@@ -1,6 +1,6 @@
-# ExampleContainers
+# Fawkes Mythic C2 Agent
 
-This repo serves as an example for the Python and Golang containers that Mythic supports.
+Fawkes is my attempt at a Mythic C2 Agent
 
 ## go_services
 
