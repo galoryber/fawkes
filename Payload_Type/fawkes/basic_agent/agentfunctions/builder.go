@@ -14,7 +14,7 @@ import (
 )
 
 var payloadDefinition = agentstructs.PayloadType{
-	Name:                                   "fawkesBin",
+	Name:                                   "fawkes",
 	FileExtension:                          "bin",
 	Author:                                 "@galoryber",
 	SupportedOS:                            []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
@@ -56,13 +56,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  false,
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
-		{
-			Name:          "supportFiles",
-			Description:   "Uploading multiple support files.",
-			Required:      false,
-			DefaultValue:  false,
-			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_FILE_MULTIPLE,
-		},
+		// {
+		// 	Name:          "supportFiles",
+		// 	Description:   "Uploading multiple support files.",
+		// 	Required:      false,
+		// 	DefaultValue:  false,
+		// 	ParameterType: agentstructs.BUILD_PARAMETER_TYPE_FILE_MULTIPLE,
+		// },
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
