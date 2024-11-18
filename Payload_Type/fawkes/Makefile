@@ -12,7 +12,6 @@ WEBHOOK_DEFAULT_STARTUP_CHANNEL?=
 
 build:
 	go mod download
-	# go run github.com/Khan/genqlient
 	go mod tidy
 	GOOS=linux go build -o ${BINARY_NAME} .
 	cp ${BINARY_NAME} /
@@ -22,7 +21,6 @@ run:
 	./${BINARY_NAME}
 
 local:
-	# go run github.com/Khan/genqlient
 	go build -o ${BINARY_NAME} .
 
 run_custom: local

@@ -29,7 +29,7 @@ func main() {
 		//MythicContainer.MythicServiceWebhook,
 		//MythicContainer.MythicServiceLogger,
 		MythicContainer.MythicServicePayload,
-		MythicContainer.MythicServiceEventing,
-		MythicContainer.MythicServiceAuth,
+		//MythicContainer.MythicServiceEventing,
+		//MythicContainer.MythicServiceAuth,
 	})
 }

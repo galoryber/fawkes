@@ -32,7 +32,7 @@ var payloadDefinition = agentstructs.PayloadType{
 			Required:      false,
 			DefaultValue:  "default",
 			Choices:       []string{"default", "c-archive", "c-shared"},
-			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE_CUSTOM,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
 		},
 		{
 			Name:          "architecture",
