@@ -4,24 +4,25 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 var payloadDefinition = agentstructs.PayloadType{
-	Name:                                   "basicAgent",
+	Name:                                   "fawkesBin",
 	FileExtension:                          "bin",
-	Author:                                 "@xorrior, @djhohnstein, @Ne0nd0g, @its_a_feature_",
-	SupportedOS:                            []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
+	Author:                                 "@galoryber",
+	SupportedOS:                            []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 	Wrapper:                                false,
 	CanBeWrappedByTheFollowingPayloadTypes: []string{},
 	SupportsDynamicLoading:                 false,
-	Description:                            "A fully featured macOS and Linux Golang agent",
-	SupportedC2Profiles:                    []string{"http", "websocket", "poseidon_tcp"},
+	Description:                            "A fawkes'd up Golang agent",
+	SupportedC2Profiles:                    []string{"http", "websocket", "dynamichttp"},
 	MythicEncryptsData:                     true,
 	MessageFormat:                          agentstructs.MessageFormatJSON,
 	BuildParameters: []agentstructs.BuildParameter{
@@ -274,5 +275,5 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 func Initialize() {
 	agentstructs.AllPayloadData.Get("basicAgent").AddPayloadDefinition(payloadDefinition)
 	agentstructs.AllPayloadData.Get("basicAgent").AddBuildFunction(build)
-	agentstructs.AllPayloadData.Get("basicAgent").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "basicAgent.svg"))
+	agentstructs.AllPayloadData.Get("basicAgent").AddIcon(filepath.Join(".", "fawkes", "agentfunctions", "fawkes.svg"))
 }

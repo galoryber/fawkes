@@ -1,10 +1,11 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/mitchellh/mapstructure"
-	"path/filepath"
 )
 
 func init() {
