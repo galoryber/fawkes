@@ -22,7 +22,7 @@ var payloadDefinition = agentstructs.PayloadType{
 	CanBeWrappedByTheFollowingPayloadTypes: []string{},
 	SupportsDynamicLoading:                 false,
 	Description:                            "A fawkes'd up Golang agent",
-	SupportedC2Profiles:                    []string{"http", "websocket", "dynamichttp"},
+	SupportedC2Profiles:                    []string{"http"},
 	MythicEncryptsData:                     true,
 	MessageFormat:                          agentstructs.MessageFormatJSON,
 	BuildParameters: []agentstructs.BuildParameter{
@@ -42,13 +42,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			Choices:       []string{"AMD_x64", "ARM_x64"},
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
 		},
-		{
-			Name:          "proxy_bypass",
-			Description:   "Ignore HTTP proxy environment settings configured on the target host?",
-			Required:      false,
-			DefaultValue:  false,
-			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
-		},
+		// {
+		// 	Name:          "proxy_bypass",
+		// 	Description:   "Ignore HTTP proxy environment settings configured on the target host?",
+		// 	Required:      false,
+		// 	DefaultValue:  false,
+		// 	ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		// },
 		{
 			Name:          "garble",
 			Description:   "Use Garble to obfuscate the output Go executable.\nWARNING - This significantly slows the agent build time.",
@@ -102,11 +102,12 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	// This package path is used with Go's "-X" link flag to set the value string variables in code at compile
 	// time. This is how each profile's configurable options are passed in.
-	poseidon_repo_profile := "github.com/MythicAgents/poseidon/Payload_Type/poseidon/agent_code/pkg/profiles"
+
+	fawkes_repo_profile := "github.com/galoryber/fawkes/Payload_Type/fawkes/basic_agent/agent_code/pkg/profiles"
 
 	// Build Go link flags that are passed in at compile time through the "-ldflags=" argument
 	// https://golang.org/cmd/link/
-	ldflags := fmt.Sprintf("-s -w -X '%s.UUID=%s'", poseidon_repo_profile, payloadBuildMsg.PayloadUUID)
+	ldflags := fmt.Sprintf("-s -w -X '%s.UUID=%s'", fawkes_repo_profile, payloadBuildMsg.PayloadUUID)
 	// Iterate over the C2 profile parameters and associated variable through Go's "-X" link flag
 	for _, key := range payloadBuildMsg.C2Profiles[0].GetArgNames() {
 		if key == "AESPSK" {
@@ -117,7 +118,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 				payloadBuildResponse.BuildStdErr = err.Error()
 				return payloadBuildResponse
 			}
-			ldflags += fmt.Sprintf(" -X '%s.%s=%s'", poseidon_repo_profile, key, cryptoVal.EncKey)
+			ldflags += fmt.Sprintf(" -X '%s.%s=%s'", fawkes_repo_profile, key, cryptoVal.EncKey)
 		} else if key == "headers" {
 			headers, err := payloadBuildMsg.C2Profiles[0].GetDictionaryArg(key)
 			if err != nil {
@@ -132,7 +133,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			} else {
 				stringBytes := string(jsonBytes)
 				stringBytes = strings.ReplaceAll(stringBytes, "\"", "\\\"")
-				ldflags += fmt.Sprintf(" -X '%s.%s=%s'", poseidon_repo_profile, key, stringBytes)
+				ldflags += fmt.Sprintf(" -X '%s.%s=%s'", fawkes_repo_profile, key, stringBytes)
 			}
 		} else {
 			val, err := payloadBuildMsg.C2Profiles[0].GetArg(key)
@@ -141,7 +142,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 				payloadBuildResponse.BuildStdErr = err.Error()
 				return payloadBuildResponse
 			}
-			ldflags += fmt.Sprintf(" -X '%s.%s=%v'", poseidon_repo_profile, key, val)
+			ldflags += fmt.Sprintf(" -X '%s.%s=%v'", fawkes_repo_profile, key, val)
 		}
 	}
 	proxyBypass, err := payloadBuildMsg.BuildParameters.GetBooleanArg("proxy_bypass")
@@ -168,7 +169,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadBuildResponse.BuildStdErr = err.Error()
 		return payloadBuildResponse
 	}
-	ldflags += fmt.Sprintf(" -X '%s.proxy_bypass=%v'", poseidon_repo_profile, proxyBypass)
+	ldflags += fmt.Sprintf(" -X '%s.proxy_bypass=%v'", fawkes_repo_profile, proxyBypass)
 	ldflags += " -buildid="
 	goarch := "amd64"
 	if architecture == "ARM_x64" {
@@ -224,7 +225,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	})
 	cmd := exec.Command("/bin/bash")
 	cmd.Stdin = strings.NewReader(command)
-	cmd.Dir = "./poseidon/agent_code/"
+	cmd.Dir = "./fawkes/agent_code/"
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
