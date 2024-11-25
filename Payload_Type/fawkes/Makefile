@@ -1,4 +1,4 @@
-BINARY_NAME?=fawkes
+BINARY_NAME?=main
 DEBUG_LEVEL?="debug"
 RABBITMQ_HOST?="127.0.0.1"
 RABBITMQ_PASSWORD?="PqR9XJ957sfHqcxj6FsBMj4p"
@@ -11,9 +11,8 @@ WEBHOOK_DEFAULT_CALLBACK_CHANNEL?=
 WEBHOOK_DEFAULT_STARTUP_CHANNEL?=
 
 build:
-	go mod download
 	go mod tidy
-	GOOS=linux go build -o ${BINARY_NAME} .
+	go build -o ${BINARY_NAME} .
 	cp ${BINARY_NAME} /
 
 run:
