@@ -1,7 +1,7 @@
 package main
 
 import (
-	basicAgent "fawkes/basic_agent/agentfunctions"
+	basicAgent "Payload_Typefawkes/basic_agent/agentfunctions"
 	///customAugmentFunctions "GoServices/command_augment/agentfunctions"
 	//httpfunctions "GoServices/http/c2functions"
 	//"GoServices/my_auth"
