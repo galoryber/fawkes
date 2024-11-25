@@ -1,8 +1,6 @@
 package agentfunctions
 
 import (
-	"path/filepath"
-
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -266,8 +264,8 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	return payloadBuildResponse
 }
 
-func Initialize() {
-	agentstructs.AllPayloadData.Get("fawkes").AddPayloadDefinition(payloadDefinition)
-	agentstructs.AllPayloadData.Get("fawkes").AddBuildFunction(build)
-	agentstructs.AllPayloadData.Get("fawkes").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
-}
+// func Initialize() {
+// 	agentstructs.AllPayloadData.Get("fawkes").AddPayloadDefinition(payloadDefinition)
+// 	agentstructs.AllPayloadData.Get("fawkes").AddBuildFunction(build)
+// 	agentstructs.AllPayloadData.Get("fawkes").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
+// }
