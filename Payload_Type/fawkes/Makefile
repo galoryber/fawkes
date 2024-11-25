@@ -1,5 +1,5 @@
-BINARY_NAME?=main
-DEBUG_LEVEL?="debug"
+BINARY_NAME?=fawkes
+DEBUG_LEVEL?="trace"
 RABBITMQ_HOST?="127.0.0.1"
 RABBITMQ_PASSWORD?="PqR9XJ957sfHqcxj6FsBMj4p"
 MYTHIC_SERVER_HOST?="127.0.0.1"
@@ -13,7 +13,7 @@ WEBHOOK_DEFAULT_STARTUP_CHANNEL?=
 build:
 	go mod download
 	go mod tidy
-	go build -o ${BINARY_NAME} .
+	GOOS=linux go build -o ${BINARY_NAME} .
 	cp ${BINARY_NAME} /
 
 run:

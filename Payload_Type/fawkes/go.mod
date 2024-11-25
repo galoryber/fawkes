@@ -8,7 +8,7 @@ toolchain go1.22.2
 
 require (
 	github.com/Khan/genqlient v0.7.0
-	github.com/MythicMeta/MythicContainer v1.4.6
+	github.com/MythicMeta/MythicContainer v1.4.1
 	github.com/crewjam/saml v0.4.14
 	github.com/mitchellh/mapstructure v1.5.0
 )
@@ -20,7 +20,7 @@ require (
 	github.com/beevik/etree v1.4.1 // indirect
 	github.com/crewjam/httperr v0.2.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
-	github.com/golang-jwt/jwt/v4 v4.5.1 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/jonboulle/clockwork v0.4.0 // indirect
