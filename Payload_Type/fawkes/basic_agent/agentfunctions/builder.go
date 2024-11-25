@@ -14,7 +14,7 @@ var payloadDefinition = agentstructs.PayloadType{
 	Wrapper:                                false,
 	CanBeWrappedByTheFollowingPayloadTypes: []string{},
 	SupportsDynamicLoading:                 false,
-	Description:                            "A fawkes'd up Golang agent",
+	Description:                            "A fawkesd up Golang agent",
 	SupportedC2Profiles:                    []string{"http"},
 	MythicEncryptsData:                     true,
 	MessageFormat:                          agentstructs.MessageFormatJSON,
