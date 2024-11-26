@@ -10,6 +10,7 @@ import (
 	"time"
 
 	// Mythic
+
 	structs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
