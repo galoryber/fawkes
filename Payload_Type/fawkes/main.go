@@ -15,7 +15,7 @@ import (
 	"github.com/MythicMeta/MythicContainer"
 	"github.com/MythicMeta/MythicContainer/logging"
 
-	structs "github.com/MythicMeta/MythicContatiner/agent_structures"
+	structs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func main() {
