@@ -1,4 +1,4 @@
-module GoServices
+module fawkes
 
 go 1.21.0
 
@@ -7,7 +7,6 @@ toolchain go1.22.2
 //replace github.com/MythicMeta/MythicContainer => ../../../../MythicMeta/MythicContainer
 
 require (
-	github.com/Khan/genqlient v0.7.0
 	github.com/MythicMeta/MythicContainer v1.4.6
 	github.com/crewjam/saml v0.4.14
 	github.com/mitchellh/mapstructure v1.5.0
