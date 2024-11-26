@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
-
+	fawkes "fawkes/basic_agent/agentfunctions"
 	// customAugmentFunctions "GoServices/command_augment/agentfunctions"
 	// httpfunctions "GoServices/http/c2functions"
 	// "GoServices/my_auth"
