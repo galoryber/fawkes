@@ -1,17 +1,10 @@
 package main
 
 import (
-	build "fawkes/basic_agent/agentfunctions"
+	fawkes "fawkes/basic_agent/agentfunctions"
 	"os"
 	"path/filepath"
 
-	// customAugmentFunctions "GoServices/command_augment/agentfunctions"
-	// httpfunctions "GoServices/http/c2functions"
-	// "GoServices/my_auth"
-	// "GoServices/my_event_processor"
-	// "GoServices/my_logger"
-	// "GoServices/my_webhooks"
-	// mytranslatorfunctions "GoServices/no_actual_translation/translationfunctions"
 	"github.com/MythicMeta/MythicContainer"
 	"github.com/MythicMeta/MythicContainer/logging"
 
@@ -19,15 +12,12 @@ import (
 )
 
 func main() {
-	// load up the agent functions directory so all the init() functions execute
-	//httpfunctions.Initialize()
-	//basicAgent.Initialize()
 
 	payloadService := structs.AllPayloadData.Get("fawkes")
 
-	// Build the Merlin Payload container definition and add it
+	// Build the Payload container definition and add it
 	// If running as standalone, locally, outside Mythic: export MYTHIC_SERVER_HOST=127.0.0.1
-	payload, err := build.NewPayload()
+	payload, err := fawkes.NewPayload()
 	if err != nil {
 		logging.LogError(err, "quitting")
 		os.Exit(2)
@@ -35,7 +25,7 @@ func main() {
 	payloadService.AddPayloadDefinition(payload)
 
 	// Add the Merlin payload build function definition
-	payloadService.AddBuildFunction(build.Build)
+	payloadService.AddBuildFunction(fawkes.Build)
 
 	// // Add the Merlin agent commands
 	// for _, command := range commands.Commands() {

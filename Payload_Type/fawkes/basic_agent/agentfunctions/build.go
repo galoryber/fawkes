@@ -529,7 +529,7 @@ func Build(msg structs.PayloadBuildMessage) (response structs.PayloadBuildRespon
 func NewPayload() (structs.PayloadType, error) {
 	payload := structs.PayloadType{
 		Name:                                   "fawkes",
-		FileExtension:                          "",
+		FileExtension:                          "bin",
 		Author:                                 "@galoryber",
 		SupportedOS:                            []string{structs.SUPPORTED_OS_WINDOWS, structs.SUPPORTED_OS_LINUX, structs.SUPPORTED_OS_MACOS, "freebsd", "openbsd", "solaris"},
 		Wrapper:                                false,
