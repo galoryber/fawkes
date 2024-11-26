@@ -1,7 +1,6 @@
 package main
 
 import (
-	basicAgent "fawkes/basic_agent/agentfunctions"
 	"os"
 	"path/filepath"
 
@@ -21,7 +20,7 @@ import (
 func main() {
 	// load up the agent functions directory so all the init() functions execute
 	//httpfunctions.Initialize()
-	basicAgent.Initialize()
+	//basicAgent.Initialize()
 
 	payloadService := structs.AllPayloadData.Get("fawkes")
 
