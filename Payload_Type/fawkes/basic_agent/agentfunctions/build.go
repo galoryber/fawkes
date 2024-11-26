@@ -495,7 +495,7 @@ func Build(msg structs.PayloadBuildMessage) (response structs.PayloadBuildRespon
 	}
 
 	// Read the payload file into memory
-	payload, err := os.ReadFile(filepath.Join("/", "Mythic", "fawkes", "fawkes.bin"))
+	payload, err := os.ReadFile(filepath.Join("/", "Mythic", "fawkes.bin"))
 	if err != nil {
 		response.BuildMessage = "Failed to find final payload"
 		response.BuildStdErr = err.Error()
