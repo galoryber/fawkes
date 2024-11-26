@@ -17,7 +17,7 @@ var payloadDefinition = agentstructs.PayloadType{
 	Name:                                   "fawkes",
 	FileExtension:                          "bin",
 	Author:                                 "@galoryber",
-	SupportedOS:                            []string{agentstructs.SUPPORTED_OS_WINDOWS},
+	SupportedOS:                            []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 	Wrapper:                                false,
 	CanBeWrappedByTheFollowingPayloadTypes: []string{},
 	SupportsDynamicLoading:                 false,
