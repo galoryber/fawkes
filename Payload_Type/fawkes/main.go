@@ -13,7 +13,7 @@ import (
 
 func main() {
 
-	payloadService := structs.AllPayloadData.Get("basicAgent")
+	payloadService := structs.AllPayloadData.Get("fawkesAgent")
 
 	// Build the Payload container definition and add it
 	// If running as standalone, locally, outside Mythic: export MYTHIC_SERVER_HOST=127.0.0.1

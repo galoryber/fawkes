@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	agentstructs.AllPayloadData.Get("basicAgent").AddCommand(agentstructs.Command{
+	agentstructs.AllPayloadData.Get("fawkesAgent").AddCommand(agentstructs.Command{
 		Name:                "ls",
 		Description:         "ls [path]",
 		Version:             1,

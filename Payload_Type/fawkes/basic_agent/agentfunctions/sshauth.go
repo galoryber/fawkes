@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	agentstructs.AllPayloadData.Get("basicAgent").AddCommand(agentstructs.Command{
+	agentstructs.AllPayloadData.Get("fawkesAgent").AddCommand(agentstructs.Command{
 		Name: "sshauth",
 		Description: `SSH to specified host(s) using the designated credentials. 
 You can also use this to execute a specific command on the remote hosts via SSH or use it to SCP files.`,
