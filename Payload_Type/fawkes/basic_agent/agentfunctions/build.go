@@ -310,7 +310,7 @@ func Build(msg structs.PayloadBuildMessage) (response structs.PayloadBuildRespon
 	}
 
 	// Setup Go command
-	goArgs := []string{"build", "-o", "merlin.bin"}
+	goArgs := []string{"build", "-o", "fawkes.bin"}
 	if mode == "shared" || mode == "raw" {
 		tags += ",shared"
 		// https://man7.org/linux/man-pages/man1/gcc.1.html
