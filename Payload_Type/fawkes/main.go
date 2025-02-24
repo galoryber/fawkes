@@ -15,7 +15,7 @@ func main() {
 	//my_logger.Initialize()
 	// sync over definitions and listen
 	MythicContainer.StartAndRunForever([]MythicContainer.MythicServices{
-		//MythicContainer.MythicServiceC2,
+		MythicContainer.MythicServiceC2,
 		//MythicContainer.MythicServiceTranslationContainer,
 		//MythicContainer.MythicServiceWebhook,
 		//MythicContainer.MythicServiceLogger,
