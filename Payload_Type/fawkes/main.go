@@ -1,15 +1,13 @@
 package main
 
 import (
-	fawkesAgent "fawkes/basic_agent/agentfunctions"
-
 	"github.com/MythicMeta/MythicContainer"
 )
 
 func main() {
 	// load up the agent functions directory so all the init() functions execute
 	//httpfunctions.Initialize()
-	fawkesAgent.Initialize()
+	fawkesAgent.build()
 	//mytranslatorfunctions.Initialize()
 	//my_webhooks.Initialize()
 	//my_logger.Initialize()
