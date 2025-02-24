@@ -33,7 +33,7 @@ func main() {
 	// }
 
 	// Get the Merlin icon and add it
-	payloadService.AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
+	payloadService.AddIcon(filepath.Join(".", "fawkes", "basic_agent", "agentfunctions", "fawkes.svg"))
 	// mytranslatorfunctions.Initialize()
 	// my_webhooks.Initialize()
 	// my_logger.Initialize()
