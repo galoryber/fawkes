@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 
+	fawkesAgent "fawkes/basic_agent/agentfunctions"
+
 	"github.com/MythicMeta/MythicContainer"
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
