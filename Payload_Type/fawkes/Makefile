@@ -11,7 +11,7 @@ WEBHOOK_DEFAULT_CALLBACK_CHANNEL?=
 WEBHOOK_DEFAULT_STARTUP_CHANNEL?=
 
 build:
-#	go mod download
+	go mod download
 	go mod tidy
 	GOOS=linux go build -o ${BINARY_NAME} .
 	cp ${BINARY_NAME} /
