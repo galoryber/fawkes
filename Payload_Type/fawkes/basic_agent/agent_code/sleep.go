@@ -4,11 +4,10 @@ import (
 	// Standard
 	"encoding/json"
 
-	"github.com/MythicAgents/freyja/Payload_Type/freyja/agent_code/pkg/profiles"
-
+	structs "github.com/MythicMeta/MythicContainer/agent_structs"
+	//"github.com/MythicAgents/freyja/Payload_Type/freyja/agent_code/pkg/profiles"
 	// Freyja
-
-	"github.com/MythicAgents/freyja/Payload_Type/freyja/agent_code/pkg/utils/structs"
+	//"github.com/MythicAgents/freyja/Payload_Type/freyja/agent_code/pkg/utils/structs"
 )
 
 type Args struct {
