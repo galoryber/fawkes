@@ -7,7 +7,7 @@ import (
 func main() {
 	// load up the agent functions directory so all the init() functions execute
 	//httpfunctions.Initialize()
-	fawkesAgent.build()
+	fawkesbuild.build()
 	//mytranslatorfunctions.Initialize()
 	//my_webhooks.Initialize()
 	//my_logger.Initialize()
