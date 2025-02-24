@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -81,6 +82,8 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		Success:            true,
 		UpdatedCommandList: &payloadBuildMsg.CommandList,
 	}
+	// adding my own payload build response outputs to see if we actually see these in Mythic
+	payloadBuildResponse.BuildStdOut = "Gary Test at beginning of build.go"
 	if len(payloadBuildMsg.C2Profiles) == 0 {
 		payloadBuildResponse.Success = false
 		payloadBuildResponse.BuildStdErr = "Failed to build - must select at least one C2 Profile"
@@ -553,5 +556,5 @@ func Initialize() {
 	agentstructs.AllPayloadData.Get("fawkesAgent").AddPayloadDefinition(payloadDefinition)
 	agentstructs.AllPayloadData.Get("fawkesAgent").AddBuildFunction(build)
 	//agentstructs.AllPayloadData.Get("freyja").AddOnNewCallbackFunction(onNewCallback)
-	//agentstructs.AllPayloadData.Get("fawkesAgent").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
+	agentstructs.AllPayloadData.Get("fawkesAgent").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
 }
