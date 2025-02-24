@@ -2,7 +2,7 @@ package fawkesbuild
 
 import (
 	// Standard
-
+	"path/filepath"
 	// Mythic
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -10,7 +10,7 @@ import (
 )
 
 var payloadDefinition = agentstructs.PayloadType{
-	Name:                                   "fawkesAgent",
+	Name:                                   "fawkes",
 	FileExtension:                          "bin",
 	Author:                                 "@galoryber",
 	SupportedOS:                            []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
@@ -72,4 +72,12 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		UpdatedCommandList: &payloadBuildMsg.CommandList,
 	}
 	return payloadBuildResponse
+}
+
+
+func Initialize() {
+	agentstructs.AllPayloadData.Get("fawkes").AddPayloadDefinition(payloadDefinition)
+	agentstructs.AllPayloadData.Get("fawkes").AddBuildFunction(build)
+	//agentstructs.AllPayloadData.Get("freyja").AddOnNewCallbackFunction(onNewCallback)
+	agentstructs.AllPayloadData.Get("fawkes").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
 }
