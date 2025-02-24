@@ -2,7 +2,6 @@ package fawkesbuild
 
 import (
 	// Standard
-	"path/filepath"
 	// Mythic
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
