@@ -5,9 +5,8 @@ import (
 	"path/filepath"
 
 	"github.com/MythicMeta/MythicContainer"
-	"github.com/MythicMeta/MythicContainer/logging"
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-
+	"github.com/MythicMeta/MythicContainer/logging"
 )
 
 func main() {
@@ -46,4 +45,4 @@ func main() {
 
 // structs.AllPayloadData.Get("basicAgent").AddPayloadDefinition(payload)
 // structs.AllPayloadData.Get("basicAgent").AddBuildFunction(build)
-agentstructs.AllPayloadData.Get("basicAgent").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
+//agentstructs.AllPayloadData.Get("basicAgent").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
