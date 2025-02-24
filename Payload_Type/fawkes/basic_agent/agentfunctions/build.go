@@ -79,5 +79,5 @@ func Initialize() {
 	agentstructs.AllPayloadData.Get("fawkes").AddPayloadDefinition(payloadDefinition)
 	agentstructs.AllPayloadData.Get("fawkes").AddBuildFunction(build)
 	//agentstructs.AllPayloadData.Get("freyja").AddOnNewCallbackFunction(onNewCallback)
-	agentstructs.AllPayloadData.Get("fawkes").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
+	//agentstructs.AllPayloadData.Get("fawkes").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
 }
