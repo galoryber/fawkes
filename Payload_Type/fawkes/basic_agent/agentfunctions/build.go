@@ -83,7 +83,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		UpdatedCommandList: &payloadBuildMsg.CommandList,
 	}
 	// adding my own payload build response outputs to see if we actually see these in Mythic
-	payloadBuildResponse.BuildMessage = "Gary Test at beginning of build.go"
+	if true {
+		payloadBuildResponse.Success = false
+		payloadBuildResponse.BuildMessage = "Gary Test at beginning of build.go"
+		return payloadBuildResponse
+	}
 	if len(payloadBuildMsg.C2Profiles) == 0 {
 		payloadBuildResponse.Success = false
 		payloadBuildResponse.BuildStdErr = "Failed to build - must select at least one C2 Profile"
