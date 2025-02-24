@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -74,6 +75,52 @@ var payloadDefinition = agentstructs.PayloadType{
 			Description: "Compiling the golang agent (maybe with obfuscation via garble)",
 		},
 	},
+	CheckIfCallbacksAliveFunction: func(message agentstructs.PTCheckIfCallbacksAliveMessage) agentstructs.PTCheckIfCallbacksAliveMessageResponse {
+		response := agentstructs.PTCheckIfCallbacksAliveMessageResponse{Success: true, Callbacks: make([]agentstructs.PTCallbacksToCheckResponse, 0)}
+		for _, callback := range message.Callbacks {
+			//logging.LogInfo("callback info", "callback", callback)
+			if callback.SleepInfo == "" {
+				continue // can't do anything if we don't know the expected sleep info of the agent
+			}
+			sleepInfo := map[string]sleepInfoStruct{}
+			err := json.Unmarshal([]byte(callback.SleepInfo), &sleepInfo)
+			if err != nil {
+				//logging.LogError(err, "failed to parse sleep info struct")
+				continue
+			}
+			atLeastOneCallbackWithinRange := false
+			for activeC2, _ := range sleepInfo {
+				if activeC2 == "websocket" && callback.LastCheckin.Unix() == 0 {
+					atLeastOneCallbackWithinRange = true
+					continue
+				}
+				if activeC2 == "poseidon_tcp" {
+					atLeastOneCallbackWithinRange = true
+					continue
+				}
+				minAdd := sleepInfo[activeC2].Interval
+				maxAdd := sleepInfo[activeC2].Interval
+				if sleepInfo[activeC2].Jitter > 0 {
+					// minimum would be sleep_interval - (sleep_jitter % of sleep_interval)
+					minAdd = minAdd - ((sleepInfo[activeC2].Jitter / 100) * (sleepInfo[activeC2].Interval))
+					// maximum would be sleep_interval + (sleep_jitter % of sleep_interval)
+					maxAdd = maxAdd + ((sleepInfo[activeC2].Jitter / 100) * (sleepInfo[activeC2].Interval))
+				}
+				maxAdd *= 2 // double the high end in case we're on a close boundary
+				earliest := callback.LastCheckin.Add(time.Duration(minAdd) * time.Second)
+				latest := callback.LastCheckin.Add(time.Duration(maxAdd) * time.Second)
+
+				if callback.LastCheckin.After(earliest) && callback.LastCheckin.Before(latest) {
+					atLeastOneCallbackWithinRange = true
+				}
+			}
+			response.Callbacks = append(response.Callbacks, agentstructs.PTCallbacksToCheckResponse{
+				ID:    callback.ID,
+				Alive: atLeastOneCallbackWithinRange,
+			})
+		}
+		return response
+	},
 }
 
 func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.PayloadBuildResponse {
@@ -83,11 +130,12 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		UpdatedCommandList: &payloadBuildMsg.CommandList,
 	}
 	// adding my own payload build response outputs to see if we actually see these in Mythic
-	if true {
+	if true == true {
 		payloadBuildResponse.Success = false
 		payloadBuildResponse.BuildMessage = "Gary Test at beginning of build.go"
 		return payloadBuildResponse
 	}
+
 	if len(payloadBuildMsg.C2Profiles) == 0 {
 		payloadBuildResponse.Success = false
 		payloadBuildResponse.BuildStdErr = "Failed to build - must select at least one C2 Profile"
@@ -554,6 +602,15 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 
 	//payloadBuildResponse.Status = agentstructs.PAYLOAD_BUILD_STATUS_ERROR
 	return payloadBuildResponse
+}
+
+// dummy example function for executing something on a new freyja callback
+func onNewCallback(data agentstructs.PTOnNewCallbackAllData) agentstructs.PTOnNewCallbackResponse {
+	return agentstructs.PTOnNewCallbackResponse{
+		AgentCallbackID: data.Callback.AgentCallbackID,
+		Success:         true,
+		Error:           "",
+	}
 }
 
 func Initialize() {
