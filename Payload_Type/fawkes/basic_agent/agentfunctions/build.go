@@ -1,4 +1,4 @@
-package fawkesbuild
+package fawkesAgent
 
 import (
 	// Standard
