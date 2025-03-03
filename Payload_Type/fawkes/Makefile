@@ -15,8 +15,8 @@ build:
 	go mod tidy
 	GOOS=linux go build -o ${BINARY_NAME} .
 	cp ${BINARY_NAME} /
-	cd ./basic_agent/agent_code && go mod download && go mod tidy && cd ../../
-	cd ./basic_agent/agentfunctions && go mod download && go mod tidy && cd ../..
+	cd ./fawkes/agent_code && go mod download && go mod tidy && cd ../../
+	cd ./fawkes/agentfunctions && go mod download && go mod tidy && cd ../..
 
 run:
 	cp /${BINARY_NAME} .

@@ -1,7 +1,7 @@
 package main
 
 import (
-	fawkesAgent "fawkes/basic_agent/agentfunctions"
+	fawkesAgent "fawkes/fawkes/agentfunctions"
 
 	"github.com/MythicMeta/MythicContainer"
 )
