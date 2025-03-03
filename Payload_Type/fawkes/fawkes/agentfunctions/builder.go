@@ -157,7 +157,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	// }
 	tags := payloadBuildMsg.C2Profiles[0].Name
 	command := fmt.Sprintf("rm -rf /deps; CGO_ENABLED=1 GOOS=%s GOARCH=%s ", targetOs, goarch)
-	goCmd := fmt.Sprintf("-tags %s -buildmode %s -ldflags \"%s\"", tags, mode, ldflags)
+	buildmodeflag := "default"
+	if mode == "shared" {
+		buildmodeflag = "c-shared"
+	}
+	goCmd := fmt.Sprintf("-tags %s -buildmode %s -ldflags \"%s\"", tags, buildmodeflag, ldflags)
 	if targetOs == "darwin" {
 		command += "CC=o64-clang CXX=o64-clang++ "
 	} else if targetOs == "windows" {
