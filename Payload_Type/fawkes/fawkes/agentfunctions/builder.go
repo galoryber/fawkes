@@ -211,6 +211,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		StepStdout:  fmt.Sprintf("Successfully configured\n%s", command),
 	})
 	cmd := exec.Command("/bin/bash")
+	fmt.Println("build command : " + command)
 	cmd.Stdin = strings.NewReader(command)
 	cmd.Dir = "./fawkes/agent_code/"
 	var stdout bytes.Buffer
