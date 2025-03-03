@@ -31,7 +31,7 @@ var payloadDefinition = agentstructs.PayloadType{
 			Name:          "mode",
 			Description:   "Choose the build mode option. Select default for executables, shared for a .dll or .so file,  shellcode to use sRDI to convert the DLL to windows shellcode",
 			Required:      false,
-			DefaultValue:  "default",
+			DefaultValue:  "default-executable",
 			Choices:       []string{"default-executable", "shared", "windows-shellcode"},
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
 		},
