@@ -1,4 +1,4 @@
-package sleep
+package commands
 
 import (
 	// Standard
