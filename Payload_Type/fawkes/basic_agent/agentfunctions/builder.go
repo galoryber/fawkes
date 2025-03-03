@@ -273,7 +273,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 }
 
 func Initialize() {
-	agentstructs.AllPayloadData.Get("basicAgent").AddPayloadDefinition(payloadDefinition)
-	agentstructs.AllPayloadData.Get("basicAgent").AddBuildFunction(build)
-	agentstructs.AllPayloadData.Get("basicAgent").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
+	agentstructs.AllPayloadData.Get("fawkesAgent").AddPayloadDefinition(payloadDefinition)
+	agentstructs.AllPayloadData.Get("fawkesAgent").AddBuildFunction(build)
+	agentstructs.AllPayloadData.Get("fawkesAgent").AddIcon(filepath.Join(".", "basic_agent", "agentfunctions", "fawkes.svg"))
 }
