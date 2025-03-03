@@ -6,8 +6,6 @@ import (
 	"log"
 	"os"
 	"strings"
-
-	structs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 type lsArgs struct {
@@ -15,8 +13,7 @@ type lsArgs struct {
 }
 
 // Run - interface method that retrieves a process list
-func Run(task structs.Task) {
-	msg := task.NewResponse()
+func init() {
 
 	// directory or location
 	args := lsArgs{}
