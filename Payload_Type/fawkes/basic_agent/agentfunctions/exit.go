@@ -1,11 +1,11 @@
-package fawkesbuild
+package agentfunctions
 
 import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
-	agentstructs.AllPayloadData.Get("fawkesAgent").AddCommand(agentstructs.Command{
+	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "exit",
 		Description:         "Exit the current session and kill the agent",
 		HelpString:          "exit",

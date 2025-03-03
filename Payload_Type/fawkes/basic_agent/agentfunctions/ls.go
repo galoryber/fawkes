@@ -1,4 +1,4 @@
-package fawkesbuild
+package agentfunctions
 
 import (
 	"path/filepath"
@@ -9,7 +9,7 @@ import (
 )
 
 func init() {
-	agentstructs.AllPayloadData.Get("fawkesAgent").AddCommand(agentstructs.Command{
+	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ls",
 		Description:         "ls [path]",
 		Version:             1,
