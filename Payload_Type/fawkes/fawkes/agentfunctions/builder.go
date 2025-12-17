@@ -2,14 +2,12 @@ package agentfunctions
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 
-	"github.com/MythicAgents/merlin/Payload_Type/merlin/container/pkg/srdi"
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
@@ -89,46 +87,63 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	// This package path is used with Go's "-X" link flag to set the value string variables in code at compile
 	// time. This is how each profile's configurable options are passed in.
-	poseidon_repo_profile := "github.com/MythicAgents/poseidon/Payload_Type/poseidon/agent_code/pkg/profiles"
+	fawkes_main_package := "main"
 
 	// Build Go link flags that are passed in at compile time through the "-ldflags=" argument
 	// https://golang.org/cmd/link/
-	ldflags := fmt.Sprintf("-s -w -X '%s.UUID=%s'", poseidon_repo_profile, payloadBuildMsg.PayloadUUID)
-	// Iterate over the C2 profile parameters and associated variable through Go's "-X" link flag
+	ldflags := fmt.Sprintf("-s -w -X '%s.payloadUUID=%s'", fawkes_main_package, payloadBuildMsg.PayloadUUID)
+	// Iterate over the C2 profile parameters and associate variables through Go's "-X" link flag
 	for _, key := range payloadBuildMsg.C2Profiles[0].GetArgNames() {
 		if key == "AESPSK" {
-			//cryptoVal := val.(map[string]interface{})
 			cryptoVal, err := payloadBuildMsg.C2Profiles[0].GetCryptoArg(key)
 			if err != nil {
 				payloadBuildResponse.Success = false
 				payloadBuildResponse.BuildStdErr = err.Error()
 				return payloadBuildResponse
 			}
-			ldflags += fmt.Sprintf(" -X '%s.%s=%s'", poseidon_repo_profile, key, cryptoVal.EncKey)
+			ldflags += fmt.Sprintf(" -X '%s.encryptionKey=%s'", fawkes_main_package, cryptoVal.EncKey)
+		} else if key == "callback_host" {
+			val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key)
+			if err != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = err.Error()
+				return payloadBuildResponse
+			}
+			ldflags += fmt.Sprintf(" -X '%s.callbackHost=%s'", fawkes_main_package, val)
+		} else if key == "callback_port" {
+			val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key)
+			if err != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = err.Error()
+				return payloadBuildResponse
+			}
+			ldflags += fmt.Sprintf(" -X '%s.callbackPort=%d'", fawkes_main_package, int(val))
+		} else if key == "callback_interval" {
+			val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key)
+			if err != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = err.Error()
+				return payloadBuildResponse
+			}
+			ldflags += fmt.Sprintf(" -X '%s.sleepInterval=%d'", fawkes_main_package, int(val))
+		} else if key == "callback_jitter" {
+			val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key)
+			if err != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = err.Error()
+				return payloadBuildResponse
+			}
+			ldflags += fmt.Sprintf(" -X '%s.jitter=%d'", fawkes_main_package, int(val))
 		} else if key == "headers" {
-			headers, err := payloadBuildMsg.C2Profiles[0].GetDictionaryArg(key)
+			headerMap, err := payloadBuildMsg.C2Profiles[0].GetDictionaryArg(key)
 			if err != nil {
 				payloadBuildResponse.Success = false
 				payloadBuildResponse.BuildStdErr = err.Error()
 				return payloadBuildResponse
 			}
-			if jsonBytes, err := json.Marshal(headers); err != nil {
-				payloadBuildResponse.Success = false
-				payloadBuildResponse.BuildStdErr = err.Error()
-				return payloadBuildResponse
-			} else {
-				stringBytes := string(jsonBytes)
-				stringBytes = strings.ReplaceAll(stringBytes, "\"", "\\\"")
-				ldflags += fmt.Sprintf(" -X '%s.%s=%s'", poseidon_repo_profile, key, stringBytes)
+			if userAgentVal, exists := headerMap["User-Agent"]; exists {
+				ldflags += fmt.Sprintf(" -X '%s.userAgent=%s'", fawkes_main_package, userAgentVal)
 			}
-		} else {
-			val, err := payloadBuildMsg.C2Profiles[0].GetArg(key)
-			if err != nil {
-				payloadBuildResponse.Success = false
-				payloadBuildResponse.BuildStdErr = err.Error()
-				return payloadBuildResponse
-			}
-			ldflags += fmt.Sprintf(" -X '%s.%s=%v'", poseidon_repo_profile, key, val)
 		}
 	}
 	architecture, err := payloadBuildMsg.BuildParameters.GetStringArg("architecture")
@@ -149,26 +164,28 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadBuildResponse.BuildStdErr = err.Error()
 		return payloadBuildResponse
 	}
-	//ldflags += fmt.Sprintf(" -X '%s.proxy_bypass=%v'", poseidon_repo_profile, proxyBypass)
+	// Add debug flag
+	ldflags += fmt.Sprintf(" -X '%s.debug=%t'", fawkes_main_package, false)
 	ldflags += " -buildid="
-	goarch := architecture // "amd64"
-	// if architecture == "ARM_x64" {
-	// 	goarch = "arm64"
-	// }
+	
+	goarch := architecture
 	tags := payloadBuildMsg.C2Profiles[0].Name
-	command := fmt.Sprintf("rm -rf /deps; CGO_ENABLED=1 GOOS=%s GOARCH=%s ", targetOs, goarch)
+	command := fmt.Sprintf("rm -rf /deps; CGO_ENABLED=0 GOOS=%s GOARCH=%s ", targetOs, goarch)
 	buildmodeflag := "default"
 	if mode == "shared" {
 		buildmodeflag = "c-shared"
+		command = strings.Replace(command, "CGO_ENABLED=0", "CGO_ENABLED=1", 1)
 	}
 	goCmd := fmt.Sprintf("-tags %s -buildmode %s -ldflags \"%s\"", tags, buildmodeflag, ldflags)
-	if targetOs == "darwin" {
-		command += "CC=o64-clang CXX=o64-clang++ "
-	} else if targetOs == "windows" {
-		command += "CC=x86_64-w64-mingw32-gcc "
-	} else {
-		if goarch == "arm64" {
-			command += "CC=aarch64-linux-gnu-gcc "
+	if mode == "shared" {
+		if targetOs == "darwin" {
+			command += "CC=o64-clang CXX=o64-clang++ "
+		} else if targetOs == "windows" {
+			command += "CC=x86_64-w64-mingw32-gcc "
+		} else {
+			if goarch == "arm64" {
+				command += "CC=aarch64-linux-gnu-gcc "
+			}
 		}
 	}
 	command += "GOGARBLE=* "
@@ -178,7 +195,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		command += "go build "
 	}
 	payloadName := fmt.Sprintf("%s-%s", payloadBuildMsg.PayloadUUID, targetOs)
-	command += fmt.Sprintf("%s -o /build/%s", goCmd, payloadName)
+	command += fmt.Sprintf("%s -o /build/%s main.go", goCmd, payloadName)
 	if targetOs == "darwin" {
 		command += fmt.Sprintf("-%s", macOSVersion)
 		payloadName += fmt.Sprintf("-%s", macOSVersion)
@@ -252,8 +269,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadBuildResponse.Success = false
 		payloadBuildResponse.BuildMessage = "Failed to find final payload"
 	} else if mode == "windows-shellcode" {
-		payloadBytes = srdi.DLLToReflectiveShellcode(payloadBytes, "Run", true, "")
-
+		// TODO: Implement sRDI shellcode conversion
+		payloadBuildResponse.Success = false
+		payloadBuildResponse.BuildMessage = "Windows shellcode mode not implemented yet"
 	} else {
 		payloadBuildResponse.Payload = &payloadBytes
 		payloadBuildResponse.Success = true
