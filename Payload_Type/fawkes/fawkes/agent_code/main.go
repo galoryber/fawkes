@@ -108,6 +108,14 @@ func main() {
 	// Initialize command handlers
 	commands.Initialize()
 
+	// Initial checkin
+	log.Printf("[INFO] Starting initial checkin...")
+	if err := c2.Checkin(agent); err != nil {
+		log.Printf("[ERROR] Initial checkin failed: %v", err)
+		return
+	}
+	log.Printf("[INFO] Initial checkin successful")
+
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -138,14 +146,6 @@ func main() {
 
 func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, maxRetriesInt int, sleepIntervalInt int, debugBool bool) {
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-
-	// Initial checkin
-	if err := c2.Checkin(agent); err != nil {
-		log.Printf("[ERROR] Initial checkin failed: %v", err)
-		return
-	}
-
-	log.Printf("[INFO] Initial checkin successful")
 
 	// Main execution loop
 	retryCount := 0
