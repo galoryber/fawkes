@@ -147,6 +147,10 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	}
 	defer resp.Body.Close()
 
+	if h.Debug {
+		log.Printf("[DEBUG] GetTasking response status: %d", resp.StatusCode)
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("get tasking failed with status: %d", resp.StatusCode)
 	}
@@ -154,6 +158,10 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	if h.Debug {
+		log.Printf("[DEBUG] GetTasking response body length: %d", len(respBody))
 	}
 
 	// Decrypt if encryption key is provided

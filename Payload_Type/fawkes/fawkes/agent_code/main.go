@@ -150,11 +150,17 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 	// Main execution loop
 	retryCount := 0
 	for {
+		if debugBool {
+			log.Printf("[DEBUG] Starting main loop iteration, retryCount=%d", retryCount)
+		}
 		select {
 		case <-ctx.Done():
 			log.Printf("[INFO] Context cancelled, exiting main loop")
 			return
 		default:
+			if debugBool {
+				log.Printf("[DEBUG] Calling GetTasking...")
+			}
 			// Get tasks from C2 server
 			tasks, err := c2.GetTasking(agent)
 			if err != nil {
@@ -175,6 +181,9 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 
 			// Reset retry count on successful communication
 			retryCount = 0
+			if debugBool {
+				log.Printf("[DEBUG] GetTasking successful, received %d tasks", len(tasks))
+			}
 
 			// Process tasks
 			for _, task := range tasks {
