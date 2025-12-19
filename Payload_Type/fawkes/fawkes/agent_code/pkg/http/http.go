@@ -86,10 +86,11 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		body = h.encryptMessage(body)
+		// Temporarily disable encryption to debug communication
 		if h.Debug {
-			log.Printf("[DEBUG] Checkin message encrypted")
+			log.Printf("[DEBUG] Encryption temporarily disabled for debugging")
 		}
+		// body = h.encryptMessage(body)
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
@@ -129,10 +130,11 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		body = h.encryptMessage(body)
+		// Temporarily disable encryption to debug communication
 		if h.Debug {
-			log.Printf("[DEBUG] Tasking message encrypted")
+			log.Printf("[DEBUG] Encryption temporarily disabled for debugging")
 		}
+		// body = h.encryptMessage(body)
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
@@ -208,10 +210,11 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		body = h.encryptMessage(body)
+		// Temporarily disable encryption to debug communication
 		if h.Debug {
-			log.Printf("[DEBUG] Response message encrypted")
+			log.Printf("[DEBUG] Encryption temporarily disabled for debugging")
 		}
+		// body = h.encryptMessage(body)
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
