@@ -236,11 +236,16 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 		return encryptedData, nil // No encryption
 	}
 
+	log.Printf("[DEBUG] Decryption key (base64): %s", h.EncryptionKey)
+
 	// Decode the base64 key
 	key, err := base64.StdEncoding.DecodeString(h.EncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode encryption key: %w", err)
 	}
+
+	log.Printf("[DEBUG] Decoded key length: %d bytes", len(key))
+	log.Printf("[DEBUG] Decoded key (hex): %x", key)
 
 	// The response format should be: UUID (36 bytes) + IV (16 bytes) + Ciphertext + HMAC (32 bytes)
 	if len(encryptedData) < 36+16+32 {
@@ -260,13 +265,45 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 	// Extract ciphertext (everything between IV and HMAC)
 	ciphertext := encryptedData[52 : len(encryptedData)-32]
 
+	log.Printf("[DEBUG] Data lengths - Total: %d, UUID: 36, IV: 16, Ciphertext: %d, HMAC: 32", len(encryptedData), len(ciphertext))
+	log.Printf("[DEBUG] Expected total: %d (36+16+%d+32)", 36+16+len(ciphertext)+32, len(ciphertext))
+
 	// Verify HMAC
 	mac := hmac.New(sha256.New, key)
-	mac.Write(encryptedData[:len(encryptedData)-32]) // Everything except HMAC
+	dataForHmac := encryptedData[:len(encryptedData)-32] // Everything except HMAC
+	mac.Write(dataForHmac)
 	expectedHmac := mac.Sum(nil)
 
+	log.Printf("[DEBUG] HMAC verification:")
+	log.Printf("[DEBUG]   Key length: %d", len(key))
+	log.Printf("[DEBUG]   Data for HMAC length: %d", len(dataForHmac))
+	log.Printf("[DEBUG]   Received HMAC: %x", hmacBytes)
+	log.Printf("[DEBUG]   Expected HMAC: %x", expectedHmac)
+	log.Printf("[DEBUG]   HMAC match: %v", hmac.Equal(hmacBytes, expectedHmac))
+
 	if !hmac.Equal(hmacBytes, expectedHmac) {
-		return nil, fmt.Errorf("HMAC verification failed")
+		log.Printf("[DEBUG] Primary HMAC verification failed, trying alternative methods...")
+		
+		// Try HMAC on just the ciphertext (alternative method)
+		mac2 := hmac.New(sha256.New, key)
+		mac2.Write(ciphertext)
+		expectedHmac2 := mac2.Sum(nil)
+		log.Printf("[DEBUG] Alternative HMAC (ciphertext only): %x", expectedHmac2)
+		
+		if hmac.Equal(hmacBytes, expectedHmac2) {
+			log.Printf("[DEBUG] Alternative HMAC method succeeded!")
+		} else {
+			// Try HMAC on UUID + IV + ciphertext (without UUID in the calculation)
+			mac3 := hmac.New(sha256.New, key)
+			mac3.Write(encryptedData[36:len(encryptedData)-32]) // IV + ciphertext
+			expectedHmac3 := mac3.Sum(nil)
+			log.Printf("[DEBUG] Alternative HMAC (IV+ciphertext): %x", expectedHmac3)
+			
+			if !hmac.Equal(hmacBytes, expectedHmac3) {
+				return nil, fmt.Errorf("HMAC verification failed with all methods")
+			}
+			log.Printf("[DEBUG] Alternative HMAC method 2 succeeded!")
+		}
 	}
 
 	// Decrypt using AES-CBC
