@@ -58,6 +58,8 @@ type CheckinMessage struct {
 	ExternalIP   string `json:"external_ip"`
 	ProcessName  string `json:"process_name"`
 	Integrity    int    `json:"integrity_level"`
+	PayloadType  string `json:"payload_type"`
+	C2Profile    string `json:"c2_profile"`
 }
 
 // TaskingMessage represents the message to get tasking

