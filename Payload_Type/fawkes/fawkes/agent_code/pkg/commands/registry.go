@@ -18,6 +18,7 @@ func Initialize() {
 	
 	// Register commands
 	RegisterCommand(&LsCommand{})
+	RegisterCommand(&PwdCommand{})
 	RegisterCommand(&SleepCommand{})
 	RegisterCommand(&ExitCommand{})
 	
