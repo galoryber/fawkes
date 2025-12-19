@@ -20,6 +20,12 @@ type Agent struct {
 	Description     string `json:"description"`
 }
 
+// UpdateSleepParams updates the agent's sleep parameters
+func (a *Agent) UpdateSleepParams(interval, jitter int) {
+	a.SleepInterval = interval
+	a.Jitter = jitter
+}
+
 // Task represents a task from Mythic
 type Task struct {
 	ID       string `json:"id"`
@@ -84,7 +90,13 @@ type Command interface {
 	Description() string
 	Execute(task Task) CommandResult
 }
-
+// AgentCommand interface for commands that need agent access
+type AgentCommand interface {
+	Name() string
+	Description() string
+	Execute(task Task) CommandResult
+	ExecuteWithAgent(task Task, agent *Agent) CommandResult
+}
 // FileListEntry for ls command
 type FileListEntry struct {
 	Name         string    `json:"name"`

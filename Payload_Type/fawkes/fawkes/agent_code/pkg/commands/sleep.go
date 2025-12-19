@@ -10,7 +10,7 @@ import (
 	"fawkes/pkg/structs"
 )
 
-// SleepCommand implements the sleep command
+// SleepCommand implements the sleep command with agent access
 type SleepCommand struct{}
 
 // Name returns the command name
@@ -23,8 +23,17 @@ func (c *SleepCommand) Description() string {
 	return "Update the sleep interval and jitter of the agent"
 }
 
-// Execute executes the sleep command
+// Execute executes the sleep command (fallback without agent access)
 func (c *SleepCommand) Execute(task structs.Task) structs.CommandResult {
+	return structs.CommandResult{
+		Output:    "Sleep command requires agent access",
+		Status:    "error",
+		Completed: true,
+	}
+}
+
+// ExecuteWithAgent executes the sleep command with agent access
+func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent) structs.CommandResult {
 	// Parse parameters
 	var args struct {
 		Interval int `json:"interval"`
@@ -76,8 +85,15 @@ func (c *SleepCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Update sleep parameters (this would normally update global agent state)
-	output := fmt.Sprintf("Updated sleep parameters: interval=%ds, jitter=%d%%", args.Interval, args.Jitter)
+	// Update sleep parameters in the actual agent
+	oldInterval := agent.SleepInterval
+	oldJitter := agent.Jitter
+	
+	agent.UpdateSleepParams(args.Interval, args.Jitter)
+	
+	// Create output message
+	output := fmt.Sprintf("Updated sleep parameters: interval=%ds, jitter=%d%% (was: %ds, %d%%)", 
+		args.Interval, args.Jitter, oldInterval, oldJitter)
 	
 	// Log the change
 	log.Printf("[INFO] Sleep parameters updated: interval=%d, jitter=%d", args.Interval, args.Jitter)

