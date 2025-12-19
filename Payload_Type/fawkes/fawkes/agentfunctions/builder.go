@@ -144,6 +144,15 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			if userAgentVal, exists := headerMap["User-Agent"]; exists {
 				ldflags += fmt.Sprintf(" -X '%s.userAgent=%s'", fawkes_main_package, userAgentVal)
 			}
+		} else if key == "get_uri" || key == "post_uri" {
+			val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key)
+			if err != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = err.Error()
+				return payloadBuildResponse
+			}
+			// Use the first URI we encounter (get_uri or post_uri)
+			ldflags += fmt.Sprintf(" -X '%s.endpointURI=%s'", fawkes_main_package, val)
 		}
 	}
 	architecture, err := payloadBuildMsg.BuildParameters.GetStringArg("architecture")
