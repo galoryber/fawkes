@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"strconv"
+	"strings"
 
 	"fawkes/pkg/commands"
 	"fawkes/pkg/http"
@@ -81,8 +82,16 @@ func main() {
 	}
 
 	// Initialize HTTP profile
+	// Construct callback URL properly - check if callbackHost already has protocol
+	var callbackURL string
+	if strings.HasPrefix(callbackHost, "http://") || strings.HasPrefix(callbackHost, "https://") {
+		callbackURL = fmt.Sprintf("%s:%d", callbackHost, callbackPortInt)
+	} else {
+		callbackURL = fmt.Sprintf("http://%s:%d", callbackHost, callbackPortInt)
+	}
+	
 	httpProfile := http.NewHTTPProfile(
-		fmt.Sprintf("http://%s:%d", callbackHost, callbackPortInt),
+		callbackURL,
 		userAgent,
 		encryptionKey,
 		maxRetriesInt,
