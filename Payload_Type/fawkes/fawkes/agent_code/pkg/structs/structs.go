@@ -64,8 +64,12 @@ type CheckinMessage struct {
 
 // TaskingMessage represents the message to get tasking
 type TaskingMessage struct {
-	Action string `json:"action"`
-	TaskingSize int `json:"tasking_size"`
+	Action      string `json:"action"`
+	TaskingSize int    `json:"tasking_size"`
+	// Add agent identification for checkin updates
+	PayloadUUID string `json:"uuid,omitempty"`
+	PayloadType string `json:"payload_type,omitempty"`
+	C2Profile   string `json:"c2_profile,omitempty"`
 }
 
 // PostResponseMessage represents posting a response back to Mythic  
