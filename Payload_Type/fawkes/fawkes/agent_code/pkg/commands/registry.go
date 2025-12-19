@@ -30,7 +30,7 @@ func RegisterCommand(cmd structs.Command) {
 	defer registryMutex.Unlock()
 	
 	commandRegistry[cmd.Name()] = cmd
-	log.Printf("[DEBUG] Registered command: %s", cmd.Name())
+	// log.Printf("[DEBUG] Registered command: %s", cmd.Name())
 }
 
 // GetCommand retrieves a command from the registry

