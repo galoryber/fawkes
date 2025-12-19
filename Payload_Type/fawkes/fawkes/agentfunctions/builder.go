@@ -195,13 +195,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		command += "go build "
 	}
 	payloadName := fmt.Sprintf("%s-%s", payloadBuildMsg.PayloadUUID, targetOs)
-	command += fmt.Sprintf("%s -o /build/%s main.go", goCmd, payloadName)
 	if targetOs == "darwin" {
-		command += fmt.Sprintf("-%s", macOSVersion)
 		payloadName += fmt.Sprintf("-%s", macOSVersion)
 	}
-	command += fmt.Sprintf("-%s", goarch)
 	payloadName += fmt.Sprintf("-%s", goarch)
+	command += fmt.Sprintf("%s -o /build/%s .", goCmd, payloadName)
 	//"default-executable", "shared", "windows-shellcode"
 	if mode == "shared" {
 		if targetOs == "windows" {
