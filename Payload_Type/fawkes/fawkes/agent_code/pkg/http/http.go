@@ -2,6 +2,11 @@ package http
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -83,9 +88,9 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		// TODO: Implement encryption
+		body = h.encryptMessage(body)
 		if h.Debug {
-			log.Printf("[DEBUG] Encryption not implemented yet")
+			log.Printf("[DEBUG] Checkin message encrypted")
 		}
 	}
 
@@ -126,9 +131,9 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		// TODO: Implement encryption
+		body = h.encryptMessage(body)
 		if h.Debug {
-			log.Printf("[DEBUG] Encryption not implemented yet")
+			log.Printf("[DEBUG] Tasking message encrypted")
 		}
 	}
 
@@ -205,9 +210,9 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		// TODO: Implement encryption
+		body = h.encryptMessage(body)
 		if h.Debug {
-			log.Printf("[DEBUG] Encryption not implemented yet")
+			log.Printf("[DEBUG] Response message encrypted")
 		}
 	}
 
@@ -268,4 +273,66 @@ func getString(m map[string]interface{}, key string) string {
 		}
 	}
 	return ""
+}
+
+// encryptMessage encrypts a message using AES with HMAC
+func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
+	if h.EncryptionKey == "" {
+		return msg
+	}
+	
+	// Decode the base64 key
+	key, err := base64.StdEncoding.DecodeString(h.EncryptionKey)
+	if err != nil {
+		if h.Debug {
+			log.Printf("[DEBUG] Failed to decode encryption key: %v", err)
+		}
+		return msg
+	}
+	
+	// Create AES cipher
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		if h.Debug {
+			log.Printf("[DEBUG] Failed to create AES cipher: %v", err)
+		}
+		return msg
+	}
+	
+	// Generate random IV
+	iv := make([]byte, aes.BlockSize)
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		if h.Debug {
+			log.Printf("[DEBUG] Failed to generate IV: %v", err)
+		}
+		return msg
+	}
+	
+	// Create CBC encrypter
+	mode := cipher.NewCBCEncrypter(block, iv)
+	
+	// Pad the message to block size
+	padded := pkcs7Pad(msg, aes.BlockSize)
+	
+	// Encrypt the message
+	encrypted := make([]byte, len(padded))
+	mode.CryptBlocks(encrypted, padded)
+	
+	// Prepend IV to encrypted data
+	result := append(iv, encrypted...)
+	
+	// Create HMAC
+	hmacHash := hmac.New(sha256.New, key)
+	hmacHash.Write(result)
+	hmacBytes := hmacHash.Sum(nil)
+	
+	// Prepend HMAC to result
+	return append(hmacBytes, result...)
+}
+
+// pkcs7Pad adds PKCS#7 padding
+func pkcs7Pad(data []byte, blockSize int) []byte {
+	padding := blockSize - len(data)%blockSize
+	padText := bytes.Repeat([]byte{byte(padding)}, padding)
+	return append(data, padText...)
 }
