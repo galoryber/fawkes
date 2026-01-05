@@ -17,10 +17,16 @@ From the Mythic install directory:
 
 Command | Syntax                                                                                                                | Description
 ------- |-----------------------------------------------------------------------------------------------------------------------| -----------
+cat | `cat <file>`                                                                                                              | Display the contents of a file.
+cd | `cd <directory>`                                                                                                           | Change the current working directory.
+cp | `cp <source> <destination>`                                                                                                | Copy a file from source to destination.
 exit | `exit`                                                                                                                   | Task agent to exit.
 ls | `ls [path]`                                                                                                        | List files and folders in `[path]`. Defaults to current working directory.
+mv | `mv <source> <destination>`                                                                                                | Move or rename a file from source to destination.
+ps | `ps [-v] [-i PID] [filter]`                                                                                               | List running processes. Use -v for verbose output with command lines. Use -i to filter by specific PID. Optional filter to search by process name.
 pwd | `pwd`                                                                                                                     | Print working directory.
-sleep | `sleep [seconds] [jitter] -> sleep 10 50`                                                                                                       | Set the callback interval in seconds and jitter percentage .
+run | `run <command>`                                                                                                            | Execute a shell command and return the output.
+sleep | `sleep [seconds] [jitter]`                                                                                                       | Set the callback interval in seconds and jitter percentage.
 
 
 
