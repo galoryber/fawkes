@@ -22,13 +22,11 @@ func init() {
 				Name:          "source",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:   "Source file path",
-				Required:      true,
 			},
 			{
 				Name:          "destination",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:   "Destination file path",
-				Required:      true,
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
