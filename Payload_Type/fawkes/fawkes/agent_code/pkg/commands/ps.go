@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -28,6 +29,7 @@ func (c *PsCommand) Description() string {
 type PsArgs struct {
 	Verbose bool   `json:"verbose"`
 	Filter  string `json:"filter"`
+	PID     int32  `json:"pid"`
 }
 
 // ProcessInfo represents process information
@@ -48,20 +50,28 @@ func (c *PsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params != "" {
 		// Try to parse as JSON first
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			// If not JSON, treat as filter string
-			// Check if it starts with -v for verbose
-			if strings.HasPrefix(task.Params, "-v ") {
-				args.Verbose = true
-				args.Filter = strings.TrimSpace(task.Params[3:])
-			} else if task.Params == "-v" {
-				args.Verbose = true
-			} else {
-				args.Filter = strings.TrimSpace(task.Params)
+			// Parse command line arguments
+			parts := strings.Fields(task.Params)
+			for i := 0; i < len(parts); i++ {
+				switch parts[i] {
+				case "-v":
+					args.Verbose = true
+				case "-i":
+					if i+1 < len(parts) {
+						if pid, err := strconv.ParseInt(parts[i+1], 10, 32); err == nil {
+							args.PID = int32(pid)
+						}
+						i++
+					}
+				default:
+					// Assume it's a filter string
+					args.Filter = parts[i]
+				}
 			}
 		}
 	}
 
-	processes, err := getProcessList(args.Filter)
+	processes, err := getProcessList(args.Filter, args.PID)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error listing processes: %v", err),
@@ -79,7 +89,7 @@ func (c *PsCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-func getProcessList(filter string) ([]ProcessInfo, error) {
+func getProcessList(filter string, pid int32) ([]ProcessInfo, error) {
 	// Get all processes
 	procs, err := process.Processes()
 	if err != nil {
@@ -90,12 +100,17 @@ func getProcessList(filter string) ([]ProcessInfo, error) {
 	filterLower := strings.ToLower(filter)
 
 	for _, p := range procs {
+		// Apply PID filter if specified
+		if pid > 0 && p.Pid != pid {
+			continue
+		}
+
 		name, err := p.Name()
 		if err != nil {
 			continue
 		}
 
-		// Apply filter if specified
+		// Apply name filter if specified
 		if filter != "" && !strings.Contains(strings.ToLower(name), filterLower) {
 			continue
 		}
@@ -153,15 +168,11 @@ func formatProcessList(processes []ProcessInfo, verbose bool) string {
 		}
 
 		if verbose {
-			cmdline := proc.CmdLine
-			if len(cmdline) > 60 {
-				cmdline = cmdline[:57] + "..."
-			}
 			result.WriteString(fmt.Sprintf("%-8d %-8d %-30s %-8s %-20s %s\n",
-				proc.PID, proc.PPID, truncate(proc.Name, 30), proc.Arch, truncate(user, 20), cmdline))
+				proc.PID, proc.PPID, proc.Name, proc.Arch, user, proc.CmdLine))
 		} else {
 			result.WriteString(fmt.Sprintf("%-8d %-8d %-30s %-8s %-20s\n",
-				proc.PID, proc.PPID, truncate(proc.Name, 30), proc.Arch, truncate(user, 20)))
+				proc.PID, proc.PPID, proc.Name, proc.Arch, user))
 		}
 	}
 

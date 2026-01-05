@@ -7,8 +7,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ps",
-		Description:         "ps [-v] [filter] - List running processes. Use -v for verbose output with command lines. Optional filter to search by process name.",
-		HelpString:          "ps [-v] [filter]",
+		Description:         "ps [-v] [-i PID] [filter] - List running processes. Use -v for verbose output with command lines. Use -i to filter by specific PID. Optional filter to search by process name.",
+		HelpString:          "ps [-v] [-i PID] [filter]",
 		Version:             1,
 		MitreAttackMappings: []string{"T1057"}, // Process Discovery
 		SupportedUIFeatures: []string{},
