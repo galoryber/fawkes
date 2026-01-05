@@ -20,18 +20,6 @@ func init() {
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
-		CommandParameters: []agentstructs.CommandParameter{
-			{
-				Name:          "source",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:   "Source file path",
-			},
-			{
-				Name:          "destination",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:   "Destination file path",
-			},
-		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			// Parse space-separated arguments: mv <source> <destination>
 			// Try to parse as JSON first
