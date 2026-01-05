@@ -90,11 +90,11 @@ func getUnixProcesses() (string, error) {
 	return formatProcessOutput(string(output), "unix")
 }
 
-func formatProcessOutput(output string, osType string) string {
+func formatProcessOutput(output string, osType string) (string, error) {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 
 	if len(lines) == 0 {
-		return "No processes found"
+		return "No processes found", nil
 	}
 
 	var result strings.Builder
@@ -116,5 +116,5 @@ func formatProcessOutput(output string, osType string) string {
 		result.WriteString(output)
 	}
 
-	return result.String()
+	return result.String(), nil
 }
