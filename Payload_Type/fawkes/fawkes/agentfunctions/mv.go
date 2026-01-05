@@ -1,6 +1,9 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
 )
@@ -30,7 +33,28 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			return args.LoadArgsFromJSONString(input)
+			// Parse space-separated arguments: mv <source> <destination>
+			// Try to parse as JSON first
+			if err := args.LoadArgsFromJSONString(input); err == nil {
+				return nil
+			}
+			// If not JSON, parse as space-separated string
+			// Split on first space to handle paths with spaces
+			parts := strings.SplitN(input, " ", 2)
+			if len(parts) != 2 {
+				return fmt.Errorf("mv requires two arguments: source and destination")
+			}
+			args.AddArg(agentstructs.CommandParameter{
+				Name:          "source",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  parts[0],
+			})
+			args.AddArg(agentstructs.CommandParameter{
+				Name:          "destination",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  parts[1],
+			})
+			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
