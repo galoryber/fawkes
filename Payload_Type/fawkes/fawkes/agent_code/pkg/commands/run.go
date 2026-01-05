@@ -35,7 +35,7 @@ func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Parse the command - handle shell execution based on OS
 	var cmd *exec.Cmd
-	
+
 	if runtime.GOOS == "windows" {
 		// On Windows, use cmd.exe /c
 		cmd = exec.Command("cmd.exe", "/c", task.Params)
@@ -46,7 +46,7 @@ func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Capture combined output (stdout and stderr)
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		// Even if there's an error, we might have output to show
 		outputStr := string(output)
