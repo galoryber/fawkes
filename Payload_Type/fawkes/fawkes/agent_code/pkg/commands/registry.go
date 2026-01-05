@@ -22,14 +22,7 @@ func Initialize() {
 	RegisterCommand(&LsCommand{})
 	RegisterCommand(&MvCommand{})
 	RegisterCommand(&PwdCommand{})
-	RegisterCommand(&SleepCommand{})
-	RegisterCommand(&ExitCommand{})
-
-	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))
-}
-
-// RegisterCommand registers a command with the command registry
-func RegisterCommand(cmd structs.Command) {
+	RegisterCommand(&RunCommand{})
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
 
