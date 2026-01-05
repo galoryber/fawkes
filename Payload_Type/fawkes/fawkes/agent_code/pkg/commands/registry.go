@@ -15,14 +15,16 @@ var (
 // Initialize sets up all available commands
 func Initialize() {
 	log.Printf("[INFO] Initializing command handlers")
-	
+
 	// Register commands
 	RegisterCommand(&CdCommand{})
+	RegisterCommand(&CpCommand{})
 	RegisterCommand(&LsCommand{})
+	RegisterCommand(&MvCommand{})
 	RegisterCommand(&PwdCommand{})
 	RegisterCommand(&SleepCommand{})
 	RegisterCommand(&ExitCommand{})
-	
+
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))
 }
 
@@ -30,7 +32,7 @@ func Initialize() {
 func RegisterCommand(cmd structs.Command) {
 	registryMutex.Lock()
 	defer registryMutex.Unlock()
-	
+
 	commandRegistry[cmd.Name()] = cmd
 	// log.Printf("[DEBUG] Registered command: %s", cmd.Name())
 }
@@ -39,7 +41,7 @@ func RegisterCommand(cmd structs.Command) {
 func GetCommand(name string) structs.Command {
 	registryMutex.RLock()
 	defer registryMutex.RUnlock()
-	
+
 	return commandRegistry[name]
 }
 
@@ -47,11 +49,11 @@ func GetCommand(name string) structs.Command {
 func GetAllCommands() map[string]structs.Command {
 	registryMutex.RLock()
 	defer registryMutex.RUnlock()
-	
+
 	commands := make(map[string]structs.Command)
 	for name, cmd := range commandRegistry {
 		commands[name] = cmd
 	}
-	
+
 	return commands
 }
