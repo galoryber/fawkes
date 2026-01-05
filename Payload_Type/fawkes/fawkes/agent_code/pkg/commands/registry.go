@@ -17,6 +17,7 @@ func Initialize() {
 	log.Printf("[INFO] Initializing command handlers")
 	
 	// Register commands
+	RegisterCommand(&CdCommand{})
 	RegisterCommand(&LsCommand{})
 	RegisterCommand(&PwdCommand{})
 	RegisterCommand(&SleepCommand{})
