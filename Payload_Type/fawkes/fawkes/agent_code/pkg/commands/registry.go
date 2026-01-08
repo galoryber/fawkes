@@ -21,6 +21,7 @@ func Initialize() {
 	RegisterCommand(&CatCommand{})
 	RegisterCommand(&CdCommand{})
 	RegisterCommand(&CpCommand{})
+	RegisterCommand(&DownloadCommand{})
 	RegisterCommand(&LsCommand{})
 	RegisterCommand(&MkdirCommand{})
 	RegisterCommand(&MvCommand{})
@@ -29,6 +30,7 @@ func Initialize() {
 	RegisterCommand(&RmCommand{})
 	RegisterCommand(&RunCommand{})
 	RegisterCommand(&SleepCommand{})
+	RegisterCommand(&UploadCommand{})
 	RegisterCommand(&ExitCommand{})
 
 	// Register Windows-specific commands

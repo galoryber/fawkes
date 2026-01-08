@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package commands
@@ -92,10 +93,10 @@ func (c *WriteMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 	// Write memory
 	kernel32 := syscall.MustLoadDLL("kernel32.dll")
 	writeProcessMemory := kernel32.MustFindProc("WriteProcessMemory")
-	
+
 	currentProcess, _ := syscall.GetCurrentProcess()
 	var bytesWritten uintptr
-	
+
 	ret, _, err := writeProcessMemory.Call(
 		uintptr(currentProcess),
 		targetAddress,
@@ -112,7 +113,7 @@ func (c *WriteMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	output := fmt.Sprintf("Successfully wrote %d bytes to %s!%s+0x%x (0x%x)\n", 
+	output := fmt.Sprintf("Successfully wrote %d bytes to %s!%s+0x%x (0x%x)\n",
 		bytesWritten, args.DllName, args.FunctionName, args.StartIndex, targetAddress)
 	output += fmt.Sprintf("Bytes written: %s", strings.ToUpper(args.HexBytes))
 

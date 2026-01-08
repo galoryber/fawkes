@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package commands
@@ -83,10 +84,10 @@ func (c *ReadMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 	buffer := make([]byte, args.NumBytes)
 	kernel32 := syscall.MustLoadDLL("kernel32.dll")
 	readProcessMemory := kernel32.MustFindProc("ReadProcessMemory")
-	
+
 	currentProcess, _ := syscall.GetCurrentProcess()
 	var bytesRead uintptr
-	
+
 	ret, _, err := readProcessMemory.Call(
 		uintptr(currentProcess),
 		targetAddress,
@@ -106,12 +107,12 @@ func (c *ReadMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 	// Format output
 	hexOutput := make([]string, bytesRead)
 	simpleHex := hex.EncodeToString(buffer[:bytesRead])
-	
+
 	for i := 0; i < int(bytesRead); i++ {
 		hexOutput[i] = fmt.Sprintf("\\x%02X", buffer[i])
 	}
 
-	output := fmt.Sprintf("Read %d bytes from %s!%s+0x%x (0x%x):\n", 
+	output := fmt.Sprintf("Read %d bytes from %s!%s+0x%x (0x%x):\n",
 		bytesRead, args.DllName, args.FunctionName, args.StartIndex, targetAddress)
 	output += fmt.Sprintf("Bytes in \\x format: %s\n", strings.Join(hexOutput, ""))
 	output += fmt.Sprintf("Bytes in hex format: %s\n", simpleHex)

