@@ -22,9 +22,11 @@ cd | `cd <directory>`                                                           
 cp | `cp <source> <destination>`                                                                                                | Copy a file from source to destination.
 exit | `exit`                                                                                                                   | Task agent to exit.
 ls | `ls [path]`                                                                                                        | List files and folders in `[path]`. Defaults to current working directory.
+mkdir | `mkdir <directory>`                                                                                                        | Create a new directory (creates parent directories if needed).
 mv | `mv <source> <destination>`                                                                                                | Move or rename a file from source to destination.
 ps | `ps [-v] [-i PID] [filter]`                                                                                               | List running processes. Use -v for verbose output with command lines. Use -i to filter by specific PID. Optional filter to search by process name.
 pwd | `pwd`                                                                                                                     | Print working directory.
+rm | `rm <path>`                                                                                                                | Remove a file or directory (recursively removes directories).
 run | `run <command>`                                                                                                            | Execute a shell command and return the output.
 sleep | `sleep [seconds] [jitter]`                                                                                                       | Set the callback interval in seconds and jitter percentage.
 
