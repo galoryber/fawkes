@@ -9,7 +9,7 @@ import (
 type Profile interface {
 	Checkin(agent *structs.Agent) error
 	GetTasking(agent *structs.Agent) ([]structs.Task, error)
-	PostResponse(response structs.Response, agent *structs.Agent) error
+	PostResponse(response structs.Response, agent *structs.Agent) ([]byte, error)
 }
 
 // NewProfile creates a new profile based on the HTTP profile
