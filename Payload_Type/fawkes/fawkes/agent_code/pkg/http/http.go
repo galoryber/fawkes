@@ -425,10 +425,34 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	}
 
 	if h.Debug {
-		log.Printf("[DEBUG] Post response result: %s", string(respBody))
+		log.Printf("[DEBUG] Post response raw result: %s", string(respBody))
 	}
 
-	return respBody, nil
+	// Decrypt the response if encryption key is provided (same as GetTasking)
+	var decryptedData []byte
+	if h.EncryptionKey != "" {
+		if h.Debug {
+			log.Printf("[DEBUG] Decrypting PostResponse result...")
+		}
+		// First, base64 decode the response
+		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
+		if err != nil {
+			return nil, fmt.Errorf("failed to decode PostResponse: %w", err)
+		}
+		
+		// Decrypt the decoded data
+		decryptedData, err = h.decryptResponse(decodedData)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt PostResponse: %w", err)
+		}
+		if h.Debug {
+			log.Printf("[DEBUG] PostResponse decryption successful: %s", string(decryptedData))
+		}
+	} else {
+		decryptedData = respBody
+	}
+
+	return decryptedData, nil
 }
 
 // makeRequest is a helper function to make HTTP requests
