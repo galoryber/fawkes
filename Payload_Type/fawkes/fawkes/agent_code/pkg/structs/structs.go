@@ -1,23 +1,27 @@
 package structs
 
-import "time"
+import (
+	"encoding/json"
+	"os"
+	"time"
+)
 
 // Agent represents the agent instance
 type Agent struct {
-	PayloadUUID     string `json:"payload_uuid"`
-	Architecture    string `json:"architecture"`
-	Domain          string `json:"domain"`
-	ExternalIP      string `json:"external_ip"`
-	Host            string `json:"host"`
-	Integrity       int    `json:"integrity_level"`
-	InternalIP      string `json:"internal_ip"`
-	OS              string `json:"os"`
-	PID             int    `json:"pid"`
-	ProcessName     string `json:"process_name"`
-	SleepInterval   int    `json:"sleep_interval"`
-	Jitter          int    `json:"jitter"`
-	User            string `json:"user"`
-	Description     string `json:"description"`
+	PayloadUUID   string `json:"payload_uuid"`
+	Architecture  string `json:"architecture"`
+	Domain        string `json:"domain"`
+	ExternalIP    string `json:"external_ip"`
+	Host          string `json:"host"`
+	Integrity     int    `json:"integrity_level"`
+	InternalIP    string `json:"internal_ip"`
+	OS            string `json:"os"`
+	PID           int    `json:"pid"`
+	ProcessName   string `json:"process_name"`
+	SleepInterval int    `json:"sleep_interval"`
+	Jitter        int    `json:"jitter"`
+	User          string `json:"user"`
+	Description   string `json:"description"`
 }
 
 // UpdateSleepParams updates the agent's sleep parameters
@@ -28,19 +32,104 @@ func (a *Agent) UpdateSleepParams(interval, jitter int) {
 
 // Task represents a task from Mythic
 type Task struct {
-	ID       string `json:"id"`
-	Command  string `json:"command"`
-	Params   string `json:"parameters"`
-	Timestamp time.Time `json:"timestamp"`
+	ID         string    `json:"id"`
+	Command    string    `json:"command"`
+	Params     string    `json:"parameters"`
+	Timestamp  time.Time `json:"timestamp"`
+	Job        *Job      `json:"-"` // Not marshalled to JSON
+	shouldStop bool      // Internal flag for task cancellation
+}
+
+// DidStop checks if the task should stop
+func (t *Task) DidStop() bool {
+	return t.shouldStop
+}
+
+// ShouldStop checks if the task should stop (alias for DidStop)
+func (t *Task) ShouldStop() bool {
+	return t.shouldStop
+}
+
+// SetStop sets the stop flag for the task
+func (t *Task) SetStop() {
+	t.shouldStop = true
+}
+
+// NewResponse creates a new response for this task
+func (t *Task) NewResponse() Response {
+	return Response{
+		TaskID: t.ID,
+	}
 }
 
 // Response represents a response to Mythic
 type Response struct {
-	TaskID      string `json:"task_id"`
-	UserOutput  string `json:"user_output"`
-	Status      string `json:"status"`
-	Completed   bool   `json:"completed"`
-	ProcessResponse interface{} `json:"process_response,omitempty"`
+	TaskID          string               `json:"task_id"`
+	UserOutput      string               `json:"user_output"`
+	Status          string               `json:"status"`
+	Completed       bool                 `json:"completed"`
+	ProcessResponse interface{}          `json:"process_response,omitempty"`
+	Upload          *FileUploadMessage   `json:"upload,omitempty"`
+	Download        *FileDownloadMessage `json:"download,omitempty"`
+}
+
+// FileUploadMessage for requesting file from Mythic
+type FileUploadMessage struct {
+	ChunkSize int    `json:"chunk_size"`
+	FileID    string `json:"file_id"`
+	ChunkNum  int    `json:"chunk_num"`
+	FullPath  string `json:"full_path"`
+}
+
+// FileDownloadMessage for sending file to Mythic
+type FileDownloadMessage struct {
+	TotalChunks int    `json:"total_chunks"`
+	ChunkNum    int    `json:"chunk_num"`
+	ChunkData   string `json:"chunk_data"`
+	FullPath    string `json:"full_path"`
+	FileID      string `json:"file_id"`
+}
+
+// Job struct holds channels and state for task execution including file transfers
+type Job struct {
+	Stop                  *int
+	SendResponses         chan Response
+	SendFileToMythic      chan SendFileToMythicStruct
+	GetFileFromMythic     chan GetFileFromMythicStruct
+	FileTransfers         map[string]chan json.RawMessage
+	removeRunningTaskChan chan string
+}
+
+// SendFileToMythicStruct for downloading files from the agent to Mythic
+type SendFileToMythicStruct struct {
+	Task                  *Task
+	IsScreenshot          bool
+	FileName              string
+	SendUserStatusUpdates bool
+	FullPath              string
+	Data                  *[]byte
+	File                  *os.File
+	FinishedTransfer      chan int
+	TrackingUUID          string
+	FileTransferResponse  chan json.RawMessage
+}
+
+// GetFileFromMythicStruct for uploading files from Mythic to the agent
+type GetFileFromMythicStruct struct {
+	Task                  *Task
+	FullPath              string
+	FileID                string
+	SendUserStatusUpdates bool
+	ReceivedChunkChannel  chan []byte
+	TrackingUUID          string
+	FileTransferResponse  chan json.RawMessage
+}
+
+// FileUploadMessageResponse is the response from Mythic when requesting file chunks
+type FileUploadMessageResponse struct {
+	ChunkNum    int    `json:"chunk_num"`
+	ChunkData   string `json:"chunk_data"`
+	TotalChunks int    `json:"total_chunks"`
 }
 
 // CommandResult represents the result of executing a command
@@ -78,9 +167,9 @@ type TaskingMessage struct {
 	C2Profile   string `json:"c2_profile,omitempty"`
 }
 
-// PostResponseMessage represents posting a response back to Mythic  
+// PostResponseMessage represents posting a response back to Mythic
 type PostResponseMessage struct {
-	Action string `json:"action"`
+	Action    string     `json:"action"`
 	Responses []Response `json:"responses"`
 }
 
@@ -90,6 +179,7 @@ type Command interface {
 	Description() string
 	Execute(task Task) CommandResult
 }
+
 // AgentCommand interface for commands that need agent access
 type AgentCommand interface {
 	Name() string
@@ -97,6 +187,7 @@ type AgentCommand interface {
 	Execute(task Task) CommandResult
 	ExecuteWithAgent(task Task, agent *Agent) CommandResult
 }
+
 // FileListEntry for ls command
 type FileListEntry struct {
 	Name         string    `json:"name"`

