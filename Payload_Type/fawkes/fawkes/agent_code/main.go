@@ -228,42 +228,26 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 					log.Printf("[ERROR] Failed to post file transfer response: %v", err)
 					continue
 				}
-				
+
 				// If this is a file transfer response, route Mythic's response back
-				// Check if the response has tracking UUID in it
 				if len(mythicResp) > 0 && (resp.Upload != nil || resp.Download != nil) {
-					log.Printf("[DEBUG] Got file transfer response from Mythic: %s", string(mythicResp))
-					log.Printf("[DEBUG] Number of active file transfer channels: %d", len(job.FileTransfers))
-					
-					// Try to find a matching file transfer channel
 					// Parse the response to get tracking info
 					var responseData map[string]interface{}
 					if err := json.Unmarshal(mythicResp, &responseData); err == nil {
 						// Look for responses array
 						if responses, ok := responseData["responses"].([]interface{}); ok && len(responses) > 0 {
-							log.Printf("[DEBUG] Found %d responses in Mythic response", len(responses))
 							if firstResp, ok := responses[0].(map[string]interface{}); ok {
 								// Send this response to all active file transfer channels
-								// In Mythic, the response contains the file details
 								respJSON, _ := json.Marshal(firstResp)
-								log.Printf("[DEBUG] Routing response to file transfer channels: %s", string(respJSON))
-								sent := 0
-								for uuid, ch := range job.FileTransfers {
+								for _, ch := range job.FileTransfers {
 									select {
 									case ch <- json.RawMessage(respJSON):
-										log.Printf("[DEBUG] Sent response to channel %s", uuid)
-										sent++
 									case <-time.After(100 * time.Millisecond):
-										log.Printf("[DEBUG] Timeout sending to channel %s", uuid)
+										// Channel timeout, skip
 									}
 								}
-								log.Printf("[DEBUG] Successfully sent to %d/%d channels", sent, len(job.FileTransfers))
 							}
-						} else {
-							log.Printf("[DEBUG] No responses array found in Mythic response")
 						}
-					} else {
-						log.Printf("[DEBUG] Failed to unmarshal Mythic response: %v", err)
 					}
 				}
 			case <-done:
@@ -287,10 +271,10 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 	handler := commands.GetCommand(task.Command)
 	if handler == nil {
 		response := structs.Response{
-			TaskID:    task.ID,
-			Status:    "error",
+			TaskID:     task.ID,
+			Status:     "error",
 			UserOutput: fmt.Sprintf("Unknown command: %s", task.Command),
-			Completed: true,
+			Completed:  true,
 		}
 		if _, err := c2.PostResponse(response, agent); err != nil {
 			log.Printf("[ERROR] Failed to post response: %v", err)
@@ -309,10 +293,10 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 
 	// Send final response
 	response := structs.Response{
-		TaskID:    task.ID,
+		TaskID:     task.ID,
 		UserOutput: result.Output,
-		Status:    result.Status,
-		Completed: result.Completed,
+		Status:     result.Status,
+		Completed:  result.Completed,
 	}
 	if _, err := c2.PostResponse(response, agent); err != nil {
 		log.Printf("[ERROR] Failed to post response: %v", err)
