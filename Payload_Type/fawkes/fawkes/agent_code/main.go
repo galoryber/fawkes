@@ -232,25 +232,38 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 				// If this is a file transfer response, route Mythic's response back
 				// Check if the response has tracking UUID in it
 				if len(mythicResp) > 0 && (resp.Upload != nil || resp.Download != nil) {
+					log.Printf("[DEBUG] Got file transfer response from Mythic: %s", string(mythicResp))
+					log.Printf("[DEBUG] Number of active file transfer channels: %d", len(job.FileTransfers))
+					
 					// Try to find a matching file transfer channel
 					// Parse the response to get tracking info
 					var responseData map[string]interface{}
 					if err := json.Unmarshal(mythicResp, &responseData); err == nil {
 						// Look for responses array
 						if responses, ok := responseData["responses"].([]interface{}); ok && len(responses) > 0 {
+							log.Printf("[DEBUG] Found %d responses in Mythic response", len(responses))
 							if firstResp, ok := responses[0].(map[string]interface{}); ok {
 								// Send this response to all active file transfer channels
 								// In Mythic, the response contains the file details
 								respJSON, _ := json.Marshal(firstResp)
-								for _, ch := range job.FileTransfers {
+								log.Printf("[DEBUG] Routing response to file transfer channels: %s", string(respJSON))
+								sent := 0
+								for uuid, ch := range job.FileTransfers {
 									select {
 									case ch <- json.RawMessage(respJSON):
+										log.Printf("[DEBUG] Sent response to channel %s", uuid)
+										sent++
 									case <-time.After(100 * time.Millisecond):
-										// Channel full or closed, skip
+										log.Printf("[DEBUG] Timeout sending to channel %s", uuid)
 									}
 								}
+								log.Printf("[DEBUG] Successfully sent to %d/%d channels", sent, len(job.FileTransfers))
 							}
+						} else {
+							log.Printf("[DEBUG] No responses array found in Mythic response")
 						}
+					} else {
+						log.Printf("[DEBUG] Failed to unmarshal Mythic response: %v", err)
 					}
 				}
 			case <-done:
