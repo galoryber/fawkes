@@ -183,14 +183,14 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	// Add debug flag
 	ldflags += fmt.Sprintf(" -X '%s.debug=%s'", fawkes_main_package, "false")
 	ldflags += " -buildid="
-	
+
 	goarch := architecture
 	tags := payloadBuildMsg.C2Profiles[0].Name
 	command := fmt.Sprintf("rm -rf /deps; CGO_ENABLED=0 GOOS=%s GOARCH=%s ", targetOs, goarch)
 	buildmodeflag := "default"
 	if mode == "shared" {
 		buildmodeflag = "c-shared"
-		tags += ",shared"  // Add shared tag to include exports.go
+		tags += ",shared" // Add shared tag to include exports.go
 		command = strings.Replace(command, "CGO_ENABLED=0", "CGO_ENABLED=1", 1)
 	}
 	goCmd := fmt.Sprintf("-tags %s -buildmode %s -ldflags \"%s\"", tags, buildmodeflag, ldflags)
@@ -216,7 +216,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadName += fmt.Sprintf("-%s", macOSVersion)
 	}
 	payloadName += fmt.Sprintf("-%s", goarch)
-	
+
 	// Add file extension based on mode before constructing the build command
 	if mode == "shared" {
 		if targetOs == "windows" {
@@ -231,7 +231,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		// need a DLL for the dll to shellcode conversion later
 		// TODO - merlin sRDI for dll to shellcode option
 	}
-	
+
 	command += fmt.Sprintf("%s -o /build/%s .", goCmd, payloadName)
 
 	mythicrpc.SendMythicRPCPayloadUpdateBuildStep(mythicrpc.MythicRPCPayloadUpdateBuildStepMessage{
