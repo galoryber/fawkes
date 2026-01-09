@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"os/exec"
@@ -11,6 +12,70 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
+
+// convertDllToShellcode uses sRDI Python tool to convert a DLL to position-independent shellcode
+func convertDllToShellcode(dllBytes []byte, functionName string, clearHeader bool) ([]byte, error) {
+	// Write DLL to temp file
+	tmpDll, err := os.CreateTemp("", "fawkes-*.dll")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp DLL file: %w", err)
+	}
+	defer os.Remove(tmpDll.Name())
+	
+	if _, err := tmpDll.Write(dllBytes); err != nil {
+		return nil, fmt.Errorf("failed to write DLL to temp file: %w", err)
+	}
+	tmpDll.Close()
+	
+	// Build sRDI command
+	args := []string{"/opt/sRDI/Python/ConvertToShellcode.py", tmpDll.Name()}
+	if functionName != "" {
+		args = append(args, "-f", functionName)
+	}
+	if clearHeader {
+		args = append(args, "-c")
+	}
+	
+	// Execute sRDI
+	cmd := exec.Command("python3", args...)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("sRDI conversion failed: %v\nStderr: %s", err, stderr.String())
+	}
+	
+	// sRDI outputs the shellcode file with .bin extension
+	shellcodeFile := tmpDll.Name() + ".bin"
+	defer os.Remove(shellcodeFile)
+	
+	shellcode, err := os.ReadFile(shellcodeFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read shellcode output: %w", err)
+	}
+	
+	return shellcode, nil
+}
+
+// is64BitDLL checks if the DLL is 64-bit by examining the PE header
+func is64BitDLL(dllBytes []byte) bool {
+	if len(dllBytes) < 64 {
+		return false
+	}
+	
+	// Get offset to PE header from bytes 60-64
+	headerOffset := binary.LittleEndian.Uint32(dllBytes[60:64])
+	if int(headerOffset)+6 > len(dllBytes) {
+		return false
+	}
+	
+	// Read machine type from PE header
+	machine := binary.LittleEndian.Uint16(dllBytes[headerOffset+4 : headerOffset+6])
+	
+	// 0x8664 = AMD64, 0x0200 = IA64
+	return machine == 0x8664 || machine == 0x0200
+}
 
 var payloadDefinition = agentstructs.PayloadType{
 	Name:                                   "fawkes",
@@ -282,9 +347,17 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadBuildResponse.Success = false
 		payloadBuildResponse.BuildMessage = "Failed to find final payload"
 	} else if mode == "windows-shellcode" {
-		// TODO: Implement sRDI shellcode conversion
-		payloadBuildResponse.Success = false
-		payloadBuildResponse.BuildMessage = "Windows shellcode mode not implemented yet"
+		// Convert DLL to shellcode using sRDI
+		shellcode, err := convertDllToShellcode(payloadBytes, "VoidFunc", true)
+		if err != nil {
+			payloadBuildResponse.Success = false
+			payloadBuildResponse.BuildMessage = fmt.Sprintf("Failed to convert DLL to shellcode: %v", err)
+			payloadBuildResponse.BuildStdErr += fmt.Sprintf("\nShellcode conversion error: %v", err)
+		} else {
+			payloadBuildResponse.Payload = &shellcode
+			payloadBuildResponse.Success = true
+			payloadBuildResponse.BuildMessage = "Successfully built shellcode payload!"
+		}
 	} else {
 		payloadBuildResponse.Payload = &payloadBytes
 		payloadBuildResponse.Success = true
