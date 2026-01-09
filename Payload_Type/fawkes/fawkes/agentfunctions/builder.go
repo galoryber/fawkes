@@ -27,17 +27,8 @@ func convertDllToShellcode(dllBytes []byte, functionName string, clearHeader boo
 	}
 	tmpDll.Close()
 	
-	// Create output file
-	tmpOut, err := os.CreateTemp("", "fawkes-shellcode-*.bin")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp output file: %w", err)
-	}
-	outputPath := tmpOut.Name()
-	tmpOut.Close()
-	defer os.Remove(outputPath)
-	
-	// Build sRDI command with output file
-	args := []string{"/opt/sRDI/Python/ConvertToShellcode.py", tmpDll.Name(), outputPath}
+	// Build sRDI command - it creates a .bin file automatically
+	args := []string{"/opt/sRDI/Python/ConvertToShellcode.py", tmpDll.Name()}
 	if functionName != "" {
 		args = append(args, "-f", functionName)
 	}
@@ -55,10 +46,14 @@ func convertDllToShellcode(dllBytes []byte, functionName string, clearHeader boo
 		return nil, fmt.Errorf("sRDI conversion failed: %v\nStderr: %s\nStdout: %s", err, stderr.String(), stdout.String())
 	}
 	
+	// sRDI creates output file as <input>.bin
+	shellcodeFile := tmpDll.Name() + ".bin"
+	defer os.Remove(shellcodeFile)
+	
 	// Read the shellcode output
-	shellcode, err := os.ReadFile(outputPath)
+	shellcode, err := os.ReadFile(shellcodeFile)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read shellcode output: %w", err)
+		return nil, fmt.Errorf("failed to read shellcode output from %s: %w\nStderr: %s", shellcodeFile, err, stderr.String())
 	}
 	
 	if len(shellcode) == 0 {
