@@ -215,25 +215,23 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadName += fmt.Sprintf("-%s", macOSVersion)
 	}
 	payloadName += fmt.Sprintf("-%s", goarch)
-	command += fmt.Sprintf("%s -o /build/%s .", goCmd, payloadName)
-	//"default-executable", "shared", "windows-shellcode"
+	
+	// Add file extension based on mode before constructing the build command
 	if mode == "shared" {
 		if targetOs == "windows" {
-			command += ".dll"
 			payloadName += ".dll"
 		} else if targetOs == "darwin" {
-			command += ".dylib"
 			payloadName += ".dylib"
 		} else {
-			command += ".so"
 			payloadName += ".so"
 		}
 	} else if mode == "windows-shellcode" {
-		command += ".dll"
 		payloadName += ".dll"
 		// need a DLL for the dll to shellcode conversion later
 		// TODO - merlin sRDI for dll to shellcode option
 	}
+	
+	command += fmt.Sprintf("%s -o /build/%s .", goCmd, payloadName)
 
 	mythicrpc.SendMythicRPCPayloadUpdateBuildStep(mythicrpc.MythicRPCPayloadUpdateBuildStepMessage{
 		PayloadUUID: payloadBuildMsg.PayloadUUID,
