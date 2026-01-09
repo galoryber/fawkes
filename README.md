@@ -21,7 +21,7 @@ autopatch | `autopatch <dll_name> <function_name> <num_bytes>` | **(Windows only
 cat | `cat <file>`                                                                                                              | Display the contents of a file.
 cd | `cd <directory>`                                                                                                           | Change the current working directory.
 cp | `cp <source> <destination>`                                                                                                | Copy a file from source to destination.
-download | `download <path>`                                                                                                          | Download a file from the target. Supports file browser integration.
+download | `download <path>`                                                                                                          | Download a file from the target. Supports chunked file transfer for any file size and file browser integration.
 exit | `exit`                                                                                                                   | Task agent to exit.
 ls | `ls [path]`                                                                                                        | List files and folders in `[path]`. Defaults to current working directory.
 mkdir | `mkdir <directory>`                                                                                                        | Create a new directory (creates parent directories if needed).
@@ -32,7 +32,7 @@ read-memory | `read-memory <dll_name> <function_name> <start_index> <num_bytes>`
 rm | `rm <path>`                                                                                                                | Remove a file or directory (recursively removes directories).
 run | `run <command>`                                                                                                            | Execute a shell command and return the output.
 sleep | `sleep [seconds] [jitter]`                                                                                                       | Set the callback interval in seconds and jitter percentage.
-upload | `upload`                                                                                                                   | Upload a file to the target. Use modal popup to select file from computer or Mythic server.
+upload | `upload`                                                                                                                   | Upload a file to the target with chunked file transfer. Use modal popup to select file and destination path.
 write-memory | `write-memory <dll_name> <function_name> <start_index> <hex_bytes>` | **(Windows only)** Write bytes to a DLL function address. Example: `write-memory amsi AmsiScanBuffer 0 909090`
 
 

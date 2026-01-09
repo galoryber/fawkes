@@ -71,7 +71,7 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
-			
+
 			fileID, err := taskData.Args.GetFileArg("file_id")
 			if err != nil {
 				logging.LogError(err, "Failed to get file_id")
@@ -79,7 +79,7 @@ func init() {
 				response.Error = err.Error()
 				return response
 			}
-			
+
 			// Get file details from Mythic
 			search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
 				AgentFileID: fileID,
@@ -99,7 +99,7 @@ func init() {
 				response.Error = "Failed to find the specified file"
 				return response
 			}
-			
+
 			remotePath, err := taskData.Args.GetStringArg("remote_path")
 			if err != nil {
 				logging.LogError(err, "Failed to get remote_path")
@@ -107,7 +107,7 @@ func init() {
 				response.Error = err.Error()
 				return response
 			}
-			
+
 			// If no remote path specified, use just the filename
 			if len(remotePath) == 0 {
 				taskData.Args.SetArgValue("remote_path", search.Files[0].Filename)
@@ -117,7 +117,7 @@ func init() {
 				displayString := fmt.Sprintf("%s", remotePath)
 				response.DisplayParams = &displayString
 			}
-			
+
 			return response
 		},
 	})
