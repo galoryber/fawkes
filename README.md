@@ -45,7 +45,11 @@ The HTTP profile calls back to the Mythic server over the basic, non-dynamic pro
 
 
 ## Thanks
-Everything I know about Mythic Agents came from stealing code and ideas from the Merlin and Freyja agents. 
+Everything I know about Mythic Agents came from Mythic Docs or stealing code and ideas from the [Merlin](https://github.com/MythicAgents/merlin) and [Freyja](https://github.com/MythicAgents/freyja) agents. 
+
+And when that didn't work, I had Claude reference Merlin Freyja and Apollo for design choices and code references. 
+
+In other words, I wrote nearly none of this. :) Thanks everybody else!
 
 # References
 https://openclipart.org/detail/229408/colorful-phoenix-line-art-12
