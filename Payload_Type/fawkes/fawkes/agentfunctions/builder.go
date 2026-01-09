@@ -27,8 +27,8 @@ func convertDllToShellcode(dllBytes []byte, functionName string, clearHeader boo
 	}
 	tmpDll.Close()
 	
-	// Build sRDI command with binary output to stdout
-	args := []string{"/opt/sRDI/Python/ConvertToShellcode.py", tmpDll.Name(), "-of", "raw"}
+	// Build sRDI command - it creates <input>.bin file
+	args := []string{"/opt/sRDI/Python/ConvertToShellcode.py", tmpDll.Name()}
 	if functionName != "" {
 		args = append(args, "-f", functionName)
 	}
@@ -36,20 +36,34 @@ func convertDllToShellcode(dllBytes []byte, functionName string, clearHeader boo
 		args = append(args, "-c")
 	}
 	
-	// Execute sRDI and capture stdout as shellcode
+	// Execute sRDI
 	cmd := exec.Command("python3", args...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	
 	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("sRDI conversion failed: %v\nStderr: %s\nStdout length: %d", err, stderr.String(), stdout.Len())
+		return nil, fmt.Errorf("sRDI conversion failed: %v\nStderr: %s\nStdout: %s", err, stderr.String(), stdout.String())
 	}
 	
-	shellcode := stdout.Bytes()
+	// sRDI creates output as <input>.bin - note it's not .dll.bin, just the input filename + .bin
+	shellcodeFile := tmpDll.Name() + ".bin"
+	defer os.Remove(shellcodeFile)
+	
+	// Read the shellcode file
+	shellcode, err := os.ReadFile(shellcodeFile)
+	if err != nil {
+		// Try without the .dll extension
+		shellcodeFile = strings.TrimSuffix(tmpDll.Name(), ".dll") + ".bin"
+		shellcode, err = os.ReadFile(shellcodeFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read shellcode output from %s: %w\nStdout: %s\nStderr: %s", shellcodeFile, err, stdout.String(), stderr.String())
+		}
+		defer os.Remove(shellcodeFile)
+	}
 	
 	if len(shellcode) == 0 {
-		return nil, fmt.Errorf("shellcode output is empty. Stderr: %s", stderr.String())
+		return nil, fmt.Errorf("shellcode output is empty")
 	}
 	
 	return shellcode, nil
