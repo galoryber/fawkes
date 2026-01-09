@@ -190,6 +190,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	buildmodeflag := "default"
 	if mode == "shared" {
 		buildmodeflag = "c-shared"
+		tags += ",shared"  // Add shared tag to include exports.go
 		command = strings.Replace(command, "CGO_ENABLED=0", "CGO_ENABLED=1", 1)
 	}
 	goCmd := fmt.Sprintf("-tags %s -buildmode %s -ldflags \"%s\"", tags, buildmodeflag, ldflags)
