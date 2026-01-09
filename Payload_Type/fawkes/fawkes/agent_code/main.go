@@ -40,6 +40,10 @@ var (
 )
 
 func main() {
+	runAgent()
+}
+
+func runAgent() {
 	// Convert string build variables to appropriate types
 	callbackPortInt, _ := strconv.Atoi(callbackPort)
 	sleepIntervalInt, _ := strconv.Atoi(sleepInterval)
