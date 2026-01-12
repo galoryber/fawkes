@@ -62,7 +62,7 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer dll.Release()
+	//defer dll.Release()
 
 	// Get function address
 	proc, err := dll.FindProc(args.FunctionName)

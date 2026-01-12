@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 // Package commands provides the inline-assembly command for executing .NET assemblies in memory.
@@ -16,16 +17,15 @@
 //  7. Agent captures and returns STDOUT/STDERR output
 //
 // Security considerations:
-//  - Run 'start-clr' and patch AMSI before executing assemblies for better OPSEC
-//  - Assemblies execute in the agent's process context
-//  - All users with access to Mythic can access uploaded assemblies
+//   - Run 'start-clr' and patch AMSI before executing assemblies for better OPSEC
+//   - Assemblies execute in the agent's process context
+//   - All users with access to Mythic can access uploaded assemblies
 //
 // Assembly requirements:
-//  - Must be a valid .NET Framework assembly (not .NET Core/.NET 5+)
-//  - Must have a standard Main() entry point signature
-//  - Should be compiled for AnyCPU or the target architecture
-//  - External dependencies must be in the GAC or loaded separately
-//
+//   - Must be a valid .NET Framework assembly (not .NET Core/.NET 5+)
+//   - Must have a standard Main() entry point signature
+//   - Should be compiled for AnyCPU or the target architecture
+//   - External dependencies must be in the GAC or loaded separately
 package commands
 
 import (
@@ -134,13 +134,13 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	assemblyMutex.Lock()
 	if !clrStarted {
 		output.WriteString("[*] Starting CLR v4...\n")
-		
+
 		// Redirect STDOUT/STDERR once when starting CLR
 		err = clr.RedirectStdoutStderr()
 		if err != nil {
 			output.WriteString(fmt.Sprintf("Warning: Could not redirect output: %v\n", err))
 		}
-		
+
 		runtimeHost, err = clr.LoadCLR("v4")
 		if err != nil {
 			assemblyMutex.Unlock()
@@ -158,10 +158,10 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 
 	// Step 1: Load the assembly (Merlin approach)
 	output.WriteString("[*] Loading assembly into CLR...\n")
-	
+
 	var methodInfo *clr.MethodInfo
 	var loadErr error
-	
+
 	// Lock only during LoadAssembly call
 	assemblyMutex.Lock()
 	func() {
@@ -170,7 +170,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
 			}
 		}()
-		
+
 		methodInfo, loadErr = clr.LoadAssembly(runtimeHost, assemblyBytes)
 	}()
 	assemblyMutex.Unlock()
@@ -184,7 +184,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		output.WriteString("  - Check that the assembly has a valid Main() entry point\n")
 		output.WriteString("  - Verify the assembly is not corrupted\n")
 		output.WriteString(fmt.Sprintf("  - Assembly size: %d bytes\n", len(assemblyBytes)))
-		
+
 		return structs.CommandResult{
 			Output:    output.String(),
 			Status:    "error",
@@ -196,10 +196,10 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 
 	// Step 2: Invoke the assembly (Merlin approach)
 	output.WriteString(fmt.Sprintf("[*] Invoking assembly with %d argument(s)...\n", len(args)))
-	
+
 	var stdout, stderr string
 	var invokeErr error
-	
+
 	// Lock only during InvokeAssembly call
 	assemblyMutex.Lock()
 	func() {
@@ -208,7 +208,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
 			}
 		}()
-		
+
 		stdout, stderr = clr.InvokeAssembly(methodInfo, args)
 	}()
 	assemblyMutex.Unlock()
@@ -220,7 +220,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		output.WriteString("  - Check that Main() signature is: static void Main(string[] args) or static int Main(string[] args)\n")
 		output.WriteString("  - Verify no external dependencies are required\n")
 		output.WriteString("  - Try running the assembly at command line first\n")
-		
+
 		return structs.CommandResult{
 			Output:    output.String(),
 			Status:    "error",
@@ -229,7 +229,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	}
 
 	output.WriteString("[+] Assembly executed successfully\n")
-	
+
 	// Add assembly output
 	if stdout != "" {
 		output.WriteString("\n=== STDOUT ===\n")
@@ -238,7 +238,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 			output.WriteString("\n")
 		}
 	}
-	
+
 	// Only show STDERR if there's an actual error message (not just CLR noise)
 	if stderr != "" && !strings.Contains(stderr, "The system cannot find the file specified") {
 		output.WriteString("\n=== STDERR ===\n")

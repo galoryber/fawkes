@@ -15,7 +15,7 @@ import (
 // This function is used as a DynamicQuery to populate dropdown lists
 func getFileList(msg agentstructs.PTRPCDynamicQueryFunctionMessage) []string {
 	var files []string
-	
+
 	search := mythicrpc.MythicRPCFileSearchMessage{
 		CallbackID:          msg.Callback,
 		LimitByCallback:     false,
@@ -24,22 +24,22 @@ func getFileList(msg agentstructs.PTRPCDynamicQueryFunctionMessage) []string {
 		IsDownloadFromAgent: false,
 		IsScreenshot:        false,
 	}
-	
+
 	resp, err := mythicrpc.SendMythicRPCFileSearch(search)
 	if err != nil {
 		logging.LogError(err, "Failed to search for files")
 		return files
 	}
-	
+
 	if resp.Error != "" {
 		logging.LogError(nil, resp.Error)
 		return files
 	}
-	
+
 	for _, file := range resp.Files {
 		files = append(files, file.Filename)
 	}
-	
+
 	return files
 }
 
@@ -57,12 +57,12 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "filename",
-				ModalDisplayName: ".NET Assembly",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "The .NET assembly to execute from files already registered in Mythic",
-				Choices:          []string{},
-				DefaultValue:     "",
+				Name:                 "filename",
+				ModalDisplayName:     ".NET Assembly",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:          "The .NET assembly to execute from files already registered in Mythic",
+				Choices:              []string{},
+				DefaultValue:         "",
 				DynamicQueryFunction: getFileList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -136,7 +136,7 @@ func init() {
 					response.Error = "Failed to get assembly file: " + err.Error()
 					return response
 				}
-				
+
 				// Search for the file by filename
 				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
 					CallbackID:      taskData.Callback.ID,
@@ -161,7 +161,7 @@ func init() {
 					return response
 				}
 				fileID = search.Files[0].AgentFileId
-				
+
 				// Get file contents directly (no file transfer to agent)
 				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
 					AgentFileID: fileID,
@@ -178,7 +178,7 @@ func init() {
 					return response
 				}
 				fileContents = getResp.Content
-				
+
 			case "new file":
 				// User uploaded a new file
 				fileID, err = taskData.Args.GetStringArg("file")
@@ -188,7 +188,7 @@ func init() {
 					response.Error = "Failed to get assembly file: " + err.Error()
 					return response
 				}
-				
+
 				// Get file details
 				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
 					AgentFileID: fileID,
@@ -210,7 +210,7 @@ func init() {
 					return response
 				}
 				filename = search.Files[0].Filename
-				
+
 				// Get file contents directly (no file transfer to agent)
 				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
 					AgentFileID: fileID,
@@ -227,7 +227,7 @@ func init() {
 					return response
 				}
 				fileContents = getResp.Content
-				
+
 			default:
 				response.Success = false
 				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
