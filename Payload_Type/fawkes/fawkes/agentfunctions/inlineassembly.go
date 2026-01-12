@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -121,6 +122,7 @@ func init() {
 
 			var fileID string
 			var filename string
+			var fileContents []byte
 			var err error
 
 			// Determine which parameter group was used
@@ -160,8 +162,25 @@ func init() {
 				}
 				fileID = search.Files[0].AgentFileId
 				
+				// Get file contents directly (no file transfer to agent)
+				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil {
+					logging.LogError(err, "Failed to get file contents")
+					response.Success = false
+					response.Error = "Failed to get file contents: " + err.Error()
+					return response
+				}
+				if !getResp.Success {
+					response.Success = false
+					response.Error = getResp.Error
+					return response
+				}
+				fileContents = getResp.Content
+				
 			case "new file":
-				// User uploaded a new file - use normal file transfer mechanism
+				// User uploaded a new file
 				fileID, err = taskData.Args.GetStringArg("file")
 				if err != nil {
 					logging.LogError(err, "Failed to get file")
@@ -170,7 +189,7 @@ func init() {
 					return response
 				}
 				
-				// Get the filename for display
+				// Get file details
 				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
 					AgentFileID: fileID,
 				})
@@ -191,6 +210,23 @@ func init() {
 					return response
 				}
 				filename = search.Files[0].Filename
+				
+				// Get file contents directly (no file transfer to agent)
+				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil {
+					logging.LogError(err, "Failed to get file contents")
+					response.Success = false
+					response.Error = "Failed to get file contents: " + err.Error()
+					return response
+				}
+				if !getResp.Success {
+					response.Success = false
+					response.Error = getResp.Error
+					return response
+				}
+				fileContents = getResp.Content
 				
 			default:
 				response.Success = false
@@ -213,9 +249,10 @@ func init() {
 			response.DisplayParams = &displayParams
 
 			// Build the actual parameters JSON that will be sent to the agent
+			// Encode file contents as base64 to embed in JSON
 			params := map[string]interface{}{
-				"file_id":   fileID,
-				"arguments": arguments,
+				"assembly_b64": base64.StdEncoding.EncodeToString(fileContents),
+				"arguments":    arguments,
 			}
 
 			paramsJSON, err := json.Marshal(params)

