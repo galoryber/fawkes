@@ -161,7 +161,7 @@ func init() {
 				fileID = search.Files[0].AgentFileId
 				
 			case "new file":
-				// User uploaded a new file - get the file ID directly
+				// User uploaded a new file - use normal file transfer mechanism
 				fileID, err = taskData.Args.GetStringArg("file")
 				if err != nil {
 					logging.LogError(err, "Failed to get file")
