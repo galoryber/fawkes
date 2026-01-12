@@ -127,14 +127,6 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		}
 	}
 
-	// Send status update (before any locks)
-	task.Job.SendResponses <- structs.Response{
-		TaskID:     task.ID,
-		UserOutput: fmt.Sprintf("[*] Received assembly: %d bytes", totalBytesReceived),
-		Status:     "processing",
-		Completed:  false,
-	}
-
 	// Parse arguments string into array
 	var args []string
 	if params.Arguments != "" {
@@ -142,10 +134,12 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		args = strings.Fields(params.Arguments)
 	}
 
-	// Build output
+	// Build output string (no intermediate channel sends to avoid jumbled output)
 	var output strings.Builder
 	output.WriteString(fmt.Sprintf("[*] Received assembly: %d bytes\n", len(assemblyBytes)))
-	output.WriteString(fmt.Sprintf("[*] Arguments: %s\n", params.Arguments))
+	if params.Arguments != "" {
+		output.WriteString(fmt.Sprintf("[*] Arguments: %s\n", params.Arguments))
+	}
 
 	// Ensure CLR is started (Merlin approach: keep persistent runtime host)
 	// Lock only during CLR initialization
@@ -174,16 +168,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	}
 	assemblyMutex.Unlock()
 
-	// Send progress update (outside of lock to avoid blocking)
-	task.Job.SendResponses <- structs.Response{
-		TaskID:     task.ID,
-		UserOutput: output.String(),
-		Status:     "processing",
-		Completed:  false,
-	}
-
 	// Step 1: Load the assembly (Merlin approach)
-	output.Reset()
 	output.WriteString("[*] Loading assembly into CLR...\n")
 	
 	var methodInfo *clr.MethodInfo
@@ -220,17 +205,8 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	}
 
 	output.WriteString("[+] Assembly loaded successfully\n")
-	
-	// Send progress update (outside of lock)
-	task.Job.SendResponses <- structs.Response{
-		TaskID:     task.ID,
-		UserOutput: output.String(),
-		Status:     "processing",
-		Completed:  false,
-	}
 
 	// Step 2: Invoke the assembly (Merlin approach)
-	output.Reset()
 	output.WriteString(fmt.Sprintf("[*] Invoking assembly with %d argument(s)...\n", len(args)))
 	
 	var stdout, stderr string
@@ -264,18 +240,19 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		}
 	}
 
-	output.WriteString("[+] Assembly executed successfully\n\n")
+	output.WriteString("[+] Assembly executed successfully\n")
 	
 	// Add assembly output
 	if stdout != "" {
-		output.WriteString("=== STDOUT ===\n")
+		output.WriteString("\n=== STDOUT ===\n")
 		output.WriteString(stdout)
 		if !strings.HasSuffix(stdout, "\n") {
 			output.WriteString("\n")
 		}
 	}
 	
-	if stderr != "" {
+	// Only show STDERR if there's an actual error message (not just CLR noise)
+	if stderr != "" && !strings.Contains(stderr, "The system cannot find the file specified") {
 		output.WriteString("\n=== STDERR ===\n")
 		output.WriteString(stderr)
 		if !strings.HasSuffix(stderr, "\n") {
