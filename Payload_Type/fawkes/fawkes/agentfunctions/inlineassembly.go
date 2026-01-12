@@ -36,7 +36,7 @@ func getFileList(msg agentstructs.PTRPCDynamicQueryFunctionMessage) []string {
 	}
 	
 	for _, file := range resp.Files {
-		files = append(files, file.AgentFileId)
+		files = append(files, file.Filename)
 	}
 	
 	return files
@@ -126,16 +126,42 @@ func init() {
 			// Determine which parameter group was used
 			switch strings.ToLower(taskData.Task.ParameterGroupName) {
 			case "default":
-				// User selected an existing file from the dropdown
-				fileID, err = taskData.Args.GetStringArg("filename")
+				// User selected an existing file from the dropdown by filename
+				filename, err = taskData.Args.GetStringArg("filename")
 				if err != nil {
 					logging.LogError(err, "Failed to get filename")
 					response.Success = false
 					response.Error = "Failed to get assembly file: " + err.Error()
 					return response
 				}
+				
+				// Search for the file by filename
+				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
+					CallbackID:      taskData.Callback.ID,
+					Filename:        filename,
+					LimitByCallback: false,
+					MaxResults:      -1,
+				})
+				if err != nil {
+					logging.LogError(err, "Failed to search for file by name")
+					response.Success = false
+					response.Error = "Failed to search for file: " + err.Error()
+					return response
+				}
+				if !search.Success {
+					response.Success = false
+					response.Error = search.Error
+					return response
+				}
+				if len(search.Files) == 0 {
+					response.Success = false
+					response.Error = fmt.Sprintf("Failed to find file: %s", filename)
+					return response
+				}
+				fileID = search.Files[0].AgentFileId
+				
 			case "new file":
-				// User uploaded a new file
+				// User uploaded a new file - get the file ID directly
 				fileID, err = taskData.Args.GetStringArg("file")
 				if err != nil {
 					logging.LogError(err, "Failed to get file")
@@ -143,33 +169,34 @@ func init() {
 					response.Error = "Failed to get assembly file: " + err.Error()
 					return response
 				}
+				
+				// Get the filename for display
+				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil {
+					logging.LogError(err, "Failed to search for file")
+					response.Success = false
+					response.Error = "Failed to search for file: " + err.Error()
+					return response
+				}
+				if !search.Success {
+					response.Success = false
+					response.Error = search.Error
+					return response
+				}
+				if len(search.Files) == 0 {
+					response.Success = false
+					response.Error = "Failed to find the specified file"
+					return response
+				}
+				filename = search.Files[0].Filename
+				
 			default:
 				response.Success = false
 				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
 				return response
 			}
-
-			// Get file details from Mythic
-			search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-				AgentFileID: fileID,
-			})
-			if err != nil {
-				logging.LogError(err, "Failed to search for file")
-				response.Success = false
-				response.Error = "Failed to search for file: " + err.Error()
-				return response
-			}
-			if !search.Success {
-				response.Success = false
-				response.Error = search.Error
-				return response
-			}
-			if len(search.Files) == 0 {
-				response.Success = false
-				response.Error = "Failed to find the specified file"
-				return response
-			}
-			filename = search.Files[0].Filename
 
 			// Get the arguments parameter as string
 			arguments := ""
