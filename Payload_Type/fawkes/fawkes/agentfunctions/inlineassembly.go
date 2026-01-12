@@ -3,11 +3,44 @@ package agentfunctions
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
+
+// getFileList queries the Mythic server for files and returns a list of filenames
+// This function is used as a DynamicQuery to populate dropdown lists
+func getFileList(msg agentstructs.PTRPCDynamicQueryFunctionMessage) []string {
+	var files []string
+	
+	search := mythicrpc.MythicRPCFileSearchMessage{
+		CallbackID:          msg.Callback,
+		LimitByCallback:     false,
+		MaxResults:          -1,
+		IsPayload:           false,
+		IsDownloadFromAgent: false,
+		IsScreenshot:        false,
+	}
+	
+	resp, err := mythicrpc.SendMythicRPCFileSearch(search)
+	if err != nil {
+		logging.LogError(err, "Failed to search for files")
+		return files
+	}
+	
+	if resp.Error != "" {
+		logging.LogError(nil, resp.Error)
+		return files
+	}
+	
+	for _, file := range resp.Files {
+		files = append(files, file.AgentFileId)
+	}
+	
+	return files
+}
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
@@ -23,15 +56,32 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "file_id",
+				Name:             "filename",
 				ModalDisplayName: ".NET Assembly",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_FILE,
-				Description:      "Upload a new .NET assembly or select from files already in Mythic",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "The .NET assembly to execute from files already registered in Mythic",
+				Choices:          []string{},
 				DefaultValue:     "",
+				DynamicQueryFunction: getFileList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
-						UIModalPosition:     1,
+						GroupName:           "Default",
+						UIModalPosition:     0,
+					},
+				},
+			},
+			{
+				Name:             "file",
+				ModalDisplayName: ".NET Assembly",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_FILE,
+				Description:      "Upload a new .NET assembly to execute",
+				DefaultValue:     nil,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "New File",
+						UIModalPosition:     0,
 					},
 				},
 			},
@@ -44,7 +94,13 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
-						UIModalPosition:     2,
+						GroupName:           "Default",
+						UIModalPosition:     1,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "New File",
+						UIModalPosition:     1,
 					},
 				},
 			},
@@ -63,12 +119,33 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
-			// Get the file_id parameter
-			fileID, err := taskData.Args.GetFileArg("file_id")
-			if err != nil {
-				logging.LogError(err, "Failed to get file_id")
+			var fileID string
+			var filename string
+			var err error
+
+			// Determine which parameter group was used
+			switch strings.ToLower(taskData.Task.ParameterGroupName) {
+			case "default":
+				// User selected an existing file from the dropdown
+				fileID, err = taskData.Args.GetStringArg("filename")
+				if err != nil {
+					logging.LogError(err, "Failed to get filename")
+					response.Success = false
+					response.Error = "Failed to get assembly file: " + err.Error()
+					return response
+				}
+			case "new file":
+				// User uploaded a new file
+				fileID, err = taskData.Args.GetStringArg("file")
+				if err != nil {
+					logging.LogError(err, "Failed to get file")
+					response.Success = false
+					response.Error = "Failed to get assembly file: " + err.Error()
+					return response
+				}
+			default:
 				response.Success = false
-				response.Error = "Failed to get assembly file: " + err.Error()
+				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
 				return response
 			}
 
@@ -92,6 +169,7 @@ func init() {
 				response.Error = "Failed to find the specified file"
 				return response
 			}
+			filename = search.Files[0].Filename
 
 			// Get the arguments parameter as string
 			arguments := ""
@@ -101,7 +179,7 @@ func init() {
 			}
 
 			// Build the display parameters
-			displayParams := fmt.Sprintf("Assembly: %s", search.Files[0].Filename)
+			displayParams := fmt.Sprintf("Assembly: %s", filename)
 			if arguments != "" {
 				displayParams += fmt.Sprintf("\nArguments: %s", arguments)
 			}
