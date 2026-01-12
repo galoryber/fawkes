@@ -40,6 +40,7 @@ func Initialize() {
 		RegisterCommand(&AutoPatchCommand{})
 		RegisterCommand(&StartCLRCommand{})
 		RegisterCommand(&InlineAssemblyCommand{})
+		RegisterCommand(&InlineExecuteCommand{})
 	}
 
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))
