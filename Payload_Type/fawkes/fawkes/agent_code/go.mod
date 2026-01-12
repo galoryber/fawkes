@@ -3,6 +3,7 @@ module fawkes
 go 1.21.0
 
 require (
+	github.com/Ne0nd0g/go-clr v1.0.3
 	github.com/google/uuid v1.6.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 )
@@ -16,4 +17,5 @@ require (
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/sys v0.20.0 // indirect
+	golang.org/x/text v0.3.7 // indirect
 )
