@@ -96,9 +96,6 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		}
 	}
 
-	assemblyMutex.Lock()
-	defer assemblyMutex.Unlock()
-
 	// Set up file transfer request to get assembly from Mythic
 	getFileMsg := structs.GetFileFromMythicStruct{
 		Task:                  &task,
@@ -130,7 +127,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		}
 	}
 
-	// Send status update
+	// Send status update (before any locks)
 	task.Job.SendResponses <- structs.Response{
 		TaskID:     task.ID,
 		UserOutput: fmt.Sprintf("[*] Received assembly: %d bytes", totalBytesReceived),
