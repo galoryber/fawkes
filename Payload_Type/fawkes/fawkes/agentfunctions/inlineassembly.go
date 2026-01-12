@@ -6,6 +6,7 @@ import (
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -36,9 +37,9 @@ func init() {
 			{
 				Name:             "arguments",
 				ModalDisplayName: "Assembly Arguments",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_ARRAY,
-				Description:      "Command-line arguments to pass to the assembly (one per line or space-separated)",
-				DefaultValue:     []string{},
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Command-line arguments to pass to the assembly (space-separated)",
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -70,32 +71,38 @@ func init() {
 				return response
 			}
 
-			// Get the arguments parameter
-			var arguments []string
-			argVal, err := taskData.Args.GetArg("arguments")
-			if err == nil && argVal != nil {
-				// Try to parse as array
-				switch v := argVal.(type) {
-				case []interface{}:
-					for _, arg := range v {
-						if argStr, ok := arg.(string); ok {
-							arguments = append(arguments, argStr)
-						}
-					}
-				case []string:
-					arguments = v
-				case string:
-					// If it's a string, split by spaces
-					if v != "" {
-						arguments = []string{v}
-					}
-				}
+			// Get file details from Mythic
+			search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
+				AgentFileID: fileID,
+			})
+			if err != nil {
+				logging.LogError(err, "Failed to search for file")
+				response.Success = false
+				response.Error = "Failed to search for file: " + err.Error()
+				return response
+			}
+			if !search.Success {
+				response.Success = false
+				response.Error = search.Error
+				return response
+			}
+			if len(search.Files) == 0 {
+				response.Success = false
+				response.Error = "Failed to find the specified file"
+				return response
+			}
+
+			// Get the arguments parameter as string
+			arguments := ""
+			argVal, err := taskData.Args.GetStringArg("arguments")
+			if err == nil {
+				arguments = argVal
 			}
 
 			// Build the display parameters
-			displayParams := fmt.Sprintf("Assembly: %s", fileID)
-			if len(arguments) > 0 {
-				displayParams += fmt.Sprintf("\nArguments: %v", arguments)
+			displayParams := fmt.Sprintf("Assembly: %s", search.Files[0].Filename)
+			if arguments != "" {
+				displayParams += fmt.Sprintf("\nArguments: %s", arguments)
 			}
 			response.DisplayParams = &displayParams
 

