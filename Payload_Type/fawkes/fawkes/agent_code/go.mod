@@ -9,6 +9,8 @@ require (
 )
 
 require (
+	github.com/Binject/debug v0.0.0-20230508195519-26db73212a7a // indirect
+	github.com/awgh/cppgo v0.0.0-20210224085512-3d24bca8edc0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20210106213030-5aafc221ea8c // indirect

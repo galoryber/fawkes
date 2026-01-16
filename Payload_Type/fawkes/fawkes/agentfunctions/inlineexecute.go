@@ -406,8 +406,8 @@ func init() {
 
 			// Build the actual parameters JSON that will be sent to the agent
 			params := map[string]interface{}{
-				"bof_b64":        base64.StdEncoding.EncodeToString(fileContents),
-				"entry_point":    entryPoint,
+				"bof_b64":         base64.StdEncoding.EncodeToString(fileContents),
+				"entry_point":     entryPoint,
 				"packed_args_b64": base64.StdEncoding.EncodeToString(packedArgs),
 			}
 
@@ -420,8 +420,7 @@ func init() {
 			}
 
 			response.Success = true
-			paramsStr := string(paramsJSON)
-			taskData.Args.SetArgValues(paramsStr)
+			taskData.Args.SetManualArgs(string(paramsJSON))
 
 			return response
 		},

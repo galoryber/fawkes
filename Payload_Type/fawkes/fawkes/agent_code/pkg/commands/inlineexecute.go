@@ -4,6 +4,7 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,7 +13,7 @@ import (
 	"fawkes/pkg/structs"
 
 	"github.com/Binject/debug/pe"
-	"github.com/awgh/cppgo/asmcall"
+	_ "github.com/awgh/cppgo/asmcall"
 )
 
 // InlineExecuteCommand implements the inline-execute command for BOF/COFF execution
@@ -30,9 +31,9 @@ func (c *InlineExecuteCommand) Description() string {
 
 // InlineExecuteParams represents the parameters for inline-execute
 type InlineExecuteParams struct {
-	BOFB64        string `json:"bof_b64"`          // Base64-encoded BOF bytes
-	EntryPoint    string `json:"entry_point"`      // Entry point function name
-	PackedArgsB64 string `json:"packed_args_b64"`  // Base64-encoded packed arguments
+	BOFB64        string `json:"bof_b64"`         // Base64-encoded BOF bytes
+	EntryPoint    string `json:"entry_point"`     // Entry point function name
+	PackedArgsB64 string `json:"packed_args_b64"` // Base64-encoded packed arguments
 }
 
 // Execute executes the inline-execute command
@@ -118,21 +119,22 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 // This is a simplified implementation - you'll want to integrate goffloader or a similar COFF loader
 func executeBOF(bofBytes []byte, entryPoint string, packedArgs []byte) (string, error) {
 	// Parse the COFF file
-	coffFile, err := pe.NewFileFromMemory(bofBytes)
+	reader := bytes.NewReader(bofBytes)
+	coffFile, err := pe.NewFileFromMemory(reader)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse COFF file: %w", err)
 	}
 
 	// TODO: Implement full COFF loading with goffloader
 	// For now, this is a placeholder that demonstrates the structure
-	
+
 	// Steps needed for full implementation:
 	// 1. Load COFF sections into memory
 	// 2. Resolve relocations
 	// 3. Resolve external symbols (Beacon API functions)
 	// 4. Find entry point function
 	// 5. Execute with packed arguments
-	
+
 	_ = coffFile // Use the parsed file
 	_ = entryPoint
 	_ = packedArgs
@@ -234,10 +236,4 @@ func (p *BeaconDataParser) ParseBytes() []byte {
 	copy(data, p.buffer[p.offset:p.offset+size])
 	p.offset += size
 	return data
-}
-
-func init() {
-	// Note: asmcall is used by goffloader for x64 function calls
-	// Import it here to ensure it's available
-	_ = asmcall.AsmCall
 }
