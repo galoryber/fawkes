@@ -5,15 +5,14 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"fawkes/pkg/structs"
 
 	"github.com/praetorian-inc/goffloader/src/coff"
+	"github.com/praetorian-inc/goffloader/src/lighthouse"
 )
 
 // InlineExecuteCommand implements the inline-execute command for BOF/COFF execution
@@ -76,10 +75,9 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		}
 	}
 
-	// Pack arguments using goffloader's lighthouse.PackArgs
-	// Note: goffloader's 'z' type has a bug (only writes low bytes of UTF-16)
-	// so we use a custom packing function
-	packedArgs, err := packBOFArgs(params.Arguments)
+	// Pack arguments using goffloader's lighthouse.PackArgs directly
+	// This uses goffloader's own format which the BOFs expect
+	packedArgs, err := lighthouse.PackArgs(params.Arguments)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error packing arguments: %v", err),
@@ -134,110 +132,6 @@ func executeBOF(bofBytes []byte, entryPoint string, packedArgs []byte) (string, 
 	}
 	
 	return output, nil
-}
-
-// packBOFArgs properly packs BOF arguments in the Beacon format
-// This fixes the bug in goffloader's PackString which only writes low bytes
-func packBOFArgs(args []string) ([]byte, error) {
-	if len(args) == 0 {
-		return nil, nil
-	}
-
-	var buff []byte
-	for _, arg := range args {
-		if len(arg) < 1 {
-			continue
-		}
-
-		argType := arg[0]
-		argValue := ""
-		if len(arg) > 1 {
-			argValue = arg[1:]
-		}
-
-		switch argType {
-		case 'z': // ASCII null-terminated string (FIXED - writes actual ASCII, not broken UTF-16)
-			// Standard Beacon format: [4-byte size][string bytes][null terminator]
-			data := []byte(argValue)
-			size := len(data) + 1 // +1 for null terminator
-			
-			sizeBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(sizeBytes, uint32(size))
-			buff = append(buff, sizeBytes...)
-			buff = append(buff, data...)
-			buff = append(buff, 0) // null terminator
-
-		case 'Z': // Wide string (UTF-16LE) - NO null terminator (matches goffloader)
-			// Convert string to runes, then encode as UTF-16
-			runes := []rune(argValue)
-			wideData := make([]uint16, 0, len(runes))
-			for _, r := range runes {
-				if r <= 0xFFFF {
-					wideData = append(wideData, uint16(r))
-				} else {
-					// Encode as surrogate pair
-					r -= 0x10000
-					wideData = append(wideData, uint16((r>>10)+0xD800))
-					wideData = append(wideData, uint16((r&0x3FF)+0xDC00))
-				}
-			}
-			
-			// Convert UTF-16 to bytes (goffloader does NOT include null terminator)
-			wideBytes := make([]byte, len(wideData)*2)
-			for i, w := range wideData {
-				binary.LittleEndian.PutUint16(wideBytes[i*2:], w)
-			}
-			
-			sizeBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(sizeBytes, uint32(len(wideBytes)))
-			buff = append(buff, sizeBytes...)
-			buff = append(buff, wideBytes...)
-
-		case 'i': // int32
-			val, err := strconv.ParseInt(argValue, 0, 32)
-			if err != nil {
-				return nil, fmt.Errorf("invalid int32 value '%s': %w", argValue, err)
-			}
-			
-			sizeBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(sizeBytes, 4)
-			buff = append(buff, sizeBytes...)
-			
-			valBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(valBytes, uint32(val))
-			buff = append(buff, valBytes...)
-
-		case 's': // int16
-			val, err := strconv.ParseInt(argValue, 0, 16)
-			if err != nil {
-				return nil, fmt.Errorf("invalid int16 value '%s': %w", argValue, err)
-			}
-			
-			sizeBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(sizeBytes, 2)
-			buff = append(buff, sizeBytes...)
-			
-			valBytes := make([]byte, 2)
-			binary.LittleEndian.PutUint16(valBytes, uint16(val))
-			buff = append(buff, valBytes...)
-
-		case 'b': // binary data (base64)
-			data, err := base64.StdEncoding.DecodeString(argValue)
-			if err != nil {
-				return nil, fmt.Errorf("invalid base64 data '%s': %w", argValue, err)
-			}
-			
-			sizeBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(sizeBytes, uint32(len(data)))
-			buff = append(buff, sizeBytes...)
-			buff = append(buff, data...)
-
-		default:
-			return nil, fmt.Errorf("unknown argument type '%c'", argType)
-		}
-	}
-
-	return buff, nil
 }
 
 // BeaconDataParser provides a simple interface for BOFs to parse their arguments
