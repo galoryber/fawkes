@@ -174,12 +174,10 @@ func packBOFArgs(args []string) ([]byte, error) {
 				return nil, fmt.Errorf("failed to convert to UTF-16: %w", err)
 			}
 			
-			// Convert to bytes
-			var wideBytes []byte
-			for _, w := range wideData {
-				b := make([]byte, 2)
-				binary.LittleEndian.PutUint16(b, w)
-				wideBytes = append(wideBytes, b...)
+			// Convert UTF-16 array to bytes (UTF16FromString already includes null terminator)
+			wideBytes := make([]byte, len(wideData)*2)
+			for i, w := range wideData {
+				binary.LittleEndian.PutUint16(wideBytes[i*2:], w)
 			}
 			
 			sizeBytes := make([]byte, 4)
