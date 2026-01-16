@@ -2,10 +2,8 @@ package agentfunctions
 
 import (
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -45,21 +43,16 @@ func getBOFFileList(msg agentstructs.PTRPCDynamicQueryFunctionMessage) []string 
 	return fileList
 }
 
-// packBOFArguments packs arguments according to the Beacon/goffloader format
-// Argument format: <type>:<value> where type is z (string), i (int32), s (int16), b (binary base64)
-// Example: "z:hostname i:80 b:AQIDBA=="
-func packBOFArguments(argString string) ([]byte, error) {
+// convertToGoffloaderFormat converts our argument format to goffloader's string array format
+// Input format: "z:hostname i:80 b:AQIDBA=="
+// Output format: ["zhostname", "i80", "bAQIDBA=="]
+func convertToGoffloaderFormat(argString string) ([]string, error) {
 	if argString == "" {
-		// No arguments - return minimal packed format
-		buf := make([]byte, 8)
-		binary.LittleEndian.PutUint32(buf[0:4], 0) // total size = 0
-		binary.LittleEndian.PutUint32(buf[4:8], 0) // arg count = 0
-		return buf, nil
+		return []string{}, nil
 	}
 
-	argBuffer := &strings.Builder{}
+	var result []string
 	argParts := strings.Fields(argString)
-	argCount := 0
 
 	for _, arg := range argParts {
 		parts := strings.SplitN(arg, ":", 2)
@@ -70,99 +63,17 @@ func packBOFArguments(argString string) ([]byte, error) {
 		argType := parts[0]
 		argValue := parts[1]
 
+		// Validate argument type
 		switch argType {
-		case "z": // null-terminated string
-			size := len(argValue) + 1 // +1 for null terminator
-			sizeBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(sizeBytes, uint32(size))
-			argBuffer.Write(sizeBytes)
-			argBuffer.WriteString(argValue)
-			argBuffer.WriteByte(0) // null terminator
-			argCount++
-
-		case "Z": // null-terminated wide string (UTF-16LE)
-			// Convert to UTF-16LE
-			wstr := utf16Encode(argValue)
-			size := (len(wstr) + 1) * 2 // +1 for null terminator, *2 for wide chars
-			sizeBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(sizeBytes, uint32(size))
-			argBuffer.Write(sizeBytes)
-			for _, w := range wstr {
-				wBytes := make([]byte, 2)
-				binary.LittleEndian.PutUint16(wBytes, w)
-				argBuffer.Write(wBytes)
-			}
-			// null terminator for wide string
-			argBuffer.Write([]byte{0, 0})
-			argCount++
-
-		case "i": // int32
-			val, err := strconv.ParseInt(argValue, 0, 32)
-			if err != nil {
-				return nil, fmt.Errorf("invalid int32 value '%s': %v", argValue, err)
-			}
-			sizeBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(sizeBytes, 4)
-			argBuffer.Write(sizeBytes)
-			valBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(valBytes, uint32(val))
-			argBuffer.Write(valBytes)
-			argCount++
-
-		case "s": // int16
-			val, err := strconv.ParseInt(argValue, 0, 16)
-			if err != nil {
-				return nil, fmt.Errorf("invalid int16 value '%s': %v", argValue, err)
-			}
-			sizeBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(sizeBytes, 2)
-			argBuffer.Write(sizeBytes)
-			valBytes := make([]byte, 2)
-			binary.LittleEndian.PutUint16(valBytes, uint16(val))
-			argBuffer.Write(valBytes)
-			argCount++
-
-		case "b": // binary data (base64 encoded)
-			data, err := base64.StdEncoding.DecodeString(argValue)
-			if err != nil {
-				return nil, fmt.Errorf("invalid base64 data '%s': %v", argValue, err)
-			}
-			sizeBytes := make([]byte, 4)
-			binary.LittleEndian.PutUint32(sizeBytes, uint32(len(data)))
-			argBuffer.Write(sizeBytes)
-			argBuffer.Write(data)
-			argCount++
-
+		case "z", "Z", "i", "s", "b":
+			// Valid types - goffloader expects format like "zhostname" or "i80"
+			result = append(result, argType+argValue)
 		default:
-			return nil, fmt.Errorf("unknown argument type '%s', valid types are: z (string), Z (wstring), i (int32), s (int16), b (binary)", argType)
+			return nil, fmt.Errorf("unknown argument type '%s', valid types are: z (string), Z (wstring), i (int32), s (int16), b (binary base64)", argType)
 		}
 	}
-
-	// Build final packed format: [total_size][arg_count][arg_data]
-	argData := []byte(argBuffer.String())
-	result := make([]byte, 8+len(argData))
-	binary.LittleEndian.PutUint32(result[0:4], uint32(len(argData)))
-	binary.LittleEndian.PutUint32(result[4:8], uint32(argCount))
-	copy(result[8:], argData)
 
 	return result, nil
-}
-
-// utf16Encode converts a string to UTF-16LE encoding
-func utf16Encode(s string) []uint16 {
-	runes := []rune(s)
-	result := make([]uint16, 0, len(runes))
-	for _, r := range runes {
-		if r <= 0xFFFF {
-			result = append(result, uint16(r))
-		} else {
-			// Encode as surrogate pair for characters outside BMP
-			r -= 0x10000
-			result = append(result, uint16((r>>10)+0xD800))
-			result = append(result, uint16((r&0x3FF)+0xDC00))
-		}
-	}
-	return result
 }
 
 func init() {
@@ -388,12 +299,12 @@ func init() {
 				arguments = argVal
 			}
 
-			// Pack the arguments according to BOF format
-			packedArgs, err := packBOFArguments(arguments)
+			// Convert arguments to goffloader format
+			goffloaderArgs, err := convertToGoffloaderFormat(arguments)
 			if err != nil {
-				logging.LogError(err, "Failed to pack BOF arguments")
+				logging.LogError(err, "Failed to convert BOF arguments")
 				response.Success = false
-				response.Error = "Failed to pack arguments: " + err.Error()
+				response.Error = "Failed to convert arguments: " + err.Error()
 				return response
 			}
 
@@ -406,9 +317,9 @@ func init() {
 
 			// Build the actual parameters JSON that will be sent to the agent
 			params := map[string]interface{}{
-				"bof_b64":         base64.StdEncoding.EncodeToString(fileContents),
-				"entry_point":     entryPoint,
-				"packed_args_b64": base64.StdEncoding.EncodeToString(packedArgs),
+				"bof_b64":     base64.StdEncoding.EncodeToString(fileContents),
+				"entry_point": entryPoint,
+				"arguments":   goffloaderArgs,
 			}
 
 			paramsJSON, err := json.Marshal(params)
