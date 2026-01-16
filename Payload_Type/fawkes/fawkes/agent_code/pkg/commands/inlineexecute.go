@@ -14,7 +14,6 @@ import (
 	"fawkes/pkg/structs"
 
 	"github.com/praetorian-inc/goffloader/src/coff"
-	"golang.org/x/sys/windows"
 )
 
 // InlineExecuteCommand implements the inline-execute command for BOF/COFF execution
@@ -168,13 +167,22 @@ func packBOFArgs(args []string) ([]byte, error) {
 			buff = append(buff, data...)
 			buff = append(buff, 0) // null terminator
 
-		case 'Z': // Wide string (UTF-16LE) null-terminated
-			wideData, err := windows.UTF16FromString(argValue)
-			if err != nil {
-				return nil, fmt.Errorf("failed to convert to UTF-16: %w", err)
+		case 'Z': // Wide string (UTF-16LE) - NO null terminator (matches goffloader)
+			// Convert string to runes, then encode as UTF-16
+			runes := []rune(argValue)
+			wideData := make([]uint16, 0, len(runes))
+			for _, r := range runes {
+				if r <= 0xFFFF {
+					wideData = append(wideData, uint16(r))
+				} else {
+					// Encode as surrogate pair
+					r -= 0x10000
+					wideData = append(wideData, uint16((r>>10)+0xD800))
+					wideData = append(wideData, uint16((r&0x3FF)+0xDC00))
+				}
 			}
 			
-			// Convert UTF-16 array to bytes (UTF16FromString already includes null terminator)
+			// Convert UTF-16 to bytes (goffloader does NOT include null terminator)
 			wideBytes := make([]byte, len(wideData)*2)
 			for i, w := range wideData {
 				binary.LittleEndian.PutUint16(wideBytes[i*2:], w)
