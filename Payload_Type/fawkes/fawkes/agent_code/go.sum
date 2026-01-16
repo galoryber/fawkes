@@ -2,6 +2,10 @@ github.com/Binject/debug v0.0.0-20230508195519-26db73212a7a h1:4c0nc0krv8eh7gD80
 github.com/Binject/debug v0.0.0-20230508195519-26db73212a7a/go.mod h1:QzgxDLY/qdKlvnbnb65eqTedhvQPbaSP2NqIbcuKvsQ=
 github.com/Ne0nd0g/go-clr v1.0.3 h1:xt92wwuqY23ZSC7RuHD3mKu3K22Bk5NNbxI803vojK4=
 github.com/Ne0nd0g/go-clr v1.0.3/go.mod h1:TKYSQ/5xT25EvBUttAlUrzpR8yHuI0qTRK495I5xG/I=
+github.com/Ne0nd0g/go-coff v0.0.0-20231121001014-3f7a89ff12c8 h1:TpcpGseeMmgfyMGxn3Cv/SU/q9Ijj+bl895pqzxEHHU=
+github.com/Ne0nd0g/go-coff v0.0.0-20231121001014-3f7a89ff12c8/go.mod h1:+EKOFR1/tCUEXpFMcu0Ng1l133XZaOx7R0V0gX6Ckug=
+github.com/Ne0nd0g/go-coff v0.0.0-20240309121511-f165c6845b74 h1:LiQSOQNfI+obcaWxQYUsBuYraWF/4MBZXb9byNuBTto=
+github.com/Ne0nd0g/go-coff v0.0.0-20240309121511-f165c6845b74/go.mod h1:TgKWh/pEblaYFUek08DTkrliRpzhL9MotXylVXxT0eE=
 github.com/RIscRIpt/pecoff v0.0.0-20200923152459-a332238caa87 h1:QJKfqX8iCuRT9HZoQGU7cUjnTjKJrypSCghfmAX2vW0=
 github.com/RIscRIpt/pecoff v0.0.0-20200923152459-a332238caa87/go.mod h1:fA0yvj8xMccdfkCwUABhuLZTrRXgyvg3b1k/B/EqHu4=
 github.com/awgh/cppgo v0.0.0-20210224085512-3d24bca8edc0 h1:JjwxKkxzcBk4k8147g0eBQRCIy0UN1Be8AAv6RaIj4Q=

@@ -12,6 +12,7 @@ require (
 
 require (
 	github.com/Binject/debug v0.0.0-20230508195519-26db73212a7a // indirect
+	github.com/Ne0nd0g/go-coff v0.0.0-20240309121511-f165c6845b74 // indirect
 	github.com/RIscRIpt/pecoff v0.0.0-20200923152459-a332238caa87 // indirect
 	github.com/awgh/cppgo v0.0.0-20210224085512-3d24bca8edc0 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
