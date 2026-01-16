@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -12,8 +11,7 @@ import (
 
 	"fawkes/pkg/structs"
 
-	"github.com/Binject/debug/pe"
-	_ "github.com/awgh/cppgo/asmcall"
+	"github.com/praetorian-inc/goffloader/src/coff"
 )
 
 // InlineExecuteCommand implements the inline-execute command for BOF/COFF execution
@@ -115,32 +113,22 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 }
 
-// executeBOF loads and executes a BOF/COFF file
-// This is a simplified implementation - you'll want to integrate goffloader or a similar COFF loader
+// executeBOF loads and executes a BOF/COFF file using goffloader
 func executeBOF(bofBytes []byte, entryPoint string, packedArgs []byte) (string, error) {
-	// Parse the COFF file
-	reader := bytes.NewReader(bofBytes)
-	coffFile, err := pe.NewFileFromMemory(reader)
+	// Use goffloader to load and execute the BOF
+	// The coff.Load function handles:
+	// 1. Loading COFF sections into memory
+	// 2. Resolving relocations
+	// 3. Resolving external symbols (Beacon API functions)
+	// 4. Finding and executing the entry point
+	// 5. Capturing and returning output
+	
+	output, err := coff.Load(bofBytes, packedArgs)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse COFF file: %w", err)
+		return "", fmt.Errorf("failed to load/execute BOF: %w", err)
 	}
-
-	// TODO: Implement full COFF loading with goffloader
-	// For now, this is a placeholder that demonstrates the structure
-
-	// Steps needed for full implementation:
-	// 1. Load COFF sections into memory
-	// 2. Resolve relocations
-	// 3. Resolve external symbols (Beacon API functions)
-	// 4. Find entry point function
-	// 5. Execute with packed arguments
-
-	_ = coffFile // Use the parsed file
-	_ = entryPoint
-	_ = packedArgs
-
-	// Placeholder implementation
-	return "", fmt.Errorf("BOF execution not yet fully implemented - goffloader integration needed")
+	
+	return output, nil
 }
 
 // BeaconDataParser provides a simple interface for BOFs to parse their arguments
