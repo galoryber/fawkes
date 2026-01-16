@@ -113,22 +113,20 @@ func BOFPackShortString(s string) ([]byte, error) {
 	return BOFPackShort(uint16(i))
 }
 
-// BOFPackString converts the string to a zero-terminated+encoded string
-// FIXED: Properly encodes UTF-16LE with both bytes of each character
+// BOFPackString converts the string to a zero-terminated UTF-8 string
+// 'z' type = null-terminated UTF-8 (plain ASCII/UTF-8 bytes)
 func BOFPackString(s string) ([]byte, error) {
-	// Convert to UTF-16
-	d := utf16.Encode([]rune(s))
+	// Convert to UTF-8 bytes (strings in Go are already UTF-8)
+	data := []byte(s)
 	// Add null terminator
-	d = append(d, 0)
+	data = append(data, 0)
 	
 	buff := make([]byte, 4)
-	// Prefix the data size in bytes (each UTF-16 code unit is 2 bytes)
-	binary.LittleEndian.PutUint32(buff, uint32(len(d)*2))
+	// Prefix the data size in bytes
+	binary.LittleEndian.PutUint32(buff, uint32(len(data)))
 	
-	// Pack each UTF-16 code unit as little-endian (low byte, then high byte)
-	for _, c := range d {
-		buff = append(buff, byte(c), byte(c>>8))
-	}
+	// Append the UTF-8 string data
+	buff = append(buff, data...)
 	return buff, nil
 }
 
