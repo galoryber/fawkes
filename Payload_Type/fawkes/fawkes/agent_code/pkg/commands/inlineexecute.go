@@ -80,8 +80,21 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	output.WriteString(fmt.Sprintf("[*] BOF size: %d bytes\n", len(bofBytes)))
 	output.WriteString(fmt.Sprintf("[*] Entry point: %s\n", params.EntryPoint))
 	output.WriteString(fmt.Sprintf("[*] Arguments: %v\n", params.Arguments))
+	output.WriteString(fmt.Sprintf("[*] About to pack and execute BOF...\n"))
 
-	// Load and execute the BOF - go-coff handles argument packing internally
+	// Try to pack arguments first to see if that's where it crashes
+	packedArgs, err := lighthouse.PackArgs(params.Arguments)
+	if err != nil {
+		output.WriteString(fmt.Sprintf("\n[!] Error packing arguments: %v\n", err))
+		return structs.CommandResult{
+			Output:    output.String(),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	output.WriteString(fmt.Sprintf("[*] Packed %d bytes of arguments: %x\n", len(packedArgs), packedArgs))
+
+	// Load and execute the BOF
 	result, err := executeBOF(bofBytes, params.EntryPoint, params.Arguments)
 	if err != nil {
 		output.WriteString(fmt.Sprintf("\n[!] Error executing BOF: %v\n", err))
@@ -104,26 +117,19 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 }
 
-// executeBOF loads and executes a BOF/COFF file using goffloader's official lighthouse.PackArgs
+// executeBOF loads and executes a BOF/COFF file using goffloader
 func executeBOF(bofBytes []byte, entryPoint string, args []string) (string, error) {
-	// Pack arguments using goffloader's official lighthouse.PackArgs
+	// Arguments are already packed by the caller
 	packedArgs, err := lighthouse.PackArgs(args)
 	if err != nil {
 		return "", fmt.Errorf("failed to pack arguments: %w", err)
 	}
 
-	// Debug output
-	debugOutput := fmt.Sprintf("[DEBUG] Raw args: %v\n", args)
-	debugOutput += fmt.Sprintf("[DEBUG] Packed args size: %d bytes\n", len(packedArgs))
-	if len(packedArgs) > 0 {
-		debugOutput += fmt.Sprintf("[DEBUG] Packed args hex: %x\n", packedArgs)
-	}
-
 	// Load and execute the BOF using goffloader
 	output, err := coff.LoadWithMethod(bofBytes, packedArgs, entryPoint)
 	if err != nil {
-		return debugOutput + fmt.Sprintf("\n[ERROR] %v", err), fmt.Errorf("failed to execute BOF: %w", err)
+		return "", fmt.Errorf("failed to execute BOF: %w", err)
 	}
 
-	return debugOutput + output, nil
+	return output, nil
 }
