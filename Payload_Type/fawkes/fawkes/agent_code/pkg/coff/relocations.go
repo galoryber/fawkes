@@ -89,7 +89,18 @@ func (l *Loader) resolveSymbol(symbol *pe.Symbol) (uintptr, error) {
 		return l.resolveWindowsAPI(symbol.Name[6:])
 	}
 
-	// Check if it's in a section
+	// Check if it's a section symbol (symbol name matches a section name)
+	// This handles references like .bss, .data, .text, etc.
+	for secIdx, section := range l.peFile.Sections {
+		if symbol.Name == section.Name {
+			if addr, ok := l.sectionMem[secIdx]; ok {
+				// For section symbols, return the base address plus the symbol value
+				return addr + uintptr(symbol.Value), nil
+			}
+		}
+	}
+
+	// Check if it's in a section by section number
 	if symbol.SectionNumber > 0 {
 		secIdx := int(symbol.SectionNumber) - 1
 		if addr, ok := l.sectionMem[secIdx]; ok {
