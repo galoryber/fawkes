@@ -79,22 +79,29 @@ func (l *Loader) processRelocations() error {
 
 // resolveSymbol resolves a symbol to its address
 func (l *Loader) resolveSymbol(symbol *pe.Symbol) (uintptr, error) {
+	l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Resolving symbol: '%s' (section=%d, value=0x%x)\n",
+		symbol.Name, symbol.SectionNumber, symbol.Value))
+	
 	// Check if it's a Beacon API function
 	if addr, ok := l.symbols[symbol.Name]; ok {
+		l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG]   -> Found as Beacon API at 0x%x\n", addr))
 		return addr, nil
 	}
 
 	// Check if it's a Windows API import: __imp_DLLNAME$FunctionName
 	if len(symbol.Name) > 6 && symbol.Name[:6] == "__imp_" {
+		l.outputBuffer.WriteString("[DEBUG]   -> Attempting Windows API resolution\n")
 		return l.resolveWindowsAPI(symbol.Name[6:])
 	}
 
 	// Check if it's a section symbol (symbol name matches a section name)
 	// This handles references like .bss, .data, .text, etc.
 	for secIdx, section := range l.peFile.Sections {
+		l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG]   -> Checking against section %d: '%s'\n", secIdx, section.Name))
 		if symbol.Name == section.Name {
 			if addr, ok := l.sectionMem[secIdx]; ok {
 				// For section symbols, return the base address plus the symbol value
+				l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG]   -> Found as section symbol at 0x%x + 0x%x\n", addr, symbol.Value))
 				return addr + uintptr(symbol.Value), nil
 			}
 		}
@@ -103,12 +110,15 @@ func (l *Loader) resolveSymbol(symbol *pe.Symbol) (uintptr, error) {
 	// Check if it's in a section by section number
 	if symbol.SectionNumber > 0 {
 		secIdx := int(symbol.SectionNumber) - 1
+		l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG]   -> Checking section number %d (index %d)\n", symbol.SectionNumber, secIdx))
 		if addr, ok := l.sectionMem[secIdx]; ok {
+			l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG]   -> Found in section at 0x%x + 0x%x\n", addr, symbol.Value))
 			return addr + uintptr(symbol.Value), nil
 		}
 	}
 
 	// External symbol not found
+	l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG]   -> FAILED to resolve\n"))
 	return 0, fmt.Errorf("unresolved symbol: %s", symbol.Name)
 }
 

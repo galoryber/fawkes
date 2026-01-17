@@ -39,6 +39,8 @@ func NewLoader(coffData []byte) (*Loader, error) {
 
 // Load allocates memory and loads all sections
 func (l *Loader) Load() error {
+	l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Loading %d sections\n", len(l.peFile.Sections)))
+	
 	// Allocate memory for each section
 	for i, section := range l.peFile.Sections {
 		// Determine the size to allocate - use VirtualSize for BSS sections
@@ -47,7 +49,11 @@ func (l *Loader) Load() error {
 			allocSize = section.VirtualSize
 		}
 		
+		l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Section %d: '%s' Size=%d VirtualSize=%d AllocSize=%d\n",
+			i, section.Name, section.Size, section.VirtualSize, allocSize))
+		
 		if allocSize == 0 {
+			l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Skipping section '%s' (size 0)\n", section.Name))
 			continue
 		}
 
@@ -64,6 +70,9 @@ func (l *Loader) Load() error {
 			for j := 0; j < len(data); j++ {
 				*(*byte)(unsafe.Pointer(addr + uintptr(j))) = data[j]
 			}
+			l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Copied %d bytes to section '%s' at 0x%x\n", len(data), section.Name, addr))
+		} else {
+			l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Section '%s' is BSS (no data to copy) at 0x%x\n", section.Name, addr))
 		}
 		// BSS sections are already zeroed by VirtualAlloc
 
