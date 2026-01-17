@@ -16,7 +16,7 @@ type BeaconDataParser struct {
 }
 
 // beaconPrintf implements BeaconPrintf(int type, char* fmt, ...)
-func (l *Loader) beaconPrintf(callbackType int, format uintptr) uintptr {
+func (l *Loader) beaconPrintf(callbackType uintptr, format uintptr) uintptr {
 	// Read the format string from memory
 	formatStr := readCString(format)
 	
@@ -29,11 +29,11 @@ func (l *Loader) beaconPrintf(callbackType int, format uintptr) uintptr {
 }
 
 // beaconOutput implements BeaconOutput(int type, char* data, int len)
-func (l *Loader) beaconOutput(callbackType int, data uintptr, length int) uintptr {
+func (l *Loader) beaconOutput(callbackType uintptr, data uintptr, length uintptr) uintptr {
 	if length > 0 && data != 0 {
 		// Read data from memory
-		dataBytes := make([]byte, length)
-		for i := 0; i < length; i++ {
+		dataBytes := make([]byte, int(length))
+		for i := 0; i < int(length); i++ {
 			dataBytes[i] = *(*byte)(unsafe.Pointer(data + uintptr(i)))
 		}
 		l.outputBuffer.Write(dataBytes)
@@ -42,7 +42,7 @@ func (l *Loader) beaconOutput(callbackType int, data uintptr, length int) uintpt
 }
 
 // beaconDataParse implements BeaconDataParse(datap* parser, char* buffer, int size)
-func (l *Loader) beaconDataParse(parser uintptr, buffer uintptr, size int) uintptr {
+func (l *Loader) beaconDataParse(parser uintptr, buffer uintptr, size uintptr) uintptr {
 	if parser == 0 {
 		return 0
 	}
@@ -64,7 +64,7 @@ func (l *Loader) beaconDataParse(parser uintptr, buffer uintptr, size int) uintp
 }
 
 // beaconDataInt implements BeaconDataInt(datap* parser)
-func (l *Loader) beaconDataInt(parser uintptr) int32 {
+func (l *Loader) beaconDataInt(parser uintptr) uintptr {
 	if parser == 0 {
 		return 0
 	}
@@ -88,11 +88,11 @@ func (l *Loader) beaconDataInt(parser uintptr) int32 {
 	*(*int32)(unsafe.Pointer(parser + 16)) = length - 8
 	
 	_ = size // unused but follows format
-	return value
+	return uintptr(value)
 }
 
 // beaconDataShort implements BeaconDataShort(datap* parser)
-func (l *Loader) beaconDataShort(parser uintptr) int16 {
+func (l *Loader) beaconDataShort(parser uintptr) uintptr {
 	if parser == 0 {
 		return 0
 	}
@@ -115,7 +115,7 @@ func (l *Loader) beaconDataShort(parser uintptr) int16 {
 	*(*int32)(unsafe.Pointer(parser + 16)) = length - 6
 	
 	_ = size
-	return value
+	return uintptr(value)
 }
 
 // beaconDataExtract implements BeaconDataExtract(datap* parser, int* size)
@@ -152,7 +152,7 @@ func (l *Loader) beaconDataExtract(parser uintptr, outSize uintptr) uintptr {
 }
 
 // beaconFormatAlloc implements BeaconFormatAlloc(formatp* format, int maxsize)
-func (l *Loader) beaconFormatAlloc(format uintptr, maxsize int) uintptr {
+func (l *Loader) beaconFormatAlloc(format uintptr, maxsize uintptr) uintptr {
 	// Allocate buffer for formatted output
 	// For now, just return a dummy pointer
 	return format
