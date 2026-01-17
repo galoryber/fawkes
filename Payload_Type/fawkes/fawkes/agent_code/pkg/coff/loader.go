@@ -150,13 +150,10 @@ func (l *Loader) Execute(entryPoint string, args []byte) (string, error) {
 
 	l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Calling entry point at 0x%x with %d bytes of args at 0x%x\\n", entryAddr, argLen, argPtr))
 
-	// BOF functions use stdcall/fastcall convention, not syscall
-	// Create a function pointer with signature: void function(char* args, int len)
-	type bofEntryPoint func(uintptr, uintptr) uintptr
-	entryFunc := *(*bofEntryPoint)(unsafe.Pointer(&entryAddr))
-	
-	// Call the function
-	entryFunc(argPtr, argLen)
+	// BOF entry point signature: void go(char* args, int len)
+	// Use Syscall (not SyscallN) which properly handles Windows x64 calling convention
+	// Arguments are passed in RCX, RDX for the first two parameters
+	_, _, _ = syscall.Syscall(entryAddr, 2, argPtr, argLen, 0)
 
 	return l.outputBuffer.String(), nil
 }
