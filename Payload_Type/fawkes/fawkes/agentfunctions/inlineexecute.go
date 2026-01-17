@@ -63,6 +63,11 @@ func convertToGoffloaderFormat(argString string) ([]string, error) {
 		argType := parts[0]
 		argValue := parts[1]
 
+		// Strip surrounding quotes if present (e.g., z:"" should become z with empty value)
+		if len(argValue) >= 2 && argValue[0] == '"' && argValue[len(argValue)-1] == '"' {
+			argValue = argValue[1 : len(argValue)-1]
+		}
+
 		// Validate argument type
 		switch argType {
 		case "z", "Z", "i", "s", "b":
