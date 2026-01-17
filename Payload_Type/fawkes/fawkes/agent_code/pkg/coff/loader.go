@@ -142,19 +142,21 @@ func (l *Loader) Execute(entryPoint string, args []byte) (string, error) {
 
 	// Call the entry point with arguments
 	argPtr := uintptr(0)
-	argLen := 0
+	argLen := uintptr(0)
 	if len(args) > 0 {
 		argPtr = uintptr(unsafe.Pointer(&args[0]))
-		argLen = len(args)
+		argLen = uintptr(len(args))
 	}
 
-	l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Calling entry point at 0x%x with %d bytes of args\n", entryAddr, argLen))
+	l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Calling entry point at 0x%x with %d bytes of args at 0x%x\\n", entryAddr, argLen, argPtr))
 
-	// Execute the BOF
-	_, _, err := syscall.SyscallN(entryAddr, argPtr, uintptr(argLen))
-	if err != syscall.Errno(0) {
-		return "", fmt.Errorf("BOF execution failed: %v", err)
-	}
+	// BOF functions use stdcall/fastcall convention, not syscall
+	// Create a function pointer with signature: void function(char* args, int len)
+	type bofEntryPoint func(uintptr, uintptr) uintptr
+	entryFunc := *(*bofEntryPoint)(unsafe.Pointer(&entryAddr))
+	
+	// Call the function
+	entryFunc(argPtr, argLen)
 
 	return l.outputBuffer.String(), nil
 }
