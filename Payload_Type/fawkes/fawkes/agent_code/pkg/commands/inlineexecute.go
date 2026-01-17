@@ -12,6 +12,7 @@ import (
 	"fawkes/pkg/structs"
 
 	"github.com/praetorian-inc/goffloader/src/coff"
+	"github.com/praetorian-inc/goffloader/src/lighthouse"
 )
 
 // InlineExecuteCommand implements the inline-execute command for BOF/COFF execution
@@ -103,10 +104,10 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 }
 
-// executeBOF loads and executes a BOF/COFF file using goffloader with fixed argument packing
+// executeBOF loads and executes a BOF/COFF file using goffloader's official lighthouse.PackArgs
 func executeBOF(bofBytes []byte, entryPoint string, args []string) (string, error) {
-	// Pack arguments using our fixed BOFPack function
-	packedArgs, err := BOFPack(args)
+	// Pack arguments using goffloader's official lighthouse.PackArgs
+	packedArgs, err := lighthouse.PackArgs(args)
 	if err != nil {
 		return "", fmt.Errorf("failed to pack arguments: %w", err)
 	}
