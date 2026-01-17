@@ -4,9 +4,12 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 
 	"github.com/Ne0nd0g/go-coff/coff"
 	"fawkes/pkg/structs"
@@ -91,19 +94,51 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		}
 	}
 
-	// Execute the BOF
-	// go-coff expects arguments in the format: ["zvalue", "i80"]
-	// Note: go-coff's BeaconOutput prints directly to stdout
-	if err := object.Run(params.EntryPoint, params.Arguments); err != nil {
+	// Capture stdout to get BOF output
+	oldStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Execute the BOF in a goroutine
+	outputChan := make(chan string, 1)
+
+	go func() {
+		// Capture the output
+		var buf bytes.Buffer
+		io.Copy(&buf, r)
+		outputChan <- buf.String()
+	}()
+
+	// Run the BOF
+	err = object.Run(params.EntryPoint, params.Arguments)
+
+	// Restore stdout
+	w.Close()
+	os.Stdout = oldStdout
+
+	// Get the captured output
+	bofOutput := <-outputChan
+
+	// Check for execution errors
+	if err != nil {
+		output := fmt.Sprintf("Error executing BOF: %v", err)
+		if bofOutput != "" {
+			output += fmt.Sprintf("\n\nBOF Output:\n%s", bofOutput)
+		}
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error executing BOF: %v", err),
+			Output:    output,
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
+	// Return the BOF output
+	if bofOutput == "" {
+		bofOutput = "[+] BOF executed successfully (no output)"
+	}
+
 	return structs.CommandResult{
-		Output:    "[+] BOF executed successfully. Output printed to stdout (check agent console if running interactively).",
+		Output:    bofOutput,
 		Status:    "success",
 		Completed: true,
 	}
