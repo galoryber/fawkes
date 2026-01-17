@@ -139,12 +139,22 @@ func executeBOF(bofBytes []byte, entryPoint string, packedArgs []byte) (string, 
 
 	// Load sections and process relocations
 	if err := loader.Load(); err != nil {
+		// Capture any debug output even on error
+		debugOutput := loader.GetOutput()
+		if debugOutput != "" {
+			return debugOutput, fmt.Errorf("failed to load COFF: %w", err)
+		}
 		return "", fmt.Errorf("failed to load COFF: %w", err)
 	}
 
 	// Execute with packed arguments
 	output, err := loader.Execute(entryPoint, packedArgs)
 	if err != nil {
+		// Capture any debug output even on error
+		debugOutput := loader.GetOutput()
+		if debugOutput != "" {
+			return debugOutput, fmt.Errorf("failed to execute: %w", err)
+		}
 		return "", fmt.Errorf("failed to execute: %w", err)
 	}
 
