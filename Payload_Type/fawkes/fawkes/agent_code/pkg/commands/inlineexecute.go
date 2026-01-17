@@ -9,10 +9,8 @@ import (
 	"fmt"
 	"strings"
 
+	"fawkes/pkg/coff"
 	"fawkes/pkg/structs"
-
-	"github.com/praetorian-inc/goffloader/src/coff"
-	"github.com/praetorian-inc/goffloader/src/lighthouse"
 )
 
 // InlineExecuteCommand implements the inline-execute command for BOF/COFF execution
@@ -94,8 +92,8 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 	output.WriteString("[*] About to pack arguments...\n")
 
-	// Try to pack arguments first to see if that's where it crashes
-	packedArgs, err := lighthouse.PackArgs(params.Arguments)
+	// Pack arguments using our custom packer
+	packedArgs, err := coff.PackArguments(params.Arguments)
 	if err != nil {
 		output.WriteString(fmt.Sprintf("\n[!] Error packing arguments: %v\n", err))
 		return structs.CommandResult{
@@ -105,10 +103,10 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		}
 	}
 	output.WriteString(fmt.Sprintf("[*] Packed %d bytes of arguments: %x\n", len(packedArgs), packedArgs))
-	output.WriteString("[*] About to call coff.LoadWithMethod...\n")
+	output.WriteString("[*] About to call COFF loader...\n")
 
-	// Load and execute the BOF
-	result, err := executeBOF(bofBytes, params.EntryPoint, params.Arguments)
+	// Load and execute the BOF using our custom loader
+	result, err := executeBOF(bofBytes, params.EntryPoint, packedArgs)
 	if err != nil {
 		output.WriteString(fmt.Sprintf("\n[!] Error executing BOF: %v\n", err))
 		return structs.CommandResult{
@@ -130,18 +128,24 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 }
 
-// executeBOF loads and executes a BOF/COFF file using goffloader
-func executeBOF(bofBytes []byte, entryPoint string, args []string) (string, error) {
-	// Arguments are already packed by the caller
-	packedArgs, err := lighthouse.PackArgs(args)
+// executeBOF loads and executes a BOF/COFF file using our custom loader
+func executeBOF(bofBytes []byte, entryPoint string, packedArgs []byte) (string, error) {
+	// Create the loader
+	loader, err := coff.NewLoader(bofBytes)
 	if err != nil {
-		return "", fmt.Errorf("failed to pack arguments: %w", err)
+		return "", fmt.Errorf("failed to create loader: %w", err)
+	}
+	defer loader.Free()
+
+	// Load sections and process relocations
+	if err := loader.Load(); err != nil {
+		return "", fmt.Errorf("failed to load COFF: %w", err)
 	}
 
-	// Load and execute the BOF using goffloader
-	output, err := coff.LoadWithMethod(bofBytes, packedArgs, entryPoint)
+	// Execute with packed arguments
+	output, err := loader.Execute(entryPoint, packedArgs)
 	if err != nil {
-		return "", fmt.Errorf("failed to execute BOF: %w", err)
+		return "", fmt.Errorf("failed to execute: %w", err)
 	}
 
 	return output, nil
