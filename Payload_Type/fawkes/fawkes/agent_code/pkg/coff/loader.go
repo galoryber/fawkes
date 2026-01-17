@@ -41,26 +41,31 @@ func NewLoader(coffData []byte) (*Loader, error) {
 func (l *Loader) Load() error {
 	// Allocate memory for each section
 	for i, section := range l.peFile.Sections {
-		if section.Size == 0 {
+		// Determine the size to allocate - use VirtualSize for BSS sections
+		allocSize := section.Size
+		if allocSize == 0 && section.VirtualSize > 0 {
+			allocSize = section.VirtualSize
+		}
+		
+		if allocSize == 0 {
 			continue
 		}
 
 		// Allocate RWX memory for the section
-		addr, err := virtualAlloc(0, uintptr(section.Size), 0x3000, 0x40) // MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE
+		addr, err := virtualAlloc(0, uintptr(allocSize), 0x3000, 0x40) // MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE
 		if err != nil {
 			return fmt.Errorf("failed to allocate memory for section %s: %w", section.Name, err)
 		}
 
-		// Copy section data
+		// Copy section data if it exists (won't exist for BSS)
 		data, err := section.Data()
-		if err != nil {
-			return fmt.Errorf("failed to read section data: %w", err)
+		if err == nil && len(data) > 0 {
+			// Copy to allocated memory
+			for j := 0; j < len(data); j++ {
+				*(*byte)(unsafe.Pointer(addr + uintptr(j))) = data[j]
+			}
 		}
-
-		// Copy to allocated memory
-		for j := 0; j < len(data); j++ {
-			*(*byte)(unsafe.Pointer(addr + uintptr(j))) = data[j]
-		}
+		// BSS sections are already zeroed by VirtualAlloc
 
 		l.sectionMem[i] = addr
 	}
