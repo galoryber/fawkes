@@ -7,10 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/Ne0nd0g/go-coff/coff"
-	"github.com/Ne0nd0g/go-coff/coff/beacon"
 	"fawkes/pkg/structs"
 )
 
@@ -95,25 +93,17 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 
 	// Execute the BOF
 	// go-coff expects arguments in the format: ["zvalue", "i80"]
+	// Note: go-coff's BeaconOutput prints directly to stdout
 	if err := object.Run(params.EntryPoint, params.Arguments); err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error executing BOF: %v\n%s", err, beacon.GetOutput()),
+			Output:    fmt.Sprintf("Error executing BOF: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	// Get the output captured by Beacon API
-	var output strings.Builder
-	bofOutput := beacon.GetOutput()
-	if bofOutput != "" {
-		output.WriteString(bofOutput)
-	} else {
-		output.WriteString("[+] BOF executed successfully (no output)\n")
-	}
-
 	return structs.CommandResult{
-		Output:    output.String(),
+		Output:    "[+] BOF executed successfully. Output printed to stdout (check agent console if running interactively).",
 		Status:    "success",
 		Completed: true,
 	}
