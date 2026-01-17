@@ -105,6 +105,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		}
 	}
 	output.WriteString(fmt.Sprintf("[*] Packed %d bytes of arguments: %x\n", len(packedArgs), packedArgs))
+	output.WriteString("[*] About to call coff.LoadWithMethod...\n")
 
 	// Load and execute the BOF
 	result, err := executeBOF(bofBytes, params.EntryPoint, params.Arguments)
