@@ -71,12 +71,10 @@ func convertToGoffloaderFormat(argString string) ([]string, error) {
 		// Validate argument type
 		switch argType {
 		case "z", "Z", "i", "s", "b":
-			// Special case: for empty string values, use a null character that BOFs can recognize
-			// Many BOFs check if (*str == 0) to detect empty/null strings
+			// Special case: for empty string values, use a single space
+			// go-coff won't accept empty strings, so use minimal valid placeholder
 			if argValue == "" && (argType == "z" || argType == "Z") {
-				// Send a single null-like marker - use chr(1) as placeholder
-				// This ensures go-coff accepts it but BOF can detect it's meant to be empty
-				argValue = "\x00"
+				argValue = " "
 			}
 			// Valid types - go-coff expects format like "zhostname" or "i80"
 			result = append(result, argType+argValue)
