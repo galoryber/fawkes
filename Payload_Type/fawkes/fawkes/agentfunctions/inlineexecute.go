@@ -71,6 +71,11 @@ func convertToGoffloaderFormat(argString string) ([]string, error) {
 		// Validate argument type
 		switch argType {
 		case "z", "Z", "i", "s", "b":
+			// Special case: skip arguments marked as SKIP or NULL
+			if strings.EqualFold(argValue, "SKIP") || strings.EqualFold(argValue, "NULL") {
+				// Omit this argument entirely - don't add to result
+				continue
+			}
 			// Special case: for empty string values, use a single space
 			// go-coff won't accept empty strings, so use minimal valid placeholder
 			if argValue == "" && (argType == "z" || argType == "Z") {
