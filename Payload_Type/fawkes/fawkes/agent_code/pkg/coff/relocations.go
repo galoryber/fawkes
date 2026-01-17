@@ -25,6 +25,9 @@ const (
 
 // processRelocations applies all relocations in the COFF file
 func (l *Loader) processRelocations() error {
+	l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Processing relocations for %d sections\n", len(l.peFile.Sections)))
+	l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Symbol table has %d entries\n", len(l.peFile.Symbols)))
+
 	for secIdx, section := range l.peFile.Sections {
 		sectionAddr, ok := l.sectionMem[secIdx]
 		if !ok {
@@ -37,32 +40,40 @@ func (l *Loader) processRelocations() error {
 			continue
 		}
 
-		for _, reloc := range relocations {
+		l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Section %s has %d relocations\n", section.Name, len(relocations)))
+
+		for relocIdx, reloc := range relocations {
 			// Get the symbol being referenced
 			if int(reloc.SymbolTableIndex) >= len(l.peFile.Symbols) {
 				// Symbol index out of bounds - skip this relocation
 				// This can happen with auxiliary symbol table entries
+				l.outputBuffer.WriteString(fmt.Sprintf("[WARN] Relocation %d: symbol index %d out of bounds (max %d), skipping\n",
+					relocIdx, reloc.SymbolTableIndex, len(l.peFile.Symbols)))
 				continue
 			}
 
 			symbol := l.peFile.Symbols[reloc.SymbolTableIndex]
 			symbolAddr, err := l.resolveSymbol(symbol)
 			if err != nil {
-				// Try to continue with zero address for unresolved symbols
-				// Some relocations might not need resolution
-				symbolAddr = 0
+				// Unresolved symbol - this is a critical error for code sections
+				return fmt.Errorf("relocation %d in section %s: failed to resolve symbol '%s': %w",
+					relocIdx, section.Name, symbol.Name, err)
 			}
+
+			l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Relocation %d: symbol '%s' resolved to 0x%x\n",
+				relocIdx, symbol.Name, symbolAddr))
 
 			// Calculate the relocation target address
 			targetAddr := sectionAddr + uintptr(reloc.VirtualAddress)
 
 			// Apply the relocation based on type
 			if err := l.applyRelocation(targetAddr, symbolAddr, reloc.Type, sectionAddr); err != nil {
-				return fmt.Errorf("failed to apply relocation: %w", err)
+				return fmt.Errorf("failed to apply relocation %d: %w", relocIdx, err)
 			}
 		}
 	}
 
+	l.outputBuffer.WriteString("[DEBUG] All relocations processed successfully\n")
 	return nil
 }
 

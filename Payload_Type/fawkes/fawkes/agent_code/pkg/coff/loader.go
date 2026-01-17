@@ -133,6 +133,8 @@ func (l *Loader) Execute(entryPoint string, args []byte) (string, error) {
 		argLen = len(args)
 	}
 
+	l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Calling entry point at 0x%x with %d bytes of args\n", entryAddr, argLen))
+
 	// Execute the BOF
 	_, _, err := syscall.SyscallN(entryAddr, argPtr, uintptr(argLen))
 	if err != syscall.Errno(0) {
