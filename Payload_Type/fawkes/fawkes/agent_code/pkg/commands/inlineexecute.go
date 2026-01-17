@@ -108,6 +108,10 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	// Load and execute the BOF using our custom loader
 	result, err := executeBOF(bofBytes, params.EntryPoint, packedArgs)
 	if err != nil {
+		// Include any debug output from the loader before the error
+		if result != "" {
+			output.WriteString(fmt.Sprintf("\n--- Debug Output ---\n%s\n", result))
+		}
 		output.WriteString(fmt.Sprintf("\n[!] Error executing BOF: %v\n", err))
 		return structs.CommandResult{
 			Output:    output.String(),
