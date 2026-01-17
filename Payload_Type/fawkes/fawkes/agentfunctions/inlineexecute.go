@@ -63,7 +63,7 @@ func convertToGoffloaderFormat(argString string) ([]string, error) {
 		argType := parts[0]
 		argValue := parts[1]
 
-		// Strip surrounding quotes if present (e.g., z:"" should become z with empty value)
+		// Strip surrounding quotes if present (e.g., z:"value" should become zvalue)
 		if len(argValue) >= 2 && argValue[0] == '"' && argValue[len(argValue)-1] == '"' {
 			argValue = argValue[1 : len(argValue)-1]
 		}
@@ -71,7 +71,14 @@ func convertToGoffloaderFormat(argString string) ([]string, error) {
 		// Validate argument type
 		switch argType {
 		case "z", "Z", "i", "s", "b":
-			// Valid types - goffloader expects format like "zhostname" or "i80"
+			// Special case: for empty string values, use a null character that BOFs can recognize
+			// Many BOFs check if (*str == 0) to detect empty/null strings
+			if argValue == "" && (argType == "z" || argType == "Z") {
+				// Send a single null-like marker - use chr(1) as placeholder
+				// This ensures go-coff accepts it but BOF can detect it's meant to be empty
+				argValue = "\x00"
+			}
+			// Valid types - go-coff expects format like "zhostname" or "i80"
 			result = append(result, argType+argValue)
 		default:
 			return nil, fmt.Errorf("unknown argument type '%s', valid types are: z (string), Z (wstring), i (int32), s (int16), b (binary base64)", argType)
