@@ -49,13 +49,14 @@ func (l *Loader) Load() error {
 			allocSize = section.VirtualSize
 		}
 		
+		// Even if size is 0, allocate at least 1 byte so relocations can reference it
+		// This handles empty .bss sections that are still referenced by relocations
+		if allocSize == 0 {
+			allocSize = 1
+		}
+		
 		l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Section %d: '%s' Size=%d VirtualSize=%d AllocSize=%d\n",
 			i, section.Name, section.Size, section.VirtualSize, allocSize))
-		
-		if allocSize == 0 {
-			l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Skipping section '%s' (size 0)\n", section.Name))
-			continue
-		}
 
 		// Allocate RWX memory for the section
 		addr, err := virtualAlloc(0, uintptr(allocSize), 0x3000, 0x40) // MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE
@@ -72,7 +73,7 @@ func (l *Loader) Load() error {
 			}
 			l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Copied %d bytes to section '%s' at 0x%x\n", len(data), section.Name, addr))
 		} else {
-			l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Section '%s' is BSS (no data to copy) at 0x%x\n", section.Name, addr))
+			l.outputBuffer.WriteString(fmt.Sprintf("[DEBUG] Section '%s' is BSS/empty (no data to copy) at 0x%x\n", section.Name, addr))
 		}
 		// BSS sections are already zeroed by VirtualAlloc
 
