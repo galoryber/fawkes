@@ -111,11 +111,18 @@ func executeBOF(bofBytes []byte, entryPoint string, args []string) (string, erro
 		return "", fmt.Errorf("failed to pack arguments: %w", err)
 	}
 
+	// Debug output
+	debugOutput := fmt.Sprintf("[DEBUG] Raw args: %v\n", args)
+	debugOutput += fmt.Sprintf("[DEBUG] Packed args size: %d bytes\n", len(packedArgs))
+	if len(packedArgs) > 0 {
+		debugOutput += fmt.Sprintf("[DEBUG] Packed args hex: %x\n", packedArgs)
+	}
+
 	// Load and execute the BOF using goffloader
 	output, err := coff.LoadWithMethod(bofBytes, packedArgs, entryPoint)
 	if err != nil {
-		return "", fmt.Errorf("failed to execute BOF: %w", err)
+		return debugOutput + fmt.Sprintf("\n[ERROR] %v", err), fmt.Errorf("failed to execute BOF: %w", err)
 	}
 
-	return output, nil
+	return debugOutput + output, nil
 }

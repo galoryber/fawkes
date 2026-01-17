@@ -113,20 +113,20 @@ func BOFPackShortString(s string) ([]byte, error) {
 	return BOFPackShort(uint16(i))
 }
 
-// BOFPackString converts the string to a zero-terminated UTF-8 string
-// 'z' type = null-terminated UTF-8 (plain ASCII/UTF-8 bytes)
+// BOFPackString converts the string to goffloader's format (UTF-16 low bytes only for ASCII compatibility)
+// This matches goffloader's PackString which uses windows.UTF16FromString but only writes byte(c)
 func BOFPackString(s string) ([]byte, error) {
-	// Convert to UTF-8 bytes (strings in Go are already UTF-8)
-	data := []byte(s)
-	// Add null terminator
-	data = append(data, 0)
-	
+	// Match goffloader: Convert to UTF-16, but only write low bytes
+	d := utf16.Encode([]rune(s))
+
 	buff := make([]byte, 4)
-	// Prefix the data size in bytes
-	binary.LittleEndian.PutUint32(buff, uint32(len(data)))
-	
-	// Append the UTF-8 string data
-	buff = append(buff, data...)
+	// Prefix with the length (number of UTF-16 code units, not bytes)
+	binary.LittleEndian.PutUint32(buff, uint32(len(d)))
+
+	// Write only the low byte of each UTF-16 code unit (matching goffloader's bug/feature)
+	for _, c := range d {
+		buff = append(buff, byte(c))
+	}
 	return buff, nil
 }
 
@@ -137,11 +137,11 @@ func BOFPackWideString(s string) ([]byte, error) {
 	d := utf16.Encode([]rune(s))
 	// Add null terminator
 	d = append(d, 0)
-	
+
 	buff := make([]byte, 4)
 	// Prefix the data size in bytes (each UTF-16 code unit is 2 bytes)
 	binary.LittleEndian.PutUint32(buff, uint32(len(d)*2))
-	
+
 	// Pack each UTF-16 code unit as little-endian (low byte, then high byte)
 	for _, c := range d {
 		buff = append(buff, byte(c), byte(c>>8))
