@@ -281,6 +281,15 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			}
 		}
 	}
+	// Enable CGO for Windows builds (needed for go-coff BOF execution)
+	if targetOs == "windows" && mode != "shared" {
+		command = strings.Replace(command, "CGO_ENABLED=0", "CGO_ENABLED=1", 1)
+		if goarch == "amd64" {
+			command += "CC=x86_64-w64-mingw32-gcc "
+		} else if goarch == "386" {
+			command += "CC=i686-w64-mingw32-gcc "
+		}
+	}
 	command += "GOGARBLE=* "
 	if garble {
 		command += "/go/bin/garble -tiny -literals -debug -seed random build "

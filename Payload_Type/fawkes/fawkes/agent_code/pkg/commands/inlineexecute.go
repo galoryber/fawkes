@@ -9,7 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"fawkes/pkg/coff"
+	"github.com/Ne0nd0g/go-coff/coff"
+	"github.com/Ne0nd0g/go-coff/coff/beacon"
 	"fawkes/pkg/structs"
 )
 
@@ -30,25 +31,17 @@ func (c *InlineExecuteCommand) Description() string {
 type InlineExecuteParams struct {
 	BOFB64     string   `json:"bof_b64"`     // Base64-encoded BOF bytes
 	EntryPoint string   `json:"entry_point"` // Entry point function name
-	Arguments  []string `json:"arguments"`   // Goffloader format arguments (e.g., ["zbing.com", "i80"])
+	Arguments  []string `json:"arguments"`   // Arguments in format: ["zvalue", "i80"]
 }
 
 // Execute executes the inline-execute command
 func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult {
-	// Add panic recovery to catch crashes
-	defer func() {
-		if r := recover(); r != nil {
-			// Panic occurred - log it
-			fmt.Printf("PANIC RECOVERED in inline-execute: %v\n", r)
-		}
-	}()
-
 	// Parse parameters
 	var params InlineExecuteParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v\nRaw params: %s", err, task.Params),
+			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -81,48 +74,42 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		}
 	}
 
-	// Debug: Show what we received
+	// Parse the COFF object
+	object, err := coff.ParseObject(bofBytes)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error parsing COFF object: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Load the COFF object (process relocations)
+	if err := object.Load(); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error loading COFF object: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Execute the BOF
+	// go-coff expects arguments in the format: ["zvalue", "i80"]
+	if err := object.Run(params.EntryPoint, params.Arguments); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error executing BOF: %v\n%s", err, beacon.GetOutput()),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Get the output captured by Beacon API
 	var output strings.Builder
-	output.WriteString(fmt.Sprintf("[*] BOF size: %d bytes\n", len(bofBytes)))
-	output.WriteString(fmt.Sprintf("[*] Entry point: %s\n", params.EntryPoint))
-	output.WriteString(fmt.Sprintf("[*] Arguments RAW: %v\n", params.Arguments))
-	output.WriteString(fmt.Sprintf("[*] Arguments count: %d\n", len(params.Arguments)))
-	for i, arg := range params.Arguments {
-		output.WriteString(fmt.Sprintf("[*]   Arg[%d]: %q (len=%d)\n", i, arg, len(arg)))
-	}
-	output.WriteString("[*] About to pack arguments...\n")
-
-	// Pack arguments using our custom packer
-	packedArgs, err := coff.PackArguments(params.Arguments)
-	if err != nil {
-		output.WriteString(fmt.Sprintf("\n[!] Error packing arguments: %v\n", err))
-		return structs.CommandResult{
-			Output:    output.String(),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	output.WriteString(fmt.Sprintf("[*] Packed %d bytes of arguments: %x\n", len(packedArgs), packedArgs))
-	output.WriteString("[*] About to call COFF loader...\n")
-
-	// Load and execute the BOF using our custom loader
-	result, err := executeBOF(bofBytes, params.EntryPoint, packedArgs)
-	if err != nil {
-		// Include any debug output from the loader before the error
-		if result != "" {
-			output.WriteString(fmt.Sprintf("\n--- Debug Output ---\n%s\n", result))
-		}
-		output.WriteString(fmt.Sprintf("\n[!] Error executing BOF: %v\n", err))
-		return structs.CommandResult{
-			Output:    output.String(),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	output.WriteString("\n[+] BOF execution completed\n")
-	if result != "" {
-		output.WriteString(fmt.Sprintf("\n--- BOF Output ---\n%s\n", result))
+	bofOutput := beacon.GetOutput()
+	if bofOutput != "" {
+		output.WriteString(bofOutput)
+	} else {
+		output.WriteString("[+] BOF executed successfully (no output)\n")
 	}
 
 	return structs.CommandResult{
@@ -130,37 +117,4 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		Status:    "success",
 		Completed: true,
 	}
-}
-
-// executeBOF loads and executes a BOF/COFF file using our custom loader
-func executeBOF(bofBytes []byte, entryPoint string, packedArgs []byte) (string, error) {
-	// Create the loader
-	loader, err := coff.NewLoader(bofBytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to create loader: %w", err)
-	}
-	defer loader.Free()
-
-	// Load sections and process relocations
-	if err := loader.Load(); err != nil {
-		// Capture any debug output even on error
-		debugOutput := loader.GetOutput()
-		if debugOutput != "" {
-			return debugOutput, fmt.Errorf("failed to load COFF: %w", err)
-		}
-		return "", fmt.Errorf("failed to load COFF: %w", err)
-	}
-
-	// Execute with packed arguments
-	output, err := loader.Execute(entryPoint, packedArgs)
-	if err != nil {
-		// Capture any debug output even on error
-		debugOutput := loader.GetOutput()
-		if debugOutput != "" {
-			return debugOutput, fmt.Errorf("failed to execute: %w", err)
-		}
-		return "", fmt.Errorf("failed to execute: %w", err)
-	}
-
-	return output, nil
 }
