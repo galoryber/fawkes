@@ -6,6 +6,7 @@ package coff
 import (
 	"debug/pe"
 	"fmt"
+	"syscall"
 	"unsafe"
 )
 
@@ -68,6 +69,11 @@ func (l *Loader) resolveSymbol(symbol *pe.Symbol) (uintptr, error) {
 		return addr, nil
 	}
 
+	// Check if it's a Windows API import: __imp_DLLNAME$FunctionName
+	if len(symbol.Name) > 6 && symbol.Name[:6] == "__imp_" {
+		return l.resolveWindowsAPI(symbol.Name[6:])
+	}
+
 	// Check if it's in a section
 	if symbol.SectionNumber > 0 {
 		secIdx := int(symbol.SectionNumber) - 1
@@ -78,6 +84,49 @@ func (l *Loader) resolveSymbol(symbol *pe.Symbol) (uintptr, error) {
 
 	// External symbol not found
 	return 0, fmt.Errorf("unresolved symbol: %s", symbol.Name)
+}
+
+// resolveWindowsAPI resolves a Windows API function
+// Format: DLLNAME$FunctionName (e.g., "KERNEL32$GetCurrentProcess")
+func (l *Loader) resolveWindowsAPI(apiName string) (uintptr, error) {
+	// Split on '$' to get DLL and function name
+	parts := splitOnce(apiName, "$")
+	if len(parts) != 2 {
+		return 0, fmt.Errorf("invalid API format: %s", apiName)
+	}
+
+	dllName := parts[0] + ".dll"
+	funcName := parts[1]
+
+	// Try to load the DLL
+	dll, err := syscall.LoadDLL(dllName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to load %s: %w", dllName, err)
+	}
+	// Note: We intentionally don't Release() the DLL as BOFs may call these functions
+
+	// Find the procedure
+	proc, err := dll.FindProc(funcName)
+	if err != nil {
+		return 0, fmt.Errorf("failed to find %s in %s: %w", funcName, dllName, err)
+	}
+
+	return proc.Addr(), nil
+}
+
+// splitOnce splits a string on the first occurrence of sep
+func splitOnce(s, sep string) []string {
+	idx := -1
+	for i := 0; i < len(s); i++ {
+		if s[i] == sep[0] {
+			idx = i
+			break
+		}
+	}
+	if idx == -1 {
+		return []string{s}
+	}
+	return []string{s[:idx], s[idx+1:]}
 }
 
 // applyRelocation applies a relocation to memory
