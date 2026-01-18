@@ -35,6 +35,26 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
+			// First, add the forge_support command to this callback
+			addCmdResp, err := mythicrpc.SendMythicRPCCallbackAddCommand(mythicrpc.MythicRPCCallbackAddCommandMessage{
+				TaskID:   taskData.Task.ID,
+				Commands: []string{"forge_support"},
+			})
+
+			if err != nil {
+				logging.LogError(err, "Failed to add forge_support command to callback")
+				response.Success = false
+				response.Error = "Failed to add forge_support command: " + err.Error()
+				return response
+			}
+
+			if !addCmdResp.Success {
+				logging.LogError(nil, "forge_support command add failed", "error", addCmdResp.Error)
+				response.Success = false
+				response.Error = "Failed to add forge_support command: " + addCmdResp.Error
+				return response
+			}
+
 			// Create the parameters for forge_support as a JSON string
 			forgeParams := map[string]interface{}{
 				"agent":                                    "fawkes",
