@@ -22,10 +22,12 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			return args.LoadArgsFromJSONString(input)
+			// No parameters for this command
+			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
-			return args.LoadArgsFromDictionary(input)
+			// No parameters for this command
+			return nil
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
