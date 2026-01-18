@@ -41,6 +41,7 @@ func Initialize() {
 		RegisterCommand(&StartCLRCommand{})
 		RegisterCommand(&InlineAssemblyCommand{})
 		RegisterCommand(&InlineExecuteCommand{})
+		RegisterCommand(&VanillaInjectionCommand{})
 	}
 
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))
