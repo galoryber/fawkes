@@ -368,7 +368,8 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadBuildResponse.BuildMessage = "Failed to find final payload"
 	} else if mode == "windows-shellcode" {
 		// Convert DLL to shellcode using sRDI
-		shellcode, err := convertDllToShellcode(payloadBytes, "VoidFunc", true)
+		// Don't clear header (false) as it can cause execution issues
+		shellcode, err := convertDllToShellcode(payloadBytes, "VoidFunc", false)
 		if err != nil {
 			payloadBuildResponse.Success = false
 			payloadBuildResponse.BuildMessage = fmt.Sprintf("Failed to convert DLL to shellcode: %v", err)
@@ -377,11 +378,35 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			payloadBuildResponse.Payload = &shellcode
 			payloadBuildResponse.Success = true
 			payloadBuildResponse.BuildMessage = "Successfully built shellcode payload!"
+			// Set proper file extension
+			extension := "bin"
+			filename := fmt.Sprintf("fawkes.%s", extension)
+			payloadBuildResponse.UpdatedFilename = &filename
 		}
 	} else {
 		payloadBuildResponse.Payload = &payloadBytes
 		payloadBuildResponse.Success = true
 		payloadBuildResponse.BuildMessage = "Successfully built payload!"
+		// Set proper file extension based on mode
+		extension := "bin"
+		if mode == "shared" {
+			if targetOs == "windows" {
+				extension = "dll"
+			} else if targetOs == "darwin" {
+				extension = "dylib"
+			} else {
+				extension = "so"
+			}
+		} else {
+			// default-executable mode
+			if targetOs == "windows" {
+				extension = "exe"
+			} else {
+				extension = "bin"
+			}
+		}
+		filename := fmt.Sprintf("fawkes.%s", extension)
+		payloadBuildResponse.UpdatedFilename = &filename
 	}
 
 	//payloadBuildResponse.Status = agentstructs.PAYLOAD_BUILD_STATUS_ERROR
