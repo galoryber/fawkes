@@ -368,8 +368,8 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadBuildResponse.BuildMessage = "Failed to find final payload"
 	} else if mode == "windows-shellcode" {
 		// Convert DLL to shellcode using sRDI
-		// Don't clear header (false) as it can cause execution issues
-		shellcode, err := convertDllToShellcode(payloadBytes, "VoidFunc", false)
+		// Use "Run" function and clearHeader=true to match Merlin configuration
+		shellcode, err := convertDllToShellcode(payloadBytes, "Run", true)
 		if err != nil {
 			payloadBuildResponse.Success = false
 			payloadBuildResponse.BuildMessage = fmt.Sprintf("Failed to convert DLL to shellcode: %v", err)
