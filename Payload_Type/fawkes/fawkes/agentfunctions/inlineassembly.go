@@ -105,6 +105,35 @@ func init() {
 					},
 				},
 			},
+			// Forge-compatible parameters
+			{
+				Name:             "assembly_file",
+				ModalDisplayName: "Assembly File (Forge)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_FILE,
+				Description:      "Assembly file UUID from Forge (used by Forge Command Augmentation)",
+				DefaultValue:     nil,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Forge",
+						UIModalPosition:     0,
+					},
+				},
+			},
+			{
+				Name:             "assembly_arguments",
+				ModalDisplayName: "Assembly Arguments (Forge)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Assembly arguments from Forge (used by Forge Command Augmentation)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Forge",
+						UIModalPosition:     1,
+					},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			// For command line usage, we'd need to parse differently
@@ -125,9 +154,59 @@ func init() {
 			var fileContents []byte
 			var err error
 
-			// Determine which parameter group was used
-			switch strings.ToLower(taskData.Task.ParameterGroupName) {
-			case "default":
+			// Check if this is a Forge invocation
+			forgeFileID, forgeErr := taskData.Args.GetStringArg("assembly_file")
+			isForgeCall := (forgeErr == nil && forgeFileID != "")
+
+			if isForgeCall {
+				// Forge invocation - use Forge parameter names
+				fileID = forgeFileID
+
+				// Get file details
+				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil {
+					logging.LogError(err, "Failed to search for file")
+					response.Success = false
+					response.Error = "Failed to search for file: " + err.Error()
+					return response
+				}
+				if !search.Success {
+					response.Success = false
+					response.Error = "Failed to search for file: " + search.Error
+					return response
+				}
+				if len(search.Files) == 0 {
+					response.Success = false
+					response.Error = "File not found"
+					return response
+				}
+
+				filename = search.Files[0].Filename
+
+				// Get file contents
+				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil {
+					logging.LogError(err, "Failed to get file content")
+					response.Success = false
+					response.Error = "Failed to get file content: " + err.Error()
+					return response
+				}
+				if !getResp.Success {
+					response.Success = false
+					response.Error = getResp.Error
+					return response
+				}
+				fileContents = getResp.Content
+
+			} else {
+				// Normal invocation - use existing parameter logic
+				// Determine which parameter group was used
+				switch strings.ToLower(taskData.Task.ParameterGroupName) {
+				case "default":
 				// User selected an existing file from the dropdown by filename
 				filename, err = taskData.Args.GetStringArg("filename")
 				if err != nil {
@@ -232,13 +311,21 @@ func init() {
 				response.Success = false
 				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
 				return response
+				}
 			}
 
-			// Get the arguments parameter as string
+			// Get arguments (support both Forge and normal parameter names)
 			arguments := ""
-			argVal, err := taskData.Args.GetStringArg("arguments")
-			if err == nil {
+			// Try Forge parameter name first
+			argVal, err := taskData.Args.GetStringArg("assembly_arguments")
+			if err == nil && argVal != "" {
 				arguments = argVal
+			} else {
+				// Fall back to normal parameter name
+				argVal, err = taskData.Args.GetStringArg("arguments")
+				if err == nil {
+					arguments = argVal
+				}
 			}
 
 			// Build the display parameters

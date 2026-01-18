@@ -120,6 +120,20 @@ func init() {
 					},
 				},
 			},
+			// Forge-compatible parameter names
+			{
+				Name:             "bof_file",
+				ModalDisplayName: "BOF File (Forge)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_FILE,
+				Description:      "BOF file UUID (used by Forge)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Forge",
+						UIModalPosition:     0,
+					},
+				},
+			},
 			{
 				Name:             "file",
 				ModalDisplayName: "BOF File",
@@ -153,6 +167,21 @@ func init() {
 					},
 				},
 			},
+			// Forge-compatible entry point parameter
+			{
+				Name:             "function_name",
+				ModalDisplayName: "Function Name (Forge)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Entry point function name (used by Forge)",
+				DefaultValue:     "go",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Forge",
+						UIModalPosition:     1,
+					},
+				},
+			},
 			{
 				Name:             "arguments",
 				ModalDisplayName: "BOF Arguments",
@@ -168,6 +197,21 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						GroupName:           "New File",
+						UIModalPosition:     2,
+					},
+				},
+			},
+			// Forge-compatible arguments parameter (Array format)
+			{
+				Name:             "coff_arguments",
+				ModalDisplayName: "COFF Arguments (Forge)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_ARRAY,
+				Description:      "BOF arguments as Array (used by Forge) - already formatted by Forge",
+				DefaultValue:     []string{},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Forge",
 						UIModalPosition:     2,
 					},
 				},
@@ -190,9 +234,59 @@ func init() {
 			var fileContents []byte
 			var err error
 
-			// Determine which parameter group was used
-			switch strings.ToLower(taskData.Task.ParameterGroupName) {
-			case "default":
+			// Check if this is a Forge invocation by looking for bof_file parameter
+			forgeFileID, forgeErr := taskData.Args.GetStringArg("bof_file")
+			isForgeCall := (forgeErr == nil && forgeFileID != "")
+
+			if isForgeCall {
+				// Forge invocation - use Forge parameter names
+				fileID = forgeFileID
+
+				// Get file details
+				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil {
+					logging.LogError(err, "Failed to search for file")
+					response.Success = false
+					response.Error = "Failed to search for file: " + err.Error()
+					return response
+				}
+				if !search.Success {
+					response.Success = false
+					response.Error = "Failed to search for file: " + search.Error
+					return response
+				}
+				if len(search.Files) == 0 {
+					response.Success = false
+					response.Error = "File not found"
+					return response
+				}
+
+				filename = search.Files[0].Filename
+
+				// Get file contents
+				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil {
+					logging.LogError(err, "Failed to get file content")
+					response.Success = false
+					response.Error = "Failed to get file content: " + err.Error()
+					return response
+				}
+				if !getResp.Success {
+					response.Success = false
+					response.Error = getResp.Error
+					return response
+				}
+				fileContents = getResp.Content
+
+			} else {
+				// Normal invocation - use existing parameter logic
+				// Determine which parameter group was used
+				switch strings.ToLower(taskData.Task.ParameterGroupName) {
+				case "default":
 				// User selected an existing file from the dropdown
 				filename, err = taskData.Args.GetStringArg("filename")
 				if err != nil {
@@ -299,9 +393,11 @@ func init() {
 				response.Success = false
 				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
 				return response
+				}
 			}
 
-			// Get entry point and arguments
+			// Get entry point and arguments (support both Forge and normal parameter names)
+			var goffloaderArgs []string
 			entryPoint := "go"
 			entryVal, err := taskData.Args.GetStringArg("entry_point")
 			if err == nil && entryVal != "" {
@@ -315,7 +411,7 @@ func init() {
 			}
 
 			// Convert arguments to goffloader format
-			goffloaderArgs, err := convertToGoffloaderFormat(arguments)
+			goffloaderArgs, err = convertToGoffloaderFormat(arguments)
 			if err != nil {
 				logging.LogError(err, "Failed to convert BOF arguments")
 				response.Success = false
@@ -325,8 +421,8 @@ func init() {
 
 			// Build the display parameters
 			displayParams := fmt.Sprintf("BOF: %s, Entry: %s", filename, entryPoint)
-			if arguments != "" {
-				displayParams += fmt.Sprintf("\nArguments: %s", arguments)
+			if len(goffloaderArgs) > 0 {
+				displayParams += fmt.Sprintf("\nArguments: %v", goffloaderArgs)
 			}
 			response.DisplayParams = &displayParams
 
