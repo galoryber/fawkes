@@ -11,7 +11,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "enable-forge",
-		Description:         "Automatically register Fawkes with Forge Command Augmentation",
+		Description:         "Display Forge registration information for Fawkes",
 		HelpString:          "enable-forge",
 		Version:             1,
 		MitreAttackMappings: []string{},
@@ -35,27 +35,7 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
-			// First, add the forge_support command to this callback
-			addCmdResp, err := mythicrpc.SendMythicRPCCallbackAddCommand(mythicrpc.MythicRPCCallbackAddCommandMessage{
-				TaskID:   taskData.Task.ID,
-				Commands: []string{"forge_support"},
-			})
-
-			if err != nil {
-				logging.LogError(err, "Failed to add forge_support command to callback")
-				response.Success = false
-				response.Error = "Failed to add forge_support command: " + err.Error()
-				return response
-			}
-
-			if !addCmdResp.Success {
-				logging.LogError(nil, "forge_support command add failed", "error", addCmdResp.Error)
-				response.Success = false
-				response.Error = "Failed to add forge_support command: " + addCmdResp.Error
-				return response
-			}
-
-			// Create the parameters for forge_support as a JSON string
+			// Create the registration info
 			forgeParams := map[string]interface{}{
 				"agent":                                    "fawkes",
 				"bof_command":                              "inline-execute",
@@ -70,44 +50,45 @@ func init() {
 				"execute_assembly_argument_parameter_name": "",
 			}
 
-			// Marshal to JSON string
-			paramsJSON, err := json.Marshal(forgeParams)
+			// Marshal to pretty JSON
+			paramsJSON, err := json.MarshalIndent(forgeParams, "", "  ")
 			if err != nil {
-				logging.LogError(err, "Failed to marshal forge_support parameters")
+				logging.LogError(err, "Failed to marshal forge registration parameters")
 				response.Success = false
-				response.Error = "Failed to create forge_support parameters: " + err.Error()
+				response.Error = "Failed to create forge registration info: " + err.Error()
 				return response
 			}
 
-			// Create a subtask to call forge_support
-			subtaskResp, err := mythicrpc.SendMythicRPCTaskCreateSubtask(mythicrpc.MythicRPCTaskCreateSubtaskMessage{
-				TaskID:      taskData.Task.ID,
-				CommandName: "forge_support",
-				Params:      string(paramsJSON),
-			})
-
-			if err != nil {
-				logging.LogError(err, "Failed to create forge_support subtask")
-				response.Success = false
-				response.Error = "Failed to create forge_support subtask: " + err.Error()
-				return response
-			}
-
-			if !subtaskResp.Success {
-				logging.LogError(nil, "forge_support subtask creation failed", "error", subtaskResp.Error)
-				response.Success = false
-				response.Error = "Failed to create forge_support subtask: " + subtaskResp.Error
-				return response
-			}
-
-			// Mark as completed and provide user feedback
+			// Mark as completed and provide the registration info
 			completed := true
 			response.Completed = &completed
-			
-			displayParams := "Registering Fawkes with Forge Command Augmentation\n" +
-				"BOF Command: inline-execute\n" +
-				"Assembly Command: inlineassembly"
+
+			displayParams := "Forge Registration Information for Fawkes"
 			response.DisplayParams = &displayParams
+
+			output := "To register Fawkes with Forge Command Augmentation:\n\n" +
+				"1. Load Forge commands into this callback:\n" +
+				"   - In Mythic UI, go to this callback's page\n" +
+				"   - Click 'Load Commands' and select the Forge container\n" +
+				"   - Add the forge_support command\n\n" +
+				"2. Run the forge_support command with these parameters:\n\n" +
+				string(paramsJSON) + "\n\n" +
+				"3. Once registered, you can use:\n" +
+				"   - forge_collections -collectionName SliverArmory\n" +
+				"   - forge_register -collectionName SliverArmory -commandName whoami\n" +
+				"   - forge_bof_sa_whoami\n" +
+				"   - forge_collections -collectionName SharpCollection\n" +
+				"   - forge_register -collectionName SharpCollection -commandName Rubeus\n" +
+				"   - forge_net_Rubeus -args \"dump\""
+
+			// Create output response using MythicRPC
+			_, err = mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+				TaskID:   taskData.Task.ID,
+				Response: []byte(output),
+			})
+			if err != nil {
+				logging.LogError(err, "Failed to send response")
+			}
 
 			return response
 		},
