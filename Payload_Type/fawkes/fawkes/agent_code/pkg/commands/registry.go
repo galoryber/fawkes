@@ -43,6 +43,9 @@ func Initialize() {
 		RegisterCommand(&InlineExecuteCommand{})
 		RegisterCommand(&VanillaInjectionCommand{})
 		RegisterCommand(&ThreadlessInjectCommand{})
+		RegisterCommand(&StealTokenCommand{})
+		RegisterCommand(&MakeTokenCommand{})
+		RegisterCommand(&Rev2SelfCommand{})
 	}
 
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))

@@ -26,15 +26,18 @@ exit | `exit`                                                                   
 inline-assembly | `inline-assembly`                                                                                                          | **(Windows only)** Execute a .NET assembly in memory using the CLR. Select from previously uploaded assemblies or upload a new one. Supports command-line arguments. Use `start-clr` first for AMSI patching workflow.
 inline-execute | `inline-execute`                                                                                                          | **(Windows only)** Execute a Beacon Object File (BOF/COFF) in memory. Select from previously uploaded BOF files or upload a new one. **Note:** Argument packing is not fully functional - string arguments will crash. BOFs without arguments or with basic int/short types may work.
 ls | `ls [path]`                                                                                                        | List files and folders in `[path]`. Defaults to current working directory.
+make-token | `make-token -username <user> -domain <domain> -password <pass>` | **(Windows only)** Create a token from credentials and impersonate it (LOGON32_LOGON_NEW_CREDENTIALS). Use with domain credentials for network authentication under a different context.
 mkdir | `mkdir <directory>`                                                                                                        | Create a new directory (creates parent directories if needed).
 mv | `mv <source> <destination>`                                                                                                | Move or rename a file from source to destination.
 ps | `ps [-v] [-i PID] [filter]`                                                                                               | List running processes. Use -v for verbose output with command lines. Use -i to filter by specific PID. Optional filter to search by process name.
 pwd | `pwd`                                                                                                                     | Print working directory.
 read-memory | `read-memory <dll_name> <function_name> <start_index> <num_bytes>` | **(Windows only)** Read bytes from a DLL function address. Example: `read-memory amsi AmsiScanBuffer 0 8`
+rev2self | `rev2self` | **(Windows only)** Revert to the original security context by dropping any active impersonation token.
 rm | `rm <path>`                                                                                                                | Remove a file or directory (recursively removes directories).
 run | `run <command>`                                                                                                            | Execute a shell command and return the output.
 sleep | `sleep [seconds] [jitter]`                                                                                                       | Set the callback interval in seconds and jitter percentage.
 start-clr | `start-clr`                                                                                                                | **(Windows only)** Initialize the CLR v4.0.30319 and load amsi.dll into memory. Run this before `inline-assembly` to implement your own AMSI bypass using `write-memory` or `autopatch`.
+steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a security token from another process (e.g., lsass.exe, winlogon.exe). Useful for privilege escalation.
 threadless-inject | `threadless-inject`                                                                                                        | **(Windows only)** Inject shellcode using threadless injection by hooking a DLL function in a remote process. Default target: kernelbase.dll!CreateEventW. More stealthy than vanilla injection as it doesn't create new threads.
 upload | `upload`                                                                                                                   | Upload a file to the target with chunked file transfer. Use modal popup to select file and destination path.
 vanilla-injection | `vanilla-injection`                                                                                                        | **(Windows only)** Inject shellcode into a remote process using VirtualAllocEx/WriteProcessMemory/CreateRemoteThread. Select shellcode file and target PID.
@@ -54,6 +57,10 @@ The HTTP profile calls back to the Mythic server over the basic, non-dynamic pro
 Everything I know about Mythic Agents came from Mythic Docs or stealing code and ideas from the [Merlin](https://github.com/MythicAgents/merlin) and [Freyja](https://github.com/MythicAgents/freyja) agents. 
 
 And when that didn't work, I had Claude reference Merlin Freyja and Apollo for design choices and code references. 
+
+Specific techniques and implementations adapted from:
+- **Threadless Injection** - [CCob's ThreadlessInject](https://github.com/CCob/ThreadlessInject) (original C# implementation) and [dreamkinn's go-ThreadlessInject](https://github.com/dreamkinn/go-ThreadlessInject) (Go port)
+- **sRDI (Shellcode Reflective DLL Injection)** - [Merlin's Go-based sRDI implementation](https://github.com/MythicAgents/merlin), originally based on [Nick Landers' (monoxgas) sRDI](https://github.com/monoxgas/sRDI)
 
 In other words, I wrote nearly none of this. :) Thanks everybody else!
 
