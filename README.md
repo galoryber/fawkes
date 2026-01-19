@@ -24,6 +24,7 @@ cp | `cp <source> <destination>`                                                
 download | `download <path>`                                                                                                          | Download a file from the target. Supports chunked file transfer for any file size and file browser integration.
 exit | `exit`                                                                                                                   | Task agent to exit.
 inline-assembly | `inline-assembly`                                                                                                          | **(Windows only)** Execute a .NET assembly in memory using the CLR. Select from previously uploaded assemblies or upload a new one. Supports command-line arguments. Use `start-clr` first for AMSI patching workflow.
+inline-execute | `inline-execute`                                                                                                          | **(Windows only)** Execute a Beacon Object File (BOF/COFF) in memory. Select from previously uploaded BOF files or upload a new one. **Note:** Argument packing is not fully functional - string arguments will crash. BOFs without arguments or with basic int/short types may work.
 ls | `ls [path]`                                                                                                        | List files and folders in `[path]`. Defaults to current working directory.
 mkdir | `mkdir <directory>`                                                                                                        | Create a new directory (creates parent directories if needed).
 mv | `mv <source> <destination>`                                                                                                | Move or rename a file from source to destination.
@@ -34,8 +35,11 @@ rm | `rm <path>`                                                                
 run | `run <command>`                                                                                                            | Execute a shell command and return the output.
 sleep | `sleep [seconds] [jitter]`                                                                                                       | Set the callback interval in seconds and jitter percentage.
 start-clr | `start-clr`                                                                                                                | **(Windows only)** Initialize the CLR v4.0.30319 and load amsi.dll into memory. Run this before `inline-assembly` to implement your own AMSI bypass using `write-memory` or `autopatch`.
+threadless-inject | `threadless-inject`                                                                                                        | **(Windows only)** Inject shellcode using threadless injection by hooking a DLL function in a remote process. Default target: kernelbase.dll!CreateEventW. More stealthy than vanilla injection as it doesn't create new threads.
 upload | `upload`                                                                                                                   | Upload a file to the target with chunked file transfer. Use modal popup to select file and destination path.
+vanilla-injection | `vanilla-injection`                                                                                                        | **(Windows only)** Inject shellcode into a remote process using VirtualAllocEx/WriteProcessMemory/CreateRemoteThread. Select shellcode file and target PID.
 write-memory | `write-memory <dll_name> <function_name> <start_index> <hex_bytes>` | **(Windows only)** Write bytes to a DLL function address. Example: `write-memory amsi AmsiScanBuffer 0 909090`
+
 
 
 
