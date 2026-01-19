@@ -34,7 +34,7 @@ func init() {
 				DynamicQueryFunction:                    getShellcodeFileList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: false,
+						ParameterIsRequired: true,
 						GroupName:           "Default",
 						UIModalPosition:     1,
 					},
