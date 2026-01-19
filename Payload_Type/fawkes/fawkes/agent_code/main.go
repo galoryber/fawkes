@@ -77,7 +77,7 @@ func runAgent() {
 		Domain:        "",
 		ExternalIP:    "",
 		Host:          getHostname(),
-		Integrity:     3,
+		Integrity:     getIntegrityLevel(),
 		InternalIP:    getInternalIP(),
 		OS:            getOperatingSystem(),
 		PID:           os.Getpid(),
