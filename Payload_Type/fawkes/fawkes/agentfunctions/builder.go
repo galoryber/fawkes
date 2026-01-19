@@ -9,62 +9,18 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/MythicAgents/merlin/Payload_Type/merlin/container/pkg/srdi"
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
-// convertDllToShellcode uses sRDI Python tool to convert a DLL to position-independent shellcode
+// convertDllToShellcode uses Merlin's Go-based sRDI to convert a DLL to position-independent shellcode
 func convertDllToShellcode(dllBytes []byte, functionName string, clearHeader bool) ([]byte, error) {
-	// Write DLL to temp file
-	tmpDll, err := os.CreateTemp("", "fawkes-*.dll")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp DLL file: %w", err)
-	}
-	defer os.Remove(tmpDll.Name())
-	
-	if _, err := tmpDll.Write(dllBytes); err != nil {
-		return nil, fmt.Errorf("failed to write DLL to temp file: %w", err)
-	}
-	tmpDll.Close()
-	
-	// Build sRDI command - it creates <input>.bin file
-	// Using same parameters as Merlin: function=Run, clearHeader=true
-	args := []string{"/opt/sRDI/Python/ConvertToShellcode.py", tmpDll.Name()}
-	if functionName != "" {
-		args = append(args, "-f", functionName)
-	}
-	if clearHeader {
-		args = append(args, "-c")
-	}
-	
-	// Execute sRDI
-	cmd := exec.Command("python3", args...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("sRDI conversion failed: %v\nStderr: %s\nStdout: %s", err, stderr.String(), stdout.String())
-	}
-	
-	// sRDI creates output as <input>.bin - note it's not .dll.bin, just the input filename + .bin
-	shellcodeFile := tmpDll.Name() + ".bin"
-	defer os.Remove(shellcodeFile)
-	
-	// Read the shellcode file
-	shellcode, err := os.ReadFile(shellcodeFile)
-	if err != nil {
-		// Try without the .dll extension
-		shellcodeFile = strings.TrimSuffix(tmpDll.Name(), ".dll") + ".bin"
-		shellcode, err = os.ReadFile(shellcodeFile)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read shellcode output from %s: %w\nStdout: %s\nStderr: %s", shellcodeFile, err, stdout.String(), stderr.String())
-		}
-		defer os.Remove(shellcodeFile)
-	}
+	// Use Merlin's Go sRDI implementation - same as working Merlin agent
+	shellcode := srdi.DLLToReflectiveShellcode(dllBytes, functionName, clearHeader, "")
 	
 	if len(shellcode) == 0 {
-		return nil, fmt.Errorf("shellcode output is empty")
+		return nil, fmt.Errorf("sRDI conversion produced empty shellcode")
 	}
 	
 	return shellcode, nil
