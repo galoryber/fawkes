@@ -68,43 +68,28 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Get current token info for comparison
+	// Try to get current token info for comparison (may fail for non-admin)
+	var output string
 	currentHandle, err := windows.GetCurrentProcess()
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get current process: %v", err),
-			Status:    "error",
-			Completed: true,
+	if err == nil {
+		var currentToken windows.Token
+		err = windows.OpenProcessToken(currentHandle, windows.TOKEN_QUERY, &currentToken)
+		if err == nil {
+			defer currentToken.Close()
+			currentUser, err := currentToken.GetTokenUser()
+			if err == nil {
+				currentUsername, currentDomain, _, err := currentUser.User.Sid.LookupAccount("")
+				if err == nil {
+					output = fmt.Sprintf("[*] Current token: %s\\%s\n", currentDomain, currentUsername)
+				}
+			}
 		}
 	}
-
-	var currentToken windows.Token
-	err = windows.OpenProcessToken(currentHandle, windows.TOKEN_QUERY, &currentToken)
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open current process token: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+	
+	// If we couldn't get current token info, just continue without it
+	if output == "" {
+		output = "[*] Creating new token...\n"
 	}
-	defer currentToken.Close()
-
-	currentUser, err := currentToken.GetTokenUser()
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get current token user: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	currentUsername, currentDomain, _, err := currentUser.User.Sid.LookupAccount("")
-	if err != nil {
-		currentUsername = "unknown"
-		currentDomain = "unknown"
-	}
-
-	output := fmt.Sprintf("[*] Current token: %s\\%s\n", currentDomain, currentUsername)
 
 	// Convert strings to UTF-16
 	usernamePtr, err := windows.UTF16PtrFromString(params.Username)

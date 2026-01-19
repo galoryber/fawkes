@@ -22,52 +22,65 @@ func (c *Rev2SelfCommand) Description() string {
 }
 
 func (c *Rev2SelfCommand) Execute(task structs.Task) structs.CommandResult {
-	// Get current token info before reverting
-	var currentToken windows.Token
-	err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, false, &currentToken)
-	
-	var currentInfo string
+	var output string
+
+	// Get current context BEFORE reverting (could be thread or process token)
+	var beforeUsername, beforeDomain string
+	var threadToken windows.Token
+	err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, false, &threadToken)
 	if err == nil {
-		defer currentToken.Close()
-		
-		currentUser, err := currentToken.GetTokenUser()
+		// We have a thread token (impersonating)
+		defer threadToken.Close()
+		threadUser, err := threadToken.GetTokenUser()
 		if err == nil {
-			currentUsername, currentDomain, _, err := currentUser.User.Sid.LookupAccount("")
-			if err != nil {
-				currentUsername = "unknown"
-				currentDomain = "unknown"
+			beforeUsername, beforeDomain, _, err = threadUser.User.Sid.LookupAccount("")
+			if err == nil {
+				output += fmt.Sprintf("[*] Current context: %s\\%s (impersonated)\n", beforeDomain, beforeUsername)
 			}
-			currentInfo = fmt.Sprintf("[*] Current impersonated token: %s\\%s\n", currentDomain, currentUsername)
 		}
 	} else {
-		currentInfo = "[*] No active impersonation detected\n"
+		// No thread token, check process token
+		processHandle, err := windows.GetCurrentProcess()
+		if err == nil {
+			var processToken windows.Token
+			err = windows.OpenProcessToken(processHandle, windows.TOKEN_QUERY, &processToken)
+			if err == nil {
+				defer processToken.Close()
+				processUser, err := processToken.GetTokenUser()
+				if err == nil {
+					beforeUsername, beforeDomain, _, err = processUser.User.Sid.LookupAccount("")
+					if err == nil {
+						output += fmt.Sprintf("[*] Current context: %s\\%s (process token)\n", beforeDomain, beforeUsername)
+					}
+				}
+			}
+		}
 	}
 
 	// Call RevertToSelf to drop impersonation
 	ret, _, err := procRevertToSelf.Call()
 	if ret == 0 {
 		return structs.CommandResult{
-			Output:    currentInfo + fmt.Sprintf("RevertToSelf failed: %v", err),
+			Output:    output + fmt.Sprintf("[-] RevertToSelf failed: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	output := currentInfo + "[+] Successfully reverted to original security context\n"
+	output += "[+] Successfully reverted to original security context\n"
 
-	// Get new token info (should be process token now)
+	// Get AFTER context (should be process token now)
 	processHandle, err := windows.GetCurrentProcess()
 	if err == nil {
 		var processToken windows.Token
 		err = windows.OpenProcessToken(processHandle, windows.TOKEN_QUERY, &processToken)
 		if err == nil {
 			defer processToken.Close()
-			
 			processUser, err := processToken.GetTokenUser()
 			if err == nil {
-				processUsername, processDomain, _, err := processUser.User.Sid.LookupAccount("")
+				afterUsername, afterDomain, _, err := processUser.User.Sid.LookupAccount("")
 				if err == nil {
-					output += fmt.Sprintf("[*] Current token: %s\\%s", processDomain, processUsername)
+					output += fmt.Sprintf("[*] Current context: %s\\%s", afterDomain, afterUsername)
 				}
 			}
 		}
