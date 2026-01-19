@@ -151,29 +151,14 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	output += "[+] Successfully impersonated new token\n"
+	// Don't close the handle - it needs to stay open for the impersonation to remain valid
+	// defer windows.CloseHandle(newTokenHandle) // REMOVED
 
-	// Get new token info
-	var impersonatedToken windows.Token
-	err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, false, &impersonatedToken)
-	if err != nil {
-		output += fmt.Sprintf("[!] Warning: Could not verify impersonation: %v\n", err)
-	} else {
-		defer impersonatedToken.Close()
-
-		impersonatedUser, err := impersonatedToken.GetTokenUser()
-		if err != nil {
-			output += fmt.Sprintf("[!] Warning: Could not get impersonated user info: %v\n", err)
-		} else {
-			impersonatedUsername, impersonatedDomain, _, err := impersonatedUser.User.Sid.LookupAccount("")
-			if err != nil {
-				impersonatedUsername = "unknown"
-				impersonatedDomain = "unknown"
-			}
-			output += fmt.Sprintf("[*] New token: %s\\%s\n", impersonatedDomain, impersonatedUsername)
-		}
-	}
-
+	output += "[+] Successfully applied token for network authentication\n"
+	output += "[!] Note: LOGON32_LOGON_NEW_CREDENTIALS only affects NETWORK operations\n"
+	output += "[*] Local operations (whoami, file access) still use your original token\n"
+	output += "[*] Network operations (SMB, WMI, etc.) will use the new credentials\n"
+	output += "[*] Test with: ls \\\\remotehost\\share or net use commands\n"
 	output += "[*] Use 'rev2self' to revert to original token"
 
 	return structs.CommandResult{
