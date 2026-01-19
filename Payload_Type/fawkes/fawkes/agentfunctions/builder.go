@@ -28,6 +28,7 @@ func convertDllToShellcode(dllBytes []byte, functionName string, clearHeader boo
 	tmpDll.Close()
 	
 	// Build sRDI command - it creates <input>.bin file
+	// Using same parameters as Merlin: function=Run, clearHeader=true
 	args := []string{"/opt/sRDI/Python/ConvertToShellcode.py", tmpDll.Name()}
 	if functionName != "" {
 		args = append(args, "-f", functionName)
