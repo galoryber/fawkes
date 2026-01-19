@@ -100,11 +100,11 @@ func stealToken(pid uint32) (string, error) {
 	}
 	defer windows.CloseHandle(hProcess)
 
-	// Open process token with TOKEN_DUPLICATE | TOKEN_QUERY (like Apollo)
+	// Open process token with TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_QUERY (like Apollo)
 	var hToken windows.Token
 	err = windows.OpenProcessToken(
 		hProcess,
-		windows.TOKEN_DUPLICATE|windows.TOKEN_QUERY,
+		windows.TOKEN_DUPLICATE|windows.TOKEN_ASSIGN_PRIMARY|windows.TOKEN_QUERY,
 		&hToken,
 	)
 	if err != nil {
