@@ -45,7 +45,7 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	
 	// Enable required privileges for token manipulation
 	debugLog.WriteString("[DEBUG] Enabling token privileges...\n")
-	enableTokenPrivileges()
+	enableTokenPrivileges(&debugLog)
 	
 	var params MakeTokenParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {

