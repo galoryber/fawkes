@@ -41,7 +41,10 @@ type MakeTokenParams struct {
 }
 
 func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
-	// Enable required privileges for token manipulation (SeImpersonatePrivilege is critical)
+	var debugLog strings.Builder
+	
+	// Enable required privileges for token manipulation
+	debugLog.WriteString("[DEBUG] Enabling token privileges...\n")
 	enableTokenPrivileges()
 	
 	var params MakeTokenParams
@@ -72,7 +75,9 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Try to get current token info for comparison (may fail for non-admin)
+	debugLog.WriteString(fmt.Sprintf("[DEBUG] Attempting to create token for %s\\%s\n", params.Domain, params.Username))
+
+	// Try to get current token info
 	var output string
 	currentHandle, err := windows.GetCurrentProcess()
 	if err == nil {
@@ -85,6 +90,7 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 				currentUsername, currentDomain, _, err := currentUser.User.Sid.LookupAccount("")
 				if err == nil {
 					output = fmt.Sprintf("Old identity: %s\\%s\n", currentDomain, currentUsername)
+					debugLog.WriteString(fmt.Sprintf("[DEBUG] Current identity: %s\\%s\n", currentDomain, currentUsername))
 				}
 			}
 		}
@@ -94,7 +100,7 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	usernamePtr, err := windows.UTF16PtrFromString(params.Username)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Failed to convert username: %v", err),
+			Output:    debugLog.String() + output + fmt.Sprintf("Failed to convert username: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -103,7 +109,7 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	domainPtr, err := windows.UTF16PtrFromString(params.Domain)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Failed to convert domain: %v", err),
+			Output:    debugLog.String() + output + fmt.Sprintf("Failed to convert domain: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -112,92 +118,78 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	passwordPtr, err := windows.UTF16PtrFromString(params.Password)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Failed to convert password: %v", err),
+			Output:    debugLog.String() + output + fmt.Sprintf("Failed to convert password: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	// Call LogonUserW to create a new token
-	var newTokenHandle windows.Handle
+	// Call LogonUserW to create a new token (exactly like Sliver)
+	debugLog.WriteString("[DEBUG] Calling LogonUserW...\n")
+	var token windows.Token
 	ret, _, err := procLogonUserW.Call(
 		uintptr(unsafe.Pointer(usernamePtr)),
 		uintptr(unsafe.Pointer(domainPtr)),
 		uintptr(unsafe.Pointer(passwordPtr)),
 		uintptr(LOGON32_LOGON_INTERACTIVE),
 		uintptr(LOGON32_PROVIDER_DEFAULT),
-		uintptr(unsafe.Pointer(&newTokenHandle)),
+		uintptr(unsafe.Pointer(&token)),
 	)
 
 	if ret == 0 {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("LogonUserW failed: %v", err),
+			Output:    debugLog.String() + output + fmt.Sprintf("LogonUserW failed: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	// Convert to Token type and duplicate as impersonation token
-	primaryToken := windows.Token(newTokenHandle)
-	
-	var hDupToken windows.Token
-	err = windows.DuplicateTokenEx(
-		primaryToken,
-		windows.TOKEN_ALL_ACCESS,
-		nil,
-		windows.SecurityImpersonation,
-		windows.TokenImpersonation,
-		&hDupToken,
-	)
+	debugLog.WriteString(fmt.Sprintf("[DEBUG] LogonUserW succeeded, token: 0x%x\n", token))
+
+	// Impersonate directly using the token from LogonUser (like Sliver - NO duplication!)
+	debugLog.WriteString("[DEBUG] Calling ImpersonateLoggedOnUser...\n")
+	ret, _, err = procImpersonateLoggedOnUser.Call(uintptr(token))
 	if err != nil {
-		primaryToken.Close()
+		token.Close()
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("DuplicateTokenEx failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	
-	// Close the primary token, keep the impersonation token
-	primaryToken.Close()
-	
-	// Impersonate using the duplicated impersonation token
-	ret, _, err = procImpersonateLoggedOnUser.Call(uintptr(hDupToken))
-	if ret == 0 {
-		hDupToken.Close()
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("ImpersonateLoggedOnUser failed: %v", err),
+			Output:    debugLog.String() + output + fmt.Sprintf("ImpersonateLoggedOnUser failed: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	// Keep the token handle open - needed for impersonation to remain valid
-	// Will be cleaned up on rev2self or process exit
+	debugLog.WriteString("[DEBUG] ImpersonateLoggedOnUser succeeded\n")
 
-	// Verify impersonation by checking thread token (openAsSelf=true to check from process context)
+	// Keep token open - it will be closed on rev2self or process exit
+	
+	// Verify impersonation by checking thread token
+	debugLog.WriteString("[DEBUG] Verifying impersonation...\n")
 	var hThreadToken windows.Token
 	err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, true, &hThreadToken)
 	if err == nil {
 		defer hThreadToken.Close()
+		debugLog.WriteString("[DEBUG] OpenThreadToken succeeded\n")
 		threadTokenUser, err := hThreadToken.GetTokenUser()
 		if err == nil {
 			currentUsername, currentDomain, _, err := threadTokenUser.User.Sid.LookupAccount("")
 			if err == nil {
 				output += fmt.Sprintf("Successfully impersonated %s\\%s", currentDomain, currentUsername)
+				debugLog.WriteString(fmt.Sprintf("[DEBUG] Verified: %s\\%s\n", currentDomain, currentUsername))
 			} else {
-				output += "Successfully impersonated (verification lookup failed)"
+				output += "Successfully impersonated (verification SID lookup failed)"
+				debugLog.WriteString(fmt.Sprintf("[DEBUG] SID lookup failed: %v\n", err))
 			}
 		} else {
-			output += "Successfully impersonated (verification query failed)"
+			output += "Successfully impersonated (verification GetTokenUser failed)"
+			debugLog.WriteString(fmt.Sprintf("[DEBUG] GetTokenUser failed: %v\n", err))
 		}
 	} else {
-		// OpenThreadToken failed - add detailed error
-		output += fmt.Sprintf("Impersonation may have failed - OpenThreadToken error: %v", err)
+		output += fmt.Sprintf("Warning: Impersonation succeeded but verification failed: %v", err)
+		debugLog.WriteString(fmt.Sprintf("[DEBUG] OpenThreadToken failed: %v\n", err))
 	}
 
 	return structs.CommandResult{
-		Output:    strings.TrimSpace(output),
+		Output:    debugLog.String() + "\n" + strings.TrimSpace(output),
 		Status:    "success",
 		Completed: true,
 	}
