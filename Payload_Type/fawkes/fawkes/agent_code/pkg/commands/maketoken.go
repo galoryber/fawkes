@@ -41,6 +41,9 @@ type MakeTokenParams struct {
 }
 
 func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
+	// Enable required privileges for token manipulation (SeImpersonatePrivilege is critical)
+	enableTokenPrivileges()
+	
 	var params MakeTokenParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
 		return structs.CommandResult{

