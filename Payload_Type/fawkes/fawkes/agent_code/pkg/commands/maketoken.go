@@ -56,29 +56,14 @@ type MakeTokenParams struct {
 }
 
 // Execute implements xenon's TokenMake function from Token.c (lines 189-264)
+// Matches xenon line-by-line: parse args, revert token, LogonUserA, impersonate, get user info
 func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
-	// Parse arguments
+	// Parse arguments - xenon Token.c lines 209-215
+	// Order: Domain, User, Password, LogonType
 	var params MakeTokenParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	// Validate required parameters
-	if params.Username == "" {
-		return structs.CommandResult{
-			Output:    "Username is required",
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	if params.Password == "" {
-		return structs.CommandResult{
-			Output:    "Password is required",
 			Status:    "error",
 			Completed: true,
 		}
@@ -89,19 +74,22 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		params.Domain = "."
 	}
 
-	// Default to LOGON32_LOGON_NEW_CREDENTIALS if not specified (xenon default)
+	// Default to LOGON32_LOGON_NEW_CREDENTIALS (9) if not specified
 	if params.LogonType == 0 {
 		params.LogonType = LOGON32_LOGON_NEW_CREDENTIALS
 	}
 
-	// IdentityAgentRevertToken() - Clean up any existing token (xenon Identity.c lines 35-52)
+	// xenon Token.c line 218: IdentityAgentRevertToken()
+	// This matches Identity.c lines 35-52: close existing token, set to NULL, RevertToSelf()
 	if gIdentityToken != 0 {
 		windows.CloseHandle(windows.Handle(gIdentityToken))
-		gIdentityToken = 0
 	}
+	gIdentityToken = 0
+	
+	// RevertToSelf() - drop any existing impersonation
 	windows.RevertToSelf()
 
-	// Convert strings to UTF-16 for Windows API
+	// Convert strings to UTF-16 for Windows API (LogonUserW requires wide strings)
 	usernamePtr, err := syscall.UTF16PtrFromString(params.Username)
 	if err != nil {
 		return structs.CommandResult{
@@ -129,22 +117,26 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Determine provider based on logon type (xenon Token.c line 226)
+	// xenon Token.c lines 220-226: Select provider based on logon type
+	// LOGON32_LOGON_NEW_CREDENTIALS only applies credentials when interacting with remote resources
+	// Use LOGON32_PROVIDER_WINNT50 for NEW_CREDENTIALS, otherwise DEFAULT
 	provider := LOGON32_PROVIDER_DEFAULT
 	if params.LogonType == LOGON32_LOGON_NEW_CREDENTIALS {
 		provider = LOGON32_PROVIDER_WINNT50
 	}
 
-	// Call LogonUserW to create token and store in gIdentityToken (xenon Token.c line 226)
+	// xenon Token.c line 226: LogonUserA(User, Domain, Password, LogonType, Provider, &gIdentityToken)
+	// CRITICAL: Result is stored DIRECTLY in gIdentityToken (6th parameter is output)
 	ret, _, err := procLogonUserW.Call(
-		uintptr(unsafe.Pointer(usernamePtr)),
-		uintptr(unsafe.Pointer(domainPtr)),
-		uintptr(unsafe.Pointer(passwordPtr)),
-		uintptr(params.LogonType),
-		uintptr(provider),
-		uintptr(unsafe.Pointer(&gIdentityToken)),
+		uintptr(unsafe.Pointer(usernamePtr)),    // lpszUsername
+		uintptr(unsafe.Pointer(domainPtr)),      // lpszDomain  
+		uintptr(unsafe.Pointer(passwordPtr)),    // lpszPassword
+		uintptr(params.LogonType),               // dwLogonType
+		uintptr(provider),                       // dwLogonProvider
+		uintptr(unsafe.Pointer(&gIdentityToken)), // phToken (output - stored in global)
 	)
 
+	// xenon Token.c line 228-233: Check if LogonUserA failed
 	if ret == 0 {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("LogonUserW failed: %v", err),
@@ -153,7 +145,7 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Check if token was created (xenon Token.c line 234)
+	// xenon Token.c line 234: Check if gIdentityToken != NULL
 	if gIdentityToken == 0 {
 		return structs.CommandResult{
 			Output:    "LogonUserW succeeded but returned null token",
@@ -162,9 +154,10 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Impersonate the token (xenon Token.c line 236)
+	// xenon Token.c line 236: ImpersonateLoggedOnUser(gIdentityToken)
 	ret, _, err = procImpersonateLoggedOnUser.Call(uintptr(gIdentityToken))
 	if ret == 0 {
+		// Failed to impersonate - clean up (xenon Token.c line 238-243)
 		windows.CloseHandle(windows.Handle(gIdentityToken))
 		gIdentityToken = 0
 		return structs.CommandResult{
@@ -174,13 +167,19 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Get the new identity for confirmation (xenon Token.c lines 244-252)
+	// xenon Token.c lines 244-252: Get user info to confirm impersonation
+	// Calls IdentityGetUserInfo(gIdentityToken) which returns "domain\\username"
 	accountName, err := getTokenUserInfo(gIdentityToken)
 	if err != nil {
-		// Still succeeded, just couldn't get name
-		accountName = "Successfully impersonated (unable to retrieve account name)"
+		// xenon Token.c lines 245-251: Error getting user info
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Could not get identity for token. ERROR: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
+	// xenon Token.c lines 253-259: Success - return account name
 	return structs.CommandResult{
 		Output:    accountName,
 		Status:    "success",
