@@ -50,15 +50,14 @@ const (
 	// Combined access for steal-token: query + duplicate + impersonate
 	STEAL_TOKEN_ACCESS = TOKEN_QUERY | TOKEN_DUPLICATE | TOKEN_IMPERSONATE
 
-	// Process access rights
-	PROCESS_QUERY_INFORMATION         = 0x0400
+	// Process access rights (PROCESS_QUERY_INFORMATION is in vanillainjection.go)
 	PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 )
 
 // Windows API procedures - shared across all token commands
+// Note: kernel32 is declared in vanillainjection.go
 var (
 	advapi32                    = windows.NewLazySystemDLL("advapi32.dll")
-	kernel32                    = windows.NewLazySystemDLL("kernel32.dll")
 	procLogonUserW              = advapi32.NewProc("LogonUserW")
 	procImpersonateLoggedOnUser = advapi32.NewProc("ImpersonateLoggedOnUser")
 	procRevertToSelf            = advapi32.NewProc("RevertToSelf")
