@@ -4,14 +4,14 @@
 package commands
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
-	"os"
+	"strings"
 
-	"github.com/Ne0nd0g/go-coff/coff"
+	"github.com/praetorian-inc/goffloader/src/coff"
+	"github.com/praetorian-inc/goffloader/src/lighthouse"
+
 	"fawkes/pkg/structs"
 )
 
@@ -75,49 +75,27 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		}
 	}
 
-	// Parse the COFF object
-	object, err := coff.ParseObject(bofBytes)
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing COFF object: %v", err),
-			Status:    "error",
-			Completed: true,
+	// Pack the arguments using goffloader's lighthouse package
+	var argBytes []byte
+	if len(params.Arguments) > 0 {
+		argBytes, err = lighthouse.PackArgs(params.Arguments)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error packing BOF arguments: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
 		}
 	}
 
-	// Load the COFF object (process relocations)
-	if err := object.Load(); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error loading COFF object: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+	// Execute the BOF using goffloader
+	// goffloader handles output capture internally via channels
+	entryPoint := params.EntryPoint
+	if entryPoint == "" {
+		entryPoint = "go"
 	}
 
-	// Capture stdout to get BOF output
-	oldStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
-
-	// Execute the BOF in a goroutine
-	outputChan := make(chan string, 1)
-
-	go func() {
-		// Capture the output
-		var buf bytes.Buffer
-		io.Copy(&buf, r)
-		outputChan <- buf.String()
-	}()
-
-	// Run the BOF
-	err = object.Run(params.EntryPoint, params.Arguments)
-
-	// Restore stdout
-	w.Close()
-	os.Stdout = oldStdout
-
-	// Get the captured output
-	bofOutput := <-outputChan
+	bofOutput, err := coff.LoadWithMethod(bofBytes, argBytes, entryPoint)
 
 	// Check for execution errors
 	if err != nil {
@@ -131,6 +109,9 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 			Completed: true,
 		}
 	}
+
+	// Clean up the output (remove trailing newlines)
+	bofOutput = strings.TrimSpace(bofOutput)
 
 	// Return the BOF output
 	if bofOutput == "" {
