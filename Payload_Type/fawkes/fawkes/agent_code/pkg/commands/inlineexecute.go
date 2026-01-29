@@ -10,9 +10,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/praetorian-inc/goffloader/src/coff"
-	"github.com/praetorian-inc/goffloader/src/lighthouse"
-
 	"fawkes/pkg/structs"
 )
 
@@ -80,10 +77,10 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		}
 	}
 
-	// Pack the arguments using goffloader's lighthouse package
+	// Pack the arguments using our custom PackArgs (fixes GC issues in goffloader)
 	var argBytes []byte
 	if len(params.Arguments) > 0 {
-		argBytes, err = lighthouse.PackArgs(params.Arguments)
+		argBytes, err = PackArgs(params.Arguments)
 		if err != nil {
 			return structs.CommandResult{
 				Output:    fmt.Sprintf("Error packing BOF arguments: %v", err),
@@ -95,14 +92,13 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		debugInfo += fmt.Sprintf("[DEBUG] Packed args (%d bytes): %s\n", len(argBytes), hex.EncodeToString(argBytes))
 	}
 
-	// Execute the BOF using goffloader
-	// goffloader handles output capture internally via channels
+	// Execute the BOF using our custom loader with fixed Beacon API
 	entryPoint := params.EntryPoint
 	if entryPoint == "" {
 		entryPoint = "go"
 	}
 
-	bofOutput, err := coff.LoadWithMethod(bofBytes, argBytes, entryPoint)
+	bofOutput, err := LoadAndRunBOF(bofBytes, argBytes, entryPoint)
 
 	// Check for execution errors
 	if err != nil {
