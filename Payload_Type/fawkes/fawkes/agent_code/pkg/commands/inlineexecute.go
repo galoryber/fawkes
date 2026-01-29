@@ -5,6 +5,7 @@ package commands
 
 import (
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -90,6 +91,8 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 				Completed: true,
 			}
 		}
+		// DEBUG: Show packed bytes
+		debugInfo += fmt.Sprintf("[DEBUG] Packed args (%d bytes): %s\n", len(argBytes), hex.EncodeToString(argBytes))
 	}
 
 	// Execute the BOF using goffloader
