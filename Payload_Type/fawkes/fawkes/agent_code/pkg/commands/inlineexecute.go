@@ -42,11 +42,15 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
+			Output:    fmt.Sprintf("Error parsing parameters: %v\nRaw params: %s", err, task.Params),
 			Status:    "error",
 			Completed: true,
 		}
 	}
+
+	// DEBUG: Log what we received
+	debugInfo := fmt.Sprintf("[DEBUG] Entry point: %s\n[DEBUG] Arguments (%d): %v\n",
+		params.EntryPoint, len(params.Arguments), params.Arguments)
 
 	// Validate BOF data
 	if params.BOFB64 == "" {
@@ -99,7 +103,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 
 	// Check for execution errors
 	if err != nil {
-		output := fmt.Sprintf("Error executing BOF: %v", err)
+		output := fmt.Sprintf("%s\nError executing BOF: %v", debugInfo, err)
 		if bofOutput != "" {
 			output += fmt.Sprintf("\n\nBOF Output:\n%s", bofOutput)
 		}
@@ -119,7 +123,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 
 	return structs.CommandResult{
-		Output:    bofOutput,
+		Output:    debugInfo + "\n" + bofOutput,
 		Status:    "success",
 		Completed: true,
 	}
