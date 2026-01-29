@@ -113,20 +113,17 @@ func BOFPackShortString(s string) ([]byte, error) {
 	return BOFPackShort(uint16(i))
 }
 
-// BOFPackString converts the string to goffloader's format (UTF-16 low bytes only for ASCII compatibility)
-// This matches goffloader's PackString which uses windows.UTF16FromString but only writes byte(c)
+// BOFPackString packs a null-terminated ANSI string for BOF arguments
+// Format: [4-byte length (little-endian)] [string bytes] [null terminator]
+// Length includes the null terminator byte
 func BOFPackString(s string) ([]byte, error) {
-	// Match goffloader: Convert to UTF-16, but only write low bytes
-	d := utf16.Encode([]rune(s))
+	// Convert to bytes and add null terminator (matching Apollo's format)
+	data := append([]byte(s), 0)
 
 	buff := make([]byte, 4)
-	// Prefix with the length (number of UTF-16 code units, not bytes)
-	binary.LittleEndian.PutUint32(buff, uint32(len(d)))
-
-	// Write only the low byte of each UTF-16 code unit (matching goffloader's bug/feature)
-	for _, c := range d {
-		buff = append(buff, byte(c))
-	}
+	// Prefix with the length (including null terminator)
+	binary.LittleEndian.PutUint32(buff, uint32(len(data)))
+	buff = append(buff, data...)
 	return buff, nil
 }
 
