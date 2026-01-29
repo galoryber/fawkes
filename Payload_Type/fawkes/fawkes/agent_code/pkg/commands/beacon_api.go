@@ -23,18 +23,18 @@ type DataParser struct {
 }
 
 var (
-	kernel32         = syscall.MustLoadDLL("kernel32.dll")
-	procVirtualAlloc = kernel32.MustFindProc("VirtualAlloc")
+	bofKernel32         = syscall.MustLoadDLL("kernel32.dll")
+	bofProcVirtualAlloc = bofKernel32.MustFindProc("VirtualAlloc")
 )
 
 const (
-	MEM_COMMIT  = 0x1000
-	MEM_RESERVE = 0x2000
+	bofMemCommit  = 0x1000
+	bofMemReserve = 0x2000
 )
 
 // virtualAllocBytes allocates memory outside of Go's GC
 func virtualAllocBytes(size uint32) (uintptr, error) {
-	addr, _, err := procVirtualAlloc.Call(0, uintptr(size), MEM_COMMIT|MEM_RESERVE, windows.PAGE_READWRITE)
+	addr, _, err := bofProcVirtualAlloc.Call(0, uintptr(size), bofMemCommit|bofMemReserve, windows.PAGE_READWRITE)
 	if addr == 0 {
 		return 0, err
 	}

@@ -19,9 +19,9 @@ import (
 // Based on goffloader but with GC-safe BeaconDataExtract
 
 const (
-	IMAGE_SCN_MEM_EXECUTE = 0x20000000
-	PAGE_EXECUTE_READ     = windows.PAGE_EXECUTE_READ
-	PAGE_READWRITE        = windows.PAGE_READWRITE
+	coffImageScnMemExecute = 0x20000000
+	coffPageExecuteRead    = windows.PAGE_EXECUTE_READ
+	coffPageReadWrite      = windows.PAGE_READWRITE
 )
 
 type coffSection struct {
@@ -135,10 +135,10 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			processReloc(symbolDefAddress, sectionVirtualAddr, reloc, symbol)
 		}
 
-		// Set executable sections to PAGE_EXECUTE_READ
-		if section.Characteristics&IMAGE_SCN_MEM_EXECUTE != 0 {
+		// Set executable sections to executable
+		if section.Characteristics&coffImageScnMemExecute != 0 {
 			var oldProtect uint32
-			windows.VirtualProtect(sectionVirtualAddr, uintptr(section.SizeOfRawData), PAGE_EXECUTE_READ, &oldProtect)
+			windows.VirtualProtect(sectionVirtualAddr, uintptr(section.SizeOfRawData), coffPageExecuteRead, &oldProtect)
 		}
 	}
 
