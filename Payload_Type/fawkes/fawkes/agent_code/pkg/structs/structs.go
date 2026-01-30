@@ -83,11 +83,12 @@ type FileUploadMessage struct {
 
 // FileDownloadMessage for sending file to Mythic
 type FileDownloadMessage struct {
-	TotalChunks int    `json:"total_chunks"`
-	ChunkNum    int    `json:"chunk_num"`
-	ChunkData   string `json:"chunk_data"`
-	FullPath    string `json:"full_path"`
-	FileID      string `json:"file_id"`
+	TotalChunks  int    `json:"total_chunks,omitempty"`
+	ChunkNum     int    `json:"chunk_num,omitempty"`
+	ChunkData    string `json:"chunk_data,omitempty"`
+	FullPath     string `json:"full_path,omitempty"`
+	FileID       string `json:"file_id,omitempty"`
+	IsScreenshot bool   `json:"is_screenshot,omitempty"`
 }
 
 // Job struct holds channels and state for task execution including file transfers

@@ -29,12 +29,14 @@ ls | `ls [path]`                                                                
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it. Default logon type 9 (NEW_CREDENTIALS) only affects NETWORK identity (like `runas /netonly`) - whoami still shows original user. Use `-logon_type 2` (INTERACTIVE) to change both local and network identity.
 mkdir | `mkdir <directory>`                                                                                                        | Create a new directory (creates parent directories if needed).
 mv | `mv <source> <destination>`                                                                                                | Move or rename a file from source to destination.
+poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. Supports Variant 1 (Worker Factory Start Routine Overwrite) and Variant 7 (TP_DIRECT Insertion). See notes below.
 ps | `ps [-v] [-i PID] [filter]`                                                                                               | List running processes. Use -v for verbose output with command lines. Use -i to filter by specific PID. Optional filter to search by process name.
 pwd | `pwd`                                                                                                                     | Print working directory.
 read-memory | `read-memory <dll_name> <function_name> <start_index> <num_bytes>` | **(Windows only)** Read bytes from a DLL function address. Example: `read-memory amsi AmsiScanBuffer 0 8`
 rev2self | `rev2self` | **(Windows only)** Revert to the original security context by dropping any active impersonation token.
 rm | `rm <path>`                                                                                                                | Remove a file or directory (recursively removes directories).
 run | `run <command>`                                                                                                            | Execute a shell command and return the output.
+screenshot | `screenshot` | **(Windows only)** Capture a screenshot of the current desktop session. Captures all monitors and uploads as PNG.
 sleep | `sleep [seconds] [jitter]`                                                                                                       | Set the callback interval in seconds and jitter percentage.
 start-clr | `start-clr`                                                                                                                | **(Windows only)** Initialize the CLR v4.0.30319 and load amsi.dll into memory. Run this before `inline-assembly` to implement your own AMSI bypass using `write-memory` or `autopatch`.
 steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a security token from another process. Changes LOCAL and NETWORK identity. Requires admin privileges or SeDebugPrivilege to steal from other users' processes.
@@ -58,11 +60,29 @@ Everything I know about Mythic Agents came from Mythic Docs or stealing code and
 
 And when that didn't work, I had Claude reference Merlin Freyja and Apollo for design choices and code references. 
 
-Specific techniques and implementations adapted from:
+In other words, I wrote nearly none of this. :) Thanks everybody else!
+
+## Specific techniques and implementations adapted from:
 - **Threadless Injection** - [CCob's ThreadlessInject](https://github.com/CCob/ThreadlessInject) (original C# implementation) and [dreamkinn's go-ThreadlessInject](https://github.com/dreamkinn/go-ThreadlessInject) (Go port)
 - **sRDI (Shellcode Reflective DLL Injection)** - [Merlin's Go-based sRDI implementation](https://github.com/MythicAgents/merlin), originally based on [Nick Landers' (monoxgas) sRDI](https://github.com/monoxgas/sRDI)
+- **PoolParty Injection** - [SafeBreach Labs PoolParty research](https://github.com/SafeBreach-Labs/PoolParty) (original C++ PoC)
 
-In other words, I wrote nearly none of this. :) Thanks everybody else!
+## Command Notes
+
+### PoolParty Injection
+
+PoolParty injection abuses Windows Thread Pool internals to achieve code execution without calling monitored APIs like `CreateRemoteThread`. Two variants are implemented:
+
+| Variant | Technique | Go Shellcode Compatible |
+|---------|-----------|------------------------|
+| 1 | Worker Factory Start Routine Overwrite | No |
+| 7 | TP_DIRECT Insertion (I/O Completion Port) | Yes |
+
+**Go-based Shellcode Compatibility:** Variant 1 executes shellcode as a thread pool worker initialization routine, which has specific constraints on stack/context setup that conflict with Go's runtime expectations (TLS setup, thread state, etc.). Variant 7's I/O completion callback context is more compatible with Go's runtime. For Go-based agent shellcode (fawkes, merlin, etc.), **use Variant 7**.
+
+Simple shellcode (e.g., msfvenom calc.bin) works with both variants.
+
+
 
 # References
 https://openclipart.org/detail/229408/colorful-phoenix-line-art-12
