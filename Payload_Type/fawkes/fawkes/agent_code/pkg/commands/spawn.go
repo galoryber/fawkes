@@ -63,11 +63,12 @@ type PROCESS_INFORMATION struct {
 	ThreadId  uint32
 }
 
+// Note: kernel32, procOpenProcess, procCreateRemoteThread, procCloseHandle are defined in vanillainjection.go
+
 var (
-	procCreateProcessW    = kernel32.NewProc("CreateProcessW")
-	procCreateRemoteThread = kernel32.NewProc("CreateRemoteThread")
-	procGetModuleHandleW  = kernel32.NewProc("GetModuleHandleW")
-	procGetProcAddressA   = kernel32.NewProc("GetProcAddress")
+	procCreateProcessW   = kernel32.NewProc("CreateProcessW")
+	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
+	procGetProcAddressA  = kernel32.NewProc("GetProcAddress")
 )
 
 // SpawnCommand implements the spawn command
