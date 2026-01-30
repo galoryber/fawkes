@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -22,29 +23,6 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "mode",
-				ModalDisplayName: "Spawn Mode",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "Create a suspended process or a suspended thread in an existing process",
-				Choices: []string{
-					"process",
-					"thread",
-				},
-				DefaultValue: "process",
-				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						ParameterIsRequired: true,
-						GroupName:           "Process",
-						UIModalPosition:     0,
-					},
-					{
-						ParameterIsRequired: true,
-						GroupName:           "Thread",
-						UIModalPosition:     0,
-					},
-				},
-			},
-			{
 				Name:             "path",
 				ModalDisplayName: "Executable Path",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
@@ -54,7 +32,7 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						GroupName:           "Process",
-						UIModalPosition:     1,
+						UIModalPosition:     0,
 					},
 				},
 			},
@@ -68,7 +46,7 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						GroupName:           "Thread",
-						UIModalPosition:     1,
+						UIModalPosition:     0,
 					},
 				},
 			},
@@ -85,20 +63,15 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
-			mode, err := taskData.Args.GetStringArg("mode")
-			if err != nil {
-				logging.LogError(err, "Failed to get mode")
-				response.Success = false
-				response.Error = "Failed to get spawn mode: " + err.Error()
-				return response
-			}
+			// Determine mode from the parameter group selection
+			groupName := strings.ToLower(taskData.Task.ParameterGroupName)
 
 			var displayParams string
 			params := make(map[string]interface{})
-			params["mode"] = mode
 
-			switch mode {
+			switch groupName {
 			case "process":
+				params["mode"] = "process"
 				path, err := taskData.Args.GetStringArg("path")
 				if err != nil {
 					logging.LogError(err, "Failed to get path")
@@ -112,9 +85,10 @@ func init() {
 					return response
 				}
 				params["path"] = path
-				displayParams = fmt.Sprintf("Mode: process\nExecutable: %s", path)
+				displayParams = fmt.Sprintf("Executable: %s (suspended)", path)
 
 			case "thread":
+				params["mode"] = "thread"
 				pid, err := taskData.Args.GetNumberArg("pid")
 				if err != nil {
 					logging.LogError(err, "Failed to get pid")
@@ -128,11 +102,11 @@ func init() {
 					return response
 				}
 				params["pid"] = int(pid)
-				displayParams = fmt.Sprintf("Mode: thread\nTarget PID: %d", int(pid))
+				displayParams = fmt.Sprintf("Suspended thread in PID: %d", int(pid))
 
 			default:
 				response.Success = false
-				response.Error = fmt.Sprintf("Invalid mode: %s. Use 'process' or 'thread'", mode)
+				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
 				return response
 			}
 
