@@ -84,6 +84,20 @@ PoolParty injection abuses Windows Thread Pool internals to achieve code executi
 
 Simple shellcode (e.g., msfvenom calc.bin) works with both variants.
 
+### Opus Injection
+
+Opus injection uses novel callback-based injection techniques that haven't been commonly weaponized. Currently implements Variant 1: Ctrl-C Handler Chain Injection.
+
+| Variant | Technique | Target | Go Shellcode Compatible |
+|---------|-----------|--------|------------------------|
+| 1 | Ctrl-C Handler Chain | Console processes only | No |
+
+**How it works:** Injects a fake handler into the target's console Ctrl+C handler array (in kernelbase.dll), then triggers a Ctrl+C event. Windows decodes and calls our shellcode as part of normal handler dispatch.
+
+**Go-based Shellcode Compatibility:** The Ctrl+C handler callback executes in a constrained context that conflicts with Go's runtime expectations. Simple shellcode (calc.bin, msfvenom payloads) works correctly.
+
+**Detection Surface:** Uses WriteProcessMemory/VirtualAllocEx (standard) plus AttachConsole/GenerateConsoleCtrlEvent (uncommon). No CreateRemoteThread, no APC, no thread pool manipulation - different API surface than typical injection techniques.
+
 
 
 # References

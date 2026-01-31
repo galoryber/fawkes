@@ -125,7 +125,11 @@ PVOID RtlEncodePointer(PVOID Pointer) {
 
 - Console processes only
 - Target must have a console (not detached)
-- GenerateConsoleCtrlEvent affects process groups - need careful targeting
+- **Go-based shellcode is NOT compatible** - the Ctrl+C handler callback executes in a constrained context that conflicts with Go's runtime expectations (TLS setup, stack requirements). Simple shellcode (calc.bin, msfvenom) works fine.
+
+### Console Restoration
+
+After injection, the agent loses its original console due to FreeConsole/AttachConsole. The implementation calls AllocConsole() afterward to restore console functionality.
 
 ---
 
