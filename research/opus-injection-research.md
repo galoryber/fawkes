@@ -683,9 +683,9 @@ Continuing callback-based research shows diminishing returns. Recommended next d
 
 The Kernel Callback Table is an array of function pointers stored in the Process Environment Block (PEB) at offset `+0x058`. This table is initialized when `user32.dll` loads into a GUI process and contains callbacks for handling window messages and interprocess communications via win32k.sys.
 
-### Status: **PUBLICLY DOCUMENTED** (Implementation Pending)
+### Status: **IMPLEMENTED** ✅
 
-**Note:** This technique is publicly documented and not novel (see [KernelCallbackTable-Injection-PoC](https://github.com/0xHossam/KernelCallbackTable-Injection-PoC)). However, it's worth implementing to test viability on Windows 11 25H2 and document our findings.
+**Note:** This technique is publicly documented and not novel (see [KernelCallbackTable-Injection-PoC](https://github.com/0xHossam/KernelCallbackTable-Injection-PoC)). However, it provides a valuable complement to Variant 1 by targeting GUI processes instead of console processes.
 
 ### Key Characteristics
 
@@ -757,11 +757,15 @@ When the target processes `WM_COPYDATA`, it dispatches to the callback table, in
 
 ### Research Questions
 
-- [ ] Does this work on Windows 11 25H2?
-- [ ] Is callback dispatch CFG protected?
-- [ ] Can we modify PEB+0x058 remotely?
-- [ ] Which callback indices exist in the table?
-- [ ] Are there better trigger messages than WM_COPYDATA?
+- [X] **Does this work on Windows 11 25H2?** → YES - Implementation complete in Fawkes Mythic agent
+- [ ] Is callback dispatch CFG protected? → Testing in progress
+- [X] **Can we modify PEB+0x058 remotely?** → YES - Successfully updates KernelCallbackTable pointer
+- [ ] Which callback indices exist in the table? → __fnCOPYDATA (index 0) confirmed working
+- [ ] Are there better trigger messages than WM_COPYDATA? → Further research needed
+
+### Go Shellcode Compatibility
+
+**COMPATIBLE** ✅ - Unlike Variant 1 (Ctrl-C handlers), the WM_COPYDATA callback context is compatible with Go's runtime requirements. This makes Variant 4 suitable for injecting Go-based agent shellcode (Fawkes, Merlin, etc.) into GUI processes.
 
 ### Advantages
 
@@ -777,12 +781,21 @@ When the target processes `WM_COPYDATA`, it dispatches to the callback table, in
 - **PEB modification** - Suspicious cross-process PEB writes
 - **Unknown CFG status** - May be protected on modern Windows
 
-### Next Steps
+### Implementation Status
 
-1. Implement basic PoC based on GitHub reference
-2. Test on Windows 11 25H2
-3. Check for CFG protection
-4. Document findings and compare to console control handler injection
+- [X] ✅ Implemented in Fawkes Mythic C2 agent (`opus-injection` command, Variant 4)
+- [X] ✅ Tested on Windows 11 25H2 (functional)
+- [X] ✅ Go shellcode compatibility confirmed (compatible with Go runtime)
+- [ ] CFG protection status testing in progress
+- [ ] Performance comparison with Variant 1
+
+### Key Findings
+
+- **Works on Windows 11 25H2** - Successfully injects and executes shellcode in GUI processes
+- **Go Shellcode Compatible** - Unlike Variant 1, this variant's callback context supports Go-based shellcode
+- **Complements Variant 1** - Provides coverage for GUI processes where Variant 1 (console processes) cannot operate
+- **Simple trigger mechanism** - Single `WM_COPYDATA` message reliably triggers execution
+- **Asynchronous triggering required** - For long-running shellcode (like full agents), the trigger must be sent asynchronously (via goroutine) to prevent blocking the injector agent. `SendMessageA` is synchronous and blocks until the handler returns - if the shellcode runs forever, it would block the injector indefinitely.
 
 ---
 
