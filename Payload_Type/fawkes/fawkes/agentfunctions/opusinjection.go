@@ -31,6 +31,7 @@ func init() {
 				Description:      "The Opus injection variant to use",
 				Choices: []string{
 					"1 - Ctrl-C Handler Chain (console processes)",
+					"4 - KernelCallbackTable (GUI processes)",
 				},
 				DefaultValue: "1 - Ctrl-C Handler Chain (console processes)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -80,7 +81,7 @@ func init() {
 				Name:             "pid",
 				ModalDisplayName: "Target PID",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "The process ID to inject into (must be a console process for Variant 1)",
+				Description:      "The process ID to inject into (console process for Variant 1, GUI process for Variant 4)",
 				DefaultValue:     0,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -128,9 +129,9 @@ func init() {
 				fmt.Sscanf(variantStr, "%d", &variant)
 			}
 
-			if variant != 1 {
+			if variant != 1 && variant != 4 {
 				response.Success = false
-				response.Error = fmt.Sprintf("Invalid variant: %d. Currently supported: 1", variant)
+				response.Error = fmt.Sprintf("Invalid variant: %d. Currently supported: 1, 4", variant)
 				return response
 			}
 
@@ -254,14 +255,19 @@ func init() {
 
 			// Build variant description
 			variantDesc := "Unknown"
+			targetNote := ""
 			switch variant {
 			case 1:
 				variantDesc = "Ctrl-C Handler Chain Injection"
+				targetNote = "Target must be a console process"
+			case 4:
+				variantDesc = "PEB KernelCallbackTable Injection"
+				targetNote = "Target must be a GUI process with user32.dll loaded"
 			}
 
 			// Build the display parameters
-			displayParams := fmt.Sprintf("Variant: %d (%s)\nShellcode: %s (%d bytes)\nTarget PID: %d\nNote: Target must be a console process",
-				variant, variantDesc, filename, len(fileContents), int(pid))
+			displayParams := fmt.Sprintf("Variant: %d (%s)\nShellcode: %s (%d bytes)\nTarget PID: %d\nNote: %s",
+				variant, variantDesc, filename, len(fileContents), int(pid), targetNote)
 			response.DisplayParams = &displayParams
 
 			// Build the actual parameters JSON that will be sent to the agent

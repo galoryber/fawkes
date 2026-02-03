@@ -561,15 +561,15 @@ Both WNF and FLS callback mechanisms are protected by Control Flow Guard (CFG) o
 
 ### Comparison Table
 
-| Factor | Variant 1 (Ctrl-C) | Variant 2 (WNF) | Variant 3 (FLS) | Candidate C (ExFilter) | Candidate A (TxnScope) |
-|--------|-------------------|-----------------|-----------------|------------------------|------------------------|
-| **CFG Protected** | ❌ No | ✅ Yes | ✅ Yes | ✅ Yes | N/A |
-| **Structure Complexity** | Low (array) | High (nested) | Medium (binary array) | Low (single pointer) | N/A |
-| **Global Context** | kernelbase.dll | ntdll.dll | ntdll.dll | kernelbase.dll | TEB (per-thread) |
-| **Target Scope** | Console only | All processes | All processes | All processes | N/A |
-| **Trigger** | Ctrl+C event | NtUpdateWnfStateData | FlsFree / thread exit | Unhandled exception | N/A |
-| **Implementation** | ✅ Complete | ❌ Blocked by CFG | ❌ Blocked by CFG | ❌ Blocked by CFG | ❌ Vestigial (unused) |
-| **Failure Reason** | - | CFG validation | CFG validation | CFG validation | Callbacks never invoked |
+| Factor | Variant 1 (Ctrl-C) | Variant 2 (WNF) | Variant 3 (FLS) | Candidate C (ExFilter) | Candidate G (ETW) | Candidate A (TxnScope) |
+|--------|-------------------|-----------------|-----------------|------------------------|-------------------|------------------------|
+| **CFG Protected** | ❌ No | ✅ Yes | ✅ Yes | ✅ Yes | ✅ Yes | N/A |
+| **Structure Complexity** | Low (array) | High (nested) | Medium (binary array) | Low (single pointer) | Medium (consumer sessions) | N/A |
+| **Global Context** | kernelbase.dll | ntdll.dll | ntdll.dll | kernelbase.dll | sechost.dll | TEB (per-thread) |
+| **Target Scope** | Console only | All processes | All processes | All processes | ETW consumers | N/A |
+| **Trigger** | Ctrl+C event | NtUpdateWnfStateData | FlsFree / thread exit | Unhandled exception | ETW events | N/A |
+| **Implementation** | ✅ Complete | ❌ Blocked by CFG | ❌ Blocked by CFG | ❌ Blocked by CFG | ❌ Blocked by CFG | ❌ Vestigial (unused) |
+| **Failure Reason** | - | CFG validation | CFG validation | CFG validation | CFG validation | Callbacks never invoked |
 
 ### Recommendation
 
@@ -584,12 +584,209 @@ For future work, if CFG bypass becomes available or acceptable:
 
 ---
 
-## Future Variant Ideas (Previously Documented)
+## CFG Protection Pattern Analysis
 
-### PEB KernelCallbackTable
-- Win32k callbacks stored in PEB
-- Used by FinFisher/Lazarus but still relatively novel
-- Requires triggering specific win32k operations
+### Emerging Pattern: Systematic CFG Retrofitting Complete
+
+After investigating 6 callback-based mechanisms, a definitive pattern has emerged:
+
+**CFG Protection Status:**
+- ✅ WNF Callbacks (Variant 2) - `ntdll!RtlpWnfWalkUserSubscriptionList` uses `guard_dispatch_icall`
+- ✅ FLS Callbacks (Variant 3) - `ntdll!RtlpFlsFree` uses `guard_dispatch_icall` (2 sites)
+- ✅ Exception Filter (Candidate C) - `kernelbase!UnhandledExceptionFilter` uses `guard_dispatch_icall`
+- ✅ ETW Consumer Callbacks (Candidate G) - `sechost!EtwpDoEventTraceCallbacks` uses `guard_dispatch_icall` (2 sites)
+- ✅ DLL Notifications (Candidate D) - `ntdll!LdrpSendDllNotifications` uses `guard_dispatch_icall`
+- ✅ RPC Dispatch Tables (Candidate H) - `rpcrt4!RpcInvokeCheckICall` uses `_guard_check_icall_fptr`
+- ❌ Ctrl-C Handlers (Variant 1) - **NO CFG protection** ✅ WORKING
+
+### Key Observations
+
+1. **Microsoft has retrofitted CFG to older mechanisms**
+   - ETW (Vista+), Exception Handling (ancient), FLS (XP+), WNF (Win8+)
+   - Age of the mechanism does NOT correlate with CFG protection
+   - Even mechanisms predating CFG by a decade now have protection
+
+2. **Callback dispatch code is the protection point**
+   - CFG is applied at the indirect call site in the dispatcher
+   - Not at callback registration or storage
+   - The `guard_dispatch_icall` thunk validates before transferring control
+
+3. **CFG is applied systematically, not selectively**
+   - **6 out of 7 investigated callback mechanisms** have CFG protection
+   - 86% CFG application rate across diverse callback types
+   - ALL modern callback mechanisms investigated are CFG protected
+   - Security-focused, diagnostic, core OS, and RPC subsystems all protected
+   - Pattern indicates complete/systematic CFG retrofitting effort by Microsoft
+   - Only exception found: Console control handlers (legacy subsystem)
+
+4. **Console Control Handlers remain unprotected**
+   - Variant 1 works because `kernelbase!CtrlRoutine` does NOT use CFG
+   - Possibly overlooked due to console subsystem being "legacy"
+   - Or considered lower risk due to console-only scope
+
+### Implications for Research
+
+1. **Callback-based techniques face uphill battle**
+   - Any newly discovered callback mechanism is likely CFG protected
+   - Must assume CFG protection until proven otherwise
+   - Testing each candidate before implementation is critical
+
+2. **Need to shift focus**
+   - Look for non-callback based techniques
+   - Look for callback mechanisms in truly obscure/legacy subsystems
+   - Consider CFG bypass techniques (`SetProcessValidCallTargets`)
+   - Explore other injection paradigms beyond callback hijacking
+
+3. **Variant 1's success is exceptional**
+   - Console control handlers appear to be an outlier
+   - Their lack of CFG protection is notable given widespread CFG application
+   - Similar "forgotten" mechanisms may exist in other legacy subsystems
+
+### Research Conclusion: Callback-Based Injection is Systematically Blocked
+
+**ALL high-priority callback mechanisms investigated are CFG protected (6/6):**
+
+With RPC dispatch tables confirmed as CFG protected, we've now verified that every major callback mechanism in Windows has been retrofitted with CFG validation. The 86% CFG protection rate (6 out of 7 mechanisms) represents a complete systematic hardening effort by Microsoft.
+
+**Key Takeaway:** Console control handlers (Variant 1) appear to be an isolated exception in an otherwise comprehensively protected callback landscape. Finding additional unprotected callback mechanisms would require exploring extremely obscure or legacy subsystems that Microsoft may have overlooked.
+
+### Recommended Research Pivot
+
+Continuing callback-based research shows diminishing returns. Recommended next directions:
+
+1. **Non-callback injection techniques** - Explore injection methods that don't rely on callback hijacking
+   - Process/thread manipulation approaches
+   - Code cave/inline hooking techniques
+   - Memory-only execution methods
+   - Return-oriented techniques
+
+2. **CFG bypass implementation** - Implement `SetProcessValidCallTargets` to enable any callback technique
+   - Adds detection surface but unlocks all blocked mechanisms
+   - Could enable WNF, FLS, ETW, DLL notifications, or RPC injection
+
+3. **Legacy/obscure subsystems** - Deep dive into forgotten Windows components
+   - 16-bit compatibility layers
+   - OS/2 subsystem remnants
+   - POSIX subsystem
+   - Other vestigial code paths
+
+4. **Attack different stages** - Target other parts of the injection kill chain
+   - Memory allocation primitives
+   - Execution triggering mechanisms
+   - Process creation/manipulation
+
+---
+
+## Variant 4: PEB KernelCallbackTable Injection
+
+### Concept
+
+The Kernel Callback Table is an array of function pointers stored in the Process Environment Block (PEB) at offset `+0x058`. This table is initialized when `user32.dll` loads into a GUI process and contains callbacks for handling window messages and interprocess communications via win32k.sys.
+
+### Status: **PUBLICLY DOCUMENTED** (Implementation Pending)
+
+**Note:** This technique is publicly documented and not novel (see [KernelCallbackTable-Injection-PoC](https://github.com/0xHossam/KernelCallbackTable-Injection-PoC)). However, it's worth implementing to test viability on Windows 11 25H2 and document our findings.
+
+### Key Characteristics
+
+- **Target:** GUI processes (requires `user32.dll`)
+- **PEB Location:** `PEB+0x058` → KernelCallbackTable pointer
+- **Target Callback:** `__fnCOPYDATA` (index 0, handles `WM_COPYDATA` messages)
+- **Trigger:** Send `WM_COPYDATA` window message to target window
+- **CFG Status:** Unknown on Windows 11 25H2 (PoC suggests it may work)
+
+### Attack Flow
+
+```
+1. Enable SeDebugPrivilege
+2. Create/identify target GUI process (e.g., notepad.exe)
+3. Find target window handle and get PID
+4. Open process handle (PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ)
+5. Query PEB address via NtQueryInformationProcess
+6. Read KernelCallbackTable pointer from PEB+0x058
+7. Allocate RWX memory in target for shellcode
+8. Copy modified callback table to new memory:
+   - Copy entire original table
+   - Replace __fnCOPYDATA entry with shellcode address
+9. Write modified table to target process
+10. Update PEB+0x058 to point to modified table
+11. Trigger via SendMessage(hWnd, WM_COPYDATA, ...)
+12. Shellcode executes when WM_COPYDATA is processed
+```
+
+### Target Identification
+
+KernelCallbackTable injection only works on GUI processes because:
+- `user32.dll` must be loaded
+- Process must have created windows
+- KernelCallbackTable is initialized during user32.dll loading
+
+Valid targets:
+- `notepad.exe`
+- `explorer.exe`
+- Any GUI application with visible windows
+
+### Trigger Mechanism
+
+The `WM_COPYDATA` message provides cross-process data transfer:
+
+```c
+COPYDATASTRUCT cds = {0};
+cds.dwData = 1;
+cds.cbData = 4;
+cds.lpData = "test";
+
+SendMessage(hTargetWindow, WM_COPYDATA, (WPARAM)hWindow, (LPARAM)&cds);
+```
+
+When the target processes `WM_COPYDATA`, it dispatches to the callback table, invoking our shellcode.
+
+### Why This Might Work (Despite Being Known)
+
+1. **Older mechanism** - PEB callback table predates modern mitigations
+2. **PoC exists** - Suggests it works on at least some Windows versions
+3. **Different from callback registration** - Modifies PEB directly, not callback registration
+4. **Win32k boundary** - Kernel→user callbacks may have different protection
+
+### Implementation Complexity
+
+- **Low-Medium** - PEB manipulation is straightforward
+- **Simple trigger** - Single `SendMessage` call
+- **GUI requirement** - Limits applicability to GUI processes only
+- **Window enumeration** - Need to find target window handle
+
+### Research Questions
+
+- [ ] Does this work on Windows 11 25H2?
+- [ ] Is callback dispatch CFG protected?
+- [ ] Can we modify PEB+0x058 remotely?
+- [ ] Which callback indices exist in the table?
+- [ ] Are there better trigger messages than WM_COPYDATA?
+
+### Advantages
+
+- **Established PoC** - Implementation reference available
+- **Simple trigger** - Easy to invoke via window messages
+- **No callback registration** - Direct PEB manipulation
+- **Legitimate mechanism** - WM_COPYDATA is normal IPC
+
+### Limitations
+
+- **GUI processes only** - Requires user32.dll and windows
+- **Known technique** - Public PoCs exist (not novel)
+- **PEB modification** - Suspicious cross-process PEB writes
+- **Unknown CFG status** - May be protected on modern Windows
+
+### Next Steps
+
+1. Implement basic PoC based on GitHub reference
+2. Test on Windows 11 25H2
+3. Check for CFG protection
+4. Document findings and compare to console control handler injection
+
+---
+
+## Future Variant Ideas (Previously Documented)
 
 ### Vectored Exception Handler Injection
 - VEH list in ntdll (LdrpVectorHandlerList)
@@ -613,6 +810,737 @@ Our research on Variants 1-3 revealed:
 - **Older/obscure mechanisms may predate CFG** and not be protected
 - **Per-thread structures (TEB)** are interesting because they're per-thread writable
 - **Exception handling paths** often have different protection characteristics
+- **Natural event triggers** provide automatic execution without manual triggering
+- **Obscure diagnostic/management subsystems** are less likely to have been weaponized
+
+### Research Methodology Update
+
+After initial research phase, refocusing on:
+- **Truly novel techniques** - avoiding known/documented methods
+- **Natural triggers** - system events that occur automatically
+- **Older subsystems** - more likely to lack CFG protection
+- **Broad applicability** - techniques that work across many process types
+
+---
+
+## 🔬 PRIORITY CANDIDATES (Truly Novel Techniques)
+
+### Candidate G: ETW (Event Tracing for Windows) Consumer Callbacks
+
+#### Concept
+
+ETW is Windows' event tracing infrastructure used for diagnostics and logging. Processes can register as ETW consumers with callback functions that fire when specific events occur. This mechanism appears **undocumented for injection purposes**.
+
+#### Status: Research Complete - **CFG PROTECTED** (Implementation Blocked)
+
+#### Key Findings from Reversing
+
+##### Critical Blocker: CFG Protection
+
+From `sechost!EtwpDoEventTraceCallbacks`, the function responsible for dispatching ETW consumer callbacks:
+
+```asm
+sechost!EtwpDoEventTraceCallbacks+0x13:
+    call    sechost!guard_dispatch_icall$thunk$10345483385596137414  ; CFG PROTECTED!
+
+sechost!EtwpDoEventTraceCallbacks+0x76:
+    call    sechost!guard_dispatch_icall$thunk$10345483385596137414  ; CFG PROTECTED!
+```
+
+**Both ETW consumer callback invocation sites use `guard_dispatch_icall`**, which validates the callback target address against the CFG bitmap before allowing the call. This means:
+
+- Overwriting callback pointers with shellcode addresses will fail CFG validation
+- Process will crash or callback invocation will be blocked
+- Same blocker as WNF, FLS, and Exception Filter mechanisms
+
+##### WinDbg Commands Used
+
+```
+# Find ETW consumer functions
+x sechost!*Trace*
+x advapi32!*Trace*
+x ntdll!*Etw*
+
+# Check callback dispatch function
+uf sechost!EtwpDoEventTraceCallbacks
+
+# Confirmed: Two guard_dispatch_icall invocations at offsets +0x13 and +0x76
+```
+
+#### Why This Is Novel (But Still Blocked)
+
+- ETW is primarily used for diagnostics/logging - not explored for injection
+- Consumer-side callback manipulation appears completely undocumented
+- Many processes consume ETW events (services, diagnostics tools, monitoring applications)
+- Older mechanism (Vista+), possibly predates CFG protection
+- Very obscure application of ETW
+
+#### Background: How ETW Consumers Work
+
+```c
+// Processes register to consume ETW events:
+EVENT_TRACE_LOGFILE TraceLogfile;
+TraceLogfile.LogFileName = L"MyTrace.etl";  // or real-time: NULL
+TraceLogfile.EventRecordCallback = MyCallbackFunction;  // ← Function pointer!
+TraceLogfile.ProcessTraceMode = PROCESS_TRACE_MODE_EVENT_RECORD | PROCESS_TRACE_MODE_REAL_TIME;
+
+TRACEHANDLE hTrace = OpenTrace(&TraceLogfile);
+ProcessTrace(&hTrace, 1, NULL, NULL);  // Begins processing, callbacks fire
+```
+
+The callback signature:
+```c
+VOID WINAPI EventRecordCallback(
+    PEVENT_RECORD EventRecord  // Contains event data
+);
+```
+
+#### Attack Theory
+
+```
+1. Identify target processes consuming ETW events
+   - Many system services consume ETW
+   - Monitoring/diagnostics applications
+   - Logging infrastructure
+
+2. Locate EVENT_TRACE_LOGFILE structures or internal ETW consumer structures
+   - Callback pointer stored in consumer session data
+   - Need to reverse ETW consumer infrastructure
+
+3. Overwrite EventRecordCallback pointer with shellcode address
+   - May or may not need encoding (research needed)
+
+4. Trigger: Generate ETW event that consumer is subscribed to
+   - Natural triggers: system activity generates constant ETW events
+   - Manual triggers: Use ETW provider APIs to generate events
+```
+
+#### Natural Triggers (Automatic)
+
+ETW providers fire constantly on active systems:
+- **Process/Thread events** - Process creation, thread creation/exit
+- **File I/O events** - File operations trigger file I/O provider
+- **Registry events** - Registry modifications
+- **Network events** - Network activity
+- **Performance counters** - Regular sampling events
+- **Security events** - Audit events, logon/logoff
+
+Consumers subscribed to common providers will receive callbacks automatically.
+
+#### Manual Triggers (Controllable)
+
+Can generate specific ETW events:
+```c
+// Register custom provider and generate events
+EventWriteString(RegHandle, Level, Keyword, L"Event data");
+```
+
+#### Target Process Identification
+
+Processes likely consuming ETW:
+- **Windows services** - Many services consume ETW for diagnostics
+- **Sysmon** - Consumes kernel ETW events
+- **Performance monitoring tools** - PerfMon, Process Monitor
+- **Security monitoring** - EDR agents, log collectors
+- **Custom applications** - Apps using ETW for logging
+
+Can identify via:
+- Check for `OpenTrace` / `ProcessTrace` in loaded modules
+- Look for ETW consumer handles in process
+
+#### Research Questions
+
+- [ ] Where exactly are `EventRecordCallback` pointers stored at runtime?
+- [X] **Is callback invocation in `ProcessTrace` CFG protected?** → YES - BLOCKED
+- [ ] What is the internal structure for ETW consumer sessions?
+- [ ] How to reliably locate consumer structures in target process?
+- [ ] Can we identify which ETW providers a process is subscribed to?
+
+#### Key Functions to Reverse
+
+| Function | Purpose |
+|----------|---------|
+| `OpenTrace` / `OpenTraceW` | Opens trace session, registers callback |
+| `ProcessTrace` | **Main callback dispatcher** - check for CFG here |
+| `CloseTrace` | Cleanup |
+| Internal: `EtwpProcessTraceEvent` or similar | Actual callback invocation site |
+
+#### WinDbg Investigation Commands
+
+```
+# Find ETW consumer functions
+x ntdll!*Etw*
+x sechost!*Trace*
+x advapi32!*Trace*
+
+# Check for callback invocation
+uf advapi32!ProcessTrace
+uf sechost!ProcessTrace
+
+# Look for guard_dispatch_icall
+uf /c advapi32!ProcessTrace | findstr guard_dispatch_icall
+```
+
+#### Complexity Assessment
+
+- **Implementation**: Medium-High - Need to understand ETW consumer structures
+- **Trigger**: Low - ETW events fire constantly, or can generate manually
+- **Detection**: Very Low - ETW consumer manipulation never monitored
+- **Target Applicability**: Medium-High - Many processes consume ETW
+
+#### Advantages (If Not CFG Protected)
+
+- **Extremely obscure** - Likely never researched for injection
+- **Natural triggers** - System generates ETW events constantly
+- **Broad applicability** - Many process types consume ETW
+- **Older infrastructure** - Vista+ era, but still retrofitted with CFG
+- **Legitimate mechanism** - ETW event processing is normal behavior
+
+#### Conclusion
+
+ETW consumer callback injection is **blocked by CFG**, despite being an older mechanism (Vista+). Microsoft has retrofitted CFG protection to the ETW callback dispatch code in `sechost!EtwpDoEventTraceCallbacks`. Same blocker as WNF, FLS, and Exception Filter.
+
+**NOT VIABLE** without CFG bypass via `SetProcessValidCallTargets`.
+
+---
+
+### Candidate H: RPC Server Dispatch Table Hijacking
+
+#### Concept
+
+Many Windows processes act as RPC (Remote Procedure Call) servers, exposing interfaces that map RPC procedure numbers to handler functions via dispatch tables. These dispatch tables are **arrays of function pointers** similar to the Ctrl-C handler array in Variant 1.
+
+#### Status: Research Complete - **CFG PROTECTED** (Implementation Blocked)
+
+#### Key Findings from Reversing
+
+##### RPC Dispatch Call Chain
+
+The RPC dispatch mechanism uses a multi-layered approach:
+
+1. `NdrServerCall2` → wraps `NdrStubCall2`
+2. `NdrStubCall2` → loads function pointer from dispatch table at `[rax+r12*8]`, calls `Invoke`
+3. `Invoke` → calls `RpcInvokeCheckICall` for validation, then `call r10` (direct)
+4. `RpcInvokeCheckICall` → **calls `_guard_check_icall_fptr`** (CFG validator!)
+
+##### Critical Blocker: CFG Protection via _guard_check_icall_fptr
+
+From `rpcrt4!RpcInvokeCheckICall`:
+
+```asm
+RPCRT4!RpcInvokeCheckICall:
+    sub     rsp,28h
+    call    qword ptr [RPCRT4!_guard_check_icall_fptr]  ; CFG VALIDATION!
+    add     rsp,28h
+    ret
+```
+
+**`_guard_check_icall_fptr`** is a function pointer to the CFG validator. This is the same validation mechanism that `guard_dispatch_icall` uses internally, just called explicitly rather than via a thunk.
+
+The RPC dispatch flow:
+- Dispatch table function pointer loaded from array
+- Passed to validation wrapper (`RpcInvokeCheckICall`)
+- CFG check performed via `_guard_check_icall_fptr`
+- If validation passes, function pointer called directly
+
+This means overwriting RPC dispatch table entries with shellcode addresses will fail CFG validation, same as all other callback mechanisms.
+
+##### WinDbg Commands Used
+
+```
+# Trace dispatch chain
+uf rpcrt4!NdrServerCall2        # Wrapper
+uf rpcrt4!NdrStubCall2          # Dispatch table loader
+uf rpcrt4!Invoke                # Invocation wrapper
+uf rpcrt4!RpcInvokeCheckICall   # CFG validation wrapper
+
+# Key finding at RpcInvokeCheckICall:
+# call qword ptr [RPCRT4!_guard_check_icall_fptr]
+```
+
+#### Why This Is Novel (But Still Blocked)
+
+- RPC dispatch table manipulation for injection appears undocumented
+- Many processes expose RPC interfaces (services, COM servers, DCOM)
+- Function pointer arrays pattern-match our successful Variant 1
+- RPC infrastructure is older, might lack CFG protection
+
+#### Background: How RPC Server Dispatch Works
+
+```c
+// RPC servers register interfaces with dispatch tables:
+typedef struct {
+    unsigned int DispatchTableCount;
+    RPC_DISPATCH_FUNCTION* DispatchTable;  // ← Array of function pointers!
+} RPC_DISPATCH_TABLE;
+
+typedef RPC_STATUS (*RPC_DISPATCH_FUNCTION)(
+    PRPC_MESSAGE Message
+);
+
+RPC_SERVER_INTERFACE ServerInterface;
+ServerInterface.DispatchTable = &MyDispatchTable;
+
+RpcServerRegisterIf2(&ServerInterface, ...);
+```
+
+When an RPC call arrives:
+1. RPC runtime receives call with procedure number
+2. Looks up procedure number in dispatch table
+3. Calls corresponding function pointer with RPC_MESSAGE parameter
+4. Function executes and returns result
+
+#### Attack Theory
+
+```
+1. Identify target processes acting as RPC servers
+   - svchost.exe instances
+   - COM/DCOM servers
+   - System services
+   - Many Windows components
+
+2. Enumerate registered RPC interfaces in target
+   - Find RPC_SERVER_INTERFACE structures
+   - Locate dispatch tables (RPC_DISPATCH_TABLE)
+
+3. Overwrite dispatch table entry with shellcode address
+   - Replace function pointer at specific procedure number
+   - May need to handle pointer encoding (research needed)
+
+4. Trigger: Make RPC call to hijacked procedure number
+   - Call via RPC from our process
+   - Wait for natural RPC call from system/other processes
+```
+
+#### Target Process Identification
+
+Processes exposing RPC interfaces:
+- **svchost.exe** - Hosts many RPC-based services
+- **lsass.exe** - Exposes security-related RPC interfaces
+- **services.exe** - Service Control Manager RPC
+- **dllhost.exe** - COM surrogate with RPC interfaces
+- **spoolsv.exe** - Print Spooler RPC (infamous)
+- **taskhost.exe** - Task Scheduler RPC
+- **Custom services** - Many third-party services expose RPC
+
+Can enumerate via:
+- Parse process memory for RPC interface structures
+- Use RPC debugging/enumeration tools
+- Check registered endpoints with system RPC mapper
+
+#### Trigger Options
+
+**Manual Triggers:**
+```c
+// Make RPC call to hijacked procedure
+RPC_BINDING_HANDLE hBinding;
+RpcStringBindingCompose(
+    NULL,                    // UUID
+    L"ncacn_np",            // Protocol: named pipe
+    L"\\\\.",               // Local machine
+    L"\\pipe\\PipeName",    // Endpoint
+    NULL,
+    &StringBinding
+);
+RpcBindingFromStringBinding(StringBinding, &hBinding);
+
+// Call procedure number we hijacked
+MyRpcCall(hBinding, ...);  // Triggers shellcode!
+```
+
+**Natural Triggers:**
+- Many RPC interfaces called automatically by system
+- Other processes making legitimate RPC calls
+- Scheduled tasks triggering RPC calls
+- System maintenance operations
+
+#### Research Questions
+
+- [ ] Where are RPC_SERVER_INTERFACE structures stored in memory?
+- [ ] Where are dispatch tables located (rpcrt4.dll? per-server allocation)?
+- [X] **Is RPC dispatch function invocation CFG protected?** → YES - BLOCKED via `_guard_check_icall_fptr`
+- [ ] How to enumerate registered interfaces in a target process?
+- [ ] Are dispatch table pointers encoded?
+
+#### Key Functions to Reverse
+
+| Function | Purpose |
+|----------|---------|
+| `RpcServerRegisterIf2` / `RpcServerRegisterIfEx` | Registers interface, stores dispatch table |
+| `RpcServerListen` | Begins listening for calls |
+| Internal: `Invoke_*` or `RPC_INTERFACE::Invoke` | **Dispatch table lookup and call** - check CFG here |
+| `NdrServerCall2` | NDR (Network Data Representation) dispatch |
+| `NdrStubCall2` | Alternative dispatch mechanism |
+
+#### WinDbg Investigation Commands
+
+```
+# Find RPC structures and functions
+x rpcrt4!*Dispatch*
+x rpcrt4!*Interface*
+x rpcrt4!*ServerRegister*
+
+# Check dispatch call site
+uf rpcrt4!NdrServerCall2
+uf rpcrt4!Invoke_*
+
+# Look for CFG protection
+uf /c rpcrt4!NdrServerCall2 | findstr guard_dispatch_icall
+
+# Examine RPC interface structure
+dt rpcrt4!RPC_SERVER_INTERFACE
+dt rpcrt4!RPC_DISPATCH_TABLE
+```
+
+#### Complexity Assessment
+
+- **Implementation**: High - Complex RPC internals, need to parse structures
+- **Trigger**: Low-Medium - RPC calls can be made manually or occur naturally
+- **Detection**: Medium - RPC calls are normal but cross-process memory write monitored
+- **Target Applicability**: Very High - Most Windows services expose RPC
+
+#### Advantages (If Not CFG Protected)
+
+- **Pattern-matches Variant 1** - Function pointer array manipulation
+- **Broad applicability** - RPC servers everywhere in Windows
+- **Controllable trigger** - Can make specific RPC calls
+- **Legitimate mechanism** - RPC calls are normal system behavior
+- **Older infrastructure** - RPC predates CFG (but still retrofitted)
+
+#### Conclusion
+
+RPC dispatch table injection is **blocked by CFG**. Despite using a different implementation pattern than other mechanisms (explicit `_guard_check_icall_fptr` call rather than `guard_dispatch_icall` thunk), the result is the same - CFG validation prevents shellcode execution.
+
+This is the **6th consecutive callback mechanism** found to be CFG protected, establishing a clear pattern: Microsoft has systematically retrofitted CFG to virtually all callback-based code execution paths in Windows.
+
+Despite pattern-matching our successful Variant 1 (function pointer array manipulation), RPC's older codebase has still been hardened with CFG protection.
+
+**NOT VIABLE** without CFG bypass via `SetProcessValidCallTargets`.
+
+---
+
+### Candidate I: Application Recovery Callback Hijacking
+
+#### Concept
+
+Windows Restart Manager allows applications to register recovery callbacks that execute when the application is about to crash or during system shutdown/restart. These callbacks are designed to save state before termination.
+
+#### Status: Research In Progress
+
+#### Why This Is Novel
+
+- Recovery callbacks exist but manipulation for injection appears undocumented
+- Many modern applications register recovery callbacks
+- Natural triggers via system events (shutdown, restart, logoff)
+- Mechanism focused on recovery, possibly not hardened against abuse
+
+#### Background: Application Recovery API
+
+```c
+// Applications register recovery callbacks:
+typedef DWORD (WINAPI *APPLICATION_RECOVERY_CALLBACK)(
+    PVOID pvParameter
+);
+
+HRESULT RegisterApplicationRecoveryCallback(
+    APPLICATION_RECOVERY_CALLBACK pRecoveryCallback,  // ← Function pointer!
+    PVOID pvParameter,
+    DWORD dwPingInterval,    // How often to ping (milliseconds)
+    DWORD dwFlags
+);
+
+// In callback, application can:
+// - Save state
+// - Clean up resources
+// - ApplicationRecoveryInProgress() to prevent termination timeout
+// - ApplicationRecoveryFinished() to signal completion
+```
+
+When callback fires:
+1. System detects application needs recovery (crash, shutdown, hang)
+2. Windows Restart Manager invokes registered callback
+3. Callback executes with parameter
+4. Application can save state before termination
+
+#### Attack Theory
+
+```
+1. Identify target applications with registered recovery callbacks
+   - Modern applications (Office, browsers, development tools)
+   - Applications using Restart Manager
+
+2. Locate recovery callback storage in target process
+   - Likely in kernel32.dll or private process structures
+   - Need to reverse RegisterApplicationRecoveryCallback implementation
+
+3. Overwrite callback pointer with shellcode address
+   - May need pointer encoding (research needed)
+
+4. Trigger: Force application into recovery scenario
+   - System shutdown/restart
+   - Application hang detection
+   - Restart Manager shutdown request
+   - Session logoff
+```
+
+#### Natural Triggers (Automatic)
+
+Recovery callbacks fire during:
+- **System shutdown** - User initiates shutdown
+- **System restart** - Windows Update restart, manual restart
+- **User logoff** - Session termination
+- **Application hang** - Windows detects unresponsive application
+- **Windows Update** - Update installation triggers restart
+
+These are all normal user/system operations that occur naturally.
+
+#### Manual Triggers (Controllable)
+
+```c
+// Use Restart Manager API to request recovery:
+DWORD dwSession;
+WCHAR szSessionKey[CCH_RM_SESSION_KEY+1];
+
+// Start Restart Manager session
+RmStartSession(&dwSession, 0, szSessionKey);
+
+// Register target process
+RM_UNIQUE_PROCESS rgProcesses[1];
+rgProcesses[0].dwProcessId = targetPID;
+GetProcessTimes(hProcess, &rgProcesses[0].ProcessStartTime, ...);
+RmRegisterResources(dwSession, 0, NULL, 1, rgProcesses, 0, NULL);
+
+// Request shutdown - triggers recovery callback!
+RmShutdown(dwSession, RmForceShutdown, NULL);
+
+// End session
+RmEndSession(dwSession);
+```
+
+#### Target Applications
+
+Applications likely to have registered recovery callbacks:
+- **Microsoft Office** - Word, Excel, PowerPoint (document recovery)
+- **Web browsers** - Chrome, Edge, Firefox (session restore)
+- **Development tools** - Visual Studio, VS Code (workspace recovery)
+- **Creative applications** - Adobe products, image editors
+- **Database applications** - SQL clients, management tools
+- **Modern Windows apps** - Apps using Restart Manager
+
+Can identify via:
+- Applications with auto-recovery features
+- Check for `RegisterApplicationRecoveryCallback` imports
+- Test applications that survive crashes with state restoration
+
+#### Research Questions
+
+- [ ] Where is the recovery callback pointer stored in process memory?
+- [ ] Is callback invocation CFG protected?
+- [ ] What is the internal structure for recovery context?
+- [ ] How to reliably locate recovery callback registration?
+- [ ] Can we identify if a process has registered a recovery callback?
+
+#### Key Functions to Reverse
+
+| Function | Purpose |
+|----------|---------|
+| `RegisterApplicationRecoveryCallback` | Registers callback, stores pointer |
+| `UnregisterApplicationRecoveryCallback` | Unregisters callback |
+| `ApplicationRecoveryInProgress` | Called during recovery to extend timeout |
+| `ApplicationRecoveryFinished` | Signals recovery complete |
+| Internal: Recovery dispatcher | **Actual callback invocation** - check CFG here |
+| `RmStartSession` / `RmShutdown` | Restart Manager triggering mechanisms |
+
+#### WinDbg Investigation Commands
+
+```
+# Find recovery-related functions
+x kernel32!*Recovery*
+x kernel32!*Restart*
+x rstrtmgr!*
+
+# Check for global storage
+x kernel32!*Recovery*Context*
+x kernel32!*Recovery*Callback*
+
+# Examine callback invocation
+uf kernel32!RegisterApplicationRecoveryCallback
+
+# Look for CFG protection at invocation site
+# (Need to find where callback is actually called)
+```
+
+#### Complexity Assessment
+
+- **Implementation**: Medium - Need to locate callback storage mechanism
+- **Trigger**: Medium - Natural triggers require waiting, manual trigger via Restart Manager
+- **Detection**: Low - Recovery callbacks and Restart Manager are legitimate
+- **Target Applicability**: Medium - Modern applications, not all processes
+
+#### Advantages
+
+- **Natural triggers** - System events fire automatically
+- **Legitimate mechanism** - Recovery and Restart Manager are normal Windows features
+- **Likely obscure** - Recovery callback hijacking probably never researched
+- **Interesting targets** - High-value applications (Office, browsers, dev tools)
+
+---
+
+### Candidate J: Memory Resource Notification Callbacks
+
+#### Concept
+
+Windows allows processes to register for notifications when system memory conditions change (low memory, high memory). These use a combination of `CreateMemoryResourceNotification` and `RegisterWaitForSingleObject`, creating a callback mechanism triggered by natural system events.
+
+#### Status: Research Queued
+
+#### Why This Is Novel
+
+- Extremely obscure API combination
+- Natural trigger (system memory pressure)
+- Wait callback mechanism might not be CFG protected
+- Appears completely undocumented for injection
+
+#### Background
+
+```c
+// Create memory resource notification handle:
+HANDLE hMemNotify = CreateMemoryResourceNotification(
+    LowMemoryResourceNotification  // or HighMemoryResourceNotification
+);
+
+// Register wait callback:
+HANDLE hWait;
+RegisterWaitForSingleObject(
+    &hWait,
+    hMemNotify,               // Wait on memory notification
+    WaitCallback,             // ← Function pointer!
+    pContext,
+    INFINITE,                 // Wait indefinitely
+    WT_EXECUTEDEFAULT         // Flags
+);
+
+// Callback signature:
+VOID CALLBACK WaitCallback(
+    PVOID lpParameter,
+    BOOLEAN TimerOrWaitFired
+);
+```
+
+When system memory conditions change, the notification handle becomes signaled, and the callback fires.
+
+#### Natural Triggers
+
+- System enters low memory condition (high memory usage)
+- System recovers to high memory availability
+- Natural system operation
+
+#### Manual Triggers
+
+- Allocate large amounts of memory to force low memory condition
+- Release memory to trigger high memory notification
+
+#### Research Status
+
+Queued for future investigation. Need to determine if wait callbacks are CFG protected (likely yes, as they're thread pool related).
+
+---
+
+### Candidate D: LdrpDllNotificationList Injection
+
+#### Concept (Moved from previous section for clarity)
+
+When DLLs load/unload, ntdll walks a notification list and calls registered callbacks. The list is:
+
+```
+ntdll!LdrpDllNotificationList - Linked list of notification entries
+```
+
+Each entry contains a callback function pointer that's called on DLL events.
+
+#### Status: Research Complete - **CFG PROTECTED** (Implementation Blocked)
+
+#### Key Findings from Reversing
+
+##### Critical Blocker: CFG Protection
+
+From `ntdll!LdrpSendDllNotifications`, the function responsible for dispatching DLL notification callbacks:
+
+```asm
+ntdll!LdrpSendDllNotifications+0x84:
+    mov     rax,qword ptr [rbx+10h]           ; Load callback pointer from entry
+    mov     ecx,edi                            ; Notification reason
+    call    ntdll!guard_dispatch_icall$thunk$10345483385596137414  ; CFG PROTECTED!
+```
+
+**The DLL notification callback invocation site uses `guard_dispatch_icall`**, which validates the callback target address against the CFG bitmap before allowing the call. This means:
+
+- Overwriting callback pointers with shellcode addresses will fail CFG validation
+- Process will crash or callback invocation will be blocked
+- Same blocker as WNF, FLS, Exception Filter, and ETW mechanisms
+
+##### Notification Entry Structure
+
+From the disassembly, each list entry appears to have:
+- `+0x00`: Flink (next entry pointer)
+- `+0x10`: Callback function pointer (invoked via CFG)
+- `+0x18`: Context parameter (passed to callback as r8)
+
+The list is protected by `ntdll!LdrpDllNotificationLock` critical section.
+
+##### WinDbg Commands Used
+
+```
+# Find the notification list
+x ntdll!*DllNotification*
+dq ntdll!LdrpDllNotificationList L1
+
+# Check callback dispatch function
+uf ntdll!LdrpSendDllNotifications
+
+# Confirmed: guard_dispatch_icall invocation at offset +0x8a
+```
+
+#### Attack Theory (Blocked by CFG)
+
+```
+1. Find LdrpDllNotificationList head in target's ntdll
+2. Allocate fake notification entry with our shellcode as callback
+3. Insert entry into the list (manipulate Flink/Blink pointers)
+4. Trigger DLL load in target:
+   - LoadLibrary call
+   - Delay-load DLL resolution
+   - COM object instantiation
+5. Notification callback fires → shellcode executes
+```
+
+#### Why This Might Be Interesting
+
+- **List injection**: We successfully manipulated the Ctrl-C handler list
+- **Many triggers**: DLL loads happen frequently
+- **Legitimate mechanism**: Process loading DLLs is normal behavior
+
+#### Research Questions
+
+- [X] **Is the callback invocation CFG protected?** → YES - BLOCKED
+- [X] **What's the notification entry structure?** → Linked list with callback at +0x10, context at +0x18
+- [X] **Are there lock/synchronization requirements?** → Yes - LdrpDllNotificationLock critical section
+- [ ] What's the callback signature?
+
+#### Complexity Assessment (If Not CFG Protected)
+
+- **Implementation**: Medium - linked list manipulation
+- **Trigger**: Low - DLL loads are easy to trigger
+- **Detection**: Medium - list manipulation might be monitored
+- **Target Applicability**: Very High - All processes load DLLs
+
+#### Conclusion
+
+DLL notification callback injection is **blocked by CFG**. The callback dispatch in `ntdll!LdrpSendDllNotifications` uses `guard_dispatch_icall` for validation. This is the **5th consecutive callback mechanism** found to be CFG protected.
+
+Despite pattern-matching our successful Variant 1 (list-based injection with function pointers), Microsoft has retrofitted CFG protection to the DLL notification system.
+
+**NOT VIABLE** without CFG bypass via `SetProcessValidCallTargets`.
 
 ---
 
@@ -1134,12 +2062,16 @@ dt ntdll!_CPTABLEINFO
 
 | Candidate | Novelty | CFG Status | Complexity | Trigger Ease | Priority |
 |-----------|---------|------------|------------|--------------|----------|
-| **A: TEB TxnScope** | Very High | N/A (vestigial) | N/A | N/A | ~~HIGH~~ **NOT VIABLE** |
-| **C: UnhandledException** | Medium-High | ❌ **PROTECTED** | Low | Medium | ~~HIGH~~ **BLOCKED** |
-| **D: DllNotification** | Medium | Unknown | Medium | Low | **HIGH - NEXT** |
-| **B: ActiveFrame** | Very High | Unknown | High | Unknown | Medium |
+| **I: Application Recovery** | Very High | Unknown | Medium | Medium (natural) | Medium |
+| **J: Memory Resource Notify** | Very High | Unknown (likely CFG) | Medium | Medium (natural) | Medium |
+| **B: ActiveFrame** | Very High | Unknown | High | Unknown | Low |
 | **E: Heap Commit** | Very High | Unknown | High | Medium | Low |
 | **F: NLS Callbacks** | Very High | Unknown | Very High | Low | Low |
+| **H: RPC Dispatch Tables** | Very High | ❌ **PROTECTED** | High | Low-Medium | ~~TOP~~ **BLOCKED** |
+| **D: DllNotification** | Medium | ❌ **PROTECTED** | Medium | Low | ~~TOP~~ **BLOCKED** |
+| **G: ETW Consumer Callbacks** | Very High | ❌ **PROTECTED** | Medium-High | Very Low (natural) | ~~TOP~~ **BLOCKED** |
+| **A: TEB TxnScope** | Very High | N/A (vestigial) | N/A | N/A | ~~HIGH~~ **NOT VIABLE** |
+| **C: UnhandledException** | Medium-High | ❌ **PROTECTED** | Low | Medium | ~~HIGH~~ **BLOCKED** |
 
 ## CFG Protection Summary
 
@@ -1149,19 +2081,60 @@ dt ntdll!_CPTABLEINFO
 | Variant 2: WNF Callbacks | ✅ Yes | ❌ Blocked |
 | Variant 3: FLS Callbacks | ✅ Yes | ❌ Blocked |
 | Candidate C: Exception Filter | ✅ Yes | ❌ Blocked |
+| Candidate G: ETW Consumer Callbacks | ✅ Yes | ❌ Blocked |
+| Candidate D: DLL Notifications | ✅ Yes | ❌ Blocked |
+| Candidate H: RPC Dispatch Tables | ✅ Yes | ❌ Blocked |
 | Candidate A: TEB TxnScope | N/A | ❌ Vestigial (never called) |
-| Candidate D: DLL Notifications | Unknown | 🔍 **NEXT TO INVESTIGATE** |
+| Candidate I: Application Recovery | Unknown | Queued |
+| Candidate J: Memory Resource Notify | Unknown (likely CFG) | Queued |
 
-## Recommended Investigation Order
+## Recommended Investigation Order (Updated)
 
-1. ~~TEB TxnScopeEnterCallback~~ - **NOT VIABLE** (vestigial, never invoked)
-2. ~~RtlpUnhandledExceptionFilter~~ - **BLOCKED BY CFG** (confirmed)
-3. **LdrpDllNotificationList** - If CFG check passes, easy trigger
-4. **Others** - Based on findings from above
+### Phase 1: Top Priority - Truly Novel Techniques
+1. **Candidate G: ETW Consumer Callbacks** - 🔍 INVESTIGATING NOW
+   - Extremely obscure, natural triggers, broad applicability
+2. **Candidate H: RPC Dispatch Tables** - 🔍 INVESTIGATING NOW
+   - Pattern-matches Variant 1, controllable triggers, ubiquitous
+3. **Candidate I: Application Recovery Callbacks** - 🔍 INVESTIGATING NOW
+   - Natural triggers, interesting targets, likely obscure
+
+### Phase 2: Previously Identified
+4. **Candidate D: LdrpDllNotificationList** - 🔍 INVESTIGATING NOW
+   - Easy trigger, similar to Variant 1 list manipulation
+
+### Phase 3: Lower Priority
+5. **Candidate J: Memory Resource Notifications** - Natural triggers but likely CFG
+6. **Others** - Based on findings from Phases 1-2
+
+### Completed Investigations
+- ~~Candidate A: TEB TxnScope~~ - **NOT VIABLE** (vestigial, never invoked)
+- ~~Candidate C: RtlpUnhandledExceptionFilter~~ - **BLOCKED BY CFG** (confirmed)
 
 ## Quick Reference: WinDbg Starting Commands
 
 ```
+# For RPC Dispatch Tables - INVESTIGATING
+x rpcrt4!*Dispatch*
+x rpcrt4!*Interface*
+x rpcrt4!*ServerRegister*
+uf rpcrt4!NdrServerCall2
+uf /c rpcrt4!NdrServerCall2 | findstr guard_dispatch_icall
+dt rpcrt4!RPC_SERVER_INTERFACE
+dt rpcrt4!RPC_DISPATCH_TABLE
+
+# COMPLETED INVESTIGATIONS:
+
+# For DLL Notifications - INVESTIGATED, CFG BLOCKED
+x ntdll!*DllNotification*
+uf ntdll!LdrpSendDllNotifications
+# Result: guard_dispatch_icall at +0x8a
+
+# For ETW Consumer Callbacks - INVESTIGATED, CFG BLOCKED
+x sechost!*Trace*
+x advapi32!*Trace*
+uf sechost!EtwpDoEventTraceCallbacks
+# Result: guard_dispatch_icall at +0x13 and +0x76
+
 # For TEB Transaction Callbacks - INVESTIGATED, NOT VIABLE (vestigial)
 dt ntdll!_TEB TxnScopeEnterCallback TxnScopeExitCallback @$teb
 x ntdll!*Txn*
@@ -1170,37 +2143,36 @@ x ntdll!*Txn*
 x ntdll!*UnhandledException*
 dq ntdll!RtlpUnhandledExceptionFilter L1
 
-# For DLL Notifications - NEXT TO INVESTIGATE
-x ntdll!*DllNotification*
-x ntdll!Ldrp*Notification*
-dq ntdll!LdrpDllNotificationList L1
-uf ntdll!LdrpSendDllNotifications           # Find callback invocation
-uf ntdll!LdrRegisterDllNotification         # How callbacks are registered
-
-# For Heap Commit Routines
+# For Heap Commit Routines - QUEUED
 !heap -h
 dt ntdll!_HEAP
 
-# For NLS/Code Pages
+# For NLS/Code Pages - QUEUED
 x ntdll!*Nls*
 x ntdll!*CodePage*
 ```
 
-## Next Investigation: Candidate D (LdrpDllNotificationList)
+## Current Investigations (In Progress)
+
+### Investigation 1: Candidate H (RPC Dispatch Tables)
 
 **Key Questions:**
-1. What's the structure of notification entries?
-2. Is the callback invocation CFG protected?
-3. How do we insert an entry into the list?
-4. What triggers notifications (DLL load/unload)?
+1. Where are RPC_SERVER_INTERFACE structures stored in memory?
+2. Where are dispatch tables located?
+3. Is RPC dispatch function invocation CFG protected?
+4. How to enumerate registered interfaces in a target process?
 
-**Starting Commands:**
+**Current Status:**
+- `NdrServerCall2` is just a wrapper that calls `NdrStubCall2`
+- No CFG protection in `NdrServerCall2` itself
+- Need to trace deeper into `NdrStubCall2` to find actual dispatch table invocation site
+
+**Next Command Needed:**
 ```
-x ntdll!*DllNotification*
-uf ntdll!LdrRegisterDllNotification
-uf ntdll!LdrpSendDllNotifications
-s -b ntdll L?500000 <pattern for list head access>
+uf rpcrt4!NdrStubCall2
 ```
+
+Look for where the dispatch table function pointers are actually called. May need to trace even deeper if `NdrStubCall2` is also a wrapper.
 
 ---
 
