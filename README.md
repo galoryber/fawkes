@@ -38,6 +38,7 @@ rm | `rm <path>`                                                                
 run | `run <command>`                                                                                                            | Execute a shell command and return the output.
 screenshot | `screenshot` | **(Windows only)** Capture a screenshot of the current desktop session. Captures all monitors and uploads as PNG.
 spawn | `spawn` | **(Windows only)** Spawn a suspended process or thread for injection techniques. Process mode creates a new process with CREATE_SUSPENDED. Thread mode creates a suspended thread in an existing process. Returns PID/TID for use with `apc-injection`.
+opus-injection | `opus-injection` | **(Windows only)** Callback-based process injection techniques. Variant 1: Ctrl-C Handler Chain (console processes). Variant 4: PEB KernelCallbackTable (GUI processes). See notes below.
 sleep | `sleep [seconds] [jitter]`                                                                                                       | Set the callback interval in seconds and jitter percentage.
 start-clr | `start-clr`                                                                                                                | **(Windows only)** Initialize the CLR v4.0.30319 and load amsi.dll into memory. Run this before `inline-assembly` to implement your own AMSI bypass using `write-memory` or `autopatch`.
 steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a security token from another process. Changes LOCAL and NETWORK identity. Requires admin privileges or SeDebugPrivilege to steal from other users' processes.
@@ -82,6 +83,28 @@ PoolParty injection abuses Windows Thread Pool internals to achieve code executi
 **Go-based Shellcode Compatibility:** Variant 1 executes shellcode as a thread pool worker initialization routine, which has specific constraints on stack/context setup that conflict with Go's runtime expectations (TLS setup, thread state, etc.). Variant 7's I/O completion callback context is more compatible with Go's runtime. For Go-based agent shellcode (fawkes, merlin, etc.), **use Variant 7**.
 
 Simple shellcode (e.g., msfvenom calc.bin) works with both variants.
+
+### Opus Injection
+
+Opus injection uses callback-based injection techniques to achieve code execution through manipulation of Windows callback tables and handler chains.
+
+| Variant | Technique | Target | Go Shellcode Compatible |
+|---------|-----------|--------|------------------------|
+| 1 | Ctrl-C Handler Chain | Console processes only | No |
+| 4 | PEB KernelCallbackTable | GUI processes only | Yes |
+
+**Variant 1 - Ctrl-C Handler Chain:**
+- **How it works:** Injects a fake handler into the target's console Ctrl+C handler array (in kernelbase.dll), then triggers a Ctrl+C event. Windows decodes and calls our shellcode as part of normal handler dispatch.
+- **Target limitation:** Console processes only (cmd.exe, powershell.exe, etc.)
+- **Go-based Shellcode:** Not compatible - Ctrl+C handler context conflicts with Go runtime expectations
+- **Detection Surface:** WriteProcessMemory/VirtualAllocEx (standard) + AttachConsole/GenerateConsoleCtrlEvent (uncommon). No CreateRemoteThread, no APC.
+
+**Variant 4 - PEB KernelCallbackTable:**
+- **How it works:** Modifies the PEB KernelCallbackTable pointer to redirect win32k user-mode callbacks (specifically `__fnCOPYDATA`). Triggers execution by sending a WM_COPYDATA window message.
+- **Target limitation:** GUI processes only (notepad.exe, explorer.exe, any process with user32.dll loaded and visible windows)
+- **Go-based Shellcode:** Compatible! WM_COPYDATA callback context works with Go's runtime requirements
+- **Detection Surface:** WriteProcessMemory/VirtualAllocEx (standard) + NtQueryInformationProcess (common) + PEB modification + SendMessage (IPC - normal behavior). No CreateRemoteThread, no APC, no thread pool manipulation.
+- **Multi-agent operation:** Both the injector agent and injected agent can operate simultaneously. The trigger is sent asynchronously to prevent blocking the injector.
 
 
 
