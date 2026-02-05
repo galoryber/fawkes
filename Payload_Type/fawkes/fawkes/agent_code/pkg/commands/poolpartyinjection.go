@@ -849,7 +849,7 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	// Step 1: Open target process
 	hProcess, err := windows.OpenProcess(
 		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
-			windows.PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
+			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
 		false,
 		pid,
 	)
