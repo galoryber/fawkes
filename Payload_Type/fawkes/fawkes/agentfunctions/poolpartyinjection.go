@@ -31,6 +31,7 @@ func init() {
 				Description:      "The PoolParty injection variant to use",
 				Choices: []string{
 					"1 - Worker Factory Start Routine Overwrite",
+					"2 - TP_WORK Insertion",
 					"7 - TP_DIRECT Insertion",
 					"8 - TP_TIMER Insertion",
 				},
@@ -132,7 +133,7 @@ func init() {
 
 			if variant != 1 && variant != 2 && variant != 7 && variant != 8 {
 				response.Success = false
-				response.Error = fmt.Sprintf("Invalid variant: %d. Supported variants: 1, 7, 8 (variant 2 hidden but functional)", variant)
+				response.Error = fmt.Sprintf("Invalid variant: %d. Supported variants: 1, 2, 7, 8", variant)
 				return response
 			}
 
