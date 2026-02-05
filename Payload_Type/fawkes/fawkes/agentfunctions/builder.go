@@ -236,6 +236,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	inflateBytes, _ := payloadBuildMsg.BuildParameters.GetStringArg("inflate_bytes")
 	inflateCount, _ := payloadBuildMsg.BuildParameters.GetStringArg("inflate_count")
 	paddingFile := "./fawkes/agent_code/padding.bin"
+	fmt.Printf("[builder] inflate_bytes='%s' inflate_count='%s'\n", inflateBytes, inflateCount)
 
 	if inflateBytes != "" && inflateCount != "" {
 		count, countErr := strconv.Atoi(strings.TrimSpace(inflateCount))
@@ -277,6 +278,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		}
 	} else {
 		// No inflation requested, write minimal default
+		fmt.Printf("[builder] No inflation requested, writing default 1-byte padding.bin\n")
 		os.WriteFile(paddingFile, []byte{0x00}, 0644)
 	}
 	// Defer cleanup: restore default padding.bin after build completes
