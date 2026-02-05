@@ -154,16 +154,16 @@ type TPP_WORK_STATE struct {
 	Exchange uint32
 }
 
-// Simplified TPP_CLEANUP_GROUP_MEMBER - only the fields we need
+// Simplified TPP_CLEANUP_GROUP_MEMBER - matching SafeBreach structure exactly
 type TPP_CLEANUP_GROUP_MEMBER struct {
-	_                  [8]byte    // Refcount
-	_                  [8]byte    // padding
+	Refcount           int32      // TPP_REFCOUNT
+	_                  [4]byte    // padding after Refcount
 	VFuncs             uintptr    // VFuncs pointer
 	CleanupGroup       uintptr    // CleanupGroup pointer
 	CleanupGroupCancel uintptr    // CleanupGroupCancelCallback
 	Finalization       uintptr    // FinalizationCallback
 	CleanupGroupLinks  LIST_ENTRY // CleanupGroupMemberLinks
-	_                  [64]byte   // CallbackBarrier
+	CallbackBarrier    [24]byte   // TPP_BARRIER: TPP_FLAGS_COUNT(8) + RTL_SRWLOCK(8) + TPP_ITE(8)
 	Callback           uintptr    // Union of various callbacks
 	Context            uintptr
 	ActivationContext  uintptr
@@ -173,10 +173,10 @@ type TPP_CLEANUP_GROUP_MEMBER struct {
 	RaceDll            uintptr
 	Pool               uintptr // Pointer to FULL_TP_POOL
 	PoolObjectLinks    LIST_ENTRY
-	Flags              uint32   // Union flags/longfunction/etc
-	_                  [4]byte  // padding
-	_                  [16]byte // AllocCaller
-	_                  [16]byte // ReleaseCaller
+	Flags              int32   // Union flags/longfunction/etc
+	_                  [4]byte // padding
+	AllocCaller        uintptr // TPP_CALLER is just a pointer
+	ReleaseCaller      uintptr // TPP_CALLER is just a pointer
 	CallbackPriority   int32
 	_                  [4]byte // padding
 }
@@ -192,7 +192,7 @@ type FULL_TP_WORK struct {
 // TPP_QUEUE structure (simplified)
 type TPP_QUEUE struct {
 	Queue LIST_ENTRY
-	_     [40]byte // RTL_SRWLOCK and other fields
+	Lock  uintptr // RTL_SRWLOCK is pointer-sized (8 bytes on x64)
 }
 
 // FULL_TP_POOL structure (simplified - only fields we need)
@@ -204,7 +204,7 @@ type FULL_TP_POOL struct {
 	_          [8]byte    // ProximityInfo pointer
 	_          [8]byte    // WorkerFactory pointer
 	_          [8]byte    // CompletionPort pointer
-	_          [40]byte   // Lock (RTL_SRWLOCK)
+	_          [8]byte    // Lock (RTL_SRWLOCK - 8 bytes on x64)
 	_          [16]byte   // PoolObjectList
 	_          [16]byte   // WorkerList
 	TimerQueue TPP_TIMER_QUEUE
@@ -237,7 +237,7 @@ type TPP_TIMER_SUBQUEUE struct {
 
 // TPP_TIMER_QUEUE structure
 type TPP_TIMER_QUEUE struct {
-	_                   [40]byte // Lock (RTL_SRWLOCK)
+	Lock                uintptr // RTL_SRWLOCK is pointer-sized (8 bytes on x64)
 	AbsoluteQueue       TPP_TIMER_SUBQUEUE
 	RelativeQueue       TPP_TIMER_SUBQUEUE
 	AllocatedTimerCount int32
