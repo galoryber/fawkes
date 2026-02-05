@@ -268,7 +268,12 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 				payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to write padding file: %v", writeErr)
 				return payloadBuildResponse
 			}
-			fmt.Printf("[builder] Generated padding.bin: %d bytes (%d repetitions of %d-byte pattern)\n", len(paddingData), count, len(bytePattern))
+			// Verify the file was written correctly
+			if fi, statErr := os.Stat(paddingFile); statErr == nil {
+				fmt.Printf("[builder] Generated padding.bin: %d bytes (%d repetitions of %d-byte pattern), file on disk: %d bytes\n", len(paddingData), count, len(bytePattern), fi.Size())
+			} else {
+				fmt.Printf("[builder] Generated padding.bin: %d bytes (%d repetitions of %d-byte pattern), stat error: %v\n", len(paddingData), count, len(bytePattern), statErr)
+			}
 		}
 	} else {
 		// No inflation requested, write minimal default

@@ -12,10 +12,11 @@ func usePadding() {
 	if len(paddingData) > 1 {
 		fmt.Printf("Loaded %d bytes of padding data.\n", len(paddingData))
 		for i, b := range paddingData {
-			_ = b
+			fmt.Printf("%02x", b)
 			if i >= 255 {
 				break
 			}
 		}
+		fmt.Println()
 	}
 }
