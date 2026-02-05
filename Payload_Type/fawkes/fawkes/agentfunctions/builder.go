@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/MythicAgents/merlin/Payload_Type/merlin/container/pkg/srdi"
@@ -80,6 +81,20 @@ var payloadDefinition = agentstructs.PayloadType{
 			Required:      false,
 			DefaultValue:  false,
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
+		{
+			Name:          "inflate_bytes",
+			Description:   "Optional: Hex bytes to inflate binary with (e.g. 0x90 or 0x41,0x42). Used with inflate_count to lower entropy or increase file size.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "inflate_count",
+			Description:   "Optional: Number of times to repeat the inflate bytes (e.g. 3000 = 3000 repetitions of the byte pattern).",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
@@ -217,6 +232,51 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	ldflags += fmt.Sprintf(" -X '%s.debug=%s'", fawkes_main_package, "false")
 	ldflags += " -buildid="
 
+	// Handle binary inflation (padding)
+	inflateBytes, _ := payloadBuildMsg.BuildParameters.GetStringArg("inflate_bytes")
+	inflateCount, _ := payloadBuildMsg.BuildParameters.GetStringArg("inflate_count")
+	paddingFile := "./fawkes/agent_code/padding.bin"
+
+	if inflateBytes != "" && inflateCount != "" {
+		count, countErr := strconv.Atoi(strings.TrimSpace(inflateCount))
+		if countErr != nil || count <= 0 {
+			// Invalid count, write default 1-byte padding
+			os.WriteFile(paddingFile, []byte{0x00}, 0644)
+		} else {
+			// Parse hex bytes like "0x41,0x42" or "0x90"
+			hexParts := strings.Split(inflateBytes, ",")
+			var bytePattern []byte
+			for _, part := range hexParts {
+				part = strings.TrimSpace(part)
+				part = strings.TrimPrefix(part, "0x")
+				part = strings.TrimPrefix(part, "0X")
+				val, parseErr := strconv.ParseUint(part, 16, 8)
+				if parseErr != nil {
+					payloadBuildResponse.Success = false
+					payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to parse inflate byte '%s': %v", part, parseErr)
+					return payloadBuildResponse
+				}
+				bytePattern = append(bytePattern, byte(val))
+			}
+			// Build the full padding data by repeating the pattern count times
+			paddingData := make([]byte, 0, len(bytePattern)*count)
+			for i := 0; i < count; i++ {
+				paddingData = append(paddingData, bytePattern...)
+			}
+			if writeErr := os.WriteFile(paddingFile, paddingData, 0644); writeErr != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to write padding file: %v", writeErr)
+				return payloadBuildResponse
+			}
+			fmt.Printf("[builder] Generated padding.bin: %d bytes (%d repetitions of %d-byte pattern)\n", len(paddingData), count, len(bytePattern))
+		}
+	} else {
+		// No inflation requested, write minimal default
+		os.WriteFile(paddingFile, []byte{0x00}, 0644)
+	}
+	// Defer cleanup: restore default padding.bin after build completes
+	defer os.WriteFile(paddingFile, []byte{0x00}, 0644)
+
 	goarch := architecture
 	tags := payloadBuildMsg.C2Profiles[0].Name
 	command := fmt.Sprintf("rm -rf /deps; CGO_ENABLED=0 GOOS=%s GOARCH=%s ", targetOs, goarch)
@@ -276,11 +336,16 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 
 	command += fmt.Sprintf("%s -o /build/%s .", goCmd, payloadName)
 
+	// Build configuring step output with padding info
+	configuringOutput := fmt.Sprintf("Successfully configured\n%s", command)
+	if inflateBytes != "" && inflateCount != "" {
+		configuringOutput += fmt.Sprintf("\nBinary inflation: bytes=%s count=%s", inflateBytes, inflateCount)
+	}
 	mythicrpc.SendMythicRPCPayloadUpdateBuildStep(mythicrpc.MythicRPCPayloadUpdateBuildStepMessage{
 		PayloadUUID: payloadBuildMsg.PayloadUUID,
 		StepName:    "Configuring",
 		StepSuccess: true,
-		StepStdout:  fmt.Sprintf("Successfully configured\n%s", command),
+		StepStdout:  configuringOutput,
 	})
 	cmd := exec.Command("/bin/bash")
 	fmt.Println("build command : " + command)
