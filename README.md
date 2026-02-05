@@ -2,7 +2,11 @@
 
 <img src="agent_icons/fawkes.svg" width="100" />
 
-Fawkes is my attempt at a Mythic C2 Agent. Fawkes is a golang based agent that will have cross platform agent capabilities, but currently operates on Windows. 
+Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" and has turned into a goal. My goal is to not write a single line of code for this agent, instead, exclusively producing it at a prompt. 
+
+I orignally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to development my own agent. A prompt though, that I have time for. 
+
+Fawkes is a golang based agent that will have cross platform agent capabilities, but currently operates on Windows. 
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -29,7 +33,7 @@ ls | `ls [path]`                                                                
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it. Default logon type 9 (NEW_CREDENTIALS) only affects NETWORK identity (like `runas /netonly`) - whoami still shows original user. Use `-logon_type 2` (INTERACTIVE) to change both local and network identity.
 mkdir | `mkdir <directory>`                                                                                                        | Create a new directory (creates parent directories if needed).
 mv | `mv <source> <destination>`                                                                                                | Move or rename a file from source to destination.
-poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. Supports Variant 1 (Worker Factory Start Routine Overwrite) and Variant 7 (TP_DIRECT Insertion). See notes below.
+poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. All 8 variants supported. See notes below.
 ps | `ps [-v] [-i PID] [filter]`                                                                                               | List running processes. Use -v for verbose output with command lines. Use -i to filter by specific PID. Optional filter to search by process name.
 pwd | `pwd`                                                                                                                     | Print working directory.
 read-memory | `read-memory <dll_name> <function_name> <start_index> <num_bytes>` | **(Windows only)** Read bytes from a DLL function address. Example: `read-memory amsi AmsiScanBuffer 0 8`
@@ -60,9 +64,8 @@ The HTTP profile calls back to the Mythic server over the basic, non-dynamic pro
 ## Thanks
 Everything I know about Mythic Agents came from Mythic Docs or stealing code and ideas from the [Merlin](https://github.com/MythicAgents/merlin) and [Freyja](https://github.com/MythicAgents/freyja) agents. 
 
-And when that didn't work, I had Claude reference Merlin Freyja and Apollo for design choices and code references. 
+After that, it's been exclusively feeding Claude PoC links and asking for cool stuff. Crazy right? 
 
-In other words, I wrote nearly none of this. :) Thanks everybody else!
 
 ## Specific techniques and implementations adapted from:
 - **Threadless Injection** - [CCob's ThreadlessInject](https://github.com/CCob/ThreadlessInject) (original C# implementation) and [dreamkinn's go-ThreadlessInject](https://github.com/dreamkinn/go-ThreadlessInject) (Go port)
@@ -73,16 +76,30 @@ In other words, I wrote nearly none of this. :) Thanks everybody else!
 
 ### PoolParty Injection
 
-PoolParty injection abuses Windows Thread Pool internals to achieve code execution without calling monitored APIs like `CreateRemoteThread`. Two variants are implemented:
+PoolParty injection abuses Windows Thread Pool internals to achieve code execution without calling monitored APIs like `CreateRemoteThread`. All 8 variants from the SafeBreach Labs research are implemented:
 
-| Variant | Technique | Go Shellcode Compatible |
-|---------|-----------|------------------------|
-| 1 | Worker Factory Start Routine Overwrite | No |
-| 7 | TP_DIRECT Insertion (I/O Completion Port) | Yes |
+| Variant | Technique | Trigger Mechanism | Go Shellcode |
+|---------|-----------|-------------------|--------------|
+| 1 | Worker Factory Start Routine Overwrite | New worker thread creation | ✗ |
+| 2 | TP_WORK Insertion | Task queue processing | ✓ |
+| 3 | TP_WAIT Insertion | Event signaling | ✓ |
+| 4 | TP_IO Insertion | File I/O completion | ✓ |
+| 5 | TP_ALPC Insertion | ALPC port messaging | ✓ |
+| 6 | TP_JOB Insertion | Job object assignment | ✓ |
+| 7 | TP_DIRECT Insertion | I/O completion port | ✓ |
+| 8 | TP_TIMER Insertion | Timer expiration | ✓ |
 
-**Go-based Shellcode Compatibility:** Variant 1 executes shellcode as a thread pool worker initialization routine, which has specific constraints on stack/context setup that conflict with Go's runtime expectations (TLS setup, thread state, etc.). Variant 7's I/O completion callback context is more compatible with Go's runtime. For Go-based agent shellcode (fawkes, merlin, etc.), **use Variant 7**.
+**Go Shellcode Compatibility:** Variant 1 executes shellcode as a thread's start routine (early initialization context) which doesn't meet Go runtime requirements (TLS, scheduler state). Variants 2-8 use callback mechanisms on fully-initialized threads, making them compatible with Go shellcode. Simple shellcode (calc.bin) works with all variants.
 
-Simple shellcode (e.g., msfvenom calc.bin) works with both variants.
+**Variant Details:**
+- **Variant 1** - Overwrites the worker factory start routine. Triggers when new thread pool workers are created via NtSetInformationWorkerFactory.
+- **Variant 2** - Inserts a TP_WORK item into the high-priority task queue. Executes when thread pool processes work items.
+- **Variant 3** - Creates a TP_WAIT structure and associates an event with the target's I/O completion port. Triggers via SetEvent.
+- **Variant 4** - Creates a TP_IO structure and associates a file with the target's I/O completion port. Triggers via async file write.
+- **Variant 5** - Creates a TP_ALPC structure and associates an ALPC port with the target's I/O completion port. Triggers via NtAlpcConnectPort.
+- **Variant 6** - Creates a TP_JOB structure and associates a job object with the target's I/O completion port. Triggers via AssignProcessToJobObject.
+- **Variant 7** - Inserts a TP_DIRECT structure and triggers via ZwSetIoCompletion. Simplest I/O completion variant.
+- **Variant 8** - Inserts a TP_TIMER into the timer queue and triggers via NtSetTimer2. Uses timer queue instead of I/O completion.
 
 ### Opus Injection
 
