@@ -247,11 +247,11 @@ type TPP_TIMER_QUEUE struct {
 // FULL_TP_TIMER structure
 type FULL_TP_TIMER struct {
 	Work             FULL_TP_WORK
-	_                [40]byte // Lock (RTL_SRWLOCK)
-	WindowEndLinks   TPP_PH_LINKS
+	Lock             uintptr      // RTL_SRWLOCK is pointer-sized (8 bytes on x64)
+	WindowEndLinks   TPP_PH_LINKS // or ExpirationLinks (union)
 	WindowStartLinks TPP_PH_LINKS
 	DueTime          int64
-	_                [64]byte // Ite structure
+	Ite              uintptr // TPP_ITE is just a pointer (8 bytes)
 	Window           uint32
 	Period           uint32
 	Inserted         uint8
