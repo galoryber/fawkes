@@ -143,6 +143,7 @@ func runAgent() {
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
 	mainLoop(ctx, agent, c2, maxRetriesInt, sleepIntervalInt, debugBool)
+	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
