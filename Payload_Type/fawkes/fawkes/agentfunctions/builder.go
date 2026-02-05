@@ -286,7 +286,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 
 	goarch := architecture
 	tags := payloadBuildMsg.C2Profiles[0].Name
-	command := fmt.Sprintf("rm -rf /deps; CGO_ENABLED=0 GOOS=%s GOARCH=%s ", targetOs, goarch)
+	command := fmt.Sprintf("rm -rf /deps; go clean -cache 2>/dev/null; CGO_ENABLED=0 GOOS=%s GOARCH=%s ", targetOs, goarch)
 	buildmodeflag := "default"
 	if mode == "shared" || mode == "windows-shellcode" {
 		buildmodeflag = "c-shared"
