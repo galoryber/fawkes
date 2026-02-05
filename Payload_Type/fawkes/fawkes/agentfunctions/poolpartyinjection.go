@@ -32,6 +32,10 @@ func init() {
 				Choices: []string{
 					"1 - Worker Factory Start Routine Overwrite",
 					"2 - TP_WORK Insertion",
+					"3 - TP_WAIT Insertion",
+					"4 - TP_IO Insertion",
+					"5 - TP_ALPC Insertion",
+					"6 - TP_JOB Insertion",
 					"7 - TP_DIRECT Insertion",
 					"8 - TP_TIMER Insertion",
 				},
@@ -131,9 +135,9 @@ func init() {
 				fmt.Sscanf(variantStr, "%d", &variant)
 			}
 
-			if variant != 1 && variant != 2 && variant != 7 && variant != 8 {
+			if variant < 1 || variant > 8 {
 				response.Success = false
-				response.Error = fmt.Sprintf("Invalid variant: %d. Supported variants: 1, 2, 7, 8", variant)
+				response.Error = fmt.Sprintf("Invalid variant: %d. Supported variants: 1-8", variant)
 				return response
 			}
 
@@ -262,6 +266,14 @@ func init() {
 				variantDesc = "Worker Factory Start Routine Overwrite"
 			case 2:
 				variantDesc = "TP_WORK Insertion"
+			case 3:
+				variantDesc = "TP_WAIT Insertion"
+			case 4:
+				variantDesc = "TP_IO Insertion"
+			case 5:
+				variantDesc = "TP_ALPC Insertion"
+			case 6:
+				variantDesc = "TP_JOB Insertion"
 			case 7:
 				variantDesc = "TP_DIRECT Insertion"
 			case 8:

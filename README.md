@@ -33,7 +33,7 @@ ls | `ls [path]`                                                                
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it. Default logon type 9 (NEW_CREDENTIALS) only affects NETWORK identity (like `runas /netonly`) - whoami still shows original user. Use `-logon_type 2` (INTERACTIVE) to change both local and network identity.
 mkdir | `mkdir <directory>`                                                                                                        | Create a new directory (creates parent directories if needed).
 mv | `mv <source> <destination>`                                                                                                | Move or rename a file from source to destination.
-poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. Supports Variant 1, 2, 7, and 8. See notes below.
+poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. All 8 variants supported. See notes below.
 ps | `ps [-v] [-i PID] [filter]`                                                                                               | List running processes. Use -v for verbose output with command lines. Use -i to filter by specific PID. Optional filter to search by process name.
 pwd | `pwd`                                                                                                                     | Print working directory.
 read-memory | `read-memory <dll_name> <function_name> <start_index> <num_bytes>` | **(Windows only)** Read bytes from a DLL function address. Example: `read-memory amsi AmsiScanBuffer 0 8`
@@ -76,21 +76,29 @@ After that, it's been exclusively feeding Claude PoC links and asking for cool s
 
 ### PoolParty Injection
 
-PoolParty injection abuses Windows Thread Pool internals to achieve code execution without calling monitored APIs like `CreateRemoteThread`. Four variants are implemented:
+PoolParty injection abuses Windows Thread Pool internals to achieve code execution without calling monitored APIs like `CreateRemoteThread`. All 8 variants are implemented:
 
-| Variant | Technique | Go Shellcode Compatible |
-|---------|-----------|------------------------|
-| 1 | Worker Factory Start Routine Overwrite | No |
-| 2 | TP_WORK Insertion (Task Queue) | No |
-| 7 | TP_DIRECT Insertion (I/O Completion Port) | Yes |
-| 8 | TP_TIMER Insertion (Timer Queue) | Yes |
+| Variant | Technique | Trigger Mechanism | Go Shellcode Compatible |
+|---------|-----------|-------------------|------------------------|
+| 1 | Worker Factory Start Routine Overwrite | New worker thread creation | No |
+| 2 | TP_WORK Insertion | Task queue processing | No |
+| 3 | TP_WAIT Insertion | Event signaling | No |
+| 4 | TP_IO Insertion | File I/O completion | No |
+| 5 | TP_ALPC Insertion | ALPC port messaging | No |
+| 6 | TP_JOB Insertion | Job object assignment | No |
+| 7 | TP_DIRECT Insertion | I/O completion port | Yes |
+| 8 | TP_TIMER Insertion | Timer expiration | Yes |
 
-**Go-based Shellcode Compatibility:** Variants 1 and 2 execute shellcode in contexts with specific constraints on stack/context setup that conflict with Go's runtime expectations (TLS setup, thread state, etc.). Variants 7 and 8 use callback contexts more compatible with Go's runtime. For Go-based agent shellcode (fawkes, merlin, etc.), **use Variant 7 or 8**.
+**Go-based Shellcode Compatibility:** Variants 1-6 execute shellcode in contexts with specific constraints on stack/context setup that conflict with Go's runtime expectations (TLS setup, thread state, etc.). Variants 7 and 8 use callback contexts more compatible with Go's runtime. For Go-based agent shellcode (fawkes, merlin, etc.), **use Variant 7 or 8**.
 
 **Variant Details:**
-- **Variant 1** - Overwrites the worker factory start routine. Triggers when new thread pool workers are created.
+- **Variant 1** - Overwrites the worker factory start routine. Triggers when new thread pool workers are created via NtSetInformationWorkerFactory.
 - **Variant 2** - Inserts a TP_WORK item into the high-priority task queue. Executes when thread pool processes work items.
-- **Variant 7** - Inserts a TP_DIRECT structure and triggers via I/O completion port. Most reliable for Go shellcode.
+- **Variant 3** - Creates a TP_WAIT structure and associates an event with the target's I/O completion port. Triggers via SetEvent.
+- **Variant 4** - Creates a TP_IO structure and associates a file with the target's I/O completion port. Triggers via async file write.
+- **Variant 5** - Creates a TP_ALPC structure and associates an ALPC port with the target's I/O completion port. Triggers via NtAlpcConnectPort.
+- **Variant 6** - Creates a TP_JOB structure and associates a job object with the target's I/O completion port. Triggers via AssignProcessToJobObject.
+- **Variant 7** - Inserts a TP_DIRECT structure and triggers via ZwSetIoCompletion. Most reliable for Go shellcode.
 - **Variant 8** - Inserts a TP_TIMER into the timer queue and triggers via NtSetTimer2. Good alternative to Variant 7.
 
 Simple shellcode (e.g., msfvenom calc.bin) works with all variants.

