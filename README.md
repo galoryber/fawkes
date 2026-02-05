@@ -76,20 +76,20 @@ After that, it's been exclusively feeding Claude PoC links and asking for cool s
 
 ### PoolParty Injection
 
-PoolParty injection abuses Windows Thread Pool internals to achieve code execution without calling monitored APIs like `CreateRemoteThread`. All 8 variants are implemented:
+PoolParty injection abuses Windows Thread Pool internals to achieve code execution without calling monitored APIs like `CreateRemoteThread`. All 8 variants from the SafeBreach Labs research are implemented:
 
-| Variant | Technique | Trigger Mechanism | Go Shellcode Compatible |
-|---------|-----------|-------------------|------------------------|
-| 1 | Worker Factory Start Routine Overwrite | New worker thread creation | No |
-| 2 | TP_WORK Insertion | Task queue processing | No |
-| 3 | TP_WAIT Insertion | Event signaling | No |
-| 4 | TP_IO Insertion | File I/O completion | No |
-| 5 | TP_ALPC Insertion | ALPC port messaging | No |
-| 6 | TP_JOB Insertion | Job object assignment | No |
-| 7 | TP_DIRECT Insertion | I/O completion port | Yes |
-| 8 | TP_TIMER Insertion | Timer expiration | Yes |
+| Variant | Technique | Trigger Mechanism | Go Shellcode |
+|---------|-----------|-------------------|--------------|
+| 1 | Worker Factory Start Routine Overwrite | New worker thread creation | ✗ |
+| 2 | TP_WORK Insertion | Task queue processing | ✓ |
+| 3 | TP_WAIT Insertion | Event signaling | ✓ |
+| 4 | TP_IO Insertion | File I/O completion | ✓ |
+| 5 | TP_ALPC Insertion | ALPC port messaging | ✓ |
+| 6 | TP_JOB Insertion | Job object assignment | ✓ |
+| 7 | TP_DIRECT Insertion | I/O completion port | ✓ |
+| 8 | TP_TIMER Insertion | Timer expiration | ✓ |
 
-**Go-based Shellcode Compatibility:** Variants 1-6 execute shellcode in contexts with specific constraints on stack/context setup that conflict with Go's runtime expectations (TLS setup, thread state, etc.). Variants 7 and 8 use callback contexts more compatible with Go's runtime. For Go-based agent shellcode (fawkes, merlin, etc.), **use Variant 7 or 8**.
+**Go Shellcode Compatibility:** Variant 1 executes shellcode as a thread's start routine (early initialization context) which doesn't meet Go runtime requirements (TLS, scheduler state). Variants 2-8 use callback mechanisms on fully-initialized threads, making them compatible with Go shellcode. Simple shellcode (calc.bin) works with all variants.
 
 **Variant Details:**
 - **Variant 1** - Overwrites the worker factory start routine. Triggers when new thread pool workers are created via NtSetInformationWorkerFactory.
@@ -98,10 +98,8 @@ PoolParty injection abuses Windows Thread Pool internals to achieve code executi
 - **Variant 4** - Creates a TP_IO structure and associates a file with the target's I/O completion port. Triggers via async file write.
 - **Variant 5** - Creates a TP_ALPC structure and associates an ALPC port with the target's I/O completion port. Triggers via NtAlpcConnectPort.
 - **Variant 6** - Creates a TP_JOB structure and associates a job object with the target's I/O completion port. Triggers via AssignProcessToJobObject.
-- **Variant 7** - Inserts a TP_DIRECT structure and triggers via ZwSetIoCompletion. Most reliable for Go shellcode.
-- **Variant 8** - Inserts a TP_TIMER into the timer queue and triggers via NtSetTimer2. Good alternative to Variant 7.
-
-Simple shellcode (e.g., msfvenom calc.bin) works with all variants.
+- **Variant 7** - Inserts a TP_DIRECT structure and triggers via ZwSetIoCompletion. Simplest I/O completion variant.
+- **Variant 8** - Inserts a TP_TIMER into the timer queue and triggers via NtSetTimer2. Uses timer queue instead of I/O completion.
 
 ### Opus Injection
 

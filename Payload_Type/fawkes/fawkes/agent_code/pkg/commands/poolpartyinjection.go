@@ -3,19 +3,23 @@
 
 // Package commands provides the poolparty-injection command for Thread Pool-based process injection.
 //
-// This command implements PoolParty injection techniques based on SafeBreach Labs research.
-// All 8 variants are supported:
-//   - Variant 1: Worker Factory Start Routine Overwrite
-//   - Variant 2: TP_WORK Insertion (Task Queue)
-//   - Variant 3: TP_WAIT Insertion (Event signaling)
-//   - Variant 4: TP_IO Insertion (File I/O completion)
-//   - Variant 5: TP_ALPC Insertion (ALPC port messaging)
-//   - Variant 6: TP_JOB Insertion (Job object assignment)
-//   - Variant 7: TP_DIRECT Insertion (I/O Completion Port)
-//   - Variant 8: TP_TIMER Insertion (Timer Queue)
+// This command implements all 8 PoolParty injection techniques based on SafeBreach Labs research.
+// All variants tested working with both simple shellcode and Go-based agent shellcode.
+//
+// Variants:
+//   - Variant 1: Worker Factory Start Routine Overwrite - triggers via NtSetInformationWorkerFactory
+//   - Variant 2: TP_WORK Insertion - triggers via task queue processing
+//   - Variant 3: TP_WAIT Insertion - triggers via SetEvent
+//   - Variant 4: TP_IO Insertion - triggers via async file I/O completion
+//   - Variant 5: TP_ALPC Insertion - triggers via NtAlpcConnectPort
+//   - Variant 6: TP_JOB Insertion - triggers via AssignProcessToJobObject
+//   - Variant 7: TP_DIRECT Insertion - triggers via ZwSetIoCompletion
+//   - Variant 8: TP_TIMER Insertion - triggers via NtSetTimer2
 //
 // These techniques abuse Windows Thread Pool internals to achieve code execution
 // without calling CreateRemoteThread or similar monitored APIs.
+//
+// Reference: https://github.com/SafeBreach-Labs/PoolParty
 package commands
 
 import (
