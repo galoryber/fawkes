@@ -197,7 +197,7 @@ type TPP_QUEUE struct {
 
 // FULL_TP_POOL structure (simplified - only fields we need)
 type FULL_TP_POOL struct {
-	_          [16]byte   // Refcount and padding
+	_          [8]byte    // Refcount (4 bytes) + Padding_239 (4 bytes)
 	_          [8]byte    // QueueState
 	TaskQueue  [3]uintptr // Array of pointers to TPP_QUEUE
 	_          [8]byte    // NumaNode pointer
