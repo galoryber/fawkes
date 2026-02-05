@@ -33,6 +33,7 @@ func init() {
 					"1 - Worker Factory Start Routine Overwrite",
 					"2 - TP_WORK Insertion",
 					"7 - TP_DIRECT Insertion",
+					"8 - TP_TIMER Insertion",
 				},
 				DefaultValue: "1 - Worker Factory Start Routine Overwrite",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -130,9 +131,9 @@ func init() {
 				fmt.Sscanf(variantStr, "%d", &variant)
 			}
 
-			if variant != 1 && variant != 2 && variant != 7 {
+			if variant != 1 && variant != 2 && variant != 7 && variant != 8 {
 				response.Success = false
-				response.Error = fmt.Sprintf("Invalid variant: %d. Supported variants: 1, 2, 7", variant)
+				response.Error = fmt.Sprintf("Invalid variant: %d. Supported variants: 1, 2, 7, 8", variant)
 				return response
 			}
 
@@ -263,6 +264,8 @@ func init() {
 				variantDesc = "TP_WORK Insertion"
 			case 7:
 				variantDesc = "TP_DIRECT Insertion"
+			case 8:
+				variantDesc = "TP_TIMER Insertion"
 			}
 
 			// Build the display parameters
