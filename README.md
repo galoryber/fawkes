@@ -51,6 +51,30 @@ upload | `upload` | Upload a file to the target with chunked file transfer.
 vanilla-injection | `vanilla-injection` | **(Windows only)** Inject shellcode into a remote process using VirtualAllocEx/WriteProcessMemory/CreateRemoteThread.
 write-memory | `write-memory <dll_name> <function_name> <start_index> <hex_bytes>` | **(Windows only)** Write bytes to a DLL function address.
 
+## Injection Techniques
+
+### PoolParty Injection
+
+| Variant | Technique | Trigger | Go Shellcode |
+|---------|-----------|---------|--------------|
+| 1 | Worker Factory Start Routine Overwrite | New worker thread creation | No |
+| 2 | TP_WORK Insertion | Task queue processing | Yes |
+| 3 | TP_WAIT Insertion | Event signaling | Yes |
+| 4 | TP_IO Insertion | File I/O completion | Yes |
+| 5 | TP_ALPC Insertion | ALPC port messaging | Yes |
+| 6 | TP_JOB Insertion | Job object assignment | Yes |
+| 7 | TP_DIRECT Insertion | I/O completion port | Yes |
+| 8 | TP_TIMER Insertion | Timer expiration | Yes |
+
+### Opus Injection
+
+| Variant | Technique | Target | Go Shellcode |
+|---------|-----------|--------|--------------|
+| 1 | Ctrl-C Handler Chain | Console processes only | No |
+| 4 | PEB KernelCallbackTable | GUI processes only | Yes |
+
+For detailed variant descriptions, see [Injection Technique Details](research/injection-techniques.md).
+
 ## Build Options
 
 ### Binary Inflation
