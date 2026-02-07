@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -38,6 +39,15 @@ func (c *LsCommand) Execute(task structs.Task) structs.CommandResult {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 			// If not JSON, treat as simple string path
 			args.Path = task.Params
+		}
+	}
+
+	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data")
+	args.Path = strings.TrimSpace(args.Path)
+	if len(args.Path) >= 2 {
+		if (args.Path[0] == '"' && args.Path[len(args.Path)-1] == '"') ||
+			(args.Path[0] == '\'' && args.Path[len(args.Path)-1] == '\'') {
+			args.Path = args.Path[1 : len(args.Path)-1]
 		}
 	}
 
