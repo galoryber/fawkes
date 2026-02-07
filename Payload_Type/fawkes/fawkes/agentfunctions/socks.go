@@ -40,7 +40,7 @@ func init() {
 				Name:          "port",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				Description:   "Port for Mythic to listen on",
-				DefaultValue:  1080,
+				DefaultValue:  7000,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

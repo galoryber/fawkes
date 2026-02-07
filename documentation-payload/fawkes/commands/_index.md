@@ -39,11 +39,14 @@ pre = "<b>2. </b>"
     * [make-token](/agents/fawkes/commands/make-token/)
     * [steal-token](/agents/fawkes/commands/steal-token/)
     * [rev2self](/agents/fawkes/commands/rev2self/)
-- Process Discovery
+- Reconnaissance
+    * [env](/agents/fawkes/commands/env/)
     * [ps](/agents/fawkes/commands/ps/)
     * [ts](/agents/fawkes/commands/ts/)
 - Post-Exploitation
     * [screenshot](/agents/fawkes/commands/screenshot/)
+- Networking
+    * [socks](/agents/fawkes/commands/socks/)
 - Agent Management
     * [sleep](/agents/fawkes/commands/sleep/)
     * [exit](/agents/fawkes/commands/exit/)
