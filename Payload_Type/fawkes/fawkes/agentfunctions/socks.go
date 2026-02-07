@@ -29,14 +29,24 @@ func init() {
 				Description:   "Start or stop the SOCKS proxy",
 				Choices:       []string{"start", "stop"},
 				DefaultValue:  "start",
-				Required:      true,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						UIModalPosition:     1,
+					},
+				},
 			},
 			{
 				Name:          "port",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				Description:   "Port for Mythic to listen on",
 				DefaultValue:  1080,
-				Required:      true,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						UIModalPosition:     2,
+					},
+				},
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
