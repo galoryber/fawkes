@@ -47,6 +47,10 @@ func (c *MvCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	// Strip surrounding quotes in case the user wrapped paths (e.g. "C:\Program Data\file.txt")
+	args.Source = stripPathQuotes(args.Source)
+	args.Destination = stripPathQuotes(args.Destination)
+
 	// Validate parameters
 	if args.Source == "" || args.Destination == "" {
 		return structs.CommandResult{

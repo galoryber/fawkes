@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -17,7 +19,15 @@ func init() {
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// Simply pass the file path as-is
+			// Strip whitespace and surrounding quotes so paths like
+			// "C:\Program Data\file.txt" resolve to C:\Program Data\file.txt
+			input = strings.TrimSpace(input)
+			if len(input) >= 2 {
+				if (input[0] == '"' && input[len(input)-1] == '"') ||
+					(input[0] == '\'' && input[len(input)-1] == '\'') {
+					input = input[1 : len(input)-1]
+				}
+			}
 			args.SetManualArgs(input)
 			return nil
 		},

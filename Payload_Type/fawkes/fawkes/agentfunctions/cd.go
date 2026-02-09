@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
 )
@@ -18,7 +20,16 @@ func init() {
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// If input is empty, return an error since cd requires a path
+			// Strip whitespace and surrounding quotes so paths like
+			// "C:\Program Data" resolve to C:\Program Data
+			input = strings.TrimSpace(input)
+			if len(input) >= 2 {
+				if (input[0] == '"' && input[len(input)-1] == '"') ||
+					(input[0] == '\'' && input[len(input)-1] == '\'') {
+					input = input[1 : len(input)-1]
+				}
+			}
+
 			if input == "" {
 				args.AddArg(agentstructs.CommandParameter{
 					Name:          "path",
