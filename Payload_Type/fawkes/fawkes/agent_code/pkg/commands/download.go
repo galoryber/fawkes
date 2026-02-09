@@ -27,6 +27,14 @@ func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
 	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data\file.txt")
 	path := stripPathQuotes(task.Params)
 
+	if path == "" {
+		return structs.CommandResult{
+			Output:    "Error: No file path specified. Usage: download <file_path>",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
 	// Get absolute path
 	fullPath, err := filepath.Abs(path)
 	if err != nil {

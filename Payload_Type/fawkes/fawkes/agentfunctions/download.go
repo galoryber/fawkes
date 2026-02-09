@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -56,6 +57,9 @@ func init() {
 					(input[0] == '\'' && input[len(input)-1] == '\'') {
 					input = input[1 : len(input)-1]
 				}
+			}
+			if input == "" {
+				return fmt.Errorf("download requires a file path argument")
 			}
 			args.SetManualArgs(input)
 			return nil
