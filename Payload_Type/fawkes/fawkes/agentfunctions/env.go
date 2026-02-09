@@ -1,46 +1,32 @@
 package agentfunctions
 
 import (
-	"strings"
-
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "rm",
-		Description:         "Remove a file or directory (recursively removes directories)",
-		HelpString:          "rm <path>",
+		Name:                "env",
+		Description:         "List environment variables, optionally filtered by name",
+		HelpString:          "env [filter]",
 		Version:             1,
-		MitreAttackMappings: []string{"T1070.004"}, // Indicator Removal on Host: File Deletion
+		MitreAttackMappings: []string{"T1082"}, // System Information Discovery
 		SupportedUIFeatures: []string{},
-		Author:              "@galoryber",
+		Author:              "@xorrior",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// Strip whitespace and surrounding quotes so paths like
-			// "C:\Program Data" resolve to C:\Program Data
-			input = strings.TrimSpace(input)
-			if len(input) >= 2 {
-				if (input[0] == '"' && input[len(input)-1] == '"') ||
-					(input[0] == '\'' && input[len(input)-1] == '\'') {
-					input = input[1 : len(input)-1]
-				}
-			}
 			args.SetManualArgs(input)
 			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
-			return args.LoadArgsFromDictionary(input)
+			return nil
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  task.Task.ID,
-			}
-			if displayParams, err := task.Args.GetFinalArgs(); err == nil {
-				response.DisplayParams = &displayParams
 			}
 			return response
 		},

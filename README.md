@@ -4,7 +4,7 @@
 
 Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" and has turned into a goal. My goal is to not write a single line of code for this agent, instead, exclusively producing it at a prompt.
 
-I orignally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to development my own agent. A prompt though, that I have time for.
+I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
 Fawkes is a golang based agent that will have cross platform agent capabilities, but currently operates on Windows.
 
@@ -26,6 +26,7 @@ cat | `cat <file>` | Display the contents of a file.
 cd | `cd <directory>` | Change the current working directory.
 cp | `cp <source> <destination>` | Copy a file from source to destination.
 download | `download <path>` | Download a file from the target. Supports chunked file transfer for any file size and file browser integration.
+env | `env [filter]` | List environment variables. Optionally filter by name (case-insensitive).
 exit | `exit` | Task agent to exit.
 inline-assembly | `inline-assembly` | **(Windows only)** Execute a .NET assembly in memory using the CLR. Supports command-line arguments. Use `start-clr` first for AMSI patching workflow.
 inline-execute | `inline-execute` | **(Windows only)** Execute a Beacon Object File (BOF/COFF) in memory. **Note:** Argument packing is not fully functional - string arguments will crash. BOFs without arguments or with basic int/short types may work.
@@ -44,6 +45,7 @@ screenshot | `screenshot` | **(Windows only)** Capture a screenshot of the curre
 spawn | `spawn` | **(Windows only)** Spawn a suspended process or thread for injection techniques.
 opus-injection | `opus-injection` | **(Windows only)** Callback-based process injection. Variant 1: Ctrl-C Handler Chain. Variant 4: PEB KernelCallbackTable. [Details](research/injection-techniques.md#opus-injection)
 sleep | `sleep [seconds] [jitter]` | Set the callback interval in seconds and jitter percentage.
+socks | `socks start [port]` / `socks stop [port]` | Start or stop a SOCKS5 proxy through the callback. Default port 7000. Tunnel tools like proxychains, nmap, or Impacket through the agent.
 start-clr | `start-clr` | **(Windows only)** Initialize the CLR v4.0.30319 and load amsi.dll into memory.
 steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a security token from another process.
 threadless-inject | `threadless-inject` | **(Windows only)** Inject shellcode using threadless injection by hooking a DLL function in a remote process. More stealthy than vanilla injection as it doesn't create new threads.

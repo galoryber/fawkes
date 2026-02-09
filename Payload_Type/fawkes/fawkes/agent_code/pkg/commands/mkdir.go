@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -30,8 +31,17 @@ func (c *MkdirCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data")
+	path := strings.TrimSpace(task.Params)
+	if len(path) >= 2 {
+		if (path[0] == '"' && path[len(path)-1] == '"') ||
+			(path[0] == '\'' && path[len(path)-1] == '\'') {
+			path = path[1 : len(path)-1]
+		}
+	}
+
 	// Create directory with parent directories if needed (0755 permissions)
-	err := os.MkdirAll(task.Params, 0755)
+	err := os.MkdirAll(path, 0755)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error creating directory: %v", err),
@@ -41,7 +51,7 @@ func (c *MkdirCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully created directory: %s", task.Params),
+		Output:    fmt.Sprintf("Successfully created directory: %s", path),
 		Status:    "success",
 		Completed: true,
 	}

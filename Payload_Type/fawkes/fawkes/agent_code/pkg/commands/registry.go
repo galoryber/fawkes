@@ -30,7 +30,9 @@ func Initialize() {
 	RegisterCommand(&RmCommand{})
 	RegisterCommand(&RunCommand{})
 	RegisterCommand(&SleepCommand{})
+	RegisterCommand(&SocksCommand{})
 	RegisterCommand(&UploadCommand{})
+	RegisterCommand(&EnvCommand{})
 	RegisterCommand(&ExitCommand{})
 
 	// Register Windows-specific commands

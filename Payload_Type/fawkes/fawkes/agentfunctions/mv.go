@@ -26,21 +26,22 @@ func init() {
 			if err := args.LoadArgsFromJSONString(input); err == nil {
 				return nil
 			}
-			// If not JSON, parse as space-separated string
-			// Split on first space to handle paths with spaces
-			parts := strings.SplitN(input, " ", 2)
-			if len(parts) != 2 {
+			// If not JSON, parse as space-separated string with quote awareness
+			// so that mv "C:\Program Files\foo.txt" "C:\Program Files\bar.txt" works
+			source, rest := extractQuotedArg(strings.TrimSpace(input))
+			destination, _ := extractQuotedArg(strings.TrimSpace(rest))
+			if source == "" || destination == "" {
 				return fmt.Errorf("mv requires two arguments: source and destination")
 			}
 			args.AddArg(agentstructs.CommandParameter{
 				Name:          "source",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:  parts[0],
+				DefaultValue:  source,
 			})
 			args.AddArg(agentstructs.CommandParameter{
 				Name:          "destination",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:  parts[1],
+				DefaultValue:  destination,
 			})
 			return nil
 		},
