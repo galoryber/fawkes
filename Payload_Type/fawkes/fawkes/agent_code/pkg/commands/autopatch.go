@@ -53,42 +53,54 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 		fmt.Sscanf(parts[2], "%d", &args.NumBytes)
 	}
 
-	// Load DLL
-	dll, err := syscall.LoadDLL(args.DllName)
+	output, err := PerformAutoPatch(args.DllName, args.FunctionName, args.NumBytes)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error loading DLL %s: %v", args.DllName, err),
+			Output:    err.Error(),
 			Status:    "error",
 			Completed: true,
 		}
 	}
-	//defer dll.Release()
+
+	return structs.CommandResult{
+		Output:    output,
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+// PerformAutoPatch applies a jump-to-ret patch on the specified function.
+// It loads the target DLL, finds the function, searches for the nearest C3 (RET)
+// instruction, and writes a JMP to it at the function prologue.
+// This is exported so that other commands (e.g., start-clr) can reuse it.
+func PerformAutoPatch(dllName, functionName string, numBytes int) (string, error) {
+	// Load DLL
+	dll, err := syscall.LoadDLL(dllName)
+	if err != nil {
+		return "", fmt.Errorf("error loading DLL %s: %v", dllName, err)
+	}
 
 	// Get function address
-	proc, err := dll.FindProc(args.FunctionName)
+	proc, err := dll.FindProc(functionName)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error finding function %s: %v", args.FunctionName, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return "", fmt.Errorf("error finding function %s: %v", functionName, err)
 	}
 
 	functionAddress := proc.Addr()
 
 	// Calculate buffer size (read backwards and forwards)
-	bufferSize := args.NumBytes * 2
+	bufferSize := numBytes * 2
 	buffer := make([]byte, bufferSize)
 
 	// Read memory around the function address
-	kernel32 := syscall.MustLoadDLL("kernel32.dll")
-	readProcessMemory := kernel32.MustFindProc("ReadProcessMemory")
+	k32 := syscall.MustLoadDLL("kernel32.dll")
+	readProcessMemory := k32.MustFindProc("ReadProcessMemory")
 
 	currentProcess, _ := syscall.GetCurrentProcess()
 	var bytesRead uintptr
 
 	// Read from (functionAddress - numBytes) forward
-	targetAddress := uintptr(functionAddress) - uintptr(args.NumBytes)
+	targetAddress := uintptr(functionAddress) - uintptr(numBytes)
 
 	ret, _, err := readProcessMemory.Call(
 		uintptr(currentProcess),
@@ -99,11 +111,7 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 	)
 
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading memory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return "", fmt.Errorf("error reading memory: %v", err)
 	}
 
 	// Find nearest C3 (return) instruction
@@ -116,15 +124,11 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if c3Index == -1 {
-		return structs.CommandResult{
-			Output:    "Error: No C3 (return) instruction found in search range",
-			Status:    "error",
-			Completed: true,
-		}
+		return "", fmt.Errorf("no C3 (return) instruction found in search range")
 	}
 
 	// Calculate offset for JMP instruction relative to function address
-	offset := c3Index - args.NumBytes
+	offset := c3Index - numBytes
 
 	// Determine jump instruction (short JMP or near JMP)
 	var jumpOp []byte
@@ -147,7 +151,7 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Write jump instruction
-	writeProcessMemory := kernel32.MustFindProc("WriteProcessMemory")
+	writeProcessMemory := k32.MustFindProc("WriteProcessMemory")
 	var bytesWritten uintptr
 
 	ret, _, err = writeProcessMemory.Call(
@@ -159,24 +163,16 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 	)
 
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing jump instruction: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return "", fmt.Errorf("error writing jump instruction: %v", err)
 	}
 
 	c3Address := targetAddress + uintptr(c3Index)
 
 	output := fmt.Sprintf("AutoPatch applied successfully!\n")
-	output += fmt.Sprintf("Function: %s!%s at 0x%x\n", args.DllName, args.FunctionName, functionAddress)
+	output += fmt.Sprintf("Function: %s!%s at 0x%x\n", dllName, functionName, functionAddress)
 	output += fmt.Sprintf("Found C3 at offset %d (0x%x)\n", offset, c3Address)
 	output += fmt.Sprintf("Applied %s JMP (%d bytes)\n", jumpType, len(jumpOp))
 	output += fmt.Sprintf("Jump bytes: %X", jumpOp)
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return output, nil
 }
