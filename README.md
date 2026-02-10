@@ -37,6 +37,7 @@ ls | `ls [path]` | List files and folders in `[path]`. Defaults to current worki
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it.
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
 mv | `mv <source> <destination>` | Move or rename a file from source to destination.
+net-stat | `net-stat` | List active network connections and listening ports with protocol, state, and PID. Cross-platform.
 poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. All 8 variants supported. [Details](research/injection-techniques.md#poolparty-injection)
 ps | `ps [-v] [-i PID] [filter]` | List running processes. Use -v for verbose output with command lines. Use -i to filter by specific PID.
 pwd | `pwd` | Print working directory.
