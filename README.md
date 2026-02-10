@@ -28,6 +28,7 @@ cp | `cp <source> <destination>` | Copy a file from source to destination.
 download | `download <path>` | Download a file from the target. Supports chunked file transfer for any file size and file browser integration.
 env | `env [filter]` | List environment variables. Optionally filter by name (case-insensitive).
 exit | `exit` | Task agent to exit.
+ifconfig | `ifconfig` | List network interfaces with addresses, MAC, MTU, and flags. Cross-platform (Windows/Linux/macOS).
 inline-assembly | `inline-assembly` | **(Windows only)** Execute a .NET assembly in memory using the CLR. Supports command-line arguments. Use `start-clr` first for AMSI patching workflow.
 inline-execute | `inline-execute` | **(Windows only)** Execute a Beacon Object File (BOF/COFF) in memory. **Note:** Argument packing is not fully functional - string arguments will crash. BOFs without arguments or with basic int/short types may work.
 kill | `kill -pid <PID>` | Terminate a process by PID. Cross-platform (Windows/Linux/macOS).

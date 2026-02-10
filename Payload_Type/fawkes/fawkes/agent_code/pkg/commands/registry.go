@@ -36,6 +36,7 @@ func Initialize() {
 	RegisterCommand(&ExitCommand{})
 	RegisterCommand(&KillCommand{})
 	RegisterCommand(&WhoamiCommand{})
+	RegisterCommand(&IfconfigCommand{})
 
 	// Register Windows-specific commands
 	if runtime.GOOS == "windows" {

@@ -50,6 +50,7 @@ pre = "<b>2. </b>"
 - Post-Exploitation
     * [screenshot](/agents/fawkes/commands/screenshot/)
 - Networking
+    * [ifconfig](/agents/fawkes/commands/ifconfig/)
     * [socks](/agents/fawkes/commands/socks/)
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
