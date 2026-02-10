@@ -149,20 +149,18 @@ type CommandResult struct {
 
 // CheckinMessage represents the initial checkin message
 type CheckinMessage struct {
-	Action       string `json:"action"`
-	PayloadUUID  string `json:"uuid"`
-	User         string `json:"user"`
-	Host         string `json:"host"`
-	PID          int    `json:"pid"`
-	OS           string `json:"os"`
-	Architecture string `json:"architecture"`
-	Domain       string `json:"domain"`
-	InternalIP   string `json:"internal_ip"`
-	ExternalIP   string `json:"external_ip"`
-	ProcessName  string `json:"process_name"`
-	Integrity    int    `json:"integrity_level"`
-	PayloadType  string `json:"payload_type"`
-	C2Profile    string `json:"c2_profile"`
+	Action       string   `json:"action"`
+	PayloadUUID  string   `json:"uuid"`
+	User         string   `json:"user"`
+	Host         string   `json:"host"`
+	PID          int      `json:"pid"`
+	OS           string   `json:"os"`
+	Architecture string   `json:"architecture"`
+	Domain       string   `json:"domain"`
+	IPs          []string `json:"ips"`
+	ExternalIP   string   `json:"external_ip"`
+	ProcessName  string   `json:"process_name"`
+	Integrity    int      `json:"integrity_level"`
 }
 
 // TaskingMessage represents the message to get tasking
