@@ -126,6 +126,7 @@ func init() {
 				ModalDisplayName: "BOF File (Forge)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_FILE,
 				Description:      "BOF file UUID (used by Forge)",
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
