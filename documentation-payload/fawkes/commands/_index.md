@@ -49,6 +49,7 @@ pre = "<b>2. </b>"
     * [reg-read](/agents/fawkes/commands/reg-read/)
     * [reg-write](/agents/fawkes/commands/reg-write/)
 - Post-Exploitation
+    * [clipboard](/agents/fawkes/commands/clipboard/)
     * [screenshot](/agents/fawkes/commands/screenshot/)
 - Networking
     * [ifconfig](/agents/fawkes/commands/ifconfig/)

@@ -24,6 +24,7 @@ Command | Syntax | Description
 autopatch | `autopatch <dll_name> <function_name> <num_bytes>` | **(Windows only)** Automatically patch a function by jumping to nearest return (C3) instruction. Useful for AMSI/ETW bypasses.
 cat | `cat <file>` | Display the contents of a file.
 cd | `cd <directory>` | Change the current working directory.
+clipboard | `clipboard -action read` / `clipboard -action write -data "text"` | **(Windows only)** Read or write the Windows clipboard contents (text only).
 cp | `cp <source> <destination>` | Copy a file from source to destination.
 download | `download <path>` | Download a file from the target. Supports chunked file transfer for any file size and file browser integration.
 env | `env [filter]` | List environment variables. Optionally filter by name (case-insensitive).
