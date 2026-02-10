@@ -85,13 +85,24 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 		r.ReceivedChunkChannel = make(chan []byte)
 		task.Job.GetFileFromMythic <- r
 
+		var writeErr error
 		for {
 			newBytes := <-r.ReceivedChunkChannel
 			if len(newBytes) == 0 {
 				break
 			}
-			fp.Write(newBytes)
+			_, writeErr = fp.Write(newBytes)
+			if writeErr != nil {
+				break
+			}
 			totalBytesWritten += len(newBytes)
+		}
+		if writeErr != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error writing to %s after %d bytes: %v", fullPath, totalBytesWritten, writeErr),
+				Status:    "error",
+				Completed: true,
+			}
 		}
 	} else {
 		// Create new file
@@ -107,13 +118,24 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 		r.ReceivedChunkChannel = make(chan []byte)
 		task.Job.GetFileFromMythic <- r
 
+		var writeErr error
 		for {
 			newBytes := <-r.ReceivedChunkChannel
 			if len(newBytes) == 0 {
 				break
 			}
-			fp.Write(newBytes)
+			_, writeErr = fp.Write(newBytes)
+			if writeErr != nil {
+				break
+			}
 			totalBytesWritten += len(newBytes)
+		}
+		if writeErr != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error writing to %s after %d bytes: %v", fullPath, totalBytesWritten, writeErr),
+				Status:    "error",
+				Completed: true,
+			}
 		}
 	}
 

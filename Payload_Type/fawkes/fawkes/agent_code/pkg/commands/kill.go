@@ -23,7 +23,7 @@ func (c *KillCommand) Description() string {
 
 // KillParams represents the JSON parameters
 type KillParams struct {
-	PID float64 `json:"pid"`
+	PID int `json:"pid"`
 }
 
 // Execute implements the Command interface
@@ -37,7 +37,7 @@ func (c *KillCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	pid := int(params.PID)
+	pid := params.PID
 	if pid <= 0 {
 		return structs.CommandResult{
 			Output:    "Error: PID must be greater than 0",
