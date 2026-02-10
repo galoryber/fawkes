@@ -26,7 +26,7 @@ func init() {
 				CLIName:          "pid",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				Description:      "PID of the process to terminate",
-				DefaultValue:     nil,
+				DefaultValue:     0,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

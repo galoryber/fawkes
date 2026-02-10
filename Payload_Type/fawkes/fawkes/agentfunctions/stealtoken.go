@@ -22,7 +22,7 @@ func init() {
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				Description:      "Process ID to steal token from (e.g., lsass.exe, winlogon.exe)",
 				Choices:          []string{},
-				DefaultValue:     nil,
+				DefaultValue:     0,
 				SupportedAgents:  []string{},
 				ChoicesAreAllCommands:                   false,
 				ChoicesAreLoadedCommands:                false,

@@ -43,7 +43,7 @@ func init() {
 				CLIName:          "path",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "Registry key path (e.g., SOFTWARE\\Microsoft\\Windows\\CurrentVersion)",
-				DefaultValue:     nil,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

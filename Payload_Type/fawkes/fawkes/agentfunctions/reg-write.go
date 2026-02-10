@@ -43,7 +43,7 @@ func init() {
 				CLIName:          "path",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "Registry key path (will be created if it doesn't exist)",
-				DefaultValue:     nil,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -73,7 +73,7 @@ func init() {
 				CLIName:          "data",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "Data to write. For REG_DWORD/REG_QWORD use decimal number. For REG_BINARY use hex string (e.g., 0102ff).",
-				DefaultValue:     nil,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

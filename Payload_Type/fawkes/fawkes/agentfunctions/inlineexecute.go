@@ -139,7 +139,7 @@ func init() {
 				ModalDisplayName: "BOF File",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_FILE,
 				Description:      "Upload a new BOF/COFF file to execute",
-				DefaultValue:     nil,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
