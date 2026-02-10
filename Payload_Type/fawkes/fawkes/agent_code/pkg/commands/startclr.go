@@ -56,7 +56,13 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse parameters (default to "None" if empty/missing for backward compat)
 	var params StartCLRParams
 	if task.Params != "" {
-		json.Unmarshal([]byte(task.Params), &params)
+		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
 	}
 	if params.AmsiPatch == "" {
 		params.AmsiPatch = "None"
