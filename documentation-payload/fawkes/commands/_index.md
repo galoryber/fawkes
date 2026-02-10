@@ -43,6 +43,7 @@ pre = "<b>2. </b>"
     * [env](/agents/fawkes/commands/env/)
     * [ps](/agents/fawkes/commands/ps/)
     * [ts](/agents/fawkes/commands/ts/)
+    * [whoami](/agents/fawkes/commands/whoami/)
 - Registry Operations
     * [reg-read](/agents/fawkes/commands/reg-read/)
     * [reg-write](/agents/fawkes/commands/reg-write/)
