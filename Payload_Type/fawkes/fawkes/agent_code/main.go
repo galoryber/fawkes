@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"net"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -74,7 +76,7 @@ func runAgent() {
 	// Initialize the agent
 	agent := &structs.Agent{
 		PayloadUUID:   payloadUUID,
-		Architecture:  "x64", // This should be set at build time
+		Architecture:  runtime.GOARCH,
 		Domain:        "",
 		ExternalIP:    "",
 		Host:          getHostname(),
@@ -364,10 +366,39 @@ func getUsername() string {
 }
 
 func getOperatingSystem() string {
-	return fmt.Sprintf("%s", os.Getenv("GOOS"))
+	return runtime.GOOS
 }
 
 func getInternalIP() string {
-	// This is simplified - should implement proper IP detection
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return "127.0.0.1"
+	}
+	for _, iface := range ifaces {
+		// Skip loopback and down interfaces
+		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.IsLoopback() {
+				continue
+			}
+			// Prefer IPv4
+			if ip4 := ip.To4(); ip4 != nil {
+				return ip4.String()
+			}
+		}
+	}
 	return "127.0.0.1"
 }
