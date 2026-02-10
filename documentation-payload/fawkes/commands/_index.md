@@ -43,10 +43,15 @@ pre = "<b>2. </b>"
     * [env](/agents/fawkes/commands/env/)
     * [ps](/agents/fawkes/commands/ps/)
     * [ts](/agents/fawkes/commands/ts/)
+- Registry Operations
+    * [reg-read](/agents/fawkes/commands/reg-read/)
+    * [reg-write](/agents/fawkes/commands/reg-write/)
 - Post-Exploitation
     * [screenshot](/agents/fawkes/commands/screenshot/)
 - Networking
     * [socks](/agents/fawkes/commands/socks/)
+- Process Management
+    * [kill](/agents/fawkes/commands/kill/)
 - Agent Management
     * [sleep](/agents/fawkes/commands/sleep/)
     * [exit](/agents/fawkes/commands/exit/)
