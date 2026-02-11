@@ -55,6 +55,7 @@ pre = "<b>2. </b>"
     * [service](/agents/fawkes/commands/service/)
 - Post-Exploitation
     * [clipboard](/agents/fawkes/commands/clipboard/)
+    * [keylog](/agents/fawkes/commands/keylog/)
     * [screenshot](/agents/fawkes/commands/screenshot/)
 - Networking
     * [ifconfig](/agents/fawkes/commands/ifconfig/)
