@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -19,9 +20,17 @@ func init() {
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// Strip whitespace and surrounding quotes so paths like
-			// "C:\Program Data\file.txt" resolve to C:\Program Data\file.txt
 			input = strings.TrimSpace(input)
+			// Try JSON first (e.g., {"path": "C:\\file.txt"} from API)
+			var jsonArgs map[string]interface{}
+			if err := json.Unmarshal([]byte(input), &jsonArgs); err == nil {
+				if path, ok := jsonArgs["path"].(string); ok {
+					args.SetManualArgs(path)
+					return nil
+				}
+			}
+			// Strip surrounding quotes so paths like
+			// "C:\Program Data\file.txt" resolve to C:\Program Data\file.txt
 			if len(input) >= 2 {
 				if (input[0] == '"' && input[len(input)-1] == '"') ||
 					(input[0] == '\'' && input[len(input)-1] == '\'') {

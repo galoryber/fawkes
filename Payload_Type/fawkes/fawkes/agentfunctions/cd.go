@@ -19,7 +19,26 @@ func init() {
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:          "path",
+				CLIName:       "path",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:   "Directory path to change to",
+				DefaultValue:  "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "Default",
+					},
+				},
+			},
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			// Try JSON first (e.g., {"path": "C:\\Windows"} from API)
+			if err := args.LoadArgsFromJSONString(input); err == nil {
+				return nil
+			}
 			// Strip whitespace and surrounding quotes so paths like
 			// "C:\Program Data" resolve to C:\Program Data
 			input = strings.TrimSpace(input)
@@ -29,34 +48,15 @@ func init() {
 					input = input[1 : len(input)-1]
 				}
 			}
-
-			if input == "" {
-				args.AddArg(agentstructs.CommandParameter{
-					Name:          "path",
-					ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-					DefaultValue:  "",
-				})
-			} else {
-				args.AddArg(agentstructs.CommandParameter{
-					Name:          "path",
-					ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-					DefaultValue:  input,
-				})
-			}
+			args.AddArg(agentstructs.CommandParameter{
+				Name:          "path",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  input,
+			})
 			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
-			// Parse path from dictionary input
-			if path, ok := input["path"].(string); ok {
-				args.AddArg(agentstructs.CommandParameter{
-					Name:          "path",
-					ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-					DefaultValue:  path,
-				})
-			} else {
-				logging.LogError(nil, "Failed to get path from dictionary input")
-			}
-			return nil
+			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

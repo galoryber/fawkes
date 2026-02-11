@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"path/filepath"
 	"strings"
 
@@ -37,13 +38,9 @@ func init() {
 			return response
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
-			// if we get a dictionary, it'll be from the file browser which will supply agentstructs.FileBrowserTask data
+			// Check if this is from the file browser (has full_path field)
 			fileBrowserData := agentstructs.FileBrowserTask{}
-			//logging.LogDebug("Called TaskFunctionParseArgDictionary in ls")
-			if err := mapstructure.Decode(input, &fileBrowserData); err != nil {
-				logging.LogError(err, "Failed to get file browser data struct information from dictionary input")
-				return err
-			} else {
+			if err := mapstructure.Decode(input, &fileBrowserData); err == nil && fileBrowserData.FullPath != "" {
 				args.AddArg(agentstructs.CommandParameter{
 					Name:          "file_browser",
 					ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
@@ -56,31 +53,57 @@ func init() {
 				})
 				return nil
 			}
+			// Otherwise parse as simple path dictionary (e.g., {"path": "C:\\Users"})
+			if path, ok := input["path"].(string); ok {
+				args.AddArg(agentstructs.CommandParameter{
+					Name:          "path",
+					ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+					DefaultValue:  path,
+				})
+			} else {
+				logging.LogError(nil, "Failed to get path from dictionary input")
+			}
+			args.AddArg(agentstructs.CommandParameter{
+				Name:          "file_browser",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				DefaultValue:  false,
+			})
+			return nil
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// Strip whitespace and surrounding quotes so paths like
-			// "C:\Program Data" resolve to C:\Program Data
 			input = strings.TrimSpace(input)
+			// Try JSON first (e.g., {"path": "C:\\Users"} from API)
+			var jsonArgs map[string]interface{}
+			if err := json.Unmarshal([]byte(input), &jsonArgs); err == nil {
+				if path, ok := jsonArgs["path"].(string); ok {
+					args.AddArg(agentstructs.CommandParameter{
+						Name:          "path",
+						ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+						DefaultValue:  path,
+					})
+					args.AddArg(agentstructs.CommandParameter{
+						Name:          "file_browser",
+						ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+						DefaultValue:  false,
+					})
+					return nil
+				}
+			}
+			// Strip surrounding quotes
 			if len(input) >= 2 {
 				if (input[0] == '"' && input[len(input)-1] == '"') ||
 					(input[0] == '\'' && input[len(input)-1] == '\'') {
 					input = input[1 : len(input)-1]
 				}
 			}
-
 			if input == "" {
-				args.AddArg(agentstructs.CommandParameter{
-					Name:          "path",
-					ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-					DefaultValue:  ".",
-				})
-			} else {
-				args.AddArg(agentstructs.CommandParameter{
-					Name:          "path",
-					ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-					DefaultValue:  input,
-				})
+				input = "."
 			}
+			args.AddArg(agentstructs.CommandParameter{
+				Name:          "path",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  input,
+			})
 			args.AddArg(agentstructs.CommandParameter{
 				Name:          "file_browser",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
