@@ -168,17 +168,18 @@ func serviceCreate(args serviceArgs) structs.CommandResult {
 		}
 	}
 
-	cmdArgs := []string{"create", args.Name, fmt.Sprintf("binpath= %s", args.BinPath)}
+	// sc.exe uses unusual syntax: keyword= value (keyword= is one arg, value is next)
+	cmdArgs := []string{"create", args.Name, "binpath=", args.BinPath}
 
 	if args.Display != "" {
-		cmdArgs = append(cmdArgs, fmt.Sprintf("displayname= %s", args.Display))
+		cmdArgs = append(cmdArgs, "displayname=", args.Display)
 	}
 
 	startType := args.Start
 	if startType == "" {
 		startType = "demand"
 	}
-	cmdArgs = append(cmdArgs, fmt.Sprintf("start= %s", startType))
+	cmdArgs = append(cmdArgs, "start=", startType)
 
 	output, err := runSC(cmdArgs)
 	if err != nil {
