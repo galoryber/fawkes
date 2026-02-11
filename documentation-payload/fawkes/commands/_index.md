@@ -42,6 +42,7 @@ pre = "<b>2. </b>"
     * [rev2self](/agents/fawkes/commands/rev2self/)
 - Reconnaissance
     * [env](/agents/fawkes/commands/env/)
+    * [net-enum](/agents/fawkes/commands/net-enum/)
     * [ps](/agents/fawkes/commands/ps/)
     * [ts](/agents/fawkes/commands/ts/)
     * [whoami](/agents/fawkes/commands/whoami/)
