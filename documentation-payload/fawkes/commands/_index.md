@@ -51,6 +51,7 @@ pre = "<b>2. </b>"
 - Persistence
     * [persist](/agents/fawkes/commands/persist/)
     * [schtask](/agents/fawkes/commands/schtask/)
+    * [service](/agents/fawkes/commands/service/)
 - Post-Exploitation
     * [clipboard](/agents/fawkes/commands/clipboard/)
     * [screenshot](/agents/fawkes/commands/screenshot/)
