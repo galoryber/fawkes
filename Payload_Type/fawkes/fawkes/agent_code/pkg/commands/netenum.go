@@ -70,9 +70,9 @@ func (c *NetEnumCommand) Execute(task structs.Task) structs.CommandResult {
 
 func netEnumLocalUsers() structs.CommandResult {
 	output, err := runNet([]string{"user"})
-	if err != nil {
+	if err != nil && output == "" {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating local users: %v\n%s", err, output),
+			Output:    fmt.Sprintf("Error enumerating local users: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -87,9 +87,9 @@ func netEnumLocalUsers() structs.CommandResult {
 
 func netEnumLocalGroups() structs.CommandResult {
 	output, err := runNet([]string{"localgroup"})
-	if err != nil {
+	if err != nil && output == "" {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating local groups: %v\n%s", err, output),
+			Output:    fmt.Sprintf("Error enumerating local groups: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -112,12 +112,12 @@ func netEnumGroupMembers(group string) structs.CommandResult {
 	}
 
 	output, err := runNet([]string{"localgroup", group})
-	if err != nil {
+	if err != nil && output == "" {
 		// Try domain group if local fails
 		domainOutput, domainErr := runNet([]string{"group", group, "/domain"})
-		if domainErr != nil {
+		if domainErr != nil && domainOutput == "" {
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Local group error: %v\n%s\n\nDomain group error: %v\n%s", err, output, domainErr, domainOutput),
+				Output:    fmt.Sprintf("Local group error: %v\nDomain group error: %v", err, domainErr),
 				Status:    "error",
 				Completed: true,
 			}
@@ -138,9 +138,9 @@ func netEnumGroupMembers(group string) structs.CommandResult {
 
 func netEnumDomainUsers() structs.CommandResult {
 	output, err := runNet([]string{"user", "/domain"})
-	if err != nil {
+	if err != nil && output == "" {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating domain users: %v\n%s", err, output),
+			Output:    fmt.Sprintf("Error enumerating domain users: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -155,9 +155,9 @@ func netEnumDomainUsers() structs.CommandResult {
 
 func netEnumDomainGroups() structs.CommandResult {
 	output, err := runNet([]string{"group", "/domain"})
-	if err != nil {
+	if err != nil && output == "" {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating domain groups: %v\n%s", err, output),
+			Output:    fmt.Sprintf("Error enumerating domain groups: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
