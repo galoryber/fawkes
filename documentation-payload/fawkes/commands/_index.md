@@ -54,6 +54,7 @@ pre = "<b>2. </b>"
 - Networking
     * [ifconfig](/agents/fawkes/commands/ifconfig/)
     * [net-stat](/agents/fawkes/commands/net-stat/)
+    * [port-scan](/agents/fawkes/commands/port-scan/)
     * [socks](/agents/fawkes/commands/socks/)
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
