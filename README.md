@@ -39,6 +39,7 @@ make-token | `make-token -username <user> -domain <domain> -password <pass> [-lo
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
 mv | `mv <source> <destination>` | Move or rename a file from source to destination.
 net-stat | `net-stat` | List active network connections and listening ports with protocol, state, and PID. Cross-platform.
+persist | `persist -method <registry\|startup-folder\|list> -action <install\|remove> -name <name>` | **(Windows only)** Install or remove persistence via registry Run keys or startup folder. Supports HKCU/HKLM.
 poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. All 8 variants supported. [Details](research/injection-techniques.md#poolparty-injection)
 port-scan | `port-scan -hosts <IPs/CIDRs> [-ports <ports>] [-timeout <s>]` | TCP connect scan for network service discovery. Supports CIDR, IP ranges, and port ranges. Cross-platform.
 ps | `ps [-v] [-i PID] [filter]` | List running processes. Use -v for verbose output with command lines. Use -i to filter by specific PID.

