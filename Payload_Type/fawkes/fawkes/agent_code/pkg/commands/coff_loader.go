@@ -79,8 +79,14 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			bssBaseAddress = addr
 		}
 
-		// Copy section data
-		copy((*[1 << 30]byte)(unsafe.Pointer(addr))[:], section.RawData())
+		// Copy section data with bounds check
+		rawData := section.RawData()
+		if uintptr(len(rawData)) > allocationSize {
+			return "", fmt.Errorf("section %s raw data (%d bytes) exceeds allocation (%d bytes)", section.NameString(), len(rawData), allocationSize)
+		}
+		if len(rawData) > 0 {
+			copy((*[1 << 30]byte)(unsafe.Pointer(addr))[:allocationSize], rawData)
+		}
 
 		sections[section.NameString()] = coffSection{
 			Section: section,
@@ -89,6 +95,9 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 	}
 
 	// Allocate GOT
+	if gotSize == 0 {
+		gotSize = 8 // Minimum allocation to avoid zero-size VirtualAlloc
+	}
 	gotBaseAddress, err := virtualAllocBytes(gotSize)
 	if err != nil {
 		return "", fmt.Errorf("VirtualAlloc for GOT failed: %v", err)
@@ -118,16 +127,25 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 					if existingGotAddress, exists := gotMap[symbol.NameString()]; exists {
 						symbolDefAddress = existingGotAddress
 					} else {
+						if uintptr(gotOffset*8+8) > uintptr(gotSize) {
+							return "", fmt.Errorf("GOT overflow: offset %d exceeds allocated size %d", gotOffset*8+8, gotSize)
+						}
 						symbolDefAddress = gotBaseAddress + uintptr(gotOffset*8)
 						gotOffset++
 						gotMap[symbol.NameString()] = symbolDefAddress
 					}
 					*(*uint64)(unsafe.Pointer(symbolDefAddress)) = uint64(externalAddress)
 				} else {
+					if uintptr(bssOffset)+uintptr(symbol.Value)+8 > uintptr(bssSize) {
+						return "", fmt.Errorf("BSS overflow: offset %d + size %d exceeds allocated %d", bssOffset, symbol.Value+8, bssSize)
+					}
 					symbolDefAddress = bssBaseAddress + uintptr(bssOffset)
 					bssOffset += int(symbol.Value) + 8
 				}
 			} else {
+				if int(symbol.SectionNumber) < 1 || int(symbol.SectionNumber) > parsedCoff.Sections.Len() {
+					return "", fmt.Errorf("symbol %s references invalid section %d", symbol.NameString(), symbol.SectionNumber)
+				}
 				targetSection := parsedCoff.Sections.Array()[symbol.SectionNumber-1]
 				symbolDefAddress = sections[targetSection.NameString()].Address + uintptr(symbol.Value)
 			}
@@ -170,6 +188,14 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 	var output string
 	for msg := range outputChan {
 		output += fmt.Sprintf("%v\n", msg)
+	}
+
+	// Free allocated memory
+	for _, sec := range sections {
+		windows.VirtualFree(sec.Address, 0, windows.MEM_RELEASE)
+	}
+	if gotBaseAddress != 0 {
+		windows.VirtualFree(gotBaseAddress, 0, windows.MEM_RELEASE)
 	}
 
 	return output, nil
