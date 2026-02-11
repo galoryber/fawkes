@@ -1,3 +1,6 @@
+//go:build !windows
+// +build !windows
+
 package commands
 
 import (
@@ -8,25 +11,17 @@ import (
 	"fawkes/pkg/structs"
 )
 
-// KillCommand implements the kill command
+// KillCommand implements the kill command (non-Windows)
 type KillCommand struct{}
 
-// Name returns the command name
 func (c *KillCommand) Name() string {
 	return "kill"
 }
 
-// Description returns the command description
 func (c *KillCommand) Description() string {
 	return "Terminate a process by PID"
 }
 
-// KillParams represents the JSON parameters
-type KillParams struct {
-	PID int `json:"pid"`
-}
-
-// Execute implements the Command interface
 func (c *KillCommand) Execute(task structs.Task) structs.CommandResult {
 	var params KillParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
