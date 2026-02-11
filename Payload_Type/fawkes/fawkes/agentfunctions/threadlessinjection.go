@@ -44,7 +44,7 @@ func init() {
 				ModalDisplayName: "Shellcode File",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_FILE,
 				Description:      "Upload a new shellcode file",
-				DefaultValue:     nil,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

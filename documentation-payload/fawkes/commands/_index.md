@@ -12,6 +12,7 @@ pre = "<b>2. </b>"
     * [cd](/agents/fawkes/commands/cd/)
     * [cp](/agents/fawkes/commands/cp/)
     * [download](/agents/fawkes/commands/download/)
+    * [find](/agents/fawkes/commands/find/)
     * [ls](/agents/fawkes/commands/ls/)
     * [mkdir](/agents/fawkes/commands/mkdir/)
     * [mv](/agents/fawkes/commands/mv/)
@@ -43,10 +44,22 @@ pre = "<b>2. </b>"
     * [env](/agents/fawkes/commands/env/)
     * [ps](/agents/fawkes/commands/ps/)
     * [ts](/agents/fawkes/commands/ts/)
+    * [whoami](/agents/fawkes/commands/whoami/)
+- Registry Operations
+    * [reg-read](/agents/fawkes/commands/reg-read/)
+    * [reg-write](/agents/fawkes/commands/reg-write/)
+- Persistence
+    * [persist](/agents/fawkes/commands/persist/)
 - Post-Exploitation
+    * [clipboard](/agents/fawkes/commands/clipboard/)
     * [screenshot](/agents/fawkes/commands/screenshot/)
 - Networking
+    * [ifconfig](/agents/fawkes/commands/ifconfig/)
+    * [net-stat](/agents/fawkes/commands/net-stat/)
+    * [port-scan](/agents/fawkes/commands/port-scan/)
     * [socks](/agents/fawkes/commands/socks/)
+- Process Management
+    * [kill](/agents/fawkes/commands/kill/)
 - Agent Management
     * [sleep](/agents/fawkes/commands/sleep/)
     * [exit](/agents/fawkes/commands/exit/)

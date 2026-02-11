@@ -80,6 +80,10 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			// Try JSON first (e.g., {"interval": 2, "jitter": 10} from API)
+			if err := args.LoadArgsFromJSONString(input); err == nil {
+				return nil
+			}
 			stringPieces := strings.Split(input, " ")
 			if len(stringPieces) == 1 {
 				if interval, err := strconv.Atoi(stringPieces[0]); err != nil {

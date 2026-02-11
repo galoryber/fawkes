@@ -73,12 +73,10 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 		OS:           agent.OS,
 		Architecture: agent.Architecture,
 		Domain:       agent.Domain,
-		InternalIP:   agent.InternalIP,
+		IPs:          []string{agent.InternalIP},
 		ExternalIP:   agent.ExternalIP,
 		ProcessName:  agent.ProcessName,
 		Integrity:    agent.Integrity,
-		PayloadType:  "fawkes",
-		C2Profile:    "http",
 	}
 
 	if h.Debug {

