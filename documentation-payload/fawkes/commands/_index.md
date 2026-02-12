@@ -39,6 +39,7 @@ pre = "<b>2. </b>"
     * [autopatch](/agents/fawkes/commands/autopatch/)
 - Credential/Token Commands
     * [make-token](/agents/fawkes/commands/make-token/)
+    * [ssh-keys](/agents/fawkes/commands/ssh-keys/)
     * [steal-token](/agents/fawkes/commands/steal-token/)
     * [rev2self](/agents/fawkes/commands/rev2self/)
 - Reconnaissance
@@ -52,6 +53,7 @@ pre = "<b>2. </b>"
     * [reg-read](/agents/fawkes/commands/reg-read/)
     * [reg-write](/agents/fawkes/commands/reg-write/)
 - Persistence
+    * [crontab](/agents/fawkes/commands/crontab/)
     * [persist](/agents/fawkes/commands/persist/)
     * [schtask](/agents/fawkes/commands/schtask/)
     * [service](/agents/fawkes/commands/service/)

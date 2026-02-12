@@ -72,7 +72,8 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Open file for writing — truncate if overwriting, create if new
-	fp, err := os.OpenFile(fullPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+	// Use 0700 permissions: owner rwx only (opsec — prevent other users from reading/executing)
+	fp, err := os.OpenFile(fullPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0700)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Failed to open %s for writing: %v", fullPath, err),

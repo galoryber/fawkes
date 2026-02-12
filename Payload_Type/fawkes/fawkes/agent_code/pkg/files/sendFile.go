@@ -21,7 +21,7 @@ func listenForSendFileToMythicMessages() {
 		case fileToMythic := <-SendToMythicChannel:
 			fileToMythic.TrackingUUID = generateUUID()
 			fileToMythic.FileTransferResponse = make(chan json.RawMessage)
-			fileToMythic.Task.Job.FileTransfers[fileToMythic.TrackingUUID] = fileToMythic.FileTransferResponse
+			fileToMythic.Task.Job.SetFileTransfer(fileToMythic.TrackingUUID, fileToMythic.FileTransferResponse)
 			go sendFileMessagesToMythic(fileToMythic)
 		}
 	}
@@ -150,7 +150,16 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 
 		fileDownloadData = structs.FileDownloadMessage{}
 		fileDownloadData.ChunkNum = int(i) + 1
-		fileDownloadData.FileID = fileDetails["file_id"].(string)
+		fileID, ok := fileDetails["file_id"].(string)
+		if !ok {
+			errResponse := sendFileToMythic.Task.NewResponse()
+			errResponse.Completed = true
+			errResponse.UserOutput = "Error: file_id not found or not a string in Mythic response"
+			sendFileToMythic.Task.Job.SendResponses <- errResponse
+			sendFileToMythic.FinishedTransfer <- 1
+			return
+		}
+		fileDownloadData.FileID = fileID
 		fileDownloadData.ChunkData = base64.StdEncoding.EncodeToString(partBuffer)
 		fileDownloadMsg.Download = &fileDownloadData
 		sendFileToMythic.Task.Job.SendResponses <- fileDownloadMsg
@@ -181,7 +190,7 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 			break
 		}
 
-		if strings.Contains(postResp["status"].(string), "success") {
+		if statusStr, ok := postResp["status"].(string); ok && strings.Contains(statusStr, "success") {
 			// Only go to the next chunk if this one was successful
 			i++
 		}

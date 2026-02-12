@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -49,9 +50,21 @@ func init() {
 			}
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// Strip whitespace and surrounding quotes so paths like
-			// "C:\Program Data\file.txt" resolve to C:\Program Data\file.txt
 			input = strings.TrimSpace(input)
+			// Try JSON first (e.g., {"file": "/etc/hostname"} from API)
+			var jsonArgs map[string]interface{}
+			if err := json.Unmarshal([]byte(input), &jsonArgs); err == nil {
+				if path, ok := jsonArgs["file"].(string); ok {
+					args.SetManualArgs(path)
+					return nil
+				}
+				if path, ok := jsonArgs["path"].(string); ok {
+					args.SetManualArgs(path)
+					return nil
+				}
+			}
+			// Strip surrounding quotes so paths like
+			// "C:\Program Data\file.txt" resolve to C:\Program Data\file.txt
 			if len(input) >= 2 {
 				if (input[0] == '"' && input[len(input)-1] == '"') ||
 					(input[0] == '\'' && input[len(input)-1] == '\'') {

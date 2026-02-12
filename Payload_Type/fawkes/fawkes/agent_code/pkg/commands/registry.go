@@ -2,7 +2,6 @@ package commands
 
 import (
 	"log"
-	"runtime"
 	"sync"
 
 	"fawkes/pkg/structs"
@@ -17,7 +16,7 @@ var (
 func Initialize() {
 	log.Printf("[INFO] Initializing command handlers")
 
-	// Register commands
+	// Register cross-platform commands
 	RegisterCommand(&CatCommand{})
 	RegisterCommand(&CdCommand{})
 	RegisterCommand(&CpCommand{})
@@ -41,36 +40,8 @@ func Initialize() {
 	RegisterCommand(&NetstatCommand{})
 	RegisterCommand(&PortScanCommand{})
 
-	// Register Windows-specific commands
-	if runtime.GOOS == "windows" {
-		RegisterCommand(&ReadMemoryCommand{})
-		RegisterCommand(&WriteMemoryCommand{})
-		RegisterCommand(&AutoPatchCommand{})
-		RegisterCommand(&StartCLRCommand{})
-		RegisterCommand(&InlineAssemblyCommand{})
-		RegisterCommand(&InlineExecuteCommand{})
-		RegisterCommand(&VanillaInjectionCommand{})
-		RegisterCommand(&ThreadlessInjectCommand{})
-		RegisterCommand(&MakeTokenCommand{})
-		RegisterCommand(&StealTokenCommand{})
-		RegisterCommand(&Rev2SelfCommand{})
-		RegisterCommand(&TsCommand{})
-		RegisterCommand(&ApcInjectionCommand{})
-		RegisterCommand(&PoolPartyInjectionCommand{})
-		RegisterCommand(&ScreenshotCommand{})
-		RegisterCommand(&SpawnCommand{})
-		RegisterCommand(&OpusInjectionCommand{})
-		RegisterCommand(&RegReadCommand{})
-		RegisterCommand(&RegWriteCommand{})
-		RegisterCommand(&ClipboardCommand{})
-		RegisterCommand(&PersistCommand{})
-		RegisterCommand(&SchtaskCommand{})
-		RegisterCommand(&ServiceCommand{})
-		RegisterCommand(&NetEnumCommand{})
-		RegisterCommand(&NetSharesCommand{})
-		RegisterCommand(&WmiCommand{})
-		RegisterCommand(&KeylogCommand{})
-	}
+	// Register platform-specific commands
+	registerPlatformCommands()
 
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))
 }

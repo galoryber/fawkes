@@ -500,7 +500,10 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 
 	resp, err := h.client.Do(req)
 	if err != nil {
-		// log.Printf("[DEBUG] HTTP request failed: %v", err)
+		// Close body if resp is non-nil on error (e.g., redirect errors)
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 

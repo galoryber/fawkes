@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -234,7 +235,10 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 
 	// Start goroutine to forward responses from the job to Mythic
 	done := make(chan bool)
+	var forwarderWg sync.WaitGroup
+	forwarderWg.Add(1)
 	go func() {
+		defer forwarderWg.Done()
 		for {
 			select {
 			case resp := <-job.SendResponses:
@@ -254,13 +258,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 							if firstResp, ok := responses[0].(map[string]interface{}); ok {
 								// Send this response to all active file transfer channels
 								respJSON, _ := json.Marshal(firstResp)
-								for _, ch := range job.FileTransfers {
-									select {
-									case ch <- json.RawMessage(respJSON):
-									case <-time.After(100 * time.Millisecond):
-										// Channel timeout, skip
-									}
-								}
+								job.BroadcastFileTransfer(json.RawMessage(respJSON))
 							}
 						}
 					}
@@ -329,9 +327,9 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		log.Printf("[ERROR] Failed to post response: %v", err)
 	}
 
-	// Signal the response forwarder to finish
+	// Signal the response forwarder to finish and wait for it to drain
 	close(done)
-	time.Sleep(100 * time.Millisecond) // Give it time to drain
+	forwarderWg.Wait()
 }
 
 func calculateSleepTime(interval, jitter int) time.Duration {
