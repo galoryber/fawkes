@@ -13,10 +13,6 @@ Windows Only
 
 Execute a Beacon Object File (BOF/COFF) in memory. BOFs are small compiled C programs that run within the agent process using a minimal COFF loader.
 
-{{% notice warning %}}
-Argument packing is not fully functional. String arguments will crash. BOFs without arguments or with basic int/short types may work.
-{{% /notice %}}
-
 ### Arguments
 
 #### BOF File

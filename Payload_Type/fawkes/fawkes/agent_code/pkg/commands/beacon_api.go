@@ -14,12 +14,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// DataParser matches the Cobalt Strike datap structure
+// DataParser matches the Cobalt Strike datap structure (beacon.h)
+// Fields use int32 to match C's signed int — prevents unsigned wraparound bugs
 type DataParser struct {
 	original uintptr
 	buffer   uintptr
-	length   uint32
-	size     uint32
+	length   int32
+	size     int32
 }
 
 var (
@@ -49,8 +50,8 @@ func copyMemory(dst, src uintptr, length uint32) {
 }
 
 // BeaconDataParse initializes the parser - matches Cobalt Strike API
-func BeaconDataParse(datap *DataParser, buff uintptr, size uint32) uintptr {
-	if size <= 0 {
+func BeaconDataParse(datap *DataParser, buff uintptr, size int32) uintptr {
+	if size < 4 {
 		return 0
 	}
 	datap.original = buff
@@ -60,33 +61,40 @@ func BeaconDataParse(datap *DataParser, buff uintptr, size uint32) uintptr {
 	return 1
 }
 
-// BeaconDataExtract extracts a length-prefixed binary blob - FIXED VERSION
+// BeaconDataExtract extracts a length-prefixed binary blob
 // Allocates memory with VirtualAlloc to avoid Go GC issues
-func BeaconDataExtract(datap *DataParser, size *uint32) uintptr {
-	if datap.length <= 0 {
+func BeaconDataExtract(datap *DataParser, size *int32) uintptr {
+	// Need at least 4 bytes for the length prefix
+	if datap.length < 4 {
+		if size != nil {
+			*size = 0
+		}
 		return 0
 	}
 
 	// Read the 4-byte length prefix
-	binaryLength := *(*uint32)(unsafe.Pointer(datap.buffer))
+	binaryLength := int32(*(*uint32)(unsafe.Pointer(datap.buffer)))
 	datap.buffer += uintptr(4)
 	datap.length -= 4
 
-	if datap.length < binaryLength {
+	if binaryLength <= 0 || datap.length < binaryLength {
+		if size != nil {
+			*size = 0
+		}
 		return 0
 	}
 
 	// Allocate memory OUTSIDE of Go's heap using VirtualAlloc
-	addr, err := virtualAllocBytes(binaryLength)
+	addr, err := virtualAllocBytes(uint32(binaryLength))
 	if err != nil || addr == 0 {
 		return 0
 	}
 
 	// Copy the data to the allocated memory
-	copyMemory(addr, datap.buffer, binaryLength)
+	copyMemory(addr, datap.buffer, uint32(binaryLength))
 
 	// Update size if requested
-	if size != nil && uintptr(unsafe.Pointer(size)) != 0 {
+	if size != nil {
 		*size = binaryLength
 	}
 
@@ -102,7 +110,7 @@ func BeaconDataInt(datap *DataParser) uintptr {
 		return 0
 	}
 	value := *(*uint32)(unsafe.Pointer(datap.buffer))
-	datap.buffer += uintptr(4)
+	datap.buffer += 4
 	datap.length -= 4
 	return uintptr(value)
 }
@@ -113,42 +121,17 @@ func BeaconDataShort(datap *DataParser) uintptr {
 		return 0
 	}
 	value := *(*uint16)(unsafe.Pointer(datap.buffer))
-	datap.buffer += uintptr(2)
+	datap.buffer += 2
 	datap.length -= 2
 	return uintptr(value)
 }
 
 // BeaconDataLength returns remaining data length
 func BeaconDataLength(datap *DataParser) uintptr {
+	if datap.length < 0 {
+		return 0
+	}
 	return uintptr(datap.length)
-}
-
-// Output channel for BOF output
-var bofOutputChannel chan string
-
-// BeaconOutput captures BOF output
-func BeaconOutput(outType int, data uintptr, length int) uintptr {
-	if length <= 0 || bofOutputChannel == nil {
-		return 0
-	}
-	out := make([]byte, length)
-	for i := 0; i < length; i++ {
-		out[i] = *(*byte)(unsafe.Pointer(data + uintptr(i)))
-	}
-	bofOutputChannel <- string(out)
-	return 1
-}
-
-// BeaconPrintf handles formatted output from BOF
-func BeaconPrintf(outType int, format uintptr, args ...uintptr) uintptr {
-	if bofOutputChannel == nil {
-		return 0
-	}
-	// Read the format string
-	formatStr := readCString(format)
-	// For now, just send the format string (full printf support would require more work)
-	bofOutputChannel <- formatStr
-	return 0
 }
 
 // readCString reads a null-terminated C string from memory
