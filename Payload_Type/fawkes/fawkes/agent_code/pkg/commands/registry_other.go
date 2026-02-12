@@ -2,6 +2,8 @@
 
 package commands
 
-// registerPlatformCommands is a no-op on non-Windows platforms.
-// All cross-platform commands are registered in registry.go.
-func registerPlatformCommands() {}
+// registerPlatformCommands registers non-Windows (Linux/macOS) specific commands.
+func registerPlatformCommands() {
+	RegisterCommand(&CrontabCommand{})
+	RegisterCommand(&SSHKeysCommand{})
+}
