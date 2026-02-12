@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/RIscRIpt/pecoff"
@@ -198,10 +199,21 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 		outputChan <- fmt.Sprintf("Entry point '%s' not found", entryPoint)
 	}()
 
-	// Collect output
+	// Collect output with timeout to prevent blocking the agent
 	var output string
-	for msg := range outputChan {
-		output += fmt.Sprintf("%v\n", msg)
+	timeout := time.After(30 * time.Second)
+collectLoop:
+	for {
+		select {
+		case msg, ok := <-outputChan:
+			if !ok {
+				break collectLoop
+			}
+			output += fmt.Sprintf("%v\n", msg)
+		case <-timeout:
+			output += "[!] BOF execution timed out after 30 seconds\n"
+			break collectLoop
+		}
 	}
 
 	// Free allocated memory
