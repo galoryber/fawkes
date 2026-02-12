@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"strings"
 	"syscall"
+	"time"
 
 	"fawkes/pkg/structs"
 
@@ -78,11 +80,26 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 			output += fmt.Sprintf("[-] Warning: Could not redirect output: %v\n", err)
 		}
 
-		// Load and initialize the CLR, storing the runtime host for inline-assembly
-		host, err := clr.LoadCLR("v4")
-		if err != nil {
+		// Load and initialize the CLR, storing the runtime host for inline-assembly.
+		// The go-clr library's GetInterface call sometimes returns a spurious
+		// "file not found" error on first invocation. Retry up to 3 times.
+		var host *clr.ICORRuntimeHost
+		var loadErr error
+		for attempt := 1; attempt <= 3; attempt++ {
+			host, loadErr = clr.LoadCLR("v4")
+			if loadErr == nil {
+				break
+			}
+			if strings.Contains(loadErr.Error(), "cannot find the file") {
+				output += fmt.Sprintf("[*] CLR load attempt %d: transient error, retrying...\n", attempt)
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			break // Non-transient error, stop retrying
+		}
+		if loadErr != nil {
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error initializing CLR: %v", err),
+				Output:    output + fmt.Sprintf("Error initializing CLR: %v", loadErr),
 				Status:    "error",
 				Completed: true,
 			}
