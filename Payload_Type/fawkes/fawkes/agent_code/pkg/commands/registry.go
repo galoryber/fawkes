@@ -39,6 +39,8 @@ func Initialize() {
 	RegisterCommand(&FindCommand{})
 	RegisterCommand(&NetstatCommand{})
 	RegisterCommand(&PortScanCommand{})
+	RegisterCommand(&TimestompCommand{})
+	RegisterCommand(&ArpCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()

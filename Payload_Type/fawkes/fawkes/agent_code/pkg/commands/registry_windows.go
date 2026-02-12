@@ -31,4 +31,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&NetSharesCommand{})
 	RegisterCommand(&WmiCommand{})
 	RegisterCommand(&KeylogCommand{})
+	RegisterCommand(&DrivesCommand{})
 }
