@@ -1,0 +1,34 @@
+{
+  "os": ["Windows", "Linux", "macOS"],
+  "languages": ["go"],
+  "features": {
+    "mythic": [
+      "artifacts",
+      "browser scripts",
+      "docker",
+      "file chunking",
+      "file browser",
+      "keylogging",
+      "screenshots",
+      "socks"
+    ],
+    "custom": [
+      "bofs",
+      "execute assembly",
+      "inline assembly",
+      "key exchange",
+      "killdate",
+      "obfuscation",
+      "persistence",
+      "shellcode injection",
+      "sRDI",
+      "token manipulation"
+    ]
+  },
+  "payload_output": ["exe", "dll", "so", "dylib", "shellcode"],
+  "architectures": ["x86_64", "x86", "arm", "arm_64", "mips", "mips64"],
+  "c2": ["http"],
+  "mythic_version": "3.4.21",
+  "agent_version": "1.0.0",
+  "supported_wrappers": []
+}
