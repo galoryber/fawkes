@@ -21,6 +21,7 @@ pre = "<b>2. </b>"
     * [upload](/agents/fawkes/commands/upload/)
 - Command Execution
     * [run](/agents/fawkes/commands/run/)
+    * [wmi](/agents/fawkes/commands/wmi/)
 - Process Injection
     * [apc-injection](/agents/fawkes/commands/apc-injection/)
     * [opus-injection](/agents/fawkes/commands/opus-injection/)
@@ -42,6 +43,8 @@ pre = "<b>2. </b>"
     * [rev2self](/agents/fawkes/commands/rev2self/)
 - Reconnaissance
     * [env](/agents/fawkes/commands/env/)
+    * [net-enum](/agents/fawkes/commands/net-enum/)
+    * [net-shares](/agents/fawkes/commands/net-shares/)
     * [ps](/agents/fawkes/commands/ps/)
     * [ts](/agents/fawkes/commands/ts/)
     * [whoami](/agents/fawkes/commands/whoami/)
@@ -50,8 +53,11 @@ pre = "<b>2. </b>"
     * [reg-write](/agents/fawkes/commands/reg-write/)
 - Persistence
     * [persist](/agents/fawkes/commands/persist/)
+    * [schtask](/agents/fawkes/commands/schtask/)
+    * [service](/agents/fawkes/commands/service/)
 - Post-Exploitation
     * [clipboard](/agents/fawkes/commands/clipboard/)
+    * [keylog](/agents/fawkes/commands/keylog/)
     * [screenshot](/agents/fawkes/commands/screenshot/)
 - Networking
     * [ifconfig](/agents/fawkes/commands/ifconfig/)

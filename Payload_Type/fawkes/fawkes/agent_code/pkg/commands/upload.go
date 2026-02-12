@@ -63,79 +63,45 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	_, err = os.Stat(fullPath)
 	fileExists := err == nil
 
-	if fileExists {
-		if !args.Overwrite {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("File %s already exists. Reupload with the overwrite parameter, or remove the file before uploading again.", fullPath),
-				Status:    "error",
-				Completed: true,
-			}
+	if fileExists && !args.Overwrite {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("File %s already exists. Reupload with the overwrite parameter, or remove the file before uploading again.", fullPath),
+			Status:    "error",
+			Completed: true,
 		}
+	}
 
-		// Overwrite existing file
-		fp, err := os.OpenFile(fullPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
-		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to get handle on %s: %s", fullPath, err.Error()),
-				Status:    "error",
-				Completed: true,
-			}
+	// Open file for writing — truncate if overwriting, create if new
+	fp, err := os.OpenFile(fullPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Failed to open %s for writing: %v", fullPath, err),
+			Status:    "error",
+			Completed: true,
 		}
-		defer fp.Close()
-		r.ReceivedChunkChannel = make(chan []byte)
-		task.Job.GetFileFromMythic <- r
+	}
+	defer fp.Close()
 
-		var writeErr error
-		for {
-			newBytes := <-r.ReceivedChunkChannel
-			if len(newBytes) == 0 {
-				break
-			}
-			_, writeErr = fp.Write(newBytes)
-			if writeErr != nil {
-				break
-			}
-			totalBytesWritten += len(newBytes)
+	r.ReceivedChunkChannel = make(chan []byte)
+	task.Job.GetFileFromMythic <- r
+
+	var writeErr error
+	for {
+		newBytes := <-r.ReceivedChunkChannel
+		if len(newBytes) == 0 {
+			break
 		}
+		_, writeErr = fp.Write(newBytes)
 		if writeErr != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error writing to %s after %d bytes: %v", fullPath, totalBytesWritten, writeErr),
-				Status:    "error",
-				Completed: true,
-			}
+			break
 		}
-	} else {
-		// Create new file
-		fp, err := os.Create(fullPath)
-		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to create file %s. Reason: %s", fullPath, err.Error()),
-				Status:    "error",
-				Completed: true,
-			}
-		}
-		defer fp.Close()
-		r.ReceivedChunkChannel = make(chan []byte)
-		task.Job.GetFileFromMythic <- r
-
-		var writeErr error
-		for {
-			newBytes := <-r.ReceivedChunkChannel
-			if len(newBytes) == 0 {
-				break
-			}
-			_, writeErr = fp.Write(newBytes)
-			if writeErr != nil {
-				break
-			}
-			totalBytesWritten += len(newBytes)
-		}
-		if writeErr != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error writing to %s after %d bytes: %v", fullPath, totalBytesWritten, writeErr),
-				Status:    "error",
-				Completed: true,
-			}
+		totalBytesWritten += len(newBytes)
+	}
+	if writeErr != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error writing to %s after %d bytes: %v", fullPath, totalBytesWritten, writeErr),
+			Status:    "error",
+			Completed: true,
 		}
 	}
 

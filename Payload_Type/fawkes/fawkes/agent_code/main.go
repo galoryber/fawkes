@@ -298,13 +298,25 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		return
 	}
 
-	// Execute command
+	// Execute command with panic recovery to prevent agent crash
 	var result structs.CommandResult
-	if agentHandler, ok := handler.(structs.AgentCommand); ok {
-		result = agentHandler.ExecuteWithAgent(task, agent)
-	} else {
-		result = handler.Execute(task)
-	}
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[ERROR] Command %s panicked: %v", task.Command, r)
+				result = structs.CommandResult{
+					Output:    fmt.Sprintf("Command panicked: %v", r),
+					Status:    "error",
+					Completed: true,
+				}
+			}
+		}()
+		if agentHandler, ok := handler.(structs.AgentCommand); ok {
+			result = agentHandler.ExecuteWithAgent(task, agent)
+		} else {
+			result = handler.Execute(task)
+		}
+	}()
 
 	// Send final response
 	response := structs.Response{

