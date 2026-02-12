@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads) and **Linux** (ELF binaries and shared libraries). 22 commands are cross-platform, with 27 additional Windows-only commands and 2 Linux-only commands for a total of 51.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads) and **Linux** (ELF binaries and shared libraries). 24 commands are cross-platform, with 28 additional Windows-only commands and 2 Linux-only commands for a total of 54.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -21,6 +21,7 @@ From the Mythic install directory:
 
 Command | Syntax | Description
 ------- | ------ | -----------
+arp | `arp` | Display ARP table — shows IP-to-MAC address mappings for nearby hosts. Cross-platform.
 autopatch | `autopatch <dll_name> <function_name> <num_bytes>` | **(Windows only)** Automatically patch a function by jumping to nearest return (C3) instruction. Useful for AMSI/ETW bypasses.
 cat | `cat <file>` | Display the contents of a file.
 cd | `cd <directory>` | Change the current working directory.
@@ -28,6 +29,7 @@ clipboard | `clipboard -action read` / `clipboard -action write -data "text"` | 
 cp | `cp <source> <destination>` | Copy a file from source to destination.
 crontab | `crontab -action <list\|add\|remove> [-entry <cron_line>] [-program <path>] [-schedule <schedule>]` | **(Linux only)** List, add, or remove cron jobs for persistence. Supports raw cron entries or program+schedule syntax.
 download | `download <path>` | Download a file from the target. Supports chunked file transfer for any file size and file browser integration.
+drives | `drives` | **(Windows only)** List available drives/volumes with type (Fixed/Removable/Network/CD-ROM), label, and free/total space.
 env | `env [filter]` | List environment variables. Optionally filter by name (case-insensitive).
 exit | `exit` | Task agent to exit.
 find | `find -pattern <glob> [-path <dir>] [-max_depth <n>]` | Search for files by name pattern. Cross-platform recursive file search with depth limit.
@@ -65,6 +67,7 @@ ssh-keys | `ssh-keys -action <list\|add\|remove\|read-private> [-key <ssh_key>] 
 start-clr | `start-clr` | **(Windows only)** Initialize the CLR v4.0.30319 and load amsi.dll into memory.
 steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a security token from another process.
 threadless-inject | `threadless-inject` | **(Windows only)** Inject shellcode using threadless injection by hooking a DLL function in a remote process. More stealthy than vanilla injection as it doesn't create new threads.
+timestomp | `timestomp -action <get\|copy\|set> -target <file> [-source <file>] [-timestamp <time>]` | Modify file timestamps to blend in. Get, copy from another file, or set specific time. Windows also modifies creation time.
 upload | `upload` | Upload a file to the target with chunked file transfer.
 vanilla-injection | `vanilla-injection` | **(Windows only)** Inject shellcode into a remote process using VirtualAllocEx/WriteProcessMemory/CreateRemoteThread.
 whoami | `whoami` | Display current user identity and security context. On Windows: username, SID, token type, integrity level, privileges. On Linux/macOS: user, UID, GID.

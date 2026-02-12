@@ -42,7 +42,8 @@ pre = "<b>2. </b>"
     * [ssh-keys](/agents/fawkes/commands/ssh-keys/)
     * [steal-token](/agents/fawkes/commands/steal-token/)
     * [rev2self](/agents/fawkes/commands/rev2self/)
-- Reconnaissance
+- Discovery
+    * [drives](/agents/fawkes/commands/drives/)
     * [env](/agents/fawkes/commands/env/)
     * [net-enum](/agents/fawkes/commands/net-enum/)
     * [net-shares](/agents/fawkes/commands/net-shares/)
@@ -62,12 +63,15 @@ pre = "<b>2. </b>"
     * [keylog](/agents/fawkes/commands/keylog/)
     * [screenshot](/agents/fawkes/commands/screenshot/)
 - Networking
+    * [arp](/agents/fawkes/commands/arp/)
     * [ifconfig](/agents/fawkes/commands/ifconfig/)
     * [net-stat](/agents/fawkes/commands/net-stat/)
     * [port-scan](/agents/fawkes/commands/port-scan/)
     * [socks](/agents/fawkes/commands/socks/)
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
+- Defense Evasion
+    * [timestomp](/agents/fawkes/commands/timestomp/)
 - Agent Management
     * [sleep](/agents/fawkes/commands/sleep/)
     * [exit](/agents/fawkes/commands/exit/)
