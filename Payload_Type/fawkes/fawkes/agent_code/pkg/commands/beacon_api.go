@@ -42,6 +42,15 @@ func virtualAllocBytes(size uint32) (uintptr, error) {
 	return addr, nil
 }
 
+// virtualAllocExec allocates executable memory outside of Go's GC
+func virtualAllocExec(size uint32) (uintptr, error) {
+	addr, _, err := bofProcVirtualAlloc.Call(0, uintptr(size), bofMemCommit|bofMemReserve, windows.PAGE_EXECUTE_READWRITE)
+	if addr == 0 {
+		return 0, err
+	}
+	return addr, nil
+}
+
 // copyMemory copies bytes from src to dst
 func copyMemory(dst, src uintptr, length uint32) {
 	for i := uint32(0); i < length; i++ {

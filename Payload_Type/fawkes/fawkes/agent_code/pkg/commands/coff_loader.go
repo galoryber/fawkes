@@ -18,11 +18,7 @@ import (
 // Custom COFF loader with fixed Beacon API implementations
 // Based on goffloader but with GC-safe BeaconDataExtract
 
-const (
-	coffImageScnMemExecute = 0x20000000
-	coffPageExecuteRead    = windows.PAGE_EXECUTE_READ
-	coffPageReadWrite      = windows.PAGE_READWRITE
-)
+const coffImageScnMemExecute = 0x20000000
 
 type coffSection struct {
 	Section *pecoff.Section
@@ -70,9 +66,16 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			continue
 		}
 
-		addr, err := virtualAllocBytes(uint32(allocationSize))
+		// Allocate code sections as executable from the start
+		var addr uintptr
+		var err error
+		if section.Characteristics&coffImageScnMemExecute != 0 {
+			addr, err = virtualAllocExec(uint32(allocationSize))
+		} else {
+			addr, err = virtualAllocBytes(uint32(allocationSize))
+		}
 		if err != nil {
-			return "", fmt.Errorf("VirtualAlloc failed: %v", err)
+			return "", fmt.Errorf("VirtualAlloc failed for section %s: %v", section.NameString(), err)
 		}
 
 		if strings.HasPrefix(section.NameString(), ".bss") {
@@ -153,11 +156,7 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			processReloc(symbolDefAddress, sectionVirtualAddr, reloc, symbol)
 		}
 
-		// Set executable sections to executable
-		if section.Characteristics&coffImageScnMemExecute != 0 {
-			var oldProtect uint32
-			windows.VirtualProtect(sectionVirtualAddr, uintptr(section.SizeOfRawData), coffPageExecuteRead, &oldProtect)
-		}
+		// Code sections were already allocated as executable via virtualAllocExec
 	}
 
 	// Find and call entry point
