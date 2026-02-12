@@ -21,6 +21,7 @@ pre = "<b>2. </b>"
     * [upload](/agents/fawkes/commands/upload/)
 - Command Execution
     * [run](/agents/fawkes/commands/run/)
+    * [wmi](/agents/fawkes/commands/wmi/)
 - Process Injection
     * [apc-injection](/agents/fawkes/commands/apc-injection/)
     * [opus-injection](/agents/fawkes/commands/opus-injection/)
