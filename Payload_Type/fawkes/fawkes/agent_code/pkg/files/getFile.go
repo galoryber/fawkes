@@ -16,7 +16,7 @@ func listenForGetFromMythicMessages() {
 		case getFile := <-GetFromMythicChannel:
 			getFile.TrackingUUID = generateUUID()
 			getFile.FileTransferResponse = make(chan json.RawMessage)
-			getFile.Task.Job.FileTransfers[getFile.TrackingUUID] = getFile.FileTransferResponse
+			getFile.Task.Job.SetFileTransfer(getFile.TrackingUUID, getFile.FileTransferResponse)
 			go sendUploadFileMessagesToMythic(getFile)
 		}
 	}

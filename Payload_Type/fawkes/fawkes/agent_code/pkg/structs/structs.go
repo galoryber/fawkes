@@ -3,6 +3,7 @@ package structs
 import (
 	"encoding/json"
 	"os"
+	"sync"
 	"time"
 )
 
@@ -98,7 +99,35 @@ type Job struct {
 	SendFileToMythic      chan SendFileToMythicStruct
 	GetFileFromMythic     chan GetFileFromMythicStruct
 	FileTransfers         map[string]chan json.RawMessage
+	FileTransfersMu       sync.RWMutex
 	removeRunningTaskChan chan string
+}
+
+// SetFileTransfer safely adds a file transfer channel to the map
+func (j *Job) SetFileTransfer(key string, ch chan json.RawMessage) {
+	j.FileTransfersMu.Lock()
+	j.FileTransfers[key] = ch
+	j.FileTransfersMu.Unlock()
+}
+
+// GetFileTransfer safely retrieves a file transfer channel from the map
+func (j *Job) GetFileTransfer(key string) (chan json.RawMessage, bool) {
+	j.FileTransfersMu.RLock()
+	ch, ok := j.FileTransfers[key]
+	j.FileTransfersMu.RUnlock()
+	return ch, ok
+}
+
+// BroadcastFileTransfer safely sends data to all file transfer channels
+func (j *Job) BroadcastFileTransfer(data json.RawMessage) {
+	j.FileTransfersMu.RLock()
+	defer j.FileTransfersMu.RUnlock()
+	for _, ch := range j.FileTransfers {
+		select {
+		case ch <- data:
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // SendFileToMythicStruct for downloading files from the agent to Mythic
