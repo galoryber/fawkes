@@ -24,27 +24,46 @@ type DataParser struct {
 }
 
 var (
-	bofKernel32         = syscall.MustLoadDLL("kernel32.dll")
-	bofProcVirtualAlloc = bofKernel32.MustFindProc("VirtualAlloc")
+	bofKernel32                = syscall.MustLoadDLL("kernel32.dll")
+	bofProcVirtualAlloc        = bofKernel32.MustFindProc("VirtualAlloc")
+	bofProcVirtualProtect      = bofKernel32.MustFindProc("VirtualProtect")
+	bofProcFlushInstructionCache = bofKernel32.MustFindProc("FlushInstructionCache")
 )
 
 const (
 	bofMemCommit  = 0x1000
 	bofMemReserve = 0x2000
+	bofMemTopDown = 0x100000
 )
 
-// virtualAllocBytes allocates memory outside of Go's GC
-func virtualAllocBytes(size uint32) (uintptr, error) {
-	addr, _, err := bofProcVirtualAlloc.Call(0, uintptr(size), bofMemCommit|bofMemReserve, windows.PAGE_READWRITE)
+// virtualAllocRW allocates RW memory with MEM_TOP_DOWN to keep allocations close together.
+// This prevents REL32 relocation overflow when sections are >2GB apart.
+func virtualAllocRW(size uint32) (uintptr, error) {
+	addr, _, err := bofProcVirtualAlloc.Call(0, uintptr(size), bofMemCommit|bofMemReserve|bofMemTopDown, windows.PAGE_READWRITE)
 	if addr == 0 {
 		return 0, err
 	}
 	return addr, nil
 }
 
-// virtualAllocExec allocates executable memory outside of Go's GC
-func virtualAllocExec(size uint32) (uintptr, error) {
-	addr, _, err := bofProcVirtualAlloc.Call(0, uintptr(size), bofMemCommit|bofMemReserve, windows.PAGE_EXECUTE_READWRITE)
+// virtualProtectRX changes memory protection to PAGE_EXECUTE_READ
+func virtualProtectRX(addr uintptr, size uint32) error {
+	var oldProtect uint32
+	ret, _, err := bofProcVirtualProtect.Call(addr, uintptr(size), windows.PAGE_EXECUTE_READ, uintptr(unsafe.Pointer(&oldProtect)))
+	if ret == 0 {
+		return err
+	}
+	return nil
+}
+
+// flushInstructionCache flushes the CPU instruction cache for the specified memory region
+func flushInstructionCache(addr uintptr, size uint32) {
+	bofProcFlushInstructionCache.Call(uintptr(0xFFFFFFFFFFFFFFFF), addr, uintptr(size))
+}
+
+// virtualAllocBytes allocates RW memory (for Beacon API internal use)
+func virtualAllocBytes(size uint32) (uintptr, error) {
+	addr, _, err := bofProcVirtualAlloc.Call(0, uintptr(size), bofMemCommit|bofMemReserve, windows.PAGE_READWRITE)
 	if addr == 0 {
 		return 0, err
 	}

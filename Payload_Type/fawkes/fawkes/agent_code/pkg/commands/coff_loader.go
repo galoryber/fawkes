@@ -66,14 +66,12 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			continue
 		}
 
-		// Allocate code sections as executable from the start
+		// Allocate all sections as RW with MEM_TOP_DOWN to keep them close together.
+		// This prevents REL32 relocation overflow when sections are >2GB apart.
+		// Executable sections will be VirtualProtect'd to RX after relocations.
 		var addr uintptr
 		var err error
-		if section.Characteristics&coffImageScnMemExecute != 0 {
-			addr, err = virtualAllocExec(uint32(allocationSize))
-		} else {
-			addr, err = virtualAllocBytes(uint32(allocationSize))
-		}
+		addr, err = virtualAllocRW(uint32(allocationSize))
 		if err != nil {
 			return "", fmt.Errorf("VirtualAlloc failed for section %s: %v", section.NameString(), err)
 		}
@@ -101,7 +99,7 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 	if gotSize == 0 {
 		gotSize = 8 // Minimum allocation to avoid zero-size VirtualAlloc
 	}
-	gotBaseAddress, err := virtualAllocBytes(gotSize)
+	gotBaseAddress, err := virtualAllocRW(gotSize)
 	if err != nil {
 		return "", fmt.Errorf("VirtualAlloc for GOT failed: %v", err)
 	}
@@ -156,7 +154,24 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			processReloc(symbolDefAddress, sectionVirtualAddr, reloc, symbol)
 		}
 
-		// Code sections were already allocated as executable via virtualAllocExec
+	}
+
+	// Mark executable sections as RX and flush instruction cache
+	for _, section := range parsedCoff.Sections.Array() {
+		if section.Characteristics&coffImageScnMemExecute != 0 {
+			sec, ok := sections[section.NameString()]
+			if !ok || sec.Address == 0 {
+				continue
+			}
+			size := section.SizeOfRawData
+			if size == 0 {
+				continue
+			}
+			if err := virtualProtectRX(sec.Address, size); err != nil {
+				return "", fmt.Errorf("VirtualProtect failed for section %s: %v", section.NameString(), err)
+			}
+			flushInstructionCache(sec.Address, size)
+		}
 	}
 
 	// Find and call entry point
