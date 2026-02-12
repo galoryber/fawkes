@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -31,8 +32,17 @@ func (c *MkdirCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	// Try to parse as JSON first (Mythic API sends JSON parameters)
+	var args struct {
+		Path string `json:"path"`
+	}
+	path := task.Params
+	if err := json.Unmarshal([]byte(task.Params), &args); err == nil && args.Path != "" {
+		path = args.Path
+	}
+
 	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data")
-	path := strings.TrimSpace(task.Params)
+	path = strings.TrimSpace(path)
 	if len(path) >= 2 {
 		if (path[0] == '"' && path[len(path)-1] == '"') ||
 			(path[0] == '\'' && path[len(path)-1] == '\'') {
