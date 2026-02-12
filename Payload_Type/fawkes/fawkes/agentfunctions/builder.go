@@ -228,6 +228,12 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadBuildResponse.BuildStdErr = err.Error()
 		return payloadBuildResponse
 	}
+	// Validate mode for target OS
+	if mode == "windows-shellcode" && targetOs != "windows" {
+		payloadBuildResponse.Success = false
+		payloadBuildResponse.BuildStdErr = "windows-shellcode mode is only supported for Windows targets"
+		return payloadBuildResponse
+	}
 	// Add debug flag
 	ldflags += fmt.Sprintf(" -X '%s.debug=%s'", fawkes_main_package, "false")
 	ldflags += " -buildid="

