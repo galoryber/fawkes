@@ -3,7 +3,6 @@ package agentfunctions
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -13,7 +12,7 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "spawn",
 		Description:         "Spawn a suspended process or thread for use with injection techniques like apc-injection. Supports PPID spoofing and non-Microsoft DLL blocking.",
-		HelpString:          "spawn",
+		HelpString:          "spawn -path <executable> [-ppid <parent_pid>] [-blockdlls true]",
 		Version:             2,
 		MitreAttackMappings: []string{"T1055", "T1134.004"}, // Process Injection, Parent PID Spoofing
 		SupportedUIFeatures: []string{},
@@ -26,27 +25,41 @@ func init() {
 				Name:             "path",
 				ModalDisplayName: "Executable Path",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Path to executable (e.g., notepad.exe or C:\\Windows\\System32\\notepad.exe)",
+				Description:      "Path to executable for process spawn (e.g., notepad.exe). Leave empty and set pid for thread mode.",
 				DefaultValue:     "C:\\Windows\\System32\\notepad.exe",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: true,
-						GroupName:           "Process",
+						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     0,
 					},
 				},
 			},
 			{
-				Name:             "ppid",
-				ModalDisplayName: "Parent PID",
+				Name:             "pid",
+				ModalDisplayName: "Target PID (Thread Mode)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "Spoof parent process ID (0 = don't spoof). The spawned process will appear as a child of this PID in Task Manager and EDR telemetry.",
+				Description:      "Process ID to create suspended thread in. If set (>0), thread mode is used instead of process mode.",
 				DefaultValue:     0,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
-						GroupName:           "Process",
+						GroupName:           "Default",
 						UIModalPosition:     1,
+					},
+				},
+			},
+			{
+				Name:             "ppid",
+				ModalDisplayName: "Parent PID (PPID Spoofing)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Spoof parent process ID (0 = don't spoof). The spawned process will appear as a child of this PID. Process mode only.",
+				DefaultValue:     0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     2,
 					},
 				},
 			},
@@ -54,50 +67,29 @@ func init() {
 				Name:             "blockdlls",
 				ModalDisplayName: "Block Non-MS DLLs",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
-				Description:      "Block non-Microsoft-signed DLLs from loading in the spawned process. Prevents most EDR hooking DLLs from injecting.",
+				Description:      "Block non-Microsoft-signed DLLs from loading in the spawned process. Prevents most EDR hooking DLLs from injecting. Process mode only.",
 				DefaultValue:     false,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
-						GroupName:           "Process",
-						UIModalPosition:     2,
-					},
-				},
-			},
-			{
-				Name:             "pid",
-				ModalDisplayName: "Target PID",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "Process ID to create suspended thread in",
-				DefaultValue:     0,
-				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						ParameterIsRequired: true,
-						GroupName:           "Thread",
-						UIModalPosition:     0,
+						GroupName:           "Default",
+						UIModalPosition:     3,
 					},
 				},
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// Try to parse as JSON and extract only known parameters
+			// Try JSON first, fall back to LoadArgsFromJSONString
 			var raw map[string]interface{}
 			if err := json.Unmarshal([]byte(input), &raw); err != nil {
 				return args.LoadArgsFromJSONString(input)
 			}
-			// Build a clean dict with only Mythic-known parameters (exclude "mode" which is agent-internal)
+			// Filter to known params only (exclude agent-internal keys like "mode")
 			clean := make(map[string]interface{})
-			if v, ok := raw["path"]; ok {
-				clean["path"] = v
-			}
-			if v, ok := raw["pid"]; ok {
-				clean["pid"] = v
-			}
-			if v, ok := raw["ppid"]; ok {
-				clean["ppid"] = v
-			}
-			if v, ok := raw["blockdlls"]; ok {
-				clean["blockdlls"] = v
+			for _, key := range []string{"path", "pid", "ppid", "blockdlls"} {
+				if v, ok := raw[key]; ok {
+					clean[key] = v
+				}
 			}
 			return args.LoadArgsFromDictionary(clean)
 		},
@@ -110,14 +102,18 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
-			// Determine mode from the parameter group selection
-			groupName := strings.ToLower(taskData.Task.ParameterGroupName)
-
 			var displayParams string
 			params := make(map[string]interface{})
 
-			switch groupName {
-			case "process":
+			// Determine mode: if pid > 0, use thread mode; otherwise process mode
+			pid, _ := taskData.Args.GetNumberArg("pid")
+			if pid > 0 {
+				// Thread mode
+				params["mode"] = "thread"
+				params["pid"] = int(pid)
+				displayParams = fmt.Sprintf("Suspended thread in PID: %d", int(pid))
+			} else {
+				// Process mode
 				params["mode"] = "process"
 				path, err := taskData.Args.GetStringArg("path")
 				if err != nil {
@@ -127,9 +123,7 @@ func init() {
 					return response
 				}
 				if path == "" {
-					response.Success = false
-					response.Error = "Executable path cannot be empty"
-					return response
+					path = "C:\\Windows\\System32\\notepad.exe"
 				}
 				params["path"] = path
 				displayParams = fmt.Sprintf("Executable: %s (suspended)", path)
@@ -145,28 +139,6 @@ func init() {
 					params["blockdlls"] = true
 					displayParams += ", blockdlls: on"
 				}
-
-			case "thread":
-				params["mode"] = "thread"
-				pid, err := taskData.Args.GetNumberArg("pid")
-				if err != nil {
-					logging.LogError(err, "Failed to get pid")
-					response.Success = false
-					response.Error = "Failed to get PID: " + err.Error()
-					return response
-				}
-				if pid <= 0 {
-					response.Success = false
-					response.Error = "Invalid PID specified (must be greater than 0)"
-					return response
-				}
-				params["pid"] = int(pid)
-				displayParams = fmt.Sprintf("Suspended thread in PID: %d", int(pid))
-
-			default:
-				response.Success = false
-				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
-				return response
 			}
 
 			response.DisplayParams = &displayParams
