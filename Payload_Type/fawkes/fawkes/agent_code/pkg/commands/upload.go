@@ -46,10 +46,24 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	// Handle tilde expansion
 	fixedFilePath := args.RemotePath
 	if strings.HasPrefix(fixedFilePath, "~/") {
-		dirname, _ := os.UserHomeDir()
+		dirname, err := os.UserHomeDir()
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Failed to resolve home directory: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
 		fixedFilePath = filepath.Join(dirname, fixedFilePath[2:])
 	}
-	fullPath, _ := filepath.Abs(fixedFilePath)
+	fullPath, err := filepath.Abs(fixedFilePath)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Failed to resolve absolute path for %s: %v", fixedFilePath, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	// Set up the file transfer request
 	r := structs.GetFileFromMythicStruct{}

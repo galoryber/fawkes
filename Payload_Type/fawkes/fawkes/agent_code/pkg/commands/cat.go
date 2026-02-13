@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -33,13 +32,7 @@ func (c *CatCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data\file.txt")
-	path := strings.TrimSpace(task.Params)
-	if len(path) >= 2 {
-		if (path[0] == '"' && path[len(path)-1] == '"') ||
-			(path[0] == '\'' && path[len(path)-1] == '\'') {
-			path = path[1 : len(path)-1]
-		}
-	}
+	path := stripPathQuotes(task.Params)
 
 	// Read the file
 	content, err := os.ReadFile(path)
