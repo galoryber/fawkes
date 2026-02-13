@@ -41,6 +41,9 @@ var (
 	debug         string = "false"
 	getURI        string = "/data"
 	postURI       string = "/data"
+	hostHeader    string = ""    // Override Host header for domain fronting
+	proxyURL      string = ""    // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
+	tlsVerify     string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
 )
 
 func main() {
@@ -111,6 +114,9 @@ func runAgent() {
 		debugBool,
 		getURI,
 		postURI,
+		hostHeader,
+		proxyURL,
+		tlsVerify,
 	)
 
 	// Initialize C2 profile

