@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main, claude]
+  pull_request:
+    branches: [main]
+
+jobs:
+  agent-code:
+    name: Agent Code
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Payload_Type/fawkes/fawkes/agent_code
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: Payload_Type/fawkes/fawkes/agent_code/go.sum
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Run tests
+        run: go test -v -count=1 ./...
+
+      - name: Build (Linux amd64)
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /dev/null .
+
+      - name: Build (Windows amd64)
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -o /dev/null .
+
+  container-code:
+    name: Container Code
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Payload_Type/fawkes
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: Payload_Type/fawkes/go.sum
+
+      - name: Go vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build -o /dev/null .
