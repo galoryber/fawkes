@@ -440,7 +440,6 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 }
 
 // getActiveUUID returns the callback UUID if available, otherwise the payload UUID
-// getActiveUUID returns the callback UUID if available, otherwise the payload UUID
 func (h *HTTPProfile) getActiveUUID(agent *structs.Agent) string {
 	if h.CallbackUUID != "" {
 		// log.Printf("[DEBUG] Using callback UUID: %s", h.CallbackUUID)
@@ -484,7 +483,10 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	defer resp.Body.Close()
 
 	// Read response body
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PostResponse body: %w", err)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("post response failed with status: %d", resp.StatusCode)
