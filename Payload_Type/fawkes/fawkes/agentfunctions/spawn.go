@@ -80,7 +80,26 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			return args.LoadArgsFromJSONString(input)
+			// Try to parse as JSON and extract only known parameters
+			var raw map[string]interface{}
+			if err := json.Unmarshal([]byte(input), &raw); err != nil {
+				return args.LoadArgsFromJSONString(input)
+			}
+			// Build a clean dict with only Mythic-known parameters (exclude "mode" which is agent-internal)
+			clean := make(map[string]interface{})
+			if v, ok := raw["path"]; ok {
+				clean["path"] = v
+			}
+			if v, ok := raw["pid"]; ok {
+				clean["pid"] = v
+			}
+			if v, ok := raw["ppid"]; ok {
+				clean["ppid"] = v
+			}
+			if v, ok := raw["blockdlls"]; ok {
+				clean["blockdlls"] = v
+			}
+			return args.LoadArgsFromDictionary(clean)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
