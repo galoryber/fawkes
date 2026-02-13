@@ -51,13 +51,36 @@ func main() {
 }
 
 func runAgent() {
-	// Convert string build variables to appropriate types
-	callbackPortInt, _ := strconv.Atoi(callbackPort)
-	sleepIntervalInt, _ := strconv.Atoi(sleepInterval)
-	jitterInt, _ := strconv.Atoi(jitter)
-	killDateInt64, _ := strconv.ParseInt(killDate, 10, 64)
-	maxRetriesInt, _ := strconv.Atoi(maxRetries)
-	debugBool, _ := strconv.ParseBool(debug)
+	// Convert string build variables to appropriate types with validation
+	callbackPortInt, err := strconv.Atoi(callbackPort)
+	if err != nil {
+		log.Printf("[WARNING] Invalid callbackPort %q, defaulting to 443", callbackPort)
+		callbackPortInt = 443
+	}
+	sleepIntervalInt, err := strconv.Atoi(sleepInterval)
+	if err != nil || sleepIntervalInt < 0 {
+		log.Printf("[WARNING] Invalid sleepInterval %q, defaulting to 10", sleepInterval)
+		sleepIntervalInt = 10
+	}
+	jitterInt, err := strconv.Atoi(jitter)
+	if err != nil || jitterInt < 0 || jitterInt > 100 {
+		log.Printf("[WARNING] Invalid jitter %q, defaulting to 10", jitter)
+		jitterInt = 10
+	}
+	killDateInt64, err := strconv.ParseInt(killDate, 10, 64)
+	if err != nil {
+		log.Printf("[WARNING] Invalid killDate %q, defaulting to 0 (disabled)", killDate)
+		killDateInt64 = 0
+	}
+	maxRetriesInt, err := strconv.Atoi(maxRetries)
+	if err != nil || maxRetriesInt < 0 {
+		log.Printf("[WARNING] Invalid maxRetries %q, defaulting to 10", maxRetries)
+		maxRetriesInt = 10
+	}
+	debugBool, err := strconv.ParseBool(debug)
+	if err != nil {
+		debugBool = false
+	}
 
 	// Setup logging
 	if debugBool {
