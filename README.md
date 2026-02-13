@@ -123,6 +123,30 @@ The byte pattern is repeated `inflate_count` times, so the total added size is `
 
 When inflation is not configured, only 1 byte of overhead is added to the binary.
 
+## Opsec Features
+
+### TLS Certificate Verification
+
+Control how the agent validates HTTPS certificates when communicating with the C2 server. Configured at build time via the **tls_verify** parameter:
+
+| Mode | Description |
+|------|-------------|
+| `none` | Skip all TLS verification (default, backward compatible) |
+| `system-ca` | Validate certificates against the OS trust store |
+| `pinned:<sha256>` | Pin to a specific certificate fingerprint (SHA-256 hex). Agent rejects connections if the server cert doesn't match. |
+
+Certificate pinning prevents MITM interception of agent traffic even if an attacker controls a trusted CA.
+
+### Domain Fronting
+
+Set the **host_header** build parameter to override the HTTP `Host` header. This enables domain fronting: route traffic through a CDN (e.g., CloudFront, Azure CDN) while the `Host` header targets your actual C2 domain. To network defenders, the traffic appears to go to the CDN's IP address.
+
+### Proxy Support
+
+Set the **proxy_url** build parameter to route agent traffic through an HTTP or SOCKS proxy. Useful for operating in corporate networks with mandatory proxy servers.
+
+Examples: `http://proxy.corp.local:8080`, `socks5://127.0.0.1:1080`
+
 ## Supported C2 Profiles
 
 ### [HTTP Profile](https://github.com/MythicC2Profiles/http)
