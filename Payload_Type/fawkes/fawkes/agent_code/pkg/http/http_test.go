@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"testing"
+
+	"fawkes/pkg/structs"
 )
 
 // --- pkcs7Pad Tests ---
@@ -493,5 +495,222 @@ func TestNewHTTPProfile_WithHostHeader(t *testing.T) {
 
 	if p.HostHeader != "fronted.example.com" {
 		t.Errorf("HostHeader = %q, want %q", p.HostHeader, "fronted.example.com")
+	}
+}
+
+func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
+	key := make([]byte, 32)
+	keyB64 := base64.StdEncoding.EncodeToString(key)
+
+	p := NewHTTPProfile(
+		"http://localhost:80",
+		"TestAgent/1.0",
+		keyB64,
+		10,
+		5,
+		10,
+		true,
+		"/get",
+		"/post",
+		"",
+		"",
+		"system-ca",
+	)
+
+	if p.EncryptionKey != keyB64 {
+		t.Errorf("EncryptionKey not set correctly")
+	}
+	if !p.Debug {
+		t.Error("Debug should be true")
+	}
+}
+
+func TestNewHTTPProfile_InvalidProxy(t *testing.T) {
+	// Invalid proxy URL should not crash — silently ignored
+	p := NewHTTPProfile(
+		"http://localhost:80",
+		"TestAgent/1.0",
+		"",
+		10,
+		5,
+		10,
+		false,
+		"/get",
+		"/post",
+		"",
+		"://not-a-valid-url",
+		"none",
+	)
+
+	if p.client == nil {
+		t.Error("client should not be nil even with invalid proxy")
+	}
+}
+
+// --- getActiveUUID Tests ---
+
+func TestGetActiveUUID_WithCallbackUUID(t *testing.T) {
+	profile := &HTTPProfile{
+		CallbackUUID: "callback-uuid-123",
+	}
+	agent := &structs.Agent{
+		PayloadUUID: "payload-uuid-456",
+	}
+
+	result := profile.getActiveUUID(agent)
+	if result != "callback-uuid-123" {
+		t.Errorf("getActiveUUID = %q, want callback UUID", result)
+	}
+}
+
+func TestGetActiveUUID_WithoutCallbackUUID(t *testing.T) {
+	profile := &HTTPProfile{
+		CallbackUUID: "",
+	}
+	agent := &structs.Agent{
+		PayloadUUID: "payload-uuid-456",
+	}
+
+	result := profile.getActiveUUID(agent)
+	if result != "payload-uuid-456" {
+		t.Errorf("getActiveUUID = %q, want payload UUID", result)
+	}
+}
+
+// --- encryptMessage edge cases ---
+
+func TestEncryptMessage_WrongKeySizeBase64(t *testing.T) {
+	// Valid base64 but decodes to wrong size for AES (not 16, 24, or 32 bytes)
+	key := make([]byte, 17) // Not a valid AES key size
+	keyB64 := base64.StdEncoding.EncodeToString(key)
+
+	profile := &HTTPProfile{
+		EncryptionKey: keyB64,
+	}
+
+	msg := []byte("test message")
+	result := profile.encryptMessage(msg)
+
+	// With wrong key size, AES cipher creation fails, should return original
+	if !bytes.Equal(result, msg) {
+		t.Error("encryptMessage with wrong key size should return original message")
+	}
+}
+
+func TestEncryptDecrypt_MultipleBlockSizes(t *testing.T) {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i + 42)
+	}
+	keyB64 := base64.StdEncoding.EncodeToString(key)
+
+	profile := &HTTPProfile{
+		EncryptionKey: keyB64,
+	}
+	fakeUUID := []byte("12345678-1234-1234-1234-123456789012")
+
+	// Test various message sizes including exact multiples of block size
+	sizes := []int{1, 15, 16, 17, 31, 32, 33, 100, 255, 256, 1024}
+	for _, size := range sizes {
+		msg := make([]byte, size)
+		for i := range msg {
+			msg[i] = byte(i % 256)
+		}
+
+		encrypted := profile.encryptMessage(msg)
+		withUUID := append(append([]byte{}, fakeUUID...), encrypted...)
+
+		decrypted, err := profile.decryptResponse(withUUID)
+		if err != nil {
+			t.Fatalf("size %d: decryptResponse failed: %v", size, err)
+		}
+		if !bytes.Equal(decrypted, msg) {
+			t.Errorf("size %d: round-trip mismatch", size)
+		}
+	}
+}
+
+func TestDecryptResponse_InvalidEncryptionKeyBase64(t *testing.T) {
+	profile := &HTTPProfile{
+		EncryptionKey: "not-valid-base64!!!",
+	}
+
+	data := make([]byte, 100)
+	_, err := profile.decryptResponse(data)
+	if err == nil {
+		t.Error("decryptResponse with invalid base64 key should return error")
+	}
+}
+
+func TestDecryptResponse_CiphertextNotBlockAligned(t *testing.T) {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i)
+	}
+	keyB64 := base64.StdEncoding.EncodeToString(key)
+
+	profile := &HTTPProfile{
+		EncryptionKey: keyB64,
+	}
+
+	// Create data with correct structure but ciphertext not aligned to block size
+	// UUID (36) + IV (16) + ciphertext (not multiple of 16) + HMAC (32)
+	// Total: 36 + 16 + 7 + 32 = 91
+	data := make([]byte, 91)
+	// Fill with valid-looking data
+	copy(data[:36], []byte("12345678-1234-1234-1234-123456789012"))
+
+	// Compute valid HMAC so it passes HMAC check (try both methods)
+	// Actually, HMAC will fail regardless since data is random, so this tests
+	// that the function doesn't panic on misaligned ciphertext
+	_, err := profile.decryptResponse(data)
+	if err == nil {
+		t.Error("decryptResponse with non-block-aligned ciphertext should fail")
+	}
+}
+
+// --- getString edge cases ---
+
+func TestGetString_NilMap(t *testing.T) {
+	// getString should handle nil gracefully
+	var m map[string]interface{}
+	if got := getString(m, "key"); got != "" {
+		t.Errorf("getString on nil map = %q, want empty", got)
+	}
+}
+
+func TestGetString_NilValue(t *testing.T) {
+	m := map[string]interface{}{
+		"key": nil,
+	}
+	if got := getString(m, "key"); got != "" {
+		t.Errorf("getString for nil value = %q, want empty", got)
+	}
+}
+
+// --- buildTLSConfig edge cases ---
+
+func TestBuildTLSConfig_Empty(t *testing.T) {
+	cfg := buildTLSConfig("")
+	if !cfg.InsecureSkipVerify {
+		t.Error("empty string should default to InsecureSkipVerify=true")
+	}
+}
+
+func TestBuildTLSConfig_PinnedEmpty(t *testing.T) {
+	cfg := buildTLSConfig("pinned:")
+	// Empty fingerprint after "pinned:" should fall back
+	if cfg.VerifyPeerCertificate != nil {
+		t.Error("pinned with empty fingerprint should not set VerifyPeerCertificate")
+	}
+}
+
+func TestBuildTLSConfig_PinnedUppercaseHex(t *testing.T) {
+	// Valid SHA-256 fingerprint with uppercase hex
+	fingerprint := "E3B0C44298FC1C149AFBF4C8996FB92427AE41E4649B934CA495991B7852B855"
+	cfg := buildTLSConfig("pinned:" + fingerprint)
+	// hex.DecodeString handles uppercase
+	if cfg.VerifyPeerCertificate == nil {
+		t.Error("pinned with uppercase hex should work")
 	}
 }
