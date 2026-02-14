@@ -155,7 +155,7 @@ func formatLsOutput(result structs.FileListing) string {
 
 	output := fmt.Sprintf("Contents of directory: %s\n", result.ParentPath)
 	output += fmt.Sprintf("%-30s %-10s %-15s %s\n", "Name", "Type", "Size", "Modified")
-	output += fmt.Sprint("--------------------------------------------------------------------------------\n")
+	output += "--------------------------------------------------------------------------------\n"
 
 	for _, file := range result.Files {
 		fileType := "FILE"

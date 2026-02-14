@@ -100,7 +100,6 @@ type Job struct {
 	GetFileFromMythic     chan GetFileFromMythicStruct
 	FileTransfers         map[string]chan json.RawMessage
 	FileTransfersMu       sync.RWMutex
-	removeRunningTaskChan chan string
 }
 
 // SetFileTransfer safely adds a file transfer channel to the map

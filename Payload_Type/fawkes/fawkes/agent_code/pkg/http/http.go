@@ -136,10 +136,6 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 		Integrity:    agent.Integrity,
 	}
 
-	if h.Debug {
-		// log.Printf("[DEBUG] Checkin message: %+v", checkinMsg)
-	}
-
 	body, err := json.Marshal(checkinMsg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal checkin message: %w", err)
@@ -148,9 +144,6 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
 		body = h.encryptMessage(body)
-		if h.Debug {
-			// log.Printf("[DEBUG] Checkin message encrypted")
-		}
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
@@ -172,10 +165,6 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read checkin response: %w", err)
-	}
-
-	if h.Debug {
-		// log.Printf("[DEBUG] Checkin response body: %s", string(respBody))
 	}
 
 	// Decrypt the checkin response if needed
@@ -227,9 +216,6 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 
 // GetTasking retrieves tasks and inbound SOCKS data from Mythic, sending any pending outbound SOCKS data
 func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.SocksMsg) ([]structs.Task, []structs.SocksMsg, error) {
-	if h.Debug {
-		// log.Printf("[DEBUG] GetTasking URL: %s%s", h.BaseURL, h.GetEndpoint)
-	}
 	taskingMsg := structs.TaskingMessage{
 		Action:      "get_tasking",
 		TaskingSize: -1, // Get all pending tasks (important for SOCKS throughput)
@@ -248,9 +234,6 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
 		body = h.encryptMessage(body)
-		if h.Debug {
-			// log.Printf("[DEBUG] Tasking message encrypted")
-		}
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
@@ -284,9 +267,6 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	// Decrypt the response if encryption key is provided
 	var decryptedData []byte
 	if h.EncryptionKey != "" {
-		if h.Debug {
-			// log.Printf("[DEBUG] Decrypting response...")
-		}
 		// First, base64 decode the response
 		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
 		if err != nil {
@@ -341,7 +321,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	var inboundSocks []structs.SocksMsg
 	if socksList, exists := taskResponse["socks"]; exists {
 		if socksRaw, err := json.Marshal(socksList); err == nil {
-			json.Unmarshal(socksRaw, &inboundSocks)
+			_ = json.Unmarshal(socksRaw, &inboundSocks)
 		}
 	}
 
@@ -647,7 +627,7 @@ func pkcs7Pad(data []byte, blockSize int) ([]byte, error) {
 	if blockSize <= 0 {
 		return nil, fmt.Errorf("invalid blocksize")
 	}
-	if data == nil || len(data) == 0 {
+	if len(data) == 0 {
 		return nil, fmt.Errorf("invalid PKCS7 data (empty or not padded)")
 	}
 	padding := blockSize - len(data)%blockSize

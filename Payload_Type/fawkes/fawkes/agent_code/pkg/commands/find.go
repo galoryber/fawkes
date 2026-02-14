@@ -65,7 +65,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	var matches []string
 	const maxResults = 500
 
-	err = filepath.Walk(startPath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.Walk(startPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // skip inaccessible entries
 		}

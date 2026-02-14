@@ -1,0 +1,31 @@
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - gosimple
+
+linters-settings:
+  errcheck:
+    exclude-functions:
+      # Test helper functions where errors are acceptable
+      - os.WriteFile
+      - os.MkdirAll
+      - os.Mkdir
+      - os.Chdir
+      - (net.Conn).SetReadDeadline
+      - (net.Conn).SetWriteDeadline
+      - (*net.TCPListener).SetDeadline
+  staticcheck:
+    checks:
+      - all
+      - -SA9003  # Exclude empty branch check (intentional debug scaffolding)
+
+issues:
+  exclude-rules:
+    # Allow unchecked errors in test files for helper setup
+    - path: _test\.go
+      linters:
+        - errcheck

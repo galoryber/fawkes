@@ -11,14 +11,11 @@ var GetFromMythicChannel = make(chan structs.GetFileFromMythicStruct, 10)
 
 // listenForGetFromMythicMessages reads from GetFromMythicChannel to get a file from Mythic to the agent
 func listenForGetFromMythicMessages() {
-	for {
-		select {
-		case getFile := <-GetFromMythicChannel:
-			getFile.TrackingUUID = generateUUID()
-			getFile.FileTransferResponse = make(chan json.RawMessage)
-			getFile.Task.Job.SetFileTransfer(getFile.TrackingUUID, getFile.FileTransferResponse)
-			go sendUploadFileMessagesToMythic(getFile)
-		}
+	for getFile := range GetFromMythicChannel {
+		getFile.TrackingUUID = generateUUID()
+		getFile.FileTransferResponse = make(chan json.RawMessage)
+		getFile.Task.Job.SetFileTransfer(getFile.TrackingUUID, getFile.FileTransferResponse)
+		go sendUploadFileMessagesToMythic(getFile)
 	}
 }
 

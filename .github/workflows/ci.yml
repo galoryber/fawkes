@@ -26,8 +26,11 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum
 
-      - name: Go vet
-        run: go vet ./...
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          working-directory: Payload_Type/fawkes/fawkes/agent_code
 
       - name: Run tests with race detector and coverage
         run: go test -v -count=1 -race -coverprofile=coverage.out ./...

@@ -559,7 +559,9 @@ func TestFileListing_EmptyFiles(t *testing.T) {
 
 	// Files should be omitted when empty (omitempty)
 	var decoded map[string]interface{}
-	json.Unmarshal(data, &decoded)
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("Failed to unmarshal: %v", err)
+	}
 	if _, exists := decoded["files"]; exists {
 		t.Error("files should be omitted when nil (omitempty)")
 	}
