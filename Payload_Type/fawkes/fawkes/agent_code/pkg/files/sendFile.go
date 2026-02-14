@@ -92,15 +92,11 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 		}
 
 		if _, ok := fileDetails["file_id"]; ok {
-			if ok {
-				updateUserOutput := structs.Response{}
-				updateUserOutput.TaskID = sendFileToMythic.Task.ID
-				updateUserOutput.UserOutput = fmt.Sprintf("{\"file_id\": \"%v\", \"total_chunks\": \"%d\"}\n", fileDetails["file_id"], chunks)
-				sendFileToMythic.Task.Job.SendResponses <- updateUserOutput
-				break
-			} else {
-				continue
-			}
+			updateUserOutput := structs.Response{}
+			updateUserOutput.TaskID = sendFileToMythic.Task.ID
+			updateUserOutput.UserOutput = fmt.Sprintf("{\"file_id\": \"%v\", \"total_chunks\": \"%d\"}\n", fileDetails["file_id"], chunks)
+			sendFileToMythic.Task.Job.SendResponses <- updateUserOutput
+			break
 		}
 	}
 

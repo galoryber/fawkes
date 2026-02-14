@@ -321,7 +321,9 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	var inboundSocks []structs.SocksMsg
 	if socksList, exists := taskResponse["socks"]; exists {
 		if socksRaw, err := json.Marshal(socksList); err == nil {
-			_ = json.Unmarshal(socksRaw, &inboundSocks)
+			if err := json.Unmarshal(socksRaw, &inboundSocks); err != nil {
+				log.Printf("Warning: failed to parse SOCKS messages: %v", err)
+			}
 		}
 	}
 
