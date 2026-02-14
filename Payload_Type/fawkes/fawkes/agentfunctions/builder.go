@@ -272,8 +272,14 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	ldflags += " -buildid="
 
 	// Handle binary inflation (padding)
-	inflateBytes, _ := payloadBuildMsg.BuildParameters.GetStringArg("inflate_bytes")
-	inflateCount, _ := payloadBuildMsg.BuildParameters.GetStringArg("inflate_count")
+	inflateBytes, inflBytesErr := payloadBuildMsg.BuildParameters.GetStringArg("inflate_bytes")
+	inflateCount, inflCountErr := payloadBuildMsg.BuildParameters.GetStringArg("inflate_count")
+	if inflBytesErr != nil {
+		fmt.Printf("[builder] Warning: could not read inflate_bytes parameter: %v\n", inflBytesErr)
+	}
+	if inflCountErr != nil {
+		fmt.Printf("[builder] Warning: could not read inflate_count parameter: %v\n", inflCountErr)
+	}
 	paddingFile := "./fawkes/agent_code/padding.bin"
 	fmt.Printf("[builder] inflate_bytes='%s' inflate_count='%s'\n", inflateBytes, inflateCount)
 
@@ -281,7 +287,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		count, countErr := strconv.Atoi(strings.TrimSpace(inflateCount))
 		if countErr != nil || count <= 0 {
 			// Invalid count, write default 1-byte padding
-			os.WriteFile(paddingFile, []byte{0x00}, 0644)
+			if writeErr := os.WriteFile(paddingFile, []byte{0x00}, 0644); writeErr != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to write default padding file: %v", writeErr)
+				return payloadBuildResponse
+			}
 		} else {
 			// Parse hex bytes like "0x41,0x42" or "0x90"
 			hexParts := strings.Split(inflateBytes, ",")
@@ -318,10 +328,18 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	} else {
 		// No inflation requested, write minimal default
 		fmt.Printf("[builder] No inflation requested, writing default 1-byte padding.bin\n")
-		os.WriteFile(paddingFile, []byte{0x00}, 0644)
+		if writeErr := os.WriteFile(paddingFile, []byte{0x00}, 0644); writeErr != nil {
+			payloadBuildResponse.Success = false
+			payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to write default padding file: %v", writeErr)
+			return payloadBuildResponse
+		}
 	}
 	// Defer cleanup: restore default padding.bin after build completes
-	defer os.WriteFile(paddingFile, []byte{0x00}, 0644)
+	defer func() {
+		if writeErr := os.WriteFile(paddingFile, []byte{0x00}, 0644); writeErr != nil {
+			fmt.Printf("[builder] Warning: failed to restore default padding file: %v\n", writeErr)
+		}
+	}()
 
 	goarch := architecture
 	tags := payloadBuildMsg.C2Profiles[0].Name
