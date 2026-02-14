@@ -137,7 +137,7 @@ func (m *Manager) handleNewConnection(serverId uint32, b64Data string) {
 	}
 
 	port := binary.BigEndian.Uint16(data[portOffset : portOffset+2])
-	target := fmt.Sprintf("%s:%d", host, port)
+	target := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 
 	// Establish TCP connection
 	conn, err := net.DialTimeout("tcp", target, dialTimeout)

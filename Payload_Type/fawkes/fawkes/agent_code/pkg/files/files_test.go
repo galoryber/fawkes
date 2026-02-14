@@ -3,6 +3,7 @@ package files
 import (
 	"math"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -123,5 +124,57 @@ func TestPartSize_SingleChunk(t *testing.T) {
 	partSize := int(math.Min(FILE_CHUNK_SIZE, float64(int64(size)-int64(i*FILE_CHUNK_SIZE))))
 	if partSize != 100 {
 		t.Errorf("Single chunk of 100 byte file should be 100, got %d", partSize)
+	}
+}
+
+// --- Initialize idempotency test ---
+// Initialize() should be safe to call multiple times without spawning duplicate goroutines
+
+func TestInitialize_Idempotent(t *testing.T) {
+	// Reset the sync.Once for testing
+	initOnce = sync.Once{}
+
+	// Call Initialize multiple times — should not panic and channels should exist
+	Initialize()
+	Initialize()
+	Initialize()
+
+	// If we get here without panic or deadlock, the sync.Once guard works
+	// Verify the channels are still functional (non-nil)
+	if SendToMythicChannel == nil {
+		t.Error("SendToMythicChannel is nil after Initialize()")
+	}
+	if GetFromMythicChannel == nil {
+		t.Error("GetFromMythicChannel is nil after Initialize()")
+	}
+}
+
+// --- Chunk boundary edge cases ---
+
+func TestChunkCalculation_OneByteOverBoundary(t *testing.T) {
+	// At each multiple of chunk size + 1 byte, we need one more chunk
+	for multiplier := 1; multiplier <= 5; multiplier++ {
+		size := int64(FILE_CHUNK_SIZE*multiplier + 1)
+		chunks := uint64(math.Ceil(float64(size) / FILE_CHUNK_SIZE))
+		expected := uint64(multiplier + 1)
+		if chunks != expected {
+			t.Errorf("Size %d should be %d chunks, got %d", size, expected, chunks)
+		}
+	}
+}
+
+func TestPartSize_MiddleChunks(t *testing.T) {
+	// 3 full chunks + partial
+	size := int64(FILE_CHUNK_SIZE*3 + 100)
+	for i := uint64(0); i < 3; i++ {
+		partSize := int(math.Min(FILE_CHUNK_SIZE, float64(int64(size)-int64(i*FILE_CHUNK_SIZE))))
+		if partSize != FILE_CHUNK_SIZE {
+			t.Errorf("Middle chunk %d should be %d bytes, got %d", i, FILE_CHUNK_SIZE, partSize)
+		}
+	}
+	// Last chunk should be 100 bytes
+	lastPart := int(math.Min(FILE_CHUNK_SIZE, float64(int64(size)-int64(3*FILE_CHUNK_SIZE))))
+	if lastPart != 100 {
+		t.Errorf("Last chunk should be 100 bytes, got %d", lastPart)
 	}
 }
