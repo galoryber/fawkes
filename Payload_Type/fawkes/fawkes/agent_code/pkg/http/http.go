@@ -347,13 +347,7 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 		return nil, fmt.Errorf("encrypted data too short: %d bytes", len(encryptedData))
 	}
 
-	// Extract UUID (first 36 bytes)
-	_ = encryptedData[:36] // uuidBytes for potential debug use
-	if h.Debug {
-		// log.Printf("[DEBUG] Response UUID: %s", string(uuidBytes))
-	}
-
-	// Extract IV (next 16 bytes)
+	// Skip UUID (first 36 bytes), extract IV (next 16 bytes)
 	iv := encryptedData[36:52]
 
 	// Extract HMAC (last 32 bytes)
@@ -398,8 +392,8 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
-	if len(ciphertext)%aes.BlockSize != 0 {
-		return nil, fmt.Errorf("ciphertext length not multiple of block size")
+	if len(ciphertext) == 0 || len(ciphertext)%aes.BlockSize != 0 {
+		return nil, fmt.Errorf("invalid ciphertext length: %d", len(ciphertext))
 	}
 
 	mode := cipher.NewCBCDecrypter(block, iv)

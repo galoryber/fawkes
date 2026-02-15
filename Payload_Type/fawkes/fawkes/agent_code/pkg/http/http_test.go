@@ -669,6 +669,28 @@ func TestDecryptResponse_CiphertextNotBlockAligned(t *testing.T) {
 	}
 }
 
+func TestDecryptResponse_EmptyCiphertext(t *testing.T) {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i)
+	}
+	keyB64 := base64.StdEncoding.EncodeToString(key)
+
+	profile := &HTTPProfile{
+		EncryptionKey: keyB64,
+	}
+
+	// Exactly 84 bytes: UUID (36) + IV (16) + no ciphertext (0) + HMAC (32)
+	// This previously caused a panic on plaintext[len(plaintext)-1]
+	data := make([]byte, 84)
+	copy(data[:36], []byte("12345678-1234-1234-1234-123456789012"))
+
+	_, err := profile.decryptResponse(data)
+	if err == nil {
+		t.Error("decryptResponse with zero-length ciphertext should fail, not panic")
+	}
+}
+
 // --- getString edge cases ---
 
 func TestGetString_NilMap(t *testing.T) {
