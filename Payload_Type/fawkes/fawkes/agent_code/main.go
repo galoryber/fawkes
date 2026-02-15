@@ -270,7 +270,11 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 						if responses, ok := responseData["responses"].([]interface{}); ok && len(responses) > 0 {
 							if firstResp, ok := responses[0].(map[string]interface{}); ok {
 								// Send this response to all active file transfer channels
-								respJSON, _ := json.Marshal(firstResp)
+								respJSON, err := json.Marshal(firstResp)
+								if err != nil {
+									log.Printf("[ERROR] Failed to marshal file transfer response: %v", err)
+									continue
+								}
 								job.BroadcastFileTransfer(json.RawMessage(respJSON))
 							}
 						}
@@ -352,11 +356,11 @@ func calculateSleepTime(interval, jitter int) time.Duration {
 
 	// Freyja-style jitter calculation
 	// Jitter is a percentage (0-100) that creates variation around the interval
-	jitterFloat := float64(rand.Int()%jitter) / float64(100)
+	jitterFloat := float64(rand.Intn(jitter)) / float64(100)
 	jitterDiff := float64(interval) * jitterFloat
 
 	// Randomly add or subtract jitter (50/50 chance)
-	if rand.Int()%2 == 0 {
+	if rand.Intn(2) == 0 {
 		// Add jitter
 		actualInterval := interval + int(jitterDiff)
 		return time.Duration(actualInterval) * time.Second
