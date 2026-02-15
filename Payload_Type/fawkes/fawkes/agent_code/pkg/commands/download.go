@@ -39,7 +39,7 @@ func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
 	fullPath, err := filepath.Abs(path)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening file: %s", err.Error()),
+			Output:    fmt.Sprintf("Error resolving file path: %s", err.Error()),
 			Status:    "error",
 			Completed: true,
 		}
@@ -54,11 +54,11 @@ func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer file.Close()
 
 	// Get file info
 	fi, err := file.Stat()
 	if err != nil {
-		file.Close()
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error getting file size: %s", err.Error()),
 			Status:    "error",
@@ -83,7 +83,6 @@ func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
 	for {
 		select {
 		case <-downloadMsg.FinishedTransfer:
-			file.Close()
 			return structs.CommandResult{
 				Output:    "Finished Downloading",
 				Status:    "success",
@@ -91,7 +90,6 @@ func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
-				file.Close()
 				return structs.CommandResult{
 					Output:    "Tasked to stop early",
 					Status:    "error",
