@@ -63,10 +63,12 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	startDepth := strings.Count(startPath, string(os.PathSeparator))
 
 	var matches []string
+	var accessErrors []string
 	const maxResults = 500
 
 	_ = filepath.Walk(startPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
+			accessErrors = append(accessErrors, fmt.Sprintf("access denied: %s", path))
 			return nil // skip inaccessible entries
 		}
 
@@ -97,8 +99,12 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	})
 
 	if len(matches) == 0 {
+		output := fmt.Sprintf("No files matching '%s' found in %s (max_depth=%d)", params.Pattern, startPath, params.MaxDepth)
+		if len(accessErrors) > 0 {
+			output += fmt.Sprintf("\n\n%d path(s) inaccessible", len(accessErrors))
+		}
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("No files matching '%s' found in %s (max_depth=%d)", params.Pattern, startPath, params.MaxDepth),
+			Output:    output,
 			Status:    "success",
 			Completed: true,
 		}
@@ -108,6 +114,9 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		len(matches), params.Pattern, startPath, strings.Join(matches, "\n"))
 	if len(matches) >= maxResults {
 		output += fmt.Sprintf("\n\n(results truncated at %d)", maxResults)
+	}
+	if len(accessErrors) > 0 {
+		output += fmt.Sprintf("\n\n%d path(s) inaccessible", len(accessErrors))
 	}
 
 	return structs.CommandResult{
