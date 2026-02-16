@@ -21,6 +21,7 @@ From the Mythic install directory:
 
 Command | Syntax | Description
 ------- | ------ | -----------
+apc-injection | `apc-injection` | **(Windows only)** Perform QueueUserAPC injection into an alertable thread. Use `ts` to find alertable threads (T1055.004).
 arp | `arp` | Display ARP table — shows IP-to-MAC address mappings for nearby hosts. Cross-platform.
 autopatch | `autopatch <dll_name> <function_name> <num_bytes>` | **(Windows only)** Automatically patch a function by jumping to nearest return (C3) instruction. Useful for AMSI/ETW bypasses.
 cat | `cat <file>` | Display the contents of a file.
@@ -45,6 +46,7 @@ mv | `mv <source> <destination>` | Move or rename a file from source to destinat
 net-enum | `net-enum -action <users\|localgroups\|groupmembers\|domainusers\|domaingroups\|domaininfo> [-target <group>]` | **(Windows only)** Enumerate local/domain users, groups, and domain information.
 net-shares | `net-shares -action <local\|remote\|mapped> [-target <host>]` | **(Windows only)** Enumerate network shares and mapped drives.
 net-stat | `net-stat` | List active network connections and listening ports with protocol, state, and PID. Cross-platform.
+opus-injection | `opus-injection` | **(Windows only)** Callback-based process injection. Variant 1: Ctrl-C Handler Chain. Variant 4: PEB KernelCallbackTable. [Details](research/injection-techniques.md#opus-injection)
 persist | `persist -method <registry\|startup-folder\|list> -action <install\|remove> -name <name>` | **(Windows only)** Install or remove persistence via registry Run keys or startup folder. Supports HKCU/HKLM.
 poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. All 8 variants supported. [Details](research/injection-techniques.md#poolparty-injection)
 port-scan | `port-scan -hosts <IPs/CIDRs> [-ports <ports>] [-timeout <s>]` | TCP connect scan for network service discovery. Supports CIDR, IP ranges, and port ranges. Cross-platform.
@@ -59,15 +61,15 @@ run | `run <command>` | Execute a shell command and return the output.
 schtask | `schtask -action <create\|query\|delete\|run\|list> -name <name> [-program <path>]` | **(Windows only)** Create, query, run, or delete Windows scheduled tasks for persistence or execution.
 screenshot | `screenshot` | **(Windows only)** Capture a screenshot of the current desktop session. Captures all monitors and uploads as PNG.
 service | `service -action <query\|start\|stop\|create\|delete\|list> -name <name> [-binpath <path>]` | **(Windows only)** Manage Windows services — query status, start, stop, create, or delete services.
-spawn | `spawn -path <exe> [-ppid <pid>] [-blockdlls true]` | **(Windows only)** Spawn a suspended process or thread for injection. Supports PPID spoofing (T1134.004) and non-Microsoft DLL blocking.
-opus-injection | `opus-injection` | **(Windows only)** Callback-based process injection. Variant 1: Ctrl-C Handler Chain. Variant 4: PEB KernelCallbackTable. [Details](research/injection-techniques.md#opus-injection)
 sleep | `sleep [seconds] [jitter]` | Set the callback interval in seconds and jitter percentage.
 socks | `socks start [port]` / `socks stop [port]` | Start or stop a SOCKS5 proxy through the callback. Default port 7000. Tunnel tools like proxychains, nmap, or Impacket through the agent.
+spawn | `spawn -path <exe> [-ppid <pid>] [-blockdlls true]` | **(Windows only)** Spawn a suspended process or thread for injection. Supports PPID spoofing (T1134.004) and non-Microsoft DLL blocking.
 ssh-keys | `ssh-keys -action <list\|add\|remove\|read-private> [-key <ssh_key>] [-user <username>]` | **(Linux only)** Read or inject SSH authorized_keys. Read private keys for credential harvesting.
 start-clr | `start-clr` | **(Windows only)** Initialize the CLR v4.0.30319 and load amsi.dll into memory.
 steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a security token from another process.
 threadless-inject | `threadless-inject` | **(Windows only)** Inject shellcode using threadless injection by hooking a DLL function in a remote process. More stealthy than vanilla injection as it doesn't create new threads.
 timestomp | `timestomp -action <get\|copy\|set> -target <file> [-source <file>] [-timestamp <time>]` | Modify file timestamps to blend in. Get, copy from another file, or set specific time. Windows also modifies creation time.
+ts | `ts [-a] [-i PID]` | **(Windows only)** List threads in processes. By default shows only alertable threads (Suspended/DelayExecution). Use -a for all threads, -i to filter by PID (T1057).
 upload | `upload` | Upload a file to the target with chunked file transfer.
 vanilla-injection | `vanilla-injection` | **(Windows only)** Inject shellcode into a remote process using VirtualAllocEx/WriteProcessMemory/CreateRemoteThread.
 whoami | `whoami` | Display current user identity and security context. On Windows: username, SID, token type, integrity level, privileges. On Linux/macOS: user, UID, GID.
