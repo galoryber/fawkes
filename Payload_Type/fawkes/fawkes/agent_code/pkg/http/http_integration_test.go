@@ -109,12 +109,9 @@ func TestMakeRequest_URLJoining(t *testing.T) {
 			defer ts.Close()
 
 			// Replace host in baseURL with test server
-			baseURL := tc.baseURL
-			// For httptest, we need to use the actual test server URL
+			baseURL := ts.URL
 			if strings.HasSuffix(tc.baseURL, "/") {
-				baseURL = ts.URL + "/"
-			} else {
-				baseURL = ts.URL
+				baseURL += "/"
 			}
 
 			profile := &HTTPProfile{
