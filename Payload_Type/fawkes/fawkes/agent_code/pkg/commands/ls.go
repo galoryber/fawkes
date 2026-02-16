@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -43,13 +42,7 @@ func (c *LsCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data")
-	args.Path = strings.TrimSpace(args.Path)
-	if len(args.Path) >= 2 {
-		if (args.Path[0] == '"' && args.Path[len(args.Path)-1] == '"') ||
-			(args.Path[0] == '\'' && args.Path[len(args.Path)-1] == '\'') {
-			args.Path = args.Path[1 : len(args.Path)-1]
-		}
-	}
+	args.Path = stripPathQuotes(args.Path)
 
 	// Ensure we have a path
 	if args.Path == "" {
@@ -162,7 +155,7 @@ func formatLsOutput(result structs.FileListing) string {
 
 	output := fmt.Sprintf("Contents of directory: %s\n", result.ParentPath)
 	output += fmt.Sprintf("%-30s %-10s %-15s %s\n", "Name", "Type", "Size", "Modified")
-	output += fmt.Sprint("--------------------------------------------------------------------------------\n")
+	output += "--------------------------------------------------------------------------------\n"
 
 	for _, file := range result.Files {
 		fileType := "FILE"

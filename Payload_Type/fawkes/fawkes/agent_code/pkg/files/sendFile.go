@@ -16,14 +16,11 @@ var SendToMythicChannel = make(chan structs.SendFileToMythicStruct, 10)
 
 // listenForSendFileToMythicMessages reads from SendToMythicChannel to send file transfer messages to Mythic
 func listenForSendFileToMythicMessages() {
-	for {
-		select {
-		case fileToMythic := <-SendToMythicChannel:
-			fileToMythic.TrackingUUID = generateUUID()
-			fileToMythic.FileTransferResponse = make(chan json.RawMessage)
-			fileToMythic.Task.Job.SetFileTransfer(fileToMythic.TrackingUUID, fileToMythic.FileTransferResponse)
-			go sendFileMessagesToMythic(fileToMythic)
-		}
+	for fileToMythic := range SendToMythicChannel {
+		fileToMythic.TrackingUUID = generateUUID()
+		fileToMythic.FileTransferResponse = make(chan json.RawMessage)
+		fileToMythic.Task.Job.SetFileTransfer(fileToMythic.TrackingUUID, fileToMythic.FileTransferResponse)
+		go sendFileMessagesToMythic(fileToMythic)
 	}
 }
 
@@ -33,7 +30,7 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 	if sendFileToMythic.Data == nil {
 		if sendFileToMythic.File == nil {
 			errResponse := sendFileToMythic.Task.NewResponse()
-			errResponse.UserOutput = fmt.Sprintf("No data and no file specified when trying to send a file to Mythic")
+			errResponse.UserOutput = "No data and no file specified when trying to send a file to Mythic"
 			sendFileToMythic.Task.Job.SendResponses <- errResponse
 			sendFileToMythic.FinishedTransfer <- 1
 			return
@@ -95,15 +92,11 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 		}
 
 		if _, ok := fileDetails["file_id"]; ok {
-			if ok {
-				updateUserOutput := structs.Response{}
-				updateUserOutput.TaskID = sendFileToMythic.Task.ID
-				updateUserOutput.UserOutput = fmt.Sprintf("{\"file_id\": \"%v\", \"total_chunks\": \"%d\"}\n", fileDetails["file_id"], chunks)
-				sendFileToMythic.Task.Job.SendResponses <- updateUserOutput
-				break
-			} else {
-				continue
-			}
+			updateUserOutput := structs.Response{}
+			updateUserOutput.TaskID = sendFileToMythic.Task.ID
+			updateUserOutput.UserOutput = fmt.Sprintf("{\"file_id\": \"%v\", \"total_chunks\": \"%d\"}\n", fileDetails["file_id"], chunks)
+			sendFileToMythic.Task.Job.SendResponses <- updateUserOutput
+			break
 		}
 	}
 
@@ -111,7 +104,13 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 	if sendFileToMythic.Data != nil {
 		r = bytes.NewBuffer(*sendFileToMythic.Data)
 	} else {
-		sendFileToMythic.File.Seek(0, 0)
+		if _, seekErr := sendFileToMythic.File.Seek(0, 0); seekErr != nil {
+			errResponse := sendFileToMythic.Task.NewResponse()
+			errResponse.UserOutput = fmt.Sprintf("Error seeking file: %s", seekErr.Error())
+			sendFileToMythic.Task.Job.SendResponses <- errResponse
+			sendFileToMythic.FinishedTransfer <- 1
+			return
+		}
 	}
 
 	lastPercentCompleteNotified := 0
@@ -137,7 +136,13 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 			}
 		} else {
 			// Skipping i*FILE_CHUNK_SIZE bytes from the beginning of the file
-			sendFileToMythic.File.Seek(int64(i*FILE_CHUNK_SIZE), 0)
+			if _, seekErr := sendFileToMythic.File.Seek(int64(i*FILE_CHUNK_SIZE), 0); seekErr != nil {
+				errResponse := sendFileToMythic.Task.NewResponse()
+				errResponse.UserOutput = fmt.Sprintf("\nError seeking file: %s\n", seekErr.Error())
+				sendFileToMythic.Task.Job.SendResponses <- errResponse
+				sendFileToMythic.FinishedTransfer <- 1
+				return
+			}
 			_, err := sendFileToMythic.File.Read(partBuffer)
 			if err != io.EOF && err != nil {
 				errResponse := sendFileToMythic.Task.NewResponse()
@@ -196,5 +201,4 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 		}
 	}
 	sendFileToMythic.FinishedTransfer <- 1
-	return
 }

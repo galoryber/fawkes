@@ -5,7 +5,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -46,10 +45,6 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		}
 	}
 
-	// DEBUG: Log what we received
-	debugInfo := fmt.Sprintf("[DEBUG] Entry point: %s\n[DEBUG] Arguments (%d): %v\n",
-		params.EntryPoint, len(params.Arguments), params.Arguments)
-
 	// Validate BOF data
 	if params.BOFB64 == "" {
 		return structs.CommandResult{
@@ -88,8 +83,6 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 				Completed: true,
 			}
 		}
-		// DEBUG: Show packed bytes
-		debugInfo += fmt.Sprintf("[DEBUG] Packed args (%d bytes): %s\n", len(argBytes), hex.EncodeToString(argBytes))
 	}
 
 	// Execute the BOF using our custom loader with fixed Beacon API
@@ -102,7 +95,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 
 	// Check for execution errors
 	if err != nil {
-		output := fmt.Sprintf("%s\nError executing BOF: %v", debugInfo, err)
+		output := fmt.Sprintf("Error executing BOF: %v", err)
 		if bofOutput != "" {
 			output += fmt.Sprintf("\n\nBOF Output:\n%s", bofOutput)
 		}
@@ -122,7 +115,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 
 	return structs.CommandResult{
-		Output:    debugInfo + "\n" + bofOutput,
+		Output:    bofOutput,
 		Status:    "success",
 		Completed: true,
 	}

