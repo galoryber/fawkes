@@ -50,7 +50,13 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 		args.DllName = parts[0]
 		args.FunctionName = parts[1]
-		fmt.Sscanf(parts[2], "%d", &args.NumBytes)
+		if n, _ := fmt.Sscanf(parts[2], "%d", &args.NumBytes); n != 1 || args.NumBytes <= 0 {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error: num_bytes must be a positive integer, got %q", parts[2]),
+				Status:    "error",
+				Completed: true,
+			}
+		}
 	}
 
 	output, err := PerformAutoPatch(args.DllName, args.FunctionName, args.NumBytes)

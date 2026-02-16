@@ -483,7 +483,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 			return nil, fmt.Errorf("failed to decrypt PostResponse: %w", err)
 		}
 		if h.Debug {
-			log.Printf("[DEBUG] PostResponse decryption successful: %s", string(decryptedData))
+			// log.Printf("[DEBUG] PostResponse decryption successful")
 		}
 	} else {
 		decryptedData = respBody

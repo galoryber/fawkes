@@ -222,12 +222,19 @@ func persistStartupFolder(args persistArgs) structs.CommandResult {
 				Completed: true,
 			}
 		}
-		defer dst.Close()
-
 		bytes, err := io.Copy(dst, src)
 		if err != nil {
+			dst.Close()
 			return structs.CommandResult{
 				Output:    fmt.Sprintf("Error copying file: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		if err := dst.Close(); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error finalizing destination file: %v", err),
 				Status:    "error",
 				Completed: true,
 			}
