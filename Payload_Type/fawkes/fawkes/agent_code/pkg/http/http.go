@@ -306,11 +306,11 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		if taskArray, ok := taskList.([]interface{}); ok {
 			for _, taskData := range taskArray {
 				if taskMap, ok := taskData.(map[string]interface{}); ok {
-					task := structs.Task{
-						ID:      getString(taskMap, "id"),
-						Command: getString(taskMap, "command"),
-						Params:  getString(taskMap, "parameters"),
-					}
+					task := structs.NewTask(
+						getString(taskMap, "id"),
+						getString(taskMap, "command"),
+						getString(taskMap, "parameters"),
+					)
 					tasks = append(tasks, task)
 				}
 			}
