@@ -43,6 +43,37 @@ func getBOFFileList(msg agentstructs.PTRPCDynamicQueryFunctionMessage) []string 
 	return fileList
 }
 
+// convertTypedArrayToGoffloaderFormat converts Forge's TypedArray format to goffloader's string array format
+// Input format: [["z", "hostname"], ["i", "80"], ["b", "AQIDBA=="]]
+// Output format: ["zhostname", "i80", "bAQIDBA=="]
+func convertTypedArrayToGoffloaderFormat(typedArray [][]string) ([]string, error) {
+	var result []string
+	for _, entry := range typedArray {
+		if len(entry) < 2 {
+			continue
+		}
+		argType := entry[0]
+		argValue := entry[1]
+
+		// Map Forge type names to our single-character type codes
+		switch argType {
+		case "z", "string":
+			result = append(result, "z"+argValue)
+		case "Z", "wchar":
+			result = append(result, "Z"+argValue)
+		case "i", "int", "int32":
+			result = append(result, "i"+argValue)
+		case "s", "short", "int16":
+			result = append(result, "s"+argValue)
+		case "b", "binary", "base64":
+			result = append(result, "b"+argValue)
+		default:
+			return nil, fmt.Errorf("unknown argument type '%s' in TypedArray entry", argType)
+		}
+	}
+	return result, nil
+}
+
 // convertToGoffloaderFormat converts our argument format to goffloader's string array format
 // Input format: "z:hostname i:80 b:AQIDBA=="
 // Output format: ["zhostname", "i80", "bAQIDBA=="]
@@ -202,13 +233,13 @@ func init() {
 					},
 				},
 			},
-			// Forge-compatible arguments parameter (Array format)
+			// Forge-compatible arguments parameter (TypedArray format from Forge)
 			{
 				Name:             "coff_arguments",
 				ModalDisplayName: "COFF Arguments (Forge)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_ARRAY,
-				Description:      "BOF arguments as Array (used by Forge) - already formatted by Forge",
-				DefaultValue:     []string{},
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_TYPED_ARRAY,
+				Description:      "BOF arguments as TypedArray (used by Forge Command Augmentation)",
+				DefaultValue:     [][]string{},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -400,24 +431,46 @@ func init() {
 			// Get entry point and arguments (support both Forge and normal parameter names)
 			var goffloaderArgs []string
 			entryPoint := "go"
-			entryVal, err := taskData.Args.GetStringArg("entry_point")
-			if err == nil && entryVal != "" {
-				entryPoint = entryVal
-			}
 
-			arguments := ""
-			argVal, err := taskData.Args.GetStringArg("arguments")
-			if err == nil {
-				arguments = argVal
-			}
+			if isForgeCall {
+				// Forge path: use function_name for entry point and coff_arguments (TypedArray) for args
+				fnVal, fnErr := taskData.Args.GetStringArg("function_name")
+				if fnErr == nil && fnVal != "" {
+					entryPoint = fnVal
+				}
 
-			// Convert arguments to goffloader format
-			goffloaderArgs, err = convertToGoffloaderFormat(arguments)
-			if err != nil {
-				logging.LogError(err, "Failed to convert BOF arguments")
-				response.Success = false
-				response.Error = "Failed to convert arguments: " + err.Error()
-				return response
+				// Get Forge TypedArray arguments
+				typedArgs, taErr := taskData.Args.GetTypedArrayArg("coff_arguments")
+				if taErr == nil && len(typedArgs) > 0 {
+					goffloaderArgs, err = convertTypedArrayToGoffloaderFormat(typedArgs)
+					if err != nil {
+						logging.LogError(err, "Failed to convert Forge TypedArray arguments")
+						response.Success = false
+						response.Error = "Failed to convert Forge arguments: " + err.Error()
+						return response
+					}
+				}
+			} else {
+				// Normal path: use entry_point and arguments string
+				entryVal, epErr := taskData.Args.GetStringArg("entry_point")
+				if epErr == nil && entryVal != "" {
+					entryPoint = entryVal
+				}
+
+				arguments := ""
+				argVal, argErr := taskData.Args.GetStringArg("arguments")
+				if argErr == nil {
+					arguments = argVal
+				}
+
+				// Convert arguments to goffloader format
+				goffloaderArgs, err = convertToGoffloaderFormat(arguments)
+				if err != nil {
+					logging.LogError(err, "Failed to convert BOF arguments")
+					response.Success = false
+					response.Error = "Failed to convert arguments: " + err.Error()
+					return response
+				}
 			}
 
 			// Build the display parameters
