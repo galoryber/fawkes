@@ -3,3 +3,5 @@ __pycache__/
 main
 .idea
 mythic_go_services.bin
+*.out
+.vscode/
