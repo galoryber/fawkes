@@ -99,6 +99,7 @@ func (c *CpCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer destFile.Close() // Safety net for panics; explicit Close below catches flush errors
 	// Copy the file contents
 	bytesCopied, err := io.Copy(destFile, sourceFile)
 	if err != nil {

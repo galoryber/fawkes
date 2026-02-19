@@ -222,6 +222,7 @@ func persistStartupFolder(args persistArgs) structs.CommandResult {
 				Completed: true,
 			}
 		}
+		defer dst.Close() // Safety net for panics; explicit Close below catches flush errors
 		bytes, err := io.Copy(dst, src)
 		if err != nil {
 			dst.Close()
