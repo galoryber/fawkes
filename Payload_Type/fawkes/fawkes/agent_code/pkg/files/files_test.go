@@ -547,43 +547,29 @@ func TestSendFile_ResponseWithoutFileID(t *testing.T) {
 	case <-task.Job.SendResponses:
 		// OK
 	case <-time.After(2 * time.Second):
-		t.Fatal("Timed out")
+		t.Fatal("Timed out waiting for announcement")
 	}
 
-	// Send valid JSON but without file_id — should cause it to loop
+	// Send valid JSON but without file_id — should cause an error and finish
 	noFileIDResp, _ := json.Marshal(map[string]interface{}{"status": "pending"})
 	fileTransferResp <- noFileIDResp
 
-	// Now send proper file_id response
-	fileIDResp, _ := json.Marshal(map[string]interface{}{"file_id": "delayed-id"})
-	fileTransferResp <- fileIDResp
-
-	// Receive file_id output
+	// Should receive error message about missing file_id
 	select {
 	case resp := <-task.Job.SendResponses:
-		if !strings.Contains(resp.UserOutput, "delayed-id") {
-			t.Errorf("Expected delayed-id in output, got: %s", resp.UserOutput)
+		if !strings.Contains(resp.UserOutput, "file_id") {
+			t.Errorf("Expected file_id error message, got: %s", resp.UserOutput)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("Timed out")
+		t.Fatal("Timed out waiting for error response")
 	}
 
-	// Receive chunk
-	select {
-	case <-task.Job.SendResponses:
-		// OK
-	case <-time.After(2 * time.Second):
-		t.Fatal("Timed out")
-	}
-
-	successResp, _ := json.Marshal(map[string]interface{}{"status": "success"})
-	fileTransferResp <- successResp
-
+	// Transfer should finish with error
 	select {
 	case <-finished:
-		// OK
+		// OK — transfer correctly aborted
 	case <-time.After(2 * time.Second):
-		t.Fatal("Timed out")
+		t.Fatal("Timed out waiting for finished signal")
 	}
 }
 

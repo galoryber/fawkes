@@ -79,26 +79,36 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 
 	var fileDetails map[string]interface{}
 
-	for {
-		// Wait for a response from the channel
-		resp := <-sendFileToMythic.FileTransferResponse
-		err := json.Unmarshal(resp, &fileDetails)
-		if err != nil {
-			errResponse := sendFileToMythic.Task.NewResponse()
-			errResponse.UserOutput = fmt.Sprintf("Error unmarshaling task response: %s", err.Error())
-			sendFileToMythic.Task.Job.SendResponses <- errResponse
-			sendFileToMythic.FinishedTransfer <- 1
-			return
-		}
-
-		if _, ok := fileDetails["file_id"]; ok {
-			updateUserOutput := structs.Response{}
-			updateUserOutput.TaskID = sendFileToMythic.Task.ID
-			updateUserOutput.UserOutput = fmt.Sprintf("{\"file_id\": \"%v\", \"total_chunks\": \"%d\"}\n", fileDetails["file_id"], chunks)
-			sendFileToMythic.Task.Job.SendResponses <- updateUserOutput
-			break
-		}
+	// Wait for Mythic to acknowledge with a file_id, with timeout
+	resp, ok := waitForFileResponse(sendFileToMythic.FileTransferResponse, fileTransferTimeout)
+	if !ok {
+		errResponse := sendFileToMythic.Task.NewResponse()
+		errResponse.UserOutput = "File transfer timed out waiting for file_id from Mythic"
+		sendFileToMythic.Task.Job.SendResponses <- errResponse
+		sendFileToMythic.FinishedTransfer <- 1
+		return
 	}
+	err := json.Unmarshal(resp, &fileDetails)
+	if err != nil {
+		errResponse := sendFileToMythic.Task.NewResponse()
+		errResponse.UserOutput = fmt.Sprintf("Error unmarshaling task response: %s", err.Error())
+		sendFileToMythic.Task.Job.SendResponses <- errResponse
+		sendFileToMythic.FinishedTransfer <- 1
+		return
+	}
+
+	if _, hasFileID := fileDetails["file_id"]; !hasFileID {
+		errResponse := sendFileToMythic.Task.NewResponse()
+		errResponse.UserOutput = "Error: Mythic response did not contain file_id"
+		sendFileToMythic.Task.Job.SendResponses <- errResponse
+		sendFileToMythic.FinishedTransfer <- 1
+		return
+	}
+
+	updateUserOutput := structs.Response{}
+	updateUserOutput.TaskID = sendFileToMythic.Task.ID
+	updateUserOutput.UserOutput = fmt.Sprintf("{\"file_id\": \"%v\", \"total_chunks\": \"%d\"}\n", fileDetails["file_id"], chunks)
+	sendFileToMythic.Task.Job.SendResponses <- updateUserOutput
 
 	var r *bytes.Buffer = nil
 	if sendFileToMythic.Data != nil {
@@ -178,21 +188,25 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 			lastPercentCompleteNotified = newPercentComplete / 10
 		}
 
-		// Wait for a response for our file chunk
-		var postResp map[string]interface{}
-		for {
-			decResp := <-sendFileToMythic.FileTransferResponse
-			err := json.Unmarshal(decResp, &postResp)
+		// Wait for a response for our file chunk with timeout
+		decResp, ok := waitForFileResponse(sendFileToMythic.FileTransferResponse, fileTransferTimeout)
+		if !ok {
+			errResponse := sendFileToMythic.Task.NewResponse()
+			errResponse.UserOutput = fmt.Sprintf("File transfer timed out waiting for chunk %d/%d acknowledgment from Mythic", int(i)+1, chunks)
+			sendFileToMythic.Task.Job.SendResponses <- errResponse
+			sendFileToMythic.FinishedTransfer <- 1
+			return
+		}
 
-			if err != nil {
-				errResponse := sendFileToMythic.Task.NewResponse()
-				errResponse.Completed = true
-				errResponse.UserOutput = fmt.Sprintf("Error unmarshaling task response: %s", err.Error())
-				sendFileToMythic.Task.Job.SendResponses <- errResponse
-				sendFileToMythic.FinishedTransfer <- 1
-				return
-			}
-			break
+		var postResp map[string]interface{}
+		err := json.Unmarshal(decResp, &postResp)
+		if err != nil {
+			errResponse := sendFileToMythic.Task.NewResponse()
+			errResponse.Completed = true
+			errResponse.UserOutput = fmt.Sprintf("Error unmarshaling task response: %s", err.Error())
+			sendFileToMythic.Task.Job.SendResponses <- errResponse
+			sendFileToMythic.FinishedTransfer <- 1
+			return
 		}
 
 		if statusStr, ok := postResp["status"].(string); ok && strings.Contains(statusStr, "success") {
