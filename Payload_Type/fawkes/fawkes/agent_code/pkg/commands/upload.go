@@ -95,6 +95,7 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer fp.Close() // Safety net: ensure fd is closed even if transfer goroutine panics
 	r.ReceivedChunkChannel = make(chan []byte)
 	task.Job.GetFileFromMythic <- r
 
