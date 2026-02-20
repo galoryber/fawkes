@@ -41,6 +41,7 @@ func Initialize() {
 	RegisterCommand(&PortScanCommand{})
 	RegisterCommand(&TimestompCommand{})
 	RegisterCommand(&ArpCommand{})
+	RegisterCommand(&SetenvCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
