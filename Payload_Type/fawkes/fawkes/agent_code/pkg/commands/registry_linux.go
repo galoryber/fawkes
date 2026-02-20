@@ -1,8 +1,8 @@
-//go:build !windows
+//go:build linux
 
 package commands
 
-// registerPlatformCommands registers non-Windows (Linux/macOS) specific commands.
+// registerPlatformCommands registers Linux-specific commands.
 func registerPlatformCommands() {
 	RegisterCommand(&CrontabCommand{})
 	RegisterCommand(&SSHKeysCommand{})
