@@ -25,8 +25,8 @@ func init() {
 				Name:             "amsi_patch",
 				ModalDisplayName: "AMSI Patch Method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "Method to patch AMSI (AmsiScanBuffer). Autopatch writes a JMP-to-RET. Hardware Breakpoint uses debug registers + VEH.",
-				Choices:          []string{"None", "Autopatch", "Hardware Breakpoint"},
+				Description:      "Method to patch AMSI (AmsiScanBuffer). Ret Patch writes 0xC3 at function entry. Autopatch writes a JMP-to-RET. Hardware Breakpoint uses debug registers + VEH (experimental).",
+				Choices:          []string{"None", "Ret Patch", "Autopatch", "Hardware Breakpoint"},
 				DefaultValue:     "None",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -39,8 +39,8 @@ func init() {
 				Name:             "etw_patch",
 				ModalDisplayName: "ETW Patch Method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "Method to patch ETW (EtwEventWrite). Autopatch writes a JMP-to-RET. Hardware Breakpoint uses debug registers + VEH.",
-				Choices:          []string{"None", "Autopatch", "Hardware Breakpoint"},
+				Description:      "Method to patch ETW (EtwEventWrite). Ret Patch writes 0xC3 at function entry. Autopatch writes a JMP-to-RET. Hardware Breakpoint uses debug registers + VEH (experimental).",
+				Choices:          []string{"None", "Ret Patch", "Autopatch", "Hardware Breakpoint"},
 				DefaultValue:     "None",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
