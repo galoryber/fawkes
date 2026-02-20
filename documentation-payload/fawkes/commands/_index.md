@@ -20,6 +20,7 @@ pre = "<b>2. </b>"
     * [rm](/agents/fawkes/commands/rm/)
     * [upload](/agents/fawkes/commands/upload/)
 - Command Execution
+    * [powershell](/agents/fawkes/commands/powershell/)
     * [run](/agents/fawkes/commands/run/)
     * [wmi](/agents/fawkes/commands/wmi/)
 - Process Injection

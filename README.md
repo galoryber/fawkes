@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads) and **Linux** (ELF binaries and shared libraries). 24 commands are cross-platform, with 28 additional Windows-only commands and 2 Linux-only commands for a total of 54.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads) and **Linux** (ELF binaries and shared libraries). 24 commands are cross-platform, with 29 additional Windows-only commands and 2 Linux-only commands for a total of 55.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -50,6 +50,7 @@ opus-injection | `opus-injection` | **(Windows only)** Callback-based process in
 persist | `persist -method <registry\|startup-folder\|list> -action <install\|remove> -name <name>` | **(Windows only)** Install or remove persistence via registry Run keys or startup folder. Supports HKCU/HKLM.
 poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. All 8 variants supported. [Details](research/injection-techniques.md#poolparty-injection)
 port-scan | `port-scan -hosts <IPs/CIDRs> [-ports <ports>] [-timeout <s>]` | TCP connect scan for network service discovery. Supports CIDR, IP ranges, and port ranges. Cross-platform.
+powershell | `powershell [command]` | **(Windows only)** Execute a PowerShell command or script directly via powershell.exe with -NoProfile -ExecutionPolicy Bypass.
 ps | `ps [-v] [-i PID] [filter]` | List running processes. Use -v for verbose output with command lines. Use -i to filter by specific PID.
 pwd | `pwd` | Print working directory.
 read-memory | `read-memory <dll_name> <function_name> <start_index> <num_bytes>` | **(Windows only)** Read bytes from a DLL function address.
