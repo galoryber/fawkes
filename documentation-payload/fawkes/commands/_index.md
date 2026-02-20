@@ -74,5 +74,6 @@ pre = "<b>2. </b>"
 - Defense Evasion
     * [timestomp](/agents/fawkes/commands/timestomp/)
 - Agent Management
+    * [setenv](/agents/fawkes/commands/setenv/)
     * [sleep](/agents/fawkes/commands/sleep/)
     * [exit](/agents/fawkes/commands/exit/)
