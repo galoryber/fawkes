@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads) and **Linux** (ELF binaries and shared libraries). 25 commands are cross-platform, with 29 additional Windows-only commands and 2 Linux-only commands for a total of 56.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 25 commands are cross-platform, with 29 additional Windows-only commands and 2 Unix-only commands for a total of 56.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -28,7 +28,7 @@ cat | `cat <file>` | Display the contents of a file.
 cd | `cd <directory>` | Change the current working directory.
 clipboard | `clipboard -action read` / `clipboard -action write -data "text"` | **(Windows only)** Read or write the Windows clipboard contents (text only).
 cp | `cp <source> <destination>` | Copy a file from source to destination.
-crontab | `crontab -action <list\|add\|remove> [-entry <cron_line>] [-program <path>] [-schedule <schedule>]` | **(Linux only)** List, add, or remove cron jobs for persistence. Supports raw cron entries or program+schedule syntax.
+crontab | `crontab -action <list\|add\|remove> [-entry <cron_line>] [-program <path>] [-schedule <schedule>]` | **(Linux/macOS only)** List, add, or remove cron jobs for persistence. Supports raw cron entries or program+schedule syntax.
 download | `download <path>` | Download a file from the target. Supports chunked file transfer for any file size and file browser integration.
 drives | `drives` | **(Windows only)** List available drives/volumes with type (Fixed/Removable/Network/CD-ROM), label, and free/total space.
 env | `env [filter]` | List environment variables. Optionally filter by name (case-insensitive).
@@ -66,7 +66,7 @@ setenv | `setenv -action <set\|unset> -name <NAME> [-value <VALUE>]` | Set or un
 sleep | `sleep [seconds] [jitter]` | Set the callback interval in seconds and jitter percentage.
 socks | `socks start [port]` / `socks stop [port]` | Start or stop a SOCKS5 proxy through the callback. Default port 7000. Tunnel tools like proxychains, nmap, or Impacket through the agent.
 spawn | `spawn -path <exe> [-ppid <pid>] [-blockdlls true]` | **(Windows only)** Spawn a suspended process or thread for injection. Supports PPID spoofing (T1134.004) and non-Microsoft DLL blocking.
-ssh-keys | `ssh-keys -action <list\|add\|remove\|read-private> [-key <ssh_key>] [-user <username>]` | **(Linux only)** Read or inject SSH authorized_keys. Read private keys for credential harvesting.
+ssh-keys | `ssh-keys -action <list\|add\|remove\|read-private> [-key <ssh_key>] [-user <username>]` | **(Linux/macOS only)** Read or inject SSH authorized_keys. Read private keys for credential harvesting.
 start-clr | `start-clr` | **(Windows only)** Initialize the CLR v4.0.30319 with optional AMSI/ETW patching (Ret Patch, Autopatch, or Hardware Breakpoint).
 steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a security token from another process.
 threadless-inject | `threadless-inject` | **(Windows only)** Inject shellcode using threadless injection by hooking a DLL function in a remote process. More stealthy than vanilla injection as it doesn't create new threads.
