@@ -567,6 +567,45 @@ func TestFileListing_EmptyFiles(t *testing.T) {
 	}
 }
 
+// --- NewTask Tests ---
+
+func TestNewTask_Fields(t *testing.T) {
+	task := NewTask("task-123", "whoami", `{"key":"val"}`)
+	if task.ID != "task-123" {
+		t.Errorf("ID = %q, want %q", task.ID, "task-123")
+	}
+	if task.Command != "whoami" {
+		t.Errorf("Command = %q, want %q", task.Command, "whoami")
+	}
+	if task.Params != `{"key":"val"}` {
+		t.Errorf("Params = %q, want %q", task.Params, `{"key":"val"}`)
+	}
+}
+
+func TestNewTask_StopFlagInitialized(t *testing.T) {
+	task := NewTask("task-456", "ls", "")
+	// stopped pointer should be initialized (not nil)
+	if task.ShouldStop() {
+		t.Error("ShouldStop() should be false for new task")
+	}
+	task.SetStop()
+	if !task.ShouldStop() {
+		t.Error("ShouldStop() should be true after SetStop()")
+	}
+}
+
+func TestNewTask_CopiesShareStopFlag(t *testing.T) {
+	task := NewTask("task-789", "cat", "")
+	taskCopy := task // Value copy
+	if taskCopy.ShouldStop() {
+		t.Error("Copy should not be stopped initially")
+	}
+	task.SetStop()
+	if !taskCopy.ShouldStop() {
+		t.Error("Copy should see stop flag set on original (shared pointer)")
+	}
+}
+
 // helper
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && containsImpl(s, substr)

@@ -529,6 +529,49 @@ func TestForwardData_EmptyData(t *testing.T) {
 	m.forwardData(999, nil, "")
 }
 
+func TestForwardData_InvalidBase64(t *testing.T) {
+	m := NewManager()
+	// Invalid base64 should not panic — just log and return
+	m.forwardData(300, nil, "!!!not-valid-base64!!!")
+	// If we get here without panic, the decode error path worked
+}
+
+func TestForwardData_WriteFailed(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer ln.Close()
+
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+
+	srvConn, _ := ln.Accept()
+	srvConn.Close() // Close server side
+
+	m := NewManager()
+	m.mu.Lock()
+	m.connections[301] = conn
+	m.mu.Unlock()
+
+	// Close the client side too to ensure write fails
+	conn.Close()
+
+	testData := base64.StdEncoding.EncodeToString([]byte("write fail"))
+	m.forwardData(301, conn, testData)
+
+	// After write failure, the connection should be cleaned up
+	time.Sleep(50 * time.Millisecond)
+	m.mu.Lock()
+	_, exists := m.connections[301]
+	m.mu.Unlock()
+	if exists {
+		t.Error("Connection should have been removed after write failure")
+	}
+}
+
 // --- readFromConnection data relay test ---
 
 func TestReadFromConnection_RelaysData(t *testing.T) {
