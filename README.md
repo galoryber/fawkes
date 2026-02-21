@@ -50,7 +50,7 @@ net-enum | `net-enum -action <users\|localgroups\|groupmembers\|domainusers\|dom
 net-shares | `net-shares -action <local\|remote\|mapped> [-target <host>]` | **(Windows only)** Enumerate network shares and mapped drives.
 net-stat | `net-stat` | List active network connections and listening ports with protocol, state, and PID. Cross-platform.
 opus-injection | `opus-injection` | **(Windows only)** Callback-based process injection. Variant 1: Ctrl-C Handler Chain. Variant 4: PEB KernelCallbackTable. [Details](research/injection-techniques.md#opus-injection)
-persist | `persist -method <registry\|startup-folder\|list> -action <install\|remove> -name <name>` | **(Windows only)** Install or remove persistence via registry Run keys or startup folder. Supports HKCU/HKLM.
+persist | `persist -method <registry\|startup-folder\|com-hijack\|screensaver\|list> -action <install\|remove>` | **(Windows only)** Install or remove persistence via registry Run keys, startup folder, COM hijacking (T1546.015), or screensaver hijacking (T1546.002). No admin for HKCU methods.
 poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. All 8 variants supported. [Details](research/injection-techniques.md#poolparty-injection)
 port-scan | `port-scan -hosts <IPs/CIDRs> [-ports <ports>] [-timeout <s>]` | TCP connect scan for network service discovery. Supports CIDR, IP ranges, and port ranges. Cross-platform.
 powershell | `powershell [command]` | **(Windows only)** Execute a PowerShell command or script directly via powershell.exe with -NoProfile -ExecutionPolicy Bypass.
@@ -147,7 +147,7 @@ Tracked artifact types:
 | File Create | mkdir |
 | File Delete | rm |
 | File Modify | timestomp |
-| Registry Write | reg-write, persist (registry method) |
+| Registry Write | reg-write, persist (registry, com-hijack, screensaver methods) |
 | Logon | make-token |
 | Token Steal | steal-token |
 
