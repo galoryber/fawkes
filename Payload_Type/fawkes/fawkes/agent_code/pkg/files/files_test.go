@@ -1446,3 +1446,522 @@ func TestListenForGetFile_SetsUpTracking(t *testing.T) {
 		}
 	}
 }
+
+// =============================================================================
+// waitForFileResponse Direct Unit Tests
+// =============================================================================
+
+// Test: waitForFileResponse returns data when available immediately
+func TestWaitForFileResponse_ImmediateData(t *testing.T) {
+	ch := make(chan json.RawMessage, 1)
+	expected := json.RawMessage(`{"file_id":"abc"}`)
+	ch <- expected
+
+	data, ok := waitForFileResponse(ch, 1*time.Second)
+	if !ok {
+		t.Fatal("Expected ok=true, got false")
+	}
+	if string(data) != string(expected) {
+		t.Errorf("Expected %q, got %q", expected, data)
+	}
+}
+
+// Test: waitForFileResponse times out when no data
+func TestWaitForFileResponse_Timeout(t *testing.T) {
+	ch := make(chan json.RawMessage)
+
+	start := time.Now()
+	data, ok := waitForFileResponse(ch, 50*time.Millisecond)
+	elapsed := time.Since(start)
+
+	if ok {
+		t.Fatal("Expected ok=false on timeout, got true")
+	}
+	if data != nil {
+		t.Errorf("Expected nil data on timeout, got: %v", data)
+	}
+	if elapsed < 40*time.Millisecond {
+		t.Errorf("Returned too quickly: %v", elapsed)
+	}
+}
+
+// Test: waitForFileResponse with data arriving just before timeout
+func TestWaitForFileResponse_DataBeforeTimeout(t *testing.T) {
+	ch := make(chan json.RawMessage, 1)
+
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		ch <- json.RawMessage(`{"status":"ok"}`)
+	}()
+
+	data, ok := waitForFileResponse(ch, 500*time.Millisecond)
+	if !ok {
+		t.Fatal("Expected ok=true when data arrives before timeout")
+	}
+	if string(data) != `{"status":"ok"}` {
+		t.Errorf("Unexpected data: %q", data)
+	}
+}
+
+// =============================================================================
+// sendFileMessagesToMythic Error Path Tests
+// =============================================================================
+
+// Test: File.Stat() error when using os.File
+func TestSendFile_FileStatError(t *testing.T) {
+	task := newTestTask("task-stat-err")
+	finished := make(chan int, 1)
+
+	// Create and close a temp file so Stat() will fail
+	tmpFile, err := os.CreateTemp("", "stat-err-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	tmpFile.Close()
+	os.Remove(tmpFile.Name())
+
+	// Reopen the removed file's descriptor — Stat() should fail
+	// Actually, we need to use the closed/removed file object
+	msg := structs.SendFileToMythicStruct{
+		Task:             task,
+		File:             tmpFile, // closed file
+		FinishedTransfer: finished,
+	}
+
+	go sendFileMessagesToMythic(msg)
+
+	// Should get error about file size
+	select {
+	case resp := <-task.Job.SendResponses:
+		if !strings.Contains(resp.UserOutput, "Error getting file size") {
+			t.Errorf("Expected file stat error, got: %s", resp.UserOutput)
+		}
+		if !resp.Completed {
+			t.Error("Expected Completed=true on stat error")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting for stat error response")
+	}
+
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting for finished signal")
+	}
+}
+
+// Test: ShouldStop during chunk transfer
+func TestSendFile_ShouldStopDuringTransfer(t *testing.T) {
+	// Use NewTask to get proper stopped field
+	realTask := structs.NewTask("task-shouldstop", "download", "")
+	stop := 0
+	realTask.Job = &structs.Job{
+		Stop:          &stop,
+		SendResponses: make(chan structs.Response, 100),
+		FileTransfers: make(map[string]chan json.RawMessage),
+	}
+	finished := make(chan int, 1)
+	fileTransferResp := make(chan json.RawMessage, 10)
+
+	// Create data for 3 chunks so we have multiple loop iterations
+	testData := make([]byte, FILE_CHUNK_SIZE*3)
+	msg := structs.SendFileToMythicStruct{
+		Task:                 &realTask,
+		Data:                 &testData,
+		FinishedTransfer:     finished,
+		FileTransferResponse: fileTransferResp,
+	}
+
+	go sendFileMessagesToMythic(msg)
+
+	// Receive initial announcement
+	select {
+	case <-realTask.Job.SendResponses:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out")
+	}
+
+	// Send file_id
+	fileIDResp, _ := json.Marshal(map[string]interface{}{"file_id": "stop-file"})
+	fileTransferResp <- fileIDResp
+
+	// Receive file_id output
+	select {
+	case <-realTask.Job.SendResponses:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out")
+	}
+
+	// Receive and ack chunk 1 (ShouldStop not yet set)
+	select {
+	case <-realTask.Job.SendResponses:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting for chunk 1")
+	}
+
+	// Ack chunk 1 as success
+	successResp, _ := json.Marshal(map[string]interface{}{"status": "success"})
+	fileTransferResp <- successResp
+
+	// Now set stop before chunk 2 processing
+	realTask.SetStop()
+
+	// The transfer should finish due to ShouldStop check at top of chunk loop
+	select {
+	case <-finished:
+		// Good — transfer stopped
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timed out — ShouldStop did not terminate transfer")
+	}
+}
+
+// Test: Closed channel during file_id exchange (simulates connection loss)
+func TestSendFile_ClosedChannelDuringFileID(t *testing.T) {
+	task := newTestTask("task-closed-ch")
+	finished := make(chan int, 1)
+	fileTransferResp := make(chan json.RawMessage, 1)
+
+	testData := []byte("test")
+	msg := structs.SendFileToMythicStruct{
+		Task:                 task,
+		Data:                 &testData,
+		FinishedTransfer:     finished,
+		FileTransferResponse: fileTransferResp,
+	}
+
+	go sendFileMessagesToMythic(msg)
+
+	// Receive initial announcement
+	select {
+	case <-task.Job.SendResponses:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting for announcement")
+	}
+
+	// Close the channel — reading returns nil RawMessage immediately
+	// which causes json.Unmarshal to fail on nil input
+	close(fileTransferResp)
+
+	// Should get an unmarshal error (nil input to json.Unmarshal)
+	select {
+	case resp := <-task.Job.SendResponses:
+		if resp.UserOutput == "" {
+			t.Error("Expected error output")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timed out waiting for error")
+	}
+
+	select {
+	case <-finished:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timed out waiting for finished")
+	}
+}
+
+// Test: file_id in response is not a string (type assertion failure)
+func TestSendFile_FileIDNotString(t *testing.T) {
+	task := newTestTask("task-fileid-type")
+	finished := make(chan int, 1)
+	fileTransferResp := make(chan json.RawMessage, 10)
+
+	testData := []byte("test")
+	msg := structs.SendFileToMythicStruct{
+		Task:                 task,
+		Data:                 &testData,
+		FinishedTransfer:     finished,
+		FileTransferResponse: fileTransferResp,
+	}
+
+	go sendFileMessagesToMythic(msg)
+
+	// Receive initial announcement
+	select {
+	case <-task.Job.SendResponses:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out")
+	}
+
+	// Send file_id as a number instead of string
+	fileIDResp, _ := json.Marshal(map[string]interface{}{"file_id": 12345})
+	fileTransferResp <- fileIDResp
+
+	// Receive file_id output (the info message)
+	select {
+	case <-task.Job.SendResponses:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out")
+	}
+
+	// Now it will try to read a chunk and do the type assertion on file_id
+	// The chunk is sent, then file_id.(string) assertion should fail
+	select {
+	case resp := <-task.Job.SendResponses:
+		if resp.Download != nil {
+			// This is the chunk data — ack it, then the type assertion will be attempted
+			// after the chunk send, during the loop iteration
+			// Actually, looking at the code more carefully: file_id type assertion happens
+			// inside the chunk loop at line 168. So the chunk data is already being sent,
+			// then when constructing fileDownloadData.FileID, the assertion fails.
+
+			// Wait for the error
+			select {
+			case errResp := <-task.Job.SendResponses:
+				if !strings.Contains(errResp.UserOutput, "file_id not found or not a string") {
+					t.Errorf("Expected file_id type error, got: %s", errResp.UserOutput)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("Timed out waiting for type assertion error")
+			}
+		} else if strings.Contains(resp.UserOutput, "file_id not found or not a string") {
+			// Got the error directly
+		} else {
+			t.Errorf("Unexpected response: %s", resp.UserOutput)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out")
+	}
+
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting for finished")
+	}
+}
+
+// =============================================================================
+// sendUploadFileMessagesToMythic Error Path Tests
+// =============================================================================
+
+// Test: ShouldStop during multi-chunk download from Mythic
+func TestGetFile_ShouldStopDuringTransfer(t *testing.T) {
+	realTask := structs.NewTask("task-get-stop", "upload", "")
+	stop := 0
+	realTask.Job = &structs.Job{
+		Stop:          &stop,
+		SendResponses: make(chan structs.Response, 100),
+		FileTransfers: make(map[string]chan json.RawMessage),
+	}
+
+	fileTransferResp := make(chan json.RawMessage, 10)
+	receivedChunks := make(chan []byte, 10)
+
+	msg := structs.GetFileFromMythicStruct{
+		Task:                 &realTask,
+		FileID:               "stop-dl-file",
+		ReceivedChunkChannel: receivedChunks,
+		FileTransferResponse: fileTransferResp,
+	}
+
+	go sendUploadFileMessagesToMythic(msg)
+
+	// Receive initial request
+	select {
+	case <-realTask.Job.SendResponses:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out")
+	}
+
+	// Send first chunk (3 total) to enter the multi-chunk loop
+	chunk1 := base64.StdEncoding.EncodeToString([]byte("data1"))
+	resp1, _ := json.Marshal(structs.FileUploadMessageResponse{
+		ChunkNum: 1, ChunkData: chunk1, TotalChunks: 3,
+	})
+	fileTransferResp <- resp1
+
+	// Receive chunk 1 data
+	select {
+	case <-receivedChunks:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out receiving chunk 1")
+	}
+
+	// Set stop before chunk 2
+	realTask.SetStop()
+
+	// Receive request for chunk 2 (sent before stop check)
+	select {
+	case <-realTask.Job.SendResponses:
+		// May or may not get this depending on timing
+	case data := <-receivedChunks:
+		// Got the empty done signal — transfer stopped
+		if len(data) != 0 {
+			t.Errorf("Expected empty stop signal, got %d bytes", len(data))
+		}
+		return
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timed out — ShouldStop did not terminate download")
+	}
+
+	// If we got the chunk 2 request, the stop should take effect on next iteration
+	// Send chunk 2 to let it proceed
+	chunk2 := base64.StdEncoding.EncodeToString([]byte("data2"))
+	resp2, _ := json.Marshal(structs.FileUploadMessageResponse{
+		ChunkNum: 2, ChunkData: chunk2, TotalChunks: 3,
+	})
+	fileTransferResp <- resp2
+
+	// Drain until we get empty signal
+	timeout := time.After(3 * time.Second)
+	for {
+		select {
+		case data := <-receivedChunks:
+			if len(data) == 0 {
+				return // Success — transfer stopped
+			}
+		case <-timeout:
+			t.Fatal("Timed out waiting for stop signal")
+		}
+	}
+}
+
+// Test: Timeout waiting for first chunk from Mythic (closed channel simulates)
+func TestGetFile_TimeoutOnFirstChunk(t *testing.T) {
+	task := newTestTask("task-get-timeout")
+	fileTransferResp := make(chan json.RawMessage)
+	receivedChunks := make(chan []byte, 10)
+
+	msg := structs.GetFileFromMythicStruct{
+		Task:                 task,
+		FileID:               "timeout-file",
+		ReceivedChunkChannel: receivedChunks,
+		FileTransferResponse: fileTransferResp,
+	}
+
+	go sendUploadFileMessagesToMythic(msg)
+
+	// Receive initial request
+	select {
+	case <-task.Job.SendResponses:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out")
+	}
+
+	// Close the channel to simulate the timeout path
+	// (reading from closed channel returns zero value immediately)
+	close(fileTransferResp)
+
+	// Should get either an error response or an empty chunk
+	timeout := time.After(3 * time.Second)
+	gotError := false
+	for !gotError {
+		select {
+		case resp := <-task.Job.SendResponses:
+			if strings.Contains(resp.UserOutput, "Failed to parse") || strings.Contains(resp.UserOutput, "timed out") {
+				gotError = true
+			}
+		case data := <-receivedChunks:
+			if len(data) == 0 {
+				gotError = true // Transfer ended
+			}
+		case <-timeout:
+			t.Fatal("Timed out waiting for error handling")
+		}
+	}
+}
+
+// Test: Send file with os.File that has been seeked to end
+func TestSendFile_FileSeekAndRead(t *testing.T) {
+	task := newTestTask("task-seek")
+	finished := make(chan int, 1)
+	fileTransferResp := make(chan json.RawMessage, 10)
+
+	// Create a temp file with multi-chunk content
+	tmpFile, err := os.CreateTemp("", "seek-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	// Write exactly 2 chunks worth of data
+	content := make([]byte, FILE_CHUNK_SIZE+100)
+	for i := range content {
+		content[i] = byte(i % 256)
+	}
+	if _, err := tmpFile.Write(content); err != nil {
+		t.Fatalf("Failed to write: %v", err)
+	}
+
+	// Seek to end (simulate a file that was just written)
+	tmpFile.Seek(0, 2) // seek to end
+
+	msg := structs.SendFileToMythicStruct{
+		Task:                 task,
+		File:                 tmpFile,
+		FullPath:             tmpFile.Name(),
+		FinishedTransfer:     finished,
+		FileTransferResponse: fileTransferResp,
+	}
+
+	go sendFileMessagesToMythic(msg)
+
+	// Initial announcement
+	select {
+	case resp := <-task.Job.SendResponses:
+		if resp.Download.TotalChunks != 2 {
+			t.Errorf("Expected 2 chunks, got %d", resp.Download.TotalChunks)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out")
+	}
+
+	// Send file_id
+	fileIDResp, _ := json.Marshal(map[string]interface{}{"file_id": "seek-file"})
+	fileTransferResp <- fileIDResp
+
+	// file_id output
+	select {
+	case <-task.Job.SendResponses:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out")
+	}
+
+	successResp, _ := json.Marshal(map[string]interface{}{"status": "success"})
+
+	// Chunk 1
+	select {
+	case resp := <-task.Job.SendResponses:
+		if resp.Download.ChunkNum != 1 {
+			t.Errorf("Expected chunk 1, got %d", resp.Download.ChunkNum)
+		}
+		decoded, _ := base64.StdEncoding.DecodeString(resp.Download.ChunkData)
+		if len(decoded) != FILE_CHUNK_SIZE {
+			t.Errorf("Chunk 1 should be %d bytes, got %d", FILE_CHUNK_SIZE, len(decoded))
+		}
+		// Verify content matches (the file was seeked to end, but sendFile should seek back)
+		for i := 0; i < len(decoded); i++ {
+			if decoded[i] != byte(i%256) {
+				t.Errorf("Chunk 1 data mismatch at byte %d: got %d, want %d", i, decoded[i], byte(i%256))
+				break
+			}
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting for chunk 1")
+	}
+
+	fileTransferResp <- successResp
+
+	// Chunk 2
+	select {
+	case resp := <-task.Job.SendResponses:
+		if resp.Download.ChunkNum != 2 {
+			t.Errorf("Expected chunk 2, got %d", resp.Download.ChunkNum)
+		}
+		decoded, _ := base64.StdEncoding.DecodeString(resp.Download.ChunkData)
+		if len(decoded) != 100 {
+			t.Errorf("Chunk 2 should be 100 bytes, got %d", len(decoded))
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting for chunk 2")
+	}
+
+	fileTransferResp <- successResp
+
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Timed out waiting for finished")
+	}
+
+	tmpFile.Close()
+}
