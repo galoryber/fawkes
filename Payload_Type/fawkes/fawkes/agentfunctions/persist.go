@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -104,6 +106,17 @@ func init() {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  taskData.Task.ID,
+			}
+			method, _ := taskData.Args.GetStringArg("method")
+			action, _ := taskData.Args.GetStringArg("action")
+			name, _ := taskData.Args.GetStringArg("name")
+			if action == "install" {
+				if method == "registry" {
+					hive, _ := taskData.Args.GetStringArg("hive")
+					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("%s\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\%s", hive, name))
+				} else if method == "startup-folder" {
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Startup folder: %s", name))
+				}
 			}
 			return response
 		},

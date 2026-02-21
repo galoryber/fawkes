@@ -6,39 +6,27 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "run",
-		Description:         "run [command] - Execute a command in a child process",
-		HelpString:          "run [command]",
+		Name:                "av-detect",
+		Description:         "Detect installed AV/EDR/security products by scanning running processes against a known signature database.",
+		HelpString:          "av-detect",
 		Version:             1,
-		MitreAttackMappings: []string{"T1059"}, // Command and Scripting Interpreter
+		MitreAttackMappings: []string{"T1518.001"}, // Software Discovery: Security Software Discovery
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// Simply pass the entire input string as the command to execute
-			args.SetManualArgs(input)
 			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
-			// If called from dictionary (unlikely for this command), just convert to string
-			if cmd, ok := input["command"].(string); ok {
-				args.SetManualArgs(cmd)
-			}
 			return nil
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			response := agentstructs.PTTaskCreateTaskingMessageResponse{
+			return agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
-			// Display the command being executed
-			if displayParams, err := task.Args.GetFinalArgs(); err == nil {
-				response.DisplayParams = &displayParams
-				createArtifact(task.Task.ID, "Process Create", displayParams)
-			}
-			return response
 		},
 	})
 }

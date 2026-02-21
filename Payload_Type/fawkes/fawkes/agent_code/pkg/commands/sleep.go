@@ -36,8 +36,11 @@ func (c *SleepCommand) Execute(task structs.Task) structs.CommandResult {
 func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent) structs.CommandResult {
 	// Parse parameters
 	var args struct {
-		Interval int `json:"interval"`
-		Jitter   int `json:"jitter"`
+		Interval     int    `json:"interval"`
+		Jitter       int    `json:"jitter"`
+		WorkingStart string `json:"working_start"` // HH:MM format, empty = no change, "00:00" with end "00:00" = disable
+		WorkingEnd   string `json:"working_end"`   // HH:MM format
+		WorkingDays  string `json:"working_days"`   // "1,2,3,4,5" format, empty = no change, "0" = disable
 	}
 
 	// Try to parse as JSON first
@@ -66,13 +69,22 @@ func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent)
 				}
 			}
 		}
+		if len(parts) >= 3 {
+			args.WorkingStart = parts[2]
+		}
+		if len(parts) >= 4 {
+			args.WorkingEnd = parts[3]
+		}
+		if len(parts) >= 5 {
+			args.WorkingDays = parts[4]
+		}
 	}
 
 	// Validate values
 	if args.Interval < 0 {
 		return structs.CommandResult{
 			Output:    "Sleep interval cannot be negative",
-			Status:    "error", 
+			Status:    "error",
 			Completed: true,
 		}
 	}
@@ -88,13 +100,79 @@ func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent)
 	// Update sleep parameters in the actual agent
 	oldInterval := agent.SleepInterval
 	oldJitter := agent.Jitter
-	
+
 	agent.UpdateSleepParams(args.Interval, args.Jitter)
-	
-	// Create output message
-	output := fmt.Sprintf("Updated sleep parameters: interval=%ds, jitter=%d%% (was: %ds, %d%%)", 
+
+	// Build output message
+	output := fmt.Sprintf("Updated sleep parameters: interval=%ds, jitter=%d%% (was: %ds, %d%%)",
 		args.Interval, args.Jitter, oldInterval, oldJitter)
-	
+
+	// Handle working hours update
+	if args.WorkingStart != "" || args.WorkingEnd != "" {
+		startMinutes, err := structs.ParseWorkingHoursTime(args.WorkingStart)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Invalid working_start: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		endMinutes, err := structs.ParseWorkingHoursTime(args.WorkingEnd)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Invalid working_end: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		var days []int
+		if args.WorkingDays != "" && args.WorkingDays != "0" {
+			days, err = structs.ParseWorkingDays(args.WorkingDays)
+			if err != nil {
+				return structs.CommandResult{
+					Output:    fmt.Sprintf("Invalid working_days: %v", err),
+					Status:    "error",
+					Completed: true,
+				}
+			}
+		}
+
+		oldStart := structs.FormatWorkingHoursTime(agent.WorkingHoursStart)
+		oldEnd := structs.FormatWorkingHoursTime(agent.WorkingHoursEnd)
+
+		agent.UpdateWorkingHours(startMinutes, endMinutes, days)
+
+		if startMinutes == 0 && endMinutes == 0 {
+			output += "\nWorking hours: DISABLED (was: " + oldStart + "-" + oldEnd + ")"
+		} else {
+			output += fmt.Sprintf("\nWorking hours: %s-%s",
+				structs.FormatWorkingHoursTime(startMinutes),
+				structs.FormatWorkingHoursTime(endMinutes))
+			if len(days) > 0 {
+				output += fmt.Sprintf(" days=%v", days)
+			}
+			output += " (was: " + oldStart + "-" + oldEnd + ")"
+		}
+	} else if args.WorkingDays != "" {
+		// Update only working days
+		if args.WorkingDays == "0" {
+			agent.WorkingDays = nil
+			output += "\nWorking days: DISABLED (all days active)"
+		} else {
+			days, err := structs.ParseWorkingDays(args.WorkingDays)
+			if err != nil {
+				return structs.CommandResult{
+					Output:    fmt.Sprintf("Invalid working_days: %v", err),
+					Status:    "error",
+					Completed: true,
+				}
+			}
+			agent.WorkingDays = days
+			output += fmt.Sprintf("\nWorking days: %v", days)
+		}
+	}
+
 	// Log the change
 	log.Printf("[INFO] Sleep parameters updated: interval=%d, jitter=%d", args.Interval, args.Jitter)
 

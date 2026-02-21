@@ -220,6 +220,7 @@ func init() {
 			// Build the display parameters
 			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes)\nTarget PID: %d", filename, len(fileContents), int(pid))
 			response.DisplayParams = &displayParams
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread into PID %d (%d bytes)", int(pid), len(fileContents)))
 
 			// Build the actual parameters JSON that will be sent to the agent
 			// Encode shellcode contents as base64 to embed in JSON

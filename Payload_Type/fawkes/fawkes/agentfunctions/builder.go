@@ -117,6 +117,27 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  "none",
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
+		{
+			Name:          "working_hours_start",
+			Description:   "Optional: Working hours start time in HH:MM 24-hour format (e.g. '09:00'). Agent only calls back during working hours. Leave empty for always-active.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "working_hours_end",
+			Description:   "Optional: Working hours end time in HH:MM 24-hour format (e.g. '17:00'). Agent only calls back during working hours. Leave empty for always-active.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "working_days",
+			Description:   "Optional: Comma-separated ISO weekday numbers when agent is active (Mon=1, Sun=7). E.g. '1,2,3,4,5' for weekdays only. Leave empty for all days.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -241,6 +262,17 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if tlsVerify, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_verify"); err == nil && tlsVerify != "" {
 		ldflags += fmt.Sprintf(" -X '%s.tlsVerify=%s'", fawkes_main_package, tlsVerify)
+	}
+
+	// Working hours opsec parameters
+	if whStart, err := payloadBuildMsg.BuildParameters.GetStringArg("working_hours_start"); err == nil && whStart != "" {
+		ldflags += fmt.Sprintf(" -X '%s.workingHoursStart=%s'", fawkes_main_package, whStart)
+	}
+	if whEnd, err := payloadBuildMsg.BuildParameters.GetStringArg("working_hours_end"); err == nil && whEnd != "" {
+		ldflags += fmt.Sprintf(" -X '%s.workingHoursEnd=%s'", fawkes_main_package, whEnd)
+	}
+	if whDays, err := payloadBuildMsg.BuildParameters.GetStringArg("working_days"); err == nil && whDays != "" {
+		ldflags += fmt.Sprintf(" -X '%s.workingDays=%s'", fawkes_main_package, whDays)
 	}
 
 	architecture, err := payloadBuildMsg.BuildParameters.GetStringArg("architecture")

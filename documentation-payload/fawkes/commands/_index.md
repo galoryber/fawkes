@@ -39,11 +39,13 @@ pre = "<b>2. </b>"
     * [write-memory](/agents/fawkes/commands/write-memory/)
     * [autopatch](/agents/fawkes/commands/autopatch/)
 - Credential/Token Commands
+    * [keychain](/agents/fawkes/commands/keychain/)
     * [make-token](/agents/fawkes/commands/make-token/)
     * [ssh-keys](/agents/fawkes/commands/ssh-keys/)
     * [steal-token](/agents/fawkes/commands/steal-token/)
     * [rev2self](/agents/fawkes/commands/rev2self/)
 - Discovery
+    * [av-detect](/agents/fawkes/commands/av-detect/)
     * [drives](/agents/fawkes/commands/drives/)
     * [env](/agents/fawkes/commands/env/)
     * [net-enum](/agents/fawkes/commands/net-enum/)

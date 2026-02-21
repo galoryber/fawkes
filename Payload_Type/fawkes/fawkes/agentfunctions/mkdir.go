@@ -50,6 +50,7 @@ func init() {
 			}
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil {
 				response.DisplayParams = &displayParams
+				createArtifact(task.Task.ID, "File Create", "mkdir "+displayParams)
 			}
 			return response
 		},

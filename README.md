@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 25 commands are cross-platform, with 29 additional Windows-only commands, 2 Unix-only commands, and 1 macOS-only command for a total of 57.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 26 commands are cross-platform, with 28 additional Windows-only commands, 1 Windows+macOS command (screenshot), 2 Unix-only commands, and 2 macOS-only commands for a total of 59.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -23,6 +23,7 @@ Command | Syntax | Description
 ------- | ------ | -----------
 apc-injection | `apc-injection` | **(Windows only)** Perform QueueUserAPC injection into an alertable thread. Use `ts` to find alertable threads (T1055.004).
 arp | `arp` | Display ARP table — shows IP-to-MAC address mappings for nearby hosts. Cross-platform.
+av-detect | `av-detect` | Detect installed AV/EDR/security products by scanning running processes against a 130+ signature database. Reports product, vendor, type, and PID. Cross-platform.
 autopatch | `autopatch <dll_name> <function_name> <num_bytes>` | **(Windows only)** Automatically patch a function by jumping to nearest return (C3) instruction. Useful for AMSI/ETW bypasses.
 cat | `cat <file>` | Display the contents of a file.
 cd | `cd <directory>` | Change the current working directory.
@@ -37,6 +38,7 @@ find | `find -pattern <glob> [-path <dir>] [-max_depth <n>]` | Search for files 
 ifconfig | `ifconfig` | List network interfaces with addresses, MAC, MTU, and flags. Cross-platform (Windows/Linux/macOS).
 inline-assembly | `inline-assembly` | **(Windows only)** Execute a .NET assembly in memory using the CLR. Supports command-line arguments. Use `start-clr` first for AMSI patching workflow.
 inline-execute | `inline-execute` | **(Windows only)** Execute a Beacon Object File (BOF/COFF) in memory. Supports all argument types: strings (z), wide strings (Z), integers (i), shorts (s), and binary (b).
+keychain | `keychain -action <list\|dump\|find-password\|find-internet\|find-cert> [-service <name>] [-server <host>]` | **(macOS only)** Access macOS Keychain — list keychains, dump metadata, find generic/internet passwords, enumerate certificates.
 keylog | `keylog -action <start\|stop\|dump>` | **(Windows only)** Low-level keyboard logger with window context. Start/stop/dump captured keystrokes.
 kill | `kill -pid <PID>` | Terminate a process by PID. Cross-platform (Windows/Linux/macOS).
 launchagent | `launchagent -action <install\|remove\|list> -label <com.example.name> [-path <exe>] [-daemon true]` | **(macOS only)** Install, remove, or list LaunchAgent/LaunchDaemon persistence. Creates plist with RunAtLoad+KeepAlive.
@@ -61,10 +63,10 @@ rev2self | `rev2self` | **(Windows only)** Revert to the original security conte
 rm | `rm <path>` | Remove a file or directory (recursively removes directories).
 run | `run <command>` | Execute a shell command and return the output.
 schtask | `schtask -action <create\|query\|delete\|run\|list> -name <name> [-program <path>]` | **(Windows only)** Create, query, run, or delete Windows scheduled tasks for persistence or execution.
-screenshot | `screenshot` | **(Windows only)** Capture a screenshot of the current desktop session. Captures all monitors and uploads as PNG.
+screenshot | `screenshot` | **(Windows, macOS)** Capture a screenshot of the current desktop session. Captures all monitors and uploads as PNG. Uses GDI on Windows, screencapture on macOS.
 service | `service -action <query\|start\|stop\|create\|delete\|list> -name <name> [-binpath <path>]` | **(Windows only)** Manage Windows services — query status, start, stop, create, or delete services.
 setenv | `setenv -action <set\|unset> -name <NAME> [-value <VALUE>]` | Set or unset environment variables in the agent process. Cross-platform.
-sleep | `sleep [seconds] [jitter]` | Set the callback interval in seconds and jitter percentage.
+sleep | `sleep [seconds] [jitter] [working_start] [working_end] [working_days]` | Set callback interval, jitter, and working hours. Working hours restrict check-ins to specified times/days for opsec.
 socks | `socks start [port]` / `socks stop [port]` | Start or stop a SOCKS5 proxy through the callback. Default port 7000. Tunnel tools like proxychains, nmap, or Impacket through the agent.
 spawn | `spawn -path <exe> [-ppid <pid>] [-blockdlls true]` | **(Windows only)** Spawn a suspended process or thread for injection. Supports PPID spoofing (T1134.004) and non-Microsoft DLL blocking.
 ssh-keys | `ssh-keys -action <list\|add\|remove\|read-private> [-key <ssh_key>] [-user <username>]` | **(Linux/macOS only)** Read or inject SSH authorized_keys. Read private keys for credential harvesting.
@@ -129,6 +131,27 @@ The byte pattern is repeated `inflate_count` times, so the total added size is `
 When inflation is not configured, only 1 byte of overhead is added to the binary.
 
 ## Opsec Features
+
+### Artifact Tracking
+
+Fawkes automatically registers artifacts with Mythic for opsec-relevant commands. Artifacts appear in the Mythic UI under the **Artifacts** tab, giving operators a clear picture of all forensic indicators generated during an engagement.
+
+Tracked artifact types:
+
+| Type | Commands |
+|------|----------|
+| Process Create | run, powershell, spawn, wmi, schtask, service, net-enum, net-shares |
+| Process Kill | kill |
+| Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection |
+| File Write | upload, cp, mv |
+| File Create | mkdir |
+| File Delete | rm |
+| File Modify | timestomp |
+| Registry Write | reg-write, persist (registry method) |
+| Logon | make-token |
+| Token Steal | steal-token |
+
+Read-only commands (ls, ps, cat, env, etc.) do not generate artifacts.
 
 ### TLS Certificate Verification
 

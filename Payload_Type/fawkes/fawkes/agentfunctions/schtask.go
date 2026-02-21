@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -145,6 +147,17 @@ func init() {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  taskData.Task.ID,
+			}
+			action, _ := taskData.Args.GetStringArg("action")
+			name, _ := taskData.Args.GetStringArg("name")
+			switch action {
+			case "create":
+				program, _ := taskData.Args.GetStringArg("program")
+				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("schtasks /Create /TN %q /TR %q", name, program))
+			case "delete":
+				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("schtasks /Delete /TN %q", name))
+			case "run":
+				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("schtasks /Run /TN %q", name))
 			}
 			return response
 		},

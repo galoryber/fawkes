@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"fawkes/pkg/structs"
 )
@@ -497,6 +498,330 @@ func TestDownloadCommand_Execute(t *testing.T) {
 		result := cmd.Execute(task)
 		if result.Status != "error" {
 			t.Errorf("expected error for nonexistent quoted path, got %q", result.Status)
+		}
+	})
+
+	t.Run("successful download with real file", func(t *testing.T) {
+		tmp := t.TempDir()
+		testFile := filepath.Join(tmp, "testfile.txt")
+		os.WriteFile(testFile, []byte("download content"), 0644)
+
+		sendCh := make(chan structs.SendFileToMythicStruct, 1)
+		stop := 0
+		job := &structs.Job{
+			Stop:             &stop,
+			SendResponses:    make(chan structs.Response, 100),
+			SendFileToMythic: sendCh,
+			FileTransfers:    make(map[string]chan json.RawMessage),
+		}
+
+		task := structs.NewTask("dl-task-1", "download", testFile)
+		task.Job = job
+
+		// Run download in background; it will block waiting for transfer to complete
+		done := make(chan structs.CommandResult, 1)
+		go func() {
+			done <- cmd.Execute(task)
+		}()
+
+		// Consume the SendFileToMythic message and immediately signal finished
+		select {
+		case msg := <-sendCh:
+			// Verify the message was set up correctly
+			if msg.FullPath == "" {
+				t.Error("Expected non-empty FullPath")
+			}
+			if msg.File == nil {
+				t.Error("Expected non-nil File")
+			}
+			if msg.IsScreenshot {
+				t.Error("Expected IsScreenshot=false")
+			}
+			if !msg.SendUserStatusUpdates {
+				t.Error("Expected SendUserStatusUpdates=true")
+			}
+			// Signal transfer complete
+			msg.FinishedTransfer <- 1
+		case <-time.After(3 * time.Second):
+			t.Fatal("Timed out waiting for SendFileToMythic message")
+		}
+
+		select {
+		case result := <-done:
+			if result.Status != "success" {
+				t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+			}
+			if !strings.Contains(result.Output, "Finished Downloading") {
+				t.Errorf("expected 'Finished Downloading', got: %s", result.Output)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Timed out waiting for download result")
+		}
+	})
+
+	t.Run("download stopped early", func(t *testing.T) {
+		tmp := t.TempDir()
+		testFile := filepath.Join(tmp, "stopfile.txt")
+		os.WriteFile(testFile, []byte("stop content"), 0644)
+
+		sendCh := make(chan structs.SendFileToMythicStruct, 1)
+		stop := 0
+		job := &structs.Job{
+			Stop:             &stop,
+			SendResponses:    make(chan structs.Response, 100),
+			SendFileToMythic: sendCh,
+			FileTransfers:    make(map[string]chan json.RawMessage),
+		}
+
+		task := structs.NewTask("dl-task-stop", "download", testFile)
+		task.Job = job
+
+		done := make(chan structs.CommandResult, 1)
+		go func() {
+			done <- cmd.Execute(task)
+		}()
+
+		// Consume the channel message but don't finish — set stop instead
+		select {
+		case <-sendCh:
+			task.SetStop()
+		case <-time.After(3 * time.Second):
+			t.Fatal("Timed out waiting for SendFileToMythic")
+		}
+
+		select {
+		case result := <-done:
+			if result.Status != "error" {
+				t.Errorf("expected error for stopped task, got %q", result.Status)
+			}
+			if !strings.Contains(result.Output, "Tasked to stop") {
+				t.Errorf("expected 'Tasked to stop', got: %s", result.Output)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("Timed out waiting for stopped download result")
+		}
+	})
+}
+
+// --- upload command full-flow tests ---
+
+func TestUploadCommand_FullFlow(t *testing.T) {
+	cmd := &UploadCommand{}
+
+	t.Run("successful upload to new file", func(t *testing.T) {
+		tmp := t.TempDir()
+		uploadPath := filepath.Join(tmp, "uploaded.bin")
+
+		getCh := make(chan structs.GetFileFromMythicStruct, 1)
+		stop := 0
+		job := &structs.Job{
+			Stop:              &stop,
+			SendResponses:     make(chan structs.Response, 100),
+			GetFileFromMythic: getCh,
+			FileTransfers:     make(map[string]chan json.RawMessage),
+		}
+
+		params, _ := json.Marshal(UploadArgs{
+			FileID:     "test-file-id",
+			RemotePath: uploadPath,
+			Overwrite:  false,
+		})
+
+		task := structs.NewTask("ul-task-1", "upload", string(params))
+		task.Job = job
+
+		done := make(chan structs.CommandResult, 1)
+		go func() {
+			done <- cmd.Execute(task)
+		}()
+
+		// Consume the GetFileFromMythic message and provide chunks
+		select {
+		case msg := <-getCh:
+			if msg.FileID != "test-file-id" {
+				t.Errorf("expected file ID 'test-file-id', got %q", msg.FileID)
+			}
+			// Send some data chunks
+			msg.ReceivedChunkChannel <- []byte("chunk1-data")
+			msg.ReceivedChunkChannel <- []byte("-chunk2-data")
+			// Signal done
+			msg.ReceivedChunkChannel <- []byte{}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Timed out waiting for GetFileFromMythic")
+		}
+
+		select {
+		case result := <-done:
+			if result.Status != "success" {
+				t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+			}
+			if !strings.Contains(result.Output, "Uploaded") {
+				t.Errorf("expected 'Uploaded' in output, got: %s", result.Output)
+			}
+			if !strings.Contains(result.Output, "23 bytes") {
+				t.Errorf("expected '23 bytes' in output, got: %s", result.Output)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Timed out waiting for upload result")
+		}
+
+		// Verify file content
+		content, err := os.ReadFile(uploadPath)
+		if err != nil {
+			t.Fatalf("Failed to read uploaded file: %v", err)
+		}
+		if string(content) != "chunk1-data-chunk2-data" {
+			t.Errorf("File content mismatch: got %q", string(content))
+		}
+	})
+
+	t.Run("upload with overwrite", func(t *testing.T) {
+		tmp := t.TempDir()
+		uploadPath := filepath.Join(tmp, "overwrite.bin")
+		os.WriteFile(uploadPath, []byte("old content"), 0644)
+
+		getCh := make(chan structs.GetFileFromMythicStruct, 1)
+		stop := 0
+		job := &structs.Job{
+			Stop:              &stop,
+			SendResponses:     make(chan structs.Response, 100),
+			GetFileFromMythic: getCh,
+			FileTransfers:     make(map[string]chan json.RawMessage),
+		}
+
+		params, _ := json.Marshal(UploadArgs{
+			FileID:     "overwrite-file",
+			RemotePath: uploadPath,
+			Overwrite:  true,
+		})
+
+		task := structs.NewTask("ul-task-ow", "upload", string(params))
+		task.Job = job
+
+		done := make(chan structs.CommandResult, 1)
+		go func() {
+			done <- cmd.Execute(task)
+		}()
+
+		select {
+		case msg := <-getCh:
+			msg.ReceivedChunkChannel <- []byte("new content")
+			msg.ReceivedChunkChannel <- []byte{}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Timed out")
+		}
+
+		select {
+		case result := <-done:
+			if result.Status != "success" {
+				t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Timed out")
+		}
+
+		content, _ := os.ReadFile(uploadPath)
+		if string(content) != "new content" {
+			t.Errorf("File not overwritten: got %q", string(content))
+		}
+	})
+
+	t.Run("upload with tilde path", func(t *testing.T) {
+		// Test tilde expansion through the full flow
+		getCh := make(chan structs.GetFileFromMythicStruct, 1)
+		stop := 0
+		job := &structs.Job{
+			Stop:              &stop,
+			SendResponses:     make(chan structs.Response, 100),
+			GetFileFromMythic: getCh,
+			FileTransfers:     make(map[string]chan json.RawMessage),
+		}
+
+		homeDir, _ := os.UserHomeDir()
+		uploadPath := filepath.Join(homeDir, "test_upload_tilde_coverage.tmp")
+		defer os.Remove(uploadPath)
+
+		params, _ := json.Marshal(UploadArgs{
+			FileID:     "tilde-file",
+			RemotePath: "~/test_upload_tilde_coverage.tmp",
+			Overwrite:  true,
+		})
+
+		task := structs.NewTask("ul-task-tilde", "upload", string(params))
+		task.Job = job
+
+		done := make(chan structs.CommandResult, 1)
+		go func() {
+			done <- cmd.Execute(task)
+		}()
+
+		select {
+		case msg := <-getCh:
+			// Verify the path was expanded
+			if !strings.HasPrefix(msg.FullPath, homeDir) {
+				t.Errorf("expected path starting with %s, got %s", homeDir, msg.FullPath)
+			}
+			msg.ReceivedChunkChannel <- []byte("tilde data")
+			msg.ReceivedChunkChannel <- []byte{}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Timed out")
+		}
+
+		select {
+		case result := <-done:
+			if result.Status != "success" {
+				t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Timed out")
+		}
+	})
+
+	t.Run("upload empty transfer (zero bytes)", func(t *testing.T) {
+		tmp := t.TempDir()
+		uploadPath := filepath.Join(tmp, "empty.bin")
+
+		getCh := make(chan structs.GetFileFromMythicStruct, 1)
+		stop := 0
+		job := &structs.Job{
+			Stop:              &stop,
+			SendResponses:     make(chan structs.Response, 100),
+			GetFileFromMythic: getCh,
+			FileTransfers:     make(map[string]chan json.RawMessage),
+		}
+
+		params, _ := json.Marshal(UploadArgs{
+			FileID:     "empty-file",
+			RemotePath: uploadPath,
+			Overwrite:  false,
+		})
+
+		task := structs.NewTask("ul-task-empty", "upload", string(params))
+		task.Job = job
+
+		done := make(chan structs.CommandResult, 1)
+		go func() {
+			done <- cmd.Execute(task)
+		}()
+
+		select {
+		case msg := <-getCh:
+			// Immediately signal done (no data)
+			msg.ReceivedChunkChannel <- []byte{}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Timed out")
+		}
+
+		select {
+		case result := <-done:
+			if result.Status != "success" {
+				t.Errorf("expected success for empty upload, got %q: %s", result.Status, result.Output)
+			}
+			if !strings.Contains(result.Output, "0 bytes") {
+				t.Errorf("expected '0 bytes' in output, got: %s", result.Output)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Timed out")
 		}
 	})
 }

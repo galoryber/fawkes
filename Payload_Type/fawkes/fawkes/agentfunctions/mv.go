@@ -94,6 +94,7 @@ func init() {
 
 			displayParams := source + " -> " + destination
 			response.DisplayParams = &displayParams
+			createArtifact(task.Task.ID, "File Write", "Move "+source+" to "+destination)
 			return response
 		},
 	})
