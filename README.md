@@ -65,7 +65,7 @@ schtask | `schtask -action <create\|query\|delete\|run\|list> -name <name> [-pro
 screenshot | `screenshot` | **(Windows, macOS)** Capture a screenshot of the current desktop session. Captures all monitors and uploads as PNG. Uses GDI on Windows, screencapture on macOS.
 service | `service -action <query\|start\|stop\|create\|delete\|list> -name <name> [-binpath <path>]` | **(Windows only)** Manage Windows services — query status, start, stop, create, or delete services.
 setenv | `setenv -action <set\|unset> -name <NAME> [-value <VALUE>]` | Set or unset environment variables in the agent process. Cross-platform.
-sleep | `sleep [seconds] [jitter]` | Set the callback interval in seconds and jitter percentage.
+sleep | `sleep [seconds] [jitter] [working_start] [working_end] [working_days]` | Set callback interval, jitter, and working hours. Working hours restrict check-ins to specified times/days for opsec.
 socks | `socks start [port]` / `socks stop [port]` | Start or stop a SOCKS5 proxy through the callback. Default port 7000. Tunnel tools like proxychains, nmap, or Impacket through the agent.
 spawn | `spawn -path <exe> [-ppid <pid>] [-blockdlls true]` | **(Windows only)** Spawn a suspended process or thread for injection. Supports PPID spoofing (T1134.004) and non-Microsoft DLL blocking.
 ssh-keys | `ssh-keys -action <list\|add\|remove\|read-private> [-key <ssh_key>] [-user <username>]` | **(Linux/macOS only)** Read or inject SSH authorized_keys. Read private keys for credential harvesting.
