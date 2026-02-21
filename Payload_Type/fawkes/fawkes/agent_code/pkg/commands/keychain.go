@@ -126,18 +126,6 @@ func keychainDump() structs.CommandResult {
 
 // keychainFindGeneric searches for generic password items
 func keychainFindGeneric(args keychainArgs) structs.CommandResult {
-	cmdArgs := []string{"find-generic-password", "-g"}
-
-	if args.Service != "" {
-		cmdArgs = append(cmdArgs, "-s", args.Service)
-	}
-	if args.Account != "" {
-		cmdArgs = append(cmdArgs, "-a", args.Account)
-	}
-	if args.Label != "" {
-		cmdArgs = append(cmdArgs, "-l", args.Label)
-	}
-
 	// If no filters specified, inform user
 	if args.Service == "" && args.Account == "" && args.Label == "" {
 		return structs.CommandResult{
@@ -147,28 +135,41 @@ func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 		}
 	}
 
+	filterArgs := buildFilterArgs(args.Service, args.Account, args.Label)
+
+	// Try with -g (include password) first
+	cmdArgs := append([]string{"find-generic-password", "-g"}, filterArgs...)
 	out, err := exec.Command("security", cmdArgs...).CombinedOutput()
 	if err != nil {
-		// security returns exit code 44 when item not found
 		output := string(out)
-		if strings.Contains(output, "could not be found") || strings.Contains(output, "SecKeychainSearchCopyNext") {
+		if isItemNotFound(output) {
 			return structs.CommandResult{
 				Output:    "No matching generic password found",
 				Status:    "success",
 				Completed: true,
 			}
 		}
-		// Access denied or keychain locked
-		if strings.Contains(output, "User interaction is not allowed") || strings.Contains(output, "authorization denied") {
+		// Password retrieval failed — retry without -g for metadata only
+		cmdArgs = append([]string{"find-generic-password"}, filterArgs...)
+		out2, err2 := exec.Command("security", cmdArgs...).CombinedOutput()
+		if err2 != nil {
+			output2 := string(out2)
+			if isItemNotFound(output2) {
+				return structs.CommandResult{
+					Output:    "No matching generic password found",
+					Status:    "success",
+					Completed: true,
+				}
+			}
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Access denied — keychain may be locked or user authorization required\n%s", output),
+				Output:    fmt.Sprintf("Error: %v\n%s", err2, output2),
 				Status:    "error",
 				Completed: true,
 			}
 		}
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v\n%s", err, output),
-			Status:    "error",
+			Output:    string(out2) + "\n[NOTE: Password data unavailable — authorization required or keychain locked]",
+			Status:    "success",
 			Completed: true,
 		}
 	}
@@ -182,18 +183,6 @@ func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 
 // keychainFindInternet searches for internet password items
 func keychainFindInternet(args keychainArgs) structs.CommandResult {
-	cmdArgs := []string{"find-internet-password", "-g"}
-
-	if args.Server != "" {
-		cmdArgs = append(cmdArgs, "-s", args.Server)
-	}
-	if args.Account != "" {
-		cmdArgs = append(cmdArgs, "-a", args.Account)
-	}
-	if args.Label != "" {
-		cmdArgs = append(cmdArgs, "-l", args.Label)
-	}
-
 	// If no filters specified, inform user
 	if args.Server == "" && args.Account == "" && args.Label == "" {
 		return structs.CommandResult{
@@ -203,26 +192,42 @@ func keychainFindInternet(args keychainArgs) structs.CommandResult {
 		}
 	}
 
+	// For internet passwords, -s is server (not service)
+	filterArgs := buildFilterArgs(args.Server, args.Account, args.Label)
+
+	// Try with -g (include password) first
+	cmdArgs := append([]string{"find-internet-password", "-g"}, filterArgs...)
 	out, err := exec.Command("security", cmdArgs...).CombinedOutput()
 	if err != nil {
 		output := string(out)
-		if strings.Contains(output, "could not be found") || strings.Contains(output, "SecKeychainSearchCopyNext") {
+		if isItemNotFound(output) {
 			return structs.CommandResult{
 				Output:    "No matching internet password found",
 				Status:    "success",
 				Completed: true,
 			}
 		}
-		if strings.Contains(output, "User interaction is not allowed") || strings.Contains(output, "authorization denied") {
+		// Password retrieval failed — retry without -g for metadata only
+		cmdArgs = append([]string{"find-internet-password"}, filterArgs...)
+		out2, err2 := exec.Command("security", cmdArgs...).CombinedOutput()
+		if err2 != nil {
+			output2 := string(out2)
+			if isItemNotFound(output2) {
+				return structs.CommandResult{
+					Output:    "No matching internet password found",
+					Status:    "success",
+					Completed: true,
+				}
+			}
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Access denied — keychain may be locked or user authorization required\n%s", output),
+				Output:    fmt.Sprintf("Error: %v\n%s", err2, output2),
 				Status:    "error",
 				Completed: true,
 			}
 		}
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v\n%s", err, output),
-			Status:    "error",
+			Output:    string(out2) + "\n[NOTE: Password data unavailable — authorization required or keychain locked]",
+			Status:    "success",
 			Completed: true,
 		}
 	}
@@ -232,6 +237,27 @@ func keychainFindInternet(args keychainArgs) structs.CommandResult {
 		Status:    "success",
 		Completed: true,
 	}
+}
+
+// buildFilterArgs builds common filter arguments for security CLI
+func buildFilterArgs(serverOrService, account, label string) []string {
+	var args []string
+	if serverOrService != "" {
+		args = append(args, "-s", serverOrService)
+	}
+	if account != "" {
+		args = append(args, "-a", account)
+	}
+	if label != "" {
+		args = append(args, "-l", label)
+	}
+	return args
+}
+
+// isItemNotFound checks if the security CLI output indicates no item was found
+func isItemNotFound(output string) bool {
+	return strings.Contains(output, "could not be found") ||
+		strings.Contains(output, "SecKeychainSearchCopyNext")
 }
 
 // keychainFindCert searches for certificates in keychains
