@@ -132,6 +132,27 @@ When inflation is not configured, only 1 byte of overhead is added to the binary
 
 ## Opsec Features
 
+### Artifact Tracking
+
+Fawkes automatically registers artifacts with Mythic for opsec-relevant commands. Artifacts appear in the Mythic UI under the **Artifacts** tab, giving operators a clear picture of all forensic indicators generated during an engagement.
+
+Tracked artifact types:
+
+| Type | Commands |
+|------|----------|
+| Process Create | run, powershell, spawn, wmi, schtask, service, net-enum, net-shares |
+| Process Kill | kill |
+| Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection |
+| File Write | upload, cp, mv |
+| File Create | mkdir |
+| File Delete | rm |
+| File Modify | timestomp |
+| Registry Write | reg-write, persist (registry method) |
+| Logon | make-token |
+| Token Steal | steal-token |
+
+Read-only commands (ls, ps, cat, env, etc.) do not generate artifacts.
+
 ### TLS Certificate Verification
 
 Control how the agent validates HTTPS certificates when communicating with the C2 server. Configured at build time via the **tls_verify** parameter:
