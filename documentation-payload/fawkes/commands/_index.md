@@ -45,6 +45,7 @@ pre = "<b>2. </b>"
     * [steal-token](/agents/fawkes/commands/steal-token/)
     * [rev2self](/agents/fawkes/commands/rev2self/)
 - Discovery
+    * [av-detect](/agents/fawkes/commands/av-detect/)
     * [drives](/agents/fawkes/commands/drives/)
     * [env](/agents/fawkes/commands/env/)
     * [net-enum](/agents/fawkes/commands/net-enum/)
