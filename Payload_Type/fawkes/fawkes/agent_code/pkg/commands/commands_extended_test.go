@@ -234,6 +234,133 @@ func TestSleepCommand(t *testing.T) {
 			t.Errorf("expected interval=0, got %d", agent.SleepInterval)
 		}
 	})
+
+	t.Run("working hours via JSON", func(t *testing.T) {
+		agent := &structs.Agent{SleepInterval: 10, Jitter: 10}
+		task := structs.Task{Params: `{"interval":10,"jitter":10,"working_start":"09:00","working_end":"17:00","working_days":"1,2,3,4,5"}`}
+		result := cmd.ExecuteWithAgent(task, agent)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if agent.WorkingHoursStart != 540 {
+			t.Errorf("expected WorkingHoursStart=540, got %d", agent.WorkingHoursStart)
+		}
+		if agent.WorkingHoursEnd != 1020 {
+			t.Errorf("expected WorkingHoursEnd=1020, got %d", agent.WorkingHoursEnd)
+		}
+		if len(agent.WorkingDays) != 5 {
+			t.Errorf("expected 5 working days, got %d", len(agent.WorkingDays))
+		}
+	})
+
+	t.Run("working hours via space-separated", func(t *testing.T) {
+		agent := &structs.Agent{SleepInterval: 10, Jitter: 10}
+		task := structs.Task{Params: "10 10 09:00 17:00 1,2,3,4,5"}
+		result := cmd.ExecuteWithAgent(task, agent)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if agent.WorkingHoursStart != 540 {
+			t.Errorf("expected WorkingHoursStart=540, got %d", agent.WorkingHoursStart)
+		}
+		if agent.WorkingHoursEnd != 1020 {
+			t.Errorf("expected WorkingHoursEnd=1020, got %d", agent.WorkingHoursEnd)
+		}
+	})
+
+	t.Run("disable working hours", func(t *testing.T) {
+		agent := &structs.Agent{
+			SleepInterval:     10,
+			Jitter:            10,
+			WorkingHoursStart: 540,
+			WorkingHoursEnd:   1020,
+			WorkingDays:       []int{1, 2, 3, 4, 5},
+		}
+		task := structs.Task{Params: `{"interval":10,"jitter":10,"working_start":"00:00","working_end":"00:00"}`}
+		result := cmd.ExecuteWithAgent(task, agent)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if agent.WorkingHoursStart != 0 || agent.WorkingHoursEnd != 0 {
+			t.Error("working hours should be disabled (0,0)")
+		}
+	})
+
+	t.Run("invalid working_start format", func(t *testing.T) {
+		agent := &structs.Agent{SleepInterval: 10, Jitter: 10}
+		task := structs.Task{Params: `{"interval":10,"jitter":10,"working_start":"bad","working_end":"17:00"}`}
+		result := cmd.ExecuteWithAgent(task, agent)
+		if result.Status != "error" {
+			t.Errorf("expected error for invalid working_start, got %q", result.Status)
+		}
+	})
+
+	t.Run("invalid working_days format", func(t *testing.T) {
+		agent := &structs.Agent{SleepInterval: 10, Jitter: 10}
+		task := structs.Task{Params: `{"interval":10,"jitter":10,"working_start":"09:00","working_end":"17:00","working_days":"abc"}`}
+		result := cmd.ExecuteWithAgent(task, agent)
+		if result.Status != "error" {
+			t.Errorf("expected error for invalid working_days, got %q", result.Status)
+		}
+	})
+
+	t.Run("update days only", func(t *testing.T) {
+		agent := &structs.Agent{
+			SleepInterval:     10,
+			Jitter:            10,
+			WorkingHoursStart: 540,
+			WorkingHoursEnd:   1020,
+		}
+		task := structs.Task{Params: `{"interval":10,"jitter":10,"working_days":"1,3,5"}`}
+		result := cmd.ExecuteWithAgent(task, agent)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if len(agent.WorkingDays) != 3 {
+			t.Errorf("expected 3 working days, got %d", len(agent.WorkingDays))
+		}
+		// Start/end should be unchanged
+		if agent.WorkingHoursStart != 540 {
+			t.Errorf("WorkingHoursStart should be unchanged, got %d", agent.WorkingHoursStart)
+		}
+	})
+
+	t.Run("disable days only", func(t *testing.T) {
+		agent := &structs.Agent{
+			SleepInterval: 10,
+			Jitter:        10,
+			WorkingDays:   []int{1, 2, 3},
+		}
+		task := structs.Task{Params: `{"interval":10,"jitter":10,"working_days":"0"}`}
+		result := cmd.ExecuteWithAgent(task, agent)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if agent.WorkingDays != nil {
+			t.Errorf("expected nil working days, got %v", agent.WorkingDays)
+		}
+	})
+
+	t.Run("no working hours change when not specified", func(t *testing.T) {
+		agent := &structs.Agent{
+			SleepInterval:     10,
+			Jitter:            10,
+			WorkingHoursStart: 540,
+			WorkingHoursEnd:   1020,
+			WorkingDays:       []int{1, 2, 3, 4, 5},
+		}
+		task := structs.Task{Params: `{"interval":20,"jitter":30}`}
+		result := cmd.ExecuteWithAgent(task, agent)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if agent.WorkingHoursStart != 540 || agent.WorkingHoursEnd != 1020 {
+			t.Error("working hours should be unchanged when not specified")
+		}
+		if len(agent.WorkingDays) != 5 {
+			t.Error("working days should be unchanged when not specified")
+		}
+	})
 }
 
 // =============================================================================

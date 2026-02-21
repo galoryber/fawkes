@@ -606,6 +606,356 @@ func TestNewTask_CopiesShareStopFlag(t *testing.T) {
 	}
 }
 
+// --- Working Hours Tests ---
+
+func TestParseWorkingHoursTime(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    int
+		wantErr bool
+	}{
+		{"09:00", 540, false},
+		{"17:00", 1020, false},
+		{"00:00", 0, false},
+		{"23:59", 1439, false},
+		{"12:30", 750, false},
+		{"", 0, false},
+		{"9:00", 540, false},    // single digit hour
+		{"09:5", 545, false},    // single digit minute (valid, 09:05)
+		{"25:00", 0, true},      // hour out of range
+		{"09:60", 0, true},      // minute out of range
+		{"09", 0, true},         // missing colon
+		{"abc:def", 0, true},    // non-numeric
+		{"09:00:00", 0, true},   // too many parts
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := ParseWorkingHoursTime(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseWorkingHoursTime(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if got != tt.want {
+				t.Errorf("ParseWorkingHoursTime(%q) = %d, want %d", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestParseWorkingDays(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    []int
+		wantErr bool
+	}{
+		{"1,2,3,4,5", []int{1, 2, 3, 4, 5}, false},
+		{"1,3,5", []int{1, 3, 5}, false},
+		{"7", []int{7}, false},
+		{"", nil, false},
+		{"0", nil, true},       // 0 out of range
+		{"8", nil, true},       // 8 out of range
+		{"1,abc", nil, true},   // non-numeric
+		{" 1 , 2 , 3 ", []int{1, 2, 3}, false}, // spaces
+	}
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			got, err := ParseWorkingDays(tt.input)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("ParseWorkingDays(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr {
+				if len(got) != len(tt.want) {
+					t.Errorf("ParseWorkingDays(%q) len = %d, want %d", tt.input, len(got), len(tt.want))
+					return
+				}
+				for i := range got {
+					if got[i] != tt.want[i] {
+						t.Errorf("ParseWorkingDays(%q)[%d] = %d, want %d", tt.input, i, got[i], tt.want[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestFormatWorkingHoursTime(t *testing.T) {
+	tests := []struct {
+		minutes int
+		want    string
+	}{
+		{540, "09:00"},
+		{1020, "17:00"},
+		{0, "00:00"},
+		{1439, "23:59"},
+		{750, "12:30"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			got := FormatWorkingHoursTime(tt.minutes)
+			if got != tt.want {
+				t.Errorf("FormatWorkingHoursTime(%d) = %q, want %q", tt.minutes, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestAgent_WorkingHoursEnabled(t *testing.T) {
+	t.Run("disabled by default", func(t *testing.T) {
+		agent := &Agent{}
+		if agent.WorkingHoursEnabled() {
+			t.Error("WorkingHoursEnabled() should be false with zero values")
+		}
+	})
+	t.Run("enabled with start only", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 540}
+		if !agent.WorkingHoursEnabled() {
+			t.Error("WorkingHoursEnabled() should be true with non-zero start")
+		}
+	})
+	t.Run("enabled with end only", func(t *testing.T) {
+		agent := &Agent{WorkingHoursEnd: 1020}
+		if !agent.WorkingHoursEnabled() {
+			t.Error("WorkingHoursEnabled() should be true with non-zero end")
+		}
+	})
+	t.Run("enabled with both", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020}
+		if !agent.WorkingHoursEnabled() {
+			t.Error("WorkingHoursEnabled() should be true with both set")
+		}
+	})
+}
+
+func TestAgent_UpdateWorkingHours(t *testing.T) {
+	agent := &Agent{}
+	agent.UpdateWorkingHours(540, 1020, []int{1, 2, 3, 4, 5})
+	if agent.WorkingHoursStart != 540 {
+		t.Errorf("WorkingHoursStart = %d, want 540", agent.WorkingHoursStart)
+	}
+	if agent.WorkingHoursEnd != 1020 {
+		t.Errorf("WorkingHoursEnd = %d, want 1020", agent.WorkingHoursEnd)
+	}
+	if len(agent.WorkingDays) != 5 {
+		t.Errorf("WorkingDays len = %d, want 5", len(agent.WorkingDays))
+	}
+}
+
+func TestAgent_IsWithinWorkingHours(t *testing.T) {
+	// Helper to create a time on a specific weekday at HH:MM
+	makeTime := func(weekday time.Weekday, hour, minute int) time.Time {
+		// 2026-02-16 is a Monday
+		// Monday=16, Tuesday=17, ..., Sunday=22
+		day := 16 + int(weekday) - 1
+		if weekday == time.Sunday {
+			day = 22
+		}
+		return time.Date(2026, 2, day, hour, minute, 0, 0, time.Local)
+	}
+
+	t.Run("disabled - always within", func(t *testing.T) {
+		agent := &Agent{} // no working hours
+		if !agent.IsWithinWorkingHours(makeTime(time.Monday, 3, 0)) {
+			t.Error("should be within hours when disabled")
+		}
+	})
+
+	t.Run("normal range - within", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020} // 09:00-17:00
+		if !agent.IsWithinWorkingHours(makeTime(time.Monday, 12, 0)) {
+			t.Error("12:00 should be within 09:00-17:00")
+		}
+	})
+
+	t.Run("normal range - before start", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020}
+		if agent.IsWithinWorkingHours(makeTime(time.Monday, 6, 0)) {
+			t.Error("06:00 should be outside 09:00-17:00")
+		}
+	})
+
+	t.Run("normal range - after end", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020}
+		if agent.IsWithinWorkingHours(makeTime(time.Monday, 20, 0)) {
+			t.Error("20:00 should be outside 09:00-17:00")
+		}
+	})
+
+	t.Run("normal range - at start boundary", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020}
+		if !agent.IsWithinWorkingHours(makeTime(time.Monday, 9, 0)) {
+			t.Error("09:00 should be within (start is inclusive)")
+		}
+	})
+
+	t.Run("normal range - at end boundary", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020}
+		if agent.IsWithinWorkingHours(makeTime(time.Monday, 17, 0)) {
+			t.Error("17:00 should be outside (end is exclusive)")
+		}
+	})
+
+	t.Run("overnight range - within late", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 1320, WorkingHoursEnd: 360} // 22:00-06:00
+		if !agent.IsWithinWorkingHours(makeTime(time.Monday, 23, 0)) {
+			t.Error("23:00 should be within 22:00-06:00")
+		}
+	})
+
+	t.Run("overnight range - within early", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 1320, WorkingHoursEnd: 360} // 22:00-06:00
+		if !agent.IsWithinWorkingHours(makeTime(time.Monday, 3, 0)) {
+			t.Error("03:00 should be within 22:00-06:00")
+		}
+	})
+
+	t.Run("overnight range - outside midday", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 1320, WorkingHoursEnd: 360} // 22:00-06:00
+		if agent.IsWithinWorkingHours(makeTime(time.Monday, 12, 0)) {
+			t.Error("12:00 should be outside 22:00-06:00")
+		}
+	})
+
+	t.Run("weekday restriction - allowed day", func(t *testing.T) {
+		agent := &Agent{
+			WorkingHoursStart: 540,
+			WorkingHoursEnd:   1020,
+			WorkingDays:       []int{1, 2, 3, 4, 5}, // Mon-Fri
+		}
+		if !agent.IsWithinWorkingHours(makeTime(time.Wednesday, 12, 0)) {
+			t.Error("Wednesday 12:00 should be within Mon-Fri 09:00-17:00")
+		}
+	})
+
+	t.Run("weekday restriction - disallowed day", func(t *testing.T) {
+		agent := &Agent{
+			WorkingHoursStart: 540,
+			WorkingHoursEnd:   1020,
+			WorkingDays:       []int{1, 2, 3, 4, 5}, // Mon-Fri
+		}
+		if agent.IsWithinWorkingHours(makeTime(time.Saturday, 12, 0)) {
+			t.Error("Saturday 12:00 should be outside Mon-Fri")
+		}
+	})
+
+	t.Run("weekday restriction - Sunday", func(t *testing.T) {
+		agent := &Agent{
+			WorkingHoursStart: 540,
+			WorkingHoursEnd:   1020,
+			WorkingDays:       []int{1, 2, 3, 4, 5}, // Mon-Fri
+		}
+		if agent.IsWithinWorkingHours(makeTime(time.Sunday, 12, 0)) {
+			t.Error("Sunday 12:00 should be outside Mon-Fri")
+		}
+	})
+
+	t.Run("weekday restriction - Sunday allowed", func(t *testing.T) {
+		agent := &Agent{
+			WorkingHoursStart: 540,
+			WorkingHoursEnd:   1020,
+			WorkingDays:       []int{7}, // Sun only
+		}
+		if !agent.IsWithinWorkingHours(makeTime(time.Sunday, 12, 0)) {
+			t.Error("Sunday 12:00 should be within Sun-only 09:00-17:00")
+		}
+	})
+}
+
+func TestAgent_MinutesUntilWorkingHours(t *testing.T) {
+	makeTime := func(weekday time.Weekday, hour, minute int) time.Time {
+		day := 16 + int(weekday) - 1
+		if weekday == time.Sunday {
+			day = 22
+		}
+		return time.Date(2026, 2, day, hour, minute, 0, 0, time.Local)
+	}
+
+	t.Run("already within hours", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020}
+		got := agent.MinutesUntilWorkingHours(makeTime(time.Monday, 12, 0))
+		if got != 0 {
+			t.Errorf("expected 0, got %d", got)
+		}
+	})
+
+	t.Run("disabled - always 0", func(t *testing.T) {
+		agent := &Agent{}
+		got := agent.MinutesUntilWorkingHours(makeTime(time.Monday, 3, 0))
+		if got != 0 {
+			t.Errorf("expected 0 for disabled, got %d", got)
+		}
+	})
+
+	t.Run("before start same day", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020} // 09:00-17:00
+		got := agent.MinutesUntilWorkingHours(makeTime(time.Monday, 6, 0)) // 06:00
+		if got != 180 { // 3 hours
+			t.Errorf("expected 180 minutes, got %d", got)
+		}
+	})
+
+	t.Run("after end - wait until tomorrow", func(t *testing.T) {
+		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020} // 09:00-17:00
+		got := agent.MinutesUntilWorkingHours(makeTime(time.Monday, 20, 0)) // 20:00
+		// 4 hours to midnight + 9 hours to 09:00 = 13 hours = 780 minutes
+		if got != 780 {
+			t.Errorf("expected 780 minutes, got %d", got)
+		}
+	})
+
+	t.Run("weekday skip to next workday", func(t *testing.T) {
+		agent := &Agent{
+			WorkingHoursStart: 540,
+			WorkingHoursEnd:   1020,
+			WorkingDays:       []int{1, 2, 3, 4, 5}, // Mon-Fri
+		}
+		// Saturday 12:00 → need to wait until Monday 09:00
+		got := agent.MinutesUntilWorkingHours(makeTime(time.Saturday, 12, 0))
+		// 12 hours to midnight + 24 hours (Sunday) + 9 hours to 09:00 = 45 hours = 2700 minutes
+		expected := (1440 - 720) + 1440 + 540 // 720 + 1440 + 540 = 2700
+		if got != expected {
+			t.Errorf("expected %d minutes (Sat 12:00 → Mon 09:00), got %d", expected, got)
+		}
+	})
+
+	t.Run("Friday evening to Monday morning", func(t *testing.T) {
+		agent := &Agent{
+			WorkingHoursStart: 540,
+			WorkingHoursEnd:   1020,
+			WorkingDays:       []int{1, 2, 3, 4, 5}, // Mon-Fri
+		}
+		// Friday 18:00 → Monday 09:00
+		got := agent.MinutesUntilWorkingHours(makeTime(time.Friday, 18, 0))
+		// 6 hours to midnight + 24 hours (Sat) + 24 hours (Sun) + 9 hours = 63 hours = 3780 minutes
+		expected := (1440 - 1080) + 2*1440 + 540 // 360 + 2880 + 540 = 3780
+		if got != expected {
+			t.Errorf("expected %d minutes (Fri 18:00 → Mon 09:00), got %d", expected, got)
+		}
+	})
+}
+
+func TestAgent_WorkingHours_JSONExcluded(t *testing.T) {
+	agent := Agent{
+		PayloadUUID:       "test-uuid",
+		WorkingHoursStart: 540,
+		WorkingHoursEnd:   1020,
+		WorkingDays:       []int{1, 2, 3},
+	}
+
+	data, err := json.Marshal(agent)
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	jsonStr := string(data)
+	if contains(jsonStr, "WorkingHours") || contains(jsonStr, "working_hours") {
+		t.Error("working hours fields should be excluded from JSON (tagged json:\"-\")")
+	}
+	if contains(jsonStr, "WorkingDays") || contains(jsonStr, "working_days") {
+		t.Error("working days field should be excluded from JSON (tagged json:\"-\")")
+	}
+}
+
 // helper
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && containsImpl(s, substr)

