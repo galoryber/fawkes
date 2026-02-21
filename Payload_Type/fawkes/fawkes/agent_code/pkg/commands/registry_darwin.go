@@ -8,4 +8,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&SSHKeysCommand{})
 	RegisterCommand(&LaunchAgentCommand{})
 	RegisterCommand(&ScreenshotDarwinCommand{})
+	RegisterCommand(&KeychainCommand{})
 }
