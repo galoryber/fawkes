@@ -95,8 +95,7 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer fp.Close()
-
+	defer fp.Close() // Safety net: ensure fd is closed even if transfer goroutine panics
 	r.ReceivedChunkChannel = make(chan []byte)
 	task.Job.GetFileFromMythic <- r
 
@@ -112,6 +111,12 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 		totalBytesWritten += len(newBytes)
 	}
+
+	// Close file explicitly to flush writes and catch errors
+	if closeErr := fp.Close(); closeErr != nil && writeErr == nil {
+		writeErr = closeErr
+	}
+
 	if writeErr != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error writing to %s after %d bytes: %v", fullPath, totalBytesWritten, writeErr),

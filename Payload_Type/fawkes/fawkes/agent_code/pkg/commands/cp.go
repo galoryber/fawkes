@@ -99,13 +99,22 @@ func (c *CpCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer destFile.Close()
-
+	defer destFile.Close() // Safety net for panics; explicit Close below catches flush errors
 	// Copy the file contents
 	bytesCopied, err := io.Copy(destFile, sourceFile)
 	if err != nil {
+		destFile.Close()
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error copying file: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Close destination file explicitly to flush writes and catch errors
+	if err := destFile.Close(); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error finalizing destination file: %v", err),
 			Status:    "error",
 			Completed: true,
 		}

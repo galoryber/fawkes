@@ -148,8 +148,11 @@ func (m *Manager) handleNewConnection(serverId uint32, b64Data string) {
 		return
 	}
 
-	// Store the connection
+	// Store the connection, closing any stale connection with the same server_id
 	m.mu.Lock()
+	if oldConn, exists := m.connections[serverId]; exists {
+		oldConn.Close()
+	}
 	m.connections[serverId] = conn
 	m.mu.Unlock()
 

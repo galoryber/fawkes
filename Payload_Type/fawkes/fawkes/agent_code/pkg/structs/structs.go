@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -38,22 +39,40 @@ type Task struct {
 	Params     string    `json:"parameters"`
 	Timestamp  time.Time `json:"timestamp"`
 	Job        *Job      `json:"-"` // Not marshalled to JSON
-	shouldStop bool      // Internal flag for task cancellation
+	stopped    *int32    // Atomic flag for task cancellation; pointer so copies share state
 }
 
-// DidStop checks if the task should stop
+// NewTask creates a Task with the stopped flag properly initialized
+func NewTask(id, command, params string) Task {
+	stopped := new(int32)
+	return Task{
+		ID:      id,
+		Command: command,
+		Params:  params,
+		stopped: stopped,
+	}
+}
+
+// DidStop checks if the task should stop (goroutine-safe)
 func (t *Task) DidStop() bool {
-	return t.shouldStop
+	if t.stopped == nil {
+		return false
+	}
+	return atomic.LoadInt32(t.stopped) != 0
 }
 
-// ShouldStop checks if the task should stop (alias for DidStop)
+// ShouldStop checks if the task should stop (alias for DidStop, goroutine-safe)
 func (t *Task) ShouldStop() bool {
-	return t.shouldStop
+	return t.DidStop()
 }
 
-// SetStop sets the stop flag for the task
+// SetStop sets the stop flag for the task (goroutine-safe)
 func (t *Task) SetStop() {
-	t.shouldStop = true
+	if t.stopped == nil {
+		v := int32(0)
+		t.stopped = &v
+	}
+	atomic.StoreInt32(t.stopped, 1)
 }
 
 // NewResponse creates a new response for this task

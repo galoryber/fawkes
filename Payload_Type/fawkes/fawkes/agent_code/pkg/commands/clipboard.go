@@ -23,6 +23,7 @@ var (
 	procSetClipboardData  = user32CB.NewProc("SetClipboardData")
 	procEmptyClipboard    = user32CB.NewProc("EmptyClipboard")
 	procGlobalAlloc       = kernel32CB.NewProc("GlobalAlloc")
+	procGlobalFree        = kernel32CB.NewProc("GlobalFree")
 	procGlobalLock        = kernel32CB.NewProc("GlobalLock")
 	procGlobalUnlock      = kernel32CB.NewProc("GlobalUnlock")
 )
@@ -156,6 +157,7 @@ func writeClipboard(text string) structs.CommandResult {
 	// Lock the memory
 	ptr, _, err := procGlobalLock.Call(hMem)
 	if ptr == 0 {
+		procGlobalFree.Call(hMem)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Failed to lock memory: %v", err),
 			Status:    "error",
@@ -176,6 +178,7 @@ func writeClipboard(text string) structs.CommandResult {
 	// Open clipboard
 	ret, _, err := procOpenClipboard.Call(0)
 	if ret == 0 {
+		procGlobalFree.Call(hMem)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Failed to open clipboard: %v", err),
 			Status:    "error",
@@ -187,9 +190,11 @@ func writeClipboard(text string) structs.CommandResult {
 	// Empty the clipboard
 	procEmptyClipboard.Call()
 
-	// Set the clipboard data
+	// Set the clipboard data — on success, the system takes ownership of hMem.
+	// On failure, we must free it ourselves.
 	ret, _, err = procSetClipboardData.Call(cfUnicodeText, hMem)
 	if ret == 0 {
+		procGlobalFree.Call(hMem)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Failed to set clipboard data: %v", err),
 			Status:    "error",

@@ -20,6 +20,7 @@ pre = "<b>2. </b>"
     * [rm](/agents/fawkes/commands/rm/)
     * [upload](/agents/fawkes/commands/upload/)
 - Command Execution
+    * [powershell](/agents/fawkes/commands/powershell/)
     * [run](/agents/fawkes/commands/run/)
     * [wmi](/agents/fawkes/commands/wmi/)
 - Process Injection
@@ -55,6 +56,7 @@ pre = "<b>2. </b>"
     * [reg-write](/agents/fawkes/commands/reg-write/)
 - Persistence
     * [crontab](/agents/fawkes/commands/crontab/)
+    * [launchagent](/agents/fawkes/commands/launchagent/)
     * [persist](/agents/fawkes/commands/persist/)
     * [schtask](/agents/fawkes/commands/schtask/)
     * [service](/agents/fawkes/commands/service/)
@@ -73,5 +75,6 @@ pre = "<b>2. </b>"
 - Defense Evasion
     * [timestomp](/agents/fawkes/commands/timestomp/)
 - Agent Management
+    * [setenv](/agents/fawkes/commands/setenv/)
     * [sleep](/agents/fawkes/commands/sleep/)
     * [exit](/agents/fawkes/commands/exit/)

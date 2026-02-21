@@ -417,3 +417,98 @@ func TestPsCommand(t *testing.T) {
 		}
 	})
 }
+
+// TestSetenvCommand tests the setenv command.
+func TestSetenvCommand(t *testing.T) {
+	cmd := &SetenvCommand{}
+
+	if cmd.Name() != "setenv" {
+		t.Errorf("Name() = %q, want %q", cmd.Name(), "setenv")
+	}
+
+	t.Run("set variable via JSON", func(t *testing.T) {
+		task := structs.Task{Params: `{"action":"set","name":"FAWKES_TEST_VAR","value":"hello123"}`}
+		result := cmd.Execute(task)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if val := os.Getenv("FAWKES_TEST_VAR"); val != "hello123" {
+			t.Errorf("env var = %q, want %q", val, "hello123")
+		}
+	})
+
+	t.Run("unset variable via JSON", func(t *testing.T) {
+		os.Setenv("FAWKES_TEST_VAR2", "toremove")
+		task := structs.Task{Params: `{"action":"unset","name":"FAWKES_TEST_VAR2"}`}
+		result := cmd.Execute(task)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if val, exists := os.LookupEnv("FAWKES_TEST_VAR2"); exists {
+			t.Errorf("env var still set: %q", val)
+		}
+	})
+
+	t.Run("set variable with manual syntax", func(t *testing.T) {
+		task := structs.Task{Params: `set FAWKES_MANUAL=world456`}
+		result := cmd.Execute(task)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if val := os.Getenv("FAWKES_MANUAL"); val != "world456" {
+			t.Errorf("env var = %q, want %q", val, "world456")
+		}
+		os.Unsetenv("FAWKES_MANUAL")
+	})
+
+	t.Run("unset variable with manual syntax", func(t *testing.T) {
+		os.Setenv("FAWKES_MANUAL2", "bye")
+		task := structs.Task{Params: `unset FAWKES_MANUAL2`}
+		result := cmd.Execute(task)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if _, exists := os.LookupEnv("FAWKES_MANUAL2"); exists {
+			t.Error("env var still set after unset")
+		}
+	})
+
+	t.Run("empty name", func(t *testing.T) {
+		task := structs.Task{Params: `{"action":"set","name":"","value":"x"}`}
+		result := cmd.Execute(task)
+		if result.Status != "error" {
+			t.Errorf("expected error for empty name, got %q", result.Status)
+		}
+	})
+
+	t.Run("unknown action", func(t *testing.T) {
+		task := structs.Task{Params: `{"action":"delete","name":"FOO"}`}
+		result := cmd.Execute(task)
+		if result.Status != "error" {
+			t.Errorf("expected error for unknown action, got %q", result.Status)
+		}
+	})
+
+	t.Run("set with empty value", func(t *testing.T) {
+		task := structs.Task{Params: `{"action":"set","name":"FAWKES_EMPTY","value":""}`}
+		result := cmd.Execute(task)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if val, exists := os.LookupEnv("FAWKES_EMPTY"); !exists || val != "" {
+			t.Errorf("env var should exist with empty value, got exists=%v val=%q", exists, val)
+		}
+		os.Unsetenv("FAWKES_EMPTY")
+	})
+
+	t.Run("manual set without equals sign", func(t *testing.T) {
+		task := structs.Task{Params: `set NOEQUALS`}
+		result := cmd.Execute(task)
+		if result.Status != "error" {
+			t.Errorf("expected error for missing =, got %q", result.Status)
+		}
+	})
+
+	// Cleanup
+	os.Unsetenv("FAWKES_TEST_VAR")
+}

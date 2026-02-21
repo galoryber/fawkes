@@ -11,25 +11,46 @@ Windows Only
 
 ## Summary
 
-Initialize the .NET CLR runtime (v4.0.30319) and load `amsi.dll` into the agent process. Run this before `inline-assembly` if you want to patch AMSI before loading .NET assemblies.
+Initialize the .NET CLR runtime (v4.0.30319) and load `amsi.dll` into the agent process. Optionally apply AMSI and ETW patches to bypass security scanning before loading .NET assemblies via `inline-assembly`.
 
 ### Arguments
 
-No arguments.
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| amsi_patch | ChooseOne | AMSI bypass method: **None**, **Ret Patch**, **Autopatch**, or **Hardware Breakpoint** |
+| etw_patch | ChooseOne | ETW bypass method: **None**, **Ret Patch**, **Autopatch**, or **Hardware Breakpoint** |
+
+### Patch Methods
+
+| Method | Description | Reliability |
+|--------|-------------|-------------|
+| None | No patching — AMSI/ETW remain active | N/A |
+| Ret Patch | Writes `0xC3` (ret) at function entry point via VirtualProtect. Simple single-byte patch. | High |
+| Autopatch | Searches for nearest `C3` instruction and writes a JMP to it at function prologue. | High |
+| Hardware Breakpoint | Uses debug registers + native VEH handler to intercept calls. No memory writes to target function. | Experimental (AMSI intermittent) |
 
 ## Usage
+
+Recommended workflow with Ret Patch (simplest):
 ```
-start-clr
+start-clr   (select Ret Patch for AMSI and ETW)
+inline-assembly   (load .NET assemblies)
 ```
 
-Example workflow
+With Autopatch:
+```
+start-clr   (select Autopatch for AMSI and ETW)
+inline-assembly
+```
+
+Without patching (benign assemblies only):
 ```
 start-clr
-autopatch amsi AmsiScanBuffer 300
 inline-assembly
 ```
 
 ## MITRE ATT&CK Mapping
 
-- T1055.001
-- T1620
+- T1055.001 — Process Injection: Dynamic-link Library Injection
+- T1620 — Reflective Code Loading
+- T1562.001 — Impair Defenses: Disable or Modify Tools

@@ -341,6 +341,11 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 	output += fmt.Sprintf("    PID: %d\n", processInfo.ProcessId)
 	output += fmt.Sprintf("    TID: %d\n", processInfo.ThreadId)
 
+	// Close handles — the suspended process/thread persist independently of these handles.
+	// apc-injection opens its own handles via PID/TID.
+	windows.CloseHandle(processInfo.Thread)
+	windows.CloseHandle(processInfo.Process)
+
 	return structs.CommandResult{
 		Output:    output,
 		Status:    "success",
@@ -435,7 +440,10 @@ func spawnSuspendedThread(pid int) structs.CommandResult {
 	output += fmt.Sprintf("    PID: %d\n", pid)
 	output += fmt.Sprintf("    TID: %d\n", threadId)
 
-	// Note: We don't close handles - needed for the thread to stay valid
+	// Close handles — the suspended thread persists independently of these handles.
+	// apc-injection opens its own handles via PID/TID.
+	windows.CloseHandle(windows.Handle(hThread))
+	windows.CloseHandle(windows.Handle(hProcess))
 
 	return structs.CommandResult{
 		Output:    output,
