@@ -42,6 +42,7 @@ func Initialize() {
 	RegisterCommand(&TimestompCommand{})
 	RegisterCommand(&ArpCommand{})
 	RegisterCommand(&SetenvCommand{})
+	RegisterCommand(&AvDetectCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()

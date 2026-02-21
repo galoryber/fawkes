@@ -987,3 +987,62 @@ func TestJobFileTransferMethods(t *testing.T) {
 		t.Error("expected data on channel 2 after broadcast")
 	}
 }
+
+// =============================================================================
+// av-detect command tests
+// =============================================================================
+
+func TestAvDetectCommand(t *testing.T) {
+	cmd := &AvDetectCommand{}
+
+	if cmd.Name() != "av-detect" {
+		t.Errorf("Name() = %q, want %q", cmd.Name(), "av-detect")
+	}
+
+	t.Run("basic execution", func(t *testing.T) {
+		task := structs.Task{Params: ""}
+		result := cmd.Execute(task)
+		if result.Status != "success" {
+			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if !result.Completed {
+			t.Error("expected completed=true")
+		}
+		// Output should contain either "No known security products" or "Security Products Detected"
+		if !strings.Contains(result.Output, "security products") && !strings.Contains(result.Output, "Security Products") {
+			t.Errorf("unexpected output format: %s", result.Output)
+		}
+	})
+
+	t.Run("known process database populated", func(t *testing.T) {
+		// Verify the database contains entries for major vendors
+		vendors := make(map[string]bool)
+		for _, product := range knownSecurityProcesses {
+			vendors[product.Vendor] = true
+		}
+
+		expectedVendors := []string{"Microsoft", "CrowdStrike", "SentinelOne", "Sophos", "Kaspersky", "ESET"}
+		for _, v := range expectedVendors {
+			if !vendors[v] {
+				t.Errorf("missing vendor in database: %s", v)
+			}
+		}
+	})
+
+	t.Run("database categories valid", func(t *testing.T) {
+		validCategories := map[string]bool{"AV": true, "EDR": true, "Firewall": true, "HIPS": true, "DLP": true, "Logging": true}
+		for name, product := range knownSecurityProcesses {
+			if !validCategories[product.Category] {
+				t.Errorf("invalid category %q for process %q", product.Category, name)
+			}
+		}
+	})
+
+	t.Run("database keys are lowercase", func(t *testing.T) {
+		for name := range knownSecurityProcesses {
+			if name != strings.ToLower(name) {
+				t.Errorf("database key %q is not lowercase", name)
+			}
+		}
+	})
+}
