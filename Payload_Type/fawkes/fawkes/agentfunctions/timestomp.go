@@ -100,6 +100,9 @@ func init() {
 				displayParams += " (time: " + timestamp + ")"
 			}
 			response.DisplayParams = &displayParams
+			if action == "copy" || action == "set" {
+				createArtifact(task.Task.ID, "File Modify", "Timestomp "+displayParams)
+			}
 
 			return response
 		},

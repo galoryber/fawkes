@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -86,6 +88,16 @@ func init() {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  taskData.Task.ID,
+			}
+			action, _ := taskData.Args.GetStringArg("action")
+			target, _ := taskData.Args.GetStringArg("target")
+			if action == "execute" {
+				cmd, _ := taskData.Args.GetStringArg("command")
+				host := "localhost"
+				if target != "" {
+					host = target
+				}
+				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("wmic /node:%s process call create %q", host, cmd))
 			}
 			return response
 		},

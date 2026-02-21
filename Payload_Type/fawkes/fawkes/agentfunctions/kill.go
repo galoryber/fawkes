@@ -64,6 +64,7 @@ func init() {
 
 			displayParams := fmt.Sprintf("PID: %d", int(pid))
 			response.DisplayParams = &displayParams
+			createArtifact(taskData.Task.ID, "Process Kill", fmt.Sprintf("Killed PID %d", int(pid)))
 
 			return response
 		},

@@ -169,6 +169,7 @@ func init() {
 			}
 			displayParams := fmt.Sprintf("%s\\%s\\%s = %s [%s]", hive, path, displayName, data, regType)
 			response.DisplayParams = &displayParams
+			createArtifact(taskData.Task.ID, "Registry Write", displayParams)
 
 			return response
 		},

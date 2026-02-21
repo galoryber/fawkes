@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -59,6 +61,13 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			action, _ := taskData.Args.GetStringArg("action")
+			target, _ := taskData.Args.GetStringArg("target")
+			msg := fmt.Sprintf("net.exe shares: %s", action)
+			if target != "" {
+				msg += " \\\\" + target
+			}
+			createArtifact(taskData.Task.ID, "Process Create", msg)
 			return response
 		},
 	})

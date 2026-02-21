@@ -109,14 +109,15 @@ func init() {
 			}
 
 			// If no remote path specified, use just the filename
+			var dest string
 			if len(remotePath) == 0 {
 				taskData.Args.SetArgValue("remote_path", search.Files[0].Filename)
-				displayString := fmt.Sprintf("%s", search.Files[0].Filename)
-				response.DisplayParams = &displayString
+				dest = search.Files[0].Filename
 			} else {
-				displayString := fmt.Sprintf("%s", remotePath)
-				response.DisplayParams = &displayString
+				dest = remotePath
 			}
+			response.DisplayParams = &dest
+			createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Upload %s to %s", search.Files[0].Filename, dest))
 
 			return response
 		},

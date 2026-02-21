@@ -142,6 +142,7 @@ func init() {
 			}
 
 			response.DisplayParams = &displayParams
+			createArtifact(taskData.Task.ID, "Process Create", displayParams)
 
 			paramsJSON, err := json.Marshal(params)
 			if err != nil {

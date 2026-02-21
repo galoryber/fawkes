@@ -33,6 +33,7 @@ func init() {
 			}
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil {
 				response.DisplayParams = &displayParams
+				createArtifact(task.Task.ID, "Process Create", "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "+displayParams)
 			}
 			return response
 		},

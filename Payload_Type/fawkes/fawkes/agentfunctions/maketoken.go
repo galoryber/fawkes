@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -113,6 +115,9 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			username, _ := taskData.Args.GetStringArg("username")
+			domain, _ := taskData.Args.GetStringArg("domain")
+			createArtifact(taskData.Task.ID, "Logon", fmt.Sprintf("LogonUserW %s\\%s (type 9)", domain, username))
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

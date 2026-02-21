@@ -269,6 +269,7 @@ func init() {
 			displayParams := fmt.Sprintf("Variant: %d (%s)\nShellcode: %s (%d bytes)\nTarget PID: %d\nNote: %s",
 				variant, variantDesc, filename, len(fileContents), int(pid), targetNote)
 			response.DisplayParams = &displayParams
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("Opus variant %d (%s) into PID %d (%d bytes)", variant, variantDesc, int(pid), len(fileContents)))
 
 			// Build the actual parameters JSON that will be sent to the agent
 			params := map[string]interface{}{

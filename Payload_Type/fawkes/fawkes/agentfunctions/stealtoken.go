@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -50,6 +52,8 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			pid, _ := taskData.Args.GetNumberArg("pid")
+			createArtifact(taskData.Task.ID, "Token Steal", fmt.Sprintf("OpenProcess + OpenProcessToken + DuplicateTokenEx on PID %d", int(pid)))
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

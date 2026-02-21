@@ -252,6 +252,7 @@ func init() {
 			// Build the display parameters
 			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes)\nTarget PID: %d\nTarget TID: %d", filename, len(fileContents), int(pid), int(tid))
 			response.DisplayParams = &displayParams
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("APC injection into PID %d TID %d (%d bytes)", int(pid), int(tid), len(fileContents)))
 
 			// Build the actual parameters JSON that will be sent to the agent
 			params := map[string]interface{}{

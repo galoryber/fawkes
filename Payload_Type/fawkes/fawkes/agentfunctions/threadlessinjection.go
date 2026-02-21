@@ -258,9 +258,10 @@ func init() {
 			}
 
 			// Build the display parameters
-			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes)\nTarget PID: %d\nDLL: %s\nFunction: %s", 
+			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes)\nTarget PID: %d\nDLL: %s\nFunction: %s",
 				filename, len(fileContents), int(pid), dllName, functionName)
 			response.DisplayParams = &displayParams
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("Threadless injection into PID %d via %s!%s (%d bytes)", int(pid), dllName, functionName, len(fileContents)))
 
 			// Build the actual parameters JSON that will be sent to the agent
 			// Encode shellcode contents as base64 to embed in JSON

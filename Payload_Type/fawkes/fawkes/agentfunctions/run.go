@@ -36,6 +36,7 @@ func init() {
 			// Display the command being executed
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil {
 				response.DisplayParams = &displayParams
+				createArtifact(task.Task.ID, "Process Create", displayParams)
 			}
 			return response
 		},
