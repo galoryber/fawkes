@@ -158,20 +158,27 @@ func formatLsOutput(result structs.FileListing) string {
 	}
 
 	output := fmt.Sprintf("Contents of directory: %s\n", result.ParentPath)
-	output += fmt.Sprintf("%-30s %-10s %-15s %s\n", "Name", "Type", "Size", "Modified")
-	output += "--------------------------------------------------------------------------------\n"
+	output += fmt.Sprintf("%-30s %-5s %12s  %-25s  %-20s  %s\n", "Name", "Type", "Size", "Owner", "Modified", "Permissions")
+	output += "--------------------------------------------------------------------------------------------------------------\n"
 
 	for _, file := range result.Files {
 		fileType := "FILE"
 		if !file.IsFile {
 			fileType = "DIR"
 		}
-		
-		output += fmt.Sprintf("%-30s %-10s %-15d %s\n",
+
+		owner := file.Owner
+		if owner == "" {
+			owner = "-"
+		}
+
+		output += fmt.Sprintf("%-30s %-5s %12d  %-25s  %-20s  %s\n",
 			file.Name,
 			fileType,
 			file.Size,
+			owner,
 			file.ModifyTime.Format("2006-01-02 15:04:05"),
+			file.Permissions,
 		)
 	}
 
