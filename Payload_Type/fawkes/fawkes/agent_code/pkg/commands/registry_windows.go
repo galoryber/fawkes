@@ -35,4 +35,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&PowershellCommand{})
 	RegisterCommand(&CredmanCommand{})
 	RegisterCommand(&BrowserCommand{})
+	RegisterCommand(&GetSystemCommand{})
 }
