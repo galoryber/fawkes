@@ -441,6 +441,11 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 	return plaintext[:len(plaintext)-padding], nil
 }
 
+// GetCallbackUUID returns the callback UUID assigned by Mythic after checkin.
+func (h *HTTPProfile) GetCallbackUUID() string {
+	return h.CallbackUUID
+}
+
 // getActiveUUID returns the callback UUID if available, otherwise the payload UUID
 func (h *HTTPProfile) getActiveUUID(agent *structs.Agent) string {
 	if h.CallbackUUID != "" {

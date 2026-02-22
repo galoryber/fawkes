@@ -214,6 +214,12 @@ func runAgent() {
 	}
 	log.Printf("[INFO] Initial checkin successful")
 
+	// After successful HTTP checkin, propagate the callback UUID to the TCP P2P instance.
+	// This ensures edge messages use the correct parent UUID for Mythic's P2P graph.
+	if tcpP2P := commands.GetTCPProfile(); tcpP2P != nil && tcpP2P.CallbackUUID == "" {
+		tcpP2P.CallbackUUID = c2.GetCallbackUUID()
+	}
+
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

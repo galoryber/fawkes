@@ -500,6 +500,12 @@ func (t *TCPProfile) handleNewChildCheckin(conn net.Conn) {
 	go t.readFromChild(childUUID, conn)
 }
 
+// StartReadFromChild starts a goroutine to continuously read messages from a child connection.
+// Used by the link command after establishing a connection to a child agent.
+func (t *TCPProfile) StartReadFromChild(uuid string, conn net.Conn) {
+	go t.readFromChild(uuid, conn)
+}
+
 // readFromChild continuously reads messages from a child connection
 // and forwards them as delegate messages to the parent/Mythic.
 func (t *TCPProfile) readFromChild(uuid string, conn net.Conn) {
@@ -579,6 +585,11 @@ func (t *TCPProfile) resolveUUID(uuid string) string {
 		return mapped
 	}
 	return uuid
+}
+
+// GetCallbackUUID returns the callback UUID assigned by Mythic after checkin.
+func (t *TCPProfile) GetCallbackUUID() string {
+	return t.CallbackUUID
 }
 
 func (t *TCPProfile) getActiveUUID(agent *structs.Agent) string {

