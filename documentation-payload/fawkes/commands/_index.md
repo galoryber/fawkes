@@ -53,6 +53,8 @@ pre = "<b>2. </b>"
     * [env](/agents/fawkes/commands/env/)
     * [net-enum](/agents/fawkes/commands/net-enum/)
     * [net-shares](/agents/fawkes/commands/net-shares/)
+    * [privesc-check](/agents/fawkes/commands/privesc-check/)
+    * [proc-info](/agents/fawkes/commands/proc-info/)
     * [ps](/agents/fawkes/commands/ps/)
     * [ts](/agents/fawkes/commands/ts/)
     * [whoami](/agents/fawkes/commands/whoami/)
