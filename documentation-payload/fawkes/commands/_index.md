@@ -51,6 +51,7 @@ pre = "<b>2. </b>"
     * [av-detect](/agents/fawkes/commands/av-detect/)
     * [drives](/agents/fawkes/commands/drives/)
     * [env](/agents/fawkes/commands/env/)
+    * [ldap-query](/agents/fawkes/commands/ldap-query/)
     * [logonsessions](/agents/fawkes/commands/logonsessions/)
     * [net-enum](/agents/fawkes/commands/net-enum/)
     * [net-shares](/agents/fawkes/commands/net-shares/)
