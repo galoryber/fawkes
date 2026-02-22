@@ -53,6 +53,7 @@ const (
 	TASK_CREATE_OR_UPDATE = 6
 
 	// Task logon types
+	TASK_LOGON_S4U                      = 2
 	TASK_LOGON_INTERACTIVE_TOKEN        = 3
 	TASK_LOGON_SERVICE_ACCOUNT          = 5
 	TASK_LOGON_INTERACTIVE_TOKEN_OR_PWD = 6
@@ -135,8 +136,8 @@ func connectTaskScheduler() (*taskSchedulerConnection, func(), error) {
 		return nil, nil, fmt.Errorf("failed to query IDispatch: %v", err)
 	}
 
-	// Connect to local task scheduler
-	_, err = oleutil.CallMethod(service, "Connect")
+	// Connect to local task scheduler (pass nil variants for optional params)
+	_, err = oleutil.CallMethod(service, "Connect", nil, nil, nil, nil)
 	if err != nil {
 		service.Release()
 		ole.CoUninitialize()
@@ -319,21 +320,23 @@ func schtaskCreate(args schtaskArgs) structs.CommandResult {
 	actionDisp.Release()
 	actionResult.Clear()
 
-	// Set principal (user context)
-	logonType := TASK_LOGON_INTERACTIVE_TOKEN
-	user := ""
+	// Register the task in the root folder
+	// RegisterTaskDefinition(path, definition, flags, userId, password, logonType, sddl)
+	var regResult *ole.VARIANT
 	if args.User != "" {
-		user = args.User
+		logonType := TASK_LOGON_INTERACTIVE_TOKEN_OR_PWD
+		user := args.User
 		if strings.EqualFold(user, "SYSTEM") || strings.EqualFold(user, "NT AUTHORITY\\SYSTEM") {
 			user = "SYSTEM"
 			logonType = TASK_LOGON_SERVICE_ACCOUNT
 		}
+		regResult, err = oleutil.CallMethod(conn.folder, "RegisterTaskDefinition",
+			args.Name, taskDef, TASK_CREATE_OR_UPDATE, user, nil, logonType, nil)
+	} else {
+		// No user specified: use S4U logon (works in non-interactive sessions like SSH)
+		regResult, err = oleutil.CallMethod(conn.folder, "RegisterTaskDefinition",
+			args.Name, taskDef, TASK_CREATE_OR_UPDATE, nil, nil, TASK_LOGON_S4U, nil)
 	}
-
-	// Register the task in the root folder
-	// RegisterTaskDefinition(path, definition, flags, userId, password, logonType)
-	regResult, err := oleutil.CallMethod(conn.folder, "RegisterTaskDefinition",
-		args.Name, taskDef, TASK_CREATE_OR_UPDATE, user, "", logonType)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error registering task '%s': %v", args.Name, err),
