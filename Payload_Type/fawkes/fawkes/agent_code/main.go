@@ -415,6 +415,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		UserOutput: result.Output,
 		Status:     result.Status,
 		Completed:  result.Completed,
+		Processes:  result.Processes,
 	}
 	if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
 		log.Printf("[ERROR] Failed to post response: %v", err)

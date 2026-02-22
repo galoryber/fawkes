@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -11,10 +13,14 @@ func init() {
 		HelpString:          "ps [-v] [-i PID] [filter]",
 		Version:             1,
 		MitreAttackMappings: []string{"T1057"}, // Process Discovery
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:list"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
+		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ps_new.js"),
+			Author:     "@galoryber",
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			// Pass the input as-is (can be empty, "-v", "processname", or "-v processname")

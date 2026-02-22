@@ -32,13 +32,14 @@ type PsArgs struct {
 	PID     int32  `json:"pid"`
 }
 
-// ProcessInfo represents process information
+// ProcessInfo represents process information collected from the OS
 type ProcessInfo struct {
 	PID     int32  `json:"pid"`
 	PPID    int32  `json:"ppid"`
 	Name    string `json:"name"`
 	Arch    string `json:"arch"`
 	User    string `json:"user"`
+	BinPath string `json:"bin_path"`
 	CmdLine string `json:"cmdline,omitempty"`
 }
 
@@ -80,12 +81,35 @@ func (c *PsCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	output := formatProcessList(processes, args.Verbose)
+	// Build Mythic ProcessEntry slice for process browser integration
+	mythicProcs := make([]structs.ProcessEntry, len(processes))
+	for i, p := range processes {
+		mythicProcs[i] = structs.ProcessEntry{
+			ProcessID:       int(p.PID),
+			ParentProcessID: int(p.PPID),
+			Architecture:    p.Arch,
+			Name:            p.Name,
+			User:            p.User,
+			BinPath:         p.BinPath,
+			CommandLine:     p.CmdLine,
+		}
+	}
+
+	// Return JSON for the browser script to render as a table
+	jsonBytes, err := json.Marshal(mythicProcs)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshalling process list: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	return structs.CommandResult{
-		Output:    output,
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
+		Processes: &mythicProcs,
 	}
 }
 
@@ -118,15 +142,15 @@ func getProcessList(filter string, pid int32) ([]ProcessInfo, error) {
 		ppid, _ := p.Ppid()
 		username, _ := p.Username()
 		cmdline, _ := p.Cmdline()
+		exe, _ := p.Exe()
 
 		// Determine architecture
 		arch := runtime.GOARCH
 		if runtime.GOOS == "windows" {
-			// Try to determine if it's 32-bit or 64-bit on Windows
-			exe, err := p.Exe()
-			if err == nil && strings.Contains(strings.ToLower(exe), "syswow64") {
+			exeLower := strings.ToLower(exe)
+			if strings.Contains(exeLower, "syswow64") {
 				arch = "x86"
-			} else if err == nil && strings.Contains(strings.ToLower(exe), "system32") {
+			} else if strings.Contains(exeLower, "system32") {
 				arch = "x64"
 			}
 		}
@@ -137,46 +161,10 @@ func getProcessList(filter string, pid int32) ([]ProcessInfo, error) {
 			Name:    name,
 			Arch:    arch,
 			User:    username,
+			BinPath: exe,
 			CmdLine: cmdline,
 		})
 	}
 
 	return processes, nil
-}
-
-func formatProcessList(processes []ProcessInfo, verbose bool) string {
-	if len(processes) == 0 {
-		return "No processes found"
-	}
-
-	var result strings.Builder
-
-	// Header
-	if verbose {
-		result.WriteString(fmt.Sprintf("%-8s %-8s %-30s %-8s %-20s %s\n", "PID", "PPID", "Name", "Arch", "User", "Command Line"))
-		result.WriteString(strings.Repeat("-", 140) + "\n")
-	} else {
-		result.WriteString(fmt.Sprintf("%-8s %-8s %-30s %-8s %-20s\n", "PID", "PPID", "Name", "Arch", "User"))
-		result.WriteString(strings.Repeat("-", 80) + "\n")
-	}
-
-	// Process rows
-	for _, proc := range processes {
-		user := proc.User
-		if user == "" {
-			user = "N/A"
-		}
-
-		if verbose {
-			result.WriteString(fmt.Sprintf("%-8d %-8d %-30s %-8s %-20s %s\n",
-				proc.PID, proc.PPID, proc.Name, proc.Arch, user, proc.CmdLine))
-		} else {
-			result.WriteString(fmt.Sprintf("%-8d %-8d %-30s %-8s %-20s\n",
-				proc.PID, proc.PPID, proc.Name, proc.Arch, user))
-		}
-	}
-
-	result.WriteString(fmt.Sprintf("\nTotal: %d processes\n", len(processes)))
-
-	return result.String()
 }

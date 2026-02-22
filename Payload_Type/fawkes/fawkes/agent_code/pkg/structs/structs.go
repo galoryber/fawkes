@@ -236,6 +236,17 @@ func (t *Task) NewResponse() Response {
 	}
 }
 
+// ProcessEntry represents a process for Mythic's process browser
+type ProcessEntry struct {
+	ProcessID       int    `json:"process_id"`
+	ParentProcessID int    `json:"parent_process_id"`
+	Architecture    string `json:"architecture"`
+	Name            string `json:"name"`
+	User            string `json:"user"`
+	BinPath         string `json:"bin_path"`
+	CommandLine     string `json:"command_line,omitempty"`
+}
+
 // Response represents a response to Mythic
 type Response struct {
 	TaskID          string               `json:"task_id"`
@@ -243,6 +254,7 @@ type Response struct {
 	Status          string               `json:"status"`
 	Completed       bool                 `json:"completed"`
 	ProcessResponse interface{}          `json:"process_response,omitempty"`
+	Processes       *[]ProcessEntry      `json:"processes,omitempty"`
 	Upload          *FileUploadMessage   `json:"upload,omitempty"`
 	Download        *FileDownloadMessage `json:"download,omitempty"`
 }
@@ -346,6 +358,7 @@ type CommandResult struct {
 	Output    string
 	Status    string
 	Completed bool
+	Processes *[]ProcessEntry // Optional: populated by ps command for Mythic process browser
 }
 
 // DelegateMessage wraps a message to/from a linked P2P agent.
