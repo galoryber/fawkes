@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 29 commands are cross-platform, with 33 additional Windows-only commands, 1 Windows+macOS command (screenshot), 2 Unix-only commands, 2 Linux-only commands, and 2 macOS-only commands for a total of 70. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 29 commands are cross-platform, with 34 additional Windows-only commands, 1 Windows+macOS command (screenshot), 2 Unix-only commands, 2 Linux-only commands, and 2 macOS-only commands for a total of 71. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -54,6 +54,7 @@ ls | `ls [path]` | List files and folders with owner/group and timestamps. File 
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it.
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
 mv | `mv <source> <destination>` | Move or rename a file from source to destination.
+named-pipes | `named-pipes [-filter <pattern>]` | **(Windows only)** List named pipes on the system for IPC discovery and pipe-based privilege escalation recon. Supports substring filtering (T1083).
 net-enum | `net-enum -action <users\|localgroups\|groupmembers\|domainusers\|domaingroups\|domaininfo> [-target <group>]` | **(Windows only)** Enumerate local/domain users, groups, and domain info via Win32 API (no subprocess).
 net-shares | `net-shares -action <local\|remote\|mapped> [-target <host>]` | **(Windows only)** Enumerate network shares and mapped drives via Win32 API (no subprocess).
 net-stat | `net-stat` | List active network connections and listening ports with protocol, state, and PID. Cross-platform.

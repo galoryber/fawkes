@@ -55,6 +55,7 @@ pre = "<b>2. </b>"
     * [env](/agents/fawkes/commands/env/)
     * [ldap-query](/agents/fawkes/commands/ldap-query/)
     * [logonsessions](/agents/fawkes/commands/logonsessions/)
+    * [named-pipes](/agents/fawkes/commands/named-pipes/)
     * [net-enum](/agents/fawkes/commands/net-enum/)
     * [net-shares](/agents/fawkes/commands/net-shares/)
     * [privesc-check](/agents/fawkes/commands/privesc-check/)
