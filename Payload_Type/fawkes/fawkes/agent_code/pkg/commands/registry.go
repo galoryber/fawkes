@@ -45,6 +45,7 @@ func Initialize() {
 	RegisterCommand(&AvDetectCommand{})
 	RegisterCommand(&LinkCommand{})
 	RegisterCommand(&UnlinkCommand{})
+	RegisterCommand(&LdapQueryCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
