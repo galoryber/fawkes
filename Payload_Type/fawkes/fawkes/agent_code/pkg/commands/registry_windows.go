@@ -37,4 +37,6 @@ func registerPlatformCommands() {
 	RegisterCommand(&BrowserCommand{})
 	RegisterCommand(&GetSystemCommand{})
 	RegisterCommand(&LogonSessionsCommand{})
+	RegisterCommand(&GetPrivsCommand{})
+	RegisterCommand(&EnumTokensCommand{})
 }
