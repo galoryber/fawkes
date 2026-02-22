@@ -46,7 +46,7 @@ keylog | `keylog -action <start\|stop\|dump>` | **(Windows only)** Low-level key
 kill | `kill -pid <PID>` | Terminate a process by PID. Cross-platform (Windows/Linux/macOS).
 launchagent | `launchagent -action <install\|remove\|list> -label <com.example.name> [-path <exe>] [-daemon true]` | **(macOS only)** Install, remove, or list LaunchAgent/LaunchDaemon persistence. Creates plist with RunAtLoad+KeepAlive.
 link | `link -host <ip> -port <port>` | Link to a TCP P2P agent for internal pivoting. Target agent must be built with TCP profile. Cross-platform (T1572).
-ls | `ls [path]` | List files and folders in `[path]`. Defaults to current working directory.
+ls | `ls [path]` | List files and folders with owner/group and timestamps. File browser integration. Defaults to cwd.
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it.
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
 mv | `mv <source> <destination>` | Move or rename a file from source to destination.
