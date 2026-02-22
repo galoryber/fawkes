@@ -36,4 +36,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&CredmanCommand{})
 	RegisterCommand(&BrowserCommand{})
 	RegisterCommand(&GetSystemCommand{})
+	RegisterCommand(&LogonSessionsCommand{})
 }
