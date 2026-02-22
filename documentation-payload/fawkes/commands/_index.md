@@ -72,9 +72,11 @@ pre = "<b>2. </b>"
 - Networking
     * [arp](/agents/fawkes/commands/arp/)
     * [ifconfig](/agents/fawkes/commands/ifconfig/)
+    * [link](/agents/fawkes/commands/link/)
     * [net-stat](/agents/fawkes/commands/net-stat/)
     * [port-scan](/agents/fawkes/commands/port-scan/)
     * [socks](/agents/fawkes/commands/socks/)
+    * [unlink](/agents/fawkes/commands/unlink/)
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
 - Defense Evasion

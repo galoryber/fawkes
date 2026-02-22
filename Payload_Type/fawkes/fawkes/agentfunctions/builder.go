@@ -55,7 +55,7 @@ var payloadDefinition = agentstructs.PayloadType{
 	CanBeWrappedByTheFollowingPayloadTypes: []string{},
 	SupportsDynamicLoading:                 false,
 	Description:                            "fawkes agent",
-	SupportedC2Profiles:                    []string{"http"},
+	SupportedC2Profiles:                    []string{"http", "tcp"},
 	MythicEncryptsData:                     true,
 	MessageFormat:                          agentstructs.MessageFormatJSON,
 	BuildParameters: []agentstructs.BuildParameter{
@@ -134,6 +134,13 @@ var payloadDefinition = agentstructs.PayloadType{
 		{
 			Name:          "working_days",
 			Description:   "Optional: Comma-separated ISO weekday numbers when agent is active (Mon=1, Sun=7). E.g. '1,2,3,4,5' for weekdays only. Leave empty for all days.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "tcp_bind_address",
+			Description:   "Optional: TCP P2P bind address (e.g. '0.0.0.0:7777'). When set, the agent operates in TCP P2P mode — it listens for a parent agent connection instead of using HTTP. Leave empty for HTTP egress mode.",
 			Required:      false,
 			DefaultValue:  "",
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
@@ -262,6 +269,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if tlsVerify, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_verify"); err == nil && tlsVerify != "" {
 		ldflags += fmt.Sprintf(" -X '%s.tlsVerify=%s'", fawkes_main_package, tlsVerify)
+	}
+
+	// TCP P2P bind address
+	if tcpBind, err := payloadBuildMsg.BuildParameters.GetStringArg("tcp_bind_address"); err == nil && tcpBind != "" {
+		ldflags += fmt.Sprintf(" -X '%s.tcpBindAddress=%s'", fawkes_main_package, tcpBind)
 	}
 
 	// Working hours opsec parameters

