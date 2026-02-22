@@ -104,9 +104,8 @@ func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	childUUID := string(decoded[:36])
 
-	// Register the child connection and start reading from it
+	// Register the child connection (AddChildConnection also starts readFromChild goroutine)
 	tcpProfileInstance.AddChildConnection(childUUID, conn)
-	tcpProfileInstance.StartReadFromChild(childUUID, conn)
 
 	// Forward the child's checkin as a delegate message to Mythic
 	tcpProfileInstance.InboundDelegates <- structs.DelegateMessage{
