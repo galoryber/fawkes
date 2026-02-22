@@ -63,7 +63,7 @@ reg-write | `reg-write -hive <HIVE> -path <path> -name <name> -data <data> -type
 rev2self | `rev2self` | **(Windows only)** Revert to the original security context by dropping any active impersonation token.
 rm | `rm <path>` | Remove a file or directory (recursively removes directories).
 run | `run <command>` | Execute a shell command and return the output.
-schtask | `schtask -action <create\|query\|delete\|run\|list> -name <name> [-program <path>]` | **(Windows only)** Create, query, run, or delete Windows scheduled tasks for persistence or execution.
+schtask | `schtask -action <create\|query\|delete\|run\|list> -name <name> [-program <path>]` | **(Windows only)** Create, query, run, or delete Windows scheduled tasks via COM API.
 screenshot | `screenshot` | **(Windows, macOS)** Capture a screenshot of the current desktop session. Captures all monitors and uploads as PNG. Uses GDI on Windows, screencapture on macOS.
 service | `service -action <query\|start\|stop\|create\|delete\|list> -name <name> [-binpath <path>]` | **(Windows only)** Manage Windows services via SCM API (no subprocess).
 setenv | `setenv -action <set\|unset> -name <NAME> [-value <VALUE>]` | Set or unset environment variables in the agent process. Cross-platform.
@@ -79,7 +79,7 @@ ts | `ts [-a] [-i PID]` | **(Windows only)** List threads in processes. By defau
 upload | `upload` | Upload a file to the target with chunked file transfer.
 vanilla-injection | `vanilla-injection` | **(Windows only)** Inject shellcode into a remote process using VirtualAllocEx/WriteProcessMemory/CreateRemoteThread.
 whoami | `whoami` | Display current user identity and security context. On Windows: username, SID, token type, integrity level, privileges. On Linux/macOS: user, UID, GID.
-wmi | `wmi -action <execute\|query\|process-list\|os-info> [-target <host>] [-command <cmd>] [-query <wmic>]` | **(Windows only)** Execute WMI queries and process creation.
+wmi | `wmi -action <execute\|query\|process-list\|os-info> [-target <host>] [-command <cmd>] [-query <wql>]` | **(Windows only)** Execute WMI queries and process creation via COM API.
 write-memory | `write-memory <dll_name> <function_name> <start_index> <hex_bytes>` | **(Windows only)** Write bytes to a DLL function address.
 
 ## Injection Techniques
@@ -141,8 +141,8 @@ Tracked artifact types:
 
 | Type | Commands |
 |------|----------|
-| Process Create | run, powershell, spawn, wmi, schtask |
-| API Call | net-enum, net-shares, service |
+| Process Create | run, powershell, spawn |
+| API Call | net-enum, net-shares, service, wmi, schtask |
 | Process Kill | kill |
 | Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection |
 | File Write | upload, cp, mv |

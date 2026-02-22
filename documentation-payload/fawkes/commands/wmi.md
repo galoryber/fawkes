@@ -9,7 +9,7 @@ hidden = false
 
 ## Summary
 
-Execute WMI queries and remote process creation via wmic.exe. Supports local and remote targets.
+Execute WMI queries and remote process creation via COM API (no subprocess creation). Uses SWbemLocator COM interface for queries and Win32_Process.Create method for remote execution. Supports local and remote targets.
 
 ### Arguments
 
