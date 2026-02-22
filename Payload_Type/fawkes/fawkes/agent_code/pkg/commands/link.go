@@ -148,15 +148,3 @@ func recvTCPFramed(conn net.Conn) ([]byte, error) {
 	}
 	return data, nil
 }
-
-// sendTCPFramed sends a length-prefixed TCP message.
-func sendTCPFramed(conn net.Conn, data []byte) error {
-	conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
-	length := uint32(len(data))
-	header := []byte{byte(length >> 24), byte(length >> 16), byte(length >> 8), byte(length)}
-	if _, err := conn.Write(header); err != nil {
-		return err
-	}
-	_, err := conn.Write(data)
-	return err
-}

@@ -268,7 +268,7 @@ done:
 	var inboundSocks []structs.SocksMsg
 	if socksList, exists := taskResponse["socks"]; exists {
 		if socksRaw, err := json.Marshal(socksList); err == nil {
-			json.Unmarshal(socksRaw, &inboundSocks)
+			_ = json.Unmarshal(socksRaw, &inboundSocks)
 		}
 	}
 

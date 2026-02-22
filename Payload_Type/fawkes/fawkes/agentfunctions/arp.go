@@ -24,7 +24,7 @@ func init() {
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			// Windows: GetIpNetTable API, Linux: /proc/net/arp, macOS: arp -a
-			if task.Callback.Os != nil && *task.Callback.Os == "macOS" {
+			if task.Callback.OS == "macOS" {
 				createArtifact(task.Task.ID, "Process Create", "arp -a")
 			} else {
 				createArtifact(task.Task.ID, "API Call", "GetIpNetTable / /proc/net/arp")
