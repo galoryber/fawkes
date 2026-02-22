@@ -955,3 +955,91 @@ func TestLsGetHostname(t *testing.T) {
 		t.Error("getHostname should not return empty string")
 	}
 }
+
+// --- ls file ownership tests ---
+
+func TestGetFileOwner(t *testing.T) {
+	// Test with a file that exists (this test file itself)
+	owner, group := getFileOwner("commands_coverage_test.go")
+	if owner == "" {
+		t.Error("getFileOwner should not return empty owner")
+	}
+	if group == "" {
+		t.Error("getFileOwner should not return empty group")
+	}
+	// On Linux/macOS, we should get actual usernames, not "unknown"
+	if owner == "unknown" {
+		t.Error("getFileOwner should resolve owner for existing file")
+	}
+	if group == "unknown" {
+		t.Error("getFileOwner should resolve group for existing file")
+	}
+}
+
+func TestGetFileOwner_NonExistent(t *testing.T) {
+	owner, group := getFileOwner("/nonexistent/path/file.txt")
+	if owner != "unknown" || group != "unknown" {
+		t.Errorf("getFileOwner for nonexistent file should return unknown/unknown, got %s/%s", owner, group)
+	}
+}
+
+func TestGetFileTimestamps(t *testing.T) {
+	// Create a temp file and check timestamps
+	tmpFile, err := os.CreateTemp("", "fileowner_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	info, err := os.Stat(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Failed to stat temp file: %v", err)
+	}
+
+	accessTime, creationTime := getFileTimestamps(info)
+	if accessTime.IsZero() {
+		t.Error("accessTime should not be zero")
+	}
+	if creationTime.IsZero() {
+		t.Error("creationTime should not be zero")
+	}
+	// Both times should be recent (within last minute)
+	if time.Since(accessTime) > time.Minute {
+		t.Errorf("accessTime too old: %v", accessTime)
+	}
+}
+
+func TestLsReturnsOwnership(t *testing.T) {
+	// Test that ls actually populates owner/group fields
+	cmd := &LsCommand{}
+	result := cmd.Execute(structs.Task{Params: "."})
+	if result.Status != "success" {
+		t.Fatalf("ls failed: %s", result.Output)
+	}
+
+	var listing structs.FileListing
+	if err := json.Unmarshal([]byte(result.Output), &listing); err != nil {
+		// Text output mode - parse JSON with file_browser flag
+		result = cmd.Execute(structs.Task{Params: `{"path": ".", "file_browser": true}`})
+		if err := json.Unmarshal([]byte(result.Output), &listing); err != nil {
+			t.Fatalf("Failed to parse ls output as JSON: %v", err)
+		}
+	}
+
+	if len(listing.Files) == 0 {
+		t.Fatal("ls returned no files")
+	}
+
+	// Check that at least one file has a resolved owner
+	hasOwner := false
+	for _, f := range listing.Files {
+		if f.Owner != "" && f.Owner != "unknown" {
+			hasOwner = true
+			break
+		}
+	}
+	if !hasOwner {
+		t.Error("ls should return at least one file with a resolved owner")
+	}
+}

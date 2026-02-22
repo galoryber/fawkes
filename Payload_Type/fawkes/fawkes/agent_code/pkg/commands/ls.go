@@ -99,16 +99,18 @@ func performLs(path string) structs.FileListing {
 	// If it's a file, return info about the file
 	if !info.IsDir() {
 		result.IsFile = true
+		owner, group := getFileOwner(path)
+		accessTime, creationTime := getFileTimestamps(info)
 		fileEntry := structs.FileListEntry{
 			Name:         info.Name(),
 			FullName:     path,
 			IsFile:       true,
 			Size:         info.Size(),
 			ModifyTime:   info.ModTime(),
-			AccessTime:   info.ModTime(), // Simplified
-			CreationDate: info.ModTime(), // Simplified
-			Owner:        "unknown",      // Would need OS-specific code
-			Group:        "unknown",      // Would need OS-specific code
+			AccessTime:   accessTime,
+			CreationDate: creationTime,
+			Owner:        owner,
+			Group:        group,
 			Permissions:  info.Mode().String(),
 		}
 		result.Files = []structs.FileListEntry{fileEntry}
@@ -129,16 +131,18 @@ func performLs(path string) structs.FileListing {
 			continue // Skip entries we can't stat
 		}
 
+		owner, group := getFileOwner(fullPath)
+		accessTime, creationTime := getFileTimestamps(info)
 		fileEntry := structs.FileListEntry{
 			Name:         entry.Name(),
 			FullName:     fullPath,
 			IsFile:       !entry.IsDir(),
 			Size:         info.Size(),
 			ModifyTime:   info.ModTime(),
-			AccessTime:   info.ModTime(), // Simplified
-			CreationDate: info.ModTime(), // Simplified
-			Owner:        "unknown",      // Would need OS-specific code
-			Group:        "unknown",      // Would need OS-specific code
+			AccessTime:   accessTime,
+			CreationDate: creationTime,
+			Owner:        owner,
+			Group:        group,
 			Permissions:  info.Mode().String(),
 		}
 
