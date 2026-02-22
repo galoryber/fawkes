@@ -39,6 +39,7 @@ pre = "<b>2. </b>"
     * [write-memory](/agents/fawkes/commands/write-memory/)
     * [autopatch](/agents/fawkes/commands/autopatch/)
 - Credential/Token Commands
+    * [browser](/agents/fawkes/commands/browser/)
     * [credman](/agents/fawkes/commands/credman/)
     * [keychain](/agents/fawkes/commands/keychain/)
     * [make-token](/agents/fawkes/commands/make-token/)
