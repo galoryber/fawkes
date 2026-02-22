@@ -449,63 +449,24 @@ func schtaskQuery(args schtaskArgs) structs.CommandResult {
 		lastResultProp.Clear()
 	}
 
-	// Get definition details
-	defResult, err := oleutil.GetProperty(taskDisp, "Definition")
-	if err == nil {
-		defDisp := defResult.ToIDispatch()
-
-		// Registration info
-		regInfoResult, err := oleutil.GetProperty(defDisp, "RegistrationInfo")
-		if err == nil {
-			regInfo := regInfoResult.ToIDispatch()
-			descResult, _ := oleutil.GetProperty(regInfo, "Description")
-			if descResult != nil {
-				desc := descResult.ToString()
-				if desc != "" {
-					sb.WriteString(fmt.Sprintf("Description: %s\n", desc))
-				}
-				descResult.Clear()
-			}
-			authorResult, _ := oleutil.GetProperty(regInfo, "Author")
-			if authorResult != nil {
-				author := authorResult.ToString()
-				if author != "" {
-					sb.WriteString(fmt.Sprintf("Author: %s\n", author))
-				}
-				authorResult.Clear()
-			}
-			regInfo.Release()
-			regInfoResult.Clear()
+	// Get task XML for detailed info (safer than navigating nested COM objects)
+	xmlResult, err := oleutil.GetProperty(taskDisp, "Xml")
+	if err == nil && xmlResult != nil {
+		xmlStr := xmlResult.ToString()
+		xmlResult.Clear()
+		// Extract key info from XML
+		if desc := extractXMLValue(xmlStr, "Description"); desc != "" {
+			sb.WriteString(fmt.Sprintf("Description: %s\n", desc))
 		}
-
-		// Actions
-		actionsResult, err := oleutil.GetProperty(defDisp, "Actions")
-		if err == nil {
-			actionsDisp := actionsResult.ToIDispatch()
-			oleutil.ForEach(actionsDisp, func(v *ole.VARIANT) error {
-				actionDisp := v.ToIDispatch()
-				defer actionDisp.Release()
-				pathResult, _ := oleutil.GetProperty(actionDisp, "Path")
-				if pathResult != nil {
-					sb.WriteString(fmt.Sprintf("Action Path: %s\n", pathResult.ToString()))
-					pathResult.Clear()
-				}
-				argsResult, _ := oleutil.GetProperty(actionDisp, "Arguments")
-				if argsResult != nil {
-					argStr := argsResult.ToString()
-					if argStr != "" {
-						sb.WriteString(fmt.Sprintf("Action Args: %s\n", argStr))
-					}
-					argsResult.Clear()
-				}
-				return nil
-			})
-			actionsDisp.Release()
-			actionsResult.Clear()
+		if author := extractXMLValue(xmlStr, "Author"); author != "" {
+			sb.WriteString(fmt.Sprintf("Author: %s\n", author))
 		}
-
-		defDisp.Release()
-		defResult.Clear()
+		if cmd := extractXMLValue(xmlStr, "Command"); cmd != "" {
+			sb.WriteString(fmt.Sprintf("Action Path: %s\n", cmd))
+		}
+		if cmdArgs := extractXMLValue(xmlStr, "Arguments"); cmdArgs != "" {
+			sb.WriteString(fmt.Sprintf("Action Args: %s\n", cmdArgs))
+		}
 	}
 
 	return structs.CommandResult{
@@ -628,7 +589,7 @@ func schtaskList() structs.CommandResult {
 	taskCount := 0
 	oleutil.ForEach(tasksDisp, func(v *ole.VARIANT) error {
 		taskDisp := v.ToIDispatch()
-		defer taskDisp.Release()
+		// Note: do NOT Release taskDisp — ForEach manages the VARIANT lifecycle
 		taskCount++
 
 		nameResult, _ := oleutil.GetProperty(taskDisp, "Name")
@@ -670,6 +631,22 @@ func schtaskList() structs.CommandResult {
 		Status:    "success",
 		Completed: true,
 	}
+}
+
+// extractXMLValue extracts the text content of a simple XML element.
+func extractXMLValue(xml, tag string) string {
+	openTag := "<" + tag + ">"
+	closeTag := "</" + tag + ">"
+	start := strings.Index(xml, openTag)
+	if start == -1 {
+		return ""
+	}
+	start += len(openTag)
+	end := strings.Index(xml[start:], closeTag)
+	if end == -1 {
+		return ""
+	}
+	return strings.TrimSpace(xml[start : start+end])
 }
 
 // taskStateToString converts a task state value to a readable string.
