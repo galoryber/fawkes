@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Enumerate local and domain users, groups, and domain configuration using net.exe and nltest.exe. Essential for situational awareness during red team engagements.
+Enumerate local and domain users, groups, and domain configuration using direct Win32 API calls (NetUserEnum, NetLocalGroupEnum, NetGroupEnum, DsGetDcNameW, DsEnumerateDomainTrustsW). No subprocess creation — all operations run in-process via netapi32.dll. Essential for situational awareness during red team engagements.
 
 {{% notice info %}}Windows Only{{% /notice %}}
 
