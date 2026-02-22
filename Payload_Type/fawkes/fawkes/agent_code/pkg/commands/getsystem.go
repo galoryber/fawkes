@@ -14,23 +14,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// Windows API procedures for named pipe impersonation
-var (
-	procCreateNamedPipeW           = kernel32.NewProc("CreateNamedPipeW")
-	procConnectNamedPipe           = kernel32.NewProc("ConnectNamedPipe")
-	procDisconnectNamedPipe        = kernel32.NewProc("DisconnectNamedPipe")
-	procImpersonateNamedPipeClient = kernel32.NewProc("ImpersonateNamedPipeClient")
-)
-
-// Named pipe constants
-const (
-	PIPE_ACCESS_DUPLEX       = 0x00000003
-	PIPE_TYPE_BYTE           = 0x00000000
-	PIPE_READMODE_BYTE       = 0x00000000
-	PIPE_WAIT                = 0x00000000
-	PIPE_UNLIMITED_INSTANCES = 255
-)
-
 type GetSystemCommand struct{}
 
 func (c *GetSystemCommand) Name() string {
