@@ -8,6 +8,8 @@ RUN make build
 
 FROM alpine
 
+RUN apk add make
+
 COPY --from=builder /main /main
 
 WORKDIR /Mythic/
