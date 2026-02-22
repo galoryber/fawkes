@@ -6,4 +6,6 @@ package commands
 func registerPlatformCommands() {
 	RegisterCommand(&CrontabCommand{})
 	RegisterCommand(&SSHKeysCommand{})
+	RegisterCommand(&PrivescCheckCommand{})
+	RegisterCommand(&ProcInfoCommand{})
 }
