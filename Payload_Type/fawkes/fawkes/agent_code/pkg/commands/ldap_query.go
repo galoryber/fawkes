@@ -147,12 +147,13 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Execute search
+	// Execute search — use SizeLimit=0 with paging to avoid "Size Limit Exceeded"
+	// errors from AD, then truncate client-side
 	searchRequest := ldap.NewSearchRequest(
 		baseDN,
 		ldap.ScopeWholeSubtree,
 		ldap.NeverDerefAliases,
-		args.Limit,
+		0,  // let paging handle size
 		30, // time limit in seconds
 		false,
 		filter,
@@ -160,7 +161,11 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 		nil,
 	)
 
-	result, err := conn.SearchWithPaging(searchRequest, 500)
+	pagingSize := uint32(args.Limit)
+	if pagingSize > 500 {
+		pagingSize = 500
+	}
+	result, err := conn.SearchWithPaging(searchRequest, pagingSize)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error executing LDAP search: %v", err),
@@ -169,8 +174,14 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	// Truncate to requested limit
+	totalFound := len(result.Entries)
+	if totalFound > args.Limit {
+		result.Entries = result.Entries[:args.Limit]
+	}
+
 	// Format output
-	output := formatLDAPResults(result, args.Action, desc, baseDN, filter, len(result.Entries))
+	output := formatLDAPResults(result, args.Action, desc, baseDN, filter, totalFound)
 
 	return structs.CommandResult{
 		Output:    output,
