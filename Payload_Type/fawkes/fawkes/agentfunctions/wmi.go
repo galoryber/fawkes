@@ -9,7 +9,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "wmi",
-		Description:         "Execute WMI queries and process creation via wmic.exe (T1047)",
+		Description:         "Execute WMI queries and process creation via COM API (T1047)",
 		HelpString:          "wmi -action <execute|query|process-list|os-info> [-target <host>] [-command <cmd>] [-query <wmic_query>]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
@@ -97,7 +97,7 @@ func init() {
 				if target != "" {
 					host = target
 				}
-				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("wmic /node:%s process call create %q", host, cmd))
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("WMI Win32_Process.Create(%q) on %s", cmd, host))
 			}
 			return response
 		},

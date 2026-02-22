@@ -9,7 +9,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "schtask",
-		Description:         "Create, query, run, or delete Windows scheduled tasks (T1053.005)",
+		Description:         "Create, query, run, or delete Windows scheduled tasks via COM API (T1053.005)",
 		HelpString:          "schtask -action <create|query|delete|run|list> -name <task_name> [-program <path>] [-args <arguments>] [-trigger <ONLOGON|DAILY|...>] [-time <HH:MM>] [-user <account>] [-run_now]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
@@ -153,11 +153,11 @@ func init() {
 			switch action {
 			case "create":
 				program, _ := taskData.Args.GetStringArg("program")
-				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("schtasks /Create /TN %q /TR %q", name, program))
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ITaskFolder.RegisterTaskDefinition(%q, exec=%q)", name, program))
 			case "delete":
-				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("schtasks /Delete /TN %q", name))
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ITaskFolder.DeleteTask(%q)", name))
 			case "run":
-				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("schtasks /Run /TN %q", name))
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("IRegisteredTask.Run(%q)", name))
 			}
 			return response
 		},
