@@ -7,9 +7,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "getsystem",
-		Description:         "Elevate to SYSTEM via named pipe impersonation (requires SeImpersonate privilege and admin)",
-		HelpString:          "getsystem [-technique service]",
-		Version:             1,
+		Description:         "Elevate to SYSTEM by stealing a token from a SYSTEM process (requires admin/SeDebugPrivilege)",
+		HelpString:          "getsystem [-technique steal]",
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1134.001"},
@@ -23,9 +23,9 @@ func init() {
 				ModalDisplayName: "Technique",
 				CLIName:          "technique",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"service"},
-				Description:      "Escalation technique: service (named pipe + SCM service trigger)",
-				DefaultValue:     "service",
+				Choices:          []string{"steal"},
+				Description:      "Escalation technique: steal (auto-find SYSTEM process and steal token)",
+				DefaultValue:     "steal",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -47,12 +47,7 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
-			technique, _ := taskData.Args.GetStringArg("technique")
-			if technique == "" {
-				technique = "service"
-			}
-			createArtifact(taskData.Task.ID, "Token Steal", "Named pipe impersonation: CreateNamedPipe + ImpersonateNamedPipeClient ("+technique+" trigger)")
-			createArtifact(taskData.Task.ID, "Process Create", "Service creation trigger: cmd.exe /c echo > \\\\.\\pipe\\<random>")
+			createArtifact(taskData.Task.ID, "Token Steal", "OpenProcess + OpenProcessToken + DuplicateTokenEx on SYSTEM process")
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

