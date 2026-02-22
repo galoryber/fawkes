@@ -190,6 +190,108 @@ func triggerTypeFromString(trigger string) int {
 	}
 }
 
+// buildTaskXML generates Task Scheduler 2.0 XML for registration.
+func buildTaskXML(args schtaskArgs) string {
+	trigger := args.Trigger
+	if trigger == "" {
+		trigger = "ONLOGON"
+	}
+
+	triggerXML := buildTriggerXML(trigger, args.Time)
+
+	actionXML := fmt.Sprintf(`      <Exec>
+        <Command>%s</Command>`, escapeXML(args.Program))
+	if args.Args != "" {
+		actionXML += fmt.Sprintf("\n        <Arguments>%s</Arguments>", escapeXML(args.Args))
+	}
+	actionXML += "\n      </Exec>"
+
+	principalXML := ""
+	if args.User != "" {
+		if strings.EqualFold(args.User, "SYSTEM") || strings.EqualFold(args.User, "NT AUTHORITY\\SYSTEM") {
+			principalXML = `  <Principals>
+    <Principal id="Author">
+      <UserId>S-1-5-18</UserId>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>`
+		} else {
+			principalXML = fmt.Sprintf(`  <Principals>
+    <Principal id="Author">
+      <UserId>%s</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>LeastPrivilege</RunLevel>
+    </Principal>
+  </Principals>`, escapeXML(args.User))
+		}
+	}
+
+	xml := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <Description>Created by Fawkes</Description>
+  </RegistrationInfo>
+  <Triggers>
+%s
+  </Triggers>
+  %s
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+  </Settings>
+  <Actions Context="Author">
+%s
+  </Actions>
+</Task>`, triggerXML, principalXML, actionXML)
+
+	return xml
+}
+
+// buildTriggerXML generates the trigger section of the task XML.
+func buildTriggerXML(trigger, startTime string) string {
+	switch strings.ToUpper(trigger) {
+	case "ONLOGON":
+		return "    <LogonTrigger>\n      <Enabled>true</Enabled>\n    </LogonTrigger>"
+	case "ONSTART":
+		return "    <BootTrigger>\n      <Enabled>true</Enabled>\n    </BootTrigger>"
+	case "ONIDLE":
+		return "    <IdleTrigger>\n      <Enabled>true</Enabled>\n    </IdleTrigger>"
+	case "DAILY":
+		boundary := "2026-01-01T09:00:00"
+		if startTime != "" {
+			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
+		}
+		return fmt.Sprintf("    <CalendarTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n      <ScheduleByDay>\n        <DaysInterval>1</DaysInterval>\n      </ScheduleByDay>\n    </CalendarTrigger>", boundary)
+	case "WEEKLY":
+		boundary := "2026-01-01T09:00:00"
+		if startTime != "" {
+			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
+		}
+		return fmt.Sprintf("    <CalendarTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n      <ScheduleByWeek>\n        <WeeksInterval>1</WeeksInterval>\n        <DaysOfWeek><Monday /></DaysOfWeek>\n      </ScheduleByWeek>\n    </CalendarTrigger>", boundary)
+	case "ONCE":
+		boundary := "2026-12-31T23:59:00"
+		if startTime != "" {
+			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
+		}
+		return fmt.Sprintf("    <TimeTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n    </TimeTrigger>", boundary)
+	default:
+		return "    <LogonTrigger>\n      <Enabled>true</Enabled>\n    </LogonTrigger>"
+	}
+}
+
+// escapeXML escapes special characters for XML content.
+func escapeXML(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	s = strings.ReplaceAll(s, "\"", "&quot;")
+	return s
+}
+
 func schtaskCreate(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
 		return structs.CommandResult{
@@ -221,122 +323,25 @@ func schtaskCreate(args schtaskArgs) structs.CommandResult {
 		trigger = "ONLOGON"
 	}
 
-	// Create a new task definition
-	taskDefResult, err := oleutil.CallMethod(conn.service, "NewTask", 0)
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating task definition: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	defer taskDefResult.Clear()
-	taskDef := taskDefResult.ToIDispatch()
+	// Build task XML and register via RegisterTask (XML-based, avoids COM object deadlocks)
+	taskXML := buildTaskXML(args)
 
-	// Set registration info
-	regInfoResult, err := oleutil.GetProperty(taskDef, "RegistrationInfo")
-	if err == nil {
-		regInfo := regInfoResult.ToIDispatch()
-		oleutil.PutProperty(regInfo, "Description", fmt.Sprintf("Created by Fawkes: %s", args.Program))
-		regInfo.Release()
-		regInfoResult.Clear()
-	}
-
-	// Configure settings
-	settingsResult, err := oleutil.GetProperty(taskDef, "Settings")
-	if err == nil {
-		settings := settingsResult.ToIDispatch()
-		oleutil.PutProperty(settings, "Enabled", true)
-		oleutil.PutProperty(settings, "AllowDemandStart", true)
-		oleutil.PutProperty(settings, "StopIfGoingOnBatteries", false)
-		oleutil.PutProperty(settings, "DisallowStartIfOnBatteries", false)
-		settings.Release()
-		settingsResult.Clear()
-	}
-
-	// Add trigger
-	triggersResult, err := oleutil.GetProperty(taskDef, "Triggers")
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error getting triggers collection: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	triggersDisp := triggersResult.ToIDispatch()
-
-	triggerType := triggerTypeFromString(trigger)
-	trigResult, err := oleutil.CallMethod(triggersDisp, "Create", triggerType)
-	triggersDisp.Release()
-	triggersResult.Clear()
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating trigger (type %s): %v", trigger, err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	trigDisp := trigResult.ToIDispatch()
-
-	// Set start time for time-based triggers
-	if args.Time != "" {
-		switch strings.ToUpper(trigger) {
-		case "DAILY", "WEEKLY", "ONCE":
-			// Task Scheduler expects ISO 8601 datetime: "2026-01-01T09:00:00"
-			startBoundary := fmt.Sprintf("2026-01-01T%s:00", args.Time)
-			oleutil.PutProperty(trigDisp, "StartBoundary", startBoundary)
-		}
-	}
-
-	trigDisp.Release()
-	trigResult.Clear()
-
-	// Add exec action
-	actionsResult, err := oleutil.GetProperty(taskDef, "Actions")
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error getting actions collection: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	actionsDisp := actionsResult.ToIDispatch()
-
-	actionResult, err := oleutil.CallMethod(actionsDisp, "Create", TASK_ACTION_EXEC)
-	actionsDisp.Release()
-	actionsResult.Clear()
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating exec action: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	actionDisp := actionResult.ToIDispatch()
-	oleutil.PutProperty(actionDisp, "Path", args.Program)
-	if args.Args != "" {
-		oleutil.PutProperty(actionDisp, "Arguments", args.Args)
-	}
-	actionDisp.Release()
-	actionResult.Clear()
-
-	// Register the task in the root folder
-	// RegisterTaskDefinition(path, definition, flags, userId, password, logonType, sddl)
-	var regResult *ole.VARIANT
+	// RegisterTask(path, xmlText, flags, userId, password, logonType)
+	// TASK_CREATE_OR_UPDATE = 6, TASK_LOGON_S4U = 2
+	logonType := TASK_LOGON_S4U
+	var userParam interface{} = nil
 	if args.User != "" {
-		logonType := TASK_LOGON_INTERACTIVE_TOKEN_OR_PWD
-		user := args.User
-		if strings.EqualFold(user, "SYSTEM") || strings.EqualFold(user, "NT AUTHORITY\\SYSTEM") {
-			user = "SYSTEM"
+		userParam = args.User
+		if strings.EqualFold(args.User, "SYSTEM") || strings.EqualFold(args.User, "NT AUTHORITY\\SYSTEM") {
 			logonType = TASK_LOGON_SERVICE_ACCOUNT
+			userParam = "SYSTEM"
+		} else {
+			logonType = TASK_LOGON_INTERACTIVE_TOKEN_OR_PWD
 		}
-		regResult, err = oleutil.CallMethod(conn.folder, "RegisterTaskDefinition",
-			args.Name, taskDef, TASK_CREATE_OR_UPDATE, user, nil, logonType, nil)
-	} else {
-		// No user specified: use S4U logon (works in non-interactive sessions like SSH)
-		regResult, err = oleutil.CallMethod(conn.folder, "RegisterTaskDefinition",
-			args.Name, taskDef, TASK_CREATE_OR_UPDATE, nil, nil, TASK_LOGON_S4U, nil)
 	}
+
+	regResult, err := oleutil.CallMethod(conn.folder, "RegisterTask",
+		args.Name, taskXML, TASK_CREATE_OR_UPDATE, userParam, nil, logonType, nil)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error registering task '%s': %v", args.Name, err),
@@ -353,8 +358,8 @@ func schtaskCreate(args schtaskArgs) structs.CommandResult {
 
 	// Optionally run immediately
 	if args.RunNow {
-		taskResult, err := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
-		if err == nil {
+		taskResult, getErr := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
+		if getErr == nil {
 			taskDisp := taskResult.ToIDispatch()
 			runResult, runErr := oleutil.CallMethod(taskDisp, "Run", nil)
 			if runErr != nil {
