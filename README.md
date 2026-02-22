@@ -37,6 +37,7 @@ drives | `drives` | **(Windows only)** List available drives/volumes with type (
 env | `env [filter]` | List environment variables. Optionally filter by name (case-insensitive).
 exit | `exit` | Task agent to exit.
 find | `find -pattern <glob> [-path <dir>] [-max_depth <n>]` | Search for files by name pattern. Cross-platform recursive file search with depth limit.
+getsystem | `getsystem [-technique steal]` | **(Windows only)** Elevate to SYSTEM by stealing a token from a SYSTEM process (winlogon.exe). Requires admin/SeDebugPrivilege (T1134.001).
 ifconfig | `ifconfig` | List network interfaces with addresses, MAC, MTU, and flags. Cross-platform (Windows/Linux/macOS).
 inline-assembly | `inline-assembly` | **(Windows only)** Execute a .NET assembly in memory using the CLR. Supports command-line arguments. Use `start-clr` first for AMSI patching workflow.
 inline-execute | `inline-execute` | **(Windows only)** Execute a Beacon Object File (BOF/COFF) in memory. Supports all argument types: strings (z), wide strings (Z), integers (i), shorts (s), and binary (b).
@@ -152,7 +153,7 @@ Tracked artifact types:
 | File Modify | timestomp |
 | Registry Write | reg-write, persist (registry, com-hijack, screensaver methods) |
 | Logon | make-token |
-| Token Steal | steal-token |
+| Token Steal | steal-token, getsystem |
 
 Read-only commands (ls, ps, cat, env, etc.) do not generate artifacts.
 
