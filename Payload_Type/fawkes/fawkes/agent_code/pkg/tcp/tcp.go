@@ -426,8 +426,22 @@ func (t *TCPProfile) GetChildUUIDs() []string {
 	return uuids
 }
 
+// DrainDelegatesOnly non-blockingly drains only pending delegate messages (not edges).
+// Used by GetTasking which cannot include edges in the request.
+func (t *TCPProfile) DrainDelegatesOnly() []structs.DelegateMessage {
+	var delegates []structs.DelegateMessage
+	for {
+		select {
+		case d := <-t.InboundDelegates:
+			delegates = append(delegates, d)
+		default:
+			return delegates
+		}
+	}
+}
+
 // DrainDelegatesAndEdges non-blockingly drains all pending delegate messages and edge notifications.
-// Used by the HTTP profile's GetDelegates hook to collect P2P data for Mythic.
+// Used by PostResponse which can include both delegates and edges.
 func (t *TCPProfile) DrainDelegatesAndEdges() ([]structs.DelegateMessage, []structs.P2PConnectionMessage) {
 	var delegates []structs.DelegateMessage
 	var edges []structs.P2PConnectionMessage

@@ -39,10 +39,12 @@ type HTTPProfile struct {
 	CallbackUUID  string // Store callback UUID from initial checkin
 
 	// P2P delegate hooks — set by main.go when TCP P2P children are supported.
-	// GetDelegates returns pending delegate messages from linked children to forward to Mythic.
+	// GetDelegatesOnly returns only pending delegate messages (no edges). Used by GetTasking.
+	// GetDelegatesAndEdges returns delegates AND edge notifications. Used by PostResponse.
 	// HandleDelegates routes incoming delegate messages from Mythic to the appropriate children.
-	GetDelegates    func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage)
-	HandleDelegates func(delegates []structs.DelegateMessage)
+	GetDelegatesOnly     func() []structs.DelegateMessage
+	GetDelegatesAndEdges func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage)
+	HandleDelegates      func(delegates []structs.DelegateMessage)
 }
 
 // NewHTTPProfile creates a new HTTP profile
@@ -232,9 +234,9 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		C2Profile:   "http",
 	}
 
-	// Collect delegate messages from linked P2P children
-	if h.GetDelegates != nil {
-		delegates, _ := h.GetDelegates()
+	// Collect delegate messages from linked P2P children (no edges — GetTasking can't carry them)
+	if h.GetDelegatesOnly != nil {
+		delegates := h.GetDelegatesOnly()
 		if len(delegates) > 0 {
 			taskingMsg.Delegates = delegates
 		}
@@ -465,8 +467,8 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	}
 
 	// Collect delegate messages and edge notifications from linked P2P children
-	if h.GetDelegates != nil {
-		delegates, edges := h.GetDelegates()
+	if h.GetDelegatesAndEdges != nil {
+		delegates, edges := h.GetDelegatesAndEdges()
 		if len(delegates) > 0 {
 			responseMsg.Delegates = delegates
 		}

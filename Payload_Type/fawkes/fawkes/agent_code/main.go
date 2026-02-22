@@ -192,7 +192,10 @@ func runAgent() {
 		commands.SetTCPProfile(tcpP2P)
 
 		// Wire up delegate hooks so the HTTP profile routes P2P delegate messages
-		httpProfile.GetDelegates = func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage) {
+		httpProfile.GetDelegatesOnly = func() []structs.DelegateMessage {
+			return tcpP2P.DrainDelegatesOnly()
+		}
+		httpProfile.GetDelegatesAndEdges = func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage) {
 			return tcpP2P.DrainDelegatesAndEdges()
 		}
 		httpProfile.HandleDelegates = func(delegates []structs.DelegateMessage) {
