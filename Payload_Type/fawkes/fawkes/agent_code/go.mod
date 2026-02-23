@@ -7,6 +7,7 @@ toolchain go1.24.12
 require (
 	github.com/Ne0nd0g/go-clr v1.0.3
 	github.com/RIscRIpt/pecoff v0.0.0-20200923152459-a332238caa87
+	github.com/go-ldap/ldap/v3 v3.4.12
 	github.com/go-ole/go-ole v1.2.6
 	github.com/google/uuid v1.6.0
 	github.com/shirou/gopsutil/v3 v3.24.5
@@ -18,7 +19,6 @@ require (
 	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667 // indirect
-	github.com/go-ldap/ldap/v3 v3.4.12 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
