@@ -51,4 +51,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&VSSCommand{})
 	RegisterCommand(&PsExecCommand{})
 	RegisterCommand(&RegDeleteCommand{})
+	RegisterCommand(&NetUserCommand{})
 }
