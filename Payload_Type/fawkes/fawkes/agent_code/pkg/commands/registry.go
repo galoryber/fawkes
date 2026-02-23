@@ -53,6 +53,7 @@ func Initialize() {
 	RegisterCommand(&WinrmCommand{})
 	RegisterCommand(&AdcsCommand{})
 	RegisterCommand(&KerbDelegationCommand{})
+	RegisterCommand(&SshExecCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
