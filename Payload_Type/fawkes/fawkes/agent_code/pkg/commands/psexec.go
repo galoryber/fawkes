@@ -12,7 +12,7 @@ import (
 
 	"fawkes/pkg/structs"
 
-	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
@@ -115,13 +115,21 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 	defer m.Disconnect()
 	sb.WriteString("  Connected.\n")
 
-	// Step 2: Create the service
+	// Step 2: Create the service using Windows API directly.
+	// mgr.CreateService wraps binpath in quotes which breaks "cmd.exe /c ..." commands.
+	// We call windows.CreateService directly to pass the binary path unquoted.
 	sb.WriteString(fmt.Sprintf("[2] Creating service '%s'...\n", serviceName))
-	s, err := m.CreateService(serviceName, binPath, mgr.Config{
-		StartType:   uint32(mgr.StartManual),
-		DisplayName: displayName,
-		ErrorControl: mgr.ErrorIgnore,
-	})
+	svcHandle, err := windows.CreateService(
+		m.Handle,
+		windows.StringToUTF16Ptr(serviceName),
+		windows.StringToUTF16Ptr(displayName),
+		windows.SERVICE_ALL_ACCESS,
+		windows.SERVICE_WIN32_OWN_PROCESS,
+		windows.SERVICE_DEMAND_START,
+		windows.SERVICE_ERROR_IGNORE,
+		windows.StringToUTF16Ptr(binPath),
+		nil, nil, nil, nil, nil,
+	)
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("  Error: %v\n", err))
 		return structs.CommandResult{
@@ -134,37 +142,24 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Step 3: Start the service
 	sb.WriteString("[3] Starting service...\n")
-	err = s.Start()
+	err = windows.StartService(svcHandle, 0, nil)
 	if err != nil {
-		sb.WriteString(fmt.Sprintf("  Start error: %v\n", err))
-		// Service may fail to start if the command exits quickly (which is expected
-		// for cmd.exe /c — the service starts, runs the command, exits)
-		// This is normal for PSExec-style execution
+		sb.WriteString(fmt.Sprintf("  Start result: %v\n", err))
+		// Service will fail to start if the command exits quickly — expected for
+		// cmd.exe /c. Error 1053 = "service did not respond to start or control request"
 		if strings.Contains(err.Error(), "1053") || strings.Contains(err.Error(), "service did not respond") {
-			sb.WriteString("  (This is expected — command likely executed and exited quickly)\n")
+			sb.WriteString("  (Expected — command executed and exited quickly)\n")
 		}
 	} else {
 		sb.WriteString("  Started.\n")
-
 		// Wait briefly for command to execute
 		time.Sleep(2 * time.Second)
-
-		// Check service status
-		status, qErr := s.Query()
-		if qErr == nil {
-			sb.WriteString(fmt.Sprintf("  Status: %s\n", describeServiceState(status.State)))
-			if status.State == svc.Running {
-				// Try to stop it
-				_, _ = s.Control(svc.Stop)
-				time.Sleep(1 * time.Second)
-			}
-		}
 	}
 
 	// Step 4: Cleanup — delete the service
 	if cleanup {
 		sb.WriteString("[4] Cleaning up...\n")
-		err = s.Delete()
+		err = windows.DeleteService(svcHandle)
 		if err != nil {
 			sb.WriteString(fmt.Sprintf("  Error deleting service: %v\n", err))
 		} else {
@@ -173,7 +168,7 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 	} else {
 		sb.WriteString("[4] Skipping cleanup (cleanup=false).\n")
 	}
-	s.Close()
+	windows.CloseServiceHandle(svcHandle)
 
 	sb.WriteString("\nDone.")
 
