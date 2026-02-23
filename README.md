@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 34 commands are cross-platform, with 38 additional Windows-only commands, 1 Windows+macOS command (screenshot), 2 Unix-only commands, 2 Linux-only commands, and 2 macOS-only commands for a total of 80. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 34 commands are cross-platform, with 39 additional Windows-only commands, 1 Windows+macOS command (screenshot), 2 Unix-only commands, 2 Linux-only commands, and 2 macOS-only commands for a total of 81. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -63,6 +63,7 @@ named-pipes | `named-pipes [-filter <pattern>]` | **(Windows only)** List named 
 net-enum | `net-enum -action <users\|localgroups\|groupmembers\|domainusers\|domaingroups\|domaininfo> [-target <group>]` | **(Windows only)** Enumerate local/domain users, groups, and domain info via Win32 API (no subprocess).
 net-shares | `net-shares -action <local\|remote\|mapped> [-target <host>]` | **(Windows only)** Enumerate network shares and mapped drives via Win32 API (no subprocess).
 net-stat | `net-stat` | List active network connections and listening ports with protocol, state, and PID. Cross-platform.
+ntdll-unhook | `ntdll-unhook [-action unhook\|check]` | **(Windows only)** Remove EDR inline hooks from ntdll.dll by restoring the .text section from a clean on-disk copy. `check` reports hooks without removing them (T1562.001).
 opus-injection | `opus-injection` | **(Windows only)** Callback-based process injection. Variant 1: Ctrl-C Handler Chain. Variant 4: PEB KernelCallbackTable. [Details](research/injection-techniques.md#opus-injection)
 persist | `persist -method <registry\|startup-folder\|com-hijack\|screensaver\|list> -action <install\|remove>` | **(Windows only)** Install or remove persistence via registry Run keys, startup folder, COM hijacking (T1546.015), or screensaver hijacking (T1546.002). No admin for HKCU methods.
 poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. All 8 variants supported. [Details](research/injection-techniques.md#poolparty-injection)
@@ -162,7 +163,7 @@ Tracked artifact types:
 | Type | Commands |
 |------|----------|
 | Process Create | run, powershell, spawn |
-| API Call | net-enum, net-shares, service, wmi, schtask, procdump, hashdump, eventlog |
+| API Call | net-enum, net-shares, service, wmi, schtask, procdump, hashdump, eventlog, ntdll-unhook |
 | Process Kill | kill |
 | Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection |
 | File Write | upload, cp, mv |
