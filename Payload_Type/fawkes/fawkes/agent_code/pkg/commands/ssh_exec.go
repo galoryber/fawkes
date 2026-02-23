@@ -118,9 +118,18 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
 
-	// Password auth (fallback)
+	// Password auth (fallback) — try both password and keyboard-interactive
 	if args.Password != "" {
 		authMethods = append(authMethods, ssh.Password(args.Password))
+		authMethods = append(authMethods, ssh.KeyboardInteractive(
+			func(user, instruction string, questions []string, echos []bool) ([]string, error) {
+				answers := make([]string, len(questions))
+				for i := range questions {
+					answers[i] = args.Password
+				}
+				return answers, nil
+			},
+		))
 	}
 
 	config := &ssh.ClientConfig{
