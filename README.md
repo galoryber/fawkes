@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 34 commands are cross-platform, with 37 additional Windows-only commands, 1 Windows+macOS command (screenshot), 2 Unix-only commands, 2 Linux-only commands, and 2 macOS-only commands for a total of 79. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 34 commands are cross-platform, with 38 additional Windows-only commands, 1 Windows+macOS command (screenshot), 2 Unix-only commands, 2 Linux-only commands, and 2 macOS-only commands for a total of 80. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -93,6 +93,7 @@ steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a s
 threadless-inject | `threadless-inject` | **(Windows only)** Inject shellcode using threadless injection by hooking a DLL function in a remote process. More stealthy than vanilla injection as it doesn't create new threads.
 timestomp | `timestomp -action <get\|copy\|set> -target <file> [-source <file>] [-timestamp <time>]` | Modify file timestamps to blend in. Get, copy from another file, or set specific time. Windows also modifies creation time.
 ts | `ts [-a] [-i PID]` | **(Windows only)** List threads in processes. By default shows only alertable threads (Suspended/DelayExecution). Use -a for all threads, -i to filter by PID (T1057).
+uac-bypass | `uac-bypass [-technique fodhelper\|computerdefaults\|sdclt] [-command <path>]` | **(Windows only)** Bypass UAC to escalate from medium to high integrity. Registry-based hijack + auto-elevating binary. Default spawns elevated callback (T1548.002).
 unlink | `unlink -connection_id <uuid>` | Disconnect a linked TCP P2P agent. Cross-platform (T1572).
 upload | `upload` | Upload a file to the target with chunked file transfer.
 vanilla-injection | `vanilla-injection` | **(Windows only)** Inject shellcode into a remote process using VirtualAllocEx/WriteProcessMemory/CreateRemoteThread.
@@ -168,7 +169,7 @@ Tracked artifact types:
 | File Create | mkdir |
 | File Delete | rm |
 | File Modify | timestomp |
-| Registry Write | reg-write, persist (registry, com-hijack, screensaver methods) |
+| Registry Write | reg-write, persist (registry, com-hijack, screensaver methods), uac-bypass |
 | Logon | make-token |
 | Token Steal | steal-token, getsystem |
 

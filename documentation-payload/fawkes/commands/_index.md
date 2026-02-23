@@ -43,7 +43,6 @@ pre = "<b>2. </b>"
     * [credman](/agents/fawkes/commands/credman/)
     * [enum-tokens](/agents/fawkes/commands/enum-tokens/)
     * [getprivs](/agents/fawkes/commands/getprivs/)
-    * [getsystem](/agents/fawkes/commands/getsystem/)
     * [hashdump](/agents/fawkes/commands/hashdump/)
     * [asrep-roast](/agents/fawkes/commands/asrep-roast/)
     * [kerberoast](/agents/fawkes/commands/kerberoast/)
@@ -94,6 +93,9 @@ pre = "<b>2. </b>"
     * [winrm](/agents/fawkes/commands/winrm/)
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
+- Privilege Escalation
+    * [getsystem](/agents/fawkes/commands/getsystem/)
+    * [uac-bypass](/agents/fawkes/commands/uac-bypass/)
 - Defense Evasion
     * [eventlog](/agents/fawkes/commands/eventlog/)
     * [timestomp](/agents/fawkes/commands/timestomp/)
