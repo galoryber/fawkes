@@ -8,4 +8,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&SSHKeysCommand{})
 	RegisterCommand(&PrivescCheckCommand{})
 	RegisterCommand(&ProcInfoCommand{})
+	RegisterCommand(&SystemdPersistCommand{})
 }
