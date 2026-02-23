@@ -56,6 +56,7 @@ pre = "<b>2. </b>"
 - Discovery
     * [adcs](/agents/fawkes/commands/adcs/)
     * [av-detect](/agents/fawkes/commands/av-detect/)
+    * [kerb-delegation](/agents/fawkes/commands/kerb-delegation/)
     * [dns](/agents/fawkes/commands/dns/)
     * [drives](/agents/fawkes/commands/drives/)
     * [env](/agents/fawkes/commands/env/)
