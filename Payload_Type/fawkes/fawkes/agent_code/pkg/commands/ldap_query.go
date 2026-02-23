@@ -191,11 +191,10 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func ldapConnect(args ldapQueryArgs) (*ldap.Conn, error) {
-	addr := fmt.Sprintf("%s:%d", args.Server, args.Port)
 	if args.UseTLS {
-		return ldap.DialTLS("tcp", addr, &tls.Config{InsecureSkipVerify: true})
+		return ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", args.Server, args.Port), ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
 	}
-	return ldap.Dial("tcp", addr)
+	return ldap.DialURL(fmt.Sprintf("ldap://%s:%d", args.Server, args.Port))
 }
 
 func ldapBind(conn *ldap.Conn, args ldapQueryArgs) error {
