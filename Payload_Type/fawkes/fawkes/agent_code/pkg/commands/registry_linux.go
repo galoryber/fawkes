@@ -11,4 +11,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&SystemdPersistCommand{})
 	RegisterCommand(&ShellConfigCommand{})
 	RegisterCommand(&IptablesCommand{})
+	RegisterCommand(&LinuxLogsCommand{})
 }
