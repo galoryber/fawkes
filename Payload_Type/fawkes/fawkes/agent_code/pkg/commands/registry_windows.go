@@ -48,4 +48,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&FirewallCommand{})
 	RegisterCommand(&DefenderCommand{})
 	RegisterCommand(&DcomCommand{})
+	RegisterCommand(&VSSCommand{})
 }
