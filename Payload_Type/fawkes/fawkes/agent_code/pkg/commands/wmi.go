@@ -150,7 +150,7 @@ func wmiExecQuery(conn *wmiConnection, wql string) (string, error) {
 
 	err = oleutil.ForEach(resultDisp, func(v *ole.VARIANT) error {
 		item := v.ToIDispatch()
-		defer item.Release()
+		// Note: do NOT Release item — ForEach manages the VARIANT lifecycle
 
 		if itemCount > 0 {
 			sb.WriteString("\n---\n")
@@ -169,7 +169,7 @@ func wmiExecQuery(conn *wmiConnection, wql string) (string, error) {
 		// Iterate properties
 		err = oleutil.ForEach(propsDisp, func(pv *ole.VARIANT) error {
 			prop := pv.ToIDispatch()
-			defer prop.Release()
+			// Note: do NOT Release prop — ForEach manages the VARIANT lifecycle
 
 			nameResult, err := oleutil.GetProperty(prop, "Name")
 			if err != nil {

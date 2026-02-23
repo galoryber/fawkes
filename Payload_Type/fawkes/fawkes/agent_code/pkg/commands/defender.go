@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
 	ole "github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
@@ -116,7 +117,7 @@ func defenderWMIQuery(wql string) (string, error) {
 
 	err = oleutil.ForEach(resultDisp, func(v *ole.VARIANT) error {
 		item := v.ToIDispatch()
-		defer item.Release()
+		// Note: do NOT Release item — ForEach manages the VARIANT lifecycle
 
 		if itemCount > 0 {
 			sb.WriteString("\n---\n")
@@ -132,7 +133,7 @@ func defenderWMIQuery(wql string) (string, error) {
 
 		err = oleutil.ForEach(propsDisp, func(pv *ole.VARIANT) error {
 			prop := pv.ToIDispatch()
-			defer prop.Release()
+			// Note: do NOT Release prop — ForEach manages the VARIANT lifecycle
 
 			nameResult, err := oleutil.GetProperty(prop, "Name")
 			if err != nil {
@@ -185,19 +186,47 @@ func defenderVariantToString(v *ole.VARIANT) string {
 	}
 }
 
-// defenderStatus queries MSFT_MpComputerStatus for Defender state.
+// defenderWMIQueryWithTimeout runs a WMI query with a timeout to prevent agent hangs.
+func defenderWMIQueryWithTimeout(wql string, timeout time.Duration) (string, error) {
+	type wmiResult struct {
+		output string
+		err    error
+	}
+	ch := make(chan wmiResult, 1)
+	go func() {
+		out, err := defenderWMIQuery(wql)
+		ch <- wmiResult{out, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.output, r.err
+	case <-time.After(timeout):
+		return "", fmt.Errorf("WMI query timed out after %v", timeout)
+	}
+}
+
+// defenderStatus gets Defender status, trying registry first (fast), then WMI.
 func defenderStatus() structs.CommandResult {
-	result, err := defenderWMIQuery("SELECT AMRunningMode, AMServiceEnabled, AntispywareEnabled, AntivirusEnabled, BehaviorMonitorEnabled, IoavProtectionEnabled, NISEnabled, OnAccessProtectionEnabled, RealTimeProtectionEnabled, AntivirusSignatureLastUpdated, AntispywareSignatureLastUpdated, QuickScanAge, FullScanAge, ComputerState FROM MSFT_MpComputerStatus")
-	if err != nil {
-		// Fall back to registry-based status
-		return defenderStatusRegistry()
+	// Registry is faster and more reliable — try it first
+	regResult := defenderStatusRegistry()
+
+	// Also try WMI for additional details (with timeout to prevent hangs)
+	wmiResult, err := defenderWMIQueryWithTimeout(
+		"SELECT AMRunningMode, AMServiceEnabled, AntispywareEnabled, AntivirusEnabled, "+
+			"BehaviorMonitorEnabled, IoavProtectionEnabled, NISEnabled, OnAccessProtectionEnabled, "+
+			"RealTimeProtectionEnabled, QuickScanAge, FullScanAge, ComputerState FROM MSFT_MpComputerStatus",
+		15*time.Second,
+	)
+	if err == nil && wmiResult != "" && wmiResult != "(no results)" {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Windows Defender Status:\n\n%s\n\n--- Registry Details ---\n%s", wmiResult, regResult.Output),
+			Status:    "success",
+			Completed: true,
+		}
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Windows Defender Status:\n\n%s", result),
-		Status:    "success",
-		Completed: true,
-	}
+	// WMI failed or timed out — return registry results
+	return regResult
 }
 
 // defenderStatusRegistry reads Defender status from the registry as a fallback.
@@ -450,7 +479,7 @@ func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 
 // defenderThreats queries recent threat detections.
 func defenderThreats() structs.CommandResult {
-	result, err := defenderWMIQuery("SELECT * FROM MSFT_MpThreatDetection")
+	result, err := defenderWMIQueryWithTimeout("SELECT * FROM MSFT_MpThreatDetection", 15*time.Second)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error querying threats: %v", err),
