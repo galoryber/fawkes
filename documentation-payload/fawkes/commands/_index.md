@@ -93,6 +93,7 @@ pre = "<b>2. </b>"
     * [screenshot](/agents/fawkes/commands/screenshot/)
 - Networking
     * [arp](/agents/fawkes/commands/arp/)
+    * [curl](/agents/fawkes/commands/curl/)
     * [ifconfig](/agents/fawkes/commands/ifconfig/)
     * [link](/agents/fawkes/commands/link/)
     * [net-stat](/agents/fawkes/commands/net-stat/)
