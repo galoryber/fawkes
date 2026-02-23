@@ -47,6 +47,7 @@ func Initialize() {
 	RegisterCommand(&UnlinkCommand{})
 	RegisterCommand(&LdapQueryCommand{})
 	RegisterCommand(&KerberoastCommand{})
+	RegisterCommand(&AsrepCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
