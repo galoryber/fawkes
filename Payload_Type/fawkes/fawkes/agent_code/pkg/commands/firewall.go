@@ -182,8 +182,22 @@ func firewallStatus() structs.CommandResult {
 		{"Public", fwProfilePublic},
 	}
 
+	// Get the current active profile bitmask
+	currentResult, err := oleutil.GetProperty(conn.policy, "CurrentProfileTypes")
+	currentProfiles := 0
+	if err == nil {
+		currentProfiles = variantToInt(currentResult)
+		currentResult.Clear()
+	}
+
 	for _, p := range profiles {
-		enabledResult, err := oleutil.CallMethod(conn.policy, "get_FirewallEnabled", p.profile)
+		active := ""
+		if currentProfiles&p.profile != 0 {
+			active = " [ACTIVE]"
+		}
+
+		// FirewallEnabled is an indexed property — use GetProperty with the profile index
+		enabledResult, err := oleutil.GetProperty(conn.policy, "FirewallEnabled", p.profile)
 		if err != nil {
 			sb.WriteString(fmt.Sprintf("  %-10s Error: %v\n", p.name+":", err))
 			continue
@@ -191,22 +205,22 @@ func firewallStatus() structs.CommandResult {
 		enabled := enabledResult.Value()
 		enabledResult.Clear()
 
-		inResult, err := oleutil.CallMethod(conn.policy, "get_DefaultInboundAction", p.profile)
+		inResult, err := oleutil.GetProperty(conn.policy, "DefaultInboundAction", p.profile)
 		inAction := "N/A"
 		if err == nil {
 			inAction = fwActionToString(inResult.Value())
 			inResult.Clear()
 		}
 
-		outResult, err := oleutil.CallMethod(conn.policy, "get_DefaultOutboundAction", p.profile)
+		outResult, err := oleutil.GetProperty(conn.policy, "DefaultOutboundAction", p.profile)
 		outAction := "N/A"
 		if err == nil {
 			outAction = fwActionToString(outResult.Value())
 			outResult.Clear()
 		}
 
-		sb.WriteString(fmt.Sprintf("  %-10s Enabled=%-5v  DefaultInbound=%-6s  DefaultOutbound=%s\n",
-			p.name+":", enabled, inAction, outAction))
+		sb.WriteString(fmt.Sprintf("  %-10s Enabled=%-5v  DefaultInbound=%-6s  DefaultOutbound=%s%s\n",
+			p.name+":", enabled, inAction, outAction, active))
 	}
 
 	// Get rule count
