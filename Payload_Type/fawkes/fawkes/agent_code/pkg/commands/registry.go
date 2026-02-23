@@ -52,6 +52,7 @@ func Initialize() {
 	RegisterCommand(&DnsCommand{})
 	RegisterCommand(&WinrmCommand{})
 	RegisterCommand(&AdcsCommand{})
+	RegisterCommand(&KerbDelegationCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
