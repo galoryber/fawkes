@@ -111,6 +111,7 @@ pre = "<b>2. </b>"
     * [defender](/agents/fawkes/commands/defender/)
     * [eventlog](/agents/fawkes/commands/eventlog/)
     * [firewall](/agents/fawkes/commands/firewall/)
+    * [iptables](/agents/fawkes/commands/iptables/)
     * [ntdll-unhook](/agents/fawkes/commands/ntdll-unhook/)
     * [timestomp](/agents/fawkes/commands/timestomp/)
 - Agent Management
