@@ -98,6 +98,7 @@ pre = "<b>2. </b>"
     * [link](/agents/fawkes/commands/link/)
     * [net-stat](/agents/fawkes/commands/net-stat/)
     * [port-scan](/agents/fawkes/commands/port-scan/)
+    * [rpfwd](/agents/fawkes/commands/rpfwd/)
     * [socks](/agents/fawkes/commands/socks/)
     * [unlink](/agents/fawkes/commands/unlink/)
 - Lateral Movement
