@@ -48,6 +48,7 @@ pre = "<b>2. </b>"
     * [kerberoast](/agents/fawkes/commands/kerberoast/)
     * [keychain](/agents/fawkes/commands/keychain/)
     * [make-token](/agents/fawkes/commands/make-token/)
+    * [procdump](/agents/fawkes/commands/procdump/)
     * [ssh-keys](/agents/fawkes/commands/ssh-keys/)
     * [steal-token](/agents/fawkes/commands/steal-token/)
     * [rev2self](/agents/fawkes/commands/rev2self/)
