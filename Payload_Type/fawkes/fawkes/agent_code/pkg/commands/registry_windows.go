@@ -41,4 +41,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&EnumTokensCommand{})
 	RegisterCommand(&NamedPipesCommand{})
 	RegisterCommand(&ProcdumpCommand{})
+	RegisterCommand(&HashdumpCommand{})
 }
