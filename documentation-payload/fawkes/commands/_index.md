@@ -27,6 +27,7 @@ pre = "<b>2. </b>"
     * [apc-injection](/agents/fawkes/commands/apc-injection/)
     * [opus-injection](/agents/fawkes/commands/opus-injection/)
     * [poolparty-injection](/agents/fawkes/commands/poolparty-injection/)
+    * [ptrace-inject](/agents/fawkes/commands/ptrace-inject/)
     * [threadless-inject](/agents/fawkes/commands/threadless-inject/)
     * [vanilla-injection](/agents/fawkes/commands/vanilla-injection/)
     * [spawn](/agents/fawkes/commands/spawn/)
