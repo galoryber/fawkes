@@ -78,6 +78,8 @@ pre = "<b>2. </b>"
     * [persist](/agents/fawkes/commands/persist/)
     * [schtask](/agents/fawkes/commands/schtask/)
     * [service](/agents/fawkes/commands/service/)
+- Account Management
+    * [net-user](/agents/fawkes/commands/net-user/)
 - Post-Exploitation
     * [clipboard](/agents/fawkes/commands/clipboard/)
     * [keylog](/agents/fawkes/commands/keylog/)
