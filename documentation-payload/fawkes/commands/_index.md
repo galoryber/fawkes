@@ -95,6 +95,7 @@ pre = "<b>2. </b>"
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
 - Defense Evasion
+    * [eventlog](/agents/fawkes/commands/eventlog/)
     * [timestomp](/agents/fawkes/commands/timestomp/)
 - Agent Management
     * [setenv](/agents/fawkes/commands/setenv/)

@@ -354,14 +354,7 @@ func evtInfo(channel string) structs.CommandResult {
 	// Last write time
 	lastWrite := evtGetLogProperty(logHandle, evtLogLastWriteTime)
 	if lastWrite > 0 {
-		ft := windows.Filetime{
-			LowDateTime:  uint32(lastWrite),
-			HighDateTime: uint32(lastWrite >> 32),
-		}
-		t := ft.Nanoseconds()
-		if t > 0 {
-			sb.WriteString(fmt.Sprintf("  Last Write:  %s\n", windowsFileTimeToString(lastWrite)))
-		}
+		sb.WriteString(fmt.Sprintf("  Last Write:  %s\n", windowsFileTimeToString(lastWrite)))
 	}
 
 	return structs.CommandResult{
@@ -563,26 +556,21 @@ func formatEvtLogSize(bytes uint64) string {
 }
 
 func windowsFileTimeToString(ft uint64) string {
-	filetime := windows.Filetime{
-		LowDateTime:  uint32(ft),
-		HighDateTime: uint32(ft >> 32),
-	}
-	nsec := filetime.Nanoseconds()
-	if nsec <= 0 {
+	if ft == 0 {
 		return "unknown"
 	}
-	// Convert 100-ns intervals since 1601-01-01 to a human-readable format
-	// Epoch difference: 1601 to 1970 = 11644473600 seconds
-	unixSec := nsec/1e9 - 11644473600
-	if unixSec < 0 {
+	// FILETIME is 100-nanosecond intervals since 1601-01-01
+	// Epoch difference: 1601 to 1970 = 11644473600 seconds = 116444736000000000 100-ns intervals
+	const epochDiff100ns = 116444736000000000
+	if ft < epochDiff100ns {
 		return "unknown"
 	}
+	unixSec := int64((ft - epochDiff100ns) / 10000000)
 	days := unixSec / 86400
 	rem := unixSec % 86400
 	hours := rem / 3600
 	mins := (rem % 3600) / 60
 	secs := rem % 60
-	// Simple date calc from days since 1970-01-01
 	year, month, day := daysToDate(days)
 	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d UTC", year, month, day, hours, mins, secs)
 }
