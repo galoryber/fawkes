@@ -138,7 +138,7 @@ func ptraceCheck() structs.CommandResult {
 				procName = strings.TrimSpace(strings.TrimPrefix(line, "Name:"))
 			}
 			if strings.HasPrefix(line, "Uid:") {
-				fmt.Sscanf(strings.TrimPrefix(line, "Uid:"), "%d", &procUID)
+				_, _ = fmt.Sscanf(strings.TrimPrefix(line, "Uid:"), "%d", &procUID)
 			}
 		}
 		if procUID == uid || os.Geteuid() == 0 {
