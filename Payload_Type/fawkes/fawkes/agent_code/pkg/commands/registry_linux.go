@@ -10,4 +10,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&ProcInfoCommand{})
 	RegisterCommand(&SystemdPersistCommand{})
 	RegisterCommand(&ShellConfigCommand{})
+	RegisterCommand(&IptablesCommand{})
 }
