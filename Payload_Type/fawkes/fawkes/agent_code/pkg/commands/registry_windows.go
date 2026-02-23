@@ -49,4 +49,6 @@ func registerPlatformCommands() {
 	RegisterCommand(&DefenderCommand{})
 	RegisterCommand(&DcomCommand{})
 	RegisterCommand(&VSSCommand{})
+	RegisterCommand(&PsExecCommand{})
+	RegisterCommand(&RegDeleteCommand{})
 }
