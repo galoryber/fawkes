@@ -192,7 +192,42 @@ Examples: `http://proxy.corp.local:8080`, `socks5://127.0.0.1:1080`
 
 ### [HTTP Profile](https://github.com/MythicC2Profiles/http)
 
-The HTTP profile calls back to the Mythic server over the basic, non-dynamic profile.
+The HTTP profile calls back to the Mythic server over the basic, non-dynamic profile. This is the default egress profile — the agent polls Mythic for tasking over HTTP/HTTPS.
+
+### TCP P2P Profile
+
+The TCP profile enables peer-to-peer (P2P) agent linking for internal pivoting. A TCP child agent listens on a port and waits for a parent agent to connect via the `link` command. All tasking and responses are routed through the parent's egress channel (HTTP), so the child never contacts Mythic directly.
+
+**Architecture:**
+
+```
+Mythic Server ←──HTTP──→ Egress Agent (HTTP profile)
+                              │
+                              ├──TCP──→ Child Agent A (TCP profile, port 7777)
+                              └──TCP──→ Child Agent B (TCP profile, port 8888)
+```
+
+**Build parameters:**
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `tcp_bind_address` | Address and port for the child to listen on (e.g., `0.0.0.0:7777`) | _(empty = HTTP mode)_ |
+
+When `tcp_bind_address` is set, the agent starts in TCP listener mode instead of HTTP egress mode. The TCP C2 profile parameters (port, AESPSK, killdate) configure the listener.
+
+**Usage workflow:**
+
+1. Build a **child agent** with the TCP C2 profile and `tcp_bind_address` set (e.g., `0.0.0.0:7777`)
+2. Deploy the child to an internal host (no internet access required)
+3. From an **egress agent** (HTTP profile), run: `link -host <child_ip> -port 7777`
+4. Mythic creates a new callback for the child — all tasking flows through the egress agent
+5. To disconnect: `unlink -connection_id <uuid>`
+
+**Encryption:** AES-256-CBC with HMAC-SHA256 (same as HTTP profile). Wire protocol uses 4-byte length-prefixed framing.
+
+**Relink support:** If a parent disconnects (e.g., via `unlink` or parent agent dies), the child agent caches its checkin data and waits for a new parent connection. When a new egress agent runs `link`, the child automatically re-registers with Mythic as a new callback. No manual intervention needed.
+
+**Multiple children:** An egress agent can link to multiple TCP children simultaneously. Each child operates independently with its own callback.
 
 ## Thanks
 Everything I know about Mythic Agents came from Mythic Docs or stealing code and ideas from the [Merlin](https://github.com/MythicAgents/merlin) and [Freyja](https://github.com/MythicAgents/freyja) agents.
