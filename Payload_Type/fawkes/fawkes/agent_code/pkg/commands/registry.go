@@ -49,6 +49,7 @@ func Initialize() {
 	RegisterCommand(&KerberoastCommand{})
 	RegisterCommand(&AsrepCommand{})
 	RegisterCommand(&SmbCommand{})
+	RegisterCommand(&WinrmCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
