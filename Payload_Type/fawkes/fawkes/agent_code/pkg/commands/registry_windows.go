@@ -42,4 +42,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&NamedPipesCommand{})
 	RegisterCommand(&ProcdumpCommand{})
 	RegisterCommand(&HashdumpCommand{})
+	RegisterCommand(&EventLogCommand{})
 }
