@@ -69,6 +69,7 @@ pre = "<b>2. </b>"
     * [ts](/agents/fawkes/commands/ts/)
     * [whoami](/agents/fawkes/commands/whoami/)
 - Registry Operations
+    * [reg-delete](/agents/fawkes/commands/reg-delete/)
     * [reg-read](/agents/fawkes/commands/reg-read/)
     * [reg-write](/agents/fawkes/commands/reg-write/)
 - Persistence
@@ -91,6 +92,7 @@ pre = "<b>2. </b>"
     * [unlink](/agents/fawkes/commands/unlink/)
 - Lateral Movement
     * [dcom](/agents/fawkes/commands/dcom/)
+    * [psexec](/agents/fawkes/commands/psexec/)
     * [smb](/agents/fawkes/commands/smb/)
     * [winrm](/agents/fawkes/commands/winrm/)
 - Process Management
