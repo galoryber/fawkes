@@ -9,4 +9,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&PrivescCheckCommand{})
 	RegisterCommand(&ProcInfoCommand{})
 	RegisterCommand(&SystemdPersistCommand{})
+	RegisterCommand(&ShellConfigCommand{})
 }
