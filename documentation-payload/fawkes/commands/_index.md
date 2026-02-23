@@ -89,6 +89,7 @@ pre = "<b>2. </b>"
     * [socks](/agents/fawkes/commands/socks/)
     * [unlink](/agents/fawkes/commands/unlink/)
 - Lateral Movement
+    * [dcom](/agents/fawkes/commands/dcom/)
     * [smb](/agents/fawkes/commands/smb/)
     * [winrm](/agents/fawkes/commands/winrm/)
 - Process Management
