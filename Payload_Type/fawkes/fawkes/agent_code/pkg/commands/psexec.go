@@ -87,10 +87,11 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Build the service binary path — wrap command in cmd.exe /c
+	// Use full path because SCM does not expand environment variables
 	binPath := args.Command
 	if !strings.HasPrefix(strings.ToLower(binPath), "cmd") &&
-		!strings.HasPrefix(strings.ToLower(binPath), "%comspec%") {
-		binPath = `%COMSPEC% /c ` + binPath
+		!strings.HasPrefix(strings.ToLower(binPath), `c:\windows`) {
+		binPath = `C:\Windows\System32\cmd.exe /c ` + binPath
 	}
 
 	var sb strings.Builder

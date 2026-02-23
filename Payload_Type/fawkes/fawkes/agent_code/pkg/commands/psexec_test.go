@@ -146,8 +146,8 @@ func TestPsExecCommandWrapping(t *testing.T) {
 	})
 	task := structs.Task{Params: string(params)}
 	result := cmd.Execute(task)
-	if !strings.Contains(result.Output, "%COMSPEC% /c whoami") {
-		t.Errorf("Expected COMSPEC wrapper, got: %s", result.Output)
+	if !strings.Contains(result.Output, `cmd.exe /c whoami`) {
+		t.Errorf("Expected cmd.exe wrapper, got: %s", result.Output)
 	}
 
 	// cmd.exe prefix should not be double-wrapped
@@ -157,7 +157,7 @@ func TestPsExecCommandWrapping(t *testing.T) {
 	})
 	task = structs.Task{Params: string(params)}
 	result = cmd.Execute(task)
-	if strings.Contains(result.Output, "%COMSPEC%") {
+	if strings.Count(result.Output, "cmd.exe") > 1 {
 		t.Errorf("Should not double-wrap cmd.exe prefix, got: %s", result.Output)
 	}
 }
