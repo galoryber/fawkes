@@ -55,6 +55,7 @@ func Initialize() {
 	RegisterCommand(&KerbDelegationCommand{})
 	RegisterCommand(&SshExecCommand{})
 	RegisterCommand(&CurlCommand{})
+	RegisterCommand(&RpfwdCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()

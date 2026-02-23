@@ -346,11 +346,13 @@ type FileUploadMessageResponse struct {
 	TotalChunks int    `json:"total_chunks"`
 }
 
-// SocksMsg represents a single SOCKS proxy message exchanged with Mythic
+// SocksMsg represents a single SOCKS/rpfwd proxy message exchanged with Mythic.
+// Used for both SOCKS5 proxy and reverse port forward (rpfwd) traffic.
 type SocksMsg struct {
 	ServerId uint32 `json:"server_id"`
 	Data     string `json:"data"`
 	Exit     bool   `json:"exit"`
+	Port     uint32 `json:"port,omitempty"`
 }
 
 // CommandResult represents the result of executing a command
@@ -400,6 +402,7 @@ type TaskingMessage struct {
 	Action      string             `json:"action"`
 	TaskingSize int                `json:"tasking_size"`
 	Socks       []SocksMsg         `json:"socks,omitempty"`
+	Rpfwd       []SocksMsg         `json:"rpfwd,omitempty"`
 	Delegates   []DelegateMessage  `json:"delegates,omitempty"`
 	// Add agent identification for checkin updates
 	PayloadUUID string `json:"uuid,omitempty"`
@@ -412,6 +415,7 @@ type PostResponseMessage struct {
 	Action    string                 `json:"action"`
 	Responses []Response             `json:"responses"`
 	Socks     []SocksMsg             `json:"socks,omitempty"`
+	Rpfwd     []SocksMsg             `json:"rpfwd,omitempty"`
 	Delegates []DelegateMessage      `json:"delegates,omitempty"`
 	Edges     []P2PConnectionMessage `json:"edges,omitempty"`
 }
