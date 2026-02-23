@@ -41,6 +41,7 @@ pre = "<b>2. </b>"
     * [autopatch](/agents/fawkes/commands/autopatch/)
 - Credential/Token Commands
     * [browser](/agents/fawkes/commands/browser/)
+    * [cred-harvest](/agents/fawkes/commands/cred-harvest/)
     * [credman](/agents/fawkes/commands/credman/)
     * [enum-tokens](/agents/fawkes/commands/enum-tokens/)
     * [getprivs](/agents/fawkes/commands/getprivs/)
