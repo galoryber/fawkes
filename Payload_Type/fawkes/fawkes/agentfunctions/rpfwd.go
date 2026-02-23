@@ -33,12 +33,6 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						UIModalPosition:     1,
-						GroupName:            "start",
-					},
-					{
-						ParameterIsRequired: true,
-						UIModalPosition:     1,
-						GroupName:            "stop",
 					},
 				},
 			},
@@ -51,12 +45,6 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						UIModalPosition:     2,
-						GroupName:            "start",
-					},
-					{
-						ParameterIsRequired: true,
-						UIModalPosition:     2,
-						GroupName:            "stop",
 					},
 				},
 			},
@@ -67,14 +55,8 @@ func init() {
 				DefaultValue:  "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: true,
-						UIModalPosition:     3,
-						GroupName:            "start",
-					},
-					{
 						ParameterIsRequired: false,
 						UIModalPosition:     3,
-						GroupName:            "stop",
 					},
 				},
 			},
@@ -85,14 +67,8 @@ func init() {
 				DefaultValue:  7000,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: true,
-						UIModalPosition:     4,
-						GroupName:            "start",
-					},
-					{
 						ParameterIsRequired: false,
 						UIModalPosition:     4,
-						GroupName:            "stop",
 					},
 				},
 			},
@@ -150,14 +126,14 @@ func init() {
 			switch action {
 			case "start":
 				remoteIP, err := taskData.Args.GetStringArg("remote_ip")
-				if err != nil {
-					response.Error = err.Error()
+				if err != nil || remoteIP == "" {
+					response.Error = "remote_ip is required for start action"
 					response.Success = false
 					return response
 				}
 				remotePort, err := taskData.Args.GetNumberArg("remote_port")
 				if err != nil {
-					response.Error = err.Error()
+					response.Error = "remote_port is required for start action"
 					response.Success = false
 					return response
 				}
@@ -188,7 +164,6 @@ func init() {
 				// Remove remote params from agent task (agent only needs action + port)
 				taskData.Args.RemoveArg("remote_port")
 				taskData.Args.RemoveArg("remote_ip")
-				taskData.Args.SetManualParameterGroup("start")
 
 			case "stop":
 				displayParams := fmt.Sprintf("stop on port %d", portInt)
