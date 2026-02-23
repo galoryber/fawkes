@@ -97,6 +97,7 @@ pre = "<b>2. </b>"
     * [getsystem](/agents/fawkes/commands/getsystem/)
     * [uac-bypass](/agents/fawkes/commands/uac-bypass/)
 - Defense Evasion
+    * [defender](/agents/fawkes/commands/defender/)
     * [eventlog](/agents/fawkes/commands/eventlog/)
     * [firewall](/agents/fawkes/commands/firewall/)
     * [ntdll-unhook](/agents/fawkes/commands/ntdll-unhook/)
