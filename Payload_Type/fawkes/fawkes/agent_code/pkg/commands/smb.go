@@ -144,7 +144,7 @@ func smbConnect(args smbArgs) (*smb2.Session, error) {
 
 	session, err := d.Dial(conn)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return nil, fmt.Errorf("SMB auth to %s as %s\\%s: %v", args.Host, args.Domain, args.Username, err)
 	}
 
@@ -160,7 +160,7 @@ func smbListShares(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer session.Logoff()
+	defer func() { _ = session.Logoff() }()
 
 	shares, err := session.ListSharenames()
 	if err != nil {
@@ -194,7 +194,7 @@ func smbListDir(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer session.Logoff()
+	defer func() { _ = session.Logoff() }()
 
 	share, err := session.Mount(args.Share)
 	if err != nil {
@@ -204,7 +204,7 @@ func smbListDir(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer share.Umount()
+	defer func() { _ = share.Umount() }()
 
 	dirPath := args.Path
 	if dirPath == "" {
@@ -251,7 +251,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer session.Logoff()
+	defer func() { _ = session.Logoff() }()
 
 	share, err := session.Mount(args.Share)
 	if err != nil {
@@ -261,7 +261,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer share.Umount()
+	defer func() { _ = share.Umount() }()
 
 	f, err := share.Open(args.Path)
 	if err != nil {
@@ -271,7 +271,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Get file info for size check
 	info, err := f.Stat()
@@ -323,7 +323,7 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer session.Logoff()
+	defer func() { _ = session.Logoff() }()
 
 	share, err := session.Mount(args.Share)
 	if err != nil {
@@ -333,7 +333,7 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer share.Umount()
+	defer func() { _ = share.Umount() }()
 
 	f, err := share.OpenFile(args.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	if err != nil {
@@ -343,7 +343,7 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	n, err := f.Write([]byte(args.Content))
 	if err != nil {
@@ -370,7 +370,7 @@ func smbDeleteFile(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer session.Logoff()
+	defer func() { _ = session.Logoff() }()
 
 	share, err := session.Mount(args.Share)
 	if err != nil {
@@ -380,7 +380,7 @@ func smbDeleteFile(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer share.Umount()
+	defer func() { _ = share.Umount() }()
 
 	err = share.Remove(args.Path)
 	if err != nil {
