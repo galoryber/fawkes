@@ -52,4 +52,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&PsExecCommand{})
 	RegisterCommand(&RegDeleteCommand{})
 	RegisterCommand(&NetUserCommand{})
+	RegisterCommand(&WmiPersistCommand{})
 }
