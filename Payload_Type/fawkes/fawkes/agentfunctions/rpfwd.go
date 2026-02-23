@@ -71,6 +71,11 @@ func init() {
 						UIModalPosition:     3,
 						GroupName:            "start",
 					},
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     3,
+						GroupName:            "stop",
+					},
 				},
 			},
 			{
@@ -83,6 +88,11 @@ func init() {
 						ParameterIsRequired: true,
 						UIModalPosition:     4,
 						GroupName:            "start",
+					},
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     4,
+						GroupName:            "stop",
 					},
 				},
 			},
