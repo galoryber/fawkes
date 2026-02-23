@@ -9,7 +9,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "service",
-		Description:         "Manage Windows services — query, start, stop, create, delete, list (T1543.003)",
+		Description:         "Manage Windows services via SCM API — query, start, stop, create, delete, list (T1543.003)",
 		HelpString:          "service -action <query|start|stop|create|delete|list> -name <service_name> [-binpath <path>] [-display <name>] [-start <auto|demand|disabled>]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
@@ -111,13 +111,13 @@ func init() {
 			switch action {
 			case "create":
 				binpath, _ := taskData.Args.GetStringArg("binpath")
-				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("sc.exe create %s binpath= %q", name, binpath))
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM CreateService %s binpath=%q", name, binpath))
 			case "start":
-				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("sc.exe start %s", name))
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM StartService %s", name))
 			case "stop":
-				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("sc.exe stop %s", name))
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ControlService(Stop) %s", name))
 			case "delete":
-				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("sc.exe delete %s", name))
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM DeleteService %s", name))
 			}
 			return response
 		},

@@ -72,9 +72,25 @@ func init() {
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			input = strings.TrimSpace(input)
-			// Try JSON first (e.g., {"path": "C:\\Users"} from API)
+			// Try JSON first (e.g., {"path": "C:\\Users"} or {"full_path": "..."} from API)
 			var jsonArgs map[string]interface{}
 			if err := json.Unmarshal([]byte(input), &jsonArgs); err == nil {
+				// Check for file browser format (full_path)
+				if fullPath, ok := jsonArgs["full_path"].(string); ok && fullPath != "" {
+					args.AddArg(agentstructs.CommandParameter{
+						Name:          "path",
+						ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+						DefaultValue:  fullPath,
+					})
+					args.AddArg(agentstructs.CommandParameter{
+						Name:          "file_browser",
+						ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+						DefaultValue:  true,
+					})
+					return nil
+				}
+				// Check for explicit file_browser flag
+				fileBrowser, _ := jsonArgs["file_browser"].(bool)
 				if path, ok := jsonArgs["path"].(string); ok {
 					args.AddArg(agentstructs.CommandParameter{
 						Name:          "path",
@@ -84,7 +100,7 @@ func init() {
 					args.AddArg(agentstructs.CommandParameter{
 						Name:          "file_browser",
 						ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
-						DefaultValue:  false,
+						DefaultValue:  fileBrowser,
 					})
 					return nil
 				}

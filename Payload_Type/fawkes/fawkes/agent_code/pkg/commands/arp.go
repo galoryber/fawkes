@@ -3,8 +3,6 @@ package commands
 import (
 	"fmt"
 	"net"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -23,62 +21,31 @@ func (c *ArpCommand) Description() string {
 	return "Display ARP table — shows IP-to-MAC address mappings for nearby hosts (T1016.001)"
 }
 
-// Execute executes the arp command
+// Execute executes the arp command using platform-specific implementation
 func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("arp", "-a")
-	case "darwin":
-		cmd = exec.Command("arp", "-a")
-	default: // linux
-		// Try ip neigh first (modern), fall back to arp
-		cmd = exec.Command("ip", "neigh", "show")
-	}
-
-	output, err := cmd.CombinedOutput()
+	entries, err := getArpTable()
 	if err != nil {
-		// On Linux, if ip neigh fails, try arp -a
-		if runtime.GOOS == "linux" {
-			cmd2 := exec.Command("arp", "-a")
-			output2, err2 := cmd2.CombinedOutput()
-			if err2 == nil && len(output2) > 0 {
-				return formatArpOutput(string(output2))
-			}
-		}
-		// If we got output despite the error, still return it
-		if len(output) > 0 {
-			return formatArpOutput(string(output))
-		}
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error running ARP command: %v", err),
+			Output:    fmt.Sprintf("Error reading ARP table: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	return formatArpOutput(string(output))
-}
-
-func formatArpOutput(raw string) structs.CommandResult {
-	// Count unique entries
-	lines := strings.Split(strings.TrimSpace(raw), "\n")
-	entryCount := 0
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "Interface") || strings.HasPrefix(line, "Internet") {
-			continue
-		}
-		// Check if line contains a MAC-like pattern
-		if containsMAC(line) {
-			entryCount++
+	if len(entries) == 0 {
+		return structs.CommandResult{
+			Output:    "No ARP entries found",
+			Status:    "success",
+			Completed: true,
 		}
 	}
 
-	output := raw
-	if entryCount > 0 {
-		output += fmt.Sprintf("\n[%d ARP entries found]", entryCount)
+	output := fmt.Sprintf("%-18s %-20s %-10s %s\n", "IP Address", "MAC Address", "Type", "Interface")
+	output += "--------------------------------------------------------------\n"
+	for _, e := range entries {
+		output += fmt.Sprintf("%-18s %-20s %-10s %s\n", e.IP, e.MAC, e.Type, e.Interface)
 	}
+	output += fmt.Sprintf("\n[%d ARP entries found]", len(entries))
 
 	return structs.CommandResult{
 		Output:    output,
@@ -87,9 +54,16 @@ func formatArpOutput(raw string) structs.CommandResult {
 	}
 }
 
+// arpEntry represents a single ARP table entry
+type arpEntry struct {
+	IP        string
+	MAC       string
+	Type      string
+	Interface string
+}
+
 // containsMAC checks if a string contains something that looks like a MAC address
 func containsMAC(s string) bool {
-	// Look for patterns like xx-xx-xx-xx-xx-xx or xx:xx:xx:xx:xx:xx
 	parts := strings.Fields(s)
 	for _, p := range parts {
 		if isMACAddress(p) {

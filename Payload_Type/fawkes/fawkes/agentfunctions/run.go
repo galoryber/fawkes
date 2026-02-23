@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"encoding/json"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -17,7 +19,15 @@ func init() {
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// Simply pass the entire input string as the command to execute
+			// Try to parse as JSON first (API-submitted params like {"command": "hostname"})
+			var parsed map[string]interface{}
+			if err := json.Unmarshal([]byte(input), &parsed); err == nil {
+				if cmd, ok := parsed["command"].(string); ok {
+					args.SetManualArgs(cmd)
+					return nil
+				}
+			}
+			// Fall back to raw string (CLI usage: run hostname)
 			args.SetManualArgs(input)
 			return nil
 		},

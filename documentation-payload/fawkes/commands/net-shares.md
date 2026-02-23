@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Enumerates network shares on the local machine, remote hosts, or lists mapped network drives. Uses `net.exe` for all operations.
+Enumerates network shares on the local machine, remote hosts, or lists mapped network drives. Uses direct Win32 API calls (NetShareEnum, WNetEnumResource) — no subprocess creation.
 
 {{% notice info %}}Windows Only{{% /notice %}}
 

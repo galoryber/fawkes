@@ -39,6 +39,12 @@ pre = "<b>2. </b>"
     * [write-memory](/agents/fawkes/commands/write-memory/)
     * [autopatch](/agents/fawkes/commands/autopatch/)
 - Credential/Token Commands
+    * [browser](/agents/fawkes/commands/browser/)
+    * [credman](/agents/fawkes/commands/credman/)
+    * [enum-tokens](/agents/fawkes/commands/enum-tokens/)
+    * [getprivs](/agents/fawkes/commands/getprivs/)
+    * [getsystem](/agents/fawkes/commands/getsystem/)
+    * [kerberoast](/agents/fawkes/commands/kerberoast/)
     * [keychain](/agents/fawkes/commands/keychain/)
     * [make-token](/agents/fawkes/commands/make-token/)
     * [ssh-keys](/agents/fawkes/commands/ssh-keys/)
@@ -48,8 +54,13 @@ pre = "<b>2. </b>"
     * [av-detect](/agents/fawkes/commands/av-detect/)
     * [drives](/agents/fawkes/commands/drives/)
     * [env](/agents/fawkes/commands/env/)
+    * [ldap-query](/agents/fawkes/commands/ldap-query/)
+    * [logonsessions](/agents/fawkes/commands/logonsessions/)
+    * [named-pipes](/agents/fawkes/commands/named-pipes/)
     * [net-enum](/agents/fawkes/commands/net-enum/)
     * [net-shares](/agents/fawkes/commands/net-shares/)
+    * [privesc-check](/agents/fawkes/commands/privesc-check/)
+    * [proc-info](/agents/fawkes/commands/proc-info/)
     * [ps](/agents/fawkes/commands/ps/)
     * [ts](/agents/fawkes/commands/ts/)
     * [whoami](/agents/fawkes/commands/whoami/)
@@ -69,9 +80,11 @@ pre = "<b>2. </b>"
 - Networking
     * [arp](/agents/fawkes/commands/arp/)
     * [ifconfig](/agents/fawkes/commands/ifconfig/)
+    * [link](/agents/fawkes/commands/link/)
     * [net-stat](/agents/fawkes/commands/net-stat/)
     * [port-scan](/agents/fawkes/commands/port-scan/)
     * [socks](/agents/fawkes/commands/socks/)
+    * [unlink](/agents/fawkes/commands/unlink/)
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
 - Defense Evasion

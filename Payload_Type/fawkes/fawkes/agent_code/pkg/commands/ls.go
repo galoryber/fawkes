@@ -99,16 +99,18 @@ func performLs(path string) structs.FileListing {
 	// If it's a file, return info about the file
 	if !info.IsDir() {
 		result.IsFile = true
+		owner, group := getFileOwner(path)
+		accessTime, creationTime := getFileTimestamps(info)
 		fileEntry := structs.FileListEntry{
 			Name:         info.Name(),
 			FullName:     path,
 			IsFile:       true,
 			Size:         info.Size(),
 			ModifyTime:   info.ModTime(),
-			AccessTime:   info.ModTime(), // Simplified
-			CreationDate: info.ModTime(), // Simplified
-			Owner:        "unknown",      // Would need OS-specific code
-			Group:        "unknown",      // Would need OS-specific code
+			AccessTime:   accessTime,
+			CreationDate: creationTime,
+			Owner:        owner,
+			Group:        group,
 			Permissions:  info.Mode().String(),
 		}
 		result.Files = []structs.FileListEntry{fileEntry}
@@ -129,16 +131,18 @@ func performLs(path string) structs.FileListing {
 			continue // Skip entries we can't stat
 		}
 
+		owner, group := getFileOwner(fullPath)
+		accessTime, creationTime := getFileTimestamps(info)
 		fileEntry := structs.FileListEntry{
 			Name:         entry.Name(),
 			FullName:     fullPath,
 			IsFile:       !entry.IsDir(),
 			Size:         info.Size(),
 			ModifyTime:   info.ModTime(),
-			AccessTime:   info.ModTime(), // Simplified
-			CreationDate: info.ModTime(), // Simplified
-			Owner:        "unknown",      // Would need OS-specific code
-			Group:        "unknown",      // Would need OS-specific code
+			AccessTime:   accessTime,
+			CreationDate: creationTime,
+			Owner:        owner,
+			Group:        group,
 			Permissions:  info.Mode().String(),
 		}
 
@@ -154,20 +158,27 @@ func formatLsOutput(result structs.FileListing) string {
 	}
 
 	output := fmt.Sprintf("Contents of directory: %s\n", result.ParentPath)
-	output += fmt.Sprintf("%-30s %-10s %-15s %s\n", "Name", "Type", "Size", "Modified")
-	output += "--------------------------------------------------------------------------------\n"
+	output += fmt.Sprintf("%-30s %-5s %12s  %-25s  %-20s  %s\n", "Name", "Type", "Size", "Owner", "Modified", "Permissions")
+	output += "--------------------------------------------------------------------------------------------------------------\n"
 
 	for _, file := range result.Files {
 		fileType := "FILE"
 		if !file.IsFile {
 			fileType = "DIR"
 		}
-		
-		output += fmt.Sprintf("%-30s %-10s %-15d %s\n",
+
+		owner := file.Owner
+		if owner == "" {
+			owner = "-"
+		}
+
+		output += fmt.Sprintf("%-30s %-5s %12d  %-25s  %-20s  %s\n",
 			file.Name,
 			fileType,
 			file.Size,
+			owner,
 			file.ModifyTime.Format("2006-01-02 15:04:05"),
+			file.Permissions,
 		)
 	}
 

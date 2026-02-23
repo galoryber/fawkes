@@ -43,6 +43,10 @@ func Initialize() {
 	RegisterCommand(&ArpCommand{})
 	RegisterCommand(&SetenvCommand{})
 	RegisterCommand(&AvDetectCommand{})
+	RegisterCommand(&LinkCommand{})
+	RegisterCommand(&UnlinkCommand{})
+	RegisterCommand(&LdapQueryCommand{})
+	RegisterCommand(&KerberoastCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()

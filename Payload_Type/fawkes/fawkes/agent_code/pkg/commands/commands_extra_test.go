@@ -83,70 +83,42 @@ func TestSocksCommand(t *testing.T) {
 }
 
 // =============================================================================
-// arp command tests (formatArpOutput helper)
+// arp command tests
 // =============================================================================
 
-func TestFormatArpOutput(t *testing.T) {
-	t.Run("typical Windows output", func(t *testing.T) {
-		input := `Interface: 192.168.100.192 --- 0x7
-  Internet Address      Physical Address      Type
-  192.168.100.1         aa-bb-cc-dd-ee-ff     dynamic
-  192.168.100.184       11-22-33-44-55-66     dynamic`
-		result := formatArpOutput(input)
-		if result.Status != "success" {
-			t.Errorf("expected success, got %q", result.Status)
-		}
-		if !strings.Contains(result.Output, "2 ARP entries found") {
-			t.Errorf("expected 2 entries, got: %s", result.Output)
-		}
-	})
+func TestArpCommand_NativeAPI(t *testing.T) {
+	cmd := &ArpCommand{}
+	result := cmd.Execute(structs.Task{Params: ""})
+	// Should succeed (even if no ARP entries on test host)
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !result.Completed {
+		t.Error("expected Completed=true")
+	}
+	// Output should use the new formatted table
+	if !strings.Contains(result.Output, "ARP entries") && !strings.Contains(result.Output, "No ARP entries") {
+		t.Errorf("expected ARP output, got: %s", result.Output)
+	}
+}
 
-	t.Run("typical Linux output", func(t *testing.T) {
-		input := `192.168.100.1 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE
-192.168.100.184 dev eth0 lladdr 11:22:33:44:55:66 STALE`
-		result := formatArpOutput(input)
-		if result.Status != "success" {
-			t.Errorf("expected success, got %q", result.Status)
+func TestGetArpTable_Native(t *testing.T) {
+	entries, err := getArpTable()
+	if err != nil {
+		t.Fatalf("getArpTable() error: %v", err)
+	}
+	// On any machine with a network, there should be at least the gateway
+	if len(entries) > 0 {
+		for _, e := range entries {
+			if e.IP == "" {
+				t.Error("ARP entry has empty IP")
+			}
+			if e.MAC == "" {
+				t.Error("ARP entry has empty MAC")
+			}
 		}
-		if !strings.Contains(result.Output, "2 ARP entries found") {
-			t.Errorf("expected 2 entries, got: %s", result.Output)
-		}
-	})
-
-	t.Run("empty output", func(t *testing.T) {
-		result := formatArpOutput("")
-		if result.Status != "success" {
-			t.Errorf("expected success, got %q", result.Status)
-		}
-		// Should not contain entry count for empty
-		if strings.Contains(result.Output, "ARP entries found") {
-			t.Errorf("empty output should have 0 entries, got: %s", result.Output)
-		}
-	})
-
-	t.Run("no MAC addresses", func(t *testing.T) {
-		input := "some output with no mac addresses"
-		result := formatArpOutput(input)
-		if result.Status != "success" {
-			t.Errorf("expected success, got %q", result.Status)
-		}
-		// entryCount should be 0, so "[N ARP entries found]" should NOT be appended
-		if strings.Contains(result.Output, "[") && strings.Contains(result.Output, "ARP entries") {
-			t.Errorf("should not have entry count for lines with no MACs, got: %s", result.Output)
-		}
-	})
-
-	t.Run("mixed valid and header lines", func(t *testing.T) {
-		input := `Interface: 192.168.1.1
-Internet Address
-  10.0.0.1   aa:bb:cc:dd:ee:ff   dynamic
-  10.0.0.2   11:22:33:44:55:66   dynamic
-  10.0.0.3   77:88:99:aa:bb:cc   dynamic`
-		result := formatArpOutput(input)
-		if !strings.Contains(result.Output, "3 ARP entries found") {
-			t.Errorf("expected 3 entries (skipping headers), got: %s", result.Output)
-		}
-	})
+		t.Logf("Found %d ARP entries", len(entries))
+	}
 }
 
 func TestArpCommand_Name(t *testing.T) {

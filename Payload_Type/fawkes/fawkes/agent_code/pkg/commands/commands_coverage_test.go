@@ -203,14 +203,19 @@ func TestFormatLsOutput_WithFiles(t *testing.T) {
 func TestPsCommand_Execute(t *testing.T) {
 	cmd := &PsCommand{}
 
-	t.Run("no params", func(t *testing.T) {
+	t.Run("no params returns JSON", func(t *testing.T) {
 		task := structs.Task{Params: ""}
 		result := cmd.Execute(task)
 		if result.Status != "success" {
 			t.Errorf("expected success, got %q: %s", result.Status, result.Output)
 		}
-		if !strings.Contains(result.Output, "Total:") {
-			t.Errorf("output should contain 'Total:', got: %s", result.Output[:min(100, len(result.Output))])
+		// Output should be valid JSON
+		var procs []structs.ProcessEntry
+		if err := json.Unmarshal([]byte(result.Output), &procs); err != nil {
+			t.Errorf("output should be valid JSON: %v", err)
+		}
+		if len(procs) == 0 {
+			t.Error("expected at least one process")
 		}
 	})
 
@@ -221,9 +226,10 @@ func TestPsCommand_Execute(t *testing.T) {
 		if result.Status != "success" {
 			t.Errorf("expected success, got %q", result.Status)
 		}
-		// Verbose mode should include "Command Line" header
-		if !strings.Contains(result.Output, "Command Line") {
-			t.Errorf("verbose output should contain 'Command Line' header")
+		// Verbose flag doesn't change JSON format, but should still return valid JSON
+		var procs []structs.ProcessEntry
+		if err := json.Unmarshal([]byte(result.Output), &procs); err != nil {
+			t.Errorf("verbose output should be valid JSON: %v", err)
 		}
 	})
 
@@ -243,9 +249,6 @@ func TestPsCommand_Execute(t *testing.T) {
 		if result.Status != "success" {
 			t.Errorf("expected success, got %q", result.Status)
 		}
-		if !strings.Contains(result.Output, "Command Line") {
-			t.Errorf("verbose output should contain 'Command Line' header")
-		}
 	})
 
 	t.Run("CLI params -i PID", func(t *testing.T) {
@@ -257,14 +260,19 @@ func TestPsCommand_Execute(t *testing.T) {
 		}
 	})
 
-	t.Run("CLI params filter string", func(t *testing.T) {
+	t.Run("CLI params filter no match", func(t *testing.T) {
 		task := structs.Task{Params: "nonexistent_process_name_xyz"}
 		result := cmd.Execute(task)
 		if result.Status != "success" {
 			t.Errorf("expected success, got %q", result.Status)
 		}
-		if !strings.Contains(result.Output, "No processes found") {
-			t.Errorf("should find no processes matching filter, got: %s", result.Output)
+		// Empty result should be an empty JSON array
+		var procs []structs.ProcessEntry
+		if err := json.Unmarshal([]byte(result.Output), &procs); err != nil {
+			t.Errorf("empty output should be valid JSON: %v", err)
+		}
+		if len(procs) != 0 {
+			t.Errorf("expected 0 processes for non-existent filter, got %d", len(procs))
 		}
 	})
 
@@ -279,43 +287,67 @@ func TestPsCommand_Execute(t *testing.T) {
 	})
 }
 
-func TestFormatProcessList_Empty(t *testing.T) {
-	output := formatProcessList(nil, false)
-	if output != "No processes found" {
-		t.Errorf("output = %q, want %q", output, "No processes found")
+func TestPsCommand_JSONOutput(t *testing.T) {
+	cmd := &PsCommand{}
+	task := structs.Task{Params: ""}
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+
+	// Output should be valid JSON array of process entries
+	var procs []structs.ProcessEntry
+	if err := json.Unmarshal([]byte(result.Output), &procs); err != nil {
+		t.Fatalf("output should be valid JSON process array: %v", err)
+	}
+	if len(procs) == 0 {
+		t.Error("expected at least one process in output")
+	}
+
+	// Processes field should be populated for Mythic process browser
+	if result.Processes == nil {
+		t.Fatal("Processes field should be non-nil")
+	}
+	if len(*result.Processes) != len(procs) {
+		t.Errorf("Processes length %d != output length %d", len(*result.Processes), len(procs))
+	}
+
+	// Verify current process is in the list
+	myPID := int(int32(os.Getpid()))
+	found := false
+	for _, p := range *result.Processes {
+		if p.ProcessID == myPID {
+			found = true
+			if p.Name == "" {
+				t.Error("current process should have a name")
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("current process PID %d not found in process list", myPID)
 	}
 }
 
-func TestFormatProcessList_NonVerbose(t *testing.T) {
-	procs := []ProcessInfo{
-		{PID: 1, PPID: 0, Name: "init", Arch: "amd64", User: "root"},
-		{PID: 100, PPID: 1, Name: "sshd", Arch: "amd64", User: ""},
+func TestPsCommand_GetProcessList(t *testing.T) {
+	procs, err := getProcessList("", 0)
+	if err != nil {
+		t.Fatalf("getProcessList error: %v", err)
 	}
-	output := formatProcessList(procs, false)
-	if strings.Contains(output, "Command Line") {
-		t.Error("non-verbose should not contain Command Line header")
+	if len(procs) == 0 {
+		t.Error("expected at least one process")
 	}
-	if !strings.Contains(output, "init") {
-		t.Error("output should contain init")
-	}
-	if !strings.Contains(output, "N/A") {
-		t.Error("empty user should show N/A")
-	}
-	if !strings.Contains(output, "Total: 2") {
-		t.Error("output should show total count")
-	}
-}
-
-func TestFormatProcessList_Verbose(t *testing.T) {
-	procs := []ProcessInfo{
-		{PID: 1, PPID: 0, Name: "init", Arch: "amd64", User: "root", CmdLine: "/sbin/init"},
-	}
-	output := formatProcessList(procs, true)
-	if !strings.Contains(output, "Command Line") {
-		t.Error("verbose should contain Command Line header")
-	}
-	if !strings.Contains(output, "/sbin/init") {
-		t.Error("verbose should show command line")
+	// Verify fields are populated
+	for _, p := range procs {
+		if p.PID <= 0 {
+			t.Errorf("invalid PID: %d", p.PID)
+		}
+		if p.Name == "" {
+			t.Errorf("process %d has empty name", p.PID)
+		}
+		if p.Arch == "" {
+			t.Errorf("process %d has empty arch", p.PID)
+		}
 	}
 }
 
@@ -921,5 +953,93 @@ func TestLsGetHostname(t *testing.T) {
 	hostname := getHostname()
 	if hostname == "" {
 		t.Error("getHostname should not return empty string")
+	}
+}
+
+// --- ls file ownership tests ---
+
+func TestGetFileOwner(t *testing.T) {
+	// Test with a file that exists (this test file itself)
+	owner, group := getFileOwner("commands_coverage_test.go")
+	if owner == "" {
+		t.Error("getFileOwner should not return empty owner")
+	}
+	if group == "" {
+		t.Error("getFileOwner should not return empty group")
+	}
+	// On Linux/macOS, we should get actual usernames, not "unknown"
+	if owner == "unknown" {
+		t.Error("getFileOwner should resolve owner for existing file")
+	}
+	if group == "unknown" {
+		t.Error("getFileOwner should resolve group for existing file")
+	}
+}
+
+func TestGetFileOwner_NonExistent(t *testing.T) {
+	owner, group := getFileOwner("/nonexistent/path/file.txt")
+	if owner != "unknown" || group != "unknown" {
+		t.Errorf("getFileOwner for nonexistent file should return unknown/unknown, got %s/%s", owner, group)
+	}
+}
+
+func TestGetFileTimestamps(t *testing.T) {
+	// Create a temp file and check timestamps
+	tmpFile, err := os.CreateTemp("", "fileowner_test")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	tmpFile.Close()
+
+	info, err := os.Stat(tmpFile.Name())
+	if err != nil {
+		t.Fatalf("Failed to stat temp file: %v", err)
+	}
+
+	accessTime, creationTime := getFileTimestamps(info)
+	if accessTime.IsZero() {
+		t.Error("accessTime should not be zero")
+	}
+	if creationTime.IsZero() {
+		t.Error("creationTime should not be zero")
+	}
+	// Both times should be recent (within last minute)
+	if time.Since(accessTime) > time.Minute {
+		t.Errorf("accessTime too old: %v", accessTime)
+	}
+}
+
+func TestLsReturnsOwnership(t *testing.T) {
+	// Test that ls actually populates owner/group fields
+	cmd := &LsCommand{}
+	result := cmd.Execute(structs.Task{Params: "."})
+	if result.Status != "success" {
+		t.Fatalf("ls failed: %s", result.Output)
+	}
+
+	var listing structs.FileListing
+	if err := json.Unmarshal([]byte(result.Output), &listing); err != nil {
+		// Text output mode - parse JSON with file_browser flag
+		result = cmd.Execute(structs.Task{Params: `{"path": ".", "file_browser": true}`})
+		if err := json.Unmarshal([]byte(result.Output), &listing); err != nil {
+			t.Fatalf("Failed to parse ls output as JSON: %v", err)
+		}
+	}
+
+	if len(listing.Files) == 0 {
+		t.Fatal("ls returned no files")
+	}
+
+	// Check that at least one file has a resolved owner
+	hasOwner := false
+	for _, f := range listing.Files {
+		if f.Owner != "" && f.Owner != "unknown" {
+			hasOwner = true
+			break
+		}
+	}
+	if !hasOwner {
+		t.Error("ls should return at least one file with a resolved owner")
 	}
 }

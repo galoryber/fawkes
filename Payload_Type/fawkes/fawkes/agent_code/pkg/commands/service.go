@@ -6,10 +6,12 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"fawkes/pkg/structs"
+
+	"golang.org/x/sys/windows/svc"
+	"golang.org/x/sys/windows/svc/mgr"
 )
 
 type ServiceCommand struct{}
@@ -19,7 +21,7 @@ func (c *ServiceCommand) Name() string {
 }
 
 func (c *ServiceCommand) Description() string {
-	return "Manage Windows services (query, start, stop, create, delete, list)"
+	return "Manage Windows services via SCM API (query, start, stop, create, delete, list)"
 }
 
 type serviceArgs struct {
@@ -80,23 +82,67 @@ func serviceQuery(args serviceArgs) structs.CommandResult {
 		}
 	}
 
-	output, err := runSC([]string{"query", args.Name})
+	m, err := mgr.Connect()
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying service '%s': %v\n%s", args.Name, err, output),
+			Output:    fmt.Sprintf("Error connecting to SCM: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer m.Disconnect()
+
+	s, err := m.OpenService(args.Name)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error opening service '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer s.Close()
+
+	status, err := s.Query()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error querying service '%s': %v", args.Name, err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	// Also get the service config for more detail
-	configOutput, configErr := runSC([]string{"qc", args.Name})
-	if configErr == nil {
-		output += "\n\nConfiguration:\n" + configOutput
+	config, err := s.Config()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error getting config for '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Service '%s':\n", args.Name))
+	sb.WriteString(strings.Repeat("-", 50) + "\n")
+	sb.WriteString(fmt.Sprintf("  State:         %s\n", describeServiceState(status.State)))
+	if status.ProcessId != 0 {
+		sb.WriteString(fmt.Sprintf("  PID:           %d\n", status.ProcessId))
+	}
+	sb.WriteString(fmt.Sprintf("  Accepts:       %s\n", describeAcceptedControls(status.Accepts)))
+	sb.WriteString("\nConfiguration:\n")
+	sb.WriteString(fmt.Sprintf("  Display Name:  %s\n", config.DisplayName))
+	sb.WriteString(fmt.Sprintf("  Binary Path:   %s\n", config.BinaryPathName))
+	sb.WriteString(fmt.Sprintf("  Start Type:    %s\n", describeStartType(config.StartType)))
+	sb.WriteString(fmt.Sprintf("  Service Type:  %s\n", describeServiceType(config.ServiceType)))
+	sb.WriteString(fmt.Sprintf("  Account:       %s\n", config.ServiceStartName))
+	if config.Description != "" {
+		sb.WriteString(fmt.Sprintf("  Description:   %s\n", config.Description))
+	}
+	if len(config.Dependencies) > 0 {
+		sb.WriteString(fmt.Sprintf("  Dependencies:  %s\n", strings.Join(config.Dependencies, ", ")))
 	}
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("Service '%s':\n%s", args.Name, output),
+		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
@@ -111,17 +157,37 @@ func serviceStart(args serviceArgs) structs.CommandResult {
 		}
 	}
 
-	output, err := runSC([]string{"start", args.Name})
+	m, err := mgr.Connect()
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error starting service '%s': %v\n%s", args.Name, err, output),
+			Output:    fmt.Sprintf("Error connecting to SCM: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer m.Disconnect()
+
+	s, err := m.OpenService(args.Name)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error opening service '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer s.Close()
+
+	err = s.Start()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error starting service '%s': %v", args.Name, err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("Started service '%s':\n%s", args.Name, output),
+		Output:    fmt.Sprintf("Started service '%s'", args.Name),
 		Status:    "success",
 		Completed: true,
 	}
@@ -136,17 +202,37 @@ func serviceStop(args serviceArgs) structs.CommandResult {
 		}
 	}
 
-	output, err := runSC([]string{"stop", args.Name})
+	m, err := mgr.Connect()
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error stopping service '%s': %v\n%s", args.Name, err, output),
+			Output:    fmt.Sprintf("Error connecting to SCM: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer m.Disconnect()
+
+	s, err := m.OpenService(args.Name)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error opening service '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer s.Close()
+
+	status, err := s.Control(svc.Stop)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error stopping service '%s': %v", args.Name, err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("Stopped service '%s':\n%s", args.Name, output),
+		Output:    fmt.Sprintf("Stopped service '%s' (state: %s)", args.Name, describeServiceState(status.State)),
 		Status:    "success",
 		Completed: true,
 	}
@@ -168,30 +254,57 @@ func serviceCreate(args serviceArgs) structs.CommandResult {
 		}
 	}
 
-	// sc.exe uses unusual syntax: keyword= value (keyword= is one arg, value is next)
-	cmdArgs := []string{"create", args.Name, "binpath=", args.BinPath}
-
-	if args.Display != "" {
-		cmdArgs = append(cmdArgs, "displayname=", args.Display)
-	}
-
-	startType := args.Start
-	if startType == "" {
-		startType = "demand"
-	}
-	cmdArgs = append(cmdArgs, "start=", startType)
-
-	output, err := runSC(cmdArgs)
+	m, err := mgr.Connect()
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating service '%s': %v\n%s", args.Name, err, output),
+			Output:    fmt.Sprintf("Error connecting to SCM: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
+	defer m.Disconnect()
+
+	startType := mgr.StartManual
+	switch strings.ToLower(args.Start) {
+	case "auto":
+		startType = mgr.StartAutomatic
+	case "disabled":
+		startType = mgr.StartDisabled
+	}
+
+	displayName := args.Display
+	if displayName == "" {
+		displayName = args.Name
+	}
+
+	s, err := m.CreateService(args.Name, args.BinPath, mgr.Config{
+		StartType:   uint32(startType),
+		DisplayName: displayName,
+	})
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error creating service '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer s.Close()
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Created service '%s':\n", args.Name))
+	sb.WriteString(fmt.Sprintf("  Binary Path:  %s\n", args.BinPath))
+	sb.WriteString(fmt.Sprintf("  Display Name: %s\n", displayName))
+	startTypeStr := "Manual"
+	switch startType {
+	case mgr.StartAutomatic:
+		startTypeStr = "Automatic"
+	case mgr.StartDisabled:
+		startTypeStr = "Disabled"
+	}
+	sb.WriteString(fmt.Sprintf("  Start Type:   %s\n", startTypeStr))
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("Created service '%s':\n  BinPath: %s\n  Start:   %s\n\n%s", args.Name, args.BinPath, startType, output),
+		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
@@ -206,41 +319,163 @@ func serviceDelete(args serviceArgs) structs.CommandResult {
 		}
 	}
 
-	output, err := runSC([]string{"delete", args.Name})
+	m, err := mgr.Connect()
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error deleting service '%s': %v\n%s", args.Name, err, output),
+			Output:    fmt.Sprintf("Error connecting to SCM: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer m.Disconnect()
+
+	s, err := m.OpenService(args.Name)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error opening service '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer s.Close()
+
+	err = s.Delete()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error deleting service '%s': %v", args.Name, err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("Deleted service '%s':\n%s", args.Name, output),
+		Output:    fmt.Sprintf("Deleted service '%s'", args.Name),
 		Status:    "success",
 		Completed: true,
 	}
 }
 
 func serviceList() structs.CommandResult {
-	output, err := runSC([]string{"query", "type=", "service", "state=", "all"})
+	m, err := mgr.Connect()
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing services: %v\n%s", err, output),
+			Output:    fmt.Sprintf("Error connecting to SCM: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer m.Disconnect()
+
+	names, err := m.ListServices()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error listing services: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Windows Services (%d):\n", len(names)))
+	sb.WriteString(fmt.Sprintf("%-40s %-10s %s\n", "Name", "State", "Display Name"))
+	sb.WriteString(strings.Repeat("-", 90) + "\n")
+
+	for _, name := range names {
+		s, sErr := m.OpenService(name)
+		if sErr != nil {
+			sb.WriteString(fmt.Sprintf("%-40s %-10s %s\n", name, "(error)", sErr.Error()))
+			continue
+		}
+
+		state := "unknown"
+		status, qErr := s.Query()
+		if qErr == nil {
+			state = describeServiceState(status.State)
+		}
+
+		displayName := name
+		config, cErr := s.Config()
+		if cErr == nil && config.DisplayName != "" {
+			displayName = config.DisplayName
+		}
+
+		s.Close()
+		sb.WriteString(fmt.Sprintf("%-40s %-10s %s\n", name, state, displayName))
+	}
+
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("Windows Services:\n%s", output),
+		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
 }
 
-func runSC(args []string) (string, error) {
-	cmd := exec.Command("sc.exe", args...)
-	out, err := cmd.CombinedOutput()
-	return strings.TrimSpace(string(out)), err
+func describeServiceState(state svc.State) string {
+	switch state {
+	case svc.Stopped:
+		return "Stopped"
+	case svc.StartPending:
+		return "Starting"
+	case svc.StopPending:
+		return "Stopping"
+	case svc.Running:
+		return "Running"
+	case svc.ContinuePending:
+		return "Continuing"
+	case svc.PausePending:
+		return "Pausing"
+	case svc.Paused:
+		return "Paused"
+	default:
+		return fmt.Sprintf("Unknown(%d)", state)
+	}
+}
+
+func describeStartType(startType uint32) string {
+	switch startType {
+	case 0: // SERVICE_BOOT_START
+		return "Boot"
+	case 1: // SERVICE_SYSTEM_START
+		return "System"
+	case 2: // SERVICE_AUTO_START
+		return "Automatic"
+	case 3: // SERVICE_DEMAND_START
+		return "Manual"
+	case 4: // SERVICE_DISABLED
+		return "Disabled"
+	default:
+		return fmt.Sprintf("Unknown(%d)", startType)
+	}
+}
+
+func describeServiceType(serviceType uint32) string {
+	switch {
+	case serviceType&0x10 != 0: // SERVICE_WIN32_OWN_PROCESS
+		return "Win32 Own Process"
+	case serviceType&0x20 != 0: // SERVICE_WIN32_SHARE_PROCESS
+		return "Win32 Shared Process"
+	case serviceType&0x01 != 0: // SERVICE_KERNEL_DRIVER
+		return "Kernel Driver"
+	case serviceType&0x02 != 0: // SERVICE_FILE_SYSTEM_DRIVER
+		return "File System Driver"
+	default:
+		return fmt.Sprintf("0x%x", serviceType)
+	}
+}
+
+func describeAcceptedControls(accepts svc.Accepted) string {
+	var parts []string
+	if accepts&svc.AcceptStop != 0 {
+		parts = append(parts, "Stop")
+	}
+	if accepts&svc.AcceptPauseAndContinue != 0 {
+		parts = append(parts, "Pause/Continue")
+	}
+	if accepts&svc.AcceptShutdown != 0 {
+		parts = append(parts, "Shutdown")
+	}
+	if len(parts) == 0 {
+		return "none"
+	}
+	return strings.Join(parts, ", ")
 }

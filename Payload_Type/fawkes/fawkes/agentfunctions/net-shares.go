@@ -9,7 +9,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "net-shares",
-		Description:         "Enumerate local shares, remote shares, and mapped drives via net.exe (T1135)",
+		Description:         "Enumerate local shares, remote shares, and mapped drives via Win32 API (T1135)",
 		HelpString:          "net-shares -action <local|remote|mapped> [-target <hostname>]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
@@ -63,11 +63,11 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			target, _ := taskData.Args.GetStringArg("target")
-			msg := fmt.Sprintf("net.exe shares: %s", action)
+			msg := fmt.Sprintf("NetAPI shares: %s", action)
 			if target != "" {
 				msg += " \\\\" + target
 			}
-			createArtifact(taskData.Task.ID, "Process Create", msg)
+			createArtifact(taskData.Task.ID, "API Call", msg)
 			return response
 		},
 	})

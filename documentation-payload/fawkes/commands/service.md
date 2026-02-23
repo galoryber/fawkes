@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Manage Windows services — query, start, stop, create, or delete services using the Windows Service Control Manager (sc.exe).
+Manage Windows services — query, start, stop, create, or delete services using the Win32 Service Control Manager API (OpenSCManager, CreateService, etc.). No subprocess creation — all operations run in-process via `golang.org/x/sys/windows/svc/mgr`.
 
 {{% notice info %}}Windows Only{{% /notice %}}
 

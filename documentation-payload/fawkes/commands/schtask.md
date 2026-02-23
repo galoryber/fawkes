@@ -9,7 +9,7 @@ hidden = false
 
 ## Summary
 
-Create, query, run, or delete Windows scheduled tasks using the built-in `schtasks.exe` utility. Supports multiple trigger types, custom run-as accounts, and immediate execution.
+Create, query, run, or delete Windows scheduled tasks via Task Scheduler COM API (no subprocess creation). Uses ITaskService COM interface with XML-based task registration. Supports multiple trigger types, custom run-as accounts, and immediate execution.
 
 ### Arguments
 
@@ -71,35 +71,35 @@ Remove a scheduled task:
 schtask -action delete -name "WindowsUpdate"
 ```
 
-### Example Output (create + run)
+### Example Output (create)
 ```
 Created scheduled task:
-  Name:    \SecurityScan
+  Name:    SecurityScan
   Program: C:\Windows\Temp\scan.exe
   Trigger: DAILY
-
-SUCCESS: The scheduled task "\SecurityScan" has successfully been created.
-
-Task executed immediately:
-SUCCESS: Attempted to run the scheduled task "\SecurityScan".
 ```
 
 ### Example Output (query)
 ```
-Task details for '\SecurityScan':
+Task: SecurityScan
+State: Ready
+Enabled: true
+Last Run Time: 2026-02-22 03:20:00
+Next Run Time: 2026-02-23 09:00:00
+Last Result: 0
+Description: Created by Fawkes
+Action Path: C:\Windows\Temp\scan.exe
+```
 
-Folder: \
-HostName:                             WIN-TARGET
-TaskName:                             \SecurityScan
-Next Run Time:                        2/12/2026 9:00:00 AM
-Status:                               Ready
-Logon Mode:                           Interactive/Background
-Last Run Time:                        2/11/2026 3:15:00 PM
-Last Result:                          0
-Author:                               WIN-TARGET\setup
-Task To Run:                          C:\Windows\Temp\scan.exe
-Schedule Type:                        Daily
-Start Time:                           9:00:00 AM
+### Example Output (list)
+```
+Scheduled Tasks (root folder):
+
+Name                                     State        Enabled  Next Run Time
+------------------------------------------------------------------------------------------
+SecurityScan                             Ready        true     2026-02-23 09:00:00
+
+Total: 1 tasks
 ```
 
 ## MITRE ATT&CK Mapping

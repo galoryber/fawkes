@@ -9,7 +9,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "net-enum",
-		Description:         "Enumerate local/domain users, groups, and domain info via net.exe (T1087, T1069)",
+		Description:         "Enumerate local/domain users, groups, and domain info via Win32 API (T1087, T1069)",
 		HelpString:          "net-enum -action <users|localgroups|groupmembers|domainusers|domaingroups|domaininfo> [-target <group_name>]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
@@ -65,11 +65,11 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			target, _ := taskData.Args.GetStringArg("target")
-			msg := fmt.Sprintf("net.exe enum: %s", action)
+			msg := fmt.Sprintf("NetAPI enum: %s", action)
 			if target != "" {
 				msg += " " + target
 			}
-			createArtifact(taskData.Task.ID, "Process Create", msg)
+			createArtifact(taskData.Task.ID, "API Call", msg)
 			return response
 		},
 		TaskFunctionProcessResponse: nil,
