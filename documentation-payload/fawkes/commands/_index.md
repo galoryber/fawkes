@@ -50,6 +50,7 @@ pre = "<b>2. </b>"
     * [make-token](/agents/fawkes/commands/make-token/)
     * [procdump](/agents/fawkes/commands/procdump/)
     * [ssh-keys](/agents/fawkes/commands/ssh-keys/)
+    * [vss](/agents/fawkes/commands/vss/)
     * [steal-token](/agents/fawkes/commands/steal-token/)
     * [rev2self](/agents/fawkes/commands/rev2self/)
 - Discovery
