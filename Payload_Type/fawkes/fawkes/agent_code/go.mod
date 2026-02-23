@@ -10,6 +10,7 @@ require (
 	github.com/go-ldap/ldap/v3 v3.4.12
 	github.com/go-ole/go-ole v1.2.6
 	github.com/google/uuid v1.6.0
+	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/shirou/gopsutil/v3 v3.24.5
 	golang.org/x/sys v0.41.0
@@ -19,6 +20,7 @@ require (
 require (
 	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/geoffgarside/ber v1.1.0 // indirect
 	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/jcmturner/aescts/v2 v2.0.0 // indirect
