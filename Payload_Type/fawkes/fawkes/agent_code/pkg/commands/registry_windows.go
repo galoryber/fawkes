@@ -44,4 +44,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&HashdumpCommand{})
 	RegisterCommand(&EventLogCommand{})
 	RegisterCommand(&UACBypassCommand{})
+	RegisterCommand(&NtdllUnhookCommand{})
 }
