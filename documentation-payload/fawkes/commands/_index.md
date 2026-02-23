@@ -80,6 +80,7 @@ pre = "<b>2. </b>"
     * [persist](/agents/fawkes/commands/persist/)
     * [schtask](/agents/fawkes/commands/schtask/)
     * [service](/agents/fawkes/commands/service/)
+    * [shell-config](/agents/fawkes/commands/shell-config/)
     * [systemd-persist](/agents/fawkes/commands/systemd-persist/)
     * [wmi-persist](/agents/fawkes/commands/wmi-persist/)
 - Account Management
