@@ -51,6 +51,7 @@ func Initialize() {
 	RegisterCommand(&SmbCommand{})
 	RegisterCommand(&DnsCommand{})
 	RegisterCommand(&WinrmCommand{})
+	RegisterCommand(&AdcsCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
