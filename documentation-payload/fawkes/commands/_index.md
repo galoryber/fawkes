@@ -86,6 +86,8 @@ pre = "<b>2. </b>"
     * [port-scan](/agents/fawkes/commands/port-scan/)
     * [socks](/agents/fawkes/commands/socks/)
     * [unlink](/agents/fawkes/commands/unlink/)
+- Lateral Movement
+    * [smb](/agents/fawkes/commands/smb/)
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
 - Defense Evasion
