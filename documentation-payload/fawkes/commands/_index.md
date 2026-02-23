@@ -103,6 +103,7 @@ pre = "<b>2. </b>"
     * [dcom](/agents/fawkes/commands/dcom/)
     * [psexec](/agents/fawkes/commands/psexec/)
     * [smb](/agents/fawkes/commands/smb/)
+    * [ssh](/agents/fawkes/commands/ssh/)
     * [winrm](/agents/fawkes/commands/winrm/)
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
