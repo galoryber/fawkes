@@ -31,9 +31,6 @@ func buildWQLTrigger(trigger string, intervalSec int, processName string) (strin
 	case "startup":
 		return "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfFormattedData_PerfOS_System' AND TargetInstance.SystemUpTime >= 120", nil
 	case "interval":
-		if intervalSec < 10 {
-			intervalSec = 300
-		}
 		return "SELECT * FROM __TimerEvent WHERE TimerID = 'FawkesTimer' AND NumFirings > 0", nil
 	case "process":
 		if processName == "" {
