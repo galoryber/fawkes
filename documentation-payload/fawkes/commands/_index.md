@@ -88,6 +88,7 @@ pre = "<b>2. </b>"
     * [unlink](/agents/fawkes/commands/unlink/)
 - Lateral Movement
     * [smb](/agents/fawkes/commands/smb/)
+    * [winrm](/agents/fawkes/commands/winrm/)
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
 - Defense Evasion
