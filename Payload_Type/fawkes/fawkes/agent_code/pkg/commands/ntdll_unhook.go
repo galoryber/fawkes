@@ -353,8 +353,8 @@ func checkNtdllHooks() (string, error) {
 
 			if len(hooks) < maxHooksToReport {
 				// Show first few bytes of original and hooked
-				origBytes := make([]byte, min(hookLen, 8))
-				hookBytes := make([]byte, min(hookLen, 8))
+				origBytes := make([]byte, minUintptr(hookLen, 8))
+				hookBytes := make([]byte, minUintptr(hookLen, 8))
 				copy(origBytes, cleanText[hookStart:])
 				copy(hookBytes, hookedText[hookStart:])
 				hooks = append(hooks, fmt.Sprintf("  0x%X (%d bytes): %X → %X",
@@ -382,7 +382,7 @@ func checkNtdllHooks() (string, error) {
 	return output, nil
 }
 
-func min(a, b uintptr) uintptr {
+func minUintptr(a, b uintptr) uintptr {
 	if a < b {
 		return a
 	}

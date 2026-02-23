@@ -95,15 +95,15 @@ func TestImageSectionHeaderSize(t *testing.T) {
 	}
 }
 
-func TestMinFunction(t *testing.T) {
-	if min(5, 10) != 5 {
-		t.Error("min(5, 10) should be 5")
+func TestMinUintptrFunction(t *testing.T) {
+	if minUintptr(5, 10) != 5 {
+		t.Error("minUintptr(5, 10) should be 5")
 	}
-	if min(10, 5) != 5 {
-		t.Error("min(10, 5) should be 5")
+	if minUintptr(10, 5) != 5 {
+		t.Error("minUintptr(10, 5) should be 5")
 	}
-	if min(5, 5) != 5 {
-		t.Error("min(5, 5) should be 5")
+	if minUintptr(5, 5) != 5 {
+		t.Error("minUintptr(5, 5) should be 5")
 	}
 }
 
