@@ -329,7 +329,9 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 	}
 
 	// Step 4: Process challenge with hash (pass-the-hash)
-	authMsg, err := ntlmssp.ProcessChallengeWithHash(challengeBytes, rt.username, rt.hash)
+	authMsg, err := ntlmssp.NewAuthenticateMessage(challengeBytes, rt.username, rt.hash, &ntlmssp.AuthenticateMessageOptions{
+		PasswordHashed: true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("NTLM authenticate with hash: %v", err)
 	}
