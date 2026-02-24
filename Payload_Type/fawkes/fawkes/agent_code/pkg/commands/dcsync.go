@@ -199,58 +199,15 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// CrackNames — resolve target account names to GUIDs
-	// First, get the domain's NetBIOS name via CrackNames on the domain DN
-	netbiosDomain := ""
-	if args.Domain != "" {
-		// Try to resolve FQDN → NetBIOS via CrackNames
-		dnsCrack, err := cli.CrackNames(ctx, &drsuapi.CrackNamesRequest{
-			Handle:    bindResp.DRS,
-			InVersion: 1,
-			In: &drsuapi.MessageCrackNamesRequest{
-				Value: &drsuapi.MessageCrackNamesRequest_V1{
-					V1: &drsuapi.MessageCrackNamesRequestV1{
-						FormatOffered: uint32(drsuapi.DSNameFormatDNSDomainName),
-						Names:         []string{args.Domain},
-						FormatDesired: uint32(drsuapi.DSNameFormatNT4AccountName),
-					},
-				},
-			},
-		})
-		if err == nil {
-			dnsItems := dnsCrack.Out.GetValue().(*drsuapi.MessageCrackNamesReplyV1).Result.Items
-			if len(dnsItems) > 0 && dnsItems[0].Status == 0 {
-				// Result is "NETBIOS\" — strip trailing backslash
-				netbiosDomain = strings.TrimRight(dnsItems[0].Name, `\`)
-			}
-		}
-	}
-
-	// Build DOMAIN\user format names for CrackNames
-	crackNames := make([]string, len(targets))
-	domainPrefix := netbiosDomain
-	if domainPrefix == "" {
-		// Fall back to original domain value
-		domainPrefix = args.Domain
-	}
-
-	for i, t := range targets {
-		if strings.Contains(t, `\`) || strings.Contains(t, "@") {
-			crackNames[i] = t // already qualified
-		} else if domainPrefix != "" {
-			crackNames[i] = domainPrefix + `\` + t
-		} else {
-			crackNames[i] = t
-		}
-	}
-
+	// Use SansDomainEx format (plain account name, DC resolves in its domain).
 	cracked, err := cli.CrackNames(ctx, &drsuapi.CrackNamesRequest{
 		Handle:    bindResp.DRS,
 		InVersion: 1,
 		In: &drsuapi.MessageCrackNamesRequest{
 			Value: &drsuapi.MessageCrackNamesRequest_V1{
 				V1: &drsuapi.MessageCrackNamesRequestV1{
-					FormatOffered: uint32(drsuapi.DSNameFormatNT4AccountName),
-					Names:         crackNames,
+					FormatOffered: uint32(drsuapi.DSNameFormatNT4AccountNameSANSDomainEx),
+					Names:         targets,
 					FormatDesired: uint32(drsuapi.DSNameFormatUniqueIDName),
 				},
 			},
