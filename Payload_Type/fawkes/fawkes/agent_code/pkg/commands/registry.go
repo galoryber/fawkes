@@ -59,6 +59,7 @@ func Initialize() {
 	RegisterCommand(&KlistCommand{})
 	RegisterCommand(&SprayCommand{})
 	RegisterCommand(&DomainPolicyCommand{})
+	RegisterCommand(&GpoCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
