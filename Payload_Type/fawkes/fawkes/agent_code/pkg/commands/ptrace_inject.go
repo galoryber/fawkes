@@ -278,8 +278,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 
 	// Helper: execute a syscall in the target process via single-step
 	execSyscall := func(sysno, arg1, arg2, arg3, arg4, arg5, arg6 uint64) (uint64, error) {
-		var regs syscall.PtraceRegs
-		regs = origRegs
+		regs := origRegs
 		regs.Rip = syscallAddr
 		regs.Rax = sysno
 		regs.Rdi = arg1
@@ -428,8 +427,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 		}
 
 		// Step 10: Clean up — munmap the RWX page
-		var munmapRegs syscall.PtraceRegs
-		munmapRegs = origRegs
+		munmapRegs := origRegs
 		munmapRegs.Rip = syscallAddr
 		munmapRegs.Rax = 11           // SYS_munmap
 		munmapRegs.Rdi = rwAddr      // addr
