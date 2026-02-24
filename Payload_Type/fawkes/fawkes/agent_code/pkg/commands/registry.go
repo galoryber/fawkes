@@ -61,6 +61,7 @@ func Initialize() {
 	RegisterCommand(&DomainPolicyCommand{})
 	RegisterCommand(&GpoCommand{})
 	RegisterCommand(&DcsyncCommand{})
+	RegisterCommand(&TicketCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
