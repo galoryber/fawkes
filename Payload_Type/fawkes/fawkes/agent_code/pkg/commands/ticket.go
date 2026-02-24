@@ -1064,12 +1064,33 @@ func ticketOPtH(username, realm string, etypeID int32, etypeCfgName string, user
 }
 
 // ticketKDCSend marshals a message, sends it to the KDC over TCP, and returns the response.
+// Retries once on empty response (transient KDC issue).
 func ticketKDCSend(marshalFn func() ([]byte, error), kdcAddr string) ([]byte, error) {
 	reqBytes, err := marshalFn()
 	if err != nil {
 		return nil, fmt.Errorf("marshal: %v", err)
 	}
 
+	var lastErr error
+	for attempt := 0; attempt < 2; attempt++ {
+		if attempt > 0 {
+			time.Sleep(2 * time.Second)
+		}
+		resp, err := ticketKDCSendRaw(reqBytes, kdcAddr)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if len(resp) == 0 {
+			lastErr = fmt.Errorf("KDC returned empty response (SPN may not exist — try FQDN)")
+			continue
+		}
+		return resp, nil
+	}
+	return nil, lastErr
+}
+
+func ticketKDCSendRaw(reqBytes []byte, kdcAddr string) ([]byte, error) {
 	conn, err := net.DialTimeout("tcp", kdcAddr, 10*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("connect to KDC %s: %v", kdcAddr, err)
@@ -1291,11 +1312,7 @@ func ticketS4U2Proxy(serviceUser, targetSPN, realm string, etypeID int32, etypeC
 	// Parse TGS-REP
 	var tgsRep messages.TGSRep
 	if err := tgsRep.Unmarshal(respBuf); err != nil {
-		tag := byte(0)
-		if len(respBuf) > 0 {
-			tag = respBuf[0]
-		}
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP parse (len=%d, tag=0x%02x): %v", len(respBuf), tag, err)
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP parse: %v", err)
 	}
 
 	// Decrypt TGS-REP using TGT session key (key usage 8)
