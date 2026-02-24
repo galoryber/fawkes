@@ -125,7 +125,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Set up GSSAPI context
+	// Set up GSSAPI context (per-context to avoid global state conflicts)
 	var cred sspcred.Credential
 	if args.Hash != "" {
 		// Strip LM hash if LM:NT format
@@ -138,11 +138,11 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		cred = sspcred.NewFromPassword(credUser, args.Password)
 	}
 
-	gssapi.AddCredential(cred)
-	gssapi.AddMechanism(ssp.SPNEGO)
-	gssapi.AddMechanism(ssp.NTLM)
-
-	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background()), time.Duration(args.Timeout)*time.Second)
+	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
+		gssapi.WithCredential(cred),
+		gssapi.WithMechanismFactory(ssp.SPNEGO),
+		gssapi.WithMechanismFactory(ssp.NTLM),
+	), time.Duration(args.Timeout)*time.Second)
 	defer cancel()
 
 	// Connect via EPM (Endpoint Mapper, port 135)
