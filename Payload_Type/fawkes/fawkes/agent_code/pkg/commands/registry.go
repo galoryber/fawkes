@@ -63,6 +63,7 @@ func Initialize() {
 	RegisterCommand(&DcsyncCommand{})
 	RegisterCommand(&TicketCommand{})
 	RegisterCommand(&TrustCommand{})
+	RegisterCommand(&NetGroupCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
