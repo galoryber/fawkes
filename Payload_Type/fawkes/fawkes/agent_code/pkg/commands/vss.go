@@ -260,9 +260,11 @@ func vssCreate(args vssArgs) structs.CommandResult {
 
 	retVal := createResult.Value()
 
-	// Query to find the newly created shadow copy
+	// Query all shadow copies to find the newest one (the one we just created).
+	// VolumeName in WMI is a volume GUID path, not the drive letter, so we
+	// query all copies and take the last (newest) one.
 	resultSet, err := oleutil.CallMethod(services, "ExecQuery",
-		fmt.Sprintf("SELECT ID, DeviceObject FROM Win32_ShadowCopy WHERE VolumeName = '%s'", volume))
+		"SELECT ID, DeviceObject FROM Win32_ShadowCopy")
 	if err == nil {
 		defer resultSet.Clear()
 		resultDisp := resultSet.ToIDispatch()
