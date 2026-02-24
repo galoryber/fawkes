@@ -42,6 +42,7 @@ pre = "<b>2. </b>"
 - Credential/Token Commands
     * [browser](/agents/fawkes/commands/browser/)
     * [cred-harvest](/agents/fawkes/commands/cred-harvest/)
+    * [dcsync](/agents/fawkes/commands/dcsync/)
     * [credman](/agents/fawkes/commands/credman/)
     * [enum-tokens](/agents/fawkes/commands/enum-tokens/)
     * [getprivs](/agents/fawkes/commands/getprivs/)
