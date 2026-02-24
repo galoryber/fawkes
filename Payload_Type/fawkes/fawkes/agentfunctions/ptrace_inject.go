@@ -136,7 +136,10 @@ func init() {
 			var filename string
 			var err error
 
-			switch strings.ToLower(taskData.Task.ParameterGroupName) {
+			groupName := strings.ToLower(taskData.Task.ParameterGroupName)
+			logging.LogInfo("ptrace-inject CreateTasking", "parameter_group", groupName)
+
+			switch groupName {
 			case "default":
 				filename, err = taskData.Args.GetStringArg("filename")
 				if err != nil {
@@ -200,12 +203,14 @@ func init() {
 			case "cli":
 				// CLI/API mode — shellcode passed directly as base64
 				shellcodeB64, err := taskData.Args.GetStringArg("shellcode_b64")
+				logging.LogInfo("ptrace-inject CLI mode", "shellcode_b64_len", len(shellcodeB64), "err", fmt.Sprintf("%v", err))
 				if err != nil || shellcodeB64 == "" {
 					response.Success = false
 					response.Error = "shellcode_b64 parameter required"
 					return response
 				}
 				fileContents, err = base64.StdEncoding.DecodeString(shellcodeB64)
+				logging.LogInfo("ptrace-inject CLI decoded", "fileContents_len", len(fileContents), "err", fmt.Sprintf("%v", err))
 				if err != nil {
 					response.Success = false
 					response.Error = "Failed to decode shellcode_b64: " + err.Error()
