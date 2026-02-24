@@ -1236,38 +1236,46 @@ func ticketS4U2Proxy(serviceUser, targetSPN, realm string, etypeID int32, etypeC
 
 // ticketBuildPAForUser constructs the PA-FOR-USER padata for S4U2Self.
 // Per MS-SFU 2.2.1: PA-FOR-USER contains userName, userRealm, cksum, auth-package.
+// Checksum uses KERB_CHECKSUM_HMAC_MD5 (-138) per RFC 4757 Section 4.
 func ticketBuildPAForUser(targetUser, realm string, sessionKey types.EncryptionKey) (types.PAData, error) {
-	// PA-FOR-USER structure (MS-SFU 2.2.1):
-	// userName[0]: PrincipalName
-	// userRealm[1]: Realm (string)
-	// cksum[2]: Checksum
-	// auth-package[3]: KerberosString = "Kerberos"
-
 	targetCName := types.PrincipalName{
-		NameType:   nametype.KRB_NT_ENTERPRISE,
+		NameType:   nametype.KRB_NT_PRINCIPAL,
 		NameString: []string{targetUser},
 	}
 
-	// Compute HMAC-MD5 checksum over (nameType + nameString + realm + "Kerberos")
-	// Using session key, per MS-SFU 2.2.1
-	var checksumData []byte
+	// Build S4UByteArray per MS-SFU 2.2.1
+	var s4uByteArray []byte
 	// Name type (4 bytes, little-endian)
 	ntBuf := make([]byte, 4)
 	binary.LittleEndian.PutUint32(ntBuf, uint32(targetCName.NameType))
-	checksumData = append(checksumData, ntBuf...)
-	// Each name component (UTF-8 bytes)
+	s4uByteArray = append(s4uByteArray, ntBuf...)
+	// Each name component (UTF-8 bytes, no null terminators)
 	for _, s := range targetCName.NameString {
-		checksumData = append(checksumData, []byte(s)...)
+		s4uByteArray = append(s4uByteArray, []byte(s)...)
 	}
 	// Realm (UTF-8 bytes)
-	checksumData = append(checksumData, []byte(realm)...)
+	s4uByteArray = append(s4uByteArray, []byte(realm)...)
 	// Auth-package: "Kerberos"
-	checksumData = append(checksumData, []byte("Kerberos")...)
+	s4uByteArray = append(s4uByteArray, []byte("Kerberos")...)
 
-	// HMAC-MD5 with session key value
-	mac := hmac.New(md5.New, sessionKey.KeyValue)
-	mac.Write(checksumData)
-	cksumValue := mac.Sum(nil)
+	// Compute KERB_CHECKSUM_HMAC_MD5 per RFC 4757 Section 4:
+	// Step 1: Ksign = HMAC-MD5(sessionKey, "signaturekey\0")
+	ksignMac := hmac.New(md5.New, sessionKey.KeyValue)
+	ksignMac.Write([]byte("signaturekey\x00"))
+	ksign := ksignMac.Sum(nil)
+
+	// Step 2: tmp = MD5(usage_LE || S4UByteArray) where usage = 17
+	usageBuf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(usageBuf, 17)
+	md5Hash := md5.New()
+	md5Hash.Write(usageBuf)
+	md5Hash.Write(s4uByteArray)
+	tmp := md5Hash.Sum(nil)
+
+	// Step 3: CHKSUM = HMAC-MD5(Ksign, tmp)
+	finalMac := hmac.New(md5.New, ksign)
+	finalMac.Write(tmp)
+	cksumValue := finalMac.Sum(nil)
 
 	cksum := types.Checksum{
 		CksumType: -138, // HMAC-MD5 (checksum type for PA-FOR-USER per MS-SFU)
