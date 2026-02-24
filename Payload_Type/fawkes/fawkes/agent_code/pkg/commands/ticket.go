@@ -24,7 +24,9 @@ import (
 	"github.com/jcmturner/gokrb5/v8/iana/asnAppTag"
 	"github.com/jcmturner/gokrb5/v8/iana/flags"
 	"github.com/jcmturner/gokrb5/v8/iana/keyusage"
+	"github.com/jcmturner/gokrb5/v8/iana/msgtype"
 	"github.com/jcmturner/gokrb5/v8/iana/nametype"
+	"github.com/jcmturner/gokrb5/v8/iana/patype"
 	"github.com/jcmturner/gokrb5/v8/messages"
 	"github.com/jcmturner/gokrb5/v8/types"
 )
@@ -1172,14 +1174,9 @@ func ticketS4U2Self(serviceUser, targetUser, realm string, etypeID int32, etypeC
 
 // ticketS4U2Proxy performs S4U2Proxy: uses the S4U2Self ticket to request a TGS
 // for the target service on behalf of the impersonated user.
+// Builds the TGS-REQ manually because gokrb5's NewTGSReq computes the authenticator
+// checksum over the body before we can add AdditionalTickets and cname-in-addl-tkt.
 func ticketS4U2Proxy(serviceUser, targetSPN, realm string, etypeID int32, etypeCfgName string, tgt messages.Ticket, sessionKey types.EncryptionKey, s4uSelfTicket messages.Ticket, kdcAddr string) (messages.Ticket, messages.EncKDCRepPart, error) {
-	cfgStr := fmt.Sprintf("[libdefaults]\n  default_realm = %s\n  dns_lookup_kdc = false\n  dns_lookup_realm = false\n  default_tkt_enctypes = %s\n  default_tgs_enctypes = %s\n  forwardable = true\n[realms]\n  %s = {\n    kdc = %s\n  }\n",
-		realm, etypeCfgName, etypeCfgName, realm, kdcAddr)
-	cfg, err := config.NewFromString(cfgStr)
-	if err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("config: %v", err)
-	}
-
 	// Parse target SPN into PrincipalName
 	spnParts := strings.SplitN(targetSPN, "/", 2)
 	targetSName := types.PrincipalName{
@@ -1192,18 +1189,88 @@ func ticketS4U2Proxy(serviceUser, targetSPN, realm string, etypeID int32, etypeC
 		NameString: []string{serviceUser},
 	}
 
-	tgsReq, err := messages.NewTGSReq(cname, realm, cfg, tgt, sessionKey, targetSName, false)
-	if err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REQ build: %v", err)
+	// Build the ReqBody FIRST with all options, THEN compute authenticator
+	nonceBuf := make([]byte, 4)
+	_, _ = rand.Read(nonceBuf)
+	nonce := int(binary.BigEndian.Uint32(nonceBuf))
+	if nonce < 0 {
+		nonce = -nonce
 	}
 
-	// Set KDC options for S4U2Proxy
-	types.SetFlag(&tgsReq.ReqBody.KDCOptions, flags.Forwardable)
-	// cname-in-addl-tkt (bit 14) tells the KDC to use the cname from AdditionalTickets
-	types.SetFlag(&tgsReq.ReqBody.KDCOptions, 14)
+	reqBody := messages.KDCReqBody{
+		KDCOptions:        types.NewKrbFlags(),
+		Realm:             realm,
+		SName:             targetSName,
+		Till:              time.Now().UTC().Add(24 * time.Hour),
+		Nonce:             nonce,
+		EType:             []int32{etypeID},
+		AdditionalTickets: []messages.Ticket{s4uSelfTicket},
+	}
 
-	// Add S4U2Self ticket as additional ticket
-	tgsReq.ReqBody.AdditionalTickets = []messages.Ticket{s4uSelfTicket}
+	// Set KDC options BEFORE authenticator checksum
+	types.SetFlag(&reqBody.KDCOptions, flags.Forwardable)
+	types.SetFlag(&reqBody.KDCOptions, flags.Canonicalize)
+	// cname-in-addl-tkt (bit 14) tells the KDC to use cname from AdditionalTickets
+	types.SetFlag(&reqBody.KDCOptions, 14)
+
+	// Marshal body for authenticator checksum
+	bodyBytes, err := reqBody.Marshal()
+	if err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("marshal body: %v", err)
+	}
+
+	// Build authenticator with checksum over the body
+	auth, err := types.NewAuthenticator(realm, cname)
+	if err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("authenticator: %v", err)
+	}
+	etype, err := crypto.GetEtype(sessionKey.KeyType)
+	if err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("etype: %v", err)
+	}
+	cksum, err := etype.GetChecksumHash(sessionKey.KeyValue, bodyBytes, keyusage.TGS_REQ_PA_TGS_REQ_AP_REQ_AUTHENTICATOR_CHKSUM)
+	if err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("checksum: %v", err)
+	}
+	auth.Cksum = types.Checksum{
+		CksumType: int32(etype.GetHMACBitLength()),
+		Checksum:  cksum,
+	}
+
+	// Encrypt authenticator
+	authBytes, err := auth.Marshal()
+	if err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("marshal auth: %v", err)
+	}
+	encAuth, err := crypto.GetEncryptedData(authBytes, sessionKey, keyusage.TGS_REQ_PA_TGS_REQ_AP_REQ_AUTHENTICATOR, tgt.EncPart.KVNO)
+	if err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("encrypt auth: %v", err)
+	}
+
+	// Build AP-REQ
+	apReq := messages.APReq{
+		PVNO:                   iana.PVNO,
+		MsgType:                msgtype.KRB_AP_REQ,
+		APOptions:              types.NewKrbFlags(),
+		Ticket:                 tgt,
+		EncryptedAuthenticator: encAuth,
+	}
+	apReqBytes, err := apReq.Marshal()
+	if err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("marshal AP-REQ: %v", err)
+	}
+
+	// Assemble TGS-REQ
+	tgsReq := messages.TGSReq{
+		KDCReqFields: messages.KDCReqFields{
+			PVNO:    iana.PVNO,
+			MsgType: msgtype.KRB_TGS_REQ,
+			PAData: types.PADataSequence{
+				{PADataType: patype.PA_TGS_REQ, PADataValue: apReqBytes},
+			},
+			ReqBody: reqBody,
+		},
+	}
 
 	// Send TGS-REQ
 	respBuf, err := ticketKDCSend(tgsReq.Marshal, kdcAddr)
