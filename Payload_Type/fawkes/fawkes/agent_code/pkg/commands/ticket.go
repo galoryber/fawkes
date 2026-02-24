@@ -635,7 +635,7 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 		}
 	}
 	defer conn.Close()
-	conn.SetDeadline(time.Now().Add(15 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
 
 	// TCP Kerberos framing: 4-byte big-endian length prefix
 	lenBuf := make([]byte, 4)
