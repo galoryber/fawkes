@@ -1291,7 +1291,11 @@ func ticketS4U2Proxy(serviceUser, targetSPN, realm string, etypeID int32, etypeC
 	// Parse TGS-REP
 	var tgsRep messages.TGSRep
 	if err := tgsRep.Unmarshal(respBuf); err != nil {
-		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP parse: %v", err)
+		tag := byte(0)
+		if len(respBuf) > 0 {
+			tag = respBuf[0]
+		}
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP parse (len=%d, tag=0x%02x): %v", len(respBuf), tag, err)
 	}
 
 	// Decrypt TGS-REP using TGT session key (key usage 8)
