@@ -4,9 +4,11 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
 )
@@ -34,7 +36,11 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	cmd := exec.Command(
+	// 5-minute timeout to prevent indefinite agent hangs from long-running scripts
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx,
 		"powershell.exe",
 		"-NoProfile",
 		"-NonInteractive",
@@ -46,6 +52,13 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if err != nil {
 		outputStr := string(output)
+		if ctx.Err() == context.DeadlineExceeded {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("PowerShell command timed out after 5 minutes\n%s", outputStr),
+				Status:    "error",
+				Completed: true,
+			}
+		}
 		if outputStr != "" {
 			return structs.CommandResult{
 				Output:    fmt.Sprintf("%s\nError: %v", outputStr, err),
