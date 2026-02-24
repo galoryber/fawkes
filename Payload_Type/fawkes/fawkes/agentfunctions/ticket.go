@@ -61,11 +61,11 @@ func init() {
 				Name:             "domain_sid",
 				CLIName:          "domain_sid",
 				ModalDisplayName: "Domain SID",
-				Description:      "Domain SID (e.g., S-1-5-21-1234567890-1234567890-1234567890)",
+				Description:      "Domain SID for forge action (e.g., S-1-5-21-1234567890-1234567890-1234567890). Not needed for request.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{ParameterIsRequired: true, GroupName: "Default"},
+					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
 			{
