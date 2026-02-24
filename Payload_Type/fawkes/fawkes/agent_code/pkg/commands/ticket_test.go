@@ -409,3 +409,117 @@ func TestTicketDefaults(t *testing.T) {
 		t.Error("default kirbi format not applied")
 	}
 }
+
+// --- Request action (Overpass-the-Hash) tests ---
+
+func TestTicketRequestMissingParams(t *testing.T) {
+	tests := []struct {
+		name   string
+		args   map[string]interface{}
+		expect string
+	}{
+		{"missing all", map[string]interface{}{"action": "request"}, "realm, username, key, and server"},
+		{"missing server", map[string]interface{}{"action": "request", "realm": "TEST.LOCAL", "username": "admin", "key": strings.Repeat("aa", 32)}, "server"},
+		{"missing key", map[string]interface{}{"action": "request", "realm": "TEST.LOCAL", "username": "admin", "server": "dc01"}, "key"},
+		{"missing realm", map[string]interface{}{"action": "request", "username": "admin", "key": strings.Repeat("aa", 32), "server": "dc01"}, "realm"},
+		{"missing username", map[string]interface{}{"action": "request", "realm": "TEST.LOCAL", "key": strings.Repeat("aa", 32), "server": "dc01"}, "username"},
+	}
+
+	cmd := &TicketCommand{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b, _ := json.Marshal(tt.args)
+			result := cmd.Execute(structs.Task{Params: string(b)})
+			if result.Status != "error" {
+				t.Errorf("expected error, got %s", result.Status)
+			}
+			if !strings.Contains(result.Output, tt.expect) {
+				t.Errorf("expected output to contain %q, got: %s", tt.expect, result.Output)
+			}
+		})
+	}
+}
+
+func TestTicketRequestBadKey(t *testing.T) {
+	cmd := &TicketCommand{}
+
+	// Invalid hex
+	b, _ := json.Marshal(map[string]interface{}{
+		"action": "request", "realm": "TEST.LOCAL", "username": "admin",
+		"key": "not_hex", "server": "dc01",
+	})
+	result := cmd.Execute(structs.Task{Params: string(b)})
+	if result.Status != "error" || !strings.Contains(result.Output, "Error decoding key") {
+		t.Errorf("expected key decode error, got: %s", result.Output)
+	}
+
+	// Wrong length for AES256
+	b, _ = json.Marshal(map[string]interface{}{
+		"action": "request", "realm": "TEST.LOCAL", "username": "admin",
+		"key": strings.Repeat("aa", 16), "key_type": "aes256", "server": "dc01",
+	})
+	result = cmd.Execute(structs.Task{Params: string(b)})
+	if result.Status != "error" || !strings.Contains(result.Output, "32 bytes") {
+		t.Errorf("expected key length error, got: %s", result.Output)
+	}
+}
+
+func TestTicketRequestBadKeyType(t *testing.T) {
+	cmd := &TicketCommand{}
+	b, _ := json.Marshal(map[string]interface{}{
+		"action": "request", "realm": "TEST.LOCAL", "username": "admin",
+		"key": strings.Repeat("aa", 32), "key_type": "des", "server": "dc01",
+	})
+	result := cmd.Execute(structs.Task{Params: string(b)})
+	if result.Status != "error" || !strings.Contains(result.Output, "unknown key_type") {
+		t.Errorf("expected key_type error, got: %s", result.Output)
+	}
+}
+
+func TestTicketRequestConnectionRefused(t *testing.T) {
+	cmd := &TicketCommand{}
+	// Use localhost with a port that's almost certainly not listening
+	b, _ := json.Marshal(map[string]interface{}{
+		"action": "request", "realm": "TEST.LOCAL", "username": "admin",
+		"key": strings.Repeat("aa", 32), "server": "127.0.0.1:19999",
+	})
+	result := cmd.Execute(structs.Task{Params: string(b)})
+	if result.Status != "error" {
+		t.Errorf("expected error for connection refused, got: %s — %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Error connecting to KDC") && !strings.Contains(result.Output, "Error") {
+		t.Errorf("expected connection error, got: %s", result.Output)
+	}
+}
+
+func TestTicketKrbErrorMsg(t *testing.T) {
+	tests := []struct {
+		code   int32
+		expect string
+	}{
+		{6, "PRINCIPAL_UNKNOWN"},
+		{18, "CLIENT_REVOKED"},
+		{24, "PREAUTH_FAILED"},
+		{25, "PREAUTH_REQUIRED"},
+		{31, "SKEW"},
+		{999, "error code 999"},
+	}
+
+	for _, tt := range tests {
+		msg := ticketKrbErrorMsg(tt.code)
+		if !strings.Contains(msg, tt.expect) {
+			t.Errorf("ticketKrbErrorMsg(%d) = %q, want to contain %q", tt.code, msg, tt.expect)
+		}
+	}
+}
+
+func TestTicketRequestViaExecuteSwitch(t *testing.T) {
+	// Verify the "request" action is recognized (not "unknown")
+	cmd := &TicketCommand{}
+	b, _ := json.Marshal(map[string]interface{}{"action": "request"})
+	result := cmd.Execute(structs.Task{Params: string(b)})
+	// Should fail with missing params, NOT "Unknown action"
+	if strings.Contains(result.Output, "Unknown action") {
+		t.Error("request action not recognized in switch")
+	}
+}
