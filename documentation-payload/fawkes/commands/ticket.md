@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Forge or request Kerberos tickets using extracted encryption keys.
+Forge, request, or delegate Kerberos tickets using extracted encryption keys.
 
 **Forge — Golden Ticket** (T1558.001): Forges a TGT using the `krbtgt` account's encryption key. Pure offline cryptographic operation — no network traffic.
 
@@ -15,24 +15,27 @@ Forge or request Kerberos tickets using extracted encryption keys.
 
 **Request — Overpass-the-Hash** (T1550.002): Performs an AS-REQ exchange with a KDC using a stolen key (AES256, AES128, or RC4/NTLM hash) to obtain a legitimate TGT. This is an online operation that contacts the Domain Controller on port 88.
 
+**S4U — Constrained Delegation** (T1134.001): Performs S4U2Self + S4U2Proxy to obtain a service ticket for an impersonated user via constrained delegation. Requires a service account with `msDS-AllowedToDelegateTo` and `TrustedToAuthForDelegation` (protocol transition). Online operation against the KDC.
+
 Outputs tickets in kirbi format (for Rubeus/Mimikatz on Windows) or ccache format (for Linux/macOS `KRB5CCNAME`).
 
 ## Arguments
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `-action` | Yes | Action: `forge` (offline ticket creation) or `request` (Overpass-the-Hash AS exchange) |
+| `-action` | Yes | Action: `forge` (offline), `request` (Overpass-the-Hash), or `s4u` (constrained delegation) |
 | `-realm` | Yes | Kerberos realm / AD domain (e.g., `CORP.LOCAL`) |
-| `-username` | Yes | Username for the ticket |
+| `-username` | Yes | Username for the ticket (forge/request) or service account with delegation (s4u) |
 | `-key` | Yes | Encryption key in hex (from DCSync, hashdump, etc.) |
 | `-key_type` | No | Key type: `aes256` (default), `aes128`, `rc4`/`ntlm` |
 | `-format` | No | Output format: `kirbi` (default) or `ccache` |
-| `-server` | No* | KDC address for `request` action (e.g., `dc01.corp.local`). *Required for request.* |
+| `-server` | No* | KDC address (e.g., `dc01.corp.local`). *Required for request and s4u.* |
+| `-impersonate` | No* | User to impersonate (e.g., `Administrator`). *Required for s4u.* |
+| `-spn` | No* | Target SPN. Silver Ticket: `cifs/dc01.corp.local`. S4U: FQDN SPN to delegate to. *Required for s4u.* |
 | `-domain_sid` | No* | Domain SID (e.g., `S-1-5-21-...`). *Required for forge.* |
 | `-user_rid` | No | User RID for forge (default: 500) |
 | `-kvno` | No | Key Version Number for forge (default: 2) |
 | `-lifetime` | No | Ticket lifetime in hours for forge (default: 24) |
-| `-spn` | No | SPN for Silver Ticket forge (e.g., `cifs/dc01.corp.local`). Omit for Golden Ticket. |
 
 ## Usage
 
@@ -81,6 +84,24 @@ With RC4/NTLM hash (ccache for Linux):
 ```
 ticket -action request -realm CORP.LOCAL -username admin -key <ntlm_hash> -key_type rc4 -format ccache -server dc01.corp.local
 ```
+
+### S4U — Constrained Delegation Abuse
+
+Impersonate a user via S4U2Self + S4U2Proxy using a service account with constrained delegation rights:
+
+```
+ticket -action s4u -realm NORTH.SEVENKINGDOMS.LOCAL -username jon.snow -key <ntlm_hash> -key_type rc4 -server dc02.north.local -impersonate Administrator -spn CIFS/winterfell.north.sevenkingdoms.local
+```
+
+With AES256 key (ccache for Linux):
+
+```
+ticket -action s4u -realm CORP.LOCAL -username svc_sql -key <aes256_key> -server dc01.corp.local -impersonate Administrator -spn MSSQLSvc/sql01.corp.local:1433 -format ccache
+```
+
+{{% notice info %}}
+**Important:** Use FQDN-style SPNs (e.g., `CIFS/dc01.corp.local` not `CIFS/dc01`). The KDC may return empty responses for short SPNs.
+{{% /notice %}}
 
 ### DCSync + OPtH Workflow
 
@@ -159,6 +180,8 @@ impacket-psexec -k -no-pass corp.local/Administrator@dc01
 **Forge** is a local cryptographic operation — no network traffic. Detection relies on anomalous ticket usage (event IDs 4769, 4770).
 
 **Request** (Overpass-the-Hash) generates a real AS-REQ to the KDC on port 88. This produces a legitimate 4768 (TGT Request) event — blends with normal authentication traffic.
+
+**S4U** generates TGS-REQ traffic to the KDC (3 requests: AS-REQ for TGT, S4U2Self TGS-REQ, S4U2Proxy TGS-REQ). Produces event ID 4769 for the S4U2Proxy service ticket. The service account must have constrained delegation configured with protocol transition (`TrustedToAuthForDelegation`).
 {{% /notice %}}
 
 - AES256 keys are preferred over RC4 — RC4 tickets may trigger alerts in environments monitoring for etype downgrade
@@ -172,3 +195,4 @@ impacket-psexec -k -no-pass corp.local/Administrator@dc01
 - **T1558.001** — Steal or Forge Kerberos Tickets: Golden Ticket
 - **T1558.002** — Steal or Forge Kerberos Tickets: Silver Ticket
 - **T1550.002** — Use Alternate Authentication Material: Pass the Hash (Overpass-the-Hash)
+- **T1134.001** — Access Token Manipulation: Token Impersonation/Theft (S4U Constrained Delegation)
