@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -202,13 +203,13 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 		}
 
 		if v := entry.GetAttributeValue("trustDirection"); v != "" {
-			fmt.Sscanf(v, "%d", &t.direction)
+			t.direction, _ = strconv.Atoi(v)
 		}
 		if v := entry.GetAttributeValue("trustType"); v != "" {
-			fmt.Sscanf(v, "%d", &t.trustType)
+			t.trustType, _ = strconv.Atoi(v)
 		}
 		if v := entry.GetAttributeValue("trustAttributes"); v != "" {
-			fmt.Sscanf(v, "%d", &t.attributes)
+			t.attributes, _ = strconv.Atoi(v)
 		}
 
 		// Parse binary SID
