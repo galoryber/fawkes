@@ -198,16 +198,31 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// CrackNames — resolve target account names to GUIDs
-	// Use SansDomainEx format (plain account name, DC resolves in its domain).
+	// CrackNames — resolve target account names to GUIDs.
+	// If we have a domain, use NT4 format (NETBIOS\account) for unambiguous resolution
+	// in multi-domain forests. Otherwise use SansDomainEx (plain name, DC resolves locally).
+	var crackFormat uint32
+	crackTargets := make([]string, len(targets))
+	if args.Domain != "" {
+		// Derive NetBIOS domain from FQDN (first DNS label, uppercased)
+		netbios := strings.ToUpper(strings.SplitN(args.Domain, ".", 2)[0])
+		crackFormat = uint32(drsuapi.DSNameFormatNT4AccountName)
+		for i, t := range targets {
+			crackTargets[i] = netbios + `\` + t
+		}
+	} else {
+		crackFormat = uint32(drsuapi.DSNameFormatNT4AccountNameSANSDomainEx)
+		copy(crackTargets, targets)
+	}
+
 	cracked, err := cli.CrackNames(ctx, &drsuapi.CrackNamesRequest{
 		Handle:    bindResp.DRS,
 		InVersion: 1,
 		In: &drsuapi.MessageCrackNamesRequest{
 			Value: &drsuapi.MessageCrackNamesRequest_V1{
 				V1: &drsuapi.MessageCrackNamesRequestV1{
-					FormatOffered: uint32(drsuapi.DSNameFormatNT4AccountNameSANSDomainEx),
-					Names:         targets,
+					FormatOffered: crackFormat,
+					Names:         crackTargets,
 					FormatDesired: uint32(drsuapi.DSNameFormatUniqueIDName),
 				},
 			},
