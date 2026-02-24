@@ -58,6 +58,7 @@ func Initialize() {
 	RegisterCommand(&RpfwdCommand{})
 	RegisterCommand(&KlistCommand{})
 	RegisterCommand(&SprayCommand{})
+	RegisterCommand(&DomainPolicyCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
