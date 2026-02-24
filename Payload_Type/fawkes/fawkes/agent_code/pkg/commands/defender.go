@@ -6,6 +6,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -363,6 +364,7 @@ func defenderExclusions() structs.CommandResult {
 }
 
 // defenderAddExclusion adds a path, process, or extension exclusion.
+// Uses PowerShell Add-MpPreference cmdlet which works with Tamper Protection.
 func defenderAddExclusion(args defenderArgs) structs.CommandResult {
 	if args.Value == "" {
 		return structs.CommandResult{
@@ -377,14 +379,14 @@ func defenderAddExclusion(args defenderArgs) structs.CommandResult {
 		exType = "path"
 	}
 
-	var regPath string
+	var paramName string
 	switch exType {
 	case "path":
-		regPath = `SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths`
+		paramName = "ExclusionPath"
 	case "process":
-		regPath = `SOFTWARE\Microsoft\Windows Defender\Exclusions\Processes`
+		paramName = "ExclusionProcess"
 	case "extension":
-		regPath = `SOFTWARE\Microsoft\Windows Defender\Exclusions\Extensions`
+		paramName = "ExclusionExtension"
 	default:
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Unknown exclusion type: %s\nAvailable: path, process, extension", exType),
@@ -393,21 +395,13 @@ func defenderAddExclusion(args defenderArgs) structs.CommandResult {
 		}
 	}
 
-	key, err := registry.OpenKey(registry.LOCAL_MACHINE, regPath, registry.SET_VALUE)
+	// Use PowerShell Add-MpPreference — works through official Defender API
+	// even when Tamper Protection blocks direct registry writes
+	psCmd := fmt.Sprintf("Add-MpPreference -%s '%s'", paramName, strings.ReplaceAll(args.Value, "'", "''"))
+	output, err := defenderRunPowerShell(psCmd)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening exclusion key: %v\nRequires administrator privileges.", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	defer key.Close()
-
-	// Exclusion values are DWORD with value 0
-	err = key.SetDWordValue(args.Value, 0)
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error setting exclusion: %v", err),
+			Output:    fmt.Sprintf("Error adding exclusion: %v\n%s\nRequires administrator privileges.", err, output),
 			Status:    "error",
 			Completed: true,
 		}
@@ -421,6 +415,7 @@ func defenderAddExclusion(args defenderArgs) structs.CommandResult {
 }
 
 // defenderRemoveExclusion removes a path, process, or extension exclusion.
+// Uses PowerShell Remove-MpPreference cmdlet which works with Tamper Protection.
 func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 	if args.Value == "" {
 		return structs.CommandResult{
@@ -435,14 +430,14 @@ func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 		exType = "path"
 	}
 
-	var regPath string
+	var paramName string
 	switch exType {
 	case "path":
-		regPath = `SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths`
+		paramName = "ExclusionPath"
 	case "process":
-		regPath = `SOFTWARE\Microsoft\Windows Defender\Exclusions\Processes`
+		paramName = "ExclusionProcess"
 	case "extension":
-		regPath = `SOFTWARE\Microsoft\Windows Defender\Exclusions\Extensions`
+		paramName = "ExclusionExtension"
 	default:
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Unknown exclusion type: %s\nAvailable: path, process, extension", exType),
@@ -451,20 +446,12 @@ func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 		}
 	}
 
-	key, err := registry.OpenKey(registry.LOCAL_MACHINE, regPath, registry.SET_VALUE)
+	// Use PowerShell Remove-MpPreference — works through official Defender API
+	psCmd := fmt.Sprintf("Remove-MpPreference -%s '%s'", paramName, strings.ReplaceAll(args.Value, "'", "''"))
+	output, err := defenderRunPowerShell(psCmd)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening exclusion key: %v\nRequires administrator privileges.", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	defer key.Close()
-
-	err = key.DeleteValue(args.Value)
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error removing exclusion: %v", err),
+			Output:    fmt.Sprintf("Error removing exclusion: %v\n%s\nRequires administrator privileges.", err, output),
 			Status:    "error",
 			Completed: true,
 		}
@@ -475,6 +462,13 @@ func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 		Status:    "success",
 		Completed: true,
 	}
+}
+
+// defenderRunPowerShell runs a PowerShell command for Defender management.
+func defenderRunPowerShell(psCmd string) (string, error) {
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", psCmd)
+	output, err := cmd.CombinedOutput()
+	return strings.TrimSpace(string(output)), err
 }
 
 // defenderThreats queries recent threat detections.
