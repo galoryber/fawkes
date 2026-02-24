@@ -807,6 +807,10 @@ func ticketKrbErrorMsg(code int32) string {
 		return "KDC_ERR_C_PRINCIPAL_UNKNOWN — client not found in Kerberos database"
 	case 12:
 		return "KDC_ERR_POLICY — KDC policy rejects request"
+	case 13:
+		return "KDC_ERR_BADOPTION — KDC cannot accommodate requested option (check delegation config)"
+	case 15:
+		return "KDC_ERR_SUMTYPE_NOSUPP — checksum type not supported"
 	case 18:
 		return "KDC_ERR_CLIENT_REVOKED — account disabled or locked"
 	case 23:
@@ -817,6 +821,8 @@ func ticketKrbErrorMsg(code int32) string {
 		return "KDC_ERR_PREAUTH_REQUIRED — pre-authentication required"
 	case 31:
 		return "KRB_AP_ERR_SKEW — clock skew too great between client and KDC"
+	case 41:
+		return "KRB_AP_ERR_BAD_INTEGRITY — integrity check on decrypted field failed"
 	case 68:
 		return "KDC_ERR_WRONG_REALM — wrong realm"
 	default:
@@ -1233,7 +1239,7 @@ func ticketS4U2Proxy(serviceUser, targetSPN, realm string, etypeID int32, etypeC
 		return messages.Ticket{}, messages.EncKDCRepPart{}, fmt.Errorf("checksum: %v", err)
 	}
 	auth.Cksum = types.Checksum{
-		CksumType: int32(etype.GetHMACBitLength()),
+		CksumType: etype.GetHashID(),
 		Checksum:  cksum,
 	}
 
