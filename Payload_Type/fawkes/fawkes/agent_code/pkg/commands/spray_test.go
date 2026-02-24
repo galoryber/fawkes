@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"net"
 	"strings"
 	"testing"
 
@@ -274,6 +275,123 @@ func TestSprayDefaultAction(t *testing.T) {
 	// Should attempt kerberos (will fail on connection, not action)
 	if strings.Contains(result.Output, "Unknown action") {
 		t.Error("empty action should default to kerberos, not return unknown action error")
+	}
+}
+
+func TestSprayEnumerateNoPasswordRequired(t *testing.T) {
+	cmd := &SprayCommand{}
+	args := sprayArgs{
+		Action: "enumerate",
+		Server: "192.0.2.1", // RFC 5737 test address
+		Domain: "TEST.LOCAL",
+		Users:  "testuser",
+		// No password — should be allowed for enumerate
+	}
+	data, _ := json.Marshal(args)
+	result := cmd.Execute(structs.Task{Params: string(data)})
+	// Should attempt enumerate (will fail on connection, not validation)
+	if strings.Contains(result.Output, "password is required") {
+		t.Error("enumerate should not require password")
+	}
+}
+
+func TestSprayNonEnumerateRequiresPassword(t *testing.T) {
+	cmd := &SprayCommand{}
+	for _, action := range []string{"kerberos", "ldap", "smb"} {
+		t.Run(action, func(t *testing.T) {
+			args := sprayArgs{
+				Action: action,
+				Server: "dc01",
+				Domain: "TEST.LOCAL",
+				Users:  "testuser",
+			}
+			data, _ := json.Marshal(args)
+			result := cmd.Execute(structs.Task{Params: string(data)})
+			if result.Status != "error" || !strings.Contains(result.Output, "password") {
+				t.Errorf("%s without password should require password, got: %s", action, result.Output)
+			}
+		})
+	}
+}
+
+func TestExtractKrbErrorCode(t *testing.T) {
+	tests := []struct {
+		name     string
+		data     []byte
+		expected int
+	}{
+		{
+			"preauth required (25)",
+			// Minimal fake: ... 0xa6 0x03 0x02 0x01 0x19 (context[6] len=3 INTEGER len=1 val=25)
+			[]byte{0x00, 0xa6, 0x03, 0x02, 0x01, 0x19, 0x00},
+			25,
+		},
+		{
+			"principal unknown (6)",
+			[]byte{0x00, 0xa6, 0x03, 0x02, 0x01, 0x06, 0x00},
+			6,
+		},
+		{
+			"client revoked (18)",
+			[]byte{0x00, 0xa6, 0x03, 0x02, 0x01, 0x12, 0x00},
+			18,
+		},
+		{
+			"preauth failed (24)",
+			[]byte{0x00, 0xa6, 0x03, 0x02, 0x01, 0x18, 0x00},
+			24,
+		},
+		{
+			"two-byte error code (256)",
+			[]byte{0x00, 0xa6, 0x04, 0x02, 0x02, 0x01, 0x00, 0x00},
+			256,
+		},
+		{
+			"no match returns -1",
+			[]byte{0x00, 0x01, 0x02, 0x03},
+			-1,
+		},
+		{
+			"empty data returns -1",
+			[]byte{},
+			-1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			code := extractKrbErrorCode(tt.data)
+			if code != tt.expected {
+				t.Errorf("expected %d, got %d", tt.expected, code)
+			}
+		})
+	}
+}
+
+func TestSprayReadFull(t *testing.T) {
+	// sprayReadFull is tested indirectly by enumKerberosUser
+	// but we can verify the basic contract through a pipe
+	r, w := net.Pipe()
+	defer r.Close()
+
+	buf := make([]byte, 4)
+	done := make(chan error)
+	go func() {
+		_, err := sprayReadFull(r, buf)
+		done <- err
+	}()
+
+	// Write in two chunks
+	w.Write([]byte{0x01, 0x02})
+	w.Write([]byte{0x03, 0x04})
+	w.Close()
+
+	err := <-done
+	if err != nil {
+		t.Errorf("expected no error, got %v", err)
+	}
+	if buf[0] != 0x01 || buf[1] != 0x02 || buf[2] != 0x03 || buf[3] != 0x04 {
+		t.Errorf("expected [1,2,3,4], got %v", buf)
 	}
 }
 
