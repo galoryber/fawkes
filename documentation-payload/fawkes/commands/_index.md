@@ -59,6 +59,7 @@ pre = "<b>2. </b>"
     * [rev2self](/agents/fawkes/commands/rev2self/)
 - Discovery
     * [adcs](/agents/fawkes/commands/adcs/)
+    * [domain-policy](/agents/fawkes/commands/domain-policy/)
     * [av-detect](/agents/fawkes/commands/av-detect/)
     * [kerb-delegation](/agents/fawkes/commands/kerb-delegation/)
     * [dns](/agents/fawkes/commands/dns/)
