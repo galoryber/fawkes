@@ -11,8 +11,8 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "dcom",
 		Description:         "Execute commands on remote hosts via DCOM lateral movement. Supports MMC20.Application, ShellWindows, and ShellBrowserWindow objects.",
-		HelpString:          "dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser] [-dir <directory>]",
-		Version:             1,
+		HelpString:          "dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser] [-dir <directory>] [-username <user> -password <pass> -domain <domain>]",
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1021.003"}, // Remote Services: Distributed Component Object Model
 		SupportedUIFeatures: []string{},
@@ -102,6 +102,48 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						UIModalPosition:     6,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "username",
+				CLIName:       "username",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Username for DCOM auth (optional — uses make-token credentials if not specified)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     7,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "password",
+				CLIName:       "password",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Password for DCOM auth (optional — uses make-token credentials if not specified)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     8,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "domain",
+				CLIName:       "domain",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Domain for DCOM auth (optional — uses make-token credentials if not specified)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     9,
 						GroupName:            "Default",
 					},
 				},

