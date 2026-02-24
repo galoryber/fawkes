@@ -290,6 +290,115 @@ func skipCcacheOctetString(r io.Reader) error {
 	return err
 }
 
+func klistImport(args klistArgs) structs.CommandResult {
+	if args.Ticket == "" {
+		return structs.CommandResult{
+			Output:    "Error: -ticket parameter required (base64-encoded kirbi or ccache data)",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Decode base64
+	data, err := base64.StdEncoding.DecodeString(args.Ticket)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error decoding base64 ticket data: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	if len(data) < 4 {
+		return structs.CommandResult{
+			Output:    "Error: ticket data too short",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Auto-detect format: ccache starts with 0x0503 or 0x0504, kirbi starts with 0x76 (APPLICATION 22)
+	isCcache := (data[0] == 0x05 && (data[1] == 0x03 || data[1] == 0x04))
+	isKirbi := data[0] == 0x76
+
+	if !isCcache && !isKirbi {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: unrecognized ticket format (first byte: 0x%02x). Expected ccache (0x0503/0x0504) or kirbi (0x76).", data[0]),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	var ccacheData []byte
+	var formatName string
+
+	if isCcache {
+		// Already in ccache format — use directly
+		ccacheData = data
+		formatName = "ccache"
+	} else {
+		// Kirbi format — convert to ccache via the ticket command's helper
+		// For now, write kirbi directly and let the user convert
+		// Actually, we can write ccache by reusing ticketToCCache from ticket.go
+		// But kirbi→ccache conversion requires parsing the KRB-CRED which is complex
+		// Simple approach: write as .kirbi file and report usage instructions
+		// Better approach: accept kirbi but write it as-is with instructions
+
+		// For a proper PTT on Unix, we need ccache format
+		// Let's try to parse the KRB-CRED and extract what we need
+		// Actually, the simplest and most reliable approach: if it's kirbi,
+		// tell the operator to use -format ccache with the ticket command instead.
+		return structs.CommandResult{
+			Output:    "Error: kirbi format detected. On Linux/macOS, use ccache format instead.\nRe-forge with: ticket -action forge ... -format ccache\nOr use impacket's ticketConverter.py to convert.",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Determine output path
+	ccachePath := args.Path
+	if ccachePath == "" {
+		ccachePath = fmt.Sprintf("/tmp/krb5cc_%d", os.Getuid())
+	}
+
+	// Write ccache file
+	if err := os.WriteFile(ccachePath, ccacheData, 0600); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error writing ccache to %s: %v", ccachePath, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Set KRB5CCNAME environment variable
+	os.Setenv("KRB5CCNAME", ccachePath)
+
+	// Parse the written ccache for display
+	defPrincipal, creds, parseErr := parseCcache(ccachePath)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[+] Ticket imported successfully (%s format, %d bytes)\n", formatName, len(ccacheData)))
+	sb.WriteString(fmt.Sprintf("[+] Written to: %s\n", ccachePath))
+	sb.WriteString(fmt.Sprintf("[+] KRB5CCNAME set to: %s\n", ccachePath))
+
+	if parseErr == nil && defPrincipal != nil {
+		sb.WriteString(fmt.Sprintf("\n    Principal: %s\n", defPrincipal.String()))
+		sb.WriteString(fmt.Sprintf("    Tickets:   %d\n", len(creds)))
+		for _, cred := range creds {
+			sb.WriteString(fmt.Sprintf("    → %s (%s)\n", cred.Server.String(), etypeToNameKL(cred.KeyType)))
+		}
+	}
+
+	sb.WriteString("\n[*] Kerberos auth is now available for tools using KRB5CCNAME.")
+	sb.WriteString("\n[*] Use 'run' to execute Kerberos-aware tools (e.g., smbclient -k, impacket-psexec -k).")
+
+	return structs.CommandResult{
+		Output:    sb.String(),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
 func klistList(args klistArgs) structs.CommandResult {
 	ccachePath := findCcacheFile()
 	if ccachePath == "" {

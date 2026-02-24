@@ -22,6 +22,8 @@ func (c *KlistCommand) Description() string {
 type klistArgs struct {
 	Action string `json:"action"`
 	Server string `json:"server"` // optional: filter by server name (list) or target for dump
+	Ticket string `json:"ticket"` // base64 kirbi or ccache data (import action)
+	Path   string `json:"path"`   // optional: output path for import (default: auto)
 }
 
 func (c *KlistCommand) Execute(task structs.Task) structs.CommandResult {
@@ -48,9 +50,11 @@ func (c *KlistCommand) Execute(task structs.Task) structs.CommandResult {
 		return klistPurge(args)
 	case "dump":
 		return klistDump(args)
+	case "import":
+		return klistImport(args)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: list, purge, dump", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s. Use: list, purge, dump, import", args.Action),
 			Status:    "error",
 			Completed: true,
 		}

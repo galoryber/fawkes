@@ -1,9 +1,11 @@
 package commands
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -316,5 +318,147 @@ func TestCcachePrincipalString(t *testing.T) {
 		if result != tt.expected {
 			t.Errorf("got %q, want %q", result, tt.expected)
 		}
+	}
+}
+
+// --- Import action tests ---
+
+func TestKlistImportMissingTicket(t *testing.T) {
+	result := klistImport(klistArgs{Action: "import"})
+	if result.Status != "error" {
+		t.Errorf("expected error, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "-ticket parameter required") {
+		t.Errorf("unexpected output: %s", result.Output)
+	}
+}
+
+func TestKlistImportBadBase64(t *testing.T) {
+	result := klistImport(klistArgs{Action: "import", Ticket: "not!valid!base64!!!"})
+	if result.Status != "error" {
+		t.Errorf("expected error, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "Error decoding base64") {
+		t.Errorf("unexpected output: %s", result.Output)
+	}
+}
+
+func TestKlistImportTooShort(t *testing.T) {
+	ticket := base64.StdEncoding.EncodeToString([]byte{0x01, 0x02})
+	result := klistImport(klistArgs{Action: "import", Ticket: ticket})
+	if result.Status != "error" {
+		t.Errorf("expected error, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "too short") {
+		t.Errorf("unexpected output: %s", result.Output)
+	}
+}
+
+func TestKlistImportUnrecognizedFormat(t *testing.T) {
+	data := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0x00}
+	ticket := base64.StdEncoding.EncodeToString(data)
+	result := klistImport(klistArgs{Action: "import", Ticket: ticket})
+	if result.Status != "error" {
+		t.Errorf("expected error, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "unrecognized ticket format") {
+		t.Errorf("unexpected output: %s", result.Output)
+	}
+}
+
+func TestKlistImportKirbiRejectedOnUnix(t *testing.T) {
+	// Kirbi starts with 0x76 (ASN.1 APPLICATION 22)
+	data := []byte{0x76, 0x03, 0x02, 0x01, 0x05}
+	ticket := base64.StdEncoding.EncodeToString(data)
+	result := klistImport(klistArgs{Action: "import", Ticket: ticket})
+	if result.Status != "error" {
+		t.Errorf("expected error for kirbi on Unix, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "kirbi format detected") {
+		t.Errorf("unexpected output: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "ccache format") {
+		t.Errorf("should suggest ccache format: %s", result.Output)
+	}
+}
+
+func TestKlistImportCcacheSuccess(t *testing.T) {
+	ccacheData := buildTestCcache(t)
+	ticket := base64.StdEncoding.EncodeToString(ccacheData)
+
+	// Use temp dir for output
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "krb5cc_import_test")
+
+	// Save and restore KRB5CCNAME
+	origCC := os.Getenv("KRB5CCNAME")
+	defer func() {
+		if origCC != "" {
+			os.Setenv("KRB5CCNAME", origCC)
+		} else {
+			os.Unsetenv("KRB5CCNAME")
+		}
+	}()
+
+	result := klistImport(klistArgs{
+		Action: "import",
+		Ticket: ticket,
+		Path:   outPath,
+	})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+
+	// Verify file was written
+	if _, err := os.Stat(outPath); os.IsNotExist(err) {
+		t.Error("ccache file was not created")
+	}
+
+	// Verify KRB5CCNAME was set
+	if os.Getenv("KRB5CCNAME") != outPath {
+		t.Errorf("KRB5CCNAME = %q, want %q", os.Getenv("KRB5CCNAME"), outPath)
+	}
+
+	// Verify output contains expected info
+	if !strings.Contains(result.Output, "Ticket imported successfully") {
+		t.Errorf("missing success message: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "user@EXAMPLE.COM") {
+		t.Errorf("missing principal in output: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "krbtgt/EXAMPLE.COM@EXAMPLE.COM") {
+		t.Errorf("missing server in output: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "KRB5CCNAME") {
+		t.Errorf("missing KRB5CCNAME info: %s", result.Output)
+	}
+}
+
+func TestKlistImportViaExecute(t *testing.T) {
+	ccacheData := buildTestCcache(t)
+	ticket := base64.StdEncoding.EncodeToString(ccacheData)
+
+	tmpDir := t.TempDir()
+	outPath := filepath.Join(tmpDir, "krb5cc_exec_test")
+
+	origCC := os.Getenv("KRB5CCNAME")
+	defer func() {
+		if origCC != "" {
+			os.Setenv("KRB5CCNAME", origCC)
+		} else {
+			os.Unsetenv("KRB5CCNAME")
+		}
+	}()
+
+	cmd := &KlistCommand{}
+	params := `{"action":"import","ticket":"` + ticket + `","path":"` + outPath + `"}`
+	result := cmd.Execute(structs.Task{Params: params})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success via Execute, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Ticket imported successfully") {
+		t.Errorf("missing success message: %s", result.Output)
 	}
 }
