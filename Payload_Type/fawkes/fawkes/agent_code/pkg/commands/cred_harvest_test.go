@@ -147,7 +147,7 @@ func TestGetUserHomesFiltered(t *testing.T) {
 }
 
 func TestIndentLines(t *testing.T) {
-	result := indentLines("line1\nline2\nline3", "  ")
+	result := credIndentLines("line1\nline2\nline3", "  ")
 	expected := "  line1\n  line2\n  line3"
 	if result != expected {
 		t.Errorf("expected %q, got %q", expected, result)
@@ -155,7 +155,7 @@ func TestIndentLines(t *testing.T) {
 }
 
 func TestIndentLinesEmpty(t *testing.T) {
-	result := indentLines("line1\n\nline3", "  ")
+	result := credIndentLines("line1\n\nline3", "  ")
 	if !strings.Contains(result, "  line1") || !strings.Contains(result, "  line3") {
 		t.Errorf("non-empty lines should be indented: %q", result)
 	}

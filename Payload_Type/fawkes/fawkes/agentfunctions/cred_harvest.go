@@ -5,22 +5,26 @@ import agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "cred-harvest",
-		Description:         "Harvest credentials from shadow files, cloud configs, and application secrets",
-		HelpString:          "cred-harvest -action <shadow|cloud|configs|all> [-user <filter>]",
-		Version:             1,
-		MitreAttackMappings: []string{"T1552.001", "T1552.004", "T1003.008"}, // Unsecured Credentials: Files, Private Keys; /etc/passwd and /etc/shadow
+		Description:         "Harvest credentials from system files, cloud configs, application secrets, and Windows-specific sources",
+		HelpString:          "cred-harvest -action <shadow|cloud|configs|windows|all> [-user <filter>]\nLinux/macOS: shadow, cloud, configs, all\nWindows: cloud, configs, windows, all",
+		Version:             2,
+		MitreAttackMappings: []string{"T1552.001", "T1552.004", "T1003.008"},
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
+			SupportedOS: []string{
+				agentstructs.SUPPORTED_OS_LINUX,
+				agentstructs.SUPPORTED_OS_MACOS,
+				agentstructs.SUPPORTED_OS_WINDOWS,
+			},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:             "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "shadow: system password hashes. cloud: cloud/infra credentials. configs: application secrets. all: run all.",
-				Choices:          []string{"all", "shadow", "cloud", "configs"},
+				Description:      "shadow: system password hashes (Unix). cloud: cloud/infra credentials. configs: application secrets. windows: PowerShell history, env vars, RDP, WiFi. all: run all platform-appropriate actions.",
+				Choices:          []string{"all", "shadow", "cloud", "configs", "windows"},
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 0},
