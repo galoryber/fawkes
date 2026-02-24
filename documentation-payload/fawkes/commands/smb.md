@@ -76,6 +76,59 @@ Size          Modified              Name
 0 B           2025-10-08 04:35:12   Default/
 ```
 
+## SMB Command vs Native File Commands
+
+Fawkes has two ways to interact with files: the **smb** command (remote shares via SMB2) and native file commands (**ls**, **cp**, **cat**, **rm**). Here's when to use each:
+
+### When to Use the SMB Command
+
+Use `smb` for **all remote file operations across the network** — this is the purpose-built lateral movement tool:
+
+- **Accessing remote shares** (`C$`, `ADMIN$`, `SYSVOL`, custom shares)
+- **Staging payloads** for lateral movement (e.g., upload to `ADMIN$` before PSExec)
+- **Reading files** from remote hosts (configs, SAM backups, logs)
+- **Cleanup** — deleting artifacts on remote systems after an engagement
+- **Working from Linux/macOS** agents — SMB works cross-platform
+
+```
+# Typical lateral movement file staging:
+smb -action upload -host 192.168.1.50 -share ADMIN$ -path payload.exe -content <data> -username admin -password Pass -domain CORP
+psexec -host 192.168.1.50 -command "C:\Windows\payload.exe"
+smb -action rm -host 192.168.1.50 -share ADMIN$ -path payload.exe -username admin -password Pass -domain CORP
+```
+
+### When to Use Native Commands (ls, cp, cat, rm)
+
+Use native commands for **local file operations on the compromised host**:
+
+- Browsing, reading, copying, and deleting files on the **agent's own filesystem**
+- These commands use Go's `os` package — they work with local paths only
+- They do **not** accept UNC paths like `\\192.168.1.50\C$`
+- They do **not** accept credentials — they run under the agent's current security context
+
+### What About make-token + Native Commands?
+
+On Windows, `make-token` creates an impersonation token from credentials. While this could theoretically enable UNC path access, the native file commands are not designed for this. Use `smb` instead — it's more reliable, works cross-platform, and takes explicit credentials per-command.
+
+### Quick Reference
+
+| Scenario | Command |
+|----------|---------|
+| Copy file **to** remote host | `smb -action upload` |
+| Copy file **from** remote host | `smb -action cat` (or `download` for agent's own files) |
+| List files on remote share | `smb -action ls` |
+| Delete file on remote host | `smb -action rm` |
+| List files locally | `ls` |
+| Copy file locally | `cp` |
+| Read file locally | `cat` |
+| Delete file locally | `rm` |
+
+### Credential Workflow for SMB Operations
+
+1. **With explicit creds** (recommended): Pass `-username` and `-password` directly to each `smb` command
+2. **With Kerberos tickets**: Not currently supported — SMB uses NTLM auth only
+3. **Domain format**: Use `DOMAIN\user` or `user@domain` in the `-username` parameter, or pass `-domain` separately
+
 ## MITRE ATT&CK Mapping
 
 - **T1021.002** - Remote Services: SMB/Windows Admin Shares
