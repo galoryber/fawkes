@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -198,14 +199,26 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// CrackNames — resolve target account names to GUIDs
+	// Use NT4 account name format (DOMAIN\user) for unambiguous resolution
+	crackNames := make([]string, len(targets))
+	for i, t := range targets {
+		if strings.Contains(t, `\`) || strings.Contains(t, "@") {
+			crackNames[i] = t // already qualified
+		} else if args.Domain != "" {
+			crackNames[i] = args.Domain + `\` + t
+		} else {
+			crackNames[i] = t
+		}
+	}
+
 	cracked, err := cli.CrackNames(ctx, &drsuapi.CrackNamesRequest{
 		Handle:    bindResp.DRS,
 		InVersion: 1,
 		In: &drsuapi.MessageCrackNamesRequest{
 			Value: &drsuapi.MessageCrackNamesRequest_V1{
 				V1: &drsuapi.MessageCrackNamesRequestV1{
-					FormatOffered: uint32(drsuapi.DSNameFormatNT4AccountNameSANSDomainEx),
-					Names:         targets,
+					FormatOffered: uint32(drsuapi.DSNameFormatNT4AccountName),
+					Names:         crackNames,
 					FormatDesired: uint32(drsuapi.DSNameFormatUniqueIDName),
 				},
 			},
@@ -338,8 +351,8 @@ func dcsyncParseReply(cli drsuapi.DrsuapiClient, nc *drsuapi.GetNCChangesRespons
 				sid = s
 			}
 		case "1.2.840.113556.1.4.221": // sAMAccountName
-			if len(val) > 0 {
-				result.Username = strings.TrimRight(string(val), "\x00")
+			if len(val) >= 2 {
+				result.Username = dcsyncDecodeUTF16LE(val)
 			}
 		}
 	}
@@ -412,4 +425,20 @@ func dcsyncExtractKerberosKeys(prop *samr.UserProperty, result *dcsyncResult) {
 			}
 		}
 	}
+}
+
+func dcsyncDecodeUTF16LE(b []byte) string {
+	// Decode UTF-16LE bytes to string, stripping null terminators
+	if len(b)%2 != 0 {
+		b = b[:len(b)-1]
+	}
+	runes := make([]rune, 0, len(b)/2)
+	for i := 0; i+1 < len(b); i += 2 {
+		r := rune(binary.LittleEndian.Uint16(b[i : i+2]))
+		if r == 0 {
+			break
+		}
+		runes = append(runes, r)
+	}
+	return string(runes)
 }
