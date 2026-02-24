@@ -27,9 +27,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "DNS query type: resolve (A/AAAA), reverse (PTR), srv, mx, ns, txt, cname, all, dc (domain controller discovery)",
+				Description:      "DNS query type: resolve (A/AAAA), reverse (PTR), srv, mx, ns, txt, cname, all, dc (domain controller discovery), zone-transfer (AXFR)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"resolve", "reverse", "srv", "mx", "ns", "txt", "cname", "all", "dc"},
+				Choices:          []string{"resolve", "reverse", "srv", "mx", "ns", "txt", "cname", "all", "dc", "zone-transfer"},
 				DefaultValue:     "resolve",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
