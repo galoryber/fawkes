@@ -85,8 +85,8 @@ func credShadow(args credHarvestArgs) structs.CommandResult {
 				continue
 			}
 
-			// Skip locked/disabled accounts (* or ! or !! prefix)
-			if hash == "*" || hash == "!" || hash == "!!" || hash == "" {
+			// Skip locked/disabled accounts (* or ! or !! or !* prefix, or starts with !)
+			if hash == "*" || hash == "" || strings.HasPrefix(hash, "!") {
 				continue
 			}
 
