@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
 
@@ -179,16 +181,20 @@ func enumerateSPNs(args kerberoastArgs) ([]spnEntry, error) {
 
 	var conn *ldap.Conn
 	var err error
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	if ldapArgs.UseTLS {
 		if ldapArgs.Port <= 0 {
 			ldapArgs.Port = 636
 		}
-		conn, err = ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", ldapArgs.Server, ldapArgs.Port), ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
+		conn, err = ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", ldapArgs.Server, ldapArgs.Port),
+			ldap.DialWithDialer(dialer),
+			ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
 	} else {
 		if ldapArgs.Port <= 0 {
 			ldapArgs.Port = 389
 		}
-		conn, err = ldap.DialURL(fmt.Sprintf("ldap://%s:%d", ldapArgs.Server, ldapArgs.Port))
+		conn, err = ldap.DialURL(fmt.Sprintf("ldap://%s:%d", ldapArgs.Server, ldapArgs.Port),
+			ldap.DialWithDialer(dialer))
 	}
 	if err != nil {
 		return nil, fmt.Errorf("LDAP connect: %v", err)
