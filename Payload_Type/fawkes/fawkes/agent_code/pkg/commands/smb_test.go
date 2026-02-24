@@ -169,6 +169,73 @@ func TestSmbCommand_DomainParsing(t *testing.T) {
 	}
 }
 
+func TestSmbDecodeHash(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		wantLen int
+		wantErr bool
+	}{
+		{"pure NT hash", "8846f7eaee8fb117ad06bdd830b7586c", 16, false},
+		{"LM:NT format", "aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c", 16, false},
+		{"with whitespace", "  8846f7eaee8fb117ad06bdd830b7586c  ", 16, false},
+		{"too short", "aabbccdd", 0, true},
+		{"not hex", "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz", 0, true},
+		{"empty", "", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := smbDecodeHash(tt.input)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error, got nil")
+				}
+			} else {
+				if err != nil {
+					t.Errorf("unexpected error: %v", err)
+				}
+				if len(result) != tt.wantLen {
+					t.Errorf("expected %d bytes, got %d", tt.wantLen, len(result))
+				}
+			}
+		})
+	}
+}
+
+func TestSmbCommand_HashAccepted(t *testing.T) {
+	// Hash should be accepted as alternative to password
+	cmd := &SmbCommand{}
+	params, _ := json.Marshal(smbArgs{
+		Action:   "shares",
+		Host:     "192.0.2.1",
+		Username: "admin",
+		Hash:     "8846f7eaee8fb117ad06bdd830b7586c",
+		Domain:   "CORP",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	// Should fail on network, not on validation
+	if strings.Contains(result.Output, "password (or hash) are required") {
+		t.Error("hash should be accepted as alternative to password")
+	}
+}
+
+func TestSmbCommand_NoPasswordOrHash(t *testing.T) {
+	cmd := &SmbCommand{}
+	params, _ := json.Marshal(smbArgs{
+		Action:   "shares",
+		Host:     "192.0.2.1",
+		Username: "admin",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Error("expected error when both password and hash are empty")
+	}
+	if !strings.Contains(result.Output, "password (or hash)") {
+		t.Errorf("expected password/hash error, got: %s", result.Output)
+	}
+}
+
 func TestSmbCommand_Registration(t *testing.T) {
 	Initialize()
 	cmd := GetCommand("smb")

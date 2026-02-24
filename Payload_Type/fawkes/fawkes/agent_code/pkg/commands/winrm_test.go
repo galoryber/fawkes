@@ -113,6 +113,38 @@ func TestWinrmCommand_DefaultPort(t *testing.T) {
 	}
 }
 
+func TestWinrmCommand_HashAccepted(t *testing.T) {
+	// Hash should be accepted as alternative to password
+	cmd := &WinrmCommand{}
+	params, _ := json.Marshal(winrmArgs{
+		Host:     "192.0.2.1",
+		Username: "admin",
+		Hash:     "aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c",
+		Command:  "whoami",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	// Should fail on network, not on validation
+	if strings.Contains(result.Output, "password (or hash) are required") {
+		t.Error("hash should be accepted as alternative to password")
+	}
+}
+
+func TestWinrmCommand_NoPasswordOrHash(t *testing.T) {
+	cmd := &WinrmCommand{}
+	params, _ := json.Marshal(winrmArgs{
+		Host:     "192.0.2.1",
+		Username: "admin",
+		Command:  "whoami",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Error("expected error when both password and hash are empty")
+	}
+	if !strings.Contains(result.Output, "password (or hash)") {
+		t.Errorf("expected password/hash error, got: %s", result.Output)
+	}
+}
+
 func TestWinrmCommand_Registration(t *testing.T) {
 	Initialize()
 	cmd := GetCommand("winrm")

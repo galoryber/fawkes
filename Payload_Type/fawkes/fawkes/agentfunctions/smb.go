@@ -10,8 +10,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "smb",
-		Description:         "SMB file operations on remote shares. List shares, browse directories, read/write/delete files via SMB2 with NTLM authentication.",
-		HelpString:          "smb -action shares -host 192.168.1.1 -username user -password pass -domain DOMAIN\nsmb -action ls -host 192.168.1.1 -share C$ -username admin -password pass -domain DOMAIN\nsmb -action cat -host 192.168.1.1 -share C$ -path Users/Public/file.txt -username admin -password pass",
+		Description:         "SMB file operations on remote shares. List shares, browse directories, read/write/delete files via SMB2 with NTLM authentication. Supports pass-the-hash.",
+		HelpString:          "smb -action shares -host 192.168.1.1 -username user -password pass -domain DOMAIN\nsmb -action ls -host 192.168.1.1 -share C$ -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -domain DOMAIN\nsmb -action cat -host 192.168.1.1 -share C$ -path Users/Public/file.txt -username admin -password pass",
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1021.002"},
@@ -61,11 +61,22 @@ func init() {
 				Name:             "password",
 				CLIName:          "password",
 				ModalDisplayName: "Password",
-				Description:      "Password for NTLM auth",
+				Description:      "Password for NTLM auth (or use -hash for pass-the-hash)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{ParameterIsRequired: true, GroupName: "Default"},
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "hash",
+				CLIName:          "hash",
+				ModalDisplayName: "NTLM Hash",
+				Description:      "NT hash for pass-the-hash (hex, e.g., aad3b435b51404ee:8846f7eaee8fb117 or just the NT hash)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
 			{

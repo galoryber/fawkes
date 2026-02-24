@@ -297,7 +297,7 @@ func TestSprayEnumerateNoPasswordRequired(t *testing.T) {
 
 func TestSprayNonEnumerateRequiresPassword(t *testing.T) {
 	cmd := &SprayCommand{}
-	for _, action := range []string{"kerberos", "ldap", "smb"} {
+	for _, action := range []string{"kerberos", "ldap"} {
 		t.Run(action, func(t *testing.T) {
 			args := sprayArgs{
 				Action: action,
@@ -309,6 +309,43 @@ func TestSprayNonEnumerateRequiresPassword(t *testing.T) {
 			result := cmd.Execute(structs.Task{Params: string(data)})
 			if result.Status != "error" || !strings.Contains(result.Output, "password") {
 				t.Errorf("%s without password should require password, got: %s", action, result.Output)
+			}
+		})
+	}
+}
+
+func TestSpraySMBAcceptsHash(t *testing.T) {
+	cmd := &SprayCommand{}
+	args := sprayArgs{
+		Action: "smb",
+		Server: "192.0.2.1",
+		Domain: "TEST.LOCAL",
+		Users:  "testuser",
+		Hash:   "8846f7eaee8fb117ad06bdd830b7586c",
+	}
+	data, _ := json.Marshal(args)
+	result := cmd.Execute(structs.Task{Params: string(data)})
+	// Should fail on network, not on validation
+	if strings.Contains(result.Output, "password") && strings.Contains(result.Output, "required") {
+		t.Error("SMB spray should accept hash instead of password")
+	}
+}
+
+func TestSprayHashOnlyForSMB(t *testing.T) {
+	cmd := &SprayCommand{}
+	for _, action := range []string{"kerberos", "ldap"} {
+		t.Run(action, func(t *testing.T) {
+			args := sprayArgs{
+				Action: action,
+				Server: "dc01",
+				Domain: "TEST.LOCAL",
+				Users:  "testuser",
+				Hash:   "8846f7eaee8fb117ad06bdd830b7586c",
+			}
+			data, _ := json.Marshal(args)
+			result := cmd.Execute(structs.Task{Params: string(data)})
+			if result.Status != "error" || !strings.Contains(result.Output, "only supported for SMB") {
+				t.Errorf("hash spray on %s should return SMB-only error, got: %s", action, result.Output)
 			}
 		})
 	}

