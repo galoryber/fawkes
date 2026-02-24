@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
@@ -131,19 +130,91 @@ func init() {
 				return response
 			}
 
-			// Inject mode — need shellcode and PID
+			// Check for CLI/API mode first — shellcode_b64 presence takes priority
+			// over parameter group matching (which can be unreliable at CreateTasking time)
+			shellcodeB64, _ := taskData.Args.GetStringArg("shellcode_b64")
+			if shellcodeB64 != "" {
+				shellcode, err := base64.StdEncoding.DecodeString(shellcodeB64)
+				if err != nil {
+					response.Success = false
+					response.Error = "Failed to decode shellcode_b64: " + err.Error()
+					return response
+				}
+
+				pid, err := taskData.Args.GetNumberArg("pid")
+				if err != nil || pid <= 0 {
+					response.Success = false
+					response.Error = "Invalid PID specified (must be greater than 0)"
+					return response
+				}
+
+				restore := true
+				if r, rErr := taskData.Args.GetBooleanArg("restore"); rErr == nil {
+					restore = r
+				}
+				timeout := 30
+				if t, tErr := taskData.Args.GetNumberArg("timeout"); tErr == nil && t > 0 {
+					timeout = int(t)
+				}
+
+				displayParams := fmt.Sprintf("Inject %d bytes → PID %d (restore=%v, timeout=%ds)",
+					len(shellcode), int(pid), restore, timeout)
+				response.DisplayParams = &displayParams
+				createArtifact(taskData.Task.ID, "Process Inject",
+					fmt.Sprintf("PTRACE_ATTACH/PTRACE_POKETEXT into PID %d (%d bytes)", int(pid), len(shellcode)))
+
+				params := map[string]interface{}{
+					"action":        "inject",
+					"pid":           int(pid),
+					"shellcode_b64": base64.StdEncoding.EncodeToString(shellcode),
+					"restore":       restore,
+					"timeout":       timeout,
+				}
+				paramsJSON, _ := json.Marshal(params)
+				taskData.Args.SetManualArgs(string(paramsJSON))
+				return response
+			}
+
+			// File-based modes — need to fetch shellcode from Mythic storage
 			var fileContents []byte
 			var filename string
 			var err error
 
 			groupName := strings.ToLower(taskData.Task.ParameterGroupName)
-			logging.LogInfo("ptrace-inject CreateTasking", "parameter_group", groupName)
 
 			switch groupName {
-			case "default":
+			case "new file":
+				fileID, err := taskData.Args.GetStringArg("file")
+				if err != nil {
+					response.Success = false
+					response.Error = "Failed to get shellcode file: " + err.Error()
+					return response
+				}
+
+				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil || !search.Success || len(search.Files) == 0 {
+					response.Success = false
+					response.Error = "Failed to find the specified file"
+					return response
+				}
+				filename = search.Files[0].Filename
+
+				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil || !getResp.Success {
+					response.Success = false
+					response.Error = "Failed to get file contents"
+					return response
+				}
+				fileContents = getResp.Content
+
+			default:
+				// Default group — select file from Mythic storage by name
 				filename, err = taskData.Args.GetStringArg("filename")
 				if err != nil {
-					logging.LogError(err, "Failed to get filename")
 					response.Success = false
 					response.Error = "Failed to get shellcode file: " + err.Error()
 					return response
@@ -170,99 +241,6 @@ func init() {
 					return response
 				}
 				fileContents = getResp.Content
-
-			case "new file":
-				fileID, err := taskData.Args.GetStringArg("file")
-				if err != nil {
-					logging.LogError(err, "Failed to get file")
-					response.Success = false
-					response.Error = "Failed to get shellcode file: " + err.Error()
-					return response
-				}
-
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil || !search.Success || len(search.Files) == 0 {
-					response.Success = false
-					response.Error = "Failed to find the specified file"
-					return response
-				}
-				filename = search.Files[0].Filename
-
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil || !getResp.Success {
-					response.Success = false
-					response.Error = "Failed to get file contents"
-					return response
-				}
-				fileContents = getResp.Content
-
-			case "cli":
-				// CLI/API mode — shellcode passed directly as base64
-				// Handle entirely within this case to avoid interference from other parameter groups
-				shellcodeB64, cliErr := taskData.Args.GetStringArg("shellcode_b64")
-				if cliErr != nil || shellcodeB64 == "" {
-					response.Success = false
-					response.Error = "shellcode_b64 parameter required"
-					return response
-				}
-				cliShellcode, cliErr := base64.StdEncoding.DecodeString(shellcodeB64)
-				if cliErr != nil {
-					response.Success = false
-					response.Error = "Failed to decode shellcode_b64: " + cliErr.Error()
-					return response
-				}
-
-				cliPid, cliErr := taskData.Args.GetNumberArg("pid")
-				if cliErr != nil || cliPid <= 0 {
-					response.Success = false
-					response.Error = "Invalid PID specified (must be greater than 0)"
-					return response
-				}
-
-				cliRestore := true
-				if r, rErr := taskData.Args.GetBooleanArg("restore"); rErr == nil {
-					cliRestore = r
-				}
-				cliTimeout := 30
-				if t, tErr := taskData.Args.GetNumberArg("timeout"); tErr == nil && t > 0 {
-					cliTimeout = int(t)
-				}
-
-				displayParams := fmt.Sprintf("CLI inject: %d bytes → PID %d (restore=%v, timeout=%ds)",
-					len(cliShellcode), int(cliPid), cliRestore, cliTimeout)
-				response.DisplayParams = &displayParams
-				createArtifact(taskData.Task.ID, "Process Inject",
-					fmt.Sprintf("PTRACE_ATTACH/PTRACE_POKETEXT into PID %d (%d bytes)", int(cliPid), len(cliShellcode)))
-
-				cliParams := map[string]interface{}{
-					"action":        "inject",
-					"pid":           int(cliPid),
-					"shellcode_b64": base64.StdEncoding.EncodeToString(cliShellcode),
-					"restore":       cliRestore,
-					"timeout":       cliTimeout,
-				}
-				cliJSON, _ := json.Marshal(cliParams)
-				taskData.Args.SetManualArgs(string(cliJSON))
-				return response
-
-			case "check":
-				params := map[string]interface{}{
-					"action": "check",
-				}
-				paramsJSON, _ := json.Marshal(params)
-				taskData.Args.SetManualArgs(string(paramsJSON))
-				displayParams := "Check ptrace configuration"
-				response.DisplayParams = &displayParams
-				return response
-
-			default:
-				response.Success = false
-				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
-				return response
 			}
 
 			pid, err := taskData.Args.GetNumberArg("pid")
