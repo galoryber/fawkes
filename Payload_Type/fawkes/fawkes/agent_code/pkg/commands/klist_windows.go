@@ -219,6 +219,14 @@ func klistList(args klistArgs) structs.CommandResult {
 		defer procLsaFreeReturnBuffer.Call(responsePtr)
 	}
 	if protocolStatus != 0 {
+		// STATUS_NO_LOGON_SERVERS (0xC000005F): machine not domain-joined or no DC reachable
+		if protocolStatus == 0xC000005F {
+			return structs.CommandResult{
+				Output:    "=== Kerberos Ticket Cache ===\n\nCached tickets: 0\n\nNo domain controller available — machine may not be domain-joined.\nKerberos tickets are only cached for domain-authenticated sessions.",
+				Status:    "success",
+				Completed: true,
+			}
+		}
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Kerberos protocol error: %v", lsaNtStatusToError(protocolStatus)),
 			Status:    "error",
@@ -228,7 +236,7 @@ func klistList(args klistArgs) structs.CommandResult {
 
 	if responsePtr == 0 || responseLen < 8 {
 		return structs.CommandResult{
-			Output:    "No ticket cache data returned",
+			Output:    "=== Kerberos Ticket Cache ===\n\nCached tickets: 0\n\nNo ticket cache data returned.",
 			Status:    "success",
 			Completed: true,
 		}
@@ -363,6 +371,14 @@ func klistPurge(args klistArgs) structs.CommandResult {
 		}
 	}
 	if protocolStatus != 0 {
+		// STATUS_NO_LOGON_SERVERS or STATUS_INVALID_PARAMETER on non-domain machines
+		if protocolStatus == 0xC000005F || protocolStatus == 0xC000000D {
+			return structs.CommandResult{
+				Output:    "No Kerberos tickets to purge (no domain logon session)",
+				Status:    "success",
+				Completed: true,
+			}
+		}
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Kerberos purge protocol error: %v", lsaNtStatusToError(protocolStatus)),
 			Status:    "error",
