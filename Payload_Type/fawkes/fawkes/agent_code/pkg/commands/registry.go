@@ -57,6 +57,7 @@ func Initialize() {
 	RegisterCommand(&CurlCommand{})
 	RegisterCommand(&RpfwdCommand{})
 	RegisterCommand(&KlistCommand{})
+	RegisterCommand(&SprayCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()

