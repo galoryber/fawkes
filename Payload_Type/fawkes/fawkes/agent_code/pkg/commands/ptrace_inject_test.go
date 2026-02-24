@@ -146,24 +146,21 @@ func TestPtraceInjectDefaultAction(t *testing.T) {
 	}
 }
 
-func TestFindExecutableRegion(t *testing.T) {
-	// Find executable region in our own process
+func TestFindSyscallGadget(t *testing.T) {
+	// Find syscall gadget in our own process
 	pid := os.Getpid()
-	addr, size, err := findExecutableRegion(pid)
+	addr, err := findSyscallGadget(pid)
 	if err != nil {
-		t.Fatalf("failed to find executable region in self: %v", err)
+		t.Fatalf("failed to find syscall gadget in self: %v", err)
 	}
 	if addr == 0 {
-		t.Fatal("expected non-zero executable region address")
+		t.Fatal("expected non-zero syscall gadget address")
 	}
-	if size == 0 {
-		t.Fatal("expected non-zero region size")
-	}
-	t.Logf("Found executable region at 0x%X, size %d bytes", addr, size)
+	t.Logf("Found syscall gadget at 0x%X", addr)
 }
 
-func TestFindExecutableRegionNonexistent(t *testing.T) {
-	_, _, err := findExecutableRegion(999999)
+func TestFindSyscallGadgetNonexistent(t *testing.T) {
+	_, err := findSyscallGadget(999999)
 	if err == nil {
 		t.Fatal("expected error for nonexistent process")
 	}

