@@ -51,6 +51,7 @@ pre = "<b>2. </b>"
     * [kerberoast](/agents/fawkes/commands/kerberoast/)
     * [klist](/agents/fawkes/commands/klist/)
     * [spray](/agents/fawkes/commands/spray/)
+    * [ticket](/agents/fawkes/commands/ticket/)
     * [keychain](/agents/fawkes/commands/keychain/)
     * [make-token](/agents/fawkes/commands/make-token/)
     * [procdump](/agents/fawkes/commands/procdump/)
