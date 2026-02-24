@@ -76,6 +76,7 @@ pre = "<b>2. </b>"
     * [privesc-check](/agents/fawkes/commands/privesc-check/)
     * [proc-info](/agents/fawkes/commands/proc-info/)
     * [ps](/agents/fawkes/commands/ps/)
+    * [trust](/agents/fawkes/commands/trust/)
     * [ts](/agents/fawkes/commands/ts/)
     * [whoami](/agents/fawkes/commands/whoami/)
 - Registry Operations
