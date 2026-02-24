@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Password spray against Active Directory via Kerberos pre-auth, LDAP simple bind, or SMB NTLM authentication. Supports configurable delay and jitter to avoid triggering account lockout policies.
+Password spray or Kerberos user enumeration against Active Directory. Spray via Kerberos pre-auth, LDAP simple bind, or SMB NTLM authentication. Enumerate validates AD usernames without credentials via Kerberos AS-REQ. Supports configurable delay and jitter to avoid triggering account lockout policies.
 
 Cross-platform — works from Windows, Linux, and macOS agents.
 
@@ -15,11 +15,11 @@ Cross-platform — works from Windows, Linux, and macOS agents.
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | Spray protocol: `kerberos`, `ldap`, or `smb` |
+| action | Yes | Action: `kerberos`, `ldap`, `smb`, or `enumerate` |
 | server | Yes | Target Domain Controller or server IP/hostname |
 | domain | Yes | Domain name (e.g., `CORP.LOCAL`) |
 | users | Yes | Newline-separated list of usernames |
-| password | Yes | Password to spray |
+| password | No* | Password to spray (*required for kerberos/ldap/smb, not needed for enumerate) |
 | delay | No | Delay between attempts in milliseconds (default: 0) |
 | jitter | No | Jitter percentage for delay randomization, 0-100 (default: 0) |
 | port | No | Custom port (default: 88 for Kerberos, 389/636 for LDAP, 445 for SMB) |
@@ -36,6 +36,12 @@ Attempts LDAP simple bind against the DC (port 389 or 636 for LDAPS). Uses UPN f
 ### SMB
 Attempts SMB2 NTLM authentication against the target (port 445). Tests actual SMB access, useful for validating credentials against file servers. Generates Event ID 4625.
 
+### Enumerate
+Validates AD usernames via Kerberos AS-REQ without pre-authentication data (port 88). No credentials required. The KDC response code distinguishes valid from invalid usernames:
+- **KDC_ERR_PREAUTH_REQUIRED (25)** — user exists (pre-auth required)
+- **KDC_ERR_C_PRINCIPAL_UNKNOWN (6)** — user does not exist
+- **Valid AS-REP** — user exists and is AS-REP roastable (no pre-auth required)
+
 ## Usage
 
 ### Kerberos spray with delay
@@ -51,6 +57,11 @@ spray -action ldap -server dc01 -domain corp.local -users "svc_backup\nadmin\nte
 ### SMB spray
 ```
 spray -action smb -server fileserver -domain CORP -users "alice\nbob\ncharlie" -password Welcome1!
+```
+
+### User enumeration (no credentials needed)
+```
+spray -action enumerate -server dc01 -domain corp.local -users "admin\njsmith\nsvc_backup\nfake.user"
 ```
 
 ## Output
@@ -76,3 +87,4 @@ The command outputs results in a structured format:
 ## MITRE ATT&CK Mapping
 
 - T1110.003 — Brute Force: Password Spraying
+- T1589.002 — Gather Victim Identity Information: Email Addresses (user enumeration)
