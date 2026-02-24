@@ -125,3 +125,5 @@ pre = "<b>2. </b>"
     * [setenv](/agents/fawkes/commands/setenv/)
     * [sleep](/agents/fawkes/commands/sleep/)
     * [exit](/agents/fawkes/commands/exit/)
+- Integration
+    * [Forge Command Augmentation](/agents/fawkes/commands/forge-setup/)
