@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Password spray or Kerberos user enumeration against Active Directory. Spray via Kerberos pre-auth, LDAP simple bind, or SMB NTLM authentication. Enumerate validates AD usernames without credentials via Kerberos AS-REQ. Supports configurable delay and jitter to avoid triggering account lockout policies.
+Password spray or Kerberos user enumeration against Active Directory. Spray via Kerberos pre-auth, LDAP simple bind, or SMB NTLM authentication. SMB spray supports pass-the-hash (PTH) — spray an NT hash across multiple accounts. Enumerate validates AD usernames without credentials via Kerberos AS-REQ. Supports configurable delay and jitter to avoid triggering account lockout policies.
 
 Cross-platform — works from Windows, Linux, and macOS agents.
 
@@ -19,7 +19,8 @@ Cross-platform — works from Windows, Linux, and macOS agents.
 | server | Yes | Target Domain Controller or server IP/hostname |
 | domain | Yes | Domain name (e.g., `CORP.LOCAL`) |
 | users | Yes | Newline-separated list of usernames |
-| password | No* | Password to spray (*required for kerberos/ldap/smb, not needed for enumerate) |
+| password | No* | Password to spray (*required for kerberos/ldap/smb unless hash is provided, not needed for enumerate) |
+| hash | No* | NT hash for SMB pass-the-hash spray (hex, e.g., `aad3b435...:8846f7ea...` or just NT hash). SMB only. |
 | delay | No | Delay between attempts in milliseconds (default: 0) |
 | jitter | No | Jitter percentage for delay randomization, 0-100 (default: 0) |
 | port | No | Custom port (default: 88 for Kerberos, 389/636 for LDAP, 445 for SMB) |
@@ -34,7 +35,7 @@ Attempts Kerberos AS-REQ pre-authentication against the KDC (port 88). This is t
 Attempts LDAP simple bind against the DC (port 389 or 636 for LDAPS). Uses UPN format (`user@domain`) automatically. Useful when Kerberos port is not directly accessible.
 
 ### SMB
-Attempts SMB2 NTLM authentication against the target (port 445). Tests actual SMB access, useful for validating credentials against file servers. Generates Event ID 4625.
+Attempts SMB2 NTLM authentication against the target (port 445). Tests actual SMB access, useful for validating credentials against file servers. Supports pass-the-hash — spray an NT hash across multiple accounts. Generates Event ID 4625.
 
 ### Enumerate
 Validates AD usernames via Kerberos AS-REQ without pre-authentication data (port 88). No credentials required. The KDC response code distinguishes valid from invalid usernames:
@@ -57,6 +58,11 @@ spray -action ldap -server dc01 -domain corp.local -users "svc_backup\nadmin\nte
 ### SMB spray
 ```
 spray -action smb -server fileserver -domain CORP -users "alice\nbob\ncharlie" -password Welcome1!
+```
+
+### SMB spray with pass-the-hash
+```
+spray -action smb -server dc01 -domain CORP -users "admin\nsvc_backup\njsmith" -hash 8846f7eaee8fb117ad06bdd830b7586c
 ```
 
 ### User enumeration (no credentials needed)
@@ -87,4 +93,5 @@ The command outputs results in a structured format:
 ## MITRE ATT&CK Mapping
 
 - T1110.003 — Brute Force: Password Spraying
+- T1550.002 — Use Alternate Authentication Material: Pass the Hash (SMB hash spray)
 - T1589.002 — Gather Victim Identity Information: Email Addresses (user enumeration)

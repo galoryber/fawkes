@@ -14,7 +14,7 @@ func init() {
 		HelpString:          "smb -action shares -host 192.168.1.1 -username user -password pass -domain DOMAIN\nsmb -action ls -host 192.168.1.1 -share C$ -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -domain DOMAIN\nsmb -action cat -host 192.168.1.1 -share C$ -path Users/Public/file.txt -username admin -password pass",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1021.002"},
+		MitreAttackMappings: []string{"T1021.002", "T1550.002"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,

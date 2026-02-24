@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-SMB2 file operations on remote network shares. Connect to Windows shares using NTLM authentication and perform file operations: list shares, browse directories, read files, write files, and delete files.
+SMB2 file operations on remote network shares. Connect to Windows shares using NTLM authentication and perform file operations: list shares, browse directories, read files, write files, and delete files. Supports pass-the-hash (PTH) — authenticate with an NT hash instead of a plaintext password.
 
 Uses the `go-smb2` library for SMB2 protocol operations (pure Go, CGO_ENABLED=0). Works cross-platform — agent running on any OS can access remote Windows shares.
 
@@ -18,7 +18,8 @@ Argument | Required | Description
 action | Yes | Operation: `shares` (list shares), `ls` (list directory), `cat` (read file), `upload` (write file), `rm` (delete file)
 host | Yes | Target host IP or hostname
 username | Yes | Username for NTLM auth (supports `DOMAIN\user` or `user@domain` format)
-password | Yes | Password for NTLM auth
+password | No* | Password for NTLM auth (*required unless `-hash` is provided)
+hash | No* | NT hash for pass-the-hash (hex, e.g., `aad3b435...:8846f7ea...` or just the NT hash)
 domain | No | NTLM domain (auto-detected from username if `DOMAIN\user` or `user@domain` format)
 share | Conditional | Share name (e.g., `C$`, `ADMIN$`, `SYSVOL`). Required for ls, cat, upload, rm.
 path | Conditional | Path within the share. Required for cat, upload, rm. Optional for ls.
@@ -50,6 +51,18 @@ smb -action upload -host 192.168.1.1 -share C$ -path Users/Public/payload.txt -c
 Delete a file:
 ```
 smb -action rm -host 192.168.1.1 -share C$ -path Users/Public/payload.txt -username admin -password pass -domain CORP
+```
+
+### Pass-the-Hash (PTH)
+
+Use `-hash` instead of `-password` with an NT hash (from hashdump, secretsdump, etc.):
+```
+smb -action shares -host 192.168.1.1 -username admin -hash 8846f7eaee8fb117ad06bdd830b7586c -domain CORP
+```
+
+LM:NT format is also supported:
+```
+smb -action ls -host 192.168.1.1 -share C$ -username admin -hash aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c -domain CORP
 ```
 
 ## Example Output
@@ -126,11 +139,13 @@ On Windows, `make-token` creates an impersonation token from credentials. While 
 ### Credential Workflow for SMB Operations
 
 1. **With explicit creds** (recommended): Pass `-username` and `-password` directly to each `smb` command
-2. **With Kerberos tickets**: Not currently supported — SMB uses NTLM auth only
-3. **Domain format**: Use `DOMAIN\user` or `user@domain` in the `-username` parameter, or pass `-domain` separately
+2. **With NT hash** (pass-the-hash): Pass `-username` and `-hash` with the hex-encoded NT hash
+3. **With Kerberos tickets**: Not currently supported — SMB uses NTLM auth only
+4. **Domain format**: Use `DOMAIN\user` or `user@domain` in the `-username` parameter, or pass `-domain` separately
 
 ## MITRE ATT&CK Mapping
 
 - **T1021.002** - Remote Services: SMB/Windows Admin Shares
+- **T1550.002** - Use Alternate Authentication Material: Pass the Hash
 
 {{% notice info %}}Cross-Platform — works on Windows, Linux, and macOS{{% /notice %}}

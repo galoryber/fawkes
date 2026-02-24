@@ -14,7 +14,7 @@ func init() {
 		HelpString:          "winrm -host 192.168.1.1 -username admin -password pass -command \"whoami\"\nwinrm -host 192.168.1.1 -username DOMAIN\\admin -password pass -command \"Get-Process\" -shell powershell\nwinrm -host 192.168.1.1 -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -command \"whoami\" -domain DOMAIN\nwinrm -host 192.168.1.1 -username admin -password pass -command \"ipconfig /all\" -port 5986 -use_tls true",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1021.006"},
+		MitreAttackMappings: []string{"T1021.006", "T1550.002"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
