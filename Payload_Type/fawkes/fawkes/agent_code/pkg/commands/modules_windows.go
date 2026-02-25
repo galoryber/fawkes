@@ -12,7 +12,7 @@ import (
 const (
 	thSnapModule   = 0x00000008
 	thSnapModule32 = 0x00000010
-	maxModuleName  = 256
+	maxModuleName  = 255 // MAX_MODULE_NAME32
 )
 
 // moduleEntry32W matches the Windows MODULEENTRY32W structure
