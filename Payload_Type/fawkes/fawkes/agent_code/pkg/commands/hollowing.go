@@ -256,7 +256,7 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 	// Step 5: Get thread context
 	sb.WriteString("[*] Getting thread context...\n")
 
-	ctx := hollowContext{}
+	ctx := CONTEXT_AMD64{}
 	ctx.ContextFlags = 0x10001B // CONTEXT_FULL
 
 	ret, _, ctxErr := procGetThreadContext.Call(
@@ -300,52 +300,3 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 	return sb.String(), nil
 }
 
-// hollowContext is the x64 CONTEXT structure for Get/SetThreadContext
-type hollowContext struct {
-	P1Home       uint64
-	P2Home       uint64
-	P3Home       uint64
-	P4Home       uint64
-	P5Home       uint64
-	P6Home       uint64
-	ContextFlags uint32
-	MxCsr        uint32
-	SegCs        uint16
-	SegDs        uint16
-	SegEs        uint16
-	SegFs        uint16
-	SegGs        uint16
-	SegSs        uint16
-	EFlags       uint32
-	Dr0          uint64
-	Dr1          uint64
-	Dr2          uint64
-	Dr3          uint64
-	Dr6          uint64
-	Dr7          uint64
-	Rax          uint64
-	Rcx          uint64
-	Rdx          uint64
-	Rbx          uint64
-	Rsp          uint64
-	Rbp          uint64
-	Rsi          uint64
-	Rdi          uint64
-	R8           uint64
-	R9           uint64
-	R10          uint64
-	R11          uint64
-	R12          uint64
-	R13          uint64
-	R14          uint64
-	R15          uint64
-	Rip          uint64
-	FltSave      [512]byte
-	VectorReg    [26][16]byte
-	VectorCtrl   uint64
-	DebugCtrl    uint64
-	LastBrTo     uint64
-	LastBrFrom   uint64
-	LastExTo     uint64
-	LastExFrom   uint64
-}
