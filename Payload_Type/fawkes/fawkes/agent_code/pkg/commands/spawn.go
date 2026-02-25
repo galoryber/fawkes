@@ -28,6 +28,7 @@ const (
 	CREATE_SUSPENDED                = 0x00000004
 	EXTENDED_STARTUPINFO_PRESENT    = 0x00080000
 	CREATE_NEW_CONSOLE              = 0x00000010
+	CREATE_NO_WINDOW                = 0x08000000
 )
 
 // Thread creation flags

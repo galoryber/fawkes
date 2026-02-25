@@ -15,10 +15,6 @@ import (
 
 var procCreateProcessWithTokenW = advapi32.NewProc("CreateProcessWithTokenW")
 
-// configureProcessToken is a no-op — token-aware process creation is handled
-// by executeRunCommand using CreateProcessWithTokenW directly.
-func configureProcessToken(cmd *exec.Cmd) {}
-
 // executeRunCommand runs a shell command, using CreateProcessWithTokenW
 // when an impersonation token is active. Returns (output, error).
 func executeRunCommand(cmdLine string) (string, error) {
@@ -74,7 +70,7 @@ func runWithToken(token windows.Token, cmdLine string) (string, error) {
 		1, // LOGON_WITH_PROFILE
 		0, // lpApplicationName
 		uintptr(unsafe.Pointer(cmdUTF16)),
-		uintptr(CREATE_NEW_CONSOLE),
+		uintptr(CREATE_NO_WINDOW),
 		0, // lpEnvironment
 		0, // lpCurrentDirectory
 		uintptr(unsafe.Pointer(&si)),
