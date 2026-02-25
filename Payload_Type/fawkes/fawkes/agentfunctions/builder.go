@@ -2,7 +2,9 @@ package agentfunctions
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -282,6 +284,18 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			}
 			if userAgentVal, exists := headerMap["User-Agent"]; exists {
 				ldflags += fmt.Sprintf(" -X '%s.userAgent=%s'", fawkes_main_package, userAgentVal)
+			}
+			// Pass all custom headers (excluding User-Agent) as base64-encoded JSON
+			extraHeaders := make(map[string]string)
+			for k, v := range headerMap {
+				if k != "User-Agent" {
+					extraHeaders[k] = v
+				}
+			}
+			if len(extraHeaders) > 0 {
+				jsonBytes, _ := json.Marshal(extraHeaders)
+				encoded := base64.StdEncoding.EncodeToString(jsonBytes)
+				ldflags += fmt.Sprintf(" -X '%s.customHeaders=%s'", fawkes_main_package, encoded)
 			}
 		} else if key == "get_uri" {
 			val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key)

@@ -262,6 +262,10 @@ Useful names: `[kworker/0:1]`, `[migration/0]`, `sshd`, `apache2`, `[rcu_preempt
 
 Combined with self-delete, the agent appears as a legitimate kernel thread or service with no file on disk.
 
+### Custom HTTP Headers
+
+All headers defined in the Mythic HTTP C2 profile configuration are applied to every request. Beyond `User-Agent` (always supported), operators can add headers like `Accept-Language`, `Referer`, `Cookie`, or `X-Forwarded-For` to blend C2 traffic with legitimate web traffic patterns.
+
 ### Domain Fronting
 
 Set the **host_header** build parameter to override the HTTP `Host` header. This enables domain fronting: route traffic through a CDN (e.g., CloudFront, Azure CDN) while the `Host` header targets your actual C2 domain. To network defenders, the traffic appears to go to the CDN's IP address.

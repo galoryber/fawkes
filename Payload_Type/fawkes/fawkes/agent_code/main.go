@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -56,6 +57,7 @@ var (
 	envKeyProcess     string = ""     // Environment key: this process must be running
 	selfDelete        string = ""     // Self-delete binary from disk after execution starts
 	masqueradeName    string = ""     // Process name masquerade (Linux: prctl PR_SET_NAME)
+	customHeaders     string = ""     // Base64-encoded JSON of additional HTTP headers
 )
 
 func main() {
@@ -207,6 +209,15 @@ func runAgent() {
 			proxyURL,
 			tlsVerify,
 		)
+		// Decode and apply custom HTTP headers from C2 profile
+		if customHeaders != "" {
+			if decoded, err := base64.StdEncoding.DecodeString(customHeaders); err == nil {
+				var headers map[string]string
+				if err := json.Unmarshal(decoded, &headers); err == nil {
+					httpProfile.CustomHeaders = headers
+				}
+			}
+		}
 		c2 = profiles.NewProfile(httpProfile)
 
 		// Also create a TCP profile instance for P2P child management.
