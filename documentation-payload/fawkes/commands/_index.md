@@ -10,6 +10,7 @@ pre = "<b>2. </b>"
 - File Operations
     * [cat](/agents/fawkes/commands/cat/)
     * [cd](/agents/fawkes/commands/cd/)
+    * [compress](/agents/fawkes/commands/compress/)
     * [cp](/agents/fawkes/commands/cp/)
     * [download](/agents/fawkes/commands/download/)
     * [find](/agents/fawkes/commands/find/)
