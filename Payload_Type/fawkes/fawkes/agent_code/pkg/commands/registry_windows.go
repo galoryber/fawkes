@@ -56,4 +56,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&CredHarvestCommand{})
 	RegisterCommand(&HandlesCommand{})
 	RegisterCommand(&NetSessionCommand{})
+	RegisterCommand(&NetLoggedonCommand{})
 }
