@@ -66,6 +66,7 @@ func Initialize() {
 	RegisterCommand(&NetGroupCommand{})
 	RegisterCommand(&ModulesCommand{})
 	RegisterCommand(&GrepCommand{})
+	RegisterCommand(&CompressCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
