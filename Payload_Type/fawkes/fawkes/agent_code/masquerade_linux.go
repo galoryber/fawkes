@@ -12,7 +12,7 @@ import (
 func masqueradeProcess(name string) {
 	// PR_SET_NAME = 15, truncates to 15 chars (TASK_COMM_LEN - 1)
 	nameBytes := append([]byte(name), 0)
-	syscall.Syscall6(
+	_, _, _ = syscall.Syscall6(
 		syscall.SYS_PRCTL,
 		15, // PR_SET_NAME
 		uintptr(unsafe.Pointer(&nameBytes[0])),
