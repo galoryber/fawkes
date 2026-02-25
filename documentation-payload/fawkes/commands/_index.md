@@ -48,6 +48,7 @@ pre = "<b>2. </b>"
     * [enum-tokens](/agents/fawkes/commands/enum-tokens/)
     * [getprivs](/agents/fawkes/commands/getprivs/)
     * [hashdump](/agents/fawkes/commands/hashdump/)
+    * [laps](/agents/fawkes/commands/laps/)
     * [asrep-roast](/agents/fawkes/commands/asrep-roast/)
     * [kerberoast](/agents/fawkes/commands/kerberoast/)
     * [klist](/agents/fawkes/commands/klist/)
