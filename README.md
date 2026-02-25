@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 55 commands are cross-platform, with 49 additional Windows-only commands, 1 Windows+macOS command (screenshot), 3 Unix-only commands, 6 Linux-only commands, and 2 macOS-only commands for a total of 117. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 55 commands are cross-platform, with 50 additional Windows-only commands, 1 Windows+macOS command (screenshot), 3 Unix-only commands, 6 Linux-only commands, and 2 macOS-only commands for a total of 118. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -81,6 +81,7 @@ mv | `mv <source> <destination>` | Move or rename a file from source to destinat
 named-pipes | `named-pipes [-filter <pattern>]` | **(Windows only)** List named pipes on the system for IPC discovery and pipe-based privilege escalation recon. Supports substring filtering (T1083).
 net-enum | `net-enum -action <users\|localgroups\|groupmembers\|domainusers\|domaingroups\|domaininfo> [-target <group>]` | **(Windows only)** Enumerate local/domain users, groups, and domain info via Win32 API (no subprocess).
 net-group | `net-group -action <list\|members\|user\|privileged> -server <DC> [-group <name>] [-user <sAMAccountName>] -username <user@domain> -password <pass>` | Enumerate AD group memberships via LDAP. Recursive member resolution, user group lookup, privileged group enumeration. Cross-platform (T1069.002).
+net-loggedon | `net-loggedon [-target <host>]` | **(Windows only)** Enumerate logged-on users via NetWkstaUserEnum. Shows username, logon domain, and logon server. MITRE T1033.
 net-session | `net-session [-target <host>]` | **(Windows only)** Enumerate active SMB sessions via NetSessionEnum. Level 502 (admin, full detail) with fallback to level 10 (no admin). MITRE T1049.
 net-shares | `net-shares -action <local\|remote\|mapped> [-target <host>]` | **(Windows only)** Enumerate network shares and mapped drives via Win32 API (no subprocess).
 net-user | `net-user -action <add\|delete\|info\|password\|group-add\|group-remove> -username <name> [-password <pass>] [-group <group>]` | **(Windows only)** Manage local user accounts and group membership via netapi32 API. MITRE T1136.001, T1098.
@@ -199,7 +200,7 @@ Tracked artifact types:
 | Type | Commands |
 |------|----------|
 | Process Create | run, powershell, spawn |
-| API Call | net-enum, net-session, net-shares, net-user, service, wmi, schtask, procdump, hashdump, eventlog, ntdll-unhook, firewall, dcom, vss (create/delete), psexec |
+| API Call | net-enum, net-loggedon, net-session, net-shares, net-user, service, wmi, schtask, procdump, hashdump, eventlog, ntdll-unhook, firewall, dcom, vss (create/delete), psexec |
 | Process Kill | kill |
 | Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection |
 | File Write | upload, cp, mv |
