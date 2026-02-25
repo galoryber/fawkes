@@ -130,7 +130,33 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-func smbConnect(args smbArgs) (*smb2.Session, error) {
+// smbConn wraps an SMB session with its underlying connection for deadline management.
+type smbConn struct {
+	session *smb2.Session
+	conn    net.Conn
+}
+
+// setDeadline sets a timeout deadline on the underlying TCP connection.
+// Call this before each SMB operation to prevent indefinite hangs.
+func (sc *smbConn) setDeadline(timeout time.Duration) {
+	_ = sc.conn.SetDeadline(time.Now().Add(timeout))
+}
+
+// clearDeadline removes the deadline after an operation completes.
+func (sc *smbConn) clearDeadline() {
+	_ = sc.conn.SetDeadline(time.Time{})
+}
+
+// close logs off the session and closes the TCP connection.
+func (sc *smbConn) close() {
+	_ = sc.session.Logoff()
+	_ = sc.conn.Close()
+}
+
+// smbOperationTimeout is the default timeout for individual SMB operations.
+const smbOperationTimeout = 30 * time.Second
+
+func smbConnect(args smbArgs) (*smbConn, error) {
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", args.Host, args.Port), 10*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("TCP connect to %s:%d: %v", args.Host, args.Port, err)
@@ -155,13 +181,16 @@ func smbConnect(args smbArgs) (*smb2.Session, error) {
 
 	d := &smb2.Dialer{Initiator: initiator}
 
+	// Set a deadline for the SMB session setup (auth exchange)
+	_ = conn.SetDeadline(time.Now().Add(smbOperationTimeout))
 	session, err := d.Dial(conn)
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("SMB auth to %s as %s\\%s: %v", args.Host, args.Domain, args.Username, err)
 	}
+	_ = conn.SetDeadline(time.Time{}) // Clear deadline after auth
 
-	return session, nil
+	return &smbConn{session: session, conn: conn}, nil
 }
 
 // smbDecodeHash decodes an NTLM hash from various formats:
@@ -184,7 +213,7 @@ func smbDecodeHash(hashStr string) ([]byte, error) {
 }
 
 func smbListShares(args smbArgs) structs.CommandResult {
-	session, err := smbConnect(args)
+	sc, err := smbConnect(args)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error: %v", err),
@@ -192,9 +221,11 @@ func smbListShares(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer func() { _ = session.Logoff() }()
+	defer sc.close()
 
-	shares, err := session.ListSharenames()
+	sc.setDeadline(smbOperationTimeout)
+	shares, err := sc.session.ListSharenames()
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error listing shares: %v", err),
@@ -218,7 +249,7 @@ func smbListShares(args smbArgs) structs.CommandResult {
 }
 
 func smbListDir(args smbArgs) structs.CommandResult {
-	session, err := smbConnect(args)
+	sc, err := smbConnect(args)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error: %v", err),
@@ -226,9 +257,11 @@ func smbListDir(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer func() { _ = session.Logoff() }()
+	defer sc.close()
 
-	share, err := session.Mount(args.Share)
+	sc.setDeadline(smbOperationTimeout)
+	share, err := sc.session.Mount(args.Share)
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err),
@@ -243,7 +276,9 @@ func smbListDir(args smbArgs) structs.CommandResult {
 		dirPath = "."
 	}
 
+	sc.setDeadline(smbOperationTimeout)
 	entries, err := share.ReadDir(dirPath)
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error listing \\\\%s\\%s\\%s: %v", args.Host, args.Share, dirPath, err),
@@ -275,7 +310,7 @@ func smbListDir(args smbArgs) structs.CommandResult {
 }
 
 func smbReadFile(args smbArgs) structs.CommandResult {
-	session, err := smbConnect(args)
+	sc, err := smbConnect(args)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error: %v", err),
@@ -283,9 +318,11 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer func() { _ = session.Logoff() }()
+	defer sc.close()
 
-	share, err := session.Mount(args.Share)
+	sc.setDeadline(smbOperationTimeout)
+	share, err := sc.session.Mount(args.Share)
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err),
@@ -295,7 +332,9 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	}
 	defer func() { _ = share.Umount() }()
 
+	sc.setDeadline(smbOperationTimeout)
 	f, err := share.Open(args.Path)
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error opening \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err),
@@ -306,7 +345,9 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	defer func() { _ = f.Close() }()
 
 	// Get file info for size check
+	sc.setDeadline(smbOperationTimeout)
 	info, err := f.Stat()
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error getting file info: %v", err),
@@ -325,7 +366,9 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 		}
 	}
 
+	sc.setDeadline(smbOperationTimeout)
 	data, err := io.ReadAll(f)
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error reading file: %v", err),
@@ -347,7 +390,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 }
 
 func smbWriteFile(args smbArgs) structs.CommandResult {
-	session, err := smbConnect(args)
+	sc, err := smbConnect(args)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error: %v", err),
@@ -355,9 +398,11 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer func() { _ = session.Logoff() }()
+	defer sc.close()
 
-	share, err := session.Mount(args.Share)
+	sc.setDeadline(smbOperationTimeout)
+	share, err := sc.session.Mount(args.Share)
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err),
@@ -367,7 +412,9 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 	}
 	defer func() { _ = share.Umount() }()
 
+	sc.setDeadline(smbOperationTimeout)
 	f, err := share.OpenFile(args.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error creating \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err),
@@ -377,7 +424,9 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 	}
 	defer func() { _ = f.Close() }()
 
+	sc.setDeadline(smbOperationTimeout)
 	n, err := f.Write([]byte(args.Content))
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error writing file: %v", err),
@@ -394,7 +443,7 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 }
 
 func smbDeleteFile(args smbArgs) structs.CommandResult {
-	session, err := smbConnect(args)
+	sc, err := smbConnect(args)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error: %v", err),
@@ -402,9 +451,11 @@ func smbDeleteFile(args smbArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	defer func() { _ = session.Logoff() }()
+	defer sc.close()
 
-	share, err := session.Mount(args.Share)
+	sc.setDeadline(smbOperationTimeout)
+	share, err := sc.session.Mount(args.Share)
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err),
@@ -414,7 +465,9 @@ func smbDeleteFile(args smbArgs) structs.CommandResult {
 	}
 	defer func() { _ = share.Umount() }()
 
+	sc.setDeadline(smbOperationTimeout)
 	err = share.Remove(args.Path)
+	sc.clearDeadline()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error deleting \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err),
