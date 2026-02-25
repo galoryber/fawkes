@@ -79,6 +79,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			// Try JSON first, fall back to LoadArgsFromJSONString
 			var raw map[string]interface{}
 			if err := json.Unmarshal([]byte(input), &raw); err != nil {

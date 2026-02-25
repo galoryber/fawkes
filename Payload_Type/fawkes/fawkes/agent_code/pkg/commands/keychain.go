@@ -3,13 +3,25 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
 )
+
+// keychainTimeout is the max time for any security CLI command.
+const keychainTimeout = 30 * time.Second
+
+// keychainExec runs a security CLI command with a timeout.
+func keychainExec(args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), keychainTimeout)
+	defer cancel()
+	return exec.CommandContext(ctx, "security", args...).CombinedOutput()
+}
 
 // KeychainCommand implements macOS keychain access via the security CLI
 type KeychainCommand struct{}
@@ -72,7 +84,7 @@ func (c *KeychainCommand) Execute(task structs.Task) structs.CommandResult {
 
 // keychainList enumerates available keychains
 func keychainList() structs.CommandResult {
-	out, err := exec.Command("security", "list-keychains").CombinedOutput()
+	out, err := keychainExec("list-keychains")
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error listing keychains: %v\n%s", err, string(out)),
@@ -82,8 +94,8 @@ func keychainList() structs.CommandResult {
 	}
 
 	// Also get default and login keychain info
-	defKc, _ := exec.Command("security", "default-keychain").CombinedOutput()
-	loginKc, _ := exec.Command("security", "login-keychain").CombinedOutput()
+	defKc, _ := keychainExec("default-keychain")
+	loginKc, _ := keychainExec("login-keychain")
 
 	var sb strings.Builder
 	sb.WriteString("=== macOS Keychains ===\n\n")
@@ -103,7 +115,7 @@ func keychainList() structs.CommandResult {
 
 // keychainDump dumps keychain metadata (no passwords without -g flag)
 func keychainDump() structs.CommandResult {
-	out, err := exec.Command("security", "dump-keychain").CombinedOutput()
+	out, err := keychainExec("dump-keychain")
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error dumping keychain: %v\n%s", err, string(out)),
@@ -139,7 +151,7 @@ func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 
 	// Try with -g (include password) first
 	cmdArgs := append([]string{"find-generic-password", "-g"}, filterArgs...)
-	out, err := exec.Command("security", cmdArgs...).CombinedOutput()
+	out, err := keychainExec(cmdArgs...)
 	if err != nil {
 		output := string(out)
 		if isItemNotFound(output) {
@@ -151,7 +163,7 @@ func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 		}
 		// Password retrieval failed — retry without -g for metadata only
 		cmdArgs = append([]string{"find-generic-password"}, filterArgs...)
-		out2, err2 := exec.Command("security", cmdArgs...).CombinedOutput()
+		out2, err2 := keychainExec(cmdArgs...)
 		if err2 != nil {
 			output2 := string(out2)
 			if isItemNotFound(output2) {
@@ -197,7 +209,7 @@ func keychainFindInternet(args keychainArgs) structs.CommandResult {
 
 	// Try with -g (include password) first
 	cmdArgs := append([]string{"find-internet-password", "-g"}, filterArgs...)
-	out, err := exec.Command("security", cmdArgs...).CombinedOutput()
+	out, err := keychainExec(cmdArgs...)
 	if err != nil {
 		output := string(out)
 		if isItemNotFound(output) {
@@ -209,7 +221,7 @@ func keychainFindInternet(args keychainArgs) structs.CommandResult {
 		}
 		// Password retrieval failed — retry without -g for metadata only
 		cmdArgs = append([]string{"find-internet-password"}, filterArgs...)
-		out2, err2 := exec.Command("security", cmdArgs...).CombinedOutput()
+		out2, err2 := keychainExec(cmdArgs...)
 		if err2 != nil {
 			output2 := string(out2)
 			if isItemNotFound(output2) {
@@ -268,7 +280,7 @@ func keychainFindCert(args keychainArgs) structs.CommandResult {
 		cmdArgs = append(cmdArgs, "-c", args.Name)
 	}
 
-	out, err := exec.Command("security", cmdArgs...).CombinedOutput()
+	out, err := keychainExec(cmdArgs...)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error finding certificates: %v\n%s", err, string(out)),
