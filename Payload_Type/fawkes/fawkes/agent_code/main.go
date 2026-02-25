@@ -405,6 +405,9 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		return
 	}
 
+	// Re-apply token impersonation if active (handles Go thread migration)
+	commands.PrepareExecution()
+
 	// Execute command with panic recovery to prevent agent crash
 	var result structs.CommandResult
 	func() {

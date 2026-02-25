@@ -5,6 +5,7 @@ package commands
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 
 	"golang.org/x/sys/windows"
@@ -80,7 +81,8 @@ var (
 )
 
 // RevertCurrentToken implements Xenon's IdentityAgentRevertToken (Identity.c lines 35-52)
-// Closes any existing impersonation token and reverts to original context
+// Closes any existing impersonation token and reverts to original context.
+// Also releases the OS thread lock set by PrepareExecution.
 func RevertCurrentToken() error {
 	tokenMutex.Lock()
 	defer tokenMutex.Unlock()
@@ -98,6 +100,12 @@ func RevertCurrentToken() error {
 	ret, _, err := procRevertToSelf.Call()
 	if ret == 0 {
 		return fmt.Errorf("RevertToSelf failed: %v", err)
+	}
+
+	// Release OS thread lock since we're no longer impersonating
+	if osThreadLocked {
+		runtime.UnlockOSThread()
+		osThreadLocked = false
 	}
 
 	return nil
