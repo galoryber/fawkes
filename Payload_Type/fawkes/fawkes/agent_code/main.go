@@ -301,16 +301,14 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			if err != nil {
 				log.Printf("[ERROR] Failed to get tasking: %v", err)
 				retryCount++
-				if retryCount >= maxRetriesInt {
-					log.Printf("[ERROR] Maximum retry count reached, resetting counter and sleeping longer")
-					retryCount = 0 // Reset counter instead of exiting
-					// Sleep longer on repeated failures
-					sleepTime := time.Duration(agent.SleepInterval*3) * time.Second
-					time.Sleep(sleepTime)
-					continue
+				// Exponential backoff: sleep 2^(retryCount-1) * base interval, capped at 5 minutes
+				backoffMultiplier := 1 << min(retryCount-1, 8) // 1, 2, 4, 8, 16, ...
+				backoffSeconds := agent.SleepInterval * backoffMultiplier
+				maxBackoff := 300 // 5 minutes cap
+				if backoffSeconds > maxBackoff {
+					backoffSeconds = maxBackoff
 				}
-				// Use the same sleep calculation for error case
-				sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
+				sleepTime := calculateSleepTime(backoffSeconds, agent.Jitter)
 				time.Sleep(sleepTime)
 				continue
 			}
