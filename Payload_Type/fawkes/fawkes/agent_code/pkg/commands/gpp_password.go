@@ -239,7 +239,7 @@ func gppWalkDir(share *smb2.Share, path string, results *[]gppResult, filesSearc
 		}
 
 		if entry.IsDir() {
-			gppWalkDir(share, fullPath, results, filesSearched)
+			_ = gppWalkDir(share, fullPath, results, filesSearched)
 			continue
 		}
 
@@ -265,7 +265,7 @@ func gppWalkDir(share *smb2.Share, path string, results *[]gppResult, filesSearc
 		}
 
 		data, err := io.ReadAll(io.LimitReader(f, 1024*1024)) // 1MB limit
-		f.Close()
+		_ = f.Close()
 		if err != nil {
 			continue
 		}
