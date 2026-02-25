@@ -59,4 +59,6 @@ func registerPlatformCommands() {
 	RegisterCommand(&NetLoggedonCommand{})
 	RegisterCommand(&RegSearchCommand{})
 	RegisterCommand(&ADSCommand{})
+	RegisterCommand(&HollowingCommand{})
+	RegisterCommand(&MemScanCommand{})
 }
