@@ -201,6 +201,7 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 
 	// Collect output with timeout to prevent blocking the agent
 	var output string
+	timedOut := false
 	timeout := time.After(30 * time.Second)
 collectLoop:
 	for {
@@ -212,16 +213,21 @@ collectLoop:
 			output += fmt.Sprintf("%v\n", msg)
 		case <-timeout:
 			output += "[!] BOF execution timed out after 30 seconds\n"
+			timedOut = true
 			break collectLoop
 		}
 	}
 
-	// Free allocated memory
-	for _, sec := range sections {
-		windows.VirtualFree(sec.Address, 0, windows.MEM_RELEASE)
-	}
-	if gotBaseAddress != 0 {
-		windows.VirtualFree(gotBaseAddress, 0, windows.MEM_RELEASE)
+	// Only free memory if the BOF goroutine has completed.
+	// If it timed out, the goroutine may still be executing code in these
+	// pages — freeing them would cause a use-after-free crash.
+	if !timedOut {
+		for _, sec := range sections {
+			windows.VirtualFree(sec.Address, 0, windows.MEM_RELEASE)
+		}
+		if gotBaseAddress != 0 {
+			windows.VirtualFree(gotBaseAddress, 0, windows.MEM_RELEASE)
+		}
 	}
 
 	return output, nil

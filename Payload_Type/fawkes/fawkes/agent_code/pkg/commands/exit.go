@@ -3,6 +3,7 @@ package commands
 import (
 	"log"
 	"os"
+	"time"
 
 	"fawkes/pkg/structs"
 )
@@ -31,8 +32,9 @@ func (c *ExitCommand) Execute(task structs.Task) structs.CommandResult {
 		Completed: true,
 	}
 
-	// Exit in a goroutine to allow the response to be sent
+	// Exit in a goroutine after a short delay to allow the response to be posted
 	go func() {
+		time.Sleep(3 * time.Second)
 		log.Printf("[INFO] Agent shutting down")
 		os.Exit(0)
 	}()
