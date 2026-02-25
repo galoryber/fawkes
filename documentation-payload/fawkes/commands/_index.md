@@ -70,6 +70,7 @@ pre = "<b>2. </b>"
     * [env](/agents/fawkes/commands/env/)
     * [ldap-query](/agents/fawkes/commands/ldap-query/)
     * [logonsessions](/agents/fawkes/commands/logonsessions/)
+    * [modules](/agents/fawkes/commands/modules/)
     * [named-pipes](/agents/fawkes/commands/named-pipes/)
     * [net-enum](/agents/fawkes/commands/net-enum/)
     * [net-group](/agents/fawkes/commands/net-group/)
