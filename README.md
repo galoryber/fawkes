@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 51 commands are cross-platform, with 48 additional Windows-only commands, 1 Windows+macOS command (screenshot), 3 Unix-only commands, 6 Linux-only commands, and 2 macOS-only commands for a total of 112. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 53 commands are cross-platform, with 48 additional Windows-only commands, 1 Windows+macOS command (screenshot), 3 Unix-only commands, 6 Linux-only commands, and 2 macOS-only commands for a total of 114. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -40,6 +40,7 @@ defender | `defender -action <status\|exclusions\|add-exclusion\|remove-exclusio
 dcom | `dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20\|shellwindows\|shellbrowser]` | **(Windows only)** Execute commands on remote hosts via DCOM lateral movement. Three objects: MMC20.Application, ShellWindows, ShellBrowserWindow. MITRE T1021.003.
 dcsync | `dcsync -server <DC> -username <user> [-password <pass>] [-hash <NT hash>] -target <account[,account2]>` | DCSync — replicate AD credentials via DRS without touching LSASS. Extracts NTLM hashes, Kerberos keys (AES256/AES128). Supports pass-the-hash. Cross-platform (T1003.006).
 dns | `dns -action <resolve\|reverse\|srv\|mx\|ns\|txt\|cname\|all\|dc\|zone-transfer> -target <host> [-server <dns_ip>]` | DNS enumeration — resolve hosts, query records, discover domain controllers, zone transfers (AXFR). Cross-platform (T1018).
+drivers | `drivers [-filter <name>]` | Enumerate loaded kernel drivers/modules. Windows: EnumDeviceDrivers, Linux: /proc/modules, macOS: kext enumeration. Cross-platform (T1082).
 domain-policy | `domain-policy -action <all\|password\|lockout\|fgpp> -server <DC> -username <user@domain> -password <pass>` | AD password/lockout policy and FGPP enumeration via LDAP. Spray-safe recommendations. Cross-platform (T1201).
 crontab | `crontab -action <list\|add\|remove> [-entry <cron_line>] [-program <path>] [-schedule <schedule>]` | **(Linux/macOS only)** List, add, or remove cron jobs for persistence. Supports raw cron entries or program+schedule syntax.
 download | `download <path>` | Download a file from the target. Supports chunked file transfer for any file size and file browser integration.
@@ -100,6 +101,7 @@ reg-delete | `reg-delete -hive <HIVE> -path <path> [-name <value>] [-recursive <
 reg-read | `reg-read -hive <HIVE> -path <path> [-name <value>]` | **(Windows only)** Read a registry value or enumerate all values/subkeys under a key.
 reg-write | `reg-write -hive <HIVE> -path <path> -name <name> -data <data> -type <type>` | **(Windows only)** Write a value to the Windows Registry. Creates keys if needed.
 rev2self | `rev2self` | **(Windows only)** Revert to the original security context by dropping any active impersonation token.
+route | `route` | Display the system routing table. Windows: GetIpForwardTable API, Linux: /proc/net/route + IPv6, macOS: netstat -rn. Cross-platform (T1016).
 rpfwd | `rpfwd start <port> <remote_ip> <remote_port>` / `rpfwd stop <port>` | Reverse port forward -- agent listens, Mythic routes to target. Cross-platform (T1090).
 rm | `rm <path>` | Remove a file or directory (recursively removes directories).
 run | `run <command>` | Execute a shell command and return the output.
