@@ -71,6 +71,7 @@ func Initialize() {
 	RegisterCommand(&RouteCommand{})
 	RegisterCommand(&SysinfoCommand{})
 	RegisterCommand(&LapsCommand{})
+	RegisterCommand(&GppPasswordCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
