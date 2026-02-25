@@ -69,6 +69,7 @@ func Initialize() {
 	RegisterCommand(&CompressCommand{})
 	RegisterCommand(&DriversCommand{})
 	RegisterCommand(&RouteCommand{})
+	RegisterCommand(&SysinfoCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
