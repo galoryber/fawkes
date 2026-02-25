@@ -44,6 +44,10 @@ func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
 		cmd = exec.Command("/bin/sh", "-c", task.Params)
 	}
 
+	// If impersonating (steal-token/getsystem/make-token), run child
+	// process with the impersonated token's security context
+	configureProcessToken(cmd)
+
 	// Capture combined output (stdout and stderr)
 	output, err := cmd.CombinedOutput()
 

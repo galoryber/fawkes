@@ -48,6 +48,9 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		"-Command", task.Params,
 	)
 
+	// If impersonating, run PowerShell as the impersonated identity
+	configureProcessToken(cmd)
+
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
