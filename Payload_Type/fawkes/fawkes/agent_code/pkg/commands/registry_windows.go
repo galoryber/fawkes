@@ -58,4 +58,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&NetSessionCommand{})
 	RegisterCommand(&NetLoggedonCommand{})
 	RegisterCommand(&RegSearchCommand{})
+	RegisterCommand(&ADSCommand{})
 }
