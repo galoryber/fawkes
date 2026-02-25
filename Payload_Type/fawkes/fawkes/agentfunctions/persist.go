@@ -9,12 +9,12 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "persist",
-		Description:         "Install or remove persistence mechanisms (registry run key, startup folder, COM hijacking, screensaver hijacking)",
-		HelpString:          "persist -method <registry|startup-folder|com-hijack|screensaver|list> -action <install|remove> [-name <name>] [-path <exe_path>] [-hive <HKCU|HKLM>] [-clsid <CLSID>] [-timeout <seconds>]",
-		Version:             2,
+		Description:         "Install or remove persistence mechanisms (registry run key, startup folder, COM hijacking, screensaver hijacking, IFEO debugger)",
+		HelpString:          "persist -method <registry|startup-folder|com-hijack|screensaver|ifeo|list> -action <install|remove> [-name <name>] [-path <exe_path>] [-hive <HKCU|HKLM>] [-clsid <CLSID>] [-timeout <seconds>]",
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002"},
+		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002", "T1546.012"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
@@ -25,8 +25,8 @@ func init() {
 				ModalDisplayName: "Persistence Method",
 				CLIName:          "method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "list"},
-				Description:      "Persistence method: registry (Run key), startup-folder (copy to Startup), com-hijack (CLSID override), screensaver (idle trigger), or list (enumerate all)",
+				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "list"},
+				Description:      "Persistence method: registry (Run key), startup-folder (copy to Startup), com-hijack (CLSID override), screensaver (idle trigger), ifeo (debugger hijack), or list (enumerate all)",
 				DefaultValue:     "registry",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -155,6 +155,9 @@ func init() {
 				case "screensaver":
 					path, _ := taskData.Args.GetStringArg("path")
 					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("HKCU\\Control Panel\\Desktop\\SCRNSAVE.EXE = %s", path))
+				case "ifeo":
+					path, _ := taskData.Args.GetStringArg("path")
+					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\%s\\Debugger = %s", name, path))
 				}
 			}
 			return response

