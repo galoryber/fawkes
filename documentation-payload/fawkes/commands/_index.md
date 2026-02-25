@@ -93,6 +93,7 @@ pre = "<b>2. </b>"
 - Registry Operations
     * [reg-delete](/agents/fawkes/commands/reg-delete/)
     * [reg-read](/agents/fawkes/commands/reg-read/)
+    * [reg-search](/agents/fawkes/commands/reg-search/)
     * [reg-write](/agents/fawkes/commands/reg-write/)
 - Persistence
     * [crontab](/agents/fawkes/commands/crontab/)
