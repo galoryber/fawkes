@@ -48,6 +48,7 @@ func init() {
 				CLIName:       "extensions",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:   "Filter by file extensions (comma-separated, e.g. .txt,.xml,.config,.ini)",
+				DefaultValue:  "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
