@@ -64,6 +64,7 @@ pre = "<b>2. </b>"
     * [domain-policy](/agents/fawkes/commands/domain-policy/)
     * [gpo](/agents/fawkes/commands/gpo/)
     * [grep](/agents/fawkes/commands/grep/)
+    * [handles](/agents/fawkes/commands/handles/)
     * [av-detect](/agents/fawkes/commands/av-detect/)
     * [kerb-delegation](/agents/fawkes/commands/kerb-delegation/)
     * [dns](/agents/fawkes/commands/dns/)
