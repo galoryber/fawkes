@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 53 commands are cross-platform, with 48 additional Windows-only commands, 1 Windows+macOS command (screenshot), 3 Unix-only commands, 6 Linux-only commands, and 2 macOS-only commands for a total of 114. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 54 commands are cross-platform, with 48 additional Windows-only commands, 1 Windows+macOS command (screenshot), 3 Unix-only commands, 6 Linux-only commands, and 2 macOS-only commands for a total of 115. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -120,6 +120,7 @@ ssh-keys | `ssh-keys -action <list\|add\|remove\|read-private> [-key <ssh_key>] 
 start-clr | `start-clr` | **(Windows only)** Initialize the CLR v4.0.30319 with optional AMSI/ETW patching (Ret Patch, Autopatch, or Hardware Breakpoint).
 systemd-persist | `systemd-persist -action <install\|remove\|list> -name <unit> [-exec_start <cmd>] [-timer <calendar>] [-system true]` | **(Linux only)** Install, remove, or list systemd service/timer persistence. User or system scope. MITRE T1543.002.
 steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a security token from another process.
+sysinfo | `sysinfo` | Comprehensive system information: OS version, hardware, memory, uptime, domain, .NET (Windows), SELinux/SIP status. Cross-platform (T1082).
 threadless-inject | `threadless-inject` | **(Windows only)** Inject shellcode using threadless injection by hooking a DLL function in a remote process. More stealthy than vanilla injection as it doesn't create new threads.
 ticket | `ticket -action forge\|request\|s4u -realm <DOMAIN> -username <user> -key <hex_key> [-key_type aes256\|aes128\|rc4] [-format kirbi\|ccache] [-domain_sid <SID>] [-spn <SPN>] [-server <KDC>] [-impersonate <user>]` | Forge, request, or delegate Kerberos tickets. Forge: Golden/Silver Tickets (offline). Request: Overpass-the-Hash (online). S4U: constrained delegation abuse via S4U2Self+S4U2Proxy. Cross-platform (T1558.001, T1558.002, T1550.002, T1134.001).
 trust | `trust -server <DC> -username <user@domain> -password <pass> [-use_tls]` | Enumerate domain and forest trust relationships via LDAP. Identifies trust direction, type, SID filtering, and attack paths. Cross-platform (T1482).

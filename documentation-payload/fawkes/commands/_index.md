@@ -82,6 +82,7 @@ pre = "<b>2. </b>"
     * [privesc-check](/agents/fawkes/commands/privesc-check/)
     * [proc-info](/agents/fawkes/commands/proc-info/)
     * [ps](/agents/fawkes/commands/ps/)
+    * [sysinfo](/agents/fawkes/commands/sysinfo/)
     * [trust](/agents/fawkes/commands/trust/)
     * [ts](/agents/fawkes/commands/ts/)
     * [whoami](/agents/fawkes/commands/whoami/)
