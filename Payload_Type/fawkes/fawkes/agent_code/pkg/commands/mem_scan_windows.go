@@ -18,16 +18,17 @@ const (
 	msProcessQueryInfo = 0x0400
 )
 
-// MEMORY_BASIC_INFORMATION for VirtualQueryEx
+// MEMORY_BASIC_INFORMATION for VirtualQueryEx (64-bit layout, 48 bytes)
 type memoryBasicInfo struct {
 	BaseAddress       uintptr
 	AllocationBase    uintptr
 	AllocationProtect uint32
-	_                 uintptr // PartitionId (Win10+) or padding
+	pad1              uint32 // alignment padding after DWORD
 	RegionSize        uintptr
 	State             uint32
 	Protect           uint32
 	Type              uint32
+	pad2              uint32 // struct tail padding
 }
 
 var (
