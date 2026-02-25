@@ -245,24 +245,36 @@ func queryObjectType(handle windows.Handle) string {
 		return ""
 	}
 
-	// OBJECT_TYPE_INFORMATION starts with a UNICODE_STRING (Length, MaxLength, Buffer pointer)
-	if retLen < 8 {
-		return ""
-	}
-	nameLen := *(*uint16)(unsafe.Pointer(&buf[0]))
-	if nameLen == 0 || nameLen > 512 {
-		return ""
-	}
-	// On 64-bit, Buffer pointer is at offset 8 (after Length uint16 + MaxLength uint16 + padding)
-	bufPtr := *(*uintptr)(unsafe.Pointer(&buf[8]))
-	if bufPtr == 0 {
+	return parseUnicodeStringFromBuffer(buf, retLen)
+}
+
+// parseUnicodeStringFromBuffer extracts the string from a UNICODE_STRING at the start of buf.
+// The Buffer pointer in the UNICODE_STRING points to the actual UTF-16 data within the buffer.
+func parseUnicodeStringFromBuffer(buf []byte, retLen uint32) string {
+	if retLen < 16 { // Need at least UNICODE_STRING header (16 bytes on amd64)
 		return ""
 	}
 
-	// The type name is stored inline after the UNICODE_STRING header in the same buffer
-	// Actually the buffer points to the inline data. Let's use the data directly.
-	nameStart := uintptr(unsafe.Pointer(&buf[0])) + unsafe.Sizeof(unicodeString{})
-	nameSlice := unsafe.Slice((*uint16)(unsafe.Pointer(nameStart)), nameLen/2)
+	us := (*unicodeString)(unsafe.Pointer(&buf[0]))
+	if us.Length == 0 || us.Buffer == 0 {
+		return ""
+	}
+
+	// The Buffer pointer is absolute — compute offset within our buf
+	bufStart := uintptr(unsafe.Pointer(&buf[0]))
+	bufEnd := bufStart + uintptr(len(buf))
+
+	if us.Buffer < bufStart || us.Buffer >= bufEnd {
+		return "" // Buffer points outside our allocation
+	}
+
+	charCount := us.Length / 2
+	available := (bufEnd - us.Buffer) / 2
+	if uintptr(charCount) > available {
+		charCount = uint16(available)
+	}
+
+	nameSlice := unsafe.Slice((*uint16)(unsafe.Pointer(us.Buffer)), charCount)
 	return syscall.UTF16ToString(nameSlice)
 }
 
@@ -283,18 +295,11 @@ func queryObjectName(handle windows.Handle) string {
 		uintptr(len(buf)),
 		uintptr(unsafe.Pointer(&retLen)),
 	)
-	if ret != 0 || retLen < 8 {
+	if ret != 0 {
 		return ""
 	}
 
-	nameLen := *(*uint16)(unsafe.Pointer(&buf[0]))
-	if nameLen == 0 || nameLen > 2000 {
-		return ""
-	}
-
-	nameStart := uintptr(unsafe.Pointer(&buf[0])) + unsafe.Sizeof(unicodeString{})
-	nameSlice := unsafe.Slice((*uint16)(unsafe.Pointer(nameStart)), nameLen/2)
-	return syscall.UTF16ToString(nameSlice)
+	return parseUnicodeStringFromBuffer(buf, retLen)
 }
 
 // isSafeToQueryName returns true for handle types where NtQueryObject won't hang
