@@ -232,6 +232,19 @@ Control how the agent validates HTTPS certificates when communicating with the C
 
 Certificate pinning prevents MITM interception of agent traffic even if an attacker controls a trusted CA.
 
+### Environment Keying / Guardrails
+
+Prevent the agent from executing on unauthorized systems. Configured at build time — the agent silently exits before making any network contact if checks fail. No logging, no artifacts, no C2 traffic.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `env_key_hostname` | Regex | Hostname must match (e.g., `WORKSTATION-\d+` or `.*\.contoso\.com`) |
+| `env_key_domain` | Regex | Domain must match (e.g., `CONTOSO` or `.*\.local`) |
+| `env_key_username` | Regex | Username must match (e.g., `admin.*` or `svc_.*`) |
+| `env_key_process` | String | Process name that must be running (e.g., `outlook.exe`) |
+
+All patterns are case-insensitive and anchored to match the full value. Multiple keys can be combined — all must pass. Invalid regex patterns fail closed (agent exits). Leave empty to skip a check.
+
 ### Domain Fronting
 
 Set the **host_header** build parameter to override the HTTP `Host` header. This enables domain fronting: route traffic through a CDN (e.g., CloudFront, Azure CDN) while the `Host` header targets your actual C2 domain. To network defenders, the traffic appears to go to the CDN's IP address.

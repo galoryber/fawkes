@@ -145,6 +145,34 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  "",
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
+		{
+			Name:          "env_key_hostname",
+			Description:   "Optional: Environment key — regex pattern the hostname must match (e.g. '.*\\.contoso\\.com' or 'WORKSTATION-\\d+'). Agent exits silently before checkin if hostname doesn't match. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "env_key_domain",
+			Description:   "Optional: Environment key — regex pattern the domain must match (e.g. 'CONTOSO' or '.*\\.local'). Agent exits silently before checkin if domain doesn't match. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "env_key_username",
+			Description:   "Optional: Environment key — regex pattern the current username must match (e.g. 'admin.*' or 'svc_.*'). Agent exits silently before checkin if username doesn't match. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "env_key_process",
+			Description:   "Optional: Environment key — process name that must be running on the system (e.g. 'outlook.exe' or 'slack'). Agent exits silently before checkin if process not found. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -285,6 +313,20 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if whDays, err := payloadBuildMsg.BuildParameters.GetStringArg("working_days"); err == nil && whDays != "" {
 		ldflags += fmt.Sprintf(" -X '%s.workingDays=%s'", fawkes_main_package, whDays)
+	}
+
+	// Environment keying / guardrails
+	if ekHostname, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_hostname"); err == nil && ekHostname != "" {
+		ldflags += fmt.Sprintf(" -X '%s.envKeyHostname=%s'", fawkes_main_package, ekHostname)
+	}
+	if ekDomain, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_domain"); err == nil && ekDomain != "" {
+		ldflags += fmt.Sprintf(" -X '%s.envKeyDomain=%s'", fawkes_main_package, ekDomain)
+	}
+	if ekUsername, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_username"); err == nil && ekUsername != "" {
+		ldflags += fmt.Sprintf(" -X '%s.envKeyUsername=%s'", fawkes_main_package, ekUsername)
+	}
+	if ekProcess, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_process"); err == nil && ekProcess != "" {
+		ldflags += fmt.Sprintf(" -X '%s.envKeyProcess=%s'", fawkes_main_package, ekProcess)
 	}
 
 	architecture, err := payloadBuildMsg.BuildParameters.GetStringArg("architecture")
