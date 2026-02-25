@@ -254,6 +254,14 @@ Enable automatic binary deletion at startup via the **self_delete** build parame
 
 The binary is deleted after environment key checks pass but before network activity begins.
 
+### Process Masquerading (Linux)
+
+Set the **masquerade_name** build parameter to change the agent's process name on Linux. Uses `prctl(PR_SET_NAME)` to modify `/proc/self/comm`, which is displayed by `ps`, `top`, and `htop`. Max 15 characters.
+
+Useful names: `[kworker/0:1]`, `[migration/0]`, `sshd`, `apache2`, `[rcu_preempt]`
+
+Combined with self-delete, the agent appears as a legitimate kernel thread or service with no file on disk.
+
 ### Domain Fronting
 
 Set the **host_header** build parameter to override the HTTP `Host` header. This enables domain fronting: route traffic through a CDN (e.g., CloudFront, Azure CDN) while the `Host` header targets your actual C2 domain. To network defenders, the traffic appears to go to the CDN's IP address.

