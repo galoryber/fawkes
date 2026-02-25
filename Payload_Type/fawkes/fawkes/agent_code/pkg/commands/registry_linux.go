@@ -16,4 +16,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&CredHarvestCommand{})
 	RegisterCommand(&MemScanCommand{})
 	RegisterCommand(&ExecuteMemoryCommand{})
+	RegisterCommand(&ScreenshotLinuxCommand{})
 }
