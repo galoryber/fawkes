@@ -26,6 +26,7 @@ pre = "<b>2. </b>"
     * [wmi](/agents/fawkes/commands/wmi/)
 - Process Injection
     * [apc-injection](/agents/fawkes/commands/apc-injection/)
+    * [hollow](/agents/fawkes/commands/hollow/)
     * [opus-injection](/agents/fawkes/commands/opus-injection/)
     * [poolparty-injection](/agents/fawkes/commands/poolparty-injection/)
     * [ptrace-inject](/agents/fawkes/commands/ptrace-inject/)
