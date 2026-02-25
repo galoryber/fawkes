@@ -15,4 +15,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&PtraceInjectCommand{})
 	RegisterCommand(&CredHarvestCommand{})
 	RegisterCommand(&MemScanCommand{})
+	RegisterCommand(&ExecuteMemoryCommand{})
 }

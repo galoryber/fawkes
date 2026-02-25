@@ -34,6 +34,7 @@ pre = "<b>2. </b>"
     * [vanilla-injection](/agents/fawkes/commands/vanilla-injection/)
     * [spawn](/agents/fawkes/commands/spawn/)
 - In-Memory Code Execution
+    * [execute-memory](/agents/fawkes/commands/execute-memory/)
     * [execute-shellcode](/agents/fawkes/commands/execute-shellcode/)
     * [inline-assembly](/agents/fawkes/commands/inline-assembly/)
     * [inline-execute](/agents/fawkes/commands/inline-execute/)
