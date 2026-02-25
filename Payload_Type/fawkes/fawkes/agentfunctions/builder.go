@@ -173,6 +173,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  "",
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
+		{
+			Name:          "self_delete",
+			Description:   "Delete the agent binary from disk after execution starts. Reduces forensic artifacts. On Linux/macOS, the file is removed immediately (process continues from memory). On Windows, uses NTFS stream rename technique.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -327,6 +334,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if ekProcess, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_process"); err == nil && ekProcess != "" {
 		ldflags += fmt.Sprintf(" -X '%s.envKeyProcess=%s'", fawkes_main_package, ekProcess)
+	}
+	if selfDel, err := payloadBuildMsg.BuildParameters.GetBooleanArg("self_delete"); err == nil && selfDel {
+		ldflags += fmt.Sprintf(" -X '%s.selfDelete=true'", fawkes_main_package)
 	}
 
 	architecture, err := payloadBuildMsg.BuildParameters.GetStringArg("architecture")

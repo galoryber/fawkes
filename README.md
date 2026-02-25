@@ -245,6 +245,15 @@ Prevent the agent from executing on unauthorized systems. Configured at build ti
 
 All patterns are case-insensitive and anchored to match the full value. Multiple keys can be combined — all must pass. Invalid regex patterns fail closed (agent exits). Leave empty to skip a check.
 
+### Self-Deletion
+
+Enable automatic binary deletion at startup via the **self_delete** build parameter. Once the agent starts running, it removes its own file from disk — eliminating the primary forensic artifact.
+
+- **Linux/macOS**: Uses `os.Remove()` — the running process continues via the in-memory inode mapping. The file disappears from disk immediately.
+- **Windows**: Uses the NTFS stream rename technique — renames the default `:$DATA` stream then deletes the file entry. No child process spawned.
+
+The binary is deleted after environment key checks pass but before network activity begins.
+
 ### Domain Fronting
 
 Set the **host_header** build parameter to override the HTTP `Host` header. This enables domain fronting: route traffic through a CDN (e.g., CloudFront, Azure CDN) while the `Host` header targets your actual C2 domain. To network defenders, the traffic appears to go to the CDN's IP address.
