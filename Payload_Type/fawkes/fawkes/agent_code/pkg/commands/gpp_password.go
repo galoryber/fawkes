@@ -169,17 +169,17 @@ func searchGPPPasswords(args gppArgs) (string, error) {
 	d := &smb2.Dialer{Initiator: initiator}
 	session, err := d.Dial(conn)
 	if err != nil {
-		conn.Close()
+		_ = conn.Close()
 		return "", fmt.Errorf("SMB auth failed: %v", err)
 	}
-	defer session.Logoff()
+	defer func() { _ = session.Logoff() }()
 
 	// Mount SYSVOL share
 	share, err := session.Mount(fmt.Sprintf(`\\%s\SYSVOL`, args.Server))
 	if err != nil {
 		return "", fmt.Errorf("mount SYSVOL: %v", err)
 	}
-	defer share.Umount()
+	defer func() { _ = share.Umount() }()
 
 	// Search for XML files containing GPP passwords
 	var results []gppResult
