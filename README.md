@@ -79,6 +79,7 @@ ls | `ls [path]` | List files and folders with owner/group and timestamps. File 
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it.
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
 modules | `modules [-pid <PID>]` | List loaded modules/DLLs/libraries in a process. Windows: CreateToolhelp32Snapshot. Linux: /proc/pid/maps. macOS: proc_info syscall. Default: current process. Cross-platform (T1057).
+mem-scan | `mem-scan -pid <PID> -pattern <string> [-hex] [-max_results <n>] [-context_bytes <n>]` | Search process memory for byte patterns with hex dump output. Windows: VirtualQueryEx/ReadProcessMemory. Linux: /proc/pid/maps+mem. Supports string and hex patterns (T1005, T1057).
 mv | `mv <source> <destination>` | Move or rename a file from source to destination.
 named-pipes | `named-pipes [-filter <pattern>]` | **(Windows only)** List named pipes on the system for IPC discovery and pipe-based privilege escalation recon. Supports substring filtering (T1083).
 net-enum | `net-enum -action <users\|localgroups\|groupmembers\|domainusers\|domaingroups\|domaininfo> [-target <group>]` | **(Windows only)** Enumerate local/domain users, groups, and domain info via Win32 API (no subprocess).

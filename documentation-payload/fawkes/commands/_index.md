@@ -37,9 +37,10 @@ pre = "<b>2. </b>"
     * [inline-execute](/agents/fawkes/commands/inline-execute/)
     * [start-clr](/agents/fawkes/commands/start-clr/)
 - Memory Operations
+    * [autopatch](/agents/fawkes/commands/autopatch/)
+    * [mem-scan](/agents/fawkes/commands/mem-scan/)
     * [read-memory](/agents/fawkes/commands/read-memory/)
     * [write-memory](/agents/fawkes/commands/write-memory/)
-    * [autopatch](/agents/fawkes/commands/autopatch/)
 - Credential/Token Commands
     * [browser](/agents/fawkes/commands/browser/)
     * [cred-harvest](/agents/fawkes/commands/cred-harvest/)
