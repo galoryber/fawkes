@@ -47,6 +47,7 @@ pre = "<b>2. </b>"
     * [credman](/agents/fawkes/commands/credman/)
     * [enum-tokens](/agents/fawkes/commands/enum-tokens/)
     * [getprivs](/agents/fawkes/commands/getprivs/)
+    * [gpp-password](/agents/fawkes/commands/gpp-password/)
     * [hashdump](/agents/fawkes/commands/hashdump/)
     * [laps](/agents/fawkes/commands/laps/)
     * [asrep-roast](/agents/fawkes/commands/asrep-roast/)
