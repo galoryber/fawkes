@@ -4,11 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -124,79 +122,24 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
+			// Check for direct base64 shellcode first (CLI/API usage)
 			var shellcodeB64 string
 			var filename string
 
-			switch strings.ToLower(taskData.Task.ParameterGroupName) {
-			case "default":
-				// Existing file from dropdown
-				fname, err := taskData.Args.GetStringArg("filename")
-				if err != nil {
+			sc, _ := taskData.Args.GetStringArg("shellcode_b64")
+			if sc != "" {
+				shellcodeB64 = sc
+				filename = "(inline)"
+			} else {
+				// File-based: resolve via helper
+				fname, fileContents, fErr := resolveFileContents(taskData)
+				if fErr != nil {
 					response.Success = false
-					response.Error = "Failed to get filename: " + err.Error()
+					response.Error = fErr.Error()
 					return response
 				}
 				filename = fname
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					CallbackID: taskData.Callback.ID, Filename: fname, LimitByCallback: false, MaxResults: -1,
-				})
-				if err != nil || !search.Success || len(search.Files) == 0 {
-					response.Success = false
-					response.Error = fmt.Sprintf("File not found: %s", fname)
-					return response
-				}
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: search.Files[0].AgentFileId,
-				})
-				if err != nil || !getResp.Success {
-					response.Success = false
-					response.Error = "Failed to get file contents"
-					return response
-				}
-				shellcodeB64 = base64.StdEncoding.EncodeToString(getResp.Content)
-
-			case "new file":
-				// Uploaded file
-				fileID, err := taskData.Args.GetStringArg("file")
-				if err != nil {
-					response.Success = false
-					response.Error = "Failed to get file: " + err.Error()
-					return response
-				}
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil || !search.Success || len(search.Files) == 0 {
-					response.Success = false
-					response.Error = "Failed to find uploaded file"
-					return response
-				}
-				filename = search.Files[0].Filename
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil || !getResp.Success {
-					response.Success = false
-					response.Error = "Failed to get file contents"
-					return response
-				}
-				shellcodeB64 = base64.StdEncoding.EncodeToString(getResp.Content)
-
-			case "cli":
-				// Direct base64 shellcode
-				sc, err := taskData.Args.GetStringArg("shellcode_b64")
-				if err != nil {
-					response.Success = false
-					response.Error = "Failed to get shellcode_b64: " + err.Error()
-					return response
-				}
-				shellcodeB64 = sc
-				filename = "(inline)"
-
-			default:
-				response.Success = false
-				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
-				return response
+				shellcodeB64 = base64.StdEncoding.EncodeToString(fileContents)
 			}
 
 			// Get optional parameters

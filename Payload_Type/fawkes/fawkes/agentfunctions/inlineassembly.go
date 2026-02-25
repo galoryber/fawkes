@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -136,8 +135,6 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// For command line usage, we'd need to parse differently
-			// For now, require JSON format
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -149,10 +146,8 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
-			var fileID string
 			var filename string
 			var fileContents []byte
-			var err error
 
 			// Check if this is a Forge invocation
 			forgeFileID, forgeErr := taskData.Args.GetStringArg("assembly_file")
@@ -160,11 +155,9 @@ func init() {
 
 			if isForgeCall {
 				// Forge invocation - use Forge parameter names
-				fileID = forgeFileID
-
 				// Get file details
 				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					AgentFileID: fileID,
+					AgentFileID: forgeFileID,
 				})
 				if err != nil {
 					logging.LogError(err, "Failed to search for file")
@@ -187,7 +180,7 @@ func init() {
 
 				// Get file contents
 				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
+					AgentFileID: forgeFileID,
 				})
 				if err != nil {
 					logging.LogError(err, "Failed to get file content")
@@ -203,114 +196,13 @@ func init() {
 				fileContents = getResp.Content
 
 			} else {
-				// Normal invocation - use existing parameter logic
-				// Determine which parameter group was used
-				switch strings.ToLower(taskData.Task.ParameterGroupName) {
-				case "default":
-				// User selected an existing file from the dropdown by filename
-				filename, err = taskData.Args.GetStringArg("filename")
-				if err != nil {
-					logging.LogError(err, "Failed to get filename")
+				// Normal invocation - resolve file by checking actual args
+				var fErr error
+				filename, fileContents, fErr = resolveFileContents(taskData)
+				if fErr != nil {
 					response.Success = false
-					response.Error = "Failed to get assembly file: " + err.Error()
+					response.Error = fErr.Error()
 					return response
-				}
-
-				// Search for the file by filename
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					CallbackID:      taskData.Callback.ID,
-					Filename:        filename,
-					LimitByCallback: false,
-					MaxResults:      -1,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to search for file by name")
-					response.Success = false
-					response.Error = "Failed to search for file: " + err.Error()
-					return response
-				}
-				if !search.Success {
-					response.Success = false
-					response.Error = search.Error
-					return response
-				}
-				if len(search.Files) == 0 {
-					response.Success = false
-					response.Error = fmt.Sprintf("Failed to find file: %s", filename)
-					return response
-				}
-				fileID = search.Files[0].AgentFileId
-
-				// Get file contents directly (no file transfer to agent)
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to get file contents")
-					response.Success = false
-					response.Error = "Failed to get file contents: " + err.Error()
-					return response
-				}
-				if !getResp.Success {
-					response.Success = false
-					response.Error = getResp.Error
-					return response
-				}
-				fileContents = getResp.Content
-
-			case "new file":
-				// User uploaded a new file
-				fileID, err = taskData.Args.GetStringArg("file")
-				if err != nil {
-					logging.LogError(err, "Failed to get file")
-					response.Success = false
-					response.Error = "Failed to get assembly file: " + err.Error()
-					return response
-				}
-
-				// Get file details
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to search for file")
-					response.Success = false
-					response.Error = "Failed to search for file: " + err.Error()
-					return response
-				}
-				if !search.Success {
-					response.Success = false
-					response.Error = search.Error
-					return response
-				}
-				if len(search.Files) == 0 {
-					response.Success = false
-					response.Error = "Failed to find the specified file"
-					return response
-				}
-				filename = search.Files[0].Filename
-
-				// Get file contents directly (no file transfer to agent)
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to get file contents")
-					response.Success = false
-					response.Error = "Failed to get file contents: " + err.Error()
-					return response
-				}
-				if !getResp.Success {
-					response.Success = false
-					response.Error = getResp.Error
-					return response
-				}
-				fileContents = getResp.Content
-
-			default:
-				response.Success = false
-				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
-				return response
 				}
 			}
 
@@ -336,7 +228,6 @@ func init() {
 			response.DisplayParams = &displayParams
 
 			// Build the actual parameters JSON that will be sent to the agent
-			// Encode file contents as base64 to embed in JSON
 			params := map[string]interface{}{
 				"assembly_b64": base64.StdEncoding.EncodeToString(fileContents),
 				"arguments":    arguments,
@@ -350,7 +241,6 @@ func init() {
 				return response
 			}
 
-			// Set the parameters as a JSON string
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
 			return response

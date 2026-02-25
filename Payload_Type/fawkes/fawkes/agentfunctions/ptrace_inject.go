@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -175,72 +174,12 @@ func init() {
 				return response
 			}
 
-			// File-based modes — need to fetch shellcode from Mythic storage
-			var fileContents []byte
-			var filename string
-			var err error
-
-			groupName := strings.ToLower(taskData.Task.ParameterGroupName)
-
-			switch groupName {
-			case "new file":
-				fileID, err := taskData.Args.GetStringArg("file")
-				if err != nil {
-					response.Success = false
-					response.Error = "Failed to get shellcode file: " + err.Error()
-					return response
-				}
-
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil || !search.Success || len(search.Files) == 0 {
-					response.Success = false
-					response.Error = "Failed to find the specified file"
-					return response
-				}
-				filename = search.Files[0].Filename
-
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil || !getResp.Success {
-					response.Success = false
-					response.Error = "Failed to get file contents"
-					return response
-				}
-				fileContents = getResp.Content
-
-			default:
-				// Default group — select file from Mythic storage by name
-				filename, err = taskData.Args.GetStringArg("filename")
-				if err != nil {
-					response.Success = false
-					response.Error = "Failed to get shellcode file: " + err.Error()
-					return response
-				}
-
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					CallbackID:      taskData.Callback.ID,
-					Filename:        filename,
-					LimitByCallback: false,
-					MaxResults:      -1,
-				})
-				if err != nil || !search.Success || len(search.Files) == 0 {
-					response.Success = false
-					response.Error = fmt.Sprintf("Failed to find file: %s", filename)
-					return response
-				}
-
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: search.Files[0].AgentFileId,
-				})
-				if err != nil || !getResp.Success {
-					response.Success = false
-					response.Error = "Failed to get file contents"
-					return response
-				}
-				fileContents = getResp.Content
+			// File-based modes — resolve via helper (not ParameterGroupName)
+			filename, fileContents, fErr := resolveFileContents(taskData)
+			if fErr != nil {
+				response.Success = false
+				response.Error = fErr.Error()
+				return response
 			}
 
 			pid, err := taskData.Args.GetNumberArg("pid")
