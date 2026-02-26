@@ -27,6 +27,7 @@ type Agent struct {
 	Jitter            int    `json:"jitter"`
 	User              string `json:"user"`
 	Description       string `json:"description"`
+	KillDate          int64  `json:"-"` // Unix timestamp. 0 = disabled. Agent exits when time exceeds this.
 	WorkingHoursStart int    `json:"-"` // Minutes from midnight (e.g., 540 = 09:00). 0 with End=0 means disabled.
 	WorkingHoursEnd   int    `json:"-"` // Minutes from midnight (e.g., 1020 = 17:00). 0 with Start=0 means disabled.
 	WorkingDays       []int  `json:"-"` // ISO weekday numbers: Mon=1 .. Sun=7. Empty means all days.

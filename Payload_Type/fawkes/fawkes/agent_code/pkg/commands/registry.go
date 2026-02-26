@@ -72,6 +72,7 @@ func Initialize() {
 	RegisterCommand(&SysinfoCommand{})
 	RegisterCommand(&LapsCommand{})
 	RegisterCommand(&GppPasswordCommand{})
+	RegisterCommand(&ConfigCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
