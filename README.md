@@ -251,6 +251,10 @@ All patterns are case-insensitive and anchored to match the full value. Multiple
 
 Enable the **obfuscate_strings** build parameter to XOR-encode all C2 config strings (callback host, URIs, user agent, encryption key, UUID) at build time with a per-build random 32-byte key. Prevents trivial IOC extraction via `strings` on the binary. Decoded at runtime. Cross-platform.
 
+### BlockDLLs for Child Processes
+
+Enable the **block_dlls** build parameter to apply `PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON` to all child processes spawned by the agent (run, powershell commands). Prevents EDR from injecting monitoring DLLs into spawned processes. Uses `STARTUPINFOEX` with `UpdateProcThreadAttribute`. Windows only.
+
 ### Auto-Patch ETW/AMSI
 
 Enable the **auto_patch** build parameter to automatically patch `EtwEventWrite` and `AmsiScanBuffer` at agent startup. This prevents ETW-based detection and AMSI scanning before any agent activity occurs — no manual command required. Windows only (no-op on Linux/macOS).

