@@ -65,6 +65,30 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	// Validate action before connecting
+	action := strings.ToLower(args.Action)
+	validActions := map[string]bool{
+		"add-member": true, "remove-member": true,
+		"set-attr": true, "add-attr": true, "remove-attr": true,
+		"set-spn": true, "disable": true, "enable": true, "set-password": true,
+	}
+	if !validActions[action] {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password", args.Action),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// set-password requires LDAPS
+	if action == "set-password" && !args.UseTLS {
+		return structs.CommandResult{
+			Output:    "Error: set-password requires LDAPS (-use_tls true). AD rejects password changes over unencrypted LDAP.",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
 	// Connect
 	conn, err := ldapConnect(ldapQueryArgs{
 		Server: args.Server, Port: args.Port, UseTLS: args.UseTLS,
@@ -121,11 +145,8 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 	case "set-password":
 		return ldapSetPassword(conn, args, baseDN)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		// Unreachable — action is validated before connection
+		return structs.CommandResult{Output: "Unknown action", Status: "error", Completed: true}
 	}
 }
 
