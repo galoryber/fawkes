@@ -31,13 +31,19 @@ type weArgs struct {
 }
 
 var (
-	user32WE          = windows.NewLazySystemDLL("user32.dll")
-	weEnumWindowsProc = user32WE.NewProc("EnumWindows")
-	weGetTextW        = user32WE.NewProc("GetWindowTextW")
-	weGetTextLenW     = user32WE.NewProc("GetWindowTextLengthW")
-	weIsVisible       = user32WE.NewProc("IsWindowVisible")
-	weGetTIDPID       = user32WE.NewProc("GetWindowThreadProcessId")
-	weGetClassW       = user32WE.NewProc("GetClassNameW")
+	user32WE             = windows.NewLazySystemDLL("user32.dll")
+	weEnumDesktopWindows = user32WE.NewProc("EnumDesktopWindows")
+	weGetTextW           = user32WE.NewProc("GetWindowTextW")
+	weGetTextLenW        = user32WE.NewProc("GetWindowTextLengthW")
+	weIsVisible          = user32WE.NewProc("IsWindowVisible")
+	weGetTIDPID          = user32WE.NewProc("GetWindowThreadProcessId")
+	weGetClassW          = user32WE.NewProc("GetClassNameW")
+	weOpenDesktop        = user32WE.NewProc("OpenDesktopW")
+	weCloseDesktop       = user32WE.NewProc("CloseDesktop")
+	weOpenWinStation     = user32WE.NewProc("OpenWindowStationW")
+	weSetProcessWinSta   = user32WE.NewProc("SetProcessWindowStation")
+	weGetProcessWinSta   = user32WE.NewProc("GetProcessWindowStation")
+	weCloseWinStation    = user32WE.NewProc("CloseWindowStation")
 )
 
 type weEntry struct {
@@ -78,6 +84,35 @@ func (c *WindowsEnumCommand) Execute(task structs.Task) structs.CommandResult {
 
 func weDoEnum(args weArgs) structs.CommandResult {
 	var entries []weEntry
+
+	// Switch to the interactive window station (WinSta0) to enumerate user windows
+	// Save current window station to restore later
+	origWinSta, _, _ := weGetProcessWinSta.Call()
+
+	desktopName, _ := syscall.UTF16PtrFromString("Default")
+	winStaName, _ := syscall.UTF16PtrFromString("WinSta0")
+
+	// WINSTA_ENUMDESKTOPS | WINSTA_READATTRIBUTES
+	hWinSta, _, _ := weOpenWinStation.Call(
+		uintptr(unsafe.Pointer(winStaName)),
+		0,
+		0x0100|0x0002, // WINSTA_ENUMDESKTOPS | WINSTA_READATTRIBUTES
+	)
+
+	var hDesktop uintptr
+	switched := false
+	if hWinSta != 0 {
+		weSetProcessWinSta.Call(hWinSta)
+		switched = true
+
+		// DESKTOP_READOBJECTS | DESKTOP_ENUMERATE
+		hDesktop, _, _ = weOpenDesktop.Call(
+			uintptr(unsafe.Pointer(desktopName)),
+			0,
+			0, // FALSE
+			0x0001|0x0040, // DESKTOP_READOBJECTS | DESKTOP_ENUMERATE
+		)
+	}
 
 	cb := syscall.NewCallback(func(hwnd uintptr, lparam uintptr) uintptr {
 		visible, _, _ := weIsVisible.Call(hwnd)
@@ -135,13 +170,18 @@ func weDoEnum(args weArgs) structs.CommandResult {
 		return 1
 	})
 
-	ret, _, _ := weEnumWindowsProc.Call(cb, 0)
-	if ret == 0 {
-		return structs.CommandResult{
-			Output:    "EnumWindows failed",
-			Status:    "error",
-			Completed: true,
-		}
+	if hDesktop != 0 {
+		weEnumDesktopWindows.Call(hDesktop, cb, 0)
+		weCloseDesktop.Call(hDesktop)
+	} else {
+		// Fallback: enumerate current desktop windows
+		weEnumDesktopWindows.Call(0, cb, 0)
+	}
+
+	// Restore original window station
+	if switched {
+		weSetProcessWinSta.Call(origWinSta)
+		weCloseWinStation.Call(hWinSta)
 	}
 
 	// Apply search filter
