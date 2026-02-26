@@ -50,6 +50,8 @@ type prefetchEntry struct {
 	FileName      string
 	ExeName       string
 	Hash          uint32
+	Version       uint32
+	DataSize      int
 	RunCount      uint32
 	LastRunTime   time.Time
 	LastRunTimes  []time.Time
@@ -235,6 +237,8 @@ func prefetchParse(name string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("File: %s\n", filepath.Base(path)))
 		sb.WriteString(fmt.Sprintf("  Executable:  %s\n", pf.ExeName))
 		sb.WriteString(fmt.Sprintf("  Hash:        %08X\n", pf.Hash))
+		sb.WriteString(fmt.Sprintf("  Version:     %d\n", pf.Version))
+		sb.WriteString(fmt.Sprintf("  Data Size:   %d bytes\n", pf.DataSize))
 		sb.WriteString(fmt.Sprintf("  Run Count:   %d\n", pf.RunCount))
 		if !pf.LastRunTime.IsZero() {
 			sb.WriteString(fmt.Sprintf("  Last Run:    %s\n", pf.LastRunTime.Format("2006-01-02 15:04:05")))
@@ -389,8 +393,10 @@ func parsePrefetchFile(path string) (*prefetchEntry, error) {
 	hash := binary.LittleEndian.Uint32(data[76:80])
 
 	entry := &prefetchEntry{
-		ExeName: exeName,
-		Hash:    hash,
+		ExeName:  exeName,
+		Hash:     hash,
+		Version:  version,
+		DataSize: len(data),
 	}
 
 	// Version-specific parsing
