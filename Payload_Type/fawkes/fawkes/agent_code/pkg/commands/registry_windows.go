@@ -63,4 +63,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&MemScanCommand{})
 	RegisterCommand(&ExecuteShellcodeCommand{})
 	RegisterCommand(&UsnJrnlCommand{})
+	RegisterCommand(&AuditPolCommand{})
 }
