@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -500,8 +501,7 @@ func ldapToggleAccount(conn *ldap.Conn, args ldapWriteArgs, baseDN string, disab
 	}
 
 	uacStr := result.Entries[0].GetAttributeValue("userAccountControl")
-	var uac int
-	fmt.Sscanf(uacStr, "%d", &uac)
+	uac, _ := strconv.Atoi(uacStr)
 
 	const accountDisable = 0x0002
 	var newUAC int
