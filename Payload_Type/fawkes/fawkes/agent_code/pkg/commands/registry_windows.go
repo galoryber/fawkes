@@ -74,4 +74,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&SyscallsCommand{})
 	RegisterCommand(&ModuleStompingCommand{})
 	RegisterCommand(&ThreadHijackCommand{})
+	RegisterCommand(&DebugDetectCommand{})
 }
