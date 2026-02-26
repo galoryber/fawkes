@@ -611,9 +611,13 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			command += "CC=i686-w64-mingw32-gcc "
 		}
 	}
-	command += "GOGARBLE=* "
+	// GOGARBLE scopes which packages garble obfuscates. Using "fawkes" restricts
+	// obfuscation to our agent code only, avoiding OOM on large dependency files
+	// (e.g., go-msrpc/win32_errors.go has ~2700 string literals that exhaust RAM
+	// when -literals tries to obfuscate them all with GOGARBLE=*).
+	command += "GOGARBLE=fawkes "
 	if garble {
-		command += "/go/bin/garble -tiny -literals -debug -seed random build "
+		command += "/go/bin/garble -tiny -literals -seed random build "
 	} else {
 		command += "go build "
 	}
