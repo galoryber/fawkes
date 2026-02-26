@@ -53,6 +53,20 @@ func init() {
 				},
 			},
 			{
+				Name:             "shellcode_b64",
+				ModalDisplayName: "Shellcode (Base64)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Base64-encoded shellcode (for CLI/API usage)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     0,
+					},
+				},
+			},
+			{
 				Name:             "pid",
 				ModalDisplayName: "Target PID",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
@@ -72,7 +86,7 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						GroupName:           "CLI",
-						UIModalPosition:     0,
+						UIModalPosition:     1,
 					},
 				},
 			},
@@ -133,24 +147,36 @@ func init() {
 				return response
 			}
 
-			// Resolve file contents by checking actual args (not ParameterGroupName)
-			filename, fileContents, fErr := resolveFileContents(taskData)
-			if fErr != nil {
-				response.Success = false
-				response.Error = fErr.Error()
-				return response
+			// Check for CLI group (shellcode_b64 provided directly)
+			var shellcodeB64 string
+			var filename string
+
+			scB64, _ := taskData.Args.GetStringArg("shellcode_b64")
+			if scB64 != "" {
+				shellcodeB64 = scB64
+				filename = "cli-shellcode"
+			} else {
+				var fileContents []byte
+				var fErr error
+				filename, fileContents, fErr = resolveFileContents(taskData)
+				if fErr != nil {
+					response.Success = false
+					response.Error = fErr.Error()
+					return response
+				}
+				shellcodeB64 = base64.StdEncoding.EncodeToString(fileContents)
 			}
 
 			// Build display and artifact
-			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes)\nTarget PID: %d\nSacrificial DLL: %s",
-				filename, len(fileContents), int(pid), dllName)
+			displayParams := fmt.Sprintf("Shellcode: %s\nTarget PID: %d\nSacrificial DLL: %s",
+				filename, int(pid), dllName)
 			response.DisplayParams = &displayParams
 			createArtifact(taskData.Task.ID, "Process Inject",
-				fmt.Sprintf("Module stomping %s in PID %d (%d bytes)", dllName, int(pid), len(fileContents)))
+				fmt.Sprintf("Module stomping %s in PID %d", dllName, int(pid)))
 
 			// Build agent parameters
 			params := map[string]interface{}{
-				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
+				"shellcode_b64": shellcodeB64,
 				"pid":           int(pid),
 				"dll_name":      dllName,
 			}
