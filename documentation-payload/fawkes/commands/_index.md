@@ -146,6 +146,7 @@ pre = "<b>2. </b>"
     * [history-scrub](/agents/fawkes/commands/history-scrub/)
     * [ntdll-unhook](/agents/fawkes/commands/ntdll-unhook/)
     * [timestomp](/agents/fawkes/commands/timestomp/)
+    * [usn-jrnl](/agents/fawkes/commands/usn-jrnl/)
 - Agent Management
     * [config](/agents/fawkes/commands/config/)
     * [setenv](/agents/fawkes/commands/setenv/)

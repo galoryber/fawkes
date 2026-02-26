@@ -62,4 +62,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&HollowingCommand{})
 	RegisterCommand(&MemScanCommand{})
 	RegisterCommand(&ExecuteShellcodeCommand{})
+	RegisterCommand(&UsnJrnlCommand{})
 }
