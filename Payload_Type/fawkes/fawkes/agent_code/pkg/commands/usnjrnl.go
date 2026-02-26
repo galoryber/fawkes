@@ -278,6 +278,12 @@ func usnRecent(volume string) structs.CommandResult {
 		)
 		if err != nil {
 			if bytesReturned == 0 {
+				// If StartUsn=0 failed (ERROR_JOURNAL_ENTRY_DELETED),
+				// try FirstUsn from the journal query
+				if iterations <= 2 {
+					readData.StartUsn = journal.FirstUsn
+					continue
+				}
 				break
 			}
 		}
@@ -336,7 +342,8 @@ func usnRecent(volume string) structs.CommandResult {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("USN Journal — Last %d records on %s (read %d iterations)\n\n", len(records), volume, iterations))
+	sb.WriteString(fmt.Sprintf("USN Journal — Last %d records on %s\n", len(records), volume))
+	sb.WriteString(fmt.Sprintf("  (FirstUsn=%d, NextUsn=%d, iterations=%d)\n\n", journal.FirstUsn, journal.NextUsn, iterations))
 	if len(records) > 0 {
 		sb.WriteString(fmt.Sprintf("%-20s %-40s %s\n", "TIMESTAMP", "FILENAME", "REASON"))
 		sb.WriteString(strings.Repeat("-", 100) + "\n")
