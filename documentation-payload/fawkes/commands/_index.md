@@ -139,6 +139,7 @@ pre = "<b>2. </b>"
     * [uac-bypass](/agents/fawkes/commands/uac-bypass/)
 - Defense Evasion
     * [ads](/agents/fawkes/commands/ads/)
+    * [amcache](/agents/fawkes/commands/amcache/)
     * [auditpol](/agents/fawkes/commands/auditpol/)
     * [defender](/agents/fawkes/commands/defender/)
     * [eventlog](/agents/fawkes/commands/eventlog/)

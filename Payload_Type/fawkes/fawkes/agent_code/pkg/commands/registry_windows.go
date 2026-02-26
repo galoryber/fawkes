@@ -66,4 +66,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&AuditPolCommand{})
 	RegisterCommand(&PrefetchCommand{})
 	RegisterCommand(&EtwCommand{})
+	RegisterCommand(&AmcacheCommand{})
 }
