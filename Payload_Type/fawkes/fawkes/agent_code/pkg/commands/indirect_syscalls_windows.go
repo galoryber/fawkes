@@ -661,6 +661,23 @@ func IndirectNtQueueApcThread(threadHandle, apcRoutine, arg1, arg2, arg3 uintptr
 	return uint32(r)
 }
 
+// IndirectNtReadVirtualMemory reads memory from a remote process via indirect syscall.
+// NTSTATUS NtReadVirtualMemory(ProcessHandle, BaseAddress, Buffer, BufferSize, NumberOfBytesRead)
+func IndirectNtReadVirtualMemory(processHandle, baseAddress, buffer, bufferSize uintptr, bytesRead *uintptr) uint32 {
+	entry := indirectSyscallResolver.entries["NtReadVirtualMemory"]
+	if entry == nil || entry.StubAddr == 0 {
+		return 0xC0000001
+	}
+	r, _, _ := syscall.SyscallN(entry.StubAddr,
+		processHandle,
+		baseAddress,
+		buffer,
+		bufferSize,
+		uintptr(unsafe.Pointer(bytesRead)),
+	)
+	return uint32(r)
+}
+
 // IndirectNtClose closes a handle via indirect syscall.
 // NTSTATUS NtClose(Handle)
 func IndirectNtClose(handle uintptr) uint32 {
