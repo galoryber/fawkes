@@ -428,7 +428,7 @@ func parsePrefetchFile(path string) (*prefetchEntry, error) {
 				entry.LastRunTime = entry.LastRunTimes[0]
 			}
 		}
-	case 30: // Windows 10/11
+	case 30, 31: // Windows 10/11
 		if len(data) >= 224 {
 			entry.RunCount = binary.LittleEndian.Uint32(data[208:212])
 			// 8 last run times starting at offset 128
