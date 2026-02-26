@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 62 commands are cross-platform, with 50 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 1 Windows+macOS command (clipboard), 3 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 126. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 63 commands are cross-platform, with 50 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 1 Windows+macOS command (clipboard), 3 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 127. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -62,6 +62,7 @@ gpo | `gpo -action <list\|links\|find\|all> -server <DC> -username <user@domain>
 grep | `grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100]` | Search file contents for regex patterns. Recursive directory search with extension filtering, context lines, and binary file skipping. Cross-platform (T1083, T1552.001).
 handles | `handles -pid <pid> [-type File] [-show_names] [-max_count 500]` | **(Windows only)** Enumerate open handles in a process via NtQuerySystemInformation. Type summary, name resolution, type filtering (T1057, T1082).
 hashdump | `hashdump` | **(Windows only)** Extract local account NTLM hashes from the SAM database. Uses registry backup semantics to bypass DACLs. Output format: user:RID:LM:NT:::. Requires admin. MITRE T1003.002.
+history-scrub | `history-scrub [-action list\|clear\|clear-all] [-user <username>]` | List or clear shell/application command history files. Covers bash, zsh, fish, PowerShell, python, mysql, and more. Cross-platform (T1070.003).
 hollow | `hollow -filename <shellcode> [-target <process>] [-ppid <pid>] [-block_dlls true]` | **(Windows only)** Process hollowing — create suspended process, write shellcode, redirect thread via SetThreadContext. PPID spoofing + DLL blocking. MITRE T1055.012.
 ifconfig | `ifconfig` | List network interfaces with addresses, MAC, MTU, and flags. Cross-platform (Windows/Linux/macOS).
 inline-assembly | `inline-assembly` | **(Windows only)** Execute a .NET assembly in memory using the CLR. Supports command-line arguments. Use `start-clr` first for AMSI patching workflow.
