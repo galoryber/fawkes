@@ -221,7 +221,7 @@ func usnQuery(volume string) structs.CommandResult {
 }
 
 func usnRecent(volume string) structs.CommandResult {
-	handle, err := openVolume(volume, false)
+	handle, err := openVolume(volume, true)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Failed to open volume: %v", err),
@@ -245,7 +245,7 @@ func usnRecent(volume string) structs.CommandResult {
 	const bufSize = 65536
 
 	readData := readUsnJournalData{
-		StartUsn:     journal.FirstUsn,
+		StartUsn:     0,
 		ReasonMask:   0xFFFFFFFF,
 		UsnJournalID: journal.UsnJournalID,
 	}
@@ -277,7 +277,9 @@ func usnRecent(volume string) structs.CommandResult {
 			nil,
 		)
 		if err != nil {
-			break
+			if bytesReturned == 0 {
+				break
+			}
 		}
 
 		if bytesReturned <= 8 {
@@ -334,9 +336,11 @@ func usnRecent(volume string) structs.CommandResult {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("USN Journal — Last %d records on %s\n\n", len(records), volume))
-	sb.WriteString(fmt.Sprintf("%-20s %-40s %s\n", "TIMESTAMP", "FILENAME", "REASON"))
-	sb.WriteString(strings.Repeat("-", 100) + "\n")
+	sb.WriteString(fmt.Sprintf("USN Journal — Last %d records on %s (read %d iterations)\n\n", len(records), volume, iterations))
+	if len(records) > 0 {
+		sb.WriteString(fmt.Sprintf("%-20s %-40s %s\n", "TIMESTAMP", "FILENAME", "REASON"))
+		sb.WriteString(strings.Repeat("-", 100) + "\n")
+	}
 
 	for _, r := range records {
 		reasonStr := usnReasonString(r.reason)
