@@ -34,6 +34,7 @@ autopatch | `autopatch <dll_name> <function_name> <num_bytes>` | **(Windows only
 browser | `browser [-action <passwords>] [-browser <all\|chrome\|edge>]` | **(Windows only)** Harvest saved credentials from Chromium-based browsers (Chrome, Edge) via DPAPI + AES-GCM decryption. MITRE T1555.003.
 cat | `cat <file>` | Display the contents of a file.
 cd | `cd <directory>` | Change the current working directory.
+certstore | `certstore -action <list\|find> [-store <MY\|ROOT\|CA\|Trust\|TrustedPeople>] [-filter <substring>]` | **(Windows only)** Enumerate Windows certificate stores to find code signing certs, client auth certs, and private keys. Searches CurrentUser and LocalMachine. MITRE T1552.004, T1649.
 clipboard | `clipboard -action <read\|write\|monitor\|dump\|stop> [-data "text"] [-interval 3]` | Read/write clipboard or continuously monitor for changes with credential pattern detection. Cross-platform (T1115).
 compress | `compress -action <create\|list\|extract> -path <path> [-output <out>] [-pattern *.txt]` | Create, list, or extract zip archives for data staging and exfiltration. Pattern filter, depth/size limits. Cross-platform (T1560.001).
 config | `config [-action show\|set] [-key sleep\|jitter\|killdate\|working_hours_start\|working_hours_end\|working_days] [-value <val>]` | View or modify runtime agent configuration — sleep, jitter, kill date, working hours. Cross-platform.

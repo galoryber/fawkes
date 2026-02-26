@@ -48,6 +48,7 @@ pre = "<b>2. </b>"
     * [write-memory](/agents/fawkes/commands/write-memory/)
 - Credential/Token Commands
     * [browser](/agents/fawkes/commands/browser/)
+    * [certstore](/agents/fawkes/commands/certstore/)
     * [cred-harvest](/agents/fawkes/commands/cred-harvest/)
     * [dcsync](/agents/fawkes/commands/dcsync/)
     * [credman](/agents/fawkes/commands/credman/)
