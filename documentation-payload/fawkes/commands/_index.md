@@ -54,6 +54,7 @@ pre = "<b>2. </b>"
     * [gpp-password](/agents/fawkes/commands/gpp-password/)
     * [hashdump](/agents/fawkes/commands/hashdump/)
     * [laps](/agents/fawkes/commands/laps/)
+    * [lsa-secrets](/agents/fawkes/commands/lsa-secrets/)
     * [asrep-roast](/agents/fawkes/commands/asrep-roast/)
     * [kerberoast](/agents/fawkes/commands/kerberoast/)
     * [klist](/agents/fawkes/commands/klist/)

@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 64 commands are cross-platform, with 55 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 3 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 132. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 64 commands are cross-platform, with 56 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 3 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 133. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -79,6 +79,7 @@ keylog | `keylog -action <start\|stop\|dump>` | **(Windows only)** Low-level key
 ldap-query | `ldap-query -action <users\|computers\|groups\|domain-admins\|spns\|asrep\|query> -server <DC>` | Query Active Directory via LDAP. Preset queries for users, computers, groups, domain admins, SPNs, AS-REP roastable accounts, or custom LDAP filters. Cross-platform (T1087.002).
 kill | `kill -pid <PID>` | Terminate a process by PID. Cross-platform (Windows/Linux/macOS).
 laps | `laps -server <DC> -username <user@domain> -password <pass> [-filter <computer>]` | Read LAPS passwords from AD via LDAP. Supports LAPS v1 (ms-Mcs-AdmPwd) and Windows LAPS v2 (ms-LAPS-Password). Cross-platform (T1552.006).
+lsa-secrets | `lsa-secrets -action <dump\|cached>` | **(Windows only)** Extract LSA secrets (service passwords, DPAPI keys, machine account) and cached domain credentials (DCC2/MSCacheV2 hashcat format). Requires SYSTEM (T1003.004, T1003.005).
 launchagent | `launchagent -action <install\|remove\|list> -label <com.example.name> [-path <exe>] [-daemon true]` | **(macOS only)** Install, remove, or list LaunchAgent/LaunchDaemon persistence. Creates plist with RunAtLoad+KeepAlive.
 link | `link -host <ip> -port <port>` | Link to a TCP P2P agent for internal pivoting. Target agent must be built with TCP profile. Cross-platform (T1572).
 linux-logs | `linux-logs -action <list\|read\|logins\|clear\|truncate\|shred> [-file <path>] [-search <filter>] [-lines <n>]` | **(Linux only)** List, read, clear, or tamper with Linux log files and binary login records (wtmp/btmp/utmp). Supports selective line removal and secure shredding (T1070.002).
