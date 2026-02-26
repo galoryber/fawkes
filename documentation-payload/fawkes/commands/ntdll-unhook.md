@@ -11,32 +11,36 @@ Windows Only
 
 ## Summary
 
-Remove EDR (Endpoint Detection and Response) inline hooks from `ntdll.dll` by reading a clean copy from disk and overwriting the in-memory `.text` section. Also supports checking for hooks without removing them.
+Remove EDR (Endpoint Detection and Response) inline hooks from DLLs by reading a clean copy from disk and overwriting the in-memory `.text` section. Supports `ntdll.dll`, `kernel32.dll`, `kernelbase.dll`, `advapi32.dll`, or all four at once.
 
 ### How EDR Hooking Works
 
-EDR products inject monitoring DLLs into every user-mode process. These DLLs overwrite the first few bytes of key ntdll functions (e.g., `NtAllocateVirtualMemory`, `NtWriteVirtualMemory`, `NtCreateThreadEx`) with `JMP` instructions that redirect to the EDR's inspection trampoline. This allows the EDR to inspect all syscall arguments before they reach the kernel.
+EDR products inject monitoring DLLs into every user-mode process. These DLLs overwrite the first few bytes of key functions (e.g., `NtAllocateVirtualMemory`, `CreateProcessW`, `VirtualAlloc`) with `JMP` instructions that redirect to the EDR's inspection trampoline. This allows the EDR to inspect all API arguments before they execute.
 
 ### How Unhooking Works
 
-Since the on-disk `ntdll.dll` is never modified (it's the original Microsoft-signed binary), we can:
+Since the on-disk DLLs are never modified (they're the original Microsoft-signed binaries), we can:
 
-1. Map a clean copy of `ntdll.dll` from `C:\Windows\System32\ntdll.dll` using `SEC_IMAGE` (PE section alignment)
+1. Map a clean copy from `C:\Windows\System32\<dll>` using `SEC_IMAGE` (PE section alignment)
 2. Parse the PE headers to locate the `.text` section
 3. Overwrite the hooked in-memory `.text` with the pristine disk copy
 4. All inline hooks are removed in a single operation
 
-### Actions
+### Supported DLLs
 
-- **unhook** (default) — Replace the hooked `.text` section with a clean copy from disk
-- **check** — Compare in-memory vs disk `.text` section and report any differences (potential hooks)
+| DLL | Commonly Hooked Functions |
+|-----|--------------------------|
+| ntdll.dll | NtAllocateVirtualMemory, NtWriteVirtualMemory, NtCreateThreadEx, NtOpenProcess |
+| kernel32.dll | CreateProcessW, VirtualAlloc, WriteProcessMemory, CreateRemoteThread |
+| kernelbase.dll | VirtualAlloc, ReadProcessMemory, CreateFileW |
+| advapi32.dll | OpenProcessToken, AdjustTokenPrivileges, RegSetValueExW |
 
-### Arguments
+## Arguments
 
-#### action
-The operation to perform. Default: `unhook`.
-- `unhook` — Restore clean .text section (removes all hooks)
-- `check` — Report hooked regions without modifying memory
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| action | No | unhook | `unhook` or `check` |
+| dll | No | ntdll.dll | Target DLL: `ntdll.dll`, `kernel32.dll`, `kernelbase.dll`, `advapi32.dll`, or `all` |
 
 ## Usage
 
@@ -45,26 +49,54 @@ Unhook ntdll (default):
 ntdll-unhook
 ```
 
-Check for hooks first:
+Check for hooks on a specific DLL:
 ```
-ntdll-unhook -action check
+ntdll-unhook -action check -dll kernel32.dll
 ```
 
-Unhook explicitly:
+Unhook all four DLLs at once:
 ```
-ntdll-unhook -action unhook
+ntdll-unhook -action unhook -dll all
+```
+
+Check all DLLs for hooks:
+```
+ntdll-unhook -action check -dll all
 ```
 
 ## Example Output
 
-### Unhook
+### Unhook Single DLL
 ```
 [*] ntdll.dll Unhooking
-[*] In-memory ntdll base: 0x7FFC3E040000
-[*] Clean ntdll mapped at: 0x1CE69590000
+[*] In-memory base: 0x7FFC3E040000
+[*] Clean copy mapped at: 0x1CE69590000
 [*] .text section: RVA=0x1000, Size=1486848 bytes
 [+] Restored 1486848 bytes of .text section
 [+] ntdll.dll successfully unhooked — all inline hooks removed
+```
+
+### Unhook All
+```
+[*] ntdll.dll Unhooking
+[*] .text section: RVA=0x1000, Size=1486848 bytes
+[+] Restored 1486848 bytes of .text section
+[+] ntdll.dll successfully unhooked — all inline hooks removed
+
+[*] kernel32.dll Unhooking
+[*] .text section: RVA=0x1000, Size=544768 bytes
+[+] Restored 544768 bytes of .text section
+[+] kernel32.dll successfully unhooked — all inline hooks removed
+
+[*] kernelbase.dll Unhooking
+[*] .text section: RVA=0x1000, Size=1720320 bytes
+[+] Restored 1720320 bytes of .text section
+[+] kernelbase.dll successfully unhooked — all inline hooks removed
+
+[*] advapi32.dll Unhooking
+[*] .text section: RVA=0x1000, Size=446464 bytes
+[+] Restored 446464 bytes of .text section
+[+] advapi32.dll successfully unhooked — all inline hooks removed
 ```
 
 ### Check (No Hooks)
@@ -77,13 +109,13 @@ ntdll-unhook -action unhook
 ### Check (Hooks Detected)
 ```
 [*] Checking ntdll.dll for inline hooks...
-[!] Found 3 hooked regions in .text section (1486848 bytes)
+[!] Found 3 hooked regions in ntdll.dll .text section (1486848 bytes)
 
   0x7FFC3E041234 (5 bytes): 4C8BD1B8 → E94027FF
   0x7FFC3E042890 (5 bytes): 4C8BD1B8 → E98015FE
   0x7FFC3E043100 (5 bytes): 4C8BD1B8 → E9C00DFD
 
-[*] Run 'ntdll-unhook' (action=unhook) to restore clean .text section
+[*] Run 'ntdll-unhook -dll ntdll.dll' (action=unhook) to restore clean .text section
 ```
 
 ## Recommended Workflow
@@ -91,10 +123,10 @@ ntdll-unhook -action unhook
 Run unhooking early in the engagement, before performing sensitive operations:
 
 ```
-1. ntdll-unhook -action check     # See if hooks exist
-2. ntdll-unhook                    # Remove hooks
-3. ntdll-unhook -action check     # Verify hooks removed
-4. hashdump / procdump / etc.     # Now safe from EDR interception
+1. ntdll-unhook -action check -dll all   # See which DLLs are hooked
+2. ntdll-unhook -dll all                  # Remove all hooks
+3. ntdll-unhook -action check -dll all   # Verify hooks removed
+4. hashdump / procdump / etc.            # Now safe from EDR interception
 ```
 
 ## MITRE ATT&CK Mapping
