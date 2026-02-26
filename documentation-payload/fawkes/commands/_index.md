@@ -110,6 +110,7 @@ pre = "<b>2. </b>"
     * [reg-search](/agents/fawkes/commands/reg-search/)
     * [reg-write](/agents/fawkes/commands/reg-write/)
 - Persistence
+    * [bits](/agents/fawkes/commands/bits/)
     * [crontab](/agents/fawkes/commands/crontab/)
     * [launchagent](/agents/fawkes/commands/launchagent/)
     * [persist](/agents/fawkes/commands/persist/)
