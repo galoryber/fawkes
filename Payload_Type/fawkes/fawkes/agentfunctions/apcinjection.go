@@ -4,11 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -55,6 +53,20 @@ func init() {
 				},
 			},
 			{
+				Name:             "shellcode_b64",
+				ModalDisplayName: "Shellcode (Base64)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Base64-encoded shellcode (for CLI/API usage)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     0,
+					},
+				},
+			},
+			{
 				Name:             "pid",
 				ModalDisplayName: "Target PID",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
@@ -69,6 +81,11 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						GroupName:           "New File",
+						UIModalPosition:     1,
+					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
 						UIModalPosition:     1,
 					},
 				},
@@ -90,6 +107,11 @@ func init() {
 						GroupName:           "New File",
 						UIModalPosition:     2,
 					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     2,
+					},
 				},
 			},
 		},
@@ -105,121 +127,26 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
-			var fileID string
+			// Check for CLI group (shellcode_b64 provided directly)
+			var shellcodeB64 string
 			var filename string
-			var fileContents []byte
-			var err error
 
-			// Determine which parameter group was used
-			switch strings.ToLower(taskData.Task.ParameterGroupName) {
-			case "default":
-				// User selected an existing file from the dropdown by filename
-				filename, err = taskData.Args.GetStringArg("filename")
+			scB64, _ := taskData.Args.GetStringArg("shellcode_b64")
+			if scB64 != "" {
+				shellcodeB64 = scB64
+				filename = "cli-shellcode"
+			} else {
+				var fileContents []byte
+				var err error
+				filename, fileContents, err = resolveFileContents(taskData)
 				if err != nil {
-					logging.LogError(err, "Failed to get filename")
 					response.Success = false
-					response.Error = "Failed to get shellcode file: " + err.Error()
+					response.Error = err.Error()
 					return response
 				}
-
-				// Search for the file by filename
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					CallbackID:      taskData.Callback.ID,
-					Filename:        filename,
-					LimitByCallback: false,
-					MaxResults:      -1,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to search for file by name")
-					response.Success = false
-					response.Error = "Failed to search for file: " + err.Error()
-					return response
-				}
-				if !search.Success {
-					response.Success = false
-					response.Error = search.Error
-					return response
-				}
-				if len(search.Files) == 0 {
-					response.Success = false
-					response.Error = fmt.Sprintf("Failed to find file: %s", filename)
-					return response
-				}
-				fileID = search.Files[0].AgentFileId
-
-				// Get file contents directly
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to get file contents")
-					response.Success = false
-					response.Error = "Failed to get file contents: " + err.Error()
-					return response
-				}
-				if !getResp.Success {
-					response.Success = false
-					response.Error = getResp.Error
-					return response
-				}
-				fileContents = getResp.Content
-
-			case "new file":
-				// User uploaded a new file
-				fileID, err = taskData.Args.GetStringArg("file")
-				if err != nil {
-					logging.LogError(err, "Failed to get file")
-					response.Success = false
-					response.Error = "Failed to get shellcode file: " + err.Error()
-					return response
-				}
-
-				// Get file details
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to search for file")
-					response.Success = false
-					response.Error = "Failed to search for file: " + err.Error()
-					return response
-				}
-				if !search.Success {
-					response.Success = false
-					response.Error = search.Error
-					return response
-				}
-				if len(search.Files) == 0 {
-					response.Success = false
-					response.Error = "Failed to find the specified file"
-					return response
-				}
-				filename = search.Files[0].Filename
-
-				// Get file contents directly
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to get file contents")
-					response.Success = false
-					response.Error = "Failed to get file contents: " + err.Error()
-					return response
-				}
-				if !getResp.Success {
-					response.Success = false
-					response.Error = getResp.Error
-					return response
-				}
-				fileContents = getResp.Content
-
-			default:
-				response.Success = false
-				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
-				return response
+				shellcodeB64 = base64.StdEncoding.EncodeToString(fileContents)
 			}
 
-			// Get the target PID
 			pid, err := taskData.Args.GetNumberArg("pid")
 			if err != nil {
 				logging.LogError(err, "Failed to get PID")
@@ -227,14 +154,12 @@ func init() {
 				response.Error = "Failed to get target PID: " + err.Error()
 				return response
 			}
-
 			if pid <= 0 {
 				response.Success = false
 				response.Error = "Invalid PID specified (must be greater than 0)"
 				return response
 			}
 
-			// Get the target Thread ID
 			tid, err := taskData.Args.GetNumberArg("tid")
 			if err != nil {
 				logging.LogError(err, "Failed to get TID")
@@ -242,36 +167,28 @@ func init() {
 				response.Error = "Failed to get target Thread ID: " + err.Error()
 				return response
 			}
-
 			if tid <= 0 {
 				response.Success = false
 				response.Error = "Invalid Thread ID specified (must be greater than 0)"
 				return response
 			}
 
-			// Build the display parameters
-			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes)\nTarget PID: %d\nTarget TID: %d", filename, len(fileContents), int(pid), int(tid))
+			displayParams := fmt.Sprintf("Shellcode: %s\nTarget PID: %d\nTarget TID: %d", filename, int(pid), int(tid))
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("APC injection into PID %d TID %d (%d bytes)", int(pid), int(tid), len(fileContents)))
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("APC injection into PID %d TID %d", int(pid), int(tid)))
 
-			// Build the actual parameters JSON that will be sent to the agent
 			params := map[string]interface{}{
-				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
+				"shellcode_b64": shellcodeB64,
 				"pid":           int(pid),
 				"tid":           int(tid),
 			}
-
 			paramsJSON, err := json.Marshal(params)
 			if err != nil {
-				logging.LogError(err, "Failed to marshal parameters")
 				response.Success = false
-				response.Error = "Failed to create task parameters: " + err.Error()
+				response.Error = "Failed to marshal parameters: " + err.Error()
 				return response
 			}
-
-			// Set the parameters as a JSON string
 			taskData.Args.SetManualArgs(string(paramsJSON))
-
 			return response
 		},
 	})

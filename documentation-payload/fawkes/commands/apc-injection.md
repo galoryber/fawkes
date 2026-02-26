@@ -13,6 +13,8 @@ Windows Only
 
 Perform QueueUserAPC injection into an alertable thread. This queues an asynchronous procedure call to a thread that is in an alertable wait state (Suspended or DelayExecution).
 
+When indirect syscalls are enabled (build parameter), uses Nt* APIs via indirect stubs: NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtProtectVirtualMemory, NtOpenThread, NtQueueApcThread, NtResumeThread. Memory follows W^X pattern (allocate RW, write, protect RX).
+
 Use the `ts` command first to find alertable threads in the target process.
 
 ### Arguments

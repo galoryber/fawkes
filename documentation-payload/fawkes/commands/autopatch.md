@@ -32,7 +32,8 @@ autopatch <dll_name> <function_name> <num_bytes>
 Example
 ```
 autopatch amsi AmsiScanBuffer 300
-autopatch ntdll EtwEventWrite 50
+autopatch ntdll EtwEventWrite 300
+autopatch ntdll EtwEventRegister 300
 ```
 
 ## MITRE ATT&CK Mapping

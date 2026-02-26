@@ -261,10 +261,8 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
-			var fileID string
 			var filename string
 			var fileContents []byte
-			var err error
 
 			// Check if this is a Forge invocation by looking for bof_file parameter
 			forgeFileID, forgeErr := taskData.Args.GetStringArg("bof_file")
@@ -272,11 +270,9 @@ func init() {
 
 			if isForgeCall {
 				// Forge invocation - use Forge parameter names
-				fileID = forgeFileID
-
 				// Get file details
 				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					AgentFileID: fileID,
+					AgentFileID: forgeFileID,
 				})
 				if err != nil {
 					logging.LogError(err, "Failed to search for file")
@@ -299,7 +295,7 @@ func init() {
 
 				// Get file contents
 				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
+					AgentFileID: forgeFileID,
 				})
 				if err != nil {
 					logging.LogError(err, "Failed to get file content")
@@ -315,116 +311,13 @@ func init() {
 				fileContents = getResp.Content
 
 			} else {
-				// Normal invocation - use existing parameter logic
-				// Determine which parameter group was used
-				switch strings.ToLower(taskData.Task.ParameterGroupName) {
-				case "default":
-				// User selected an existing file from the dropdown
-				filename, err = taskData.Args.GetStringArg("filename")
-				if err != nil {
-					logging.LogError(err, "Failed to get filename")
+				// Normal invocation - resolve file by checking actual args
+				var fErr error
+				filename, fileContents, fErr = resolveFileContents(taskData)
+				if fErr != nil {
 					response.Success = false
-					response.Error = "Failed to get BOF file: " + err.Error()
+					response.Error = fErr.Error()
 					return response
-				}
-
-				// Search for the file by filename
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					CallbackID:      taskData.Callback.ID,
-					Filename:        filename,
-					LimitByCallback: false,
-					MaxResults:      1,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to search for file")
-					response.Success = false
-					response.Error = "Failed to search for file: " + err.Error()
-					return response
-				}
-				if !search.Success {
-					response.Success = false
-					response.Error = "Failed to search for file: " + search.Error
-					return response
-				}
-				if len(search.Files) == 0 {
-					response.Success = false
-					response.Error = "File not found: " + filename
-					return response
-				}
-
-				fileID = search.Files[0].AgentFileId
-
-				// Get file contents
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to get file content")
-					response.Success = false
-					response.Error = "Failed to get file content: " + err.Error()
-					return response
-				}
-				if !getResp.Success {
-					response.Success = false
-					response.Error = getResp.Error
-					return response
-				}
-				fileContents = getResp.Content
-
-			case "new file":
-				// User uploaded a new file
-				fileID, err = taskData.Args.GetStringArg("file")
-				if err != nil {
-					logging.LogError(err, "Failed to get file")
-					response.Success = false
-					response.Error = "Failed to get BOF file: " + err.Error()
-					return response
-				}
-
-				// Get file details
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to search for file")
-					response.Success = false
-					response.Error = "Failed to search for file: " + err.Error()
-					return response
-				}
-				if !search.Success {
-					response.Success = false
-					response.Error = "Failed to search for file: " + search.Error
-					return response
-				}
-				if len(search.Files) == 0 {
-					response.Success = false
-					response.Error = "File not found"
-					return response
-				}
-
-				filename = search.Files[0].Filename
-
-				// Get file contents
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to get file content")
-					response.Success = false
-					response.Error = "Failed to get file content: " + err.Error()
-					return response
-				}
-				if !getResp.Success {
-					response.Success = false
-					response.Error = getResp.Error
-					return response
-				}
-				fileContents = getResp.Content
-
-			default:
-				response.Success = false
-				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
-				return response
 				}
 			}
 
@@ -442,11 +335,12 @@ func init() {
 				// Get Forge TypedArray arguments
 				typedArgs, taErr := taskData.Args.GetTypedArrayArg("coff_arguments")
 				if taErr == nil && len(typedArgs) > 0 {
-					goffloaderArgs, err = convertTypedArrayToGoffloaderFormat(typedArgs)
-					if err != nil {
-						logging.LogError(err, "Failed to convert Forge TypedArray arguments")
+					var convErr error
+					goffloaderArgs, convErr = convertTypedArrayToGoffloaderFormat(typedArgs)
+					if convErr != nil {
+						logging.LogError(convErr, "Failed to convert Forge TypedArray arguments")
 						response.Success = false
-						response.Error = "Failed to convert Forge arguments: " + err.Error()
+						response.Error = "Failed to convert Forge arguments: " + convErr.Error()
 						return response
 					}
 				}
@@ -464,11 +358,12 @@ func init() {
 				}
 
 				// Convert arguments to goffloader format
-				goffloaderArgs, err = convertToGoffloaderFormat(arguments)
-				if err != nil {
-					logging.LogError(err, "Failed to convert BOF arguments")
+				var convErr error
+				goffloaderArgs, convErr = convertToGoffloaderFormat(arguments)
+				if convErr != nil {
+					logging.LogError(convErr, "Failed to convert BOF arguments")
 					response.Success = false
-					response.Error = "Failed to convert arguments: " + err.Error()
+					response.Error = "Failed to convert arguments: " + convErr.Error()
 					return response
 				}
 			}
@@ -495,7 +390,6 @@ func init() {
 				return response
 			}
 
-			response.Success = true
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
 			return response

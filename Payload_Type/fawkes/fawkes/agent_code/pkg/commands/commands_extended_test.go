@@ -390,6 +390,21 @@ func TestWhoamiCommand(t *testing.T) {
 			t.Errorf("expected 'GID:' in output: %s", result.Output)
 		}
 	})
+
+	t.Run("groups section", func(t *testing.T) {
+		task := structs.Task{Params: ""}
+		result := cmd.Execute(task)
+		if result.Status != "success" {
+			t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+		}
+		if !strings.Contains(result.Output, "Groups:") {
+			t.Errorf("expected 'Groups:' section in output: %s", result.Output)
+		}
+		// Should have at least one group (primary group)
+		if !strings.Contains(result.Output, "gid=") {
+			t.Errorf("expected group entries with gid= in output: %s", result.Output)
+		}
+	})
 }
 
 // =============================================================================

@@ -66,6 +66,16 @@ func (c *WhoamiCommand) Execute(task structs.Task) structs.CommandResult {
 		lines = append(lines, fmt.Sprintf("Integrity:   %s", integrity))
 	}
 
+	// Group memberships
+	groups, err := getTokenGroups(token)
+	if err == nil && len(groups) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "Groups:")
+		for _, g := range groups {
+			lines = append(lines, fmt.Sprintf("  %-50s %s", g.name, g.flags))
+		}
+	}
+
 	// Privileges
 	privs, err := getTokenPrivileges(token)
 	if err == nil && len(privs) > 0 {
@@ -171,6 +181,89 @@ func getTokenIntegrityLevel(token windows.Token) (string, error) {
 	fmt.Sscanf(sidStr, "S-1-16-%d", &rid)
 
 	return fmt.Sprintf("%s (S-1-16-%d)", integrityLevelName(rid), rid), nil
+}
+
+type groupInfo struct {
+	name  string
+	sid   string
+	flags string
+}
+
+// getTokenGroups returns the group memberships for a token.
+func getTokenGroups(token windows.Token) ([]groupInfo, error) {
+	const tokenGroupsClass = 2
+
+	var needed uint32
+	_ = windows.GetTokenInformation(token, tokenGroupsClass, nil, 0, &needed)
+	if needed == 0 {
+		return nil, fmt.Errorf("GetTokenInformation returned zero size")
+	}
+
+	buf := make([]byte, needed)
+	err := windows.GetTokenInformation(token, tokenGroupsClass, &buf[0], needed, &needed)
+	if err != nil {
+		return nil, fmt.Errorf("GetTokenInformation: %v", err)
+	}
+
+	// TOKEN_GROUPS: GroupCount uint32, then SID_AND_ATTRIBUTES array
+	tg := (*windows.Tokengroups)(unsafe.Pointer(&buf[0]))
+	count := tg.GroupCount
+	if count == 0 {
+		return nil, nil
+	}
+
+	const (
+		SE_GROUP_ENABLED           = 0x00000004
+		SE_GROUP_USE_FOR_DENY_ONLY = 0x00000010
+		SE_GROUP_INTEGRITY         = 0x00000020
+		SE_GROUP_LOGON_ID          = 0xC0000000
+	)
+
+	// Access groups via pointer arithmetic from first element
+	firstGroup := unsafe.Pointer(&tg.Groups[0])
+	saaSize := unsafe.Sizeof(tg.Groups[0])
+
+	var groups []groupInfo
+	for i := uint32(0); i < count; i++ {
+		sa := (*windows.SIDAndAttributes)(unsafe.Pointer(uintptr(firstGroup) + uintptr(i)*saaSize))
+
+		// Skip logon session SIDs and integrity SIDs
+		if sa.Attributes&SE_GROUP_LOGON_ID != 0 {
+			continue
+		}
+		if sa.Attributes&SE_GROUP_INTEGRITY != 0 {
+			continue
+		}
+
+		// Resolve SID to name
+		sidStr := sa.Sid.String()
+		name := sidStr
+		account, domain, _, lookupErr := sa.Sid.LookupAccount("")
+		if lookupErr == nil {
+			if domain != "" {
+				name = fmt.Sprintf("%s\\%s", domain, account)
+			} else {
+				name = account
+			}
+		}
+
+		// Determine flags
+		var flagParts []string
+		if sa.Attributes&SE_GROUP_ENABLED != 0 {
+			flagParts = append(flagParts, "Enabled")
+		}
+		if sa.Attributes&SE_GROUP_USE_FOR_DENY_ONLY != 0 {
+			flagParts = append(flagParts, "Deny-Only")
+		}
+		flagStr := strings.Join(flagParts, ", ")
+		if flagStr == "" {
+			flagStr = "Disabled"
+		}
+
+		groups = append(groups, groupInfo{name: name, sid: sidStr, flags: flagStr})
+	}
+
+	return groups, nil
 }
 
 type privilegeInfo struct {

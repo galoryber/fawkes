@@ -5,13 +5,15 @@ weight = 112
 hidden = false
 +++
 
-{{% notice info %}}Windows Only{{% /notice %}}
-
 ## Summary
 
-List all available drives/volumes on the system, including drive type (Fixed, Removable, Network, CD-ROM), volume label, and disk space information (free and total in GB).
+List all available drives/volumes and mounted filesystems on the system. Cross-platform.
 
-Useful for identifying mapped network drives, removable media, and available storage during an engagement.
+On **Windows**, uses GetLogicalDrives/GetDriveTypeW/GetDiskFreeSpaceExW to enumerate drive letters with type (Fixed, Removable, Network, CD-ROM), volume label, and disk space.
+
+On **Linux**, reads `/proc/mounts` and uses `statfs` for disk space. Filters pseudo-filesystems (proc, sysfs, cgroup, etc.).
+
+On **macOS**, parses `mount` command output and uses `statfs` for disk space.
 
 ## Arguments
 
@@ -23,15 +25,25 @@ None.
 drives
 ```
 
-### Example Output
+### Example Output (Windows)
 ```
 Drive  Type         Label                      Free (GB)      Total (GB)
 ------------------------------------------------------------------------
 C:\    Fixed                                        26.6            79.1
 D:\    Network      FileShare                       50.2           100.0
-E:\    CD-ROM       virtio-win-0.1.285               0.0             0.7
 
-[3 drives found]
+[2 drives found]
+```
+
+### Example Output (Linux)
+```
+Mount Point                    Device          Type        Free (GB)   Total (GB)  Use%
+------------------------------------------------------------------------------------------
+/                              /dev/sda1       ext4             18.2         30.0   39%
+/home                          /dev/sda2       ext4            120.5        200.0   40%
+/boot/efi                      /dev/sda15      vfat              0.5          0.5    5%
+
+[3 filesystems]
 ```
 
 ## MITRE ATT&CK Mapping

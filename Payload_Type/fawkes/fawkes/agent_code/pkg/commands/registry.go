@@ -64,6 +64,16 @@ func Initialize() {
 	RegisterCommand(&TicketCommand{})
 	RegisterCommand(&TrustCommand{})
 	RegisterCommand(&NetGroupCommand{})
+	RegisterCommand(&ModulesCommand{})
+	RegisterCommand(&GrepCommand{})
+	RegisterCommand(&CompressCommand{})
+	RegisterCommand(&DriversCommand{})
+	RegisterCommand(&RouteCommand{})
+	RegisterCommand(&SysinfoCommand{})
+	RegisterCommand(&LapsCommand{})
+	RegisterCommand(&GppPasswordCommand{})
+	RegisterCommand(&ConfigCommand{})
+	RegisterCommand(&HistoryScrubCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()

@@ -13,6 +13,8 @@ Windows Only
 
 Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. These techniques achieve code execution without calling commonly monitored APIs like `CreateRemoteThread`. All 8 variants from the SafeBreach Labs research are implemented.
 
+When indirect syscalls are enabled (build parameter), core APIs (NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtReadVirtualMemory, NtProtectVirtualMemory, NtClose) use Nt* indirect stubs. Memory follows W^X pattern (allocate RW, write, protect RX).
+
 Based on [SafeBreach Labs PoolParty research](https://github.com/SafeBreach-Labs/PoolParty).
 
 ### Arguments

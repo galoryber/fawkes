@@ -4,11 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -109,11 +107,6 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
-			var fileID string
-			var filename string
-			var fileContents []byte
-			var err error
-
 			// Get the variant selection
 			variantStr, err := taskData.Args.GetStringArg("variant")
 			if err != nil {
@@ -135,106 +128,11 @@ func init() {
 				return response
 			}
 
-			// Determine which parameter group was used
-			switch strings.ToLower(taskData.Task.ParameterGroupName) {
-			case "default":
-				filename, err = taskData.Args.GetStringArg("filename")
-				if err != nil {
-					logging.LogError(err, "Failed to get filename")
-					response.Success = false
-					response.Error = "Failed to get shellcode file: " + err.Error()
-					return response
-				}
-
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					CallbackID:      taskData.Callback.ID,
-					Filename:        filename,
-					LimitByCallback: false,
-					MaxResults:      -1,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to search for file by name")
-					response.Success = false
-					response.Error = "Failed to search for file: " + err.Error()
-					return response
-				}
-				if !search.Success {
-					response.Success = false
-					response.Error = search.Error
-					return response
-				}
-				if len(search.Files) == 0 {
-					response.Success = false
-					response.Error = fmt.Sprintf("Failed to find file: %s", filename)
-					return response
-				}
-				fileID = search.Files[0].AgentFileId
-
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to get file contents")
-					response.Success = false
-					response.Error = "Failed to get file contents: " + err.Error()
-					return response
-				}
-				if !getResp.Success {
-					response.Success = false
-					response.Error = getResp.Error
-					return response
-				}
-				fileContents = getResp.Content
-
-			case "new file":
-				fileID, err = taskData.Args.GetStringArg("file")
-				if err != nil {
-					logging.LogError(err, "Failed to get file")
-					response.Success = false
-					response.Error = "Failed to get shellcode file: " + err.Error()
-					return response
-				}
-
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to search for file")
-					response.Success = false
-					response.Error = "Failed to search for file: " + err.Error()
-					return response
-				}
-				if !search.Success {
-					response.Success = false
-					response.Error = search.Error
-					return response
-				}
-				if len(search.Files) == 0 {
-					response.Success = false
-					response.Error = "Failed to find the specified file"
-					return response
-				}
-				filename = search.Files[0].Filename
-
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					logging.LogError(err, "Failed to get file contents")
-					response.Success = false
-					response.Error = "Failed to get file contents: " + err.Error()
-					return response
-				}
-				if !getResp.Success {
-					response.Success = false
-					response.Error = getResp.Error
-					return response
-				}
-				fileContents = getResp.Content
-
-			default:
+			// Resolve file contents by checking actual args (not ParameterGroupName)
+			filename, fileContents, fErr := resolveFileContents(taskData)
+			if fErr != nil {
 				response.Success = false
-				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
+				response.Error = fErr.Error()
 				return response
 			}
 

@@ -35,6 +35,7 @@ type HTTPProfile struct {
 	GetEndpoint   string
 	PostEndpoint  string
 	HostHeader    string // Override Host header for domain fronting
+	CustomHeaders map[string]string // Additional HTTP headers from C2 profile
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin
 
@@ -630,6 +631,11 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 	req.Header.Set("User-Agent", h.UserAgent)
 	req.Header.Set("Content-Type", "text/plain")
 	req.Header.Set("Accept", "*/*")
+
+	// Apply custom headers from C2 profile
+	for k, v := range h.CustomHeaders {
+		req.Header.Set(k, v)
+	}
 
 	// Override Host header for domain fronting
 	if h.HostHeader != "" {

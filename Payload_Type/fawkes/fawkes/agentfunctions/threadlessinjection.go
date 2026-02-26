@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -123,111 +122,11 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
-			var fileID string
-			var filename string
-			var fileContents []byte
-			var err error
-
-			// Determine which parameter group was used
-			switch strings.ToLower(taskData.Task.ParameterGroupName) {
-			case "default":
-				// User selected an existing file from the dropdown by filename
-				filename, err = taskData.Args.GetStringArg("filename")
-				if err != nil {
-					response.Success = false
-					response.Error = "Failed to get shellcode file: " + err.Error()
-					return response
-				}
-
-				// Search for the file by filename
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					CallbackID:      taskData.Callback.ID,
-					Filename:        filename,
-					LimitByCallback: false,
-					MaxResults:      -1,
-				})
-				if err != nil {
-					response.Success = false
-					response.Error = "Failed to search for file: " + err.Error()
-					return response
-				}
-				if !search.Success {
-					response.Success = false
-					response.Error = search.Error
-					return response
-				}
-				if len(search.Files) == 0 {
-					response.Success = false
-					response.Error = fmt.Sprintf("Failed to find file: %s", filename)
-					return response
-				}
-				fileID = search.Files[0].AgentFileId
-
-				// Get file contents directly (no file transfer to agent)
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					response.Success = false
-					response.Error = "Failed to get file contents: " + err.Error()
-					return response
-				}
-				if !getResp.Success {
-					response.Success = false
-					response.Error = getResp.Error
-					return response
-				}
-				fileContents = getResp.Content
-
-			case "new file":
-				// User uploaded a new file
-				fileID, err = taskData.Args.GetStringArg("file")
-				if err != nil {
-					response.Success = false
-					response.Error = "Failed to get shellcode file: " + err.Error()
-					return response
-				}
-
-				// Get file details
-				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					response.Success = false
-					response.Error = "Failed to search for file: " + err.Error()
-					return response
-				}
-				if !search.Success {
-					response.Success = false
-					response.Error = search.Error
-					return response
-				}
-				if len(search.Files) == 0 {
-					response.Success = false
-					response.Error = "Failed to find the specified file"
-					return response
-				}
-				filename = search.Files[0].Filename
-
-				// Get file contents directly (no file transfer to agent)
-				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: fileID,
-				})
-				if err != nil {
-					response.Success = false
-					response.Error = "Failed to get file contents: " + err.Error()
-					return response
-				}
-				if !getResp.Success {
-					response.Success = false
-					response.Error = getResp.Error
-					return response
-				}
-				fileContents = getResp.Content
-
-			default:
+			// Resolve file contents by checking actual args (not ParameterGroupName)
+			filename, fileContents, err := resolveFileContents(taskData)
+			if err != nil {
 				response.Success = false
-				response.Error = fmt.Sprintf("Unknown parameter group: %s", taskData.Task.ParameterGroupName)
+				response.Error = err.Error()
 				return response
 			}
 

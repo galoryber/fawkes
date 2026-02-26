@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/user"
+	"strconv"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -51,6 +52,21 @@ func (c *WhoamiCommand) Execute(task structs.Task) structs.CommandResult {
 	ruid := os.Getuid()
 	if euid != ruid {
 		lines = append(lines, fmt.Sprintf("EUID:     %d (differs from UID — possible SUID)", euid))
+	}
+
+	// Supplementary groups
+	gids, err := os.Getgroups()
+	if err == nil && len(gids) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, "Groups:")
+		for _, gid := range gids {
+			g, gErr := user.LookupGroupId(strconv.Itoa(gid))
+			if gErr == nil {
+				lines = append(lines, fmt.Sprintf("  %s (gid=%d)", g.Name, gid))
+			} else {
+				lines = append(lines, fmt.Sprintf("  gid=%d", gid))
+			}
+		}
 	}
 
 	return structs.CommandResult{

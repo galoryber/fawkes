@@ -13,6 +13,8 @@ Windows Only
 
 Inject shellcode into a remote process using threadless injection. This technique hooks a DLL function in the target process so that shellcode executes when the hooked function is naturally called. No new threads are created, making it stealthier than traditional injection methods.
 
+When indirect syscalls are enabled (build parameter), uses Nt* APIs via indirect stubs: NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtReadVirtualMemory, NtProtectVirtualMemory, NtClose. Memory follows W^X pattern (allocate RW, write, protect RX).
+
 Based on [CCob's ThreadlessInject](https://github.com/CCob/ThreadlessInject).
 
 ### Arguments
