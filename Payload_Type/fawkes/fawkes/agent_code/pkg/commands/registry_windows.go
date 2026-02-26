@@ -77,4 +77,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&DebugDetectCommand{})
 	RegisterCommand(&CertstoreCommand{})
 	RegisterCommand(&NetLocalGroupCommand{})
+	RegisterCommand(&ReflectiveLoadCommand{})
 }
