@@ -28,7 +28,7 @@ func init() {
 				Choices:          []string{"list", "enable", "disable", "strip"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "Default",
 						UIModalPosition:     0,
 					},

@@ -240,7 +240,7 @@ func usnRecent(volume string) structs.CommandResult {
 		}
 	}
 
-	// Read last 100 records by starting near the end
+	// Read recent records from the journal
 	const maxRecords = 100
 	const bufSize = 65536
 
@@ -250,16 +250,6 @@ func usnRecent(volume string) structs.CommandResult {
 		UsnJournalID: journal.UsnJournalID,
 	}
 
-	// To get "recent" records, start from the end and read backward
-	// Actually USN journal is forward-only, so we'll read from near NextUsn
-	// Set StartUsn to an estimate near the end
-	if journal.NextUsn > 0 {
-		estimatedStart := journal.NextUsn - int64(bufSize*2)
-		if estimatedStart > journal.FirstUsn {
-			readData.StartUsn = estimatedStart
-		}
-	}
-
 	type recordEntry struct {
 		fileName  string
 		reason    uint32
@@ -267,10 +257,14 @@ func usnRecent(volume string) structs.CommandResult {
 		usn       int64
 	}
 
+	// Ring buffer: read entire journal but only keep last maxRecords
 	var records []recordEntry
 	buf := make([]byte, bufSize)
+	iterations := 0
+	const maxIterations = 5000 // safety limit
 
-	for len(records) < maxRecords*10 { // collect more, then take last 100
+	for iterations < maxIterations {
+		iterations++
 		var bytesReturned uint32
 		err := windows.DeviceIoControl(
 			handle,
