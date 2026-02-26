@@ -50,7 +50,9 @@ Enable `indirect_syscalls` in the payload build options to automatically initial
 ## Integrated Commands
 
 When indirect syscalls are active, these commands use Nt* APIs via indirect stubs:
-- **vanilla-injection** — Uses NtAllocateVirtualMemory, NtWriteVirtualMemory, NtProtectVirtualMemory, NtCreateThreadEx instead of VirtualAllocEx/WriteProcessMemory/CreateRemoteThread
+- **vanilla-injection** — NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtProtectVirtualMemory, NtCreateThreadEx
+- **execute-shellcode** — NtAllocateVirtualMemory, NtProtectVirtualMemory, NtCreateThreadEx (in-process)
+- **hollow** — NtAllocateVirtualMemory, NtWriteVirtualMemory, NtProtectVirtualMemory, NtGetContextThread, NtSetContextThread, NtResumeThread
 
 ## MITRE ATT&CK Mapping
 
