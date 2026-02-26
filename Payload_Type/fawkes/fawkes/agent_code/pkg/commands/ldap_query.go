@@ -808,12 +808,16 @@ func daclAssessRisk(mask uint32, aceType byte, sid string, objectGUID []byte) st
 		}
 	}
 
-	isDangerous := mask&0x10000000 != 0 || // GenericAll
+	// User-Change-Password (ab721a53) is not dangerous — requires knowing current password
+	isChangePassword := aceType == 0x05 && len(objectGUID) == 16 &&
+		daclGUIDName(objectGUID) == "User-Change-Password"
+
+	isDangerous := !isChangePassword && (mask&0x10000000 != 0 || // GenericAll
 		mask&0x40000000 != 0 || // GenericWrite
 		mask&0x00080000 != 0 || // WriteOwner
 		mask&0x00040000 != 0 || // WriteDACL
 		mask&0x00000020 != 0 || // WriteProperty
-		mask&0x00000100 != 0 // ExtendedRights (includes ForceChangePassword)
+		mask&0x00000100 != 0) // ExtendedRights (includes ForceChangePassword)
 
 	if !isDangerous {
 		return "standard"
@@ -847,12 +851,18 @@ func daclGUIDName(guid []byte) string {
 	knownGUIDs := map[string]string{
 		// Extended Rights
 		"00299570-246d-11d0-a768-00aa006e0529": "User-Force-Change-Password",
+		"ab721a53-1e2f-11d0-9819-00aa0040529b": "User-Change-Password",
+		"ab721a54-1e2f-11d0-9819-00aa0040529b": "Send-As",
+		"ab721a56-1e2f-11d0-9819-00aa0040529b": "Receive-As",
 		"0e10c968-78fb-11d2-90d4-00c04f79dc55": "Certificate-Enrollment",
 		"1131f6aa-9c07-11d1-f79f-00c04fc2dcd2": "DS-Replication-Get-Changes",
 		"1131f6ad-9c07-11d1-f79f-00c04fc2dcd2": "DS-Replication-Get-Changes-All",
 		"89e95b76-444d-4c62-991a-0facbeda640c": "DS-Replication-Get-Changes-In-Filtered-Set",
+		"91e647de-d96f-4b70-9557-d63ff4f3ccd8": "Private-Information",
+		"1131f6ab-9c07-11d1-f79f-00c04fc2dcd2": "DS-Replication-Manage-Topology",
 		// Property Sets / Attributes
 		"bf9679c0-0de6-11d0-a285-00aa003049e2": "member",
+		"bf967a7f-0de6-11d0-a285-00aa003049e2": "userCertificate",
 		"f30e3bc2-9ff0-11d1-b603-0000f80367c1": "GPC-File-Sys-Path",
 		"bf967a86-0de6-11d0-a285-00aa003049e2": "servicePrincipalName",
 		"5b47d60f-6090-40b2-9f37-2a4de88f3063": "msDS-KeyCredentialLink",
@@ -863,7 +873,11 @@ func daclGUIDName(guid []byte) string {
 		"e48d0154-bcf8-11d1-8702-00c04fb96050": "Public-Information",
 		"77b5b886-944a-11d1-aebd-0000f80367c1": "Personal-Information",
 		"e45795b2-9455-11d1-aebd-0000f80367c1": "Email-Information",
+		"e45795b3-9455-11d1-aebd-0000f80367c1": "Web-Information",
 		"59ba2f42-79a2-11d0-9020-00c04fc2d3cf": "General-Information",
+		"6db69a1c-9422-11d1-aebd-0000f80367c1": "Terminal-Server",
+		"5805bc62-bdc9-4428-a5e2-856a0f4c185e": "Terminal-Server-License-Server",
+		"ea1b7b93-5e48-46d5-bc6c-4df4fda78a35": "msDS-SupportedEncryptionTypes",
 	}
 
 	if name, ok := knownGUIDs[guidStr]; ok {
