@@ -78,4 +78,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&CertstoreCommand{})
 	RegisterCommand(&NetLocalGroupCommand{})
 	RegisterCommand(&ReflectiveLoadCommand{})
+	RegisterCommand(&WindowsEnumCommand{})
 }
