@@ -53,6 +53,7 @@ When indirect syscalls are active, these commands use Nt* APIs via indirect stub
 - **vanilla-injection** — NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtProtectVirtualMemory, NtCreateThreadEx
 - **execute-shellcode** — NtAllocateVirtualMemory, NtProtectVirtualMemory, NtCreateThreadEx (in-process)
 - **hollow** — NtAllocateVirtualMemory, NtWriteVirtualMemory, NtProtectVirtualMemory, NtGetContextThread, NtSetContextThread, NtResumeThread
+- **apc-injection** — NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtProtectVirtualMemory, NtOpenThread, NtQueueApcThread, NtResumeThread
 
 ## MITRE ATT&CK Mapping
 

