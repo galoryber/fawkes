@@ -417,8 +417,7 @@ func TestBuildRBCDSecurityDescriptor(t *testing.T) {
 	// SubAuthorities (little-endian uint32)
 	sid[8] = 21   // SubAuth[0] = 21
 	sid[12] = 100 // SubAuth[1] = 100
-	sid[16] = 200 // SubAuth[2] = 200 (0xC8)
-	sid[16] = 0xC8
+	sid[16] = 0xC8 // SubAuth[2] = 200 (0xC8)
 	sid[20] = 0x2C // SubAuth[3] = 300 (0x12C)
 	sid[21] = 0x01
 	sid[24] = 0xE9 // SubAuth[4] = 1001 (0x3E9)
@@ -426,7 +425,7 @@ func TestBuildRBCDSecurityDescriptor(t *testing.T) {
 
 	sd := buildRBCDSecurityDescriptor(sid)
 
-	// Verify SD structure
+	// Verify SD header
 	if sd[0] != 1 {
 		t.Errorf("expected SD revision 1, got %d", sd[0])
 	}
@@ -435,35 +434,44 @@ func TestBuildRBCDSecurityDescriptor(t *testing.T) {
 	if control != 0x8004 {
 		t.Errorf("expected control 0x8004, got 0x%04X", control)
 	}
-	// DACL offset should be 20
-	daclOff := uint32(sd[16]) | uint32(sd[17])<<8 | uint32(sd[18])<<16 | uint32(sd[19])<<24
-	if daclOff != 20 {
-		t.Errorf("expected DACL offset 20, got %d", daclOff)
+	// Owner offset should be 20 (right after header)
+	ownerOff := uint32(sd[4]) | uint32(sd[5])<<8 | uint32(sd[6])<<16 | uint32(sd[7])<<24
+	if ownerOff != 20 {
+		t.Errorf("expected Owner offset 20, got %d", ownerOff)
 	}
-	// ACL revision should be 2
-	if sd[20] != 2 {
-		t.Errorf("expected ACL revision 2, got %d", sd[20])
+	// Owner SID should be S-1-5-32-544 (BUILTIN\Administrators) = 16 bytes
+	if sd[20] != 0x01 || sd[21] != 0x02 { // Revision=1, SubCount=2
+		t.Errorf("expected owner SID revision=1 subcount=2, got %d %d", sd[20], sd[21])
+	}
+	// DACL offset should be 36 (20 header + 16 owner SID)
+	daclOff := uint32(sd[16]) | uint32(sd[17])<<8 | uint32(sd[18])<<16 | uint32(sd[19])<<24
+	if daclOff != 36 {
+		t.Errorf("expected DACL offset 36, got %d", daclOff)
+	}
+	// ACL revision should be 4 (ACL_REVISION_DS)
+	if sd[36] != 4 {
+		t.Errorf("expected ACL revision 4, got %d", sd[36])
 	}
 	// ACE count should be 1
-	aceCount := uint16(sd[24]) | uint16(sd[25])<<8
+	aceCount := uint16(sd[40]) | uint16(sd[41])<<8
 	if aceCount != 1 {
 		t.Errorf("expected 1 ACE, got %d", aceCount)
 	}
 	// ACE type should be ACCESS_ALLOWED (0x00)
-	if sd[28] != 0x00 {
-		t.Errorf("expected ACE type 0x00, got 0x%02X", sd[28])
+	if sd[44] != 0x00 {
+		t.Errorf("expected ACE type 0x00, got 0x%02X", sd[44])
 	}
 	// Access mask should be 0x000F003F
-	mask := uint32(sd[32]) | uint32(sd[33])<<8 | uint32(sd[34])<<16 | uint32(sd[35])<<24
+	mask := uint32(sd[48]) | uint32(sd[49])<<8 | uint32(sd[50])<<16 | uint32(sd[51])<<24
 	if mask != 0x000F003F {
 		t.Errorf("expected mask 0x000F003F, got 0x%08X", mask)
 	}
-	// SID should be at offset 36
-	if sd[36] != sid[0] || sd[37] != sid[1] {
-		t.Errorf("expected SID at offset 36, got revision=%d subcount=%d", sd[36], sd[37])
+	// SID should be at offset 52
+	if sd[52] != sid[0] || sd[53] != sid[1] {
+		t.Errorf("expected SID at offset 52, got revision=%d subcount=%d", sd[52], sd[53])
 	}
-	// Total size: 20 (SD) + 8 (ACL) + 8 (ACE header+mask) + 28 (SID) = 64
-	expectedLen := 20 + 8 + 8 + len(sid)
+	// Total size: 20 (SD) + 16 (owner SID) + 8 (ACL) + 8 (ACE header+mask) + 28 (SID) = 80
+	expectedLen := 20 + 16 + 8 + 8 + len(sid)
 	if len(sd) != expectedLen {
 		t.Errorf("expected SD length %d, got %d", expectedLen, len(sd))
 	}
