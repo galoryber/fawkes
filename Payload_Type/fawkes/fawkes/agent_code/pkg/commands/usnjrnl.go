@@ -221,7 +221,7 @@ func usnQuery(volume string) structs.CommandResult {
 }
 
 func usnRecent(volume string) structs.CommandResult {
-	handle, err := openVolume(volume, true)
+	handle, err := openVolume(volume, false)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Failed to open volume: %v", err),
@@ -342,8 +342,7 @@ func usnRecent(volume string) structs.CommandResult {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("USN Journal — Last %d records on %s\n", len(records), volume))
-	sb.WriteString(fmt.Sprintf("  (FirstUsn=%d, NextUsn=%d, iterations=%d)\n\n", journal.FirstUsn, journal.NextUsn, iterations))
+	sb.WriteString(fmt.Sprintf("USN Journal — Last %d records on %s\n\n", len(records), volume))
 	if len(records) > 0 {
 		sb.WriteString(fmt.Sprintf("%-20s %-40s %s\n", "TIMESTAMP", "FILENAME", "REASON"))
 		sb.WriteString(strings.Repeat("-", 100) + "\n")
