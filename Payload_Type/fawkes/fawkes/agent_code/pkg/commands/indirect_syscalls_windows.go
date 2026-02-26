@@ -126,6 +126,8 @@ func (r *SyscallResolver) init() error {
 		"NtReadVirtualMemory",
 		"NtQueryInformationProcess",
 		"NtResumeThread",
+		"NtGetContextThread",
+		"NtSetContextThread",
 	}
 
 	for _, name := range keyFunctions {
@@ -559,6 +561,48 @@ func IndirectNtOpenProcess(processHandle *uintptr, desiredAccess uint32, pid uin
 		uintptr(desiredAccess),
 		uintptr(unsafe.Pointer(&oa)),
 		uintptr(unsafe.Pointer(&cid)),
+	)
+	return uint32(r)
+}
+
+// IndirectNtResumeThread resumes a suspended thread via indirect syscall.
+// NTSTATUS NtResumeThread(ThreadHandle, *PreviousSuspendCount)
+func IndirectNtResumeThread(threadHandle uintptr, previousSuspendCount *uint32) uint32 {
+	entry := indirectSyscallResolver.entries["NtResumeThread"]
+	if entry == nil || entry.StubAddr == 0 {
+		return 0xC0000001
+	}
+	r, _, _ := syscall.SyscallN(entry.StubAddr,
+		threadHandle,
+		uintptr(unsafe.Pointer(previousSuspendCount)),
+	)
+	return uint32(r)
+}
+
+// IndirectNtGetContextThread retrieves thread context via indirect syscall.
+// NTSTATUS NtGetContextThread(ThreadHandle, *CONTEXT)
+func IndirectNtGetContextThread(threadHandle uintptr, context uintptr) uint32 {
+	entry := indirectSyscallResolver.entries["NtGetContextThread"]
+	if entry == nil || entry.StubAddr == 0 {
+		return 0xC0000001
+	}
+	r, _, _ := syscall.SyscallN(entry.StubAddr,
+		threadHandle,
+		context,
+	)
+	return uint32(r)
+}
+
+// IndirectNtSetContextThread sets thread context via indirect syscall.
+// NTSTATUS NtSetContextThread(ThreadHandle, *CONTEXT)
+func IndirectNtSetContextThread(threadHandle uintptr, context uintptr) uint32 {
+	entry := indirectSyscallResolver.entries["NtSetContextThread"]
+	if entry == nil || entry.StubAddr == 0 {
+		return 0xC0000001
+	}
+	r, _, _ := syscall.SyscallN(entry.StubAddr,
+		threadHandle,
+		context,
 	)
 	return uint32(r)
 }

