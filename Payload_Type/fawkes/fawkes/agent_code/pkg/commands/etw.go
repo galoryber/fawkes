@@ -145,6 +145,10 @@ func etwSessions() structs.CommandResult {
 		propsBufs[i] = make([]byte, eventTracePropsSize)
 		// Set Wnode.BufferSize at offset 0
 		binary.LittleEndian.PutUint32(propsBufs[i][0:4], eventTracePropsSize)
+		// LogFileNameOffset at offset 112, LoggerNameOffset at offset 116
+		// Point to buffer space after the fixed 120-byte struct
+		binary.LittleEndian.PutUint32(propsBufs[i][116:120], 120)  // LoggerNameOffset
+		binary.LittleEndian.PutUint32(propsBufs[i][112:116], 632)  // LogFileNameOffset (120 + 256*2)
 		propsPtrs[i] = uintptr(unsafe.Pointer(&propsBufs[i][0]))
 	}
 
@@ -170,15 +174,17 @@ func etwSessions() structs.CommandResult {
 	for i := uint32(0); i < sessionCount; i++ {
 		buf := propsBufs[i]
 
-		// WNODE_HEADER: BufferSize(4) + ProviderId(4) + HistoricalContext(8) + TimeStamp(8) +
-		// Guid(16) + ClientContext(4) + Flags(4) = 48 bytes
-		// EVENT_TRACE_PROPERTIES after WNODE_HEADER:
-		// BufferSize(4) + MinimumBuffers(4) + MaximumBuffers(4) + MaximumFileSize(4) +
-		// LogFileMode(4) + FlushTimer(4) + EnableFlags(4) + ...
-		// LoggerNameOffset at offset 112 (0x70)
-		// LogFileNameOffset at offset 116 (0x74)
+		// EVENT_TRACE_PROPERTIES layout:
+		// WNODE_HEADER: 48 bytes (BufferSize(4) + ProviderId(4) + HistoricalContext(8) +
+		//   TimeStamp(8) + Guid(16) + ClientContext(4) + Flags(4))
+		// After WNODE_HEADER: BufferSize(4) + MinimumBuffers(4) + MaximumBuffers(4) +
+		//   MaximumFileSize(4) + LogFileMode(4) + FlushTimer(4) + EnableFlags(4) +
+		//   AgeLimit(4) + NumberOfBuffers(4) + FreeBuffers(4) + EventsLost(4) +
+		//   BuffersWritten(4) + LogBuffersLost(4) + RealTimeBuffersLost(4) +
+		//   LoggerThreadId(8) + LogFileNameOffset(4@112) + LoggerNameOffset(4@116)
+		// Total fixed size: 120 bytes
 
-		loggerNameOffset := binary.LittleEndian.Uint32(buf[112:116])
+		loggerNameOffset := binary.LittleEndian.Uint32(buf[116:120])
 		sessionName := ""
 		if loggerNameOffset > 0 && loggerNameOffset < eventTracePropsSize-2 {
 			// UTF-16LE string
@@ -313,8 +319,8 @@ func etwStop(sessionName string) structs.CommandResult {
 
 	props := make([]byte, eventTracePropsSize)
 	binary.LittleEndian.PutUint32(props[0:4], eventTracePropsSize) // Wnode.BufferSize
-	// LoggerNameOffset — place it after the fixed struct portion
-	binary.LittleEndian.PutUint32(props[112:116], 120)
+	binary.LittleEndian.PutUint32(props[116:120], 120)             // LoggerNameOffset
+	binary.LittleEndian.PutUint32(props[112:116], 632)             // LogFileNameOffset
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
@@ -387,8 +393,9 @@ func etwBlind(sessionName, provider string) structs.CommandResult {
 
 	// Step 2: Query the session to get its handle
 	props := make([]byte, eventTracePropsSize)
-	binary.LittleEndian.PutUint32(props[0:4], eventTracePropsSize)
-	binary.LittleEndian.PutUint32(props[112:116], 120)
+	binary.LittleEndian.PutUint32(props[0:4], eventTracePropsSize) // Wnode.BufferSize
+	binary.LittleEndian.PutUint32(props[116:120], 120)             // LoggerNameOffset
+	binary.LittleEndian.PutUint32(props[112:116], 632)             // LogFileNameOffset
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
