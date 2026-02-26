@@ -65,4 +65,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&UsnJrnlCommand{})
 	RegisterCommand(&AuditPolCommand{})
 	RegisterCommand(&PrefetchCommand{})
+	RegisterCommand(&EtwCommand{})
 }

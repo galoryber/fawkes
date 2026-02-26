@@ -78,6 +78,7 @@ pre = "<b>2. </b>"
     * [drivers](/agents/fawkes/commands/drivers/)
     * [drives](/agents/fawkes/commands/drives/)
     * [env](/agents/fawkes/commands/env/)
+    * [etw](/agents/fawkes/commands/etw/)
     * [ldap-query](/agents/fawkes/commands/ldap-query/)
     * [logonsessions](/agents/fawkes/commands/logonsessions/)
     * [modules](/agents/fawkes/commands/modules/)
