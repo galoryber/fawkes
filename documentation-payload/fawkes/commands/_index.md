@@ -101,6 +101,7 @@ pre = "<b>2. </b>"
     * [sysinfo](/agents/fawkes/commands/sysinfo/)
     * [trust](/agents/fawkes/commands/trust/)
     * [ts](/agents/fawkes/commands/ts/)
+    * [windows](/agents/fawkes/commands/windows/)
     * [whoami](/agents/fawkes/commands/whoami/)
 - Registry Operations
     * [reg-delete](/agents/fawkes/commands/reg-delete/)
