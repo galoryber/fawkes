@@ -63,6 +63,7 @@ pre = "<b>2. </b>"
     * [keychain](/agents/fawkes/commands/keychain/)
     * [make-token](/agents/fawkes/commands/make-token/)
     * [procdump](/agents/fawkes/commands/procdump/)
+    * [wdigest](/agents/fawkes/commands/wdigest/)
     * [ssh-keys](/agents/fawkes/commands/ssh-keys/)
     * [vss](/agents/fawkes/commands/vss/)
     * [steal-token](/agents/fawkes/commands/steal-token/)
