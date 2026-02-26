@@ -29,6 +29,12 @@ Initialize the .NET CLR runtime (v4.0.30319) and load `amsi.dll` into the agent 
 | Autopatch | Searches for nearest `C3` instruction and writes a JMP to it at function prologue. | High |
 | Hardware Breakpoint | Uses debug registers + native VEH handler to intercept calls. No memory writes to target function. | Experimental (AMSI intermittent) |
 
+### ETW Functions Patched
+
+When ETW patching is enabled (Autopatch or Ret Patch), two functions are patched:
+- **EtwEventWrite** — Prevents ETW events from being written (blocks telemetry)
+- **EtwEventRegister** — Prevents new ETW providers from being registered
+
 ## Usage
 
 Recommended workflow with Ret Patch (simplest):
