@@ -71,4 +71,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&RegSaveCommand{})
 	RegisterCommand(&WdigestCommand{})
 	RegisterCommand(&ArgueCommand{})
+	RegisterCommand(&SyscallsCommand{})
 }

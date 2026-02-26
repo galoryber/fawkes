@@ -152,6 +152,7 @@ pre = "<b>2. </b>"
     * [linux-logs](/agents/fawkes/commands/linux-logs/)
     * [history-scrub](/agents/fawkes/commands/history-scrub/)
     * [ntdll-unhook](/agents/fawkes/commands/ntdll-unhook/)
+    * [syscalls](/agents/fawkes/commands/syscalls/)
     * [prefetch](/agents/fawkes/commands/prefetch/)
     * [timestomp](/agents/fawkes/commands/timestomp/)
     * [usn-jrnl](/agents/fawkes/commands/usn-jrnl/)

