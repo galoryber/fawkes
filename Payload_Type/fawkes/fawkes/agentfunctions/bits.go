@@ -19,14 +19,13 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:          "action",
-				CLIName:       "action",
+				Name:             "action",
+				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:   "Action to perform: list (enumerate jobs), create (download file), persist (download + notification command), cancel (remove job)",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				DefaultValue:  "list",
-				Choices:       []string{"list", "create", "persist", "cancel"},
-				Required:      false,
+				Description:      "Action to perform: list (enumerate jobs), create (download file), persist (download + notification command), cancel (remove job)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				DefaultValue:     "list",
+				Choices:          []string{"list", "create", "persist", "cancel"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -35,13 +34,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "name",
-				CLIName:       "name",
+				Name:             "name",
+				CLIName:          "name",
 				ModalDisplayName: "Job Name",
-				Description:   "Display name for the BITS job (used for create/persist/cancel)",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:  "",
-				Required:      false,
+				Description:      "Display name for the BITS job (used for create/persist/cancel)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -50,13 +48,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "url",
-				CLIName:       "url",
+				Name:             "url",
+				CLIName:          "url",
 				ModalDisplayName: "Remote URL",
-				Description:   "URL to download from (e.g., http://attacker.com/payload.exe)",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:  "",
-				Required:      false,
+				Description:      "URL to download from (e.g., http://attacker.com/payload.exe)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -65,13 +62,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "path",
-				CLIName:       "path",
+				Name:             "path",
+				CLIName:          "path",
 				ModalDisplayName: "Local Path",
-				Description:   "Local file path to save the downloaded file",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:  "",
-				Required:      false,
+				Description:      "Local file path to save the downloaded file",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -80,13 +76,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "command",
-				CLIName:       "command",
+				Name:             "command",
+				CLIName:          "command",
 				ModalDisplayName: "Notification Command",
-				Description:   "Program to execute when download completes (persist action). Full path to executable.",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:  "",
-				Required:      false,
+				Description:      "Program to execute when download completes (persist action). Full path to executable.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -95,13 +90,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "cmd_args",
-				CLIName:       "cmd_args",
+				Name:             "cmd_args",
+				CLIName:          "cmd_args",
 				ModalDisplayName: "Command Arguments",
-				Description:   "Arguments for the notification command (persist action)",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:  "",
-				Required:      false,
+				Description:      "Arguments for the notification command (persist action)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
