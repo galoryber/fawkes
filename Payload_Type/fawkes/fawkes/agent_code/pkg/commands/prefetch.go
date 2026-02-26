@@ -4,19 +4,20 @@
 package commands
 
 import (
-	"compress/flate"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 	"unicode/utf16"
+	"unsafe"
 
 	"fawkes/pkg/structs"
+
+	"golang.org/x/sys/windows"
 )
 
 type PrefetchCommand struct{}
@@ -443,8 +444,17 @@ func parsePrefetchFile(path string) (*prefetchEntry, error) {
 	return entry, nil
 }
 
+var (
+	ntdllPF                       = windows.NewLazySystemDLL("ntdll.dll")
+	procRtlDecompressBufferEx     = ntdllPF.NewProc("RtlDecompressBufferEx")
+	procRtlGetCompressionWorkSpaceSize = ntdllPF.NewProc("RtlGetCompressionWorkSpaceSize")
+)
+
+const compressionFormatXpressHuff = 0x0004
+
 // decompressMAM decompresses a MAM-compressed prefetch file (Windows 10+)
-// MAM format: header (8 bytes) + DEFLATE compressed data
+// MAM format: header (8 bytes) + Xpress Huffman compressed data
+// Uses RtlDecompressBufferEx from ntdll.dll
 func decompressMAM(data []byte) ([]byte, error) {
 	if len(data) < 8 {
 		return nil, fmt.Errorf("MAM header too small")
@@ -456,29 +466,37 @@ func decompressMAM(data []byte) ([]byte, error) {
 		return nil, fmt.Errorf("uncompressed size too large: %d", uncompressedSize)
 	}
 
-	reader := flate.NewReader(strings.NewReader(string(data[8:])))
-	defer reader.Close()
-
-	decompressed := make([]byte, 0, uncompressedSize)
-	buf := make([]byte, 4096)
-	for {
-		n, err := reader.Read(buf)
-		if n > 0 {
-			decompressed = append(decompressed, buf[:n]...)
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			// Partial decompression is OK — we may have enough data
-			if len(decompressed) > 84 {
-				break
-			}
-			return nil, fmt.Errorf("decompress: %v", err)
-		}
+	// Get workspace size for decompression
+	var workspaceSize uint32
+	var fragWorkspaceSize uint32
+	r1, _, _ := procRtlGetCompressionWorkSpaceSize.Call(
+		uintptr(compressionFormatXpressHuff),
+		uintptr(unsafe.Pointer(&workspaceSize)),
+		uintptr(unsafe.Pointer(&fragWorkspaceSize)),
+	)
+	if r1 != 0 {
+		return nil, fmt.Errorf("RtlGetCompressionWorkSpaceSize: 0x%X", r1)
 	}
 
-	return decompressed, nil
+	workspace := make([]byte, workspaceSize)
+	decompressed := make([]byte, uncompressedSize)
+	compressed := data[8:]
+
+	var finalSize uint32
+	r1, _, _ = procRtlDecompressBufferEx.Call(
+		uintptr(compressionFormatXpressHuff),
+		uintptr(unsafe.Pointer(&decompressed[0])),
+		uintptr(uncompressedSize),
+		uintptr(unsafe.Pointer(&compressed[0])),
+		uintptr(len(compressed)),
+		uintptr(unsafe.Pointer(&finalSize)),
+		uintptr(unsafe.Pointer(&workspace[0])),
+	)
+	if r1 != 0 {
+		return nil, fmt.Errorf("RtlDecompressBufferEx: 0x%X", r1)
+	}
+
+	return decompressed[:finalSize], nil
 }
 
 func decodeUTF16(data []byte) string {
