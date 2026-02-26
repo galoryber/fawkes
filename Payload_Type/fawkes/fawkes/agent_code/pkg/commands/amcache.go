@@ -100,21 +100,23 @@ func readShimcacheRaw() ([]byte, error) {
 }
 
 // parseShimcacheWin10 parses Windows 10/11 Shimcache format
-// Format: 4-byte signature + 4-byte unknown + entries
+// Header: first 4 bytes = header size (0x34 = 52 on Win10/11)
+// Entries start at offset indicated by header size (typically 48 or 52)
 // Each entry: 4-byte signature "10ts" + 4-byte unknown + 4-byte data size +
 //             2-byte path length + path (UTF-16LE) + FILETIME + data
 func parseShimcacheWin10(data []byte) ([]shimcacheEntry, error) {
-	if len(data) < 48 {
+	if len(data) < 52 {
 		return nil, fmt.Errorf("data too small: %d bytes", len(data))
 	}
 
-	sig := binary.LittleEndian.Uint32(data[0:4])
-	if sig != shimcacheWin10Sig {
-		return nil, fmt.Errorf("unexpected signature: 0x%08X (expected 0x%08X)", sig, shimcacheWin10Sig)
+	// Header size is in the first 4 bytes
+	headerSize := binary.LittleEndian.Uint32(data[0:4])
+	if headerSize < 48 || headerSize > 128 {
+		return nil, fmt.Errorf("unexpected header size: %d", headerSize)
 	}
 
 	var entries []shimcacheEntry
-	offset := 48 // Skip header (48 bytes on Windows 10)
+	offset := int(headerSize) // Skip header
 
 	for offset < len(data)-12 {
 		entrySig := binary.LittleEndian.Uint32(data[offset : offset+4])
@@ -232,23 +234,31 @@ func parseShimcache(data []byte) ([]shimcacheEntry, string, error) {
 		return nil, "", fmt.Errorf("data too small")
 	}
 
-	sig := binary.LittleEndian.Uint32(data[0:4])
+	headerVal := binary.LittleEndian.Uint32(data[0:4])
 
-	switch sig {
-	case shimcacheWin10Sig:
-		entries, err := parseShimcacheWin10(data)
-		return entries, "Windows 10/11", err
-	case 0x80:
+	// Windows 10/11: header starts with header size (typically 0x34 = 52)
+	// Check if entries at offset headerVal start with "10ts" signature
+	if headerVal >= 48 && headerVal <= 128 && int(headerVal)+4 <= len(data) {
+		entrySig := binary.LittleEndian.Uint32(data[headerVal : headerVal+4])
+		if entrySig == shimcacheWin10Sig {
+			entries, err := parseShimcacheWin10(data)
+			return entries, "Windows 10/11", err
+		}
+	}
+
+	// Windows 8/8.1: header starts with 0x80
+	if headerVal == 0x80 {
 		entries, err := parseShimcacheWin8(data)
 		return entries, "Windows 8/8.1", err
-	default:
-		// Try Windows 10 format anyway (some variants)
-		entries, err := parseShimcacheWin10(data)
-		if err == nil && len(entries) > 0 {
-			return entries, "Windows 10/11 (variant)", nil
-		}
-		return nil, "", fmt.Errorf("unsupported Shimcache format (signature: 0x%08X)", sig)
 	}
+
+	// Fallback: try Windows 10 format
+	entries, err := parseShimcacheWin10(data)
+	if err == nil && len(entries) > 0 {
+		return entries, "Windows 10/11 (variant)", nil
+	}
+
+	return nil, "", fmt.Errorf("unsupported Shimcache format (header: 0x%08X, size: %d bytes)", headerVal, len(data))
 }
 
 func amcacheQuery(params amcacheParams) structs.CommandResult {
@@ -377,11 +387,19 @@ func amcacheDelete(params amcacheParams) structs.CommandResult {
 		}
 	}
 
-	// Only support Win10/11 format for deletion (most common + we understand the structure)
-	sig := binary.LittleEndian.Uint32(data[0:4])
-	if sig != shimcacheWin10Sig {
+	// Only support Win10/11 format for deletion
+	headerSize := binary.LittleEndian.Uint32(data[0:4])
+	if headerSize < 48 || headerSize > 128 || int(headerSize)+4 > len(data) {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Delete only supported for Windows 10/11 format (got signature: 0x%08X)", sig),
+			Output:    fmt.Sprintf("Delete only supported for Windows 10/11 format (header: 0x%08X)", headerSize),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	entrySig := binary.LittleEndian.Uint32(data[headerSize : headerSize+4])
+	if entrySig != shimcacheWin10Sig {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Delete only supported for Windows 10/11 format (entry sig: 0x%08X)", entrySig),
 			Status:    "error",
 			Completed: true,
 		}
@@ -418,7 +436,7 @@ func amcacheDelete(params amcacheParams) structs.CommandResult {
 	}
 
 	// Rebuild the Shimcache binary data with matching entries removed
-	newData := rebuildShimcacheWin10(data[:48], keepEntries, data)
+	newData := rebuildShimcacheWin10(data[:headerSize], keepEntries, data)
 	if newData == nil {
 		return structs.CommandResult{
 			Output:    "Error rebuilding Shimcache data",
@@ -454,7 +472,7 @@ func amcacheClear() structs.CommandResult {
 		}
 	}
 
-	if len(data) < 48 {
+	if len(data) < 52 {
 		return structs.CommandResult{
 			Output:    "Shimcache data too small",
 			Status:    "error",
@@ -465,9 +483,13 @@ func amcacheClear() structs.CommandResult {
 	entries, _, _ := parseShimcache(data)
 	totalEntries := len(entries)
 
-	// Write just the header (no entries)
-	header := make([]byte, 48)
-	copy(header, data[:48])
+	// Write just the header (no entries) — header size from first 4 bytes
+	headerSize := int(binary.LittleEndian.Uint32(data[0:4]))
+	if headerSize < 48 || headerSize > 128 || headerSize > len(data) {
+		headerSize = 52 // Default Win10/11 header size
+	}
+	header := make([]byte, headerSize)
+	copy(header, data[:headerSize])
 
 	if err := writeShimcache(header); err != nil {
 		return structs.CommandResult{
