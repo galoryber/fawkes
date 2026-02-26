@@ -86,6 +86,7 @@ pre = "<b>2. </b>"
     * [env](/agents/fawkes/commands/env/)
     * [etw](/agents/fawkes/commands/etw/)
     * [ldap-query](/agents/fawkes/commands/ldap-query/)
+    * [ldap-write](/agents/fawkes/commands/ldap-write/)
     * [logonsessions](/agents/fawkes/commands/logonsessions/)
     * [modules](/agents/fawkes/commands/modules/)
     * [named-pipes](/agents/fawkes/commands/named-pipes/)
