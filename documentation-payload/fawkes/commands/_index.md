@@ -40,6 +40,7 @@ pre = "<b>2. </b>"
     * [execute-shellcode](/agents/fawkes/commands/execute-shellcode/)
     * [inline-assembly](/agents/fawkes/commands/inline-assembly/)
     * [inline-execute](/agents/fawkes/commands/inline-execute/)
+    * [reflective-load](/agents/fawkes/commands/reflective-load/)
     * [start-clr](/agents/fawkes/commands/start-clr/)
 - Memory Operations
     * [autopatch](/agents/fawkes/commands/autopatch/)
