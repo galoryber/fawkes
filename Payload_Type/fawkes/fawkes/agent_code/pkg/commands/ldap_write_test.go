@@ -307,7 +307,7 @@ func TestLdapWriteArgs_ValuesArray(t *testing.T) {
 // Test all supported actions are recognized
 
 func TestLdapWriteCommand_AllActionsRecognized(t *testing.T) {
-	actions := []string{"add-member", "remove-member", "set-attr", "add-attr", "remove-attr", "set-spn", "disable", "enable", "set-password"}
+	actions := []string{"add-member", "remove-member", "set-attr", "add-attr", "remove-attr", "set-spn", "disable", "enable", "set-password", "add-computer", "delete-object"}
 	cmd := &LdapWriteCommand{}
 
 	for _, action := range actions {
@@ -334,6 +334,41 @@ func TestLdapWriteCommand_UnknownAction(t *testing.T) {
 	}
 	if !strings.Contains(result.Output, "Unknown action") {
 		t.Errorf("expected Unknown action message, got: %s", result.Output)
+	}
+}
+
+func TestLdapWriteCommand_AddComputer_MissingTarget(t *testing.T) {
+	cmd := &LdapWriteCommand{}
+	params, _ := json.Marshal(ldapWriteArgs{
+		Action: "add-computer", Server: "127.0.0.1",
+		Value: "Password123!",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for missing target, got %s", result.Status)
+	}
+}
+
+func TestLdapWriteCommand_AddComputer_MissingPassword(t *testing.T) {
+	cmd := &LdapWriteCommand{}
+	params, _ := json.Marshal(ldapWriteArgs{
+		Action: "add-computer", Server: "127.0.0.1",
+		Target: "FAKEPC",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for missing password, got %s", result.Status)
+	}
+}
+
+func TestLdapWriteCommand_DeleteObject_MissingTarget(t *testing.T) {
+	cmd := &LdapWriteCommand{}
+	params, _ := json.Marshal(ldapWriteArgs{
+		Action: "delete-object", Server: "127.0.0.1",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for missing target, got %s", result.Status)
 	}
 }
 
