@@ -70,4 +70,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&LsaSecretsCommand{})
 	RegisterCommand(&RegSaveCommand{})
 	RegisterCommand(&WdigestCommand{})
+	RegisterCommand(&ArgueCommand{})
 }

@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 64 commands are cross-platform, with 58 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 3 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 135. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 64 commands are cross-platform, with 59 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 3 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 136. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -26,6 +26,7 @@ ads | `ads -action <write\|read\|list\|delete> -file <path> [-stream <name>] [-d
 amcache | `amcache -action <query\|search\|delete\|clear> [-name <pattern>] [-count <n>]` | **(Windows only)** Query and clean Windows Shimcache (AppCompatCache) execution history. Removes forensic evidence of tool execution (T1070.004).
 apc-injection | `apc-injection` | **(Windows only)** Perform QueueUserAPC injection into an alertable thread. Use `ts` to find alertable threads (T1055.004).
 auditpol | `auditpol -action <query\|disable\|enable\|stealth> [-category <name\|all>]` | **(Windows only)** Query and modify Windows audit policies. Disable security event logging before sensitive operations. Stealth mode disables detection-critical subcategories. Uses AuditQuerySystemPolicy API (T1562.002).
+argue | `argue -command "cmd.exe /c whoami" -spoof "cmd.exe /c echo hello"` | **(Windows only)** Execute a command with spoofed process arguments. Defeats Sysmon Event ID 1 and EDR command-line telemetry (T1564.010).
 arp | `arp` | Display ARP table — shows IP-to-MAC address mappings for nearby hosts. Cross-platform.
 asrep-roast | `asrep-roast -server <DC> -username <user@domain> -password <pass> [-account <target>]` | Request AS-REP tickets for accounts without pre-authentication and extract hashes in hashcat format for offline cracking. Auto-enumerates via LDAP. Cross-platform (T1558.004).
 av-detect | `av-detect` | Detect installed AV/EDR/security products by scanning running processes against a 130+ signature database. Reports product, vendor, type, and PID. Cross-platform.
@@ -216,7 +217,7 @@ Tracked artifact types:
 
 | Type | Commands |
 |------|----------|
-| Process Create | run, powershell, spawn |
+| Process Create | run, powershell, spawn, argue |
 | API Call | net-enum, net-loggedon, net-session, net-shares, net-user, service, wmi, schtask, procdump, hashdump, eventlog, ntdll-unhook, firewall, dcom, vss (create/delete), psexec |
 | Process Kill | kill |
 | Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection |

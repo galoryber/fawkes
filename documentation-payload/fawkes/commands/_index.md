@@ -143,6 +143,7 @@ pre = "<b>2. </b>"
 - Defense Evasion
     * [ads](/agents/fawkes/commands/ads/)
     * [amcache](/agents/fawkes/commands/amcache/)
+    * [argue](/agents/fawkes/commands/argue/)
     * [auditpol](/agents/fawkes/commands/auditpol/)
     * [defender](/agents/fawkes/commands/defender/)
     * [eventlog](/agents/fawkes/commands/eventlog/)
