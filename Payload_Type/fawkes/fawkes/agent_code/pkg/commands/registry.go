@@ -46,6 +46,7 @@ func Initialize() {
 	RegisterCommand(&LinkCommand{})
 	RegisterCommand(&UnlinkCommand{})
 	RegisterCommand(&LdapQueryCommand{})
+	RegisterCommand(&LdapWriteCommand{})
 	RegisterCommand(&KerberoastCommand{})
 	RegisterCommand(&AsrepCommand{})
 	RegisterCommand(&SmbCommand{})
