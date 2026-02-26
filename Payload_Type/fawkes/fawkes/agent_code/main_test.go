@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"os"
 	"testing"
 	"time"
@@ -338,5 +339,77 @@ func TestIsProcessRunning_Init(t *testing.T) {
 func TestIsProcessRunning_Nonexistent(t *testing.T) {
 	if isProcessRunning("totally_fake_process_xyz") {
 		t.Error("fake process name should not be found")
+	}
+}
+
+// --- xorDecodeString Tests ---
+
+func TestXorDecodeString_RoundTrip(t *testing.T) {
+	key := []byte{0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48}
+	plaintext := "http://192.168.100.184"
+
+	// Encode: XOR then base64
+	data := []byte(plaintext)
+	encoded := make([]byte, len(data))
+	for i, b := range data {
+		encoded[i] = b ^ key[i%len(key)]
+	}
+	encodedB64 := base64.StdEncoding.EncodeToString(encoded)
+
+	// Decode
+	result := xorDecodeString(encodedB64, key)
+	if result != plaintext {
+		t.Errorf("xorDecodeString roundtrip failed: got %q, want %q", result, plaintext)
+	}
+}
+
+func TestXorDecodeString_EmptyString(t *testing.T) {
+	key := []byte{0x01, 0x02}
+	result := xorDecodeString("", key)
+	if result != "" {
+		t.Errorf("empty string should return empty, got %q", result)
+	}
+}
+
+func TestXorDecodeString_EmptyKey(t *testing.T) {
+	result := xorDecodeString("dGVzdA==", nil)
+	// Empty key should return original encoded string
+	if result != "dGVzdA==" {
+		t.Errorf("empty key should return original, got %q", result)
+	}
+}
+
+func TestXorDecodeString_NotBase64(t *testing.T) {
+	key := []byte{0x01}
+	// Invalid base64 should return original string
+	result := xorDecodeString("not-valid-base64!!!", key)
+	if result != "not-valid-base64!!!" {
+		t.Errorf("invalid base64 should return original, got %q", result)
+	}
+}
+
+func TestXorDecodeString_MultipleStrings(t *testing.T) {
+	key := []byte("random32bytekeyforxorobfuscation")
+	testCases := []string{
+		"http://192.168.100.184",
+		"443",
+		"/data",
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+		"aes-encryption-key-value-here",
+		"some-uuid-1234-5678",
+	}
+
+	for _, tc := range testCases {
+		data := []byte(tc)
+		encoded := make([]byte, len(data))
+		for i, b := range data {
+			encoded[i] = b ^ key[i%len(key)]
+		}
+		encodedB64 := base64.StdEncoding.EncodeToString(encoded)
+
+		result := xorDecodeString(encodedB64, key)
+		if result != tc {
+			t.Errorf("roundtrip failed for %q: got %q", tc, result)
+		}
 	}
 }

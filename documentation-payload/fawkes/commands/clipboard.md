@@ -11,6 +11,8 @@ Read, write, or continuously monitor clipboard contents. Supports text data with
 
 On **Windows**, uses native Win32 API (OpenClipboard/GetClipboardData/SetClipboardData) for direct clipboard access.
 
+On **Linux**, uses `wl-paste`/`wl-copy` (Wayland), `xclip`, or `xsel` (X11) — auto-detects available tool.
+
 On **macOS**, uses `pbpaste` (read) and `pbcopy` (write) CLI tools, which are always available on macOS.
 
 ### Monitor Mode

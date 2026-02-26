@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 63 commands are cross-platform, with 50 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 1 Windows+macOS command (clipboard), 3 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 127. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 64 commands are cross-platform, with 50 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 3 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 127. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -31,7 +31,7 @@ autopatch | `autopatch <dll_name> <function_name> <num_bytes>` | **(Windows only
 browser | `browser [-action <passwords>] [-browser <all\|chrome\|edge>]` | **(Windows only)** Harvest saved credentials from Chromium-based browsers (Chrome, Edge) via DPAPI + AES-GCM decryption. MITRE T1555.003.
 cat | `cat <file>` | Display the contents of a file.
 cd | `cd <directory>` | Change the current working directory.
-clipboard | `clipboard -action <read\|write\|monitor\|dump\|stop> [-data "text"] [-interval 3]` | **(Windows + macOS)** Read/write clipboard or continuously monitor for changes with credential pattern detection (T1115).
+clipboard | `clipboard -action <read\|write\|monitor\|dump\|stop> [-data "text"] [-interval 3]` | Read/write clipboard or continuously monitor for changes with credential pattern detection. Cross-platform (T1115).
 compress | `compress -action <create\|list\|extract> -path <path> [-output <out>] [-pattern *.txt]` | Create, list, or extract zip archives for data staging and exfiltration. Pattern filter, depth/size limits. Cross-platform (T1560.001).
 config | `config [-action show\|set] [-key sleep\|jitter\|killdate\|working_hours_start\|working_hours_end\|working_days] [-value <val>]` | View or modify runtime agent configuration — sleep, jitter, kill date, working hours. Cross-platform.
 cp | `cp <source> <destination>` | Copy a file from source to destination.
@@ -246,6 +246,10 @@ Prevent the agent from executing on unauthorized systems. Configured at build ti
 | `env_key_process` | String | Process name that must be running (e.g., `outlook.exe`) |
 
 All patterns are case-insensitive and anchored to match the full value. Multiple keys can be combined — all must pass. Invalid regex patterns fail closed (agent exits). Leave empty to skip a check.
+
+### C2 String Obfuscation
+
+Enable the **obfuscate_strings** build parameter to XOR-encode all C2 config strings (callback host, URIs, user agent, encryption key, UUID) at build time with a per-build random 32-byte key. Prevents trivial IOC extraction via `strings` on the binary. Decoded at runtime. Cross-platform.
 
 ### Auto-Patch ETW/AMSI
 

