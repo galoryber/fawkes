@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 64 commands are cross-platform, with 60 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 3 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 137. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 64 commands are cross-platform, with 61 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 3 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 138. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -88,6 +88,7 @@ logonsessions | `logonsessions [-action list\|users] [-filter <name>]` | **(Wind
 ls | `ls [path]` | List files and folders with owner/group and timestamps. File browser integration. Defaults to cwd.
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it.
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
+module-stomping | `module-stomping -pid <PID> [-dll_name <DLL>]` | **(Windows only)** Inject shellcode by stomping a legitimate DLL's .text section. Shellcode executes from signed DLL address space, bypassing private-memory detection (T1055.001).
 modules | `modules [-pid <PID>]` | List loaded modules/DLLs/libraries in a process. Windows: CreateToolhelp32Snapshot. Linux: /proc/pid/maps. macOS: proc_info syscall. Default: current process. Cross-platform (T1057).
 mem-scan | `mem-scan -pid <PID> -pattern <string> [-hex] [-max_results <n>] [-context_bytes <n>]` | Search process memory for byte patterns with hex dump output. Windows: VirtualQueryEx/ReadProcessMemory. Linux: /proc/pid/maps+mem. Supports string and hex patterns (T1005, T1057).
 mv | `mv <source> <destination>` | Move or rename a file from source to destination.
@@ -221,7 +222,7 @@ Tracked artifact types:
 | Process Create | run, powershell, spawn, argue |
 | API Call | net-enum, net-loggedon, net-session, net-shares, net-user, service, wmi, schtask, procdump, hashdump, eventlog, ntdll-unhook, syscalls, firewall, dcom, vss (create/delete), psexec |
 | Process Kill | kill |
-| Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection |
+| Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection, module-stomping |
 | File Write | upload, cp, mv |
 | File Create | mkdir |
 | File Delete | rm |
