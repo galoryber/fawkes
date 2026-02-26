@@ -58,6 +58,7 @@ When indirect syscalls are active, these commands use Nt* APIs via indirect stub
 - **opus-injection** — NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtReadVirtualMemory, NtProtectVirtualMemory, NtClose
 - **poolparty-injection** — NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtReadVirtualMemory, NtProtectVirtualMemory, NtClose
 - **module-stomping** — NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtReadVirtualMemory, NtProtectVirtualMemory, NtCreateThreadEx, NtClose
+- **thread-hijack** — NtOpenProcess, NtAllocateVirtualMemory, NtWriteVirtualMemory, NtProtectVirtualMemory, NtOpenThread, NtGetContextThread, NtSetContextThread, NtResumeThread
 
 ## MITRE ATT&CK Mapping
 
