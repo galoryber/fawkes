@@ -31,6 +31,7 @@ type Agent struct {
 	WorkingHoursStart int    `json:"-"` // Minutes from midnight (e.g., 540 = 09:00). 0 with End=0 means disabled.
 	WorkingHoursEnd   int    `json:"-"` // Minutes from midnight (e.g., 1020 = 17:00). 0 with Start=0 means disabled.
 	WorkingDays       []int  `json:"-"` // ISO weekday numbers: Mon=1 .. Sun=7. Empty means all days.
+	DefaultPPID       int    `json:"-"` // Default parent PID for subprocess spoofing. 0 = disabled.
 }
 
 // UpdateSleepParams updates the agent's sleep parameters

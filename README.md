@@ -268,6 +268,10 @@ Enable the **obfuscate_strings** build parameter to XOR-encode all C2 config str
 
 Enable the **block_dlls** build parameter to apply `PROCESS_CREATION_MITIGATION_POLICY_BLOCK_NON_MICROSOFT_BINARIES_ALWAYS_ON` to all child processes spawned by the agent (run, powershell commands). Prevents EDR from injecting monitoring DLLs into spawned processes. Uses `STARTUPINFOEX` with `UpdateProcThreadAttribute`. Windows only.
 
+### Parent PID Spoofing for Subprocesses
+
+Set `config -action set -key default_ppid -value <PID>` at runtime to make all child processes (`run`, `powershell`) appear as children of a legitimate process (e.g., `explorer.exe`). Defeats parent-child process relationship detection by EDR. Combines with BlockDLLs when both are active. Uses `UpdateProcThreadAttribute(PROC_THREAD_ATTRIBUTE_PARENT_PROCESS)`. Disable with `config -action set -key default_ppid -value 0`. Windows only (T1134.004).
+
 ### Auto-Patch ETW/AMSI
 
 Enable the **auto_patch** build parameter to automatically patch `EtwEventWrite` and `AmsiScanBuffer` at agent startup. This prevents ETW-based detection and AMSI scanning before any agent activity occurs — no manual command required. Windows only (no-op on Linux/macOS).

