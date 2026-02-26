@@ -55,7 +55,7 @@ execute-shellcode | `execute-shellcode` | **(Windows only)** Execute shellcode i
 exit | `exit` | Task agent to exit.
 find | `find -pattern <glob> [-path <dir>] [-max_depth <n>]` | Search for files by name pattern. Cross-platform recursive file search with depth limit.
 firewall | `firewall -action <list\|add\|delete\|enable\|disable\|status> [-name <rule>] [-direction <in\|out>] [-protocol <tcp\|udp\|any>] [-port <port>]` | **(Windows only)** Manage Windows Firewall rules via COM API. List/filter rules, add/delete rules, enable/disable rules, check profile status. MITRE T1562.004.
-getprivs | `getprivs` | **(Windows only)** List all privileges of the current token with enabled/disabled status, descriptions, and integrity level (T1078).
+getprivs | `getprivs -action list\|enable\|disable\|strip [-privilege <name>]` | **(Windows only)** List, enable, disable, or strip token privileges. Strip disables all non-essential privs to reduce EDR detection surface (T1134.002).
 getsystem | `getsystem [-technique steal]` | **(Windows only)** Elevate to SYSTEM by stealing a token from a SYSTEM process (winlogon.exe). Requires admin/SeDebugPrivilege (T1134.001).
 gpp-password | `gpp-password -server <DC> -username <user@domain> -password <pass>` | Search SYSVOL for GPP XML files with encrypted cpassword attributes and decrypt using the published AES key (MS14-025). Cross-platform via SMB (T1552.006).
 gpo | `gpo -action <list\|links\|find\|all> -server <DC> -username <user@domain> -password <pass> [-filter <name>]` | Enumerate Group Policy Objects via LDAP — list GPOs, map links with enforcement, find interesting CSE settings. Cross-platform (T1615).

@@ -11,49 +11,53 @@ Windows Only
 
 ## Summary
 
-List all privileges assigned to the current token (thread or process) with their enabled/disabled status and human-readable descriptions. Shows:
+List, enable, disable, or strip token privileges. Supports:
 
-- Current identity (user and token source: process or impersonation)
-- Integrity level (Untrusted, Low, Medium, High, System)
-- Total privilege count and enabled count
-- Each privilege with name, status, and description
+- **list** — Show all privileges with enabled/disabled status and descriptions
+- **enable** — Enable a specific privilege (e.g., SeDebugPrivilege)
+- **disable** — Disable a specific privilege
+- **strip** — Disable all non-essential privileges (keeps only SeChangeNotifyPrivilege)
 
-This is useful for understanding what the current context can do before attempting privilege escalation or lateral movement. Key privileges to look for:
+The `strip` action reduces EDR detection surface by disabling privileges that trigger alerts (e.g., SeDebugPrivilege, SeImpersonatePrivilege). This makes the token appear less suspicious to behavioral analysis engines.
 
-- **SeDebugPrivilege** — Required for `getsystem` and process injection into other users' processes
+Key privileges:
+
+- **SeDebugPrivilege** — Required for `getsystem` and process injection
 - **SeImpersonatePrivilege** — Required for `steal-token` and `make-token`
 - **SeBackupPrivilege** — Can read any file regardless of ACLs
 - **SeRestorePrivilege** — Can write any file regardless of ACLs
 - **SeTcbPrivilege** — Act as part of the operating system
 
+## Arguments
+
+| Argument  | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| action    | Yes      | list    | `list`, `enable`, `disable`, or `strip` |
+| privilege | No       | ""      | Privilege name (required for `enable`/`disable`) |
+
 ## Usage
 
+### List privileges
 ```
 getprivs
+getprivs -action list
 ```
 
-No parameters required. Works with both primary (process) tokens and impersonation (thread) tokens set by `make-token`, `steal-token`, or `getsystem`.
-
-## Example Output
-
+### Enable a privilege
 ```
-Token: WORKSTATION\user (Primary (process))
-Integrity: High (S-1-16-12288)
-Privileges: 24
+getprivs -action enable -privilege SeDebugPrivilege
+```
 
-Enabled: 24 / 24
+### Disable a privilege
+```
+getprivs -action disable -privilege SeDebugPrivilege
+```
 
-PRIVILEGE                                     STATUS             DESCRIPTION
---------------------------------------------------------------------------------------------------------------
-SeIncreaseQuotaPrivilege                      Enabled (Default)  Adjust memory quotas for a process
-SeSecurityPrivilege                           Enabled (Default)  Manage auditing and security log
-SeTakeOwnershipPrivilege                      Enabled (Default)  Take ownership of files or other objects
-SeDebugPrivilege                              Enabled (Default)  Debug programs
-SeImpersonatePrivilege                        Enabled (Default)  Impersonate a client after authentication
-SeChangeNotifyPrivilege                       Enabled (Default)  Bypass traverse checking
-...
+### Strip all non-essential privileges
+```
+getprivs -action strip
 ```
 
 ## MITRE ATT&CK Mapping
 
-- T1078 — Valid Accounts (privilege enumeration for access assessment)
+- T1134.002 — Access Token Manipulation: Create Process with Token
