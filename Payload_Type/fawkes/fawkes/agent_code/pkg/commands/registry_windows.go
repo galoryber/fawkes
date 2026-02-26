@@ -68,4 +68,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&EtwCommand{})
 	RegisterCommand(&AmcacheCommand{})
 	RegisterCommand(&LsaSecretsCommand{})
+	RegisterCommand(&RegSaveCommand{})
 }
