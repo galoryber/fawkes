@@ -45,7 +45,7 @@ type shimcacheEntry struct {
 // Windows 10/11 AppCompatCache header
 // Signature: "10ts" (0x30747331)
 // After the 4-byte signature comes a 4-byte unknown field, then entries
-const shimcacheWin10Sig = 0x30747331 // "10ts"
+const shimcacheWin10Sig = 0x73743031 // "10ts" as little-endian uint32
 
 func (c *AmcacheCommand) Execute(task structs.Task) structs.CommandResult {
 	var params amcacheParams
@@ -101,9 +101,9 @@ func readShimcacheRaw() ([]byte, error) {
 
 // parseShimcacheWin10 parses Windows 10/11 Shimcache format
 // Header: first 4 bytes = header size (0x34 = 52 on Win10/11)
-// Entries start at offset indicated by header size (typically 48 or 52)
-// Each entry: 4-byte signature "10ts" + 4-byte unknown + 4-byte data size +
-//             2-byte path length + path (UTF-16LE) + FILETIME + data
+// Entries start at offset indicated by header size
+// Each entry: sig(4) + unknown(4) + data_size(4) + data(data_size bytes)
+// Inside data: path_len(2) + path(path_len bytes UTF-16LE) + FILETIME(8) + remaining
 func parseShimcacheWin10(data []byte) ([]shimcacheEntry, error) {
 	if len(data) < 52 {
 		return nil, fmt.Errorf("data too small: %d bytes", len(data))
@@ -118,56 +118,54 @@ func parseShimcacheWin10(data []byte) ([]shimcacheEntry, error) {
 	var entries []shimcacheEntry
 	offset := int(headerSize) // Skip header
 
-	for offset < len(data)-12 {
+	for offset+12 < len(data) {
 		entrySig := binary.LittleEndian.Uint32(data[offset : offset+4])
 		if entrySig != shimcacheWin10Sig {
 			break
 		}
 
 		entryStart := offset
-		offset += 4 // skip entry signature
 
-		// Skip unknown field
-		offset += 4
+		// Entry header: sig(4) + unknown(4) + data_size(4)
+		dataSize := int(binary.LittleEndian.Uint32(data[offset+8 : offset+12]))
+		dataStart := offset + 12
+		nextEntry := dataStart + dataSize
 
-		// Data size
-		dataSize := binary.LittleEndian.Uint32(data[offset : offset+4])
-		offset += 4
-
-		// Path length in bytes (UTF-16LE)
-		if offset+2 > len(data) {
+		if nextEntry > len(data) {
 			break
 		}
-		pathLen := binary.LittleEndian.Uint16(data[offset : offset+2])
-		offset += 2
 
-		// Path (UTF-16LE)
-		if offset+int(pathLen) > len(data) {
-			break
-		}
-		path := decodeUTF16LEShim(data[offset : offset+int(pathLen)])
-		offset += int(pathLen)
-
-		// Last modified FILETIME (8 bytes)
+		// Parse data block: path_len(2) + path + FILETIME(8)
+		var path string
 		var lastMod time.Time
-		if offset+8 <= len(data) {
-			ft := binary.LittleEndian.Uint64(data[offset : offset+8])
-			if ft > 0 {
-				lastMod = filetimeToTime(int64(ft))
-			}
-			offset += 8
-		}
 
-		// Skip data
-		offset += int(dataSize)
+		if dataStart+2 <= len(data) {
+			pathLen := int(binary.LittleEndian.Uint16(data[dataStart : dataStart+2]))
+			pathStart := dataStart + 2
+
+			if pathStart+pathLen <= len(data) {
+				path = decodeUTF16LEShim(data[pathStart : pathStart+pathLen])
+
+				// FILETIME follows path
+				ftStart := pathStart + pathLen
+				if ftStart+8 <= len(data) {
+					ft := binary.LittleEndian.Uint64(data[ftStart : ftStart+8])
+					if ft > 0 {
+						lastMod = filetimeToTime(int64(ft))
+					}
+				}
+			}
+		}
 
 		entries = append(entries, shimcacheEntry{
 			Path:         path,
 			LastModified: lastMod,
-			DataSize:     dataSize,
+			DataSize:     uint32(dataSize),
 			DataOffset:   entryStart,
-			EntrySize:    offset - entryStart,
+			EntrySize:    nextEntry - entryStart,
 		})
+
+		offset = nextEntry
 	}
 
 	return entries, nil
