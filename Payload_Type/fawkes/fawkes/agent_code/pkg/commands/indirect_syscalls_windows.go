@@ -102,10 +102,11 @@ func (r *SyscallResolver) init() error {
 	}
 	r.entries = entries
 
-	// Step 3: Allocate RWX memory for stubs (4KB = room for ~180 stubs at 22 bytes each)
+	// Step 3: Allocate RW memory for stubs (4KB = room for ~180 stubs at 22 bytes each)
+	// W^X pattern: allocate as RW, write stubs, then change to RX
 	const stubPoolSize = 4096
 	addr, err := windows.VirtualAlloc(0, stubPoolSize,
-		windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_EXECUTE_READWRITE)
+		windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_READWRITE)
 	if err != nil {
 		return fmt.Errorf("VirtualAlloc for stub pool: %v", err)
 	}
@@ -140,6 +141,14 @@ func (r *SyscallResolver) init() error {
 			continue
 		}
 		entry.StubAddr = stub
+	}
+
+	// Step 5: Change stub pool from RW to RX (W^X enforcement)
+	var oldProtect uint32
+	err = windows.VirtualProtect(r.stubPool, stubPoolSize,
+		windows.PAGE_EXECUTE_READ, &oldProtect)
+	if err != nil {
+		return fmt.Errorf("VirtualProtect stub pool to RX: %v", err)
 	}
 
 	r.initialized = true
