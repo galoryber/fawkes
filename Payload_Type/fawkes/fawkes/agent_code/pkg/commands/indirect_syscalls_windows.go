@@ -514,6 +514,29 @@ func IndirectNtCreateThreadEx(threadHandle *uintptr, processHandle, startRoutine
 	return uint32(r)
 }
 
+// IndirectNtCreateThreadExWithArg creates a thread in a process with a start argument via indirect syscall.
+// Same as IndirectNtCreateThreadEx but passes an argument to the thread start routine.
+func IndirectNtCreateThreadExWithArg(threadHandle *uintptr, processHandle, startRoutine, argument uintptr) uint32 {
+	entry := indirectSyscallResolver.entries["NtCreateThreadEx"]
+	if entry == nil || entry.StubAddr == 0 {
+		return 0xC0000001
+	}
+	r, _, _ := syscall.SyscallN(entry.StubAddr,
+		uintptr(unsafe.Pointer(threadHandle)),
+		0x1FFFFF, // THREAD_ALL_ACCESS
+		0,        // ObjectAttributes
+		processHandle,
+		startRoutine,
+		argument,  // Argument passed to start routine
+		0,         // CreateFlags
+		0,         // ZeroBits
+		0,         // StackSize
+		0,         // MaxStackSize
+		0,         // AttributeList
+	)
+	return uint32(r)
+}
+
 // IndirectNtFreeVirtualMemory frees memory in a process via indirect syscall.
 // NTSTATUS NtFreeVirtualMemory(ProcessHandle, *BaseAddress, *RegionSize, FreeType)
 func IndirectNtFreeVirtualMemory(processHandle uintptr, baseAddress *uintptr, regionSize *uintptr, freeType uint32) uint32 {
