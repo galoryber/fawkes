@@ -76,4 +76,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&ThreadHijackCommand{})
 	RegisterCommand(&DebugDetectCommand{})
 	RegisterCommand(&CertstoreCommand{})
+	RegisterCommand(&NetLocalGroupCommand{})
 }
