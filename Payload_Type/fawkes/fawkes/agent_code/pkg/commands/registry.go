@@ -95,6 +95,11 @@ func Initialize() {
 	RegisterCommand(&MountCommand{})
 	RegisterCommand(&SortCommand{})
 	RegisterCommand(&UniqCommand{})
+	RegisterCommand(&TacCommand{})
+	RegisterCommand(&CutCommand{})
+	RegisterCommand(&TrCommand{})
+	RegisterCommand(&ProcessTreeCommand{})
+	RegisterCommand(&WlanProfilesCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
