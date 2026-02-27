@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 72 commands are cross-platform, with 62 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 4 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 153. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 73 commands are cross-platform, with 62 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 4 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 154. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -173,6 +173,7 @@ windows | `windows [-action list\|search] [-filter <string>] [-all]` | **(Window
 whoami | `whoami` | Display current user identity and security context. On Windows: username, SID, token type, integrity level, group memberships, privileges. On Linux/macOS: user, UID, GID, supplementary groups.
 wmi | `wmi -action <execute\|query\|process-list\|os-info> [-target <host>] [-command <cmd>] [-query <wql>]` | **(Windows only)** Execute WMI queries and process creation via COM API.
 wmi-persist | `wmi-persist -action <install\|remove\|list> -name <id> -trigger <logon\|startup\|interval\|process> -command <exe>` | **(Windows only)** WMI Event Subscription persistence via COM API. Fileless, survives reboots. MITRE T1546.003.
+write-file | `write-file -path <file> -content <text> [-base64 true] [-append true] [-mkdir true]` | Write text or base64-decoded content to a file. Create, overwrite, or append without spawning subprocesses. Cross-platform (T1105).
 write-memory | `write-memory <dll_name> <function_name> <start_index> <hex_bytes>` | **(Windows only)** Write bytes to a DLL function address.
 
 ## Injection Techniques
