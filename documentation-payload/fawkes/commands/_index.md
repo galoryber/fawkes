@@ -51,6 +51,7 @@ pre = "<b>2. </b>"
     * [browser](/agents/fawkes/commands/browser/)
     * [certstore](/agents/fawkes/commands/certstore/)
     * [cred-harvest](/agents/fawkes/commands/cred-harvest/)
+    * [coerce](/agents/fawkes/commands/coerce/)
     * [dcsync](/agents/fawkes/commands/dcsync/)
     * [credman](/agents/fawkes/commands/credman/)
     * [enum-tokens](/agents/fawkes/commands/enum-tokens/)
