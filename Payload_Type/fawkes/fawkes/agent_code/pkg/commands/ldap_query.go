@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -387,7 +388,7 @@ func ldapQueryDACL(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 
 	// Format output
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] DACL Enumeration (T1069)\n"))
+	sb.WriteString("[*] DACL Enumeration (T1069)\n")
 	sb.WriteString(fmt.Sprintf("[+] Target: %s\n", targetDN))
 	sb.WriteString(fmt.Sprintf("[+] Object Class: %s\n", strings.Join(objClass, ", ")))
 	sb.WriteString(fmt.Sprintf("[+] ACE Count: %d\n", len(aces)))
@@ -624,11 +625,15 @@ func daclSIDToBytes(sid string) []byte {
 		return nil
 	}
 
-	revision := 0
-	fmt.Sscanf(parts[1], "%d", &revision)
+	revision, err := strconv.Atoi(parts[1])
+	if err != nil {
+		return nil
+	}
 
-	authority := uint64(0)
-	fmt.Sscanf(parts[2], "%d", &authority)
+	authority, err := strconv.ParseUint(parts[2], 10, 64)
+	if err != nil {
+		return nil
+	}
 
 	subAuthCount := len(parts) - 3
 	result := make([]byte, 8+subAuthCount*4)
@@ -640,9 +645,11 @@ func daclSIDToBytes(sid string) []byte {
 	}
 	// Sub-authorities (little-endian uint32)
 	for i := 0; i < subAuthCount; i++ {
-		subAuth := uint32(0)
-		fmt.Sscanf(parts[3+i], "%d", &subAuth)
-		binary.LittleEndian.PutUint32(result[8+i*4:], subAuth)
+		subAuth, err := strconv.ParseUint(parts[3+i], 10, 32)
+		if err != nil {
+			return nil
+		}
+		binary.LittleEndian.PutUint32(result[8+i*4:], uint32(subAuth))
 	}
 
 	return result
@@ -657,8 +664,8 @@ func daclWellKnownRID(sid string) string {
 
 	// Check for domain-relative well-known RIDs
 	lastPart := parts[len(parts)-1]
-	rid := uint32(0)
-	fmt.Sscanf(lastPart, "%d", &rid)
+	ridVal, _ := strconv.ParseUint(lastPart, 10, 32)
+	rid := uint32(ridVal)
 
 	switch rid {
 	case 500:
