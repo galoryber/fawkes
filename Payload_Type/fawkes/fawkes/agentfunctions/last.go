@@ -34,6 +34,7 @@ func init() {
 				Name:          "user",
 				CLIName:       "user",
 				Description:   "Filter by username",
+				DefaultValue:  "",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},

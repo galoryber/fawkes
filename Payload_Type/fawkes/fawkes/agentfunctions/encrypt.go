@@ -38,6 +38,7 @@ func init() {
 				Name:          "path",
 				CLIName:       "path",
 				Description:   "Path to the file to encrypt/decrypt",
+				DefaultValue:  "",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -50,6 +51,7 @@ func init() {
 				Name:          "output",
 				CLIName:       "output",
 				Description:   "Output file path (default: input path + .enc for encrypt, - .enc for decrypt)",
+				DefaultValue:  "",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -62,6 +64,7 @@ func init() {
 				Name:          "key",
 				CLIName:       "key",
 				Description:   "Base64-encoded AES-256 key (auto-generated for encrypt if not provided, required for decrypt)",
+				DefaultValue:  "",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

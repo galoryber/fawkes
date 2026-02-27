@@ -24,6 +24,7 @@ func init() {
 				Name:          "test_url",
 				CLIName:       "test_url",
 				Description:   "Optional URL to test proxy connectivity",
+				DefaultValue:  "",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
