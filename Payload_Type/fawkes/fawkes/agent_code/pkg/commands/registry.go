@@ -79,6 +79,7 @@ func Initialize() {
 	RegisterCommand(&FindAdminCommand{})
 	RegisterCommand(&HashCommand{})
 	RegisterCommand(&ChmodCommand{})
+	RegisterCommand(&ChownCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
