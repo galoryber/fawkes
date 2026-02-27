@@ -103,7 +103,7 @@ func vmCheckMAC() ([]vmEvidence, string) {
 	}
 
 	for _, iface := range ifaces {
-		if iface.HardwareAddr == nil || len(iface.HardwareAddr) < 3 {
+		if len(iface.HardwareAddr) < 3 {
 			continue
 		}
 		mac := iface.HardwareAddr.String()
