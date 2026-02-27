@@ -77,6 +77,7 @@ pre = "<b>2. </b>"
     * [adcs](/agents/fawkes/commands/adcs/)
     * [domain-policy](/agents/fawkes/commands/domain-policy/)
     * [gpo](/agents/fawkes/commands/gpo/)
+    * [find-admin](/agents/fawkes/commands/find-admin/)
     * [grep](/agents/fawkes/commands/grep/)
     * [handles](/agents/fawkes/commands/handles/)
     * [av-detect](/agents/fawkes/commands/av-detect/)
