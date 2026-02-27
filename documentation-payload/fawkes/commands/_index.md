@@ -175,6 +175,7 @@ pre = "<b>2. </b>"
     * [ntdll-unhook](/agents/fawkes/commands/ntdll-unhook/)
     * [syscalls](/agents/fawkes/commands/syscalls/)
     * [prefetch](/agents/fawkes/commands/prefetch/)
+    * [secure-delete](/agents/fawkes/commands/secure-delete/)
     * [timestomp](/agents/fawkes/commands/timestomp/)
     * [usn-jrnl](/agents/fawkes/commands/usn-jrnl/)
 - Agent Management
