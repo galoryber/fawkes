@@ -108,6 +108,10 @@ func Initialize() {
 	RegisterCommand(&PingCommand{})
 	RegisterCommand(&UptimeCommand{})
 	RegisterCommand(&WhoCommand{})
+	RegisterCommand(&ContainerDetectCommand{})
+	RegisterCommand(&VmDetectCommand{})
+	RegisterCommand(&PkgListCommand{})
+	RegisterCommand(&SecurityInfoCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
