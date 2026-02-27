@@ -85,6 +85,7 @@ func Initialize() {
 	RegisterCommand(&WriteFileCommand{})
 	RegisterCommand(&Base64Command{})
 	RegisterCommand(&TouchCommand{})
+	RegisterCommand(&HexdumpCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
