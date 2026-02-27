@@ -90,6 +90,11 @@ func Initialize() {
 	RegisterCommand(&SecureDeleteCommand{})
 	RegisterCommand(&WcCommand{})
 	RegisterCommand(&DuCommand{})
+	RegisterCommand(&DiffCommand{})
+	RegisterCommand(&DfCommand{})
+	RegisterCommand(&MountCommand{})
+	RegisterCommand(&SortCommand{})
+	RegisterCommand(&UniqCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
