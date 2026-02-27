@@ -105,6 +105,9 @@ func Initialize() {
 	RegisterCommand(&ProxyCheckCommand{})
 	RegisterCommand(&FileTypeCommand{})
 	RegisterCommand(&LastCommand{})
+	RegisterCommand(&PingCommand{})
+	RegisterCommand(&UptimeCommand{})
+	RegisterCommand(&WhoCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
