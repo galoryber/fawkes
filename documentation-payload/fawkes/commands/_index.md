@@ -11,6 +11,7 @@ pre = "<b>2. </b>"
     * [cat](/agents/fawkes/commands/cat/)
     * [cd](/agents/fawkes/commands/cd/)
     * [chmod](/agents/fawkes/commands/chmod/)
+    * [chown](/agents/fawkes/commands/chown/)
     * [compress](/agents/fawkes/commands/compress/)
     * [cp](/agents/fawkes/commands/cp/)
     * [download](/agents/fawkes/commands/download/)
