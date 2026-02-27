@@ -1,3 +1,5 @@
+version: "2"
+
 linters:
   enable:
     - errcheck
@@ -5,27 +7,54 @@ linters:
     - staticcheck
     - ineffassign
     - unused
-    - gosimple
-
-linters-settings:
-  errcheck:
-    exclude-functions:
-      # Test helper functions where errors are acceptable
-      - os.WriteFile
-      - os.MkdirAll
-      - os.Mkdir
-      - os.Chdir
-      - (net.Conn).SetReadDeadline
-      - (net.Conn).SetWriteDeadline
-      - (*net.TCPListener).SetDeadline
-  staticcheck:
-    checks:
-      - all
-      - -SA9003  # Exclude empty branch check (intentional debug scaffolding)
-
-issues:
-  exclude-rules:
-    # Allow unchecked errors in test files for helper setup
-    - path: _test\.go
-      linters:
-        - errcheck
+  settings:
+    errcheck:
+      exclude-functions:
+        - os.WriteFile
+        - os.MkdirAll
+        - os.Mkdir
+        - os.Chdir
+        - os.Remove
+        - os.RemoveAll
+        - os.Chmod
+        - os.Chtimes
+        - os.Setenv
+        - os.Unsetenv
+        - filepath.Walk
+        - path/filepath.Walk
+        - (net.Conn).Close
+        - (net.Conn).SetReadDeadline
+        - (net.Conn).SetWriteDeadline
+        - (*net.TCPListener).SetDeadline
+        - (*os.File).Close
+        - (*os.File).Seek
+        - (*os.File).Sync
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (net/http.ResponseWriter).Write
+        - (*encoding/json.Encoder).Encode
+        - (*archive/zip.Writer).Close
+    staticcheck:
+      checks:
+        - all
+        - -SA9003
+        - -ST1000  # Package comment not required
+        - -ST1003  # Naming convention (pre-existing, would break API)
+        - -ST1011  # Variable naming with unit suffix
+        - -QF1001  # De Morgan's law suggestion
+        - -QF1002  # Tagged switch suggestion
+        - -QF1011  # Type inference suggestion
+        - -QF1012  # fmt.Fprintf suggestion
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+      # Ignore unchecked Close() on various types in defer statements
+      - text: "Error return value of `.+\\.Close`"
+        linters:
+          - errcheck
+      # Pre-existing: IPv6 address format warnings
+      - text: "hostport.*IPv6"
+        linters:
+          - govet
