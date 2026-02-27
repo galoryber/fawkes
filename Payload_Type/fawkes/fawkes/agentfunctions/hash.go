@@ -25,12 +25,10 @@ func init() {
 				CLIName:          "path",
 				ModalDisplayName: "File or Directory Path",
 				Description:      "Path to file or directory to hash",
-				Type:             agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						Required:      true,
-						UIModalPosition: 1,
-					},
+					{ParameterIsRequired: true, GroupName: "Default"},
 				},
 			},
 			{
@@ -38,14 +36,11 @@ func init() {
 				CLIName:          "algorithm",
 				ModalDisplayName: "Hash Algorithm",
 				Description:      "Hash algorithm to use",
-				Type:             agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				DefaultValue:     "sha256",
 				Choices:          []string{"md5", "sha1", "sha256", "sha512"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						Required:      false,
-						UIModalPosition: 2,
-					},
+					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
 			{
@@ -53,13 +48,10 @@ func init() {
 				CLIName:          "recursive",
 				ModalDisplayName: "Recursive",
 				Description:      "Recurse into subdirectories (for directory paths)",
-				Type:             agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
 				DefaultValue:     false,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						Required:      false,
-						UIModalPosition: 3,
-					},
+					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
 			{
@@ -67,13 +59,10 @@ func init() {
 				CLIName:          "pattern",
 				ModalDisplayName: "File Pattern",
 				Description:      "Glob pattern to filter files (e.g., *.exe, *.dll)",
-				Type:             agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						Required:      false,
-						UIModalPosition: 4,
-					},
+					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
 			{
@@ -81,13 +70,10 @@ func init() {
 				CLIName:          "max_files",
 				ModalDisplayName: "Max Files",
 				Description:      "Maximum number of files to hash (default: 500)",
-				Type:             agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				DefaultValue:     500,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{
-						Required:      false,
-						UIModalPosition: 5,
-					},
+					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
 		},
