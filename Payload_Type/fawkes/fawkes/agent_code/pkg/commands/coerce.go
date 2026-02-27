@@ -33,7 +33,7 @@ func init() {
 }
 
 func coerceSafeAddMechanism(m gssapi.MechanismFactory) {
-	defer func() { recover() }()
+	defer func() { _ = recover() }()
 	gssapi.AddMechanism(m)
 }
 
@@ -139,7 +139,7 @@ func (c *CoerceCommand) Execute(task structs.Task) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("[*] Credentials: %s\n", credUser))
 	sb.WriteString(strings.Repeat("-", 60) + "\n")
 
-	methods := []string{}
+	var methods []string
 	switch args.Method {
 	case "petitpotam", "efsr":
 		methods = []string{"petitpotam"}
