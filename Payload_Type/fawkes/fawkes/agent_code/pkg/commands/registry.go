@@ -82,6 +82,7 @@ func Initialize() {
 	RegisterCommand(&ChownCommand{})
 	RegisterCommand(&StatCommand{})
 	RegisterCommand(&TailCommand{})
+	RegisterCommand(&WriteFileCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
