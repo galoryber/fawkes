@@ -249,6 +249,16 @@ type ProcessEntry struct {
 	CommandLine     string `json:"command_line,omitempty"`
 }
 
+// MythicCredential represents a credential to store in Mythic's credential vault.
+// Included in the Response.Credentials array — Mythic automatically ingests these.
+type MythicCredential struct {
+	CredentialType string `json:"credential_type"` // "plaintext", "hash", "ticket", "key", "certificate"
+	Realm          string `json:"realm"`           // Domain/realm (e.g., "CONTOSO.LOCAL")
+	Account        string `json:"account"`         // Username
+	Credential     string `json:"credential"`      // The actual credential value (password, hash, ticket)
+	Comment        string `json:"comment"`         // Source info (e.g., "hashdump", "kerberoast")
+}
+
 // Response represents a response to Mythic
 type Response struct {
 	TaskID          string               `json:"task_id"`
@@ -257,6 +267,7 @@ type Response struct {
 	Completed       bool                 `json:"completed"`
 	ProcessResponse interface{}          `json:"process_response,omitempty"`
 	Processes       *[]ProcessEntry      `json:"processes,omitempty"`
+	Credentials     *[]MythicCredential  `json:"credentials,omitempty"`
 	Upload          *FileUploadMessage   `json:"upload,omitempty"`
 	Download        *FileDownloadMessage `json:"download,omitempty"`
 }
@@ -359,10 +370,11 @@ type SocksMsg struct {
 
 // CommandResult represents the result of executing a command
 type CommandResult struct {
-	Output    string
-	Status    string
-	Completed bool
-	Processes *[]ProcessEntry // Optional: populated by ps command for Mythic process browser
+	Output      string
+	Status      string
+	Completed   bool
+	Processes   *[]ProcessEntry   // Optional: populated by ps command for Mythic process browser
+	Credentials *[]MythicCredential // Optional: credentials to store in Mythic's credential vault
 }
 
 // DelegateMessage wraps a message to/from a linked P2P agent.
