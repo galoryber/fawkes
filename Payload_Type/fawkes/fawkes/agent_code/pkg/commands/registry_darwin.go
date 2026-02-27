@@ -16,4 +16,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&DebugDetectCommand{})
 	RegisterCommand(&XattrCommand{})
 	RegisterCommand(&MemScanCommand{})
+	RegisterCommand(&PrivescCheckCommand{})
 }

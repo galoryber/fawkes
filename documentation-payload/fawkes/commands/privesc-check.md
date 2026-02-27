@@ -7,57 +7,72 @@ hidden = false
 
 ## Summary
 
-Linux privilege escalation enumeration. Scans for common privilege escalation vectors including SUID/SGID binaries, file capabilities, sudo rules, writable paths, and container detection.
+Privilege escalation enumeration for Linux and macOS. Scans for common privilege escalation vectors including SUID/SGID binaries, sudo rules, writable paths, and platform-specific checks.
 
-{{% notice info %}}Linux Only{{% /notice %}}
+- **Linux:** capabilities, containers
+- **macOS:** LaunchDaemons/Agents, TCC database, dylib hijacking, SIP status
 
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | all | Check to perform: `all`, `suid`, `capabilities`, `sudo`, `writable`, `container` |
+| action | No | all | Check to perform (see platform-specific actions below) |
 
-### Actions
+### Shared Actions (Linux + macOS)
 
-- **all** — Run all checks and return a comprehensive report
-- **suid** — Find SUID/SGID binaries in common paths, flag interesting ones (e.g., `find`, `python`, `docker`, `nmap`)
-- **capabilities** — Enumerate file capabilities via `getcap` and current process capabilities from `/proc/self/status`
-- **sudo** — Check `sudo -l` (non-interactive), read `/etc/sudoers` and `/etc/sudoers.d` if accessible
-- **writable** — Find writable PATH directories (binary hijacking), writable sensitive files, world-writable dirs, UID 0 accounts
-- **container** — Detect Docker (`.dockerenv`), Kubernetes (service account tokens), container cgroups, Docker socket, overlay FS, PID 1 process
+- **all** — Run all platform-appropriate checks
+- **suid** — Find SUID/SGID binaries, flag exploitable ones (find, python, docker, etc.)
+- **sudo** — Check `sudo -l` (non-interactive), read `/etc/sudoers` if accessible
+- **writable** — Find writable PATH directories, writable sensitive files/paths
+
+### Linux-Only Actions
+
+- **capabilities** — Enumerate file capabilities via `getcap` and current process capabilities
+- **container** — Detect Docker, Kubernetes, LXC, overlay FS, container cgroups
+
+### macOS-Only Actions
+
+- **launchdaemons** — Check for writable LaunchDaemons/LaunchAgents plists (persistence + privesc)
+- **tcc** — Inspect TCC database for granted permissions (Full Disk Access, Accessibility, etc.)
+- **dylib** — Check DYLD_* environment variables, Hardened Runtime status, writable library paths
+- **sip** — Check System Integrity Protection and Authenticated Root status
 
 ## Usage
 
 ```
 privesc-check -action all
 privesc-check -action suid
-privesc-check -action container
+privesc-check -action launchdaemons
+privesc-check -action tcc
 ```
 
-### Example Output (all)
+### Example Output (macOS, all)
 
 ```
-=== LINUX PRIVILEGE ESCALATION CHECK ===
+=== macOS PRIVILEGE ESCALATION CHECK ===
+
+--- SIP Status ---
+System Integrity Protection status: enabled.
+[*] SIP is enabled — standard protections active
 
 --- SUID/SGID Binaries ---
-SUID binaries (15 found):
-  /usr/bin/sudo (-rwsr-xr-x, 232680 bytes)
-  /usr/bin/passwd (-rwsr-xr-x, 68208 bytes)
+SUID binaries (12 found):
+  /usr/bin/sudo (-rwsr-xr-x, 378848 bytes)
+  /usr/bin/passwd (-rwsr-xr-x, 68624 bytes)
   ...
 
-[!] INTERESTING SUID binaries (3):
-  /usr/bin/find (-rwsr-xr-x, 280488 bytes)
-  /usr/bin/python3.11 (-rwsr-xr-x, 5925136 bytes)
+--- LaunchDaemons / LaunchAgents ---
+/Library/LaunchDaemons (System LaunchDaemons (run as root), 8 plists):
+/Library/LaunchAgents (System LaunchAgents (run as logged-in users), 3 plists):
 
---- Sudo Rules ---
-User setup may run the following commands:
-    (ALL : ALL) NOPASSWD: ALL
+--- TCC Database ---
+User TCC: ~/Library/Application Support/com.apple.TCC/TCC.db
+  kTCCServiceAccessibility → com.example.app (auth=2) [!] Accessibility
+  kTCCServiceSystemPolicyAllFiles → com.backup.app (auth=2) [!] Full Disk Access
 
-[!] NOPASSWD rules detected — potential passwordless privilege escalation
-[!] User has full sudo access (ALL)
-
---- Container Detection ---
-No container indicators found — likely running on bare metal/VM host.
+--- Dylib Hijacking ---
+  /usr/bin/ssh: Hardened Runtime (DYLD injection blocked)
+[!] /usr/local/lib is WRITABLE — dylib planting possible
 ```
 
 ## MITRE ATT&CK Mapping

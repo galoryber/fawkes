@@ -7,15 +7,15 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "privesc-check",
-		Description:         "Linux privilege escalation enumeration: SUID/SGID binaries, capabilities, sudo rules, writable paths, container detection (T1548)",
-		HelpString:          "privesc-check -action <all|suid|capabilities|sudo|writable|container>",
-		Version:             1,
+		Description:         "Privilege escalation enumeration: SUID/SGID, sudo, writable paths. Linux: capabilities, containers. macOS: LaunchDaemons, TCC, dylib hijacking, SIP (T1548)",
+		HelpString:          "privesc-check -action <all|suid|sudo|writable|...> (Linux: capabilities, container. macOS: launchdaemons, tcc, dylib, sip)",
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1548", "T1548.001", "T1613", "T1082"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -23,8 +23,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "suid", "capabilities", "sudo", "writable", "container"},
-				Description:      "Check to perform: all (comprehensive), suid (SUID/SGID binaries), capabilities (file capabilities), sudo (sudo rules), writable (writable paths), container (container detection)",
+				Choices:          []string{"all", "suid", "sudo", "writable", "capabilities", "container", "launchdaemons", "tcc", "dylib", "sip"},
+				Description:      "Check to perform. Shared: all, suid, sudo, writable. Linux: capabilities, container. macOS: launchdaemons, tcc, dylib, sip",
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

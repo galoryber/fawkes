@@ -341,6 +341,9 @@ checkinDone:
 }
 
 func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int) {
+	// Semaphore to limit concurrent task goroutines (prevents memory exhaustion)
+	taskSem := make(chan struct{}, 20)
+
 	// Main execution loop
 	retryCount := 0
 	for {
@@ -397,9 +400,14 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			}
 
 			// Process tasks concurrently — each task runs in its own goroutine
-			// so long-running commands (SOCKS, keylog, port-scan) don't block new tasks
+			// so long-running commands (SOCKS, keylog, port-scan) don't block new tasks.
+			// Semaphore limits concurrency to prevent memory exhaustion.
 			for _, task := range tasks {
-				go processTaskWithAgent(task, agent, c2, socksManager)
+				taskSem <- struct{}{} // Acquire semaphore slot
+				go func(t structs.Task) {
+					defer func() { <-taskSem }() // Release slot when done
+					processTaskWithAgent(t, agent, c2, socksManager)
+				}(task)
 			}
 
 			// Sleep before next iteration
