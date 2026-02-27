@@ -32,7 +32,7 @@ func uptimePlatform() string {
 	bootTime := time.Now().Add(-time.Duration(uptimeSecs) * time.Second)
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] System Uptime\n"))
+	sb.WriteString("[*] System Uptime\n")
 	sb.WriteString(fmt.Sprintf("  Uptime:    %s\n", formatUptime(uptimeSecs)))
 	sb.WriteString(fmt.Sprintf("  Boot time: %s\n", bootTime.Format("2006-01-02 15:04:05 MST")))
 
