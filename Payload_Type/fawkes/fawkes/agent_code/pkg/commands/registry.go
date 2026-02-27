@@ -75,6 +75,7 @@ func Initialize() {
 	RegisterCommand(&GppPasswordCommand{})
 	RegisterCommand(&ConfigCommand{})
 	RegisterCommand(&HistoryScrubCommand{})
+	RegisterCommand(&CoerceCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
