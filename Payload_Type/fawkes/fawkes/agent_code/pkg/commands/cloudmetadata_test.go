@@ -73,7 +73,7 @@ func TestMetadataGet(t *testing.T) {
 			if r.Header.Get("X-Custom") == "expected" {
 				fmt.Fprint(w, "header-ok")
 			} else {
-				http.Error(w, "missing header", 403)
+				http.Error(w, "missing header", http.StatusForbidden)
 			}
 		case "/not-found":
 			http.Error(w, "not found", 404)

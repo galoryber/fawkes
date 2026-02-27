@@ -184,7 +184,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Encrypted: %s → %s\n", args.Path, outPath))
-	sb.WriteString(fmt.Sprintf("Algorithm: AES-256-GCM\n"))
+	sb.WriteString("Algorithm: AES-256-GCM\n")
 	sb.WriteString(fmt.Sprintf("Key (base64): %s\n", base64.StdEncoding.EncodeToString(key)))
 	sb.WriteString(fmt.Sprintf("Input size:  %d bytes\n", len(plaintext)))
 	sb.WriteString(fmt.Sprintf("Output size: %d bytes\n", len(ciphertext)))
