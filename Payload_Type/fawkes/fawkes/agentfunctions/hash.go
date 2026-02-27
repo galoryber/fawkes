@@ -83,5 +83,11 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
+			return agentstructs.PTTaskCreateTaskingMessageResponse{
+				Success: true,
+				TaskID:  taskData.Task.ID,
+			}
+		},
 	})
 }
