@@ -678,8 +678,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		}
 	} else if mode == "windows-shellcode" {
 		payloadName += ".dll"
-		// need a DLL for the dll to shellcode conversion later
-		// TODO - merlin sRDI for dll to shellcode option
+		// Build as DLL first, then convert to shellcode via Merlin's sRDI
 	}
 
 	command += fmt.Sprintf("%s -o /build/%s .", goCmd, payloadName)
