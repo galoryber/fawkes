@@ -23,13 +23,14 @@ type containerEvidence struct {
 
 func (c *ContainerDetectCommand) Execute(task structs.Task) structs.CommandResult {
 	var evidence []containerEvidence
-	detected := "none"
+	var detected string
 
-	if runtime.GOOS == "linux" {
+	switch runtime.GOOS {
+	case "linux":
 		evidence, detected = containerDetectLinux()
-	} else if runtime.GOOS == "darwin" {
+	case "darwin":
 		evidence, detected = containerDetectDarwin()
-	} else {
+	default:
 		evidence, detected = containerDetectWindows()
 	}
 

@@ -40,7 +40,7 @@ func (c *SecurityInfoCommand) Execute(task structs.Task) structs.CommandResult {
 
 	enabledCount := 0
 	for _, ctl := range controls {
-		indicator := "  "
+		var indicator string
 		switch ctl.Status {
 		case "enabled":
 			indicator = "[+]"
