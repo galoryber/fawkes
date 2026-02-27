@@ -23,6 +23,7 @@ pre = "<b>2. </b>"
     * [pwd](/agents/fawkes/commands/pwd/)
     * [rm](/agents/fawkes/commands/rm/)
     * [stat](/agents/fawkes/commands/stat/)
+    * [tail](/agents/fawkes/commands/tail/)
     * [upload](/agents/fawkes/commands/upload/)
 - Command Execution
     * [powershell](/agents/fawkes/commands/powershell/)
