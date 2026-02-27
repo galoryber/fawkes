@@ -12,37 +12,25 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-var (
-	wtsapi32              = windows.NewLazySystemDLL("wtsapi32.dll")
-	procWTSEnumSessionsW  = wtsapi32.NewProc("WTSEnumerateSessionsW")
-	procWTSQuerySessionW  = wtsapi32.NewProc("WTSQuerySessionInformationW")
-	procWTSFreeMemoryWho  = wtsapi32.NewProc("WTSFreeMemory")
-)
-
+// WTS info class constants for who command
 const (
-	wtsActive       = 0
-	wtsConnected    = 1
-	wtsDisconnected = 4
-	wtsIdle         = 5
+	whoWTSActive       = 0
+	whoWTSConnected    = 1
+	whoWTSDisconnected = 4
+	whoWTSIdle         = 5
 
-	wtsUserName     = 5
-	wtsDomainName   = 7
-	wtsClientName   = 10
-	wtsSessionInfo  = 24
-	wtsConnectTime  = 25 //nolint:unused // reserved for future use
+	whoWTSUserName    = 5
+	whoWTSDomainName  = 7
+	whoWTSClientName  = 10
+	whoWTSSessionInfo = 24
 )
-
-type wtsSessionInfoW struct {
-	SessionID      uint32
-	WinStationName *uint16
-	State          uint32
-}
 
 func whoPlatform(args whoArgs) string {
 	var pSessionInfo uintptr
 	var count uint32
 
-	ret, _, _ := procWTSEnumSessionsW.Call(
+	// Reuse procWTSEnumSess from logonsessions.go
+	ret, _, _ := procWTSEnumSess.Call(
 		0, // WTS_CURRENT_SERVER_HANDLE
 		0,
 		1,
@@ -52,11 +40,12 @@ func whoPlatform(args whoArgs) string {
 	if ret == 0 {
 		return "Error: WTSEnumerateSessionsW failed"
 	}
-	defer procWTSFreeMemoryWho.Call(pSessionInfo)
+	defer procWTSFreeMemory.Call(pSessionInfo)
 
 	var sb strings.Builder
 	sb.WriteString(whoHeader())
 
+	// Reuse wtsSessionInfoW struct from logonsessions.go
 	sessionSize := unsafe.Sizeof(wtsSessionInfoW{})
 	activeCount := 0
 
@@ -64,17 +53,17 @@ func whoPlatform(args whoArgs) string {
 		session := (*wtsSessionInfoW)(unsafe.Pointer(pSessionInfo + uintptr(i)*sessionSize))
 
 		// Filter to active/disconnected sessions unless -all
-		if !args.All && session.State != wtsActive && session.State != wtsDisconnected {
+		if !args.All && session.State != whoWTSActive && session.State != whoWTSDisconnected {
 			continue
 		}
 
-		user := wtsQueryString(session.SessionID, wtsUserName)
+		user := whoQueryString(session.SessionId, whoWTSUserName)
 		if user == "" && !args.All {
 			continue
 		}
 
-		domain := wtsQueryString(session.SessionID, wtsDomainName)
-		client := wtsQueryString(session.SessionID, wtsClientName)
+		domain := whoQueryString(session.SessionId, whoWTSDomainName)
+		client := whoQueryString(session.SessionId, whoWTSClientName)
 
 		stationName := ""
 		if session.WinStationName != nil {
@@ -86,8 +75,8 @@ func whoPlatform(args whoArgs) string {
 			fullUser = domain + "\\" + user
 		}
 
-		status := wtsStateName(session.State)
-		loginTime := wtsQueryConnectTime(session.SessionID)
+		status := whoStateName(session.State)
+		loginTime := whoQueryConnectTime(session.SessionId)
 
 		from := client
 		if from == "" {
@@ -106,11 +95,11 @@ func whoPlatform(args whoArgs) string {
 	return sb.String()
 }
 
-func wtsQueryString(sessionID uint32, infoClass int) string {
+func whoQueryString(sessionID uint32, infoClass int) string {
 	var buf *uint16
 	var bytesReturned uint32
 
-	ret, _, _ := procWTSQuerySessionW.Call(
+	ret, _, _ := procWTSQuerySess.Call(
 		0,
 		uintptr(sessionID),
 		uintptr(infoClass),
@@ -120,26 +109,26 @@ func wtsQueryString(sessionID uint32, infoClass int) string {
 	if ret == 0 || buf == nil {
 		return ""
 	}
-	defer procWTSFreeMemoryWho.Call(uintptr(unsafe.Pointer(buf)))
+	defer procWTSFreeMemory.Call(uintptr(unsafe.Pointer(buf)))
 
 	return windows.UTF16PtrToString(buf)
 }
 
-func wtsQueryConnectTime(sessionID uint32) string {
+func whoQueryConnectTime(sessionID uint32) string {
 	var buf *byte
 	var bytesReturned uint32
 
-	ret, _, _ := procWTSQuerySessionW.Call(
+	ret, _, _ := procWTSQuerySess.Call(
 		0,
 		uintptr(sessionID),
-		uintptr(wtsSessionInfo),
+		uintptr(whoWTSSessionInfo),
 		uintptr(unsafe.Pointer(&buf)),
 		uintptr(unsafe.Pointer(&bytesReturned)),
 	)
 	if ret == 0 || buf == nil {
 		return "-"
 	}
-	defer procWTSFreeMemoryWho.Call(uintptr(unsafe.Pointer(buf)))
+	defer procWTSFreeMemory.Call(uintptr(unsafe.Pointer(buf)))
 
 	// WTSINFO struct: ConnectTime is a LARGE_INTEGER (FILETIME) at offset 0
 	if bytesReturned < 8 {
@@ -154,15 +143,15 @@ func wtsQueryConnectTime(sessionID uint32) string {
 	return t.Format("2006-01-02 15:04:05")
 }
 
-func wtsStateName(state uint32) string {
+func whoStateName(state uint32) string {
 	switch state {
-	case wtsActive:
+	case whoWTSActive:
 		return "active"
-	case wtsConnected:
+	case whoWTSConnected:
 		return "connected"
-	case wtsDisconnected:
+	case whoWTSDisconnected:
 		return "disconnected"
-	case wtsIdle:
+	case whoWTSIdle:
 		return "idle"
 	default:
 		return fmt.Sprintf("state=%d", state)
