@@ -396,9 +396,10 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				socksManager.HandleMessages(inboundSocks)
 			}
 
-			// Process tasks
+			// Process tasks concurrently — each task runs in its own goroutine
+			// so long-running commands (SOCKS, keylog, port-scan) don't block new tasks
 			for _, task := range tasks {
-				processTaskWithAgent(task, agent, c2, socksManager)
+				go processTaskWithAgent(task, agent, c2, socksManager)
 			}
 
 			// Sleep before next iteration
