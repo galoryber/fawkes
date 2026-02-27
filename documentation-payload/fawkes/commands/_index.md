@@ -25,6 +25,7 @@ pre = "<b>2. </b>"
     * [rm](/agents/fawkes/commands/rm/)
     * [stat](/agents/fawkes/commands/stat/)
     * [tail](/agents/fawkes/commands/tail/)
+    * [touch](/agents/fawkes/commands/touch/)
     * [upload](/agents/fawkes/commands/upload/)
     * [write-file](/agents/fawkes/commands/write-file/)
 - Command Execution
