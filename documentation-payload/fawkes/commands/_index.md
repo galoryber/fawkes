@@ -8,6 +8,7 @@ pre = "<b>2. </b>"
 ## Table of Contents
 
 - File Operations
+    * [base64](/agents/fawkes/commands/base64/)
     * [cat](/agents/fawkes/commands/cat/)
     * [cd](/agents/fawkes/commands/cd/)
     * [chmod](/agents/fawkes/commands/chmod/)
