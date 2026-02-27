@@ -80,6 +80,7 @@ func Initialize() {
 	RegisterCommand(&HashCommand{})
 	RegisterCommand(&ChmodCommand{})
 	RegisterCommand(&ChownCommand{})
+	RegisterCommand(&StatCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
