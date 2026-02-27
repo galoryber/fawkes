@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 95 commands are cross-platform, with 62 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 4 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 176. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 98 commands are cross-platform, with 62 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 5 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 180. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -127,6 +127,7 @@ syscalls | `syscalls [-action status\|list\|init]` | **(Windows only)** Indirect
 opus-injection | `opus-injection` | **(Windows only)** Callback-based process injection. Variant 1: Ctrl-C Handler Chain. Variant 4: PEB KernelCallbackTable. [Details](research/injection-techniques.md#opus-injection)
 persist | `persist -method <registry\|startup-folder\|com-hijack\|screensaver\|ifeo\|list> -action <install\|remove>` | **(Windows only)** Install or remove persistence via registry Run keys, startup folder, COM hijacking (T1546.015), screensaver hijacking (T1546.002), or IFEO debugger (T1546.012). IFEO targets accessible from lock screen (sethc, utilman, osk).
 poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. All 8 variants supported. [Details](research/injection-techniques.md#poolparty-injection)
+ping | `ping -hosts <IP/CIDR/range> [-port 445] [-timeout 1000] [-threads 25]` | TCP connect host reachability check with subnet sweep. Supports CIDR, dash ranges, and comma-separated lists. Cross-platform (T1018).
 port-scan | `port-scan -hosts <IPs/CIDRs> [-ports <ports>] [-timeout <s>]` | TCP connect scan for network service discovery. Supports CIDR, IP ranges, and port ranges. Cross-platform.
 powershell | `powershell [command]` | **(Windows only)** Execute a PowerShell command or script directly via powershell.exe with -NoProfile -ExecutionPolicy Bypass.
 prefetch | `prefetch -action <list\|parse\|delete\|clear> [-name <exe>] [-count <max>]` | **(Windows only)** Parse and manage Windows Prefetch files. List executed programs, parse run history (up to 8 timestamps), delete specific entries, or clear all. Supports MAM-compressed files (T1070.004).
@@ -183,6 +184,7 @@ ts | `ts [-a] [-i PID]` | **(Windows only)** List threads in processes. By defau
 uac-bypass | `uac-bypass [-technique fodhelper\|computerdefaults\|sdclt] [-command <path>]` | **(Windows only)** Bypass UAC to escalate from medium to high integrity. Registry-based hijack + auto-elevating binary. Default spawns elevated callback (T1548.002).
 uniq | `uniq -path <file> [-count true] [-duplicate true] [-unique_only true]` | Filter or count duplicate consecutive lines in a file. Count mode sorts by frequency. Cross-platform (T1083).
 unlink | `unlink -connection_id <uuid>` | Disconnect a linked TCP P2P agent. Cross-platform (T1572).
+uptime | `uptime` | Show system uptime, boot time, and load averages. Cross-platform (T1082).
 upload | `upload` | Upload a file to the target with chunked file transfer.
 usn-jrnl | `usn-jrnl -action query\|recent\|delete [-volume C:]` | **(Windows only)** Query or delete NTFS USN Change Journal — destroys file operation history for anti-forensics (T1070.004).
 vanilla-injection | `vanilla-injection` | **(Windows only)** Inject shellcode into a remote process using VirtualAllocEx/WriteProcessMemory/CreateRemoteThread.
@@ -191,12 +193,14 @@ wc | `wc -path <file_or_dir> [-pattern <glob>]` | Count lines, words, characters
 wdigest | `wdigest -action <status\|enable\|disable>` | **(Windows only)** Manage WDigest plaintext credential caching. Enable to capture cleartext passwords at next logon. MITRE T1003.001, T1112.
 winrm | `winrm -host <target> -username <user> [-password <pass>] [-hash <NT hash>] -command <cmd> [-shell cmd\|powershell]` | Execute commands on remote Windows hosts via WinRM with NTLM authentication. Supports pass-the-hash, cmd.exe and PowerShell. Cross-platform (T1021.006, T1550.002).
 windows | `windows [-action list\|search] [-filter <string>] [-all]` | **(Windows only)** Enumerate visible application windows — shows HWND, PID, process name, window class, and title. Search filters by title/process/class. MITRE T1010.
+who | `who [-all true]` | Show currently logged-in users and active sessions. Linux: parses utmp. Windows: WTS API. macOS: who command. Cross-platform (T1033).
 whoami | `whoami` | Display current user identity and security context. On Windows: username, SID, token type, integrity level, group memberships, privileges. On Linux/macOS: user, UID, GID, supplementary groups.
 wmi | `wmi -action <execute\|query\|process-list\|os-info> [-target <host>] [-command <cmd>] [-query <wql>]` | **(Windows only)** Execute WMI queries and process creation via COM API.
 wmi-persist | `wmi-persist -action <install\|remove\|list> -name <id> -trigger <logon\|startup\|interval\|process> -command <exe>` | **(Windows only)** WMI Event Subscription persistence via COM API. Fileless, survives reboots. MITRE T1546.003.
 wlan-profiles | `wlan-profiles [-name <SSID>]` | Recover saved WiFi network profiles and credentials. Windows: WLAN API, Linux: NetworkManager/wpa_supplicant/iwd, macOS: Keychain. Cross-platform (T1555).
 write-file | `write-file -path <file> -content <text> [-base64 true] [-append true] [-mkdir true]` | Write text or base64-decoded content to a file. Create, overwrite, or append without spawning subprocesses. Cross-platform (T1105).
 write-memory | `write-memory <dll_name> <function_name> <start_index> <hex_bytes>` | **(Windows only)** Write bytes to a DLL function address.
+xattr | `xattr -action <list\|get\|set\|delete> -path <file> [-name <attr>] [-value <data>] [-hex true]` | **(Linux/macOS only)** Manage extended file attributes — list, get, set, delete. Unix complement to Windows ADS for data hiding (T1564.004).
 
 ## Injection Techniques
 

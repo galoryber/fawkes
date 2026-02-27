@@ -131,6 +131,8 @@ pre = "<b>2. </b>"
     * [sysinfo](/agents/fawkes/commands/sysinfo/)
     * [trust](/agents/fawkes/commands/trust/)
     * [ts](/agents/fawkes/commands/ts/)
+    * [uptime](/agents/fawkes/commands/uptime/)
+    * [who](/agents/fawkes/commands/who/)
     * [windows](/agents/fawkes/commands/windows/)
     * [whoami](/agents/fawkes/commands/whoami/)
 - Registry Operations
@@ -161,6 +163,7 @@ pre = "<b>2. </b>"
     * [ifconfig](/agents/fawkes/commands/ifconfig/)
     * [link](/agents/fawkes/commands/link/)
     * [net-stat](/agents/fawkes/commands/net-stat/)
+    * [ping](/agents/fawkes/commands/ping/)
     * [port-scan](/agents/fawkes/commands/port-scan/)
     * [route](/agents/fawkes/commands/route/)
     * [rpfwd](/agents/fawkes/commands/rpfwd/)
@@ -180,6 +183,7 @@ pre = "<b>2. </b>"
 - Defense Evasion
     * [debug-detect](/agents/fawkes/commands/debug-detect/)
     * [ads](/agents/fawkes/commands/ads/)
+    * [xattr](/agents/fawkes/commands/xattr/)
     * [amcache](/agents/fawkes/commands/amcache/)
     * [argue](/agents/fawkes/commands/argue/)
     * [auditpol](/agents/fawkes/commands/auditpol/)
