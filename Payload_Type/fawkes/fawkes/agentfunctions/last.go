@@ -1,0 +1,53 @@
+package agentfunctions
+
+import (
+	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+)
+
+func init() {
+	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
+		Name:                "last",
+		Description:         "Show recent login history. Linux: parses wtmp/utmp or auth.log. Windows: queries Security event log (4624). macOS: uses last command.",
+		HelpString:          "last\nlast -count 50\nlast -user admin",
+		Version:             1,
+		Author:              "@galoryber",
+		MitreAttackMappings: []string{"T1087.001"},
+		CommandAttributes: agentstructs.CommandAttribute{
+			SupportedOS: []string{
+				agentstructs.SUPPORTED_OS_WINDOWS,
+				agentstructs.SUPPORTED_OS_LINUX,
+				agentstructs.SUPPORTED_OS_MACOS,
+			},
+		},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:          "count",
+				CLIName:       "count",
+				Description:   "Number of entries to show (default: 25)",
+				DefaultValue:  25,
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:          "user",
+				CLIName:       "user",
+				Description:   "Filter by username",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+		},
+		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			return args.LoadArgsFromJSONString(input)
+		},
+		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
+			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
+			return agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+		},
+	})
+}

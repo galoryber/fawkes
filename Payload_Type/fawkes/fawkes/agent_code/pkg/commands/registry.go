@@ -102,6 +102,9 @@ func Initialize() {
 	RegisterCommand(&WlanProfilesCommand{})
 	RegisterCommand(&CloudMetadataCommand{})
 	RegisterCommand(&EncryptCommand{})
+	RegisterCommand(&ProxyCheckCommand{})
+	RegisterCommand(&FileTypeCommand{})
+	RegisterCommand(&LastCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
