@@ -205,6 +205,8 @@ pre = "<b>2. </b>"
     * [usn-jrnl](/agents/fawkes/commands/usn-jrnl/)
 - Agent Management
     * [config](/agents/fawkes/commands/config/)
+    * [jobs](/agents/fawkes/commands/jobs/)
+    * [jobkill](/agents/fawkes/commands/jobkill/)
     * [setenv](/agents/fawkes/commands/setenv/)
     * [sleep](/agents/fawkes/commands/sleep/)
     * [exit](/agents/fawkes/commands/exit/)

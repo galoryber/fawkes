@@ -406,6 +406,8 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				taskSem <- struct{}{} // Acquire semaphore slot
 				go func(t structs.Task) {
 					defer func() { <-taskSem }() // Release slot when done
+					commands.TrackTask(&t)
+					defer commands.UntrackTask(t.ID)
 					processTaskWithAgent(t, agent, c2, socksManager)
 				}(task)
 			}
@@ -418,6 +420,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 }
 
 func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager) {
+	task.StartTime = time.Now()
 	log.Printf("[INFO] Processing task: %s (ID: %s)", task.Command, task.ID)
 
 	// Create Job struct with channels for this task

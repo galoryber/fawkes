@@ -194,6 +194,7 @@ type Task struct {
 	Command    string    `json:"command"`
 	Params     string    `json:"parameters"`
 	Timestamp  time.Time `json:"timestamp"`
+	StartTime  time.Time `json:"-"` // When the agent began executing this task
 	Job        *Job      `json:"-"` // Not marshalled to JSON
 	stopped    *int32    // Atomic flag for task cancellation; pointer so copies share state
 }
