@@ -88,6 +88,7 @@ func Initialize() {
 	RegisterCommand(&HexdumpCommand{})
 	RegisterCommand(&StringsCommand{})
 	RegisterCommand(&SecureDeleteCommand{})
+	RegisterCommand(&WcCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
