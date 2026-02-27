@@ -81,6 +81,7 @@ func Initialize() {
 	RegisterCommand(&ChmodCommand{})
 	RegisterCommand(&ChownCommand{})
 	RegisterCommand(&StatCommand{})
+	RegisterCommand(&TailCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
