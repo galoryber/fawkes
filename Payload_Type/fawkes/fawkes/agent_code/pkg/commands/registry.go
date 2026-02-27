@@ -100,6 +100,8 @@ func Initialize() {
 	RegisterCommand(&TrCommand{})
 	RegisterCommand(&ProcessTreeCommand{})
 	RegisterCommand(&WlanProfilesCommand{})
+	RegisterCommand(&CloudMetadataCommand{})
+	RegisterCommand(&EncryptCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
