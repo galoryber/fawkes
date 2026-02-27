@@ -35,7 +35,7 @@ type ldapWriteArgs struct {
 }
 
 func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
-	allActions := "add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd"
+	allActions := "add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd, shadow-cred, clear-shadow-cred"
 	if task.Params == "" {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error: parameters required. Use -action <%s> -server <DC>", allActions),
@@ -77,6 +77,7 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		"set-spn": true, "disable": true, "enable": true, "set-password": true,
 		"add-computer": true, "delete-object": true,
 		"set-rbcd": true, "clear-rbcd": true,
+		"shadow-cred": true, "clear-shadow-cred": true,
 	}
 	if !validActions[action] {
 		return structs.CommandResult{
@@ -158,6 +159,10 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		return ldapSetRBCD(conn, args, baseDN)
 	case "clear-rbcd":
 		return ldapClearRBCD(conn, args, baseDN)
+	case "shadow-cred":
+		return ldapShadowCred(conn, args, baseDN)
+	case "clear-shadow-cred":
+		return ldapClearShadowCred(conn, args, baseDN)
 	default:
 		// Unreachable — action is validated before connection
 		return structs.CommandResult{Output: "Unknown action", Status: "error", Completed: true}

