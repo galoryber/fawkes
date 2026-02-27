@@ -25,6 +25,7 @@ pre = "<b>2. </b>"
     * [pwd](/agents/fawkes/commands/pwd/)
     * [rm](/agents/fawkes/commands/rm/)
     * [stat](/agents/fawkes/commands/stat/)
+    * [strings](/agents/fawkes/commands/strings/)
     * [tail](/agents/fawkes/commands/tail/)
     * [touch](/agents/fawkes/commands/touch/)
     * [upload](/agents/fawkes/commands/upload/)
