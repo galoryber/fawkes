@@ -15,6 +15,7 @@ pre = "<b>2. </b>"
     * [chown](/agents/fawkes/commands/chown/)
     * [compress](/agents/fawkes/commands/compress/)
     * [cp](/agents/fawkes/commands/cp/)
+    * [encrypt](/agents/fawkes/commands/encrypt/)
     * [cut](/agents/fawkes/commands/cut/)
     * [diff](/agents/fawkes/commands/diff/)
     * [download](/agents/fawkes/commands/download/)
@@ -94,6 +95,7 @@ pre = "<b>2. </b>"
     * [rev2self](/agents/fawkes/commands/rev2self/)
 - Discovery
     * [adcs](/agents/fawkes/commands/adcs/)
+    * [cloud-metadata](/agents/fawkes/commands/cloud-metadata/)
     * [domain-policy](/agents/fawkes/commands/domain-policy/)
     * [gpo](/agents/fawkes/commands/gpo/)
     * [find-admin](/agents/fawkes/commands/find-admin/)
