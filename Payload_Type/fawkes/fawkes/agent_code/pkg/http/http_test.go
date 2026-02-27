@@ -116,7 +116,10 @@ func TestEncryptDecrypt_RoundTrip(t *testing.T) {
 	}
 
 	original := []byte(`{"action":"checkin","uuid":"test-uuid-1234"}`)
-	encrypted := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original)
+	if err != nil {
+		t.Fatalf("encryptMessage failed: %v", err)
+	}
 
 	if bytes.Equal(encrypted, original) {
 		t.Error("encrypted message should differ from original")
@@ -147,7 +150,10 @@ func TestEncryptDecrypt_EmptyKey(t *testing.T) {
 	}
 
 	original := []byte("test message")
-	encrypted := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original)
+	if err != nil {
+		t.Fatalf("encryptMessage failed: %v", err)
+	}
 
 	// With no key, message should pass through unchanged
 	if !bytes.Equal(encrypted, original) {
@@ -198,7 +204,10 @@ func TestDecryptResponse_InvalidHMAC(t *testing.T) {
 	}
 
 	original := []byte("test message for HMAC verification")
-	encrypted := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original)
+	if err != nil {
+		t.Fatalf("encryptMessage failed: %v", err)
+	}
 
 	// Prepend fake UUID and corrupt HMAC
 	fakeUUID := []byte("12345678-1234-1234-1234-123456789012")
@@ -206,8 +215,8 @@ func TestDecryptResponse_InvalidHMAC(t *testing.T) {
 	// Corrupt last byte of HMAC
 	withUUID[len(withUUID)-1] ^= 0xFF
 
-	_, err := profile.decryptResponse(withUUID)
-	if err == nil {
+	_, decErr := profile.decryptResponse(withUUID)
+	if decErr == nil {
 		t.Error("decryptResponse should fail with corrupted HMAC")
 	}
 }
@@ -224,7 +233,10 @@ func TestDecryptResponse_InvalidPadding(t *testing.T) {
 	}
 
 	original := []byte("test")
-	encrypted := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original)
+	if err != nil {
+		t.Fatalf("encryptMessage failed: %v", err)
+	}
 
 	fakeUUID := []byte("12345678-1234-1234-1234-123456789012")
 	withUUID := append(fakeUUID, encrypted...)
@@ -235,8 +247,8 @@ func TestDecryptResponse_InvalidPadding(t *testing.T) {
 		withUUID[55] ^= 0xFF
 	}
 
-	_, err := profile.decryptResponse(withUUID)
-	if err == nil {
+	_, decErr := profile.decryptResponse(withUUID)
+	if decErr == nil {
 		t.Error("decryptResponse should fail with corrupted ciphertext")
 	}
 }
@@ -253,8 +265,14 @@ func TestEncryptMessage_DifferentEachTime(t *testing.T) {
 	}
 
 	msg := []byte("same message")
-	enc1 := profile.encryptMessage(msg)
-	enc2 := profile.encryptMessage(msg)
+	enc1, err := profile.encryptMessage(msg)
+	if err != nil {
+		t.Fatalf("encryptMessage failed: %v", err)
+	}
+	enc2, err := profile.encryptMessage(msg)
+	if err != nil {
+		t.Fatalf("encryptMessage failed: %v", err)
+	}
 
 	// Due to random IV, the two encrypted messages should differ
 	if bytes.Equal(enc1, enc2) {
@@ -279,7 +297,10 @@ func TestEncryptDecrypt_LargeMessage(t *testing.T) {
 		original[i] = byte(i % 256)
 	}
 
-	encrypted := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original)
+	if err != nil {
+		t.Fatalf("encryptMessage failed: %v", err)
+	}
 	fakeUUID := []byte("12345678-1234-1234-1234-123456789012")
 	withUUID := append(fakeUUID, encrypted...)
 
@@ -299,10 +320,10 @@ func TestEncryptDecrypt_InvalidKey(t *testing.T) {
 	}
 
 	msg := []byte("test")
-	result := profile.encryptMessage(msg)
-	// With invalid key, should return original message
-	if !bytes.Equal(result, msg) {
-		t.Error("encryptMessage with invalid key should return original message")
+	_, err := profile.encryptMessage(msg)
+	// With invalid key, should return an error (never fall back to plaintext)
+	if err == nil {
+		t.Error("encryptMessage with invalid key should return an error")
 	}
 }
 
@@ -589,11 +610,11 @@ func TestEncryptMessage_WrongKeySizeBase64(t *testing.T) {
 	}
 
 	msg := []byte("test message")
-	result := profile.encryptMessage(msg)
+	_, err := profile.encryptMessage(msg)
 
-	// With wrong key size, AES cipher creation fails, should return original
-	if !bytes.Equal(result, msg) {
-		t.Error("encryptMessage with wrong key size should return original message")
+	// With wrong key size, AES cipher creation fails — should return error (never plaintext)
+	if err == nil {
+		t.Error("encryptMessage with wrong key size should return an error")
 	}
 }
 
@@ -617,7 +638,10 @@ func TestEncryptDecrypt_MultipleBlockSizes(t *testing.T) {
 			msg[i] = byte(i % 256)
 		}
 
-		encrypted := profile.encryptMessage(msg)
+		encrypted, err := profile.encryptMessage(msg)
+		if err != nil {
+			t.Fatalf("size %d: encryptMessage failed: %v", size, err)
+		}
 		withUUID := append(append([]byte{}, fakeUUID...), encrypted...)
 
 		decrypted, err := profile.decryptResponse(withUUID)

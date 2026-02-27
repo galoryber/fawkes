@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/MythicAgents/merlin/Payload_Type/merlin/container/pkg/srdi"
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -218,6 +219,20 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  false,
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
+		{
+			Name:          "kill_date",
+			Description:   "Optional: UTC date/time after which the agent will self-terminate (format: YYYY-MM-DD or YYYY-MM-DD HH:MM). Leave empty for no kill date. Enforced every tasking cycle.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "max_retries",
+			Description:   "Maximum number of consecutive failed checkin attempts before the agent self-terminates. Default: 10. Set to 0 for unlimited retries.",
+			Required:      false,
+			DefaultValue:  "10",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
 	},
 	BuildSteps: []agentstructs.BuildStep{
 		{
@@ -399,6 +414,31 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if indSyscalls, err := payloadBuildMsg.BuildParameters.GetBooleanArg("indirect_syscalls"); err == nil && indSyscalls {
 		ldflags += fmt.Sprintf(" -X '%s.indirectSyscalls=true'", fawkes_main_package)
+	}
+
+	// Kill date: parse date string to Unix timestamp
+	if kdStr, err := payloadBuildMsg.BuildParameters.GetStringArg("kill_date"); err == nil && kdStr != "" {
+		var kdTime time.Time
+		var parseErr error
+		// Try YYYY-MM-DD HH:MM format first, then YYYY-MM-DD
+		if kdTime, parseErr = time.Parse("2006-01-02 15:04", kdStr); parseErr != nil {
+			if kdTime, parseErr = time.Parse("2006-01-02", kdStr); parseErr != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = fmt.Sprintf("Invalid kill_date format %q — use YYYY-MM-DD or YYYY-MM-DD HH:MM", kdStr)
+				return payloadBuildResponse
+			}
+		}
+		ldflags += fmt.Sprintf(" -X '%s.killDate=%d'", fawkes_main_package, kdTime.Unix())
+	}
+
+	// Max retries
+	if mrStr, err := payloadBuildMsg.BuildParameters.GetStringArg("max_retries"); err == nil && mrStr != "" {
+		if _, parseErr := strconv.Atoi(mrStr); parseErr != nil {
+			payloadBuildResponse.Success = false
+			payloadBuildResponse.BuildStdErr = fmt.Sprintf("Invalid max_retries %q — must be a number", mrStr)
+			return payloadBuildResponse
+		}
+		ldflags += fmt.Sprintf(" -X '%s.maxRetries=%s'", fawkes_main_package, mrStr)
 	}
 
 	// String obfuscation: XOR-encode C2 config strings with a random key
