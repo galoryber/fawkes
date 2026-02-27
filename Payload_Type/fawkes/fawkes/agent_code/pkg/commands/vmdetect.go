@@ -157,11 +157,27 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	if data, err := os.ReadFile("/sys/class/dmi/id/sys_vendor"); err == nil {
 		vendor := strings.TrimSpace(string(data))
 		vendorLower := strings.ToLower(vendor)
-		if strings.Contains(vendorLower, "vmware") || strings.Contains(vendorLower, "innotek") ||
-			strings.Contains(vendorLower, "microsoft") || strings.Contains(vendorLower, "qemu") ||
-			strings.Contains(vendorLower, "xen") || strings.Contains(vendorLower, "parallels") ||
-			strings.Contains(vendorLower, "amazon") {
+		vendorVM := ""
+		if strings.Contains(vendorLower, "vmware") {
+			vendorVM = "VMware"
+		} else if strings.Contains(vendorLower, "innotek") {
+			vendorVM = "VirtualBox"
+		} else if strings.Contains(vendorLower, "microsoft") {
+			vendorVM = "Hyper-V"
+		} else if strings.Contains(vendorLower, "qemu") {
+			vendorVM = "QEMU/KVM"
+		} else if strings.Contains(vendorLower, "xen") {
+			vendorVM = "Xen"
+		} else if strings.Contains(vendorLower, "parallels") {
+			vendorVM = "Parallels"
+		} else if strings.Contains(vendorLower, "amazon") {
+			vendorVM = "AWS"
+		}
+		if vendorVM != "" {
 			evidence = append(evidence, vmEvidence{"DMI sys_vendor", "VM", vendor})
+			if detected == "" {
+				detected = vendorVM
+			}
 		} else {
 			evidence = append(evidence, vmEvidence{"DMI sys_vendor", "clean", vendor})
 		}
@@ -171,9 +187,21 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	if data, err := os.ReadFile("/sys/class/dmi/id/bios_vendor"); err == nil {
 		bios := strings.TrimSpace(string(data))
 		biosLower := strings.ToLower(bios)
-		if strings.Contains(biosLower, "phoenix") || strings.Contains(biosLower, "innotek") ||
-			strings.Contains(biosLower, "seabios") || strings.Contains(biosLower, "xen") {
+		biosVM := ""
+		if strings.Contains(biosLower, "innotek") {
+			biosVM = "VirtualBox"
+		} else if strings.Contains(biosLower, "seabios") {
+			biosVM = "QEMU/KVM"
+		} else if strings.Contains(biosLower, "xen") {
+			biosVM = "Xen"
+		} else if strings.Contains(biosLower, "phoenix") {
+			biosVM = "VM (Phoenix BIOS)"
+		}
+		if biosVM != "" {
 			evidence = append(evidence, vmEvidence{"DMI bios_vendor", "VM", bios})
+			if detected == "" {
+				detected = biosVM
+			}
 		} else {
 			evidence = append(evidence, vmEvidence{"DMI bios_vendor", "info", bios})
 		}
@@ -182,12 +210,19 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	// Check /proc/scsi/scsi for virtual disk
 	if data, err := os.ReadFile("/proc/scsi/scsi"); err == nil {
 		content := strings.ToLower(string(data))
+		scsiVM := ""
 		if strings.Contains(content, "vmware") {
-			evidence = append(evidence, vmEvidence{"SCSI devices", "VM", "VMware virtual disk"})
+			scsiVM = "VMware"
 		} else if strings.Contains(content, "vbox") {
-			evidence = append(evidence, vmEvidence{"SCSI devices", "VM", "VirtualBox virtual disk"})
+			scsiVM = "VirtualBox"
 		} else if strings.Contains(content, "qemu") || strings.Contains(content, "virtio") {
-			evidence = append(evidence, vmEvidence{"SCSI devices", "VM", "QEMU/KVM virtual disk"})
+			scsiVM = "QEMU/KVM"
+		}
+		if scsiVM != "" {
+			evidence = append(evidence, vmEvidence{"SCSI devices", "VM", scsiVM + " virtual disk"})
+			if detected == "" {
+				detected = scsiVM
+			}
 		}
 	}
 
