@@ -84,4 +84,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&DpapiCommand{})
 	RegisterCommand(&RunasCommand{})
 	RegisterCommand(&TsconCommand{})
+	RegisterCommand(&ProcessMitigationCommand{})
 }

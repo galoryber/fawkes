@@ -208,6 +208,7 @@ pre = "<b>2. </b>"
     * [linux-logs](/agents/fawkes/commands/linux-logs/)
     * [history-scrub](/agents/fawkes/commands/history-scrub/)
     * [ntdll-unhook](/agents/fawkes/commands/ntdll-unhook/)
+    * [process-mitigation](/agents/fawkes/commands/process-mitigation/)
     * [syscalls](/agents/fawkes/commands/syscalls/)
     * [prefetch](/agents/fawkes/commands/prefetch/)
     * [secure-delete](/agents/fawkes/commands/secure-delete/)
