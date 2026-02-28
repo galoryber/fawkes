@@ -238,7 +238,7 @@ func TestTrustDefaultPort(t *testing.T) {
 	cmd := &TrustCommand{}
 
 	// LDAP default should be 389
-	result := cmd.Execute(structs.Task{Params: `{"server":"192.0.2.1"}`})
+	result := cmd.Execute(structs.Task{Params: `{"server":"127.0.0.1"}`})
 	if result.Status != "error" {
 		t.Error("unreachable server should return error")
 	}
@@ -247,7 +247,7 @@ func TestTrustDefaultPort(t *testing.T) {
 	}
 
 	// LDAPS default should be 636
-	result = cmd.Execute(structs.Task{Params: `{"server":"192.0.2.1","use_tls":true}`})
+	result = cmd.Execute(structs.Task{Params: `{"server":"127.0.0.1","use_tls":true}`})
 	if result.Status != "error" {
 		t.Error("unreachable server should return error")
 	}

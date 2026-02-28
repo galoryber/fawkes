@@ -488,17 +488,17 @@ func TestLdapWriteCommand_ValidationBeforeConnect(t *testing.T) {
 	}{
 		{
 			name:   "add-member without target/group",
-			args:   ldapWriteArgs{Action: "add-member", Server: "192.0.2.1"},
+			args:   ldapWriteArgs{Action: "add-member", Server: "127.0.0.1"},
 			expect: "target",
 		},
 		{
 			name:   "set-spn without target/value",
-			args:   ldapWriteArgs{Action: "set-spn", Server: "192.0.2.1"},
+			args:   ldapWriteArgs{Action: "set-spn", Server: "127.0.0.1"},
 			expect: "target",
 		},
 		{
 			name:   "set-password without TLS",
-			args:   ldapWriteArgs{Action: "set-password", Server: "192.0.2.1", Target: "user", Value: "pass"},
+			args:   ldapWriteArgs{Action: "set-password", Server: "127.0.0.1", Target: "user", Value: "pass"},
 			expect: "LDAPS",
 		},
 	}

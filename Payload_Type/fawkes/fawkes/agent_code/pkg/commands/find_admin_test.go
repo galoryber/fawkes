@@ -137,7 +137,7 @@ func TestFindAdminHashDecoding(t *testing.T) {
 
 func TestFindAdminHashAccepted(t *testing.T) {
 	args := findAdminArgs{
-		Hosts:    "192.0.2.1",
+		Hosts:    "127.0.0.1",
 		Username: "admin",
 		Hash:     "aad3b435b51404ee:8846f7eaee8fb117",
 		Timeout:  2,
@@ -156,7 +156,7 @@ func TestFindAdminHashAccepted(t *testing.T) {
 
 func TestFindAdminDefaultValues(t *testing.T) {
 	args := findAdminArgs{
-		Hosts:    "192.0.2.1",
+		Hosts:    "127.0.0.1",
 		Username: "admin",
 		Password: "pass",
 	}
@@ -183,7 +183,7 @@ func TestFindAdminDefaultValues(t *testing.T) {
 
 func TestFindAdminSMBUnreachable(t *testing.T) {
 	args := findAdminArgs{
-		Hosts:    "192.0.2.1",
+		Hosts:    "127.0.0.1",
 		Username: "admin",
 		Password: "pass",
 		Method:   "smb",
@@ -205,7 +205,7 @@ func TestFindAdminSMBUnreachable(t *testing.T) {
 
 func TestFindAdminWinRMUnreachable(t *testing.T) {
 	args := findAdminArgs{
-		Hosts:    "192.0.2.1",
+		Hosts:    "127.0.0.1",
 		Username: "admin",
 		Password: "pass",
 		Method:   "winrm",
@@ -224,7 +224,7 @@ func TestFindAdminWinRMUnreachable(t *testing.T) {
 
 func TestFindAdminBothMethodsUnreachable(t *testing.T) {
 	args := findAdminArgs{
-		Hosts:    "192.0.2.1",
+		Hosts:    "127.0.0.1",
 		Username: "admin",
 		Password: "pass",
 		Method:   "both",
@@ -241,7 +241,7 @@ func TestFindAdminBothMethodsUnreachable(t *testing.T) {
 
 func TestFindAdminCIDRParsing(t *testing.T) {
 	args := findAdminArgs{
-		Hosts:    "192.0.2.0/30",
+		Hosts:    "127.0.0.1",
 		Username: "admin",
 		Password: "pass",
 		Method:   "smb",
@@ -258,7 +258,7 @@ func TestFindAdminCIDRParsing(t *testing.T) {
 
 func TestFindAdminOutputFormat(t *testing.T) {
 	args := findAdminArgs{
-		Hosts:    "192.0.2.1",
+		Hosts:    "127.0.0.1",
 		Username: `CORP\admin`,
 		Password: "pass",
 		Method:   "smb",

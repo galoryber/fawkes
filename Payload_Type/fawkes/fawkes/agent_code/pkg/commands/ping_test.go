@@ -35,8 +35,9 @@ func TestPingMissingHosts(t *testing.T) {
 
 func TestPingTooManyHosts(t *testing.T) {
 	cmd := &PingCommand{}
-	// /8 network would exceed 65536
-	params, _ := json.Marshal(pingArgs{Hosts: "10.0.0.0/8"})
+	// /15 gives ~131K hosts which exceeds the 65536 limit but expands much
+	// faster than a /8 (16M IPs takes ~9s to iterate vs ~0.5s for /15).
+	params, _ := json.Marshal(pingArgs{Hosts: "10.0.0.0/15"})
 	result := cmd.Execute(structs.Task{Params: string(params)})
 	if result.Status != "error" {
 		t.Errorf("expected error for too many hosts, got %s", result.Status)

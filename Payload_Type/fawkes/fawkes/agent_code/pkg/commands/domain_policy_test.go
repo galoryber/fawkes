@@ -57,7 +57,7 @@ func TestDomainPolicyUnknownAction(t *testing.T) {
 	cmd := &DomainPolicyCommand{}
 	args := domainPolicyArgs{
 		Action:   "bogus",
-		Server:   "192.0.2.1",
+		Server:   "127.0.0.1",
 		Username: "user@domain",
 		Password: "pass",
 	}
@@ -73,7 +73,7 @@ func TestDomainPolicyUnknownAction(t *testing.T) {
 func TestDomainPolicyDefaultAction(t *testing.T) {
 	cmd := &DomainPolicyCommand{}
 	args := domainPolicyArgs{
-		Server:   "192.0.2.1", // RFC 5737 - will timeout
+		Server:   "127.0.0.1", // RFC 5737 - will timeout
 		Username: "user@domain",
 		Password: "pass",
 	}

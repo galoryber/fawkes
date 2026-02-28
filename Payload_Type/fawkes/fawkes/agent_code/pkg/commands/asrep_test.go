@@ -86,7 +86,7 @@ func TestAsrepCommand_MissingPassword(t *testing.T) {
 func TestAsrepCommand_RealmAutoDetect(t *testing.T) {
 	cmd := &AsrepCommand{}
 	params, _ := json.Marshal(asrepArgs{
-		Server:   "192.0.2.1", // RFC 5737 documentation IP
+		Server:   "127.0.0.1", // RFC 5737 documentation IP
 		Username: "user@test.local",
 		Password: "pass",
 		Account:  "targetuser",

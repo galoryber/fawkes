@@ -39,8 +39,9 @@ func TestKerbDelegationBadJSON(t *testing.T) {
 
 func TestKerbDelegationInvalidAction(t *testing.T) {
 	cmd := &KerbDelegationCommand{}
-	// This will fail to connect but should parse the action first
-	result := cmd.Execute(structs.Task{Params: `{"action":"badaction","server":"1.2.3.4"}`})
+	// Use 127.0.0.1 instead of 1.2.3.4 so the LDAP connection gets refused
+	// instantly rather than timing out after 10s waiting for a non-routable IP.
+	result := cmd.Execute(structs.Task{Params: `{"action":"badaction","server":"127.0.0.1"}`})
 	// Will get connection error before action check, that's OK
 	if result.Status != "error" {
 		t.Error("should return error")

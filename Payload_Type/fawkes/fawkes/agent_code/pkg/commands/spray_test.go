@@ -265,7 +265,7 @@ func TestSprayDefaultAction(t *testing.T) {
 	// This will fail to connect but shouldn't error on action validation
 	cmd := &SprayCommand{}
 	args := sprayArgs{
-		Server:   "192.0.2.1", // RFC 5737 test address
+		Server:   "127.0.0.1", // RFC 5737 test address
 		Domain:   "TEST.LOCAL",
 		Users:    "testuser",
 		Password: "testpass",
@@ -282,7 +282,7 @@ func TestSprayEnumerateNoPasswordRequired(t *testing.T) {
 	cmd := &SprayCommand{}
 	args := sprayArgs{
 		Action: "enumerate",
-		Server: "192.0.2.1", // RFC 5737 test address
+		Server: "127.0.0.1", // RFC 5737 test address
 		Domain: "TEST.LOCAL",
 		Users:  "testuser",
 		// No password — should be allowed for enumerate
@@ -318,7 +318,7 @@ func TestSpraySMBAcceptsHash(t *testing.T) {
 	cmd := &SprayCommand{}
 	args := sprayArgs{
 		Action: "smb",
-		Server: "192.0.2.1",
+		Server: "127.0.0.1",
 		Domain: "TEST.LOCAL",
 		Users:  "testuser",
 		Hash:   "8846f7eaee8fb117ad06bdd830b7586c",
