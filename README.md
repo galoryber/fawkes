@@ -292,6 +292,32 @@ Tracked artifact types:
 
 Read-only commands (ls, ps, cat, env, etc.) do not generate artifacts.
 
+### Credential Vault Integration
+
+Credential-harvesting commands automatically report discoveries to Mythic's **Credentials** store, making them searchable and exportable from the Mythic UI.
+
+| Command | Credential Type | What's Reported |
+|---------|----------------|-----------------|
+| hashdump | hash | SAM NTLM hashes |
+| kerberoast | hash | TGS tickets for offline cracking |
+| asrep-roast | hash | AS-REP hashes |
+| dcsync | hash | NTLM + AES keys via DRSGetNCChanges |
+| lsa-secrets | plaintext/hash/key | Service passwords, cached creds, DPAPI keys |
+| laps | plaintext | LAPS v1 & v2 passwords |
+| gpp-password | plaintext | GPP encrypted passwords from SYSVOL |
+| browser | plaintext | Chrome/Edge saved passwords |
+| dpapi | plaintext/hash | DPAPI-protected secrets |
+| credman | plaintext | Credential Manager entries (on dump action) |
+| make-token | plaintext | Credentials used for token creation |
+
+### Keylog Tracking
+
+The `keylog` command integrates with Mythic's **Keylogs** feature. When keystrokes are returned via `stop` or `dump`, they are automatically parsed by window title and sent to Mythic's keylog tracker with user attribution. Keylogs are searchable in the Mythic UI by window title, user, or keystroke content.
+
+### Token Tracking
+
+The `make-token` and `steal-token` commands register tokens with Mythic's **Callback Tokens** tracker. This provides visibility into which tokens are associated with each callback, including the impersonated user identity and source process.
+
 ### TLS Certificate Verification
 
 Control how the agent validates HTTPS certificates when communicating with the C2 server. Configured at build time via the **tls_verify** parameter:
