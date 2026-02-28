@@ -1,6 +1,11 @@
 package agentfunctions
 
 import (
+	"strings"
+
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -24,6 +29,38 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+
+			// Only remove tokens on successful reversion (output contains "Reverted to:")
+			if !strings.Contains(responseText, "Reverted to:") {
+				return response
+			}
+
+			// Remove all tokens from callback token tracker
+			host := processResponse.TaskData.Callback.Host
+			_, err := mythicrpc.SendMythicRPCCallbackTokenRemove(mythicrpc.MythicRPCCallbackTokenRemoveMessage{
+				TaskID: processResponse.TaskData.Task.ID,
+				CallbackTokens: []mythicrpc.MythicRPCCallbackTokenRemoveCallbackTokenData{
+					{
+						Action: "remove",
+						Host:   &host,
+					},
+				},
+			})
+			if err != nil {
+				logging.LogError(err, "Failed to remove tokens from Mythic tracker on rev2self")
+			}
+
+			return response
+		},
 	})
 }

