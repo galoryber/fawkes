@@ -189,6 +189,12 @@ func aclEditReadSD(conn *ldap.Conn, targetDN string) ([]byte, error) {
 // flags: 0x01=Owner, 0x02=Group, 0x04=DACL, 0x08=SACL
 func buildSDFlagsControl(flags uint32) *ldap.ControlString {
 	// BER encode as SDFlagsRequestValue ::= SEQUENCE { Flags INTEGER }
+	// Hardcode the encoding for small flag values (0-127) which fit in 1 byte
+	if flags <= 127 {
+		controlValue := string([]byte{0x30, 0x03, 0x02, 0x01, byte(flags)})
+		return ldap.NewControlString("1.2.840.113556.1.4.801", true, controlValue)
+	}
+	// For larger values, use BER library
 	seq := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "SDFlagsRequestValue")
 	seq.AppendChild(ber.Encode(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, int64(flags), "Flags"))
 	controlValue := seq.Bytes()
@@ -510,11 +516,29 @@ func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, prin
 		binary.LittleEndian.PutUint32(newSD[12:16], uint32(saclOff+sizeDelta))
 	}
 
-	// Write the full modified SD back (no control needed since we include the complete SD)
-	modReq := ldap.NewModifyRequest(targetDN, nil)
-	modReq.Replace("nTSecurityDescriptor", []string{string(newSD)})
+	// Write the modified SD back, trying with SD_FLAGS control first for DACL-only modification,
+	// falling back to writing the full SD without the control
+	sdFlagsControl := buildSDFlagsControl(0x04) // DACL_SECURITY_INFORMATION
 
-	return conn.Modify(modReq)
+	// Try with SD_FLAGS control — tells AD to only modify the DACL
+	modReq := ldap.NewModifyRequest(targetDN, []ldap.Control{sdFlagsControl})
+	// When using SD_FLAGS, write a minimal SD with just the DACL
+	minSD := make([]byte, 20+len(newACL))
+	minSD[0] = 1                                                         // Revision
+	binary.LittleEndian.PutUint16(minSD[2:4], 0x8004)                    // SE_DACL_PRESENT | SE_SELF_RELATIVE
+	binary.LittleEndian.PutUint32(minSD[16:20], 20)                      // OffsetDacl
+	copy(minSD[20:], newACL)
+	modReq.Replace("nTSecurityDescriptor", []string{string(minSD)})
+
+	err = conn.Modify(modReq)
+	if err != nil {
+		// Fallback: write the full modified SD without the control
+		modReq = ldap.NewModifyRequest(targetDN, nil)
+		modReq.Replace("nTSecurityDescriptor", []string{string(newSD)})
+		err = conn.Modify(modReq)
+	}
+
+	return err
 }
 
 // removeMatchingACEs removes ACEs that match the given SID, mask, and objectGUID
@@ -872,10 +896,19 @@ func aclEditRestore(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.Co
 		}
 	}
 
-	modReq := ldap.NewModifyRequest(targetDN, nil)
+	// Try with SD_FLAGS control first, fallback to without
+	sdFlagsControl := buildSDFlagsControl(0x04)
+	modReq := ldap.NewModifyRequest(targetDN, []ldap.Control{sdFlagsControl})
 	modReq.Replace("nTSecurityDescriptor", []string{string(sd)})
 
-	if err := conn.Modify(modReq); err != nil {
+	err = conn.Modify(modReq)
+	if err != nil {
+		modReq = ldap.NewModifyRequest(targetDN, nil)
+		modReq.Replace("nTSecurityDescriptor", []string{string(sd)})
+		err = conn.Modify(modReq)
+	}
+
+	if err != nil {
 		return structs.CommandResult{
 			Output: fmt.Sprintf("Error restoring DACL: %v", err), Status: "error", Completed: true,
 		}
