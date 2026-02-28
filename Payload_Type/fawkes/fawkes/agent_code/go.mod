@@ -9,15 +9,15 @@ require (
 	github.com/Ne0nd0g/go-clr v1.0.3
 	github.com/RIscRIpt/pecoff v0.0.0-20200923152459-a332238caa87
 	github.com/go-ldap/ldap/v3 v3.4.12
-	github.com/go-ole/go-ole v1.2.6
+	github.com/go-ole/go-ole v1.3.0
 	github.com/google/uuid v1.6.0
 	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/jcmturner/gofork v1.7.6
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/masterzen/winrm v0.0.0-20250927112105-5f8e6c707321
-	github.com/oiweiwei/go-msrpc v1.2.15
+	github.com/oiweiwei/go-msrpc v1.2.16
 	github.com/shirou/gopsutil/v3 v3.24.5
-	golang.org/x/crypto v0.45.0
+	golang.org/x/crypto v0.48.0
 	golang.org/x/sys v0.41.0
 	modernc.org/sqlite v1.46.1
 )
@@ -54,7 +54,7 @@ require (
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
-	golang.org/x/net v0.47.0 // indirect
+	golang.org/x/net v0.49.0 // indirect
 	golang.org/x/text v0.34.0 // indirect
 	modernc.org/libc v1.67.6 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
