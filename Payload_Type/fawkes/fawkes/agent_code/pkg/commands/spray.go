@@ -42,9 +42,9 @@ type sprayArgs struct {
 }
 
 type sprayResult struct {
-	Username string
-	Success  bool
-	Message  string
+	Username string `json:"username"`
+	Success  bool   `json:"success"`
+	Message  string `json:"message"`
 }
 
 func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
@@ -155,36 +155,17 @@ func sprayDelay(args sprayArgs) {
 }
 
 func sprayFormatResults(action string, args sprayArgs, users []string, results []sprayResult) structs.CommandResult {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] Password spray via %s against %s (%s)\n", action, args.Server, args.Domain))
-	sb.WriteString(fmt.Sprintf("[*] %d users, password: %s\n", len(users), args.Password))
-	if args.Delay > 0 {
-		sb.WriteString(fmt.Sprintf("[*] Delay: %dms", args.Delay))
-		if args.Jitter > 0 {
-			sb.WriteString(fmt.Sprintf(" (jitter: %d%%)", args.Jitter))
-		}
-		sb.WriteString("\n")
-	}
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-
-	valid := 0
-	locked := 0
-	for _, r := range results {
-		if r.Success {
-			sb.WriteString(fmt.Sprintf("[+] VALID: %s — %s\n", r.Username, r.Message))
-			valid++
-		} else if strings.Contains(r.Message, "locked") || strings.Contains(r.Message, "REVOKED") {
-			sb.WriteString(fmt.Sprintf("[!] LOCKED: %s — %s\n", r.Username, r.Message))
-			locked++
+	data, err := json.Marshal(results)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
 	}
-
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-	sb.WriteString(fmt.Sprintf("[*] Results: %d valid, %d locked, %d failed out of %d users\n",
-		valid, locked, len(results)-valid-locked, len(results)))
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
@@ -425,6 +406,13 @@ func classifySMBError(err error) string {
 
 // --- Kerberos user enumeration (no credentials needed) ---
 
+// sprayEnumEntry represents a user enumeration result for JSON output
+type sprayEnumEntry struct {
+	Username string `json:"username"`
+	Status   string `json:"status"` // "exists", "asrep", "not_found", or error string
+	Message  string `json:"message"`
+}
+
 func sprayEnumerate(args sprayArgs, users []string) structs.CommandResult {
 	realm := strings.ToUpper(args.Domain)
 	krb5Conf := buildKrb5Config(realm, args.Server)
@@ -437,50 +425,42 @@ func sprayEnumerate(args sprayArgs, users []string) structs.CommandResult {
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] Kerberos user enumeration against %s (%s)\n", args.Server, realm))
-	sb.WriteString(fmt.Sprintf("[*] %d usernames to check\n", len(users)))
-	if args.Delay > 0 {
-		sb.WriteString(fmt.Sprintf("[*] Delay: %dms", args.Delay))
-		if args.Jitter > 0 {
-			sb.WriteString(fmt.Sprintf(" (jitter: %d%%)", args.Jitter))
-		}
-		sb.WriteString("\n")
-	}
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-
-	valid := 0
-	asrepRoastable := 0
+	var entries []sprayEnumEntry
 	for i, user := range users {
 		if i > 0 {
 			sprayDelay(args)
 		}
 
 		status := enumKerberosUser(cfg, realm, args.Server, user)
-		switch {
-		case status == "exists":
-			sb.WriteString(fmt.Sprintf("[+] VALID: %s (pre-auth required)\n", user))
-			valid++
-		case status == "asrep":
-			sb.WriteString(fmt.Sprintf("[+] VALID: %s (NO PRE-AUTH — AS-REP roastable!)\n", user))
-			valid++
-			asrepRoastable++
-		case status == "not_found":
-			// Don't print non-existent users by default (too noisy)
+		var message string
+		switch status {
+		case "exists":
+			message = "Pre-auth required"
+		case "asrep":
+			message = "NO PRE-AUTH — AS-REP roastable"
+		case "not_found":
+			message = "User not found"
 		default:
-			sb.WriteString(fmt.Sprintf("[?] %s — %s\n", user, status))
+			message = status
+		}
+		entries = append(entries, sprayEnumEntry{
+			Username: user,
+			Status:   status,
+			Message:  message,
+		})
+	}
+
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
 	}
 
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-	sb.WriteString(fmt.Sprintf("[*] Results: %d valid users found out of %d checked", valid, len(users)))
-	if asrepRoastable > 0 {
-		sb.WriteString(fmt.Sprintf(" (%d AS-REP roastable!)", asrepRoastable))
-	}
-	sb.WriteString("\n")
-
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

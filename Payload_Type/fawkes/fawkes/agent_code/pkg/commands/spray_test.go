@@ -240,23 +240,19 @@ func TestSprayFormatResults(t *testing.T) {
 	if cmdResult.Status != "success" {
 		t.Error("expected success status")
 	}
-	if !strings.Contains(cmdResult.Output, "VALID: user1") {
-		t.Error("expected VALID label for successful auth")
+
+	var parsed []sprayResult
+	if err := json.Unmarshal([]byte(cmdResult.Output), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
 	}
-	if !strings.Contains(cmdResult.Output, "LOCKED: user3") {
-		t.Error("expected LOCKED label for locked account")
+	if len(parsed) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(parsed))
 	}
-	if !strings.Contains(cmdResult.Output, "1 valid") {
-		t.Error("expected valid count in summary")
+	if !parsed[0].Success || parsed[0].Username != "user1" {
+		t.Error("expected user1 to be successful")
 	}
-	if !strings.Contains(cmdResult.Output, "1 locked") {
-		t.Error("expected locked count in summary")
-	}
-	if !strings.Contains(cmdResult.Output, "Delay: 1000ms") {
-		t.Error("expected delay info")
-	}
-	if !strings.Contains(cmdResult.Output, "jitter: 25%") {
-		t.Error("expected jitter info")
+	if parsed[2].Username != "user3" || !strings.Contains(parsed[2].Message, "locked") {
+		t.Error("expected user3 to show locked status")
 	}
 }
 

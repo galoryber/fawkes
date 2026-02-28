@@ -27,9 +27,9 @@ type regSearchArgs struct {
 }
 
 type regSearchResult struct {
-	KeyPath   string
-	ValueName string
-	ValueData string
+	KeyPath   string `json:"key_path"`
+	ValueName string `json:"value_name,omitempty"`
+	ValueData string `json:"value_data,omitempty"`
 }
 
 func (c *RegSearchCommand) Execute(task structs.Task) structs.CommandResult {
@@ -83,31 +83,25 @@ func (c *RegSearchCommand) Execute(task structs.Task) structs.CommandResult {
 	var results []regSearchResult
 	regSearchRecursive(hiveKey, args.Path, strings.ToLower(args.Pattern), 0, args.MaxDepth, args.MaxResults, &results)
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Registry Search: %s\\%s\n", args.Hive, args.Path))
-	sb.WriteString(fmt.Sprintf("Pattern: %q (case-insensitive)\n", args.Pattern))
-	sb.WriteString(fmt.Sprintf("Max depth: %d, Max results: %d\n", args.MaxDepth, args.MaxResults))
-	sb.WriteString(strings.Repeat("=", 70) + "\n")
-
 	if len(results) == 0 {
-		sb.WriteString("\nNo matches found.\n")
-	} else {
-		sb.WriteString(fmt.Sprintf("\nFound %d match(es):\n\n", len(results)))
-		for i, r := range results {
-			sb.WriteString(fmt.Sprintf("[%d] %s\n", i+1, r.KeyPath))
-			if r.ValueName != "" {
-				sb.WriteString(fmt.Sprintf("    Value: %s\n", r.ValueName))
-				sb.WriteString(fmt.Sprintf("    Data:  %s\n", r.ValueData))
-			}
-			sb.WriteString("\n")
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
 		}
-		if len(results) >= args.MaxResults {
-			sb.WriteString("(results truncated — increase max_results to see more)\n")
+	}
+
+	data, err := json.Marshal(results)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

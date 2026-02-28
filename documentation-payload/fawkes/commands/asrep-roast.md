@@ -43,17 +43,26 @@ With explicit realm:
 asrep-roast -server 192.168.1.1 -realm DOMAIN.LOCAL -username user@domain.local -password pass
 ```
 
-## Example Output
+## Output Format
 
+Returns a JSON array of roast result objects rendered as a sortable table via browser script:
+
+```json
+[
+  {"account": "brandon.stark", "etype": "AES256-CTS", "hash": "$krb5asrep$18$brandon.stark@NORTH...", "status": "roasted"},
+  {"account": "hodor", "etype": "", "hash": "", "status": "failed", "error": "KDC_ERR_C_PRINCIPAL_UNKNOWN"}
+]
 ```
-[*] AS-REP Roasting 1 account(s) from NORTH.SEVENKINGDOMS.LOCAL (KDC: 192.168.100.52)
-------------------------------------------------------------
 
-[+] brandon.stark (AES256-CTS)
-$krb5asrep$18$brandon.stark@NORTH.SEVENKINGDOMS.LOCAL$fa996d26a1ea9091...$a8806e67fa1daaf3...
+| Field | Description |
+|-------|-------------|
+| account | Target account name |
+| etype | Encryption type (RC4-HMAC, AES128-CTS, AES256-CTS) |
+| hash | Extracted hash in hashcat-compatible format |
+| status | `roasted` (hash extracted) or `failed` |
+| error | Error message when status is `failed` |
 
-[*] 1/1 hashes extracted (hashcat -m 18200 for RC4)
-```
+Successfully roasted hashes are highlighted green in the browser script table. Hashes are also reported to the Mythic credential vault.
 
 ## Cracking Hashes
 

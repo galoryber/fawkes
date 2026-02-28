@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -22,6 +23,7 @@ func init() {
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "kerberoast_new.js"), Author: "@galoryber"},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:             "server",
