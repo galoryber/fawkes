@@ -577,58 +577,9 @@ func schtaskList() structs.CommandResult {
 	}
 	defer cleanup()
 
-	// Get tasks from root folder (0 = include hidden tasks)
-	tasksResult, err := oleutil.CallMethod(conn.folder, "GetTasks", 0)
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing tasks: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	defer tasksResult.Clear()
-	tasksDisp := tasksResult.ToIDispatch()
-
 	var entries []schtaskListEntry
-	oleutil.ForEach(tasksDisp, func(v *ole.VARIANT) error {
-		taskDisp := v.ToIDispatch()
-
-		nameResult, _ := oleutil.GetProperty(taskDisp, "Name")
-		name := ""
-		if nameResult != nil {
-			name = nameResult.ToString()
-			nameResult.Clear()
-		}
-
-		stateResult, _ := oleutil.GetProperty(taskDisp, "State")
-		state := ""
-		if stateResult != nil {
-			state = taskStateToString(stateResult.Value())
-			stateResult.Clear()
-		}
-
-		enabledResult, _ := oleutil.GetProperty(taskDisp, "Enabled")
-		enabled := ""
-		if enabledResult != nil {
-			enabled = fmt.Sprintf("%v", enabledResult.Value())
-			enabledResult.Clear()
-		}
-
-		nextRunResult, _ := oleutil.GetProperty(taskDisp, "NextRunTime")
-		nextRun := ""
-		if nextRunResult != nil {
-			nextRun = fmt.Sprintf("%v", nextRunResult.Value())
-			nextRunResult.Clear()
-		}
-
-		entries = append(entries, schtaskListEntry{
-			Name:        name,
-			State:       state,
-			Enabled:     enabled,
-			NextRunTime: nextRun,
-		})
-		return nil
-	})
+	// Use BFS with the service to get fresh folder references (avoids COM iterator nesting issues)
+	collectTasksBFS(conn.service, &entries)
 
 	if len(entries) == 0 {
 		return structs.CommandResult{
@@ -651,6 +602,100 @@ func schtaskList() structs.CommandResult {
 		Output:    string(data),
 		Status:    "success",
 		Completed: true,
+	}
+}
+
+// collectTasksBFS uses breadth-first traversal to enumerate all scheduled tasks.
+// It avoids nested COM iterator issues by collecting subfolder paths first,
+// then opening each folder individually via ITaskService.GetFolder.
+func collectTasksBFS(service *ole.IDispatch, entries *[]schtaskListEntry) {
+	queue := []string{`\`}
+
+	for len(queue) > 0 {
+		path := queue[0]
+		queue = queue[1:]
+
+		// Open folder via GetFolder (fresh COM reference each time)
+		folderResult, err := oleutil.CallMethod(service, "GetFolder", path)
+		if err != nil {
+			continue // skip folders we can't access
+		}
+		folder := folderResult.ToIDispatch()
+
+		// Collect tasks in this folder
+		tasksResult, err := oleutil.CallMethod(folder, "GetTasks", 0)
+		if err == nil && tasksResult != nil {
+			tasksDisp := tasksResult.ToIDispatch()
+			oleutil.ForEach(tasksDisp, func(v *ole.VARIANT) error {
+				taskDisp := v.ToIDispatch()
+
+				nameResult, _ := oleutil.GetProperty(taskDisp, "Name")
+				name := ""
+				if nameResult != nil {
+					name = nameResult.ToString()
+					nameResult.Clear()
+				}
+
+				fullPath := path + name
+				if path == `\` {
+					fullPath = `\` + name
+				}
+
+				stateResult, _ := oleutil.GetProperty(taskDisp, "State")
+				state := ""
+				if stateResult != nil {
+					state = taskStateToString(stateResult.Value())
+					stateResult.Clear()
+				}
+
+				enabledResult, _ := oleutil.GetProperty(taskDisp, "Enabled")
+				enabled := ""
+				if enabledResult != nil {
+					enabled = fmt.Sprintf("%v", enabledResult.Value())
+					enabledResult.Clear()
+				}
+
+				nextRunResult, _ := oleutil.GetProperty(taskDisp, "NextRunTime")
+				nextRun := ""
+				if nextRunResult != nil {
+					nextRun = fmt.Sprintf("%v", nextRunResult.Value())
+					nextRunResult.Clear()
+				}
+
+				*entries = append(*entries, schtaskListEntry{
+					Name:        fullPath,
+					State:       state,
+					Enabled:     enabled,
+					NextRunTime: nextRun,
+				})
+				return nil
+			})
+			tasksResult.Clear()
+		}
+
+		// Collect subfolder paths (don't recurse inside ForEach)
+		foldersResult, err := oleutil.CallMethod(folder, "GetFolders", 0)
+		if err == nil && foldersResult != nil {
+			foldersDisp := foldersResult.ToIDispatch()
+			oleutil.ForEach(foldersDisp, func(v *ole.VARIANT) error {
+				subFolder := v.ToIDispatch()
+				subNameResult, _ := oleutil.GetProperty(subFolder, "Name")
+				if subNameResult != nil {
+					subName := subNameResult.ToString()
+					subNameResult.Clear()
+					subPath := path + subName + `\`
+					if path == `\` {
+						subPath = `\` + subName + `\`
+					}
+					queue = append(queue, subPath)
+				}
+				return nil
+			})
+			foldersResult.Clear()
+		}
+
+		folder.Release()
+		folderResult.Clear()
 	}
 }
 
