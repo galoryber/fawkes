@@ -25,25 +25,16 @@ None.
 drives
 ```
 
-### Example Output (Windows)
-```
-Drive  Type         Label                      Free (GB)      Total (GB)
-------------------------------------------------------------------------
-C:\    Fixed                                        26.6            79.1
-D:\    Network      FileShare                       50.2           100.0
+### Browser Script
 
-[2 drives found]
-```
+Output is rendered as a sortable table in the Mythic UI with columns: Drive, Type, Label, Free (GB), Total (GB), Used %. Volumes over 90% usage are highlighted red, over 75% in orange.
 
-### Example Output (Linux)
-```
-Mount Point                    Device          Type        Free (GB)   Total (GB)  Use%
-------------------------------------------------------------------------------------------
-/                              /dev/sda1       ext4             18.2         30.0   39%
-/home                          /dev/sda2       ext4            120.5        200.0   40%
-/boot/efi                      /dev/sda15      vfat              0.5          0.5    5%
-
-[3 filesystems]
+### Example Output (JSON)
+```json
+[
+  {"drive":"C:\\","type":"Fixed","label":"","free_gb":26.6,"total_gb":79.1},
+  {"drive":"D:\\","type":"Network","label":"FileShare","free_gb":50.2,"total_gb":100.0}
+]
 ```
 
 ## MITRE ATT&CK Mapping
