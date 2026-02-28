@@ -298,6 +298,44 @@ func TestRemoveMatchingACEsObject(t *testing.T) {
 	}
 }
 
+func TestRemoveMatchingACEsRelaxedMask(t *testing.T) {
+	// Simulate AD decomposing GenericAll (0x10000000) into specific rights
+	sid := daclSIDToBytes("S-1-5-21-100-200-300-1001")
+	decomposedMask := uint32(0x000F01FF) // AD's decomposed version of GenericAll
+	ace := buildACE(0x00, decomposedMask, sid, nil)
+
+	// Try to remove by GenericAll mask — exact match fails, relaxed match by SID succeeds
+	result, count := removeMatchingACEs(ace, 1, "S-1-5-21-100-200-300-1001", 0x10000000, nil, 0x00)
+
+	if count != 0 {
+		t.Errorf("count = %d, want 0 (relaxed SID match should remove)", count)
+	}
+	if len(result) != 0 {
+		t.Errorf("result should be empty, got %d bytes", len(result))
+	}
+}
+
+func TestRemoveMatchingACEsRelaxedPreservesOthers(t *testing.T) {
+	// Two ACEs for different SIDs, both with decomposed masks
+	sid1 := daclSIDToBytes("S-1-5-21-100-200-300-1001")
+	sid2 := daclSIDToBytes("S-1-5-21-100-200-300-512")
+
+	ace1 := buildACE(0x00, 0x000F01FF, sid1, nil) // decomposed GenericAll for sid1
+	ace2 := buildACE(0x00, 0x000F01FF, sid2, nil) // same mask for sid2
+
+	aceData := append(ace1, ace2...)
+
+	// Remove should only affect sid1, not sid2
+	result, count := removeMatchingACEs(aceData, 2, "S-1-5-21-100-200-300-1001", 0x10000000, nil, 0x00)
+
+	if count != 1 {
+		t.Errorf("count = %d, want 1", count)
+	}
+	if len(result) != len(ace2) {
+		t.Errorf("result length = %d, want %d", len(result), len(ace2))
+	}
+}
+
 func TestBuildSDFlagsControl(t *testing.T) {
 	ctrl := buildSDFlagsControl(0x04)
 	if ctrl == nil {

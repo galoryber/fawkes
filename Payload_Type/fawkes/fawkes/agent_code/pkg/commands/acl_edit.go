@@ -469,7 +469,7 @@ func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, prin
 	if remove {
 		newACLBody, newACECount = removeMatchingACEs(existingACEs, aceCount, principalSIDStr, mask, objectGUID, aceType)
 		if newACECount == aceCount {
-			return fmt.Errorf("no matching ACE found to remove")
+			return fmt.Errorf("no matching ACE found to remove for SID %s with mask 0x%08x", principalSIDStr, mask)
 		}
 	} else {
 		newACLBody = append(newACE, existingACEs...)
@@ -541,8 +541,23 @@ func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, prin
 	return err
 }
 
-// removeMatchingACEs removes ACEs that match the given SID, mask, and objectGUID
+// removeMatchingACEs removes ACEs that match the given SID, mask, and objectGUID.
+// Uses a two-pass approach: first tries exact mask match, then falls back to SID-based
+// matching. AD often decomposes generic rights (e.g., GenericAll 0x10000000) into
+// specific component rights, so exact mask matching may fail after a write.
 func removeMatchingACEs(aceData []byte, aceCount int, targetSID string, targetMask uint32, targetGUID []byte, targetType byte) ([]byte, int) {
+	// Pass 1: Try exact match (mask + SID + GUID)
+	result, remaining := removeMatchingACEsPass(aceData, aceCount, targetSID, targetMask, targetGUID, targetType, true)
+	if remaining < aceCount {
+		return result, remaining
+	}
+
+	// Pass 2: Relaxed match — SID only for standard ACEs, SID + GUID for object ACEs.
+	// This handles cases where AD decomposed GenericAll/GenericWrite into specific rights.
+	return removeMatchingACEsPass(aceData, aceCount, targetSID, targetMask, targetGUID, targetType, false)
+}
+
+func removeMatchingACEsPass(aceData []byte, aceCount int, targetSID string, targetMask uint32, targetGUID []byte, targetType byte, exactMask bool) ([]byte, int) {
 	var result []byte
 	remaining := aceCount
 	pos := 0
@@ -559,16 +574,20 @@ func removeMatchingACEs(aceData []byte, aceCount int, targetSID string, targetMa
 
 		switch aceType {
 		case 0x00: // ACCESS_ALLOWED_ACE_TYPE
-			if pos+8 <= len(aceData) && aceType == targetType {
-				mask := binary.LittleEndian.Uint32(aceData[pos+4 : pos+8])
+			if pos+8 <= len(aceData) && targetType == 0x00 && len(targetGUID) == 0 {
 				sid := adcsParseSID(aceData[pos+8 : pos+aceSize])
-				if sid == targetSID && mask == targetMask && len(targetGUID) == 0 {
-					shouldRemove = true
+				if sid == targetSID {
+					if exactMask {
+						mask := binary.LittleEndian.Uint32(aceData[pos+4 : pos+8])
+						shouldRemove = (mask == targetMask)
+					} else {
+						// Relaxed: match by SID only — handles decomposed generic rights
+						shouldRemove = true
+					}
 				}
 			}
 		case 0x05: // ACCESS_ALLOWED_OBJECT_ACE_TYPE
 			if pos+12 <= len(aceData) && targetType == 0x05 {
-				mask := binary.LittleEndian.Uint32(aceData[pos+4 : pos+8])
 				flags := binary.LittleEndian.Uint32(aceData[pos+8 : pos+12])
 
 				sidStart := pos + 12
@@ -592,8 +611,13 @@ func removeMatchingACEs(aceData []byte, aceCount int, targetSID string, targetMa
 							}
 						}
 					}
-					if sid == targetSID && mask == targetMask && guidsMatch {
-						shouldRemove = true
+					if sid == targetSID && guidsMatch {
+						if exactMask {
+							mask := binary.LittleEndian.Uint32(aceData[pos+4 : pos+8])
+							shouldRemove = (mask == targetMask)
+						} else {
+							shouldRemove = true
+						}
 					}
 				}
 			}
