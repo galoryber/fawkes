@@ -464,7 +464,7 @@ func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, prin
 	newACE := buildACE(aceType, mask, principalSID, objectGUID)
 
 	var newACLBody []byte
-	newACECount := aceCount
+	var newACECount int
 
 	if remove {
 		newACLBody, newACECount = removeMatchingACEs(existingACEs, aceCount, principalSIDStr, mask, objectGUID, aceType)
