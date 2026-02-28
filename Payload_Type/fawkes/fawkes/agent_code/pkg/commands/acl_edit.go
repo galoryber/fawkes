@@ -428,7 +428,8 @@ func buildACE(aceType byte, mask uint32, sid []byte, objectGUID []byte) []byte {
 	return ace
 }
 
-// aclEditModifySD reads the current SD, adds/removes an ACE, and writes it back
+// aclEditModifySD reads the current SD, adds/removes an ACE, and writes the full modified SD back.
+// Uses the complete original SD to preserve owner, group, and SACL — only the DACL is modified.
 func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, principalSIDStr string, mask uint32, objectGUID []byte, aceType byte, remove bool) error {
 	sd, err := aclEditReadSD(conn, targetDN)
 	if err != nil {
@@ -460,13 +461,11 @@ func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, prin
 	newACECount := aceCount
 
 	if remove {
-		// Remove matching ACEs
 		newACLBody, newACECount = removeMatchingACEs(existingACEs, aceCount, principalSIDStr, mask, objectGUID, aceType)
 		if newACECount == aceCount {
 			return fmt.Errorf("no matching ACE found to remove")
 		}
 	} else {
-		// Prepend new ACE (non-inherited ACEs go first)
 		newACLBody = append(newACE, existingACEs...)
 		newACECount = aceCount + 1
 	}
@@ -474,29 +473,45 @@ func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, prin
 	// Build new ACL
 	newACLSize := 8 + len(newACLBody)
 	newACL := make([]byte, newACLSize)
-	newACL[0] = 4 // ACL_REVISION_DS
+	newACL[0] = sd[daclOffset] // Preserve original ACL revision
 	newACL[1] = 0
 	binary.LittleEndian.PutUint16(newACL[2:4], uint16(newACLSize))
 	binary.LittleEndian.PutUint16(newACL[4:6], uint16(newACECount))
 	binary.LittleEndian.PutUint16(newACL[6:8], 0)
 	copy(newACL[8:], newACLBody)
 
-	// Build new SD with just the DACL
-	// Use a minimal self-relative SD: header(20) + DACL
-	newSD := make([]byte, 20+len(newACL))
-	newSD[0] = 1                                                         // Revision
-	newSD[1] = 0                                                         // Sbz1
-	binary.LittleEndian.PutUint16(newSD[2:4], 0x8004)                    // Control: SE_DACL_PRESENT | SE_SELF_RELATIVE
-	binary.LittleEndian.PutUint32(newSD[4:8], 0)                         // OffsetOwner (0 = not present)
-	binary.LittleEndian.PutUint32(newSD[8:12], 0)                        // OffsetGroup (0 = not present)
-	binary.LittleEndian.PutUint32(newSD[12:16], 0)                       // OffsetSacl (0 = not present)
-	binary.LittleEndian.PutUint32(newSD[16:20], 20)                      // OffsetDacl (right after header)
-	copy(newSD[20:], newACL)
+	// Rebuild the full SD: preserve everything before the DACL, replace DACL, preserve everything after
+	// The SD is self-relative, so we need to adjust offsets if the DACL size changed
+	oldACLEnd := daclOffset + aclSize
+	sizeDelta := newACLSize - aclSize
 
-	// Write the modified SD back using the SD_FLAGS control
-	sdFlagsControl := buildSDFlagsControl(0x04) // DACL_SECURITY_INFORMATION
+	newSD := make([]byte, len(sd)+sizeDelta)
+	// Copy everything before the DACL
+	copy(newSD[:daclOffset], sd[:daclOffset])
+	// Insert new DACL
+	copy(newSD[daclOffset:], newACL)
+	// Copy everything after the old DACL
+	if oldACLEnd < len(sd) {
+		copy(newSD[daclOffset+newACLSize:], sd[oldACLEnd:])
+	}
 
-	modReq := ldap.NewModifyRequest(targetDN, []ldap.Control{sdFlagsControl})
+	// Adjust offsets in the SD header for sections that come after the DACL
+	ownerOff := int(binary.LittleEndian.Uint32(newSD[4:8]))
+	groupOff := int(binary.LittleEndian.Uint32(newSD[8:12]))
+	saclOff := int(binary.LittleEndian.Uint32(newSD[12:16]))
+
+	if ownerOff > daclOffset {
+		binary.LittleEndian.PutUint32(newSD[4:8], uint32(ownerOff+sizeDelta))
+	}
+	if groupOff > daclOffset {
+		binary.LittleEndian.PutUint32(newSD[8:12], uint32(groupOff+sizeDelta))
+	}
+	if saclOff > daclOffset {
+		binary.LittleEndian.PutUint32(newSD[12:16], uint32(saclOff+sizeDelta))
+	}
+
+	// Write the full modified SD back (no control needed since we include the complete SD)
+	modReq := ldap.NewModifyRequest(targetDN, nil)
 	modReq.Replace("nTSecurityDescriptor", []string{string(newSD)})
 
 	return conn.Modify(modReq)
@@ -857,8 +872,7 @@ func aclEditRestore(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.Co
 		}
 	}
 
-	sdFlagsControl := buildSDFlagsControl(0x04)
-	modReq := ldap.NewModifyRequest(targetDN, []ldap.Control{sdFlagsControl})
+	modReq := ldap.NewModifyRequest(targetDN, nil)
 	modReq.Replace("nTSecurityDescriptor", []string{string(sd)})
 
 	if err := conn.Modify(modReq); err != nil {
