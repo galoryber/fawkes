@@ -95,6 +95,7 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
+			createArtifact(taskData.Task.ID, "Process Create", "Container escape attempt")
 			return response
 		},
 	})

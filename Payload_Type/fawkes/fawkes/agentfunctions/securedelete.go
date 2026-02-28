@@ -59,6 +59,7 @@ func init() {
 			path, _ := taskData.Args.GetStringArg("path")
 			display := fmt.Sprintf("%s", path)
 			response.DisplayParams = &display
+			createArtifact(taskData.Task.ID, "File Delete", fmt.Sprintf("Secure deletion of %s", path))
 			return response
 		},
 	})

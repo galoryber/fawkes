@@ -136,6 +136,14 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
+			if action == "install" {
+				label, _ := taskData.Args.GetStringArg("label")
+				path, _ := taskData.Args.GetStringArg("path")
+				createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("LaunchAgent plist creation: %s.plist (program=%s)", label, path))
+			} else if action == "remove" {
+				label, _ := taskData.Args.GetStringArg("label")
+				createArtifact(taskData.Task.ID, "File Delete", fmt.Sprintf("LaunchAgent plist removal: %s.plist", label))
+			}
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -177,11 +176,7 @@ func init() {
 			} else {
 				artifactMsg = fmt.Sprintf("Password spray via %s against %s (%d users)", action, server, userCount)
 			}
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  artifactMsg,
-			})
+			createArtifact(taskData.Task.ID, "Network Connection", artifactMsg)
 
 			return response
 		},

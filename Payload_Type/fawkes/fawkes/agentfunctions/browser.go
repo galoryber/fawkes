@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -74,11 +73,7 @@ func init() {
 			}
 			display := fmt.Sprintf("%s", browser)
 			response.DisplayParams = &display
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  "CryptUnprotectData(browser_key) + SQLite(Login Data) targeting " + browser,
-			})
+			createArtifact(taskData.Task.ID, "File Read", fmt.Sprintf("Browser credential database access — %s", browser))
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

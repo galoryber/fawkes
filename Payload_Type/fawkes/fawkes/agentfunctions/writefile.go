@@ -92,6 +92,7 @@ func init() {
 			path, _ := taskData.Args.GetStringArg("path")
 			display := fmt.Sprintf("%s", path)
 			response.DisplayParams = &display
+			createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("File write to %s", path))
 			return response
 		},
 	})

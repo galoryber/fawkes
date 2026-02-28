@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -93,15 +92,11 @@ func init() {
 			response.DisplayParams = &display
 
 			if action == "delete" || action == "clear" {
-				msg := fmt.Sprintf("Prefetch %s", action)
+				msg := fmt.Sprintf("Prefetch file deletion: %s", action)
 				if name != "" {
 					msg += fmt.Sprintf(" (filter: %s)", name)
 				}
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "File Deletion",
-					ArtifactMessage:  msg,
-				})
+				createArtifact(taskData.Task.ID, "File Delete", msg)
 			}
 			return response
 		},

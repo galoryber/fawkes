@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -53,11 +52,7 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			display := fmt.Sprintf("LSA secrets %s", action)
 			response.DisplayParams = &display
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "Registry Read",
-				ArtifactMessage:  fmt.Sprintf("SECURITY hive read — LSA secrets %s", action),
-			})
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("LSA secret extraction via registry — %s", action))
 			return response
 		},
 	})

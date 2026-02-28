@@ -64,6 +64,14 @@ func init() {
 			action, _ := task.Args.GetStringArg("action")
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
+			if action == "clear" || action == "clear-all" {
+				user, _ := task.Args.GetStringArg("user")
+				msg := fmt.Sprintf("Shell history modification: %s", action)
+				if user != "" {
+					msg += fmt.Sprintf(" (user: %s)", user)
+				}
+				createArtifact(task.Task.ID, "File Delete", msg)
+			}
 			return response
 		},
 	})

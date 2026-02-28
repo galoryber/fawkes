@@ -1,10 +1,10 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -130,23 +130,11 @@ func init() {
 			// Artifact tracking
 			switch action {
 			case "create":
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage:  "BITS CoCreateInstance + IBackgroundCopyManager::CreateJob + AddFile",
-				})
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("BITS CreateJob + AddFile: %s → %s", url, name))
 			case "persist":
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage:  "BITS CreateJob + SetNotifyCmdLine: " + command,
-				})
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("BITS CreateJob + SetNotifyCmdLine: %s", command))
 			case "cancel":
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage:  "BITS Cancel job: " + name,
-				})
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("BITS Cancel job: %s", name))
 			}
 
 			displayStr := action

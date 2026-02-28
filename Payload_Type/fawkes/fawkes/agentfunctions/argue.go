@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -74,16 +73,12 @@ func init() {
 			}
 			response.DisplayParams = &displayMsg
 
-			// Report artifact: the SPOOFED command line (what EDR sees)
+			// Report artifact: process argument spoofing
 			spoofDisplay := spoof
 			if spoofDisplay == "" {
 				spoofDisplay = "(executable name only)"
 			}
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:            taskData.Task.ID,
-				BaseArtifactType:  "Process Create",
-				ArtifactMessage:   fmt.Sprintf("Spoofed cmdline: %s (real: %s)", spoofDisplay, command),
-			})
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Process argument spoofing — spoofed: %s, real: %s", spoofDisplay, command))
 
 			return response
 		},

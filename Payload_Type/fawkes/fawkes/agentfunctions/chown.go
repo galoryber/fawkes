@@ -88,6 +88,7 @@ func init() {
 				display += fmt.Sprintf(", group: %s", group)
 			}
 			response.DisplayParams = &display
+			createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Ownership change on %s", path))
 			return response
 		},
 	})

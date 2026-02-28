@@ -71,6 +71,7 @@ func init() {
 			mode, _ := taskData.Args.GetStringArg("mode")
 			display := fmt.Sprintf("%s %s", mode, path)
 			response.DisplayParams = &display
+			createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Permission change on %s", path))
 			return response
 		},
 	})

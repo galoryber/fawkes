@@ -392,6 +392,7 @@ func init() {
 
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
+			createArtifact(taskData.Task.ID, "API Call", "COFF/BOF in-memory execution")
 			return response
 		},
 	})

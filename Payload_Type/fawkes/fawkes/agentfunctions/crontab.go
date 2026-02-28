@@ -120,6 +120,22 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
+			if action == "add" || action == "remove" {
+				entry, _ := taskData.Args.GetStringArg("entry")
+				program, _ := taskData.Args.GetStringArg("program")
+				user, _ := taskData.Args.GetStringArg("user")
+				msg := fmt.Sprintf("crontab %s", action)
+				if entry != "" {
+					msg += fmt.Sprintf(" entry=%s", entry)
+				}
+				if program != "" {
+					msg += fmt.Sprintf(" program=%s", program)
+				}
+				if user != "" {
+					msg += fmt.Sprintf(" user=%s", user)
+				}
+				createArtifact(taskData.Task.ID, "File Write", msg)
+			}
 			return response
 		},
 	})

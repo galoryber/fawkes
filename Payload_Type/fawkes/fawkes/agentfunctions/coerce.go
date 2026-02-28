@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -132,11 +131,7 @@ func init() {
 			displayMsg := fmt.Sprintf("coerce %s → %s (%s)", server, listener, method)
 			response.DisplayParams = &displayMsg
 
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("NTLM coercion: %s → %s via %s", server, listener, method),
-			})
+			createArtifact(taskData.Task.ID, "Network Connection", fmt.Sprintf("NTLM coercion: %s → %s via %s", server, listener, method))
 
 			return response
 		},

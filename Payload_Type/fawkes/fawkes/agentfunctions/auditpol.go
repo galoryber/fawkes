@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -78,16 +77,12 @@ func init() {
 			}
 			response.DisplayParams = &display
 
-			if action == "disable" || action == "stealth" {
+			if action != "query" {
 				msg := fmt.Sprintf("AuditSetSystemPolicy — %s", action)
 				if category != "" {
 					msg += fmt.Sprintf(" (category: %s)", category)
 				}
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage:  msg,
-				})
+				createArtifact(taskData.Task.ID, "API Call", msg)
 			}
 			return response
 		},

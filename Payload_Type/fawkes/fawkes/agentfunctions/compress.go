@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -119,6 +121,8 @@ func init() {
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil && displayParams != "" {
 				response.DisplayParams = &displayParams
 			}
+			path, _ := task.Args.GetStringArg("path")
+			createArtifact(task.Task.ID, "File Write", fmt.Sprintf("File compression of %s", path))
 			return response
 		},
 	})

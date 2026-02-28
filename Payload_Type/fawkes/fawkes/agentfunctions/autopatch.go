@@ -31,6 +31,7 @@ func init() {
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil {
 				response.DisplayParams = &displayParams
 			}
+			createArtifact(task.Task.ID, "API Call", "Memory patching of EtwEventWrite/AmsiScanBuffer — scan for RET instruction and redirect function entry")
 			return response
 		},
 	})

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -93,11 +92,11 @@ func init() {
 			resp.DisplayParams = &display
 
 			if action == "delete" || action == "clear" {
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:            taskData.Task.ID,
-					BaseArtifactType:  "Registry Write",
-					ArtifactMessage:   "Modified HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\AppCompatCache\\AppCompatCache",
-				})
+				msg := "AMCache entry deletion: HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\AppCompatCache\\AppCompatCache"
+				if name != "" {
+					msg += fmt.Sprintf(" (filter: %s)", name)
+				}
+				createArtifact(taskData.Task.ID, "Registry Write", msg)
 			}
 
 			return resp

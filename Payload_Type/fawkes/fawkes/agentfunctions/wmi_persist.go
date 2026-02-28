@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -128,18 +127,12 @@ func init() {
 			}
 			response.DisplayParams = &displayMsg
 
-			artifactType := "API Call"
-			artifactMsg := fmt.Sprintf("WMI Event Subscription: %s", action)
 			if action == "install" {
 				command, _ := taskData.Args.GetStringArg("command")
-				artifactMsg = fmt.Sprintf("WMI Event Subscription install: %s (trigger: %s, command: %s)", name, trigger, command)
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("WMI EventSubscription creation: %s (trigger: %s, command: %s)", name, trigger, command))
+			} else if action == "remove" {
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("WMI EventSubscription removal: %s", name))
 			}
-
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: artifactType,
-				ArtifactMessage:  artifactMsg,
-			})
 
 			return response
 		},

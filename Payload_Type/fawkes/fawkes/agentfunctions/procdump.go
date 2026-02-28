@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -70,18 +69,7 @@ func init() {
 			}
 			response.DisplayParams = &displayMsg
 
-			// Artifact: process memory read
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("MiniDumpWriteDump — %s", displayMsg),
-			})
-			// Artifact: temp file write
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "File Write",
-				ArtifactMessage:  "Write minidump to %%TEMP%% (auto-deleted after upload)",
-			})
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Process memory dump (MiniDumpWriteDump or /proc/pid/mem) — %s", displayMsg))
 
 			return response
 		},

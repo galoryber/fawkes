@@ -60,6 +60,7 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
+			createArtifact(taskData.Task.ID, "API Call", "Keystroke capture (SetWindowsHookEx or /dev/input)")
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {

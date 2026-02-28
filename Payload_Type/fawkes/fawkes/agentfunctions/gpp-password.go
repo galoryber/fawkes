@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -108,11 +107,7 @@ func init() {
 			server, _ := taskData.Args.GetStringArg("server")
 			display := fmt.Sprintf("SYSVOL on %s", server)
 			response.DisplayParams = &display
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "SMB Connection",
-				ArtifactMessage:  fmt.Sprintf("SMB connect to \\\\%s\\SYSVOL for GPP password search", server),
-			})
+			createArtifact(taskData.Task.ID, "File Read", fmt.Sprintf("GPP Groups.xml password extraction from \\\\%s\\SYSVOL", server))
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

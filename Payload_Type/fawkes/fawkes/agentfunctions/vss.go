@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -123,26 +122,14 @@ func init() {
 			switch action {
 			case "create":
 				volume, _ := taskData.Args.GetStringArg("volume")
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage:  fmt.Sprintf("Win32_ShadowCopy.Create volume=%s", volume),
-				})
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Win32_ShadowCopy.Create volume=%s", volume))
 			case "delete":
 				id, _ := taskData.Args.GetStringArg("id")
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage:  fmt.Sprintf("Win32_ShadowCopy.Delete_ id=%s", id),
-				})
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Win32_ShadowCopy.Delete_ id=%s", id))
 			case "extract":
 				source, _ := taskData.Args.GetStringArg("source")
 				dest, _ := taskData.Args.GetStringArg("dest")
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "File Write",
-					ArtifactMessage:  fmt.Sprintf("VSS extract %s to %s", source, dest),
-				})
+				createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("VSS extract %s to %s", source, dest))
 			}
 			return response
 		},

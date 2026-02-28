@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -102,19 +101,11 @@ func init() {
 				response.DisplayParams = &display
 			}
 			if action == "creds" {
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "File Create",
-					ArtifactMessage:  "RegSaveKeyEx — SAM+SECURITY+SYSTEM hive export",
-				})
+				createArtifact(taskData.Task.ID, "File Write", "Registry hive saved to file — SAM+SECURITY+SYSTEM export")
 			} else {
 				path, _ := taskData.Args.GetStringArg("path")
 				output, _ := taskData.Args.GetStringArg("output")
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "File Create",
-					ArtifactMessage:  fmt.Sprintf("RegSaveKeyEx — %s → %s", path, output),
-				})
+				createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Registry hive saved to file — %s → %s", path, output))
 			}
 			return response
 		},

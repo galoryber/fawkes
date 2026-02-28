@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -70,11 +69,7 @@ func init() {
 				display := fmt.Sprintf("Reflective load")
 				response.DisplayParams = &display
 			}
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "Process Inject",
-				ArtifactMessage:  fmt.Sprintf("Reflective PE load into current process (self-injection via manual PE mapping)"),
-			})
+			createArtifact(taskData.Task.ID, "API Call", "Reflective DLL loading into memory")
 			return response
 		},
 	})

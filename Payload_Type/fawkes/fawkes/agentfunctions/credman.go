@@ -69,6 +69,7 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("CredEnumerateW credential enumeration — %s", action))
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

@@ -111,6 +111,11 @@ func init() {
 				display = fmt.Sprintf("%s\\%s", domain, username)
 			}
 			response.DisplayParams = &display
+			user := username
+			if domain != "" {
+				user = fmt.Sprintf("%s\\%s", domain, username)
+			}
+			createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("Process execution as %s", user))
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

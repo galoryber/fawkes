@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -127,20 +126,12 @@ func init() {
 			}
 			response.DisplayParams = &displayMsg
 
-			artifactType := "File Create"
-			artifactMsg := fmt.Sprintf("Systemd service: %s", action)
 			if action == "install" {
-				artifactMsg = fmt.Sprintf("Systemd service install: %s.service", name)
+				execStart, _ := taskData.Args.GetStringArg("exec_start")
+				createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Systemd unit file creation: %s.service (ExecStart=%s)", name, execStart))
 			} else if action == "remove" {
-				artifactType = "File Delete"
-				artifactMsg = fmt.Sprintf("Systemd service remove: %s.service", name)
+				createArtifact(taskData.Task.ID, "File Delete", fmt.Sprintf("Systemd unit file removal: %s.service", name))
 			}
-
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: artifactType,
-				ArtifactMessage:  artifactMsg,
-			})
 
 			return response
 		},

@@ -91,6 +91,7 @@ func init() {
 			path, _ := taskData.Args.GetStringArg("path")
 			display := fmt.Sprintf("%s %s", action, path)
 			response.DisplayParams = &display
+			createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("File encryption of %s", path))
 			return response
 		},
 	})

@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -137,11 +136,7 @@ func init() {
 			}
 			response.DisplayParams = &displayMsg
 
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("Kerberos AS-REQ to KDC %s (no pre-auth)", server),
-			})
+			createArtifact(taskData.Task.ID, "Network Connection", fmt.Sprintf("AS-REP roast request to %s", server))
 
 			return response
 		},

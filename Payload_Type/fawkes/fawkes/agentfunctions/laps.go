@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -96,11 +95,7 @@ func init() {
 			displayMsg := fmt.Sprintf("LAPS password recovery on %s", server)
 			response.DisplayParams = &displayMsg
 
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("LDAP LAPS query on %s", server),
-			})
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("LDAP query for ms-Mcs-AdmPwd (LAPS password) on %s", server))
 
 			return response
 		},

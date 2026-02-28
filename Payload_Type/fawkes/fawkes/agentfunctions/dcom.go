@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -168,11 +167,7 @@ func init() {
 			object, _ := taskData.Args.GetStringArg("object")
 			display := fmt.Sprintf("%s via %s", host, object)
 			response.DisplayParams = &display
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("DCOM %s lateral movement to %s: %s", object, host, command),
-			})
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("DCOM CoCreateInstanceEx %s on %s: %s", object, host, command))
 			return response
 		},
 	})

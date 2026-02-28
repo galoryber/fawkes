@@ -32,6 +32,7 @@ func init() {
 			}
 			display := fmt.Sprintf("Screen capture")
 			response.DisplayParams = &display
+			createArtifact(taskData.Task.ID, "API Call", "Screen capture (platform-specific: GDI BitBlt on Windows, Xlib on Linux, CGDisplayCreateImage on macOS)")
 			return response
 		},
 	})

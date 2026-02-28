@@ -5,7 +5,6 @@ import (
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -137,11 +136,7 @@ func init() {
 			}
 			response.DisplayParams = &displayMsg
 
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("Kerberos TGS-REQ to KDC %s", server),
-			})
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Kerberos TGS request for SPN roasting on %s", server))
 
 			return response
 		},

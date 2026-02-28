@@ -88,6 +88,12 @@ func init() {
 				display += fmt.Sprintf(", provider: %s", provider)
 			}
 			response.DisplayParams = &display
+			switch action {
+			case "stop":
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW ControlTrace(EVENT_TRACE_CONTROL_STOP) session=%s", sessionName))
+			case "blind":
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW EnableTraceEx2(EVENT_CONTROL_CODE_DISABLE_PROVIDER) session=%s provider=%s", sessionName, provider))
+			}
 			return response
 		},
 	})

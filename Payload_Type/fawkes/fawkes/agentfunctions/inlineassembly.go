@@ -243,6 +243,7 @@ func init() {
 
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf(".NET assembly in-memory execution (Assembly.Load) — %s", filename))
 			return response
 		},
 	})
