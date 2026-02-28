@@ -123,6 +123,8 @@ func Initialize() {
 	RegisterCommand(&LateralCheckCommand{})
 	RegisterCommand(&ShareHuntCommand{})
 	RegisterCommand(&CredCheckCommand{})
+	RegisterCommand(&LnCommand{})
+	RegisterCommand(&FileAttrCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
