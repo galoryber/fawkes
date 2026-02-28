@@ -606,8 +606,8 @@ func schtaskList() structs.CommandResult {
 }
 
 // collectTasksBFS uses breadth-first traversal to enumerate all scheduled tasks.
-// It avoids nested COM iterator issues by collecting subfolder paths first,
-// then opening each folder individually via ITaskService.GetFolder.
+// Uses Count + Item(index) iteration instead of ForEach/IEnumVARIANT to avoid
+// COM iterator hangs observed on Windows Server systems.
 func collectTasksBFS(service *ole.IDispatch, entries *[]schtaskListEntry) {
 	queue := []string{`\`}
 
@@ -622,80 +622,116 @@ func collectTasksBFS(service *ole.IDispatch, entries *[]schtaskListEntry) {
 		}
 		folder := folderResult.ToIDispatch()
 
-		// Collect tasks in this folder
+		// Collect tasks using Count + Item(index) — avoids IEnumVARIANT hangs
 		tasksResult, err := oleutil.CallMethod(folder, "GetTasks", 0)
 		if err == nil && tasksResult != nil {
 			tasksDisp := tasksResult.ToIDispatch()
-			oleutil.ForEach(tasksDisp, func(v *ole.VARIANT) error {
-				taskDisp := v.ToIDispatch()
+			countResult, _ := oleutil.GetProperty(tasksDisp, "Count")
+			if countResult != nil {
+				count := comToInt(countResult.Value())
+				countResult.Clear()
+				for i := 1; i <= count; i++ { // COM collections are 1-indexed
+					itemResult, err := oleutil.GetProperty(tasksDisp, "Item", i)
+					if err != nil || itemResult == nil {
+						continue
+					}
+					taskDisp := itemResult.ToIDispatch()
 
-				nameResult, _ := oleutil.GetProperty(taskDisp, "Name")
-				name := ""
-				if nameResult != nil {
-					name = nameResult.ToString()
-					nameResult.Clear()
+					nameResult, _ := oleutil.GetProperty(taskDisp, "Name")
+					name := ""
+					if nameResult != nil {
+						name = nameResult.ToString()
+						nameResult.Clear()
+					}
+
+					fullPath := path + name
+					if path == `\` {
+						fullPath = `\` + name
+					}
+
+					stateResult, _ := oleutil.GetProperty(taskDisp, "State")
+					state := ""
+					if stateResult != nil {
+						state = taskStateToString(stateResult.Value())
+						stateResult.Clear()
+					}
+
+					enabledResult, _ := oleutil.GetProperty(taskDisp, "Enabled")
+					enabled := ""
+					if enabledResult != nil {
+						enabled = fmt.Sprintf("%v", enabledResult.Value())
+						enabledResult.Clear()
+					}
+
+					nextRunResult, _ := oleutil.GetProperty(taskDisp, "NextRunTime")
+					nextRun := ""
+					if nextRunResult != nil {
+						nextRun = fmt.Sprintf("%v", nextRunResult.Value())
+						nextRunResult.Clear()
+					}
+
+					*entries = append(*entries, schtaskListEntry{
+						Name:        fullPath,
+						State:       state,
+						Enabled:     enabled,
+						NextRunTime: nextRun,
+					})
+					taskDisp.Release()
+					itemResult.Clear()
 				}
-
-				fullPath := path + name
-				if path == `\` {
-					fullPath = `\` + name
-				}
-
-				stateResult, _ := oleutil.GetProperty(taskDisp, "State")
-				state := ""
-				if stateResult != nil {
-					state = taskStateToString(stateResult.Value())
-					stateResult.Clear()
-				}
-
-				enabledResult, _ := oleutil.GetProperty(taskDisp, "Enabled")
-				enabled := ""
-				if enabledResult != nil {
-					enabled = fmt.Sprintf("%v", enabledResult.Value())
-					enabledResult.Clear()
-				}
-
-				nextRunResult, _ := oleutil.GetProperty(taskDisp, "NextRunTime")
-				nextRun := ""
-				if nextRunResult != nil {
-					nextRun = fmt.Sprintf("%v", nextRunResult.Value())
-					nextRunResult.Clear()
-				}
-
-				*entries = append(*entries, schtaskListEntry{
-					Name:        fullPath,
-					State:       state,
-					Enabled:     enabled,
-					NextRunTime: nextRun,
-				})
-				return nil
-			})
+			}
+			tasksDisp.Release()
 			tasksResult.Clear()
 		}
 
-		// Collect subfolder paths (don't recurse inside ForEach)
+		// Collect subfolder paths using Count + Item(index)
 		foldersResult, err := oleutil.CallMethod(folder, "GetFolders", 0)
 		if err == nil && foldersResult != nil {
 			foldersDisp := foldersResult.ToIDispatch()
-			oleutil.ForEach(foldersDisp, func(v *ole.VARIANT) error {
-				subFolder := v.ToIDispatch()
-				subNameResult, _ := oleutil.GetProperty(subFolder, "Name")
-				if subNameResult != nil {
-					subName := subNameResult.ToString()
-					subNameResult.Clear()
-					subPath := path + subName + `\`
-					if path == `\` {
-						subPath = `\` + subName + `\`
+			countResult, _ := oleutil.GetProperty(foldersDisp, "Count")
+			if countResult != nil {
+				count := comToInt(countResult.Value())
+				countResult.Clear()
+				for i := 1; i <= count; i++ {
+					itemResult, err := oleutil.GetProperty(foldersDisp, "Item", i)
+					if err != nil || itemResult == nil {
+						continue
 					}
-					queue = append(queue, subPath)
+					subFolder := itemResult.ToIDispatch()
+					subNameResult, _ := oleutil.GetProperty(subFolder, "Name")
+					if subNameResult != nil {
+						subName := subNameResult.ToString()
+						subNameResult.Clear()
+						subPath := path + subName + `\`
+						if path == `\` {
+							subPath = `\` + subName + `\`
+						}
+						queue = append(queue, subPath)
+					}
+					subFolder.Release()
+					itemResult.Clear()
 				}
-				return nil
-			})
+			}
+			foldersDisp.Release()
 			foldersResult.Clear()
 		}
 
 		folder.Release()
 		folderResult.Clear()
+	}
+}
+
+// comToInt converts a COM variant value to int (handles int32, int64, int).
+func comToInt(v interface{}) int {
+	switch n := v.(type) {
+	case int32:
+		return int(n)
+	case int64:
+		return int(n)
+	case int:
+		return n
+	default:
+		return 0
 	}
 }
 
