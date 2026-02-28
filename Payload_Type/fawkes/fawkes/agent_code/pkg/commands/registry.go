@@ -56,6 +56,7 @@ func Initialize() {
 	RegisterCommand(&SmbCommand{})
 	RegisterCommand(&DnsCommand{})
 	RegisterCommand(&WinrmCommand{})
+	RegisterCommand(&AclEditCommand{})
 	RegisterCommand(&AdcsCommand{})
 	RegisterCommand(&KerbDelegationCommand{})
 	RegisterCommand(&SshExecCommand{})

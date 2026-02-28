@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 109 commands are cross-platform, with 76 additional Windows-only commands, 6 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 200. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 110 commands are cross-platform, with 76 additional Windows-only commands, 6 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 201. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -21,6 +21,7 @@ From the Mythic install directory:
 
 Command | Syntax | Description
 ------- | ------ | -----------
+acl-edit | `acl-edit -action read -server dc01 -target user` | Read/modify Active Directory object DACLs (add/remove ACEs, grant DCSync, GenericAll, backup/restore). Cross-platform (T1222.001, T1098, T1003.006).
 adcs | `adcs -action <cas\|templates\|find> -server <DC> -username <user@domain> -password <pass>` | Enumerate AD Certificate Services and find vulnerable templates (ESC1-ESC4). Includes security descriptor parsing for enrollment permissions. Cross-platform (T1649).
 ads | `ads -action <write\|read\|list\|delete> -file <path> [-stream <name>] [-data <content>] [-hex true]` | **(Windows only)** Manage NTFS Alternate Data Streams — write, read, list, or delete hidden data streams. Supports text and hex-encoded binary. MITRE T1564.004.
 amcache | `amcache -action <query\|search\|delete\|clear> [-name <pattern>] [-count <n>]` | **(Windows only)** Query and clean Windows Shimcache (AppCompatCache) execution history. Removes forensic evidence of tool execution (T1070.004).

@@ -97,6 +97,7 @@ pre = "<b>2. </b>"
     * [steal-token](/agents/fawkes/commands/steal-token/)
     * [rev2self](/agents/fawkes/commands/rev2self/)
 - Discovery
+    * [acl-edit](/agents/fawkes/commands/acl-edit/)
     * [adcs](/agents/fawkes/commands/adcs/)
     * [cloud-metadata](/agents/fawkes/commands/cloud-metadata/)
     * [container-detect](/agents/fawkes/commands/container-detect/)
