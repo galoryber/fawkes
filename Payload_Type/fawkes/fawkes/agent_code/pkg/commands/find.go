@@ -67,6 +67,9 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	const maxResults = 500
 
 	_ = filepath.Walk(startPath, func(path string, info os.FileInfo, err error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
 		if err != nil {
 			accessErrors = append(accessErrors, fmt.Sprintf("access denied: %s", path))
 			return nil // skip inaccessible entries

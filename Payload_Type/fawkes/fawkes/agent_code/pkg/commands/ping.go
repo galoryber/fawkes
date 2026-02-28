@@ -97,6 +97,9 @@ func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 	sem := make(chan struct{}, args.Threads)
 
 	for i, host := range targets {
+		if task.DidStop() {
+			break
+		}
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(idx int, h string) {
