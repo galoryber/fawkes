@@ -65,6 +65,21 @@ auditpol -action stealth
 auditpol -action enable -category all
 ```
 
+## Output Format
+
+The `query` action returns a JSON array rendered as a sortable table via browser script:
+```json
+[
+  {
+    "category": "Detailed Tracking",
+    "subcategory": "Process Creation",
+    "setting": "Success and Failure"
+  }
+]
+```
+
+The browser script highlights "No Auditing" settings in orange and "Success and Failure" in blue. Other actions (disable, enable, stealth) return plain text status messages.
+
 ## Operational Notes
 
 - **Stealth mode** saves previous settings in the output — use this to manually restore after operations

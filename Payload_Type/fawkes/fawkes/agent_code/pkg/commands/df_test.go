@@ -1,38 +1,29 @@
 package commands
 
 import (
-	"strings"
+	"encoding/json"
 	"testing"
 
 	"fawkes/pkg/structs"
 )
 
-func TestDfBasic(t *testing.T) {
+func TestDfReturnsJSON(t *testing.T) {
 	cmd := &DfCommand{}
 	result := cmd.Execute(structs.Task{Params: ""})
 
 	if result.Status != "success" {
 		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "Filesystem") {
-		t.Fatalf("expected header, got: %s", result.Output)
+	var entries []dfOutputEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Fatalf("expected valid JSON output: %v (got: %s)", err, result.Output)
 	}
-	// Should have at least one filesystem
-	if !strings.Contains(result.Output, "/") && !strings.Contains(result.Output, "\\") {
-		t.Fatalf("expected at least one mount point, got: %s", result.Output)
+	if len(entries) == 0 {
+		t.Fatal("expected at least one filesystem entry")
 	}
-}
-
-func TestDfHasSize(t *testing.T) {
-	cmd := &DfCommand{}
-	result := cmd.Execute(structs.Task{Params: ""})
-
-	if result.Status != "success" {
-		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
-	}
-	// Should show size information
-	if !strings.Contains(result.Output, "Size") {
-		t.Fatalf("expected Size header, got: %s", result.Output)
+	// Check first entry has a mount point
+	if entries[0].MountPoint == "" {
+		t.Error("expected non-empty mount point")
 	}
 }
 

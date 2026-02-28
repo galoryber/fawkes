@@ -8,11 +8,7 @@ import (
 	"strings"
 )
 
-func lastPlatform(args lastArgs) string {
-	var sb strings.Builder
-	sb.WriteString("=== Login History ===\n\n")
-
-	// macOS has the `last` command built-in
+func lastPlatform(args lastArgs) []lastLoginEntry {
 	cmdArgs := []string{"-n", fmt.Sprintf("%d", args.Count)}
 	if args.User != "" {
 		cmdArgs = append(cmdArgs, args.User)
@@ -20,10 +16,31 @@ func lastPlatform(args lastArgs) string {
 
 	out, err := exec.Command("last", cmdArgs...).CombinedOutput()
 	if err != nil {
-		sb.WriteString(fmt.Sprintf("Error running last: %v\n", err))
-		return sb.String()
+		return nil
 	}
 
-	sb.Write(out)
-	return sb.String()
+	var entries []lastLoginEntry
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "wtmp") || strings.HasPrefix(line, "reboot") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) < 3 {
+			continue
+		}
+		user := fields[0]
+		tty := fields[1]
+		// Remaining fields are date/time info
+		rest := strings.Join(fields[2:], " ")
+
+		entries = append(entries, lastLoginEntry{
+			User:      user,
+			TTY:       tty,
+			LoginTime: rest,
+			From:      "-",
+		})
+	}
+
+	return entries
 }

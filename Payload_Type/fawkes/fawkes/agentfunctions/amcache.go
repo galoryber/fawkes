@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
@@ -8,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "amcache",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "amcache_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Query and clean Windows Shimcache (AppCompatCache) execution history. Shimcache records program execution, which is a key forensic artifact. Cleaning it removes evidence of tool execution.",
 		HelpString:          "amcache -action <query|search|delete|clear> [-name <pattern>] [-count <n>]",
 		Version:             1,

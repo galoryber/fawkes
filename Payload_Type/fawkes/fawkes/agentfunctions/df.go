@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "df",
+		Name: "df",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "df_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Report filesystem disk space usage. Shows total, used, available space and utilization percentage.",
 		HelpString:          "df",
 		Version:             1,

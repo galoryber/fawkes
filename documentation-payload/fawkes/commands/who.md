@@ -29,6 +29,23 @@ Show all sessions including system:
 who -all true
 ```
 
+## Output Format
+
+Returns a JSON array rendered as a sortable table via browser script:
+```json
+[
+  {
+    "user": "admin",
+    "tty": "pts/0",
+    "login_time": "2025-01-15 09:30:00",
+    "from": "192.168.1.100",
+    "status": "Active"
+  }
+]
+```
+
+The browser script highlights active sessions in blue and disconnected sessions in orange.
+
 ## Platform Details
 
 ### Linux

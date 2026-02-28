@@ -47,14 +47,23 @@ type prefetchHeader struct {
 
 // Parsed prefetch entry
 type prefetchEntry struct {
-	FileName      string
-	ExeName       string
-	Hash          uint32
-	RunCount      uint32
-	LastRunTime   time.Time
-	LastRunTimes  []time.Time
-	FileSize      int64
-	ModTime       time.Time
+	FileName     string
+	ExeName      string
+	Hash         uint32
+	RunCount     uint32
+	LastRunTime  time.Time
+	LastRunTimes []time.Time
+	FileSize     int64
+	ModTime      time.Time
+}
+
+// prefetchOutputEntry is the JSON output format for browser script rendering
+type prefetchOutputEntry struct {
+	Executable string `json:"executable"`
+	RunCount   uint32 `json:"run_count"`
+	LastRun    string `json:"last_run"`
+	FileSize   int64  `json:"file_size"`
+	Hash       string `json:"hash,omitempty"`
 }
 
 func (c *PrefetchCommand) Execute(task structs.Task) structs.CommandResult {
@@ -152,11 +161,7 @@ func prefetchList(count int, filter string) structs.CommandResult {
 		parsed = parsed[:count]
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Windows Prefetch — %s (%d files)\n\n", dir, len(parsed)))
-	sb.WriteString(fmt.Sprintf("%-40s %-8s %-20s %s\n", "EXECUTABLE", "RUNS", "LAST RUN", "SIZE"))
-	sb.WriteString(strings.Repeat("-", 85) + "\n")
-
+	output := make([]prefetchOutputEntry, 0, len(parsed))
 	for _, pe := range parsed {
 		name := pe.ExeName
 		if name == "" {
@@ -168,16 +173,30 @@ func prefetchList(count int, filter string) structs.CommandResult {
 		} else {
 			lastRun = pe.ModTime.Format("2006-01-02 15:04:05")
 		}
-		runs := ""
-		if pe.RunCount > 0 {
-			runs = fmt.Sprintf("%d", pe.RunCount)
+		hashStr := ""
+		if pe.Hash > 0 {
+			hashStr = fmt.Sprintf("%08X", pe.Hash)
 		}
-		sb.WriteString(fmt.Sprintf("%-40s %-8s %-20s %s\n",
-			truncateStr(name, 40), runs, lastRun, formatBytes(uint64(pe.FileSize))))
+		output = append(output, prefetchOutputEntry{
+			Executable: name,
+			RunCount:   pe.RunCount,
+			LastRun:    lastRun,
+			FileSize:   pe.FileSize,
+			Hash:       hashStr,
+		})
+	}
+
+	jsonBytes, err := json.Marshal(output)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}

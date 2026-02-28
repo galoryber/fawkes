@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "prefetch",
+		Name: "prefetch",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "prefetch_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Parse and manage Windows Prefetch files — list executed programs, parse execution history, delete specific entries, or clear all. Supports compressed (MAM) prefetch files on Windows 10/11.",
 		HelpString:          "prefetch -action <list|parse|delete|clear> [-name <exe_name>] [-count <max>]",
 		Version:             1,

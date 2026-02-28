@@ -355,6 +355,13 @@ func serviceDelete(args serviceArgs) structs.CommandResult {
 	}
 }
 
+// serviceListEntry is the JSON output format for browser script rendering
+type serviceListEntry struct {
+	Name        string `json:"name"`
+	State       string `json:"state"`
+	DisplayName string `json:"display_name"`
+}
+
 func serviceList() structs.CommandResult {
 	m, err := mgr.Connect()
 	if err != nil {
@@ -375,15 +382,11 @@ func serviceList() structs.CommandResult {
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Windows Services (%d):\n", len(names)))
-	sb.WriteString(fmt.Sprintf("%-40s %-10s %s\n", "Name", "State", "Display Name"))
-	sb.WriteString(strings.Repeat("-", 90) + "\n")
-
+	output := make([]serviceListEntry, 0, len(names))
 	for _, name := range names {
 		s, sErr := m.OpenService(name)
 		if sErr != nil {
-			sb.WriteString(fmt.Sprintf("%-40s %-10s %s\n", name, "(error)", sErr.Error()))
+			output = append(output, serviceListEntry{Name: name, State: "error"})
 			continue
 		}
 
@@ -400,11 +403,24 @@ func serviceList() structs.CommandResult {
 		}
 
 		s.Close()
-		sb.WriteString(fmt.Sprintf("%-40s %-10s %s\n", name, state, displayName))
+		output = append(output, serviceListEntry{
+			Name:        name,
+			State:       state,
+			DisplayName: displayName,
+		})
+	}
+
+	jsonBytes, err := json.Marshal(output)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}

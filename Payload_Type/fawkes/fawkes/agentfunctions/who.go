@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "who",
+		Name: "who",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "who_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Show currently logged-in users and active sessions. Linux: parses utmp. Windows: WTSEnumerateSessions API. macOS: parses utmpx.",
 		HelpString:          "who\nwho -all true",
 		Version:             1,

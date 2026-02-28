@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "service",
+		Name: "service",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "service_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Manage Windows services via SCM API — query, start, stop, create, delete, list (T1543.003)",
 		HelpString:          "service -action <query|start|stop|create|delete|list> -name <service_name> [-binpath <path>] [-display <name>] [-start <auto|demand|disabled>]",
 		Version:             1,
@@ -93,8 +98,7 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			return args.LoadArgsFromJSONString(input)
 		},

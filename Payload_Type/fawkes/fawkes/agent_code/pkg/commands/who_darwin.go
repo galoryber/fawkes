@@ -4,16 +4,11 @@
 package commands
 
 import (
-	"fmt"
 	"os/exec"
 	"strings"
 )
 
-func whoPlatform(args whoArgs) string {
-	var sb strings.Builder
-	sb.WriteString(whoHeader())
-
-	// macOS has the `who` command built-in
+func whoPlatform(args whoArgs) []whoSessionEntry {
 	cmdArgs := []string{}
 	if args.All {
 		cmdArgs = append(cmdArgs, "-a")
@@ -21,16 +16,15 @@ func whoPlatform(args whoArgs) string {
 
 	out, err := exec.Command("who", cmdArgs...).CombinedOutput()
 	if err != nil {
-		return fmt.Sprintf("Error running who: %v", err)
+		return nil
 	}
 
 	output := strings.TrimSpace(string(out))
 	if output == "" {
-		return ""
+		return nil
 	}
 
-	// Parse `who` output: user tty date time (host)
-	count := 0
+	var entries []whoSessionEntry
 	for _, line := range strings.Split(output, "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 3 {
@@ -42,7 +36,6 @@ func whoPlatform(args whoArgs) string {
 		loginTime := strings.Join(fields[2:], " ")
 		host := ""
 
-		// Extract host from parentheses if present
 		if idx := strings.Index(loginTime, "("); idx != -1 {
 			endIdx := strings.Index(loginTime, ")")
 			if endIdx > idx {
@@ -51,14 +44,19 @@ func whoPlatform(args whoArgs) string {
 			}
 		}
 
-		sb.WriteString(whoEntry(user, tty, loginTime, host, "active"))
-		count++
+		from := host
+		if from == "" {
+			from = "-"
+		}
+
+		entries = append(entries, whoSessionEntry{
+			User:      user,
+			TTY:       tty,
+			LoginTime: loginTime,
+			From:      from,
+			Status:    "active",
+		})
 	}
 
-	if count == 0 {
-		return ""
-	}
-
-	sb.WriteString(fmt.Sprintf("\n[*] %d active session(s)", count))
-	return sb.String()
+	return entries
 }

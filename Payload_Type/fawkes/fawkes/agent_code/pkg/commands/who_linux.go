@@ -16,27 +16,20 @@ const (
 	whoUtmpRecordSize  = 384 // sizeof(struct utmp) on x86_64 Linux
 )
 
-func whoPlatform(args whoArgs) string {
-	// Parse /var/run/utmp for currently logged-in users
+func whoPlatform(args whoArgs) []whoSessionEntry {
 	data, err := os.ReadFile("/var/run/utmp")
 	if err != nil {
-		// Fallback: try /run/utmp
 		data, err = os.ReadFile("/run/utmp")
 		if err != nil {
-			return fmt.Sprintf("Error reading utmp: %v", err)
+			return nil
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(whoHeader())
-
-	count := 0
+	var entries []whoSessionEntry
 	for i := 0; i+whoUtmpRecordSize <= len(data); i += whoUtmpRecordSize {
 		record := data[i : i+whoUtmpRecordSize]
-
 		utType := int32(binary.LittleEndian.Uint32(record[0:4]))
 
-		// Only show USER_PROCESS entries unless -all
 		if !args.All && utType != whoUtmpUserProcess {
 			continue
 		}
@@ -44,8 +37,6 @@ func whoPlatform(args whoArgs) string {
 		user := strings.TrimRight(string(record[4:36]), "\x00")
 		tty := strings.TrimRight(string(record[36:68]), "\x00")
 		host := strings.TrimRight(string(record[76:332]), "\x00")
-
-		// Login time: tv_sec at offset 340 (4 bytes)
 		tvSec := int64(binary.LittleEndian.Uint32(record[340:344]))
 		loginTime := time.Unix(tvSec, 0).Format("2006-01-02 15:04:05")
 
@@ -57,15 +48,21 @@ func whoPlatform(args whoArgs) string {
 		if utType != whoUtmpUserProcess {
 			status = fmt.Sprintf("type=%d", utType)
 		}
+		if host == "" {
+			host = "-"
+		}
+		if tty == "" {
+			tty = "-"
+		}
 
-		sb.WriteString(whoEntry(user, tty, loginTime, host, status))
-		count++
+		entries = append(entries, whoSessionEntry{
+			User:      user,
+			TTY:       tty,
+			LoginTime: loginTime,
+			From:      host,
+			Status:    status,
+		})
 	}
 
-	if count == 0 {
-		return "No active user sessions found"
-	}
-
-	sb.WriteString(fmt.Sprintf("\n[*] %d active session(s)", count))
-	return sb.String()
+	return entries
 }

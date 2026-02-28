@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"strings"
+	"encoding/json"
 	"testing"
 
 	"fawkes/pkg/structs"
@@ -14,12 +14,16 @@ func TestWhoCommandName(t *testing.T) {
 	}
 }
 
-func TestWhoReturnsOutput(t *testing.T) {
+func TestWhoReturnsJSON(t *testing.T) {
 	cmd := &WhoCommand{}
 	result := cmd.Execute(structs.Task{})
-	// On CI/containers there may be no logged-in users, so just check it doesn't error
 	if result.Status != "success" {
 		t.Errorf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	// Output should be valid JSON (array or empty array)
+	var entries []whoSessionEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Errorf("expected valid JSON output: %v (got: %s)", err, result.Output)
 	}
 }
 
@@ -29,40 +33,29 @@ func TestWhoWithAllFlag(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("expected success, got %s: %s", result.Status, result.Output)
 	}
-}
-
-func TestWhoHeader(t *testing.T) {
-	h := whoHeader()
-	if !strings.Contains(h, "USER") {
-		t.Error("expected 'USER' in header")
-	}
-	if !strings.Contains(h, "TTY/SESSION") {
-		t.Error("expected 'TTY/SESSION' in header")
-	}
-	if !strings.Contains(h, "LOGIN TIME") {
-		t.Error("expected 'LOGIN TIME' in header")
+	var entries []whoSessionEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Errorf("expected valid JSON output: %v", err)
 	}
 }
 
-func TestWhoEntry(t *testing.T) {
-	entry := whoEntry("testuser", "pts/0", "2026-01-01 12:00:00", "192.168.1.1", "active")
-	if !strings.Contains(entry, "testuser") {
-		t.Error("expected username in entry")
+func TestWhoSessionEntryJSON(t *testing.T) {
+	entry := whoSessionEntry{
+		User:      "testuser",
+		TTY:       "pts/0",
+		LoginTime: "2026-01-01 12:00:00",
+		From:      "192.168.1.1",
+		Status:    "active",
 	}
-	if !strings.Contains(entry, "pts/0") {
-		t.Error("expected tty in entry")
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
 	}
-	if !strings.Contains(entry, "192.168.1.1") {
-		t.Error("expected host in entry")
+	var decoded whoSessionEntry
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
 	}
-}
-
-func TestWhoEntryDefaults(t *testing.T) {
-	entry := whoEntry("user", "", "", "", "")
-	if !strings.Contains(entry, "-") {
-		t.Error("expected '-' for empty fields")
-	}
-	if !strings.Contains(entry, "active") {
-		t.Error("expected 'active' as default status")
+	if decoded.User != "testuser" || decoded.TTY != "pts/0" || decoded.From != "192.168.1.1" {
+		t.Errorf("unexpected decoded values: %+v", decoded)
 	}
 }

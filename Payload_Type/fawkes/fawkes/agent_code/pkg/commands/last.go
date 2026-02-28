@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -20,6 +19,15 @@ type lastArgs struct {
 	User  string `json:"user"`  // Filter by username
 }
 
+// lastLoginEntry is the JSON output format for browser script rendering
+type lastLoginEntry struct {
+	User      string `json:"user"`
+	TTY       string `json:"tty"`
+	From      string `json:"from"`
+	LoginTime string `json:"login_time"`
+	Duration  string `json:"duration,omitempty"`
+}
+
 func (c *LastCommand) Execute(task structs.Task) structs.CommandResult {
 	args := lastArgs{Count: 25}
 	if task.Params != "" {
@@ -29,32 +37,27 @@ func (c *LastCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Count = 25
 	}
 
-	output := lastPlatform(args)
-	if output == "" {
-		output = "No login history available on this platform"
+	entries := lastPlatform(args)
+	if len(entries) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
+
+	jsonBytes, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    output,
-		Status:    "completed",
+		Output:    string(jsonBytes),
+		Status:    "success",
 		Completed: true,
 	}
-}
-
-// formatLastEntry formats a login entry consistently across platforms
-func formatLastEntry(user, tty, host, loginTime, duration string) string {
-	if host == "" {
-		host = "-"
-	}
-	if tty == "" {
-		tty = "-"
-	}
-	return fmt.Sprintf("%-16s %-12s %-20s %-22s %s\n", user, tty, host, loginTime, duration)
-}
-
-func lastHeader() string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-16s %-12s %-20s %-22s %s\n", "USER", "TTY", "FROM", "LOGIN TIME", "DURATION"))
-	sb.WriteString(strings.Repeat("-", 90) + "\n")
-	return sb.String()
 }

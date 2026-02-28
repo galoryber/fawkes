@@ -2,22 +2,21 @@ package commands
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"fawkes/pkg/structs"
 )
 
-func TestLastNoParams(t *testing.T) {
+func TestLastReturnsJSON(t *testing.T) {
 	cmd := &LastCommand{}
 	result := cmd.Execute(structs.Task{Params: ""})
 
-	if result.Status != "completed" {
-		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
 	}
-	// Should return something (even if no history on CI)
-	if result.Output == "" {
-		t.Fatal("expected non-empty output")
+	var entries []lastLoginEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Errorf("expected valid JSON output: %v (got: %s)", err, result.Output)
 	}
 }
 
@@ -25,8 +24,8 @@ func TestLastWithEmptyJSON(t *testing.T) {
 	cmd := &LastCommand{}
 	result := cmd.Execute(structs.Task{Params: "{}"})
 
-	if result.Status != "completed" {
-		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
 	}
 }
 
@@ -35,8 +34,8 @@ func TestLastWithCount(t *testing.T) {
 	cmd := &LastCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
-		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
 	}
 }
 
@@ -45,55 +44,39 @@ func TestLastWithUserFilter(t *testing.T) {
 	cmd := &LastCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
-		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
 	}
 }
 
 func TestLastDefaultCount(t *testing.T) {
-	// Negative count should default to 25
 	params, _ := json.Marshal(lastArgs{Count: -1})
 	cmd := &LastCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
-		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
 	}
 }
 
-func TestFormatLastEntry(t *testing.T) {
-	entry := formatLastEntry("gary", "pts/0", "192.168.1.1", "2025-01-15 10:30:00", "01:25")
-	if !strings.Contains(entry, "gary") {
-		t.Error("expected user in output")
+func TestLastLoginEntryJSON(t *testing.T) {
+	entry := lastLoginEntry{
+		User:      "gary",
+		TTY:       "pts/0",
+		From:      "192.168.1.1",
+		LoginTime: "2025-01-15 10:30:00",
+		Duration:  "01:25",
 	}
-	if !strings.Contains(entry, "pts/0") {
-		t.Error("expected tty in output")
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
 	}
-	if !strings.Contains(entry, "192.168.1.1") {
-		t.Error("expected host in output")
+	var decoded lastLoginEntry
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
 	}
-}
-
-func TestFormatLastEntryEmptyFields(t *testing.T) {
-	entry := formatLastEntry("root", "", "", "2025-01-15 10:30:00", "")
-	if !strings.Contains(entry, "-") {
-		t.Error("expected dash for empty fields")
-	}
-}
-
-func TestLastHeader(t *testing.T) {
-	header := lastHeader()
-	if !strings.Contains(header, "USER") {
-		t.Error("expected USER in header")
-	}
-	if !strings.Contains(header, "TTY") {
-		t.Error("expected TTY in header")
-	}
-	if !strings.Contains(header, "FROM") {
-		t.Error("expected FROM in header")
-	}
-	if !strings.Contains(header, "LOGIN TIME") {
-		t.Error("expected LOGIN TIME in header")
+	if decoded.User != "gary" || decoded.TTY != "pts/0" || decoded.From != "192.168.1.1" {
+		t.Errorf("unexpected decoded values: %+v", decoded)
 	}
 }
 
@@ -118,14 +101,12 @@ func TestExtractCString(t *testing.T) {
 }
 
 func TestDetectRecordSize(t *testing.T) {
-	// Data that's exactly 384*2 = 768 bytes should detect 384
 	data := make([]byte, 768)
 	size := detectRecordSize(data)
 	if size != 384 {
 		t.Errorf("expected 384, got %d", size)
 	}
 
-	// Data too small
 	small := make([]byte, 10)
 	size = detectRecordSize(small)
 	if size != 0 {

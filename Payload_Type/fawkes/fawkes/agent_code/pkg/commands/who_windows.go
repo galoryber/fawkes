@@ -5,7 +5,6 @@ package commands
 
 import (
 	"fmt"
-	"strings"
 	"time"
 	"unsafe"
 
@@ -25,11 +24,10 @@ const (
 	whoWTSSessionInfo = 24
 )
 
-func whoPlatform(args whoArgs) string {
+func whoPlatform(args whoArgs) []whoSessionEntry {
 	var pSessionInfo uintptr
 	var count uint32
 
-	// Reuse procWTSEnumSess from logonsessions.go
 	ret, _, _ := procWTSEnumSess.Call(
 		0, // WTS_CURRENT_SERVER_HANDLE
 		0,
@@ -38,21 +36,16 @@ func whoPlatform(args whoArgs) string {
 		uintptr(unsafe.Pointer(&count)),
 	)
 	if ret == 0 {
-		return "Error: WTSEnumerateSessionsW failed"
+		return nil
 	}
 	defer procWTSFreeMemory.Call(pSessionInfo)
 
-	var sb strings.Builder
-	sb.WriteString(whoHeader())
-
-	// Reuse wtsSessionInfoW struct from logonsessions.go
 	sessionSize := unsafe.Sizeof(wtsSessionInfoW{})
-	activeCount := 0
+	var entries []whoSessionEntry
 
 	for i := uint32(0); i < count; i++ {
 		session := (*wtsSessionInfoW)(unsafe.Pointer(pSessionInfo + uintptr(i)*sessionSize))
 
-		// Filter to active/disconnected sessions unless -all
 		if !args.All && session.State != whoWTSActive && session.State != whoWTSDisconnected {
 			continue
 		}
@@ -83,16 +76,16 @@ func whoPlatform(args whoArgs) string {
 			from = "local"
 		}
 
-		sb.WriteString(whoEntry(fullUser, stationName, loginTime, from, status))
-		activeCount++
+		entries = append(entries, whoSessionEntry{
+			User:      fullUser,
+			TTY:       stationName,
+			LoginTime: loginTime,
+			From:      from,
+			Status:    status,
+		})
 	}
 
-	if activeCount == 0 {
-		return "No active user sessions found"
-	}
-
-	sb.WriteString(fmt.Sprintf("\n[*] %d session(s)", activeCount))
-	return sb.String()
+	return entries
 }
 
 func whoQueryString(sessionID uint32, infoClass int) string {

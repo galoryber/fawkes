@@ -1,8 +1,8 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
-	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -30,34 +30,40 @@ func (c *DfCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if len(entries) == 0 {
 		return structs.CommandResult{
-			Output:    "[*] No filesystems found",
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("%-20s %-10s %-10s %-10s %-6s %s\n",
-		"Filesystem", "Size", "Used", "Avail", "Use%", "Mounted on"))
-	sb.WriteString(fmt.Sprintf("%-20s %-10s %-10s %-10s %-6s %s\n",
-		"----------", "----", "----", "-----", "----", "----------"))
-
+	output := make([]dfOutputEntry, 0, len(entries))
 	for _, e := range entries {
 		usePct := 0
 		if e.total > 0 {
 			usePct = int(float64(e.used) * 100.0 / float64(e.total))
 		}
-		sb.WriteString(fmt.Sprintf("%-20s %-10s %-10s %-10s %3d%%   %s\n",
-			truncStr(e.device, 20),
-			statFormatSize(int64(e.total)),
-			statFormatSize(int64(e.used)),
-			statFormatSize(int64(e.avail)),
-			usePct,
-			e.mountpoint))
+		output = append(output, dfOutputEntry{
+			Filesystem: e.device,
+			FsType:     e.fstype,
+			MountPoint: e.mountpoint,
+			TotalBytes: e.total,
+			UsedBytes:  e.used,
+			AvailBytes: e.avail,
+			UsePercent: usePct,
+		})
+	}
+
+	jsonBytes, err := json.Marshal(output)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}
@@ -70,6 +76,16 @@ type dfEntry struct {
 	total      uint64
 	used       uint64
 	avail      uint64
+}
+
+type dfOutputEntry struct {
+	Filesystem string `json:"filesystem"`
+	FsType     string `json:"fstype,omitempty"`
+	MountPoint string `json:"mount_point"`
+	TotalBytes uint64 `json:"total_bytes"`
+	UsedBytes  uint64 `json:"used_bytes"`
+	AvailBytes uint64 `json:"avail_bytes"`
+	UsePercent int    `json:"use_percent"`
 }
 
 func truncStr(s string, max int) string {

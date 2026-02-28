@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "last",
+		Name: "last",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "last_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Show recent login history. Linux: parses wtmp/utmp or auth.log. Windows: queries Security event log (4624). macOS: uses last command.",
 		HelpString:          "last\nlast -count 50\nlast -user admin",
 		Version:             1,

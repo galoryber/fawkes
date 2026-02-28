@@ -4,7 +4,6 @@ package commands
 
 import (
 	"encoding/binary"
-	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -20,14 +19,10 @@ const (
 	utDeadProc   = 8   // Terminated
 )
 
-func lastPlatform(args lastArgs) string {
-	var sb strings.Builder
-	sb.WriteString("=== Login History ===\n\n")
-	sb.WriteString(lastHeader())
-
+func lastPlatform(args lastArgs) []lastLoginEntry {
 	// Try wtmp first (historical logins), then utmp (current)
 	files := []string{"/var/log/wtmp", "/var/run/utmp"}
-	count := 0
+	var entries []lastLoginEntry
 
 	for _, file := range files {
 		data, err := os.ReadFile(file)
@@ -35,21 +30,19 @@ func lastPlatform(args lastArgs) string {
 			continue
 		}
 
-		// Parse utmp/wtmp records (backwards for most recent first)
 		recSize := detectRecordSize(data)
 		if recSize == 0 {
 			continue
 		}
 
 		numRecords := len(data) / recSize
-		for i := numRecords - 1; i >= 0 && count < args.Count; i-- {
+		for i := numRecords - 1; i >= 0 && len(entries) < args.Count; i-- {
 			offset := i * recSize
 			if offset+recSize > len(data) {
 				continue
 			}
 			rec := data[offset : offset+recSize]
 
-			// utmp struct: type(4) + pid(4) + line(32) + id(4) + user(32) + host(256) + ... + tv_sec(4/8)
 			utType := binary.LittleEndian.Uint32(rec[0:4])
 			if utType != utUserProc {
 				continue
@@ -59,7 +52,6 @@ func lastPlatform(args lastArgs) string {
 			user := extractCString(rec[44:76])
 			host := extractCString(rec[76:332])
 
-			// Timestamp is at different offsets depending on arch
 			var loginTime time.Time
 			if recSize >= 384 {
 				tvSec := int64(binary.LittleEndian.Uint32(rec[340:344]))
@@ -70,23 +62,32 @@ func lastPlatform(args lastArgs) string {
 				continue
 			}
 
-			sb.WriteString(formatLastEntry(user, line, host,
-				loginTime.Format("2006-01-02 15:04:05"), ""))
-			count++
+			if host == "" {
+				host = "-"
+			}
+			if line == "" {
+				line = "-"
+			}
+
+			entries = append(entries, lastLoginEntry{
+				User:      user,
+				TTY:       line,
+				From:      host,
+				LoginTime: loginTime.Format("2006-01-02 15:04:05"),
+			})
 		}
 
-		if count > 0 {
-			break // Got records from wtmp, no need for utmp
+		if len(entries) > 0 {
+			break
 		}
 	}
 
-	// Fallback: parse /var/log/auth.log or /var/log/secure
-	if count == 0 {
-		sb.WriteString(lastFromAuthLog(args))
+	// Fallback: parse auth.log entries as raw text
+	if len(entries) == 0 {
+		entries = lastFromAuthLogEntries(args)
 	}
 
-	sb.WriteString(fmt.Sprintf("\n%d entries shown", count))
-	return sb.String()
+	return entries
 }
 
 func detectRecordSize(data []byte) int {
@@ -112,8 +113,8 @@ func extractCString(data []byte) string {
 	return string(data)
 }
 
-func lastFromAuthLog(args lastArgs) string {
-	var sb strings.Builder
+func lastFromAuthLogEntries(args lastArgs) []lastLoginEntry {
+	var entries []lastLoginEntry
 
 	logFiles := []string{"/var/log/auth.log", "/var/log/secure"}
 	for _, logFile := range logFiles {
@@ -123,9 +124,7 @@ func lastFromAuthLog(args lastArgs) string {
 		}
 
 		lines := strings.Split(string(data), "\n")
-		count := 0
-		// Read backwards
-		for i := len(lines) - 1; i >= 0 && count < args.Count; i-- {
+		for i := len(lines) - 1; i >= 0 && len(entries) < args.Count; i-- {
 			line := lines[i]
 			if !strings.Contains(line, "session opened") && !strings.Contains(line, "Accepted") {
 				continue
@@ -133,13 +132,15 @@ func lastFromAuthLog(args lastArgs) string {
 			if args.User != "" && !strings.Contains(line, args.User) {
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("  %s\n", line))
-			count++
+			entries = append(entries, lastLoginEntry{
+				User:      line,
+				LoginTime: "-",
+			})
 		}
-		if count > 0 {
+		if len(entries) > 0 {
 			break
 		}
 	}
 
-	return sb.String()
+	return entries
 }

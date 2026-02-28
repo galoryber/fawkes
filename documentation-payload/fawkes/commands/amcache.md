@@ -54,6 +54,21 @@ amcache -action delete -name fawkes.exe
 amcache -action clear
 ```
 
+## Output Format
+
+The `query` and `search` actions return a JSON array rendered as a sortable table via browser script:
+```json
+[
+  {
+    "index": 0,
+    "last_modified": "2025-01-15 14:30:22",
+    "path": "\\??\\C:\\Windows\\System32\\cmd.exe"
+  }
+]
+```
+
+The browser script highlights suspicious executables (powershell, cmd, wscript, cscript, mshta) in orange. Other actions (delete, clear) return plain text status messages.
+
 ## Operational Notes
 
 - **Shimcache vs Amcache**: This command targets the Shimcache (AppCompatCache registry value), which is the in-memory execution tracker. The Amcache.hve hive file is a separate artifact.

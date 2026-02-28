@@ -35,6 +35,21 @@ Filter by user:
 last -user admin
 ```
 
+## Output Format
+
+Returns a JSON array rendered as a sortable table via browser script:
+```json
+[
+  {
+    "user": "admin",
+    "tty": "pts/0",
+    "from": "192.168.1.100",
+    "login_time": "2025-01-15 09:30:00",
+    "duration": "02:15"
+  }
+]
+```
+
 ## Platform Details
 
 ### Linux

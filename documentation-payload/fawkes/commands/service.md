@@ -53,6 +53,21 @@ service -action create -name MyService -binpath "C:\path\to\binary.exe" -display
 service -action delete -name MyService
 ```
 
+## Output Format
+
+The `list` action returns a JSON array rendered as a sortable table via browser script:
+```json
+[
+  {
+    "name": "Spooler",
+    "state": "Running",
+    "display_name": "Print Spooler"
+  }
+]
+```
+
+The browser script highlights running services in blue. Other actions (query, start, stop, create, delete) return plain text status messages.
+
 ## MITRE ATT&CK Mapping
 
 - **T1543.003** — Create or Modify System Service: Windows Service

@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "auditpol",
+		Name: "auditpol",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "auditpol_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Query and modify Windows audit policies — disable security event logging before sensitive operations, re-enable after. Uses AuditQuerySystemPolicy/AuditSetSystemPolicy API (no auditpol.exe process creation).",
 		HelpString:          "auditpol -action <query|disable|enable|stealth> [-category <name|all>]",
 		Version:             1,
