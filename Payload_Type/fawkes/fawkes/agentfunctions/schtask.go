@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -145,7 +146,20 @@ func init() {
 			if input == "" {
 				return nil
 			}
-			return args.LoadArgsFromJSONString(input)
+			// Try JSON first (from API/modal)
+			if err := args.LoadArgsFromJSONString(input); err == nil {
+				return nil
+			}
+			// Plain string: first word is action (list, query, create, delete, run)
+			// Second word (if present) is task name
+			parts := strings.Fields(input)
+			if len(parts) >= 1 {
+				args.SetArgValue("action", parts[0])
+			}
+			if len(parts) >= 2 {
+				args.SetArgValue("name", parts[1])
+			}
+			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
