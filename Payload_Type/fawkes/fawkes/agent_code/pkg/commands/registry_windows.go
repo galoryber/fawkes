@@ -83,4 +83,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&PipeServerCommand{})
 	RegisterCommand(&DpapiCommand{})
 	RegisterCommand(&RunasCommand{})
+	RegisterCommand(&TsconCommand{})
 }

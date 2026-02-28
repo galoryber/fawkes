@@ -185,6 +185,7 @@ pre = "<b>2. </b>"
     * [share-hunt](/agents/fawkes/commands/share-hunt/)
     * [smb](/agents/fawkes/commands/smb/)
     * [ssh](/agents/fawkes/commands/ssh/)
+    * [tscon](/agents/fawkes/commands/tscon/)
     * [winrm](/agents/fawkes/commands/winrm/)
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
