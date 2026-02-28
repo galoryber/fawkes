@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -34,21 +35,23 @@ func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if len(entries) == 0 {
 		return structs.CommandResult{
-			Output:    "No ARP entries found",
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	output := fmt.Sprintf("%-18s %-20s %-10s %s\n", "IP Address", "MAC Address", "Type", "Interface")
-	output += "--------------------------------------------------------------\n"
-	for _, e := range entries {
-		output += fmt.Sprintf("%-18s %-20s %-10s %s\n", e.IP, e.MAC, e.Type, e.Interface)
+	jsonBytes, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshalling ARP table: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
-	output += fmt.Sprintf("\n[%d ARP entries found]", len(entries))
 
 	return structs.CommandResult{
-		Output:    output,
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}
@@ -56,10 +59,10 @@ func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
 
 // arpEntry represents a single ARP table entry
 type arpEntry struct {
-	IP        string
-	MAC       string
-	Type      string
-	Interface string
+	IP        string `json:"ip"`
+	MAC       string `json:"mac"`
+	Type      string `json:"type"`
+	Interface string `json:"interface"`
 }
 
 // containsMAC checks if a string contains something that looks like a MAC address

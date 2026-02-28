@@ -54,20 +54,14 @@ func TestEnumTokensCommand_ListDefault(t *testing.T) {
 		t.Error("expected Completed=true")
 	}
 
-	// Should contain table headers
-	if !strings.Contains(result.Output, "PID") {
-		t.Error("output should contain 'PID' header")
+	// Output should be valid JSON array
+	var entries []tokenEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Errorf("expected valid JSON output, got error: %v", err)
 	}
-	if !strings.Contains(result.Output, "PROCESS") {
-		t.Error("output should contain 'PROCESS' header")
-	}
-	if !strings.Contains(result.Output, "USER") {
-		t.Error("output should contain 'USER' header")
-	}
-
-	// Should list at least the current process (we can always see ourselves)
-	if !strings.Contains(result.Output, "Tokens enumerated:") {
-		t.Error("output should contain 'Tokens enumerated:' count")
+	// Should list at least the current process
+	if len(entries) == 0 {
+		t.Error("expected at least one token entry")
 	}
 }
 
@@ -90,15 +84,9 @@ func TestEnumTokensCommand_Unique(t *testing.T) {
 		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
 	}
 
-	// Should contain unique-specific headers
-	if !strings.Contains(result.Output, "Unique token owners:") {
-		t.Error("output should contain 'Unique token owners:' count")
-	}
-	if !strings.Contains(result.Output, "PROCS") {
-		t.Error("output should contain 'PROCS' header")
-	}
-	if !strings.Contains(result.Output, "SESSIONS") {
-		t.Error("output should contain 'SESSIONS' header")
+	// Output should be valid JSON array
+	if !strings.HasPrefix(result.Output, "[") {
+		t.Errorf("expected JSON array output, got: %s", result.Output[:min(100, len(result.Output))])
 	}
 }
 
@@ -111,11 +99,9 @@ func TestEnumTokensCommand_UserFilter(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("expected success even with no matches, got %q: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "Filter: NONEXISTENTUSER12345") {
-		t.Error("output should show the applied filter")
-	}
-	if !strings.Contains(result.Output, "Tokens enumerated: 0") {
-		t.Error("no processes should match nonexistent user filter")
+	// Output should be empty JSON array (no matches)
+	if result.Output != "[]" {
+		t.Errorf("expected empty JSON array, got: %s", result.Output[:min(100, len(result.Output))])
 	}
 }
 

@@ -4,6 +4,7 @@ package commands
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,14 @@ import (
 
 	"fawkes/pkg/structs"
 )
+
+type driveEntry struct {
+	Drive   string  `json:"drive"`
+	Type    string  `json:"type"`
+	Label   string  `json:"label"`
+	FreeGB  float64 `json:"free_gb"`
+	TotalGB float64 `json:"total_gb"`
+}
 
 // DrivesUnixCommand implements the drives command for Linux and macOS.
 type DrivesUnixCommand struct{}
@@ -28,18 +37,13 @@ func (c *DrivesUnixCommand) Execute(task structs.Task) structs.CommandResult {
 	mounts := getMountPoints()
 	if len(mounts) == 0 {
 		return structs.CommandResult{
-			Output:    "No mount points found",
-			Status:    "error",
+			Output:    "[]",
+			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	var output strings.Builder
-	output.WriteString(fmt.Sprintf("%-30s %-15s %-10s %12s %12s %6s\n",
-		"Mount Point", "Device", "Type", "Free (GB)", "Total (GB)", "Use%"))
-	output.WriteString(strings.Repeat("-", 90) + "\n")
-
-	count := 0
+	var entries []driveEntry
 	for _, m := range mounts {
 		var stat syscall.Statfs_t
 		if err := syscall.Statfs(m.mountPoint, &stat); err != nil {
@@ -48,23 +52,35 @@ func (c *DrivesUnixCommand) Execute(task structs.Task) structs.CommandResult {
 
 		totalBytes := uint64(stat.Blocks) * uint64(stat.Bsize)
 		freeBytes := uint64(stat.Bavail) * uint64(stat.Bsize)
-		totalGB := float64(totalBytes) / (1024 * 1024 * 1024)
-		freeGB := float64(freeBytes) / (1024 * 1024 * 1024)
 
-		usePct := 0.0
-		if totalBytes > 0 {
-			usePct = float64(totalBytes-freeBytes) / float64(totalBytes) * 100
-		}
-
-		output.WriteString(fmt.Sprintf("%-30s %-15s %-10s %12.1f %12.1f %5.0f%%\n",
-			m.mountPoint, truncDevice(m.device, 15), m.fsType, freeGB, totalGB, usePct))
-		count++
+		entries = append(entries, driveEntry{
+			Drive:   m.mountPoint,
+			Type:    m.fsType,
+			Label:   m.device,
+			FreeGB:  float64(freeBytes) / (1024 * 1024 * 1024),
+			TotalGB: float64(totalBytes) / (1024 * 1024 * 1024),
+		})
 	}
 
-	output.WriteString(fmt.Sprintf("\n[%d filesystems]", count))
+	if len(entries) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
+
+	jsonBytes, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshalling drive data: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	return structs.CommandResult{
-		Output:    output.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}

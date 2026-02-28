@@ -31,11 +31,11 @@ type enumTokensArgs struct {
 }
 
 type tokenEntry struct {
-	PID       uint32
-	Process   string
-	User      string
-	Integrity string
-	Session   uint32
+	PID       uint32 `json:"pid"`
+	Process   string `json:"process"`
+	User      string `json:"user"`
+	Integrity string `json:"integrity"`
+	Session   uint32 `json:"session"`
 }
 
 func (c *EnumTokensCommand) Execute(task structs.Task) structs.CommandResult {
@@ -94,6 +94,14 @@ func enumTokensList(filterUser string) structs.CommandResult {
 		entries = filtered
 	}
 
+	if len(entries) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
+
 	// Sort by user then PID
 	sort.Slice(entries, func(i, j int) bool {
 		if entries[i].User != entries[j].User {
@@ -102,23 +110,17 @@ func enumTokensList(filterUser string) structs.CommandResult {
 		return entries[i].PID < entries[j].PID
 	})
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Tokens enumerated: %d processes\n", len(entries)))
-	if filterUser != "" {
-		sb.WriteString(fmt.Sprintf("Filter: %s\n", filterUser))
-	}
-	sb.WriteString("\n")
-
-	sb.WriteString(fmt.Sprintf("%-8s %-30s %-35s %-10s %-8s\n", "PID", "PROCESS", "USER", "INTEGRITY", "SESSION"))
-	sb.WriteString(strings.Repeat("-", 95) + "\n")
-
-	for _, e := range entries {
-		sb.WriteString(fmt.Sprintf("%-8d %-30s %-35s %-10s %-8d\n",
-			e.PID, truncateStr(e.Process, 30), truncateStr(e.User, 35), e.Integrity, e.Session))
+	jsonBytes, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshalling token data: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}
@@ -186,33 +188,52 @@ func enumTokensUnique(filterUser string) structs.CommandResult {
 	for _, u := range users {
 		sortedUsers = append(sortedUsers, u)
 	}
+	if len(sortedUsers) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
 	sort.Slice(sortedUsers, func(i, j int) bool {
 		return sortedUsers[i].User < sortedUsers[j].User
 	})
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Unique token owners: %d\n\n", len(sortedUsers)))
+	type uniqueEntry struct {
+		User      string   `json:"user"`
+		Integrity string   `json:"integrity"`
+		Count     int      `json:"count"`
+		Sessions  []uint32 `json:"sessions"`
+		Processes []string `json:"processes"`
+	}
 
-	sb.WriteString(fmt.Sprintf("%-35s %-10s %-8s %-10s %s\n", "USER", "INTEGRITY", "PROCS", "SESSIONS", "EXAMPLE PROCESSES"))
-	sb.WriteString(strings.Repeat("-", 110) + "\n")
-
+	var uniqueEntries []uniqueEntry
 	for _, u := range sortedUsers {
-		sessions := make([]string, 0, len(u.Sessions))
+		sessions := make([]uint32, 0, len(u.Sessions))
 		for s := range u.Sessions {
-			sessions = append(sessions, fmt.Sprintf("%d", s))
+			sessions = append(sessions, s)
 		}
-		sort.Strings(sessions)
+		sort.Slice(sessions, func(i, j int) bool { return sessions[i] < sessions[j] })
+		uniqueEntries = append(uniqueEntries, uniqueEntry{
+			User:      u.User,
+			Integrity: u.Integrity,
+			Count:     u.Count,
+			Sessions:  sessions,
+			Processes: u.Processes,
+		})
+	}
 
-		sb.WriteString(fmt.Sprintf("%-35s %-10s %-8d %-10s %s\n",
-			truncateStr(u.User, 35),
-			u.Integrity,
-			u.Count,
-			strings.Join(sessions, ","),
-			strings.Join(u.Processes, ", ")))
+	jsonBytes, err := json.Marshal(uniqueEntries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshalling token data: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}

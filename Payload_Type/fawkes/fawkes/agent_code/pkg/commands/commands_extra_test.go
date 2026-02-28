@@ -96,9 +96,9 @@ func TestArpCommand_NativeAPI(t *testing.T) {
 	if !result.Completed {
 		t.Error("expected Completed=true")
 	}
-	// Output should use the new formatted table
-	if !strings.Contains(result.Output, "ARP entries") && !strings.Contains(result.Output, "No ARP entries") {
-		t.Errorf("expected ARP output, got: %s", result.Output)
+	// Output should be JSON (array or empty array)
+	if result.Output != "[]" && !strings.HasPrefix(result.Output, "[{") {
+		t.Errorf("expected JSON output, got: %s", result.Output)
 	}
 }
 
@@ -495,4 +495,3 @@ func TestUploadCommand(t *testing.T) {
 		}
 	})
 }
-

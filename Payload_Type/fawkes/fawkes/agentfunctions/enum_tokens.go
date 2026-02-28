@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -48,7 +50,10 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "enum_tokens_new.js"),
+			Author:     "@galoryber",
+		},
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
