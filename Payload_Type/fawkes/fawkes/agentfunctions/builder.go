@@ -239,10 +239,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			Name:        "Configuring",
 			Description: "Cleaning up configuration values and generating the golang build command",
 		},
-
 		{
 			Name:        "Compiling",
 			Description: "Compiling the golang agent (maybe with obfuscation via garble)",
+		},
+		{
+			Name:        "YARA Scan",
+			Description: "Scanning payload against detection rules (informational only)",
 		},
 		{
 			Name:        "Reporting back",
@@ -630,7 +633,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		tags += ",shared" // Add shared tag to include exports.go
 		command = strings.Replace(command, "CGO_ENABLED=0", "CGO_ENABLED=1", 1)
 	}
-	goCmd := fmt.Sprintf("-tags %s -buildmode %s -ldflags \"%s\"", tags, buildmodeflag, ldflags)
+	goCmd := fmt.Sprintf("-trimpath -tags %s -buildmode %s -ldflags \"%s\"", tags, buildmodeflag, ldflags)
 	if mode == "shared" || mode == "windows-shellcode" {
 		if targetOs == "darwin" {
 			command += "CC=o64-clang CXX=o64-clang++ "
@@ -732,6 +735,16 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		payloadBuildResponse.BuildStdErr = stderr.String()
 	}
 	payloadBuildResponse.BuildStdOut = stdout.String()
+
+	// YARA scan: run detection rules against the built payload (informational only)
+	yaraOutput := runYARAScan(fmt.Sprintf("/build/%s", payloadName))
+	mythicrpc.SendMythicRPCPayloadUpdateBuildStep(mythicrpc.MythicRPCPayloadUpdateBuildStepMessage{
+		PayloadUUID: payloadBuildMsg.PayloadUUID,
+		StepName:    "YARA Scan",
+		StepSuccess: true,
+		StepStdout:  yaraOutput,
+	})
+
 	if payloadBytes, err := os.ReadFile(fmt.Sprintf("/build/%s", payloadName)); err != nil {
 		payloadBuildResponse.Success = false
 		payloadBuildResponse.BuildMessage = "Failed to find final payload"
@@ -808,6 +821,101 @@ func xorEncodeString(plaintext string, key []byte) string {
 		result[i] = b ^ key[i%len(key)]
 	}
 	return base64.StdEncoding.EncodeToString(result)
+}
+
+// runYARAScan runs YARA rules against a built payload and returns a formatted report.
+// This is informational only — it never causes a build failure.
+func runYARAScan(payloadPath string) string {
+	rulesPath := "./yara_rules/fawkes_scan.yar"
+
+	// Check if YARA is available
+	if _, err := exec.LookPath("yara"); err != nil {
+		return "YARA not installed — skipping detection scan"
+	}
+
+	// Check if rules file exists
+	if _, err := os.Stat(rulesPath); err != nil {
+		return fmt.Sprintf("YARA rules not found at %s — skipping detection scan", rulesPath)
+	}
+
+	// Check if payload exists
+	fi, err := os.Stat(payloadPath)
+	if err != nil {
+		return fmt.Sprintf("Payload not found at %s — skipping YARA scan", payloadPath)
+	}
+
+	// Run YARA with metadata output
+	cmd := exec.Command("yara", "-s", "-m", rulesPath, payloadPath)
+	var yaraOut bytes.Buffer
+	var yaraErr bytes.Buffer
+	cmd.Stdout = &yaraOut
+	cmd.Stderr = &yaraErr
+
+	scanErr := cmd.Run()
+
+	var report strings.Builder
+	report.WriteString(fmt.Sprintf("=== YARA Detection Scan ===\n"))
+	report.WriteString(fmt.Sprintf("Payload: %s (%d bytes)\n", filepath.Base(payloadPath), fi.Size()))
+	report.WriteString(fmt.Sprintf("Rules:   %s\n\n", rulesPath))
+
+	if yaraErr.Len() > 0 {
+		report.WriteString(fmt.Sprintf("YARA warnings: %s\n", yaraErr.String()))
+	}
+
+	output := strings.TrimSpace(yaraOut.String())
+	if output == "" && scanErr == nil {
+		report.WriteString("Result: CLEAN — no detection rules matched\n")
+		return report.String()
+	}
+
+	if scanErr != nil && output == "" {
+		report.WriteString(fmt.Sprintf("YARA scan error (non-fatal): %v\n", scanErr))
+		return report.String()
+	}
+
+	// Parse and format matches
+	lines := strings.Split(output, "\n")
+	matchCount := 0
+	var matches []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// YARA output with -m: "RuleName [meta1=val1,meta2=val2] /path/to/file"
+		// Without -s match lines start with "0x" (string match offset)
+		if strings.HasPrefix(line, "0x") {
+			continue // Skip string match detail lines
+		}
+		matchCount++
+		// Extract rule name (first field before space or bracket)
+		parts := strings.SplitN(line, " ", 2)
+		ruleName := parts[0]
+		meta := ""
+		if len(parts) > 1 {
+			// Extract metadata between brackets
+			if idx := strings.Index(parts[1], "["); idx >= 0 {
+				if endIdx := strings.Index(parts[1], "]"); endIdx > idx {
+					meta = parts[1][idx+1 : endIdx]
+				}
+			}
+		}
+		matches = append(matches, fmt.Sprintf("  [%d] %s", matchCount, ruleName))
+		if meta != "" {
+			matches = append(matches, fmt.Sprintf("      %s", meta))
+		}
+	}
+
+	if matchCount == 0 {
+		report.WriteString("Result: CLEAN — no detection rules matched\n")
+	} else {
+		report.WriteString(fmt.Sprintf("Result: %d rule(s) matched\n\n", matchCount))
+		report.WriteString("Matches:\n")
+		report.WriteString(strings.Join(matches, "\n"))
+		report.WriteString("\n\nNote: These are informational — consider enabling garble, obfuscate_strings, or -trimpath to reduce detections.")
+	}
+
+	return report.String()
 }
 
 func Initialize() {
