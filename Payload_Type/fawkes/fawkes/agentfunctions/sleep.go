@@ -127,6 +127,9 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			// Try JSON first (e.g., {"interval": 2, "jitter": 10} from API)
 			if err := args.LoadArgsFromJSONString(input); err == nil {
 				return nil

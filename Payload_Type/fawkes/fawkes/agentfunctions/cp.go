@@ -49,6 +49,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			// Parse space-separated arguments: cp <source> <destination>
 			// Try to parse as JSON first
 			if err := args.LoadArgsFromJSONString(input); err == nil {
