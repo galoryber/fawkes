@@ -58,7 +58,10 @@ func init() {
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input != "" {
-				return args.LoadArgsFromJSONString(input)
+				if input == "" {
+				return nil
+			}
+			return args.LoadArgsFromJSONString(input)
 			}
 			return nil
 		},
