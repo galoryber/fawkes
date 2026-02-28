@@ -19,7 +19,10 @@ func init() {
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1134.001"},
-		ScriptOnlyCommand:   false,
+		ScriptOnlyCommand: false,
+		CommandAttributes: agentstructs.CommandAttribute{
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:             "username",

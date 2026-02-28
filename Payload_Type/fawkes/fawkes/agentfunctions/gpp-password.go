@@ -17,7 +17,9 @@ func init() {
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1552.006"},
 		ScriptOnlyCommand:   false,
-		CommandAttributes:   agentstructs.CommandAttribute{},
+		CommandAttributes: agentstructs.CommandAttribute{
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
+		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:             "server",

@@ -18,8 +18,11 @@ func init() {
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1134.001"},
-		ScriptOnlyCommand:   false,
-		CommandParameters:   []agentstructs.CommandParameter{},
+		ScriptOnlyCommand: false,
+		CommandAttributes: agentstructs.CommandAttribute{
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+		},
+		CommandParameters: []agentstructs.CommandParameter{},
 		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
