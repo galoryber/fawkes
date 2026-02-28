@@ -22,9 +22,8 @@ const (
 )
 
 var (
-	kernel32              = syscall.NewLazyDLL("kernel32.dll")
-	procGetFileAttributesW = kernel32.NewProc("GetFileAttributesW")
-	procSetFileAttributesW = kernel32.NewProc("SetFileAttributesW")
+	procGetFileAttributesW = syscall.NewLazyDLL("kernel32.dll").NewProc("GetFileAttributesW")
+	procSetFileAttributesW = syscall.NewLazyDLL("kernel32.dll").NewProc("SetFileAttributesW")
 )
 
 type winAttrDef struct {
