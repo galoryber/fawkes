@@ -364,6 +364,26 @@ Set the **proxy_url** build parameter to route agent traffic through an HTTP or 
 
 Examples: `http://proxy.corp.local:8080`, `socks5://127.0.0.1:1080`
 
+### Build Path Stripping (-trimpath)
+
+All builds use Go's `-trimpath` flag to strip local filesystem paths from the compiled binary. Without this, paths like `/home/user/project/...` and `/go/pkg/mod/...` leak into the binary through panic traces and runtime metadata. Combined with `-s -w` (symbol stripping) and empty `-buildid`, this minimizes forensic information in the binary. Garble builds already handle this; `-trimpath` covers non-garble builds.
+
+### YARA Post-Build Scanning
+
+After compilation, the built payload is automatically scanned against a set of YARA rules that model common defender detection patterns. Results are shown in the Mythic build output as an informational step — the scan **never fails the build**.
+
+Detection categories scanned:
+- Go binary identification and symbol leaks
+- Leaked build/development paths
+- Mythic/C2 framework string indicators
+- Windows injection API names
+- Credential access API names
+- Defense evasion API patterns
+- Persistence mechanism strings
+- Plaintext C2 configuration
+
+This helps operators understand detection risk and choose appropriate opsec options (garble, obfuscate_strings, etc.) before deploying.
+
 ## Supported C2 Profiles
 
 ### [HTTP Profile](https://github.com/MythicC2Profiles/http)
