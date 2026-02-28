@@ -108,7 +108,7 @@ func (c *TriageCommand) Execute(task structs.Task) structs.CommandResult {
 			r.Path))
 	}
 
-	sb.WriteString(fmt.Sprintf("\n--- Summary ---\n"))
+	sb.WriteString("\n--- Summary ---\n")
 	sb.WriteString(fmt.Sprintf("Total: %d files, %s\n", len(results), formatTriageSize(totalSize)))
 	for cat, count := range categoryCounts {
 		sb.WriteString(fmt.Sprintf("  %s: %d\n", cat, count))
