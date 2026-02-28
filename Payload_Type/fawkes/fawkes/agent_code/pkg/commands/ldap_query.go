@@ -292,30 +292,44 @@ func resolveQuery(args ldapQueryArgs, baseDN string) (string, []string, string) 
 	return filter, attributes, preset.desc
 }
 
+// ldapQueryOutput is the JSON output for regular LDAP queries
+type ldapQueryOutput struct {
+	Query   string                       `json:"query"`
+	BaseDN  string                       `json:"base_dn"`
+	Filter  string                       `json:"filter"`
+	Count   int                          `json:"count"`
+	Entries []map[string]json.RawMessage `json:"entries"`
+}
+
 func formatLDAPResults(result *ldap.SearchResult, action, desc, baseDN, filter string, count int) string {
-	var sb strings.Builder
-
-	sb.WriteString(fmt.Sprintf("LDAP Query: %s\n", desc))
-	sb.WriteString(fmt.Sprintf("Base DN: %s\n", baseDN))
-	sb.WriteString(fmt.Sprintf("Filter: %s\n", filter))
-	sb.WriteString(fmt.Sprintf("Results: %d\n", count))
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-
-	for i, entry := range result.Entries {
-		sb.WriteString(fmt.Sprintf("\n[%d] %s\n", i+1, entry.DN))
-		for _, attr := range entry.Attributes {
-			if len(attr.Values) == 1 {
-				sb.WriteString(fmt.Sprintf("    %-30s %s\n", attr.Name+":", attr.Values[0]))
-			} else if len(attr.Values) > 1 {
-				sb.WriteString(fmt.Sprintf("    %s:\n", attr.Name))
-				for _, v := range attr.Values {
-					sb.WriteString(fmt.Sprintf("      - %s\n", v))
-				}
-			}
-		}
+	output := ldapQueryOutput{
+		Query:  desc,
+		BaseDN: baseDN,
+		Filter: filter,
+		Count:  count,
 	}
 
-	return sb.String()
+	for _, entry := range result.Entries {
+		row := make(map[string]json.RawMessage)
+		dnBytes, _ := json.Marshal(entry.DN)
+		row["dn"] = dnBytes
+		for _, attr := range entry.Attributes {
+			if len(attr.Values) == 1 {
+				valBytes, _ := json.Marshal(attr.Values[0])
+				row[attr.Name] = valBytes
+			} else if len(attr.Values) > 1 {
+				valBytes, _ := json.Marshal(strings.Join(attr.Values, "; "))
+				row[attr.Name] = valBytes
+			}
+		}
+		output.Entries = append(output.Entries, row)
+	}
+
+	data, err := json.Marshal(output)
+	if err != nil {
+		return fmt.Sprintf("Error marshaling JSON: %v", err)
+	}
+	return string(data)
 }
 
 // ldapQueryDACL queries the DACL (access control list) of a specific AD object
@@ -386,12 +400,30 @@ func ldapQueryDACL(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 	// Build SID resolution cache
 	sidCache := daclResolveSIDs(conn, aces, baseDN)
 
-	// Format output
-	var sb strings.Builder
-	sb.WriteString("[*] DACL Enumeration (T1069)\n")
-	sb.WriteString(fmt.Sprintf("[+] Target: %s\n", targetDN))
-	sb.WriteString(fmt.Sprintf("[+] Object Class: %s\n", strings.Join(objClass, ", ")))
-	sb.WriteString(fmt.Sprintf("[+] ACE Count: %d\n", len(aces)))
+	// Build JSON output
+	type daclACEOutput struct {
+		Principal   string `json:"principal"`
+		SID         string `json:"sid"`
+		Permissions string `json:"permissions"`
+		Risk        string `json:"risk"`
+	}
+	type daclOutput struct {
+		Mode        string          `json:"mode"`
+		Target      string          `json:"target"`
+		ObjectClass string          `json:"object_class"`
+		ACECount    int             `json:"ace_count"`
+		Owner       string          `json:"owner"`
+		Dangerous   int             `json:"dangerous"`
+		Notable     int             `json:"notable"`
+		ACEs        []daclACEOutput `json:"aces"`
+	}
+
+	out := daclOutput{
+		Mode:        "dacl",
+		Target:      targetDN,
+		ObjectClass: strings.Join(objClass, ", "),
+		ACECount:    len(aces),
+	}
 
 	// Parse owner if present
 	ownerOff := int(binary.LittleEndian.Uint32(sd[4:8]))
@@ -401,63 +433,43 @@ func ldapQueryDACL(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 		if ownerName == "" {
 			ownerName = ownerSID
 		}
-		sb.WriteString(fmt.Sprintf("[+] Owner: %s\n", ownerName))
+		out.Owner = ownerName
 	}
-
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-
-	// Categorize ACEs by risk
-	var dangerous, notable, standard []string
 
 	for _, ace := range aces {
 		principal := sidCache[ace.sid]
 		if principal == "" {
 			principal = ace.sid
 		}
-
 		perms := daclDescribePermissions(ace.mask, ace.aceType, ace.objectGUID)
 		risk := daclAssessRisk(ace.mask, ace.aceType, ace.sid, ace.objectGUID)
 
-		line := fmt.Sprintf("  %-40s %s", principal, perms)
+		out.ACEs = append(out.ACEs, daclACEOutput{
+			Principal:   principal,
+			SID:         ace.sid,
+			Permissions: perms,
+			Risk:        risk,
+		})
 
 		switch risk {
 		case "dangerous":
-			dangerous = append(dangerous, fmt.Sprintf("[!] %s", line))
+			out.Dangerous++
 		case "notable":
-			notable = append(notable, fmt.Sprintf("[*] %s", line))
-		default:
-			standard = append(standard, fmt.Sprintf("    %s", line))
+			out.Notable++
 		}
 	}
 
-	if len(dangerous) > 0 {
-		sb.WriteString("\n=== DANGEROUS PERMISSIONS (attack targets) ===\n")
-		for _, line := range dangerous {
-			sb.WriteString(line + "\n")
+	data, err := json.Marshal(out)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling DACL JSON: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
-	}
-
-	if len(notable) > 0 {
-		sb.WriteString("\n=== NOTABLE PERMISSIONS ===\n")
-		for _, line := range notable {
-			sb.WriteString(line + "\n")
-		}
-	}
-
-	if len(standard) > 0 {
-		sb.WriteString("\n=== STANDARD PERMISSIONS ===\n")
-		for _, line := range standard {
-			sb.WriteString(line + "\n")
-		}
-	}
-
-	if len(dangerous) > 0 {
-		sb.WriteString(fmt.Sprintf("\n[!] Found %d dangerous ACE(s) — these principals can modify this object.\n", len(dangerous)))
-		sb.WriteString("[!] Potential attacks: RBCD (set-rbcd), Shadow Credentials, password change, SPN modification\n")
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

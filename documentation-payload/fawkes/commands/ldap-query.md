@@ -65,28 +65,45 @@ ldap-query -action query -server 192.168.1.10 -username user@domain.local -passw
 ldap-query -action users -server 192.168.1.10 -username user@domain.local -password Pass123 -use_tls true
 ```
 
-## Example Output
+## Output Format
 
-**dacl action:**
+### Regular Queries (users, computers, groups, etc.)
+Returns a JSON object rendered as a sortable table via browser script:
+
+```json
+{
+  "query": "All domain users",
+  "base_dn": "DC=north,DC=sevenkingdoms,DC=local",
+  "filter": "(&(objectCategory=person)(objectClass=user))",
+  "count": 15,
+  "entries": [
+    {"dn": "CN=arya.stark,CN=Users,DC=...", "sAMAccountName": "arya.stark", "mail": "arya@north.sevenkingdoms.local", ...}
+  ]
+}
 ```
-[*] DACL Enumeration (T1069)
-[+] Target: CN=arya.stark,CN=Users,DC=north,DC=sevenkingdoms,DC=local
-[+] Object Class: top, person, organizationalPerson, user
-[+] ACE Count: 51
-[+] Owner: Domain Admins
-------------------------------------------------------------
 
-=== DANGEROUS PERMISSIONS (attack targets) ===
-[!]   Authenticated Users                      GenericAll (FULL CONTROL)
+Columns are auto-detected from the LDAP attributes present in the result set. Priority attributes (sAMAccountName, cn, displayName) appear first.
 
-=== NOTABLE PERMISSIONS ===
-[*]   Key Admins                               WriteProperty(msDS-KeyCredentialLink), ReadProperty
-[*]   Enterprise Key Admins                    WriteProperty(msDS-KeyCredentialLink), ReadProperty
-[*]   Self                                     WriteProperty(msDS-AllowedToActOnBehalfOfOtherIdentity)
+### DACL Query
+Returns a JSON object with ACE entries rendered as a risk-colored table:
 
-=== STANDARD PERMISSIONS ===
-      Domain Admins                            StandardAll, AllExtendedRights, ...
+```json
+{
+  "mode": "dacl",
+  "target": "CN=arya.stark,CN=Users,DC=...",
+  "object_class": "top, person, organizationalPerson, user",
+  "ace_count": 51,
+  "owner": "Domain Admins",
+  "dangerous": 1,
+  "notable": 3,
+  "aces": [
+    {"principal": "Authenticated Users", "permissions": "GenericAll (FULL CONTROL)", "risk": "dangerous", "sid": "S-1-5-11"},
+    {"principal": "Key Admins", "permissions": "WriteProperty(msDS-KeyCredentialLink), ReadProperty", "risk": "notable", "sid": "S-1-5-21-..."}
+  ]
+}
 ```
+
+Dangerous ACEs are highlighted red, notable ACEs orange. Risk assessment considers the principal (low-priv accounts with write permissions = dangerous).
 
 ## DACL Action Details
 
