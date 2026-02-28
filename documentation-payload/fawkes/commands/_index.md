@@ -97,6 +97,7 @@ pre = "<b>2. </b>"
     * [adcs](/agents/fawkes/commands/adcs/)
     * [cloud-metadata](/agents/fawkes/commands/cloud-metadata/)
     * [container-detect](/agents/fawkes/commands/container-detect/)
+    * [container-escape](/agents/fawkes/commands/container-escape/)
     * [domain-policy](/agents/fawkes/commands/domain-policy/)
     * [gpo](/agents/fawkes/commands/gpo/)
     * [find-admin](/agents/fawkes/commands/find-admin/)

@@ -21,4 +21,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&DrivesUnixCommand{})
 	RegisterCommand(&DebugDetectCommand{})
 	RegisterCommand(&XattrCommand{})
+	RegisterCommand(&ContainerEscapeCommand{})
 }
