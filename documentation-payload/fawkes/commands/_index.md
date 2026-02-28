@@ -42,6 +42,7 @@ pre = "<b>2. </b>"
 - Command Execution
     * [powershell](/agents/fawkes/commands/powershell/)
     * [run](/agents/fawkes/commands/run/)
+    * [runas](/agents/fawkes/commands/runas/)
     * [wmi](/agents/fawkes/commands/wmi/)
 - Process Injection
     * [apc-injection](/agents/fawkes/commands/apc-injection/)

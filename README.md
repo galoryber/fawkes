@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 110 commands are cross-platform, with 64 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 5 Unix-only commands, 8 Linux-only commands, and 2 macOS-only commands for a total of 195. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 110 commands are cross-platform, with 65 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 5 Unix-only commands, 8 Linux-only commands, and 2 macOS-only commands for a total of 196. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -160,6 +160,7 @@ route | `route` | Display the system routing table. Windows: GetIpForwardTable A
 rpfwd | `rpfwd start <port> <remote_ip> <remote_port>` / `rpfwd stop <port>` | Reverse port forward -- agent listens, Mythic routes to target. Cross-platform (T1090).
 rm | `rm <path>` | Remove a file or directory (recursively removes directories).
 run | `run <command>` | Execute a shell command and return the output.
+runas | `runas -command <cmd> -username <DOMAIN\user> -password <pass> [-netonly true]` | **(Windows only)** Execute a command as a different user via CreateProcessWithLogonW. Supports /netonly mode for network-only credentials. Creates new logon session (T1134.002).
 schtask | `schtask -action <create\|query\|delete\|run\|list> -name <name> [-program <path>]` | **(Windows only)** Create, query, run, or delete Windows scheduled tasks via COM API.
 screenshot | `screenshot` | Capture a screenshot of the current desktop session. Uploads as PNG. Windows: GDI multi-monitor capture. macOS: screencapture. Linux: auto-detects X11/Wayland tools (import, scrot, gnome-screenshot, grim). Cross-platform (T1113).
 secure-delete | `secure-delete -path <file_or_dir> [-passes <n>]` | Securely delete files by overwriting with random data before removal. Configurable passes (default 3), recursive directory support. Prevents forensic recovery. Cross-platform (T1070.004).
