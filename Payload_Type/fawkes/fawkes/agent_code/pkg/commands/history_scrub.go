@@ -14,8 +14,10 @@ import (
 // HistoryScrubCommand implements the history-scrub command for anti-forensics.
 type HistoryScrubCommand struct{}
 
-func (c *HistoryScrubCommand) Name() string        { return "history-scrub" }
-func (c *HistoryScrubCommand) Description() string { return "Clear shell and application command history" }
+func (c *HistoryScrubCommand) Name() string { return "history-scrub" }
+func (c *HistoryScrubCommand) Description() string {
+	return "Clear shell and application command history"
+}
 
 // HistoryScrubParams holds the parsed parameters.
 type HistoryScrubParams struct {
@@ -86,8 +88,8 @@ func getTargetHome(user string) string {
 
 // historyTargets returns paths to check for history files relative to a home dir.
 func historyTargets(home string) []struct {
-	path    string
-	htype   string
+	path  string
+	htype string
 } {
 	var targets []struct {
 		path  string
@@ -261,4 +263,3 @@ func historyClear(user string, clearAll bool) structs.CommandResult {
 		Completed: true,
 	}
 }
-

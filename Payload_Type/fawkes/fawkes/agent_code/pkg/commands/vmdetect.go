@@ -13,8 +13,10 @@ import (
 // VmDetectCommand detects virtual machine and hypervisor environments.
 type VmDetectCommand struct{}
 
-func (c *VmDetectCommand) Name() string        { return "vm-detect" }
-func (c *VmDetectCommand) Description() string { return "Detect virtual machine and hypervisor environment" }
+func (c *VmDetectCommand) Name() string { return "vm-detect" }
+func (c *VmDetectCommand) Description() string {
+	return "Detect virtual machine and hypervisor environment"
+}
 
 type vmEvidence struct {
 	Check   string
@@ -277,12 +279,12 @@ func vmDetectWindows() ([]vmEvidence, string) {
 
 	// Check for VM-specific files/directories
 	vmPaths := map[string]string{
-		`C:\Program Files\VMware\VMware Tools`:                       "VMware",
-		`C:\Program Files\Oracle\VirtualBox Guest Additions`:         "VirtualBox",
-		`C:\Program Files\Parallels\Parallels Tools`:                "Parallels",
-		`C:\Windows\System32\drivers\VBoxMouse.sys`:                 "VirtualBox",
-		`C:\Windows\System32\drivers\vmhgfs.sys`:                    "VMware",
-		`C:\Windows\System32\drivers\vmci.sys`:                      "VMware",
+		`C:\Program Files\VMware\VMware Tools`:               "VMware",
+		`C:\Program Files\Oracle\VirtualBox Guest Additions`: "VirtualBox",
+		`C:\Program Files\Parallels\Parallels Tools`:         "Parallels",
+		`C:\Windows\System32\drivers\VBoxMouse.sys`:          "VirtualBox",
+		`C:\Windows\System32\drivers\vmhgfs.sys`:             "VMware",
+		`C:\Windows\System32\drivers\vmci.sys`:               "VMware",
 	}
 
 	for path, vm := range vmPaths {

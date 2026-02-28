@@ -22,13 +22,13 @@ func (c *NetstatCommand) Description() string {
 
 // netstatEntry represents a single network connection for JSON output.
 type netstatEntry struct {
-	Proto   string `json:"proto"`
-	LocalIP string `json:"local_ip"`
-	LocalPort uint32 `json:"local_port"`
-	RemoteIP  string `json:"remote_ip"`
+	Proto      string `json:"proto"`
+	LocalIP    string `json:"local_ip"`
+	LocalPort  uint32 `json:"local_port"`
+	RemoteIP   string `json:"remote_ip"`
 	RemotePort uint32 `json:"remote_port"`
-	State   string `json:"state"`
-	PID     int32  `json:"pid"`
+	State      string `json:"state"`
+	PID        int32  `json:"pid"`
 }
 
 func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {

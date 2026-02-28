@@ -31,7 +31,7 @@ type encryptArgs struct {
 
 const (
 	encryptMaxFileSize = 500 * 1024 * 1024 // 500MB
-	aes256KeySize      = 32                 // 256 bits
+	aes256KeySize      = 32                // 256 bits
 )
 
 func (c *EncryptCommand) Execute(task structs.Task) structs.CommandResult {

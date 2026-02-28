@@ -17,8 +17,10 @@ import (
 
 type SmbCommand struct{}
 
-func (c *SmbCommand) Name() string        { return "smb" }
-func (c *SmbCommand) Description() string { return "SMB file operations on remote shares — list, read, write, delete files via SMB2 (T1021.002)" }
+func (c *SmbCommand) Name() string { return "smb" }
+func (c *SmbCommand) Description() string {
+	return "SMB file operations on remote shares — list, read, write, delete files via SMB2 (T1021.002)"
+}
 
 type smbArgs struct {
 	Action   string `json:"action"`   // ls, cat, upload, rm, shares

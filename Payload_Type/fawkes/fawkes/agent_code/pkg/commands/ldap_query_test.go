@@ -241,9 +241,9 @@ func TestDaclParseSD_MinimalSD(t *testing.T) {
 	// Build a minimal self-relative SD with one ACCESS_ALLOWED_ACE
 	// SID: S-1-5-21-100-200-300-512 (Domain Admins-like)
 	sid := make([]byte, 28)
-	sid[0] = 1    // Revision
-	sid[1] = 5    // SubAuthorityCount
-	sid[7] = 5    // Authority = NT Authority
+	sid[0] = 1 // Revision
+	sid[1] = 5 // SubAuthorityCount
+	sid[7] = 5 // Authority = NT Authority
 	binary.LittleEndian.PutUint32(sid[8:], 21)
 	binary.LittleEndian.PutUint32(sid[12:], 100)
 	binary.LittleEndian.PutUint32(sid[16:], 200)
@@ -256,9 +256,9 @@ func TestDaclParseSD_MinimalSD(t *testing.T) {
 	sd := make([]byte, sdSize)
 
 	// SD header
-	sd[0] = 1 // Revision
+	sd[0] = 1                                      // Revision
 	binary.LittleEndian.PutUint16(sd[2:4], 0x8004) // SE_DACL_PRESENT | SE_SELF_RELATIVE
-	binary.LittleEndian.PutUint32(sd[16:20], 20)    // OffsetDacl
+	binary.LittleEndian.PutUint32(sd[16:20], 20)   // OffsetDacl
 
 	// ACL header
 	sd[20] = 2 // AclRevision
@@ -417,9 +417,9 @@ func TestDaclGUIDName_KnownGUIDs(t *testing.T) {
 	// User-Force-Change-Password: 00299570-246d-11d0-a768-00aa006e0529
 	guid := []byte{
 		0x70, 0x95, 0x29, 0x00, // Data1 LE
-		0x6d, 0x24,             // Data2 LE
-		0xd0, 0x11,             // Data3 LE
-		0xa7, 0x68,             // Data4 bytes 0-1
+		0x6d, 0x24, // Data2 LE
+		0xd0, 0x11, // Data3 LE
+		0xa7, 0x68, // Data4 bytes 0-1
 		0x00, 0xaa, 0x00, 0x6e, 0x05, 0x29, // Data4 bytes 2-7
 	}
 	name := daclGUIDName(guid)

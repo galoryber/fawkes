@@ -340,9 +340,9 @@ func buildTestSD(aces []testACE) []byte {
 
 	// SD header (20 bytes)
 	sd := make([]byte, 20+len(dacl))
-	sd[0] = 1                        // Revision
+	sd[0] = 1                                      // Revision
 	binary.LittleEndian.PutUint16(sd[2:4], 0x8004) // Control: SE_DACL_PRESENT | SE_SELF_RELATIVE
-	binary.LittleEndian.PutUint32(sd[16:20], 20)    // DACL offset
+	binary.LittleEndian.PutUint32(sd[16:20], 20)   // DACL offset
 
 	copy(sd[20:], dacl)
 	return sd

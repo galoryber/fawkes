@@ -109,7 +109,7 @@ func weDoEnum(args weArgs) structs.CommandResult {
 		hDesktop, _, _ = weOpenDesktop.Call(
 			uintptr(unsafe.Pointer(desktopName)),
 			0,
-			0, // FALSE
+			0,             // FALSE
 			0x0001|0x0040, // DESKTOP_READOBJECTS | DESKTOP_ENUMERATE
 		)
 	}

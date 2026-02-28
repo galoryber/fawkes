@@ -350,11 +350,11 @@ func TestParseAXFRResponse_ARecord(t *testing.T) {
 
 	// Answer: example.com A 10.0.0.1
 	msg = append(msg, 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0) // name
-	msg = binary.BigEndian.AppendUint16(msg, 1)                                      // TYPE=A
-	msg = binary.BigEndian.AppendUint16(msg, 1)                                      // CLASS=IN
-	msg = binary.BigEndian.AppendUint32(msg, 300)                                    // TTL
-	msg = binary.BigEndian.AppendUint16(msg, 4)                                      // RDLENGTH
-	msg = append(msg, 10, 0, 0, 1)                                                   // RDATA: 10.0.0.1
+	msg = binary.BigEndian.AppendUint16(msg, 1)                                  // TYPE=A
+	msg = binary.BigEndian.AppendUint16(msg, 1)                                  // CLASS=IN
+	msg = binary.BigEndian.AppendUint32(msg, 300)                                // TTL
+	msg = binary.BigEndian.AppendUint16(msg, 4)                                  // RDLENGTH
+	msg = append(msg, 10, 0, 0, 1)                                               // RDATA: 10.0.0.1
 
 	records, rcode, soa := parseAXFRResponse(msg)
 	if rcode != 0 {

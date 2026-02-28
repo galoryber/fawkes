@@ -11,11 +11,11 @@ import (
 )
 
 var (
-	kernel32DbgDetect                     = windows.NewLazySystemDLL("kernel32.dll")
-	ntdllDbgDetect                        = windows.NewLazySystemDLL("ntdll.dll")
-	procIsDebuggerPresent                 = kernel32DbgDetect.NewProc("IsDebuggerPresent")
-	procCheckRemoteDebuggerPresent        = kernel32DbgDetect.NewProc("CheckRemoteDebuggerPresent")
-	procNtQueryInformationProcessDbg      = ntdllDbgDetect.NewProc("NtQueryInformationProcess")
+	kernel32DbgDetect                = windows.NewLazySystemDLL("kernel32.dll")
+	ntdllDbgDetect                   = windows.NewLazySystemDLL("ntdll.dll")
+	procIsDebuggerPresent            = kernel32DbgDetect.NewProc("IsDebuggerPresent")
+	procCheckRemoteDebuggerPresent   = kernel32DbgDetect.NewProc("CheckRemoteDebuggerPresent")
+	procNtQueryInformationProcessDbg = ntdllDbgDetect.NewProc("NtQueryInformationProcess")
 )
 
 const (

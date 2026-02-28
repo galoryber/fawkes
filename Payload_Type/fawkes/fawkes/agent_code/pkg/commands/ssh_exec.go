@@ -22,14 +22,14 @@ func (c *SshExecCommand) Description() string {
 }
 
 type sshExecArgs struct {
-	Host     string `json:"host"`      // target host IP or hostname
-	Username string `json:"username"`  // username for auth
-	Password string `json:"password"`  // password for auth (optional if key provided)
-	KeyPath  string `json:"key_path"`  // path to SSH private key on agent's filesystem
-	KeyData  string `json:"key_data"`  // inline SSH private key (PEM format)
-	Command  string `json:"command"`   // command to execute
-	Port     int    `json:"port"`      // SSH port (default: 22)
-	Timeout  int    `json:"timeout"`   // connection+command timeout in seconds (default: 60)
+	Host     string `json:"host"`     // target host IP or hostname
+	Username string `json:"username"` // username for auth
+	Password string `json:"password"` // password for auth (optional if key provided)
+	KeyPath  string `json:"key_path"` // path to SSH private key on agent's filesystem
+	KeyData  string `json:"key_data"` // inline SSH private key (PEM format)
+	Command  string `json:"command"`  // command to execute
+	Port     int    `json:"port"`     // SSH port (default: 22)
+	Timeout  int    `json:"timeout"`  // connection+command timeout in seconds (default: 60)
 }
 
 func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {

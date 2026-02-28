@@ -85,10 +85,10 @@ type nlgGroupEntry struct {
 
 // nlgMemberEntry represents a local group member for JSON output
 type nlgMemberEntry struct {
-	Name    string `json:"name"`
-	Type    string `json:"type"`
-	Group   string `json:"group"`
-	Server  string `json:"server,omitempty"`
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Group  string `json:"group"`
+	Server string `json:"server,omitempty"`
 }
 
 // nlgList enumerates all local groups on the specified server (or local machine).

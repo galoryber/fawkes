@@ -11,7 +11,7 @@ import (
 type JobkillCommand struct{}
 
 func (c *JobkillCommand) Name() string        { return "jobkill" }
-func (c *JobkillCommand) Description() string  { return "Stop a running task by task ID" }
+func (c *JobkillCommand) Description() string { return "Stop a running task by task ID" }
 
 type jobkillArgs struct {
 	ID string `json:"id"`

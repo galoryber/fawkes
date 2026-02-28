@@ -12,13 +12,13 @@ import (
 )
 
 const (
-	fileAttrReadOnly       = 0x1
-	fileAttrHidden         = 0x2
-	fileAttrSystem         = 0x4
-	fileAttrArchive        = 0x20
-	fileAttrNormal         = 0x80
-	fileAttrNotIndexed     = 0x2000
-	fileAttrNoScrubData    = 0x20000
+	fileAttrReadOnly    = 0x1
+	fileAttrHidden      = 0x2
+	fileAttrSystem      = 0x4
+	fileAttrArchive     = 0x20
+	fileAttrNormal      = 0x80
+	fileAttrNotIndexed  = 0x2000
+	fileAttrNoScrubData = 0x20000
 )
 
 var (

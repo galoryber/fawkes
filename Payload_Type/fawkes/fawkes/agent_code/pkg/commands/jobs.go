@@ -13,7 +13,7 @@ import (
 type JobsCommand struct{}
 
 func (c *JobsCommand) Name() string        { return "jobs" }
-func (c *JobsCommand) Description() string  { return "List currently running tasks" }
+func (c *JobsCommand) Description() string { return "List currently running tasks" }
 
 func (c *JobsCommand) Execute(task structs.Task) structs.CommandResult {
 	tasks := GetRunningTasks()
@@ -28,8 +28,8 @@ func (c *JobsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Sort by start time for consistent output
 	type entry struct {
-		id      string
-		task    *structs.Task
+		id   string
+		task *structs.Task
 	}
 	entries := make([]entry, 0, len(tasks))
 	for id, t := range tasks {

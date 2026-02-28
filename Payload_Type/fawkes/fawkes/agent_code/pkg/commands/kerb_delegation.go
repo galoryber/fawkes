@@ -16,8 +16,10 @@ import (
 
 type KerbDelegationCommand struct{}
 
-func (c *KerbDelegationCommand) Name() string        { return "kerb-delegation" }
-func (c *KerbDelegationCommand) Description() string { return "Enumerate Kerberos delegation relationships in Active Directory" }
+func (c *KerbDelegationCommand) Name() string { return "kerb-delegation" }
+func (c *KerbDelegationCommand) Description() string {
+	return "Enumerate Kerberos delegation relationships in Active Directory"
+}
 
 type kerbDelegArgs struct {
 	Action   string `json:"action"`
@@ -30,10 +32,10 @@ type kerbDelegArgs struct {
 
 // userAccountControl flags
 const (
-	uacTrustedForDelegation        = 0x80000  // Unconstrained delegation
-	uacTrustedToAuthForDelegation  = 0x1000000 // Protocol transition (S4U2Self)
-	uacNotDelegated                = 0x100000  // Account is sensitive and cannot be delegated
-	uacAccountDisable              = 0x2
+	uacTrustedForDelegation       = 0x80000   // Unconstrained delegation
+	uacTrustedToAuthForDelegation = 0x1000000 // Protocol transition (S4U2Self)
+	uacNotDelegated               = 0x100000  // Account is sensitive and cannot be delegated
+	uacAccountDisable             = 0x2
 )
 
 func (c *KerbDelegationCommand) Execute(task structs.Task) structs.CommandResult {

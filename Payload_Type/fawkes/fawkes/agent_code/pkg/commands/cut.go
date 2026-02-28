@@ -12,14 +12,16 @@ import (
 // CutCommand extracts fields from text files (like Unix cut)
 type CutCommand struct{}
 
-func (c *CutCommand) Name() string        { return "cut" }
-func (c *CutCommand) Description() string { return "Extract fields or character ranges from file lines" }
+func (c *CutCommand) Name() string { return "cut" }
+func (c *CutCommand) Description() string {
+	return "Extract fields or character ranges from file lines"
+}
 
 type cutArgs struct {
 	Path      string `json:"path"`
 	Delimiter string `json:"delimiter"`
-	Fields    string `json:"fields"`    // e.g. "1,3" or "1-3" or "2-"
-	Chars     string `json:"chars"`     // character positions, e.g. "1-10"
+	Fields    string `json:"fields"` // e.g. "1,3" or "1-3" or "2-"
+	Chars     string `json:"chars"`  // character positions, e.g. "1-10"
 }
 
 // parseRanges parses range specs like "1,3", "1-3", "2-" into a set of 1-based indices

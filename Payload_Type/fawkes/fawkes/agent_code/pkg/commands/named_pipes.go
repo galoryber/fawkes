@@ -31,10 +31,10 @@ type namedPipesArgs struct {
 
 // Windows constants for pipe enumeration
 var (
-	kernel32NP          = windows.NewLazySystemDLL("kernel32.dll")
-	procFindFirstFileW  = kernel32NP.NewProc("FindFirstFileW")
-	procFindNextFileW   = kernel32NP.NewProc("FindNextFileW")
-	procFindClose       = kernel32NP.NewProc("FindClose")
+	kernel32NP         = windows.NewLazySystemDLL("kernel32.dll")
+	procFindFirstFileW = kernel32NP.NewProc("FindFirstFileW")
+	procFindNextFileW  = kernel32NP.NewProc("FindNextFileW")
+	procFindClose      = kernel32NP.NewProc("FindClose")
 )
 
 // WIN32_FIND_DATAW structure (592 bytes)

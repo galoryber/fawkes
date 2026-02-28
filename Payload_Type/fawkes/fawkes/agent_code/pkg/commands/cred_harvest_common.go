@@ -13,8 +13,10 @@ import (
 
 type CredHarvestCommand struct{}
 
-func (c *CredHarvestCommand) Name() string        { return "cred-harvest" }
-func (c *CredHarvestCommand) Description() string { return "Harvest credentials from shadow, cloud configs, and application secrets (T1552)" }
+func (c *CredHarvestCommand) Name() string { return "cred-harvest" }
+func (c *CredHarvestCommand) Description() string {
+	return "Harvest credentials from shadow, cloud configs, and application secrets (T1552)"
+}
 
 type credHarvestArgs struct {
 	Action string `json:"action"` // shadow, cloud, configs, windows, all

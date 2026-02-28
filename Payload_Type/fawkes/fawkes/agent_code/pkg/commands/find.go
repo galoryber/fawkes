@@ -21,9 +21,9 @@ func (c *FindCommand) Description() string {
 }
 
 type FindParams struct {
-	Path    string `json:"path"`
-	Pattern string `json:"pattern"`
-	MaxDepth int   `json:"max_depth"`
+	Path     string `json:"path"`
+	Pattern  string `json:"pattern"`
+	MaxDepth int    `json:"max_depth"`
 }
 
 func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {

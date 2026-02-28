@@ -186,14 +186,14 @@ func TestFormatEvtLogSize(t *testing.T) {
 
 func TestDaysToDate(t *testing.T) {
 	tests := []struct {
-		days       int64
+		days             int64
 		year, month, day int64
 	}{
-		{0, 1970, 1, 1},         // Unix epoch
-		{365, 1971, 1, 1},       // One year
-		{10957, 2000, 1, 1},     // Y2K
-		{18628, 2021, 1, 1},     // 2021
-		{19723, 2024, 1, 1},     // 2024 (leap year)
+		{0, 1970, 1, 1},     // Unix epoch
+		{365, 1971, 1, 1},   // One year
+		{10957, 2000, 1, 1}, // Y2K
+		{18628, 2021, 1, 1}, // 2021
+		{19723, 2024, 1, 1}, // 2024 (leap year)
 	}
 	for _, tt := range tests {
 		y, m, d := daysToDate(tt.days)

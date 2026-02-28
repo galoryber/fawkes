@@ -47,12 +47,12 @@ const (
 	MAX_PREFERRED_LEN  = 0xFFFFFFFF
 	FILTER_NORMAL_ACCT = 0x0002
 	// DS_DOMAIN_TRUSTS flags
-	DS_DOMAIN_IN_FOREST     = 0x0001
+	DS_DOMAIN_IN_FOREST       = 0x0001
 	DS_DOMAIN_DIRECT_OUTBOUND = 0x0002
-	DS_DOMAIN_TREE_ROOT     = 0x0004
-	DS_DOMAIN_PRIMARY       = 0x0008
-	DS_DOMAIN_NATIVE_MODE   = 0x0010
-	DS_DOMAIN_DIRECT_INBOUND = 0x0020
+	DS_DOMAIN_TREE_ROOT       = 0x0004
+	DS_DOMAIN_PRIMARY         = 0x0008
+	DS_DOMAIN_NATIVE_MODE     = 0x0010
+	DS_DOMAIN_DIRECT_INBOUND  = 0x0020
 )
 
 // USER_INFO_0 - just the username
@@ -78,15 +78,15 @@ type groupInfo0 struct {
 
 // DOMAIN_CONTROLLER_INFO
 type domainControllerInfo struct {
-	DomainControllerName    *uint16
-	DomainControllerAddress *uint16
+	DomainControllerName     *uint16
+	DomainControllerAddress  *uint16
 	DomainControllerAddrType uint32
-	DomainGuid              [16]byte
-	DomainName              *uint16
-	DnsForestName           *uint16
-	Flags                   uint32
-	DcSiteName              *uint16
-	ClientSiteName          *uint16
+	DomainGuid               [16]byte
+	DomainName               *uint16
+	DnsForestName            *uint16
+	Flags                    uint32
+	DcSiteName               *uint16
+	ClientSiteName           *uint16
 }
 
 // USER_MODALS_INFO_0 - account policy
@@ -521,18 +521,18 @@ func netEnumDomainGroups() structs.CommandResult {
 }
 
 type domainInfoOutput struct {
-	DCName       string          `json:"dc_name,omitempty"`
-	DCAddress    string          `json:"dc_address,omitempty"`
-	Domain       string          `json:"domain,omitempty"`
-	Forest       string          `json:"forest,omitempty"`
-	DCSite       string          `json:"dc_site,omitempty"`
-	ClientSite   string          `json:"client_site,omitempty"`
-	MinPassLen   uint32          `json:"min_password_length,omitempty"`
-	MaxPassAge   uint32          `json:"max_password_age_days,omitempty"`
-	MinPassAge   uint32          `json:"min_password_age_days,omitempty"`
-	PassHistLen  uint32          `json:"password_history_length,omitempty"`
-	ForceLogoff  string          `json:"force_logoff,omitempty"`
-	Trusts       []netEnumEntry  `json:"trusts,omitempty"`
+	DCName      string         `json:"dc_name,omitempty"`
+	DCAddress   string         `json:"dc_address,omitempty"`
+	Domain      string         `json:"domain,omitempty"`
+	Forest      string         `json:"forest,omitempty"`
+	DCSite      string         `json:"dc_site,omitempty"`
+	ClientSite  string         `json:"client_site,omitempty"`
+	MinPassLen  uint32         `json:"min_password_length,omitempty"`
+	MaxPassAge  uint32         `json:"max_password_age_days,omitempty"`
+	MinPassAge  uint32         `json:"min_password_age_days,omitempty"`
+	PassHistLen uint32         `json:"password_history_length,omitempty"`
+	ForceLogoff string         `json:"force_logoff,omitempty"`
+	Trusts      []netEnumEntry `json:"trusts,omitempty"`
 }
 
 func netEnumDomainInfo() structs.CommandResult {

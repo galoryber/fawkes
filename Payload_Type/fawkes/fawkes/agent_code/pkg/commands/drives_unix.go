@@ -184,4 +184,3 @@ func shouldSkipFs(fsType, device string) bool {
 	}
 	return false
 }
-

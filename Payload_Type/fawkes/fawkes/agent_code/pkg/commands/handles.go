@@ -36,26 +36,26 @@ type handleInfo struct {
 
 // Windows NT API constants
 const (
-	systemHandleInformation    = 16
-	statusInfoLengthMismatch   = 0xC0000004
-	statusBufferTooSmall       = 0xC0000023
-	objectNameInformation      = 1
-	objectTypeInformation      = 2
-	processQueryLimitedInfo    = 0x1000
-	processDupHandle           = 0x0040
-	duplicateCloseSource       = 0x00000001
-	duplicateSameAccess        = 0x00000002
-	duplicateSameAttributes    = 0x00000004
+	systemHandleInformation  = 16
+	statusInfoLengthMismatch = 0xC0000004
+	statusBufferTooSmall     = 0xC0000023
+	objectNameInformation    = 1
+	objectTypeInformation    = 2
+	processQueryLimitedInfo  = 0x1000
+	processDupHandle         = 0x0040
+	duplicateCloseSource     = 0x00000001
+	duplicateSameAccess      = 0x00000002
+	duplicateSameAttributes  = 0x00000004
 )
 
 // SYSTEM_HANDLE_TABLE_ENTRY_INFO - per-handle entry in SystemHandleInformation
 type systemHandleEntry struct {
-	OwnerPID       uint32
-	ObjectTypeIdx  uint8
-	HandleAttr     uint8
-	HandleValue    uint16
-	ObjectPtr      uintptr
-	GrantedAccess  uint32
+	OwnerPID      uint32
+	ObjectTypeIdx uint8
+	HandleAttr    uint8
+	HandleValue   uint16
+	ObjectPtr     uintptr
+	GrantedAccess uint32
 }
 
 var (
@@ -306,12 +306,12 @@ func queryObjectName(handle windows.Handle) string {
 func isSafeToQueryName(typeName string) bool {
 	// NtQueryObject can deadlock on ALPC Port, WaitCompletionPacket, and some pipe handles
 	unsafeTypes := map[string]bool{
-		"ALPC Port":             true,
-		"WaitCompletionPacket":  true,
-		"TpWorkerFactory":       true,
-		"IRTimer":               true,
-		"IoCompletion":          true,
-		"IoCompletionReserve":   true,
+		"ALPC Port":            true,
+		"WaitCompletionPacket": true,
+		"TpWorkerFactory":      true,
+		"IRTimer":              true,
+		"IoCompletion":         true,
+		"IoCompletionReserve":  true,
 	}
 	return !unsafeTypes[typeName]
 }
@@ -328,12 +328,12 @@ func formatHandleOutput(handles []handleInfo, typeCounts map[string]int, args ha
 	sort.Slice(summary, func(i, j int) bool { return summary[i].Count > summary[j].Count })
 
 	type handlesOutput struct {
-		PID      int          `json:"pid"`
-		Shown    int          `json:"shown"`
-		Total    int          `json:"total"`
-		System   int          `json:"system"`
-		Summary  []typeCount  `json:"summary"`
-		Handles  []handleInfo `json:"handles"`
+		PID     int          `json:"pid"`
+		Shown   int          `json:"shown"`
+		Total   int          `json:"total"`
+		System  int          `json:"system"`
+		Summary []typeCount  `json:"summary"`
+		Handles []handleInfo `json:"handles"`
 	}
 
 	out := handlesOutput{

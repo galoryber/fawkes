@@ -386,4 +386,3 @@ func hollowIndirect(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 
 	return sb.String(), nil
 }
-

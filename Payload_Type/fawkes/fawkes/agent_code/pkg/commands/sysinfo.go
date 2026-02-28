@@ -13,8 +13,10 @@ import (
 // SysinfoCommand collects comprehensive system information
 type SysinfoCommand struct{}
 
-func (c *SysinfoCommand) Name() string        { return "sysinfo" }
-func (c *SysinfoCommand) Description() string { return "Collect comprehensive system information (T1082)" }
+func (c *SysinfoCommand) Name() string { return "sysinfo" }
+func (c *SysinfoCommand) Description() string {
+	return "Collect comprehensive system information (T1082)"
+}
 
 func (c *SysinfoCommand) Execute(task structs.Task) structs.CommandResult {
 	var sb strings.Builder

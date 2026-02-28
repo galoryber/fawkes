@@ -14,15 +14,17 @@ import (
 )
 
 var (
-	netapi32Logon           = windows.NewLazySystemDLL("netapi32.dll")
-	procNetWkstaUserEnum    = netapi32Logon.NewProc("NetWkstaUserEnum")
-	procNetApiBufFreeLogon  = netapi32Logon.NewProc("NetApiBufferFree")
+	netapi32Logon          = windows.NewLazySystemDLL("netapi32.dll")
+	procNetWkstaUserEnum   = netapi32Logon.NewProc("NetWkstaUserEnum")
+	procNetApiBufFreeLogon = netapi32Logon.NewProc("NetApiBufferFree")
 )
 
 type NetLoggedonCommand struct{}
 
-func (c *NetLoggedonCommand) Name() string        { return "net-loggedon" }
-func (c *NetLoggedonCommand) Description() string { return "Enumerate logged-on users on local or remote hosts (T1033)" }
+func (c *NetLoggedonCommand) Name() string { return "net-loggedon" }
+func (c *NetLoggedonCommand) Description() string {
+	return "Enumerate logged-on users on local or remote hosts (T1033)"
+}
 
 type netLoggedonArgs struct {
 	Target string `json:"target"`
@@ -36,10 +38,10 @@ type loggedonEntry struct {
 
 // WKSTA_USER_INFO_1 structure
 type wkstaUserInfo1 struct {
-	Username    uintptr // LPWSTR
-	LogonDomain uintptr // LPWSTR
+	Username     uintptr // LPWSTR
+	LogonDomain  uintptr // LPWSTR
 	OtherDomains uintptr // LPWSTR
-	LogonServer uintptr // LPWSTR
+	LogonServer  uintptr // LPWSTR
 }
 
 func (c *NetLoggedonCommand) Execute(task structs.Task) structs.CommandResult {

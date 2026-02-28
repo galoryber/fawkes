@@ -17,8 +17,10 @@ import (
 // ArgueCommand implements process argument spoofing
 type ArgueCommand struct{}
 
-func (c *ArgueCommand) Name() string        { return "argue" }
-func (c *ArgueCommand) Description() string { return "Execute a command with spoofed process arguments" }
+func (c *ArgueCommand) Name() string { return "argue" }
+func (c *ArgueCommand) Description() string {
+	return "Execute a command with spoofed process arguments"
+}
 
 type argueParams struct {
 	Command string `json:"command"`

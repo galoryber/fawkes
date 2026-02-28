@@ -21,15 +21,15 @@ import (
 
 // KEY_CREDENTIAL entry identifiers (MS-ADTS 2.2.22.2.1)
 const (
-	kcEntryKeyID                           = 1
-	kcEntryKeyHash                         = 2
-	kcEntryKeyMaterial                     = 3
-	kcEntryKeyUsage                        = 4
-	kcEntryKeySource                       = 5
-	kcEntryDeviceID                        = 6
-	kcEntryCustomKeyInformation            = 7
+	kcEntryKeyID                            = 1
+	kcEntryKeyHash                          = 2
+	kcEntryKeyMaterial                      = 3
+	kcEntryKeyUsage                         = 4
+	kcEntryKeySource                        = 5
+	kcEntryDeviceID                         = 6
+	kcEntryCustomKeyInformation             = 7
 	kcEntryKeyApproximateLastLogonTimestamp = 8
-	kcEntryKeyCreationTime                 = 9
+	kcEntryKeyCreationTime                  = 9
 )
 
 // KEY_CREDENTIAL version

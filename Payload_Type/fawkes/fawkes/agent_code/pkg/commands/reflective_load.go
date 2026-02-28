@@ -33,9 +33,9 @@ type reflectiveLoadArgs struct {
 
 // PE constants
 const (
-	rlDOSSignature     = 0x5A4D     // "MZ"
-	rlNTSignature      = 0x00004550 // "PE\0\0"
-	rlMachineMD64      = 0x8664
+	rlDOSSignature      = 0x5A4D     // "MZ"
+	rlNTSignature       = 0x00004550 // "PE\0\0"
+	rlMachineMD64       = 0x8664
 	rlDLLCharacteristic = 0x2000
 
 	rlSCNMemExecute = 0x20000000

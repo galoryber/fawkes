@@ -620,13 +620,13 @@ func TestParseWorkingHoursTime(t *testing.T) {
 		{"23:59", 1439, false},
 		{"12:30", 750, false},
 		{"", 0, false},
-		{"9:00", 540, false},    // single digit hour
-		{"09:5", 545, false},    // single digit minute (valid, 09:05)
-		{"25:00", 0, true},      // hour out of range
-		{"09:60", 0, true},      // minute out of range
-		{"09", 0, true},         // missing colon
-		{"abc:def", 0, true},    // non-numeric
-		{"09:00:00", 0, true},   // too many parts
+		{"9:00", 540, false},  // single digit hour
+		{"09:5", 545, false},  // single digit minute (valid, 09:05)
+		{"25:00", 0, true},    // hour out of range
+		{"09:60", 0, true},    // minute out of range
+		{"09", 0, true},       // missing colon
+		{"abc:def", 0, true},  // non-numeric
+		{"09:00:00", 0, true}, // too many parts
 	}
 	for _, tt := range tests {
 		t.Run(tt.input, func(t *testing.T) {
@@ -652,9 +652,9 @@ func TestParseWorkingDays(t *testing.T) {
 		{"1,3,5", []int{1, 3, 5}, false},
 		{"7", []int{7}, false},
 		{"", nil, false},
-		{"0", nil, true},       // 0 out of range
-		{"8", nil, true},       // 8 out of range
-		{"1,abc", nil, true},   // non-numeric
+		{"0", nil, true},                       // 0 out of range
+		{"8", nil, true},                       // 8 out of range
+		{"1,abc", nil, true},                   // non-numeric
 		{" 1 , 2 , 3 ", []int{1, 2, 3}, false}, // spaces
 	}
 	for _, tt := range tests {
@@ -887,15 +887,15 @@ func TestAgent_MinutesUntilWorkingHours(t *testing.T) {
 	})
 
 	t.Run("before start same day", func(t *testing.T) {
-		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020} // 09:00-17:00
+		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020}     // 09:00-17:00
 		got := agent.MinutesUntilWorkingHours(makeTime(time.Monday, 6, 0)) // 06:00
-		if got != 180 { // 3 hours
+		if got != 180 {                                                    // 3 hours
 			t.Errorf("expected 180 minutes, got %d", got)
 		}
 	})
 
 	t.Run("after end - wait until tomorrow", func(t *testing.T) {
-		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020} // 09:00-17:00
+		agent := &Agent{WorkingHoursStart: 540, WorkingHoursEnd: 1020}      // 09:00-17:00
 		got := agent.MinutesUntilWorkingHours(makeTime(time.Monday, 20, 0)) // 20:00
 		// 4 hours to midnight + 9 hours to 09:00 = 13 hours = 780 minutes
 		if got != 780 {

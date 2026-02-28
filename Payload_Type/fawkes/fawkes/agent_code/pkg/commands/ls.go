@@ -26,7 +26,7 @@ func (c *LsCommand) Description() string {
 func (c *LsCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse parameters
 	var args struct {
-		Path       string `json:"path"`
+		Path        string `json:"path"`
 		FileBrowser bool   `json:"file_browser"`
 	}
 
@@ -51,7 +51,7 @@ func (c *LsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Execute ls
 	result := performLs(args.Path)
-	
+
 	// Format response based on file browser flag
 	if args.FileBrowser {
 		// Return JSON for file browser
@@ -63,7 +63,7 @@ func (c *LsCommand) Execute(task structs.Task) structs.CommandResult {
 				Completed: true,
 			}
 		}
-		
+
 		return structs.CommandResult{
 			Output:    string(jsonBytes),
 			Status:    "success",
@@ -74,7 +74,7 @@ func (c *LsCommand) Execute(task structs.Task) structs.CommandResult {
 	// Return formatted text output
 	return structs.CommandResult{
 		Output:    formatLsOutput(result),
-		Status:    "success", 
+		Status:    "success",
 		Completed: true,
 	}
 }

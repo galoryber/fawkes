@@ -344,4 +344,3 @@ func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 		Completed: true,
 	}
 }
-

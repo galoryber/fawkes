@@ -38,11 +38,11 @@ type prefetchParams struct {
 
 // Prefetch file header (versions 17/23/26/30)
 type prefetchHeader struct {
-	Version       uint32
-	Signature     uint32 // "SCCA"
-	FileSize      uint32
+	Version        uint32
+	Signature      uint32 // "SCCA"
+	FileSize       uint32
 	ExecutableName [60]byte
-	PrefetchHash  uint32
+	PrefetchHash   uint32
 }
 
 // Parsed prefetch entry
@@ -466,8 +466,8 @@ func parsePrefetchFile(path string) (*prefetchEntry, error) {
 }
 
 var (
-	ntdllPF                       = windows.NewLazySystemDLL("ntdll.dll")
-	procRtlDecompressBufferEx     = ntdllPF.NewProc("RtlDecompressBufferEx")
+	ntdllPF                            = windows.NewLazySystemDLL("ntdll.dll")
+	procRtlDecompressBufferEx          = ntdllPF.NewProc("RtlDecompressBufferEx")
 	procRtlGetCompressionWorkSpaceSize = ntdllPF.NewProc("RtlGetCompressionWorkSpaceSize")
 )
 
@@ -541,4 +541,3 @@ func decodeUTF16(data []byte) string {
 
 	return string(utf16.Decode(u16s))
 }
-

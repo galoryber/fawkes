@@ -17,8 +17,10 @@ import (
 
 type TrustCommand struct{}
 
-func (c *TrustCommand) Name() string        { return "trust" }
-func (c *TrustCommand) Description() string { return "Enumerate domain and forest trust relationships via LDAP (T1482)" }
+func (c *TrustCommand) Name() string { return "trust" }
+func (c *TrustCommand) Description() string {
+	return "Enumerate domain and forest trust relationships via LDAP (T1482)"
+}
 
 type trustArgs struct {
 	Server   string `json:"server"`
@@ -208,10 +210,10 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	var trusts []trustEntry
 	for _, entry := range result.Entries {
 		t := trustEntry{
-			name:    entry.GetAttributeValue("cn"),
-			partner: entry.GetAttributeValue("trustPartner"),
+			name:     entry.GetAttributeValue("cn"),
+			partner:  entry.GetAttributeValue("trustPartner"),
 			flatName: entry.GetAttributeValue("flatName"),
-			dn:      entry.DN,
+			dn:       entry.DN,
 		}
 
 		if v := entry.GetAttributeValue("trustDirection"); v != "" {

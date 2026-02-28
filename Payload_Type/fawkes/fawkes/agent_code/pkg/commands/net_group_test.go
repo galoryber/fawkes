@@ -76,7 +76,7 @@ func TestNgGroupTypeStr(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"-2147483646", "[Global Security]"},      // 0x80000002
+		{"-2147483646", "[Global Security]"},       // 0x80000002
 		{"-2147483644", "[Domain Local Security]"}, // 0x80000004
 		{"-2147483640", "[Universal Security]"},    // 0x80000008
 		{"2", "[Global Distribution]"},

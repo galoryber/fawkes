@@ -32,4 +32,3 @@ func TestGetArpTable(t *testing.T) {
 		}
 	}
 }
-

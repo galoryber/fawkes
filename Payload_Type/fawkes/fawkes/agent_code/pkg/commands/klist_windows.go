@@ -18,12 +18,12 @@ import (
 )
 
 var (
-	secur32KL                       = windows.NewLazySystemDLL("secur32.dll")
-	procLsaConnectUntrusted         = secur32KL.NewProc("LsaConnectUntrusted")
-	procLsaLookupAuthenticationPkg  = secur32KL.NewProc("LsaLookupAuthenticationPackage")
-	procLsaCallAuthenticationPkg    = secur32KL.NewProc("LsaCallAuthenticationPackage")
-	procLsaDeregisterLogonProcess   = secur32KL.NewProc("LsaDeregisterLogonProcess")
-	procLsaFreeReturnBuffer         = secur32KL.NewProc("LsaFreeReturnBuffer")
+	secur32KL                      = windows.NewLazySystemDLL("secur32.dll")
+	procLsaConnectUntrusted        = secur32KL.NewProc("LsaConnectUntrusted")
+	procLsaLookupAuthenticationPkg = secur32KL.NewProc("LsaLookupAuthenticationPackage")
+	procLsaCallAuthenticationPkg   = secur32KL.NewProc("LsaCallAuthenticationPackage")
+	procLsaDeregisterLogonProcess  = secur32KL.NewProc("LsaDeregisterLogonProcess")
+	procLsaFreeReturnBuffer        = secur32KL.NewProc("LsaFreeReturnBuffer")
 )
 
 const (
@@ -46,7 +46,7 @@ type lsaStringKL struct {
 type unicodeStringKL struct {
 	Length        uint16
 	MaximumLength uint16
-	_pad          uint32  // alignment padding on amd64
+	_pad          uint32 // alignment padding on amd64
 	Buffer        uintptr
 }
 
@@ -75,23 +75,23 @@ type kerbPurgeTktCacheRequest struct {
 	MessageType uint32
 	LogonIdLow  uint32
 	LogonIdHigh int32
-	_pad        uint32           // align to 8-byte boundary for UNICODE_STRING
+	_pad        uint32 // align to 8-byte boundary for UNICODE_STRING
 	ServerName  unicodeStringKL
 	RealmName   unicodeStringKL
 }
 
 // kerbRetrieveTktRequest matches KERB_RETRIEVE_TKT_REQUEST on amd64
 type kerbRetrieveTktRequest struct {
-	MessageType    uint32
-	LogonIdLow     uint32
-	LogonIdHigh    int32
-	_pad           uint32          // align TargetName
-	TargetName     unicodeStringKL // 16 bytes
-	TicketFlags    uint32
-	CacheOptions   uint32
-	EncryptionType int32
-	_pad2          uint32          // align CredentialsHandle
-	CredentialsHandle [16]byte     // SecHandle (two uintptrs)
+	MessageType       uint32
+	LogonIdLow        uint32
+	LogonIdHigh       int32
+	_pad              uint32          // align TargetName
+	TargetName        unicodeStringKL // 16 bytes
+	TicketFlags       uint32
+	CacheOptions      uint32
+	EncryptionType    int32
+	_pad2             uint32   // align CredentialsHandle
+	CredentialsHandle [16]byte // SecHandle (two uintptrs)
 }
 
 // readUS reads a UNICODE_STRING from LSA-allocated memory

@@ -60,10 +60,10 @@ func TestProcdumpCommand_DumpActionNoPID(t *testing.T) {
 
 func TestProcdumpArgs_JSONParsing(t *testing.T) {
 	tests := []struct {
-		name     string
-		input    string
-		wantAct  string
-		wantPID  int
+		name    string
+		input   string
+		wantAct string
+		wantPID int
 	}{
 		{"lsass action", `{"action":"lsass"}`, "lsass", 0},
 		{"dump action", `{"action":"dump","pid":1234}`, "dump", 1234},

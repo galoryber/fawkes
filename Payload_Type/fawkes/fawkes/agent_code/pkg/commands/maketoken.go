@@ -101,12 +101,12 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	// Call LogonUserW to create the token (Xenon Token.c line 226)
 	var newToken windows.Token
 	ret, _, err := procLogonUserW.Call(
-		uintptr(unsafe.Pointer(usernamePtr)),  // lpszUsername
-		uintptr(unsafe.Pointer(domainPtr)),    // lpszDomain
-		uintptr(unsafe.Pointer(passwordPtr)),  // lpszPassword
-		uintptr(params.LogonType),             // dwLogonType
-		uintptr(provider),                     // dwLogonProvider
-		uintptr(unsafe.Pointer(&newToken)),    // phToken (output)
+		uintptr(unsafe.Pointer(usernamePtr)), // lpszUsername
+		uintptr(unsafe.Pointer(domainPtr)),   // lpszDomain
+		uintptr(unsafe.Pointer(passwordPtr)), // lpszPassword
+		uintptr(params.LogonType),            // dwLogonType
+		uintptr(provider),                    // dwLogonProvider
+		uintptr(unsafe.Pointer(&newToken)),   // phToken (output)
 	)
 
 	if ret == 0 {

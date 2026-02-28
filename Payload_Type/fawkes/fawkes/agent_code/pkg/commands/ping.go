@@ -14,8 +14,10 @@ import (
 // PingCommand implements TCP connect-based host reachability checks with sweep support
 type PingCommand struct{}
 
-func (c *PingCommand) Name() string        { return "ping" }
-func (c *PingCommand) Description() string { return "TCP connect host reachability check with subnet sweep support (T1018)" }
+func (c *PingCommand) Name() string { return "ping" }
+func (c *PingCommand) Description() string {
+	return "TCP connect host reachability check with subnet sweep support (T1018)"
+}
 
 type pingArgs struct {
 	Hosts   string `json:"hosts"`   // Single host, comma-separated, or CIDR (e.g., "192.168.1.0/24")

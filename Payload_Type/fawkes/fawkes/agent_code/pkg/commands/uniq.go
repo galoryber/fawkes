@@ -22,8 +22,8 @@ func (c *UniqCommand) Description() string {
 
 type uniqArgs struct {
 	Path      string `json:"path"`
-	Count     bool   `json:"count"`      // prefix lines with occurrence count
-	Duplicate bool   `json:"duplicate"`  // only show duplicate lines
+	Count     bool   `json:"count"`       // prefix lines with occurrence count
+	Duplicate bool   `json:"duplicate"`   // only show duplicate lines
 	Unique    bool   `json:"unique_only"` // only show unique lines (appear once)
 }
 

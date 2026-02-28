@@ -332,10 +332,10 @@ func TestPKCS7Pad(t *testing.T) {
 		blockSize int
 		padLen    int
 	}{
-		{[]byte("hello"), 16, 11},       // 5 bytes → 16 - 5 = 11 padding
+		{[]byte("hello"), 16, 11},            // 5 bytes → 16 - 5 = 11 padding
 		{[]byte("1234567890123456"), 16, 16}, // Exactly 16 → full block of padding
-		{[]byte(""), 16, 16},                  // Empty → full block
-		{[]byte("a"), 16, 15},                 // 1 byte → 15 padding
+		{[]byte(""), 16, 16},                 // Empty → full block
+		{[]byte("a"), 16, 15},                // 1 byte → 15 padding
 	}
 
 	for _, tt := range tests {

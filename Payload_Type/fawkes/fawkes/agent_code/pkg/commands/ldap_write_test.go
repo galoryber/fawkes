@@ -411,12 +411,12 @@ func TestBuildRBCDSecurityDescriptor(t *testing.T) {
 	// Example SID: S-1-5-21-100-200-300-1001
 	// Revision=1, SubCount=5, Authority=5(NT), SubAuth=[21,100,200,300,1001]
 	sid := make([]byte, 28)
-	sid[0] = 1    // Revision
-	sid[1] = 5    // SubAuthorityCount
-	sid[7] = 5    // IdentifierAuthority (NT Authority = 5, big-endian in bytes 2-7)
+	sid[0] = 1 // Revision
+	sid[1] = 5 // SubAuthorityCount
+	sid[7] = 5 // IdentifierAuthority (NT Authority = 5, big-endian in bytes 2-7)
 	// SubAuthorities (little-endian uint32)
-	sid[8] = 21   // SubAuth[0] = 21
-	sid[12] = 100 // SubAuth[1] = 100
+	sid[8] = 21    // SubAuth[0] = 21
+	sid[12] = 100  // SubAuth[1] = 100
 	sid[16] = 0xC8 // SubAuth[2] = 200 (0xC8)
 	sid[20] = 0x2C // SubAuth[3] = 300 (0x12C)
 	sid[21] = 0x01

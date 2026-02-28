@@ -236,7 +236,7 @@ func TestCoerceDefaultMethod(t *testing.T) {
 func TestCoerceNetworkErrorOutput(t *testing.T) {
 	// Test that network errors are properly reported (can't actually connect)
 	args := coerceArgs{
-		Server: "127.0.0.1", // TEST-NET, unreachable
+		Server:   "127.0.0.1", // TEST-NET, unreachable
 		Listener: "10.0.0.5",
 		Username: "admin", Password: "pass",
 		Method:  "petitpotam",

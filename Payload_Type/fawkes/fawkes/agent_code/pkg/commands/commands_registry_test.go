@@ -160,5 +160,3 @@ func TestExitCommand_Name(t *testing.T) {
 		t.Error("Description() should not be empty")
 	}
 }
-
-

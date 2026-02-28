@@ -10,8 +10,10 @@ import (
 
 type WmiPersistCommand struct{}
 
-func (c *WmiPersistCommand) Name() string        { return "wmi-persist" }
-func (c *WmiPersistCommand) Description() string { return "Install or remove WMI Event Subscription persistence" }
+func (c *WmiPersistCommand) Name() string { return "wmi-persist" }
+func (c *WmiPersistCommand) Description() string {
+	return "Install or remove WMI Event Subscription persistence"
+}
 
 type wmiPersistArgs struct {
 	Action      string `json:"action"`

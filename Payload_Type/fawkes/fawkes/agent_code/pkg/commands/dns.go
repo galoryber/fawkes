@@ -15,8 +15,10 @@ import (
 
 type DnsCommand struct{}
 
-func (c *DnsCommand) Name() string        { return "dns" }
-func (c *DnsCommand) Description() string { return "DNS enumeration — resolve hosts, query records, discover domain controllers (T1018)" }
+func (c *DnsCommand) Name() string { return "dns" }
+func (c *DnsCommand) Description() string {
+	return "DNS enumeration — resolve hosts, query records, discover domain controllers (T1018)"
+}
 
 type dnsArgs struct {
 	Action  string `json:"action"`  // resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer

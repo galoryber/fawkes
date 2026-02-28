@@ -24,7 +24,7 @@ func (c *ExitCommand) Description() string {
 // Execute executes the exit command
 func (c *ExitCommand) Execute(task structs.Task) structs.CommandResult {
 	log.Printf("[INFO] Exit command received, terminating agent")
-	
+
 	// Send response before exiting
 	result := structs.CommandResult{
 		Output:    "Agent exiting...",

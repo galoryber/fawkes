@@ -14,8 +14,8 @@ import (
 )
 
 var (
-	netapi32Ses         = windows.NewLazySystemDLL("netapi32.dll")
-	procNetSessionEnum  = netapi32Ses.NewProc("NetSessionEnum")
+	netapi32Ses          = windows.NewLazySystemDLL("netapi32.dll")
+	procNetSessionEnum   = netapi32Ses.NewProc("NetSessionEnum")
 	procNetApiBufFreeSes = netapi32Ses.NewProc("NetApiBufferFree")
 )
 
@@ -47,13 +47,13 @@ type sessionInfo10 struct {
 
 // SESSION_INFO_502 structure (level 502 — requires admin, has transport info)
 type sessionInfo502 struct {
-	ClientName    uintptr // LPWSTR
-	UserName      uintptr // LPWSTR
-	NumOpens      uint32  // open files/resources
-	Time          uint32  // seconds connected
-	IdleTime      uint32  // seconds idle
-	UserFlags     uint32  // user flags
-	ClientType    uintptr // LPWSTR — transport name
+	ClientName uintptr // LPWSTR
+	UserName   uintptr // LPWSTR
+	NumOpens   uint32  // open files/resources
+	Time       uint32  // seconds connected
+	IdleTime   uint32  // seconds idle
+	UserFlags  uint32  // user flags
+	ClientType uintptr // LPWSTR — transport name
 }
 
 func (c *NetSessionCommand) Execute(task structs.Task) structs.CommandResult {
@@ -103,12 +103,12 @@ func enumerateSessions502(target string) (string, error) {
 	var entriesRead, totalEntries, resumeHandle uint32
 
 	ret, _, _ := procNetSessionEnum.Call(
-		serverPtr,       // servername (NULL = local)
-		0,               // UncClientName (NULL = all clients)
-		0,               // username (NULL = all users)
-		502,             // level
+		serverPtr,                     // servername (NULL = local)
+		0,                             // UncClientName (NULL = all clients)
+		0,                             // username (NULL = all users)
+		502,                           // level
 		uintptr(unsafe.Pointer(&buf)), // bufptr
-		0xFFFFFFFF,      // prefmaxlen (MAX_PREFERRED_LENGTH)
+		0xFFFFFFFF,                    // prefmaxlen (MAX_PREFERRED_LENGTH)
 		uintptr(unsafe.Pointer(&entriesRead)),
 		uintptr(unsafe.Pointer(&totalEntries)),
 		uintptr(unsafe.Pointer(&resumeHandle)),

@@ -276,9 +276,9 @@ func (r *SyscallResolver) halosGate(ntdllBase uintptr, exports *imageExportDirec
 
 	// Build ordered list of Nt* functions by address
 	type ntFunc struct {
-		name    string
-		addr    uintptr
-		sysNum  uint16
+		name     string
+		addr     uintptr
+		sysNum   uint16
 		resolved bool
 	}
 
@@ -527,12 +527,12 @@ func IndirectNtCreateThreadExWithArg(threadHandle *uintptr, processHandle, start
 		0,        // ObjectAttributes
 		processHandle,
 		startRoutine,
-		argument,  // Argument passed to start routine
-		0,         // CreateFlags
-		0,         // ZeroBits
-		0,         // StackSize
-		0,         // MaxStackSize
-		0,         // AttributeList
+		argument, // Argument passed to start routine
+		0,        // CreateFlags
+		0,        // ZeroBits
+		0,        // StackSize
+		0,        // MaxStackSize
+		0,        // AttributeList
 	)
 	return uint32(r)
 }
@@ -571,7 +571,7 @@ func IndirectNtOpenProcess(processHandle *uintptr, desiredAccess uint32, pid uin
 	// OBJECT_ATTRIBUTES: Length(4) + pad(4) + RootDirectory(8) + ObjectName(8) + Attributes(4) + pad(4) + SecurityDescriptor(8) + SecurityQualityOfService(8)
 	type objectAttributes struct {
 		Length                   uint32
-		_                       uint32
+		_                        uint32
 		RootDirectory            uintptr
 		ObjectName               uintptr
 		Attributes               uint32
@@ -648,7 +648,7 @@ func IndirectNtOpenThread(threadHandle *uintptr, desiredAccess uint32, tid uintp
 
 	type objectAttributes struct {
 		Length                   uint32
-		_                       uint32
+		_                        uint32
 		RootDirectory            uintptr
 		ObjectName               uintptr
 		Attributes               uint32

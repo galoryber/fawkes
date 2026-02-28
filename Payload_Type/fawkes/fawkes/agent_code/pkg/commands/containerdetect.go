@@ -12,8 +12,10 @@ import (
 // ContainerDetectCommand detects container and virtualization environments.
 type ContainerDetectCommand struct{}
 
-func (c *ContainerDetectCommand) Name() string        { return "container-detect" }
-func (c *ContainerDetectCommand) Description() string { return "Detect container runtime and environment type" }
+func (c *ContainerDetectCommand) Name() string { return "container-detect" }
+func (c *ContainerDetectCommand) Description() string {
+	return "Detect container runtime and environment type"
+}
 
 type containerEvidence struct {
 	Check   string

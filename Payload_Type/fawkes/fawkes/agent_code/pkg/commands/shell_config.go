@@ -15,8 +15,10 @@ import (
 
 type ShellConfigCommand struct{}
 
-func (c *ShellConfigCommand) Name() string        { return "shell-config" }
-func (c *ShellConfigCommand) Description() string { return "Read shell history, list/read/inject/remove shell config files (T1546.004, T1552.003)" }
+func (c *ShellConfigCommand) Name() string { return "shell-config" }
+func (c *ShellConfigCommand) Description() string {
+	return "Read shell history, list/read/inject/remove shell config files (T1546.004, T1552.003)"
+}
 
 type shellConfigArgs struct {
 	Action  string `json:"action"`

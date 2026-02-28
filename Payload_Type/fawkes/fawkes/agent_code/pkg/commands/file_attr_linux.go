@@ -14,15 +14,15 @@ import (
 
 // Linux ext2/3/4/xfs file attribute flags
 const (
-	fsSecureRemoval  = 0x00000001 // s: secure deletion
-	fsUndelete       = 0x00000002 // u: undelete
-	fsCompress       = 0x00000004 // c: compress
-	fsSync           = 0x00000008 // S: synchronous updates
-	fsImmutable      = 0x00000010 // i: immutable
-	fsAppend         = 0x00000020 // a: append only
-	fsNoDump         = 0x00000040 // d: no dump
-	fsNoAtime        = 0x00000080 // A: no atime updates
-	fsNoCoW          = 0x00800000 // C: no copy on write
+	fsSecureRemoval = 0x00000001 // s: secure deletion
+	fsUndelete      = 0x00000002 // u: undelete
+	fsCompress      = 0x00000004 // c: compress
+	fsSync          = 0x00000008 // S: synchronous updates
+	fsImmutable     = 0x00000010 // i: immutable
+	fsAppend        = 0x00000020 // a: append only
+	fsNoDump        = 0x00000040 // d: no dump
+	fsNoAtime       = 0x00000080 // A: no atime updates
+	fsNoCoW         = 0x00800000 // C: no copy on write
 )
 
 // FS_IOC_GETFLAGS/SETFLAGS ioctl numbers (architecture-dependent via long size)

@@ -132,10 +132,10 @@ func TestParsePortsDedup(t *testing.T) {
 
 func TestPortScanKnownService(t *testing.T) {
 	tests := map[int]string{
-		22:  "SSH",
-		80:  "HTTP",
-		443: "HTTPS",
-		445: "SMB",
+		22:    "SSH",
+		80:    "HTTP",
+		443:   "HTTPS",
+		445:   "SMB",
 		12345: "",
 	}
 	for port, expected := range tests {

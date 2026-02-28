@@ -13,8 +13,10 @@ import (
 
 type LapsCommand struct{}
 
-func (c *LapsCommand) Name() string        { return "laps" }
-func (c *LapsCommand) Description() string { return "Read LAPS passwords from Active Directory (T1552.006)" }
+func (c *LapsCommand) Name() string { return "laps" }
+func (c *LapsCommand) Description() string {
+	return "Read LAPS passwords from Active Directory (T1552.006)"
+}
 
 type lapsArgs struct {
 	Server   string `json:"server"`

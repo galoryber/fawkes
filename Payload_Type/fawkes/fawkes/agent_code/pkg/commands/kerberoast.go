@@ -18,8 +18,10 @@ import (
 
 type KerberoastCommand struct{}
 
-func (c *KerberoastCommand) Name() string        { return "kerberoast" }
-func (c *KerberoastCommand) Description() string { return "Request TGS tickets for SPNs and extract hashes for offline cracking (T1558.003)" }
+func (c *KerberoastCommand) Name() string { return "kerberoast" }
+func (c *KerberoastCommand) Description() string {
+	return "Request TGS tickets for SPNs and extract hashes for offline cracking (T1558.003)"
+}
 
 type kerberoastArgs struct {
 	Server   string `json:"server"`
@@ -27,9 +29,9 @@ type kerberoastArgs struct {
 	Realm    string `json:"realm"`
 	Username string `json:"username"`
 	Password string `json:"password"`
-	SPN      string `json:"spn"`      // optional: specific SPN to roast
-	BaseDN   string `json:"base_dn"`  // optional: LDAP base DN
-	UseTLS   bool   `json:"use_tls"`  // optional: LDAPS for SPN enumeration
+	SPN      string `json:"spn"`     // optional: specific SPN to roast
+	BaseDN   string `json:"base_dn"` // optional: LDAP base DN
+	UseTLS   bool   `json:"use_tls"` // optional: LDAPS for SPN enumeration
 }
 
 func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {

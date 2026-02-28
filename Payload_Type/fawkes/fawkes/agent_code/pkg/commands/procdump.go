@@ -24,7 +24,7 @@ const (
 )
 
 var (
-	dbghelp              = windows.NewLazySystemDLL("dbghelp.dll")
+	dbghelp               = windows.NewLazySystemDLL("dbghelp.dll")
 	procMiniDumpWriteDump = dbghelp.NewProc("MiniDumpWriteDump")
 )
 

@@ -29,8 +29,10 @@ import (
 
 type DcsyncCommand struct{}
 
-func (c *DcsyncCommand) Name() string        { return "dcsync" }
-func (c *DcsyncCommand) Description() string { return "DCSync — replicate AD credentials via DRS (T1003.006)" }
+func (c *DcsyncCommand) Name() string { return "dcsync" }
+func (c *DcsyncCommand) Description() string {
+	return "DCSync — replicate AD credentials via DRS (T1003.006)"
+}
 
 type dcsyncArgs struct {
 	Server   string `json:"server"`   // domain controller IP/hostname

@@ -26,26 +26,28 @@ var (
 )
 
 const (
-	tsconServerHandle  = 0
-	tsconInfoUserName  = 5
-	tsconInfoDomain    = 7
-	tsconStateActive   = 0
-	tsconStateConn     = 1
-	tsconStateConnQ    = 2
-	tsconStateShadow   = 3
-	tsconStateDisconn  = 4
-	tsconStateIdle     = 5
-	tsconStateListen   = 6
-	tsconStateReset    = 7
-	tsconStateDown     = 8
-	tsconStateInit     = 9
+	tsconServerHandle = 0
+	tsconInfoUserName = 5
+	tsconInfoDomain   = 7
+	tsconStateActive  = 0
+	tsconStateConn    = 1
+	tsconStateConnQ   = 2
+	tsconStateShadow  = 3
+	tsconStateDisconn = 4
+	tsconStateIdle    = 5
+	tsconStateListen  = 6
+	tsconStateReset   = 7
+	tsconStateDown    = 8
+	tsconStateInit    = 9
 )
 
 // TsconCommand manages RDP sessions — list, hijack, disconnect.
 type TsconCommand struct{}
 
-func (c *TsconCommand) Name() string        { return "tscon" }
-func (c *TsconCommand) Description() string { return "RDP session management — list, hijack, disconnect" }
+func (c *TsconCommand) Name() string { return "tscon" }
+func (c *TsconCommand) Description() string {
+	return "RDP session management — list, hijack, disconnect"
+}
 
 type tsconArgs struct {
 	Action    string `json:"action"`     // list, hijack, disconnect

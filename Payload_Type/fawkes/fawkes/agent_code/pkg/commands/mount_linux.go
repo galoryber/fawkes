@@ -22,7 +22,7 @@ func getMountInfo() ([]mountInfoEntry, error) {
 		}
 
 		entries = append(entries, mountInfoEntry{
-			device:     fields[0],
+			device:   fields[0],
 			mntPoint: fields[1],
 			mntType:  fields[2],
 			mntOpts:  fields[3],

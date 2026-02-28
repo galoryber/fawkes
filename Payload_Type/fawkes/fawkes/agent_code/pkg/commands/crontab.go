@@ -22,11 +22,11 @@ func (c *CrontabCommand) Description() string {
 }
 
 type crontabArgs struct {
-	Action  string `json:"action"`
-	Entry   string `json:"entry"`
-	User    string `json:"user"`
-	Program string `json:"program"`
-	Args    string `json:"args"`
+	Action   string `json:"action"`
+	Entry    string `json:"entry"`
+	User     string `json:"user"`
+	Program  string `json:"program"`
+	Args     string `json:"args"`
 	Schedule string `json:"schedule"`
 }
 

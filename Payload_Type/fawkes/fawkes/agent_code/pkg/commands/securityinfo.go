@@ -12,8 +12,10 @@ import (
 // SecurityInfoCommand reports security posture and controls.
 type SecurityInfoCommand struct{}
 
-func (c *SecurityInfoCommand) Name() string        { return "security-info" }
-func (c *SecurityInfoCommand) Description() string { return "Report security posture and active controls" }
+func (c *SecurityInfoCommand) Name() string { return "security-info" }
+func (c *SecurityInfoCommand) Description() string {
+	return "Report security posture and active controls"
+}
 
 type secControl struct {
 	Name    string

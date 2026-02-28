@@ -14,17 +14,17 @@ import (
 )
 
 var (
-	user32CB              = windows.NewLazySystemDLL("user32.dll")
-	kernel32CB            = windows.NewLazySystemDLL("kernel32.dll")
-	procOpenClipboard     = user32CB.NewProc("OpenClipboard")
-	procCloseClipboard    = user32CB.NewProc("CloseClipboard")
-	procGetClipboardData  = user32CB.NewProc("GetClipboardData")
-	procSetClipboardData  = user32CB.NewProc("SetClipboardData")
-	procEmptyClipboard    = user32CB.NewProc("EmptyClipboard")
-	procGlobalAlloc       = kernel32CB.NewProc("GlobalAlloc")
-	procGlobalFree        = kernel32CB.NewProc("GlobalFree")
-	procGlobalLock        = kernel32CB.NewProc("GlobalLock")
-	procGlobalUnlock      = kernel32CB.NewProc("GlobalUnlock")
+	user32CB             = windows.NewLazySystemDLL("user32.dll")
+	kernel32CB           = windows.NewLazySystemDLL("kernel32.dll")
+	procOpenClipboard    = user32CB.NewProc("OpenClipboard")
+	procCloseClipboard   = user32CB.NewProc("CloseClipboard")
+	procGetClipboardData = user32CB.NewProc("GetClipboardData")
+	procSetClipboardData = user32CB.NewProc("SetClipboardData")
+	procEmptyClipboard   = user32CB.NewProc("EmptyClipboard")
+	procGlobalAlloc      = kernel32CB.NewProc("GlobalAlloc")
+	procGlobalFree       = kernel32CB.NewProc("GlobalFree")
+	procGlobalLock       = kernel32CB.NewProc("GlobalLock")
+	procGlobalUnlock     = kernel32CB.NewProc("GlobalUnlock")
 )
 
 const (

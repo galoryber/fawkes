@@ -17,18 +17,20 @@ import (
 // ShareHuntCommand crawls SMB shares across multiple hosts to find sensitive files.
 type ShareHuntCommand struct{}
 
-func (c *ShareHuntCommand) Name() string        { return "share-hunt" }
-func (c *ShareHuntCommand) Description() string { return "Crawl SMB shares across hosts for sensitive files" }
+func (c *ShareHuntCommand) Name() string { return "share-hunt" }
+func (c *ShareHuntCommand) Description() string {
+	return "Crawl SMB shares across hosts for sensitive files"
+}
 
 type shareHuntArgs struct {
-	Hosts    string `json:"hosts"`    // comma-separated IPs or CIDR
-	Username string `json:"username"` // DOMAIN\user or user@domain
-	Password string `json:"password"` // password
-	Hash     string `json:"hash"`     // NTLM hash for PTH
-	Domain   string `json:"domain"`   // domain (optional)
-	Depth    int    `json:"depth"`    // max recursion depth (default: 3)
+	Hosts    string `json:"hosts"`     // comma-separated IPs or CIDR
+	Username string `json:"username"`  // DOMAIN\user or user@domain
+	Password string `json:"password"`  // password
+	Hash     string `json:"hash"`      // NTLM hash for PTH
+	Domain   string `json:"domain"`    // domain (optional)
+	Depth    int    `json:"depth"`     // max recursion depth (default: 3)
 	MaxFiles int    `json:"max_files"` // max results (default: 500)
-	Filter   string `json:"filter"`   // filter: all, credentials, configs, code (default: all)
+	Filter   string `json:"filter"`    // filter: all, credentials, configs, code (default: all)
 }
 
 type shareHuntResult struct {

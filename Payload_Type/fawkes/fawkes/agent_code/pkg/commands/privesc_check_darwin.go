@@ -520,11 +520,11 @@ func macPrivescCheckWritable() structs.CommandResult {
 
 	// Sensitive macOS paths
 	sensitiveFiles := map[string]string{
-		"/etc/passwd":                          "User database",
-		"/etc/sudoers":                         "Sudo configuration",
-		"/etc/authorization":                   "Authorization policy",
-		"/private/etc/pam.d":                   "PAM configuration",
-		"/Library/Preferences":                 "System preferences",
+		"/etc/passwd":                            "User database",
+		"/etc/sudoers":                           "Sudo configuration",
+		"/etc/authorization":                     "Authorization policy",
+		"/private/etc/pam.d":                     "PAM configuration",
+		"/Library/Preferences":                   "System preferences",
 		"/Library/Security/SecurityAgentPlugins": "Security agent plugins (root)",
 	}
 

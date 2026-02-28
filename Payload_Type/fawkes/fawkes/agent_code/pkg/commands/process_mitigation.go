@@ -15,32 +15,32 @@ import (
 )
 
 var (
-	kernel32PM                    = windows.NewLazySystemDLL("kernel32.dll")
-	procGetProcessMitigationPol   = kernel32PM.NewProc("GetProcessMitigationPolicy")
-	procSetProcessMitigationPol   = kernel32PM.NewProc("SetProcessMitigationPolicy")
+	kernel32PM                  = windows.NewLazySystemDLL("kernel32.dll")
+	procGetProcessMitigationPol = kernel32PM.NewProc("GetProcessMitigationPolicy")
+	procSetProcessMitigationPol = kernel32PM.NewProc("SetProcessMitigationPolicy")
 )
 
 // Mitigation policy types
 const (
-	ProcessDEPPolicy                    = 0
-	ProcessASLRPolicy                   = 1
-	ProcessDynamicCodePolicy            = 2
-	ProcessStrictHandleCheckPolicy      = 3
-	ProcessSystemCallDisablePolicy      = 4
-	ProcessExtensionPointDisablePolicy  = 6
-	ProcessControlFlowGuardPolicy       = 7
-	ProcessSignaturePolicy              = 8
-	ProcessFontDisablePolicy            = 9
-	ProcessImageLoadPolicy              = 10
-	ProcessChildProcessPolicy           = 13
-	ProcessUserShadowStackPolicy        = 15
+	ProcessDEPPolicy                   = 0
+	ProcessASLRPolicy                  = 1
+	ProcessDynamicCodePolicy           = 2
+	ProcessStrictHandleCheckPolicy     = 3
+	ProcessSystemCallDisablePolicy     = 4
+	ProcessExtensionPointDisablePolicy = 6
+	ProcessControlFlowGuardPolicy      = 7
+	ProcessSignaturePolicy             = 8
+	ProcessFontDisablePolicy           = 9
+	ProcessImageLoadPolicy             = 10
+	ProcessChildProcessPolicy          = 13
+	ProcessUserShadowStackPolicy       = 15
 )
 
 // Policy structures — bitfield structs matching Windows definitions.
 // Each uses a uint32 Flags field where individual bits represent policy settings.
 
 type processMitigationDEPPolicy struct {
-	Flags    uint32
+	Flags     uint32
 	Permanent uint32 // BOOLEAN
 }
 
@@ -90,8 +90,10 @@ type processMitigationUserShadowStackPolicy struct {
 
 type ProcessMitigationCommand struct{}
 
-func (c *ProcessMitigationCommand) Name() string        { return "process-mitigation" }
-func (c *ProcessMitigationCommand) Description() string { return "Query or set process mitigation policies (DEP, ASLR, CIG, ACG, CFG)" }
+func (c *ProcessMitigationCommand) Name() string { return "process-mitigation" }
+func (c *ProcessMitigationCommand) Description() string {
+	return "Query or set process mitigation policies (DEP, ASLR, CIG, ACG, CFG)"
+}
 
 type processMitigationArgs struct {
 	Action string `json:"action"` // query, set

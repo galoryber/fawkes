@@ -33,16 +33,16 @@ func (p ccachePrincipal) String() string {
 
 // ccacheCredential represents a credential entry in the ccache file
 type ccacheCredential struct {
-	Client       ccachePrincipal
-	Server       ccachePrincipal
-	KeyType      int32 // changed from uint16 to match ccache v4 spec
-	AuthTime     time.Time
-	StartTime    time.Time
-	EndTime      time.Time
-	RenewTill    time.Time
-	IsSKey       bool
-	TicketFlags  uint32
-	TicketData   []byte
+	Client      ccachePrincipal
+	Server      ccachePrincipal
+	KeyType     int32 // changed from uint16 to match ccache v4 spec
+	AuthTime    time.Time
+	StartTime   time.Time
+	EndTime     time.Time
+	RenewTill   time.Time
+	IsSKey      bool
+	TicketFlags uint32
+	TicketData  []byte
 }
 
 // findCcacheFile locates the Kerberos credential cache file

@@ -15,15 +15,17 @@ import (
 
 type RegSearchCommand struct{}
 
-func (c *RegSearchCommand) Name() string        { return "reg-search" }
-func (c *RegSearchCommand) Description() string { return "Search Windows Registry keys and values recursively (T1012)" }
+func (c *RegSearchCommand) Name() string { return "reg-search" }
+func (c *RegSearchCommand) Description() string {
+	return "Search Windows Registry keys and values recursively (T1012)"
+}
 
 type regSearchArgs struct {
-	Hive    string `json:"hive"`
-	Path    string `json:"path"`
-	Pattern string `json:"pattern"`
-	MaxDepth int   `json:"max_depth"`
-	MaxResults int `json:"max_results"`
+	Hive       string `json:"hive"`
+	Path       string `json:"path"`
+	Pattern    string `json:"pattern"`
+	MaxDepth   int    `json:"max_depth"`
+	MaxResults int    `json:"max_results"`
 }
 
 type regSearchResult struct {

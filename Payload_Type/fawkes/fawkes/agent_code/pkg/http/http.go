@@ -34,7 +34,7 @@ type HTTPProfile struct {
 	Debug         bool
 	GetEndpoint   string
 	PostEndpoint  string
-	HostHeader    string // Override Host header for domain fronting
+	HostHeader    string            // Override Host header for domain fronting
 	CustomHeaders map[string]string // Additional HTTP headers from C2 profile
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin

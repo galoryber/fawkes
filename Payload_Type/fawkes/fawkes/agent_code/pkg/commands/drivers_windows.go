@@ -10,8 +10,8 @@ import (
 )
 
 var (
-	psapiDrv                   = windows.NewLazySystemDLL("psapi.dll")
-	procEnumDeviceDrivers      = psapiDrv.NewProc("EnumDeviceDrivers")
+	psapiDrv                     = windows.NewLazySystemDLL("psapi.dll")
+	procEnumDeviceDrivers        = psapiDrv.NewProc("EnumDeviceDrivers")
 	procGetDeviceDriverBaseNameW = psapiDrv.NewProc("GetDeviceDriverBaseNameW")
 	procGetDeviceDriverFileNameW = psapiDrv.NewProc("GetDeviceDriverFileNameW")
 )

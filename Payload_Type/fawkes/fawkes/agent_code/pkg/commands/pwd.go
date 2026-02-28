@@ -34,7 +34,7 @@ func (c *PwdCommand) Execute(task structs.Task) structs.CommandResult {
 
 	return structs.CommandResult{
 		Output:    currentDir,
-		Status:    "success", 
+		Status:    "success",
 		Completed: true,
 	}
 }

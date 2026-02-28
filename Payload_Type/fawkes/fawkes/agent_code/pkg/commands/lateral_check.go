@@ -14,8 +14,10 @@ import (
 // LateralCheckCommand tests which lateral movement methods are available against targets.
 type LateralCheckCommand struct{}
 
-func (c *LateralCheckCommand) Name() string        { return "lateral-check" }
-func (c *LateralCheckCommand) Description() string { return "Test lateral movement options against targets" }
+func (c *LateralCheckCommand) Name() string { return "lateral-check" }
+func (c *LateralCheckCommand) Description() string {
+	return "Test lateral movement options against targets"
+}
 
 type lateralCheckArgs struct {
 	Hosts   string `json:"hosts"`   // single IP, comma-separated, or CIDR
@@ -33,11 +35,11 @@ type lateralResult struct {
 }
 
 type lateralOutputEntry struct {
-	Host       string   `json:"host"`
-	Available  []string `json:"available,omitempty"`
-	Closed     []string `json:"closed,omitempty"`
-	Suggested  []string `json:"suggested,omitempty"`
-	TotalOpen  int      `json:"total_open"`
+	Host      string   `json:"host"`
+	Available []string `json:"available,omitempty"`
+	Closed    []string `json:"closed,omitempty"`
+	Suggested []string `json:"suggested,omitempty"`
+	TotalOpen int      `json:"total_open"`
 }
 
 func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {

@@ -39,8 +39,10 @@ func coerceSafeAddMechanism(m gssapi.MechanismFactory) {
 
 type CoerceCommand struct{}
 
-func (c *CoerceCommand) Name() string        { return "coerce" }
-func (c *CoerceCommand) Description() string { return "NTLM authentication coercion via MS-EFSR/MS-RPRN/MS-FSRVP (T1187)" }
+func (c *CoerceCommand) Name() string { return "coerce" }
+func (c *CoerceCommand) Description() string {
+	return "NTLM authentication coercion via MS-EFSR/MS-RPRN/MS-FSRVP (T1187)"
+}
 
 type coerceArgs struct {
 	Server   string `json:"server"`   // target server to coerce
@@ -219,15 +221,15 @@ func coerceIsRPCProcessed(err error) bool {
 	// These Win32/NTSTATUS errors mean the server processed the RPC call
 	// and tried (or refused) the file/print operation — coercion was triggered
 	processedIndicators := []string{
-		"ERROR_BAD_NETPATH",       // target tried to resolve the UNC path
-		"ERROR_ACCESS_DENIED",     // path processed but access denied
-		"ERROR_BAD_NET_NAME",      // UNC share name not found (tried to connect)
-		"ERROR_NOT_FOUND",         // resource not found (call processed)
-		"ERROR_INVALID_PARAMETER", // parameter error (call reached handler)
-		"0x00000035",              // BAD_NETPATH numeric
-		"0x00000005",              // ACCESS_DENIED numeric
+		"ERROR_BAD_NETPATH",        // target tried to resolve the UNC path
+		"ERROR_ACCESS_DENIED",      // path processed but access denied
+		"ERROR_BAD_NET_NAME",       // UNC share name not found (tried to connect)
+		"ERROR_NOT_FOUND",          // resource not found (call processed)
+		"ERROR_INVALID_PARAMETER",  // parameter error (call reached handler)
+		"0x00000035",               // BAD_NETPATH numeric
+		"0x00000005",               // ACCESS_DENIED numeric
 		"RPC_S_SERVER_UNAVAILABLE", // server tried to reach listener, listener not there
-		"0x000006ba",              // RPC_S_SERVER_UNAVAILABLE numeric
+		"0x000006ba",               // RPC_S_SERVER_UNAVAILABLE numeric
 	}
 	for _, indicator := range processedIndicators {
 		if strings.Contains(errStr, indicator) {

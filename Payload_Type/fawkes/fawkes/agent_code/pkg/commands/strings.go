@@ -33,7 +33,7 @@ type stringsArgs struct {
 const (
 	stringsDefaultMinLen  = 4
 	stringsDefaultMaxSize = 10 * 1024 * 1024 // 10MB
-	stringsMaxOutput      = 100000            // max output chars to prevent huge responses
+	stringsMaxOutput      = 100000           // max output chars to prevent huge responses
 )
 
 func (c *StringsCommand) Execute(task structs.Task) structs.CommandResult {

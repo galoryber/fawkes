@@ -34,12 +34,12 @@ func TestShouldSkipFs(t *testing.T) {
 		{"sysfs", "sysfs", true},
 		{"devpts", "devpts", true},
 		{"cgroup2", "cgroup2", true},
-		{"tmpfs", "none", true},          // device=none is skipped
-		{"ext4", "systemd-1", true},       // systemd device is skipped
-		{"tmpfs", "tmpfs", false},         // tmpfs with proper device is OK
+		{"tmpfs", "none", true},     // device=none is skipped
+		{"ext4", "systemd-1", true}, // systemd device is skipped
+		{"tmpfs", "tmpfs", false},   // tmpfs with proper device is OK
 		{"debugfs", "debugfs", true},
 		{"bpf", "bpf", true},
-		{"nfs", "server:/share", false},   // NFS mounts should not be skipped
+		{"nfs", "server:/share", false}, // NFS mounts should not be skipped
 		{"binfmt_misc", "binfmt_misc", true},
 	}
 

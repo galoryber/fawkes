@@ -126,9 +126,9 @@ func buildTestCcache(t *testing.T) []byte {
 
 	// Times
 	now := time.Now()
-	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(-1*time.Hour).Unix()))  // authtime
-	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(-1*time.Hour).Unix()))  // starttime
-	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(9*time.Hour).Unix()))   // endtime
+	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(-1*time.Hour).Unix()))   // authtime
+	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(-1*time.Hour).Unix()))   // starttime
+	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(9*time.Hour).Unix()))    // endtime
 	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(7*24*time.Hour).Unix())) // renew_till
 
 	// is_skey

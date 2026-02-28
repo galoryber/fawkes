@@ -33,18 +33,18 @@ import (
 
 var (
 	// These variables are populated at build time by the Go linker
-	payloadUUID  string = ""
-	callbackHost string = ""
-	callbackPort  string = "443"
-	userAgent     string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-	sleepInterval string = "10"
-	jitter        string = "10"
-	encryptionKey string = ""
-	killDate      string = "0"
-	maxRetries    string = "10"
-	debug         string = "false"
-	getURI        string = "/data"
-	postURI       string = "/data"
+	payloadUUID       string = ""
+	callbackHost      string = ""
+	callbackPort      string = "443"
+	userAgent         string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+	sleepInterval     string = "10"
+	jitter            string = "10"
+	encryptionKey     string = ""
+	killDate          string = "0"
+	maxRetries        string = "10"
+	debug             string = "false"
+	getURI            string = "/data"
+	postURI           string = "/data"
 	hostHeader        string = ""     // Override Host header for domain fronting
 	proxyURL          string = ""     // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
 	tlsVerify         string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>

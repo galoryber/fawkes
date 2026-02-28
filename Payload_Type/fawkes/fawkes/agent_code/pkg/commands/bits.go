@@ -36,18 +36,18 @@ type bitsArgs struct {
 
 // COM GUIDs for BITS
 var (
-	clsidBITS     = ole.NewGUID("{4991D34B-80A1-4291-83B6-3328366B9097}")
-	iidBITSMgr    = ole.NewGUID("{5CE34C0D-0DC9-4C1F-897C-DAA1B78CEE7C}")
-	iidBITSJob    = ole.NewGUID("{37668D37-507E-4160-9316-26306D150B12}")
-	iidBITSJob2   = ole.NewGUID("{54B50739-686F-45EB-9DFF-D6A9A0FAA9AF}")
-	iidBITSEnum   = ole.NewGUID("{1AF4F612-3B71-466F-8F58-7B6F73AC57AD}")
+	clsidBITS   = ole.NewGUID("{4991D34B-80A1-4291-83B6-3328366B9097}")
+	iidBITSMgr  = ole.NewGUID("{5CE34C0D-0DC9-4C1F-897C-DAA1B78CEE7C}")
+	iidBITSJob  = ole.NewGUID("{37668D37-507E-4160-9316-26306D150B12}")
+	iidBITSJob2 = ole.NewGUID("{54B50739-686F-45EB-9DFF-D6A9A0FAA9AF}")
+	iidBITSEnum = ole.NewGUID("{1AF4F612-3B71-466F-8F58-7B6F73AC57AD}")
 )
 
 // IBackgroundCopyManager vtable offsets (after IUnknown 0-2)
 const (
-	bitsVtCreateJob         = 3
-	bitsVtGetJob            = 4
-	bitsVtEnumJobs          = 5
+	bitsVtCreateJob = 3
+	bitsVtGetJob    = 4
+	bitsVtEnumJobs  = 5
 )
 
 // IBackgroundCopyJob vtable offsets (after IUnknown 0-2)

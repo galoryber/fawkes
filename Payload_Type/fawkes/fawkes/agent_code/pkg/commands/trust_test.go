@@ -54,8 +54,8 @@ func TestTrustParseSID(t *testing.T) {
 		{
 			name: "standard domain SID S-1-5-21-...",
 			input: []byte{
-				0x01,                   // revision 1
-				0x04,                   // 4 sub-authorities
+				0x01,                               // revision 1
+				0x04,                               // 4 sub-authorities
 				0x00, 0x00, 0x00, 0x00, 0x00, 0x05, // authority: 5
 				0x15, 0x00, 0x00, 0x00, // sub-auth 1: 21
 				0x39, 0x05, 0x00, 0x00, // sub-auth 2: 1337

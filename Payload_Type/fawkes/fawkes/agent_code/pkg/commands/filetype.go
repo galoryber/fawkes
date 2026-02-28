@@ -24,10 +24,10 @@ type fileTypeArgs struct {
 }
 
 type magicSig struct {
-	offset  int
-	magic   []byte
-	desc    string
-	ext     string
+	offset   int
+	magic    []byte
+	desc     string
+	ext      string
 	category string
 }
 

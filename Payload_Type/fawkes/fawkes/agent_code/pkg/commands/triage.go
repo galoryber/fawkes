@@ -354,4 +354,3 @@ func triageScanPatterns(task structs.Task, paths []string, patterns []string, ca
 	}
 	return results
 }
-

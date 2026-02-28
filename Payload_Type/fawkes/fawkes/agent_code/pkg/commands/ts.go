@@ -52,10 +52,10 @@ type ProcessThreadInfo struct {
 
 // Windows API constants
 const (
-	TH32CS_SNAPTHREAD = 0x00000004
+	TH32CS_SNAPTHREAD  = 0x00000004
 	TH32CS_SNAPPROCESS = 0x00000002
 
-	THREAD_QUERY_INFORMATION        = 0x0040
+	THREAD_QUERY_INFORMATION         = 0x0040
 	THREAD_QUERY_LIMITED_INFORMATION = 0x0800
 
 	// ThreadWaitReason values from Windows
@@ -108,61 +108,61 @@ type CLIENT_ID struct {
 type KWAIT_REASON uint32
 
 const (
-	Executive           KWAIT_REASON = 0
-	FreePage            KWAIT_REASON = 1
-	PageIn              KWAIT_REASON = 2
-	PoolAllocation      KWAIT_REASON = 3
-	DelayExecution      KWAIT_REASON = 4  // Alertable - SleepEx, WaitForSingleObjectEx, etc.
-	Suspended           KWAIT_REASON = 5  // Alertable - Thread is suspended
-	UserRequest         KWAIT_REASON = 6
-	WrExecutive         KWAIT_REASON = 7
-	WrFreePage          KWAIT_REASON = 8
-	WrPageIn            KWAIT_REASON = 9
-	WrPoolAllocation    KWAIT_REASON = 10
-	WrDelayExecution    KWAIT_REASON = 11
-	WrSuspended         KWAIT_REASON = 12
-	WrUserRequest       KWAIT_REASON = 13
-	WrEventPair         KWAIT_REASON = 14
-	WrQueue             KWAIT_REASON = 15
-	WrLpcReceive        KWAIT_REASON = 16
-	WrLpcReply          KWAIT_REASON = 17
-	WrVirtualMemory     KWAIT_REASON = 18
-	WrPageOut           KWAIT_REASON = 19
-	WrRendezvous        KWAIT_REASON = 20
-	WrKeyedEvent        KWAIT_REASON = 21
-	WrTerminated        KWAIT_REASON = 22
-	WrProcessInSwap     KWAIT_REASON = 23
-	WrCpuRateControl    KWAIT_REASON = 24
-	WrCalloutStack      KWAIT_REASON = 25
-	WrKernel            KWAIT_REASON = 26
-	WrResource          KWAIT_REASON = 27
-	WrPushLock          KWAIT_REASON = 28
-	WrMutex             KWAIT_REASON = 29
-	WrQuantumEnd        KWAIT_REASON = 30
-	WrDispatchInt       KWAIT_REASON = 31
-	WrPreempted         KWAIT_REASON = 32
-	WrYieldExecution    KWAIT_REASON = 33
-	WrFastMutex         KWAIT_REASON = 34
-	WrGuardedMutex      KWAIT_REASON = 35
-	WrRundown           KWAIT_REASON = 36
-	WrAlertByThreadId   KWAIT_REASON = 37
-	WrDeferredPreempt   KWAIT_REASON = 38
-	MaximumWaitReason   KWAIT_REASON = 39
+	Executive         KWAIT_REASON = 0
+	FreePage          KWAIT_REASON = 1
+	PageIn            KWAIT_REASON = 2
+	PoolAllocation    KWAIT_REASON = 3
+	DelayExecution    KWAIT_REASON = 4 // Alertable - SleepEx, WaitForSingleObjectEx, etc.
+	Suspended         KWAIT_REASON = 5 // Alertable - Thread is suspended
+	UserRequest       KWAIT_REASON = 6
+	WrExecutive       KWAIT_REASON = 7
+	WrFreePage        KWAIT_REASON = 8
+	WrPageIn          KWAIT_REASON = 9
+	WrPoolAllocation  KWAIT_REASON = 10
+	WrDelayExecution  KWAIT_REASON = 11
+	WrSuspended       KWAIT_REASON = 12
+	WrUserRequest     KWAIT_REASON = 13
+	WrEventPair       KWAIT_REASON = 14
+	WrQueue           KWAIT_REASON = 15
+	WrLpcReceive      KWAIT_REASON = 16
+	WrLpcReply        KWAIT_REASON = 17
+	WrVirtualMemory   KWAIT_REASON = 18
+	WrPageOut         KWAIT_REASON = 19
+	WrRendezvous      KWAIT_REASON = 20
+	WrKeyedEvent      KWAIT_REASON = 21
+	WrTerminated      KWAIT_REASON = 22
+	WrProcessInSwap   KWAIT_REASON = 23
+	WrCpuRateControl  KWAIT_REASON = 24
+	WrCalloutStack    KWAIT_REASON = 25
+	WrKernel          KWAIT_REASON = 26
+	WrResource        KWAIT_REASON = 27
+	WrPushLock        KWAIT_REASON = 28
+	WrMutex           KWAIT_REASON = 29
+	WrQuantumEnd      KWAIT_REASON = 30
+	WrDispatchInt     KWAIT_REASON = 31
+	WrPreempted       KWAIT_REASON = 32
+	WrYieldExecution  KWAIT_REASON = 33
+	WrFastMutex       KWAIT_REASON = 34
+	WrGuardedMutex    KWAIT_REASON = 35
+	WrRundown         KWAIT_REASON = 36
+	WrAlertByThreadId KWAIT_REASON = 37
+	WrDeferredPreempt KWAIT_REASON = 38
+	MaximumWaitReason KWAIT_REASON = 39
 )
 
 // SYSTEM_THREAD_INFORMATION for NtQuerySystemInformation
 type SYSTEM_THREAD_INFORMATION struct {
-	KernelTime       int64
-	UserTime         int64
-	CreateTime       int64
-	WaitTime         uint32
-	StartAddress     uintptr
-	ClientId         CLIENT_ID
-	Priority         int32
-	BasePriority     int32
-	ContextSwitches  uint32
-	ThreadState      uint32
-	WaitReason       KWAIT_REASON
+	KernelTime      int64
+	UserTime        int64
+	CreateTime      int64
+	WaitTime        uint32
+	StartAddress    uintptr
+	ClientId        CLIENT_ID
+	Priority        int32
+	BasePriority    int32
+	ContextSwitches uint32
+	ThreadState     uint32
+	WaitReason      KWAIT_REASON
 }
 
 // Windows API procedures

@@ -81,9 +81,9 @@ type privOutputEntry struct {
 
 // privsOutput wraps the privilege listing with token metadata
 type privsOutput struct {
-	Identity  string            `json:"identity"`
-	Source    string            `json:"source"`
-	Integrity string           `json:"integrity"`
+	Identity   string            `json:"identity"`
+	Source     string            `json:"source"`
+	Integrity  string            `json:"integrity"`
 	Privileges []privOutputEntry `json:"privileges"`
 }
 

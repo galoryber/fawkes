@@ -60,14 +60,14 @@ const (
 
 // USER_INFO_1 for NetUserAdd (level 1)
 type userInfo1 struct {
-	Name     *uint16
-	Password *uint16
+	Name        *uint16
+	Password    *uint16
 	PasswordAge uint32
-	Priv     uint32
-	HomeDir  *uint16
-	Comment  *uint16
-	Flags    uint32
-	ScriptPath *uint16
+	Priv        uint32
+	HomeDir     *uint16
+	Comment     *uint16
+	Flags       uint32
+	ScriptPath  *uint16
 }
 
 // USER_INFO_1003 for setting password
@@ -77,34 +77,34 @@ type userInfo1003 struct {
 
 // USER_INFO_4 for detailed info (level 4)
 type userInfo4 struct {
-	Name           *uint16
-	Password       *uint16
-	PasswordAge    uint32
-	Priv           uint32
-	HomeDir        *uint16
-	Comment        *uint16
-	Flags          uint32
-	ScriptPath     *uint16
-	AuthFlags      uint32
-	FullName       *uint16
-	UsrComment     *uint16
-	Params         *uint16
-	Workstations   *uint16
-	LastLogon      uint32
-	LastLogoff     uint32
-	AcctExpires    uint32
-	MaxStorage     uint32
-	UnitsPerWeek   uint32
-	LogonHours     uintptr
-	BadPwCount     uint32
-	NumLogons      uint32
-	LogonServer    *uint16
-	CountryCode    uint32
-	CodePage       uint32
-	UserSid        uintptr
-	PrimaryGroupID uint32
-	Profile        *uint16
-	HomeDirDrive   *uint16
+	Name            *uint16
+	Password        *uint16
+	PasswordAge     uint32
+	Priv            uint32
+	HomeDir         *uint16
+	Comment         *uint16
+	Flags           uint32
+	ScriptPath      *uint16
+	AuthFlags       uint32
+	FullName        *uint16
+	UsrComment      *uint16
+	Params          *uint16
+	Workstations    *uint16
+	LastLogon       uint32
+	LastLogoff      uint32
+	AcctExpires     uint32
+	MaxStorage      uint32
+	UnitsPerWeek    uint32
+	LogonHours      uintptr
+	BadPwCount      uint32
+	NumLogons       uint32
+	LogonServer     *uint16
+	CountryCode     uint32
+	CodePage        uint32
+	UserSid         uintptr
+	PrimaryGroupID  uint32
+	Profile         *uint16
+	HomeDirDrive    *uint16
 	PasswordExpired uint32
 }
 

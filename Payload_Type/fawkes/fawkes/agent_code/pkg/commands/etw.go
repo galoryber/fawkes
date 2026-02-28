@@ -147,8 +147,8 @@ func etwSessions() structs.CommandResult {
 		binary.LittleEndian.PutUint32(propsBufs[i][0:4], eventTracePropsSize)
 		// LogFileNameOffset at offset 112, LoggerNameOffset at offset 116
 		// Point to buffer space after the fixed 120-byte struct
-		binary.LittleEndian.PutUint32(propsBufs[i][116:120], 120)  // LoggerNameOffset
-		binary.LittleEndian.PutUint32(propsBufs[i][112:116], 632)  // LogFileNameOffset (120 + 256*2)
+		binary.LittleEndian.PutUint32(propsBufs[i][116:120], 120) // LoggerNameOffset
+		binary.LittleEndian.PutUint32(propsBufs[i][112:116], 632) // LogFileNameOffset (120 + 256*2)
 		propsPtrs[i] = uintptr(unsafe.Pointer(&propsBufs[i][0]))
 	}
 

@@ -19,8 +19,10 @@ import (
 // Classic Windows privilege escalation: create pipe → wait for privileged connection → impersonate token.
 type PipeServerCommand struct{}
 
-func (c *PipeServerCommand) Name() string        { return "pipe-server" }
-func (c *PipeServerCommand) Description() string { return "Named pipe impersonation for privilege escalation" }
+func (c *PipeServerCommand) Name() string { return "pipe-server" }
+func (c *PipeServerCommand) Description() string {
+	return "Named pipe impersonation for privilege escalation"
+}
 
 type pipeServerArgs struct {
 	Action  string `json:"action"`

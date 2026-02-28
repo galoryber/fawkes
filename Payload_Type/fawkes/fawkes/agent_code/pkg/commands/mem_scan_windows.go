@@ -10,11 +10,11 @@ import (
 )
 
 const (
-	msMemCommit      = 0x1000
-	msPageNoAccess   = 0x01
-	msPageGuard      = 0x100
-	msChunkSize      = 4 * 1024 * 1024 // 4 MB read chunks
-	msProcessVMRead  = 0x0010
+	msMemCommit        = 0x1000
+	msPageNoAccess     = 0x01
+	msPageGuard        = 0x100
+	msChunkSize        = 4 * 1024 * 1024 // 4 MB read chunks
+	msProcessVMRead    = 0x0010
 	msProcessQueryInfo = 0x0400
 )
 

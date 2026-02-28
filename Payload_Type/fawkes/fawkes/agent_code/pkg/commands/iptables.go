@@ -14,8 +14,10 @@ import (
 
 type IptablesCommand struct{}
 
-func (c *IptablesCommand) Name() string        { return "iptables" }
-func (c *IptablesCommand) Description() string { return "Linux firewall enumeration and rule management via iptables/nftables (T1562.004)" }
+func (c *IptablesCommand) Name() string { return "iptables" }
+func (c *IptablesCommand) Description() string {
+	return "Linux firewall enumeration and rule management via iptables/nftables (T1562.004)"
+}
 
 type iptablesArgs struct {
 	Action string `json:"action"`

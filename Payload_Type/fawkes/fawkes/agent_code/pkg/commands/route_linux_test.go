@@ -13,10 +13,10 @@ func TestHexToIP_Valid(t *testing.T) {
 	}{
 		{"00000000", "0.0.0.0"},
 		{"0100000A", "10.0.0.1"},        // 10.0.0.1 in little-endian hex
-		{"0100A8C0", "192.168.0.1"},      // 192.168.0.1
-		{"FFFFFFFF", "255.255.255.255"},  // broadcast
-		{"0100007F", "127.0.0.1"},        // loopback
-		{"0064A8C0", "192.168.100.0"},    // 192.168.100.0
+		{"0100A8C0", "192.168.0.1"},     // 192.168.0.1
+		{"FFFFFFFF", "255.255.255.255"}, // broadcast
+		{"0100007F", "127.0.0.1"},       // loopback
+		{"0064A8C0", "192.168.100.0"},   // 192.168.100.0
 	}
 	for _, tc := range tests {
 		got := hexToIP(tc.input)
@@ -31,9 +31,9 @@ func TestHexToIP_Invalid(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"", ""},           // empty
-		{"00", "00"},       // too short
-		{"ZZZZZZZZ", "ZZZZZZZZ"}, // invalid hex
+		{"", ""},                     // empty
+		{"00", "00"},                 // too short
+		{"ZZZZZZZZ", "ZZZZZZZZ"},     // invalid hex
 		{"00000000FF", "00000000FF"}, // too long
 	}
 	for _, tc := range tests {
@@ -49,14 +49,14 @@ func TestLinuxRouteFlags(t *testing.T) {
 		flags uint32
 		want  string
 	}{
-		{0x0001, "U"},          // Up
-		{0x0002, "G"},          // Gateway
-		{0x0003, "UG"},         // Up + Gateway (default route)
-		{0x0005, "UH"},         // Up + Host
+		{0x0001, "U"},           // Up
+		{0x0002, "G"},           // Gateway
+		{0x0003, "UG"},          // Up + Gateway (default route)
+		{0x0005, "UH"},          // Up + Host
 		{0x0001 | 0x0010, "UD"}, // Up + Dynamic
 		{0x0001 | 0x0020, "UM"}, // Up + Modified
 		{0x0000, "-"},           // No flags
-		{0x003F, "UGHRDM"},     // All flags
+		{0x003F, "UGHRDM"},      // All flags
 	}
 	for _, tc := range tests {
 		got := linuxRouteFlags(tc.flags)
@@ -88,8 +88,8 @@ func TestHexToIPv6_Invalid(t *testing.T) {
 	tests := []struct {
 		input string
 	}{
-		{""},            // empty
-		{"0000"},        // too short
+		{""},                                 // empty
+		{"0000"},                             // too short
 		{"ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"}, // invalid hex
 	}
 	for _, tc := range tests {
@@ -105,11 +105,11 @@ func TestDestPrefixToLen(t *testing.T) {
 		input string
 		want  string
 	}{
-		{"40", "64"},   // /64 prefix
-		{"80", "128"},  // /128 prefix
-		{"00", "0"},    // /0 default
-		{"30", "48"},   // /48
-		{"10", "16"},   // /16
+		{"40", "64"},  // /64 prefix
+		{"80", "128"}, // /128 prefix
+		{"00", "0"},   // /0 default
+		{"30", "48"},  // /48
+		{"10", "16"},  // /16
 	}
 	for _, tc := range tests {
 		got := destPrefixToLen(tc.input)

@@ -279,7 +279,7 @@ func amcacheQuery(params amcacheParams) structs.CommandResult {
 	entries, _, err := parseShimcache(data)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing Shimcache: %v\nRaw data size: %d bytes, first 4 bytes: 0x%08X",
+			Output: fmt.Sprintf("Error parsing Shimcache: %v\nRaw data size: %d bytes, first 4 bytes: 0x%08X",
 				err, len(data), binary.LittleEndian.Uint32(data[0:4])),
 			Status:    "error",
 			Completed: true,

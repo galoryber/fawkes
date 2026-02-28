@@ -396,4 +396,3 @@ func certFiletimeToTime(ft windows.Filetime) time.Time {
 	unixNsec := (nsec - epochDiff) * 100
 	return time.Unix(0, unixNsec).UTC()
 }
-

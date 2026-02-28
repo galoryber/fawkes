@@ -158,8 +158,8 @@ func TestShareHuntMatchFileExtension(t *testing.T) {
 		{"test.kdbx", "cred"},
 		{"config.yaml", "config"},
 		{"deploy.ps1", "code"},
-		{"photo.jpg", ""},     // no match
-		{"report.docx", ""},   // not in share-hunt patterns
+		{"photo.jpg", ""},   // no match
+		{"report.docx", ""}, // not in share-hunt patterns
 	}
 
 	for _, tc := range tests {

@@ -12,8 +12,10 @@ import (
 // TrCommand translates or deletes characters in a file (like Unix tr)
 type TrCommand struct{}
 
-func (c *TrCommand) Name() string        { return "tr" }
-func (c *TrCommand) Description() string { return "Translate, squeeze, or delete characters in file content" }
+func (c *TrCommand) Name() string { return "tr" }
+func (c *TrCommand) Description() string {
+	return "Translate, squeeze, or delete characters in file content"
+}
 
 type trArgs struct {
 	Path    string `json:"path"`

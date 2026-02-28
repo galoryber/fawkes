@@ -24,10 +24,10 @@ func (c *TimestompCommand) Description() string {
 
 // TimestompParams represents the parameters for timestomp
 type TimestompParams struct {
-	Action    string `json:"action"`     // "copy", "set", "get"
-	Target    string `json:"target"`     // Target file to modify
-	Source    string `json:"source"`     // Source file to copy timestamps from (for "copy")
-	Timestamp string `json:"timestamp"`  // Timestamp string (for "set")
+	Action    string `json:"action"`    // "copy", "set", "get"
+	Target    string `json:"target"`    // Target file to modify
+	Source    string `json:"source"`    // Source file to copy timestamps from (for "copy")
+	Timestamp string `json:"timestamp"` // Timestamp string (for "set")
 }
 
 // Execute executes the timestomp command

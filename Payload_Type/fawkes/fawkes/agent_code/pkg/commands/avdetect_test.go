@@ -38,10 +38,10 @@ func TestAvDetectKnownProcesses(t *testing.T) {
 	}
 	// Spot-check a few well-known entries
 	checks := map[string]string{
-		"msmpeng.exe":          "Windows Defender",
-		"csfalconservice.exe":  "CrowdStrike Falcon",
-		"sentinelagent.exe":    "SentinelOne",
-		"cb.exe":               "Carbon Black",
+		"msmpeng.exe":         "Windows Defender",
+		"csfalconservice.exe": "CrowdStrike Falcon",
+		"sentinelagent.exe":   "SentinelOne",
+		"cb.exe":              "Carbon Black",
 	}
 	for proc, expectedProduct := range checks {
 		product, ok := knownSecurityProcesses[proc]

@@ -157,4 +157,3 @@ func TestSecureDeleteFileFunction(t *testing.T) {
 		t.Error("file should be removed after secureDeleteFile")
 	}
 }
-

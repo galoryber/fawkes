@@ -19,8 +19,10 @@ import (
 // CredCheckCommand tests credentials against multiple protocols on target hosts.
 type CredCheckCommand struct{}
 
-func (c *CredCheckCommand) Name() string        { return "cred-check" }
-func (c *CredCheckCommand) Description() string { return "Test credentials against SMB, WinRM, SSH, LDAP on target hosts" }
+func (c *CredCheckCommand) Name() string { return "cred-check" }
+func (c *CredCheckCommand) Description() string {
+	return "Test credentials against SMB, WinRM, SSH, LDAP on target hosts"
+}
 
 type credCheckArgs struct {
 	Hosts    string `json:"hosts"`    // comma-separated IPs or CIDR

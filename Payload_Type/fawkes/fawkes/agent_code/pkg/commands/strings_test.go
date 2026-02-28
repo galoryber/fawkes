@@ -41,7 +41,7 @@ func TestStringsBasic(t *testing.T) {
 func TestStringsMinLength(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "test.bin")
 	data := []byte{0x00}
-	data = append(data, []byte("ab")...)    // too short for default min=4
+	data = append(data, []byte("ab")...) // too short for default min=4
 	data = append(data, []byte{0x00}...)
 	data = append(data, []byte("abcdef")...) // long enough
 	data = append(data, []byte{0x00}...)

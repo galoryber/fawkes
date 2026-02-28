@@ -21,8 +21,10 @@ import (
 
 type AsrepCommand struct{}
 
-func (c *AsrepCommand) Name() string        { return "asrep-roast" }
-func (c *AsrepCommand) Description() string { return "Request AS-REP tickets for accounts without Kerberos pre-authentication and extract hashes for offline cracking (T1558.004)" }
+func (c *AsrepCommand) Name() string { return "asrep-roast" }
+func (c *AsrepCommand) Description() string {
+	return "Request AS-REP tickets for accounts without Kerberos pre-authentication and extract hashes for offline cracking (T1558.004)"
+}
 
 type asrepArgs struct {
 	Server   string `json:"server"`
@@ -30,9 +32,9 @@ type asrepArgs struct {
 	Realm    string `json:"realm"`
 	Username string `json:"username"`
 	Password string `json:"password"`
-	Account  string `json:"account"`  // optional: specific account to roast
-	BaseDN   string `json:"base_dn"`  // optional: LDAP base DN
-	UseTLS   bool   `json:"use_tls"`  // optional: LDAPS for enumeration
+	Account  string `json:"account"` // optional: specific account to roast
+	BaseDN   string `json:"base_dn"` // optional: LDAP base DN
+	UseTLS   bool   `json:"use_tls"` // optional: LDAPS for enumeration
 }
 
 func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {

@@ -10,8 +10,10 @@ import (
 // WhoCommand shows currently logged-in users/sessions
 type WhoCommand struct{}
 
-func (c *WhoCommand) Name() string        { return "who" }
-func (c *WhoCommand) Description() string { return "Show currently logged-in users and active sessions" }
+func (c *WhoCommand) Name() string { return "who" }
+func (c *WhoCommand) Description() string {
+	return "Show currently logged-in users and active sessions"
+}
 
 type whoArgs struct {
 	All bool `json:"all"` // Show all sessions including system accounts

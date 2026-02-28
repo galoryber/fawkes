@@ -17,8 +17,10 @@ import (
 
 type NetGroupCommand struct{}
 
-func (c *NetGroupCommand) Name() string        { return "net-group" }
-func (c *NetGroupCommand) Description() string { return "Enumerate AD group memberships via LDAP (T1069.002)" }
+func (c *NetGroupCommand) Name() string { return "net-group" }
+func (c *NetGroupCommand) Description() string {
+	return "Enumerate AD group memberships via LDAP (T1069.002)"
+}
 
 type netGroupArgs struct {
 	Action   string `json:"action"`

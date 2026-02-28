@@ -13,8 +13,10 @@ import (
 
 type StatCommand struct{}
 
-func (c *StatCommand) Name() string        { return "stat" }
-func (c *StatCommand) Description() string { return "Display detailed file or directory metadata (T1083)" }
+func (c *StatCommand) Name() string { return "stat" }
+func (c *StatCommand) Description() string {
+	return "Display detailed file or directory metadata (T1083)"
+}
 
 type statArgs struct {
 	Path string `json:"path"` // file or directory path

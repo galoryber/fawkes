@@ -146,12 +146,12 @@ type userHash struct {
 
 // Constants for SAM hash decryption
 var (
-	samQWERTY    = []byte("!@#$%^&*()qwertyUIOPAzxcvbnmQQQQQQQQQQQQ)(*@&%\x00")
-	samDIGITS    = []byte("0123456789012345678901234567890123456789\x00")
-	samNTPASSWD  = []byte("NTPASSWORD\x00")
-	samLMPASSWD  = []byte("LMPASSWORD\x00")
-	emptyLMHash  = "aad3b435b51404eeaad3b435b51404ee"
-	emptyNTHash  = "31d6cfe0d16ae931b73c59d7e0c089c0"
+	samQWERTY   = []byte("!@#$%^&*()qwertyUIOPAzxcvbnmQQQQQQQQQQQQ)(*@&%\x00")
+	samDIGITS   = []byte("0123456789012345678901234567890123456789\x00")
+	samNTPASSWD = []byte("NTPASSWORD\x00")
+	samLMPASSWD = []byte("LMPASSWORD\x00")
+	emptyLMHash = "aad3b435b51404eeaad3b435b51404ee"
+	emptyNTHash = "31d6cfe0d16ae931b73c59d7e0c089c0"
 )
 
 // Boot key permutation table
@@ -327,8 +327,8 @@ func deriveHashedBootKeyRC4(fValue, bootKey []byte) ([]byte, byte, error) {
 		return nil, 0, fmt.Errorf("F value too short for RC4 key data")
 	}
 
-	salt := fValue[0x70:0x80]       // offset 0x68 + 8 = 0x70
-	encKey := fValue[0x80:0x90]     // offset 0x68 + 0x18 = 0x80
+	salt := fValue[0x70:0x80]        // offset 0x68 + 8 = 0x70
+	encKey := fValue[0x80:0x90]      // offset 0x68 + 0x18 = 0x80
 	encChecksum := fValue[0x90:0xA0] // offset 0x68 + 0x28 = 0x90
 
 	// Derive RC4 key: MD5(salt + QWERTY + bootKey + DIGITS)
@@ -376,8 +376,8 @@ func deriveHashedBootKeyAES(fValue, bootKey []byte) ([]byte, byte, error) {
 	}
 
 	dataLen := binary.LittleEndian.Uint32(fValue[0x74:0x78]) // offset 0x68 + 0x0C
-	salt := fValue[0x78:0x88]                                 // offset 0x68 + 0x10
-	encData := fValue[0x88 : 0x88+dataLen]                    // offset 0x68 + 0x20
+	salt := fValue[0x78:0x88]                                // offset 0x68 + 0x10
+	encData := fValue[0x88 : 0x88+dataLen]                   // offset 0x68 + 0x20
 
 	if len(encData) < 16 || len(encData)%aes.BlockSize != 0 {
 		// Pad to block size if needed

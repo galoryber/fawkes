@@ -181,10 +181,10 @@ type findStreamData struct {
 }
 
 var (
-	kernel32ADS             = windows.NewLazySystemDLL("kernel32.dll")
-	procFindFirstStreamW    = kernel32ADS.NewProc("FindFirstStreamW")
-	procFindNextStreamW     = kernel32ADS.NewProc("FindNextStreamW")
-	procFindCloseADS        = kernel32ADS.NewProc("FindClose")
+	kernel32ADS          = windows.NewLazySystemDLL("kernel32.dll")
+	procFindFirstStreamW = kernel32ADS.NewProc("FindFirstStreamW")
+	procFindNextStreamW  = kernel32ADS.NewProc("FindNextStreamW")
+	procFindCloseADS     = kernel32ADS.NewProc("FindClose")
 )
 
 func adsList(args adsArgs) structs.CommandResult {
@@ -381,4 +381,3 @@ func adsDelete(args adsArgs) structs.CommandResult {
 		Completed: true,
 	}
 }
-

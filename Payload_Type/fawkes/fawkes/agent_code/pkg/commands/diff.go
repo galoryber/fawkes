@@ -154,10 +154,10 @@ func diffLines(a, b []string, context int) []string {
 
 	// Generate edit operations
 	type edit struct {
-		op   byte // '=', '-', '+'
+		op    byte // '=', '-', '+'
 		lineA int
 		lineB int
-		text string
+		text  string
 	}
 
 	var edits []edit

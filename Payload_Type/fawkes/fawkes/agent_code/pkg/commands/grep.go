@@ -15,8 +15,10 @@ import (
 // GrepCommand searches file contents for patterns
 type GrepCommand struct{}
 
-func (c *GrepCommand) Name() string        { return "grep" }
-func (c *GrepCommand) Description() string { return "Search file contents for patterns (T1083, T1552.001)" }
+func (c *GrepCommand) Name() string { return "grep" }
+func (c *GrepCommand) Description() string {
+	return "Search file contents for patterns (T1083, T1552.001)"
+}
 
 type grepArgs struct {
 	Pattern     string `json:"pattern"`

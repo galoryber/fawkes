@@ -23,12 +23,12 @@ func (c *CompressCommand) Description() string {
 }
 
 type CompressParams struct {
-	Action    string `json:"action"`
-	Path      string `json:"path"`
-	Output    string `json:"output"`
-	Pattern   string `json:"pattern"`
-	MaxDepth  int    `json:"max_depth"`
-	MaxSize   int64  `json:"max_size"`
+	Action   string `json:"action"`
+	Path     string `json:"path"`
+	Output   string `json:"output"`
+	Pattern  string `json:"pattern"`
+	MaxDepth int    `json:"max_depth"`
+	MaxSize  int64  `json:"max_size"`
 }
 
 func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
@@ -447,4 +447,3 @@ func compressExtract(params CompressParams) structs.CommandResult {
 		Completed: true,
 	}
 }
-

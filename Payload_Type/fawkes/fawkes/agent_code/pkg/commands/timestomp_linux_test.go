@@ -103,4 +103,3 @@ func TestGetAccessTime_ModifiedFile(t *testing.T) {
 		t.Errorf("access time %v doesn't match set time %v (diff: %v)", atime, knownTime, diff)
 	}
 }
-

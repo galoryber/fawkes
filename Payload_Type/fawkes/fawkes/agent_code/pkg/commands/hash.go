@@ -20,8 +20,10 @@ import (
 
 type HashCommand struct{}
 
-func (c *HashCommand) Name() string        { return "hash" }
-func (c *HashCommand) Description() string { return "Compute file hashes — MD5, SHA-1, SHA-256, SHA-512 (T1083)" }
+func (c *HashCommand) Name() string { return "hash" }
+func (c *HashCommand) Description() string {
+	return "Compute file hashes — MD5, SHA-1, SHA-256, SHA-512 (T1083)"
+}
 
 type hashArgs struct {
 	Path      string `json:"path"`      // file or directory to hash
