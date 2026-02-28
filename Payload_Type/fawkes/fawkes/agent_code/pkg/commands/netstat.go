@@ -1,9 +1,9 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
-	"strings"
 
 	"fawkes/pkg/structs"
 
@@ -20,6 +20,17 @@ func (c *NetstatCommand) Description() string {
 	return "List active network connections and listening ports"
 }
 
+// netstatEntry represents a single network connection for JSON output.
+type netstatEntry struct {
+	Proto   string `json:"proto"`
+	LocalIP string `json:"local_ip"`
+	LocalPort uint32 `json:"local_port"`
+	RemoteIP  string `json:"remote_ip"`
+	RemotePort uint32 `json:"remote_port"`
+	State   string `json:"state"`
+	PID     int32  `json:"pid"`
+}
+
 func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 	// Get all connections (TCP and UDP)
 	conns, err := psnet.Connections("all")
@@ -33,7 +44,7 @@ func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if len(conns) == 0 {
 		return structs.CommandResult{
-			Output:    "No active connections found",
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
@@ -49,34 +60,42 @@ func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 		return conns[i].Laddr.Port < conns[j].Laddr.Port
 	})
 
-	// Format header
-	var lines []string
-	lines = append(lines, fmt.Sprintf("%-6s %-25s %-25s %-15s %s",
-		"Proto", "Local Address", "Remote Address", "State", "PID"))
-	lines = append(lines, strings.Repeat("-", 80))
-
-	for _, conn := range conns {
-		proto := protoName(conn.Type)
-		local := formatAddr(conn.Laddr.IP, conn.Laddr.Port)
-		remote := formatAddr(conn.Raddr.IP, conn.Raddr.Port)
+	entries := make([]netstatEntry, len(conns))
+	for i, conn := range conns {
 		state := conn.Status
 		if state == "" {
 			state = "-"
 		}
-
-		pidStr := "-"
-		if conn.Pid > 0 {
-			pidStr = fmt.Sprintf("%d", conn.Pid)
+		localIP := conn.Laddr.IP
+		if localIP == "" {
+			localIP = "*"
 		}
-
-		lines = append(lines, fmt.Sprintf("%-6s %-25s %-25s %-15s %s",
-			proto, local, remote, state, pidStr))
+		remoteIP := conn.Raddr.IP
+		if remoteIP == "" {
+			remoteIP = "*"
+		}
+		entries[i] = netstatEntry{
+			Proto:      protoName(conn.Type),
+			LocalIP:    localIP,
+			LocalPort:  conn.Laddr.Port,
+			RemoteIP:   remoteIP,
+			RemotePort: conn.Raddr.Port,
+			State:      state,
+			PID:        conn.Pid,
+		}
 	}
 
-	output := fmt.Sprintf("%d connections\n\n%s", len(conns), strings.Join(lines, "\n"))
+	jsonBytes, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshalling connections: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	return structs.CommandResult{
-		Output:    output,
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}

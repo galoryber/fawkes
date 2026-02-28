@@ -117,17 +117,12 @@ func TestNetstatCommand_Execute(t *testing.T) {
 		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
 	}
 
-	// Output should contain header
-	if !strings.Contains(result.Output, "Proto") {
-		t.Errorf("output should contain Proto header, got: %s", result.Output[:min(200, len(result.Output))])
+	// Output should be valid JSON (browser script format)
+	if !strings.HasPrefix(result.Output, "[") {
+		t.Errorf("output should be JSON array, got: %s", result.Output[:min(200, len(result.Output))])
 	}
-	if !strings.Contains(result.Output, "Local Address") {
-		t.Errorf("output should contain Local Address header, got: %s", result.Output[:min(200, len(result.Output))])
-	}
-
-	// Should have at least 1 connection
-	if !strings.Contains(result.Output, "connections") {
-		t.Errorf("output should contain connection count, got: %s", result.Output[:min(200, len(result.Output))])
+	if !strings.Contains(result.Output, "proto") {
+		t.Errorf("output should contain proto field, got: %s", result.Output[:min(200, len(result.Output))])
 	}
 }
 
