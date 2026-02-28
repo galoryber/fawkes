@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "laps",
+		Name: "laps",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "laps_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "laps - Read LAPS (Local Administrator Password Solution) passwords from Active Directory via LDAP. Supports LAPS v1 (ms-Mcs-AdmPwd) and Windows LAPS v2 (ms-LAPS-Password). Requires read access to LAPS attributes.",
 		HelpString:          "laps -server <DC> -username <user@domain> -password <pass> [-filter <computer>]",
 		Version:             1,

@@ -151,11 +151,44 @@ func kdDetectBaseDN(conn *ldap.Conn) (string, error) {
 	return baseDN, nil
 }
 
+// kdOutputEntry is a JSON-serializable delegation entry for browser script rendering.
+type kdOutputEntry struct {
+	Account        string   `json:"account"`
+	DNS            string   `json:"dns,omitempty"`
+	DelegationType string   `json:"delegation_type"`
+	Mode           string   `json:"mode,omitempty"`
+	Targets        []string `json:"targets,omitempty"`
+	Disabled       bool     `json:"disabled,omitempty"`
+	S4U2Self       bool     `json:"s4u2self,omitempty"`
+	SPNs           []string `json:"spns,omitempty"`
+	Description    string   `json:"description,omitempty"`
+	Risk           string   `json:"risk,omitempty"`
+}
+
+func kdMarshalResult(entries []kdOutputEntry) structs.CommandResult {
+	if entries == nil {
+		entries = []kdOutputEntry{}
+	}
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output: fmt.Sprintf("Error marshaling output: %v", err), Status: "error", Completed: true,
+		}
+	}
+	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+}
+
 // kdFindUnconstrained finds accounts with TRUSTED_FOR_DELEGATION (excluding DCs)
 func kdFindUnconstrained(conn *ldap.Conn, baseDN string) structs.CommandResult {
-	// TRUSTED_FOR_DELEGATION = 0x80000 (524288)
-	filter := fmt.Sprintf("(&(userAccountControl:1.2.840.113556.1.4.803:=%d)(!(primaryGroupID=516)))", uacTrustedForDelegation)
+	entries, err := kdUnconstrainedEntries(conn, baseDN)
+	if err != nil {
+		return structs.CommandResult{Output: fmt.Sprintf("Error searching for unconstrained delegation: %v", err), Status: "error", Completed: true}
+	}
+	return kdMarshalResult(entries)
+}
 
+func kdUnconstrainedEntries(conn *ldap.Conn, baseDN string) ([]kdOutputEntry, error) {
+	filter := fmt.Sprintf("(&(userAccountControl:1.2.840.113556.1.4.803:=%d)(!(primaryGroupID=516)))", uacTrustedForDelegation)
 	req := ldap.NewSearchRequest(baseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
 		0, 30, false, filter,
 		[]string{"sAMAccountName", "dNSHostName", "userAccountControl", "objectClass", "servicePrincipalName", "description"},
@@ -163,61 +196,40 @@ func kdFindUnconstrained(conn *ldap.Conn, baseDN string) structs.CommandResult {
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error searching for unconstrained delegation: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return nil, err
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Unconstrained Delegation (%d found, excluding DCs)\n", len(result.Entries)))
-	sb.WriteString(strings.Repeat("=", 60) + "\n")
-	sb.WriteString("Accounts with TrustedForDelegation can impersonate ANY user to ANY service.\n\n")
-
-	for i, entry := range result.Entries {
-		sb.WriteString(fmt.Sprintf("[%d] %s\n", i+1, entry.GetAttributeValue("sAMAccountName")))
-		if dns := entry.GetAttributeValue("dNSHostName"); dns != "" {
-			sb.WriteString(fmt.Sprintf("    DNS: %s\n", dns))
-		}
+	var entries []kdOutputEntry
+	for _, entry := range result.Entries {
 		uac, _ := strconv.ParseInt(entry.GetAttributeValue("userAccountControl"), 10, 64)
-		sb.WriteString(fmt.Sprintf("    UAC: 0x%X", uac))
-		if uac&uacAccountDisable != 0 {
-			sb.WriteString(" [DISABLED]")
+		e := kdOutputEntry{
+			Account:        entry.GetAttributeValue("sAMAccountName"),
+			DNS:            entry.GetAttributeValue("dNSHostName"),
+			DelegationType: "Unconstrained",
+			Disabled:       uac&uacAccountDisable != 0,
+			S4U2Self:       uac&uacTrustedToAuthForDelegation != 0,
+			Description:    entry.GetAttributeValue("description"),
+			Risk:           "Can capture TGTs from any authenticating user",
 		}
-		if uac&uacTrustedToAuthForDelegation != 0 {
-			sb.WriteString(" [S4U2Self]")
-		}
-		sb.WriteString("\n")
 		if spns := entry.GetAttributeValues("servicePrincipalName"); len(spns) > 0 {
-			sb.WriteString(fmt.Sprintf("    SPNs: %s\n", strings.Join(spns[:minInt(3, len(spns))], ", ")))
-			if len(spns) > 3 {
-				sb.WriteString(fmt.Sprintf("          ...and %d more\n", len(spns)-3))
-			}
+			e.SPNs = spns
 		}
-		if desc := entry.GetAttributeValue("description"); desc != "" {
-			sb.WriteString(fmt.Sprintf("    Desc: %s\n", desc))
-		}
+		entries = append(entries, e)
 	}
-
-	if len(result.Entries) == 0 {
-		sb.WriteString("No non-DC accounts with unconstrained delegation found.\n")
-	} else {
-		sb.WriteString(fmt.Sprintf("\n[!] %d account(s) can capture TGTs from any authenticating user.\n", len(result.Entries)))
-		sb.WriteString("    Compromise any of these to escalate via TGT capture.\n")
-	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return entries, nil
 }
 
 // kdFindConstrained finds accounts with msDS-AllowedToDelegateTo set
 func kdFindConstrained(conn *ldap.Conn, baseDN string) structs.CommandResult {
-	filter := "(msDS-AllowedToDelegateTo=*)"
+	entries, err := kdConstrainedEntries(conn, baseDN)
+	if err != nil {
+		return structs.CommandResult{Output: fmt.Sprintf("Error searching for constrained delegation: %v", err), Status: "error", Completed: true}
+	}
+	return kdMarshalResult(entries)
+}
 
+func kdConstrainedEntries(conn *ldap.Conn, baseDN string) ([]kdOutputEntry, error) {
+	filter := "(msDS-AllowedToDelegateTo=*)"
 	req := ldap.NewSearchRequest(baseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
 		0, 30, false, filter,
 		[]string{"sAMAccountName", "dNSHostName", "msDS-AllowedToDelegateTo", "userAccountControl", "servicePrincipalName", "description"},
@@ -225,62 +237,49 @@ func kdFindConstrained(conn *ldap.Conn, baseDN string) structs.CommandResult {
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error searching for constrained delegation: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return nil, err
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Constrained Delegation (%d found)\n", len(result.Entries)))
-	sb.WriteString(strings.Repeat("=", 60) + "\n")
-	sb.WriteString("Accounts that can impersonate users to specific services.\n\n")
-
-	for i, entry := range result.Entries {
-		name := entry.GetAttributeValue("sAMAccountName")
+	var entries []kdOutputEntry
+	for _, entry := range result.Entries {
 		uac, _ := strconv.ParseInt(entry.GetAttributeValue("userAccountControl"), 10, 64)
 		delegTo := entry.GetAttributeValues("msDS-AllowedToDelegateTo")
+		s4u2self := uac&uacTrustedToAuthForDelegation != 0
 
-		sb.WriteString(fmt.Sprintf("[%d] %s\n", i+1, name))
-		if dns := entry.GetAttributeValue("dNSHostName"); dns != "" {
-			sb.WriteString(fmt.Sprintf("    DNS: %s\n", dns))
+		mode := "S4U2Proxy only"
+		risk := ""
+		if s4u2self {
+			mode = "S4U2Self + S4U2Proxy"
+			risk = "Protocol transition — can impersonate ANY user without interaction"
 		}
 
-		// Protocol transition check
-		if uac&uacTrustedToAuthForDelegation != 0 {
-			sb.WriteString("    Mode: Constrained with Protocol Transition (S4U2Self + S4U2Proxy)\n")
-			sb.WriteString("    [!] Can impersonate ANY user without their interaction\n")
-		} else {
-			sb.WriteString("    Mode: Constrained (S4U2Proxy only)\n")
-			sb.WriteString("    Requires user to authenticate to this service first\n")
+		e := kdOutputEntry{
+			Account:        entry.GetAttributeValue("sAMAccountName"),
+			DNS:            entry.GetAttributeValue("dNSHostName"),
+			DelegationType: "Constrained",
+			Mode:           mode,
+			Targets:        delegTo,
+			Disabled:       uac&uacAccountDisable != 0,
+			S4U2Self:       s4u2self,
+			Description:    entry.GetAttributeValue("description"),
+			Risk:           risk,
 		}
-
-		sb.WriteString("    Allowed to delegate to:\n")
-		for _, target := range delegTo {
-			sb.WriteString(fmt.Sprintf("      - %s\n", target))
-		}
-
-		if uac&uacAccountDisable != 0 {
-			sb.WriteString("    [DISABLED]\n")
-		}
+		entries = append(entries, e)
 	}
-
-	if len(result.Entries) == 0 {
-		sb.WriteString("No accounts with constrained delegation found.\n")
-	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return entries, nil
 }
 
 // kdFindRBCD finds objects with msDS-AllowedToActOnBehalfOfOtherIdentity set
 func kdFindRBCD(conn *ldap.Conn, baseDN string) structs.CommandResult {
-	filter := "(msDS-AllowedToActOnBehalfOfOtherIdentity=*)"
+	entries, err := kdRBCDEntries(conn, baseDN)
+	if err != nil {
+		return structs.CommandResult{Output: fmt.Sprintf("Error searching for RBCD: %v", err), Status: "error", Completed: true}
+	}
+	return kdMarshalResult(entries)
+}
 
+func kdRBCDEntries(conn *ldap.Conn, baseDN string) ([]kdOutputEntry, error) {
+	filter := "(msDS-AllowedToActOnBehalfOfOtherIdentity=*)"
 	req := ldap.NewSearchRequest(baseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
 		0, 30, false, filter,
 		[]string{"sAMAccountName", "dNSHostName", "msDS-AllowedToActOnBehalfOfOtherIdentity", "userAccountControl", "description"},
@@ -288,90 +287,58 @@ func kdFindRBCD(conn *ldap.Conn, baseDN string) structs.CommandResult {
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error searching for RBCD: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return nil, err
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Resource-Based Constrained Delegation (%d found)\n", len(result.Entries)))
-	sb.WriteString(strings.Repeat("=", 60) + "\n")
-	sb.WriteString("Objects where other accounts can impersonate users to their services.\n\n")
-
-	for i, entry := range result.Entries {
-		name := entry.GetAttributeValue("sAMAccountName")
-		sb.WriteString(fmt.Sprintf("[%d] %s\n", i+1, name))
-		if dns := entry.GetAttributeValue("dNSHostName"); dns != "" {
-			sb.WriteString(fmt.Sprintf("    DNS: %s\n", dns))
+	var entries []kdOutputEntry
+	for _, entry := range result.Entries {
+		e := kdOutputEntry{
+			Account:        entry.GetAttributeValue("sAMAccountName"),
+			DNS:            entry.GetAttributeValue("dNSHostName"),
+			DelegationType: "RBCD",
+			Description:    entry.GetAttributeValue("description"),
 		}
-
-		// Parse the SD in msDS-AllowedToActOnBehalfOfOtherIdentity to find allowed SIDs
 		sdBytes := entry.GetRawAttributeValue("msDS-AllowedToActOnBehalfOfOtherIdentity")
 		if len(sdBytes) > 0 {
 			aces := adcsParseSD(sdBytes)
-			sb.WriteString("    Allowed to act on behalf:\n")
 			for _, ace := range aces {
-				sb.WriteString(fmt.Sprintf("      - %s (mask: 0x%X)\n", ace.sid, ace.mask))
-			}
-			if len(aces) == 0 {
-				sb.WriteString("      (could not parse allowed identities)\n")
+				e.Targets = append(e.Targets, fmt.Sprintf("%s (mask: 0x%X)", ace.sid, ace.mask))
 			}
 		}
+		entries = append(entries, e)
 	}
-
-	if len(result.Entries) == 0 {
-		sb.WriteString("No RBCD configurations found.\n")
-	}
-
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return entries, nil
 }
 
 // kdFindAll runs all delegation checks and produces a combined report
 func kdFindAll(conn *ldap.Conn, baseDN string) structs.CommandResult {
-	var sb strings.Builder
-	sb.WriteString("Kerberos Delegation Report\n")
-	sb.WriteString(strings.Repeat("=", 60) + "\n\n")
+	var allEntries []kdOutputEntry
 
-	// Unconstrained
-	r1 := kdFindUnconstrained(conn, baseDN)
-	sb.WriteString(r1.Output)
-	sb.WriteString("\n")
+	if entries, err := kdUnconstrainedEntries(conn, baseDN); err == nil {
+		allEntries = append(allEntries, entries...)
+	}
+	if entries, err := kdConstrainedEntries(conn, baseDN); err == nil {
+		allEntries = append(allEntries, entries...)
+	}
+	if entries, err := kdRBCDEntries(conn, baseDN); err == nil {
+		allEntries = append(allEntries, entries...)
+	}
 
-	// Constrained
-	r2 := kdFindConstrained(conn, baseDN)
-	sb.WriteString(r2.Output)
-	sb.WriteString("\n")
-
-	// RBCD
-	r3 := kdFindRBCD(conn, baseDN)
-	sb.WriteString(r3.Output)
-	sb.WriteString("\n")
-
-	// Sensitive accounts (NOT_DELEGATED flag)
+	// Add protected accounts
 	filter := fmt.Sprintf("(userAccountControl:1.2.840.113556.1.4.803:=%d)", uacNotDelegated)
 	req := ldap.NewSearchRequest(baseDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
-		0, 30, false, filter,
-		[]string{"sAMAccountName"}, nil)
-	result, err := conn.SearchWithPaging(req, 100)
-	if err == nil && len(result.Entries) > 0 {
-		sb.WriteString(fmt.Sprintf("Protected Accounts (NOT_DELEGATED) — %d found\n", len(result.Entries)))
-		sb.WriteString(strings.Repeat("-", 40) + "\n")
+		0, 30, false, filter, []string{"sAMAccountName"}, nil)
+	if result, err := conn.SearchWithPaging(req, 100); err == nil {
 		for _, entry := range result.Entries {
-			sb.WriteString(fmt.Sprintf("  - %s\n", entry.GetAttributeValue("sAMAccountName")))
+			allEntries = append(allEntries, kdOutputEntry{
+				Account:        entry.GetAttributeValue("sAMAccountName"),
+				DelegationType: "Protected",
+				Risk:           "NOT_DELEGATED flag set — cannot be impersonated via delegation",
+			})
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return kdMarshalResult(allEntries)
 }
 
 func minInt(a, b int) int {

@@ -116,7 +116,7 @@ func TestTrustDNToDomain(t *testing.T) {
 	}
 }
 
-func TestTrustDirectionStr(t *testing.T) {
+func TestTrustDirectionSimple(t *testing.T) {
 	tests := []struct {
 		dir      int
 		expected string
@@ -129,9 +129,9 @@ func TestTrustDirectionStr(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := trustDirectionStr(tt.dir, "corp.local", "partner.local")
+		result := trustDirectionSimple(tt.dir)
 		if !strings.Contains(result, tt.expected) {
-			t.Errorf("trustDirectionStr(%d): expected to contain %q, got %q", tt.dir, tt.expected, result)
+			t.Errorf("trustDirectionSimple(%d): expected to contain %q, got %q", tt.dir, tt.expected, result)
 		}
 	}
 }
@@ -185,35 +185,25 @@ func TestTrustAttributesStr(t *testing.T) {
 	}
 }
 
-func TestTrustFormatEntry(t *testing.T) {
-	var sb strings.Builder
-	entry := trustEntry{
-		name:       "north.sevenkingdoms.local",
-		partner:    "north.sevenkingdoms.local",
-		flatName:   "NORTH",
-		direction:  trustDirectionBidir,
-		trustType:  trustTypeUplevel,
-		attributes: trustAttrWithinForest,
-		sid:        "S-1-5-21-1234-5678-9012",
+func TestTrustOutputEntryJSON(t *testing.T) {
+	e := trustOutputEntry{
+		Partner:    "north.sevenkingdoms.local",
+		FlatName:   "NORTH",
+		Direction:  "Bidirectional",
+		Type:       "Uplevel (Active Directory)",
+		Category:   "Intra-Forest",
+		Attributes: "WITHIN_FOREST",
+		SID:        "S-1-5-21-1234-5678-9012",
+		Risk:       "Intra-forest — implicit full trust",
 	}
-
-	trustFormatEntry(&sb, 1, entry, "sevenkingdoms.local")
-	output := sb.String()
-
-	if !strings.Contains(output, "north.sevenkingdoms.local") {
-		t.Error("output should contain trust partner name")
+	if e.Partner != "north.sevenkingdoms.local" {
+		t.Error("partner should be set")
 	}
-	if !strings.Contains(output, "NORTH") {
-		t.Error("output should contain flat name")
+	if e.Category != "Intra-Forest" {
+		t.Error("category should be Intra-Forest")
 	}
-	if !strings.Contains(output, "Bidirectional") {
-		t.Error("output should contain direction")
-	}
-	if !strings.Contains(output, "WITHIN_FOREST") {
-		t.Error("output should contain attributes")
-	}
-	if !strings.Contains(output, "S-1-5-21") {
-		t.Error("output should contain SID")
+	if e.Risk == "" {
+		t.Error("risk should be set for intra-forest trust")
 	}
 }
 

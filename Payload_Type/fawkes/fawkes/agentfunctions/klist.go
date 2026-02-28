@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "klist",
+		Name: "klist",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "klist_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate cached Kerberos tickets — list, purge, dump, or import tickets for pass-the-ticket (T1550.003)",
 		HelpString:          "klist\nklist -action list\nklist -action list -server krbtgt\nklist -action purge\nklist -action dump -server krbtgt/DOMAIN.LOCAL\nklist -action import -ticket <base64>",
 		Version:             1,

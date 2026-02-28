@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "trust",
+		Name: "trust",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "trust_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate domain and forest trust relationships via LDAP — identify trust direction, type, SID filtering, and attack paths.",
 		HelpString:          "trust -server 192.168.1.1 -username user@domain.local -password Pass123\ntrust -server dc01 -use_tls true",
 		Version:             1,

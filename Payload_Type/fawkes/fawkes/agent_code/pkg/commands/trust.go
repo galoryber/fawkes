@@ -69,6 +69,18 @@ type trustEntry struct {
 	dn         string
 }
 
+// trustOutputEntry is a JSON-serializable trust for browser script rendering.
+type trustOutputEntry struct {
+	Partner    string `json:"partner"`
+	FlatName   string `json:"flat_name,omitempty"`
+	Direction  string `json:"direction"`
+	Type       string `json:"type"`
+	Category   string `json:"category"`
+	Attributes string `json:"attributes"`
+	SID        string `json:"sid,omitempty"`
+	Risk       string `json:"risk,omitempty"`
+}
+
 func (c *TrustCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
 		return structs.CommandResult{
@@ -224,138 +236,82 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	// Derive current domain from baseDN
 	currentDomain := trustDNToDomain(baseDN)
 
-	// Format output
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Domain Trust Enumeration — %s\n", currentDomain))
-	sb.WriteString(strings.Repeat("=", 60) + "\n")
-	sb.WriteString(fmt.Sprintf("Queried: CN=System,%s\n", baseDN))
-	sb.WriteString(fmt.Sprintf("Trusts found: %d\n\n", len(trusts)))
-
 	if len(trusts) == 0 {
-		sb.WriteString("No trust relationships found.\n")
 		return structs.CommandResult{
-			Output:    sb.String(),
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	// Categorize trusts
-	var parentChild, forest, external, other []trustEntry
+	// Build JSON entries with category and risk annotations
+	var output []trustOutputEntry
 	for _, t := range trusts {
+		category := "Other"
 		if t.attributes&trustAttrWithinForest != 0 {
-			parentChild = append(parentChild, t)
+			category = "Intra-Forest"
 		} else if t.attributes&trustAttrForestTransitive != 0 {
-			forest = append(forest, t)
-		} else if t.trustType == trustTypeUplevel && t.attributes&trustAttrWithinForest == 0 {
-			external = append(external, t)
-		} else {
-			other = append(other, t)
+			category = "Forest"
+		} else if t.trustType == trustTypeUplevel {
+			category = "External"
 		}
-	}
 
-	// Parent/Child (intra-forest)
-	if len(parentChild) > 0 {
-		sb.WriteString(fmt.Sprintf("Intra-Forest (Parent/Child) — %d\n", len(parentChild)))
-		sb.WriteString(strings.Repeat("-", 50) + "\n")
-		for i, t := range parentChild {
-			trustFormatEntry(&sb, i+1, t, currentDomain)
-		}
-		sb.WriteString("\n")
-	}
-
-	// Forest trusts
-	if len(forest) > 0 {
-		sb.WriteString(fmt.Sprintf("Forest Trusts — %d\n", len(forest)))
-		sb.WriteString(strings.Repeat("-", 50) + "\n")
-		for i, t := range forest {
-			trustFormatEntry(&sb, i+1, t, currentDomain)
-		}
-		sb.WriteString("\n")
-	}
-
-	// External trusts
-	if len(external) > 0 {
-		sb.WriteString(fmt.Sprintf("External Trusts — %d\n", len(external)))
-		sb.WriteString(strings.Repeat("-", 50) + "\n")
-		for i, t := range external {
-			trustFormatEntry(&sb, i+1, t, currentDomain)
-		}
-		sb.WriteString("\n")
-	}
-
-	// Other trusts
-	if len(other) > 0 {
-		sb.WriteString(fmt.Sprintf("Other Trusts — %d\n", len(other)))
-		sb.WriteString(strings.Repeat("-", 50) + "\n")
-		for i, t := range other {
-			trustFormatEntry(&sb, i+1, t, currentDomain)
-		}
-		sb.WriteString("\n")
-	}
-
-	// Summary / attack paths
-	sb.WriteString("Attack Path Analysis\n")
-	sb.WriteString(strings.Repeat("-", 50) + "\n")
-
-	attackPaths := 0
-	for _, t := range trusts {
-		// Bidirectional or outbound = we can authenticate TO the trusted domain
+		// Compute risk
+		var risks []string
 		if t.direction == trustDirectionOutbound || t.direction == trustDirectionBidir {
 			if t.attributes&trustAttrFilterSIDs == 0 {
-				sb.WriteString(fmt.Sprintf("[!] %s — outbound trust WITHOUT SID filtering\n", t.partner))
-				sb.WriteString("    SID history attacks possible (Golden Ticket with extra SIDs)\n")
-				attackPaths++
+				risks = append(risks, "No SID filtering — SID history attacks possible")
 			}
 			if t.attributes&trustAttrWithinForest != 0 {
-				sb.WriteString(fmt.Sprintf("[!] %s — intra-forest trust (implicit full trust)\n", t.partner))
-				sb.WriteString("    Compromise any domain in the forest → compromise all domains\n")
-				attackPaths++
+				risks = append(risks, "Intra-forest — implicit full trust")
 			}
 			if t.attributes&trustAttrForestTransitive != 0 && t.attributes&trustAttrFilterSIDs == 0 {
-				sb.WriteString(fmt.Sprintf("[!] %s — forest trust WITHOUT SID filtering\n", t.partner))
-				sb.WriteString("    Cross-forest SID history attack possible\n")
-				attackPaths++
+				risks = append(risks, "Forest trust without SID filtering — cross-forest attack possible")
 			}
 		}
+
+		dirStr := trustDirectionSimple(t.direction)
+		e := trustOutputEntry{
+			Partner:    t.partner,
+			FlatName:   t.flatName,
+			Direction:  dirStr,
+			Type:       trustTypeStr(t.trustType),
+			Category:   category,
+			Attributes: trustAttributesStr(t.attributes),
+			SID:        t.sid,
+		}
+		if len(risks) > 0 {
+			e.Risk = strings.Join(risks, "; ")
+		}
+		output = append(output, e)
 	}
 
-	if attackPaths == 0 {
-		sb.WriteString("No obvious trust-based attack paths identified.\n")
-		sb.WriteString("SID filtering may be enabled on all external/forest trusts.\n")
+	_ = currentDomain // used for direction detail if needed
+
+	data, err := json.Marshal(output)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling output: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
 }
 
-func trustFormatEntry(sb *strings.Builder, idx int, t trustEntry, currentDomain string) {
-	sb.WriteString(fmt.Sprintf("[%d] %s", idx, t.partner))
-	if t.flatName != "" {
-		sb.WriteString(fmt.Sprintf(" (%s)", t.flatName))
-	}
-	sb.WriteString("\n")
-
-	sb.WriteString(fmt.Sprintf("    Direction:  %s\n", trustDirectionStr(t.direction, currentDomain, t.partner)))
-	sb.WriteString(fmt.Sprintf("    Type:       %s\n", trustTypeStr(t.trustType)))
-	sb.WriteString(fmt.Sprintf("    Attributes: %s\n", trustAttributesStr(t.attributes)))
-
-	if t.sid != "" {
-		sb.WriteString(fmt.Sprintf("    SID:        %s\n", t.sid))
-	}
-}
-
-func trustDirectionStr(dir int, currentDomain, partner string) string {
+func trustDirectionSimple(dir int) string {
 	switch dir {
 	case trustDirectionInbound:
-		return fmt.Sprintf("Inbound (%s trusts %s — they can access us)", currentDomain, partner)
+		return "Inbound"
 	case trustDirectionOutbound:
-		return fmt.Sprintf("Outbound (%s trusts %s — we can access them)", partner, currentDomain)
+		return "Outbound"
 	case trustDirectionBidir:
-		return "Bidirectional (mutual trust)"
+		return "Bidirectional"
 	default:
 		return fmt.Sprintf("Unknown (%d)", dir)
 	}
