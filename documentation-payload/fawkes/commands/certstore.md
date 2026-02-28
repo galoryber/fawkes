@@ -48,18 +48,17 @@ certstore -action find -filter "8F:43:28:8A"
 certstore -action find -filter "Code Signing"
 ```
 
-## Output
+### Browser Script
 
-For each certificate found, displays:
-- **Subject** — Certificate subject (common name)
-- **Issuer** — Certificate issuer
-- **Serial** — Certificate serial number (hex)
-- **Valid** — Validity period with `[EXPIRED]` flag
-- **Thumbprint** — SHA-1 thumbprint (colon-separated hex)
-- **Private Key** — Whether a private key is accessible
-- **Type** — Classification (self-signed, certificate with private key)
+Output is rendered as a sortable table in the Mythic UI with columns: Subject, Issuer, Store, Location, Not Before, Not After, Has Private Key, Thumbprint. Expired certificates are highlighted red; certificates with private keys are highlighted orange.
 
-Results are grouped by store location (e.g., `CurrentUser\MY`, `LocalMachine\ROOT`).
+### Example Output (JSON)
+```json
+[
+  {"subject":"Microsoft Root Certificate Authority","issuer":"Microsoft Root Certificate Authority","serial_number":"79ad16a14aa0a5ad","not_before":"2001-05-10","not_after":"2021-05-10","expired":true,"thumbprint":"CC:B3:...:A4","has_private_key":false,"store":"ROOT","location":"LocalMachine"},
+  {"subject":"My Code Signing Cert","issuer":"DigiCert","thumbprint":"AB:12:...:CD","has_private_key":true,"store":"MY","location":"CurrentUser"}
+]
+```
 
 ## Operational Notes
 

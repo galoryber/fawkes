@@ -34,18 +34,18 @@ type certstoreParams struct {
 
 var (
 	crypt32              = windows.NewLazySystemDLL("crypt32.dll")
-	procCertOpenStore     = crypt32.NewProc("CertOpenStore")
-	procCertCloseStore    = crypt32.NewProc("CertCloseStore")
-	procCertEnumCerts     = crypt32.NewProc("CertEnumCertificatesInStore")
-	procCertGetNameW      = crypt32.NewProc("CertGetNameStringW")
-	procCryptAcquireCert  = crypt32.NewProc("CryptAcquireCertificatePrivateKey")
+	procCertOpenStore    = crypt32.NewProc("CertOpenStore")
+	procCertCloseStore   = crypt32.NewProc("CertCloseStore")
+	procCertEnumCerts    = crypt32.NewProc("CertEnumCertificatesInStore")
+	procCertGetNameW     = crypt32.NewProc("CertGetNameStringW")
+	procCryptAcquireCert = crypt32.NewProc("CryptAcquireCertificatePrivateKey")
 )
 
 // CERT_STORE_PROV_SYSTEM_W
 const (
-	certStoreProvSystemW     = 10
-	certStoreLocalMachineID  = 0x00020000 // CERT_SYSTEM_STORE_LOCAL_MACHINE
-	certStoreCurrentUserID   = 0x00010000 // CERT_SYSTEM_STORE_CURRENT_USER
+	certStoreProvSystemW      = 10
+	certStoreLocalMachineID   = 0x00020000 // CERT_SYSTEM_STORE_LOCAL_MACHINE
+	certStoreCurrentUserID    = 0x00010000 // CERT_SYSTEM_STORE_CURRENT_USER
 	certNameSimpleDisplayType = 4
 	certNameIssuerFlag        = 1
 	cryptAcquireCacheFlag     = 0x00000001
@@ -90,7 +90,7 @@ type cryptAlgorithmID struct {
 
 type subjectPublicKeyInfo struct {
 	Algorithm cryptAlgorithmID
-	PublicKey  cryptBitBlob
+	PublicKey cryptBitBlob
 }
 
 type cryptBitBlob struct {
@@ -100,16 +100,17 @@ type cryptBitBlob struct {
 }
 
 type certEntry struct {
-	Subject      string
-	Issuer       string
-	SerialNumber string
-	NotBefore    time.Time
-	NotAfter     time.Time
-	Thumbprint   string
-	HasPrivKey   bool
-	KeyBits      int
-	Store        string
-	Location     string
+	Subject      string `json:"subject"`
+	Issuer       string `json:"issuer"`
+	SerialNumber string `json:"serial_number,omitempty"`
+	NotBefore    string `json:"not_before,omitempty"`
+	NotAfter     string `json:"not_after,omitempty"`
+	Expired      bool   `json:"expired,omitempty"`
+	Thumbprint   string `json:"thumbprint"`
+	HasPrivKey   bool   `json:"has_private_key"`
+	KeyBits      int    `json:"key_bits,omitempty"`
+	Store        string `json:"store"`
+	Location     string `json:"location"`
 }
 
 func (c *CertstoreCommand) Execute(task structs.Task) structs.CommandResult {
@@ -164,37 +165,24 @@ func certstoreList(store, filter string) structs.CommandResult {
 	}
 
 	if len(allCerts) == 0 {
-		msg := "No certificates found"
-		if filter != "" {
-			msg += fmt.Sprintf(" matching '%s'", filter)
-		}
 		return structs.CommandResult{
-			Output:    msg,
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Certificates Found: %d\n\n", len(allCerts)))
-
-	// Group by store
-	storeGroups := make(map[string][]certEntry)
-	for _, cert := range allCerts {
-		key := fmt.Sprintf("%s\\%s", cert.Location, cert.Store)
-		storeGroups[key] = append(storeGroups[key], cert)
-	}
-
-	for groupName, certs := range storeGroups {
-		sb.WriteString(fmt.Sprintf("=== %s (%d) ===\n", groupName, len(certs)))
-		for _, cert := range certs {
-			sb.WriteString(formatCertEntry(cert))
-			sb.WriteString("\n")
+	out, err := json.Marshal(allCerts)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("JSON marshal error: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(out),
 		Status:    "success",
 		Completed: true,
 	}
@@ -292,8 +280,15 @@ func parseCertContext(ctx *certContext, storeName, locationName string) certEntr
 	if ctx.CertInfo != 0 {
 		info := (*certInfo)(unsafe.Pointer(ctx.CertInfo))
 
-		entry.NotBefore = certFiletimeToTime(info.NotBefore)
-		entry.NotAfter = certFiletimeToTime(info.NotAfter)
+		notBefore := certFiletimeToTime(info.NotBefore)
+		notAfter := certFiletimeToTime(info.NotAfter)
+		if !notBefore.IsZero() {
+			entry.NotBefore = notBefore.Format("2006-01-02")
+		}
+		if !notAfter.IsZero() {
+			entry.NotAfter = notAfter.Format("2006-01-02")
+			entry.Expired = notAfter.Before(time.Now())
+		}
 
 		// Serial number (little-endian byte array)
 		if info.SerialNumber.Size > 0 && info.SerialNumber.Data != 0 {
@@ -402,38 +397,3 @@ func certFiletimeToTime(ft windows.Filetime) time.Time {
 	return time.Unix(0, unixNsec).UTC()
 }
 
-func formatCertEntry(cert certEntry) string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("  Subject:   %s\n", cert.Subject))
-	sb.WriteString(fmt.Sprintf("  Issuer:    %s\n", cert.Issuer))
-
-	if cert.SerialNumber != "" {
-		sb.WriteString(fmt.Sprintf("  Serial:    %s\n", cert.SerialNumber))
-	}
-
-	if !cert.NotBefore.IsZero() {
-		sb.WriteString(fmt.Sprintf("  Valid:     %s → %s", cert.NotBefore.Format("2006-01-02"), cert.NotAfter.Format("2006-01-02")))
-		if cert.NotAfter.Before(time.Now()) {
-			sb.WriteString(" [EXPIRED]")
-		}
-		sb.WriteString("\n")
-	}
-
-	sb.WriteString(fmt.Sprintf("  Thumbprint: %s\n", cert.Thumbprint))
-
-	if cert.HasPrivKey {
-		sb.WriteString("  Private Key: YES (exportable key available)\n")
-	}
-
-	// Classify the certificate
-	if cert.HasPrivKey {
-		isSelfSigned := cert.Subject == cert.Issuer
-		if isSelfSigned {
-			sb.WriteString("  Type:      Self-signed (private key available)\n")
-		} else {
-			sb.WriteString("  Type:      Certificate with private key\n")
-		}
-	}
-
-	return sb.String()
-}

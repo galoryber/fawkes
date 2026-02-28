@@ -6,7 +6,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -27,6 +26,12 @@ func (c *NetLoggedonCommand) Description() string { return "Enumerate logged-on 
 
 type netLoggedonArgs struct {
 	Target string `json:"target"`
+}
+
+type loggedonEntry struct {
+	Username    string `json:"username"`
+	LogonDomain string `json:"logon_domain"`
+	LogonServer string `json:"logon_server"`
 }
 
 // WKSTA_USER_INFO_1 structure
@@ -95,35 +100,27 @@ func enumerateLoggedOn(target string) (string, error) {
 		return "", fmt.Errorf("NetWkstaUserEnum failed: error %d", ret)
 	}
 
-	var sb strings.Builder
-	targetDisplay := target
-	if targetDisplay == "" {
-		targetDisplay = "(local)"
-	}
-	sb.WriteString(fmt.Sprintf("Logged-On Users on %s\n", targetDisplay))
-	sb.WriteString(fmt.Sprintf("Total: %d users\n", totalEntries))
-	sb.WriteString(strings.Repeat("=", 70) + "\n")
-
 	if entriesRead == 0 {
-		sb.WriteString("\nNo logged-on users found.\n")
-		return sb.String(), nil
+		return "[]", nil
 	}
 
-	sb.WriteString(fmt.Sprintf("\n%-25s %-20s %s\n", "Username", "Logon Domain", "Logon Server"))
-	sb.WriteString(strings.Repeat("-", 70) + "\n")
-
+	entries := make([]loggedonEntry, 0, entriesRead)
 	entrySize := unsafe.Sizeof(wkstaUserInfo1{})
 	for i := uint32(0); i < entriesRead; i++ {
 		entry := (*wkstaUserInfo1)(unsafe.Pointer(buf + uintptr(i)*entrySize))
 
-		username := logonWideToString(entry.Username)
-		domain := logonWideToString(entry.LogonDomain)
-		server := logonWideToString(entry.LogonServer)
-
-		sb.WriteString(fmt.Sprintf("%-25s %-20s %s\n", username, domain, server))
+		entries = append(entries, loggedonEntry{
+			Username:    logonWideToString(entry.Username),
+			LogonDomain: logonWideToString(entry.LogonDomain),
+			LogonServer: logonWideToString(entry.LogonServer),
+		})
 	}
 
-	return sb.String(), nil
+	out, err := json.Marshal(entries)
+	if err != nil {
+		return "", fmt.Errorf("JSON marshal error: %v", err)
+	}
+	return string(out), nil
 }
 
 // logonWideToString converts a Windows LPWSTR to a Go string
