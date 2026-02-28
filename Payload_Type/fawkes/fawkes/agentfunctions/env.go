@@ -28,6 +28,10 @@ func init() {
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
+			if task.Task.Params != "" {
+				display := task.Task.Params
+				response.DisplayParams = &display
+			}
 			return response
 		},
 	})

@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -102,6 +104,10 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			hosts, _ := taskData.Args.GetStringArg("hosts")
+			username, _ := taskData.Args.GetStringArg("username")
+			display := fmt.Sprintf("hosts: %s, user: %s", hosts, username)
+			response.DisplayParams = &display
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

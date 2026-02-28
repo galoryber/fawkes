@@ -85,6 +85,13 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+
+			display := action
+			if name != "" {
+				display += fmt.Sprintf(" %s", name)
+			}
+			response.DisplayParams = &display
+
 			if action == "delete" || action == "clear" {
 				msg := fmt.Sprintf("Prefetch %s", action)
 				if name != "" {

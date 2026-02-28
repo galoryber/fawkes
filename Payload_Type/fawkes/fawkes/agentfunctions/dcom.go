@@ -166,6 +166,8 @@ func init() {
 			host, _ := taskData.Args.GetStringArg("host")
 			command, _ := taskData.Args.GetStringArg("command")
 			object, _ := taskData.Args.GetStringArg("object")
+			display := fmt.Sprintf("%s via %s", host, object)
+			response.DisplayParams = &display
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           taskData.Task.ID,
 				BaseArtifactType: "API Call",

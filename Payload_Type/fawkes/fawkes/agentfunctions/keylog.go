@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -56,6 +57,9 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			action, _ := taskData.Args.GetStringArg("action")
+			display := fmt.Sprintf("%s", action)
+			response.DisplayParams = &display
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {

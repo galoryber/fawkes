@@ -51,6 +51,8 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			action, _ := taskData.Args.GetStringArg("action")
+			display := action
+			response.DisplayParams = &display
 			if action == "enable" || action == "disable" {
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 					TaskID:           taskData.Task.ID,

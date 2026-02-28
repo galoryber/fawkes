@@ -60,6 +60,8 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			pid, _ := taskData.Args.GetNumberArg("pid")
+			display := fmt.Sprintf("PID: %d", int(pid))
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "Token Steal", fmt.Sprintf("OpenProcess + OpenProcessToken + DuplicateTokenEx on PID %d", int(pid)))
 			return response
 		},

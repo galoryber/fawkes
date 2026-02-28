@@ -71,6 +71,13 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			category, _ := taskData.Args.GetStringArg("category")
+
+			display := action
+			if category != "" {
+				display += fmt.Sprintf(" %s", category)
+			}
+			response.DisplayParams = &display
+
 			if action == "disable" || action == "stealth" {
 				msg := fmt.Sprintf("AuditSetSystemPolicy — %s", action)
 				if category != "" {

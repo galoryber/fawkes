@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
@@ -70,6 +72,8 @@ func init() {
 			if browser == "" {
 				browser = "all"
 			}
+			display := fmt.Sprintf("%s", browser)
+			response.DisplayParams = &display
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           taskData.Task.ID,
 				BaseArtifactType: "API Call",

@@ -51,6 +51,8 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			action, _ := taskData.Args.GetStringArg("action")
+			display := fmt.Sprintf("LSA secrets %s", action)
+			response.DisplayParams = &display
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           taskData.Task.ID,
 				BaseArtifactType: "Registry Read",

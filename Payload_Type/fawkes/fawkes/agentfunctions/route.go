@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -23,10 +24,13 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			return agentstructs.PTTaskCreateTaskingMessageResponse{
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
+			display := fmt.Sprintf("Routing table")
+			response.DisplayParams = &display
+			return response
 		},
 	})
 }

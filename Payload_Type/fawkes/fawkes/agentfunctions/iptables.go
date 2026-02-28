@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -90,6 +92,8 @@ func init() {
 
 			action, _ := taskData.Args.GetStringArg("action")
 			rule, _ := taskData.Args.GetStringArg("rule")
+			display := fmt.Sprintf("%s", action)
+			response.DisplayParams = &display
 
 			// Report artifacts for modification actions
 			switch action {

@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
@@ -60,6 +62,10 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			host, _ := taskData.Args.GetStringArg("host")
+			port, _ := taskData.Args.GetNumberArg("port")
+			display := fmt.Sprintf("%s:%d", host, int(port))
+			response.DisplayParams = &display
 
 			// Report artifact
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{

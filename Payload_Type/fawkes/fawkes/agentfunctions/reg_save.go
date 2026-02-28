@@ -94,6 +94,14 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			if action == "creds" {
+				display := fmt.Sprintf("creds (SAM+SECURITY+SYSTEM)")
+				response.DisplayParams = &display
+			} else {
+				path, _ := taskData.Args.GetStringArg("path")
+				display := fmt.Sprintf("save %s", path)
+				response.DisplayParams = &display
+			}
+			if action == "creds" {
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 					TaskID:           taskData.Task.ID,
 					BaseArtifactType: "File Create",

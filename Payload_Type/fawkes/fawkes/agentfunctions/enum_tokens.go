@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -69,6 +70,8 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			display := fmt.Sprintf("Token enumeration")
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "API Call", "CreateToolhelp32Snapshot + OpenProcessToken across all processes")
 			return response
 		},

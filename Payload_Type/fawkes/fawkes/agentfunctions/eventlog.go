@@ -108,6 +108,11 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			channel, _ := taskData.Args.GetStringArg("channel")
+			display := fmt.Sprintf("%s", action)
+			if channel != "" {
+				display += fmt.Sprintf(", channel: %s", channel)
+			}
+			response.DisplayParams = &display
 			if action == "clear" && channel != "" {
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 					TaskID:           taskData.Task.ID,

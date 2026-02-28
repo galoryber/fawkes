@@ -124,6 +124,8 @@ func init() {
 			}
 			username, _ := taskData.Args.GetStringArg("username")
 			domain, _ := taskData.Args.GetStringArg("domain")
+			display := fmt.Sprintf("%s\\%s", domain, username)
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "Logon", fmt.Sprintf("LogonUserW %s\\%s (type 9)", domain, username))
 			return response
 		},

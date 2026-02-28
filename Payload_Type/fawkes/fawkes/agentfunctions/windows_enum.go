@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -76,6 +78,13 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			action, _ := taskData.Args.GetStringArg("action")
+			display := action
+			filter, _ := taskData.Args.GetStringArg("filter")
+			if filter != "" {
+				display += fmt.Sprintf(" (filter: %s)", filter)
+			}
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "API Call", "EnumWindows + GetWindowTextW + GetWindowThreadProcessId + GetClassNameW")
 			return response
 		},

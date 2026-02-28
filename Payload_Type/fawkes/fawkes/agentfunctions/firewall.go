@@ -167,6 +167,8 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+			display := fmt.Sprintf("%s", action)
+			response.DisplayParams = &display
 			switch action {
 			case "add":
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{

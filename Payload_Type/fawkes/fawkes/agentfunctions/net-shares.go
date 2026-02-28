@@ -68,6 +68,11 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			target, _ := taskData.Args.GetStringArg("target")
+			display := fmt.Sprintf("action: %s", action)
+			if target != "" {
+				display += fmt.Sprintf(", host: %s", target)
+			}
+			response.DisplayParams = &display
 			msg := fmt.Sprintf("NetAPI shares: %s", action)
 			if target != "" {
 				msg += " \\\\" + target

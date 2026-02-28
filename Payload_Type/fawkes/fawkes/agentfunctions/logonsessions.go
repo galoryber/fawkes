@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -68,6 +69,9 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			action, _ := taskData.Args.GetStringArg("action")
+			display := fmt.Sprintf("%s", action)
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "API Call", "LsaEnumerateLogonSessions + LsaGetLogonSessionData + WTSEnumerateSessionsW")
 			return response
 		},

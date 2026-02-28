@@ -91,6 +91,11 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			target, _ := taskData.Args.GetStringArg("target")
+			display := fmt.Sprintf("action: %s", action)
+			if target != "" {
+				display += fmt.Sprintf(", host: %s", target)
+			}
+			response.DisplayParams = &display
 			if action == "execute" {
 				cmd, _ := taskData.Args.GetStringArg("command")
 				host := "localhost"

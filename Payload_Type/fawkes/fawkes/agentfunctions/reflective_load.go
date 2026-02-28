@@ -62,6 +62,14 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			function, _ := taskData.Args.GetStringArg("function")
+			if function != "" {
+				display := fmt.Sprintf("Reflective load (export: %s)", function)
+				response.DisplayParams = &display
+			} else {
+				display := fmt.Sprintf("Reflective load")
+				response.DisplayParams = &display
+			}
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           taskData.Task.ID,
 				BaseArtifactType: "Process Inject",

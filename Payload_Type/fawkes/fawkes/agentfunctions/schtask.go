@@ -154,6 +154,8 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+			display := fmt.Sprintf("%s %s", action, name)
+			response.DisplayParams = &display
 			switch action {
 			case "create":
 				program, _ := taskData.Args.GetStringArg("program")

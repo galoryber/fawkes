@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -25,6 +27,8 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			display := fmt.Sprintf("Network interfaces")
+			response.DisplayParams = &display
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

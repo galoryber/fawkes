@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -84,6 +85,13 @@ func init() {
 			}
 
 			action, _ := taskData.Args.GetStringArg("action")
+			display := action
+			name, _ := taskData.Args.GetStringArg("name")
+			if name != "" {
+				display += fmt.Sprintf(" %s", name)
+			}
+			resp.DisplayParams = &display
+
 			if action == "delete" || action == "clear" {
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 					TaskID:            taskData.Task.ID,

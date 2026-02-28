@@ -112,6 +112,13 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+			if name != "" {
+				display := fmt.Sprintf("%s %s", action, name)
+				response.DisplayParams = &display
+			} else {
+				display := fmt.Sprintf("%s", action)
+				response.DisplayParams = &display
+			}
 			switch action {
 			case "create":
 				binpath, _ := taskData.Args.GetStringArg("binpath")

@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -104,6 +106,13 @@ func init() {
 
 			action, _ := taskData.Args.GetStringArg("action")
 			file, _ := taskData.Args.GetStringArg("file")
+			if file != "" {
+				display := fmt.Sprintf("%s %s", action, file)
+				response.DisplayParams = &display
+			} else {
+				display := fmt.Sprintf("%s", action)
+				response.DisplayParams = &display
+			}
 
 			switch action {
 			case "clear", "shred":

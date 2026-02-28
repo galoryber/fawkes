@@ -47,6 +47,13 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
+			connID, _ := taskData.Args.GetStringArg("connection_id")
+			display := connID
+			if len(connID) > 8 {
+				display = connID[:8] + "..."
+			}
+			response.DisplayParams = &display
+
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           taskData.Task.ID,
 				BaseArtifactType: "API Call",

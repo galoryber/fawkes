@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -50,6 +52,12 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			technique, _ := taskData.Args.GetStringArg("technique")
+			if technique == "" {
+				technique = "steal"
+			}
+			display := fmt.Sprintf("technique: %s", technique)
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "Token Steal", "OpenProcess + OpenProcessToken + DuplicateTokenEx on SYSTEM process")
 			return response
 		},

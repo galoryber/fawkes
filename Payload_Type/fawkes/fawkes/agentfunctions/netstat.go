@@ -30,6 +30,8 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			display := "Network connections"
+			response.DisplayParams = &display
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

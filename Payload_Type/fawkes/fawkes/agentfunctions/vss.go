@@ -107,6 +107,19 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			action, _ := taskData.Args.GetStringArg("action")
+			display := fmt.Sprintf("action: %s", action)
+			switch action {
+			case "create":
+				vol, _ := taskData.Args.GetStringArg("volume")
+				display += fmt.Sprintf(", volume: %s", vol)
+			case "delete":
+				delID, _ := taskData.Args.GetStringArg("id")
+				display += fmt.Sprintf(", id: %s", delID)
+			case "extract":
+				src, _ := taskData.Args.GetStringArg("source")
+				display += fmt.Sprintf(", source: %s", src)
+			}
+			response.DisplayParams = &display
 			switch action {
 			case "create":
 				volume, _ := taskData.Args.GetStringArg("volume")

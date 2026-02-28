@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -57,7 +59,18 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			return agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{
+				Success: true,
+				TaskID:  taskData.Task.ID,
+			}
+			path, _ := taskData.Args.GetStringArg("path")
+			display := path
+			recursive, _ := taskData.Args.GetBooleanArg("recursive")
+			if recursive {
+				display += fmt.Sprintf(" (recursive)")
+			}
+			response.DisplayParams = &display
+			return response
 		},
 	})
 }

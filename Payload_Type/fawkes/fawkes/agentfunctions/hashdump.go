@@ -29,6 +29,8 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			display := "SAM Dump"
+			response.DisplayParams = &display
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           taskData.Task.ID,
 				BaseArtifactType: "API Call",
