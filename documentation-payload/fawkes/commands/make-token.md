@@ -43,6 +43,12 @@ make-token -username admin -domain CORP -password P@ssw0rd!
 make-token -username localadmin -domain . -password Password1 -logon_type 2
 ```
 
+## Notes
+
+- **Credential Vault**: Credentials used for token creation are automatically reported to Mythic's Credentials store as plaintext credentials.
+- **Token Tracking**: The created token is registered with Mythic's Callback Tokens tracker, providing visibility into which tokens are associated with each callback.
+- Use `rev2self` to drop impersonation and revert to the original security context.
+
 ## MITRE ATT&CK Mapping
 
 - T1134.001

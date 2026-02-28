@@ -68,6 +68,7 @@ Same as above but includes `Password:` field with decrypted credential blobs.
 
 ## Notes
 
+- **Credential Vault**: All credentials with usernames are automatically reported to Mythic's Credentials store. When using `dump` action, plaintext passwords are included; `list` action reports the credential metadata.
 - **Requires interactive logon session**: The Credential Manager vault is tied to the user's interactive logon. If the agent runs via SSH or as a non-interactive service, enumeration will fail. Deploy via methods that create an interactive session (phishing, exploit, GUI session).
 - **User context**: Returns credentials for the current user only. To access another user's credentials, impersonate them first (make-token/steal-token).
 - Credential blobs are typically UTF-16 encoded passwords. Binary blobs are reported as `[binary data, N bytes]`.

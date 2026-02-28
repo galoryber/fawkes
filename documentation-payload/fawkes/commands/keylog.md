@@ -51,6 +51,7 @@ Special keys are shown in brackets: `[ENTER]`, `[TAB]`, `[BS]` (backspace), `[DE
 
 ## Notes
 
+- **Mythic Keylogs**: When `stop` or `dump` returns captured keystrokes, they are automatically parsed by window title and sent to Mythic's Keylogs tracker with user attribution. Keylogs are searchable in the Mythic UI.
 - The keylogger runs in a background goroutine and does not block the agent
 - Only one keylogger instance can run at a time
 - Window titles provide context for what application keystrokes belong to
