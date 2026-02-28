@@ -121,6 +121,7 @@ func Initialize() {
 	RegisterCommand(&TriageCommand{})
 	RegisterCommand(&SuspendCommand{})
 	RegisterCommand(&LateralCheckCommand{})
+	RegisterCommand(&ShareHuntCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
