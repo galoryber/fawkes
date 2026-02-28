@@ -20,29 +20,18 @@ None — the command takes no parameters.
 av-detect
 ```
 
-### Example Output (Windows)
+### Output Format
+
+Returns a JSON array of detected security products (rendered as a sortable table in the Mythic UI with color-coded categories):
+
+```json
+[
+  {"product": "Windows Defender", "vendor": "Microsoft", "category": "AV", "process": "MsMpEng.exe", "pid": 3400},
+  {"product": "Defender for Endpoint", "vendor": "Microsoft", "category": "EDR", "process": "MsSense.exe", "pid": 1520}
+]
 ```
-Security Products Detected: 2 unique product(s)
 
-Product                             Vendor          Type       Process                   PID
-----------------------------------------------------------------------------------------------------
-Windows Defender                    Microsoft       AV         MsMpEng.exe               3400
-Windows Security Health             Microsoft       AV         SecurityHealthSystray.exe  6440
-
-Summary: 2 AV
-```
-
-### Example Output (macOS)
-```
-Security Products Detected: 2 unique product(s)
-
-Product                             Vendor          Type       Process                   PID
-----------------------------------------------------------------------------------------------------
-Endpoint Security                   Apple           EDR        endpointsecurityd         346
-XProtect                            Apple           AV         XprotectService           697
-
-Summary: 1 EDR, 1 AV
-```
+Returns `[]` when no security products are detected.
 
 ## Supported Products
 

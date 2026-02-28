@@ -38,10 +38,23 @@ net-localgroup -action admins -server 192.168.100.51
 net-localgroup -action list -server DC01
 ```
 
-## Output
+## Output Format
 
-- **list**: Shows all local groups with their descriptions
-- **members/admins**: Shows each member with their SID type (User, Group, WellKnownGroup, Computer, Alias)
+**list** returns a JSON array of groups (rendered as a sortable table in the Mythic UI):
+```json
+[
+  {"name": "Administrators", "comment": "Administrators have complete and unrestricted access", "server": ""},
+  {"name": "Remote Desktop Users", "comment": "Members can log on remotely", "server": ""}
+]
+```
+
+**members/admins** returns a JSON array of members with SID type:
+```json
+[
+  {"name": "DOMAIN\\Administrator", "type": "User", "group": "Administrators", "server": ""},
+  {"name": "DOMAIN\\Domain Admins", "type": "Group", "group": "Administrators", "server": ""}
+]
+```
 
 ## Operational Notes
 

@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "net-localgroup",
+		Name: "net-localgroup",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "netlocalgroup_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate local groups and their members via NetLocalGroup APIs. Supports remote hosts. Use 'admins' action to quickly find local administrators.",
 		HelpString:          "net-localgroup -action <list|members|admins> [-group <name>] [-server <hostname>]",
 		Version:             1,

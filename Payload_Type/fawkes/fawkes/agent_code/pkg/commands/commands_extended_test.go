@@ -1023,9 +1023,12 @@ func TestAvDetectCommand(t *testing.T) {
 		if !result.Completed {
 			t.Error("expected completed=true")
 		}
-		// Output should contain either "No known security products" or "Security Products Detected"
-		if !strings.Contains(result.Output, "security products") && !strings.Contains(result.Output, "Security Products") {
-			t.Errorf("unexpected output format: %s", result.Output)
+		// Output should be valid JSON (either "[]" or an array of detected products)
+		if result.Output != "[]" {
+			var detected []detectedProduct
+			if err := json.Unmarshal([]byte(result.Output), &detected); err != nil {
+				t.Errorf("output is not valid JSON: %v, output: %s", err, result.Output)
+			}
 		}
 	})
 

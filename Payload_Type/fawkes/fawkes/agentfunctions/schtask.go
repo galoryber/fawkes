@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "schtask",
+		Name: "schtask",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "schtask_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Create, query, run, or delete Windows scheduled tasks via COM API (T1053.005)",
 		HelpString:          "schtask -action <create|query|delete|run|list> -name <task_name> [-program <path>] [-args <arguments>] [-trigger <ONLOGON|DAILY|...>] [-time <HH:MM>] [-user <account>] [-run_now]",
 		Version:             1,
@@ -135,7 +140,6 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			return args.LoadArgsFromJSONString(input)

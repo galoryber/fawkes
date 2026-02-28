@@ -72,6 +72,21 @@ func (c *GetPrivsCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
+// privOutputEntry represents a token privilege for JSON output
+type privOutputEntry struct {
+	Name        string `json:"name"`
+	Status      string `json:"status"`
+	Description string `json:"description,omitempty"`
+}
+
+// privsOutput wraps the privilege listing with token metadata
+type privsOutput struct {
+	Identity  string            `json:"identity"`
+	Source    string            `json:"source"`
+	Integrity string           `json:"integrity"`
+	Privileges []privOutputEntry `json:"privileges"`
+}
+
 func listPrivileges() structs.CommandResult {
 	token, tokenSource, err := getCurrentToken()
 	if err != nil {
@@ -98,29 +113,33 @@ func listPrivileges() structs.CommandResult {
 		integrity = "Unknown"
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Token: %s (%s)\n", identity, tokenSource))
-	sb.WriteString(fmt.Sprintf("Integrity: %s\n", integrity))
-	sb.WriteString(fmt.Sprintf("Privileges: %d\n\n", len(privs)))
-
-	enabledCount := 0
+	var entries []privOutputEntry
 	for _, p := range privs {
-		if p.status == "Enabled" || p.status == "Enabled (Default)" {
-			enabledCount++
-		}
+		entries = append(entries, privOutputEntry{
+			Name:        p.name,
+			Status:      p.status,
+			Description: privilegeDescription(p.name),
+		})
 	}
-	sb.WriteString(fmt.Sprintf("Enabled: %d / %d\n\n", enabledCount, len(privs)))
 
-	sb.WriteString(fmt.Sprintf("%-45s %-18s %s\n", "PRIVILEGE", "STATUS", "DESCRIPTION"))
-	sb.WriteString(strings.Repeat("-", 110) + "\n")
+	output := privsOutput{
+		Identity:   identity,
+		Source:     tokenSource,
+		Integrity:  integrity,
+		Privileges: entries,
+	}
 
-	for _, p := range privs {
-		desc := privilegeDescription(p.name)
-		sb.WriteString(fmt.Sprintf("%-45s %-18s %s\n", p.name, p.status, desc))
+	data, err := json.Marshal(output)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

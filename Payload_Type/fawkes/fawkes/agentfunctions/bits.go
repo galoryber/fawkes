@@ -1,13 +1,19 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "bits",
+		Name: "bits",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "bits_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Manage BITS transfer jobs for persistence and stealthy file download. Background Intelligent Transfer Service (BITS) jobs survive reboots and transfer files using the Windows BITS infrastructure.",
 		HelpString:          "bits -action [list|create|persist|cancel]",
 		Version:             1,

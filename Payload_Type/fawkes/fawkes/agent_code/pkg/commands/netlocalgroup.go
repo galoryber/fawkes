@@ -76,6 +76,21 @@ func nlgGetServerPtr(server string) (*uint16, error) {
 	return windows.UTF16PtrFromString(server)
 }
 
+// nlgGroupEntry represents a local group for JSON output
+type nlgGroupEntry struct {
+	Name    string `json:"name"`
+	Comment string `json:"comment,omitempty"`
+	Server  string `json:"server,omitempty"`
+}
+
+// nlgMemberEntry represents a local group member for JSON output
+type nlgMemberEntry struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Group   string `json:"group"`
+	Server  string `json:"server,omitempty"`
+}
+
 // nlgList enumerates all local groups on the specified server (or local machine).
 // Reuses procNetLocalGroupEnum, localGroupInfo1, etc. from netenum.go.
 func nlgList(server string) structs.CommandResult {
@@ -111,13 +126,7 @@ func nlgList(server string) structs.CommandResult {
 		defer procNetApiBufferFree.Call(buf)
 	}
 
-	var sb strings.Builder
-	target := "localhost"
-	if server != "" {
-		target = server
-	}
-	sb.WriteString(fmt.Sprintf("Local Groups on %s: %d\n\n", target, entriesRead))
-
+	var entries []nlgGroupEntry
 	entrySize := unsafe.Sizeof(localGroupInfo1{})
 	for i := uint32(0); i < entriesRead; i++ {
 		entry := (*localGroupInfo1)(unsafe.Pointer(buf + uintptr(i)*entrySize))
@@ -126,15 +135,32 @@ func nlgList(server string) structs.CommandResult {
 		if entry.Comment != nil {
 			comment = windows.UTF16PtrToString(entry.Comment)
 		}
-		if comment != "" {
-			sb.WriteString(fmt.Sprintf("  %-35s %s\n", name, comment))
-		} else {
-			sb.WriteString(fmt.Sprintf("  %s\n", name))
+		entries = append(entries, nlgGroupEntry{
+			Name:    name,
+			Comment: comment,
+			Server:  server,
+		})
+	}
+
+	if len(entries) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
+
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
@@ -193,13 +219,7 @@ func nlgMembers(group, server string) structs.CommandResult {
 		defer procNetApiBufferFree.Call(buf)
 	}
 
-	var sb strings.Builder
-	target := "localhost"
-	if server != "" {
-		target = server
-	}
-	sb.WriteString(fmt.Sprintf("Members of %s\\%s: %d\n\n", target, group, entriesRead))
-
+	var entries []nlgMemberEntry
 	entrySize := unsafe.Sizeof(localGroupMembersInfo2{})
 	for i := uint32(0); i < entriesRead; i++ {
 		entry := (*localGroupMembersInfo2)(unsafe.Pointer(buf + uintptr(i)*entrySize))
@@ -207,12 +227,33 @@ func nlgMembers(group, server string) structs.CommandResult {
 		if entry.DomainAndName != nil {
 			name = windows.UTF16PtrToString(entry.DomainAndName)
 		}
-		sidType := nlgSidUsageString(entry.SIDUsage)
-		sb.WriteString(fmt.Sprintf("  %-45s  %s\n", name, sidType))
+		entries = append(entries, nlgMemberEntry{
+			Name:   name,
+			Type:   nlgSidUsageString(entry.SIDUsage),
+			Group:  group,
+			Server: server,
+		})
+	}
+
+	if len(entries) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
+
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

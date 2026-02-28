@@ -178,6 +178,17 @@ func bitsConnect() (uintptr, func(), error) {
 	return mgr, cleanup, nil
 }
 
+// bitsJobEntry represents a BITS job for JSON output
+type bitsJobEntry struct {
+	JobID            string `json:"job_id"`
+	Name             string `json:"name"`
+	State            string `json:"state"`
+	BytesTransferred uint64 `json:"bytes_transferred"`
+	BytesTotal       uint64 `json:"bytes_total"`
+	FilesTransferred uint32 `json:"files_transferred"`
+	FilesTotal       uint32 `json:"files_total"`
+}
+
 func bitsList() structs.CommandResult {
 	mgr, cleanup, err := bitsConnect()
 	if err != nil {
@@ -208,71 +219,77 @@ func bitsList() structs.CommandResult {
 	var count uint32
 	bitsComCall(pEnum, bitsEnumVtGetCount, uintptr(unsafe.Pointer(&count)))
 
-	var sb strings.Builder
-	sb.WriteString("[*] BITS Job Enumeration (T1197)\n")
-	sb.WriteString(fmt.Sprintf("[+] Found %d BITS jobs\n\n", count))
+	var entries []bitsJobEntry
 
-	if count > 0 {
-		sb.WriteString(fmt.Sprintf("%-36s %-20s %-12s %-15s %s\n",
-			"Job ID", "Name", "State", "Progress", "Files"))
-		sb.WriteString(strings.Repeat("-", 100) + "\n")
+	for i := uint32(0); i < count; i++ {
+		var pJob uintptr
+		var fetched uint32
+		hr, _ := bitsComCall(pEnum, bitsEnumVtNext, 1, uintptr(unsafe.Pointer(&pJob)), uintptr(unsafe.Pointer(&fetched)))
+		if int32(hr) < 0 || fetched == 0 {
+			break
+		}
 
-		for i := uint32(0); i < count; i++ {
-			var pJob uintptr
-			var fetched uint32
-			hr, _ := bitsComCall(pEnum, bitsEnumVtNext, 1, uintptr(unsafe.Pointer(&pJob)), uintptr(unsafe.Pointer(&fetched)))
-			if int32(hr) < 0 || fetched == 0 {
-				break
-			}
+		// Get job ID
+		var guid ole.GUID
+		bitsComCall(pJob, bitsJobVtGetId, uintptr(unsafe.Pointer(&guid)))
+		jobID := fmt.Sprintf("{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
+			guid.Data1, guid.Data2, guid.Data3,
+			guid.Data4[0], guid.Data4[1], guid.Data4[2], guid.Data4[3],
+			guid.Data4[4], guid.Data4[5], guid.Data4[6], guid.Data4[7])
 
-			// Get job ID
-			var guid ole.GUID
-			bitsComCall(pJob, bitsJobVtGetId, uintptr(unsafe.Pointer(&guid)))
-			jobID := fmt.Sprintf("{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
-				guid.Data1, guid.Data2, guid.Data3,
-				guid.Data4[0], guid.Data4[1], guid.Data4[2], guid.Data4[3],
-				guid.Data4[4], guid.Data4[5], guid.Data4[6], guid.Data4[7])
+		// Get display name
+		var namePtr uintptr
+		bitsComCall(pJob, bitsJobVtGetDisplayName, uintptr(unsafe.Pointer(&namePtr)))
+		name := "(unknown)"
+		if namePtr != 0 {
+			name = bitsReadWString(namePtr)
+			bitsCoTaskMemFree(namePtr)
+		}
 
-			// Get display name
-			var namePtr uintptr
-			bitsComCall(pJob, bitsJobVtGetDisplayName, uintptr(unsafe.Pointer(&namePtr)))
-			name := "(unknown)"
-			if namePtr != 0 {
-				name = bitsReadWString(namePtr)
-				bitsCoTaskMemFree(namePtr)
-			}
+		// Get state
+		var state uint32
+		bitsComCall(pJob, bitsJobVtGetState, uintptr(unsafe.Pointer(&state)))
+		stateStr := "Unknown"
+		if int(state) < len(bitsJobStates) {
+			stateStr = bitsJobStates[state]
+		}
 
-			// Get state
-			var state uint32
-			bitsComCall(pJob, bitsJobVtGetState, uintptr(unsafe.Pointer(&state)))
-			stateStr := "Unknown"
-			if int(state) < len(bitsJobStates) {
-				stateStr = bitsJobStates[state]
-			}
+		// Get progress
+		var progress bgJobProgress
+		bitsComCall(pJob, bitsJobVtGetProgress, uintptr(unsafe.Pointer(&progress)))
 
-			// Get progress
-			var progress bgJobProgress
-			bitsComCall(pJob, bitsJobVtGetProgress, uintptr(unsafe.Pointer(&progress)))
+		entries = append(entries, bitsJobEntry{
+			JobID:            jobID,
+			Name:             name,
+			State:            stateStr,
+			BytesTransferred: progress.BytesTransferred,
+			BytesTotal:       progress.BytesTotal,
+			FilesTransferred: progress.FilesTransferred,
+			FilesTotal:       progress.FilesTotal,
+		})
 
-			progressStr := "0/0 bytes"
-			if progress.BytesTotal > 0 && progress.BytesTotal != 0xFFFFFFFFFFFFFFFF {
-				pct := float64(progress.BytesTransferred) / float64(progress.BytesTotal) * 100
-				progressStr = fmt.Sprintf("%.0f%% (%s)", pct, bitsFormatBytes(progress.BytesTransferred))
-			} else if progress.BytesTransferred > 0 {
-				progressStr = bitsFormatBytes(progress.BytesTransferred)
-			}
+		bitsComCall(pJob, 2) // Release
+	}
 
-			fileInfo := fmt.Sprintf("%d/%d", progress.FilesTransferred, progress.FilesTotal)
+	if len(entries) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
 
-			sb.WriteString(fmt.Sprintf("%-36s %-20s %-12s %-15s %s\n",
-				jobID, bitsEllipsis(name, 20), stateStr, progressStr, fileInfo))
-
-			bitsComCall(pJob, 2) // Release
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

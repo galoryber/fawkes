@@ -558,6 +558,14 @@ func schtaskRun(args schtaskArgs) structs.CommandResult {
 	}
 }
 
+// schtaskListEntry represents a scheduled task for JSON output
+type schtaskListEntry struct {
+	Name        string `json:"name"`
+	State       string `json:"state"`
+	Enabled     string `json:"enabled"`
+	NextRunTime string `json:"next_run_time,omitempty"`
+}
+
 func schtaskList() structs.CommandResult {
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
@@ -581,16 +589,9 @@ func schtaskList() structs.CommandResult {
 	defer tasksResult.Clear()
 	tasksDisp := tasksResult.ToIDispatch()
 
-	var sb strings.Builder
-	sb.WriteString("Scheduled Tasks (root folder):\n\n")
-	sb.WriteString(fmt.Sprintf("%-40s %-12s %-8s %s\n", "Name", "State", "Enabled", "Next Run Time"))
-	sb.WriteString(strings.Repeat("-", 90) + "\n")
-
-	taskCount := 0
+	var entries []schtaskListEntry
 	oleutil.ForEach(tasksDisp, func(v *ole.VARIANT) error {
 		taskDisp := v.ToIDispatch()
-		// Note: do NOT Release taskDisp — ForEach manages the VARIANT lifecycle
-		taskCount++
 
 		nameResult, _ := oleutil.GetProperty(taskDisp, "Name")
 		name := ""
@@ -620,14 +621,34 @@ func schtaskList() structs.CommandResult {
 			nextRunResult.Clear()
 		}
 
-		sb.WriteString(fmt.Sprintf("%-40s %-12s %-8s %s\n", name, state, enabled, nextRun))
+		entries = append(entries, schtaskListEntry{
+			Name:        name,
+			State:       state,
+			Enabled:     enabled,
+			NextRunTime: nextRun,
+		})
 		return nil
 	})
 
-	sb.WriteString(fmt.Sprintf("\nTotal: %d tasks\n", taskCount))
+	if len(entries) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
+
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

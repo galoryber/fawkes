@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -187,11 +188,11 @@ var knownSecurityProcesses = map[string]securityProduct{
 
 // detectedProduct holds info about a found security product
 type detectedProduct struct {
-	Product     string
-	Vendor      string
-	Category    string
-	ProcessName string
-	PID         int32
+	Product     string `json:"product"`
+	Vendor      string `json:"vendor"`
+	Category    string `json:"category"`
+	ProcessName string `json:"process"`
+	PID         int32  `json:"pid"`
 }
 
 func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
@@ -205,7 +206,6 @@ func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	var detected []detectedProduct
-	seen := make(map[string]bool) // Track unique products (not duplicate processes)
 
 	for _, p := range procs {
 		name, err := p.Name()
@@ -222,49 +222,28 @@ func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
 				ProcessName: name,
 				PID:         p.Pid,
 			})
-			seen[product.Product] = true
 		}
 	}
 
 	if len(detected) == 0 {
 		return structs.CommandResult{
-			Output:    "No known security products detected in running processes.",
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Security Products Detected: %d unique product(s)\n\n", len(seen)))
-	result.WriteString(fmt.Sprintf("%-35s %-15s %-10s %-25s %s\n", "Product", "Vendor", "Type", "Process", "PID"))
-	result.WriteString(strings.Repeat("-", 100) + "\n")
-
-	for _, d := range detected {
-		result.WriteString(fmt.Sprintf("%-35s %-15s %-10s %-25s %d\n",
-			d.Product, d.Vendor, d.Category, d.ProcessName, d.PID))
-	}
-
-	// Summary by category
-	categories := make(map[string]int)
-	for prod := range seen {
-		for _, d := range detected {
-			if d.Product == prod {
-				categories[d.Category]++
-				break
-			}
+	data, err := json.Marshal(detected)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
 	}
 
-	result.WriteString("\nSummary: ")
-	parts := make([]string, 0)
-	for cat, count := range categories {
-		parts = append(parts, fmt.Sprintf("%d %s", count, cat))
-	}
-	result.WriteString(strings.Join(parts, ", "))
-	result.WriteString("\n")
-
 	return structs.CommandResult{
-		Output:    result.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
