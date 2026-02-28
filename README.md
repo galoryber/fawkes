@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 106 commands are cross-platform, with 63 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 5 Unix-only commands, 8 Linux-only commands, and 2 macOS-only commands for a total of 190. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 107 commands are cross-platform, with 63 additional Windows-only commands, 1 Windows+Linux command (mem-scan), 5 Unix-only commands, 8 Linux-only commands, and 2 macOS-only commands for a total of 191. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -177,6 +177,7 @@ strings | `strings -path <file> [-min_length <n>] [-pattern <text>] [-offset <by
 start-clr | `start-clr` | **(Windows only)** Initialize the CLR v4.0.30319 with optional AMSI/ETW patching (Ret Patch, Autopatch, or Hardware Breakpoint).
 systemd-persist | `systemd-persist -action <install\|remove\|list> -name <unit> [-exec_start <cmd>] [-timer <calendar>] [-system true]` | **(Linux only)** Install, remove, or list systemd service/timer persistence. User or system scope. MITRE T1543.002.
 steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a security token from another process.
+suspend | `suspend -action <suspend\|resume> -pid <PID>` | Suspend or resume a process. Tactical EDR/AV pause during sensitive ops. Windows: NtSuspendProcess/NtResumeProcess. Linux/macOS: SIGSTOP/SIGCONT. Cross-platform (T1562.001).
 sysinfo | `sysinfo` | Comprehensive system information: OS version, hardware, memory, uptime, domain, .NET (Windows), SELinux/SIP status. Cross-platform (T1082).
 tac | `tac -path <file>` | Print file lines in reverse order. Useful for viewing logs newest-to-oldest. Cross-platform (T1083).
 tail | `tail -path <file> [-lines <N>] [-head true] [-bytes <N>]` | Read first or last N lines/bytes of a file without transferring entire contents. Ring buffer for efficient tail, reverse-seek for large files. Cross-platform (T1005, T1083).

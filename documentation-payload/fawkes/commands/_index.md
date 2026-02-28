@@ -183,6 +183,7 @@ pre = "<b>2. </b>"
     * [winrm](/agents/fawkes/commands/winrm/)
 - Process Management
     * [kill](/agents/fawkes/commands/kill/)
+    * [suspend](/agents/fawkes/commands/suspend/)
 - Privilege Escalation
     * [getsystem](/agents/fawkes/commands/getsystem/)
     * [pipe-server](/agents/fawkes/commands/pipe-server/)
