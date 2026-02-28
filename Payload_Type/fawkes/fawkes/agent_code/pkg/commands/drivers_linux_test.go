@@ -88,7 +88,6 @@ func TestFindModulePath(t *testing.T) {
 	}
 
 	// Try with a module that likely exists in /sys/module
-	result = findModulePath("kernel")
-	// Result is still "" because findModulePath returns "" for all (it's a stub)
-	// Just verify no panic
+	// findModulePath is a stub that returns "" for all; just verify no panic
+	_ = findModulePath("kernel")
 }
