@@ -81,4 +81,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&WindowsEnumCommand{})
 	RegisterCommand(&BitsCommand{})
 	RegisterCommand(&PipeServerCommand{})
+	RegisterCommand(&DpapiCommand{})
 }
