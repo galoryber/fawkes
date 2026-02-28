@@ -147,11 +147,11 @@ func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-// aclEditReadSD reads the raw nTSecurityDescriptor with SD_FLAGS control for DACL only
+// aclEditReadSD reads the raw nTSecurityDescriptor, trying with SD_FLAGS control first,
+// falling back to a plain read if the control is not supported.
 func aclEditReadSD(conn *ldap.Conn, targetDN string) ([]byte, error) {
-	// Build LDAP_SERVER_SD_FLAGS_OID control to request only DACL (0x04)
+	// Try with LDAP_SERVER_SD_FLAGS_OID control for DACL only (0x04)
 	sdFlagsControl := buildSDFlagsControl(0x04) // DACL_SECURITY_INFORMATION
-
 	searchReq := ldap.NewSearchRequest(
 		targetDN,
 		ldap.ScopeBaseObject,
@@ -164,7 +164,12 @@ func aclEditReadSD(conn *ldap.Conn, targetDN string) ([]byte, error) {
 
 	result, err := conn.Search(searchReq)
 	if err != nil {
-		return nil, fmt.Errorf("querying nTSecurityDescriptor: %v", err)
+		// Fallback: try without the control (some DCs reject it)
+		searchReq.Controls = nil
+		result, err = conn.Search(searchReq)
+		if err != nil {
+			return nil, fmt.Errorf("querying nTSecurityDescriptor: %v", err)
+		}
 	}
 
 	if len(result.Entries) == 0 {
@@ -183,9 +188,10 @@ func aclEditReadSD(conn *ldap.Conn, targetDN string) ([]byte, error) {
 // This control specifies which parts of the security descriptor to return/modify.
 // flags: 0x01=Owner, 0x02=Group, 0x04=DACL, 0x08=SACL
 func buildSDFlagsControl(flags uint32) *ldap.ControlString {
-	// BER encode the flags value as an integer inside a sequence
-	flagsPacket := ber.Encode(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, int64(flags), "SD Flags")
-	controlValue := flagsPacket.Bytes()
+	// BER encode as SDFlagsRequestValue ::= SEQUENCE { Flags INTEGER }
+	seq := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "SDFlagsRequestValue")
+	seq.AppendChild(ber.Encode(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, int64(flags), "Flags"))
+	controlValue := seq.Bytes()
 	return ldap.NewControlString("1.2.840.113556.1.4.801", true, string(controlValue))
 }
 
