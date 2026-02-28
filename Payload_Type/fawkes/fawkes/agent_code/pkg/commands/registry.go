@@ -118,6 +118,7 @@ func Initialize() {
 	RegisterCommand(&SecurityInfoCommand{})
 	RegisterCommand(&JobsCommand{})
 	RegisterCommand(&JobkillCommand{})
+	RegisterCommand(&TriageCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
