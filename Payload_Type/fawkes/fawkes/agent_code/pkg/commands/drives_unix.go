@@ -185,9 +185,3 @@ func shouldSkipFs(fsType, device string) bool {
 	return false
 }
 
-func truncDevice(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-2] + ".."
-}
