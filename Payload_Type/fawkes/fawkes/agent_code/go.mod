@@ -8,6 +8,7 @@ require (
 	github.com/Azure/go-ntlmssp v0.1.0
 	github.com/Ne0nd0g/go-clr v1.0.3
 	github.com/RIscRIpt/pecoff v0.0.0-20200923152459-a332238caa87
+	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667
 	github.com/go-ldap/ldap/v3 v3.4.12
 	github.com/go-ole/go-ole v1.3.0
 	github.com/google/uuid v1.6.0
@@ -28,7 +29,6 @@ require (
 	github.com/bodgit/windows v1.0.1 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/geoffgarside/ber v1.1.0 // indirect
-	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667 // indirect
 	github.com/go-logr/logr v1.4.1 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
