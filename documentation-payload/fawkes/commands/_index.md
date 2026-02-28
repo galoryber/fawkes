@@ -185,6 +185,7 @@ pre = "<b>2. </b>"
     * [kill](/agents/fawkes/commands/kill/)
 - Privilege Escalation
     * [getsystem](/agents/fawkes/commands/getsystem/)
+    * [pipe-server](/agents/fawkes/commands/pipe-server/)
     * [uac-bypass](/agents/fawkes/commands/uac-bypass/)
 - Defense Evasion
     * [debug-detect](/agents/fawkes/commands/debug-detect/)

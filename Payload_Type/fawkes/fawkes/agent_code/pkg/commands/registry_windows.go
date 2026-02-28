@@ -80,4 +80,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&ReflectiveLoadCommand{})
 	RegisterCommand(&WindowsEnumCommand{})
 	RegisterCommand(&BitsCommand{})
+	RegisterCommand(&PipeServerCommand{})
 }
