@@ -28,7 +28,7 @@ type netSessionArgs struct {
 	Target string `json:"target"`
 }
 
-type sessionEntry struct {
+type smbSessionEntry struct {
 	Client    string `json:"client"`
 	User      string `json:"user"`
 	Opens     int    `json:"opens"`
@@ -126,12 +126,12 @@ func enumerateSessions502(target string) (string, error) {
 		return "[]", nil
 	}
 
-	entries := make([]sessionEntry, 0, entriesRead)
+	entries := make([]smbSessionEntry, 0, entriesRead)
 	entrySize := unsafe.Sizeof(sessionInfo502{})
 	for i := uint32(0); i < entriesRead; i++ {
 		entry := (*sessionInfo502)(unsafe.Pointer(buf + uintptr(i)*entrySize))
 
-		entries = append(entries, sessionEntry{
+		entries = append(entries, smbSessionEntry{
 			Client:    sesWideToString(entry.ClientName),
 			User:      sesWideToString(entry.UserName),
 			Opens:     int(entry.NumOpens),
@@ -184,12 +184,12 @@ func enumerateSessions10(target string) (string, error) {
 		return "[]", nil
 	}
 
-	entries := make([]sessionEntry, 0, entriesRead)
+	entries := make([]smbSessionEntry, 0, entriesRead)
 	entrySize := unsafe.Sizeof(sessionInfo10{})
 	for i := uint32(0); i < entriesRead; i++ {
 		entry := (*sessionInfo10)(unsafe.Pointer(buf + uintptr(i)*entrySize))
 
-		entries = append(entries, sessionEntry{
+		entries = append(entries, smbSessionEntry{
 			Client: sesWideToString(entry.ClientName),
 			User:   sesWideToString(entry.UserName),
 			Time:   sesFormatDuration(entry.Time),

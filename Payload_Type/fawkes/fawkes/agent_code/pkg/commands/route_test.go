@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"fawkes/pkg/structs"
@@ -28,13 +27,11 @@ func TestRouteExecute(t *testing.T) {
 	if !result.Completed {
 		t.Error("expected completed=true")
 	}
-	// On a real system, we should get routes
+	// On a real system, we should get routes as JSON
 	if result.Status == "success" {
-		if !strings.Contains(result.Output, "Routing Table") {
-			t.Error("output should contain 'Routing Table' header")
-		}
-		if !strings.Contains(result.Output, "Destination") {
-			t.Error("output should contain column headers")
+		var routes []RouteEntry
+		if err := json.Unmarshal([]byte(result.Output), &routes); err != nil {
+			t.Errorf("output should be valid JSON array: %v", err)
 		}
 	}
 }
@@ -64,14 +61,16 @@ func TestRouteEntryStruct(t *testing.T) {
 	}
 }
 
-func TestRouteFormatOutput(t *testing.T) {
+func TestRouteJSONOutput(t *testing.T) {
 	cmd := &RouteCommand{}
 	result := cmd.Execute(structs.Task{Params: ""})
-	if result.Status == "success" {
-		// Check for proper formatting
-		lines := strings.Split(result.Output, "\n")
-		if len(lines) < 3 {
-			t.Error("expected at least 3 lines (header, separator, routes)")
+	if result.Status == "success" && result.Output != "[]" {
+		var routes []RouteEntry
+		if err := json.Unmarshal([]byte(result.Output), &routes); err != nil {
+			t.Errorf("output should be valid JSON: %v", err)
+		}
+		if len(routes) == 0 {
+			t.Error("expected at least one route entry")
 		}
 	}
 }
