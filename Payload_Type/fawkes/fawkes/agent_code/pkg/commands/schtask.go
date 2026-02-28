@@ -4,8 +4,10 @@
 package commands
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"runtime"
 	"strings"
 
@@ -562,24 +564,45 @@ func schtaskRun(args schtaskArgs) structs.CommandResult {
 type schtaskListEntry struct {
 	Name        string `json:"name"`
 	State       string `json:"state"`
-	Enabled     string `json:"enabled"`
 	NextRunTime string `json:"next_run_time,omitempty"`
 }
 
 func schtaskList() structs.CommandResult {
-	conn, cleanup, err := connectTaskScheduler()
+	// Use schtasks.exe /query /fo CSV — reliable across all Windows versions.
+	// COM-based iteration (ForEach, Count+Item) hangs in Go's COM apartment model.
+	out, err := exec.Command("schtasks.exe", "/query", "/fo", "CSV", "/nh").CombinedOutput()
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to Task Scheduler: %v", err),
+			Output:    fmt.Sprintf("Error running schtasks.exe: %v\n%s", err, string(out)),
 			Status:    "error",
 			Completed: true,
 		}
 	}
-	defer cleanup()
 
 	var entries []schtaskListEntry
-	// Use BFS with the service to get fresh folder references (avoids COM iterator nesting issues)
-	collectTasksBFS(conn.service, &entries)
+	reader := csv.NewReader(strings.NewReader(string(out)))
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			break
+		}
+		if len(record) < 3 {
+			continue
+		}
+		// CSV fields: TaskName, Next Run Time, Status
+		name := strings.TrimSpace(record[0])
+		if name == "" || name == "TaskName" || name == "INFO:" {
+			continue
+		}
+		nextRun := strings.TrimSpace(record[1])
+		status := strings.TrimSpace(record[2])
+
+		entries = append(entries, schtaskListEntry{
+			Name:        name,
+			State:       status,
+			NextRunTime: nextRun,
+		})
+	}
 
 	if len(entries) == 0 {
 		return structs.CommandResult{
@@ -602,136 +625,6 @@ func schtaskList() structs.CommandResult {
 		Output:    string(data),
 		Status:    "success",
 		Completed: true,
-	}
-}
-
-// collectTasksBFS uses breadth-first traversal to enumerate all scheduled tasks.
-// Uses Count + Item(index) iteration instead of ForEach/IEnumVARIANT to avoid
-// COM iterator hangs observed on Windows Server systems.
-func collectTasksBFS(service *ole.IDispatch, entries *[]schtaskListEntry) {
-	queue := []string{`\`}
-
-	for len(queue) > 0 {
-		path := queue[0]
-		queue = queue[1:]
-
-		// Open folder via GetFolder (fresh COM reference each time)
-		folderResult, err := oleutil.CallMethod(service, "GetFolder", path)
-		if err != nil {
-			continue // skip folders we can't access
-		}
-		folder := folderResult.ToIDispatch()
-
-		// Collect tasks using Count + Item(index) — avoids IEnumVARIANT hangs
-		tasksResult, err := oleutil.CallMethod(folder, "GetTasks", 0)
-		if err == nil && tasksResult != nil {
-			tasksDisp := tasksResult.ToIDispatch()
-			countResult, _ := oleutil.GetProperty(tasksDisp, "Count")
-			if countResult != nil {
-				count := comToInt(countResult.Value())
-				countResult.Clear()
-				for i := 1; i <= count; i++ { // COM collections are 1-indexed
-					itemResult, err := oleutil.GetProperty(tasksDisp, "Item", i)
-					if err != nil || itemResult == nil {
-						continue
-					}
-					taskDisp := itemResult.ToIDispatch()
-
-					nameResult, _ := oleutil.GetProperty(taskDisp, "Name")
-					name := ""
-					if nameResult != nil {
-						name = nameResult.ToString()
-						nameResult.Clear()
-					}
-
-					fullPath := path + name
-					if path == `\` {
-						fullPath = `\` + name
-					}
-
-					stateResult, _ := oleutil.GetProperty(taskDisp, "State")
-					state := ""
-					if stateResult != nil {
-						state = taskStateToString(stateResult.Value())
-						stateResult.Clear()
-					}
-
-					enabledResult, _ := oleutil.GetProperty(taskDisp, "Enabled")
-					enabled := ""
-					if enabledResult != nil {
-						enabled = fmt.Sprintf("%v", enabledResult.Value())
-						enabledResult.Clear()
-					}
-
-					nextRunResult, _ := oleutil.GetProperty(taskDisp, "NextRunTime")
-					nextRun := ""
-					if nextRunResult != nil {
-						nextRun = fmt.Sprintf("%v", nextRunResult.Value())
-						nextRunResult.Clear()
-					}
-
-					*entries = append(*entries, schtaskListEntry{
-						Name:        fullPath,
-						State:       state,
-						Enabled:     enabled,
-						NextRunTime: nextRun,
-					})
-					taskDisp.Release()
-					itemResult.Clear()
-				}
-			}
-			tasksDisp.Release()
-			tasksResult.Clear()
-		}
-
-		// Collect subfolder paths using Count + Item(index)
-		foldersResult, err := oleutil.CallMethod(folder, "GetFolders", 0)
-		if err == nil && foldersResult != nil {
-			foldersDisp := foldersResult.ToIDispatch()
-			countResult, _ := oleutil.GetProperty(foldersDisp, "Count")
-			if countResult != nil {
-				count := comToInt(countResult.Value())
-				countResult.Clear()
-				for i := 1; i <= count; i++ {
-					itemResult, err := oleutil.GetProperty(foldersDisp, "Item", i)
-					if err != nil || itemResult == nil {
-						continue
-					}
-					subFolder := itemResult.ToIDispatch()
-					subNameResult, _ := oleutil.GetProperty(subFolder, "Name")
-					if subNameResult != nil {
-						subName := subNameResult.ToString()
-						subNameResult.Clear()
-						subPath := path + subName + `\`
-						if path == `\` {
-							subPath = `\` + subName + `\`
-						}
-						queue = append(queue, subPath)
-					}
-					subFolder.Release()
-					itemResult.Clear()
-				}
-			}
-			foldersDisp.Release()
-			foldersResult.Clear()
-		}
-
-		folder.Release()
-		folderResult.Clear()
-	}
-}
-
-// comToInt converts a COM variant value to int (handles int32, int64, int).
-func comToInt(v interface{}) int {
-	switch n := v.(type) {
-	case int32:
-		return int(n)
-	case int64:
-		return int(n)
-	case int:
-		return n
-	default:
-		return 0
 	}
 }
 
