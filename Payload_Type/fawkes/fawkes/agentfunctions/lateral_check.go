@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "lateral-check",
+		Name: "lateral-check",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "lateral_check_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Test lateral movement options against target hosts (SMB, WinRM, RDP, RPC, SSH)",
 		HelpString:          "lateral-check -hosts <IPs/CIDRs> [-timeout <seconds>]",
 		Version:             1,
@@ -47,7 +53,6 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			return args.LoadArgsFromJSONString(input)

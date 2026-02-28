@@ -44,24 +44,30 @@ Scan a subnet:
 lateral-check -hosts 10.0.0.0/24 -timeout 2
 ```
 
-## Sample Output
+## Output Format
 
+Returns JSON array of host results, rendered by a browser script into a color-coded sortable table.
+
+### JSON Structure
+```json
+[
+  {
+    "host": "192.168.1.100",
+    "available": ["SMB (445)", "WinRM-HTTP (5985)", "RDP (3389)", "RPC (135)"],
+    "closed": ["WinRM-HTTPS (5986)", "SSH (22)"],
+    "suggested": ["psexec", "smb", "dcom", "winrm"],
+    "total_open": 4
+  }
+]
 ```
-=== LATERAL MOVEMENT CHECK ===
 
---- 192.168.1.100 ---
-  [+] SMB (445)              port open — use smb/psexec for lateral movement
-  [+] WinRM-HTTP (5985)      port open
-  [-] WinRM-HTTPS (5986)     port closed
-  [+] RDP (3389)             port open
-  [+] RPC (135)              port open
-  [-] SSH (22)               port closed
-  [+] WMI-DCOM (135)         port open
-  Suggested: psexec, smb, dcom, winrm, wmi
-  (5/7 services available)
+### Browser Script Rendering
 
---- 1 host(s) checked ---
-```
+The browser script renders results as a color-coded sortable table:
+- **Green** rows indicate hosts with **many open ports** (strong lateral movement options)
+- **Red** rows indicate hosts with **no open ports** (no lateral movement available)
+
+Columns: Host, Available Services, Closed Services, Suggested Commands, Total Open.
 
 ## MITRE ATT&CK Mapping
 

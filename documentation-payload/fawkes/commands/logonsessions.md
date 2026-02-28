@@ -46,28 +46,25 @@ Filter by username:
 logonsessions -action list -filter setup
 ```
 
-## Example Output
+## Output Format
 
-### List
-```
-Logon Sessions: 2
+Returns JSON array of session entries, rendered by a browser script into a sortable table.
 
-Session  User                   Domain             Station          State          Client
-------------------------------------------------------------------------------------------------------
-0        (none)                 -                  Services         Disconnected   -
-2        setup                  Win1123H2          Console          Active         -
-
-Summary: 2 sessions (1 with users) — 1 Disconnected, 1 Active
+### JSON Structure
+```json
+[
+  {"session_id": 0, "username": "(none)", "domain": "-", "station": "Services", "state": "Disconnected", "client": ""},
+  {"session_id": 2, "username": "setup", "domain": "Win1123H2", "station": "Console", "state": "Active", "client": ""}
+]
 ```
 
-### Users
-```
-Unique Users: 1
+### Browser Script Rendering
 
-User                           Sessions   Session Details
------------------------------------------------------------------------
-Win1123H2\setup                1          2(Active)
-```
+The browser script renders results as a color-coded sortable table:
+- **Green** rows indicate **Active** sessions
+- **Orange** rows indicate **Disconnected** sessions
+
+Columns: Session ID, Username, Domain, Station, State, Client.
 
 ## MITRE ATT&CK Mapping
 

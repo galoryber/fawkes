@@ -84,6 +84,15 @@ type netResource struct {
 	Provider    *uint16
 }
 
+type shareOutputEntry struct {
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Path     string `json:"path,omitempty"`
+	Remark   string `json:"remark,omitempty"`
+	Host     string `json:"host,omitempty"`
+	Provider string `json:"provider,omitempty"`
+}
+
 func (c *NetSharesCommand) Execute(task structs.Task) structs.CommandResult {
 	var args netSharesArgs
 
@@ -144,7 +153,7 @@ func netSharesLocal() structs.CommandResult {
 
 	if buf == 0 || entriesRead == 0 {
 		return structs.CommandResult{
-			Output:    "No local shares found.",
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
@@ -152,30 +161,26 @@ func netSharesLocal() structs.CommandResult {
 	defer procNetApiBufFreeNS.Call(buf)
 
 	entries := unsafe.Slice((*shareInfo2)(unsafe.Pointer(buf)), entriesRead)
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Local Shares (%d):\n", entriesRead))
-	sb.WriteString(fmt.Sprintf("%-20s %-12s %-30s %s\n", "Name", "Type", "Path", "Remark"))
-	sb.WriteString(strings.Repeat("-", 80) + "\n")
+	var out []shareOutputEntry
 
 	for _, entry := range entries {
-		name := ""
-		path := ""
-		remark := ""
+		e := shareOutputEntry{}
 		if entry.Name != nil {
-			name = windows.UTF16PtrToString(entry.Name)
+			e.Name = windows.UTF16PtrToString(entry.Name)
 		}
 		if entry.Path != nil {
-			path = windows.UTF16PtrToString(entry.Path)
+			e.Path = windows.UTF16PtrToString(entry.Path)
 		}
 		if entry.Remark != nil {
-			remark = windows.UTF16PtrToString(entry.Remark)
+			e.Remark = windows.UTF16PtrToString(entry.Remark)
 		}
-		shareType := describeShareType(entry.Type)
-		sb.WriteString(fmt.Sprintf("%-20s %-12s %-30s %s\n", name, shareType, path, remark))
+		e.Type = describeShareType(entry.Type)
+		out = append(out, e)
 	}
 
+	data, _ := json.Marshal(out)
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
@@ -222,7 +227,7 @@ func netSharesRemote(target string) structs.CommandResult {
 
 	if buf == 0 || entriesRead == 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("No shares found on %s.", target),
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
@@ -230,26 +235,23 @@ func netSharesRemote(target string) structs.CommandResult {
 	defer procNetApiBufFreeNS.Call(buf)
 
 	entries := unsafe.Slice((*shareInfo1)(unsafe.Pointer(buf)), entriesRead)
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Shares on %s (%d):\n", target, entriesRead))
-	sb.WriteString(fmt.Sprintf("%-20s %-12s %s\n", "Name", "Type", "Remark"))
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
+	var out []shareOutputEntry
 
 	for _, entry := range entries {
-		name := ""
-		remark := ""
+		e := shareOutputEntry{Host: target}
 		if entry.Name != nil {
-			name = windows.UTF16PtrToString(entry.Name)
+			e.Name = windows.UTF16PtrToString(entry.Name)
 		}
 		if entry.Remark != nil {
-			remark = windows.UTF16PtrToString(entry.Remark)
+			e.Remark = windows.UTF16PtrToString(entry.Remark)
 		}
-		shareType := describeShareType(entry.Type)
-		sb.WriteString(fmt.Sprintf("%-20s %-12s %s\n", name, shareType, remark))
+		e.Type = describeShareType(entry.Type)
+		out = append(out, e)
 	}
 
+	data, _ := json.Marshal(out)
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
@@ -275,12 +277,7 @@ func netSharesMapped() structs.CommandResult {
 	}
 	defer procWNetCloseEnum.Call(uintptr(handle))
 
-	var sb strings.Builder
-	sb.WriteString("Mapped Drives:\n")
-	sb.WriteString(fmt.Sprintf("%-10s %-40s %s\n", "Local", "Remote", "Provider"))
-	sb.WriteString(strings.Repeat("-", 70) + "\n")
-
-	count := 0
+	var out []shareOutputEntry
 	bufSize := uint32(16384)
 	buf := make([]byte, bufSize)
 
@@ -303,20 +300,17 @@ func netSharesMapped() structs.CommandResult {
 		resSize := unsafe.Sizeof(netResource{})
 		for i := uint32(0); i < entries; i++ {
 			res := (*netResource)(unsafe.Pointer(uintptr(ptr) + uintptr(i)*resSize))
-			localName := ""
-			remoteName := ""
-			provider := ""
+			e := shareOutputEntry{Type: "Mapped"}
 			if res.LocalName != nil {
-				localName = windows.UTF16PtrToString(res.LocalName)
+				e.Name = windows.UTF16PtrToString(res.LocalName)
 			}
 			if res.RemoteName != nil {
-				remoteName = windows.UTF16PtrToString(res.RemoteName)
+				e.Path = windows.UTF16PtrToString(res.RemoteName)
 			}
 			if res.Provider != nil {
-				provider = windows.UTF16PtrToString(res.Provider)
+				e.Provider = windows.UTF16PtrToString(res.Provider)
 			}
-			sb.WriteString(fmt.Sprintf("%-10s %-40s %s\n", localName, remoteName, provider))
-			count++
+			out = append(out, e)
 		}
 
 		if enumRet != ERROR_MORE_DATA {
@@ -324,10 +318,17 @@ func netSharesMapped() structs.CommandResult {
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("\n[%d mapped drives]", count))
+	if len(out) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
 
+	data, _ := json.Marshal(out)
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

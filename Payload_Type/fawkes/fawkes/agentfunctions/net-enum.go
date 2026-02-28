@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "net-enum",
+		Name: "net-enum",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "netenum_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate local/domain users, groups, and domain info via Win32 API (T1087, T1069)",
 		HelpString:          "net-enum -action <users|localgroups|groupmembers|domainusers|domaingroups|domaininfo> [-target <group_name>]",
 		Version:             1,
@@ -50,7 +55,6 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			return args.LoadArgsFromJSONString(input)

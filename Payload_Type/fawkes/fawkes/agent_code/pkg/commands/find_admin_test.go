@@ -149,8 +149,20 @@ func TestFindAdminHashAccepted(t *testing.T) {
 	if result.Output == "Error: username and password (or hash) are required" {
 		t.Fatal("hash should be accepted as credential")
 	}
-	if !strings.Contains(result.Output, "PTH") {
-		t.Fatal("output should indicate PTH authentication")
+	// Output is JSON array; verify at least one entry has method "SMB" (PTH uses SMB)
+	var results []findAdminResult
+	if err := json.Unmarshal([]byte(result.Output), &results); err != nil {
+		t.Fatalf("Expected valid JSON output, got parse error: %v\nOutput: %s", err, result.Output)
+	}
+	foundSMB := false
+	for _, r := range results {
+		if r.Method == "SMB" {
+			foundSMB = true
+			break
+		}
+	}
+	if !foundSMB {
+		t.Fatal("output should contain an SMB method entry (PTH authentication)")
 	}
 }
 
@@ -192,14 +204,22 @@ func TestFindAdminSMBUnreachable(t *testing.T) {
 	b, _ := json.Marshal(args)
 	cmd := &FindAdminCommand{}
 	result := cmd.Execute(structs.Task{Params: string(b)})
-	if result.Status != "error" {
-		t.Fatalf("expected error for unreachable host, got %q", result.Status)
+	// Output is now JSON; status is "success" with JSON data showing unreachable
+	if result.Status != "success" {
+		t.Fatalf("expected success with JSON results, got %q: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "unreachable") {
-		t.Fatalf("expected unreachable message, got: %s", result.Output)
+	var results []findAdminResult
+	if err := json.Unmarshal([]byte(result.Output), &results); err != nil {
+		t.Fatalf("Expected valid JSON output, got parse error: %v\nOutput: %s", err, result.Output)
 	}
-	if !strings.Contains(result.Output, "0/1 hosts") {
-		t.Fatalf("expected 0/1 count, got: %s", result.Output)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for single host, got %d", len(results))
+	}
+	if results[0].Admin {
+		t.Fatal("expected admin=false for unreachable host")
+	}
+	if results[0].Host != "127.0.0.1" {
+		t.Fatalf("expected host 127.0.0.1, got %q", results[0].Host)
 	}
 }
 
@@ -214,11 +234,22 @@ func TestFindAdminWinRMUnreachable(t *testing.T) {
 	b, _ := json.Marshal(args)
 	cmd := &FindAdminCommand{}
 	result := cmd.Execute(structs.Task{Params: string(b)})
-	if result.Status != "error" {
-		t.Fatalf("expected error for unreachable host, got %q", result.Status)
+	// Output is now JSON; status is "success" with JSON data showing unreachable
+	if result.Status != "success" {
+		t.Fatalf("expected success with JSON results, got %q: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "unreachable") {
-		t.Fatalf("expected unreachable message, got: %s", result.Output)
+	var results []findAdminResult
+	if err := json.Unmarshal([]byte(result.Output), &results); err != nil {
+		t.Fatalf("Expected valid JSON output, got parse error: %v\nOutput: %s", err, result.Output)
+	}
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for single host, got %d", len(results))
+	}
+	if results[0].Admin {
+		t.Fatal("expected admin=false for unreachable host")
+	}
+	if results[0].Method != "WinRM" {
+		t.Fatalf("expected method WinRM, got %q", results[0].Method)
 	}
 }
 
@@ -233,8 +264,22 @@ func TestFindAdminBothMethodsUnreachable(t *testing.T) {
 	b, _ := json.Marshal(args)
 	cmd := &FindAdminCommand{}
 	result := cmd.Execute(structs.Task{Params: string(b)})
-	// Both methods should be tried
-	if !strings.Contains(result.Output, "SMB") || !strings.Contains(result.Output, "WinRM") {
+	// Both methods should be tried — JSON output should contain entries for both SMB and WinRM
+	var results []findAdminResult
+	if err := json.Unmarshal([]byte(result.Output), &results); err != nil {
+		t.Fatalf("Expected valid JSON output, got parse error: %v\nOutput: %s", err, result.Output)
+	}
+	hasSMB := false
+	hasWinRM := false
+	for _, r := range results {
+		if r.Method == "SMB" {
+			hasSMB = true
+		}
+		if r.Method == "WinRM" {
+			hasWinRM = true
+		}
+	}
+	if !hasSMB || !hasWinRM {
 		t.Fatalf("expected both SMB and WinRM results, got: %s", result.Output)
 	}
 }
@@ -250,9 +295,13 @@ func TestFindAdminCIDRParsing(t *testing.T) {
 	b, _ := json.Marshal(args)
 	cmd := &FindAdminCommand{}
 	result := cmd.Execute(structs.Task{Params: string(b)})
-	// Should parse CIDR and scan hosts (will be unreachable)
-	if !strings.Contains(result.Output, "hosts") {
-		t.Fatalf("expected host sweep output, got: %s", result.Output)
+	// Should parse hosts and return JSON results
+	var results []findAdminResult
+	if err := json.Unmarshal([]byte(result.Output), &results); err != nil {
+		t.Fatalf("Expected valid JSON output, got parse error: %v\nOutput: %s", err, result.Output)
+	}
+	if len(results) == 0 {
+		t.Fatal("expected at least one result from host sweep")
 	}
 }
 
@@ -267,14 +316,19 @@ func TestFindAdminOutputFormat(t *testing.T) {
 	b, _ := json.Marshal(args)
 	cmd := &FindAdminCommand{}
 	result := cmd.Execute(structs.Task{Params: string(b)})
-	// Check output formatting
-	if !strings.Contains(result.Output, "Admin access sweep") {
-		t.Fatal("missing header")
+	// Output should be valid JSON array with expected fields
+	var results []findAdminResult
+	if err := json.Unmarshal([]byte(result.Output), &results); err != nil {
+		t.Fatalf("Expected valid JSON output, got parse error: %v\nOutput: %s", err, result.Output)
 	}
-	if !strings.Contains(result.Output, "CORP\\admin") {
-		t.Fatal("missing credential display")
+	if len(results) == 0 {
+		t.Fatal("expected at least one result entry")
 	}
-	if !strings.Contains(result.Output, "hosts have admin access") {
-		t.Fatal("missing summary line")
+	// Verify the result has the expected host and method fields
+	if results[0].Host != "127.0.0.1" {
+		t.Fatalf("expected host 127.0.0.1, got %q", results[0].Host)
+	}
+	if results[0].Method != "SMB" {
+		t.Fatalf("expected method SMB, got %q", results[0].Method)
 	}
 }

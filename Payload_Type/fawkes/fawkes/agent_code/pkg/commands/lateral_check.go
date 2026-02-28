@@ -32,6 +32,14 @@ type lateralResult struct {
 	Detail    string
 }
 
+type lateralOutputEntry struct {
+	Host       string   `json:"host"`
+	Available  []string `json:"available,omitempty"`
+	Closed     []string `json:"closed,omitempty"`
+	Suggested  []string `json:"suggested,omitempty"`
+	TotalOpen  int      `json:"total_open"`
+}
+
 func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	var args lateralCheckArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -159,59 +167,57 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	wg.Wait()
 
-	// Format output
-	var sb strings.Builder
-	sb.WriteString("=== LATERAL MOVEMENT CHECK ===\n\n")
+	// Build JSON output
+	var entries []lateralOutputEntry
+	order := []string{"SMB (445)", "WinRM-HTTP (5985)", "WinRM-HTTPS (5986)", "RDP (3389)", "RPC (135)", "SSH (22)", "WMI-DCOM (135)"}
 
 	for _, target := range results {
-		sb.WriteString(fmt.Sprintf("--- %s ---\n", target.Host))
-
-		available := 0
-		order := []string{"SMB (445)", "WinRM-HTTP (5985)", "WinRM-HTTPS (5986)", "RDP (3389)", "RPC (135)", "SSH (22)", "WMI-DCOM (135)"}
+		entry := lateralOutputEntry{Host: target.Host}
 
 		for _, name := range order {
 			r, ok := target.Results[name]
 			if !ok {
 				continue
 			}
-			status := "[-]"
 			if r.Available {
-				status = "[+]"
-				available++
+				entry.Available = append(entry.Available, name)
+				entry.TotalOpen++
+			} else {
+				entry.Closed = append(entry.Closed, name)
 			}
-			sb.WriteString(fmt.Sprintf("  %s %-20s %s\n", status, name, r.Detail))
 		}
 
 		// Suggest methods
-		suggestions := []string{}
 		if r, ok := target.Results["SMB (445)"]; ok && r.Available {
-			suggestions = append(suggestions, "psexec", "smb", "dcom")
+			entry.Suggested = append(entry.Suggested, "psexec", "smb", "dcom")
 		}
 		if r, ok := target.Results["WinRM-HTTP (5985)"]; ok && r.Available {
-			suggestions = append(suggestions, "winrm")
+			entry.Suggested = append(entry.Suggested, "winrm")
 		}
 		if r, ok := target.Results["WinRM-HTTPS (5986)"]; ok && r.Available {
-			suggestions = append(suggestions, "winrm (HTTPS)")
+			entry.Suggested = append(entry.Suggested, "winrm (HTTPS)")
 		}
 		if r, ok := target.Results["SSH (22)"]; ok && r.Available {
-			suggestions = append(suggestions, "ssh")
+			entry.Suggested = append(entry.Suggested, "ssh")
 		}
 		if r, ok := target.Results["RPC (135)"]; ok && r.Available {
-			suggestions = append(suggestions, "wmi")
+			entry.Suggested = append(entry.Suggested, "wmi")
 		}
 
-		if len(suggestions) > 0 {
-			sb.WriteString(fmt.Sprintf("  Suggested: %s\n", strings.Join(suggestions, ", ")))
-		} else {
-			sb.WriteString("  No lateral movement vectors identified\n")
-		}
-		sb.WriteString(fmt.Sprintf("  (%d/%d services available)\n\n", available, len(order)))
+		entries = append(entries, entry)
 	}
 
-	sb.WriteString(fmt.Sprintf("--- %d host(s) checked ---\n", len(results)))
+	if len(entries) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
 
+	data, _ := json.Marshal(entries)
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

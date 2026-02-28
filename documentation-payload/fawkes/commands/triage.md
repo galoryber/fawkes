@@ -70,9 +70,27 @@ Configuration files (.conf, .cfg, .ini, .yaml, .yml, .json, .xml, .properties, .
 
 **Search paths:** /etc, ~/.config, ~/.kube, ~/.docker, ~/.aws, ~/.azure, ProgramData (Windows).
 
-## Output
+## Output Format
 
-Results include file category, size, modification date, and full path. Summary shows total file count, size, and per-category breakdown.
+Returns JSON array of file results, rendered by a browser script into a color-coded sortable table.
+
+### JSON Structure
+```json
+[
+  {"path": "/home/user/Documents/report.pdf", "size": 1048576, "modified": "2026-02-28 08:00", "category": "doc"},
+  {"path": "/home/user/.ssh/id_rsa", "size": 2048, "modified": "2026-01-15 12:30", "category": "cred"},
+  {"path": "/etc/nginx/nginx.conf", "size": 4096, "modified": "2026-02-20 14:00", "category": "config"}
+]
+```
+
+### Browser Script Rendering
+
+The browser script renders results as a color-coded sortable table with human-readable file sizes:
+- **Red** rows indicate **credential files** (keys, passwords, keystores)
+- **Orange** rows indicate **configuration files** (.conf, .yaml, .env, etc.)
+- **Blue** rows indicate **document files** (.pdf, .docx, .xlsx, etc.)
+
+Columns: Path, Size (human-readable), Modified, Category.
 
 Use `download` to exfiltrate individual files identified by triage.
 

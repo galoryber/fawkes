@@ -69,11 +69,17 @@ func TestTriageCustom(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("Expected success, got %s: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "FILE TRIAGE") {
-		t.Errorf("Expected FILE TRIAGE header, got: %s", result.Output)
+	var results []triageResult
+	if err := json.Unmarshal([]byte(result.Output), &results); err != nil {
+		t.Fatalf("Expected valid JSON array, got parse error: %v\nOutput: %s", err, result.Output)
 	}
-	if !strings.Contains(result.Output, "2 files found") {
-		t.Errorf("Expected 2 files found, got: %s", result.Output)
+	if len(results) != 2 {
+		t.Errorf("Expected 2 files in JSON array, got %d", len(results))
+	}
+	for _, r := range results {
+		if r.Category != "custom" {
+			t.Errorf("Expected category 'custom', got '%s'", r.Category)
+		}
 	}
 }
 
@@ -89,8 +95,12 @@ func TestTriageCustomMaxFiles(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("Expected success, got %s: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "3 files found") {
-		t.Errorf("Expected 3 files found (max), got: %s", result.Output)
+	var results []triageResult
+	if err := json.Unmarshal([]byte(result.Output), &results); err != nil {
+		t.Fatalf("Expected valid JSON array, got parse error: %v\nOutput: %s", err, result.Output)
+	}
+	if len(results) != 3 {
+		t.Errorf("Expected 3 files (max), got %d", len(results))
 	}
 }
 
@@ -106,8 +116,12 @@ func TestTriageCustomSkipsEmptyFiles(t *testing.T) {
 		t.Errorf("Expected success, got %s: %s", result.Status, result.Output)
 	}
 	// Only notempty.txt should be found (empty is skipped)
-	if !strings.Contains(result.Output, "1 files found") {
-		t.Errorf("Expected 1 file (empty skipped), got: %s", result.Output)
+	var results []triageResult
+	if err := json.Unmarshal([]byte(result.Output), &results); err != nil {
+		t.Fatalf("Expected valid JSON array, got parse error: %v\nOutput: %s", err, result.Output)
+	}
+	if len(results) != 1 {
+		t.Errorf("Expected 1 file (empty skipped), got %d", len(results))
 	}
 }
 
@@ -124,8 +138,12 @@ func TestTriageCustomMaxSize(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("Expected success, got %s: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "1 files found") {
-		t.Errorf("Expected 1 file (big skipped), got: %s", result.Output)
+	var results []triageResult
+	if err := json.Unmarshal([]byte(result.Output), &results); err != nil {
+		t.Fatalf("Expected valid JSON array, got parse error: %v\nOutput: %s", err, result.Output)
+	}
+	if len(results) != 1 {
+		t.Errorf("Expected 1 file (big skipped), got %d", len(results))
 	}
 }
 
@@ -137,8 +155,10 @@ func TestTriageDefaultAction(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("Expected success for default action, got %s: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "FILE TRIAGE") {
-		t.Errorf("Expected FILE TRIAGE header, got: %s", result.Output)
+	// Output should be valid JSON (either [] or an array of triageResult)
+	var results []triageResult
+	if err := json.Unmarshal([]byte(result.Output), &results); err != nil {
+		t.Errorf("Expected valid JSON array output, got parse error: %v\nOutput: %s", err, result.Output)
 	}
 }
 
@@ -187,27 +207,6 @@ func TestTriageCancellation(t *testing.T) {
 	}
 	if !strings.Contains(result.Output, "cancelled") {
 		t.Errorf("Expected cancelled message, got: %s", result.Output)
-	}
-}
-
-func TestFormatTriageSize(t *testing.T) {
-	tests := []struct {
-		bytes    int64
-		expected string
-	}{
-		{0, "0B"},
-		{512, "512B"},
-		{1024, "1.0KB"},
-		{1536, "1.5KB"},
-		{1048576, "1.0MB"},
-		{5242880, "5.0MB"},
-	}
-
-	for _, tc := range tests {
-		result := formatTriageSize(tc.bytes)
-		if result != tc.expected {
-			t.Errorf("formatTriageSize(%d) = %s, want %s", tc.bytes, result, tc.expected)
-		}
 	}
 }
 

@@ -110,6 +110,16 @@ type dsDomainTrusts struct {
 	DomainGuid        [16]byte
 }
 
+// netEnumEntry is the JSON output for most net-enum actions.
+type netEnumEntry struct {
+	Name    string `json:"name"`
+	Comment string `json:"comment,omitempty"`
+	Type    string `json:"type,omitempty"`
+	Source  string `json:"source,omitempty"`
+	Flags   string `json:"flags,omitempty"`
+	DNS     string `json:"dns,omitempty"`
+}
+
 func (c *NetEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	var args netEnumArgs
 
@@ -216,15 +226,16 @@ func netEnumLocalUsers() structs.CommandResult {
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Local Users (%d):\n", len(users)))
-	sb.WriteString(strings.Repeat("-", 40) + "\n")
+	var entries []netEnumEntry
 	for _, u := range users {
-		sb.WriteString(u + "\n")
+		entries = append(entries, netEnumEntry{Name: u, Type: "local_user"})
 	}
-
+	if len(entries) == 0 {
+		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+	}
+	data, _ := json.Marshal(entries)
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
@@ -282,19 +293,16 @@ func netEnumLocalGroups() structs.CommandResult {
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Local Groups (%d):\n", len(groups)))
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
+	var entries []netEnumEntry
 	for _, g := range groups {
-		if g.comment != "" {
-			sb.WriteString(fmt.Sprintf("%-30s  %s\n", g.name, g.comment))
-		} else {
-			sb.WriteString(g.name + "\n")
-		}
+		entries = append(entries, netEnumEntry{Name: g.name, Comment: g.comment, Type: "local_group"})
 	}
-
+	if len(entries) == 0 {
+		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+	}
+	data, _ := json.Marshal(entries)
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
@@ -360,15 +368,16 @@ func netEnumGroupMembers(group string) structs.CommandResult {
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Members of '%s' (%d):\n", group, len(members)))
-	sb.WriteString(strings.Repeat("-", 50) + "\n")
+	var entries []netEnumEntry
 	for _, m := range members {
-		sb.WriteString(m + "\n")
+		entries = append(entries, netEnumEntry{Name: m, Type: "member", Source: group})
 	}
-
+	if len(entries) == 0 {
+		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+	}
+	data, _ := json.Marshal(entries)
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
@@ -428,15 +437,16 @@ func netEnumDomainUsers() structs.CommandResult {
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Domain Users on %s (%d):\n", dcName, len(users)))
-	sb.WriteString(strings.Repeat("-", 40) + "\n")
+	var entries []netEnumEntry
 	for _, u := range users {
-		sb.WriteString(u + "\n")
+		entries = append(entries, netEnumEntry{Name: u, Type: "domain_user", Source: dcName})
 	}
-
+	if len(entries) == 0 {
+		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+	}
+	data, _ := json.Marshal(entries)
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
@@ -495,22 +505,38 @@ func netEnumDomainGroups() structs.CommandResult {
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Domain Groups on %s (%d):\n", dcName, len(groups)))
-	sb.WriteString(strings.Repeat("-", 40) + "\n")
+	var entries []netEnumEntry
 	for _, g := range groups {
-		sb.WriteString(g + "\n")
+		entries = append(entries, netEnumEntry{Name: g, Type: "domain_group", Source: dcName})
 	}
-
+	if len(entries) == 0 {
+		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+	}
+	data, _ := json.Marshal(entries)
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
 }
 
+type domainInfoOutput struct {
+	DCName       string          `json:"dc_name,omitempty"`
+	DCAddress    string          `json:"dc_address,omitempty"`
+	Domain       string          `json:"domain,omitempty"`
+	Forest       string          `json:"forest,omitempty"`
+	DCSite       string          `json:"dc_site,omitempty"`
+	ClientSite   string          `json:"client_site,omitempty"`
+	MinPassLen   uint32          `json:"min_password_length,omitempty"`
+	MaxPassAge   uint32          `json:"max_password_age_days,omitempty"`
+	MinPassAge   uint32          `json:"min_password_age_days,omitempty"`
+	PassHistLen  uint32          `json:"password_history_length,omitempty"`
+	ForceLogoff  string          `json:"force_logoff,omitempty"`
+	Trusts       []netEnumEntry  `json:"trusts,omitempty"`
+}
+
 func netEnumDomainInfo() structs.CommandResult {
-	var sb strings.Builder
+	out := domainInfoOutput{}
 
 	// 1. Domain controller info via DsGetDcNameW
 	var dcInfo *domainControllerInfo
@@ -519,36 +545,21 @@ func netEnumDomainInfo() structs.CommandResult {
 		uintptr(unsafe.Pointer(&dcInfo)),
 	)
 	if ret == NERR_Success && dcInfo != nil {
-		dcName := windows.UTF16PtrToString(dcInfo.DomainControllerName)
-		dcAddr := windows.UTF16PtrToString(dcInfo.DomainControllerAddress)
-		domainName := windows.UTF16PtrToString(dcInfo.DomainName)
-		forestName := windows.UTF16PtrToString(dcInfo.DnsForestName)
-		dcSite := ""
-		clientSite := ""
+		out.DCName = windows.UTF16PtrToString(dcInfo.DomainControllerName)
+		out.DCAddress = windows.UTF16PtrToString(dcInfo.DomainControllerAddress)
+		out.Domain = windows.UTF16PtrToString(dcInfo.DomainName)
+		out.Forest = windows.UTF16PtrToString(dcInfo.DnsForestName)
 		if dcInfo.DcSiteName != nil {
-			dcSite = windows.UTF16PtrToString(dcInfo.DcSiteName)
+			out.DCSite = windows.UTF16PtrToString(dcInfo.DcSiteName)
 		}
 		if dcInfo.ClientSiteName != nil {
-			clientSite = windows.UTF16PtrToString(dcInfo.ClientSiteName)
+			out.ClientSite = windows.UTF16PtrToString(dcInfo.ClientSiteName)
 		}
-
-		sb.WriteString("Domain Controller:\n")
-		sb.WriteString(fmt.Sprintf("  DC Name:     %s\n", dcName))
-		sb.WriteString(fmt.Sprintf("  DC Address:  %s\n", dcAddr))
-		sb.WriteString(fmt.Sprintf("  Domain:      %s\n", domainName))
-		sb.WriteString(fmt.Sprintf("  Forest:      %s\n", forestName))
-		if dcSite != "" {
-			sb.WriteString(fmt.Sprintf("  DC Site:     %s\n", dcSite))
-		}
-		if clientSite != "" {
-			sb.WriteString(fmt.Sprintf("  Client Site: %s\n", clientSite))
-		}
-		sb.WriteString("\n")
 
 		procNetApiBufferFree.Call(uintptr(unsafe.Pointer(dcInfo)))
 
 		// 2. Account policy via NetUserModalsGet (query the DC)
-		dcNameClean := strings.TrimPrefix(dcName, "\\\\")
+		dcNameClean := strings.TrimPrefix(out.DCName, "\\\\")
 		serverPtr, _ := syscall.UTF16PtrFromString("\\\\" + dcNameClean)
 		var modalsInfo uintptr
 		modRet, _, _ := procNetUserModalsGet.Call(
@@ -558,26 +569,25 @@ func netEnumDomainInfo() structs.CommandResult {
 		)
 		if modRet == NERR_Success && modalsInfo != 0 {
 			info := (*userModalsInfo0)(unsafe.Pointer(modalsInfo))
-			sb.WriteString("Domain Account Policy:\n")
-			sb.WriteString(fmt.Sprintf("  Min Password Length:   %d\n", info.MinPasswdLen))
-			maxAgeDays := uint32(0)
+			out.MinPassLen = info.MinPasswdLen
 			if info.MaxPasswdAge > 0 {
-				maxAgeDays = info.MaxPasswdAge / 86400
+				out.MaxPassAge = info.MaxPasswdAge / 86400
 			}
-			sb.WriteString(fmt.Sprintf("  Max Password Age:      %d days\n", maxAgeDays))
-			minAgeDays := info.MinPasswdAge / 86400
-			sb.WriteString(fmt.Sprintf("  Min Password Age:      %d days\n", minAgeDays))
-			sb.WriteString(fmt.Sprintf("  Password History Len:  %d\n", info.PasswordHistLen))
+			out.MinPassAge = info.MinPasswdAge / 86400
+			out.PassHistLen = info.PasswordHistLen
 			if info.ForceLogoff == 0xFFFFFFFF {
-				sb.WriteString("  Force Logoff:          Never\n")
+				out.ForceLogoff = "Never"
 			} else {
-				sb.WriteString(fmt.Sprintf("  Force Logoff:          %d seconds\n", info.ForceLogoff))
+				out.ForceLogoff = fmt.Sprintf("%d seconds", info.ForceLogoff)
 			}
-			sb.WriteString("\n")
 			procNetApiBufferFree.Call(modalsInfo)
 		}
 	} else {
-		sb.WriteString(fmt.Sprintf("Domain Controller: (not available, error %d — machine may not be domain-joined)\n\n", ret))
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: DsGetDcNameW failed (error %d — machine may not be domain-joined)", ret),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	// 3. Domain trusts via DsEnumerateDomainTrustsW
@@ -591,41 +601,24 @@ func netEnumDomainInfo() structs.CommandResult {
 		uintptr(unsafe.Pointer(&trustCount)),
 	)
 	if trustRet == NERR_Success && trustCount > 0 && trustBuf != 0 {
-		sb.WriteString(fmt.Sprintf("Domain Trusts (%d):\n", trustCount))
 		trusts := unsafe.Slice((*dsDomainTrusts)(unsafe.Pointer(trustBuf)), trustCount)
 		for _, t := range trusts {
-			netbios := ""
-			dns := ""
+			e := netEnumEntry{Type: "trust"}
 			if t.NetbiosDomainName != nil {
-				netbios = windows.UTF16PtrToString(t.NetbiosDomainName)
+				e.Name = windows.UTF16PtrToString(t.NetbiosDomainName)
 			}
 			if t.DnsDomainName != nil {
-				dns = windows.UTF16PtrToString(t.DnsDomainName)
+				e.DNS = windows.UTF16PtrToString(t.DnsDomainName)
 			}
-
-			flags := describeTrustFlags(t.Flags)
-			if dns != "" {
-				sb.WriteString(fmt.Sprintf("  %s (%s) — %s\n", netbios, dns, flags))
-			} else {
-				sb.WriteString(fmt.Sprintf("  %s — %s\n", netbios, flags))
-			}
+			e.Flags = describeTrustFlags(t.Flags)
+			out.Trusts = append(out.Trusts, e)
 		}
 		procNetApiBufferFree.Call(trustBuf)
-	} else if trustRet != NERR_Success {
-		sb.WriteString(fmt.Sprintf("Domain Trusts: (error %d)\n", trustRet))
 	}
 
-	result := sb.String()
-	if result == "" {
-		return structs.CommandResult{
-			Output:    "Error: unable to retrieve domain information (machine may not be domain-joined)",
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
+	data, _ := json.Marshal(out)
 	return structs.CommandResult{
-		Output:    result,
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

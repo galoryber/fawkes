@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "triage",
+		Name: "triage",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "triage_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Find high-value files for exfiltration — documents, credentials, configs, or custom path scan (T1083, T1005)",
 		HelpString:          "triage -action <all|documents|credentials|configs|custom> [-path /opt/app] [-max_size 10485760] [-max_files 200]",
 		Version:             1,

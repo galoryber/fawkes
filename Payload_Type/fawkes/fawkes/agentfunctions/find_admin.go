@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "find-admin",
+		Name: "find-admin",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "find_admin_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Sweep hosts to discover where credentials have admin access via SMB and/or WinRM. Tests C$ share access (SMB) or whoami execution (WinRM).",
 		HelpString:          "find-admin -hosts 192.168.1.0/24 -username DOMAIN\\admin -password pass\nfind-admin -hosts 10.0.0.1-10 -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -method both\nfind-admin -hosts dc01,dc02,srv01 -username user@domain.local -password pass -method winrm",
 		Version:             1,

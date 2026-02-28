@@ -41,20 +41,29 @@ find-admin -hosts dc01,dc02,dc03 -username admin@corp.local -hash aad3b435b51404
 find-admin -hosts 10.0.0.1-10 -username DOMAIN\svcadmin -password Secret123 -method both
 ```
 
-## Output
+## Output Format
 
-```
-[*] Admin access sweep: 3 hosts via smb (password as NORTH\vagrant)
-------------------------------------------------------------
-[+] 192.168.100.52       SMB    ADMIN
-[-] 192.168.100.51       SMB    no admin share
-[-] 192.168.100.53       SMB    access denied
-------------------------------------------------------------
-[*] 1/3 hosts have admin access
+Returns JSON array of sweep results, rendered by a browser script into a color-coded sortable table.
+
+### JSON Structure
+```json
+[
+  {"host": "192.168.100.52", "method": "SMB", "admin": true, "message": ""},
+  {"host": "192.168.100.51", "method": "SMB", "admin": false, "message": "no admin share"},
+  {"host": "192.168.100.53", "method": "SMB", "admin": false, "message": "access denied"}
+]
 ```
 
-**Result codes:**
-- `ADMIN` — Credentials have administrative access on this host
+### Browser Script Rendering
+
+The browser script renders results as a color-coded sortable table:
+- **Green** rows indicate **admin access** confirmed
+- **Red** rows indicate **auth failed** or access denied
+
+Columns: Host, Method, Admin, Message.
+
+### Result Messages
+- Empty message with `admin: true` — Credentials have administrative access on this host
 - `access denied` — Authentication succeeded but account lacks admin rights
 - `auth failed` — Invalid credentials for this host
 - `auth error` — Authentication protocol error

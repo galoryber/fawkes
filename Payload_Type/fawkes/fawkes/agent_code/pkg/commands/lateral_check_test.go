@@ -76,14 +76,16 @@ func TestLateralCheckLocalhost(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("Expected success, got %s: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "LATERAL MOVEMENT CHECK") {
-		t.Errorf("Expected header, got: %s", result.Output)
+	// Output should be valid JSON array with one entry for 127.0.0.1
+	var entries []lateralOutputEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Fatalf("Expected valid JSON array, got parse error: %v\nOutput: %s", err, result.Output)
 	}
-	if !strings.Contains(result.Output, "127.0.0.1") {
-		t.Errorf("Expected host in output, got: %s", result.Output)
+	if len(entries) != 1 {
+		t.Errorf("Expected 1 host entry, got %d", len(entries))
 	}
-	if !strings.Contains(result.Output, "1 host(s) checked") {
-		t.Errorf("Expected 1 host checked summary, got: %s", result.Output)
+	if entries[0].Host != "127.0.0.1" {
+		t.Errorf("Expected host 127.0.0.1, got %q", entries[0].Host)
 	}
 }
 
@@ -94,8 +96,13 @@ func TestLateralCheckMultipleHosts(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("Expected success, got %s: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "2 host(s) checked") {
-		t.Errorf("Expected 2 hosts checked, got: %s", result.Output)
+	// Output should be valid JSON array with 2 entries
+	var entries []lateralOutputEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Fatalf("Expected valid JSON array, got parse error: %v\nOutput: %s", err, result.Output)
+	}
+	if len(entries) != 2 {
+		t.Errorf("Expected 2 host entries, got %d", len(entries))
 	}
 }
 

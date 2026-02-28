@@ -36,10 +36,10 @@ type findAdminArgs struct {
 }
 
 type findAdminResult struct {
-	Host    string
-	Method  string
-	Admin   bool
-	Message string
+	Host    string `json:"host"`
+	Method  string `json:"method"`
+	Admin   bool   `json:"admin"`
+	Message string `json:"message,omitempty"`
 }
 
 func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
@@ -116,19 +116,6 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	credDisplay := args.Username
-	if args.Domain != "" {
-		credDisplay = args.Domain + `\` + args.Username
-	}
-	authType := "password"
-	if args.Hash != "" {
-		authType = "PTH"
-	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] Admin access sweep: %d hosts via %s (%s as %s)\n", len(hosts), args.Method, authType, credDisplay))
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-
 	// Run parallel checks
 	var results []findAdminResult
 	var mu sync.Mutex
@@ -172,27 +159,26 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 		return results[i].Host < results[j].Host
 	})
 
-	adminCount := 0
-	for _, r := range results {
-		if r.Admin {
-			adminCount++
-			sb.WriteString(fmt.Sprintf("[+] %-20s %-6s ADMIN\n", r.Host, r.Method))
-		} else {
-			sb.WriteString(fmt.Sprintf("[-] %-20s %-6s %s\n", r.Host, r.Method, r.Message))
+	if len(results) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
 		}
 	}
 
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-	sb.WriteString(fmt.Sprintf("[*] %d/%d hosts have admin access\n", adminCount, len(hosts)))
-
-	status := "success"
-	if adminCount == 0 && len(hosts) > 0 {
-		status = "error"
+	data, err := json.Marshal(results)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling output: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    status,
+		Output:    string(data),
+		Status:    "success",
 		Completed: true,
 	}
 }

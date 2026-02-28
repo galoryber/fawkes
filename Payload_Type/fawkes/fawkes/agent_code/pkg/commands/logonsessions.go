@@ -67,12 +67,12 @@ var wtsStateNames = map[uint32]string{
 }
 
 type sessionEntry struct {
-	SessionID   uint32
-	UserName    string
-	Domain      string
-	Station     string
-	State       string
-	ClientName  string
+	SessionID  uint32 `json:"session_id"`
+	UserName   string `json:"username"`
+	Domain     string `json:"domain"`
+	Station    string `json:"station"`
+	State      string `json:"state"`
+	ClientName string `json:"client,omitempty"`
 }
 
 func (c *LogonSessionsCommand) Execute(task structs.Task) structs.CommandResult {
@@ -231,62 +231,34 @@ func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 	}
 
 	if len(filtered) == 0 {
-		msg := "No logon sessions found"
-		if args.Filter != "" {
-			msg += fmt.Sprintf(" (filter: %q)", args.Filter)
-		}
 		return structs.CommandResult{
-			Output:    msg,
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Logon Sessions: %d\n\n", len(filtered)))
-	result.WriteString(fmt.Sprintf("%-8s %-22s %-18s %-16s %-14s %s\n",
-		"Session", "User", "Domain", "Station", "State", "Client"))
-	result.WriteString(strings.Repeat("-", 100) + "\n")
-
-	for _, s := range filtered {
-		user := s.UserName
-		if user == "" {
-			user = "(none)"
-		}
-		domain := s.Domain
-		if domain == "" {
-			domain = "-"
-		}
-		client := s.ClientName
-		if client == "" {
-			client = "-"
-		}
-		result.WriteString(fmt.Sprintf("%-8d %-22s %-18s %-16s %-14s %s\n",
-			s.SessionID, ltruncate(user, 22), ltruncate(domain, 18),
-			ltruncate(s.Station, 16), s.State, client))
-	}
-
-	// Summary
-	stateCounts := make(map[string]int)
-	userCount := 0
-	for _, s := range filtered {
-		stateCounts[s.State]++
-		if s.UserName != "" {
-			userCount++
+	data, err := json.Marshal(filtered)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling output: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
 	}
-	result.WriteString(fmt.Sprintf("\nSummary: %d sessions (%d with users) — ", len(filtered), userCount))
-	parts := make([]string, 0)
-	for state, count := range stateCounts {
-		parts = append(parts, fmt.Sprintf("%d %s", count, state))
-	}
-	result.WriteString(strings.Join(parts, ", "))
 
 	return structs.CommandResult{
-		Output:    result.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
+}
+
+type userEntry struct {
+	User     string   `json:"user"`
+	Domain   string   `json:"domain,omitempty"`
+	Sessions int      `json:"sessions"`
+	Details  []string `json:"details"`
 }
 
 // logonSessionsUsers returns unique logged-on users
@@ -301,8 +273,8 @@ func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 	}
 
 	type userInfo struct {
-		Domain    string
-		Sessions  map[uint32]string // session ID → state
+		Domain   string
+		Sessions map[uint32]string
 	}
 
 	users := make(map[string]*userInfo)
@@ -336,42 +308,40 @@ func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 	}
 
 	if len(users) == 0 {
-		msg := "No logged-on users found"
-		if args.Filter != "" {
-			msg += fmt.Sprintf(" (filter: %q)", args.Filter)
-		}
 		return structs.CommandResult{
-			Output:    msg,
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Unique Users: %d\n\n", len(users)))
-	result.WriteString(fmt.Sprintf("%-30s %-10s %s\n", "User", "Sessions", "Session Details"))
-	result.WriteString(strings.Repeat("-", 70) + "\n")
-
-	for name, entry := range users {
-		details := make([]string, 0)
-		for sid, state := range entry.Sessions {
+	var entries []userEntry
+	for name, info := range users {
+		var details []string
+		for sid, state := range info.Sessions {
 			details = append(details, fmt.Sprintf("%d(%s)", sid, state))
 		}
-		result.WriteString(fmt.Sprintf("%-30s %-10d %s\n",
-			ltruncate(name, 30), len(entry.Sessions), strings.Join(details, ", ")))
+		entries = append(entries, userEntry{
+			User:     name,
+			Domain:   info.Domain,
+			Sessions: len(info.Sessions),
+			Details:  details,
+		})
+	}
+
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling output: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    result.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
 }
 
-// ltruncate shortens a string to maxLen chars
-func ltruncate(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-1] + "…"
-}

@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "logonsessions",
+		Name: "logonsessions",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "logonsessions_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate active logon sessions — shows who is logged in, session type, and logon time",
 		HelpString:          "logonsessions [-action list|users] [-filter username]",
 		Version:             1,

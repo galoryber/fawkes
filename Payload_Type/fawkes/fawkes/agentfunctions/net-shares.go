@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "net-shares",
+		Name: "net-shares",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "netshares_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate local shares, remote shares, and mapped drives via Win32 API (T1135)",
 		HelpString:          "net-shares -action <local|remote|mapped> [-target <hostname>]",
 		Version:             1,
