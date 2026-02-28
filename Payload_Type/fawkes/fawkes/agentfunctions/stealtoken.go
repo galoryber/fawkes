@@ -2,6 +2,10 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -56,6 +60,58 @@ func init() {
 			createArtifact(taskData.Task.ID, "Token Steal", fmt.Sprintf("OpenProcess + OpenProcessToken + DuplicateTokenEx on PID %d", int(pid)))
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+
+			// Only track on successful steal (output contains "New:")
+			if !strings.Contains(responseText, "New:") {
+				return response
+			}
+
+			// Parse "New: DOMAIN\user" from output
+			user := ""
+			for _, line := range strings.Split(responseText, "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), "New:") {
+					user = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "New:"))
+					break
+				}
+			}
+			if user == "" {
+				return response
+			}
+
+			// Get source PID for context
+			pid, _ := processResponse.TaskData.Args.GetNumberArg("pid")
+
+			// Register token with Mythic's callback token tracker
+			host := processResponse.TaskData.Callback.Host
+			_, err := mythicrpc.SendMythicRPCCallbackTokenCreate(mythicrpc.MythicRPCCallbackTokenCreateMessage{
+				TaskID: processResponse.TaskData.Task.ID,
+				CallbackTokens: []mythicrpc.MythicRPCCallbackTokenData{
+					{
+						Action:  "add",
+						Host:    &host,
+						TokenId: uint64(processResponse.TaskData.Task.ID),
+						TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
+							User:      user,
+							ProcessID: int(pid),
+						},
+					},
+				},
+			})
+			if err != nil {
+				logging.LogError(err, "Failed to register stolen token with Mythic", "user", user, "pid", int(pid))
+			}
+
+			return response
+		},
 	})
 }

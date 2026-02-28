@@ -154,9 +154,21 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		output = fmt.Sprintf("Old: %s\nNew: %s", oldIdentity, newIdentity)
 	}
 
+	// Report plaintext credentials to Mythic vault
+	creds := []structs.MythicCredential{
+		{
+			CredentialType: "plaintext",
+			Realm:          params.Domain,
+			Account:        params.Username,
+			Credential:     params.Password,
+			Comment:        "make-token",
+		},
+	}
+
 	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
+		Output:      output,
+		Status:      "success",
+		Completed:   true,
+		Credentials: &creds,
 	}
 }

