@@ -109,6 +109,18 @@ Harvests Windows-specific credential sources:
 | **WiFi Profiles** | Profile locations (use `netsh wlan show profiles` to extract keys) |
 | **Windows Vault** | Vault directory locations (use `credman` command for detailed enumeration) |
 
+## Credential Vault Integration
+
+Harvested credentials are automatically reported to Mythic's Credentials store:
+
+| Source | Credential Type | What's Reported |
+|--------|----------------|-----------------|
+| `/etc/shadow` hashes | hash | Username + password hash (e.g., `$6$...`, `$y$...`) |
+| Cloud env vars | plaintext | Environment variable name + value (e.g., `AWS_ACCESS_KEY_ID`, `VAULT_TOKEN`) |
+| Windows sensitive env vars | plaintext | Environment variable name + value (e.g., `PASSWORD`, `SECRET`, `API_KEY` patterns) |
+
+Credentials are searchable in the Mythic UI under the Credentials tab.
+
 ## OPSEC Considerations
 
 - All actions use only file read operations — no subprocess execution, no API calls

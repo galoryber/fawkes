@@ -22,6 +22,11 @@ No arguments.
 rev2self
 ```
 
+## Notes
+
+- **Token Cleanup**: When rev2self successfully reverts impersonation, all tracked tokens are automatically removed from Mythic's Callback Tokens tracker.
+- Shows identity before and after reversion (e.g., "Was: CORP\admin → Reverted to: NT AUTHORITY\SYSTEM").
+
 ## MITRE ATT&CK Mapping
 
 - T1134.001

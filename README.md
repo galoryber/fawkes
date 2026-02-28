@@ -309,6 +309,7 @@ Credential-harvesting commands automatically report discoveries to Mythic's **Cr
 | dpapi | plaintext/hash | DPAPI-protected secrets |
 | credman | plaintext | Credential Manager entries (on dump action) |
 | make-token | plaintext | Credentials used for token creation |
+| cred-harvest | hash/plaintext | Shadow hashes, cloud env vars, sensitive env vars |
 
 ### Keylog Tracking
 
@@ -316,7 +317,7 @@ The `keylog` command integrates with Mythic's **Keylogs** feature. When keystrok
 
 ### Token Tracking
 
-The `make-token` and `steal-token` commands register tokens with Mythic's **Callback Tokens** tracker. This provides visibility into which tokens are associated with each callback, including the impersonated user identity and source process.
+The `make-token` and `steal-token` commands register tokens with Mythic's **Callback Tokens** tracker. This provides visibility into which tokens are associated with each callback, including the impersonated user identity and source process. The `rev2self` command automatically removes tracked tokens when impersonation is dropped.
 
 ### TLS Certificate Verification
 
