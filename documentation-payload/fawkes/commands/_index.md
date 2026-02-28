@@ -178,6 +178,7 @@ pre = "<b>2. </b>"
     * [unlink](/agents/fawkes/commands/unlink/)
 - Lateral Movement
     * [dcom](/agents/fawkes/commands/dcom/)
+    * [lateral-check](/agents/fawkes/commands/lateral-check/)
     * [psexec](/agents/fawkes/commands/psexec/)
     * [smb](/agents/fawkes/commands/smb/)
     * [ssh](/agents/fawkes/commands/ssh/)
