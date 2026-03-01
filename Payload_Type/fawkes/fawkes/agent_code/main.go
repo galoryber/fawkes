@@ -562,6 +562,9 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		}
 	}()
 
+	// Zero task parameters to reduce forensic exposure of credentials/arguments
+	task.WipeParams()
+
 	// Send final response
 	response := structs.Response{
 		TaskID:      task.ID,

@@ -606,6 +606,47 @@ func TestNewTask_CopiesShareStopFlag(t *testing.T) {
 	}
 }
 
+// --- WipeParams Tests ---
+// Note: WipeParams zeros the underlying string bytes using unsafe. This only works
+// for heap-allocated strings (e.g., from json.Unmarshal, network I/O). String literals
+// are in read-only memory and would crash. In production, all task.Params are heap-allocated.
+// Tests use string([]byte(...)) to create heap-allocated copies.
+
+func TestWipeParams_ZerosMemory(t *testing.T) {
+	// Heap-allocated string (matches production behavior where params come from JSON)
+	params := string([]byte("secret-password-123"))
+	task := NewTask("id-1", "test", params)
+	if task.Params != "secret-password-123" {
+		t.Fatalf("params should be set: got %q", task.Params)
+	}
+
+	task.WipeParams()
+
+	if task.Params != "" {
+		t.Errorf("params should be empty after wipe: got %q", task.Params)
+	}
+}
+
+func TestWipeParams_EmptyParams(t *testing.T) {
+	task := NewTask("id-2", "test", "")
+	task.WipeParams() // Should not panic
+	if task.Params != "" {
+		t.Errorf("params should remain empty: got %q", task.Params)
+	}
+}
+
+func TestWipeParams_LargeParams(t *testing.T) {
+	// Simulate a task with credential data (heap-allocated)
+	params := string([]byte(`{"username":"admin","password":"P@ssw0rd!","domain":"corp.local","hash":"aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c"}`))
+	task := NewTask("id-3", "cred-check", params)
+
+	task.WipeParams()
+
+	if task.Params != "" {
+		t.Errorf("params should be empty after wipe: got %q", task.Params)
+	}
+}
+
 // --- Working Hours Tests ---
 
 func TestParseWorkingHoursTime(t *testing.T) {

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 )
 
 // Agent represents the agent instance
@@ -208,6 +209,16 @@ func NewTask(id, command, params string) Task {
 		Params:  params,
 		stopped: stopped,
 	}
+}
+
+// WipeParams zeros out the task parameters in memory to reduce forensic exposure.
+// Credentials and sensitive arguments are cleared after command execution.
+func (t *Task) WipeParams() {
+	if len(t.Params) > 0 {
+		b := unsafe.Slice(unsafe.StringData(t.Params), len(t.Params))
+		clear(b)
+	}
+	t.Params = ""
 }
 
 // DidStop checks if the task should stop (goroutine-safe)

@@ -1,6 +1,8 @@
 package http
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -1246,5 +1248,85 @@ func TestPostResponse_EncryptedBadBase64(t *testing.T) {
 	_, err := profile.PostResponse(response, agent, nil)
 	if err == nil {
 		t.Error("PostResponse should fail with bad base64 encrypted response")
+	}
+}
+
+// --- Gzip Decompression Tests ---
+
+func TestReadResponseBody_PlainText(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello world"))
+	}))
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := readResponseBody(resp)
+	if err != nil {
+		t.Fatalf("readResponseBody failed: %v", err)
+	}
+	if string(body) != "hello world" {
+		t.Errorf("got %q, want %q", string(body), "hello world")
+	}
+}
+
+func TestReadResponseBody_GzipCompressed(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate a CDN/proxy that gzip-compresses the response
+		w.Header().Set("Content-Encoding", "gzip")
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		gz.Write([]byte("compressed payload"))
+		gz.Close()
+		w.Write(buf.Bytes())
+	}))
+	defer ts.Close()
+
+	// Use a Transport that does NOT auto-decompress (simulates our explicit Accept-Encoding)
+	client := &http.Client{
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+	}
+	resp, err := client.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := readResponseBody(resp)
+	if err != nil {
+		t.Fatalf("readResponseBody failed: %v", err)
+	}
+	if string(body) != "compressed payload" {
+		t.Errorf("got %q, want %q", string(body), "compressed payload")
+	}
+}
+
+func TestReadResponseBody_InvalidGzip(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Write([]byte("not actually gzip data"))
+	}))
+	defer ts.Close()
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+	}
+	resp, err := client.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	_, err = readResponseBody(resp)
+	if err == nil {
+		t.Error("readResponseBody should fail with invalid gzip data")
 	}
 }
