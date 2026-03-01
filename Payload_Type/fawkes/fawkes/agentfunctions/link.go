@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
@@ -50,6 +52,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -60,6 +65,10 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			host, _ := taskData.Args.GetStringArg("host")
+			port, _ := taskData.Args.GetNumberArg("port")
+			display := fmt.Sprintf("%s:%d", host, int(port))
+			response.DisplayParams = &display
 
 			// Report artifact
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{

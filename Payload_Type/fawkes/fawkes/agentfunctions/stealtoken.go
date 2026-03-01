@@ -2,6 +2,10 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -15,7 +19,10 @@ func init() {
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1134.001"},
-		ScriptOnlyCommand:   false,
+		ScriptOnlyCommand: false,
+		CommandAttributes: agentstructs.CommandAttribute{
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:             "pid",
@@ -42,6 +49,9 @@ func init() {
 		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -53,9 +63,63 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			pid, _ := taskData.Args.GetNumberArg("pid")
+			display := fmt.Sprintf("PID: %d", int(pid))
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "Token Steal", fmt.Sprintf("OpenProcess + OpenProcessToken + DuplicateTokenEx on PID %d", int(pid)))
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+
+			// Only track on successful steal (output contains "New:")
+			if !strings.Contains(responseText, "New:") {
+				return response
+			}
+
+			// Parse "New: DOMAIN\user" from output
+			user := ""
+			for _, line := range strings.Split(responseText, "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), "New:") {
+					user = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "New:"))
+					break
+				}
+			}
+			if user == "" {
+				return response
+			}
+
+			// Get source PID for context
+			pid, _ := processResponse.TaskData.Args.GetNumberArg("pid")
+
+			// Register token with Mythic's callback token tracker
+			host := processResponse.TaskData.Callback.Host
+			_, err := mythicrpc.SendMythicRPCCallbackTokenCreate(mythicrpc.MythicRPCCallbackTokenCreateMessage{
+				TaskID: processResponse.TaskData.Task.ID,
+				CallbackTokens: []mythicrpc.MythicRPCCallbackTokenData{
+					{
+						Action:  "add",
+						Host:    &host,
+						TokenId: uint64(processResponse.TaskData.Task.ID),
+						TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
+							User:      user,
+							ProcessID: int(pid),
+						},
+					},
+				},
+			})
+			if err != nil {
+				logging.LogError(err, "Failed to register stolen token with Mythic", "user", user, "pid", int(pid))
+			}
+
+			return response
+		},
 	})
 }

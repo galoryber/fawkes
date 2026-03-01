@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -64,6 +66,9 @@ func init() {
 		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -74,6 +79,10 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			path, _ := taskData.Args.GetStringArg("path")
+			pattern, _ := taskData.Args.GetStringArg("pattern")
+			display := fmt.Sprintf("%s %s", path, pattern)
+			response.DisplayParams = &display
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "kerb-delegation",
+		Name: "kerb-delegation",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "kerb_delegation_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate Kerberos delegation relationships (unconstrained, constrained, RBCD) in Active Directory via LDAP.",
 		HelpString:          "kerb-delegation -action all -server 192.168.1.1 -username user@domain.local -password pass\nkerb-delegation -action unconstrained -server dc01",
 		Version:             1,
@@ -92,6 +97,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {

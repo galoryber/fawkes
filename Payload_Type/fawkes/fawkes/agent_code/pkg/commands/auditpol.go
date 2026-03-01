@@ -138,23 +138,41 @@ func (c *AuditPolCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-func auditPolQuery() structs.CommandResult {
-	var sb strings.Builder
-	sb.WriteString("Windows Audit Policy\n\n")
-	sb.WriteString(fmt.Sprintf("%-25s %-35s %s\n", "CATEGORY", "SUBCATEGORY", "SETTING"))
-	sb.WriteString(strings.Repeat("-", 80) + "\n")
+// auditPolicyEntry is the JSON output format for browser script rendering
+type auditPolicyEntry struct {
+	Category    string `json:"category"`
+	Subcategory string `json:"subcategory"`
+	Setting     string `json:"setting"`
+}
 
+func auditPolQuery() structs.CommandResult {
+	output := make([]auditPolicyEntry, 0, len(auditSubcategories))
 	for _, sub := range auditSubcategories {
 		setting, err := querySubcategoryPolicy(sub.GUID)
+		settingStr := ""
 		if err != nil {
-			sb.WriteString(fmt.Sprintf("%-25s %-35s %s\n", sub.Category, sub.Name, fmt.Sprintf("Error: %v", err)))
-			continue
+			settingStr = fmt.Sprintf("Error: %v", err)
+		} else {
+			settingStr = auditSettingString(setting)
 		}
-		sb.WriteString(fmt.Sprintf("%-25s %-35s %s\n", sub.Category, sub.Name, auditSettingString(setting)))
+		output = append(output, auditPolicyEntry{
+			Category:    sub.Category,
+			Subcategory: sub.Name,
+			Setting:     settingStr,
+		})
+	}
+
+	jsonBytes, err := json.Marshal(output)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}

@@ -1,8 +1,8 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
-	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -35,33 +35,23 @@ func (c *RouteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if len(routes) == 0 {
 		return structs.CommandResult{
-			Output:    "No routes found",
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Routing Table: %d entries\n\n", len(routes)))
-	sb.WriteString(fmt.Sprintf("%-20s %-20s %-20s %-15s %-8s %s\n",
-		"Destination", "Gateway", "Netmask", "Interface", "Metric", "Flags"))
-	sb.WriteString(strings.Repeat("-", 95) + "\n")
-
-	for _, r := range routes {
-		gw := r.Gateway
-		if gw == "" {
-			gw = "*"
+	out, err := json.Marshal(routes)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("JSON marshal error: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
-		flags := r.Flags
-		if flags == "" {
-			flags = "-"
-		}
-		sb.WriteString(fmt.Sprintf("%-20s %-20s %-20s %-15s %-8d %s\n",
-			r.Destination, gw, r.Netmask, r.Interface, r.Metric, flags))
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(out),
 		Status:    "success",
 		Completed: true,
 	}

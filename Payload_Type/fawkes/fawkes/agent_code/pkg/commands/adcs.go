@@ -17,8 +17,10 @@ import (
 
 type AdcsCommand struct{}
 
-func (c *AdcsCommand) Name() string        { return "adcs" }
-func (c *AdcsCommand) Description() string { return "Enumerate AD Certificate Services and find vulnerable templates" }
+func (c *AdcsCommand) Name() string { return "adcs" }
+func (c *AdcsCommand) Description() string {
+	return "Enumerate AD Certificate Services and find vulnerable templates"
+}
 
 type adcsArgs struct {
 	Action   string `json:"action"`
@@ -441,21 +443,21 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string) structs.Comman
 // adcsResolveEKU converts an OID to a human-readable name
 func adcsResolveEKU(oid string) string {
 	names := map[string]string{
-		oidClientAuth:                         "Client Authentication",
-		oidServerAuth:                         "Server Authentication",
-		oidPKINITClient:                       "PKINIT Client Auth",
-		oidSmartCardLogon:                     "Smart Card Logon",
-		oidAnyPurpose:                         "Any Purpose",
-		oidCertRequestAgent:                   "Certificate Request Agent",
-		"1.3.6.1.5.5.7.3.4":                  "Secure Email",
-		"1.3.6.1.5.5.7.3.8":                  "Time Stamping",
-		"1.3.6.1.4.1.311.10.3.4":             "EFS Recovery Agent",
-		"1.3.6.1.4.1.311.10.3.12":            "Document Signing",
-		"1.3.6.1.4.1.311.54.1.2":             "Remote Desktop Auth",
-		"1.3.6.1.4.1.311.10.3.4.1":           "EFS Data Recovery",
-		"1.3.6.1.4.1.311.21.5":               "CA Encryption Certificate",
-		"1.3.6.1.4.1.311.10.3.1":             "CTL Signing",
-		"1.3.6.1.5.5.7.3.9":                  "OCSP Signing",
+		oidClientAuth:              "Client Authentication",
+		oidServerAuth:              "Server Authentication",
+		oidPKINITClient:            "PKINIT Client Auth",
+		oidSmartCardLogon:          "Smart Card Logon",
+		oidAnyPurpose:              "Any Purpose",
+		oidCertRequestAgent:        "Certificate Request Agent",
+		"1.3.6.1.5.5.7.3.4":        "Secure Email",
+		"1.3.6.1.5.5.7.3.8":        "Time Stamping",
+		"1.3.6.1.4.1.311.10.3.4":   "EFS Recovery Agent",
+		"1.3.6.1.4.1.311.10.3.12":  "Document Signing",
+		"1.3.6.1.4.1.311.54.1.2":   "Remote Desktop Auth",
+		"1.3.6.1.4.1.311.10.3.4.1": "EFS Data Recovery",
+		"1.3.6.1.4.1.311.21.5":     "CA Encryption Certificate",
+		"1.3.6.1.4.1.311.10.3.1":   "CTL Signing",
+		"1.3.6.1.5.5.7.3.9":        "OCSP Signing",
 	}
 	if name, ok := names[oid]; ok {
 		return name

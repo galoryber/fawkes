@@ -80,8 +80,8 @@ func (c *SyscallsCommand) list() structs.CommandResult {
 
 	// Sort by syscall number
 	type sortEntry struct {
-		name   string
-		entry  *SyscallEntry
+		name  string
+		entry *SyscallEntry
 	}
 	var sorted []sortEntry
 	for name, entry := range entries {

@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "net-shares",
+		Name: "net-shares",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "netshares_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate local shares, remote shares, and mapped drives via Win32 API (T1135)",
 		HelpString:          "net-shares -action <local|remote|mapped> [-target <hostname>]",
 		Version:             1,
@@ -51,6 +56,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -63,6 +71,11 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			target, _ := taskData.Args.GetStringArg("target")
+			display := fmt.Sprintf("action: %s", action)
+			if target != "" {
+				display += fmt.Sprintf(", host: %s", target)
+			}
+			response.DisplayParams = &display
 			msg := fmt.Sprintf("NetAPI shares: %s", action)
 			if target != "" {
 				msg += " \\\\" + target

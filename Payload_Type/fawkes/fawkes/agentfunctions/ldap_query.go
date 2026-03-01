@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -14,7 +15,7 @@ func init() {
 		HelpString:          "ldap-query -action users -server 192.168.1.1\nldap-query -action query -server dc01 -filter \"(servicePrincipalName=*MSSQLSvc*)\"",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1087.002"},
+		MitreAttackMappings: []string{"T1087.002", "T1069.002"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -22,6 +23,7 @@ func init() {
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ldap_query_new.js"), Author: "@galoryber"},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:             "action",
@@ -29,7 +31,7 @@ func init() {
 				ModalDisplayName: "Query Type",
 				Description:      "Preset query or custom filter",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "query"},
+				Choices:          []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "dacl", "query"},
 				DefaultValue:     "users",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -125,6 +127,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -143,6 +148,8 @@ func init() {
 			displayMsg := fmt.Sprintf("LDAP %s on %s", action, server)
 			if action == "query" && filter != "" {
 				displayMsg += fmt.Sprintf(" filter=%s", filter)
+			} else if action == "dacl" && filter != "" {
+				displayMsg = fmt.Sprintf("LDAP DACL on %s target=%s", server, filter)
 			}
 			response.DisplayParams = &displayMsg
 

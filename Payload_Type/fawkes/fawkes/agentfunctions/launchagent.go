@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -121,6 +123,9 @@ func init() {
 		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -130,6 +135,17 @@ func init() {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  taskData.Task.ID,
+			}
+			action, _ := taskData.Args.GetStringArg("action")
+			display := fmt.Sprintf("%s", action)
+			response.DisplayParams = &display
+			if action == "install" {
+				label, _ := taskData.Args.GetStringArg("label")
+				path, _ := taskData.Args.GetStringArg("path")
+				createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("LaunchAgent plist creation: %s.plist (program=%s)", label, path))
+			} else if action == "remove" {
+				label, _ := taskData.Args.GetStringArg("label")
+				createArtifact(taskData.Task.ID, "File Delete", fmt.Sprintf("LaunchAgent plist removal: %s.plist", label))
 			}
 			return response
 		},

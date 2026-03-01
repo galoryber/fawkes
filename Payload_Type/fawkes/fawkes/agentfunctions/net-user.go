@@ -96,6 +96,9 @@ func init() {
 		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -108,6 +111,8 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			username, _ := taskData.Args.GetStringArg("username")
+			display := fmt.Sprintf("%s user: %s", action, username)
+			response.DisplayParams = &display
 			switch action {
 			case "add":
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{

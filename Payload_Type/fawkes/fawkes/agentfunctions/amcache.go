@@ -1,13 +1,19 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "amcache",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "amcache_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Query and clean Windows Shimcache (AppCompatCache) execution history. Shimcache records program execution, which is a key forensic artifact. Cleaning it removes evidence of tool execution.",
 		HelpString:          "amcache -action <query|search|delete|clear> [-name <pattern>] [-count <n>]",
 		Version:             1,
@@ -78,12 +84,19 @@ func init() {
 			}
 
 			action, _ := taskData.Args.GetStringArg("action")
+			display := action
+			name, _ := taskData.Args.GetStringArg("name")
+			if name != "" {
+				display += fmt.Sprintf(" %s", name)
+			}
+			resp.DisplayParams = &display
+
 			if action == "delete" || action == "clear" {
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:            taskData.Task.ID,
-					BaseArtifactType:  "Registry Write",
-					ArtifactMessage:   "Modified HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\AppCompatCache\\AppCompatCache",
-				})
+				msg := "AMCache entry deletion: HKLM\\SYSTEM\\CurrentControlSet\\Control\\Session Manager\\AppCompatCache\\AppCompatCache"
+				if name != "" {
+					msg += fmt.Sprintf(" (filter: %s)", name)
+				}
+				createArtifact(taskData.Task.ID, "Registry Write", msg)
 			}
 
 			return resp

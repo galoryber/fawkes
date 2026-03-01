@@ -1,6 +1,9 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -48,7 +51,10 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "enum_tokens_new.js"),
+			Author:     "@galoryber",
+		},
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -64,6 +70,8 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			display := fmt.Sprintf("Token enumeration")
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "API Call", "CreateToolhelp32Snapshot + OpenProcessToken across all processes")
 			return response
 		},

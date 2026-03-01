@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "getprivs",
+		Name: "getprivs",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "getprivs_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "List, enable, disable, or strip token privileges. Strip disables all non-essential privileges to reduce EDR detection surface.",
 		HelpString:          "getprivs\ngetprivs -action list\ngetprivs -action enable -privilege SeDebugPrivilege\ngetprivs -action disable -privilege SeDebugPrivilege\ngetprivs -action strip",
 		Version:             2,
@@ -52,7 +58,10 @@ func init() {
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input != "" {
-				return args.LoadArgsFromJSONString(input)
+				if input == "" {
+				return nil
+			}
+			return args.LoadArgsFromJSONString(input)
 			}
 			return nil
 		},

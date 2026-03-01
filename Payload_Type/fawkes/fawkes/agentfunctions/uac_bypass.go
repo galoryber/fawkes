@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -68,6 +70,8 @@ func init() {
 			if technique == "" {
 				technique = "fodhelper"
 			}
+			display := fmt.Sprintf("method: %s", technique)
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "Registry Write", "HKCU\\Software\\Classes\\ms-settings\\Shell\\Open\\command (UAC bypass via "+technique+")")
 			createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: "+technique+".exe")
 			return response

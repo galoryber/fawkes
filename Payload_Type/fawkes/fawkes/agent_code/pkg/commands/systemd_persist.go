@@ -16,8 +16,10 @@ import (
 
 type SystemdPersistCommand struct{}
 
-func (c *SystemdPersistCommand) Name() string        { return "systemd-persist" }
-func (c *SystemdPersistCommand) Description() string { return "Install, remove, or list systemd service persistence (T1543.002)" }
+func (c *SystemdPersistCommand) Name() string { return "systemd-persist" }
+func (c *SystemdPersistCommand) Description() string {
+	return "Install, remove, or list systemd service persistence (T1543.002)"
+}
 
 type systemdPersistArgs struct {
 	Action      string `json:"action"`

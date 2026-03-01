@@ -17,7 +17,10 @@ func init() {
 		Version:             1,
 		MitreAttackMappings: []string{"T1083"},
 		SupportedUIFeatures: []string{"file_browser:list"},
-		Author:              "@xorrior",
+		Author: "@xorrior",
+		CommandAttributes: agentstructs.CommandAttribute{
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
+		},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ls_new.js"),
 			Author:     "@its_a_feature_",

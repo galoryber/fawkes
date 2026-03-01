@@ -6,6 +6,7 @@ package commands
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -32,16 +33,16 @@ func (p ccachePrincipal) String() string {
 
 // ccacheCredential represents a credential entry in the ccache file
 type ccacheCredential struct {
-	Client       ccachePrincipal
-	Server       ccachePrincipal
-	KeyType      int32 // changed from uint16 to match ccache v4 spec
-	AuthTime     time.Time
-	StartTime    time.Time
-	EndTime      time.Time
-	RenewTill    time.Time
-	IsSKey       bool
-	TicketFlags  uint32
-	TicketData   []byte
+	Client      ccachePrincipal
+	Server      ccachePrincipal
+	KeyType     int32 // changed from uint16 to match ccache v4 spec
+	AuthTime    time.Time
+	StartTime   time.Time
+	EndTime     time.Time
+	RenewTill   time.Time
+	IsSKey      bool
+	TicketFlags uint32
+	TicketData  []byte
 }
 
 // findCcacheFile locates the Kerberos credential cache file
@@ -425,15 +426,10 @@ func klistList(args klistArgs) structs.CommandResult {
 		}
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("=== Kerberos Ticket Cache ===\n\nccache: %s\n", ccachePath))
-	if defPrincipal != nil {
-		sb.WriteString(fmt.Sprintf("Default principal: %s\n", defPrincipal.String()))
-	}
-	sb.WriteString(fmt.Sprintf("Cached tickets: %d\n", len(creds)))
+	_ = defPrincipal // principal info is available via ccache metadata
 
 	now := time.Now()
-	displayed := 0
+	var entries []klistTicketEntry
 
 	for i, cred := range creds {
 		// Apply server filter
@@ -445,36 +441,44 @@ func klistList(args klistArgs) structs.CommandResult {
 			}
 		}
 
-		expired := ""
+		status := "valid"
 		if !cred.EndTime.IsZero() && cred.EndTime.Before(now) && cred.EndTime.Year() > 1970 {
-			expired = " [EXPIRED]"
+			status = "EXPIRED"
 		}
 
-		sb.WriteString(fmt.Sprintf("\n#%d  %s → %s%s\n",
-			i, cred.Client.String(), cred.Server.String(), expired))
-		sb.WriteString(fmt.Sprintf("    Encryption: %s (etype %d)\n",
-			etypeToNameKL(cred.KeyType), cred.KeyType))
-		sb.WriteString(fmt.Sprintf("    Flags:      %s (0x%08X)\n",
-			klistFormatFlags(cred.TicketFlags), cred.TicketFlags))
+		e := klistTicketEntry{
+			Index:      i,
+			Client:     cred.Client.String(),
+			Server:     cred.Server.String(),
+			Encryption: etypeToNameKL(cred.KeyType),
+			Flags:      klistFormatFlags(cred.TicketFlags),
+			Status:     status,
+		}
 		if cred.StartTime.Year() > 1970 {
-			sb.WriteString(fmt.Sprintf("    Start:      %s\n", cred.StartTime.Format("2006-01-02 15:04:05")))
+			e.Start = cred.StartTime.Format("2006-01-02 15:04:05")
 		}
 		if cred.EndTime.Year() > 1970 {
-			sb.WriteString(fmt.Sprintf("    End:        %s\n", cred.EndTime.Format("2006-01-02 15:04:05")))
+			e.End = cred.EndTime.Format("2006-01-02 15:04:05")
 		}
 		if cred.RenewTill.Year() > 1970 {
-			sb.WriteString(fmt.Sprintf("    Renew:      %s\n", cred.RenewTill.Format("2006-01-02 15:04:05")))
+			e.Renew = cred.RenewTill.Format("2006-01-02 15:04:05")
 		}
-
-		displayed++
+		entries = append(entries, e)
 	}
 
-	if args.Server != "" && displayed != len(creds) {
-		sb.WriteString(fmt.Sprintf("\nDisplayed %d/%d tickets (filter: %q)\n", displayed, len(creds), args.Server))
+	if entries == nil {
+		entries = []klistTicketEntry{}
 	}
-
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling output: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

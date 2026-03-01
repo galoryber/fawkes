@@ -84,19 +84,19 @@ func TestKerberoastCommand_MissingPassword(t *testing.T) {
 }
 
 func TestKerberoastCommand_RealmAutoDetect(t *testing.T) {
-	// This test verifies realm auto-detection from UPN format
-	// It will fail to connect to a real KDC, but should get past param validation
+	// Verify realm auto-detection from UPN format by checking the
+	// code path doesn't return "realm required" error. Use 127.0.0.1
+	// to get a fast connection refusal instead of a hanging timeout.
 	cmd := &KerberoastCommand{}
 	params, _ := json.Marshal(kerberoastArgs{
-		Server:   "192.0.2.1", // RFC 5737 documentation IP
+		Server:   "127.0.0.1",
 		Username: "user@test.local",
 		Password: "pass",
 		SPN:      "MSSQLSvc/host.test.local",
 	})
 	result := cmd.Execute(structs.Task{Params: string(params)})
-	// Should fail at KDC connection, not at realm detection
+	// Should fail at LDAP/KDC connection, not at realm detection
 	if result.Status != "error" {
-		// If it somehow succeeds connecting to a test IP, that's unexpected
 		t.Log("Unexpected success — may have connected to something")
 	}
 	// Should NOT contain "realm required" error since UPN provides the realm

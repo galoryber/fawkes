@@ -57,7 +57,7 @@ func TestDomainPolicyUnknownAction(t *testing.T) {
 	cmd := &DomainPolicyCommand{}
 	args := domainPolicyArgs{
 		Action:   "bogus",
-		Server:   "192.0.2.1",
+		Server:   "127.0.0.1",
 		Username: "user@domain",
 		Password: "pass",
 	}
@@ -73,7 +73,7 @@ func TestDomainPolicyUnknownAction(t *testing.T) {
 func TestDomainPolicyDefaultAction(t *testing.T) {
 	cmd := &DomainPolicyCommand{}
 	args := domainPolicyArgs{
-		Server:   "192.0.2.1", // RFC 5737 - will timeout
+		Server:   "127.0.0.1", // RFC 5737 - will timeout
 		Username: "user@domain",
 		Password: "pass",
 	}
@@ -96,12 +96,12 @@ func TestFormatADInterval(t *testing.T) {
 	}{
 		{"empty", "", "(not set)"},
 		{"zero", "0", "None"},
-		{"1 hour negative", "-36000000000", "1h"},           // -36000000000 * 100ns = -1 hour
-		{"30 minutes negative", "-18000000000", "30m"},      // -18000000000 * 100ns = -30 min
-		{"1 day negative", "-864000000000", "1d"},            // -864000000000 * 100ns = -1 day
-		{"42 days negative", "-36288000000000", "42d"},       // 42 days
-		{"invalid", "abc", "abc"},                            // returns raw
-		{"never expires", "-9223372036854775808", "Never"},   // max int64
+		{"1 hour negative", "-36000000000", "1h"},          // -36000000000 * 100ns = -1 hour
+		{"30 minutes negative", "-18000000000", "30m"},     // -18000000000 * 100ns = -30 min
+		{"1 day negative", "-864000000000", "1d"},          // -864000000000 * 100ns = -1 day
+		{"42 days negative", "-36288000000000", "42d"},     // 42 days
+		{"invalid", "abc", "abc"},                          // returns raw
+		{"never expires", "-9223372036854775808", "Never"}, // max int64
 	}
 
 	for _, tt := range tests {

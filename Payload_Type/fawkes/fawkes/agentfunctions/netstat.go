@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -17,14 +19,19 @@ func init() {
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
-		CommandParameters:   []agentstructs.CommandParameter{},
-		AssociatedBrowserScript: nil,
+		CommandParameters: []agentstructs.CommandParameter{},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "netstat_new.js"),
+			Author:     "@galoryber",
+		},
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			display := "Network connections"
+			response.DisplayParams = &display
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

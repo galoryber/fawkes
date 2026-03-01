@@ -24,9 +24,9 @@ type DataParser struct {
 }
 
 var (
-	bofKernel32                = syscall.MustLoadDLL("kernel32.dll")
-	bofProcVirtualAlloc        = bofKernel32.MustFindProc("VirtualAlloc")
-	bofProcVirtualProtect      = bofKernel32.MustFindProc("VirtualProtect")
+	bofKernel32                  = syscall.MustLoadDLL("kernel32.dll")
+	bofProcVirtualAlloc          = bofKernel32.MustFindProc("VirtualAlloc")
+	bofProcVirtualProtect        = bofKernel32.MustFindProc("VirtualProtect")
 	bofProcFlushInstructionCache = bofKernel32.MustFindProc("FlushInstructionCache")
 )
 

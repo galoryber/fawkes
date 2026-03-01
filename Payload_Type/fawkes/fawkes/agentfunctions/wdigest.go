@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -51,12 +50,10 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			action, _ := taskData.Args.GetStringArg("action")
+			display := action
+			response.DisplayParams = &display
 			if action == "enable" || action == "disable" {
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "Registry Write",
-					ArtifactMessage:  fmt.Sprintf("WDigest UseLogonCredential → %s", action),
-				})
+				createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("WDigest UseLogonCredential registry modification — %s", action))
 			}
 			return response
 		},

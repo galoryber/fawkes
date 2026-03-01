@@ -1,6 +1,9 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -15,12 +18,19 @@ func init() {
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "route_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandParameters: []agentstructs.CommandParameter{},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			return agentstructs.PTTaskCreateTaskingMessageResponse{
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
+			display := fmt.Sprintf("Routing table")
+			response.DisplayParams = &display
+			return response
 		},
 	})
 }

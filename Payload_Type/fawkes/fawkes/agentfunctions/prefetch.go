@@ -2,14 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "prefetch",
+		Name: "prefetch",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "prefetch_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Parse and manage Windows Prefetch files — list executed programs, parse execution history, delete specific entries, or clear all. Supports compressed (MAM) prefetch files on Windows 10/11.",
 		HelpString:          "prefetch -action <list|parse|delete|clear> [-name <exe_name>] [-count <max>]",
 		Version:             1,
@@ -80,16 +84,19 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+
+			display := action
+			if name != "" {
+				display += fmt.Sprintf(" %s", name)
+			}
+			response.DisplayParams = &display
+
 			if action == "delete" || action == "clear" {
-				msg := fmt.Sprintf("Prefetch %s", action)
+				msg := fmt.Sprintf("Prefetch file deletion: %s", action)
 				if name != "" {
 					msg += fmt.Sprintf(" (filter: %s)", name)
 				}
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "File Deletion",
-					ArtifactMessage:  msg,
-				})
+				createArtifact(taskData.Task.ID, "File Delete", msg)
 			}
 			return response
 		},

@@ -373,7 +373,11 @@ func TestCheckin_WithEncryption(t *testing.T) {
 		respJSON, _ := json.Marshal(resp)
 
 		// Encrypt the response
-		encrypted := profile.encryptMessage(respJSON)
+		encrypted, encErr := profile.encryptMessage(respJSON)
+		if encErr != nil {
+			http.Error(w, "encryption failed", 500)
+			return
+		}
 
 		// Prepend a 36-byte UUID (the callback UUID padded/truncated)
 		fakeUUID := []byte("12345678-1234-1234-1234-123456789012")
@@ -633,7 +637,11 @@ func TestGetTasking_WithEncryption(t *testing.T) {
 			},
 		}
 		respJSON, _ := json.Marshal(resp)
-		encrypted := profile.encryptMessage(respJSON)
+		encrypted, encErr := profile.encryptMessage(respJSON)
+		if encErr != nil {
+			http.Error(w, "encryption failed", 500)
+			return
+		}
 
 		fakeUUID := []byte("12345678-1234-1234-1234-123456789012")
 		withUUID := append(fakeUUID, encrypted...)
@@ -929,7 +937,11 @@ func TestPostResponse_WithEncryption(t *testing.T) {
 			"responses": []interface{}{},
 		}
 		respJSON, _ := json.Marshal(resp)
-		encrypted := profile.encryptMessage(respJSON)
+		encrypted, encErr := profile.encryptMessage(respJSON)
+		if encErr != nil {
+			http.Error(w, "encryption failed", 500)
+			return
+		}
 
 		fakeUUID := []byte("12345678-1234-1234-1234-123456789012")
 		withUUID := append(fakeUUID, encrypted...)
@@ -1043,7 +1055,10 @@ func TestDecryptResponse_AlternativeHMAC(t *testing.T) {
 
 	// Use encryptMessage to produce correctly encrypted data
 	original := []byte(`{"test":"data"}`)
-	encrypted := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original)
+	if err != nil {
+		t.Fatalf("encryptMessage failed: %v", err)
+	}
 
 	// encrypted = IV + ciphertext + HMAC(key, IV+ciphertext)
 	// decryptResponse expects: UUID(36) + IV + ciphertext + HMAC

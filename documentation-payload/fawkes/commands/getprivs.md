@@ -58,6 +58,24 @@ getprivs -action disable -privilege SeDebugPrivilege
 getprivs -action strip
 ```
 
+## Output Format
+
+The `list` action returns a JSON object with token metadata and a privileges array (rendered as sortable tables in the Mythic UI):
+
+```json
+{
+  "identity": "DOMAIN\\user",
+  "source": "Process",
+  "integrity": "High",
+  "privileges": [
+    {"name": "SeDebugPrivilege", "status": "Enabled", "description": "Debug programs"},
+    {"name": "SeChangeNotifyPrivilege", "status": "Enabled (Default)", "description": "Bypass traverse checking"}
+  ]
+}
+```
+
+Other actions (enable, disable, strip) return plain text status messages.
+
 ## MITRE ATT&CK Mapping
 
 - T1134.002 — Access Token Manipulation: Create Process with Token

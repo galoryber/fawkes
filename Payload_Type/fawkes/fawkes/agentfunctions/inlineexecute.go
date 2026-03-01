@@ -250,6 +250,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -392,6 +395,7 @@ func init() {
 
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
+			createArtifact(taskData.Task.ID, "API Call", "COFF/BOF in-memory execution")
 			return response
 		},
 	})

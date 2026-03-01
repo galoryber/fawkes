@@ -2,14 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "laps",
+		Name: "laps",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "laps_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "laps - Read LAPS (Local Administrator Password Solution) passwords from Active Directory via LDAP. Supports LAPS v1 (ms-Mcs-AdmPwd) and Windows LAPS v2 (ms-LAPS-Password). Requires read access to LAPS attributes.",
 		HelpString:          "laps -server <DC> -username <user@domain> -password <pass> [-filter <computer>]",
 		Version:             1,
@@ -76,6 +80,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -91,11 +98,7 @@ func init() {
 			displayMsg := fmt.Sprintf("LAPS password recovery on %s", server)
 			response.DisplayParams = &displayMsg
 
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("LDAP LAPS query on %s", server),
-			})
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("LDAP query for ms-Mcs-AdmPwd (LAPS password) on %s", server))
 
 			return response
 		},

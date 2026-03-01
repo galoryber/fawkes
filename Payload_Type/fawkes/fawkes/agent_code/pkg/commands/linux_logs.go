@@ -16,8 +16,10 @@ import (
 
 type LinuxLogsCommand struct{}
 
-func (c *LinuxLogsCommand) Name() string        { return "linux-logs" }
-func (c *LinuxLogsCommand) Description() string { return "List, read, clear, or tamper with Linux log files and login records (T1070.002)" }
+func (c *LinuxLogsCommand) Name() string { return "linux-logs" }
+func (c *LinuxLogsCommand) Description() string {
+	return "List, read, clear, or tamper with Linux log files and login records (T1070.002)"
+}
 
 type linuxLogsArgs struct {
 	Action string `json:"action"`

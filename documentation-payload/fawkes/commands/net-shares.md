@@ -35,6 +35,28 @@ List mapped network drives:
 net-shares -action mapped
 ```
 
+## Output Format
+
+Returns JSON array of share entries, rendered by a browser script into a sortable table.
+
+### JSON Structure
+```json
+[
+  {"name": "C$", "type": "Disk (Admin)", "path": "C:\\", "remark": "Default share", "host": "", "provider": ""},
+  {"name": "IPC$", "type": "IPC (Admin)", "path": "", "remark": "Remote IPC", "host": "", "provider": ""},
+  {"name": "Users", "type": "Disk", "path": "C:\\Users", "remark": "", "host": "", "provider": ""}
+]
+```
+
+### Browser Script Rendering
+
+The browser script renders results as a color-coded sortable table:
+- **Red** rows indicate **Admin shares** (e.g., C$, ADMIN$)
+- **Blue** rows indicate **IPC shares** (e.g., IPC$)
+- Default styling for standard shares
+
+Columns: Name, Type, Path, Remark, Host, Provider.
+
 ## MITRE ATT&CK Mapping
 
 - **T1135** - Network Share Discovery

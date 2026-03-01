@@ -4,14 +4,22 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
-	"strings"
 	"syscall"
 	"unsafe"
 
 	"fawkes/pkg/structs"
 	"golang.org/x/sys/windows"
 )
+
+type driveEntry struct {
+	Drive   string  `json:"drive"`
+	Type    string  `json:"type"`
+	Label   string  `json:"label"`
+	FreeGB  float64 `json:"free_gb"`
+	TotalGB float64 `json:"total_gb"`
+}
 
 // DrivesCommand implements the drives command
 type DrivesCommand struct{}
@@ -46,37 +54,43 @@ func (c *DrivesCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	var output strings.Builder
-	output.WriteString(fmt.Sprintf("%-6s %-12s %-20s %15s %15s\n", "Drive", "Type", "Label", "Free (GB)", "Total (GB)"))
-	output.WriteString(strings.Repeat("-", 72) + "\n")
-
-	count := 0
+	var entries []driveEntry
 	for i := 0; i < 26; i++ {
 		if mask&(1<<uint(i)) == 0 {
 			continue
 		}
 
 		driveLetter := string(rune('A'+i)) + ":\\"
-		driveType := getDriveType(driveLetter)
-		label := getVolumeLabel(driveLetter)
 		freeGB, totalGB := getDiskSpace(driveLetter)
 
-		freeStr := "-"
-		totalStr := "-"
-		if totalGB >= 0 {
-			freeStr = fmt.Sprintf("%.1f", freeGB)
-			totalStr = fmt.Sprintf("%.1f", totalGB)
-		}
-
-		output.WriteString(fmt.Sprintf("%-6s %-12s %-20s %15s %15s\n",
-			driveLetter, driveType, label, freeStr, totalStr))
-		count++
+		entries = append(entries, driveEntry{
+			Drive:   driveLetter,
+			Type:    getDriveType(driveLetter),
+			Label:   getVolumeLabel(driveLetter),
+			FreeGB:  freeGB,
+			TotalGB: totalGB,
+		})
 	}
 
-	output.WriteString(fmt.Sprintf("\n[%d drives found]", count))
+	if len(entries) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
+
+	jsonBytes, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshalling drive data: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	return structs.CommandResult{
-		Output:    output.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}

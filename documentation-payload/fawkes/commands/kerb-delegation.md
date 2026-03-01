@@ -47,48 +47,41 @@ kerb-delegation -action constrained -server 192.168.1.10 -username admin@corp.lo
 kerb-delegation -action rbcd -server 192.168.1.10 -username admin@corp.local -password Pass123
 ```
 
-## Example Output
+## Output Format
 
+Returns a JSON array rendered as a sortable table via browser script:
+```json
+[
+  {
+    "account": "FILESERVER$",
+    "dns": "fileserver.corp.local",
+    "delegation_type": "Unconstrained",
+    "spns": ["cifs/fileserver.corp.local", "HOST/fileserver.corp.local"],
+    "risk": "TGT cached for any authenticating user"
+  },
+  {
+    "account": "SVC-SQL$",
+    "dns": "svc-sql.corp.local",
+    "delegation_type": "Constrained",
+    "mode": "Protocol Transition (S4U2Self)",
+    "targets": ["MSSQLSvc/dbserver.corp.local", "MSSQLSvc/dbserver.corp.local:1433"],
+    "s4u2self": true,
+    "risk": "S4U2Self enabled — no user interaction needed"
+  },
+  {
+    "account": "WEBSERVER$",
+    "delegation_type": "RBCD",
+    "targets": ["S-1-5-21-...-1105"]
+  },
+  {
+    "account": "Administrator",
+    "delegation_type": "Protected",
+    "description": "NOT_DELEGATED — cannot be impersonated via delegation"
+  }
+]
 ```
-Kerberos Delegation Report
-============================================================
 
-Unconstrained Delegation (1 found, excluding DCs)
-============================================================
-Accounts with TrustedForDelegation can impersonate ANY user to ANY service.
-
-[1] FILESERVER$ (computer)
-    DN: CN=FILESERVER,CN=Computers,DC=corp,DC=local
-    SPNs: cifs/fileserver.corp.local, HOST/fileserver.corp.local
-
-Constrained Delegation (1 found)
-============================================================
-Accounts that can impersonate users to specific services.
-
-[1] SVC-SQL$ (computer) [PROTOCOL TRANSITION]
-    DN: CN=SVC-SQL,CN=Computers,DC=corp,DC=local
-    Allowed services:
-      - MSSQLSvc/dbserver.corp.local
-      - MSSQLSvc/dbserver.corp.local:1433
-
-Resource-Based Constrained Delegation (1 found)
-============================================================
-Objects where other accounts can impersonate users to their services.
-
-[1] WEBSERVER$ (computer)
-    DN: CN=WEBSERVER,CN=Computers,DC=corp,DC=local
-    Allowed principals:
-      - S-1-5-21-...-1105
-
-Sensitive Accounts (NOT_DELEGATED) (2 found)
-============================================================
-These accounts have the NOT_DELEGATED flag — they CANNOT be impersonated via delegation.
-
-[1] krbtgt
-    DN: CN=krbtgt,CN=Users,DC=corp,DC=local
-[2] Administrator
-    DN: CN=Administrator,CN=Users,DC=corp,DC=local
-```
+The browser script highlights unconstrained delegation in red, S4U2Self-enabled constrained delegation in orange, protected accounts in green, and disabled accounts in gray. The `all` action combines results from all delegation types plus protected accounts.
 
 ## Delegation Attack Patterns
 

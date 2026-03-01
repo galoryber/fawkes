@@ -40,16 +40,34 @@ laps -server dc01 -username admin@corp.local -password Pass123 -filter srv
 laps -server dc01.corp.local -username admin@corp.local -password Pass123 -use_tls true
 ```
 
-## Output
+## Output Format
 
-For each computer with readable LAPS passwords:
-- Computer name and FQDN
-- Operating system
-- **LAPS v1**: Plaintext password, expiration time with countdown
-- **LAPS v2**: Managed account name, plaintext password, update timestamp, expiration
-- **LAPS v2 Encrypted**: Reports encrypted password presence (requires DPAPI backup key)
+Returns a JSON array rendered as a sortable table via browser script:
+```json
+[
+  {
+    "computer": "FILESERVER$",
+    "fqdn": "fileserver.corp.local",
+    "os": "Windows Server 2022",
+    "version": "v1",
+    "password": "xK9#mP2$vL5n",
+    "expires": "2026-03-15 08:00 UTC",
+    "expiry_status": "expires in 14d 3h"
+  },
+  {
+    "computer": "WEBSERVER$",
+    "fqdn": "webserver.corp.local",
+    "os": "Windows Server 2022",
+    "version": "v2",
+    "account": "LapsAdmin",
+    "password": "Tj8!qR4@wN7x",
+    "expires": "2026-03-10 12:00 UTC",
+    "expiry_status": "expires in 9d 7h"
+  }
+]
+```
 
-If no results are found, the command reports possible reasons (LAPS not deployed, insufficient permissions, or no matching computers).
+The browser script highlights passwords in green, expired entries in red, and v2-encrypted entries (requiring DPAPI backup key) in orange. Discovered credentials are automatically registered in Mythic's credential store.
 
 ## OPSEC Considerations
 

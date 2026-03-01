@@ -73,6 +73,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			// For command line usage, we'd need to parse differently
 			// For now, require JSON format
 			return args.LoadArgsFromJSONString(input)

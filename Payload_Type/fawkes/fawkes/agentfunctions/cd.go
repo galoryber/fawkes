@@ -35,6 +35,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			// Try JSON first (e.g., {"path": "C:\\Windows"} from API)
 			if err := args.LoadArgsFromJSONString(input); err == nil {
 				return nil

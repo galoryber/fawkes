@@ -12,8 +12,8 @@ import (
 )
 
 var (
-	iphlpapiRoute           = windows.NewLazySystemDLL("iphlpapi.dll")
-	procGetIpForwardTable   = iphlpapiRoute.NewProc("GetIpForwardTable")
+	iphlpapiRoute         = windows.NewLazySystemDLL("iphlpapi.dll")
+	procGetIpForwardTable = iphlpapiRoute.NewProc("GetIpForwardTable")
 )
 
 // MIB_IPFORWARDROW — IPv4 routing table entry

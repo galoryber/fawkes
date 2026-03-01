@@ -46,35 +46,26 @@ Filter to a specific user:
 enum-tokens -action unique -user setup
 ```
 
-## Example Output
+### Browser Script
+
+Output is rendered as a sortable table in the Mythic UI. Rows are color-coded by integrity level: System (red), High (orange), Low (gray).
+
+## Example Output (JSON)
 
 ### List Action
-
-```
-Tokens enumerated: 141 processes
-
-PID      PROCESS                        USER                                INTEGRITY  SESSION
------------------------------------------------------------------------------------------------
-4        System                         NT AUTHORITY\SYSTEM                 System     0
-112      Registry                       NT AUTHORITY\SYSTEM                 System     0
-672      svchost.exe                    NT AUTHORITY\SYSTEM                 System     0
-856      svchost.exe                    NT AUTHORITY\LOCAL SERVICE          System     0
-5644     fontdrvhost.exe                Font Driver Host\UMFD-2             Low        2
-...
+```json
+[
+  {"pid":4,"process":"System","user":"NT AUTHORITY\\SYSTEM","integrity":"System","session":0},
+  {"pid":672,"process":"svchost.exe","user":"NT AUTHORITY\\SYSTEM","integrity":"System","session":0}
+]
 ```
 
 ### Unique Action
-
-```
-Unique token owners: 9
-
-USER                                INTEGRITY  PROCS    SESSIONS   EXAMPLE PROCESSES
---------------------------------------------------------------------------------------------------------------
-NT AUTHORITY\LOCAL SERVICE          System     26       0          svchost.exe, WmiPrvSE.exe, NisSrv.exe
-NT AUTHORITY\NETWORK SERVICE        System     6        0          svchost.exe
-NT AUTHORITY\SYSTEM                 System     63       0,2        System, Registry, smss.exe, csrss.exe
-Win1123H2\setup                     High       42       0,2        sihost.exe, explorer.exe, ShellHost.exe
-...
+```json
+[
+  {"user":"NT AUTHORITY\\SYSTEM","integrity":"System","count":63,"sessions":[0,2],"processes":["System","csrss.exe"]},
+  {"user":"Win1123H2\\setup","integrity":"High","count":42,"sessions":[0,2],"processes":["explorer.exe"]}
+]
 ```
 
 ## MITRE ATT&CK Mapping

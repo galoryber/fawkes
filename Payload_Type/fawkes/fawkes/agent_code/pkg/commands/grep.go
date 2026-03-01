@@ -15,8 +15,10 @@ import (
 // GrepCommand searches file contents for patterns
 type GrepCommand struct{}
 
-func (c *GrepCommand) Name() string        { return "grep" }
-func (c *GrepCommand) Description() string { return "Search file contents for patterns (T1083, T1552.001)" }
+func (c *GrepCommand) Name() string { return "grep" }
+func (c *GrepCommand) Description() string {
+	return "Search file contents for patterns (T1083, T1552.001)"
+}
 
 type grepArgs struct {
 	Pattern     string `json:"pattern"`
@@ -135,6 +137,9 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 		// Walk directory
 		startDepth := strings.Count(startPath, string(os.PathSeparator))
 		_ = filepath.WalkDir(startPath, func(path string, d os.DirEntry, err error) error {
+			if task.DidStop() {
+				return fmt.Errorf("cancelled")
+			}
 			if err != nil {
 				return nil // Skip inaccessible dirs
 			}

@@ -57,7 +57,7 @@ func TestSmbCommand_MissingHost(t *testing.T) {
 func TestSmbCommand_MissingAction(t *testing.T) {
 	cmd := &SmbCommand{}
 	params, _ := json.Marshal(smbArgs{
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Username: "user",
 		Password: "pass",
 	})
@@ -71,7 +71,7 @@ func TestSmbCommand_InvalidAction(t *testing.T) {
 	cmd := &SmbCommand{}
 	params, _ := json.Marshal(smbArgs{
 		Action:   "invalid",
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Username: "user",
 		Password: "pass",
 	})
@@ -88,7 +88,7 @@ func TestSmbCommand_LsMissingShare(t *testing.T) {
 	cmd := &SmbCommand{}
 	params, _ := json.Marshal(smbArgs{
 		Action:   "ls",
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Username: "user",
 		Password: "pass",
 	})
@@ -102,7 +102,7 @@ func TestSmbCommand_CatMissingPath(t *testing.T) {
 	cmd := &SmbCommand{}
 	params, _ := json.Marshal(smbArgs{
 		Action:   "cat",
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Share:    "C$",
 		Username: "user",
 		Password: "pass",
@@ -117,7 +117,7 @@ func TestSmbCommand_UploadMissingContent(t *testing.T) {
 	cmd := &SmbCommand{}
 	params, _ := json.Marshal(smbArgs{
 		Action:   "upload",
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Share:    "C$",
 		Path:     "test.txt",
 		Username: "user",
@@ -208,7 +208,7 @@ func TestSmbCommand_HashAccepted(t *testing.T) {
 	cmd := &SmbCommand{}
 	params, _ := json.Marshal(smbArgs{
 		Action:   "shares",
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Username: "admin",
 		Hash:     "8846f7eaee8fb117ad06bdd830b7586c",
 		Domain:   "CORP",
@@ -224,7 +224,7 @@ func TestSmbCommand_NoPasswordOrHash(t *testing.T) {
 	cmd := &SmbCommand{}
 	params, _ := json.Marshal(smbArgs{
 		Action:   "shares",
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Username: "admin",
 	})
 	result := cmd.Execute(structs.Task{Params: string(params)})

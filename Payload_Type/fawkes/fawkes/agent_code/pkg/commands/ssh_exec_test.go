@@ -109,13 +109,16 @@ func TestSshExecDefaultPort(t *testing.T) {
 
 func TestSshExecNonexistentHost(t *testing.T) {
 	cmd := &SshExecCommand{}
+	// Use 127.0.0.1 on a non-listening port so the connection is refused
+	// instantly, rather than 192.168.255.254 which times out after 3s waiting
+	// for a non-existent host.
 	params, _ := json.Marshal(sshExecArgs{
-		Host:     "192.168.255.254",
+		Host:     "127.0.0.1",
 		Username: "root",
 		Password: "pass",
 		Command:  "whoami",
-		Port:     22,
-		Timeout:  3,
+		Port:     19999,
+		Timeout:  1,
 	})
 	result := cmd.Execute(structs.Task{Params: string(params)})
 	if result.Status != "error" {

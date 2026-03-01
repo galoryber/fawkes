@@ -7,15 +7,15 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "privesc-check",
-		Description:         "Linux privilege escalation enumeration: SUID/SGID binaries, capabilities, sudo rules, writable paths, container detection (T1548)",
-		HelpString:          "privesc-check -action <all|suid|capabilities|sudo|writable|container>",
-		Version:             1,
+		Description:         "Privilege escalation enumeration. Windows: token privileges, unquoted services, AlwaysInstallElevated, auto-logon, UAC. Linux: SUID/SGID, capabilities, sudo, containers. macOS: LaunchDaemons, TCC, dylib hijacking, SIP (T1548)",
+		HelpString:          "privesc-check -action <all|...> (Windows: privileges, services, registry, uac, unattend. Linux: suid, capabilities, sudo, container. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable)",
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1548", "T1548.001", "T1613", "T1082"},
+		MitreAttackMappings: []string{"T1548", "T1548.001", "T1548.002", "T1574.009", "T1552.001", "T1613", "T1082"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -23,8 +23,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "suid", "capabilities", "sudo", "writable", "container"},
-				Description:      "Check to perform: all (comprehensive), suid (SUID/SGID binaries), capabilities (file capabilities), sudo (sudo rules), writable (writable paths), container (container detection)",
+				Choices:          []string{"all", "privileges", "services", "registry", "uac", "unattend", "writable", "suid", "sudo", "capabilities", "container", "launchdaemons", "tcc", "dylib", "sip"},
+				Description:      "Check to perform. Windows: privileges, services, registry, uac, unattend. Linux: suid, capabilities, sudo, container. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -47,6 +47,10 @@ func init() {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  taskData.Task.ID,
+			}
+			action, _ := taskData.Args.GetStringArg("action")
+			if action != "" && action != "all" {
+				response.DisplayParams = &action
 			}
 			return response
 		},

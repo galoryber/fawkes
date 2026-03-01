@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -95,6 +96,13 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			interval, _ := taskData.Args.GetNumberArg("interval")
+			jitter, _ := taskData.Args.GetNumberArg("jitter")
+			display := fmt.Sprintf("%ds", int(interval))
+			if jitter > 0 {
+				display += fmt.Sprintf(" %d%%", int(jitter))
+			}
+			response.DisplayParams = &display
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
@@ -119,6 +127,9 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			// Try JSON first (e.g., {"interval": 2, "jitter": 10} from API)
 			if err := args.LoadArgsFromJSONString(input); err == nil {
 				return nil

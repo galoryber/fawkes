@@ -4,8 +4,10 @@
 package commands
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"runtime"
 	"strings"
 
@@ -36,16 +38,10 @@ type schtaskArgs struct {
 	RunNow  bool   `json:"run_now"`
 }
 
-// Task Scheduler 2.0 COM constants
-const (
-	// Task trigger types
-	TASK_TRIGGER_LOGON  = 9
-	TASK_TRIGGER_BOOT   = 8
-	TASK_TRIGGER_DAILY  = 2
-	TASK_TRIGGER_WEEKLY = 3
-	TASK_TRIGGER_IDLE   = 6
-	TASK_TRIGGER_TIME   = 1
+// TASK_TRIGGER_* constants moved to command_helpers.go
 
+// Task Scheduler 2.0 COM constants (non-trigger)
+const (
 	// Task action types
 	TASK_ACTION_EXEC = 0
 
@@ -170,25 +166,7 @@ func connectTaskScheduler() (*taskSchedulerConnection, func(), error) {
 	return conn, cleanup, nil
 }
 
-// triggerTypeFromString maps trigger name to Task Scheduler 2.0 trigger type constant.
-func triggerTypeFromString(trigger string) int {
-	switch strings.ToUpper(trigger) {
-	case "ONLOGON":
-		return TASK_TRIGGER_LOGON
-	case "ONSTART":
-		return TASK_TRIGGER_BOOT
-	case "DAILY":
-		return TASK_TRIGGER_DAILY
-	case "WEEKLY":
-		return TASK_TRIGGER_WEEKLY
-	case "ONIDLE":
-		return TASK_TRIGGER_IDLE
-	case "ONCE":
-		return TASK_TRIGGER_TIME
-	default:
-		return TASK_TRIGGER_LOGON
-	}
-}
+// triggerTypeFromString moved to command_helpers.go
 
 // buildTaskXML generates Task Scheduler 2.0 XML for registration.
 func buildTaskXML(args schtaskArgs) string {
@@ -251,46 +229,7 @@ func buildTaskXML(args schtaskArgs) string {
 	return xml
 }
 
-// buildTriggerXML generates the trigger section of the task XML.
-func buildTriggerXML(trigger, startTime string) string {
-	switch strings.ToUpper(trigger) {
-	case "ONLOGON":
-		return "    <LogonTrigger>\n      <Enabled>true</Enabled>\n    </LogonTrigger>"
-	case "ONSTART":
-		return "    <BootTrigger>\n      <Enabled>true</Enabled>\n    </BootTrigger>"
-	case "ONIDLE":
-		return "    <IdleTrigger>\n      <Enabled>true</Enabled>\n    </IdleTrigger>"
-	case "DAILY":
-		boundary := "2026-01-01T09:00:00"
-		if startTime != "" {
-			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
-		}
-		return fmt.Sprintf("    <CalendarTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n      <ScheduleByDay>\n        <DaysInterval>1</DaysInterval>\n      </ScheduleByDay>\n    </CalendarTrigger>", boundary)
-	case "WEEKLY":
-		boundary := "2026-01-01T09:00:00"
-		if startTime != "" {
-			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
-		}
-		return fmt.Sprintf("    <CalendarTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n      <ScheduleByWeek>\n        <WeeksInterval>1</WeeksInterval>\n        <DaysOfWeek><Monday /></DaysOfWeek>\n      </ScheduleByWeek>\n    </CalendarTrigger>", boundary)
-	case "ONCE":
-		boundary := "2026-12-31T23:59:00"
-		if startTime != "" {
-			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
-		}
-		return fmt.Sprintf("    <TimeTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n    </TimeTrigger>", boundary)
-	default:
-		return "    <LogonTrigger>\n      <Enabled>true</Enabled>\n    </LogonTrigger>"
-	}
-}
-
-// escapeXML escapes special characters for XML content.
-func escapeXML(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	s = strings.ReplaceAll(s, ">", "&gt;")
-	s = strings.ReplaceAll(s, "\"", "&quot;")
-	return s
-}
+// buildTriggerXML, escapeXML moved to command_helpers.go
 
 func schtaskCreate(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
@@ -558,76 +497,69 @@ func schtaskRun(args schtaskArgs) structs.CommandResult {
 	}
 }
 
+// schtaskListEntry represents a scheduled task for JSON output
+type schtaskListEntry struct {
+	Name        string `json:"name"`
+	State       string `json:"state"`
+	NextRunTime string `json:"next_run_time,omitempty"`
+}
+
 func schtaskList() structs.CommandResult {
-	conn, cleanup, err := connectTaskScheduler()
+	// Use schtasks.exe /query /fo CSV — reliable across all Windows versions.
+	// COM-based iteration (ForEach, Count+Item) hangs in Go's COM apartment model.
+	out, err := exec.Command("schtasks.exe", "/query", "/fo", "CSV", "/nh").CombinedOutput()
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to Task Scheduler: %v", err),
+			Output:    fmt.Sprintf("Error running schtasks.exe: %v\n%s", err, string(out)),
 			Status:    "error",
 			Completed: true,
 		}
 	}
-	defer cleanup()
 
-	// Get tasks from root folder (0 = include hidden tasks)
-	tasksResult, err := oleutil.CallMethod(conn.folder, "GetTasks", 0)
+	var entries []schtaskListEntry
+	reader := csv.NewReader(strings.NewReader(string(out)))
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			break
+		}
+		if len(record) < 3 {
+			continue
+		}
+		// CSV fields: TaskName, Next Run Time, Status
+		name := strings.TrimSpace(record[0])
+		if name == "" || name == "TaskName" || name == "INFO:" {
+			continue
+		}
+		nextRun := strings.TrimSpace(record[1])
+		status := strings.TrimSpace(record[2])
+
+		entries = append(entries, schtaskListEntry{
+			Name:        name,
+			State:       status,
+			NextRunTime: nextRun,
+		})
+	}
+
+	if len(entries) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
+
+	data, err := json.Marshal(entries)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing tasks: %v", err),
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
-	defer tasksResult.Clear()
-	tasksDisp := tasksResult.ToIDispatch()
-
-	var sb strings.Builder
-	sb.WriteString("Scheduled Tasks (root folder):\n\n")
-	sb.WriteString(fmt.Sprintf("%-40s %-12s %-8s %s\n", "Name", "State", "Enabled", "Next Run Time"))
-	sb.WriteString(strings.Repeat("-", 90) + "\n")
-
-	taskCount := 0
-	oleutil.ForEach(tasksDisp, func(v *ole.VARIANT) error {
-		taskDisp := v.ToIDispatch()
-		// Note: do NOT Release taskDisp — ForEach manages the VARIANT lifecycle
-		taskCount++
-
-		nameResult, _ := oleutil.GetProperty(taskDisp, "Name")
-		name := ""
-		if nameResult != nil {
-			name = nameResult.ToString()
-			nameResult.Clear()
-		}
-
-		stateResult, _ := oleutil.GetProperty(taskDisp, "State")
-		state := ""
-		if stateResult != nil {
-			state = taskStateToString(stateResult.Value())
-			stateResult.Clear()
-		}
-
-		enabledResult, _ := oleutil.GetProperty(taskDisp, "Enabled")
-		enabled := ""
-		if enabledResult != nil {
-			enabled = fmt.Sprintf("%v", enabledResult.Value())
-			enabledResult.Clear()
-		}
-
-		nextRunResult, _ := oleutil.GetProperty(taskDisp, "NextRunTime")
-		nextRun := ""
-		if nextRunResult != nil {
-			nextRun = fmt.Sprintf("%v", nextRunResult.Value())
-			nextRunResult.Clear()
-		}
-
-		sb.WriteString(fmt.Sprintf("%-40s %-12s %-8s %s\n", name, state, enabled, nextRun))
-		return nil
-	})
-
-	sb.WriteString(fmt.Sprintf("\nTotal: %d tasks\n", taskCount))
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

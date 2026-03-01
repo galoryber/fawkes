@@ -22,15 +22,17 @@ No arguments required.
 route
 ```
 
-## Output
+### Browser Script
 
-Shows routing table entries with:
-- **Destination** — Target network/host
-- **Gateway** — Next-hop gateway address
-- **Netmask** — Network mask
-- **Interface** — Network interface name
-- **Metric** — Route metric/priority
-- **Flags** — Route flags (UG=gateway, UH=host, etc.)
+Output is rendered as a sortable table in the Mythic UI with columns: Destination, Gateway, Netmask, Interface, Metric, Flags. Default gateway entries are highlighted blue.
+
+### Example Output (JSON)
+```json
+[
+  {"destination":"0.0.0.0","gateway":"192.168.1.1","netmask":"0.0.0.0","interface":"eth0","metric":100,"flags":"UG"},
+  {"destination":"192.168.1.0","gateway":"","netmask":"255.255.255.0","interface":"eth0","metric":100,"flags":"U"}
+]
+```
 
 ## Platform Details
 

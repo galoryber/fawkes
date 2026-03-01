@@ -79,6 +79,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -91,6 +94,11 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			target, _ := taskData.Args.GetStringArg("target")
+			display := fmt.Sprintf("action: %s", action)
+			if target != "" {
+				display += fmt.Sprintf(", host: %s", target)
+			}
+			response.DisplayParams = &display
 			if action == "execute" {
 				cmd, _ := taskData.Args.GetStringArg("command")
 				host := "localhost"

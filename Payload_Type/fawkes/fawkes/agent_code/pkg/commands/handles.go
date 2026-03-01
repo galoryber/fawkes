@@ -29,33 +29,33 @@ type handlesArgs struct {
 }
 
 type handleInfo struct {
-	Handle   uint16
-	TypeName string
-	Name     string
+	Handle   uint16 `json:"handle"`
+	TypeName string `json:"type"`
+	Name     string `json:"name,omitempty"`
 }
 
 // Windows NT API constants
 const (
-	systemHandleInformation    = 16
-	statusInfoLengthMismatch   = 0xC0000004
-	statusBufferTooSmall       = 0xC0000023
-	objectNameInformation      = 1
-	objectTypeInformation      = 2
-	processQueryLimitedInfo    = 0x1000
-	processDupHandle           = 0x0040
-	duplicateCloseSource       = 0x00000001
-	duplicateSameAccess        = 0x00000002
-	duplicateSameAttributes    = 0x00000004
+	systemHandleInformation  = 16
+	statusInfoLengthMismatch = 0xC0000004
+	statusBufferTooSmall     = 0xC0000023
+	objectNameInformation    = 1
+	objectTypeInformation    = 2
+	processQueryLimitedInfo  = 0x1000
+	processDupHandle         = 0x0040
+	duplicateCloseSource     = 0x00000001
+	duplicateSameAccess      = 0x00000002
+	duplicateSameAttributes  = 0x00000004
 )
 
 // SYSTEM_HANDLE_TABLE_ENTRY_INFO - per-handle entry in SystemHandleInformation
 type systemHandleEntry struct {
-	OwnerPID       uint32
-	ObjectTypeIdx  uint8
-	HandleAttr     uint8
-	HandleValue    uint16
-	ObjectPtr      uintptr
-	GrantedAccess  uint32
+	OwnerPID      uint32
+	ObjectTypeIdx uint8
+	HandleAttr    uint8
+	HandleValue   uint16
+	ObjectPtr     uintptr
+	GrantedAccess uint32
 }
 
 var (
@@ -306,87 +306,105 @@ func queryObjectName(handle windows.Handle) string {
 func isSafeToQueryName(typeName string) bool {
 	// NtQueryObject can deadlock on ALPC Port, WaitCompletionPacket, and some pipe handles
 	unsafeTypes := map[string]bool{
-		"ALPC Port":             true,
-		"WaitCompletionPacket":  true,
-		"TpWorkerFactory":       true,
-		"IRTimer":               true,
-		"IoCompletion":          true,
-		"IoCompletionReserve":   true,
+		"ALPC Port":            true,
+		"WaitCompletionPacket": true,
+		"TpWorkerFactory":      true,
+		"IRTimer":              true,
+		"IoCompletion":         true,
+		"IoCompletionReserve":  true,
 	}
 	return !unsafeTypes[typeName]
 }
 
 func formatHandleOutput(handles []handleInfo, typeCounts map[string]int, args handlesArgs, pidTotal, sysTotal int) structs.CommandResult {
-	var sb strings.Builder
-
-	sb.WriteString(fmt.Sprintf("Handles for PID %d: %d shown (%d total, %d system-wide)\n\n", args.PID, len(handles), pidTotal, sysTotal))
-
-	// Type summary
-	sb.WriteString("Handle Type Summary:\n")
 	type typeCount struct {
-		name  string
-		count int
+		Type  string `json:"type"`
+		Count int    `json:"count"`
 	}
-	var sorted []typeCount
+	var summary []typeCount
 	for name, count := range typeCounts {
-		sorted = append(sorted, typeCount{name, count})
+		summary = append(summary, typeCount{name, count})
 	}
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].count > sorted[j].count })
-	for _, tc := range sorted {
-		sb.WriteString(fmt.Sprintf("  %-30s %d\n", tc.name, tc.count))
+	sort.Slice(summary, func(i, j int) bool { return summary[i].Count > summary[j].Count })
+
+	type handlesOutput struct {
+		PID     int          `json:"pid"`
+		Shown   int          `json:"shown"`
+		Total   int          `json:"total"`
+		System  int          `json:"system"`
+		Summary []typeCount  `json:"summary"`
+		Handles []handleInfo `json:"handles"`
 	}
 
-	// Detail list
-	if args.ShowNames {
-		sb.WriteString(fmt.Sprintf("\n%-8s %-25s %s\n", "Handle", "Type", "Name"))
-		sb.WriteString(strings.Repeat("-", 80) + "\n")
-		for _, h := range handles {
-			name := h.Name
-			if name == "" {
-				name = "(unnamed)"
-			}
-			sb.WriteString(fmt.Sprintf("0x%-6X %-25s %s\n", h.Handle, h.TypeName, name))
+	out := handlesOutput{
+		PID:     args.PID,
+		Shown:   len(handles),
+		Total:   pidTotal,
+		System:  sysTotal,
+		Summary: summary,
+		Handles: handles,
+	}
+
+	jsonBytes, err := json.Marshal(out)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshalling handle data: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
 	}
 
-	if len(handles) >= args.MaxCount {
-		sb.WriteString(fmt.Sprintf("\n[Truncated at %d handles]", args.MaxCount))
-	}
-
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}
 }
 
 func formatHandleSummary(entries []systemHandleEntry, args handlesArgs, sysTotal int, _ error) structs.CommandResult {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Handles for PID %d: %d handles (%d system-wide)\n", args.PID, len(entries), sysTotal))
-	sb.WriteString("(Could not open process — showing count only. Try running with higher privileges.)\n\n")
-
 	// Count by type index
 	typeCounts := make(map[uint8]int)
 	for _, e := range entries {
 		typeCounts[e.ObjectTypeIdx]++
 	}
 
-	sb.WriteString("Handle Type Index Summary:\n")
 	type indexCount struct {
-		idx   uint8
-		count int
+		Type  string `json:"type"`
+		Count int    `json:"count"`
 	}
-	var sorted []indexCount
+	var summary []indexCount
 	for idx, count := range typeCounts {
-		sorted = append(sorted, indexCount{idx, count})
+		summary = append(summary, indexCount{fmt.Sprintf("Type_%d", idx), count})
 	}
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].count > sorted[j].count })
-	for _, ic := range sorted {
-		sb.WriteString(fmt.Sprintf("  Type_%d: %d\n", ic.idx, ic.count))
+	sort.Slice(summary, func(i, j int) bool { return summary[i].Count > summary[j].Count })
+
+	type summaryOutput struct {
+		PID     int          `json:"pid"`
+		Total   int          `json:"total"`
+		System  int          `json:"system"`
+		Note    string       `json:"note"`
+		Summary []indexCount `json:"summary"`
+	}
+
+	out := summaryOutput{
+		PID:     args.PID,
+		Total:   len(entries),
+		System:  sysTotal,
+		Note:    "Could not open process — showing count only",
+		Summary: summary,
+	}
+
+	jsonBytes, err := json.Marshal(out)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshalling handle data: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}

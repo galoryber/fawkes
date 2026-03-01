@@ -40,16 +40,24 @@ reg-search -pattern Run -hive HKLM -path SOFTWARE\Microsoft\Windows\CurrentVersi
 reg-search -pattern password -hive HKLM -path SOFTWARE -max_results 100
 ```
 
-### Value Types
+### Output Format
 
-The command reads and searches across all common registry value types:
+Returns a JSON array of match objects rendered as a sortable table via browser script:
 
-| Type | Display Format |
-|------|---------------|
-| REG_SZ / REG_EXPAND_SZ | String value |
-| REG_DWORD / REG_QWORD | Decimal (hex) — e.g., `1234 (0x4d2)` |
-| REG_BINARY | Hex bytes (first 64 bytes) |
-| REG_MULTI_SZ | Semicolon-separated strings |
+```json
+[
+  {"key_path": "HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", "value_name": "SecurityHealth", "value_data": "C:\\Windows\\..."},
+  {"key_path": "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion", "value_name": "", "value_data": ""}
+]
+```
+
+| Field | Description |
+|-------|-------------|
+| key_path | Full registry key path |
+| value_name | Matching value name (empty for key-only matches) |
+| value_data | Value data content (empty for key-only matches) |
+
+Value matches are highlighted in the browser script table. Supports REG_SZ, REG_EXPAND_SZ, REG_DWORD, REG_QWORD, REG_BINARY (first 64 bytes hex), and REG_MULTI_SZ (semicolon-separated).
 
 ### OPSEC Notes
 

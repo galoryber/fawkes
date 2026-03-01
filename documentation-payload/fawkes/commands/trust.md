@@ -36,39 +36,35 @@ trust -server dc01.corp.local -username admin@corp.local -password Pass123
 trust -server 192.168.1.10 -username admin@corp.local -password Pass123 -use_tls true
 ```
 
-## Example Output
+## Output Format
 
+Returns a JSON array rendered as a sortable table via browser script:
+```json
+[
+  {
+    "partner": "north.sevenkingdoms.local",
+    "flat_name": "NORTH",
+    "direction": "Bidirectional",
+    "type": "Uplevel",
+    "category": "Intra-Forest",
+    "attributes": "WITHIN_FOREST",
+    "sid": "S-1-5-21-3830354804-2748400559-49935211",
+    "risk": "Intra-forest implicit full trust; No SID filtering — SID history attacks possible"
+  },
+  {
+    "partner": "essos.local",
+    "flat_name": "ESSOS",
+    "direction": "Bidirectional",
+    "type": "Uplevel",
+    "category": "Forest",
+    "attributes": "FOREST_TRANSITIVE | TREAT_AS_EXTERNAL",
+    "sid": "S-1-5-21-69387547-3003948751-3466758987",
+    "risk": "Forest trust without SID filtering — cross-forest SID history attack"
+  }
+]
 ```
-Domain Trust Enumeration — sevenkingdoms.local
-============================================================
-Queried: CN=System,DC=sevenkingdoms,DC=local
-Trusts found: 2
 
-Intra-Forest (Parent/Child) — 1
---------------------------------------------------
-[1] north.sevenkingdoms.local (NORTH)
-    Direction:  Bidirectional (mutual trust)
-    Type:       Uplevel (Active Directory)
-    Attributes: WITHIN_FOREST
-    SID:        S-1-5-21-3830354804-2748400559-49935211
-
-Forest Trusts — 1
---------------------------------------------------
-[1] essos.local (ESSOS)
-    Direction:  Bidirectional (mutual trust)
-    Type:       Uplevel (Active Directory)
-    Attributes: FOREST_TRANSITIVE | TREAT_AS_EXTERNAL
-    SID:        S-1-5-21-69387547-3003948751-3466758987
-
-Attack Path Analysis
---------------------------------------------------
-[!] north.sevenkingdoms.local — outbound trust WITHOUT SID filtering
-    SID history attacks possible (Golden Ticket with extra SIDs)
-[!] north.sevenkingdoms.local — intra-forest trust (implicit full trust)
-    Compromise any domain in the forest → compromise all domains
-[!] essos.local — forest trust WITHOUT SID filtering
-    Cross-forest SID history attack possible
-```
+The browser script highlights entries with risks in red, bidirectional trusts in orange, and provides copyable partner domain names.
 
 ## Trust Categories
 

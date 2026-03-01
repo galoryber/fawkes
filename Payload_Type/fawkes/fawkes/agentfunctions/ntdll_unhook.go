@@ -72,6 +72,8 @@ func init() {
 			if dll == "" {
 				dll = "ntdll.dll"
 			}
+			display := fmt.Sprintf("%s %s", action, dll)
+			response.DisplayParams = &display
 			if action == "" || action == "unhook" {
 				createArtifact(taskData.Task.ID, "API Call",
 					fmt.Sprintf("VirtualProtect + memcpy on %s .text section (EDR unhooking)", dll))

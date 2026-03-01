@@ -413,3 +413,139 @@ func TestXorDecodeString_MultipleStrings(t *testing.T) {
 		}
 	}
 }
+
+// --- guardedSleep Tests ---
+
+func TestGuardedSleep_NormalSleep(t *testing.T) {
+	// A real sleep should pass the timing check
+	result := guardedSleep(50 * time.Millisecond)
+	if !result {
+		t.Error("guardedSleep with real sleep should return true")
+	}
+}
+
+func TestGuardedSleep_ZeroDuration(t *testing.T) {
+	result := guardedSleep(0)
+	if !result {
+		t.Error("guardedSleep(0) should return true")
+	}
+}
+
+func TestGuardedSleep_NegativeDuration(t *testing.T) {
+	result := guardedSleep(-1 * time.Second)
+	if !result {
+		t.Error("guardedSleep(negative) should return true")
+	}
+}
+
+func TestGuardedSleep_ActuallyWaits(t *testing.T) {
+	// Verify that guardedSleep actually sleeps for approximately the requested duration
+	duration := 100 * time.Millisecond
+	before := time.Now()
+	guardedSleep(duration)
+	elapsed := time.Since(before)
+
+	// Allow some slack (should be at least 75% of duration)
+	if elapsed < duration*3/4 {
+		t.Errorf("guardedSleep(%v) only waited %v", duration, elapsed)
+	}
+}
+
+// --- zeroBytes Tests ---
+
+func TestZeroBytes_ClearsData(t *testing.T) {
+	data := []byte{0x41, 0x42, 0x43, 0x44, 0x45}
+	zeroBytes(data)
+	for i, b := range data {
+		if b != 0 {
+			t.Errorf("zeroBytes did not clear byte %d: got 0x%02x", i, b)
+		}
+	}
+}
+
+func TestZeroBytes_EmptySlice(t *testing.T) {
+	data := []byte{}
+	zeroBytes(data) // should not panic
+}
+
+func TestZeroBytes_NilSlice(t *testing.T) {
+	var data []byte
+	zeroBytes(data) // should not panic
+}
+
+func TestZeroBytes_LargeSlice(t *testing.T) {
+	data := make([]byte, 4096)
+	for i := range data {
+		data[i] = byte(i % 256)
+	}
+	zeroBytes(data)
+	for i, b := range data {
+		if b != 0 {
+			t.Errorf("zeroBytes did not clear byte %d of large slice", i)
+			break
+		}
+	}
+}
+
+// --- clearGlobals Tests ---
+
+func TestClearGlobals_ClearsAllFields(t *testing.T) {
+	// Set all globals to non-empty values
+	payloadUUID = "test-uuid"
+	callbackHost = "http://test.com"
+	callbackPort = "443"
+	userAgent = "TestAgent"
+	encryptionKey = "secret-key"
+	getURI = "/get"
+	postURI = "/post"
+	hostHeader = "test.com"
+	proxyURL = "http://proxy:8080"
+	customHeaders = "eyJ0ZXN0IjogInZhbHVlIn0="
+	xorKey = "dGVzdA=="
+
+	clearGlobals()
+
+	if payloadUUID != "" {
+		t.Error("clearGlobals did not clear payloadUUID")
+	}
+	if callbackHost != "" {
+		t.Error("clearGlobals did not clear callbackHost")
+	}
+	if callbackPort != "" {
+		t.Error("clearGlobals did not clear callbackPort")
+	}
+	if userAgent != "" {
+		t.Error("clearGlobals did not clear userAgent")
+	}
+	if encryptionKey != "" {
+		t.Error("clearGlobals did not clear encryptionKey")
+	}
+	if getURI != "" {
+		t.Error("clearGlobals did not clear getURI")
+	}
+	if postURI != "" {
+		t.Error("clearGlobals did not clear postURI")
+	}
+	if hostHeader != "" {
+		t.Error("clearGlobals did not clear hostHeader")
+	}
+	if proxyURL != "" {
+		t.Error("clearGlobals did not clear proxyURL")
+	}
+	if customHeaders != "" {
+		t.Error("clearGlobals did not clear customHeaders")
+	}
+	if xorKey != "" {
+		t.Error("clearGlobals did not clear xorKey")
+	}
+}
+
+func TestClearGlobals_AlreadyEmpty(t *testing.T) {
+	// Should not panic when globals are already empty
+	payloadUUID = ""
+	callbackHost = ""
+	callbackPort = ""
+	userAgent = ""
+	encryptionKey = ""
+	clearGlobals() // should not panic
+}

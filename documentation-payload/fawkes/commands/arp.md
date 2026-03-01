@@ -25,15 +25,16 @@ None.
 arp
 ```
 
-### Example Output
-```
-IP Address         MAC Address          Type       Interface
---------------------------------------------------------------
-192.168.100.1      9e:05:d6:df:79:22    dynamic    eth0
-192.168.100.99     e0:d4:64:8e:f0:a3    dynamic    eth0
-192.168.100.184    52:54:00:12:34:56    static     eth0
+### Browser Script
 
-[3 ARP entries found]
+Output is rendered as a sortable table in the Mythic UI with columns: IP, MAC, Type, Interface. Static entries are highlighted.
+
+### Example Output (JSON)
+```json
+[
+  {"ip":"192.168.100.1","mac":"9e:05:d6:df:79:22","type":"dynamic","interface":"eth0"},
+  {"ip":"192.168.100.184","mac":"52:54:00:12:34:56","type":"static","interface":"eth0"}
+]
 ```
 
 ## MITRE ATT&CK Mapping

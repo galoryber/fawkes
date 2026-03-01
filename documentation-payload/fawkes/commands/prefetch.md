@@ -49,6 +49,23 @@ prefetch -action delete -name PAYLOAD
 prefetch -action clear
 ```
 
+## Output Format
+
+The `list` action returns a JSON array rendered as a sortable table via browser script:
+```json
+[
+  {
+    "executable": "CMD.EXE",
+    "run_count": 15,
+    "last_run": "2025-01-15 14:30:22",
+    "file_size": 278528,
+    "hash": "3D6B4568"
+  }
+]
+```
+
+The browser script formats file sizes as human-readable values and highlights suspicious executables (powershell, cmd, wscript, cscript, mshta) in orange. Other actions (parse, delete, clear) return plain text.
+
 ## Operational Notes
 
 - Prefetch directory: `%WINDIR%\Prefetch`

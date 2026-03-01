@@ -29,16 +29,16 @@ type TCPProfile struct {
 	CallbackUUID string // Set after checkin
 
 	// Parent connection (this agent connects to parent, or parent connects to us)
-	parentConn   net.Conn
-	parentMu     sync.Mutex
+	parentConn net.Conn
+	parentMu   sync.Mutex
 
 	// Child connections (agents that linked to us)
-	childConns   map[string]net.Conn // UUID → connection
-	childMu      sync.RWMutex
+	childConns map[string]net.Conn // UUID → connection
+	childMu    sync.RWMutex
 
 	// Channels for delegate message routing
-	InboundDelegates  chan structs.DelegateMessage   // Messages from child agents → forward to parent/Mythic
-	OutboundDelegates chan []structs.DelegateMessage  // Messages from parent/Mythic → route to child agents
+	InboundDelegates  chan structs.DelegateMessage      // Messages from child agents → forward to parent/Mythic
+	OutboundDelegates chan []structs.DelegateMessage    // Messages from parent/Mythic → route to child agents
 	EdgeMessages      chan structs.P2PConnectionMessage // Edge add/remove notifications
 
 	// UUID mapping for staging (temp UUID → Mythic UUID)

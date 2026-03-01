@@ -51,6 +51,37 @@ net-enum -action domaingroups
 net-enum -action domaininfo
 ```
 
+## Output Format
+
+Returns JSON output, rendered by a browser script into sortable tables. The structure varies by action.
+
+### List Actions (users, localgroups, domainusers, domaingroups, groupmembers)
+
+Returns a JSON array of entries:
+```json
+[
+  {"name": "Administrator", "type": "local_user", "comment": "Built-in account for administering the computer/domain", "source": ""},
+  {"name": "Guest", "type": "local_user", "comment": "Built-in account for guest access", "source": ""}
+]
+```
+
+### domaininfo Action
+
+Returns a structured JSON object with DC information, account policy, and trust relationships:
+```json
+{
+  "dc": {"name": "DC01", "address": "\\\\192.168.1.10", "domain": "CORP.LOCAL", "forest": "CORP.LOCAL", "site": "Default-First-Site-Name"},
+  "policy": {"min_password_length": 7, "max_password_age_days": 42, "lockout_threshold": 0},
+  "trusts": [{"name": "CHILD.CORP.LOCAL", "type": "Uplevel", "direction": "Bidirectional", "attributes": "WithinForest"}]
+}
+```
+
+### Browser Script Rendering
+
+The browser script renders results as sortable tables:
+- **List actions**: Single sortable table with columns appropriate to the action (Name, Type, Comment, Source)
+- **domaininfo**: Two-table layout showing DC info/policy in one table and trust relationships in a second table
+
 ## MITRE ATT&CK Mapping
 
 - **T1087.001** — Account Discovery: Local Account

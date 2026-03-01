@@ -2,6 +2,10 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
+
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -15,7 +19,10 @@ func init() {
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1134.001"},
-		ScriptOnlyCommand:   false,
+		ScriptOnlyCommand: false,
+		CommandAttributes: agentstructs.CommandAttribute{
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:             "username",
@@ -105,6 +112,9 @@ func init() {
 		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -117,10 +127,53 @@ func init() {
 			}
 			username, _ := taskData.Args.GetStringArg("username")
 			domain, _ := taskData.Args.GetStringArg("domain")
+			display := fmt.Sprintf("%s\\%s", domain, username)
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "Logon", fmt.Sprintf("LogonUserW %s\\%s (type 9)", domain, username))
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+
+			// Only track tokens on successful impersonation
+			if !strings.Contains(responseText, "Successfully impersonated") && !strings.Contains(responseText, "New:") {
+				return response
+			}
+
+			// Extract the new identity from output
+			username, _ := processResponse.TaskData.Args.GetStringArg("username")
+			domain, _ := processResponse.TaskData.Args.GetStringArg("domain")
+			user := fmt.Sprintf("%s\\%s", domain, username)
+
+			// Register token with Mythic's callback token tracker
+			host := processResponse.TaskData.Callback.Host
+			_, err := mythicrpc.SendMythicRPCCallbackTokenCreate(mythicrpc.MythicRPCCallbackTokenCreateMessage{
+				TaskID: processResponse.TaskData.Task.ID,
+				CallbackTokens: []mythicrpc.MythicRPCCallbackTokenData{
+					{
+						Action:  "add",
+						Host:    &host,
+						TokenId: uint64(processResponse.TaskData.Task.ID),
+						TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
+							User: user,
+						},
+					},
+				},
+			})
+			if err != nil {
+				logging.LogError(err, "Failed to register token with Mythic", "user", user)
+			}
+
+			return response
+		},
 	})
 }
 

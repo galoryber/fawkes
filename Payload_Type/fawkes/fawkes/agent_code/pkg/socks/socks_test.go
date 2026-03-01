@@ -875,9 +875,9 @@ func TestHandleMessages_DomainMinLength(t *testing.T) {
 
 func TestConstants(t *testing.T) {
 	tests := []struct {
-		name     string
-		got      interface{}
-		want     interface{}
+		name string
+		got  interface{}
+		want interface{}
 	}{
 		{"socksVersion", socksVersion, byte(0x05)},
 		{"connectCommand", connectCommand, byte(0x01)},

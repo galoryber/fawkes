@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-	"unicode/utf16"
 
 	"fawkes/pkg/structs"
 
@@ -40,6 +39,13 @@ type shimcacheEntry struct {
 	DataSize     uint32
 	DataOffset   int
 	EntrySize    int
+}
+
+// amcacheOutputEntry is the JSON output format for browser script rendering
+type amcacheOutputEntry struct {
+	Index        int    `json:"index"`
+	LastModified string `json:"last_modified"`
+	Path         string `json:"path"`
 }
 
 // Windows 10/11 AppCompatCache header
@@ -269,10 +275,10 @@ func amcacheQuery(params amcacheParams) structs.CommandResult {
 		}
 	}
 
-	entries, osVer, err := parseShimcache(data)
+	entries, _, err := parseShimcache(data)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing Shimcache: %v\nRaw data size: %d bytes, first 4 bytes: 0x%08X",
+			Output: fmt.Sprintf("Error parsing Shimcache: %v\nRaw data size: %d bytes, first 4 bytes: 0x%08X",
 				err, len(data), binary.LittleEndian.Uint32(data[0:4])),
 			Status:    "error",
 			Completed: true,
@@ -284,26 +290,31 @@ func amcacheQuery(params amcacheParams) structs.CommandResult {
 		count = len(entries)
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Shimcache (AppCompatCache) — %s format, %d entries total\n\n", osVer, len(entries)))
-	sb.WriteString(fmt.Sprintf("%-4s  %-20s  %s\n", "#", "LAST MODIFIED", "PATH"))
-	sb.WriteString(strings.Repeat("-", 100) + "\n")
-
+	output := make([]amcacheOutputEntry, 0, count)
 	for i := 0; i < count; i++ {
 		e := entries[i]
-		ts := "N/A"
+		ts := ""
 		if !e.LastModified.IsZero() {
 			ts = e.LastModified.Format("2006-01-02 15:04:05")
 		}
-		sb.WriteString(fmt.Sprintf("%-4d  %-20s  %s\n", i+1, ts, e.Path))
+		output = append(output, amcacheOutputEntry{
+			Index:        i + 1,
+			LastModified: ts,
+			Path:         e.Path,
+		})
 	}
 
-	if len(entries) > count {
-		sb.WriteString(fmt.Sprintf("\n... %d more entries (use -count to see more)\n", len(entries)-count))
+	jsonBytes, err := json.Marshal(output)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling output: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}
@@ -327,7 +338,7 @@ func amcacheSearch(params amcacheParams) structs.CommandResult {
 		}
 	}
 
-	entries, osVer, err := parseShimcache(data)
+	entries, _, err := parseShimcache(data)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error parsing Shimcache: %v", err),
@@ -337,30 +348,37 @@ func amcacheSearch(params amcacheParams) structs.CommandResult {
 	}
 
 	searchLower := strings.ToLower(params.Name)
-	var sb strings.Builder
-	found := 0
-
-	sb.WriteString(fmt.Sprintf("Shimcache search for \"%s\" (%s format, %d total entries)\n\n", params.Name, osVer, len(entries)))
+	var output []amcacheOutputEntry
 
 	for i, e := range entries {
 		if strings.Contains(strings.ToLower(e.Path), searchLower) {
-			found++
-			ts := "N/A"
+			ts := ""
 			if !e.LastModified.IsZero() {
 				ts = e.LastModified.Format("2006-01-02 15:04:05")
 			}
-			sb.WriteString(fmt.Sprintf("[%d] %s  %s\n", i+1, ts, e.Path))
+			output = append(output, amcacheOutputEntry{
+				Index:        i + 1,
+				LastModified: ts,
+				Path:         e.Path,
+			})
 		}
 	}
 
-	if found == 0 {
-		sb.WriteString("No matching entries found\n")
-	} else {
-		sb.WriteString(fmt.Sprintf("\n%d matching entries found\n", found))
+	if output == nil {
+		output = []amcacheOutputEntry{}
+	}
+
+	jsonBytes, err := json.Marshal(output)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling output: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(jsonBytes),
 		Status:    "success",
 		Completed: true,
 	}
@@ -537,18 +555,4 @@ func writeShimcache(data []byte) error {
 	return nil
 }
 
-// decodeUTF16LEShim decodes a UTF-16LE byte slice to a Go string
-func decodeUTF16LEShim(b []byte) string {
-	if len(b) < 2 {
-		return ""
-	}
-	u16 := make([]uint16, len(b)/2)
-	for i := range u16 {
-		u16[i] = binary.LittleEndian.Uint16(b[i*2 : i*2+2])
-	}
-	// Remove trailing null
-	for len(u16) > 0 && u16[len(u16)-1] == 0 {
-		u16 = u16[:len(u16)-1]
-	}
-	return string(utf16.Decode(u16))
-}
+// decodeUTF16LEShim moved to command_helpers.go

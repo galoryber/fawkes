@@ -48,7 +48,7 @@ func TestNetGroupMissingServer(t *testing.T) {
 func TestNetGroupInvalidAction(t *testing.T) {
 	cmd := &NetGroupCommand{}
 	// Will fail on connection before action check
-	result := cmd.Execute(structs.Task{Params: `{"action":"badaction","server":"192.0.2.1"}`})
+	result := cmd.Execute(structs.Task{Params: `{"action":"badaction","server":"127.0.0.1"}`})
 	if result.Status != "error" {
 		t.Error("should return error")
 	}
@@ -57,7 +57,7 @@ func TestNetGroupInvalidAction(t *testing.T) {
 func TestNetGroupMembersMissingGroup(t *testing.T) {
 	cmd := &NetGroupCommand{}
 	// Will fail on connection, but if it got through, should require group param
-	result := cmd.Execute(structs.Task{Params: `{"action":"members","server":"192.0.2.1"}`})
+	result := cmd.Execute(structs.Task{Params: `{"action":"members","server":"127.0.0.1"}`})
 	if result.Status != "error" {
 		t.Error("members without group should return error")
 	}
@@ -65,7 +65,7 @@ func TestNetGroupMembersMissingGroup(t *testing.T) {
 
 func TestNetGroupUserMissingUser(t *testing.T) {
 	cmd := &NetGroupCommand{}
-	result := cmd.Execute(structs.Task{Params: `{"action":"user","server":"192.0.2.1"}`})
+	result := cmd.Execute(structs.Task{Params: `{"action":"user","server":"127.0.0.1"}`})
 	if result.Status != "error" {
 		t.Error("user without user param should return error")
 	}
@@ -76,7 +76,7 @@ func TestNgGroupTypeStr(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"-2147483646", "[Global Security]"},      // 0x80000002
+		{"-2147483646", "[Global Security]"},       // 0x80000002
 		{"-2147483644", "[Domain Local Security]"}, // 0x80000004
 		{"-2147483640", "[Universal Security]"},    // 0x80000008
 		{"2", "[Global Distribution]"},
@@ -132,13 +132,13 @@ func TestNetGroupDefaultPort(t *testing.T) {
 	cmd := &NetGroupCommand{}
 
 	// Default port 389
-	result := cmd.Execute(structs.Task{Params: `{"action":"list","server":"192.0.2.1"}`})
+	result := cmd.Execute(structs.Task{Params: `{"action":"list","server":"127.0.0.1"}`})
 	if !strings.Contains(result.Output, "389") {
 		t.Errorf("default port should be 389, got: %s", result.Output)
 	}
 
 	// TLS port 636
-	result = cmd.Execute(structs.Task{Params: `{"action":"list","server":"192.0.2.1","use_tls":true}`})
+	result = cmd.Execute(structs.Task{Params: `{"action":"list","server":"127.0.0.1","use_tls":true}`})
 	if !strings.Contains(result.Output, "636") {
 		t.Errorf("TLS port should be 636, got: %s", result.Output)
 	}

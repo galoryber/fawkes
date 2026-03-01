@@ -11,8 +11,10 @@ import (
 // DriversCommand enumerates loaded kernel drivers/modules
 type DriversCommand struct{}
 
-func (c *DriversCommand) Name() string        { return "drivers" }
-func (c *DriversCommand) Description() string { return "Enumerate loaded kernel drivers and modules (T1082)" }
+func (c *DriversCommand) Name() string { return "drivers" }
+func (c *DriversCommand) Description() string {
+	return "Enumerate loaded kernel drivers and modules (T1082)"
+}
 
 type driversArgs struct {
 	Filter string `json:"filter"` // Optional name filter

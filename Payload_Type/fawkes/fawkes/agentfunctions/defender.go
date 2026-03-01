@@ -82,6 +82,8 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			value, _ := taskData.Args.GetStringArg("value")
 			exType, _ := taskData.Args.GetStringArg("type")
+			display := fmt.Sprintf("%s", action)
+			response.DisplayParams = &display
 			switch action {
 			case "add-exclusion":
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{

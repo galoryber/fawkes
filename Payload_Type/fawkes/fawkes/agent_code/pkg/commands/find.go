@@ -21,19 +21,15 @@ func (c *FindCommand) Description() string {
 }
 
 type FindParams struct {
-	Path    string `json:"path"`
-	Pattern string `json:"pattern"`
-	MaxDepth int   `json:"max_depth"`
+	Path     string `json:"path"`
+	Pattern  string `json:"pattern"`
+	MaxDepth int    `json:"max_depth"`
 }
 
 func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	var params FindParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		params.Pattern = strings.TrimSpace(task.Params)
 	}
 
 	if params.Path == "" {
@@ -67,6 +63,9 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	const maxResults = 500
 
 	_ = filepath.Walk(startPath, func(path string, info os.FileInfo, err error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
 		if err != nil {
 			accessErrors = append(accessErrors, fmt.Sprintf("access denied: %s", path))
 			return nil // skip inaccessible entries

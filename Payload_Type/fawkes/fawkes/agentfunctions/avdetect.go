@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "av-detect",
+		Name: "av-detect",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "avdetect_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Detect installed AV/EDR/security products by scanning running processes against a known signature database.",
 		HelpString:          "av-detect",
 		Version:             1,

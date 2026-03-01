@@ -23,8 +23,8 @@ type connTracker struct {
 
 // Manager handles all active reverse port forward listeners and connections
 type Manager struct {
-	listeners   map[uint32]net.Listener    // port → listener
-	connections map[uint32]*connTracker    // serverId → connection
+	listeners   map[uint32]net.Listener // port → listener
+	connections map[uint32]*connTracker // serverId → connection
 	outbound    []structs.SocksMsg
 	mu          sync.Mutex
 }

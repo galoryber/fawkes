@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -60,22 +59,25 @@ func (c *ModulesCommand) Execute(task structs.Task) structs.CommandResult {
 		return modules[i].BaseAddr < modules[j].BaseAddr
 	})
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Modules loaded in PID %d (%d total):\n\n", args.PID, len(modules)))
-	sb.WriteString(fmt.Sprintf("%-18s %-12s %-40s %s\n", "Base Address", "Size", "Name", "Path"))
-	sb.WriteString(strings.Repeat("-", 120) + "\n")
+	if len(modules) == 0 {
+		return structs.CommandResult{
+			Output:    "[]",
+			Status:    "success",
+			Completed: true,
+		}
+	}
 
-	for _, m := range modules {
-		sb.WriteString(fmt.Sprintf("%-18s %-12s %-40s %s\n",
-			m.BaseAddr,
-			formatModuleSize(m.Size),
-			m.Name,
-			m.Path,
-		))
+	out, err := json.Marshal(modules)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("JSON marshal error: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(out),
 		Status:    "success",
 		Completed: true,
 	}

@@ -55,11 +55,12 @@ func TestModulesCommand_Execute(t *testing.T) {
 	if result.Status != "success" {
 		t.Fatalf("Execute with no params failed: %s", result.Output)
 	}
-	if !strings.Contains(result.Output, "Modules loaded in PID") {
-		t.Error("output missing header")
+	var modules []ModuleInfo
+	if err := json.Unmarshal([]byte(result.Output), &modules); err != nil {
+		t.Errorf("output should be valid JSON array: %v", err)
 	}
-	if !strings.Contains(result.Output, "Base Address") {
-		t.Error("output missing column headers")
+	if len(modules) == 0 {
+		t.Error("expected at least one module")
 	}
 }
 

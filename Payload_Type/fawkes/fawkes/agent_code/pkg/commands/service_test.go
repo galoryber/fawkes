@@ -147,8 +147,13 @@ func TestServiceCommand_List(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("expected success for service list, got %q: %s", result.Status, result.Output)
 	}
-	if !strings.Contains(result.Output, "Windows Services") {
-		t.Errorf("expected 'Windows Services' in output, got: %s", result.Output)
+	// Output should be valid JSON array
+	var entries []serviceListEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Errorf("expected valid JSON output: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Error("expected at least one service in list")
 	}
 }
 

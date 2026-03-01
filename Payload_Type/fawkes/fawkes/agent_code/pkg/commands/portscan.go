@@ -112,7 +112,13 @@ func (c *PortScanCommand) Execute(task structs.Task) structs.CommandResult {
 	var wg sync.WaitGroup
 
 	for _, host := range hosts {
+		if task.DidStop() {
+			break
+		}
 		for _, port := range ports {
+			if task.DidStop() {
+				break
+			}
 			wg.Add(1)
 			sem <- struct{}{} // Acquire semaphore
 			go func(h string, p int) {

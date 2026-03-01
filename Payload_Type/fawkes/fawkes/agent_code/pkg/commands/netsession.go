@@ -6,7 +6,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -15,8 +14,8 @@ import (
 )
 
 var (
-	netapi32Ses         = windows.NewLazySystemDLL("netapi32.dll")
-	procNetSessionEnum  = netapi32Ses.NewProc("NetSessionEnum")
+	netapi32Ses          = windows.NewLazySystemDLL("netapi32.dll")
+	procNetSessionEnum   = netapi32Ses.NewProc("NetSessionEnum")
 	procNetApiBufFreeSes = netapi32Ses.NewProc("NetApiBufferFree")
 )
 
@@ -29,6 +28,15 @@ type netSessionArgs struct {
 	Target string `json:"target"`
 }
 
+type smbSessionEntry struct {
+	Client    string `json:"client"`
+	User      string `json:"user"`
+	Opens     int    `json:"opens"`
+	Time      string `json:"time"`
+	Idle      string `json:"idle"`
+	Transport string `json:"transport,omitempty"`
+}
+
 // SESSION_INFO_10 structure (level 10 — doesn't require admin)
 type sessionInfo10 struct {
 	ClientName uintptr // LPWSTR
@@ -39,13 +47,13 @@ type sessionInfo10 struct {
 
 // SESSION_INFO_502 structure (level 502 — requires admin, has transport info)
 type sessionInfo502 struct {
-	ClientName    uintptr // LPWSTR
-	UserName      uintptr // LPWSTR
-	NumOpens      uint32  // open files/resources
-	Time          uint32  // seconds connected
-	IdleTime      uint32  // seconds idle
-	UserFlags     uint32  // user flags
-	ClientType    uintptr // LPWSTR — transport name
+	ClientName uintptr // LPWSTR
+	UserName   uintptr // LPWSTR
+	NumOpens   uint32  // open files/resources
+	Time       uint32  // seconds connected
+	IdleTime   uint32  // seconds idle
+	UserFlags  uint32  // user flags
+	ClientType uintptr // LPWSTR — transport name
 }
 
 func (c *NetSessionCommand) Execute(task structs.Task) structs.CommandResult {
@@ -95,12 +103,12 @@ func enumerateSessions502(target string) (string, error) {
 	var entriesRead, totalEntries, resumeHandle uint32
 
 	ret, _, _ := procNetSessionEnum.Call(
-		serverPtr,       // servername (NULL = local)
-		0,               // UncClientName (NULL = all clients)
-		0,               // username (NULL = all users)
-		502,             // level
+		serverPtr,                     // servername (NULL = local)
+		0,                             // UncClientName (NULL = all clients)
+		0,                             // username (NULL = all users)
+		502,                           // level
 		uintptr(unsafe.Pointer(&buf)), // bufptr
-		0xFFFFFFFF,      // prefmaxlen (MAX_PREFERRED_LENGTH)
+		0xFFFFFFFF,                    // prefmaxlen (MAX_PREFERRED_LENGTH)
 		uintptr(unsafe.Pointer(&entriesRead)),
 		uintptr(unsafe.Pointer(&totalEntries)),
 		uintptr(unsafe.Pointer(&resumeHandle)),
@@ -114,38 +122,30 @@ func enumerateSessions502(target string) (string, error) {
 		return "", fmt.Errorf("NetSessionEnum level 502 failed: error %d", ret)
 	}
 
-	var sb strings.Builder
-	targetDisplay := target
-	if targetDisplay == "" {
-		targetDisplay = "(local)"
-	}
-	sb.WriteString(fmt.Sprintf("SMB Sessions on %s\n", targetDisplay))
-	sb.WriteString(fmt.Sprintf("Total: %d sessions\n", totalEntries))
-	sb.WriteString(strings.Repeat("=", 70) + "\n")
-
 	if entriesRead == 0 {
-		sb.WriteString("\nNo active sessions.\n")
-		return sb.String(), nil
+		return "[]", nil
 	}
 
-	sb.WriteString(fmt.Sprintf("\n%-25s %-20s %-8s %-8s %-8s %s\n", "Client", "User", "Opens", "Time", "Idle", "Transport"))
-	sb.WriteString(strings.Repeat("-", 85) + "\n")
-
+	entries := make([]smbSessionEntry, 0, entriesRead)
 	entrySize := unsafe.Sizeof(sessionInfo502{})
 	for i := uint32(0); i < entriesRead; i++ {
 		entry := (*sessionInfo502)(unsafe.Pointer(buf + uintptr(i)*entrySize))
 
-		client := sesWideToString(entry.ClientName)
-		user := sesWideToString(entry.UserName)
-		transport := sesWideToString(entry.ClientType)
-
-		sb.WriteString(fmt.Sprintf("%-25s %-20s %-8d %-8s %-8s %s\n",
-			client, user, entry.NumOpens,
-			sesFormatDuration(entry.Time), sesFormatDuration(entry.IdleTime),
-			transport))
+		entries = append(entries, smbSessionEntry{
+			Client:    sesWideToString(entry.ClientName),
+			User:      sesWideToString(entry.UserName),
+			Opens:     int(entry.NumOpens),
+			Time:      sesFormatDuration(entry.Time),
+			Idle:      sesFormatDuration(entry.IdleTime),
+			Transport: sesWideToString(entry.ClientType),
+		})
 	}
 
-	return sb.String(), nil
+	out, err := json.Marshal(entries)
+	if err != nil {
+		return "", fmt.Errorf("JSON marshal error: %v", err)
+	}
+	return string(out), nil
 }
 
 func enumerateSessions10(target string) (string, error) {
@@ -180,36 +180,28 @@ func enumerateSessions10(target string) (string, error) {
 		return "", fmt.Errorf("NetSessionEnum level 10 failed: error %d", ret)
 	}
 
-	var sb strings.Builder
-	targetDisplay := target
-	if targetDisplay == "" {
-		targetDisplay = "(local)"
-	}
-	sb.WriteString(fmt.Sprintf("SMB Sessions on %s\n", targetDisplay))
-	sb.WriteString(fmt.Sprintf("Total: %d sessions\n", totalEntries))
-	sb.WriteString(strings.Repeat("=", 70) + "\n")
-
 	if entriesRead == 0 {
-		sb.WriteString("\nNo active sessions.\n")
-		return sb.String(), nil
+		return "[]", nil
 	}
 
-	sb.WriteString(fmt.Sprintf("\n%-25s %-20s %-10s %s\n", "Client", "User", "Connected", "Idle"))
-	sb.WriteString(strings.Repeat("-", 70) + "\n")
-
+	entries := make([]smbSessionEntry, 0, entriesRead)
 	entrySize := unsafe.Sizeof(sessionInfo10{})
 	for i := uint32(0); i < entriesRead; i++ {
 		entry := (*sessionInfo10)(unsafe.Pointer(buf + uintptr(i)*entrySize))
 
-		client := sesWideToString(entry.ClientName)
-		user := sesWideToString(entry.UserName)
-
-		sb.WriteString(fmt.Sprintf("%-25s %-20s %-10s %s\n",
-			client, user,
-			sesFormatDuration(entry.Time), sesFormatDuration(entry.IdleTime)))
+		entries = append(entries, smbSessionEntry{
+			Client: sesWideToString(entry.ClientName),
+			User:   sesWideToString(entry.UserName),
+			Time:   sesFormatDuration(entry.Time),
+			Idle:   sesFormatDuration(entry.IdleTime),
+		})
 	}
 
-	return sb.String(), nil
+	out, err := json.Marshal(entries)
+	if err != nil {
+		return "", fmt.Errorf("JSON marshal error: %v", err)
+	}
+	return string(out), nil
 }
 
 // sesWideToString converts a Windows LPWSTR to a Go string

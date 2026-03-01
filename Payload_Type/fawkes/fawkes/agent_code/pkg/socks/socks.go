@@ -21,7 +21,7 @@ const (
 	addrTypeDomain = 0x03
 	addrTypeIPv6   = 0x04
 
-	replySuccess         = 0x00
+	replySuccess           = 0x00
 	replyConnectionRefused = 0x05
 
 	readBufSize = 32 * 1024 // 32KB per read

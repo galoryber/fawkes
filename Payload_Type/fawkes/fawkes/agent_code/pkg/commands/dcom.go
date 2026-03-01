@@ -48,9 +48,9 @@ var (
 
 // ole32.dll for CoCreateInstanceEx and CoSetProxyBlanket
 var (
-	ole32DCOM               = windows.NewLazySystemDLL("ole32.dll")
-	procCoCreateInstanceEx  = ole32DCOM.NewProc("CoCreateInstanceEx")
-	procCoSetProxyBlanket   = ole32DCOM.NewProc("CoSetProxyBlanket")
+	ole32DCOM              = windows.NewLazySystemDLL("ole32.dll")
+	procCoCreateInstanceEx = ole32DCOM.NewProc("CoCreateInstanceEx")
+	procCoSetProxyBlanket  = ole32DCOM.NewProc("CoSetProxyBlanket")
 )
 
 // RPC authentication constants
@@ -146,13 +146,13 @@ func (a *dcomAuthState) setProxyBlanket(disp *ole.IDispatch) error {
 	}
 	ret, _, _ := procCoSetProxyBlanket.Call(
 		uintptr(unsafe.Pointer(disp)),
-		rpcCAuthnWinNT,          // dwAuthnSvc
-		rpcCAuthzNone,           // dwAuthzSvc
-		0,                       // pServerPrincName (COLE_DEFAULT_PRINCIPAL)
-		rpcCAuthnLevelConnect,   // dwAuthnLevel
-		rpcCImpLevelImpersonate, // dwImpersonationLevel
+		rpcCAuthnWinNT,                      // dwAuthnSvc
+		rpcCAuthzNone,                       // dwAuthzSvc
+		0,                                   // pServerPrincName (COLE_DEFAULT_PRINCIPAL)
+		rpcCAuthnLevelConnect,               // dwAuthnLevel
+		rpcCImpLevelImpersonate,             // dwImpersonationLevel
 		uintptr(unsafe.Pointer(a.identity)), // pAuthInfo
-		eoacNone,                // dwCapabilities
+		eoacNone,                            // dwCapabilities
 	)
 	if ret != 0 {
 		return fmt.Errorf("CoSetProxyBlanket failed: HRESULT 0x%08X", ret)

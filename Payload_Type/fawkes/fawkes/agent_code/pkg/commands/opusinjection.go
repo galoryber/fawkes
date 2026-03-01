@@ -94,7 +94,6 @@ var (
 	procSendMessageA                = user32Opus.NewProc("SendMessageA")
 )
 
-
 // OpusInjectionCommand implements the opus-injection command
 type OpusInjectionCommand struct{}
 
@@ -467,10 +466,10 @@ func findWindowByPID(targetPID uint32) (uintptr, error) {
 	// Enumerate all top-level windows
 	for {
 		ret, _, _ := procFindWindowExA.Call(
-			0,                    // hWndParent (desktop)
-			currentHwnd,          // hWndChildAfter (previous window)
-			0,                    // lpClassName (any)
-			0,                    // lpWindowName (any)
+			0,           // hWndParent (desktop)
+			currentHwnd, // hWndChildAfter (previous window)
+			0,           // lpClassName (any)
+			0,           // lpWindowName (any)
 		)
 
 		if ret == 0 {

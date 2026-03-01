@@ -95,6 +95,9 @@ func init() {
 		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -107,6 +110,8 @@ func init() {
 			}
 			host, _ := taskData.Args.GetStringArg("host")
 			command, _ := taskData.Args.GetStringArg("command")
+			display := fmt.Sprintf("%s → %s", host, command)
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ConnectRemote(%s) CreateService binpath=cmd.exe /c %s", host, command))
 			return response
 		},

@@ -4,4 +4,5 @@ main
 .idea
 mythic_go_services.bin
 *.out
+Payload_Type/fawkes/fawkes/agent_code/fawkes
 .vscode/

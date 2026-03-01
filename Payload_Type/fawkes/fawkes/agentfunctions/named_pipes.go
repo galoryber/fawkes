@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -49,6 +51,12 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			display := "list"
+			filter, _ := taskData.Args.GetStringArg("filter")
+			if filter != "" {
+				display += fmt.Sprintf(" (filter: %s)", filter)
+			}
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "API Call", "FindFirstFile/FindNextFile on \\\\.\\pipe\\*")
 			return response
 		},

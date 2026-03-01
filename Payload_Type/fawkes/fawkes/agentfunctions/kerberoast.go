@@ -2,9 +2,9 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -22,6 +22,7 @@ func init() {
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "kerberoast_new.js"), Author: "@galoryber"},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:             "server",
@@ -113,6 +114,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -135,11 +139,7 @@ func init() {
 			}
 			response.DisplayParams = &displayMsg
 
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("Kerberos TGS-REQ to KDC %s", server),
-			})
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Kerberos TGS request for SPN roasting on %s", server))
 
 			return response
 		},

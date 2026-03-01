@@ -19,8 +19,8 @@ import (
 
 // GDI32 and User32 constants
 const (
-	SRCCOPY     = 0x00CC0020
-	BI_RGB      = 0
+	SRCCOPY        = 0x00CC0020
+	BI_RGB         = 0
 	DIB_RGB_COLORS = 0
 )
 
@@ -46,12 +46,12 @@ type BITMAPINFO struct {
 }
 
 var (
-	user32   = windows.NewLazySystemDLL("user32.dll")
-	gdi32    = windows.NewLazySystemDLL("gdi32.dll")
+	user32 = windows.NewLazySystemDLL("user32.dll")
+	gdi32  = windows.NewLazySystemDLL("gdi32.dll")
 
-	procGetDC             = user32.NewProc("GetDC")
-	procReleaseDC         = user32.NewProc("ReleaseDC")
-	procGetSystemMetrics  = user32.NewProc("GetSystemMetrics")
+	procGetDC            = user32.NewProc("GetDC")
+	procReleaseDC        = user32.NewProc("ReleaseDC")
+	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
 
 	procCreateCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
 	procCreateCompatibleBitmap = gdi32.NewProc("CreateCompatibleBitmap")

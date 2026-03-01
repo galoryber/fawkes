@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -167,19 +166,17 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+			display := fmt.Sprintf("%s", action)
+			response.DisplayParams = &display
 			switch action {
 			case "add":
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage:  fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Add(%s) — Firewall rule created", name),
-				})
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Add(%s) — Firewall rule created", name))
 			case "delete":
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:           taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage:  fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Remove(%s) — Firewall rule deleted", name),
-				})
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Remove(%s) — Firewall rule deleted", name))
+			case "enable":
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Item(%s).Enabled=true — Firewall rule enabled", name))
+			case "disable":
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Item(%s).Enabled=false — Firewall rule disabled", name))
 			}
 			return response
 		},

@@ -43,19 +43,19 @@ const (
 	PROCESS_VM_WRITE          = 0x0020
 	PROCESS_VM_READ           = 0x0010
 
-	MEM_COMMIT             = 0x1000
-	MEM_RESERVE            = 0x2000
-	PAGE_EXECUTE_READ      = 0x20
-	PAGE_READWRITE         = 0x04
+	MEM_COMMIT        = 0x1000
+	MEM_RESERVE       = 0x2000
+	PAGE_EXECUTE_READ = 0x20
+	PAGE_READWRITE    = 0x04
 )
 
 var (
-	kernel32                 = syscall.NewLazyDLL("kernel32.dll")
-	procVirtualAllocEx       = kernel32.NewProc("VirtualAllocEx")
-	procWriteProcessMemory   = kernel32.NewProc("WriteProcessMemory")
-	procCreateRemoteThread   = kernel32.NewProc("CreateRemoteThread")
-	procOpenProcess          = kernel32.NewProc("OpenProcess")
-	procCloseHandle          = kernel32.NewProc("CloseHandle")
+	kernel32               = syscall.NewLazyDLL("kernel32.dll")
+	procVirtualAllocEx     = kernel32.NewProc("VirtualAllocEx")
+	procWriteProcessMemory = kernel32.NewProc("WriteProcessMemory")
+	procCreateRemoteThread = kernel32.NewProc("CreateRemoteThread")
+	procOpenProcess        = kernel32.NewProc("OpenProcess")
+	procCloseHandle        = kernel32.NewProc("CloseHandle")
 )
 
 // VanillaInjectionCommand implements the vanilla-injection command

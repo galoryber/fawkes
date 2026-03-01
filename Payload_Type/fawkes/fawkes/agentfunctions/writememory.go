@@ -31,6 +31,7 @@ func init() {
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil {
 				response.DisplayParams = &displayParams
 			}
+			createArtifact(task.Task.ID, "API Call", "Process memory write (WriteProcessMemory)")
 			return response
 		},
 	})

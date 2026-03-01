@@ -18,7 +18,7 @@ func (c *SleepCommand) Name() string {
 	return "sleep"
 }
 
-// Description returns the command description  
+// Description returns the command description
 func (c *SleepCommand) Description() string {
 	return "Update the sleep interval and jitter of the agent"
 }
@@ -40,7 +40,7 @@ func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent)
 		Jitter       int    `json:"jitter"`
 		WorkingStart string `json:"working_start"` // HH:MM format, empty = no change, "00:00" with end "00:00" = disable
 		WorkingEnd   string `json:"working_end"`   // HH:MM format
-		WorkingDays  string `json:"working_days"`   // "1,2,3,4,5" format, empty = no change, "0" = disable
+		WorkingDays  string `json:"working_days"`  // "1,2,3,4,5" format, empty = no change, "0" = disable
 	}
 
 	// Try to parse as JSON first

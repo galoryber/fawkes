@@ -30,11 +30,12 @@ func TestFindCommand(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid JSON", func(t *testing.T) {
-		task := structs.Task{Params: "not json"}
+	t.Run("plain text as pattern", func(t *testing.T) {
+		task := structs.Task{Params: "*.go"}
 		result := cmd.Execute(task)
-		if result.Status != "error" {
-			t.Errorf("expected error for invalid JSON, got %q", result.Status)
+		// Plain text treated as pattern — should not return a parse error
+		if result.Status == "error" && strings.Contains(result.Output, "Error parsing") {
+			t.Errorf("plain text should be treated as pattern, got parse error: %s", result.Output)
 		}
 	})
 
@@ -1023,9 +1024,12 @@ func TestAvDetectCommand(t *testing.T) {
 		if !result.Completed {
 			t.Error("expected completed=true")
 		}
-		// Output should contain either "No known security products" or "Security Products Detected"
-		if !strings.Contains(result.Output, "security products") && !strings.Contains(result.Output, "Security Products") {
-			t.Errorf("unexpected output format: %s", result.Output)
+		// Output should be valid JSON (either "[]" or an array of detected products)
+		if result.Output != "[]" {
+			var detected []detectedProduct
+			if err := json.Unmarshal([]byte(result.Output), &detected); err != nil {
+				t.Errorf("output is not valid JSON: %v, output: %s", err, result.Output)
+			}
 		}
 	})
 

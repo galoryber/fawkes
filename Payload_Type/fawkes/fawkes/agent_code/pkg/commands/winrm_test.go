@@ -57,7 +57,7 @@ func TestWinrmCommand_MissingHost(t *testing.T) {
 func TestWinrmCommand_MissingUsername(t *testing.T) {
 	cmd := &WinrmCommand{}
 	params, _ := json.Marshal(winrmArgs{
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Password: "pass",
 		Command:  "whoami",
 	})
@@ -70,7 +70,7 @@ func TestWinrmCommand_MissingUsername(t *testing.T) {
 func TestWinrmCommand_MissingPassword(t *testing.T) {
 	cmd := &WinrmCommand{}
 	params, _ := json.Marshal(winrmArgs{
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Username: "user",
 		Command:  "whoami",
 	})
@@ -83,7 +83,7 @@ func TestWinrmCommand_MissingPassword(t *testing.T) {
 func TestWinrmCommand_MissingCommand(t *testing.T) {
 	cmd := &WinrmCommand{}
 	params, _ := json.Marshal(winrmArgs{
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Username: "user",
 		Password: "pass",
 	})
@@ -97,7 +97,7 @@ func TestWinrmCommand_DefaultPort(t *testing.T) {
 	// Verify default port logic by testing that non-TLS defaults to 5985
 	// and TLS defaults to 5986 (tested via parameter parsing)
 	args := winrmArgs{
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Username: "user",
 		Password: "pass",
 		Command:  "whoami",
@@ -117,7 +117,7 @@ func TestWinrmCommand_HashAccepted(t *testing.T) {
 	// Hash should be accepted as alternative to password
 	cmd := &WinrmCommand{}
 	params, _ := json.Marshal(winrmArgs{
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Username: "admin",
 		Hash:     "aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c",
 		Command:  "whoami",
@@ -132,7 +132,7 @@ func TestWinrmCommand_HashAccepted(t *testing.T) {
 func TestWinrmCommand_NoPasswordOrHash(t *testing.T) {
 	cmd := &WinrmCommand{}
 	params, _ := json.Marshal(winrmArgs{
-		Host:     "192.0.2.1",
+		Host:     "127.0.0.1",
 		Username: "admin",
 		Command:  "whoami",
 	})

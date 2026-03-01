@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	kernel32SD             = windows.NewLazySystemDLL("kernel32.dll")
+	kernel32SD              = windows.NewLazySystemDLL("kernel32.dll")
 	procSetFileInfoByHandle = kernel32SD.NewProc("SetFileInformationByHandle")
 )
 
@@ -63,9 +63,9 @@ func selfDeleteBinary() {
 	const headerSize = 20
 	buf := make([]byte, headerSize+streamNameBytes)
 
-	binary.LittleEndian.PutUint32(buf[0:], 0)                                   // Flags = 0
-	binary.LittleEndian.PutUint64(buf[8:], 0)                                   // RootDirectory = NULL
-	binary.LittleEndian.PutUint32(buf[16:], uint32(streamNameBytes-2))           // FileNameLength (exclude null)
+	binary.LittleEndian.PutUint32(buf[0:], 0)                          // Flags = 0
+	binary.LittleEndian.PutUint64(buf[8:], 0)                          // RootDirectory = NULL
+	binary.LittleEndian.PutUint32(buf[16:], uint32(streamNameBytes-2)) // FileNameLength (exclude null)
 	for i, c := range streamName {
 		binary.LittleEndian.PutUint16(buf[headerSize+i*2:], c)
 	}

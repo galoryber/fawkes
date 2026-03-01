@@ -125,6 +125,9 @@ func init() {
 		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -138,6 +141,8 @@ func init() {
 			method, _ := taskData.Args.GetStringArg("method")
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+			display := fmt.Sprintf("%s %s", action, method)
+			response.DisplayParams = &display
 			if action == "install" {
 				switch method {
 				case "registry":

@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -105,6 +107,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -114,6 +119,25 @@ func init() {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  taskData.Task.ID,
+			}
+			action, _ := taskData.Args.GetStringArg("action")
+			display := fmt.Sprintf("%s", action)
+			response.DisplayParams = &display
+			if action == "add" || action == "remove" {
+				entry, _ := taskData.Args.GetStringArg("entry")
+				program, _ := taskData.Args.GetStringArg("program")
+				user, _ := taskData.Args.GetStringArg("user")
+				msg := fmt.Sprintf("crontab %s", action)
+				if entry != "" {
+					msg += fmt.Sprintf(" entry=%s", entry)
+				}
+				if program != "" {
+					msg += fmt.Sprintf(" program=%s", program)
+				}
+				if user != "" {
+					msg += fmt.Sprintf(" user=%s", user)
+				}
+				createArtifact(taskData.Task.ID, "File Write", msg)
 			}
 			return response
 		},

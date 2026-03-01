@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "net-enum",
+		Name: "net-enum",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "netenum_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate local/domain users, groups, and domain info via Win32 API (T1087, T1069)",
 		HelpString:          "net-enum -action <users|localgroups|groupmembers|domainusers|domaingroups|domaininfo> [-target <group_name>]",
 		Version:             1,
@@ -50,9 +55,11 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -65,6 +72,11 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			target, _ := taskData.Args.GetStringArg("target")
+			display := fmt.Sprintf("action: %s", action)
+			if target != "" {
+				display += fmt.Sprintf(", target: %s", target)
+			}
+			response.DisplayParams = &display
 			msg := fmt.Sprintf("NetAPI enum: %s", action)
 			if target != "" {
 				msg += " " + target

@@ -32,13 +32,17 @@ net-loggedon -target dc01.domain.local
 net-loggedon -target 192.168.1.10
 ```
 
-### Output Fields
+### Browser Script
 
-| Field | Description |
-|-------|-------------|
-| Username | The logged-on user's name |
-| Logon Domain | The domain or machine the user authenticated against |
-| Logon Server | The server that processed the logon request |
+Output is rendered as a sortable table in the Mythic UI with columns: Username, Logon Domain, Logon Server.
+
+### Example Output (JSON)
+```json
+[
+  {"username":"setup","logon_domain":"WIN11","logon_server":"WIN11"},
+  {"username":"admin","logon_domain":"CORP","logon_server":"DC01"}
+]
+```
 
 ### Notes
 

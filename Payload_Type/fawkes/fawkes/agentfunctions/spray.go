@@ -2,10 +2,10 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -23,6 +23,7 @@ func init() {
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "spray_new.js"), Author: "@galoryber"},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:             "action",
@@ -137,6 +138,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -175,11 +179,7 @@ func init() {
 			} else {
 				artifactMsg = fmt.Sprintf("Password spray via %s against %s (%d users)", action, server, userCount)
 			}
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  artifactMsg,
-			})
+			createArtifact(taskData.Task.ID, "Network Connection", artifactMsg)
 
 			return response
 		},

@@ -240,23 +240,19 @@ func TestSprayFormatResults(t *testing.T) {
 	if cmdResult.Status != "success" {
 		t.Error("expected success status")
 	}
-	if !strings.Contains(cmdResult.Output, "VALID: user1") {
-		t.Error("expected VALID label for successful auth")
+
+	var parsed []sprayResult
+	if err := json.Unmarshal([]byte(cmdResult.Output), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
 	}
-	if !strings.Contains(cmdResult.Output, "LOCKED: user3") {
-		t.Error("expected LOCKED label for locked account")
+	if len(parsed) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(parsed))
 	}
-	if !strings.Contains(cmdResult.Output, "1 valid") {
-		t.Error("expected valid count in summary")
+	if !parsed[0].Success || parsed[0].Username != "user1" {
+		t.Error("expected user1 to be successful")
 	}
-	if !strings.Contains(cmdResult.Output, "1 locked") {
-		t.Error("expected locked count in summary")
-	}
-	if !strings.Contains(cmdResult.Output, "Delay: 1000ms") {
-		t.Error("expected delay info")
-	}
-	if !strings.Contains(cmdResult.Output, "jitter: 25%") {
-		t.Error("expected jitter info")
+	if parsed[2].Username != "user3" || !strings.Contains(parsed[2].Message, "locked") {
+		t.Error("expected user3 to show locked status")
 	}
 }
 
@@ -265,7 +261,7 @@ func TestSprayDefaultAction(t *testing.T) {
 	// This will fail to connect but shouldn't error on action validation
 	cmd := &SprayCommand{}
 	args := sprayArgs{
-		Server:   "192.0.2.1", // RFC 5737 test address
+		Server:   "127.0.0.1", // RFC 5737 test address
 		Domain:   "TEST.LOCAL",
 		Users:    "testuser",
 		Password: "testpass",
@@ -282,7 +278,7 @@ func TestSprayEnumerateNoPasswordRequired(t *testing.T) {
 	cmd := &SprayCommand{}
 	args := sprayArgs{
 		Action: "enumerate",
-		Server: "192.0.2.1", // RFC 5737 test address
+		Server: "127.0.0.1", // RFC 5737 test address
 		Domain: "TEST.LOCAL",
 		Users:  "testuser",
 		// No password — should be allowed for enumerate
@@ -318,7 +314,7 @@ func TestSpraySMBAcceptsHash(t *testing.T) {
 	cmd := &SprayCommand{}
 	args := sprayArgs{
 		Action: "smb",
-		Server: "192.0.2.1",
+		Server: "127.0.0.1",
 		Domain: "TEST.LOCAL",
 		Users:  "testuser",
 		Hash:   "8846f7eaee8fb117ad06bdd830b7586c",

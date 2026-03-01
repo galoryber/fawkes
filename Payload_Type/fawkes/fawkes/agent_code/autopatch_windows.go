@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	kernel32AP       = syscall.NewLazyDLL("kernel32.dll")
+	kernel32AP        = syscall.NewLazyDLL("kernel32.dll")
 	procVirtualProtAP = kernel32AP.NewProc("VirtualProtect")
 )
 

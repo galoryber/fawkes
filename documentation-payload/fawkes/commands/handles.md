@@ -38,41 +38,25 @@ handles -pid 1234 -show_names -max_count 1000
 handles -pid 1234 -type Key -show_names
 ```
 
-## Example Output
+### Browser Script
 
-### Type Summary
-```
-Handles for PID 5408: 172 shown (172 total, 71997 system-wide)
+Output is rendered as sortable tables in the Mythic UI:
+1. **Type summary table**: Handle type and count, sorted by count descending
+2. **Handle detail table**: Handle value, type, and name. Color-coded: File (blue), Key (orange), Process/Thread (red)
 
-Handle Type Summary:
-  Event                          29
-  File                           26
-  IRTimer                        20
-  WaitCompletionPacket           15
-  Thread                         12
-  Key                            9
-  ALPC Port                      6
-  IoCompletion                   4
-  TpWorkerFactory                3
-  Mutant                         2
-  Semaphore                      2
-  Directory                      2
-```
-
-### File Handles with Names
-```
-Handles for PID 5408: 5 shown (172 total, 72004 system-wide)
-
-Handle Type Summary:
-  File                           5
-
-Handle   Type                      Name
---------------------------------------------------------------------------------
-0x4      File                      \Device\ConDrv
-0x10     File                      \Device\Null
-0x5C     File                      \Device\HarddiskVolume3\Users\setup
-0x64     File                      \Device\ConDrv
-0xC8     File                      \Device\CNG
+## Example Output (JSON)
+```json
+{
+  "pid": 5408, "shown": 172, "total": 172, "system": 71997,
+  "summary": [
+    {"type": "Event", "count": 29},
+    {"type": "File", "count": 26}
+  ],
+  "handles": [
+    {"handle": 4, "type": "File", "name": "\\Device\\ConDrv"},
+    {"handle": 16, "type": "File", "name": "\\Device\\Null"}
+  ]
+}
 ```
 
 ## Common Handle Types

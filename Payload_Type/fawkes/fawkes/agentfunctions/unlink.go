@@ -36,6 +36,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -46,6 +49,13 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+
+			connID, _ := taskData.Args.GetStringArg("connection_id")
+			display := connID
+			if len(connID) > 8 {
+				display = connID[:8] + "..."
+			}
+			response.DisplayParams = &display
 
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           taskData.Task.ID,

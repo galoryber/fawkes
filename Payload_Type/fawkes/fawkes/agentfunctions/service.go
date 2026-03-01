@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "service",
+		Name: "service",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "service_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Manage Windows services via SCM API — query, start, stop, create, delete, list (T1543.003)",
 		HelpString:          "service -action <query|start|stop|create|delete|list> -name <service_name> [-binpath <path>] [-display <name>] [-start <auto|demand|disabled>]",
 		Version:             1,
@@ -93,9 +98,11 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -108,6 +115,13 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+			if name != "" {
+				display := fmt.Sprintf("%s %s", action, name)
+				response.DisplayParams = &display
+			} else {
+				display := fmt.Sprintf("%s", action)
+				response.DisplayParams = &display
+			}
 			switch action {
 			case "create":
 				binpath, _ := taskData.Args.GetStringArg("binpath")

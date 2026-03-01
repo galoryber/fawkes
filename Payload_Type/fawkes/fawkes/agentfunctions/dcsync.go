@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -103,6 +102,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -121,11 +123,7 @@ func init() {
 			displayMsg := fmt.Sprintf("DCSync %s (%d account(s))", server, targetCount)
 			response.DisplayParams = &displayMsg
 
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("DRSGetNCChanges to %s for %s", server, target),
-			})
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("DRS replication request (DCSync) to %s for %s", server, target))
 
 			return response
 		},

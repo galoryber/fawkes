@@ -32,25 +32,17 @@ net-session -target dc01.domain.local
 net-session -target 192.168.1.10
 ```
 
-### Output Fields
+### Browser Script
 
-**Level 502 (Admin):**
-| Field | Description |
-|-------|-------------|
-| Client | Client IP/hostname connected to the server |
-| User | Username of the connected session |
-| Opens | Number of open files/resources |
-| Time | Duration of the connection |
-| Idle | Time since last activity |
-| Transport | Network transport name |
+Output is rendered as a sortable table in the Mythic UI. Level 502 shows columns: Client, User, Opens, Time, Idle, Transport. Level 10 fallback shows: Client, User, Time, Idle.
 
-**Level 10 (Non-Admin Fallback):**
-| Field | Description |
-|-------|-------------|
-| Client | Client IP/hostname |
-| User | Username |
-| Connected | Duration of the connection |
-| Idle | Time since last activity |
+### Example Output (JSON)
+```json
+[
+  {"client":"\\\\192.168.1.50","user":"admin","opens":3,"time":"2h15m","idle":"5m30s","transport":"\\Device\\NetBT_Tcpip"},
+  {"client":"\\\\192.168.1.51","user":"svc_sql","opens":1,"time":"45m12s","idle":"10s"}
+]
+```
 
 ## MITRE ATT&CK Mapping
 

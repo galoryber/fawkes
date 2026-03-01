@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -125,6 +124,9 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
 			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
@@ -143,11 +145,7 @@ func init() {
 			displayMsg := fmt.Sprintf("WinRM %s %s@%s: %s", shell, "", host, command)
 			response.DisplayParams = &displayMsg
 
-			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("WinRM %s command to %s", shell, host),
-			})
+			createArtifact(taskData.Task.ID, "Network Connection", fmt.Sprintf("WinRM connection to %s (%s: %s)", host, shell, command))
 
 			return response
 		},

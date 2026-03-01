@@ -71,29 +71,26 @@ klist -action import -ticket <base64_from_step_1>
 klist -action list
 ```
 
-## Example Output
+## Output Format
 
+The `list` action returns a JSON array rendered as a sortable table via browser script:
+```json
+[
+  {
+    "index": 0,
+    "client": "user@DOMAIN.COM",
+    "server": "krbtgt/DOMAIN.COM@DOMAIN.COM",
+    "encryption": "AES256-CTS (etype 18)",
+    "flags": "forwardable, renewable, initial, pre-authent",
+    "start": "2026-02-24 08:00:00",
+    "end": "2026-02-24 18:00:00",
+    "renew": "2026-03-03 08:00:00",
+    "status": "valid"
+  }
+]
 ```
-=== Kerberos Ticket Cache ===
 
-Cached tickets: 3
-
-  [0] Client:  user@DOMAIN.COM
-      Server:  krbtgt/DOMAIN.COM@DOMAIN.COM
-      Encrypt: AES256-CTS (etype 18)
-      Flags:   forwardable, renewable, initial, pre-authent
-      Start:   2026-02-24 08:00:00
-      End:     2026-02-24 18:00:00
-      Renew:   2026-03-03 08:00:00
-
-  [1] Client:  user@DOMAIN.COM
-      Server:  cifs/fileserver.domain.com@DOMAIN.COM
-      Encrypt: AES256-CTS (etype 18)
-      Flags:   forwardable, renewable, pre-authent
-      Start:   2026-02-24 08:05:12
-      End:     2026-02-24 18:05:12
-      Renew:   2026-03-03 08:00:00
-```
+The browser script highlights TGT tickets (`krbtgt`) in blue and expired tickets in red. Other actions (`dump`, `purge`, `import`) return plain text responses.
 
 ## MITRE ATT&CK Mapping
 

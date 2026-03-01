@@ -30,32 +30,16 @@ modules -pid 1234
 modules -pid 4852
 ```
 
-## Example Output (Windows)
+### Browser Script
 
-```
-Modules loaded in PID 4852 (19 total):
+Output is rendered as a sortable table in the Mythic UI with columns: Base Address, Size, Name, Path. Key system DLLs (ntdll.dll, kernel32.dll, kernelbase.dll) are highlighted blue. Size is formatted as KB/MB in the browser script.
 
-Base Address       Size         Name                                     Path
-------------------------------------------------------------------------------------------------------------------------
-0x7FF772530000     18.9 MB      fawkes_modules.exe                       C:\Users\setup\Downloads\fawkes_modules.exe
-0x7FFC32910000     140.0 KB     dhcpcsvc.DLL                             C:\WINDOWS\SYSTEM32\dhcpcsvc.DLL
-0x7FFC334C0000     120.0 KB     dhcpcsvc6.DLL                            C:\WINDOWS\SYSTEM32\dhcpcsvc6.DLL
-0x7FFC3A3A0000     32.0 KB      winrnr.dll                               C:\WINDOWS\system32\winrnr.dll
-0x7FFC44980000     796.0 KB     msvcrt.dll                               C:\WINDOWS\System32\msvcrt.dll
-0x7FFC45910000     2.1 MB       KERNELBASE.dll                           C:\WINDOWS\System32\KERNELBASE.dll
-0x7FFC46180000     740.0 KB     KERNEL32.DLL                             C:\WINDOWS\System32\KERNEL32.DLL
-0x7FFC466F0000     2.0 MB       ntdll.dll                                C:\WINDOWS\SYSTEM32\ntdll.dll
-...
-```
-
-## Example Output (Linux)
-
-```
-Modules loaded in PID 55425 (1 total):
-
-Base Address       Size         Name                                     Path
-------------------------------------------------------------------------------------------------------------------------
-0x400000           13.5 MB      fawkes_mod2                              /tmp/fawkes_mod2
+### Example Output (JSON)
+```json
+[
+  {"name":"ntdll.dll","path":"C:\\WINDOWS\\SYSTEM32\\ntdll.dll","base_addr":"0x7FFC466F0000","size":2097152},
+  {"name":"KERNEL32.DLL","path":"C:\\WINDOWS\\System32\\KERNEL32.DLL","base_addr":"0x7FFC46180000","size":757760}
+]
 ```
 
 {{% notice note %}}

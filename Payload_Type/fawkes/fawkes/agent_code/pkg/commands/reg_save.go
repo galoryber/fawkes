@@ -141,9 +141,9 @@ func regSaveCredentialHives(outputDir string) structs.CommandResult {
 	}
 
 	hives := []struct {
-		path   string
-		file   string
-		desc   string
+		path string
+		file string
+		desc string
 	}{
 		{"SAM", "sam.hiv", "Local account hashes"},
 		{"SECURITY", "security.hiv", "LSA secrets, cached creds"},

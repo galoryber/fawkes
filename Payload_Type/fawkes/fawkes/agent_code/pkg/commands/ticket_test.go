@@ -651,10 +651,10 @@ func TestTicketParseKeyType(t *testing.T) {
 		{"aes128", 16, 17, "aes128-cts-hmac-sha1-96", false},
 		{"rc4", 16, 23, "rc4-hmac", false},
 		{"ntlm", 16, 23, "rc4-hmac", false},
-		{"aes256", 16, 0, "", true},  // wrong length
-		{"aes128", 32, 0, "", true},  // wrong length
-		{"rc4", 32, 0, "", true},     // wrong length
-		{"des", 8, 0, "", true},      // unknown type
+		{"aes256", 16, 0, "", true}, // wrong length
+		{"aes128", 32, 0, "", true}, // wrong length
+		{"rc4", 32, 0, "", true},    // wrong length
+		{"des", 8, 0, "", true},     // unknown type
 	}
 
 	for _, tt := range tests {
