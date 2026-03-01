@@ -215,7 +215,7 @@ func listAgentKeys(socketPath string) ([]agentKeyInfo, error) {
 	defer conn.Close()
 
 	// Set read deadline to avoid hanging on unresponsive sockets
-	conn.SetDeadline(time.Now().Add(10 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
 
 	client := agent.NewClient(conn)
 	keys, err := client.List()
