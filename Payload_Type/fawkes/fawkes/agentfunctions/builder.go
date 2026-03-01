@@ -255,6 +255,10 @@ var payloadDefinition = agentstructs.PayloadType{
 			Description: "Scanning payload against detection rules (informational only)",
 		},
 		{
+			Name:        "Entropy Analysis",
+			Description: "Analyzing payload entropy characteristics (informational only)",
+		},
+		{
 			Name:        "Reporting back",
 			Description: "Sending the payload back to Mythic",
 		},
@@ -755,6 +759,15 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		StepStdout:  yaraOutput,
 	})
 
+	// Entropy analysis: run ent on the built payload (informational only)
+	entropyOutput := runEntropyScan(fmt.Sprintf("/build/%s", payloadName))
+	mythicrpc.SendMythicRPCPayloadUpdateBuildStep(mythicrpc.MythicRPCPayloadUpdateBuildStepMessage{
+		PayloadUUID: payloadBuildMsg.PayloadUUID,
+		StepName:    "Entropy Analysis",
+		StepSuccess: true,
+		StepStdout:  entropyOutput,
+	})
+
 	if payloadBytes, err := os.ReadFile(fmt.Sprintf("/build/%s", payloadName)); err != nil {
 		payloadBuildResponse.Success = false
 		payloadBuildResponse.BuildMessage = "Failed to find final payload"
@@ -926,6 +939,96 @@ func runYARAScan(payloadPath string) string {
 	}
 
 	return report.String()
+}
+
+// runEntropyScan runs the ent command against a built payload and returns a formatted report.
+// This is informational only — it never causes a build failure.
+func runEntropyScan(payloadPath string) string {
+	// Check if ent is available
+	if _, err := exec.LookPath("ent"); err != nil {
+		return "ent not installed — skipping entropy analysis"
+	}
+
+	// Check if payload exists
+	fi, err := os.Stat(payloadPath)
+	if err != nil {
+		return fmt.Sprintf("Payload not found at %s — skipping entropy analysis", payloadPath)
+	}
+
+	// Run ent
+	cmd := exec.Command("ent", payloadPath)
+	var entOut bytes.Buffer
+	var entErr bytes.Buffer
+	cmd.Stdout = &entOut
+	cmd.Stderr = &entErr
+
+	scanErr := cmd.Run()
+
+	var report strings.Builder
+	report.WriteString("=== Entropy Analysis ===\n")
+	report.WriteString(fmt.Sprintf("Payload: %s (%d bytes / %.2f MB)\n\n", filepath.Base(payloadPath), fi.Size(), float64(fi.Size())/(1024*1024)))
+
+	if scanErr != nil {
+		report.WriteString(fmt.Sprintf("ent error (non-fatal): %v\n", scanErr))
+		if entErr.Len() > 0 {
+			report.WriteString(fmt.Sprintf("stderr: %s\n", entErr.String()))
+		}
+		return report.String()
+	}
+
+	output := strings.TrimSpace(entOut.String())
+	if output == "" {
+		report.WriteString("No output from ent\n")
+		return report.String()
+	}
+
+	report.WriteString(output)
+	report.WriteString("\n\n")
+
+	// Parse entropy value and add assessment
+	report.WriteString(formatEntropyAssessment(output))
+
+	return report.String()
+}
+
+// formatEntropyAssessment parses ent output and adds an opsec assessment.
+func formatEntropyAssessment(entOutput string) string {
+	// Extract entropy value from "Entropy = X.XXXXXX bits per byte."
+	var entropy float64
+	for _, line := range strings.Split(entOutput, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Entropy = ") {
+			// Parse "Entropy = 7.999822 bits per byte."
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				if val, err := strconv.ParseFloat(parts[2], 64); err == nil {
+					entropy = val
+				}
+			}
+			break
+		}
+	}
+
+	if entropy == 0 {
+		return ""
+	}
+
+	var assessment strings.Builder
+	assessment.WriteString("--- Opsec Assessment ---\n")
+	if entropy >= 7.9 {
+		assessment.WriteString(fmt.Sprintf("Entropy: %.4f — VERY HIGH (packed/encrypted signature)\n", entropy))
+		assessment.WriteString("Recommendation: Consider using inflate_bytes build parameter to lower entropy.\n")
+		assessment.WriteString("  Example: inflate_bytes=0x00 inflate_count=500000 adds ~500KB of zero bytes.\n")
+	} else if entropy >= 7.5 {
+		assessment.WriteString(fmt.Sprintf("Entropy: %.4f — HIGH (typical for compiled Go binaries)\n", entropy))
+		assessment.WriteString("Note: Go binaries naturally have high entropy due to static linking.\n")
+	} else if entropy >= 6.0 {
+		assessment.WriteString(fmt.Sprintf("Entropy: %.4f — MODERATE (good for evasion)\n", entropy))
+	} else {
+		assessment.WriteString(fmt.Sprintf("Entropy: %.4f — LOW (normal executable range)\n", entropy))
+	}
+
+	return assessment.String()
 }
 
 func Initialize() {
