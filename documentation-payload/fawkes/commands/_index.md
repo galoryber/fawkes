@@ -92,6 +92,7 @@ pre = "<b>2. </b>"
     * [procdump](/agents/fawkes/commands/procdump/)
     * [wdigest](/agents/fawkes/commands/wdigest/)
     * [wlan-profiles](/agents/fawkes/commands/wlan-profiles/)
+    * [ssh-agent](/agents/fawkes/commands/ssh-agent/)
     * [ssh-keys](/agents/fawkes/commands/ssh-keys/)
     * [vss](/agents/fawkes/commands/vss/)
     * [steal-token](/agents/fawkes/commands/steal-token/)
