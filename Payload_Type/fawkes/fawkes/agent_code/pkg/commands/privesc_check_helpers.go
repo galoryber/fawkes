@@ -90,15 +90,6 @@ func startTypeString(st uint32) string {
 	}
 }
 
-func isFileWritable(path string) bool {
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
-	if err != nil {
-		return false
-	}
-	f.Close()
-	return true
-}
-
 func isFileReadable(path string) bool {
 	f, err := os.Open(path)
 	if err != nil {

@@ -573,6 +573,15 @@ func winPrivescCheckUAC() structs.CommandResult {
 
 // --- Windows-specific helper functions ---
 
+func isFileWritable(path string) bool {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return false
+	}
+	f.Close()
+	return true
+}
+
 func readRegDWORD(root windows.Handle, path, name string) uint32 {
 	var key windows.Handle
 	pathUTF16, _ := windows.UTF16PtrFromString(path)
