@@ -420,10 +420,14 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			// so long-running commands (SOCKS, keylog, port-scan) don't block new tasks.
 			// Semaphore limits concurrency to prevent memory exhaustion.
 			for _, task := range tasks {
+				// Track task synchronously BEFORE spawning goroutine — prevents a race
+				// where obfuscateSleep sees GetRunningTasks()==0 because the goroutine
+				// hasn't called TrackTask yet, causing C2 profile fields to be zeroed
+				// while task goroutines still need them for PostResponse.
+				commands.TrackTask(&task)
 				taskSem <- struct{}{} // Acquire semaphore slot
 				go func(t structs.Task) {
 					defer func() { <-taskSem }() // Release slot when done
-					commands.TrackTask(&t)
 					defer commands.UntrackTask(t.ID)
 					processTaskWithAgent(t, agent, c2, socksManager)
 				}(task)

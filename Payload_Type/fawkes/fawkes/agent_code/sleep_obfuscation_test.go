@@ -304,8 +304,9 @@ func TestObfuscateProfileWhenNoTasksRunning(t *testing.T) {
 	}
 }
 
-func TestObfuscateProfileSkippedWhenTasksRunning(t *testing.T) {
+func TestObfuscateSkippedEntirelyWhenTasksRunning(t *testing.T) {
 	agent := makeTestAgent()
+	origUUID := agent.PayloadUUID
 	hp := makeTestHTTPProfile()
 	c2 := profiles.Profile(hp)
 
@@ -315,27 +316,30 @@ func TestObfuscateProfileSkippedWhenTasksRunning(t *testing.T) {
 	defer commands.UntrackTask("test-task-1")
 
 	vault := obfuscateSleep(agent, c2)
-	if vault == nil {
-		t.Fatal("obfuscateSleep returned nil")
+
+	// Should return nil — no masking when tasks are running (data race prevention)
+	if vault != nil {
+		t.Error("obfuscateSleep should return nil when tasks are running")
 	}
 
-	// Profile should NOT be masked when tasks are running
-	if vault.profileMasked {
-		t.Error("profile should not be masked when tasks are running")
-	}
-	if vault.profileBlob != nil {
-		t.Error("profileBlob should be nil when tasks are running")
+	// Agent fields should NOT be modified
+	if agent.PayloadUUID != origUUID {
+		t.Error("PayloadUUID was incorrectly zeroed while tasks running")
 	}
 
-	// Profile fields should still be intact
+	// Profile fields should NOT be modified
 	if hp.EncryptionKey != "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" {
-		t.Error("EncryptionKey was incorrectly zeroed")
+		t.Error("EncryptionKey was incorrectly zeroed while tasks running")
 	}
 	if hp.BaseURL != "https://c2.example.com:443" {
-		t.Error("BaseURL was incorrectly zeroed")
+		t.Error("BaseURL was incorrectly zeroed while tasks running")
 	}
 
+	// deobfuscateSleep with nil vault should be a no-op
 	deobfuscateSleep(vault, agent, c2)
+	if agent.PayloadUUID != origUUID {
+		t.Error("deobfuscate with nil vault should be a no-op")
+	}
 }
 
 func TestDeobfuscateNilVault(t *testing.T) {
