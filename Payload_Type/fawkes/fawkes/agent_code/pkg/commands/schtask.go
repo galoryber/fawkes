@@ -38,16 +38,10 @@ type schtaskArgs struct {
 	RunNow  bool   `json:"run_now"`
 }
 
-// Task Scheduler 2.0 COM constants
-const (
-	// Task trigger types
-	TASK_TRIGGER_LOGON  = 9
-	TASK_TRIGGER_BOOT   = 8
-	TASK_TRIGGER_DAILY  = 2
-	TASK_TRIGGER_WEEKLY = 3
-	TASK_TRIGGER_IDLE   = 6
-	TASK_TRIGGER_TIME   = 1
+// TASK_TRIGGER_* constants moved to command_helpers.go
 
+// Task Scheduler 2.0 COM constants (non-trigger)
+const (
 	// Task action types
 	TASK_ACTION_EXEC = 0
 
@@ -172,25 +166,7 @@ func connectTaskScheduler() (*taskSchedulerConnection, func(), error) {
 	return conn, cleanup, nil
 }
 
-// triggerTypeFromString maps trigger name to Task Scheduler 2.0 trigger type constant.
-func triggerTypeFromString(trigger string) int {
-	switch strings.ToUpper(trigger) {
-	case "ONLOGON":
-		return TASK_TRIGGER_LOGON
-	case "ONSTART":
-		return TASK_TRIGGER_BOOT
-	case "DAILY":
-		return TASK_TRIGGER_DAILY
-	case "WEEKLY":
-		return TASK_TRIGGER_WEEKLY
-	case "ONIDLE":
-		return TASK_TRIGGER_IDLE
-	case "ONCE":
-		return TASK_TRIGGER_TIME
-	default:
-		return TASK_TRIGGER_LOGON
-	}
-}
+// triggerTypeFromString moved to command_helpers.go
 
 // buildTaskXML generates Task Scheduler 2.0 XML for registration.
 func buildTaskXML(args schtaskArgs) string {
@@ -253,46 +229,7 @@ func buildTaskXML(args schtaskArgs) string {
 	return xml
 }
 
-// buildTriggerXML generates the trigger section of the task XML.
-func buildTriggerXML(trigger, startTime string) string {
-	switch strings.ToUpper(trigger) {
-	case "ONLOGON":
-		return "    <LogonTrigger>\n      <Enabled>true</Enabled>\n    </LogonTrigger>"
-	case "ONSTART":
-		return "    <BootTrigger>\n      <Enabled>true</Enabled>\n    </BootTrigger>"
-	case "ONIDLE":
-		return "    <IdleTrigger>\n      <Enabled>true</Enabled>\n    </IdleTrigger>"
-	case "DAILY":
-		boundary := "2026-01-01T09:00:00"
-		if startTime != "" {
-			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
-		}
-		return fmt.Sprintf("    <CalendarTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n      <ScheduleByDay>\n        <DaysInterval>1</DaysInterval>\n      </ScheduleByDay>\n    </CalendarTrigger>", boundary)
-	case "WEEKLY":
-		boundary := "2026-01-01T09:00:00"
-		if startTime != "" {
-			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
-		}
-		return fmt.Sprintf("    <CalendarTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n      <ScheduleByWeek>\n        <WeeksInterval>1</WeeksInterval>\n        <DaysOfWeek><Monday /></DaysOfWeek>\n      </ScheduleByWeek>\n    </CalendarTrigger>", boundary)
-	case "ONCE":
-		boundary := "2026-12-31T23:59:00"
-		if startTime != "" {
-			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
-		}
-		return fmt.Sprintf("    <TimeTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n    </TimeTrigger>", boundary)
-	default:
-		return "    <LogonTrigger>\n      <Enabled>true</Enabled>\n    </LogonTrigger>"
-	}
-}
-
-// escapeXML escapes special characters for XML content.
-func escapeXML(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	s = strings.ReplaceAll(s, ">", "&gt;")
-	s = strings.ReplaceAll(s, "\"", "&quot;")
-	return s
-}
+// buildTriggerXML, escapeXML moved to command_helpers.go
 
 func schtaskCreate(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {

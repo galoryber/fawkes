@@ -37,21 +37,10 @@ type firewallArgs struct {
 	Enabled    string `json:"enabled"`
 }
 
-// Windows Firewall COM constants
+// fwIPProtocol*, fwRuleDirection*, fwAction* constants moved to command_helpers.go
+
+// Windows Firewall COM constants (profile types)
 const (
-	// NET_FW_IP_PROTOCOL
-	fwIPProtocolTCP = 6
-	fwIPProtocolUDP = 17
-	fwIPProtocolAny = 256
-
-	// NET_FW_RULE_DIRECTION
-	fwRuleDirectionIn  = 1
-	fwRuleDirectionOut = 2
-
-	// NET_FW_ACTION
-	fwActionBlock = 0
-	fwActionAllow = 1
-
 	// NET_FW_PROFILE_TYPE2
 	fwProfileDomain  = 1
 	fwProfilePrivate = 2
@@ -599,16 +588,7 @@ func firewallEnableDisable(args firewallArgs, enable bool) structs.CommandResult
 
 // Helper functions
 
-func fwDirectionToString(dir int) string {
-	switch dir {
-	case fwRuleDirectionIn:
-		return "In"
-	case fwRuleDirectionOut:
-		return "Out"
-	default:
-		return fmt.Sprintf("%d", dir)
-	}
-}
+// fwDirectionToString moved to command_helpers.go
 
 func fwActionToString(val interface{}) string {
 	switch v := val.(type) {
@@ -628,33 +608,7 @@ func fwActionToString(val interface{}) string {
 	}
 }
 
-func fwActionIntToString(action int) string {
-	switch action {
-	case fwActionBlock:
-		return "Block"
-	case fwActionAllow:
-		return "Allow"
-	default:
-		return fmt.Sprintf("%d", action)
-	}
-}
-
-func fwProtocolToString(proto int) string {
-	switch proto {
-	case fwIPProtocolTCP:
-		return "TCP"
-	case fwIPProtocolUDP:
-		return "UDP"
-	case fwIPProtocolAny:
-		return "Any"
-	case 1:
-		return "ICMPv4"
-	case 58:
-		return "ICMPv6"
-	default:
-		return fmt.Sprintf("%d", proto)
-	}
-}
+// fwActionIntToString, fwProtocolToString moved to command_helpers.go
 
 func variantToInt(v *ole.VARIANT) int {
 	if v == nil {
