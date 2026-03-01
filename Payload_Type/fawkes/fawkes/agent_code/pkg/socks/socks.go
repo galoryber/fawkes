@@ -24,21 +24,24 @@ const (
 	replySuccess           = 0x00
 	replyConnectionRefused = 0x05
 
-	readBufSize = 32 * 1024 // 32KB per read
-	dialTimeout = 10 * time.Second
+	readBufSize     = 32 * 1024       // 32KB per read
+	dialTimeout     = 10 * time.Second
+	idleReadTimeout = 5 * time.Minute // close idle connections to prevent goroutine/connection leaks
 )
 
 // Manager handles all active SOCKS proxy connections
 type Manager struct {
-	connections map[uint32]net.Conn
-	outbound    []structs.SocksMsg
-	mu          sync.Mutex
+	connections     map[uint32]net.Conn
+	outbound        []structs.SocksMsg
+	mu              sync.Mutex
+	IdleReadTimeout time.Duration // exported for testing; defaults to idleReadTimeout const
 }
 
 // NewManager creates a new SOCKS connection manager
 func NewManager() *Manager {
 	return &Manager{
-		connections: make(map[uint32]net.Conn),
+		connections:     make(map[uint32]net.Conn),
+		IdleReadTimeout: idleReadTimeout,
 	}
 }
 
@@ -179,10 +182,14 @@ func (m *Manager) forwardData(serverId uint32, conn net.Conn, b64Data string) {
 	}
 }
 
-// readFromConnection reads data from a TCP connection and queues it as outbound SOCKS messages
+// readFromConnection reads data from a TCP connection and queues it as outbound SOCKS messages.
+// Uses an idle read timeout to prevent goroutine/connection leaks when remote endpoints
+// stop responding without closing the connection (common with firewalls, NAT timeouts,
+// or crashed services). Long-running idle connections are also forensic indicators.
 func (m *Manager) readFromConnection(serverId uint32, conn net.Conn) {
 	buf := make([]byte, readBufSize)
 	for {
+		conn.SetReadDeadline(time.Now().Add(m.IdleReadTimeout))
 		n, err := conn.Read(buf)
 		if n > 0 {
 			encoded := base64.StdEncoding.EncodeToString(buf[:n])
@@ -195,10 +202,21 @@ func (m *Manager) readFromConnection(serverId uint32, conn net.Conn) {
 			m.mu.Unlock()
 		}
 		if err != nil {
-			if err != io.EOF {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// Idle timeout — check if connection was already closed externally
+				m.mu.Lock()
+				_, stillActive := m.connections[serverId]
+				m.mu.Unlock()
+				if !stillActive {
+					conn.Close()
+					return
+				}
+				// Connection still active but idle for too long — close it
+				log.Printf("[SOCKS] Idle timeout for server_id %d, closing", serverId)
+			} else if err != io.EOF {
 				log.Printf("[SOCKS] Read error for server_id %d: %v", serverId, err)
 			}
-			// Connection closed or errored — send exit and clean up
+			// Connection closed, timed out, or errored — send exit and clean up
 			m.mu.Lock()
 			m.outbound = append(m.outbound, structs.SocksMsg{
 				ServerId: serverId,

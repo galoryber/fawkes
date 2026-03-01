@@ -888,6 +888,7 @@ func TestConstants(t *testing.T) {
 		{"replyConnectionRefused", replyConnectionRefused, byte(0x05)},
 		{"readBufSize", readBufSize, 32 * 1024},
 		{"dialTimeout", dialTimeout, 10 * time.Second},
+		{"idleReadTimeout", idleReadTimeout, 5 * time.Minute},
 	}
 
 	for _, tt := range tests {
@@ -897,4 +898,145 @@ func TestConstants(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- Idle timeout tests ---
+
+func TestReadFromConnection_IdleTimeout(t *testing.T) {
+	// Create a connection pair where the server never sends data
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer ln.Close()
+
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer conn.Close()
+
+	srvConn, _ := ln.Accept()
+	defer srvConn.Close()
+
+	m := NewManager()
+	m.IdleReadTimeout = 200 * time.Millisecond // short timeout for testing
+
+	m.mu.Lock()
+	m.connections[600] = conn
+	m.mu.Unlock()
+
+	go m.readFromConnection(600, conn)
+
+	// Wait for slightly more than the idle timeout
+	time.Sleep(500 * time.Millisecond)
+
+	// Should have sent an exit message and cleaned up
+	msgs := m.DrainOutbound()
+	foundExit := false
+	for _, msg := range msgs {
+		if msg.Exit && msg.ServerId == 600 {
+			foundExit = true
+		}
+	}
+	if !foundExit {
+		t.Error("Should send exit message after idle timeout")
+	}
+
+	m.mu.Lock()
+	_, exists := m.connections[600]
+	m.mu.Unlock()
+	if exists {
+		t.Error("Connection should be removed from map after idle timeout")
+	}
+}
+
+func TestReadFromConnection_ActiveConnectionNotTimedOut(t *testing.T) {
+	// Connection that sends data periodically should NOT be timed out
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer ln.Close()
+
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer conn.Close()
+
+	srvConn, _ := ln.Accept()
+	defer srvConn.Close()
+
+	m := NewManager()
+	m.IdleReadTimeout = 300 * time.Millisecond
+
+	m.mu.Lock()
+	m.connections[601] = conn
+	m.mu.Unlock()
+
+	go m.readFromConnection(601, conn)
+
+	// Send data before the idle timeout expires
+	time.Sleep(100 * time.Millisecond)
+	srvConn.Write([]byte("keepalive1"))
+	time.Sleep(100 * time.Millisecond)
+	srvConn.Write([]byte("keepalive2"))
+	time.Sleep(100 * time.Millisecond)
+
+	// Connection should still be active
+	m.mu.Lock()
+	_, exists := m.connections[601]
+	m.mu.Unlock()
+	if !exists {
+		t.Error("Active connection should NOT be timed out")
+	}
+
+	// Verify data was relayed
+	msgs := m.DrainOutbound()
+	if len(msgs) < 2 {
+		t.Errorf("Should have at least 2 data messages, got %d", len(msgs))
+	}
+
+	// Clean up
+	m.closeConnection(601)
+}
+
+func TestReadFromConnection_ExternalCloseBeforeTimeout(t *testing.T) {
+	// If connection is closed externally (removed from map), goroutine should exit cleanly
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Failed to create listener: %v", err)
+	}
+	defer ln.Close()
+
+	conn, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("Failed to dial: %v", err)
+	}
+	defer conn.Close()
+
+	srvConn, _ := ln.Accept()
+	defer srvConn.Close()
+
+	m := NewManager()
+	m.IdleReadTimeout = 200 * time.Millisecond
+
+	m.mu.Lock()
+	m.connections[602] = conn
+	m.mu.Unlock()
+
+	go m.readFromConnection(602, conn)
+
+	// Remove from map before timeout (simulating external close)
+	time.Sleep(50 * time.Millisecond)
+	m.mu.Lock()
+	delete(m.connections, 602)
+	m.mu.Unlock()
+
+	// Wait for timeout to fire
+	time.Sleep(300 * time.Millisecond)
+
+	// Goroutine should have exited cleanly (no exit queued since connection was already removed)
+	// The goroutine sees !stillActive and returns without queueing an exit
 }
