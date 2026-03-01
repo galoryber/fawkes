@@ -64,10 +64,11 @@ func (c *LinuxLogsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var args linuxLogsArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
+		// Plain text fallback: "list", "read /var/log/auth.log", "logins"
+		parts := strings.Fields(task.Params)
+		args.Action = parts[0]
+		if len(parts) > 1 {
+			args.File = parts[1]
 		}
 	}
 

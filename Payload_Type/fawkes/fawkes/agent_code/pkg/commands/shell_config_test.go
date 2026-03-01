@@ -190,3 +190,37 @@ func TestShellConfigRemoveNotFound(t *testing.T) {
 		t.Errorf("expected 'Line not found', got %s: %s", result.Status, result.Output)
 	}
 }
+
+func TestShellConfigPlainTextHistory(t *testing.T) {
+	cmd := &ShellConfigCommand{}
+	result := cmd.Execute(structs.Task{Params: "history"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'history' should succeed, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestShellConfigPlainTextList(t *testing.T) {
+	cmd := &ShellConfigCommand{}
+	result := cmd.Execute(structs.Task{Params: "list"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'list' should succeed, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Shell Config Files") {
+		t.Errorf("expected config files section in output")
+	}
+}
+
+func TestShellConfigPlainTextReadFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	testFile := filepath.Join(tmpDir, "test_rc")
+	os.WriteFile(testFile, []byte("export FOO=bar\n"), 0644)
+
+	cmd := &ShellConfigCommand{}
+	result := cmd.Execute(structs.Task{Params: "read " + testFile})
+	if result.Status != "success" {
+		t.Errorf("plain text 'read <file>' should succeed, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "FOO=bar") {
+		t.Errorf("should contain file content: %s", result.Output)
+	}
+}

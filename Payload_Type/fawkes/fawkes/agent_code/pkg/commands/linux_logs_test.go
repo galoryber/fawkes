@@ -181,3 +181,19 @@ func TestUtmpTypeName(t *testing.T) {
 		}
 	}
 }
+
+func TestLinuxLogsPlainTextList(t *testing.T) {
+	cmd := &LinuxLogsCommand{}
+	result := cmd.Execute(structs.Task{Params: "list"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'list' should succeed, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestLinuxLogsPlainTextLogins(t *testing.T) {
+	cmd := &LinuxLogsCommand{}
+	result := cmd.Execute(structs.Task{Params: "logins"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'logins' should succeed, got %s: %s", result.Status, result.Output)
+	}
+}

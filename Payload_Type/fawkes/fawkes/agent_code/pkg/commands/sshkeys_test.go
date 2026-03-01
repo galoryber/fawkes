@@ -495,3 +495,19 @@ func TestSshKeysEnumerate_NonExistentUser(t *testing.T) {
 		t.Errorf("expected error for non-existent user, got %q", result.Status)
 	}
 }
+
+func TestSshKeysPlainTextEnumerate(t *testing.T) {
+	cmd := &SSHKeysCommand{}
+	result := cmd.Execute(structs.Task{Params: "enumerate"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'enumerate' should succeed, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestSshKeysPlainTextList(t *testing.T) {
+	cmd := &SSHKeysCommand{}
+	result := cmd.Execute(structs.Task{Params: "list"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'list' should succeed, got %s: %s", result.Status, result.Output)
+	}
+}

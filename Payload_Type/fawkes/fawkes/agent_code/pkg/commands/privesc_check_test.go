@@ -160,3 +160,30 @@ func TestIsReadable(t *testing.T) {
 		}
 	}
 }
+
+func TestPrivescCheckPlainTextSuid(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	result := cmd.Execute(structs.Task{Params: "suid"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'suid' should succeed, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "SUID binaries") {
+		t.Errorf("should contain SUID section")
+	}
+}
+
+func TestPrivescCheckPlainTextCapabilities(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	result := cmd.Execute(structs.Task{Params: "capabilities"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'capabilities' should succeed, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestPrivescCheckPlainTextWritable(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	result := cmd.Execute(structs.Task{Params: "writable"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'writable' should succeed, got %s: %s", result.Status, result.Output)
+	}
+}

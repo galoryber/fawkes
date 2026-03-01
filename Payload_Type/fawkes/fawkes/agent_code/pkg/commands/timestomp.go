@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -34,10 +35,21 @@ type TimestompParams struct {
 func (c *TimestompCommand) Execute(task structs.Task) structs.CommandResult {
 	var params TimestompParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
+		// Plain text fallback: "get /path", "copy /target /source", "set /path 2024-01-01T00:00:00Z"
+		parts := strings.Fields(task.Params)
+		if len(parts) >= 1 {
+			params.Action = parts[0]
+		}
+		if len(parts) >= 2 {
+			params.Target = parts[1]
+		}
+		if len(parts) >= 3 {
+			switch params.Action {
+			case "copy":
+				params.Source = parts[2]
+			case "set":
+				params.Timestamp = parts[2]
+			}
 		}
 	}
 

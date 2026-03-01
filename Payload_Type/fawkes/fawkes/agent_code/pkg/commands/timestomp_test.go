@@ -181,3 +181,17 @@ func TestTimestompCopyMissingSource(t *testing.T) {
 		t.Errorf("expected error about source file, got: %s", result.Output)
 	}
 }
+
+func TestTimestompPlainTextGet(t *testing.T) {
+	tmpFile := filepath.Join(t.TempDir(), "test.txt")
+	os.WriteFile(tmpFile, []byte("hello"), 0644)
+
+	cmd := &TimestompCommand{}
+	result := cmd.Execute(structs.Task{Params: "get " + tmpFile})
+	if result.Status != "success" {
+		t.Errorf("plain text 'get <file>' should succeed, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Accessed:") {
+		t.Errorf("expected timestamp output: %s", result.Output)
+	}
+}

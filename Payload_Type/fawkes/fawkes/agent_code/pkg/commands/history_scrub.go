@@ -29,10 +29,11 @@ func (c *HistoryScrubCommand) Execute(task structs.Task) structs.CommandResult {
 	var params HistoryScrubParams
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
+			// Plain text fallback: "list", "clear", "clear-all", "clear root"
+			parts := strings.Fields(task.Params)
+			params.Action = parts[0]
+			if len(parts) > 1 {
+				params.User = parts[1]
 			}
 		}
 	}

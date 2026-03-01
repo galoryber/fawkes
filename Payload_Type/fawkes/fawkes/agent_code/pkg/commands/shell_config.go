@@ -75,10 +75,14 @@ func (c *ShellConfigCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var args shellConfigArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
+		// Plain text fallback: "history", "list", "read .bashrc", "inject .bashrc <line>"
+		parts := strings.Fields(task.Params)
+		args.Action = parts[0]
+		if len(parts) > 1 {
+			args.File = parts[1]
+		}
+		if len(parts) > 2 {
+			args.Line = strings.Join(parts[2:], " ")
 		}
 	}
 

@@ -558,3 +558,27 @@ func TestCredCloudFileContentTruncation(t *testing.T) {
 		}
 	}
 }
+
+func TestCredHarvestPlainTextShadow(t *testing.T) {
+	cmd := &CredHarvestCommand{}
+	result := cmd.Execute(structs.Task{Params: "shadow"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'shadow' should succeed, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestCredHarvestPlainTextAll(t *testing.T) {
+	cmd := &CredHarvestCommand{}
+	result := cmd.Execute(structs.Task{Params: "all"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'all' should succeed, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestCredHarvestPlainTextWithUser(t *testing.T) {
+	cmd := &CredHarvestCommand{}
+	result := cmd.Execute(structs.Task{Params: "shadow root"})
+	if result.Status != "success" {
+		t.Errorf("plain text 'shadow root' should succeed, got %s: %s", result.Status, result.Output)
+	}
+}
