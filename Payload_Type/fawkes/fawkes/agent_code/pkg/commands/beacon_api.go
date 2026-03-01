@@ -4,8 +4,6 @@
 package commands
 
 import (
-	"encoding/binary"
-	"fmt"
 	"syscall"
 	"unsafe"
 
