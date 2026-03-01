@@ -40,10 +40,20 @@ func (c *XattrCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var args xattrArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
+		// Parse "action path [name] [value]"
+		parts := strings.Fields(task.Params)
+		if len(parts) >= 2 {
+			args.Action = parts[0]
+			args.Path = parts[1]
+			if len(parts) >= 3 {
+				args.Name = parts[2]
+			}
+			if len(parts) >= 4 {
+				args.Value = strings.Join(parts[3:], " ")
+			}
+		} else if len(parts) == 1 {
+			args.Path = parts[0]
+			args.Action = "list"
 		}
 	}
 

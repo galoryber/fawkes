@@ -29,11 +29,7 @@ type FindParams struct {
 func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	var params FindParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		params.Pattern = strings.TrimSpace(task.Params)
 	}
 
 	if params.Path == "" {

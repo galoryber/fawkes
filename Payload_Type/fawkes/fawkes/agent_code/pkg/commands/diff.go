@@ -38,10 +38,12 @@ func (c *DiffCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var args diffArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
+		parts := strings.Fields(task.Params)
+		if len(parts) >= 2 {
+			args.File1 = parts[0]
+			args.File2 = parts[1]
+		} else if len(parts) == 1 {
+			args.File1 = parts[0]
 		}
 	}
 

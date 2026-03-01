@@ -106,13 +106,14 @@ func TestFindCancellation(t *testing.T) {
 	}
 }
 
-func TestFindBadJSON(t *testing.T) {
+func TestFindPlainText(t *testing.T) {
 	cmd := &FindCommand{}
 	task := structs.NewTask("t", "find", "")
-	task.Params = "not json"
+	task.Params = "*.go"
 	result := cmd.Execute(task)
-	if result.Status != "error" {
-		t.Errorf("expected error for bad JSON, got %q", result.Status)
+	// Plain text should be treated as pattern (not a parse error)
+	if result.Status == "error" && strings.Contains(result.Output, "Error parsing") {
+		t.Errorf("plain text should be treated as pattern, got parse error: %s", result.Output)
 	}
 }
 

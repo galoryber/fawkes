@@ -30,11 +30,12 @@ func TestFindCommand(t *testing.T) {
 		}
 	})
 
-	t.Run("invalid JSON", func(t *testing.T) {
-		task := structs.Task{Params: "not json"}
+	t.Run("plain text as pattern", func(t *testing.T) {
+		task := structs.Task{Params: "*.go"}
 		result := cmd.Execute(task)
-		if result.Status != "error" {
-			t.Errorf("expected error for invalid JSON, got %q", result.Status)
+		// Plain text treated as pattern — should not return a parse error
+		if result.Status == "error" && strings.Contains(result.Output, "Error parsing") {
+			t.Errorf("plain text should be treated as pattern, got parse error: %s", result.Output)
 		}
 	})
 

@@ -45,10 +45,13 @@ func (c *EncryptCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var args encryptArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
+		// Parse "encrypt /path/file" or "decrypt /path/file"
+		parts := strings.Fields(task.Params)
+		if len(parts) >= 2 {
+			args.Action = parts[0]
+			args.Path = parts[1]
+		} else if len(parts) == 1 {
+			args.Path = parts[0]
 		}
 	}
 

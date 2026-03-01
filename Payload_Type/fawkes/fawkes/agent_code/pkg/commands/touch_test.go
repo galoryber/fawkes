@@ -33,11 +33,16 @@ func TestTouchEmptyParams(t *testing.T) {
 	}
 }
 
-func TestTouchBadJSON(t *testing.T) {
+func TestTouchPlainText(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "plain.txt")
 	c := &TouchCommand{}
-	result := c.Execute(structs.Task{Params: "not json"})
-	if result.Status != "error" {
-		t.Errorf("expected error, got %s", result.Status)
+	result := c.Execute(structs.Task{Params: path})
+	if result.Status != "success" {
+		t.Errorf("plain text path should work, got %s: %s", result.Status, result.Output)
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Error("file should be created from plain text path")
 	}
 }
 

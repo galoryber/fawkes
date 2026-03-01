@@ -39,11 +39,7 @@ func (c *SortCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var args sortArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		args.Path = strings.TrimSpace(task.Params)
 	}
 
 	if args.Path == "" {

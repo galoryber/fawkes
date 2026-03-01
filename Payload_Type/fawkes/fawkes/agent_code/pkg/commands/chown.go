@@ -36,10 +36,17 @@ func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var args chownArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
+		// Parse "owner:group path" or "owner path"
+		parts := strings.Fields(task.Params)
+		if len(parts) >= 2 {
+			ownerGroup := parts[0]
+			args.Path = parts[1]
+			if idx := strings.IndexByte(ownerGroup, ':'); idx >= 0 {
+				args.Owner = ownerGroup[:idx]
+				args.Group = ownerGroup[idx+1:]
+			} else {
+				args.Owner = ownerGroup
+			}
 		}
 	}
 

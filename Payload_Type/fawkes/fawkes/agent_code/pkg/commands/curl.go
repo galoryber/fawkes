@@ -68,11 +68,7 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var args curlArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		args.URL = strings.TrimSpace(task.Params)
 	}
 
 	if args.URL == "" {
