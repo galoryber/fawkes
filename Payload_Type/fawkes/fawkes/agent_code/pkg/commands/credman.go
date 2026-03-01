@@ -35,13 +35,7 @@ type credential struct {
 	UserName           *uint16
 }
 
-// Credential type constants
-const (
-	credTypeGeneric           = 1
-	credTypeDomainPassword    = 2
-	credTypeDomainCertificate = 3
-	credTypeDomainVisible     = 4
-)
+// credType constants and isPrintable/credTypeName/credPersistName moved to command_helpers.go
 
 type CredmanCommand struct{}
 
@@ -248,39 +242,4 @@ func extractCredBlob(cred *credential) string {
 	return fmt.Sprintf("[binary data, %d bytes]", cred.CredentialBlobSize)
 }
 
-func isPrintable(s string) bool {
-	for _, r := range s {
-		if r < 0x20 || r == 0x7f {
-			return false
-		}
-	}
-	return len(s) > 0
-}
-
-func credTypeName(t uint32) string {
-	switch t {
-	case credTypeGeneric:
-		return "Generic"
-	case credTypeDomainPassword:
-		return "Domain Password"
-	case credTypeDomainCertificate:
-		return "Domain Certificate"
-	case credTypeDomainVisible:
-		return "Domain Visible Password"
-	default:
-		return fmt.Sprintf("Unknown (%d)", t)
-	}
-}
-
-func credPersistName(p uint32) string {
-	switch p {
-	case 1:
-		return "Session"
-	case 2:
-		return "Local Machine"
-	case 3:
-		return "Enterprise"
-	default:
-		return fmt.Sprintf("Unknown (%d)", p)
-	}
-}
+// isPrintable, credTypeName, credPersistName moved to command_helpers.go

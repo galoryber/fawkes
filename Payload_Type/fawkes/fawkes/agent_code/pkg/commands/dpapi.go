@@ -347,47 +347,6 @@ func dpapiDecryptBlob(data []byte) ([]byte, error) {
 	return result, nil
 }
 
-// dpapiIsPrintable checks if a byte slice contains printable ASCII/UTF-8
-func dpapiIsPrintable(data []byte) bool {
-	for _, b := range data {
-		if b < 0x20 && b != '\n' && b != '\r' && b != '\t' {
-			return false
-		}
-	}
-	return true
-}
-
-// isGUID checks if a string looks like a GUID
-func isGUID(s string) bool {
-	if len(s) != 36 {
-		return false
-	}
-	for i, c := range s {
-		if i == 8 || i == 13 || i == 18 || i == 23 {
-			if c != '-' {
-				return false
-			}
-		} else {
-			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-// extractXMLTag extracts the text content of an XML tag
-func extractXMLTag(xml, tag string) string {
-	start := strings.Index(xml, "<"+tag+">")
-	if start == -1 {
-		return ""
-	}
-	start += len(tag) + 2
-	end := strings.Index(xml[start:], "</"+tag+">")
-	if end == -1 {
-		return ""
-	}
-	return xml[start : start+end]
-}
+// dpapiIsPrintable, isGUID, extractXMLTag moved to command_helpers.go
 
 // WLAN API structures are defined in wlanprofiles_windows.go

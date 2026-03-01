@@ -518,27 +518,4 @@ func parseGUID(data []byte) windows.GUID {
 	}
 }
 
-func classifySessionSecurity(name string) string {
-	lower := strings.ToLower(name)
-	switch {
-	case strings.Contains(lower, "defender") || strings.Contains(lower, "antimalware"):
-		return "!! DEFENDER/AV"
-	case strings.Contains(lower, "sysmon"):
-		return "!! SYSMON"
-	case strings.Contains(lower, "edr") || strings.Contains(lower, "sentinel") ||
-		strings.Contains(lower, "crowdstrike") || strings.Contains(lower, "carbon"):
-		return "!! EDR"
-	case strings.Contains(lower, "security"):
-		return "! Security"
-	case strings.Contains(lower, "audit"):
-		return "! Audit"
-	case strings.Contains(lower, "etw") || strings.Contains(lower, "eventlog"):
-		return "Telemetry"
-	case strings.Contains(lower, "kernel"):
-		return "Kernel"
-	case strings.Contains(lower, "diagtrack") || strings.Contains(lower, "autologger"):
-		return "Diagnostics"
-	default:
-		return ""
-	}
-}
+// classifySessionSecurity moved to command_helpers.go
