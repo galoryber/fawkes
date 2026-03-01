@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -35,26 +34,7 @@ type prefetchParams struct {
 	Count  int    `json:"count"`
 }
 
-// Prefetch file header (versions 17/23/26/30)
-type prefetchHeader struct {
-	Version        uint32
-	Signature      uint32 // "SCCA"
-	FileSize       uint32
-	ExecutableName [60]byte
-	PrefetchHash   uint32
-}
-
-// Parsed prefetch entry
-type prefetchEntry struct {
-	FileName     string
-	ExeName      string
-	Hash         uint32
-	RunCount     uint32
-	LastRunTime  time.Time
-	LastRunTimes []time.Time
-	FileSize     int64
-	ModTime      time.Time
-}
+// prefetchHeader, prefetchEntry, parsePrefetchData moved to forensics_helpers.go
 
 // prefetchOutputEntry is the JSON output format for browser script rendering
 type prefetchOutputEntry struct {
@@ -372,8 +352,8 @@ func prefetchClear() structs.CommandResult {
 	}
 }
 
-// parsePrefetchFile reads and parses a Windows Prefetch file
-// Supports versions 17 (XP), 23 (Vista/7), 26 (8.1), 30 (10/11)
+// parsePrefetchFile reads and parses a Windows Prefetch file.
+// Handles MAM decompression (Windows 10+) then delegates to parsePrefetchData.
 func parsePrefetchFile(path string) (*prefetchEntry, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -381,7 +361,6 @@ func parsePrefetchFile(path string) (*prefetchEntry, error) {
 	}
 
 	// Windows 10+ prefetch files are MAM compressed
-	// Check for MAM signature (0x44, 0x41, 0x4D, 0x04 = "MAM\x04")
 	if len(data) >= 8 && data[0] == 0x4D && data[1] == 0x41 && data[2] == 0x4D {
 		decompressed, err := decompressMAM(data)
 		if err != nil {
@@ -390,78 +369,7 @@ func parsePrefetchFile(path string) (*prefetchEntry, error) {
 		data = decompressed
 	}
 
-	if len(data) < 84 {
-		return nil, fmt.Errorf("file too small (%d bytes)", len(data))
-	}
-
-	// Parse header
-	version := binary.LittleEndian.Uint32(data[0:4])
-	signature := binary.LittleEndian.Uint32(data[4:8])
-
-	if signature != 0x41434353 { // "SCCA"
-		return nil, fmt.Errorf("invalid signature: 0x%08X", signature)
-	}
-
-	// Extract executable name (UTF-16LE, 60 bytes at offset 16)
-	exeName := decodeUTF16(data[16:76])
-
-	// Hash at offset 76
-	hash := binary.LittleEndian.Uint32(data[76:80])
-
-	entry := &prefetchEntry{
-		ExeName: exeName,
-		Hash:    hash,
-	}
-
-	// Version-specific parsing
-	switch version {
-	case 17: // Windows XP
-		if len(data) >= 100 {
-			entry.RunCount = binary.LittleEndian.Uint32(data[90:94])
-			entry.LastRunTime = filetimeToTime(int64(binary.LittleEndian.Uint64(data[78:86])))
-		}
-	case 23: // Windows Vista/7
-		if len(data) >= 160 {
-			entry.RunCount = binary.LittleEndian.Uint32(data[152:156])
-			entry.LastRunTime = filetimeToTime(int64(binary.LittleEndian.Uint64(data[128:136])))
-		}
-	case 26: // Windows 8.1
-		if len(data) >= 224 {
-			entry.RunCount = binary.LittleEndian.Uint32(data[208:212])
-			// 8 last run times starting at offset 128
-			for i := 0; i < 8; i++ {
-				off := 128 + i*8
-				if off+8 <= len(data) {
-					t := filetimeToTime(int64(binary.LittleEndian.Uint64(data[off : off+8])))
-					if !t.IsZero() && t.Year() > 2000 {
-						entry.LastRunTimes = append(entry.LastRunTimes, t)
-					}
-				}
-			}
-			if len(entry.LastRunTimes) > 0 {
-				entry.LastRunTime = entry.LastRunTimes[0]
-			}
-		}
-	case 30, 31: // Windows 10/11
-		if len(data) >= 224 {
-			entry.RunCount = binary.LittleEndian.Uint32(data[208:212])
-			// 8 last run times starting at offset 128
-			for i := 0; i < 8; i++ {
-				off := 128 + i*8
-				if off+8 <= len(data) {
-					t := filetimeToTime(int64(binary.LittleEndian.Uint64(data[off : off+8])))
-					if !t.IsZero() && t.Year() > 2000 {
-						entry.LastRunTimes = append(entry.LastRunTimes, t)
-					}
-				}
-			}
-			if len(entry.LastRunTimes) > 0 {
-				entry.LastRunTime = entry.LastRunTimes[0]
-			}
-		}
-	}
-
-	return entry, nil
+	return parsePrefetchData(data)
 }
 
 var (

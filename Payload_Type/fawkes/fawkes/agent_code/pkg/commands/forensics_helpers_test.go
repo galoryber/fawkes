@@ -699,3 +699,295 @@ func TestShimcacheWin8Roundtrip(t *testing.T) {
 		}
 	}
 }
+
+// --- Prefetch SCCA parsing tests ---
+
+// buildPrefetchSCCA constructs a minimal Prefetch SCCA binary blob for testing.
+// version: 17 (XP), 23 (Vista/7), 26 (8.1), 30 (10/11)
+func buildPrefetchSCCA(version uint32, exeName string, hash uint32, runCount uint32, lastRunFT uint64) []byte {
+	// Allocate enough space for the largest version (26/30 need >= 224 bytes)
+	size := 256
+	data := make([]byte, size)
+
+	// Version at offset 0
+	binary.LittleEndian.PutUint32(data[0:4], version)
+
+	// SCCA signature at offset 4
+	binary.LittleEndian.PutUint32(data[4:8], prefetchSCCASig)
+
+	// File size at offset 8
+	binary.LittleEndian.PutUint32(data[8:12], uint32(size))
+
+	// Executable name (UTF-16LE, 60 bytes at offset 16)
+	nameBytes := encodeUTF16LE(exeName)
+	if len(nameBytes) > 60 {
+		nameBytes = nameBytes[:60]
+	}
+	copy(data[16:76], nameBytes)
+
+	// Hash at offset 76
+	binary.LittleEndian.PutUint32(data[76:80], hash)
+
+	// Version-specific fields
+	switch version {
+	case 17: // XP: LastRunTime at 78, RunCount at 90
+		binary.LittleEndian.PutUint64(data[78:86], lastRunFT)
+		binary.LittleEndian.PutUint32(data[90:94], runCount)
+	case 23: // Vista/7: LastRunTime at 128, RunCount at 152
+		binary.LittleEndian.PutUint64(data[128:136], lastRunFT)
+		binary.LittleEndian.PutUint32(data[152:156], runCount)
+	case 26: // 8.1: RunCount at 208, LastRunTimes at 128 (8 x FILETIME)
+		binary.LittleEndian.PutUint32(data[208:212], runCount)
+		binary.LittleEndian.PutUint64(data[128:136], lastRunFT)
+	case 30, 31: // 10/11: Same layout as 26
+		binary.LittleEndian.PutUint32(data[208:212], runCount)
+		binary.LittleEndian.PutUint64(data[128:136], lastRunFT)
+	}
+
+	return data
+}
+
+// buildPrefetchSCCAMultiRun constructs a Prefetch SCCA blob with multiple run times (version 26/30).
+func buildPrefetchSCCAMultiRun(version uint32, exeName string, hash uint32, runCount uint32, runTimes []uint64) []byte {
+	data := buildPrefetchSCCA(version, exeName, hash, runCount, 0)
+
+	// Write up to 8 run times starting at offset 128
+	for i, ft := range runTimes {
+		if i >= 8 {
+			break
+		}
+		off := 128 + i*8
+		binary.LittleEndian.PutUint64(data[off:off+8], ft)
+	}
+
+	return data
+}
+
+func TestParsePrefetchDataInvalidSignature(t *testing.T) {
+	data := make([]byte, 100)
+	binary.LittleEndian.PutUint32(data[0:4], 30)
+	binary.LittleEndian.PutUint32(data[4:8], 0xDEADBEEF)
+
+	_, err := parsePrefetchData(data)
+	if err == nil {
+		t.Fatal("expected error for invalid signature")
+	}
+}
+
+func TestParsePrefetchDataTooSmall(t *testing.T) {
+	data := make([]byte, 50) // < 84 bytes minimum
+	_, err := parsePrefetchData(data)
+	if err == nil {
+		t.Fatal("expected error for too-small data")
+	}
+}
+
+func TestParsePrefetchDataVersion17(t *testing.T) {
+	ft := uint64(116444736000000000) // Unix epoch
+	// Note: v17 FILETIME at offset 78 overlaps with hash at 76-79.
+	// Build with hash=0, then manually set hash bytes at 76-77 only.
+	data := buildPrefetchSCCA(17, "CMD.EXE", 0, 42, ft)
+	// Set hash lower 2 bytes at 76-77 (won't be overwritten by FILETIME at 78+)
+	data[76] = 0xDD
+	data[77] = 0xCC
+
+	entry, err := parsePrefetchData(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.ExeName != "CMD.EXE" {
+		t.Errorf("ExeName: expected 'CMD.EXE', got '%s'", entry.ExeName)
+	}
+	// Hash reads all 4 bytes at 76-79; bytes 78-79 come from FILETIME overlap
+	if entry.Hash == 0 {
+		t.Error("Hash should be non-zero (has partial FILETIME bytes)")
+	}
+	if entry.RunCount != 42 {
+		t.Errorf("RunCount: expected 42, got %d", entry.RunCount)
+	}
+	if entry.LastRunTime.Year() != 1970 {
+		t.Errorf("LastRunTime: expected 1970, got %d", entry.LastRunTime.Year())
+	}
+}
+
+func TestParsePrefetchDataVersion23(t *testing.T) {
+	ft := uint64(133801632000000000) // 2025-01-01
+	data := buildPrefetchSCCA(23, "NOTEPAD.EXE", 0x12345678, 100, ft)
+
+	entry, err := parsePrefetchData(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.ExeName != "NOTEPAD.EXE" {
+		t.Errorf("ExeName: expected 'NOTEPAD.EXE', got '%s'", entry.ExeName)
+	}
+	if entry.Hash != 0x12345678 {
+		t.Errorf("Hash: expected 0x12345678, got 0x%08X", entry.Hash)
+	}
+	if entry.RunCount != 100 {
+		t.Errorf("RunCount: expected 100, got %d", entry.RunCount)
+	}
+	if entry.LastRunTime.Year() != 2025 {
+		t.Errorf("LastRunTime: expected year 2025, got %d", entry.LastRunTime.Year())
+	}
+}
+
+func TestParsePrefetchDataVersion26(t *testing.T) {
+	ft := uint64(133801632000000000) // 2025-01-01
+	data := buildPrefetchSCCA(26, "EXPLORER.EXE", 0xDEAD, 5, ft)
+
+	entry, err := parsePrefetchData(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.ExeName != "EXPLORER.EXE" {
+		t.Errorf("ExeName: expected 'EXPLORER.EXE', got '%s'", entry.ExeName)
+	}
+	if entry.RunCount != 5 {
+		t.Errorf("RunCount: expected 5, got %d", entry.RunCount)
+	}
+	if entry.LastRunTime.Year() != 2025 {
+		t.Errorf("LastRunTime: expected year 2025, got %d", entry.LastRunTime.Year())
+	}
+	if len(entry.LastRunTimes) != 1 {
+		t.Errorf("LastRunTimes: expected 1 entry, got %d", len(entry.LastRunTimes))
+	}
+}
+
+func TestParsePrefetchDataVersion30(t *testing.T) {
+	ft := uint64(133801632000000000)
+	data := buildPrefetchSCCA(30, "POWERSHELL.EXE", 0xBEEF, 200, ft)
+
+	entry, err := parsePrefetchData(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.ExeName != "POWERSHELL.EXE" {
+		t.Errorf("ExeName: expected 'POWERSHELL.EXE', got '%s'", entry.ExeName)
+	}
+	if entry.Hash != 0xBEEF {
+		t.Errorf("Hash: expected 0xBEEF, got 0x%08X", entry.Hash)
+	}
+	if entry.RunCount != 200 {
+		t.Errorf("RunCount: expected 200, got %d", entry.RunCount)
+	}
+}
+
+func TestParsePrefetchDataVersion31(t *testing.T) {
+	ft := uint64(133801632000000000)
+	data := buildPrefetchSCCA(31, "SVCHOST.EXE", 0x1234, 50, ft)
+
+	entry, err := parsePrefetchData(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.ExeName != "SVCHOST.EXE" {
+		t.Errorf("ExeName: expected 'SVCHOST.EXE', got '%s'", entry.ExeName)
+	}
+	if entry.RunCount != 50 {
+		t.Errorf("RunCount: expected 50, got %d", entry.RunCount)
+	}
+}
+
+func TestParsePrefetchDataMultipleRunTimes(t *testing.T) {
+	runTimes := []uint64{
+		133801632000000000, // 2025-01-01
+		133793856000000000, // ~2024-12-23
+		133786080000000000, // ~2024-12-14
+	}
+	data := buildPrefetchSCCAMultiRun(30, "FAWKES.EXE", 0xF00D, 3, runTimes)
+
+	entry, err := parsePrefetchData(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entry.LastRunTimes) != 3 {
+		t.Fatalf("expected 3 run times, got %d", len(entry.LastRunTimes))
+	}
+	if entry.LastRunTime.Year() != 2025 {
+		t.Errorf("LastRunTime: expected year 2025, got %d", entry.LastRunTime.Year())
+	}
+}
+
+func TestParsePrefetchDataMultiRunSkipsZero(t *testing.T) {
+	runTimes := []uint64{
+		133801632000000000, // 2025-01-01
+		0,                  // Zero — should be filtered
+		133786080000000000, // ~2024-12-14
+	}
+	data := buildPrefetchSCCAMultiRun(26, "TEST.EXE", 0x0, 2, runTimes)
+
+	entry, err := parsePrefetchData(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entry.LastRunTimes) != 2 {
+		t.Errorf("expected 2 valid run times (zero filtered), got %d", len(entry.LastRunTimes))
+	}
+}
+
+func TestParsePrefetchDataEmptyExeName(t *testing.T) {
+	data := buildPrefetchSCCA(30, "", 0x0, 0, 0)
+
+	entry, err := parsePrefetchData(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.ExeName != "" {
+		t.Errorf("expected empty ExeName, got '%s'", entry.ExeName)
+	}
+}
+
+func TestParsePrefetchDataZeroRunCount(t *testing.T) {
+	data := buildPrefetchSCCA(30, "CMD.EXE", 0x1, 0, 0)
+
+	entry, err := parsePrefetchData(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.RunCount != 0 {
+		t.Errorf("expected 0 run count, got %d", entry.RunCount)
+	}
+}
+
+func TestParsePrefetchDataUnknownVersion(t *testing.T) {
+	data := buildPrefetchSCCA(99, "UNKNOWN.EXE", 0xFFFF, 0, 0)
+
+	entry, err := parsePrefetchData(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.ExeName != "UNKNOWN.EXE" {
+		t.Errorf("expected 'UNKNOWN.EXE', got '%s'", entry.ExeName)
+	}
+	if entry.RunCount != 0 {
+		t.Errorf("expected 0 run count for unknown version, got %d", entry.RunCount)
+	}
+}
+
+func TestParsePrefetchDataMinimumSize(t *testing.T) {
+	// Exactly 84 bytes — version XP won't have run count (needs >= 100)
+	data := make([]byte, 84)
+	binary.LittleEndian.PutUint32(data[0:4], 17)
+	binary.LittleEndian.PutUint32(data[4:8], prefetchSCCASig)
+	nameBytes := encodeUTF16LE("A.EXE")
+	copy(data[16:76], nameBytes)
+	binary.LittleEndian.PutUint32(data[76:80], 0x01)
+
+	entry, err := parsePrefetchData(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if entry.ExeName != "A.EXE" {
+		t.Errorf("expected 'A.EXE', got '%s'", entry.ExeName)
+	}
+	if entry.RunCount != 0 {
+		t.Errorf("expected 0 run count (data too short for v17 fields), got %d", entry.RunCount)
+	}
+}
+
+func TestPrefetchSCCASigConstant(t *testing.T) {
+	if prefetchSCCASig != 0x41434353 {
+		t.Errorf("expected 0x41434353, got 0x%08X", prefetchSCCASig)
+	}
+}
