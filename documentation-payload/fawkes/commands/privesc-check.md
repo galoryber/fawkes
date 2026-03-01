@@ -7,9 +7,10 @@ hidden = false
 
 ## Summary
 
-Privilege escalation enumeration for Linux and macOS. Scans for common privilege escalation vectors including SUID/SGID binaries, sudo rules, writable paths, and platform-specific checks.
+Cross-platform privilege escalation enumeration. Scans for common privilege escalation vectors with platform-specific checks for Windows, Linux, and macOS.
 
-- **Linux:** capabilities, containers
+- **Windows:** Token privileges (potato attacks, SeDebug, SeBackup), unquoted service paths, modifiable service binaries, AlwaysInstallElevated, auto-logon credentials, UAC configuration, LSA protection, writable PATH directories, unattended install files
+- **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers
 - **macOS:** LaunchDaemons/Agents, TCC database, dylib hijacking, SIP status
 
 ## Arguments
@@ -18,15 +19,23 @@ Privilege escalation enumeration for Linux and macOS. Scans for common privilege
 |----------|----------|---------|-------------|
 | action | No | all | Check to perform (see platform-specific actions below) |
 
-### Shared Actions (Linux + macOS)
+### Shared Actions (All Platforms)
 
 - **all** — Run all platform-appropriate checks
-- **suid** — Find SUID/SGID binaries, flag exploitable ones (find, python, docker, etc.)
-- **sudo** — Check `sudo -l` (non-interactive), read `/etc/sudoers` if accessible
-- **writable** — Find writable PATH directories, writable sensitive files/paths
+- **writable** — Find writable PATH directories and sensitive files/paths
+
+### Windows-Only Actions
+
+- **privileges** — Enumerate token privileges, flag exploitable ones (SeImpersonate, SeDebug, SeBackup, etc.) with exploitation guidance
+- **services** — Check for unquoted service paths, modifiable service binaries, and writable binary directories
+- **registry** — Check AlwaysInstallElevated, auto-logon credentials, LSA protection (RunAsPPL), Credential Guard, WSUS configuration
+- **uac** — Report UAC configuration (EnableLUA, ConsentPromptBehavior, Secure Desktop, FilterAdminToken)
+- **unattend** — Search for unattended install files (sysprep/Unattend.xml) and other credential-containing files
 
 ### Linux-Only Actions
 
+- **suid** — Find SUID/SGID binaries, flag exploitable ones (find, python, docker, etc.)
+- **sudo** — Check `sudo -l` (non-interactive), read `/etc/sudoers` if accessible
 - **capabilities** — Enumerate file capabilities via `getcap` and current process capabilities
 - **container** — Detect Docker, Kubernetes, LXC, overlay FS, container cgroups
 
@@ -41,38 +50,59 @@ Privilege escalation enumeration for Linux and macOS. Scans for common privilege
 
 ```
 privesc-check -action all
+privesc-check -action privileges
+privesc-check -action services
+privesc-check -action registry
+privesc-check -action uac
 privesc-check -action suid
 privesc-check -action launchdaemons
-privesc-check -action tcc
 ```
 
-### Example Output (macOS, all)
+### Example Output (Windows, all)
 
 ```
-=== macOS PRIVILEGE ESCALATION CHECK ===
+=== WINDOWS PRIVILEGE ESCALATION CHECK ===
 
---- SIP Status ---
-System Integrity Protection status: enabled.
-[*] SIP is enabled — standard protections active
-
---- SUID/SGID Binaries ---
-SUID binaries (12 found):
-  /usr/bin/sudo (-rwsr-xr-x, 378848 bytes)
-  /usr/bin/passwd (-rwsr-xr-x, 68624 bytes)
+--- Token Privileges ---
+Token privileges (23 total):
+  SeIncreaseQuotaPrivilege               [Disabled]
+  SeSecurityPrivilege                    [Disabled]
+  SeBackupPrivilege                      [Disabled]
+  SeImpersonatePrivilege                 [Enabled]
   ...
 
---- LaunchDaemons / LaunchAgents ---
-/Library/LaunchDaemons (System LaunchDaemons (run as root), 8 plists):
-/Library/LaunchAgents (System LaunchAgents (run as logged-in users), 3 plists):
+[!] EXPLOITABLE privileges (3):
+  [!] SeImpersonatePrivilege              [Enabled]  → Potato attacks (JuicyPotato, PrintSpoofer, GodPotato) → SYSTEM
+  [*] SeBackupPrivilege                   [Disabled] → Read any file (SAM, SYSTEM hives, NTDS.dit)
+  [!] SeDebugPrivilege                    [Enabled]  → Inject into/dump any process including LSASS
 
---- TCC Database ---
-User TCC: ~/Library/Application Support/com.apple.TCC/TCC.db
-  kTCCServiceAccessibility → com.example.app (auth=2) [!] Accessibility
-  kTCCServiceSystemPolicyAllFiles → com.backup.app (auth=2) [!] Full Disk Access
+Note: Disabled privileges can be enabled with 'getprivs -action enable -privilege <name>'
 
---- Dylib Hijacking ---
-  /usr/bin/ssh: Hardened Runtime (DYLD injection blocked)
-[!] /usr/local/lib is WRITABLE — dylib planting possible
+Integrity Level: High (S-1-16-12288) (elevated admin)
+
+--- UAC Configuration ---
+UAC is enabled (EnableLUA = 1)
+Admin consent prompt behavior: Prompt for consent for non-Windows binaries (5) — DEFAULT
+[*] Standard config — UAC bypass via auto-elevating binaries possible (fodhelper, computerdefaults, sdclt)
+
+--- Service Misconfigurations ---
+Checked 247 services:
+
+Unquoted service paths (2):
+  VulnerableService
+    Path: C:\Program Files\Vulnerable App\service.exe -start
+    Start: Auto
+[!] Unquoted paths with spaces allow binary planting in intermediate directories
+
+--- Registry Checks ---
+AlwaysInstallElevated:
+  Not enabled (safe)
+
+Auto-Logon Credentials:
+  Not configured
+
+LSA Protection:
+  [!] LSA Protection (RunAsPPL) is NOT enabled — LSASS can be dumped
 ```
 
 ## MITRE ATT&CK Mapping
@@ -81,5 +111,8 @@ User TCC: ~/Library/Application Support/com.apple.TCC/TCC.db
 |--------------|------|
 | T1548 | Abuse Elevation Control Mechanism |
 | T1548.001 | Setuid and Setgid |
+| T1548.002 | Bypass User Account Control |
+| T1574.009 | Path Interception by Unquoted Path |
+| T1552.001 | Unsecured Credentials: Credentials In Files |
 | T1613 | Container and Resource Discovery |
 | T1082 | System Information Discovery |
