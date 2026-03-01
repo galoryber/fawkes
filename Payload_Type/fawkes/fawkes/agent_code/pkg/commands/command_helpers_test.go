@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/binary"
 	"strings"
 	"testing"
 )
@@ -676,5 +677,282 @@ func TestBuildWQLTrigger(t *testing.T) {
 				t.Errorf("buildWQLTrigger() = %q, missing %q", result, tt.contains)
 			}
 		})
+	}
+}
+
+// --- BOF Argument Packing tests ---
+
+func TestBofPackArgs_Empty(t *testing.T) {
+	result, err := bofPackArgs(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil for empty input, got %v", result)
+	}
+}
+
+func TestBofPackArgs_IntArg(t *testing.T) {
+	result, err := bofPackArgs([]string{"i42"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4-byte total size prefix + 4-byte int = 8 bytes
+	if len(result) != 8 {
+		t.Fatalf("expected 8 bytes, got %d", len(result))
+	}
+	// Total size should be 4
+	totalSize := binary.LittleEndian.Uint32(result[:4])
+	if totalSize != 4 {
+		t.Errorf("expected total size 4, got %d", totalSize)
+	}
+	// Value should be 42 in little-endian
+	val := binary.LittleEndian.Uint32(result[4:8])
+	if val != 42 {
+		t.Errorf("expected 42, got %d", val)
+	}
+}
+
+func TestBofPackArgs_ShortArg(t *testing.T) {
+	result, err := bofPackArgs([]string{"s1024"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4-byte total size + 2-byte short = 6 bytes
+	if len(result) != 6 {
+		t.Fatalf("expected 6 bytes, got %d", len(result))
+	}
+	val := binary.LittleEndian.Uint16(result[4:6])
+	if val != 1024 {
+		t.Errorf("expected 1024, got %d", val)
+	}
+}
+
+func TestBofPackArgs_StringArg(t *testing.T) {
+	result, err := bofPackArgs([]string{"zhello"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4 total size + 4 string len + 5 chars + 1 null = 14 bytes
+	if len(result) != 14 {
+		t.Fatalf("expected 14 bytes, got %d", len(result))
+	}
+	// String length (including null)
+	strLen := binary.LittleEndian.Uint32(result[4:8])
+	if strLen != 6 { // "hello" + null
+		t.Errorf("expected string length 6, got %d", strLen)
+	}
+	// Verify "hello\0"
+	if string(result[8:13]) != "hello" {
+		t.Errorf("expected 'hello', got %q", string(result[8:13]))
+	}
+	if result[13] != 0 {
+		t.Errorf("expected null terminator, got %d", result[13])
+	}
+}
+
+func TestBofPackArgs_WideStringArg(t *testing.T) {
+	result, err := bofPackArgs([]string{"ZAB"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4 total size + 4 wstring len + 2*2 chars + 2 null = 14 bytes
+	if len(result) != 14 {
+		t.Fatalf("expected 14 bytes, got %d", len(result))
+	}
+	// Wide string length: 2*2 + 2 = 6 bytes
+	wstrLen := binary.LittleEndian.Uint32(result[4:8])
+	if wstrLen != 6 {
+		t.Errorf("expected wide string length 6, got %d", wstrLen)
+	}
+	// 'A' = 0x41,0x00 in UTF-16LE
+	if result[8] != 0x41 || result[9] != 0x00 {
+		t.Errorf("expected 'A' in UTF-16LE, got %02x %02x", result[8], result[9])
+	}
+	// 'B' = 0x42,0x00
+	if result[10] != 0x42 || result[11] != 0x00 {
+		t.Errorf("expected 'B' in UTF-16LE, got %02x %02x", result[10], result[11])
+	}
+	// Null terminator
+	if result[12] != 0x00 || result[13] != 0x00 {
+		t.Errorf("expected null terminator, got %02x %02x", result[12], result[13])
+	}
+}
+
+func TestBofPackArgs_BinaryArg(t *testing.T) {
+	result, err := bofPackArgs([]string{"bdeadbeef"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4 total size + 4 binary len + 4 bytes = 12
+	if len(result) != 12 {
+		t.Fatalf("expected 12 bytes, got %d", len(result))
+	}
+	binLen := binary.LittleEndian.Uint32(result[4:8])
+	if binLen != 4 {
+		t.Errorf("expected binary length 4, got %d", binLen)
+	}
+	if result[8] != 0xde || result[9] != 0xad || result[10] != 0xbe || result[11] != 0xef {
+		t.Errorf("expected deadbeef, got %x", result[8:12])
+	}
+}
+
+func TestBofPackArgs_MultipleArgs(t *testing.T) {
+	result, err := bofPackArgs([]string{"i100", "zhello", "s5"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4 total size + 4 int + (4 str len + 6 str) + 2 short = 20 bytes
+	if len(result) != 20 {
+		t.Fatalf("expected 20 bytes, got %d", len(result))
+	}
+	totalSize := binary.LittleEndian.Uint32(result[:4])
+	if totalSize != 16 {
+		t.Errorf("expected total size 16, got %d", totalSize)
+	}
+}
+
+func TestBofPackArgs_EmptyArg(t *testing.T) {
+	_, err := bofPackArgs([]string{""})
+	if err == nil {
+		t.Error("expected error for empty argument")
+	}
+}
+
+func TestBofPackArgs_UnknownType(t *testing.T) {
+	_, err := bofPackArgs([]string{"x42"})
+	if err == nil {
+		t.Error("expected error for unknown type prefix")
+	}
+}
+
+func TestBofPackArgs_InvalidHex(t *testing.T) {
+	_, err := bofPackArgs([]string{"bZZZZ"})
+	if err == nil {
+		t.Error("expected error for invalid hex")
+	}
+}
+
+func TestBofPackArgs_InvalidInt(t *testing.T) {
+	_, err := bofPackArgs([]string{"iabc"})
+	if err == nil {
+		t.Error("expected error for invalid integer")
+	}
+}
+
+func TestBofPackArgs_IntOverflow(t *testing.T) {
+	_, err := bofPackArgs([]string{"i99999999999"})
+	if err == nil {
+		t.Error("expected error for int overflow")
+	}
+}
+
+func TestBofPackArgs_ShortOverflow(t *testing.T) {
+	_, err := bofPackArgs([]string{"s70000"})
+	if err == nil {
+		t.Error("expected error for short overflow")
+	}
+}
+
+func TestBofPackString_Empty(t *testing.T) {
+	result := bofPackString("")
+	// 4-byte length + 1-byte null = 5
+	if len(result) != 5 {
+		t.Fatalf("expected 5 bytes for empty string, got %d", len(result))
+	}
+	strLen := binary.LittleEndian.Uint32(result[:4])
+	if strLen != 1 {
+		t.Errorf("expected length 1 (just null), got %d", strLen)
+	}
+}
+
+func TestBofPackWideString_Empty(t *testing.T) {
+	result := bofPackWideString("")
+	// 4-byte length + 2-byte null = 6
+	if len(result) != 6 {
+		t.Fatalf("expected 6 bytes for empty wide string, got %d", len(result))
+	}
+	wstrLen := binary.LittleEndian.Uint32(result[:4])
+	if wstrLen != 2 {
+		t.Errorf("expected length 2 (just null), got %d", wstrLen)
+	}
+}
+
+// --- Thread Scan helpers tests ---
+
+func TestTsWaitReasonString_AllKnown(t *testing.T) {
+	tests := []struct {
+		reason uint32
+		want   string
+	}{
+		{0, "Executive"},
+		{1, "FreePage"},
+		{2, "PageIn"},
+		{3, "PoolAllocation"},
+		{4, "DelayExecution"},
+		{5, "Suspended"},
+		{6, "UserRequest"},
+		{7, "WrExecutive"},
+		{11, "WrDelayExecution"},
+		{12, "WrSuspended"},
+		{15, "WrQueue"},
+		{22, "WrTerminated"},
+		{30, "WrQuantumEnd"},
+		{37, "WrAlertByThreadId"},
+		{38, "WrDeferredPreempt"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			got := tsWaitReasonString(tt.reason)
+			if got != tt.want {
+				t.Errorf("tsWaitReasonString(%d) = %q, want %q", tt.reason, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTsWaitReasonString_Unknown(t *testing.T) {
+	got := tsWaitReasonString(99)
+	if got != "Unknown(99)" {
+		t.Errorf("tsWaitReasonString(99) = %q, want %q", got, "Unknown(99)")
+	}
+}
+
+func TestTsWaitReasonString_Boundary(t *testing.T) {
+	// MaximumWaitReason = 39, should be unknown
+	got := tsWaitReasonString(39)
+	if !strings.Contains(got, "Unknown") {
+		t.Errorf("tsWaitReasonString(39) = %q, expected Unknown", got)
+	}
+}
+
+func TestTsTruncateOwner_Short(t *testing.T) {
+	got := tsTruncateOwner("NT AUTHORITY\\SYSTEM", 25)
+	if got != "NT AUTHORITY\\SYSTEM" {
+		t.Errorf("expected no truncation, got %q", got)
+	}
+}
+
+func TestTsTruncateOwner_Exact(t *testing.T) {
+	got := tsTruncateOwner("DOMAIN\\user", 11) // exactly 11 chars
+	if got != "DOMAIN\\user" {
+		t.Errorf("expected no truncation for exact length, got %q", got)
+	}
+}
+
+func TestTsTruncateOwner_Long(t *testing.T) {
+	got := tsTruncateOwner("VERYLONGDOMAIN\\administrator", 18)
+	if len(got) > 18 {
+		t.Errorf("expected truncated to 18, got len=%d: %q", len(got), got)
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Errorf("expected '...' suffix, got %q", got)
+	}
+}
+
+func TestTsTruncateOwner_Empty(t *testing.T) {
+	got := tsTruncateOwner("", 10)
+	if got != "" {
+		t.Errorf("expected empty string, got %q", got)
 	}
 }
