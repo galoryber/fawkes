@@ -41,7 +41,13 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			return agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			testURL, _ := taskData.Args.GetStringArg("test_url")
+			if testURL != "" {
+				dp := testURL
+				response.DisplayParams = &dp
+			}
+			return response
 		},
 	})
 }

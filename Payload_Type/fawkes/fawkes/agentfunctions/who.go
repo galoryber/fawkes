@@ -47,7 +47,13 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			return agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			all, _ := taskData.Args.GetBooleanArg("all")
+			if all {
+				dp := "(all sessions)"
+				response.DisplayParams = &dp
+			}
+			return response
 		},
 	})
 }

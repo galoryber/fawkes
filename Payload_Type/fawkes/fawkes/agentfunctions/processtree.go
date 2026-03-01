@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -53,10 +55,26 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			return agentstructs.PTTaskCreateTaskingMessageResponse{
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			pid, _ := taskData.Args.GetNumberArg("pid")
+			filter, _ := taskData.Args.GetStringArg("filter")
+			dp := ""
+			if pid > 0 {
+				dp = fmt.Sprintf("pid: %d", int(pid))
+			}
+			if filter != "" {
+				if dp != "" {
+					dp += ", "
+				}
+				dp += fmt.Sprintf("filter: %s", filter)
+			}
+			if dp != "" {
+				response.DisplayParams = &dp
+			}
+			return response
 		},
 	})
 }

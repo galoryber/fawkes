@@ -48,6 +48,10 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			action, _ := taskData.Args.GetStringArg("action")
+			if action != "" && action != "all" {
+				response.DisplayParams = &action
+			}
 			return response
 		},
 	})
