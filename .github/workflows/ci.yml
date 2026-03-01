@@ -37,12 +37,7 @@ jobs:
           working-directory: Payload_Type/fawkes/fawkes/agent_code
 
       - name: Run tests with race detector and coverage
-        run: |
-          echo "Go version: $(go version)"
-          echo "GOMAXPROCS: $(nproc)"
-          echo "Runner: $(uname -a)"
-          go test -v -count=1 -race -timeout 5m -coverprofile=coverage.out ./... 2>&1 | tee test-output.txt
-          exit ${PIPESTATUS[0]}
+        run: go test -v -count=1 -race -timeout 5m -coverprofile=coverage.out ./... 2>&1 | tee test-output.txt; exit ${PIPESTATUS[0]}
 
       - name: Post test output on failure
         if: failure()
@@ -50,18 +45,16 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const output = fs.readFileSync('Payload_Type/fawkes/fawkes/agent_code/test-output.txt', 'utf8');
+            const path = 'Payload_Type/fawkes/fawkes/agent_code/test-output.txt';
+            if (!fs.existsSync(path)) return;
+            const output = fs.readFileSync(path, 'utf8');
             const lines = output.split('\n');
-            // Get last 300 lines (most relevant - includes the failure)
             const tail = lines.slice(-300).join('\n');
-            // Also find FAIL lines
-            const failLines = lines.filter(l => l.includes('FAIL') || l.includes('RACE') || l.includes('DATA RACE') || l.includes('panic')).join('\n');
-            const body = `## CI Test Failure - ${context.sha.substring(0,7)}\n\n### Failure indicators\n\`\`\`\n${failLines || 'No FAIL/RACE/panic lines found'}\n\`\`\`\n\n### Last 300 lines of test output\n\`\`\`\n${tail}\n\`\`\``;
+            const failLines = lines.filter(l => l.includes('FAIL') || l.includes('DATA RACE') || l.includes('panic')).join('\n');
+            const body = `## CI Test Failure - ${context.sha.substring(0,7)}\n\n### Failure indicators\n\`\`\`\n${failLines || 'No FAIL/RACE/panic lines found'}\n\`\`\`\n\n### Last 300 lines\n\`\`\`\n${tail}\n\`\`\``;
             await github.rest.repos.createCommitComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              commit_sha: context.sha,
-              body: body.substring(0, 65000)
+              owner: context.repo.owner, repo: context.repo.repo,
+              commit_sha: context.sha, body: body.substring(0, 65000)
             });
 
       - name: Display coverage summary
