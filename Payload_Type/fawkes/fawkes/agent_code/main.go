@@ -276,6 +276,7 @@ func runAgent() {
 
 		// Wire up rpfwd hooks for reverse port forwarding
 		rpfwdManager := rpfwd.NewManager()
+		defer rpfwdManager.Close()
 		commands.SetRpfwdManager(rpfwdManager)
 		httpProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
 		httpProfile.HandleRpfwd = rpfwdManager.HandleMessages
@@ -342,6 +343,7 @@ checkinDone:
 
 	// Initialize SOCKS proxy manager
 	socksManager := socks.NewManager()
+	defer socksManager.Close()
 
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])

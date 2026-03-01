@@ -45,6 +45,18 @@ func NewManager() *Manager {
 	}
 }
 
+// Close closes all active SOCKS connections and releases resources.
+// Should be called during agent shutdown to prevent connection leaks.
+func (m *Manager) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, conn := range m.connections {
+		conn.Close()
+		delete(m.connections, id)
+	}
+	m.outbound = nil
+}
+
 // DrainOutbound atomically returns all pending outbound SOCKS messages and clears the queue
 func (m *Manager) DrainOutbound() []structs.SocksMsg {
 	m.mu.Lock()

@@ -81,6 +81,22 @@ func (m *Manager) Stop(port uint32) error {
 	return nil
 }
 
+// Close stops all listeners and closes all connections. Should be called during agent shutdown.
+func (m *Manager) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for port, listener := range m.listeners {
+		listener.Close()
+		delete(m.listeners, port)
+	}
+	for id, tracker := range m.connections {
+		tracker.conn.Close()
+		close(tracker.writeCh)
+		delete(m.connections, id)
+	}
+	m.outbound = nil
+}
+
 // DrainOutbound atomically returns all pending outbound rpfwd messages and clears the queue
 func (m *Manager) DrainOutbound() []structs.SocksMsg {
 	m.mu.Lock()

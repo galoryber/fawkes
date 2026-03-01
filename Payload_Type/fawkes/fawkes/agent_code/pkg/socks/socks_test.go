@@ -205,6 +205,63 @@ func TestCloseConnection_NonExisting(t *testing.T) {
 	m.closeConnection(999)
 }
 
+// --- Close (shutdown) Tests ---
+
+func TestClose_CleansAllConnections(t *testing.T) {
+	m := NewManager()
+
+	// Create multiple connections
+	var listeners []net.Listener
+	for i := uint32(0); i < 3; i++ {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatalf("Failed to create listener: %v", err)
+		}
+		listeners = append(listeners, ln)
+
+		conn, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatalf("Failed to dial: %v", err)
+		}
+		srvConn, _ := ln.Accept()
+		defer srvConn.Close()
+
+		m.mu.Lock()
+		m.connections[i+700] = conn
+		m.mu.Unlock()
+	}
+	defer func() {
+		for _, ln := range listeners {
+			ln.Close()
+		}
+	}()
+
+	// Add some outbound messages
+	m.mu.Lock()
+	m.outbound = append(m.outbound, structs.SocksMsg{ServerId: 700})
+	m.mu.Unlock()
+
+	// Close should clean up everything
+	m.Close()
+
+	m.mu.Lock()
+	connCount := len(m.connections)
+	outboundCount := len(m.outbound)
+	m.mu.Unlock()
+
+	if connCount != 0 {
+		t.Errorf("Close() should remove all connections, got %d", connCount)
+	}
+	if outboundCount != 0 {
+		t.Errorf("Close() should clear outbound queue, got %d", outboundCount)
+	}
+}
+
+func TestClose_EmptyManager(t *testing.T) {
+	m := NewManager()
+	m.Close() // Should not panic
+}
+
 // --- HandleMessages Tests ---
 
 func TestHandleMessages_ExitMessage(t *testing.T) {
