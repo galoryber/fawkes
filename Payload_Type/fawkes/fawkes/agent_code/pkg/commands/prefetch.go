@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode/utf16"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -520,24 +519,4 @@ func decompressMAM(data []byte) ([]byte, error) {
 	return decompressed[:finalSize], nil
 }
 
-func decodeUTF16(data []byte) string {
-	if len(data) < 2 {
-		return ""
-	}
-
-	// Convert bytes to uint16 slice
-	u16s := make([]uint16, len(data)/2)
-	for i := range u16s {
-		u16s[i] = binary.LittleEndian.Uint16(data[i*2 : i*2+2])
-	}
-
-	// Find null terminator
-	for i, v := range u16s {
-		if v == 0 {
-			u16s = u16s[:i]
-			break
-		}
-	}
-
-	return string(utf16.Decode(u16s))
-}
+// decodeUTF16 moved to forensics_helpers.go
