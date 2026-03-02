@@ -650,7 +650,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 
 	goarch := architecture
 	tags := payloadBuildMsg.C2Profiles[0].Name
-	command := fmt.Sprintf("rm -rf /deps; go clean -cache 2>/dev/null; CGO_ENABLED=0 GOOS=%s GOARCH=%s ", targetOs, goarch)
+	// Clear both Go and Garble build caches to ensure embedded files (padding.bin)
+	// are re-read from disk. Garble has its own cache (~/.cache/garble) separate
+	// from GOCACHE — without clearing it, Garble reuses stale cached objects
+	// even when the underlying embedded file has changed.
+	command := fmt.Sprintf("rm -rf /deps; go clean -cache 2>/dev/null; rm -rf \"${HOME}/.cache/garble\" 2>/dev/null; CGO_ENABLED=0 GOOS=%s GOARCH=%s ", targetOs, goarch)
 	buildmodeflag := "default"
 	if mode == "shared" || mode == "windows-shellcode" {
 		buildmodeflag = "c-shared"
