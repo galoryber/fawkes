@@ -133,7 +133,7 @@ func makeTestAgent() *structs.Agent {
 		InternalIP:    "10.0.0.50",
 		ExternalIP:    "203.0.113.10",
 		ProcessName:   "svchost.exe",
-		Description:   "Fawkes agent 550e8400",
+		Description:   "550e8400",
 		SleepInterval: 30,
 		Jitter:        20,
 		PID:           1234,
