@@ -174,6 +174,7 @@ pre = "<b>2. </b>"
     * [screenshot](/agents/fawkes/commands/screenshot/)
 - Networking
     * [arp](/agents/fawkes/commands/arp/)
+    * [cert-check](/agents/fawkes/commands/cert-check/)
     * [curl](/agents/fawkes/commands/curl/)
     * [ifconfig](/agents/fawkes/commands/ifconfig/)
     * [link](/agents/fawkes/commands/link/)

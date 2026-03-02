@@ -128,6 +128,7 @@ func Initialize() {
 	RegisterCommand(&FileAttrCommand{})
 	RegisterCommand(&WatchDirCommand{})
 	RegisterCommand(&IdeReconCommand{})
+	RegisterCommand(&CertCheckCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
