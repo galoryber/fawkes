@@ -37,6 +37,7 @@ pre = "<b>2. </b>"
     * [tr](/agents/fawkes/commands/tr/)
     * [uniq](/agents/fawkes/commands/uniq/)
     * [upload](/agents/fawkes/commands/upload/)
+    * [watch-dir](/agents/fawkes/commands/watch-dir/)
     * [wc](/agents/fawkes/commands/wc/)
     * [write-file](/agents/fawkes/commands/write-file/)
 - Command Execution

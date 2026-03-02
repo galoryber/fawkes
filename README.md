@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 105 commands are cross-platform, with 75 additional Windows-only commands, 12 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 201. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 106 commands are cross-platform, with 75 additional Windows-only commands, 12 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 202. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -210,6 +210,7 @@ usn-jrnl | `usn-jrnl -action query\|recent\|delete [-volume C:]` | **(Windows on
 vanilla-injection | `vanilla-injection` | **(Windows only)** Inject shellcode into a remote process using VirtualAllocEx/WriteProcessMemory/CreateRemoteThread.
 vm-detect | `vm-detect` | Detect VM/hypervisor environment (VMware, VirtualBox, Hyper-V, QEMU/KVM, Xen, Parallels). Checks MAC OUI, DMI/SMBIOS, VM tools, SCSI, CPU hypervisor flag. Cross-platform (T1497.001).
 vss | `vss -action <list\|create\|delete\|extract> [-volume C:\\] [-id <device_path>] [-source <path>] [-dest <path>]` | **(Windows only)** Manage Volume Shadow Copies — list, create, delete, extract files. Extract locked files (NTDS.dit, SAM) without touching lsass. MITRE T1003.003.
+watch-dir | `watch-dir -path <dir> [-interval 5] [-duration 300] [-depth 3] [-pattern *.docx] [-hash true]` | Monitor a directory for file system changes — detects new, modified, and deleted files via polling. Supports glob filtering and MD5 hash detection. Cross-platform (T1083, T1119).
 wc | `wc -path <file_or_dir> [-pattern <glob>]` | Count lines, words, characters, and bytes in files. Directory mode with glob pattern filtering and totals. Cross-platform (T1083).
 wdigest | `wdigest -action <status\|enable\|disable>` | **(Windows only)** Manage WDigest plaintext credential caching. Enable to capture cleartext passwords at next logon. MITRE T1003.001, T1112.
 winrm | `winrm -host <target> -username <user> [-password <pass>] [-hash <NT hash>] -command <cmd> [-shell cmd\|powershell]` | Execute commands on remote Windows hosts via WinRM with NTLM authentication. Supports pass-the-hash, cmd.exe and PowerShell. Cross-platform (T1021.006, T1550.002).
