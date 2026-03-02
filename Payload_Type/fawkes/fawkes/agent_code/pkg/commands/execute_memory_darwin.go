@@ -85,6 +85,14 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		return errorf("Error setting executable permission: %v", err)
 	}
 
+	// Ad-hoc codesign — required on Apple Silicon (arm64) for unsigned binaries.
+	// Without signing, macOS kills the process immediately with SIGKILL.
+	signCmd := exec.Command("/usr/bin/codesign", "-s", "-", tmpPath)
+	if signOut, signErr := signCmd.CombinedOutput(); signErr != nil {
+		os.Remove(tmpPath)
+		return errorf("Error code signing binary: %v: %s", signErr, string(signOut))
+	}
+
 	// Parse command-line arguments
 	var cmdArgs []string
 	if args.Arguments != "" {
