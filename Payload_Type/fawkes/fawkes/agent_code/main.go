@@ -375,8 +375,8 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				waitMinutes := agent.MinutesUntilWorkingHours(time.Now())
 				if waitMinutes > 0 {
 					// Add jitter to the wake time (±jitter% of sleep interval, not the full wait)
-					jitterSeconds := calculateSleepTime(agent.SleepInterval, agent.Jitter) - time.Duration(agent.SleepInterval)*time.Second
-					sleepDuration := time.Duration(waitMinutes)*time.Minute + jitterSeconds
+					jitterOffset := calculateSleepTime(agent.SleepInterval, agent.Jitter) - time.Duration(agent.SleepInterval)*time.Second
+					sleepDuration := time.Duration(waitMinutes)*time.Minute + jitterOffset
 					log.Printf("[INFO] Outside working hours, sleeping %v until next work period", sleepDuration)
 					var whVault *sleepVault
 					if sleepMaskEnabled {
