@@ -388,20 +388,7 @@ func macPrivescCheckTCC() structs.CommandResult {
 			client := fields[1]
 			authVal := fields[2]
 
-			// Flag high-value permissions
-			flag := ""
-			switch service {
-			case "kTCCServiceAccessibility":
-				flag = " [!] Accessibility — can control UI, inject keystrokes"
-			case "kTCCServiceScreenCapture":
-				flag = " [!] Screen Capture"
-			case "kTCCServiceSystemPolicyAllFiles":
-				flag = " [!] Full Disk Access"
-			case "kTCCServiceMicrophone":
-				flag = " [!] Microphone Access"
-			case "kTCCServiceCamera":
-				flag = " [!] Camera Access"
-			}
+			flag := macTCCServiceFlag(service)
 			sb.WriteString(fmt.Sprintf("  %s → %s (auth=%s)%s\n", service, client, authVal, flag))
 			if flag != "" {
 				interesting++
