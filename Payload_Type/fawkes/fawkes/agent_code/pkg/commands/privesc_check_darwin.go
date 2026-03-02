@@ -577,13 +577,13 @@ func macIsWritable(path string) bool {
 		return false
 	}
 	if info.IsDir() {
-		tmpFile := filepath.Join(path, ".fawkes_write_test")
-		f, err := os.Create(tmpFile)
+		f, err := os.CreateTemp(path, ".tmp-*")
 		if err != nil {
 			return false
 		}
+		name := f.Name()
 		f.Close()
-		os.Remove(tmpFile)
+		os.Remove(name)
 		return true
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
