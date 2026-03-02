@@ -200,7 +200,7 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 	}()
 
 	// Collect output with timeout to prevent blocking the agent
-	var output string
+	var outputBuf strings.Builder
 	timedOut := false
 	timeout := time.After(30 * time.Second)
 collectLoop:
@@ -210,13 +210,14 @@ collectLoop:
 			if !ok {
 				break collectLoop
 			}
-			output += fmt.Sprintf("%v\n", msg)
+			fmt.Fprintf(&outputBuf, "%v\n", msg)
 		case <-timeout:
-			output += "[!] BOF execution timed out after 30 seconds\n"
+			outputBuf.WriteString("[!] BOF execution timed out after 30 seconds\n")
 			timedOut = true
 			break collectLoop
 		}
 	}
+	output := outputBuf.String()
 
 	// Only free memory if the BOF goroutine has completed.
 	// If it timed out, the goroutine may still be executing code in these

@@ -191,8 +191,12 @@ func macPrivescCheckSUID() structs.CommandResult {
 
 	var flagged []string
 	for _, f := range suidFiles {
+		fields := strings.Fields(f)
+		if len(fields) == 0 {
+			continue
+		}
 		for _, bin := range interestingBins {
-			if strings.Contains(f, "/"+bin+" ") || strings.HasSuffix(strings.Fields(f)[0], "/"+bin) {
+			if strings.Contains(f, "/"+bin+" ") || strings.HasSuffix(fields[0], "/"+bin) {
 				flagged = append(flagged, f)
 				break
 			}

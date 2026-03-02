@@ -440,7 +440,13 @@ func linuxLogsShred(args linuxLogsArgs) structs.CommandResult {
 		}
 		_ = f.Sync()
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error closing %s after overwrite: %v", args.File, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	// Truncate to zero
 	_ = os.Truncate(args.File, 0)

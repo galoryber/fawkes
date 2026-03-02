@@ -126,8 +126,13 @@ func secureDeleteFile(path string, size int64, passes int) error {
 			remaining -= n
 		}
 
-		f.Sync()
-		f.Close()
+		if err := f.Sync(); err != nil {
+			f.Close()
+			return fmt.Errorf("sync pass %d: %w", i+1, err)
+		}
+		if err := f.Close(); err != nil {
+			return fmt.Errorf("close pass %d: %w", i+1, err)
+		}
 	}
 
 	return os.Remove(path)
