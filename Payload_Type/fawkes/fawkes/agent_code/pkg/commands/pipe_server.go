@@ -148,7 +148,7 @@ func pipeServerCheck(task structs.Task) structs.CommandResult {
 // pipeServerImpersonate creates a named pipe, waits for connection, and impersonates
 func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.CommandResult {
 	if args.Name == "" {
-		args.Name = fmt.Sprintf("fawkes_%d", time.Now().UnixNano()%100000)
+		args.Name = fmt.Sprintf("svc_%d", time.Now().UnixNano()%100000)
 	}
 
 	pipePath := fmt.Sprintf(`\\.\pipe\%s`, args.Name)

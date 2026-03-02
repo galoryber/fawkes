@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -100,12 +99,12 @@ func isFileReadable(path string) bool {
 }
 
 func isDirWritable(dir string) bool {
-	tmpFile := filepath.Join(dir, ".fawkes_privesc_test")
-	f, err := os.Create(tmpFile)
+	f, err := os.CreateTemp(dir, ".tmp-*")
 	if err != nil {
 		return false
 	}
+	name := f.Name()
 	f.Close()
-	os.Remove(tmpFile)
+	os.Remove(name)
 	return true
 }
