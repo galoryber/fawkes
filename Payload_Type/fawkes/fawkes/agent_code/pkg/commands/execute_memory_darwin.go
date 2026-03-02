@@ -109,17 +109,11 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
-	// Start the process, then immediately remove the file from disk.
-	// The kernel keeps the file data accessible via the open file descriptor
-	// until the process exits, but it's no longer visible in the filesystem.
-	startErr := cmd.Start()
-	os.Remove(tmpPath) // Remove regardless of start success
-
-	if startErr != nil {
-		return errorf("Error starting binary: %v", startErr)
-	}
-
-	waitErr := cmd.Wait()
+	// Execute and capture output. The temp file must persist during execution
+	// because macOS validates code signatures at runtime — unlinking the file
+	// while the process runs causes SIGKILL on Apple Silicon.
+	execErr := cmd.Run()
+	os.Remove(tmpPath) // Clean up after execution completes
 
 	// Build output from stdout + stderr
 	var sb strings.Builder
@@ -134,13 +128,13 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		sb.WriteString(stderr.String())
 	}
 
-	if waitErr != nil {
+	if execErr != nil {
 		if ctx.Err() == context.DeadlineExceeded {
 			sb.WriteString(fmt.Sprintf("\n[Process timed out after %ds]", timeout))
 		}
 		output := sb.String()
 		if output == "" {
-			output = fmt.Sprintf("Error executing binary: %v", waitErr)
+			output = fmt.Sprintf("Error executing binary: %v", execErr)
 		}
 		return structs.CommandResult{
 			Output:    output,
