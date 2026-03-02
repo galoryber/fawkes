@@ -23,7 +23,7 @@ func init() {
 				Name:             "path",
 				CLIName:          "path",
 				ModalDisplayName: "File Path",
-				Type:             agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "Path to the file to read",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -36,7 +36,7 @@ func init() {
 				Name:             "start",
 				CLIName:          "start",
 				ModalDisplayName: "Start Line",
-				Type:             agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				Description:      "Starting line number (1-based, default: beginning of file)",
 				DefaultValue:     0,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -50,7 +50,7 @@ func init() {
 				Name:             "end",
 				CLIName:          "end",
 				ModalDisplayName: "End Line",
-				Type:             agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				Description:      "Ending line number (default: end of file)",
 				DefaultValue:     0,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -64,7 +64,7 @@ func init() {
 				Name:             "number",
 				CLIName:          "number",
 				ModalDisplayName: "Line Numbers",
-				Type:             agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
 				Description:      "Show line numbers",
 				DefaultValue:     false,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -78,7 +78,7 @@ func init() {
 				Name:             "max",
 				CLIName:          "max",
 				ModalDisplayName: "Max Size (KB)",
-				Type:             agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				Description:      "Maximum output size in KB (default: 5120 = 5MB)",
 				DefaultValue:     0,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
