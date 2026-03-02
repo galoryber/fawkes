@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -36,7 +35,17 @@ func (c *ScreenshotLinuxCommand) Execute(task structs.Task) structs.CommandResul
 		}
 	}
 
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf(".tmp_%d.png", time.Now().UnixNano()))
+	// Create temp file for screenshot — random name (no distinctive pattern)
+	tf, tfErr := os.CreateTemp("", "*.png")
+	if tfErr != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error creating temp file: %v", tfErr),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	tmpFile := tf.Name()
+	tf.Close()
 
 	// Try screenshot tools in order of preference
 	var err error
