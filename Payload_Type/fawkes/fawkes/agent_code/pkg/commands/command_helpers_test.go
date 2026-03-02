@@ -956,3 +956,168 @@ func TestTsTruncateOwner_Empty(t *testing.T) {
 		t.Errorf("expected empty string, got %q", got)
 	}
 }
+
+// --- ETW Provider Resolution tests ---
+
+func TestResolveProviderGUID_Shorthands(t *testing.T) {
+	tests := []struct {
+		shorthand    string
+		expectedGUID string
+		expectedName string
+	}{
+		{"sysmon", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6", "Microsoft-Windows-Sysmon"},
+		{"amsi", "F4E1897A-BB65-5399-F245-102D38640FFE", "Microsoft-Antimalware-Scan-Interface"},
+		{"powershell", "A0C1853B-5C40-4B15-8766-3CF1C58F985A", "Microsoft-Windows-PowerShell"},
+		{"dotnet", "04C2CAB3-2A99-4097-AB1C-1291F8EB6E95", "Microsoft-Windows-DotNETRuntime"},
+		{"winrm", "11C5D8AD-756A-42C2-8087-EB1B4A72A846", "Microsoft-Windows-WinRM"},
+		{"wmi", "DCBE5AAA-16E2-457C-9337-366950045F0A", "Microsoft-Windows-WMI-Activity"},
+		{"api-calls", "7DD42A49-5329-4832-8DFD-43D979153A88", "Microsoft-Windows-Kernel-Audit-API-Calls"},
+		{"task-scheduler", "E8109B99-3A2C-4961-AA83-D1A7A148ADA8", "Microsoft-Windows-TaskScheduler"},
+		{"dns-client", "555908D1-A6D7-4695-8E1E-26931D2012F4", "Microsoft-Windows-DNS-Client"},
+		{"security-auditing", "54849625-5478-4994-A5BA-3E3B0328C30D", "Microsoft-Windows-Security-Auditing"},
+		{"kernel-process", "EDD08927-9CC4-4E65-B970-C2560FB5C289", "Microsoft-Windows-Kernel-Process"},
+		{"kernel-file", "22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716", "Microsoft-Windows-Kernel-File"},
+		{"kernel-network", "A68CA8B7-004F-D7B6-A698-04740076C4E7", "Microsoft-Windows-Kernel-Network"},
+		{"kernel-registry", "0BD3506A-9030-4F76-B16D-2803530B31F1", "Microsoft-Windows-Kernel-Registry"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.shorthand, func(t *testing.T) {
+			guid, name := resolveProviderGUID(tt.shorthand)
+			if guid != tt.expectedGUID {
+				t.Errorf("resolveProviderGUID(%q) guid = %q, want %q", tt.shorthand, guid, tt.expectedGUID)
+			}
+			if name != tt.expectedName {
+				t.Errorf("resolveProviderGUID(%q) name = %q, want %q", tt.shorthand, name, tt.expectedName)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_ShorthandsCaseInsensitive(t *testing.T) {
+	tests := []string{"SYSMON", "Sysmon", "SySmOn", "AMSI", "Amsi", "PowerShell", "POWERSHELL"}
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			guid, _ := resolveProviderGUID(input)
+			if guid == "" {
+				t.Errorf("resolveProviderGUID(%q) returned empty guid, expected match", input)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_FullName(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		expectedGUID string
+	}{
+		{"exact match", "Microsoft-Windows-Sysmon", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6"},
+		{"case insensitive", "microsoft-windows-sysmon", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6"},
+		{"substring match", "Sysmon", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6"},
+		{"substring PowerShell", "PowerShell", "A0C1853B-5C40-4B15-8766-3CF1C58F985A"},
+		{"substring WinRM", "WinRM", "11C5D8AD-756A-42C2-8087-EB1B4A72A846"},
+		{"substring LDAP", "LDAP", "B675EC37-BDB6-4648-BC92-F3FDC74D3CA2"},
+		{"substring CAPI2", "CAPI2", "F4190177-63B0-4CB5-8B2C-3A5C3D319B6D"},
+		{"substring Winlogon", "Winlogon", "DBE9B383-7CF3-4331-91CC-A3CB16A3B538"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			guid, _ := resolveProviderGUID(tt.input)
+			if guid != tt.expectedGUID {
+				t.Errorf("resolveProviderGUID(%q) guid = %q, want %q", tt.input, guid, tt.expectedGUID)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_RawGUID(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		expectedGUID string
+		expectedName string
+	}{
+		{"known GUID uppercase", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6", "Microsoft-Windows-Sysmon"},
+		{"known GUID lowercase", "b3a7698a-0c45-44da-b73d-e181c9b5c8e6", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6", "Microsoft-Windows-Sysmon"},
+		{"known GUID with braces", "{B3A7698A-0C45-44DA-B73D-E181C9B5C8E6}", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6", "Microsoft-Windows-Sysmon"},
+		{"unknown GUID", "12345678-1234-1234-1234-123456789ABC", "12345678-1234-1234-1234-123456789ABC", ""},
+		{"AMSI GUID", "F4E1897A-BB65-5399-F245-102D38640FFE", "F4E1897A-BB65-5399-F245-102D38640FFE", "Microsoft-Antimalware-Scan-Interface"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			guid, name := resolveProviderGUID(tt.input)
+			if guid != tt.expectedGUID {
+				t.Errorf("resolveProviderGUID(%q) guid = %q, want %q", tt.input, guid, tt.expectedGUID)
+			}
+			if name != tt.expectedName {
+				t.Errorf("resolveProviderGUID(%q) name = %q, want %q", tt.input, name, tt.expectedName)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_Invalid(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"empty", ""},
+		{"random text", "notaprovider"},
+		{"partial GUID", "B3A7698A-0C45"},
+		{"too long", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6-EXTRA"},
+		{"no dashes", "B3A7698A0C4544DAB73DE181C9B5C8E6"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			guid, _ := resolveProviderGUID(tt.input)
+			if guid != "" {
+				t.Errorf("resolveProviderGUID(%q) = %q, expected empty string", tt.input, guid)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_AllShorthandsResolve(t *testing.T) {
+	// Verify every shorthand in the map resolves to a valid GUID and name
+	for shorthand, expectedGUID := range providerShorthands {
+		t.Run(shorthand, func(t *testing.T) {
+			guid, name := resolveProviderGUID(shorthand)
+			if guid != expectedGUID {
+				t.Errorf("shorthand %q: got guid %q, want %q", shorthand, guid, expectedGUID)
+			}
+			if name == "" {
+				t.Errorf("shorthand %q: got empty name for guid %q", shorthand, guid)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_AllKnownProvidersResolveByName(t *testing.T) {
+	// Verify every known provider can be resolved by its full name
+	for expectedGUID, fullName := range knownSecurityProviders {
+		t.Run(fullName, func(t *testing.T) {
+			guid, name := resolveProviderGUID(fullName)
+			if guid != expectedGUID {
+				t.Errorf("name %q: got guid %q, want %q", fullName, guid, expectedGUID)
+			}
+			if name != fullName {
+				t.Errorf("name %q: got name %q, want %q", fullName, name, fullName)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_KnownSecurityProvidersConsistency(t *testing.T) {
+	// Every shorthand should map to a GUID in knownSecurityProviders
+	for shorthand, guid := range providerShorthands {
+		t.Run(shorthand, func(t *testing.T) {
+			if _, ok := knownSecurityProviders[guid]; !ok {
+				t.Errorf("shorthand %q maps to GUID %q which is not in knownSecurityProviders", shorthand, guid)
+			}
+		})
+	}
+}

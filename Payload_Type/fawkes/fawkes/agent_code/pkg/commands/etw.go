@@ -62,46 +62,7 @@ const (
 	eventControlCodeEnableProvider  = 1
 )
 
-// Well-known ETW provider GUIDs for security tools
-var knownSecurityProviders = map[string]string{
-	"54849625-5478-4994-A5BA-3E3B0328C30D": "Microsoft-Windows-Security-Auditing",
-	"EDD08927-9CC4-4E65-B970-C2560FB5C289": "Microsoft-Windows-Kernel-Process",
-	"22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716": "Microsoft-Windows-Kernel-File",
-	"A68CA8B7-004F-D7B6-A698-04740076C4E7": "Microsoft-Windows-Kernel-Network",
-	"0BD3506A-9030-4F76-B16D-2803530B31F1": "Microsoft-Windows-Kernel-Registry",
-	"DCBE5AAA-16E2-457C-9337-366950045F0A": "Microsoft-Windows-WMI-Activity",
-	"7DD42A49-5329-4832-8DFD-43D979153A88": "Microsoft-Windows-Kernel-Audit-API-Calls",
-	"B675EC37-BDB6-4648-BC92-F3FDC74D3CA2": "Microsoft-Windows-LDAP-Client",
-	"F4E1897A-BB65-5399-F245-102D38640FFE": "Microsoft-Antimalware-Scan-Interface",
-	"A0C1853B-5C40-4B15-8766-3CF1C58F985A": "Microsoft-Windows-PowerShell",
-	"11C5D8AD-756A-42C2-8087-EB1B4A72A846": "Microsoft-Windows-WinRM",
-	"F4190177-63B0-4CB5-8B2C-3A5C3D319B6D": "Microsoft-Windows-CAPI2",
-	"DBE9B383-7CF3-4331-91CC-A3CB16A3B538": "Microsoft-Windows-Winlogon",
-	"0CCE985E-0000-0000-0000-000000000000": "Microsoft-Windows-Security-Auditing-Process",
-	"E8109B99-3A2C-4961-AA83-D1A7A148ADA8": "Microsoft-Windows-TaskScheduler",
-	"B3A7698A-0C45-44DA-B73D-E181C9B5C8E6": "Microsoft-Windows-Sysmon",
-	"555908D1-A6D7-4695-8E1E-26931D2012F4": "Microsoft-Windows-DNS-Client",
-	"A83D4C09-79AF-4A78-A129-A15ECCAE1BF9": "Microsoft-Windows-RPC",
-	"04C2CAB3-2A99-4097-AB1C-1291F8EB6E95": "Microsoft-Windows-DotNETRuntime",
-}
-
-// Shorthand provider names for operator convenience
-var providerShorthands = map[string]string{
-	"security-auditing": "54849625-5478-4994-A5BA-3E3B0328C30D",
-	"kernel-process":    "EDD08927-9CC4-4E65-B970-C2560FB5C289",
-	"kernel-file":       "22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716",
-	"kernel-network":    "A68CA8B7-004F-D7B6-A698-04740076C4E7",
-	"kernel-registry":   "0BD3506A-9030-4F76-B16D-2803530B31F1",
-	"sysmon":            "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6",
-	"amsi":              "F4E1897A-BB65-5399-F245-102D38640FFE",
-	"powershell":        "A0C1853B-5C40-4B15-8766-3CF1C58F985A",
-	"winrm":             "11C5D8AD-756A-42C2-8087-EB1B4A72A846",
-	"dotnet":            "04C2CAB3-2A99-4097-AB1C-1291F8EB6E95",
-	"wmi":               "DCBE5AAA-16E2-457C-9337-366950045F0A",
-	"api-calls":         "7DD42A49-5329-4832-8DFD-43D979153A88",
-	"task-scheduler":    "E8109B99-3A2C-4961-AA83-D1A7A148ADA8",
-	"dns-client":        "555908D1-A6D7-4695-8E1E-26931D2012F4",
-}
+// knownSecurityProviders and providerShorthands are defined in command_helpers.go
 
 func (c *EtwCommand) Execute(task structs.Task) structs.CommandResult {
 	var params etwParams
@@ -479,35 +440,7 @@ func etwBlind(sessionName, provider string) structs.CommandResult {
 	}
 }
 
-// resolveProviderGUID resolves a provider name/shorthand/GUID to a GUID string and display name
-func resolveProviderGUID(provider string) (string, string) {
-	// Check shorthand names first
-	lower := strings.ToLower(provider)
-	if guid, ok := providerShorthands[lower]; ok {
-		name := knownSecurityProviders[guid]
-		return guid, name
-	}
-
-	// Check if it matches a full known provider name (case-insensitive substring)
-	for guid, name := range knownSecurityProviders {
-		if strings.EqualFold(name, provider) {
-			return guid, name
-		}
-		// Substring match: "Sysmon" matches "Microsoft-Windows-Sysmon"
-		if strings.Contains(strings.ToLower(name), lower) {
-			return guid, name
-		}
-	}
-
-	// Check if it looks like a GUID already
-	cleaned := strings.Trim(provider, "{}")
-	if len(cleaned) == 36 && strings.Count(cleaned, "-") == 4 {
-		name := knownSecurityProviders[strings.ToUpper(cleaned)]
-		return strings.ToUpper(cleaned), name
-	}
-
-	return "", ""
-}
+// resolveProviderGUID moved to command_helpers.go
 
 func parseGUID(data []byte) windows.GUID {
 	return windows.GUID{
