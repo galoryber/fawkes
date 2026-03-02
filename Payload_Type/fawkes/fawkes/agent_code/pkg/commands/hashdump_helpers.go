@@ -37,7 +37,7 @@ var bootKeyPerm = []int{0x8, 0x5, 0x4, 0x2, 0xb, 0x9, 0xd, 0x3, 0x0, 0x6, 0x1, 0
 // SAM_KEY_DATA at offset 0x68: revision(4) + length(4) + salt(16) + key(16) + checksum(16)
 func deriveHashedBootKeyRC4(fValue, bootKey []byte) ([]byte, byte, error) {
 	if len(fValue) < 0x68+0x38 {
-		return nil, 0, fmt.Errorf("F value too short for RC4 key data")
+		return nil, 0, fmt.Errorf("f value too short for RC4 key data")
 	}
 
 	salt := fValue[0x70:0x80]        // offset 0x68 + 8 = 0x70
@@ -86,7 +86,7 @@ func deriveHashedBootKeyRC4(fValue, bootKey []byte) ([]byte, byte, error) {
 // SAM_KEY_DATA_AES at offset 0x68: revision(4) + length(4) + checksumLen(4) + dataLen(4) + salt(16) + data(varies)
 func deriveHashedBootKeyAES(fValue, bootKey []byte) ([]byte, byte, error) {
 	if len(fValue) < 0x68+0x20 {
-		return nil, 0, fmt.Errorf("F value too short for AES key data")
+		return nil, 0, fmt.Errorf("f value too short for AES key data")
 	}
 
 	dataLen := binary.LittleEndian.Uint32(fValue[0x74:0x78]) // offset 0x68 + 0x0C
@@ -122,7 +122,7 @@ func parseHexUint32(s string) (uint32, error) {
 // parseUserVValue parses a SAM V value to extract username and decrypt NT/LM hashes.
 func parseUserVValue(v []byte, rid uint32, hashedBootKey []byte, samRevision byte) (*userHash, error) {
 	if len(v) < 0xCC+4 {
-		return nil, fmt.Errorf("V value too short")
+		return nil, fmt.Errorf("v value too short")
 	}
 
 	// Read username

@@ -278,7 +278,7 @@ func deriveHashedBootKey(bootKey []byte) ([]byte, byte, error) {
 	}
 
 	if len(fValue) < 0x70 {
-		return nil, 0, fmt.Errorf("F value too short (%d bytes)", len(fValue))
+		return nil, 0, fmt.Errorf("f value too short (%d bytes)", len(fValue))
 	}
 
 	// Key0 starts at offset 0x68
