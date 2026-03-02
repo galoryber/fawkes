@@ -12,12 +12,19 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MythicAgents/merlin/Payload_Type/merlin/container/pkg/srdi"
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
+
+// buildMu serializes agent builds to prevent concurrent builds from interfering
+// with each other's padding.bin file. Each build writes custom padding data to
+// a shared file path before compiling, so overlapping builds would corrupt each
+// other's embedded padding.
+var buildMu sync.Mutex
 
 // convertDllToShellcode uses Merlin's Go-based sRDI to convert a DLL to position-independent shellcode
 func convertDllToShellcode(dllBytes []byte, functionName string, clearHeader bool) ([]byte, error) {
@@ -577,6 +584,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	// Add debug flag
 	ldflags += fmt.Sprintf(" -X '%s.debug=%s'", fawkes_main_package, "false")
 	ldflags += " -buildid="
+
+	// Serialize builds: padding.bin is a shared file that must not be modified
+	// by concurrent goroutines between the write and the go build invocation.
+	buildMu.Lock()
+	defer buildMu.Unlock()
 
 	// Handle binary inflation (padding)
 	inflateBytes, inflBytesErr := payloadBuildMsg.BuildParameters.GetStringArg("inflate_bytes")
