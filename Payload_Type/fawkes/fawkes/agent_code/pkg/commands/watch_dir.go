@@ -81,34 +81,18 @@ func (c *WatchDirCommand) Execute(task structs.Task) structs.CommandResult {
 	pollInterval := time.Duration(params.Interval) * time.Second
 	maxDuration := time.Duration(params.Duration) * time.Second
 
-	// Poll loop
-	for {
-		// Check for cancellation
-		if task.DidStop() {
-			break
-		}
-
-		// Check duration limit
-		if maxDuration > 0 && time.Since(startTime) >= maxDuration {
-			break
-		}
-
+	// Poll loop — exits on task cancellation or duration limit
+	for !task.DidStop() && (maxDuration == 0 || time.Since(startTime) < maxDuration) {
 		// Sleep with cancellation checks
 		sleepEnd := time.Now().Add(pollInterval)
-		for time.Now().Before(sleepEnd) {
-			if task.DidStop() {
-				break
-			}
+		for time.Now().Before(sleepEnd) && !task.DidStop() {
 			if maxDuration > 0 && time.Since(startTime) >= maxDuration {
 				break
 			}
 			time.Sleep(500 * time.Millisecond)
 		}
 
-		if task.DidStop() {
-			break
-		}
-		if maxDuration > 0 && time.Since(startTime) >= maxDuration {
+		if task.DidStop() || (maxDuration > 0 && time.Since(startTime) >= maxDuration) {
 			break
 		}
 
