@@ -1,8 +1,7 @@
 package agentfunctions
 
 import (
-	"encoding/json"
-	"strings"
+	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -10,51 +9,114 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "cat",
-		Description:         "cat [path] - Display the contents of a file",
-		HelpString:          "cat [path]",
-		Version:             1,
+		Description:         "Display file contents with optional line range, numbering, and size protection",
+		HelpString:          "cat [path] — read file | cat -path file -start 10 -end 20 — line range | cat -path file -number true — with line numbers",
+		Version:             2,
 		MitreAttackMappings: []string{"T1005"}, // Data from Local System
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "path",
+				CLIName:          "path",
+				ModalDisplayName: "File Path",
+				Type:             agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Path to the file to read",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						UIModalPosition:     1,
+					},
+				},
+			},
+			{
+				Name:             "start",
+				CLIName:          "start",
+				ModalDisplayName: "Start Line",
+				Type:             agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Starting line number (1-based, default: beginning of file)",
+				DefaultValue:     0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     2,
+					},
+				},
+			},
+			{
+				Name:             "end",
+				CLIName:          "end",
+				ModalDisplayName: "End Line",
+				Type:             agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Ending line number (default: end of file)",
+				DefaultValue:     0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     3,
+					},
+				},
+			},
+			{
+				Name:             "number",
+				CLIName:          "number",
+				ModalDisplayName: "Line Numbers",
+				Type:             agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Show line numbers",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     4,
+					},
+				},
+			},
+			{
+				Name:             "max",
+				CLIName:          "max",
+				ModalDisplayName: "Max Size (KB)",
+				Type:             agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Maximum output size in KB (default: 5120 = 5MB)",
+				DefaultValue:     0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     5,
+					},
+				},
+			},
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			input = strings.TrimSpace(input)
-			// Try JSON first (e.g., {"path": "C:\\file.txt"} from API)
-			var jsonArgs map[string]interface{}
-			if err := json.Unmarshal([]byte(input), &jsonArgs); err == nil {
-				if path, ok := jsonArgs["path"].(string); ok {
-					args.SetManualArgs(path)
-					return nil
-				}
-			}
-			// Strip surrounding quotes so paths like
-			// "C:\Program Data\file.txt" resolve to C:\Program Data\file.txt
-			if len(input) >= 2 {
-				if (input[0] == '"' && input[len(input)-1] == '"') ||
-					(input[0] == '\'' && input[len(input)-1] == '\'') {
-					input = input[1 : len(input)-1]
-				}
-			}
-			args.SetManualArgs(input)
-			return nil
+			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
-			if path, ok := input["path"].(string); ok {
-				args.SetManualArgs(path)
-			}
-			return nil
+			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
-			// Display the file path
-			if displayParams, err := task.Args.GetFinalArgs(); err == nil {
-				response.DisplayParams = &displayParams
+			path, _ := task.Args.GetStringArg("path")
+			start, _ := task.Args.GetNumberArg("start")
+			end, _ := task.Args.GetNumberArg("end")
+			number, _ := task.Args.GetBooleanArg("number")
+
+			display := path
+			if start > 0 || end > 0 {
+				if end > 0 {
+					display = fmt.Sprintf("%s [lines %d-%d]", path, int(start), int(end))
+				} else {
+					display = fmt.Sprintf("%s [from line %d]", path, int(start))
+				}
 			}
+			if number {
+				display += " (numbered)"
+			}
+			response.DisplayParams = &display
 			return response
 		},
 	})
