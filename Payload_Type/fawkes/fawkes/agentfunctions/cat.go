@@ -90,7 +90,11 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			return args.LoadArgsFromJSONString(input)
+			if err := args.LoadArgsFromJSONString(input); err != nil {
+				// Plain text — treat as file path
+				args.SetManualArgs(input)
+			}
+			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
