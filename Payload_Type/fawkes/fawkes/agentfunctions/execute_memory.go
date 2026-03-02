@@ -12,21 +12,21 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "execute-memory",
-		Description:         "Execute an ELF binary entirely from memory using memfd_create. No file is written to disk — the binary exists only in an anonymous memory-backed file descriptor. Linux only.",
+		Description:         "Execute a native binary from memory. Linux: memfd_create (no disk write). macOS: temp file with immediate unlink (minimal disk footprint).",
 		HelpString:          "execute-memory -arguments 'arg1 arg2' -timeout 60",
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1620"}, // Reflective Code Loading
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:                 "filename",
-				ModalDisplayName:     "ELF Binary",
+				ModalDisplayName:     "Native Binary",
 				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:          "Select an ELF binary already registered in Mythic",
+				Description:          "Select a native binary already registered in Mythic",
 				Choices:              []string{},
 				DefaultValue:         "",
 				DynamicQueryFunction: getFileList,
@@ -42,7 +42,7 @@ func init() {
 				Name:             "file",
 				ModalDisplayName: "ELF Binary",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_FILE,
-				Description:      "Upload a new ELF binary",
+				Description:      "Upload a new native binary",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -56,7 +56,7 @@ func init() {
 				Name:             "binary_b64",
 				CLIName:          "binary_b64",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Base64-encoded ELF binary (for API/CLI usage)",
+				Description:      "Base64-encoded native binary (for API/CLI usage)",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -138,6 +138,18 @@ func init() {
 				timeout = 60
 			}
 
+			// Determine platform-specific labels
+			os := taskData.Callback.OS
+			binaryLabel := "binary"
+			methodLabel := "execute-memory"
+			if os == "Linux" {
+				binaryLabel = "ELF"
+				methodLabel = "memfd_create + execve"
+			} else if os == "macOS" {
+				binaryLabel = "Mach-O"
+				methodLabel = "tmpfile + unlink + execve"
+			}
+
 			// Check for direct base64 binary first (CLI/API usage)
 			b64, _ := taskData.Args.GetStringArg("binary_b64")
 			if b64 != "" {
@@ -154,12 +166,12 @@ func init() {
 				}
 				paramsJSON, _ := json.Marshal(params)
 				taskData.Args.SetManualArgs(string(paramsJSON))
-				displayParams := fmt.Sprintf("ELF: base64 (%d bytes)", len(decoded))
+				displayParams := fmt.Sprintf("%s: base64 (%d bytes)", binaryLabel, len(decoded))
 				if arguments != "" {
 					displayParams += fmt.Sprintf(", args: %s", arguments)
 				}
 				response.DisplayParams = &displayParams
-				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("memfd_create + execve (%d bytes)", len(decoded)))
+				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("%s (%d bytes)", methodLabel, len(decoded)))
 				return response
 			}
 
@@ -216,12 +228,12 @@ func init() {
 				fileContents = getResp.Content
 			}
 
-			displayParams := fmt.Sprintf("ELF: %s (%d bytes)", filename, len(fileContents))
+			displayParams := fmt.Sprintf("%s: %s (%d bytes)", binaryLabel, filename, len(fileContents))
 			if arguments != "" {
 				displayParams += fmt.Sprintf(", args: %s", arguments)
 			}
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("memfd_create + execve: %s (%d bytes)", filename, len(fileContents)))
+			createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("%s: %s (%d bytes)", methodLabel, filename, len(fileContents)))
 
 			params := map[string]interface{}{
 				"binary_b64": base64.StdEncoding.EncodeToString(fileContents),
