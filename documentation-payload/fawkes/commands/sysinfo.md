@@ -48,17 +48,23 @@ sysinfo
 
 ### macOS-Specific
 - Product name, version, build (from sw_vers)
-- Kernel version, hardware model
+- Kernel version, hardware model, serial number
+- CPU brand string, Apple Silicon/Rosetta 2 detection
+- Architecture (arm64/amd64)
 - Total memory
 - System uptime and boot time
 - UID/EUID
-- System Integrity Protection (SIP) status
+- Security status section:
+  - System Integrity Protection (SIP) status
+  - Gatekeeper status (enabled/disabled)
+  - FileVault disk encryption status (on/off/encrypting/decrypting)
+  - MDM enrollment status (MDM and DEP)
 
 ## OPSEC Considerations
 
 - Read-only enumeration — no disk writes or system modifications
 - Uses standard APIs and /proc filesystem on Linux
-- macOS implementation calls sw_vers, uname, sysctl, csrutil — brief subprocess activity
+- macOS implementation calls sw_vers, uname, sysctl, csrutil, ioreg, spctl, fdesetup, profiles — brief subprocess activity
 - Windows reads registry and calls memory/system APIs — minimal footprint
 
 ## MITRE ATT&CK Mapping
