@@ -109,6 +109,7 @@ pre = "<b>2. </b>"
     * [find-admin](/agents/fawkes/commands/find-admin/)
     * [grep](/agents/fawkes/commands/grep/)
     * [handles](/agents/fawkes/commands/handles/)
+    * [ide-recon](/agents/fawkes/commands/ide-recon/)
     * [av-detect](/agents/fawkes/commands/av-detect/)
     * [kerb-delegation](/agents/fawkes/commands/kerb-delegation/)
     * [df](/agents/fawkes/commands/df/)
