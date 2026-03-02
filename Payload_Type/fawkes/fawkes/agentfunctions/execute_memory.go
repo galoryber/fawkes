@@ -12,14 +12,14 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "execute-memory",
-		Description:         "Execute a native binary from memory. Linux: memfd_create (no disk write). macOS: temp file with immediate unlink (minimal disk footprint).",
+		Description:         "Execute a native binary from memory. Linux: memfd_create (no disk write). macOS/Windows: temp file with immediate cleanup (minimal disk footprint).",
 		HelpString:          "execute-memory -arguments 'arg1 arg2' -timeout 60",
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1620"}, // Reflective Code Loading
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -147,7 +147,10 @@ func init() {
 				methodLabel = "memfd_create + execve"
 			} else if os == "macOS" {
 				binaryLabel = "Mach-O"
-				methodLabel = "tmpfile + unlink + execve"
+				methodLabel = "tmpfile + codesign + execve"
+			} else if os == "Windows" {
+				binaryLabel = "PE"
+				methodLabel = "tmpfile + CreateProcess"
 			}
 
 			// Check for direct base64 binary first (CLI/API usage)

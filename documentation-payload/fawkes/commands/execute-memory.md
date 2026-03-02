@@ -9,7 +9,7 @@ hidden = false
 
 Execute a native binary from memory with minimal forensic footprint. Platform-specific implementations ensure the most covert execution method available on each OS.
 
-{{% notice info %}}Linux and macOS{{% /notice %}}
+{{% notice info %}}Cross-Platform: Windows, Linux, macOS{{% /notice %}}
 
 ## How It Works
 
@@ -31,6 +31,15 @@ No file is ever written to disk — the binary exists only in an anonymous memor
 
 The temp file exists only for the duration of execution. Apple Silicon requires code signatures even for ad-hoc signed binaries, and macOS validates signatures at runtime (the file must persist while the process runs).
 
+### Windows (temp file + CreateProcess)
+1. The PE binary is validated (MZ header + PE signature at NT header offset)
+2. A temp file is created with a randomized name and `.exe` extension
+3. The binary is written and executed via `CreateProcess`
+4. stdout/stderr are captured and returned
+5. The temp file is removed immediately after execution completes
+
+The temp file exists only for the duration of execution. This approach handles both x86 and x64 PE binaries.
+
 ## Arguments
 
 | Argument | Required | Description |
@@ -41,7 +50,7 @@ The temp file exists only for the duration of execution. Apple Silicon requires 
 
 ## Usage
 
-**Via Mythic UI:** Upload a native binary (ELF for Linux, Mach-O for macOS) or select a previously uploaded one, optionally provide arguments.
+**Via Mythic UI:** Upload a native binary (PE for Windows, ELF for Linux, Mach-O for macOS) or select a previously uploaded one, optionally provide arguments.
 
 **Via CLI/API:**
 ```
@@ -62,6 +71,7 @@ execute-memory (upload file via UI) -arguments "-v" -timeout 120
 
 ## Notes
 
+- **Windows:** Binary must be a valid PE executable (MZ header + PE signature validated). Temp file is created with randomized name and `.exe` extension, removed immediately after execution.
 - **Linux:** Binary must be a valid ELF executable (magic bytes validated). Requires kernel 3.17+ for memfd_create. Binary appears in `ps` as `/proc/<pid>/fd/<N>` or `memfd:`.
 - **macOS:** Binary must be a valid Mach-O executable (all 6 magic variants validated: 32/64-bit, universal/fat binaries). Ad-hoc codesign is applied automatically — required on Apple Silicon.
 - Static binaries work best — dynamically linked binaries require shared libraries on the target
