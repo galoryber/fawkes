@@ -13,10 +13,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "download",
-		Description:         "Download a file from the target system",
-		HelpString:          "download [path]",
-		Version:             1,
-		MitreAttackMappings: []string{"T1020", "T1030", "T1041"},
+		Description:         "Download a file or directory from the target system (directories auto-zipped)",
+		HelpString:          "download [path] — download a file or directory (directories are auto-zipped)",
+		Version:             2,
+		MitreAttackMappings: []string{"T1020", "T1030", "T1041", "T1560.002"},
 		SupportedUIFeatures: []string{"file_browser:download"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
