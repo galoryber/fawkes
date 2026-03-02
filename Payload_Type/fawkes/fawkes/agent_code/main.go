@@ -36,7 +36,7 @@ var (
 	payloadUUID       string = ""
 	callbackHost      string = ""
 	callbackPort      string = "443"
-	userAgent         string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+	userAgent         string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
 	sleepInterval     string = "10"
 	jitter            string = "10"
 	encryptionKey     string = ""

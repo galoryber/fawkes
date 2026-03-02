@@ -564,7 +564,7 @@ func macIsWritable(path string) bool {
 		return false
 	}
 	if info.IsDir() {
-		f, err := os.CreateTemp(path, ".tmp-*")
+		f, err := os.CreateTemp(path, ".*")
 		if err != nil {
 			return false
 		}

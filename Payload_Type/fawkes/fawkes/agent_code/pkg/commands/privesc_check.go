@@ -523,7 +523,7 @@ func privescCheckContainer() structs.CommandResult {
 
 // isWritable checks if the current user can write to a path
 func isWritable(path string) bool {
-	f, err := os.CreateTemp(path, ".tmp-*")
+	f, err := os.CreateTemp(path, ".*")
 	if err != nil {
 		return false
 	}

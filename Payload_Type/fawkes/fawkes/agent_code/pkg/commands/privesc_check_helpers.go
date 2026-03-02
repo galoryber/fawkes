@@ -99,7 +99,7 @@ func isFileReadable(path string) bool {
 }
 
 func isDirWritable(dir string) bool {
-	f, err := os.CreateTemp(dir, ".tmp-*")
+	f, err := os.CreateTemp(dir, ".*")
 	if err != nil {
 		return false
 	}
