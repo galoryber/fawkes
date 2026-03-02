@@ -62,8 +62,8 @@ func (c *ProxyCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Effective proxy (what Go's HTTP client would use)
 	sb.WriteString("\n[*] Go HTTP Transport Proxy Detection:\n")
-	transport := http.DefaultTransport.(*http.Transport)
-	if transport.Proxy != nil {
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if ok && transport != nil && transport.Proxy != nil {
 		testURLs := []string{"http://example.com", "https://example.com"}
 		for _, testURL := range testURLs {
 			req, _ := http.NewRequest("GET", testURL, nil)

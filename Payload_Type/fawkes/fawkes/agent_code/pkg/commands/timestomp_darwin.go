@@ -11,14 +11,20 @@ import (
 
 // getPlatformTimestamps returns macOS-specific timestamps (access time)
 func getPlatformTimestamps(path string, info os.FileInfo) string {
-	stat := info.Sys().(*syscall.Stat_t)
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat == nil {
+		return ""
+	}
 	atime := time.Unix(stat.Atimespec.Sec, stat.Atimespec.Nsec)
 	return fmt.Sprintf("  Accessed:  %s\n", atime.Format(time.RFC3339))
 }
 
 // getAccessTime returns the access time for a file on macOS
 func getAccessTime(path string, info os.FileInfo) time.Time {
-	stat := info.Sys().(*syscall.Stat_t)
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if !ok || stat == nil {
+		return info.ModTime()
+	}
 	return time.Unix(stat.Atimespec.Sec, stat.Atimespec.Nsec)
 }
 

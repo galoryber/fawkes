@@ -12,7 +12,10 @@ import (
 
 // getPlatformTimestamps returns Windows-specific timestamps (access, creation)
 func getPlatformTimestamps(path string, info os.FileInfo) string {
-	sys := info.Sys().(*syscall.Win32FileAttributeData)
+	sys, ok := info.Sys().(*syscall.Win32FileAttributeData)
+	if !ok || sys == nil {
+		return ""
+	}
 	output := ""
 	output += fmt.Sprintf("  Accessed:  %s\n", time.Unix(0, sys.LastAccessTime.Nanoseconds()).Format(time.RFC3339))
 	output += fmt.Sprintf("  Created:   %s\n", time.Unix(0, sys.CreationTime.Nanoseconds()).Format(time.RFC3339))
@@ -21,7 +24,10 @@ func getPlatformTimestamps(path string, info os.FileInfo) string {
 
 // getAccessTime returns the access time for a file on Windows
 func getAccessTime(path string, info os.FileInfo) time.Time {
-	sys := info.Sys().(*syscall.Win32FileAttributeData)
+	sys, ok := info.Sys().(*syscall.Win32FileAttributeData)
+	if !ok || sys == nil {
+		return info.ModTime()
+	}
 	return time.Unix(0, sys.LastAccessTime.Nanoseconds())
 }
 
@@ -31,7 +37,10 @@ func copyCreationTime(target, source string) error {
 	if err != nil {
 		return err
 	}
-	sys := sourceInfo.Sys().(*syscall.Win32FileAttributeData)
+	sys, ok := sourceInfo.Sys().(*syscall.Win32FileAttributeData)
+	if !ok || sys == nil {
+		return fmt.Errorf("unable to read file attributes")
+	}
 	creationTime := time.Unix(0, sys.CreationTime.Nanoseconds())
 	return setCreationTime(target, creationTime)
 }
