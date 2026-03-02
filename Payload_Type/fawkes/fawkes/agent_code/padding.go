@@ -2,21 +2,15 @@ package main
 
 import (
 	_ "embed"
-	"fmt"
 )
 
 //go:embed padding.bin
 var paddingData []byte
 
 func usePadding() {
-	if len(paddingData) > 1 {
-		fmt.Printf("Loaded %d bytes of padding data.\n", len(paddingData))
-		for i, b := range paddingData {
-			fmt.Printf("%02x", b)
-			if i >= 255 {
-				break
-			}
-		}
-		fmt.Println()
+	// Reference paddingData to prevent the compiler from stripping the embedded blob.
+	// No output — avoid any console IOC on the target.
+	if len(paddingData) > 0 {
+		_ = paddingData[0]
 	}
 }

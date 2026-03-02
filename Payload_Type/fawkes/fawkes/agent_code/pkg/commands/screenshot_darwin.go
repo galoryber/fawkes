@@ -25,7 +25,7 @@ func (c *ScreenshotDarwinCommand) Description() string {
 
 func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResult {
 	// Create temp file for screenshot
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf(".sc_%d.png", time.Now().UnixNano()))
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf(".tmp_%d.png", time.Now().UnixNano()))
 
 	// Use screencapture: -x = no sound, -t png = PNG format
 	cmd := exec.Command("screencapture", "-x", "-t", "png", tmpFile)

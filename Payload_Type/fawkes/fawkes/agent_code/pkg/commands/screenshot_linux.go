@@ -36,7 +36,7 @@ func (c *ScreenshotLinuxCommand) Execute(task structs.Task) structs.CommandResul
 		}
 	}
 
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf(".sc_%d.png", time.Now().UnixNano()))
+	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf(".tmp_%d.png", time.Now().UnixNano()))
 
 	// Try screenshot tools in order of preference
 	var err error
