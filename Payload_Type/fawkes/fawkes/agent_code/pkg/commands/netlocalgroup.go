@@ -259,23 +259,4 @@ func nlgMembers(group, server string) structs.CommandResult {
 	}
 }
 
-func nlgSidUsageString(usage uint32) string {
-	switch usage {
-	case 1:
-		return "User"
-	case 2:
-		return "Group"
-	case 3:
-		return "Domain"
-	case 4:
-		return "Alias"
-	case 5:
-		return "WellKnownGroup"
-	case 6:
-		return "DeletedAccount"
-	case 9:
-		return "Computer"
-	default:
-		return fmt.Sprintf("Type(%d)", usage)
-	}
-}
+// nlgSidUsageString moved to eventlog_helpers.go
