@@ -351,3 +351,115 @@ func TestXorEncode_ExtractLdflag_Integration(t *testing.T) {
 		t.Errorf("full pipeline roundtrip failed: got %q, want %q", string(result), plaintext)
 	}
 }
+
+// --- parseInflateHexBytes tests ---
+
+func TestParseInflateHexBytes_SingleByte(t *testing.T) {
+	result, err := parseInflateHexBytes("0x90")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 || result[0] != 0x90 {
+		t.Errorf("got %x, want [90]", result)
+	}
+}
+
+func TestParseInflateHexBytes_MultiByte(t *testing.T) {
+	result, err := parseInflateHexBytes("0x41,0x42")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 2 || result[0] != 0x41 || result[1] != 0x42 {
+		t.Errorf("got %x, want [41 42]", result)
+	}
+}
+
+func TestParseInflateHexBytes_NoPrefix(t *testing.T) {
+	result, err := parseInflateHexBytes("90")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 1 || result[0] != 0x90 {
+		t.Errorf("got %x, want [90]", result)
+	}
+}
+
+func TestParseInflateHexBytes_MixedCase(t *testing.T) {
+	result, err := parseInflateHexBytes("0XFF,0xff,FF")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("got %d bytes, want 3", len(result))
+	}
+	for i, b := range result {
+		if b != 0xFF {
+			t.Errorf("byte %d: got %x, want ff", i, b)
+		}
+	}
+}
+
+func TestParseInflateHexBytes_WithSpaces(t *testing.T) {
+	result, err := parseInflateHexBytes("0x00, 0x90")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 2 || result[0] != 0x00 || result[1] != 0x90 {
+		t.Errorf("got %x, want [00 90]", result)
+	}
+}
+
+func TestParseInflateHexBytes_Invalid(t *testing.T) {
+	_, err := parseInflateHexBytes("0xZZ")
+	if err == nil {
+		t.Error("expected error for invalid hex")
+	}
+}
+
+func TestParseInflateHexBytes_TooLarge(t *testing.T) {
+	_, err := parseInflateHexBytes("0x1FF")
+	if err == nil {
+		t.Error("expected error for >8-bit value")
+	}
+}
+
+// --- generatePaddingData tests ---
+
+func TestGeneratePaddingData_SingleByte(t *testing.T) {
+	data := generatePaddingData([]byte{0x90}, 5)
+	if len(data) != 5 {
+		t.Fatalf("got %d bytes, want 5", len(data))
+	}
+	for i, b := range data {
+		if b != 0x90 {
+			t.Errorf("byte %d: got %x, want 90", i, b)
+		}
+	}
+}
+
+func TestGeneratePaddingData_Pattern(t *testing.T) {
+	data := generatePaddingData([]byte{0x41, 0x42}, 3)
+	expected := []byte{0x41, 0x42, 0x41, 0x42, 0x41, 0x42}
+	if len(data) != len(expected) {
+		t.Fatalf("got %d bytes, want %d", len(data), len(expected))
+	}
+	for i := range data {
+		if data[i] != expected[i] {
+			t.Errorf("byte %d: got %x, want %x", i, data[i], expected[i])
+		}
+	}
+}
+
+func TestGeneratePaddingData_LargeCount(t *testing.T) {
+	data := generatePaddingData([]byte{0x00, 0x90}, 1000000)
+	if len(data) != 2000000 {
+		t.Errorf("got %d bytes, want 2000000", len(data))
+	}
+}
+
+func TestGeneratePaddingData_ZeroCount(t *testing.T) {
+	data := generatePaddingData([]byte{0x90}, 0)
+	if len(data) != 0 {
+		t.Errorf("got %d bytes, want 0", len(data))
+	}
+}

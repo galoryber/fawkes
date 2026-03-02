@@ -601,25 +601,14 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			}
 		} else {
 			// Parse hex bytes like "0x41,0x42" or "0x90"
-			hexParts := strings.Split(inflateBytes, ",")
-			var bytePattern []byte
-			for _, part := range hexParts {
-				part = strings.TrimSpace(part)
-				part = strings.TrimPrefix(part, "0x")
-				part = strings.TrimPrefix(part, "0X")
-				val, parseErr := strconv.ParseUint(part, 16, 8)
-				if parseErr != nil {
-					payloadBuildResponse.Success = false
-					payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to parse inflate byte '%s': %v", part, parseErr)
-					return payloadBuildResponse
-				}
-				bytePattern = append(bytePattern, byte(val))
+			bytePattern, parseErr := parseInflateHexBytes(inflateBytes)
+			if parseErr != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to parse inflate bytes: %v", parseErr)
+				return payloadBuildResponse
 			}
 			// Build the full padding data by repeating the pattern count times
-			paddingData := make([]byte, 0, len(bytePattern)*count)
-			for i := 0; i < count; i++ {
-				paddingData = append(paddingData, bytePattern...)
-			}
+			paddingData := generatePaddingData(bytePattern, count)
 			if writeErr := os.WriteFile(paddingFile, paddingData, 0644); writeErr != nil {
 				payloadBuildResponse.Success = false
 				payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to write padding file: %v", writeErr)
@@ -1043,6 +1032,33 @@ func formatEntropyAssessment(entOutput string) string {
 	}
 
 	return assessment.String()
+}
+
+// parseInflateHexBytes parses a comma-separated hex byte string like "0x41,0x42" or "0x90"
+// into a byte slice. Returns an error if any part is not a valid hex byte.
+func parseInflateHexBytes(hexStr string) ([]byte, error) {
+	hexParts := strings.Split(hexStr, ",")
+	var pattern []byte
+	for _, part := range hexParts {
+		part = strings.TrimSpace(part)
+		part = strings.TrimPrefix(part, "0x")
+		part = strings.TrimPrefix(part, "0X")
+		val, err := strconv.ParseUint(part, 16, 8)
+		if err != nil {
+			return nil, fmt.Errorf("invalid hex byte '%s': %v", part, err)
+		}
+		pattern = append(pattern, byte(val))
+	}
+	return pattern, nil
+}
+
+// generatePaddingData repeats a byte pattern count times to create padding data.
+func generatePaddingData(pattern []byte, count int) []byte {
+	data := make([]byte, 0, len(pattern)*count)
+	for i := 0; i < count; i++ {
+		data = append(data, pattern...)
+	}
+	return data
 }
 
 func Initialize() {
