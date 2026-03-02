@@ -48,18 +48,18 @@ func TestKerbDelegationInvalidAction(t *testing.T) {
 	}
 }
 
-func TestMinInt(t *testing.T) {
-	if minInt(3, 5) != 3 {
-		t.Error("minInt(3,5) should be 3")
+func TestMinBuiltin(t *testing.T) {
+	if min(3, 5) != 3 {
+		t.Error("min(3,5) should be 3")
 	}
-	if minInt(5, 3) != 3 {
-		t.Error("minInt(5,3) should be 3")
+	if min(5, 3) != 3 {
+		t.Error("min(5,3) should be 3")
 	}
-	if minInt(3, 3) != 3 {
-		t.Error("minInt(3,3) should be 3")
+	if min(3, 3) != 3 {
+		t.Error("min(3,3) should be 3")
 	}
-	if minInt(0, 1) != 0 {
-		t.Error("minInt(0,1) should be 0")
+	if min(0, 1) != 0 {
+		t.Error("min(0,1) should be 0")
 	}
 }
 

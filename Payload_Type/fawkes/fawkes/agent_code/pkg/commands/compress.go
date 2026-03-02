@@ -253,8 +253,14 @@ func compressCreate(params CompressParams) structs.CommandResult {
 		totalSize = written
 	}
 
-	// Close writer to flush
-	zipWriter.Close()
+	// Close writer to flush (writes central directory)
+	if closeErr := zipWriter.Close(); closeErr != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error finalizing zip archive: %v", closeErr),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	// Get final zip size
 	zipStat, _ := os.Stat(outputPath)
@@ -430,10 +436,13 @@ func compressExtract(params CompressParams) structs.CommandResult {
 		}
 
 		written, copyErr := io.Copy(outFile, rc)
-		outFile.Close()
+		closeErr := outFile.Close()
 		rc.Close()
 
 		if copyErr != nil {
+			continue
+		}
+		if closeErr != nil {
 			continue
 		}
 
