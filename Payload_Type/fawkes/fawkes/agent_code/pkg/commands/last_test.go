@@ -80,36 +80,3 @@ func TestLastLoginEntryJSON(t *testing.T) {
 	}
 }
 
-func TestExtractCString(t *testing.T) {
-	tests := []struct {
-		name string
-		data []byte
-		want string
-	}{
-		{"normal", []byte{'h', 'e', 'l', 'l', 'o', 0, 0, 0}, "hello"},
-		{"empty", []byte{0, 0, 0}, ""},
-		{"full", []byte{'a', 'b', 'c'}, "abc"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := extractCString(tt.data)
-			if got != tt.want {
-				t.Errorf("extractCString = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
-func TestDetectRecordSize(t *testing.T) {
-	data := make([]byte, 768)
-	size := detectRecordSize(data)
-	if size != 384 {
-		t.Errorf("expected 384, got %d", size)
-	}
-
-	small := make([]byte, 10)
-	size = detectRecordSize(small)
-	if size != 0 {
-		t.Errorf("expected 0 for small data, got %d", size)
-	}
-}

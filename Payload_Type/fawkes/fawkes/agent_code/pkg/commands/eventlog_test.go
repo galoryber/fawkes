@@ -120,7 +120,7 @@ func TestBuildEventXPath_RawXPath(t *testing.T) {
 	}
 }
 
-func TestExtractXMLField(t *testing.T) {
+func TestExtractXMLField_EventLog(t *testing.T) {
 	xml := `<Event><System><EventID>4624</EventID><Level>4</Level></System></Event>`
 	if v := extractXMLField(xml, "EventID"); v != "4624" {
 		t.Errorf("EventID: got %q, want %q", v, "4624")
