@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 106 commands are cross-platform, with 75 additional Windows-only commands, 12 Unix-only commands, 7 Linux-only commands, and 2 macOS-only commands for a total of 202. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). 106 commands are cross-platform, with 75 additional Windows-only commands, 12 Unix-only commands, 7 Linux-only commands, and 4 macOS-only commands for a total of 204. Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -51,6 +51,7 @@ container-escape | `container-escape -action <check\|docker-sock\|cgroup\|nsente
 cp | `cp <source> <destination>` | Copy a file from source to destination.
 cred-check | `cred-check -hosts <IPs/CIDRs> -username <DOMAIN\user> -password <pass> [-hash <NTLM>] [-timeout <seconds>]` | Test credentials against SMB, WinRM, and LDAP on target hosts. Validates authentication across protocols in parallel with PTH support. Cross-platform (T1110.001, T1078).
 cred-harvest | `cred-harvest -action <shadow\|cloud\|configs\|windows\|all> [-user <username>]` | Harvest credentials: shadow hashes (Unix), cloud configs (AWS/GCP/Azure/K8s), application secrets, PowerShell history + env vars + RDP (Windows). Cross-platform (T1552.001, T1552.004, T1003.008).
+credential-prompt | `credential-prompt [-title "Update Required"] [-message "macOS needs your password..."] [-icon caution]` | **(macOS only)** Display native credential dialog to capture user password. Reports to Mythic credential vault. Custom title/message/icon (T1056.002).
 curl | `curl -url <URL> [-method GET\|POST\|PUT\|DELETE\|HEAD\|OPTIONS\|PATCH] [-headers '{"K":"V"}'] [-body <data>] [-output full\|body\|headers]` | Make HTTP/HTTPS requests from agent's network. Cloud metadata, internal services, SSRF. Cross-platform (T1106).
 cut | `cut -path <file> -delimiter <char> -fields <1,3\|1-3\|2-> [-chars <1-10>]` | Extract fields or character ranges from file lines. Custom delimiters, range specs. Cross-platform (T1083).
 credman | `credman [-action <list\|dump>] [-filter <pattern>]` | **(Windows only)** Enumerate Windows Credential Manager entries. `list` shows metadata, `dump` reveals passwords. MITRE T1555.004.
@@ -193,6 +194,7 @@ suspend | `suspend -action <suspend\|resume> -pid <PID>` | Suspend or resume a p
 sysinfo | `sysinfo` | Comprehensive system information: OS version, hardware, memory, uptime, domain, .NET (Windows), SELinux/SIP status. Cross-platform (T1082).
 tac | `tac -path <file>` | Print file lines in reverse order. Useful for viewing logs newest-to-oldest. Cross-platform (T1083).
 tail | `tail -path <file> [-lines <N>] [-head true] [-bytes <N>]` | Read first or last N lines/bytes of a file without transferring entire contents. Ring buffer for efficient tail, reverse-seek for large files. Cross-platform (T1005, T1083).
+tcc-check | `tcc-check [-service <filter>]` | **(macOS only)** Enumerate TCC (Transparency, Consent, and Control) permissions. Discover which apps have camera, microphone, screen recording, full disk access. Groups by service with allowed summary (T1082).
 touch | `touch -path <file> [-mkdir true]` | Create an empty file or update existing file timestamps. Optional parent directory creation. Cross-platform (T1106).
 thread-hijack | `thread-hijack -pid <PID> [-tid <TID>]` | **(Windows only)** Inject shellcode via thread execution hijacking — suspend existing thread, redirect RIP to shellcode, resume. Avoids CreateRemoteThread detection (T1055.003).
 threadless-inject | `threadless-inject` | **(Windows only)** Inject shellcode using threadless injection by hooking a DLL function in a remote process. More stealthy than vanilla injection as it doesn't create new threads.
@@ -318,6 +320,7 @@ Credential-harvesting commands automatically report discoveries to Mythic's **Cr
 | credman | plaintext | Credential Manager entries (on dump action) |
 | make-token | plaintext | Credentials used for token creation |
 | cred-harvest | hash/plaintext | Shadow hashes, cloud env vars, sensitive env vars |
+| credential-prompt | plaintext | macOS dialog-captured password |
 
 ### Keylog Tracking
 

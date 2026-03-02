@@ -40,6 +40,7 @@ var tccServiceNames = map[string]string{
 	"kTCCServiceFileProviderDomain":            "File Provider",
 	"kTCCServiceFileProviderPresence":          "File Provider Presence",
 	"kTCCServiceListenEvent":                   "Input Monitoring",
+	"kTCCServiceLiverpool":                     "Location Simulation",
 	"kTCCServiceLocation":                      "Location Services",
 	"kTCCServiceMediaLibrary":                  "Media Library",
 	"kTCCServiceMicrophone":                    "Microphone",
