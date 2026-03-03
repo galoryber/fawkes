@@ -54,6 +54,14 @@ whoami          # Verify SYSTEM context
 rev2self        # Revert to original identity when done
 ```
 
+## Compatibility
+
+{{% notice warning %}}**Patched on Windows 11 23H2+**: Microsoft fixed the Print Spooler path normalization vulnerability. On fully patched Windows 11, OpenPrinterW returns "This computer name is invalid" and the spooler does not connect to the pipe. On older/unpatched Windows (Server 2016, 2019, Windows 10), the technique still works.{{% /notice %}}
+
+For modern Windows, consider alternative SeImpersonate escalation methods:
+- **GodPotato/DCOM-based** — uses DCOM activation, not affected by spooler patches
+- **pipe-server** — generic pipe impersonation with external trigger
+
 ## Comparison with pipe-server
 
 | Feature | printspoofer | pipe-server |
@@ -61,8 +69,9 @@ rev2self        # Revert to original identity when done
 | Steps | One command | Requires separate trigger (e.g., coerce) |
 | Target | Local Print Spooler | Any connecting client |
 | Use case | Quick SYSTEM escalation | General pipe impersonation |
+| Patched Win11 | No (technique patched) | Yes (any client can connect) |
 
-Use `printspoofer` for straightforward SYSTEM escalation. Use `pipe-server` when you need to impersonate a specific remote client connecting to a custom pipe.
+Use `printspoofer` for SYSTEM escalation on pre-Win11 23H2 targets. Use `pipe-server` when you need to impersonate a specific remote client connecting to a custom pipe.
 
 ## MITRE ATT&CK Mapping
 
