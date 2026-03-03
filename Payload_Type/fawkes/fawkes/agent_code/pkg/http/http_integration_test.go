@@ -1,6 +1,8 @@
 package http
 
 import (
+	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -54,8 +56,8 @@ func TestMakeRequest_BasicPOST(t *testing.T) {
 	if receivedUA != "FawkesTest/1.0" {
 		t.Errorf("User-Agent = %q, want %q", receivedUA, "FawkesTest/1.0")
 	}
-	if receivedContentType != "text/plain" {
-		t.Errorf("Content-Type = %q, want %q", receivedContentType, "text/plain")
+	if receivedContentType != "application/x-www-form-urlencoded" {
+		t.Errorf("Content-Type = %q, want %q", receivedContentType, "application/x-www-form-urlencoded")
 	}
 }
 
@@ -154,6 +156,109 @@ func TestMakeRequest_NilBody(t *testing.T) {
 		t.Fatalf("makeRequest failed: %v", err)
 	}
 	resp.Body.Close()
+}
+
+func TestMakeRequest_BrowserRealisticHeaders(t *testing.T) {
+	var headers http.Header
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers = r.Header
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	profile := &HTTPProfile{
+		BaseURL:   ts.URL,
+		UserAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+		client:    ts.Client(),
+	}
+
+	resp, err := profile.makeRequest("POST", "/api/data", []byte("test-body"))
+	if err != nil {
+		t.Fatalf("makeRequest failed: %v", err)
+	}
+	resp.Body.Close()
+
+	// Verify browser-realistic headers are present
+	if got := headers.Get("Accept-Language"); got != "en-US,en;q=0.9" {
+		t.Errorf("Accept-Language = %q, want %q", got, "en-US,en;q=0.9")
+	}
+	if got := headers.Get("Accept-Encoding"); got != "gzip, deflate" {
+		t.Errorf("Accept-Encoding = %q, want %q", got, "gzip, deflate")
+	}
+	if got := headers.Get("Accept"); !strings.Contains(got, "text/html") {
+		t.Errorf("Accept = %q, should contain text/html", got)
+	}
+}
+
+func TestMakeRequest_NoContentTypeOnGET(t *testing.T) {
+	var headers http.Header
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers = r.Header
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	profile := &HTTPProfile{
+		BaseURL:   ts.URL,
+		UserAgent: "Test/1.0",
+		client:    ts.Client(),
+	}
+
+	// GET with nil body — should NOT have Content-Type
+	resp, err := profile.makeRequest("GET", "/test", nil)
+	if err != nil {
+		t.Fatalf("makeRequest failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if ct := headers.Get("Content-Type"); ct != "" {
+		t.Errorf("GET with nil body should not have Content-Type, got %q", ct)
+	}
+}
+
+func TestMakeRequest_CustomHeadersOverrideDefaults(t *testing.T) {
+	var headers http.Header
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		headers = r.Header
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	profile := &HTTPProfile{
+		BaseURL:   ts.URL,
+		UserAgent: "Test/1.0",
+		client:    ts.Client(),
+		CustomHeaders: map[string]string{
+			"Accept-Language": "fr-FR,fr;q=0.9",
+			"Content-Type":   "application/json",
+			"X-Custom":       "custom-value",
+		},
+	}
+
+	resp, err := profile.makeRequest("POST", "/test", []byte("data"))
+	if err != nil {
+		t.Fatalf("makeRequest failed: %v", err)
+	}
+	resp.Body.Close()
+
+	// Custom headers should override defaults
+	if got := headers.Get("Accept-Language"); got != "fr-FR,fr;q=0.9" {
+		t.Errorf("Accept-Language should be overridden: got %q", got)
+	}
+	if got := headers.Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type should be overridden: got %q", got)
+	}
+	// Custom headers should be added
+	if got := headers.Get("X-Custom"); got != "custom-value" {
+		t.Errorf("X-Custom = %q, want %q", got, "custom-value")
+	}
+	// Default headers not overridden should still be present
+	if got := headers.Get("Accept-Encoding"); got != "gzip, deflate" {
+		t.Errorf("Accept-Encoding default should still be present: got %q", got)
+	}
 }
 
 func TestMakeRequest_ServerDown(t *testing.T) {
@@ -1143,5 +1248,85 @@ func TestPostResponse_EncryptedBadBase64(t *testing.T) {
 	_, err := profile.PostResponse(response, agent, nil)
 	if err == nil {
 		t.Error("PostResponse should fail with bad base64 encrypted response")
+	}
+}
+
+// --- Gzip Decompression Tests ---
+
+func TestReadResponseBody_PlainText(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("hello world"))
+	}))
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := readResponseBody(resp)
+	if err != nil {
+		t.Fatalf("readResponseBody failed: %v", err)
+	}
+	if string(body) != "hello world" {
+		t.Errorf("got %q, want %q", string(body), "hello world")
+	}
+}
+
+func TestReadResponseBody_GzipCompressed(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Simulate a CDN/proxy that gzip-compresses the response
+		w.Header().Set("Content-Encoding", "gzip")
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		gz.Write([]byte("compressed payload"))
+		gz.Close()
+		w.Write(buf.Bytes())
+	}))
+	defer ts.Close()
+
+	// Use a Transport that does NOT auto-decompress (simulates our explicit Accept-Encoding)
+	client := &http.Client{
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+	}
+	resp, err := client.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := readResponseBody(resp)
+	if err != nil {
+		t.Fatalf("readResponseBody failed: %v", err)
+	}
+	if string(body) != "compressed payload" {
+		t.Errorf("got %q, want %q", string(body), "compressed payload")
+	}
+}
+
+func TestReadResponseBody_InvalidGzip(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Write([]byte("not actually gzip data"))
+	}))
+	defer ts.Close()
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			DisableCompression: true,
+		},
+	}
+	resp, err := client.Get(ts.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	_, err = readResponseBody(resp)
+	if err == nil {
+		t.Error("readResponseBody should fail with invalid gzip data")
 	}
 }

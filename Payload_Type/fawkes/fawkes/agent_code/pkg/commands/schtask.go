@@ -207,7 +207,7 @@ func buildTaskXML(args schtaskArgs) string {
 	xml := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Created by Fawkes</Description>
+    <Description>System Maintenance Task</Description>
   </RegistrationInfo>
   <Triggers>
 %s

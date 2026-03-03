@@ -134,7 +134,7 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Set default User-Agent if not provided
 	if req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36")
 	}
 
 	// Execute request

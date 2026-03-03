@@ -238,7 +238,15 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	items := cracked.Out.GetValue().(*drsuapi.MessageCrackNamesReplyV1).Result.Items
+	crackedReply, ok := cracked.Out.GetValue().(*drsuapi.MessageCrackNamesReplyV1)
+	if !ok || crackedReply == nil {
+		return structs.CommandResult{
+			Output:    "Error: unexpected DRSCrackNames response type",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	items := crackedReply.Result.Items
 
 	var sb strings.Builder
 	authMethod := "password"
@@ -334,8 +342,8 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func dcsyncParseReply(cli drsuapi.DrsuapiClient, nc *drsuapi.GetNCChangesResponse, targetName string) *dcsyncResult {
-	reply := nc.Out.GetValue().(*drsuapi.MessageGetNCChangesReplyV6)
-	if reply.Objects == nil || reply.Objects.EntityInfo == nil {
+	reply, ok := nc.Out.GetValue().(*drsuapi.MessageGetNCChangesReplyV6)
+	if !ok || reply == nil || reply.Objects == nil || reply.Objects.EntityInfo == nil {
 		return nil
 	}
 

@@ -10,6 +10,15 @@ import (
 	"fawkes/pkg/structs"
 )
 
+func TestConstants(t *testing.T) {
+	if readBufSize != 32*1024 {
+		t.Errorf("readBufSize = %d, want 32768", readBufSize)
+	}
+	if idleReadTimeout != 5*time.Minute {
+		t.Errorf("idleReadTimeout = %v, want 5m", idleReadTimeout)
+	}
+}
+
 func TestNewManager(t *testing.T) {
 	m := NewManager()
 	if m == nil {
@@ -20,6 +29,9 @@ func TestNewManager(t *testing.T) {
 	}
 	if m.connections == nil {
 		t.Error("connections map not initialized")
+	}
+	if m.IdleReadTimeout != idleReadTimeout {
+		t.Errorf("IdleReadTimeout = %v, want %v", m.IdleReadTimeout, idleReadTimeout)
 	}
 }
 
@@ -323,6 +335,140 @@ func TestConnectionClosed(t *testing.T) {
 	}
 	if !hasExit {
 		t.Error("expected exit message after connection close")
+	}
+}
+
+func TestReadFromConnection_IdleTimeout(t *testing.T) {
+	m := NewManager()
+	m.IdleReadTimeout = 200 * time.Millisecond
+
+	port := findFreePort(t)
+	err := m.Start(uint32(port))
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer m.Stop(uint32(port))
+
+	// Connect but send no data — should trigger idle timeout
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 2*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	// Wait for connection registration + idle timeout + cleanup
+	time.Sleep(500 * time.Millisecond)
+
+	// Should have an exit message from the idle timeout
+	msgs := m.DrainOutbound()
+	hasExit := false
+	for _, msg := range msgs {
+		if msg.Exit {
+			hasExit = true
+			break
+		}
+	}
+	if !hasExit {
+		t.Error("expected exit message from idle timeout")
+	}
+
+	// Connection should be removed from tracking
+	m.mu.Lock()
+	connCount := len(m.connections)
+	m.mu.Unlock()
+	if connCount != 0 {
+		t.Errorf("expected 0 connections after idle timeout, got %d", connCount)
+	}
+}
+
+func TestReadFromConnection_ActiveConnectionNotTimedOut(t *testing.T) {
+	m := NewManager()
+	m.IdleReadTimeout = 300 * time.Millisecond
+
+	port := findFreePort(t)
+	err := m.Start(uint32(port))
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer m.Stop(uint32(port))
+
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 2*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	// Send data within the timeout window to keep connection alive
+	time.Sleep(100 * time.Millisecond)
+	_, err = conn.Write([]byte("keepalive1"))
+	if err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Connection should still be active
+	m.mu.Lock()
+	connCount := len(m.connections)
+	m.mu.Unlock()
+	if connCount != 1 {
+		t.Errorf("expected 1 active connection, got %d", connCount)
+	}
+
+	// Should have data messages (not exit)
+	msgs := m.DrainOutbound()
+	hasData := false
+	for _, msg := range msgs {
+		if !msg.Exit && msg.Data != "" {
+			hasData = true
+			break
+		}
+	}
+	if !hasData {
+		t.Error("expected data messages from active connection")
+	}
+}
+
+func TestReadFromConnection_ExternalCloseBeforeTimeout(t *testing.T) {
+	m := NewManager()
+	m.IdleReadTimeout = 300 * time.Millisecond
+
+	port := findFreePort(t)
+	err := m.Start(uint32(port))
+	if err != nil {
+		t.Fatalf("Start failed: %v", err)
+	}
+	defer m.Stop(uint32(port))
+
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 2*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+
+	time.Sleep(100 * time.Millisecond)
+
+	// Find the server ID
+	m.mu.Lock()
+	var serverID uint32
+	for id := range m.connections {
+		serverID = id
+		break
+	}
+	m.mu.Unlock()
+
+	// Externally close the connection via the manager (simulates Mythic exit)
+	m.closeConnection(serverID)
+
+	// Wait for the read goroutine to notice
+	time.Sleep(200 * time.Millisecond)
+	conn.Close()
+
+	// Connection should be gone
+	m.mu.Lock()
+	_, exists := m.connections[serverID]
+	m.mu.Unlock()
+	if exists {
+		t.Error("connection should be removed after external close")
 	}
 }
 

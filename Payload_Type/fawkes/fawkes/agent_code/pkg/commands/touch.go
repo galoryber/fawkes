@@ -75,7 +75,13 @@ func (c *TouchCommand) Execute(task structs.Task) structs.CommandResult {
 				Completed: true,
 			}
 		}
-		f.Close()
+		if err := f.Close(); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error creating file: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
 
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("[+] Created %s", args.Path),

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/binary"
 	"strings"
 	"testing"
 )
@@ -674,6 +675,448 @@ func TestBuildWQLTrigger(t *testing.T) {
 			}
 			if !strings.Contains(result, tt.contains) {
 				t.Errorf("buildWQLTrigger() = %q, missing %q", result, tt.contains)
+			}
+		})
+	}
+}
+
+// --- BOF Argument Packing tests ---
+
+func TestBofPackArgs_Empty(t *testing.T) {
+	result, err := bofPackArgs(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil {
+		t.Errorf("expected nil for empty input, got %v", result)
+	}
+}
+
+func TestBofPackArgs_IntArg(t *testing.T) {
+	result, err := bofPackArgs([]string{"i42"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4-byte total size prefix + 4-byte int = 8 bytes
+	if len(result) != 8 {
+		t.Fatalf("expected 8 bytes, got %d", len(result))
+	}
+	// Total size should be 4
+	totalSize := binary.LittleEndian.Uint32(result[:4])
+	if totalSize != 4 {
+		t.Errorf("expected total size 4, got %d", totalSize)
+	}
+	// Value should be 42 in little-endian
+	val := binary.LittleEndian.Uint32(result[4:8])
+	if val != 42 {
+		t.Errorf("expected 42, got %d", val)
+	}
+}
+
+func TestBofPackArgs_ShortArg(t *testing.T) {
+	result, err := bofPackArgs([]string{"s1024"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4-byte total size + 2-byte short = 6 bytes
+	if len(result) != 6 {
+		t.Fatalf("expected 6 bytes, got %d", len(result))
+	}
+	val := binary.LittleEndian.Uint16(result[4:6])
+	if val != 1024 {
+		t.Errorf("expected 1024, got %d", val)
+	}
+}
+
+func TestBofPackArgs_StringArg(t *testing.T) {
+	result, err := bofPackArgs([]string{"zhello"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4 total size + 4 string len + 5 chars + 1 null = 14 bytes
+	if len(result) != 14 {
+		t.Fatalf("expected 14 bytes, got %d", len(result))
+	}
+	// String length (including null)
+	strLen := binary.LittleEndian.Uint32(result[4:8])
+	if strLen != 6 { // "hello" + null
+		t.Errorf("expected string length 6, got %d", strLen)
+	}
+	// Verify "hello\0"
+	if string(result[8:13]) != "hello" {
+		t.Errorf("expected 'hello', got %q", string(result[8:13]))
+	}
+	if result[13] != 0 {
+		t.Errorf("expected null terminator, got %d", result[13])
+	}
+}
+
+func TestBofPackArgs_WideStringArg(t *testing.T) {
+	result, err := bofPackArgs([]string{"ZAB"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4 total size + 4 wstring len + 2*2 chars + 2 null = 14 bytes
+	if len(result) != 14 {
+		t.Fatalf("expected 14 bytes, got %d", len(result))
+	}
+	// Wide string length: 2*2 + 2 = 6 bytes
+	wstrLen := binary.LittleEndian.Uint32(result[4:8])
+	if wstrLen != 6 {
+		t.Errorf("expected wide string length 6, got %d", wstrLen)
+	}
+	// 'A' = 0x41,0x00 in UTF-16LE
+	if result[8] != 0x41 || result[9] != 0x00 {
+		t.Errorf("expected 'A' in UTF-16LE, got %02x %02x", result[8], result[9])
+	}
+	// 'B' = 0x42,0x00
+	if result[10] != 0x42 || result[11] != 0x00 {
+		t.Errorf("expected 'B' in UTF-16LE, got %02x %02x", result[10], result[11])
+	}
+	// Null terminator
+	if result[12] != 0x00 || result[13] != 0x00 {
+		t.Errorf("expected null terminator, got %02x %02x", result[12], result[13])
+	}
+}
+
+func TestBofPackArgs_BinaryArg(t *testing.T) {
+	result, err := bofPackArgs([]string{"bdeadbeef"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4 total size + 4 binary len + 4 bytes = 12
+	if len(result) != 12 {
+		t.Fatalf("expected 12 bytes, got %d", len(result))
+	}
+	binLen := binary.LittleEndian.Uint32(result[4:8])
+	if binLen != 4 {
+		t.Errorf("expected binary length 4, got %d", binLen)
+	}
+	if result[8] != 0xde || result[9] != 0xad || result[10] != 0xbe || result[11] != 0xef {
+		t.Errorf("expected deadbeef, got %x", result[8:12])
+	}
+}
+
+func TestBofPackArgs_MultipleArgs(t *testing.T) {
+	result, err := bofPackArgs([]string{"i100", "zhello", "s5"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4 total size + 4 int + (4 str len + 6 str) + 2 short = 20 bytes
+	if len(result) != 20 {
+		t.Fatalf("expected 20 bytes, got %d", len(result))
+	}
+	totalSize := binary.LittleEndian.Uint32(result[:4])
+	if totalSize != 16 {
+		t.Errorf("expected total size 16, got %d", totalSize)
+	}
+}
+
+func TestBofPackArgs_EmptyArg(t *testing.T) {
+	_, err := bofPackArgs([]string{""})
+	if err == nil {
+		t.Error("expected error for empty argument")
+	}
+}
+
+func TestBofPackArgs_UnknownType(t *testing.T) {
+	_, err := bofPackArgs([]string{"x42"})
+	if err == nil {
+		t.Error("expected error for unknown type prefix")
+	}
+}
+
+func TestBofPackArgs_InvalidHex(t *testing.T) {
+	_, err := bofPackArgs([]string{"bZZZZ"})
+	if err == nil {
+		t.Error("expected error for invalid hex")
+	}
+}
+
+func TestBofPackArgs_InvalidInt(t *testing.T) {
+	_, err := bofPackArgs([]string{"iabc"})
+	if err == nil {
+		t.Error("expected error for invalid integer")
+	}
+}
+
+func TestBofPackArgs_IntOverflow(t *testing.T) {
+	_, err := bofPackArgs([]string{"i99999999999"})
+	if err == nil {
+		t.Error("expected error for int overflow")
+	}
+}
+
+func TestBofPackArgs_ShortOverflow(t *testing.T) {
+	_, err := bofPackArgs([]string{"s70000"})
+	if err == nil {
+		t.Error("expected error for short overflow")
+	}
+}
+
+func TestBofPackString_Empty(t *testing.T) {
+	result := bofPackString("")
+	// 4-byte length + 1-byte null = 5
+	if len(result) != 5 {
+		t.Fatalf("expected 5 bytes for empty string, got %d", len(result))
+	}
+	strLen := binary.LittleEndian.Uint32(result[:4])
+	if strLen != 1 {
+		t.Errorf("expected length 1 (just null), got %d", strLen)
+	}
+}
+
+func TestBofPackWideString_Empty(t *testing.T) {
+	result := bofPackWideString("")
+	// 4-byte length + 2-byte null = 6
+	if len(result) != 6 {
+		t.Fatalf("expected 6 bytes for empty wide string, got %d", len(result))
+	}
+	wstrLen := binary.LittleEndian.Uint32(result[:4])
+	if wstrLen != 2 {
+		t.Errorf("expected length 2 (just null), got %d", wstrLen)
+	}
+}
+
+// --- Thread Scan helpers tests ---
+
+func TestTsWaitReasonString_AllKnown(t *testing.T) {
+	tests := []struct {
+		reason uint32
+		want   string
+	}{
+		{0, "Executive"},
+		{1, "FreePage"},
+		{2, "PageIn"},
+		{3, "PoolAllocation"},
+		{4, "DelayExecution"},
+		{5, "Suspended"},
+		{6, "UserRequest"},
+		{7, "WrExecutive"},
+		{11, "WrDelayExecution"},
+		{12, "WrSuspended"},
+		{15, "WrQueue"},
+		{22, "WrTerminated"},
+		{30, "WrQuantumEnd"},
+		{37, "WrAlertByThreadId"},
+		{38, "WrDeferredPreempt"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.want, func(t *testing.T) {
+			got := tsWaitReasonString(tt.reason)
+			if got != tt.want {
+				t.Errorf("tsWaitReasonString(%d) = %q, want %q", tt.reason, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestTsWaitReasonString_Unknown(t *testing.T) {
+	got := tsWaitReasonString(99)
+	if got != "Unknown(99)" {
+		t.Errorf("tsWaitReasonString(99) = %q, want %q", got, "Unknown(99)")
+	}
+}
+
+func TestTsWaitReasonString_Boundary(t *testing.T) {
+	// MaximumWaitReason = 39, should be unknown
+	got := tsWaitReasonString(39)
+	if !strings.Contains(got, "Unknown") {
+		t.Errorf("tsWaitReasonString(39) = %q, expected Unknown", got)
+	}
+}
+
+func TestTsTruncateOwner_Short(t *testing.T) {
+	got := tsTruncateOwner("NT AUTHORITY\\SYSTEM", 25)
+	if got != "NT AUTHORITY\\SYSTEM" {
+		t.Errorf("expected no truncation, got %q", got)
+	}
+}
+
+func TestTsTruncateOwner_Exact(t *testing.T) {
+	got := tsTruncateOwner("DOMAIN\\user", 11) // exactly 11 chars
+	if got != "DOMAIN\\user" {
+		t.Errorf("expected no truncation for exact length, got %q", got)
+	}
+}
+
+func TestTsTruncateOwner_Long(t *testing.T) {
+	got := tsTruncateOwner("VERYLONGDOMAIN\\administrator", 18)
+	if len(got) > 18 {
+		t.Errorf("expected truncated to 18, got len=%d: %q", len(got), got)
+	}
+	if !strings.HasSuffix(got, "...") {
+		t.Errorf("expected '...' suffix, got %q", got)
+	}
+}
+
+func TestTsTruncateOwner_Empty(t *testing.T) {
+	got := tsTruncateOwner("", 10)
+	if got != "" {
+		t.Errorf("expected empty string, got %q", got)
+	}
+}
+
+// --- ETW Provider Resolution tests ---
+
+func TestResolveProviderGUID_Shorthands(t *testing.T) {
+	tests := []struct {
+		shorthand    string
+		expectedGUID string
+		expectedName string
+	}{
+		{"sysmon", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6", "Microsoft-Windows-Sysmon"},
+		{"amsi", "F4E1897A-BB65-5399-F245-102D38640FFE", "Microsoft-Antimalware-Scan-Interface"},
+		{"powershell", "A0C1853B-5C40-4B15-8766-3CF1C58F985A", "Microsoft-Windows-PowerShell"},
+		{"dotnet", "04C2CAB3-2A99-4097-AB1C-1291F8EB6E95", "Microsoft-Windows-DotNETRuntime"},
+		{"winrm", "11C5D8AD-756A-42C2-8087-EB1B4A72A846", "Microsoft-Windows-WinRM"},
+		{"wmi", "DCBE5AAA-16E2-457C-9337-366950045F0A", "Microsoft-Windows-WMI-Activity"},
+		{"api-calls", "7DD42A49-5329-4832-8DFD-43D979153A88", "Microsoft-Windows-Kernel-Audit-API-Calls"},
+		{"task-scheduler", "E8109B99-3A2C-4961-AA83-D1A7A148ADA8", "Microsoft-Windows-TaskScheduler"},
+		{"dns-client", "555908D1-A6D7-4695-8E1E-26931D2012F4", "Microsoft-Windows-DNS-Client"},
+		{"security-auditing", "54849625-5478-4994-A5BA-3E3B0328C30D", "Microsoft-Windows-Security-Auditing"},
+		{"kernel-process", "EDD08927-9CC4-4E65-B970-C2560FB5C289", "Microsoft-Windows-Kernel-Process"},
+		{"kernel-file", "22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716", "Microsoft-Windows-Kernel-File"},
+		{"kernel-network", "A68CA8B7-004F-D7B6-A698-04740076C4E7", "Microsoft-Windows-Kernel-Network"},
+		{"kernel-registry", "0BD3506A-9030-4F76-B16D-2803530B31F1", "Microsoft-Windows-Kernel-Registry"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.shorthand, func(t *testing.T) {
+			guid, name := resolveProviderGUID(tt.shorthand)
+			if guid != tt.expectedGUID {
+				t.Errorf("resolveProviderGUID(%q) guid = %q, want %q", tt.shorthand, guid, tt.expectedGUID)
+			}
+			if name != tt.expectedName {
+				t.Errorf("resolveProviderGUID(%q) name = %q, want %q", tt.shorthand, name, tt.expectedName)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_ShorthandsCaseInsensitive(t *testing.T) {
+	tests := []string{"SYSMON", "Sysmon", "SySmOn", "AMSI", "Amsi", "PowerShell", "POWERSHELL"}
+	for _, input := range tests {
+		t.Run(input, func(t *testing.T) {
+			guid, _ := resolveProviderGUID(input)
+			if guid == "" {
+				t.Errorf("resolveProviderGUID(%q) returned empty guid, expected match", input)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_FullName(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		expectedGUID string
+	}{
+		{"exact match", "Microsoft-Windows-Sysmon", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6"},
+		{"case insensitive", "microsoft-windows-sysmon", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6"},
+		{"substring match", "Sysmon", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6"},
+		{"substring PowerShell", "PowerShell", "A0C1853B-5C40-4B15-8766-3CF1C58F985A"},
+		{"substring WinRM", "WinRM", "11C5D8AD-756A-42C2-8087-EB1B4A72A846"},
+		{"substring LDAP", "LDAP", "B675EC37-BDB6-4648-BC92-F3FDC74D3CA2"},
+		{"substring CAPI2", "CAPI2", "F4190177-63B0-4CB5-8B2C-3A5C3D319B6D"},
+		{"substring Winlogon", "Winlogon", "DBE9B383-7CF3-4331-91CC-A3CB16A3B538"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			guid, _ := resolveProviderGUID(tt.input)
+			if guid != tt.expectedGUID {
+				t.Errorf("resolveProviderGUID(%q) guid = %q, want %q", tt.input, guid, tt.expectedGUID)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_RawGUID(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		expectedGUID string
+		expectedName string
+	}{
+		{"known GUID uppercase", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6", "Microsoft-Windows-Sysmon"},
+		{"known GUID lowercase", "b3a7698a-0c45-44da-b73d-e181c9b5c8e6", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6", "Microsoft-Windows-Sysmon"},
+		{"known GUID with braces", "{B3A7698A-0C45-44DA-B73D-E181C9B5C8E6}", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6", "Microsoft-Windows-Sysmon"},
+		{"unknown GUID", "12345678-1234-1234-1234-123456789ABC", "12345678-1234-1234-1234-123456789ABC", ""},
+		{"AMSI GUID", "F4E1897A-BB65-5399-F245-102D38640FFE", "F4E1897A-BB65-5399-F245-102D38640FFE", "Microsoft-Antimalware-Scan-Interface"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			guid, name := resolveProviderGUID(tt.input)
+			if guid != tt.expectedGUID {
+				t.Errorf("resolveProviderGUID(%q) guid = %q, want %q", tt.input, guid, tt.expectedGUID)
+			}
+			if name != tt.expectedName {
+				t.Errorf("resolveProviderGUID(%q) name = %q, want %q", tt.input, name, tt.expectedName)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_Invalid(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"empty", ""},
+		{"random text", "notaprovider"},
+		{"partial GUID", "B3A7698A-0C45"},
+		{"too long", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6-EXTRA"},
+		{"no dashes", "B3A7698A0C4544DAB73DE181C9B5C8E6"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			guid, _ := resolveProviderGUID(tt.input)
+			if guid != "" {
+				t.Errorf("resolveProviderGUID(%q) = %q, expected empty string", tt.input, guid)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_AllShorthandsResolve(t *testing.T) {
+	// Verify every shorthand in the map resolves to a valid GUID and name
+	for shorthand, expectedGUID := range providerShorthands {
+		t.Run(shorthand, func(t *testing.T) {
+			guid, name := resolveProviderGUID(shorthand)
+			if guid != expectedGUID {
+				t.Errorf("shorthand %q: got guid %q, want %q", shorthand, guid, expectedGUID)
+			}
+			if name == "" {
+				t.Errorf("shorthand %q: got empty name for guid %q", shorthand, guid)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_AllKnownProvidersResolveByName(t *testing.T) {
+	// Verify every known provider can be resolved by its full name
+	for expectedGUID, fullName := range knownSecurityProviders {
+		t.Run(fullName, func(t *testing.T) {
+			guid, name := resolveProviderGUID(fullName)
+			if guid != expectedGUID {
+				t.Errorf("name %q: got guid %q, want %q", fullName, guid, expectedGUID)
+			}
+			if name != fullName {
+				t.Errorf("name %q: got name %q, want %q", fullName, name, fullName)
+			}
+		})
+	}
+}
+
+func TestResolveProviderGUID_KnownSecurityProvidersConsistency(t *testing.T) {
+	// Every shorthand should map to a GUID in knownSecurityProviders
+	for shorthand, guid := range providerShorthands {
+		t.Run(shorthand, func(t *testing.T) {
+			if _, ok := knownSecurityProviders[guid]; !ok {
+				t.Errorf("shorthand %q maps to GUID %q which is not in knownSecurityProviders", shorthand, guid)
 			}
 		})
 	}

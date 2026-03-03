@@ -434,49 +434,7 @@ func renderEventXML(eventHandle uintptr) (string, error) {
 
 // summarizeEventXML, extractXMLField, extractXMLAttr, buildEventXPath,
 // formatEvtLogSize moved to command_helpers.go
-
-func windowsFileTimeToString(ft uint64) string {
-	if ft == 0 {
-		return "unknown"
-	}
-	// FILETIME is 100-nanosecond intervals since 1601-01-01
-	// Epoch difference: 1601 to 1970 = 11644473600 seconds = 116444736000000000 100-ns intervals
-	const epochDiff100ns = 116444736000000000
-	if ft < epochDiff100ns {
-		return "unknown"
-	}
-	unixSec := int64((ft - epochDiff100ns) / 10000000)
-	days := unixSec / 86400
-	rem := unixSec % 86400
-	hours := rem / 3600
-	mins := (rem % 3600) / 60
-	secs := rem % 60
-	year, month, day := daysToDate(days)
-	return fmt.Sprintf("%04d-%02d-%02d %02d:%02d:%02d UTC", year, month, day, hours, mins, secs)
-}
-
-func daysToDate(days int64) (int64, int64, int64) {
-	// Algorithm from https://howardhinnant.github.io/date_algorithms.html
-	z := days + 719468
-	era := z / 146097
-	if z < 0 {
-		era = (z - 146096) / 146097
-	}
-	doe := z - era*146097
-	yoe := (doe - doe/1460 + doe/36524 - doe/146096) / 365
-	y := yoe + era*400
-	doy := doe - (365*yoe + yoe/4 - yoe/100)
-	mp := (5*doy + 2) / 153
-	d := doy - (153*mp+2)/5 + 1
-	m := mp + 3
-	if mp >= 10 {
-		m = mp - 9
-	}
-	if m <= 2 {
-		y++
-	}
-	return y, m, d
-}
+// windowsFileTimeToString, daysToDate moved to eventlog_helpers.go
 
 // enableSecurityPrivilege enables SeSecurityPrivilege on the process token
 func enableSecurityPrivilege() error {

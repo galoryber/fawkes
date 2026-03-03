@@ -585,94 +585,10 @@ func getProcessIntegrity(pid uint32) string {
 
 // getWaitReasonString converts a wait reason enum to string
 func getWaitReasonString(reason KWAIT_REASON) string {
-	switch reason {
-	case Executive:
-		return "Executive"
-	case FreePage:
-		return "FreePage"
-	case PageIn:
-		return "PageIn"
-	case PoolAllocation:
-		return "PoolAllocation"
-	case DelayExecution:
-		return "DelayExecution"
-	case Suspended:
-		return "Suspended"
-	case UserRequest:
-		return "UserRequest"
-	case WrExecutive:
-		return "WrExecutive"
-	case WrFreePage:
-		return "WrFreePage"
-	case WrPageIn:
-		return "WrPageIn"
-	case WrPoolAllocation:
-		return "WrPoolAllocation"
-	case WrDelayExecution:
-		return "WrDelayExecution"
-	case WrSuspended:
-		return "WrSuspended"
-	case WrUserRequest:
-		return "WrUserRequest"
-	case WrEventPair:
-		return "WrEventPair"
-	case WrQueue:
-		return "WrQueue"
-	case WrLpcReceive:
-		return "WrLpcReceive"
-	case WrLpcReply:
-		return "WrLpcReply"
-	case WrVirtualMemory:
-		return "WrVirtualMemory"
-	case WrPageOut:
-		return "WrPageOut"
-	case WrRendezvous:
-		return "WrRendezvous"
-	case WrKeyedEvent:
-		return "WrKeyedEvent"
-	case WrTerminated:
-		return "WrTerminated"
-	case WrProcessInSwap:
-		return "WrProcessInSwap"
-	case WrCpuRateControl:
-		return "WrCpuRateControl"
-	case WrCalloutStack:
-		return "WrCalloutStack"
-	case WrKernel:
-		return "WrKernel"
-	case WrResource:
-		return "WrResource"
-	case WrPushLock:
-		return "WrPushLock"
-	case WrMutex:
-		return "WrMutex"
-	case WrQuantumEnd:
-		return "WrQuantumEnd"
-	case WrDispatchInt:
-		return "WrDispatchInt"
-	case WrPreempted:
-		return "WrPreempted"
-	case WrYieldExecution:
-		return "WrYieldExecution"
-	case WrFastMutex:
-		return "WrFastMutex"
-	case WrGuardedMutex:
-		return "WrGuardedMutex"
-	case WrRundown:
-		return "WrRundown"
-	case WrAlertByThreadId:
-		return "WrAlertByThreadId"
-	case WrDeferredPreempt:
-		return "WrDeferredPreempt"
-	default:
-		return fmt.Sprintf("Unknown(%d)", reason)
-	}
+	return tsWaitReasonString(uint32(reason))
 }
 
 // truncateOwner truncates owner string to max length
 func truncateOwner(owner string, maxLen int) string {
-	if len(owner) <= maxLen {
-		return owner
-	}
-	return owner[:maxLen-3] + "..."
+	return tsTruncateOwner(owner, maxLen)
 }

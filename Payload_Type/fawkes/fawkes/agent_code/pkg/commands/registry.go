@@ -126,6 +126,9 @@ func Initialize() {
 	RegisterCommand(&CredCheckCommand{})
 	RegisterCommand(&LnCommand{})
 	RegisterCommand(&FileAttrCommand{})
+	RegisterCommand(&WatchDirCommand{})
+	RegisterCommand(&IdeReconCommand{})
+	RegisterCommand(&CertCheckCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
@@ -164,8 +167,12 @@ func UntrackTask(id string) {
 func GetRunningTasks() map[string]*structs.Task {
 	tasks := make(map[string]*structs.Task)
 	runningTasks.Range(func(key, value interface{}) bool {
+		k, ok := key.(string)
+		if !ok {
+			return true
+		}
 		if t, ok := value.(*structs.Task); ok {
-			tasks[key.(string)] = t
+			tasks[k] = t
 		}
 		return true
 	})

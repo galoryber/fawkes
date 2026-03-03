@@ -142,7 +142,7 @@ func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func tcpPing(host string, port int, timeout time.Duration) pingResult {
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	start := time.Now()
 
 	conn, err := net.DialTimeout("tcp", addr, timeout)

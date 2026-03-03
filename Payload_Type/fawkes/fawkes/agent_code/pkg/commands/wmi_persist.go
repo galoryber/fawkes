@@ -173,7 +173,7 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 			if err == nil {
 				defer timerInst.Clear()
 				timerDisp := timerInst.ToIDispatch()
-				oleutil.PutProperty(timerDisp, "TimerID", "FawkesTimer")
+				oleutil.PutProperty(timerDisp, "TimerID", "PerfDataTimer")
 				oleutil.PutProperty(timerDisp, "IntervalBetweenEvents", intervalMs)
 				oleutil.CallMethod(timerDisp, "Put_")
 			}
@@ -323,7 +323,7 @@ func wmiPersistRemove(args wmiPersistArgs) structs.CommandResult {
 		sb.WriteString("Filter removed\n")
 	}
 
-	deleteWMIObjectByPath(services, `__IntervalTimerInstruction.TimerID="FawkesTimer"`)
+	deleteWMIObjectByPath(services, `__IntervalTimerInstruction.TimerID="PerfDataTimer"`)
 
 	status := "success"
 	if errors > 0 {

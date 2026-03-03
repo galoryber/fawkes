@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -46,6 +47,39 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 		sb.WriteString(fmt.Sprintf("Model:         %s\n", strings.TrimSpace(string(out))))
 	}
 
+	// Serial number
+	if out, err := exec.Command("ioreg", "-rd1", "-c", "IOPlatformExpertDevice").Output(); err == nil {
+		if serial := parseIoregSerial(string(out)); serial != "" {
+			sb.WriteString(fmt.Sprintf("Serial:        %s\n", serial))
+		}
+	}
+
+	// CPU brand string
+	if out, err := exec.Command("sysctl", "-n", "machdep.cpu.brand_string").Output(); err == nil {
+		brand := strings.TrimSpace(string(out))
+		if brand != "" {
+			sb.WriteString(fmt.Sprintf("CPU:           %s\n", brand))
+		}
+	}
+
+	// Apple Silicon / Rosetta 2 detection
+	procTranslated := ""
+	cpuBrand := ""
+	if out, err := exec.Command("sysctl", "-n", "sysctl.proc_translated").Output(); err == nil {
+		procTranslated = string(out)
+	}
+	if out, err := exec.Command("sysctl", "-n", "machdep.cpu.brand_string").Output(); err == nil {
+		cpuBrand = string(out)
+	}
+	isAppleSilicon, isRosetta := parseRosettaStatus(procTranslated, cpuBrand)
+	if isAppleSilicon {
+		sb.WriteString("Chip:          Apple Silicon\n")
+	}
+	if isRosetta {
+		sb.WriteString("Rosetta 2:     active (translated process)\n")
+	}
+	sb.WriteString(fmt.Sprintf("Arch:          %s\n", runtime.GOARCH))
+
 	// Memory
 	if out, err := exec.Command("sysctl", "-n", "hw.memsize").Output(); err == nil {
 		var memBytes uint64
@@ -74,6 +108,8 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 	sb.WriteString(fmt.Sprintf("UID:           %d\n", os.Getuid()))
 	sb.WriteString(fmt.Sprintf("EUID:          %d\n", os.Geteuid()))
 
+	sb.WriteString("\n--- Security Status ---\n")
+
 	// SIP status
 	if out, err := exec.Command("csrutil", "status").Output(); err == nil {
 		status := strings.TrimSpace(string(out))
@@ -81,6 +117,31 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 			sb.WriteString("SIP:           enabled\n")
 		} else if strings.Contains(status, "disabled") {
 			sb.WriteString("SIP:           disabled\n")
+		}
+	}
+
+	// Gatekeeper status
+	if out, err := exec.Command("spctl", "--status").CombinedOutput(); err == nil {
+		gk := parseSpctlStatus(string(out))
+		sb.WriteString(fmt.Sprintf("Gatekeeper:    %s\n", gk))
+	}
+
+	// FileVault status
+	if out, err := exec.Command("fdesetup", "status").CombinedOutput(); err == nil {
+		fv := parseFdesetupStatus(string(out))
+		sb.WriteString(fmt.Sprintf("FileVault:     %s\n", fv))
+	}
+
+	// MDM enrollment
+	if out, err := exec.Command("profiles", "status", "-type", "enrollment").CombinedOutput(); err == nil {
+		mdm := parseMDMEnrollment(string(out))
+		if mdm.Enrolled {
+			sb.WriteString("MDM Enrolled:  yes\n")
+			if mdm.DEPEnrolled {
+				sb.WriteString("DEP Enrolled:  yes\n")
+			}
+		} else {
+			sb.WriteString("MDM Enrolled:  no\n")
 		}
 	}
 }

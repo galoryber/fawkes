@@ -3,6 +3,8 @@ package commands
 import (
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
+	"net"
 	"strings"
 	"testing"
 
@@ -374,5 +376,632 @@ func TestParseAXFRResponse_ARecord(t *testing.T) {
 	}
 	if !strings.Contains(records[0].data, "10.0.0.1") {
 		t.Errorf("expected '10.0.0.1' in data, got %q", records[0].data)
+	}
+}
+
+// --- Additional wire-format tests ---
+
+// Helper to build DNS response messages for testing.
+func buildTestDNSResponse(rcode int, questions int, answers []testDNSRR) []byte {
+	var msg []byte
+	msg = binary.BigEndian.AppendUint16(msg, 0x1234)
+	flags := uint16(0x8000) | uint16(rcode)
+	msg = binary.BigEndian.AppendUint16(msg, flags)
+	msg = binary.BigEndian.AppendUint16(msg, uint16(questions))
+	msg = binary.BigEndian.AppendUint16(msg, uint16(len(answers)))
+	msg = binary.BigEndian.AppendUint16(msg, 0)
+	msg = binary.BigEndian.AppendUint16(msg, 0)
+
+	for i := 0; i < questions; i++ {
+		msg = append(msg, 7)
+		msg = append(msg, []byte("example")...)
+		msg = append(msg, 3)
+		msg = append(msg, []byte("com")...)
+		msg = append(msg, 0)
+		msg = binary.BigEndian.AppendUint16(msg, 252) // AXFR
+		msg = binary.BigEndian.AppendUint16(msg, 1)   // IN
+	}
+
+	for _, rr := range answers {
+		for _, label := range strings.Split(rr.name, ".") {
+			if label == "" {
+				continue
+			}
+			msg = append(msg, byte(len(label)))
+			msg = append(msg, []byte(label)...)
+		}
+		msg = append(msg, 0)
+		msg = binary.BigEndian.AppendUint16(msg, rr.rtype)
+		msg = binary.BigEndian.AppendUint16(msg, 1) // class IN
+		msg = binary.BigEndian.AppendUint32(msg, rr.ttl)
+		msg = binary.BigEndian.AppendUint16(msg, uint16(len(rr.rdata)))
+		msg = append(msg, rr.rdata...)
+	}
+	return msg
+}
+
+type testDNSRR struct {
+	name  string
+	rtype uint16
+	ttl   uint32
+	rdata []byte
+}
+
+func TestBuildAXFRQuery_SubDomainLabels(t *testing.T) {
+	query := buildAXFRQuery("a.b.c.d.example.com")
+	off := 12
+	labels := []string{"a", "b", "c", "d", "example", "com"}
+	for _, label := range labels {
+		if off >= len(query) {
+			t.Fatalf("query too short at label %q", label)
+		}
+		if int(query[off]) != len(label) {
+			t.Errorf("label %q: length byte = %d, want %d", label, query[off], len(label))
+		}
+		off++
+		if string(query[off:off+len(label)]) != label {
+			t.Errorf("label = %q, want %q", string(query[off:off+len(label)]), label)
+		}
+		off += len(label)
+	}
+	if query[off] != 0 {
+		t.Error("expected root label")
+	}
+}
+
+func TestBuildAXFRQuery_TrailingDot(t *testing.T) {
+	q1 := buildAXFRQuery("example.com")
+	q2 := buildAXFRQuery("example.com.")
+	// Both should encode the same (trailing dot produces empty label, skipped)
+	if len(q1) != len(q2) {
+		t.Errorf("trailing dot changed length: %d vs %d", len(q1), len(q2))
+	}
+}
+
+func TestBuildAXFRQuery_SingleLabel(t *testing.T) {
+	query := buildAXFRQuery("localhost")
+	off := 12
+	if query[off] != 9 {
+		t.Errorf("label length = %d, want 9", query[off])
+	}
+	if string(query[off+1:off+10]) != "localhost" {
+		t.Errorf("label = %q, want %q", string(query[off+1:off+10]), "localhost")
+	}
+}
+
+func TestDecodeDNSName_CircularPointer(t *testing.T) {
+	// Pointer to itself at offset 0
+	msg := []byte{0xC0, 0x00}
+	name := decodeDNSName(msg, 0)
+	// Should not hang; visited map breaks the loop
+	if name != "." {
+		t.Errorf("circular pointer: got %q, want %q", name, ".")
+	}
+}
+
+func TestDecodeDNSName_PointerMidName(t *testing.T) {
+	// offset 0: \x03com\x00  ("com")
+	// offset 5: \x07example\xC0\x00  ("example" + ptr to offset 0)
+	msg := []byte{3}
+	msg = append(msg, []byte("com")...)
+	msg = append(msg, 0) // offset 4
+
+	msg = append(msg, 7) // offset 5
+	msg = append(msg, []byte("example")...)
+	msg = append(msg, 0xC0, 0x00) // ptr to offset 0
+
+	name := decodeDNSName(msg, 5)
+	if name != "example.com" {
+		t.Errorf("got %q, want %q", name, "example.com")
+	}
+}
+
+func TestDecodeDNSName_OutOfBoundsOffset(t *testing.T) {
+	msg := []byte{0}
+	name := decodeDNSName(msg, 100)
+	if name != "." {
+		t.Errorf("out-of-bounds: got %q, want %q", name, ".")
+	}
+}
+
+func TestDecodeDNSName_TruncatedPointer(t *testing.T) {
+	msg := []byte{0xC0} // pointer byte without second byte
+	name := decodeDNSName(msg, 0)
+	// Should not crash
+	_ = name
+}
+
+func TestDecodeDNSName_ManyLabels(t *testing.T) {
+	var msg []byte
+	labels := []string{"a", "bb", "ccc", "dddd", "eeeee", "ffffff", "ggggggg"}
+	for _, l := range labels {
+		msg = append(msg, byte(len(l)))
+		msg = append(msg, []byte(l)...)
+	}
+	msg = append(msg, 0)
+
+	name := decodeDNSName(msg, 0)
+	expected := strings.Join(labels, ".")
+	if name != expected {
+		t.Errorf("got %q, want %q", name, expected)
+	}
+}
+
+func TestSkipDNSName_RootLabel(t *testing.T) {
+	msg := []byte{0}
+	if end := skipDNSName(msg, 0); end != 1 {
+		t.Errorf("root label: got %d, want 1", end)
+	}
+}
+
+func TestSkipDNSName_WithOffset(t *testing.T) {
+	// 3 bytes padding + name \x04test\x00
+	msg := []byte{0xFF, 0xFF, 0xFF, 4}
+	msg = append(msg, []byte("test")...)
+	msg = append(msg, 0)
+
+	end := skipDNSName(msg, 3)
+	expected := 3 + 1 + 4 + 1
+	if end != expected {
+		t.Errorf("got %d, want %d", end, expected)
+	}
+}
+
+func TestFormatRR_NS(t *testing.T) {
+	rdataOffset := 10
+	msg := make([]byte, rdataOffset)
+	msg = append(msg, 3)
+	msg = append(msg, []byte("ns1")...)
+	msg = append(msg, 7)
+	msg = append(msg, []byte("example")...)
+	msg = append(msg, 3)
+	msg = append(msg, []byte("com")...)
+	msg = append(msg, 0)
+
+	rdata := msg[rdataOffset:]
+	typeName, data := formatRR(2, rdata, msg, rdataOffset, 86400)
+	if typeName != "NS" {
+		t.Errorf("typeName = %q, want %q", typeName, "NS")
+	}
+	if !strings.Contains(data, "ns1.example.com") {
+		t.Errorf("data %q should contain NS hostname", data)
+	}
+	if !strings.Contains(data, "TTL=86400") {
+		t.Errorf("data %q should contain TTL", data)
+	}
+}
+
+func TestFormatRR_CNAME(t *testing.T) {
+	rdataOffset := 10
+	msg := make([]byte, rdataOffset)
+	msg = append(msg, 3)
+	msg = append(msg, []byte("www")...)
+	msg = append(msg, 7)
+	msg = append(msg, []byte("example")...)
+	msg = append(msg, 3)
+	msg = append(msg, []byte("com")...)
+	msg = append(msg, 0)
+
+	rdata := msg[rdataOffset:]
+	typeName, data := formatRR(5, rdata, msg, rdataOffset, 1800)
+	if typeName != "CNAME" {
+		t.Errorf("typeName = %q, want %q", typeName, "CNAME")
+	}
+	if !strings.Contains(data, "www.example.com") {
+		t.Errorf("data %q should contain CNAME target", data)
+	}
+}
+
+func TestFormatRR_MX(t *testing.T) {
+	rdataOffset := 20
+	msg := make([]byte, rdataOffset)
+	msg = binary.BigEndian.AppendUint16(msg, 10) // preference
+	msg = append(msg, 4)
+	msg = append(msg, []byte("mail")...)
+	msg = append(msg, 7)
+	msg = append(msg, []byte("example")...)
+	msg = append(msg, 3)
+	msg = append(msg, []byte("com")...)
+	msg = append(msg, 0)
+
+	rdata := msg[rdataOffset:]
+	typeName, data := formatRR(15, rdata, msg, rdataOffset, 600)
+	if typeName != "MX" {
+		t.Errorf("typeName = %q, want %q", typeName, "MX")
+	}
+	if !strings.Contains(data, "pref=10") {
+		t.Errorf("data %q should contain preference", data)
+	}
+	if !strings.Contains(data, "mail.example.com") {
+		t.Errorf("data %q should contain mail host", data)
+	}
+}
+
+func TestFormatRR_SRV(t *testing.T) {
+	rdataOffset := 10
+	msg := make([]byte, rdataOffset)
+	msg = binary.BigEndian.AppendUint16(msg, 10)  // priority
+	msg = binary.BigEndian.AppendUint16(msg, 5)   // weight
+	msg = binary.BigEndian.AppendUint16(msg, 389)  // port
+	msg = append(msg, 4)
+	msg = append(msg, []byte("dc01")...)
+	msg = append(msg, 7)
+	msg = append(msg, []byte("example")...)
+	msg = append(msg, 3)
+	msg = append(msg, []byte("com")...)
+	msg = append(msg, 0)
+
+	rdata := msg[rdataOffset:]
+	typeName, data := formatRR(33, rdata, msg, rdataOffset, 600)
+	if typeName != "SRV" {
+		t.Errorf("typeName = %q, want %q", typeName, "SRV")
+	}
+	if !strings.Contains(data, "dc01.example.com") {
+		t.Errorf("data %q should contain target", data)
+	}
+	if !strings.Contains(data, ":389") {
+		t.Errorf("data %q should contain port", data)
+	}
+	if !strings.Contains(data, "priority=10") {
+		t.Errorf("data %q should contain priority", data)
+	}
+	if !strings.Contains(data, "weight=5") {
+		t.Errorf("data %q should contain weight", data)
+	}
+}
+
+func TestFormatRR_SOA(t *testing.T) {
+	rdataOffset := 10
+	msg := make([]byte, rdataOffset)
+
+	// MNAME
+	msg = append(msg, 3)
+	msg = append(msg, []byte("ns1")...)
+	msg = append(msg, 7)
+	msg = append(msg, []byte("example")...)
+	msg = append(msg, 3)
+	msg = append(msg, []byte("com")...)
+	msg = append(msg, 0)
+	// RNAME
+	msg = append(msg, 5)
+	msg = append(msg, []byte("admin")...)
+	msg = append(msg, 7)
+	msg = append(msg, []byte("example")...)
+	msg = append(msg, 3)
+	msg = append(msg, []byte("com")...)
+	msg = append(msg, 0)
+	// Serial + refresh + retry + expire + minimum
+	msg = binary.BigEndian.AppendUint32(msg, 2024030101)
+	msg = binary.BigEndian.AppendUint32(msg, 3600)
+	msg = binary.BigEndian.AppendUint32(msg, 900)
+	msg = binary.BigEndian.AppendUint32(msg, 604800)
+	msg = binary.BigEndian.AppendUint32(msg, 86400)
+
+	rdata := msg[rdataOffset:]
+	typeName, data := formatRR(6, rdata, msg, rdataOffset, 86400)
+	if typeName != "SOA" {
+		t.Errorf("typeName = %q, want %q", typeName, "SOA")
+	}
+	if !strings.Contains(data, "ns1.example.com") {
+		t.Errorf("data %q should contain MNAME", data)
+	}
+	if !strings.Contains(data, "admin.example.com") {
+		t.Errorf("data %q should contain RNAME", data)
+	}
+	if !strings.Contains(data, "serial=2024030101") {
+		t.Errorf("data %q should contain serial", data)
+	}
+}
+
+func TestFormatRR_A_WrongLength(t *testing.T) {
+	rdata := []byte{1, 2, 3} // 3 bytes, not 4
+	typeName, _ := formatRR(1, rdata, nil, 0, 300)
+	if typeName != "TYPE1" {
+		t.Errorf("malformed A: typeName = %q, want %q", typeName, "TYPE1")
+	}
+}
+
+func TestFormatRR_AAAA_WrongLength(t *testing.T) {
+	rdata := []byte{1, 2, 3, 4, 5, 6, 7, 8} // 8 bytes, not 16
+	typeName, _ := formatRR(28, rdata, nil, 0, 300)
+	if typeName != "TYPE28" {
+		t.Errorf("malformed AAAA: typeName = %q, want %q", typeName, "TYPE28")
+	}
+}
+
+func TestFormatRR_MX_TooShort(t *testing.T) {
+	rdata := []byte{0x00}
+	typeName, _ := formatRR(15, rdata, nil, 0, 300)
+	if typeName != "TYPE15" {
+		t.Errorf("malformed MX: typeName = %q, want %q", typeName, "TYPE15")
+	}
+}
+
+func TestFormatRR_SRV_TooShort(t *testing.T) {
+	rdata := []byte{0x00, 0x01, 0x00, 0x02} // < 6 bytes
+	typeName, _ := formatRR(33, rdata, nil, 0, 300)
+	if typeName != "TYPE33" {
+		t.Errorf("malformed SRV: typeName = %q, want %q", typeName, "TYPE33")
+	}
+}
+
+func TestFormatRR_TXT_Empty(t *testing.T) {
+	rdata := []byte{}
+	typeName, _ := formatRR(16, rdata, nil, 0, 300)
+	if typeName != "TYPE16" {
+		t.Errorf("empty TXT: typeName = %q, want %q", typeName, "TYPE16")
+	}
+}
+
+func TestFormatRR_A_CommonIPs(t *testing.T) {
+	tests := []struct {
+		name string
+		ip   [4]byte
+		want string
+	}{
+		{"loopback", [4]byte{127, 0, 0, 1}, "127.0.0.1"},
+		{"private_10", [4]byte{10, 0, 0, 1}, "10.0.0.1"},
+		{"private_172", [4]byte{172, 16, 0, 1}, "172.16.0.1"},
+		{"zeros", [4]byte{0, 0, 0, 0}, "0.0.0.0"},
+		{"broadcast", [4]byte{255, 255, 255, 255}, "255.255.255.255"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			typeName, data := formatRR(1, tc.ip[:], nil, 0, 60)
+			if typeName != "A" {
+				t.Errorf("typeName = %q, want %q", typeName, "A")
+			}
+			if !strings.Contains(data, tc.want) {
+				t.Errorf("data %q should contain %q", data, tc.want)
+			}
+		})
+	}
+}
+
+func TestFormatRR_AAAA_IPv6(t *testing.T) {
+	ip := net.ParseIP("2001:db8::1")
+	typeName, data := formatRR(28, ip.To16(), nil, 0, 3600)
+	if typeName != "AAAA" {
+		t.Errorf("typeName = %q, want %q", typeName, "AAAA")
+	}
+	if !strings.Contains(data, "2001:db8::1") {
+		t.Errorf("data %q should contain IPv6", data)
+	}
+}
+
+func TestParseAXFRResponse_SOACount(t *testing.T) {
+	// Build SOA rdata
+	var soaRdata []byte
+	soaRdata = append(soaRdata, 2)
+	soaRdata = append(soaRdata, []byte("ns")...)
+	soaRdata = append(soaRdata, 7)
+	soaRdata = append(soaRdata, []byte("example")...)
+	soaRdata = append(soaRdata, 3)
+	soaRdata = append(soaRdata, []byte("com")...)
+	soaRdata = append(soaRdata, 0)
+	soaRdata = append(soaRdata, 5)
+	soaRdata = append(soaRdata, []byte("admin")...)
+	soaRdata = append(soaRdata, 7)
+	soaRdata = append(soaRdata, []byte("example")...)
+	soaRdata = append(soaRdata, 3)
+	soaRdata = append(soaRdata, []byte("com")...)
+	soaRdata = append(soaRdata, 0)
+	soaRdata = binary.BigEndian.AppendUint32(soaRdata, 2024030101)
+	soaRdata = binary.BigEndian.AppendUint32(soaRdata, 3600)
+	soaRdata = binary.BigEndian.AppendUint32(soaRdata, 900)
+	soaRdata = binary.BigEndian.AppendUint32(soaRdata, 604800)
+	soaRdata = binary.BigEndian.AppendUint32(soaRdata, 86400)
+
+	answers := []testDNSRR{
+		{name: "example.com", rtype: 6, ttl: 86400, rdata: soaRdata},
+		{name: "host.example.com", rtype: 1, ttl: 300, rdata: []byte{10, 0, 0, 1}},
+	}
+	msg := buildTestDNSResponse(0, 0, answers)
+
+	records, rcode, soaCount := parseAXFRResponse(msg)
+	if rcode != 0 {
+		t.Fatalf("rcode = %d, want 0", rcode)
+	}
+	if soaCount != 1 {
+		t.Errorf("soaCount = %d, want 1", soaCount)
+	}
+	if len(records) != 2 {
+		t.Errorf("got %d records, want 2", len(records))
+	}
+	if records[0].rtype != "SOA" {
+		t.Errorf("first record type = %q, want %q", records[0].rtype, "SOA")
+	}
+}
+
+func TestParseAXFRResponse_MultipleRecordTypes(t *testing.T) {
+	txtData := []byte{11}
+	txtData = append(txtData, []byte("hello world")...)
+
+	answers := []testDNSRR{
+		{name: "example.com", rtype: 1, ttl: 300, rdata: []byte{1, 2, 3, 4}},
+		{name: "example.com", rtype: 28, ttl: 300, rdata: net.ParseIP("::1").To16()},
+		{name: "example.com", rtype: 16, ttl: 300, rdata: txtData},
+	}
+	msg := buildTestDNSResponse(0, 0, answers)
+
+	records, rcode, _ := parseAXFRResponse(msg)
+	if rcode != 0 {
+		t.Fatalf("rcode = %d, want 0", rcode)
+	}
+	if len(records) != 3 {
+		t.Fatalf("got %d records, want 3", len(records))
+	}
+	expectedTypes := []string{"A", "AAAA", "TXT"}
+	for i, rec := range records {
+		if rec.rtype != expectedTypes[i] {
+			t.Errorf("record %d: type = %q, want %q", i, rec.rtype, expectedTypes[i])
+		}
+	}
+}
+
+func TestParseAXFRResponse_AllErrorRcodes(t *testing.T) {
+	for _, rc := range []int{1, 2, 3, 4, 5, 9} {
+		t.Run(fmt.Sprintf("RCODE_%d", rc), func(t *testing.T) {
+			msg := buildTestDNSResponse(rc, 0, nil)
+			records, rcode, _ := parseAXFRResponse(msg)
+			if rcode != rc {
+				t.Errorf("rcode = %d, want %d", rcode, rc)
+			}
+			if records != nil {
+				t.Error("records should be nil for error rcode")
+			}
+		})
+	}
+}
+
+func TestParseAXFRResponse_EmptyAnswer(t *testing.T) {
+	msg := buildTestDNSResponse(0, 0, nil)
+	records, rcode, _ := parseAXFRResponse(msg)
+	if rcode != 0 {
+		t.Errorf("rcode = %d, want 0", rcode)
+	}
+	if len(records) != 0 {
+		t.Errorf("got %d records, want 0", len(records))
+	}
+}
+
+func TestParseAXFRResponse_WithQuestion(t *testing.T) {
+	answers := []testDNSRR{
+		{name: "example.com", rtype: 1, ttl: 300, rdata: []byte{10, 0, 0, 1}},
+	}
+	msg := buildTestDNSResponse(0, 1, answers)
+
+	records, rcode, _ := parseAXFRResponse(msg)
+	if rcode != 0 {
+		t.Fatalf("rcode = %d, want 0", rcode)
+	}
+	if len(records) != 1 {
+		t.Fatalf("got %d records, want 1", len(records))
+	}
+	if !strings.Contains(records[0].data, "10.0.0.1") {
+		t.Errorf("data %q should contain IP", records[0].data)
+	}
+}
+
+func TestParseAXFRResponse_TruncatedRdata(t *testing.T) {
+	// Build response with RDLEN claiming more data than available
+	var msg []byte
+	msg = binary.BigEndian.AppendUint16(msg, 0x1234)
+	msg = binary.BigEndian.AppendUint16(msg, 0x8000)
+	msg = binary.BigEndian.AppendUint16(msg, 0)
+	msg = binary.BigEndian.AppendUint16(msg, 1)
+	msg = binary.BigEndian.AppendUint16(msg, 0)
+	msg = binary.BigEndian.AppendUint16(msg, 0)
+
+	msg = append(msg, 4)
+	msg = append(msg, []byte("test")...)
+	msg = append(msg, 0)
+	msg = binary.BigEndian.AppendUint16(msg, 1)
+	msg = binary.BigEndian.AppendUint16(msg, 1)
+	msg = binary.BigEndian.AppendUint32(msg, 300)
+	msg = binary.BigEndian.AppendUint16(msg, 100) // claims 100 bytes
+	msg = append(msg, 1, 2, 3, 4)                // only 4 bytes
+
+	// Should not panic
+	records, _, _ := parseAXFRResponse(msg)
+	_ = records
+}
+
+func TestDnsCommand_ZoneTransferMissingServer(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action: "zone-transfer",
+		Target: "example.com",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error without server, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "server") {
+		t.Errorf("error should mention server: %s", result.Output)
+	}
+}
+
+func TestDnsCommand_AXFRAlias(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action: "axfr",
+		Target: "example.com",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	// Should hit the zone-transfer handler (and fail due to missing server)
+	if result.Status != "error" {
+		t.Errorf("expected error for axfr without server, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "server") {
+		t.Errorf("error should mention server: %s", result.Output)
+	}
+}
+
+func TestBuildAndDecode_RoundTrip(t *testing.T) {
+	domain := "test.local"
+	query := buildAXFRQuery(domain)
+
+	// Decode the domain name from the query
+	name := decodeDNSName(query, 12)
+	if name != domain {
+		t.Errorf("round-trip: got %q, want %q", name, domain)
+	}
+
+	// Verify skip matches
+	endOffset := skipDNSName(query, 12)
+	// After the name, we should have QTYPE + QCLASS (4 bytes) = end of query
+	if endOffset+4 != len(query) {
+		t.Errorf("skipDNSName returned %d, expected end at %d (len=%d)", endOffset, len(query)-4, len(query))
+	}
+}
+
+func TestBuildAXFRQuery_DifferentDomains(t *testing.T) {
+	q1 := buildAXFRQuery("example.com")
+	q2 := buildAXFRQuery("test.org")
+	// "example.com" = 13 bytes in wire format, "test.org" = 10 bytes
+	if len(q1) == len(q2) {
+		t.Error("different-length domains should produce different-length queries")
+	}
+}
+
+// --- Benchmarks ---
+
+func BenchmarkDecodeDNSName(b *testing.B) {
+	var msg []byte
+	for _, label := range []string{"dc01", "subdomain", "example", "com"} {
+		msg = append(msg, byte(len(label)))
+		msg = append(msg, []byte(label)...)
+	}
+	msg = append(msg, 0)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		decodeDNSName(msg, 0)
+	}
+}
+
+func BenchmarkBuildAXFRQuery(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		buildAXFRQuery("subdomain.example.com")
+	}
+}
+
+func BenchmarkParseAXFRResponse(b *testing.B) {
+	answers := make([]testDNSRR, 10)
+	for i := range answers {
+		answers[i] = testDNSRR{
+			name:  fmt.Sprintf("host%d.example.com", i),
+			rtype: 1,
+			ttl:   300,
+			rdata: []byte{10, 0, 0, byte(i + 1)},
+		}
+	}
+	msg := buildTestDNSResponse(0, 0, answers)
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		parseAXFRResponse(msg)
 	}
 }

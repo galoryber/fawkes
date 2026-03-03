@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
 
@@ -32,26 +31,12 @@ type amcacheParams struct {
 	Count  int    `json:"count"`
 }
 
-// Shimcache entry parsed from AppCompatCache registry value
-type shimcacheEntry struct {
-	Path         string
-	LastModified time.Time
-	DataSize     uint32
-	DataOffset   int
-	EntrySize    int
-}
-
 // amcacheOutputEntry is the JSON output format for browser script rendering
 type amcacheOutputEntry struct {
 	Index        int    `json:"index"`
 	LastModified string `json:"last_modified"`
 	Path         string `json:"path"`
 }
-
-// Windows 10/11 AppCompatCache header
-// Signature: "10ts" (0x30747331)
-// After the 4-byte signature comes a 4-byte unknown field, then entries
-const shimcacheWin10Sig = 0x73743031 // "10ts" as little-endian uint32
 
 func (c *AmcacheCommand) Execute(task structs.Task) structs.CommandResult {
 	var params amcacheParams
@@ -105,165 +90,7 @@ func readShimcacheRaw() ([]byte, error) {
 	return val, nil
 }
 
-// parseShimcacheWin10 parses Windows 10/11 Shimcache format
-// Header: first 4 bytes = header size (0x34 = 52 on Win10/11)
-// Entries start at offset indicated by header size
-// Each entry: sig(4) + unknown(4) + data_size(4) + data(data_size bytes)
-// Inside data: path_len(2) + path(path_len bytes UTF-16LE) + FILETIME(8) + remaining
-func parseShimcacheWin10(data []byte) ([]shimcacheEntry, error) {
-	if len(data) < 52 {
-		return nil, fmt.Errorf("data too small: %d bytes", len(data))
-	}
-
-	// Header size is in the first 4 bytes
-	headerSize := binary.LittleEndian.Uint32(data[0:4])
-	if headerSize < 48 || headerSize > 128 {
-		return nil, fmt.Errorf("unexpected header size: %d", headerSize)
-	}
-
-	var entries []shimcacheEntry
-	offset := int(headerSize) // Skip header
-
-	for offset+12 < len(data) {
-		entrySig := binary.LittleEndian.Uint32(data[offset : offset+4])
-		if entrySig != shimcacheWin10Sig {
-			break
-		}
-
-		entryStart := offset
-
-		// Entry header: sig(4) + unknown(4) + data_size(4)
-		dataSize := int(binary.LittleEndian.Uint32(data[offset+8 : offset+12]))
-		dataStart := offset + 12
-		nextEntry := dataStart + dataSize
-
-		if nextEntry > len(data) {
-			break
-		}
-
-		// Parse data block: path_len(2) + path + FILETIME(8)
-		var path string
-		var lastMod time.Time
-
-		if dataStart+2 <= len(data) {
-			pathLen := int(binary.LittleEndian.Uint16(data[dataStart : dataStart+2]))
-			pathStart := dataStart + 2
-
-			if pathStart+pathLen <= len(data) {
-				path = decodeUTF16LEShim(data[pathStart : pathStart+pathLen])
-
-				// FILETIME follows path
-				ftStart := pathStart + pathLen
-				if ftStart+8 <= len(data) {
-					ft := binary.LittleEndian.Uint64(data[ftStart : ftStart+8])
-					if ft > 0 {
-						lastMod = filetimeToTime(int64(ft))
-					}
-				}
-			}
-		}
-
-		entries = append(entries, shimcacheEntry{
-			Path:         path,
-			LastModified: lastMod,
-			DataSize:     uint32(dataSize),
-			DataOffset:   entryStart,
-			EntrySize:    nextEntry - entryStart,
-		})
-
-		offset = nextEntry
-	}
-
-	return entries, nil
-}
-
-// parseShimcacheWin8 parses Windows 8/8.1 Shimcache format
-// Format: 4-byte signature (0x80) + entries with length-prefixed paths
-func parseShimcacheWin8(data []byte) ([]shimcacheEntry, error) {
-	if len(data) < 128 {
-		return nil, fmt.Errorf("data too small: %d bytes", len(data))
-	}
-
-	var entries []shimcacheEntry
-	offset := 128 // Skip header
-
-	for offset < len(data)-12 {
-		if offset+4 > len(data) {
-			break
-		}
-
-		// Path length in characters (UTF-16)
-		pathLenChars := binary.LittleEndian.Uint32(data[offset : offset+4])
-		offset += 4
-
-		pathLenBytes := int(pathLenChars * 2)
-		if pathLenBytes <= 0 || pathLenBytes > 2048 || offset+pathLenBytes > len(data) {
-			break
-		}
-
-		path := decodeUTF16LEShim(data[offset : offset+pathLenBytes])
-		offset += pathLenBytes
-
-		// Last modified FILETIME
-		var lastMod time.Time
-		if offset+8 <= len(data) {
-			ft := binary.LittleEndian.Uint64(data[offset : offset+8])
-			if ft > 0 {
-				lastMod = filetimeToTime(int64(ft))
-			}
-			offset += 8
-		}
-
-		// Data size + data
-		if offset+4 > len(data) {
-			break
-		}
-		dataSize := binary.LittleEndian.Uint32(data[offset : offset+4])
-		offset += 4
-		offset += int(dataSize)
-
-		entries = append(entries, shimcacheEntry{
-			Path:         path,
-			LastModified: lastMod,
-			DataSize:     dataSize,
-		})
-	}
-
-	return entries, nil
-}
-
-// parseShimcache auto-detects format and parses
-func parseShimcache(data []byte) ([]shimcacheEntry, string, error) {
-	if len(data) < 4 {
-		return nil, "", fmt.Errorf("data too small")
-	}
-
-	headerVal := binary.LittleEndian.Uint32(data[0:4])
-
-	// Windows 10/11: header starts with header size (typically 0x34 = 52)
-	// Check if entries at offset headerVal start with "10ts" signature
-	if headerVal >= 48 && headerVal <= 128 && int(headerVal)+4 <= len(data) {
-		entrySig := binary.LittleEndian.Uint32(data[headerVal : headerVal+4])
-		if entrySig == shimcacheWin10Sig {
-			entries, err := parseShimcacheWin10(data)
-			return entries, "Windows 10/11", err
-		}
-	}
-
-	// Windows 8/8.1: header starts with 0x80
-	if headerVal == 0x80 {
-		entries, err := parseShimcacheWin8(data)
-		return entries, "Windows 8/8.1", err
-	}
-
-	// Fallback: try Windows 10 format
-	entries, err := parseShimcacheWin10(data)
-	if err == nil && len(entries) > 0 {
-		return entries, "Windows 10/11 (variant)", nil
-	}
-
-	return nil, "", fmt.Errorf("unsupported Shimcache format (header: 0x%08X, size: %d bytes)", headerVal, len(data))
-}
+// parseShimcacheWin10, parseShimcacheWin8, parseShimcache moved to forensics_helpers.go
 
 func amcacheQuery(params amcacheParams) structs.CommandResult {
 	data, err := readShimcacheRaw()
@@ -522,22 +349,7 @@ func amcacheClear() structs.CommandResult {
 	}
 }
 
-// rebuildShimcacheWin10 rebuilds the binary Shimcache data keeping only specified entries
-func rebuildShimcacheWin10(header []byte, keepEntries []shimcacheEntry, originalData []byte) []byte {
-	// Start with the header
-	result := make([]byte, len(header))
-	copy(result, header)
-
-	// Append each kept entry's raw bytes from the original data
-	for _, e := range keepEntries {
-		if e.DataOffset+e.EntrySize > len(originalData) {
-			return nil
-		}
-		result = append(result, originalData[e.DataOffset:e.DataOffset+e.EntrySize]...)
-	}
-
-	return result
-}
+// rebuildShimcacheWin10 moved to forensics_helpers.go
 
 // writeShimcache writes new Shimcache data to the registry
 func writeShimcache(data []byte) error {

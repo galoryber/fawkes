@@ -245,13 +245,6 @@ func vmDetectDarwin() ([]vmEvidence, string) {
 	var evidence []vmEvidence
 	detected := ""
 
-	// Check hw.model via sysctl file
-	// On macOS VMs, model often reveals virtualization
-	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
-		// macOS doesn't have /proc, so this won't hit normally
-		_ = data
-	}
-
 	// Check for known VM kext/processes
 	vmKexts := map[string]string{
 		"/Library/Application Support/VMware Tools": "VMware",

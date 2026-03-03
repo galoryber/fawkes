@@ -191,8 +191,12 @@ func macPrivescCheckSUID() structs.CommandResult {
 
 	var flagged []string
 	for _, f := range suidFiles {
+		fields := strings.Fields(f)
+		if len(fields) == 0 {
+			continue
+		}
 		for _, bin := range interestingBins {
-			if strings.Contains(f, "/"+bin+" ") || strings.HasSuffix(strings.Fields(f)[0], "/"+bin) {
+			if strings.Contains(f, "/"+bin+" ") || strings.HasSuffix(fields[0], "/"+bin) {
 				flagged = append(flagged, f)
 				break
 			}
@@ -384,20 +388,7 @@ func macPrivescCheckTCC() structs.CommandResult {
 			client := fields[1]
 			authVal := fields[2]
 
-			// Flag high-value permissions
-			flag := ""
-			switch service {
-			case "kTCCServiceAccessibility":
-				flag = " [!] Accessibility — can control UI, inject keystrokes"
-			case "kTCCServiceScreenCapture":
-				flag = " [!] Screen Capture"
-			case "kTCCServiceSystemPolicyAllFiles":
-				flag = " [!] Full Disk Access"
-			case "kTCCServiceMicrophone":
-				flag = " [!] Microphone Access"
-			case "kTCCServiceCamera":
-				flag = " [!] Camera Access"
-			}
+			flag := macTCCServiceFlag(service)
 			sb.WriteString(fmt.Sprintf("  %s → %s (auth=%s)%s\n", service, client, authVal, flag))
 			if flag != "" {
 				interesting++
@@ -573,13 +564,13 @@ func macIsWritable(path string) bool {
 		return false
 	}
 	if info.IsDir() {
-		tmpFile := filepath.Join(path, ".fawkes_write_test")
-		f, err := os.Create(tmpFile)
+		f, err := os.CreateTemp(path, ".*")
 		if err != nil {
 			return false
 		}
+		name := f.Name()
 		f.Close()
-		os.Remove(tmpFile)
+		os.Remove(name)
 		return true
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)

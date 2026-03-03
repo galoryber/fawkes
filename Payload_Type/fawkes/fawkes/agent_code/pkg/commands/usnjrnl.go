@@ -43,22 +43,7 @@ const (
 	usnDeleteFlagDelete = 0x00000001
 )
 
-// USN reason flags
-const (
-	usnReasonDataOverwrite       = 0x00000001
-	usnReasonDataExtend          = 0x00000002
-	usnReasonDataTruncation      = 0x00000004
-	usnReasonNamedDataOverwrite  = 0x00000010
-	usnReasonNamedDataExtend     = 0x00000020
-	usnReasonNamedDataTruncation = 0x00000040
-	usnReasonFileCreate          = 0x00000100
-	usnReasonFileDelete          = 0x00000200
-	usnReasonSecurityChange      = 0x00000800
-	usnReasonRenameOldName       = 0x00001000
-	usnReasonRenameNewName       = 0x00002000
-	usnReasonBasicInfoChange     = 0x00008000
-	usnReasonClose               = 0x80000000
-)
+// USN reason flags and usnReasonString moved to forensics_helpers.go
 
 type usnJournalData struct {
 	UsnJournalID    uint64
@@ -209,9 +194,9 @@ func usnQuery(volume string) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("  Next USN:         %d\n", journal.NextUsn))
 	sb.WriteString(fmt.Sprintf("  Lowest Valid USN: %d\n", journal.LowestValidUsn))
 	sb.WriteString(fmt.Sprintf("  Max USN:          %d\n", journal.MaxUsn))
-	sb.WriteString(fmt.Sprintf("  Max Size:         %s\n", formatBytes(journal.MaximumSize)))
-	sb.WriteString(fmt.Sprintf("  Alloc Delta:      %s\n", formatBytes(journal.AllocationDelta)))
-	sb.WriteString(fmt.Sprintf("  Record Range:     %s (approx)\n", formatBytes(uint64(recordRange))))
+	sb.WriteString(fmt.Sprintf("  Max Size:         %s\n", bitsFormatBytes(journal.MaximumSize)))
+	sb.WriteString(fmt.Sprintf("  Alloc Delta:      %s\n", bitsFormatBytes(journal.AllocationDelta)))
+	sb.WriteString(fmt.Sprintf("  Record Range:     %s (approx)\n", bitsFormatBytes(uint64(recordRange))))
 
 	return structs.CommandResult{
 		Output:    sb.String(),
@@ -410,50 +395,11 @@ func usnDelete(volume string) structs.CommandResult {
 	recordRange := journal.NextUsn - journal.FirstUsn
 	return structs.CommandResult{
 		Output: fmt.Sprintf("USN Journal deleted on %s\n  Journal ID: 0x%016X\n  Records cleared: ~%s of forensic data destroyed\n  Note: deletion continues in background",
-			volume, journal.UsnJournalID, formatBytes(uint64(recordRange))),
+			volume, journal.UsnJournalID, bitsFormatBytes(uint64(recordRange))),
 		Status:    "success",
 		Completed: true,
 	}
 }
 
-func formatBytes(b uint64) string {
-	switch {
-	case b >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
-	case b >= 1<<20:
-		return fmt.Sprintf("%.1f MB", float64(b)/float64(1<<20))
-	case b >= 1<<10:
-		return fmt.Sprintf("%.1f KB", float64(b)/float64(1<<10))
-	default:
-		return fmt.Sprintf("%d B", b)
-	}
-}
-
-func usnReasonString(reason uint32) string {
-	var parts []string
-	if reason&usnReasonFileCreate != 0 {
-		parts = append(parts, "Create")
-	}
-	if reason&usnReasonFileDelete != 0 {
-		parts = append(parts, "Delete")
-	}
-	if reason&(usnReasonDataOverwrite|usnReasonDataExtend|usnReasonDataTruncation) != 0 {
-		parts = append(parts, "DataChange")
-	}
-	if reason&(usnReasonRenameOldName|usnReasonRenameNewName) != 0 {
-		parts = append(parts, "Rename")
-	}
-	if reason&usnReasonSecurityChange != 0 {
-		parts = append(parts, "SecurityChange")
-	}
-	if reason&usnReasonBasicInfoChange != 0 {
-		parts = append(parts, "InfoChange")
-	}
-	if reason&usnReasonClose != 0 {
-		parts = append(parts, "Close")
-	}
-	if len(parts) == 0 {
-		return fmt.Sprintf("0x%08X", reason)
-	}
-	return strings.Join(parts, "|")
-}
+// formatBytes (duplicate of bitsFormatBytes in command_helpers.go) and
+// usnReasonString moved to forensics_helpers.go

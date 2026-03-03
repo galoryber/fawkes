@@ -8,11 +8,15 @@ import (
 	"math/rand"
 	"net"
 	"sync"
+	"time"
 
 	"fawkes/pkg/structs"
 )
 
-const readBufSize = 32 * 1024 // 32KB per read
+const (
+	readBufSize     = 32 * 1024       // 32KB per read
+	idleReadTimeout = 5 * time.Minute // close idle connections to prevent goroutine/connection leaks
+)
 
 // connTracker tracks a single rpfwd connection
 type connTracker struct {
@@ -23,17 +27,19 @@ type connTracker struct {
 
 // Manager handles all active reverse port forward listeners and connections
 type Manager struct {
-	listeners   map[uint32]net.Listener // port → listener
-	connections map[uint32]*connTracker // serverId → connection
-	outbound    []structs.SocksMsg
-	mu          sync.Mutex
+	listeners       map[uint32]net.Listener // port → listener
+	connections     map[uint32]*connTracker // serverId → connection
+	outbound        []structs.SocksMsg
+	mu              sync.Mutex
+	IdleReadTimeout time.Duration // exported for testing; defaults to idleReadTimeout const
 }
 
 // NewManager creates a new rpfwd manager
 func NewManager() *Manager {
 	return &Manager{
-		listeners:   make(map[uint32]net.Listener),
-		connections: make(map[uint32]*connTracker),
+		listeners:       make(map[uint32]net.Listener),
+		connections:     make(map[uint32]*connTracker),
+		IdleReadTimeout: idleReadTimeout,
 	}
 }
 
@@ -79,6 +85,22 @@ func (m *Manager) Stop(port uint32) error {
 
 	log.Printf("[RPFWD] Stopped listening on port %d", port)
 	return nil
+}
+
+// Close stops all listeners and closes all connections. Should be called during agent shutdown.
+func (m *Manager) Close() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for port, listener := range m.listeners {
+		listener.Close()
+		delete(m.listeners, port)
+	}
+	for id, tracker := range m.connections {
+		tracker.conn.Close()
+		close(tracker.writeCh)
+		delete(m.connections, id)
+	}
+	m.outbound = nil
 }
 
 // DrainOutbound atomically returns all pending outbound rpfwd messages and clears the queue
@@ -152,10 +174,14 @@ func (m *Manager) acceptConnections(listener net.Listener, port uint32) {
 	}
 }
 
-// readFromConnection reads data from a TCP connection and queues it as outbound rpfwd messages
+// readFromConnection reads data from a TCP connection and queues it as outbound rpfwd messages.
+// Uses an idle read timeout to prevent goroutine/connection leaks when remote endpoints
+// stop responding without closing the connection (common with firewalls, NAT timeouts,
+// or crashed services). Long-running idle connections are also forensic indicators.
 func (m *Manager) readFromConnection(serverID uint32, conn net.Conn, port uint32) {
 	buf := make([]byte, readBufSize)
 	for {
+		conn.SetReadDeadline(time.Now().Add(m.IdleReadTimeout))
 		n, err := conn.Read(buf)
 		if n > 0 {
 			encoded := base64.StdEncoding.EncodeToString(buf[:n])
@@ -169,10 +195,21 @@ func (m *Manager) readFromConnection(serverID uint32, conn net.Conn, port uint32
 			m.mu.Unlock()
 		}
 		if err != nil {
-			if err != io.EOF {
+			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+				// Idle timeout — check if connection was already closed externally
+				m.mu.Lock()
+				_, stillActive := m.connections[serverID]
+				m.mu.Unlock()
+				if !stillActive {
+					conn.Close()
+					return
+				}
+				// Connection still active but idle for too long — close it
+				log.Printf("[RPFWD] Idle timeout for server_id %d, closing", serverID)
+			} else if err != io.EOF {
 				log.Printf("[RPFWD] Read error for server_id %d: %v", serverID, err)
 			}
-			// Connection closed or errored — send exit and clean up
+			// Connection closed, timed out, or errored — send exit and clean up
 			m.mu.Lock()
 			m.outbound = append(m.outbound, structs.SocksMsg{
 				ServerId: serverID,
@@ -180,8 +217,13 @@ func (m *Manager) readFromConnection(serverID uint32, conn net.Conn, port uint32
 				Exit:     true,
 				Port:     port,
 			})
+			tracker, trackerExists := m.connections[serverID]
+			delete(m.connections, serverID)
 			m.mu.Unlock()
-			m.closeConnection(serverID)
+			if trackerExists {
+				close(tracker.writeCh)
+			}
+			conn.Close()
 			return
 		}
 	}

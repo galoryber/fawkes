@@ -147,14 +147,14 @@ func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 		}
 	}
 
-	filterArgs := buildFilterArgs(args.Service, args.Account, args.Label)
+	filterArgs := macBuildFilterArgs(args.Service, args.Account, args.Label)
 
 	// Try with -g (include password) first
 	cmdArgs := append([]string{"find-generic-password", "-g"}, filterArgs...)
 	out, err := keychainExec(cmdArgs...)
 	if err != nil {
 		output := string(out)
-		if isItemNotFound(output) {
+		if macIsItemNotFound(output) {
 			return structs.CommandResult{
 				Output:    "No matching generic password found",
 				Status:    "success",
@@ -166,7 +166,7 @@ func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 		out2, err2 := keychainExec(cmdArgs...)
 		if err2 != nil {
 			output2 := string(out2)
-			if isItemNotFound(output2) {
+			if macIsItemNotFound(output2) {
 				return structs.CommandResult{
 					Output:    "No matching generic password found",
 					Status:    "success",
@@ -205,14 +205,14 @@ func keychainFindInternet(args keychainArgs) structs.CommandResult {
 	}
 
 	// For internet passwords, -s is server (not service)
-	filterArgs := buildFilterArgs(args.Server, args.Account, args.Label)
+	filterArgs := macBuildFilterArgs(args.Server, args.Account, args.Label)
 
 	// Try with -g (include password) first
 	cmdArgs := append([]string{"find-internet-password", "-g"}, filterArgs...)
 	out, err := keychainExec(cmdArgs...)
 	if err != nil {
 		output := string(out)
-		if isItemNotFound(output) {
+		if macIsItemNotFound(output) {
 			return structs.CommandResult{
 				Output:    "No matching internet password found",
 				Status:    "success",
@@ -224,7 +224,7 @@ func keychainFindInternet(args keychainArgs) structs.CommandResult {
 		out2, err2 := keychainExec(cmdArgs...)
 		if err2 != nil {
 			output2 := string(out2)
-			if isItemNotFound(output2) {
+			if macIsItemNotFound(output2) {
 				return structs.CommandResult{
 					Output:    "No matching internet password found",
 					Status:    "success",
@@ -249,27 +249,6 @@ func keychainFindInternet(args keychainArgs) structs.CommandResult {
 		Status:    "success",
 		Completed: true,
 	}
-}
-
-// buildFilterArgs builds common filter arguments for security CLI
-func buildFilterArgs(serverOrService, account, label string) []string {
-	var args []string
-	if serverOrService != "" {
-		args = append(args, "-s", serverOrService)
-	}
-	if account != "" {
-		args = append(args, "-a", account)
-	}
-	if label != "" {
-		args = append(args, "-l", label)
-	}
-	return args
-}
-
-// isItemNotFound checks if the security CLI output indicates no item was found
-func isItemNotFound(output string) bool {
-	return strings.Contains(output, "could not be found") ||
-		strings.Contains(output, "SecKeychainSearchCopyNext")
 }
 
 // keychainFindCert searches for certificates in keychains

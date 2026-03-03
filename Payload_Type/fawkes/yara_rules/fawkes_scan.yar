@@ -152,7 +152,7 @@ rule SuspiciousCryptoPatterns
         $hmac = "crypto/hmac" ascii
         $rsa = "crypto/rsa" ascii
     condition:
-        ($aes_gcm and $base64) or ($hmac and $aes_gcm)
+        ($aes_gcm and $base64) or ($hmac and $aes_gcm) or ($rsa and $base64)
 }
 
 rule PersistenceMechanisms
@@ -196,5 +196,5 @@ rule GarbleObfuscated
         $no_gopclntab = ".gopclntab" ascii
         $no_go_buildid = "Go build ID:" ascii
     condition:
-        not $no_gopclntab and not $no_go_buildid
+        ($garble_seed or (not $no_gopclntab and not $no_go_buildid))
 }

@@ -229,7 +229,10 @@ func generateTestKey() string {
 func TestEncryptMessage_NoKey(t *testing.T) {
 	p := NewTCPProfile("", "", false) // No encryption key
 	msg := []byte("plaintext message")
-	result := p.encryptMessage(msg)
+	result, err := p.encryptMessage(msg)
+	if err != nil {
+		t.Fatalf("encryptMessage with no key should not error: %v", err)
+	}
 	if string(result) != string(msg) {
 		t.Error("Without key, encryptMessage should return original message")
 	}
@@ -240,7 +243,10 @@ func TestEncryptMessage_WithKey(t *testing.T) {
 	p := NewTCPProfile("", key, false)
 	msg := []byte("secret message")
 
-	encrypted := p.encryptMessage(msg)
+	encrypted, err := p.encryptMessage(msg)
+	if err != nil {
+		t.Fatalf("encryptMessage failed: %v", err)
+	}
 	if string(encrypted) == string(msg) {
 		t.Error("Encrypted message should differ from plaintext")
 	}
@@ -248,6 +254,23 @@ func TestEncryptMessage_WithKey(t *testing.T) {
 	// Encrypted format: IV (16) + ciphertext (padded) + HMAC (32)
 	if len(encrypted) < 16+16+32 { // IV + at least one block + HMAC
 		t.Errorf("Encrypted message too short: %d bytes", len(encrypted))
+	}
+}
+
+func TestEncryptMessage_InvalidKey(t *testing.T) {
+	p := NewTCPProfile("", "not-valid-base64!!!", false)
+	_, err := p.encryptMessage([]byte("test"))
+	if err == nil {
+		t.Error("encryptMessage with invalid key should return error, not silently fall back to plaintext")
+	}
+}
+
+func TestEncryptMessage_WrongKeyLength(t *testing.T) {
+	// Valid base64 but wrong length for AES (not 16, 24, or 32 bytes)
+	p := NewTCPProfile("", base64.StdEncoding.EncodeToString([]byte("short")), false)
+	_, err := p.encryptMessage([]byte("test"))
+	if err == nil {
+		t.Error("encryptMessage with wrong key length should return error")
 	}
 }
 
@@ -264,7 +287,10 @@ func TestEncryptDecrypt_Roundtrip(t *testing.T) {
 	}
 
 	for _, msg := range testMessages {
-		encrypted := p.encryptMessage([]byte(msg))
+		encrypted, err := p.encryptMessage([]byte(msg))
+		if err != nil {
+			t.Fatalf("encryptMessage failed for '%s': %v", msg, err)
+		}
 
 		// The decryptResponse expects UUID prefix (36 bytes) before IV
 		withUUID := append([]byte(p.CallbackUUID), encrypted...)

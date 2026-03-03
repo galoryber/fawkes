@@ -116,28 +116,7 @@ func TestSchtaskCommand_List(t *testing.T) {
 	}
 }
 
-func TestTriggerTypeFromString(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected int
-	}{
-		{"ONLOGON", TASK_TRIGGER_LOGON},
-		{"onlogon", TASK_TRIGGER_LOGON},
-		{"ONSTART", TASK_TRIGGER_BOOT},
-		{"DAILY", TASK_TRIGGER_DAILY},
-		{"WEEKLY", TASK_TRIGGER_WEEKLY},
-		{"ONIDLE", TASK_TRIGGER_IDLE},
-		{"ONCE", TASK_TRIGGER_TIME},
-		{"unknown", TASK_TRIGGER_LOGON}, // default
-	}
-
-	for _, tt := range tests {
-		result := triggerTypeFromString(tt.input)
-		if result != tt.expected {
-			t.Errorf("triggerTypeFromString(%q) = %d, want %d", tt.input, result, tt.expected)
-		}
-	}
-}
+// TestTriggerTypeFromString moved to command_helpers_test.go
 
 func TestTaskStateIntToString(t *testing.T) {
 	tests := []struct {

@@ -125,7 +125,7 @@ func (c *PortScanCommand) Execute(task structs.Task) structs.CommandResult {
 				defer wg.Done()
 				defer func() { <-sem }() // Release semaphore
 
-				addr := fmt.Sprintf("%s:%d", h, p)
+				addr := net.JoinHostPort(h, fmt.Sprintf("%d", p))
 				conn, err := net.DialTimeout("tcp", addr, timeout)
 				if err == nil {
 					conn.Close()

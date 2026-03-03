@@ -33,7 +33,7 @@ func buildWQLTrigger(trigger string, intervalSec int, processName string) (strin
 	case "startup":
 		return "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfFormattedData_PerfOS_System' AND TargetInstance.SystemUpTime >= 120", nil
 	case "interval":
-		return "SELECT * FROM __TimerEvent WHERE TimerID = 'FawkesTimer' AND NumFirings > 0", nil
+		return "SELECT * FROM __TimerEvent WHERE TimerID = 'PerfDataTimer' AND NumFirings > 0", nil
 	case "process":
 		if processName == "" {
 			return "", fmt.Errorf("process_name required for process trigger")

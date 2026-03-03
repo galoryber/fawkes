@@ -152,12 +152,7 @@ func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 	return cmdResult
 }
 
-// filetimeToTime converts a Windows FILETIME (100-ns intervals since 1601-01-01) to Go time.
-func filetimeToTime(ft int64) time.Time {
-	const epochDiff = 11644473600
-	seconds := ft/10000000 - epochDiff
-	return time.Unix(seconds, 0).UTC()
-}
+// filetimeToTime moved to forensics_helpers.go
 
 func lapsExpiryStatus(expTime time.Time) string {
 	remaining := time.Until(expTime)

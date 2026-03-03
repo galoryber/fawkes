@@ -1,8 +1,11 @@
 package commands
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -17,12 +20,23 @@ func (c *CatCommand) Name() string {
 
 // Description returns the command description
 func (c *CatCommand) Description() string {
-	return "Display file contents - reads and displays the contents of a file"
+	return "Display file contents with optional line range, numbering, and size protection"
 }
+
+// catParams represents the structured parameters for cat
+type catParams struct {
+	Path   string `json:"path"`
+	Start  int    `json:"start"`  // Starting line number (1-based, 0 = beginning)
+	End    int    `json:"end"`    // Ending line number (0 = end of file)
+	Number bool   `json:"number"` // Show line numbers
+	Max    int    `json:"max"`    // Max output size in KB (default 5120 = 5MB)
+}
+
+// maxCatBytes is the default maximum output size (5MB)
+const maxCatBytes = 5 * 1024 * 1024
 
 // Execute executes the cat command
 func (c *CatCommand) Execute(task structs.Task) structs.CommandResult {
-	// Check if parameters are provided
 	if task.Params == "" {
 		return structs.CommandResult{
 			Output:    "Error: No file path specified",
@@ -31,10 +45,65 @@ func (c *CatCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data\file.txt")
-	path := stripPathQuotes(task.Params)
+	args := catParams{}
+	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+		// Plain text — treat entire input as file path
+		args.Path = stripPathQuotes(task.Params)
+	}
 
-	// Read the file
+	if args.Path == "" {
+		return structs.CommandResult{
+			Output:    "Error: No file path specified",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Determine max output size
+	maxBytes := maxCatBytes
+	if args.Max > 0 {
+		maxBytes = args.Max * 1024
+	}
+
+	// If line range or numbering requested, use line-based reading
+	if args.Start > 0 || args.End > 0 || args.Number {
+		return catReadLines(args, maxBytes)
+	}
+
+	return catReadFull(args.Path, maxBytes)
+}
+
+// catReadFull reads the entire file with size protection
+func catReadFull(path string, maxBytes int) structs.CommandResult {
+	info, err := os.Stat(path)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	if info.IsDir() {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: %s is a directory", path),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	size := info.Size()
+
+	// Size protection: don't read files larger than maxBytes
+	if size > int64(maxBytes) {
+		return structs.CommandResult{
+			Output: fmt.Sprintf("Error: file is %s (limit: %s). Use 'tail' for large files, or 'cat -max %d' to override.",
+				statFormatSize(size), statFormatSize(int64(maxBytes)), (size/1024)+1),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return structs.CommandResult{
@@ -44,9 +113,93 @@ func (c *CatCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Return the file contents
 	return structs.CommandResult{
 		Output:    string(content),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+// catReadLines reads specific line ranges with optional numbering
+func catReadLines(args catParams, maxBytes int) structs.CommandResult {
+	f, err := os.Open(args.Path)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer f.Close()
+
+	info, _ := f.Stat()
+	if info != nil && info.IsDir() {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: %s is a directory", args.Path),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	scanner := bufio.NewScanner(f)
+	// Increase max token size for files with very long lines
+	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
+
+	var sb strings.Builder
+	lineNum := 0
+	outputLines := 0
+	startLine := args.Start
+	if startLine < 1 {
+		startLine = 1
+	}
+	endLine := args.End // 0 means no limit
+
+	for scanner.Scan() {
+		lineNum++
+
+		if lineNum < startLine {
+			continue
+		}
+		if endLine > 0 && lineNum > endLine {
+			break
+		}
+
+		if sb.Len() > maxBytes {
+			sb.WriteString(fmt.Sprintf("\n... (output truncated at %s)", statFormatSize(int64(maxBytes))))
+			break
+		}
+
+		if args.Number {
+			sb.WriteString(fmt.Sprintf("%6d  %s\n", lineNum, scanner.Text()))
+		} else {
+			sb.WriteString(scanner.Text())
+			sb.WriteByte('\n')
+		}
+		outputLines++
+	}
+
+	if err := scanner.Err(); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error reading file: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Add header for range/numbered output
+	header := ""
+	if args.Start > 0 || args.End > 0 {
+		if args.End > 0 {
+			header = fmt.Sprintf("[*] %s lines %d-%d (%d lines shown)\n", args.Path, startLine, min(lineNum, endLine), outputLines)
+		} else {
+			header = fmt.Sprintf("[*] %s from line %d (%d lines shown)\n", args.Path, startLine, outputLines)
+		}
+	} else if args.Number {
+		header = fmt.Sprintf("[*] %s (%d lines)\n", args.Path, outputLines)
+	}
+
+	return structs.CommandResult{
+		Output:    header + sb.String(),
 		Status:    "success",
 		Completed: true,
 	}

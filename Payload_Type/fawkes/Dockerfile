@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     python3-pip \
     git \
     yara \
+    ent \
     && rm -rf /var/lib/apt/lists/*
 
 # Install sRDI for DLL to shellcode conversion

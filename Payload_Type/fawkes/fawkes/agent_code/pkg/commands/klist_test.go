@@ -4,8 +4,10 @@
 package commands
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -463,5 +465,720 @@ func TestKlistImportViaExecute(t *testing.T) {
 	}
 	if !strings.Contains(result.Output, "Ticket imported successfully") {
 		t.Errorf("missing success message: %s", result.Output)
+	}
+}
+
+// --- Standalone binary parser tests ---
+
+func TestReadCcacheString(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    []byte
+		want    string
+		wantErr bool
+	}{
+		{
+			name: "simple string",
+			data: func() []byte {
+				var b []byte
+				b = binary.BigEndian.AppendUint32(b, 5)
+				b = append(b, "hello"...)
+				return b
+			}(),
+			want: "hello",
+		},
+		{
+			name: "empty string",
+			data: func() []byte {
+				var b []byte
+				b = binary.BigEndian.AppendUint32(b, 0)
+				return b
+			}(),
+			want: "",
+		},
+		{
+			name:    "truncated length",
+			data:    []byte{0x00, 0x00},
+			wantErr: true,
+		},
+		{
+			name: "truncated data",
+			data: func() []byte {
+				var b []byte
+				b = binary.BigEndian.AppendUint32(b, 10)
+				b = append(b, "short"...)
+				return b
+			}(),
+			wantErr: true,
+		},
+		{
+			name: "string too long",
+			data: func() []byte {
+				var b []byte
+				b = binary.BigEndian.AppendUint32(b, 100000) // >65535
+				return b
+			}(),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := bytes.NewReader(tt.data)
+			got, err := readCcacheString(r)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("readCcacheString() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && got != tt.want {
+				t.Errorf("readCcacheString() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadCcacheOctetString(t *testing.T) {
+	tests := []struct {
+		name    string
+		data    []byte
+		wantLen int
+		wantErr bool
+	}{
+		{
+			name: "valid data",
+			data: func() []byte {
+				var b []byte
+				b = binary.BigEndian.AppendUint32(b, 4)
+				b = append(b, 0xDE, 0xAD, 0xBE, 0xEF)
+				return b
+			}(),
+			wantLen: 4,
+		},
+		{
+			name: "empty data",
+			data: func() []byte {
+				var b []byte
+				b = binary.BigEndian.AppendUint32(b, 0)
+				return b
+			}(),
+			wantLen: 0,
+		},
+		{
+			name:    "truncated length",
+			data:    []byte{0x00},
+			wantErr: true,
+		},
+		{
+			name: "too long (>1MB)",
+			data: func() []byte {
+				var b []byte
+				b = binary.BigEndian.AppendUint32(b, 2000000)
+				return b
+			}(),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := bytes.NewReader(tt.data)
+			got, err := readCcacheOctetString(r)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("readCcacheOctetString() error = %v, wantErr %v", err, tt.wantErr)
+				return
+			}
+			if !tt.wantErr && len(got) != tt.wantLen {
+				t.Errorf("readCcacheOctetString() len = %d, want %d", len(got), tt.wantLen)
+			}
+		})
+	}
+}
+
+func TestSkipCcacheOctetString(t *testing.T) {
+	// Valid skip — should consume exactly the right number of bytes
+	var buf []byte
+	buf = binary.BigEndian.AppendUint32(buf, 8)
+	buf = append(buf, make([]byte, 8)...)
+	buf = append(buf, 0xFF) // sentinel after the octet string
+
+	r := bytes.NewReader(buf)
+	if err := skipCcacheOctetString(r); err != nil {
+		t.Fatalf("skipCcacheOctetString() error = %v", err)
+	}
+	// Should have exactly 1 byte remaining (sentinel)
+	if r.Len() != 1 {
+		t.Errorf("expected 1 byte remaining, got %d", r.Len())
+	}
+
+	// Too long (>1MB)
+	var buf2 []byte
+	buf2 = binary.BigEndian.AppendUint32(buf2, 2000000)
+	r2 := bytes.NewReader(buf2)
+	if err := skipCcacheOctetString(r2); err == nil {
+		t.Error("expected error for >1MB octet string")
+	}
+}
+
+func TestReadCcachePrincipalStandalone(t *testing.T) {
+	// Build a principal with multiple components: HTTP/web.example.com@EXAMPLE.COM
+	var buf []byte
+	buf = binary.BigEndian.AppendUint32(buf, 2) // name type (NT-SRV-HST)
+	buf = binary.BigEndian.AppendUint32(buf, 2) // 2 components
+	buf = appendCcacheString(buf, "EXAMPLE.COM")
+	buf = appendCcacheString(buf, "HTTP")
+	buf = appendCcacheString(buf, "web.example.com")
+
+	r := bytes.NewReader(buf)
+	p, err := readCcachePrincipal(r)
+	if err != nil {
+		t.Fatalf("readCcachePrincipal() error = %v", err)
+	}
+	if p.NameType != 2 {
+		t.Errorf("NameType = %d, want 2", p.NameType)
+	}
+	if p.Realm != "EXAMPLE.COM" {
+		t.Errorf("Realm = %q, want EXAMPLE.COM", p.Realm)
+	}
+	if len(p.Components) != 2 {
+		t.Fatalf("Components len = %d, want 2", len(p.Components))
+	}
+	if p.String() != "HTTP/web.example.com@EXAMPLE.COM" {
+		t.Errorf("String() = %q, want HTTP/web.example.com@EXAMPLE.COM", p.String())
+	}
+}
+
+func TestReadCcachePrincipalTruncated(t *testing.T) {
+	// Only name type, no component count
+	var buf []byte
+	buf = binary.BigEndian.AppendUint32(buf, 1)
+	r := bytes.NewReader(buf)
+	_, err := readCcachePrincipal(r)
+	if err == nil {
+		t.Error("expected error for truncated principal")
+	}
+}
+
+// --- v3 ccache format test ---
+
+func TestParseCcacheV3(t *testing.T) {
+	var buf []byte
+
+	// Version: 0x0503 (no header)
+	buf = binary.BigEndian.AppendUint16(buf, 0x0503)
+
+	// Default principal: admin@CORP.LOCAL
+	buf = appendPrincipal(buf, 1, "CORP.LOCAL", []string{"admin"})
+
+	// One credential
+	buf = appendPrincipal(buf, 1, "CORP.LOCAL", []string{"admin"})
+	buf = appendPrincipal(buf, 2, "CORP.LOCAL", []string{"krbtgt", "CORP.LOCAL"})
+	buf = binary.BigEndian.AppendUint16(buf, 23) // RC4-HMAC
+	buf = appendOctetString(buf, make([]byte, 16))
+	now := time.Now()
+	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Unix()))
+	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Unix()))
+	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(10*time.Hour).Unix()))
+	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(7*24*time.Hour).Unix()))
+	buf = append(buf, 0) // is_skey
+	buf = binary.BigEndian.AppendUint32(buf, 0x40000000) // forwardable
+	buf = binary.BigEndian.AppendUint32(buf, 0) // addresses
+	buf = binary.BigEndian.AppendUint32(buf, 0) // authdata
+	buf = appendOctetString(buf, []byte{0x61, 0x03}) // ticket
+	buf = appendOctetString(buf, nil) // second ticket
+
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "krb5cc_v3")
+	if err := os.WriteFile(path, buf, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	principal, creds, err := parseCcache(path)
+	if err != nil {
+		t.Fatalf("parseCcache v3 failed: %v", err)
+	}
+	if principal.String() != "admin@CORP.LOCAL" {
+		t.Errorf("principal = %q, want admin@CORP.LOCAL", principal.String())
+	}
+	if len(creds) != 1 {
+		t.Fatalf("expected 1 cred, got %d", len(creds))
+	}
+	if creds[0].KeyType != 23 {
+		t.Errorf("keytype = %d, want 23 (RC4-HMAC)", creds[0].KeyType)
+	}
+}
+
+// --- Multiple credentials test ---
+
+func TestParseCcacheMultipleCredentials(t *testing.T) {
+	var buf []byte
+
+	buf = binary.BigEndian.AppendUint16(buf, 0x0504)
+	buf = binary.BigEndian.AppendUint16(buf, 0) // header len
+
+	// Default principal
+	buf = appendPrincipal(buf, 1, "DOMAIN.COM", []string{"user"})
+
+	now := time.Now()
+
+	// Credential 1: TGT
+	buf = appendCredential(buf, now,
+		ccachePrincipal{NameType: 1, Realm: "DOMAIN.COM", Components: []string{"user"}},
+		ccachePrincipal{NameType: 2, Realm: "DOMAIN.COM", Components: []string{"krbtgt", "DOMAIN.COM"}},
+		18, 0x40e00000)
+
+	// Credential 2: HTTP service ticket
+	buf = appendCredential(buf, now,
+		ccachePrincipal{NameType: 1, Realm: "DOMAIN.COM", Components: []string{"user"}},
+		ccachePrincipal{NameType: 2, Realm: "DOMAIN.COM", Components: []string{"HTTP", "web.domain.com"}},
+		17, 0x40000000)
+
+	// Credential 3: CIFS service ticket
+	buf = appendCredential(buf, now,
+		ccachePrincipal{NameType: 1, Realm: "DOMAIN.COM", Components: []string{"user"}},
+		ccachePrincipal{NameType: 2, Realm: "DOMAIN.COM", Components: []string{"cifs", "fileserver.domain.com"}},
+		18, 0x40000000)
+
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "krb5cc_multi")
+	if err := os.WriteFile(path, buf, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	principal, creds, err := parseCcache(path)
+	if err != nil {
+		t.Fatalf("parseCcache failed: %v", err)
+	}
+	if principal.String() != "user@DOMAIN.COM" {
+		t.Errorf("principal = %q", principal.String())
+	}
+	if len(creds) != 3 {
+		t.Fatalf("expected 3 credentials, got %d", len(creds))
+	}
+	if creds[1].Server.String() != "HTTP/web.domain.com@DOMAIN.COM" {
+		t.Errorf("cred[1] server = %q", creds[1].Server.String())
+	}
+	if creds[2].Server.String() != "cifs/fileserver.domain.com@DOMAIN.COM" {
+		t.Errorf("cred[2] server = %q", creds[2].Server.String())
+	}
+}
+
+// appendCredential is a test helper to build a binary credential entry
+func appendCredential(buf []byte, now time.Time, client, server ccachePrincipal, etype uint16, flags uint32) []byte {
+	buf = appendPrincipal(buf, client.NameType, client.Realm, client.Components)
+	buf = appendPrincipal(buf, server.NameType, server.Realm, server.Components)
+	buf = binary.BigEndian.AppendUint16(buf, etype)
+	buf = appendOctetString(buf, make([]byte, 16)) // key data
+	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Unix()))
+	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Unix()))
+	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(10*time.Hour).Unix()))
+	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(7*24*time.Hour).Unix()))
+	buf = append(buf, 0)                            // is_skey
+	buf = binary.BigEndian.AppendUint32(buf, flags)  // ticket_flags
+	buf = binary.BigEndian.AppendUint32(buf, 0)      // addresses
+	buf = binary.BigEndian.AppendUint32(buf, 0)      // authdata
+	buf = appendOctetString(buf, []byte{0x61, 0x03}) // ticket
+	buf = appendOctetString(buf, nil)                 // second ticket
+	return buf
+}
+
+// --- klistList action tests ---
+
+func TestKlistListWithRealCcache(t *testing.T) {
+	ccacheData := buildTestCcache(t)
+	tmpDir := t.TempDir()
+	ccachePath := filepath.Join(tmpDir, "krb5cc_listtest")
+	if err := os.WriteFile(ccachePath, ccacheData, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := os.Getenv("KRB5CCNAME")
+	os.Setenv("KRB5CCNAME", ccachePath)
+	defer func() {
+		if orig != "" {
+			os.Setenv("KRB5CCNAME", orig)
+		} else {
+			os.Unsetenv("KRB5CCNAME")
+		}
+	}()
+
+	result := klistList(klistArgs{Action: "list"})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+
+	// Output should be JSON array of ticket entries
+	var entries []klistTicketEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Fatalf("output is not valid JSON: %v\nOutput: %s", err, result.Output)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Server != "krbtgt/EXAMPLE.COM@EXAMPLE.COM" {
+		t.Errorf("server = %q", entries[0].Server)
+	}
+	if entries[0].Status != "valid" {
+		t.Errorf("status = %q, want valid", entries[0].Status)
+	}
+	if entries[0].Encryption != "AES256-CTS" {
+		t.Errorf("encryption = %q, want AES256-CTS", entries[0].Encryption)
+	}
+}
+
+func TestKlistListWithServerFilter(t *testing.T) {
+	// Build ccache with multiple credentials
+	var buf []byte
+	buf = binary.BigEndian.AppendUint16(buf, 0x0504)
+	buf = binary.BigEndian.AppendUint16(buf, 0)
+	buf = appendPrincipal(buf, 1, "DOMAIN.COM", []string{"user"})
+	now := time.Now()
+	buf = appendCredential(buf, now,
+		ccachePrincipal{NameType: 1, Realm: "DOMAIN.COM", Components: []string{"user"}},
+		ccachePrincipal{NameType: 2, Realm: "DOMAIN.COM", Components: []string{"krbtgt", "DOMAIN.COM"}},
+		18, 0x40e00000)
+	buf = appendCredential(buf, now,
+		ccachePrincipal{NameType: 1, Realm: "DOMAIN.COM", Components: []string{"user"}},
+		ccachePrincipal{NameType: 2, Realm: "DOMAIN.COM", Components: []string{"HTTP", "web.domain.com"}},
+		17, 0x40000000)
+
+	tmpDir := t.TempDir()
+	ccachePath := filepath.Join(tmpDir, "krb5cc_filter")
+	if err := os.WriteFile(ccachePath, buf, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := os.Getenv("KRB5CCNAME")
+	os.Setenv("KRB5CCNAME", ccachePath)
+	defer func() {
+		if orig != "" {
+			os.Setenv("KRB5CCNAME", orig)
+		} else {
+			os.Unsetenv("KRB5CCNAME")
+		}
+	}()
+
+	// Filter for HTTP — should return only 1 entry
+	result := klistList(klistArgs{Action: "list", Server: "HTTP"})
+	if result.Status != "success" {
+		t.Fatalf("expected success: %s", result.Output)
+	}
+	var entries []klistTicketEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 filtered entry, got %d", len(entries))
+	}
+	if !strings.Contains(entries[0].Server, "HTTP") {
+		t.Errorf("filtered entry server = %q, expected HTTP", entries[0].Server)
+	}
+}
+
+func TestKlistListNoFile(t *testing.T) {
+	orig := os.Getenv("KRB5CCNAME")
+	os.Setenv("KRB5CCNAME", "/nonexistent/krb5cc_missing")
+	defer func() {
+		if orig != "" {
+			os.Setenv("KRB5CCNAME", orig)
+		} else {
+			os.Unsetenv("KRB5CCNAME")
+		}
+	}()
+
+	result := klistList(klistArgs{Action: "list"})
+	if result.Status != "success" {
+		t.Errorf("expected success (graceful not-found), got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "No ccache file") {
+		t.Errorf("expected not-found message, got: %s", result.Output)
+	}
+}
+
+// --- klistPurge action tests ---
+
+func TestKlistPurgeSuccess(t *testing.T) {
+	ccacheData := buildTestCcache(t)
+	tmpDir := t.TempDir()
+	ccachePath := filepath.Join(tmpDir, "krb5cc_purge")
+	if err := os.WriteFile(ccachePath, ccacheData, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := os.Getenv("KRB5CCNAME")
+	os.Setenv("KRB5CCNAME", ccachePath)
+	defer func() {
+		if orig != "" {
+			os.Setenv("KRB5CCNAME", orig)
+		} else {
+			os.Unsetenv("KRB5CCNAME")
+		}
+	}()
+
+	result := klistPurge(klistArgs{Action: "purge"})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "purged") {
+		t.Errorf("expected purge confirmation, got: %s", result.Output)
+	}
+
+	// File should be gone
+	if _, err := os.Stat(ccachePath); !os.IsNotExist(err) {
+		t.Error("ccache file should have been deleted")
+	}
+}
+
+func TestKlistPurgeNoFile(t *testing.T) {
+	orig := os.Getenv("KRB5CCNAME")
+	os.Setenv("KRB5CCNAME", "/nonexistent/krb5cc_nope")
+	defer func() {
+		if orig != "" {
+			os.Setenv("KRB5CCNAME", orig)
+		} else {
+			os.Unsetenv("KRB5CCNAME")
+		}
+	}()
+
+	result := klistPurge(klistArgs{Action: "purge"})
+	if result.Status != "success" {
+		t.Errorf("expected success (graceful not-found), got %s", result.Status)
+	}
+}
+
+func TestKlistPurgeNonFileType(t *testing.T) {
+	orig := os.Getenv("KRB5CCNAME")
+	os.Setenv("KRB5CCNAME", "KEYRING:persistent:1000")
+	defer func() {
+		if orig != "" {
+			os.Setenv("KRB5CCNAME", orig)
+		} else {
+			os.Unsetenv("KRB5CCNAME")
+		}
+	}()
+
+	result := klistPurge(klistArgs{Action: "purge"})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "No file-based ccache") {
+		t.Errorf("expected non-file message, got: %s", result.Output)
+	}
+}
+
+// --- klistDump action tests ---
+
+func TestKlistDumpSuccess(t *testing.T) {
+	ccacheData := buildTestCcache(t)
+	tmpDir := t.TempDir()
+	ccachePath := filepath.Join(tmpDir, "krb5cc_dump")
+	if err := os.WriteFile(ccachePath, ccacheData, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := os.Getenv("KRB5CCNAME")
+	os.Setenv("KRB5CCNAME", ccachePath)
+	defer func() {
+		if orig != "" {
+			os.Setenv("KRB5CCNAME", orig)
+		} else {
+			os.Unsetenv("KRB5CCNAME")
+		}
+	}()
+
+	result := klistDump(klistArgs{Action: "dump"})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Dumped ccache") {
+		t.Errorf("expected dump header, got: %s", result.Output)
+	}
+
+	// The output should contain base64-encoded ccache data
+	// Extract the base64 and verify it decodes back to the original
+	lines := strings.Split(result.Output, "\n")
+	var b64Lines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && !strings.HasPrefix(trimmed, "[") {
+			b64Lines = append(b64Lines, trimmed)
+		}
+	}
+	b64 := strings.Join(b64Lines, "")
+	decoded, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		t.Fatalf("base64 decode failed: %v", err)
+	}
+	if len(decoded) != len(ccacheData) {
+		t.Errorf("decoded length %d != original %d", len(decoded), len(ccacheData))
+	}
+}
+
+func TestKlistDumpNoFile(t *testing.T) {
+	orig := os.Getenv("KRB5CCNAME")
+	os.Setenv("KRB5CCNAME", "/nonexistent/krb5cc_nodump")
+	defer func() {
+		if orig != "" {
+			os.Setenv("KRB5CCNAME", orig)
+		} else {
+			os.Unsetenv("KRB5CCNAME")
+		}
+	}()
+
+	result := klistDump(klistArgs{Action: "dump"})
+	if result.Status != "error" {
+		t.Errorf("expected error for missing file, got %s", result.Status)
+	}
+}
+
+// --- Credential with addresses and authdata ---
+
+func TestParseCcacheWithAddressesAndAuthdata(t *testing.T) {
+	var buf []byte
+	buf = binary.BigEndian.AppendUint16(buf, 0x0504)
+	buf = binary.BigEndian.AppendUint16(buf, 0) // header len
+
+	buf = appendPrincipal(buf, 1, "TEST.LOCAL", []string{"svc"})
+
+	// Client and server
+	buf = appendPrincipal(buf, 1, "TEST.LOCAL", []string{"svc"})
+	buf = appendPrincipal(buf, 2, "TEST.LOCAL", []string{"krbtgt", "TEST.LOCAL"})
+
+	// Keyblock
+	buf = binary.BigEndian.AppendUint16(buf, 18)
+	buf = appendOctetString(buf, make([]byte, 32))
+
+	// Times
+	now := time.Now()
+	for i := 0; i < 4; i++ {
+		buf = binary.BigEndian.AppendUint32(buf, uint32(now.Unix()))
+	}
+
+	buf = append(buf, 1)                            // is_skey = true
+	buf = binary.BigEndian.AppendUint32(buf, 0x08000000) // proxy flag
+
+	// 1 address: IPv4 (type 2), 4 bytes
+	buf = binary.BigEndian.AppendUint32(buf, 1)      // num_addresses
+	buf = binary.BigEndian.AppendUint16(buf, 2)      // addr type = IPv4
+	buf = appendOctetString(buf, []byte{10, 0, 0, 1}) // 10.0.0.1
+
+	// 1 authdata entry: AD-IF-RELEVANT (type 1)
+	buf = binary.BigEndian.AppendUint32(buf, 1)            // num_authdata
+	buf = binary.BigEndian.AppendUint16(buf, 1)            // ad_type
+	buf = appendOctetString(buf, []byte{0x30, 0x00})       // minimal authdata
+
+	// Ticket + second ticket
+	buf = appendOctetString(buf, []byte{0x61, 0x03, 0x02, 0x01, 0x05})
+	buf = appendOctetString(buf, nil)
+
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "krb5cc_addrs")
+	if err := os.WriteFile(path, buf, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	principal, creds, err := parseCcache(path)
+	if err != nil {
+		t.Fatalf("parseCcache failed: %v", err)
+	}
+	if principal.String() != "svc@TEST.LOCAL" {
+		t.Errorf("principal = %q", principal.String())
+	}
+	if len(creds) != 1 {
+		t.Fatalf("expected 1 cred, got %d", len(creds))
+	}
+	if !creds[0].IsSKey {
+		t.Error("expected IsSKey = true")
+	}
+	if creds[0].TicketFlags != 0x08000000 {
+		t.Errorf("flags = 0x%08X, want 0x08000000", creds[0].TicketFlags)
+	}
+}
+
+// --- Expired ticket detection in klistList ---
+
+func TestKlistListExpiredTicket(t *testing.T) {
+	var buf []byte
+	buf = binary.BigEndian.AppendUint16(buf, 0x0504)
+	buf = binary.BigEndian.AppendUint16(buf, 0)
+	buf = appendPrincipal(buf, 1, "EXPIRED.COM", []string{"user"})
+
+	// Build credential with end time in the past
+	buf = appendPrincipal(buf, 1, "EXPIRED.COM", []string{"user"})
+	buf = appendPrincipal(buf, 2, "EXPIRED.COM", []string{"krbtgt", "EXPIRED.COM"})
+	buf = binary.BigEndian.AppendUint16(buf, 18)
+	buf = appendOctetString(buf, make([]byte, 32))
+	past := time.Now().Add(-24 * time.Hour)
+	buf = binary.BigEndian.AppendUint32(buf, uint32(past.Add(-48*time.Hour).Unix())) // authtime
+	buf = binary.BigEndian.AppendUint32(buf, uint32(past.Add(-48*time.Hour).Unix())) // starttime
+	buf = binary.BigEndian.AppendUint32(buf, uint32(past.Unix()))                     // endtime (past)
+	buf = binary.BigEndian.AppendUint32(buf, uint32(past.Unix()))                     // renew_till
+	buf = append(buf, 0)
+	buf = binary.BigEndian.AppendUint32(buf, 0x40000000)
+	buf = binary.BigEndian.AppendUint32(buf, 0) // addresses
+	buf = binary.BigEndian.AppendUint32(buf, 0) // authdata
+	buf = appendOctetString(buf, []byte{0x61})
+	buf = appendOctetString(buf, nil)
+
+	tmpDir := t.TempDir()
+	ccachePath := filepath.Join(tmpDir, "krb5cc_expired")
+	if err := os.WriteFile(ccachePath, buf, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	orig := os.Getenv("KRB5CCNAME")
+	os.Setenv("KRB5CCNAME", ccachePath)
+	defer func() {
+		if orig != "" {
+			os.Setenv("KRB5CCNAME", orig)
+		} else {
+			os.Unsetenv("KRB5CCNAME")
+		}
+	}()
+
+	result := klistList(klistArgs{Action: "list"})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+
+	var entries []klistTicketEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 entry, got %d", len(entries))
+	}
+	if entries[0].Status != "EXPIRED" {
+		t.Errorf("status = %q, want EXPIRED", entries[0].Status)
+	}
+}
+
+// --- v4 header with tags ---
+
+func TestParseCcacheV4WithHeader(t *testing.T) {
+	var buf []byte
+	buf = binary.BigEndian.AppendUint16(buf, 0x0504)
+
+	// Header with 12 bytes of tag data
+	headerData := make([]byte, 12)
+	buf = binary.BigEndian.AppendUint16(buf, uint16(len(headerData)))
+	buf = append(buf, headerData...)
+
+	buf = appendPrincipal(buf, 1, "HEADERED.COM", []string{"admin"})
+
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "krb5cc_header")
+	if err := os.WriteFile(path, buf, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	principal, creds, err := parseCcache(path)
+	if err != nil {
+		t.Fatalf("parseCcache with header failed: %v", err)
+	}
+	if principal.String() != "admin@HEADERED.COM" {
+		t.Errorf("principal = %q", principal.String())
+	}
+	if len(creds) != 0 {
+		t.Errorf("expected 0 creds, got %d", len(creds))
 	}
 }

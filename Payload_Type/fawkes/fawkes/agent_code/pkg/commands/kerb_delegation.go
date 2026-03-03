@@ -343,9 +343,3 @@ func kdFindAll(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	return kdMarshalResult(allEntries)
 }
 
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

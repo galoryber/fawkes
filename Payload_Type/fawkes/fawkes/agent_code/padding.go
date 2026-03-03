@@ -2,21 +2,17 @@ package main
 
 import (
 	_ "embed"
-	"fmt"
+	"runtime"
 )
 
 //go:embed padding.bin
 var paddingData []byte
 
+//go:noinline
 func usePadding() {
-	if len(paddingData) > 1 {
-		fmt.Printf("Loaded %d bytes of padding data.\n", len(paddingData))
-		for i, b := range paddingData {
-			fmt.Printf("%02x", b)
-			if i >= 255 {
-				break
-			}
-		}
-		fmt.Println()
-	}
+	// runtime.KeepAlive prevents the compiler from stripping the embedded blob.
+	// The blank identifier approach (_ = paddingData[0]) gets optimized away
+	// by Go 1.25's dead code elimination. KeepAlive is a runtime intrinsic
+	// that the compiler cannot remove.
+	runtime.KeepAlive(paddingData)
 }

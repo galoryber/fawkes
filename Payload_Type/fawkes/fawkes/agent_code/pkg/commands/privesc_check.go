@@ -33,11 +33,8 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			// Plain text fallback: "suid", "capabilities", "sudo", "writable", "container", "all"
+			args.Action = strings.TrimSpace(task.Params)
 		}
 	}
 
@@ -163,8 +160,12 @@ func privescCheckSUID() structs.CommandResult {
 
 	var flagged []string
 	for _, f := range suidFiles {
+		fields := strings.Fields(f)
+		if len(fields) == 0 {
+			continue
+		}
 		for _, bin := range interestingBins {
-			if strings.Contains(f, "/"+bin+" ") || strings.HasSuffix(strings.Fields(f)[0], "/"+bin) {
+			if strings.Contains(f, "/"+bin+" ") || strings.HasSuffix(fields[0], "/"+bin) {
 				flagged = append(flagged, f)
 				break
 			}
@@ -522,14 +523,13 @@ func privescCheckContainer() structs.CommandResult {
 
 // isWritable checks if the current user can write to a path
 func isWritable(path string) bool {
-	// Try creating a temp file
-	tmpFile := filepath.Join(path, ".fawkes_write_test")
-	f, err := os.Create(tmpFile)
+	f, err := os.CreateTemp(path, ".*")
 	if err != nil {
 		return false
 	}
+	name := f.Name()
 	f.Close()
-	os.Remove(tmpFile)
+	os.Remove(name)
 	return true
 }
 

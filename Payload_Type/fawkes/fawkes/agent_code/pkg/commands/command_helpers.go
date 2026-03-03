@@ -5,7 +5,9 @@ package commands
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf16"
 )
@@ -81,6 +83,84 @@ func classifySessionSecurity(name string) string {
 	default:
 		return ""
 	}
+}
+
+// Well-known ETW provider GUIDs for security tools
+var knownSecurityProviders = map[string]string{
+	"54849625-5478-4994-A5BA-3E3B0328C30D": "Microsoft-Windows-Security-Auditing",
+	"EDD08927-9CC4-4E65-B970-C2560FB5C289": "Microsoft-Windows-Kernel-Process",
+	"22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716": "Microsoft-Windows-Kernel-File",
+	"A68CA8B7-004F-D7B6-A698-04740076C4E7": "Microsoft-Windows-Kernel-Network",
+	"0BD3506A-9030-4F76-B16D-2803530B31F1": "Microsoft-Windows-Kernel-Registry",
+	"DCBE5AAA-16E2-457C-9337-366950045F0A": "Microsoft-Windows-WMI-Activity",
+	"7DD42A49-5329-4832-8DFD-43D979153A88": "Microsoft-Windows-Kernel-Audit-API-Calls",
+	"B675EC37-BDB6-4648-BC92-F3FDC74D3CA2": "Microsoft-Windows-LDAP-Client",
+	"F4E1897A-BB65-5399-F245-102D38640FFE": "Microsoft-Antimalware-Scan-Interface",
+	"A0C1853B-5C40-4B15-8766-3CF1C58F985A": "Microsoft-Windows-PowerShell",
+	"11C5D8AD-756A-42C2-8087-EB1B4A72A846": "Microsoft-Windows-WinRM",
+	"F4190177-63B0-4CB5-8B2C-3A5C3D319B6D": "Microsoft-Windows-CAPI2",
+	"DBE9B383-7CF3-4331-91CC-A3CB16A3B538": "Microsoft-Windows-Winlogon",
+	"0CCE985E-0000-0000-0000-000000000000": "Microsoft-Windows-Security-Auditing-Process",
+	"E8109B99-3A2C-4961-AA83-D1A7A148ADA8": "Microsoft-Windows-TaskScheduler",
+	"B3A7698A-0C45-44DA-B73D-E181C9B5C8E6": "Microsoft-Windows-Sysmon",
+	"555908D1-A6D7-4695-8E1E-26931D2012F4": "Microsoft-Windows-DNS-Client",
+	"A83D4C09-79AF-4A78-A129-A15ECCAE1BF9": "Microsoft-Windows-RPC",
+	"04C2CAB3-2A99-4097-AB1C-1291F8EB6E95": "Microsoft-Windows-DotNETRuntime",
+}
+
+// Shorthand provider names for operator convenience
+var providerShorthands = map[string]string{
+	"security-auditing": "54849625-5478-4994-A5BA-3E3B0328C30D",
+	"kernel-process":    "EDD08927-9CC4-4E65-B970-C2560FB5C289",
+	"kernel-file":       "22FB2CD6-0E7B-422B-A0C7-2FAD1FD0E716",
+	"kernel-network":    "A68CA8B7-004F-D7B6-A698-04740076C4E7",
+	"kernel-registry":   "0BD3506A-9030-4F76-B16D-2803530B31F1",
+	"sysmon":            "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6",
+	"amsi":              "F4E1897A-BB65-5399-F245-102D38640FFE",
+	"powershell":        "A0C1853B-5C40-4B15-8766-3CF1C58F985A",
+	"winrm":             "11C5D8AD-756A-42C2-8087-EB1B4A72A846",
+	"dotnet":            "04C2CAB3-2A99-4097-AB1C-1291F8EB6E95",
+	"wmi":               "DCBE5AAA-16E2-457C-9337-366950045F0A",
+	"api-calls":         "7DD42A49-5329-4832-8DFD-43D979153A88",
+	"task-scheduler":    "E8109B99-3A2C-4961-AA83-D1A7A148ADA8",
+	"dns-client":        "555908D1-A6D7-4695-8E1E-26931D2012F4",
+}
+
+// resolveProviderGUID resolves a provider name/shorthand/GUID to a GUID string and display name
+func resolveProviderGUID(provider string) (string, string) {
+	if provider == "" {
+		return "", ""
+	}
+
+	// Check shorthand names first
+	lower := strings.ToLower(provider)
+	if guid, ok := providerShorthands[lower]; ok {
+		name := knownSecurityProviders[guid]
+		return guid, name
+	}
+
+	// Check exact match first (case-insensitive) — prevents ambiguous substring matches
+	for guid, name := range knownSecurityProviders {
+		if strings.EqualFold(name, provider) {
+			return guid, name
+		}
+	}
+
+	// Substring match: "Sysmon" matches "Microsoft-Windows-Sysmon"
+	for guid, name := range knownSecurityProviders {
+		if strings.Contains(strings.ToLower(name), lower) {
+			return guid, name
+		}
+	}
+
+	// Check if it looks like a GUID already
+	cleaned := strings.Trim(provider, "{}")
+	if len(cleaned) == 36 && strings.Count(cleaned, "-") == 4 {
+		name := knownSecurityProviders[strings.ToUpper(cleaned)]
+		return strings.ToUpper(cleaned), name
+	}
+
+	return "", ""
 }
 
 // --- BITS helpers (from bits.go) ---
@@ -425,4 +505,210 @@ func fwProtocolToString(proto int) string {
 	default:
 		return fmt.Sprintf("%d", proto)
 	}
+}
+
+// --- BOF Argument Packing helpers (from beacon_api.go) ---
+
+// bofPackArgs packs BOF arguments in Cobalt Strike format.
+// Each arg is a type-prefixed string: b=binary(hex), i=int32, s=short, z=ansi, Z=wide.
+// Returns the packed bytes with a 4-byte total size prefix.
+func bofPackArgs(data []string) ([]byte, error) {
+	if len(data) == 0 {
+		return nil, nil
+	}
+
+	var buff []byte
+	for _, arg := range data {
+		if len(arg) < 1 {
+			return nil, fmt.Errorf("empty argument")
+		}
+		switch arg[0] {
+		case 'b':
+			packed, err := bofPackBinary(arg[1:])
+			if err != nil {
+				return nil, fmt.Errorf("binary packing error: %v", err)
+			}
+			buff = append(buff, packed...)
+		case 'i':
+			packed, err := bofPackInt(arg[1:])
+			if err != nil {
+				return nil, fmt.Errorf("int packing error: %v", err)
+			}
+			buff = append(buff, packed...)
+		case 's':
+			packed, err := bofPackShort(arg[1:])
+			if err != nil {
+				return nil, fmt.Errorf("short packing error: %v", err)
+			}
+			buff = append(buff, packed...)
+		case 'z':
+			packed := bofPackString(arg[1:])
+			buff = append(buff, packed...)
+		case 'Z':
+			packed := bofPackWideString(arg[1:])
+			buff = append(buff, packed...)
+		default:
+			return nil, fmt.Errorf("unknown type prefix '%c'", arg[0])
+		}
+	}
+
+	// Prefix with total size
+	result := make([]byte, 4)
+	binary.LittleEndian.PutUint32(result, uint32(len(buff)))
+	result = append(result, buff...)
+	return result, nil
+}
+
+// bofPackBinary hex-decodes data and wraps with 4-byte length prefix
+func bofPackBinary(data string) ([]byte, error) {
+	decoded, err := hex.DecodeString(data)
+	if err != nil {
+		return nil, err
+	}
+	buff := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buff, uint32(len(decoded)))
+	buff = append(buff, decoded...)
+	return buff, nil
+}
+
+// bofPackInt converts decimal string to 4-byte little-endian integer
+func bofPackInt(s string) ([]byte, error) {
+	val, err := strconv.ParseUint(s, 10, 32)
+	if err != nil {
+		return nil, err
+	}
+	buff := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buff, uint32(val))
+	return buff, nil
+}
+
+// bofPackShort converts decimal string to 2-byte little-endian integer
+func bofPackShort(s string) ([]byte, error) {
+	val, err := strconv.ParseUint(s, 10, 16)
+	if err != nil {
+		return nil, err
+	}
+	buff := make([]byte, 2)
+	binary.LittleEndian.PutUint16(buff, uint16(val))
+	return buff, nil
+}
+
+// bofPackString wraps ANSI string with null terminator and 4-byte length prefix
+func bofPackString(s string) []byte {
+	data := append([]byte(s), 0)
+	buff := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buff, uint32(len(data)))
+	buff = append(buff, data...)
+	return buff
+}
+
+// bofPackWideString encodes UTF-16LE string with null terminator and 4-byte length prefix
+func bofPackWideString(s string) []byte {
+	runes := []rune(s)
+	data := make([]byte, 0, (len(runes)+1)*2)
+	for _, r := range runes {
+		data = append(data, byte(r), byte(r>>8))
+	}
+	data = append(data, 0, 0)
+
+	buff := make([]byte, 4)
+	binary.LittleEndian.PutUint32(buff, uint32(len(data)))
+	buff = append(buff, data...)
+	return buff
+}
+
+// --- Thread Scan helpers (from ts.go) ---
+
+// tsWaitReasonString converts a KWAIT_REASON enum value to human-readable string
+func tsWaitReasonString(reason uint32) string {
+	switch reason {
+	case 0:
+		return "Executive"
+	case 1:
+		return "FreePage"
+	case 2:
+		return "PageIn"
+	case 3:
+		return "PoolAllocation"
+	case 4:
+		return "DelayExecution"
+	case 5:
+		return "Suspended"
+	case 6:
+		return "UserRequest"
+	case 7:
+		return "WrExecutive"
+	case 8:
+		return "WrFreePage"
+	case 9:
+		return "WrPageIn"
+	case 10:
+		return "WrPoolAllocation"
+	case 11:
+		return "WrDelayExecution"
+	case 12:
+		return "WrSuspended"
+	case 13:
+		return "WrUserRequest"
+	case 14:
+		return "WrEventPair"
+	case 15:
+		return "WrQueue"
+	case 16:
+		return "WrLpcReceive"
+	case 17:
+		return "WrLpcReply"
+	case 18:
+		return "WrVirtualMemory"
+	case 19:
+		return "WrPageOut"
+	case 20:
+		return "WrRendezvous"
+	case 21:
+		return "WrKeyedEvent"
+	case 22:
+		return "WrTerminated"
+	case 23:
+		return "WrProcessInSwap"
+	case 24:
+		return "WrCpuRateControl"
+	case 25:
+		return "WrCalloutStack"
+	case 26:
+		return "WrKernel"
+	case 27:
+		return "WrResource"
+	case 28:
+		return "WrPushLock"
+	case 29:
+		return "WrMutex"
+	case 30:
+		return "WrQuantumEnd"
+	case 31:
+		return "WrDispatchInt"
+	case 32:
+		return "WrPreempted"
+	case 33:
+		return "WrYieldExecution"
+	case 34:
+		return "WrFastMutex"
+	case 35:
+		return "WrGuardedMutex"
+	case 36:
+		return "WrRundown"
+	case 37:
+		return "WrAlertByThreadId"
+	case 38:
+		return "WrDeferredPreempt"
+	default:
+		return fmt.Sprintf("Unknown(%d)", reason)
+	}
+}
+
+// tsTruncateOwner truncates a process owner string to maxLen, adding "..." if truncated
+func tsTruncateOwner(owner string, maxLen int) string {
+	if len(owner) <= maxLen {
+		return owner
+	}
+	return owner[:maxLen-3] + "..."
 }

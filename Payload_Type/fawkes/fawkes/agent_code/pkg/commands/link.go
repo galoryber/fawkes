@@ -70,7 +70,7 @@ func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Connect to the child agent's TCP listener
-	addr := fmt.Sprintf("%s:%d", args.Host, args.Port)
+	addr := net.JoinHostPort(args.Host, fmt.Sprintf("%d", args.Port))
 	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
 	if err != nil {
 		return structs.CommandResult{

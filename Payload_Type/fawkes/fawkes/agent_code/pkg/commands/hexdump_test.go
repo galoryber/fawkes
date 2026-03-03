@@ -76,9 +76,9 @@ func TestHexdumpBasic(t *testing.T) {
 	if !strings.Contains(result.Output, "|Hello") {
 		t.Error("should contain ASCII 'Hello'")
 	}
-	// Non-printable should be dots
-	if !strings.Contains(result.Output, "...|") || !strings.Contains(result.Output, ".|") {
-		// The last chars include 0x00, 0x01, 0x02, 0xff which should be dots
+	// Non-printable bytes (0x00, 0x01, 0x02, 0xff) should render as dots in ASCII column
+	if !strings.Contains(result.Output, ".") {
+		t.Error("non-printable bytes should appear as dots in ASCII representation")
 	}
 }
 
