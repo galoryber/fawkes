@@ -746,9 +746,24 @@ func createMinimalIUnknown() uintptr {
 			if ppv == 0 {
 				return 0x80004003 // E_POINTER
 			}
-			// Return our own pointer for any QI
-			*(*uintptr)(unsafe.Pointer(ppv)) = this
-			return 0 // S_OK
+			// Only succeed for IID_IUnknown — return E_NOINTERFACE for everything
+			// else (especially IMarshal!) so COM uses standard OXID marshaling.
+			// If we return S_OK for IMarshal, COM tries to call IMarshal methods
+			// on our 3-entry IUnknown vtable, reading garbage and hanging.
+			qiid := unsafe.Slice((*byte)(unsafe.Pointer(riid)), 16)
+			isIUnknown := true
+			for i := 0; i < 16; i++ {
+				if qiid[i] != iidIUnknown[i] {
+					isIUnknown = false
+					break
+				}
+			}
+			if isIUnknown {
+				*(*uintptr)(unsafe.Pointer(ppv)) = this
+				return 0 // S_OK
+			}
+			*(*uintptr)(unsafe.Pointer(ppv)) = 0
+			return 0x80004002 // E_NOINTERFACE
 		}),
 		AddRef: syscall.NewCallback(func(this uintptr) uintptr {
 			return 1
