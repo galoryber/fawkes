@@ -21,6 +21,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andybalholm/brotli"
+
 	"fawkes/pkg/structs"
 )
 
@@ -635,16 +637,30 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 	}
 
 	// Set browser-realistic default headers to blend with legitimate traffic.
-	// These match common browser behavior and avoid network-level IOCs
-	// (e.g., bare Content-Type: text/plain or missing Accept-Language).
+	// These match Chrome's header set and avoid network-level IOCs.
 	// All defaults are overridable via CustomHeaders from the C2 profile.
+	//
+	// Note on header ordering: Go's net/http sends headers in sorted (alphabetical)
+	// order, which differs from Chrome's native ordering. A custom Transport would
+	// be needed to control order for JA4H-level fingerprint matching.
 	req.Header.Set("User-Agent", h.UserAgent)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept", chromeAcceptHeader)
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Accept-Encoding", "gzip, deflate")
+	req.Header.Set("Accept-Encoding", chromeAcceptEncoding)
+
+	// sec-ch-ua client hint headers — Chrome has sent these on every request
+	// since v89. Missing them is a strong non-browser signal.
+	if secChUa := generateSecChUa(h.UserAgent); secChUa != "" {
+		req.Header.Set("Sec-Ch-Ua", secChUa)
+		req.Header.Set("Sec-Ch-Ua-Mobile", generateSecChUaMobile(h.UserAgent))
+		req.Header.Set("Sec-Ch-Ua-Platform", generateSecChUaPlatform(h.UserAgent))
+	}
+
+	// Upgrade-Insecure-Requests: standard on every navigation request from Chrome
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
 
 	// Apply custom headers from C2 profile — these override any defaults above
 	for k, v := range h.CustomHeaders {
@@ -675,17 +691,21 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 // readResponseBody reads and decompresses the response body if needed.
 // When Accept-Encoding is set explicitly (for OPSEC-realistic headers), Go's
 // http.Transport does NOT auto-decompress responses. This helper transparently
-// handles gzip-compressed responses from CDNs, proxies, or load balancers.
+// handles gzip and Brotli-compressed responses from CDNs, proxies, or load balancers.
 func readResponseBody(resp *http.Response) ([]byte, error) {
-	if resp.Header.Get("Content-Encoding") == "gzip" {
+	switch resp.Header.Get("Content-Encoding") {
+	case "gzip":
 		gr, err := gzip.NewReader(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("gzip decompression failed: %w", err)
 		}
 		defer gr.Close()
 		return io.ReadAll(gr)
+	case "br":
+		return io.ReadAll(brotli.NewReader(resp.Body))
+	default:
+		return io.ReadAll(resp.Body)
 	}
-	return io.ReadAll(resp.Body)
 }
 
 // getString safely gets a string value from a map

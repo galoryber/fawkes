@@ -183,8 +183,8 @@ func TestMakeRequest_BrowserRealisticHeaders(t *testing.T) {
 	if got := headers.Get("Accept-Language"); got != "en-US,en;q=0.9" {
 		t.Errorf("Accept-Language = %q, want %q", got, "en-US,en;q=0.9")
 	}
-	if got := headers.Get("Accept-Encoding"); got != "gzip, deflate" {
-		t.Errorf("Accept-Encoding = %q, want %q", got, "gzip, deflate")
+	if got := headers.Get("Accept-Encoding"); got != chromeAcceptEncoding {
+		t.Errorf("Accept-Encoding = %q, want %q", got, chromeAcceptEncoding)
 	}
 	if got := headers.Get("Accept"); !strings.Contains(got, "text/html") {
 		t.Errorf("Accept = %q, should contain text/html", got)
@@ -255,9 +255,9 @@ func TestMakeRequest_CustomHeadersOverrideDefaults(t *testing.T) {
 	if got := headers.Get("X-Custom"); got != "custom-value" {
 		t.Errorf("X-Custom = %q, want %q", got, "custom-value")
 	}
-	// Default headers not overridden should still be present
-	if got := headers.Get("Accept-Encoding"); got != "gzip, deflate" {
-		t.Errorf("Accept-Encoding default should still be present: got %q", got)
+	// Default headers not overridden should still be present (includes Brotli)
+	if got := headers.Get("Accept-Encoding"); got != chromeAcceptEncoding {
+		t.Errorf("Accept-Encoding default should still be present: got %q, want %q", got, chromeAcceptEncoding)
 	}
 }
 
