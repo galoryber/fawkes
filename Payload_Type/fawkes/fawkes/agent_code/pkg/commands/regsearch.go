@@ -73,7 +73,7 @@ func (c *RegSearchCommand) Execute(task structs.Task) structs.CommandResult {
 		args.MaxResults = 50
 	}
 
-	hiveKey, err := regSearchParseHive(args.Hive)
+	hiveKey, err := parseHive(args.Hive)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    err.Error(),
@@ -109,23 +109,6 @@ func (c *RegSearchCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-func regSearchParseHive(hive string) (registry.Key, error) {
-	switch strings.ToUpper(hive) {
-	case "HKLM", "HKEY_LOCAL_MACHINE":
-		return registry.LOCAL_MACHINE, nil
-	case "HKCU", "HKEY_CURRENT_USER":
-		return registry.CURRENT_USER, nil
-	case "HKU", "HKEY_USERS":
-		return registry.USERS, nil
-	case "HKCR", "HKEY_CLASSES_ROOT":
-		return registry.CLASSES_ROOT, nil
-	case "HKCC", "HKEY_CURRENT_CONFIG":
-		return registry.CURRENT_CONFIG, nil
-	default:
-		return 0, fmt.Errorf("unknown hive: %s (use HKLM, HKCU, HKU, HKCR, HKCC)", hive)
-	}
-}
-
 func regSearchRecursive(hive registry.Key, path, pattern string, depth, maxDepth, maxResults int, results *[]regSearchResult) {
 	if depth >= maxDepth || len(*results) >= maxResults {
 		return
@@ -137,7 +120,6 @@ func regSearchRecursive(hive registry.Key, path, pattern string, depth, maxDepth
 	}
 	defer key.Close()
 
-	// Check if the key name itself matches
 	keyLower := strings.ToLower(path)
 	if strings.Contains(keyLower, pattern) && len(*results) < maxResults {
 		*results = append(*results, regSearchResult{
@@ -145,7 +127,6 @@ func regSearchRecursive(hive registry.Key, path, pattern string, depth, maxDepth
 		})
 	}
 
-	// Search value names and data
 	valueNames, err := key.ReadValueNames(-1)
 	if err == nil {
 		for _, name := range valueNames {
@@ -166,7 +147,6 @@ func regSearchRecursive(hive registry.Key, path, pattern string, depth, maxDepth
 		}
 	}
 
-	// Recurse into subkeys
 	subKeys, err := key.ReadSubKeyNames(-1)
 	if err != nil {
 		return
@@ -179,35 +159,4 @@ func regSearchRecursive(hive registry.Key, path, pattern string, depth, maxDepth
 		subPath := path + `\` + sub
 		regSearchRecursive(hive, subPath, pattern, depth+1, maxDepth, maxResults, results)
 	}
-}
-
-func regSearchReadValue(key registry.Key, name string) string {
-	// Try string first (most common)
-	val, _, err := key.GetStringValue(name)
-	if err == nil {
-		return val
-	}
-
-	// Try integer
-	intVal, _, err := key.GetIntegerValue(name)
-	if err == nil {
-		return fmt.Sprintf("%d (0x%x)", intVal, intVal)
-	}
-
-	// Try binary — show first 64 bytes hex
-	binVal, _, err := key.GetBinaryValue(name)
-	if err == nil {
-		if len(binVal) > 64 {
-			return fmt.Sprintf("(binary %d bytes) %x...", len(binVal), binVal[:64])
-		}
-		return fmt.Sprintf("(binary %d bytes) %x", len(binVal), binVal)
-	}
-
-	// Try multi-string
-	strVals, _, err := key.GetStringsValue(name)
-	if err == nil {
-		return strings.Join(strVals, "; ")
-	}
-
-	return "(unreadable)"
 }

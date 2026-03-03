@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **208 commands** total: 108 cross-platform, 84 Windows-only, 13 Unix-only, 7 Linux-only, and 5 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **209 commands** total: 108 cross-platform, 85 Windows-only, 13 Unix-only, 7 Linux-only, and 5 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -159,6 +159,7 @@ ps | `ps [-v] [-i PID] [filter]` | List running processes with Mythic process br
 ptrace-inject | `ptrace-inject -action <check\|inject> [-pid <PID>] [-filename <shellcode>] [-restore <true>] [-timeout <30>]` | **(Linux only, x86_64)** Process injection via ptrace — PTRACE_ATTACH/POKETEXT/SETREGS with register and code restore. Check mode reports ptrace_scope, capabilities, and candidates (T1055.008).
 pwd | `pwd` | Print working directory.
 read-memory | `read-memory <dll_name> <function_name> <start_index> <num_bytes>` | **(Windows only)** Read bytes from a DLL function address.
+reg | `reg -action <read\|write\|delete\|search\|save\|creds> [-hive HKLM] [-path ...] [...]` | **(Windows only)** Unified registry operations — read, write, delete, search, and save hives. Single command replaces reg-read/write/delete/search/save (T1012, T1112, T1003.002).
 reg-delete | `reg-delete -hive <HIVE> -path <path> [-name <value>] [-recursive <true>]` | **(Windows only)** Delete a registry value, key, or key tree (recursive). MITRE T1112.
 reg-read | `reg-read -hive <HIVE> -path <path> [-name <value>]` | **(Windows only)** Read a registry value or enumerate all values/subkeys under a key.
 reg-save | `reg-save -action <save\|creds> [-hive HKLM] [-path SAM] [-output C:\Temp\sam.hiv]` | **(Windows only)** Export registry hives to files for offline credential extraction. Use 'creds' to export SAM+SECURITY+SYSTEM. MITRE T1003.002, T1003.004.

