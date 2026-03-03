@@ -57,7 +57,10 @@ func init() {
 			if input == "" {
 				return nil
 			}
-			return args.LoadArgsFromJSONString(input)
+			if err := args.LoadArgsFromJSONString(input); err != nil {
+				return args.SetArgValue("host", input)
+			}
+			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
