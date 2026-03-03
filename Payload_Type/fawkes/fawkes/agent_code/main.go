@@ -68,6 +68,12 @@ var (
 )
 
 func main() {
+	// Try running as a Windows service first. If started by SCM, this blocks
+	// and runs the agent in the service context (with full service privileges).
+	// On non-Windows or when not started by SCM, returns false immediately.
+	if tryRunAsService() {
+		return
+	}
 	runAgent()
 }
 
