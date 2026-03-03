@@ -21,4 +21,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&ExecuteMemoryCommand{})
 	RegisterCommand(&CredentialPromptCommand{})
 	RegisterCommand(&TCCCheckCommand{})
+	RegisterCommand(&EnvScanCommand{})
 }
