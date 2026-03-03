@@ -1,8 +1,69 @@
 package commands
 
 import (
+	"encoding/xml"
 	"strings"
 )
+
+// systemVersionPlist represents the parsed SystemVersion.plist content.
+type systemVersionPlist struct {
+	ProductName         string
+	ProductVersion      string
+	ProductBuildVersion string
+}
+
+// parseSystemVersionPlist extracts version info from the XML plist content of
+// /System/Library/CoreServices/SystemVersion.plist. This avoids spawning sw_vers.
+func parseSystemVersionPlist(xmlContent string) systemVersionPlist {
+	var result systemVersionPlist
+
+	// Apple plists use <dict> with alternating <key> and <string> elements.
+	// Parse the XML to extract key-value pairs.
+	decoder := xml.NewDecoder(strings.NewReader(xmlContent))
+	var currentKey string
+	var inKey, inString bool
+
+	for {
+		tok, err := decoder.Token()
+		if err != nil {
+			break
+		}
+
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "key":
+				inKey = true
+			case "string":
+				inString = true
+			}
+		case xml.EndElement:
+			inKey = false
+			inString = false
+		case xml.CharData:
+			text := strings.TrimSpace(string(t))
+			if text == "" {
+				continue
+			}
+			if inKey {
+				currentKey = text
+			} else if inString {
+				switch currentKey {
+				case "ProductName":
+					result.ProductName = text
+				case "ProductVersion", "ProductUserVisibleVersion":
+					if result.ProductVersion == "" {
+						result.ProductVersion = text
+					}
+				case "ProductBuildVersion":
+					result.ProductBuildVersion = text
+				}
+			}
+		}
+	}
+
+	return result
+}
 
 // parseIoregSerial extracts the IOPlatformSerialNumber from ioreg output.
 // Input: output of `ioreg -rd1 -c IOPlatformExpertDevice`

@@ -363,3 +363,112 @@ func TestParseIoregModelID_EmptyOutput(t *testing.T) {
 		t.Errorf("expected empty string, got %q", model)
 	}
 }
+
+// --- parseSystemVersionPlist tests ---
+
+func TestParseSystemVersionPlist_Standard(t *testing.T) {
+	plist := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ProductBuildVersion</key>
+	<string>25D125</string>
+	<key>ProductName</key>
+	<string>macOS</string>
+	<key>ProductUserVisibleVersion</key>
+	<string>26.3</string>
+	<key>ProductVersion</key>
+	<string>26.3</string>
+</dict>
+</plist>`
+	ver := parseSystemVersionPlist(plist)
+	if ver.ProductName != "macOS" {
+		t.Errorf("ProductName = %q, want 'macOS'", ver.ProductName)
+	}
+	if ver.ProductVersion != "26.3" {
+		t.Errorf("ProductVersion = %q, want '26.3'", ver.ProductVersion)
+	}
+	if ver.ProductBuildVersion != "25D125" {
+		t.Errorf("ProductBuildVersion = %q, want '25D125'", ver.ProductBuildVersion)
+	}
+}
+
+func TestParseSystemVersionPlist_Ventura(t *testing.T) {
+	plist := `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+	<key>ProductBuildVersion</key>
+	<string>22A380</string>
+	<key>ProductName</key>
+	<string>macOS</string>
+	<key>ProductVersion</key>
+	<string>13.0</string>
+</dict>
+</plist>`
+	ver := parseSystemVersionPlist(plist)
+	if ver.ProductName != "macOS" {
+		t.Errorf("ProductName = %q, want 'macOS'", ver.ProductName)
+	}
+	if ver.ProductVersion != "13.0" {
+		t.Errorf("ProductVersion = %q, want '13.0'", ver.ProductVersion)
+	}
+	if ver.ProductBuildVersion != "22A380" {
+		t.Errorf("ProductBuildVersion = %q, want '22A380'", ver.ProductBuildVersion)
+	}
+}
+
+func TestParseSystemVersionPlist_Empty(t *testing.T) {
+	ver := parseSystemVersionPlist("")
+	if ver.ProductName != "" || ver.ProductVersion != "" || ver.ProductBuildVersion != "" {
+		t.Error("expected all empty fields for empty input")
+	}
+}
+
+func TestParseSystemVersionPlist_MissingKeys(t *testing.T) {
+	plist := `<?xml version="1.0"?>
+<plist version="1.0">
+<dict>
+	<key>ProductName</key>
+	<string>macOS</string>
+</dict>
+</plist>`
+	ver := parseSystemVersionPlist(plist)
+	if ver.ProductName != "macOS" {
+		t.Errorf("ProductName = %q, want 'macOS'", ver.ProductName)
+	}
+	if ver.ProductVersion != "" {
+		t.Errorf("ProductVersion should be empty, got %q", ver.ProductVersion)
+	}
+	if ver.ProductBuildVersion != "" {
+		t.Errorf("ProductBuildVersion should be empty, got %q", ver.ProductBuildVersion)
+	}
+}
+
+func TestParseSystemVersionPlist_InvalidXML(t *testing.T) {
+	ver := parseSystemVersionPlist("this is not xml")
+	if ver.ProductName != "" {
+		t.Errorf("expected empty ProductName for invalid XML, got %q", ver.ProductName)
+	}
+}
+
+func TestParseSystemVersionPlist_MacOSX(t *testing.T) {
+	// Older macOS versions used "Mac OS X" as ProductName
+	plist := `<?xml version="1.0"?>
+<plist version="1.0">
+<dict>
+	<key>ProductName</key>
+	<string>Mac OS X</string>
+	<key>ProductVersion</key>
+	<string>10.15.7</string>
+	<key>ProductBuildVersion</key>
+	<string>19H1922</string>
+</dict>
+</plist>`
+	ver := parseSystemVersionPlist(plist)
+	if ver.ProductName != "Mac OS X" {
+		t.Errorf("ProductName = %q, want 'Mac OS X'", ver.ProductName)
+	}
+	if ver.ProductVersion != "10.15.7" {
+		t.Errorf("ProductVersion = %q, want '10.15.7'", ver.ProductVersion)
+	}
+}
