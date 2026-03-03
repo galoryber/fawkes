@@ -891,10 +891,4 @@ func doGetNetwork(timeout time.Duration) string {
 	return sb.String()
 }
 
-// truncate returns the first n characters of a string
-func truncate(s string, n int) string {
-	if len(s) <= n {
-		return s
-	}
-	return s[:n]
-}
+// truncate moved to format_helpers.go

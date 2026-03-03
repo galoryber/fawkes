@@ -590,5 +590,5 @@ func getWaitReasonString(reason KWAIT_REASON) string {
 
 // truncateOwner truncates owner string to max length
 func truncateOwner(owner string, maxLen int) string {
-	return tsTruncateOwner(owner, maxLen)
+	return truncStr(owner, maxLen)
 }

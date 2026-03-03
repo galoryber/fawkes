@@ -194,9 +194,9 @@ func usnQuery(volume string) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("  Next USN:         %d\n", journal.NextUsn))
 	sb.WriteString(fmt.Sprintf("  Lowest Valid USN: %d\n", journal.LowestValidUsn))
 	sb.WriteString(fmt.Sprintf("  Max USN:          %d\n", journal.MaxUsn))
-	sb.WriteString(fmt.Sprintf("  Max Size:         %s\n", bitsFormatBytes(journal.MaximumSize)))
-	sb.WriteString(fmt.Sprintf("  Alloc Delta:      %s\n", bitsFormatBytes(journal.AllocationDelta)))
-	sb.WriteString(fmt.Sprintf("  Record Range:     %s (approx)\n", bitsFormatBytes(uint64(recordRange))))
+	sb.WriteString(fmt.Sprintf("  Max Size:         %s\n", formatBytes(journal.MaximumSize)))
+	sb.WriteString(fmt.Sprintf("  Alloc Delta:      %s\n", formatBytes(journal.AllocationDelta)))
+	sb.WriteString(fmt.Sprintf("  Record Range:     %s (approx)\n", formatBytes(uint64(recordRange))))
 
 	return structs.CommandResult{
 		Output:    sb.String(),
@@ -337,7 +337,7 @@ func usnRecent(volume string) structs.CommandResult {
 		reasonStr := usnReasonString(r.reason)
 		sb.WriteString(fmt.Sprintf("%-20s %-40s %s\n",
 			r.timestamp.Format("2006-01-02 15:04:05"),
-			truncateStr(r.fileName, 40),
+			truncStr(r.fileName, 40),
 			reasonStr,
 		))
 	}
@@ -395,7 +395,7 @@ func usnDelete(volume string) structs.CommandResult {
 	recordRange := journal.NextUsn - journal.FirstUsn
 	return structs.CommandResult{
 		Output: fmt.Sprintf("USN Journal deleted on %s\n  Journal ID: 0x%016X\n  Records cleared: ~%s of forensic data destroyed\n  Note: deletion continues in background",
-			volume, journal.UsnJournalID, bitsFormatBytes(uint64(recordRange))),
+			volume, journal.UsnJournalID, formatBytes(uint64(recordRange))),
 		Status:    "success",
 		Completed: true,
 	}

@@ -345,12 +345,7 @@ func getTokenSessionID(token windows.Token) uint32 {
 	return sessionID
 }
 
-func truncateStr(s string, maxLen int) string {
-	if len(s) <= maxLen {
-		return s
-	}
-	return s[:maxLen-3] + "..."
-}
+// truncateStr consolidated into truncStr in format_helpers.go
 
 func integrityRank(level string) int {
 	switch level {

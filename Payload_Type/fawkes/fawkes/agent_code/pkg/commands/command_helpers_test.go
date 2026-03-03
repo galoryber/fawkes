@@ -154,15 +154,15 @@ func TestBitsFormatBytes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := bitsFormatBytes(tt.bytes)
+			result := formatBytes(tt.bytes)
 			if result != tt.expected {
-				t.Errorf("bitsFormatBytes(%d) = %q, want %q", tt.bytes, result, tt.expected)
+				t.Errorf("formatBytes(%d) = %q, want %q", tt.bytes, result, tt.expected)
 			}
 		})
 	}
 }
 
-func TestBitsEllipsis(t *testing.T) {
+func TestTruncStr_FromBitsEllipsis(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -178,9 +178,9 @@ func TestBitsEllipsis(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := bitsEllipsis(tt.input, tt.max)
+			result := truncStr(tt.input, tt.max)
 			if result != tt.expected {
-				t.Errorf("bitsEllipsis(%q, %d) = %q, want %q", tt.input, tt.max, result, tt.expected)
+				t.Errorf("truncStr(%q, %d) = %q, want %q", tt.input, tt.max, result, tt.expected)
 			}
 		})
 	}
@@ -926,22 +926,22 @@ func TestTsWaitReasonString_Boundary(t *testing.T) {
 	}
 }
 
-func TestTsTruncateOwner_Short(t *testing.T) {
-	got := tsTruncateOwner("NT AUTHORITY\\SYSTEM", 25)
+func TestTruncStr_OwnerShort(t *testing.T) {
+	got := truncStr("NT AUTHORITY\\SYSTEM", 25)
 	if got != "NT AUTHORITY\\SYSTEM" {
 		t.Errorf("expected no truncation, got %q", got)
 	}
 }
 
-func TestTsTruncateOwner_Exact(t *testing.T) {
-	got := tsTruncateOwner("DOMAIN\\user", 11) // exactly 11 chars
+func TestTruncStr_OwnerExact(t *testing.T) {
+	got := truncStr("DOMAIN\\user", 11) // exactly 11 chars
 	if got != "DOMAIN\\user" {
 		t.Errorf("expected no truncation for exact length, got %q", got)
 	}
 }
 
-func TestTsTruncateOwner_Long(t *testing.T) {
-	got := tsTruncateOwner("VERYLONGDOMAIN\\administrator", 18)
+func TestTruncStr_OwnerLong(t *testing.T) {
+	got := truncStr("VERYLONGDOMAIN\\administrator", 18)
 	if len(got) > 18 {
 		t.Errorf("expected truncated to 18, got len=%d: %q", len(got), got)
 	}
@@ -950,8 +950,8 @@ func TestTsTruncateOwner_Long(t *testing.T) {
 	}
 }
 
-func TestTsTruncateOwner_Empty(t *testing.T) {
-	got := tsTruncateOwner("", 10)
+func TestTruncStr_OwnerEmpty(t *testing.T) {
+	got := truncStr("", 10)
 	if got != "" {
 		t.Errorf("expected empty string, got %q", got)
 	}
