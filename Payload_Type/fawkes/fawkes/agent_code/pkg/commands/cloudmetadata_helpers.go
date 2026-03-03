@@ -9,9 +9,6 @@ import (
 	"strings"
 )
 
-// cloudProviderNames lists valid provider names for validation
-var cloudProviderNames = []string{"aws", "azure", "gcp", "digitalocean"}
-
 // normalizeProvider validates and normalizes a cloud provider name.
 // Returns the normalized name or empty string if invalid.
 func normalizeProvider(provider string) string {
