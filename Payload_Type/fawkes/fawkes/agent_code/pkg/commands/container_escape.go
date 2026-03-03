@@ -94,16 +94,11 @@ func escapeCheck() (string, string) {
 	// 2. Privileged container (all capabilities + no seccomp)
 	privileged := false
 	if data, err := os.ReadFile("/proc/self/status"); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.HasPrefix(line, "CapEff:") {
-				cap := strings.TrimSpace(strings.TrimPrefix(line, "CapEff:"))
-				// Full caps = likely privileged
-				if cap == "0000003fffffffff" || cap == "000001ffffffffff" || cap == "000003ffffffffff" {
-					sb.WriteString("[!] Full capabilities detected — likely PRIVILEGED container\n")
-					privileged = true
-					vectors++
-				}
-			}
+		capEff := parseCapEff(string(data))
+		if isFullCaps(capEff) {
+			sb.WriteString("[!] Full capabilities detected — likely PRIVILEGED container\n")
+			privileged = true
+			vectors++
 		}
 	}
 
@@ -509,26 +504,4 @@ func escapeMountHost(devicePath string) (string, string) {
 	return sb.String(), "success"
 }
 
-// extractCgroupPath gets the container's cgroup path from /proc/1/cgroup.
-func extractCgroupPath(content string) string {
-	for _, line := range strings.Split(content, "\n") {
-		parts := strings.SplitN(line, ":", 3)
-		if len(parts) == 3 && parts[2] != "/" && parts[2] != "" {
-			return parts[2]
-		}
-	}
-	return ""
-}
-
-// cleanDockerLogs strips the 8-byte Docker log header from each line.
-func cleanDockerLogs(raw string) string {
-	var sb strings.Builder
-	for _, line := range strings.Split(raw, "\n") {
-		if len(line) > 8 {
-			sb.WriteString(line[8:] + "\n")
-		} else if line != "" {
-			sb.WriteString(line + "\n")
-		}
-	}
-	return sb.String()
-}
+// extractCgroupPath, cleanDockerLogs moved to container_escape_helpers.go

@@ -10,6 +10,9 @@ import (
 	"fawkes/pkg/structs"
 )
 
+// Helper function tests (extractCgroupPath, cleanDockerLogs, parseCapEff, etc.)
+// are in container_escape_helpers_test.go (cross-platform, no build tags).
+
 func TestContainerEscapeName(t *testing.T) {
 	cmd := &ContainerEscapeCommand{}
 	if cmd.Name() != "container-escape" {
@@ -108,45 +111,3 @@ func TestContainerEscapeNsenterMissingCommand(t *testing.T) {
 	}
 }
 
-// --- Helper function tests ---
-
-func TestExtractCgroupPath(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"", ""},
-		{"12:memory:/docker/abc123\n", "/docker/abc123"},
-		{"0::/\n", ""},
-		{"12:memory:/\n0::/system.slice/docker-abc.scope\n", "/system.slice/docker-abc.scope"},
-		{"invalid line\n", ""},
-	}
-
-	for _, tc := range tests {
-		result := extractCgroupPath(tc.input)
-		if result != tc.expected {
-			t.Errorf("extractCgroupPath(%q) = %q, want %q", tc.input, result, tc.expected)
-		}
-	}
-}
-
-func TestCleanDockerLogs(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		contains string
-	}{
-		{"normal line", "\x01\x00\x00\x00\x00\x00\x00\x05hello", "hello"},
-		{"short line", "short", "short"},
-		{"empty", "", ""},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			result := cleanDockerLogs(tc.input)
-			if tc.contains != "" && !strings.Contains(result, tc.contains) {
-				t.Errorf("Expected %q in result, got: %q", tc.contains, result)
-			}
-		})
-	}
-}
