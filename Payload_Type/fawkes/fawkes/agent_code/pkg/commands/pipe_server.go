@@ -153,11 +153,21 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 
 	pipePath := fmt.Sprintf(`\\.\pipe\%s`, args.Name)
 
-	// Create security descriptor allowing Everyone to connect
-	var sd windows.SECURITY_DESCRIPTOR
+	// Create security descriptor allowing Everyone to connect.
+	// Must use NewSecurityDescriptor() which calls InitializeSecurityDescriptor
+	// to set revision=1; a zero-value SECURITY_DESCRIPTOR has revision=0 and
+	// SetDACL will fail with ERROR_INVALID_SECURITY_DESCR.
+	sd, sdErr := windows.NewSecurityDescriptor()
+	if sdErr != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Failed to initialize security descriptor: %v", sdErr),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 	if err := sd.SetDACL(nil, true, false); err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create security descriptor: %v", err),
+			Output:    fmt.Sprintf("Failed to set DACL on security descriptor: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -165,7 +175,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 
 	sa := windows.SecurityAttributes{
 		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
-		SecurityDescriptor: &sd,
+		SecurityDescriptor: sd,
 		InheritHandle:      0,
 	}
 

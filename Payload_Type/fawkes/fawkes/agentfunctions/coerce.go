@@ -2,6 +2,8 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -116,7 +118,59 @@ func init() {
 			if input == "" {
 				return nil
 			}
-			return args.LoadArgsFromJSONString(input)
+			// Try JSON first (from API/modal)
+			if err := args.LoadArgsFromJSONString(input); err == nil {
+				return nil
+			}
+			// Plain text: parse -flag value pairs
+			parts := strings.Fields(input)
+			for i := 0; i < len(parts); i++ {
+				switch parts[i] {
+				case "-server", "-target":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("server", parts[i])
+					}
+				case "-listener":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("listener", parts[i])
+					}
+				case "-method":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("method", parts[i])
+					}
+				case "-username", "-user":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("username", parts[i])
+					}
+				case "-password", "-pass":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("password", parts[i])
+					}
+				case "-hash":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("hash", parts[i])
+					}
+				case "-domain":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("domain", parts[i])
+					}
+				case "-timeout":
+					if i+1 < len(parts) {
+						i++
+						if t, err := strconv.Atoi(parts[i]); err == nil {
+							args.SetArgValue("timeout", t)
+						}
+					}
+				}
+			}
+			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
