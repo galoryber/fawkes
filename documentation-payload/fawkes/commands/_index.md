@@ -119,6 +119,7 @@ pre = "<b>2. </b>"
     * [drivers](/agents/fawkes/commands/drivers/)
     * [drives](/agents/fawkes/commands/drives/)
     * [env](/agents/fawkes/commands/env/)
+    * [env-scan](/agents/fawkes/commands/env-scan/)
     * [etw](/agents/fawkes/commands/etw/)
     * [file-attr](/agents/fawkes/commands/file-attr/)
     * [file-type](/agents/fawkes/commands/file-type/)
