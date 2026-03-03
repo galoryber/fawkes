@@ -97,7 +97,11 @@ func getMountPoints() []mountEntry {
 	if mounts := parseProcMounts(); len(mounts) > 0 {
 		return mounts
 	}
-	// Fall back to mount command (macOS)
+	// Try getfsstat syscall (macOS — no child process)
+	if mounts := getfsstatMounts(); len(mounts) > 0 {
+		return mounts
+	}
+	// Fall back to mount command
 	return parseMountCommand()
 }
 
