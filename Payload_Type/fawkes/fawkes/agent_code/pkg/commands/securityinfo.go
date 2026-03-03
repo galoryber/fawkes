@@ -239,7 +239,7 @@ func securityInfoWindows() []secControl {
 
 	// Windows Defender status
 	defenderCmd := `(Get-MpComputerStatus).RealTimeProtectionEnabled`
-	defender := runQuietCommand("powershell", "-NoProfile", "-NonInteractive", "-Command", defenderCmd)
+	defender := runQuietCommand("powershell", BuildPSArgs(defenderCmd, InternalPSOptions())...)
 	if strings.Contains(strings.TrimSpace(defender), "True") {
 		controls = append(controls, secControl{"Windows Defender RT", "enabled", "real-time protection"})
 	} else if strings.Contains(strings.TrimSpace(defender), "False") {
@@ -251,7 +251,7 @@ func securityInfoWindows() []secControl {
 
 	// Credential Guard
 	credGuardCmd := `(Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard -ErrorAction SilentlyContinue).SecurityServicesRunning`
-	credGuard := runQuietCommand("powershell", "-NoProfile", "-NonInteractive", "-Command", credGuardCmd)
+	credGuard := runQuietCommand("powershell", BuildPSArgs(credGuardCmd, InternalPSOptions())...)
 	if strings.Contains(credGuard, "1") || strings.Contains(credGuard, "2") {
 		controls = append(controls, secControl{"Credential Guard", "enabled", ""})
 	} else {
@@ -260,7 +260,7 @@ func securityInfoWindows() []secControl {
 
 	// UAC level
 	uacCmd := `(Get-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -Name EnableLUA -ErrorAction SilentlyContinue).EnableLUA`
-	uac := runQuietCommand("powershell", "-NoProfile", "-NonInteractive", "-Command", uacCmd)
+	uac := runQuietCommand("powershell", BuildPSArgs(uacCmd, InternalPSOptions())...)
 	if strings.TrimSpace(uac) == "1" {
 		controls = append(controls, secControl{"UAC", "enabled", ""})
 	} else {
@@ -269,7 +269,7 @@ func securityInfoWindows() []secControl {
 
 	// Windows Firewall
 	fwCmd := `Get-NetFirewallProfile | ForEach-Object { "$($_.Name):$($_.Enabled)" }`
-	fw := runQuietCommand("powershell", "-NoProfile", "-NonInteractive", "-Command", fwCmd)
+	fw := runQuietCommand("powershell", BuildPSArgs(fwCmd, InternalPSOptions())...)
 	if fw != "" {
 		profiles := strings.TrimSpace(fw)
 		controls = append(controls, secControl{"Windows Firewall", "info", profiles})
@@ -277,7 +277,7 @@ func securityInfoWindows() []secControl {
 
 	// BitLocker
 	blCmd := `(Get-BitLockerVolume -MountPoint C: -ErrorAction SilentlyContinue).ProtectionStatus`
-	bl := runQuietCommand("powershell", "-NoProfile", "-NonInteractive", "-Command", blCmd)
+	bl := runQuietCommand("powershell", BuildPSArgs(blCmd, InternalPSOptions())...)
 	if strings.TrimSpace(bl) == "On" {
 		controls = append(controls, secControl{"BitLocker (C:)", "enabled", "volume encrypted"})
 	} else if strings.TrimSpace(bl) == "Off" {
@@ -286,7 +286,7 @@ func securityInfoWindows() []secControl {
 
 	// PowerShell Constrained Language Mode
 	clmCmd := `$ExecutionContext.SessionState.LanguageMode`
-	clm := runQuietCommand("powershell", "-NoProfile", "-NonInteractive", "-Command", clmCmd)
+	clm := runQuietCommand("powershell", BuildPSArgs(clmCmd, InternalPSOptions())...)
 	if strings.Contains(clm, "ConstrainedLanguage") {
 		controls = append(controls, secControl{"PS Constrained Lang", "enabled", "CLM active"})
 	} else if strings.Contains(clm, "FullLanguage") {
