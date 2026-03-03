@@ -50,15 +50,11 @@ pipe-server
 4. Token is captured and stored — verify with `whoami`
 5. Use `rev2self` to revert when done
 
-## Chaining with Coerce
+## Quick SYSTEM Escalation
 
-```
-# Terminal 1: Start pipe server
-pipe-server -name evilpipe -timeout 60
+For one-step NETWORK SERVICE → SYSTEM escalation, use [`printspoofer`](/agents/fawkes/commands/printspoofer/) instead. It combines pipe creation and spooler triggering into a single command.
 
-# Terminal 2: Trigger SYSTEM connection via PrinterBug
-coerce -server 127.0.0.1 -listener \\.\pipe\evilpipe -method printerbug
-```
+Use `pipe-server` when you need to impersonate a specific remote client connecting to a custom pipe name.
 
 ## MITRE ATT&CK Mapping
 

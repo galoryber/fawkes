@@ -81,6 +81,7 @@ func registerPlatformCommands() {
 	RegisterCommand(&WindowsEnumCommand{})
 	RegisterCommand(&BitsCommand{})
 	RegisterCommand(&PipeServerCommand{})
+	RegisterCommand(&PrintSpooferCommand{})
 	RegisterCommand(&DpapiCommand{})
 	RegisterCommand(&RunasCommand{})
 	RegisterCommand(&TsconCommand{})

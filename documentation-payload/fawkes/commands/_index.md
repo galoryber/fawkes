@@ -203,6 +203,7 @@ pre = "<b>2. </b>"
 - Privilege Escalation
     * [getsystem](/agents/fawkes/commands/getsystem/)
     * [pipe-server](/agents/fawkes/commands/pipe-server/)
+    * [printspoofer](/agents/fawkes/commands/printspoofer/)
     * [uac-bypass](/agents/fawkes/commands/uac-bypass/)
 - Defense Evasion
     * [debug-detect](/agents/fawkes/commands/debug-detect/)
