@@ -541,7 +541,14 @@ func ldapToggleAccount(conn *ldap.Conn, args ldapWriteArgs, baseDN string, disab
 	}
 
 	uacStr := result.Entries[0].GetAttributeValue("userAccountControl")
-	uac, _ := strconv.Atoi(uacStr)
+	uac, err := strconv.Atoi(uacStr)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error parsing userAccountControl value %q: %v", uacStr, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 
 	const accountDisable = 0x0002
 	var newUAC int
