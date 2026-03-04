@@ -304,7 +304,7 @@ func persistEnumScheduledTasks(sb *strings.Builder) int {
 
 // persistEnumTaskTree recursively walks the task scheduler tree.
 func persistEnumTaskTree(sb *strings.Builder, basePath string, prefix string) int {
-	key, err := registry.OpenKey(registry.LOCAL_MACHINE, basePath, registry.ENUMERATE_SUB_KEYS|registry.QUERY_VALUE)
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, basePath, registry.READ)
 	if err != nil {
 		return 0
 	}
