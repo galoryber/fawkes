@@ -18,9 +18,10 @@ import (
 
 // executeMemoryArgs is shared with execute_memory_linux.go (duplicated due to build tags).
 type executeMemoryArgs struct {
-	BinaryB64 string `json:"binary_b64"` // base64-encoded binary
-	Arguments string `json:"arguments"`  // command-line arguments (space-separated)
-	Timeout   int    `json:"timeout"`    // execution timeout in seconds (default: 60)
+	BinaryB64  string `json:"binary_b64"`  // base64-encoded binary
+	Arguments  string `json:"arguments"`   // command-line arguments (space-separated)
+	Timeout    int    `json:"timeout"`     // execution timeout in seconds (default: 60)
+	ExportName string `json:"export_name"` // (Windows only) export function to call for DLLs
 }
 
 // ExecuteMemoryCommand executes a Mach-O binary with minimal disk footprint.

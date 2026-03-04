@@ -64,6 +64,7 @@ The temp file exists only for the duration of execution. Apple Silicon requires 
 | file/filename/binary_b64 | Yes | The native binary to execute (upload, select existing, or base64-encode) |
 | arguments | No | Command-line arguments to pass to the binary |
 | timeout | No | Execution timeout in seconds (default: 60) |
+| export_name | No | Windows DLLs only: export function to call after DllMain (e.g., Go, Run, Execute) |
 
 ## Usage
 
