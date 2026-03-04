@@ -42,6 +42,7 @@ pre = "<b>2. </b>"
     * [wc](/agents/fawkes/commands/wc/)
     * [write-file](/agents/fawkes/commands/write-file/)
 - Command Execution
+    * [jxa](/agents/fawkes/commands/jxa/)
     * [powershell](/agents/fawkes/commands/powershell/)
     * [run](/agents/fawkes/commands/run/)
     * [runas](/agents/fawkes/commands/runas/)

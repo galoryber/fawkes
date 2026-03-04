@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **200 commands** total: 108 cross-platform, 76 Windows-only, 13 Unix-only, 7 Linux-only, and 4 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **201 commands** total: 108 cross-platform, 76 Windows-only, 13 Unix-only, 7 Linux-only, and 5 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -102,6 +102,7 @@ reflective-load | `reflective-load -dll_b64 <base64_dll> [-function <export>]` |
 iptables | `iptables -action <status\|rules\|nat\|add\|delete\|flush> [-rule <args>] [-table <name>]` | **(Linux only)** Linux firewall enumeration and management via iptables/nftables/ufw. IP forwarding, connection tracking, rule listing and modification. MITRE T1562.004.
 jobkill | `jobkill -id <task-uuid>` | Stop a running task by task ID. Use `jobs` to list running tasks. Cross-platform.
 jobs | `jobs` | List currently running tasks with task ID, command name, and duration. Cross-platform.
+jxa | `jxa -code '<script>' [-timeout 60]` or `jxa -file /path/to/script.js` | **(macOS only)** Execute JavaScript for Automation (JXA) scripts with ObjC bridge access to Foundation, AppKit, Security frameworks. Supports inline code and file input (T1059.007).
 kerberoast | `kerberoast -server <DC> -username <user@domain> -password <pass> [-spn <SPN>]` | Request TGS tickets for SPN accounts and extract hashes in hashcat format for offline cracking. Auto-enumerates via LDAP. Cross-platform (T1558.003).
 klist | `klist -action <list\|purge\|dump\|import> [-server <filter>] [-ticket <base64>] [-path <path>]` | Enumerate, dump, purge, and import Kerberos tickets. Import enables Pass-the-Ticket: Windows injects kirbi via LSA, Linux/macOS writes ccache + sets KRB5CCNAME. Cross-platform (T1558, T1550.003).
 keychain | `keychain -action <list\|dump\|find-password\|find-internet\|find-cert> [-service <name>] [-server <host>]` | **(macOS only)** Access macOS Keychain — list keychains, dump metadata, find generic/internet passwords, enumerate certificates.
