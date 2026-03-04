@@ -174,7 +174,7 @@ func etwSessions() structs.CommandResult {
 		relevance := classifySessionSecurity(sessionName)
 
 		sb.WriteString(fmt.Sprintf("%-35s %-8s %s\n",
-			truncateStr(sessionName, 35), "", relevance))
+			truncStr(sessionName, 35), "", relevance))
 	}
 
 	return structs.CommandResult{

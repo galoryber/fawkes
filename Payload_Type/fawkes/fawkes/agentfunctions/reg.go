@@ -1,0 +1,281 @@
+package agentfunctions
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+
+	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+)
+
+func init() {
+	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
+		Name:                "reg",
+		Description:         "Unified Windows Registry operations — read, write, delete, search, and save hives. Single command replaces reg-read, reg-write, reg-delete, reg-search, and reg-save.",
+		HelpString:          "reg -action read -hive HKLM -path \"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\" -name ProgramFilesDir\nreg -action write -hive HKCU -path \"Software\\Test\" -name Val -data hello -type REG_SZ\nreg -action delete -hive HKCU -path \"Software\\Test\" -name Val\nreg -action search -pattern password -hive HKLM -path SOFTWARE\nreg -action save -hive HKLM -path SAM -output C:\\Temp\\sam.hiv",
+		Version:             1,
+		MitreAttackMappings: []string{"T1012", "T1112", "T1003.002"},
+		SupportedUIFeatures: []string{},
+		Author:              "@galoryber",
+		CommandAttributes: agentstructs.CommandAttribute{
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+		},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "action",
+				ModalDisplayName: "Action",
+				CLIName:          "action",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Registry operation to perform",
+				DefaultValue:     "read",
+				Choices:          []string{"read", "write", "delete", "search", "save", "creds"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 0},
+				},
+			},
+			{
+				Name:             "hive",
+				ModalDisplayName: "Registry Hive",
+				CLIName:          "hive",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Registry hive",
+				DefaultValue:     "HKLM",
+				Choices:          []string{"HKLM", "HKCU", "HKCR", "HKU", "HKCC"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 1},
+				},
+			},
+			{
+				Name:             "path",
+				ModalDisplayName: "Registry Path",
+				CLIName:          "path",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Registry key path",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 2},
+				},
+			},
+			{
+				Name:             "name",
+				ModalDisplayName: "Value Name",
+				CLIName:          "name",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Value name (for read/write/delete)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 3},
+				},
+			},
+			{
+				Name:             "data",
+				ModalDisplayName: "Value Data",
+				CLIName:          "data",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Data to write (for write action). DWORD/QWORD: decimal or 0x hex. BINARY: hex string.",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 4},
+				},
+			},
+			{
+				Name:             "reg_type",
+				ModalDisplayName: "Value Type",
+				CLIName:          "type",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Registry value type (for write action)",
+				DefaultValue:     "REG_SZ",
+				Choices:          []string{"REG_SZ", "REG_EXPAND_SZ", "REG_DWORD", "REG_QWORD", "REG_BINARY"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 5},
+				},
+			},
+			{
+				Name:             "recursive",
+				ModalDisplayName: "Recursive",
+				CLIName:          "recursive",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"false", "true"},
+				Description:      "Recursively delete all subkeys (for delete action)",
+				DefaultValue:     "false",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 6},
+				},
+			},
+			{
+				Name:             "pattern",
+				ModalDisplayName: "Search Pattern",
+				CLIName:          "pattern",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Search pattern (for search action, case-insensitive)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 7},
+				},
+			},
+			{
+				Name:             "max_depth",
+				ModalDisplayName: "Max Search Depth",
+				CLIName:          "max_depth",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Maximum recursion depth for search (default: 5)",
+				DefaultValue:     5,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 8},
+				},
+			},
+			{
+				Name:             "max_results",
+				ModalDisplayName: "Max Search Results",
+				CLIName:          "max_results",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Maximum number of search results (default: 50)",
+				DefaultValue:     50,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 9},
+				},
+			},
+			{
+				Name:             "output",
+				ModalDisplayName: "Output File",
+				CLIName:          "output",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Output file path (for save action)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 10},
+				},
+			},
+		},
+		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
+			if input == "" {
+				return nil
+			}
+			if err := args.LoadArgsFromJSONString(input); err == nil {
+				return nil
+			}
+			// Plain text: parse -flag value pairs
+			parts := strings.Fields(input)
+			for i := 0; i < len(parts); i++ {
+				switch parts[i] {
+				case "-action":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("action", parts[i])
+					}
+				case "-hive":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("hive", parts[i])
+					}
+				case "-path":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("path", parts[i])
+					}
+				case "-name":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("name", parts[i])
+					}
+				case "-data":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("data", parts[i])
+					}
+				case "-type", "-reg_type":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("reg_type", parts[i])
+					}
+				case "-recursive":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("recursive", parts[i])
+					}
+				case "-pattern":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("pattern", parts[i])
+					}
+				case "-max_depth":
+					if i+1 < len(parts) {
+						i++
+						if v, err := strconv.Atoi(parts[i]); err == nil {
+							args.SetArgValue("max_depth", v)
+						}
+					}
+				case "-max_results":
+					if i+1 < len(parts) {
+						i++
+						if v, err := strconv.Atoi(parts[i]); err == nil {
+							args.SetArgValue("max_results", v)
+						}
+					}
+				case "-output":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("output", parts[i])
+					}
+				}
+			}
+			return nil
+		},
+		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
+			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{
+				Success: true,
+				TaskID:  taskData.Task.ID,
+			}
+
+			action, _ := taskData.Args.GetStringArg("action")
+			hive, _ := taskData.Args.GetStringArg("hive")
+			path, _ := taskData.Args.GetStringArg("path")
+			name, _ := taskData.Args.GetStringArg("name")
+
+			var display string
+			switch action {
+			case "read":
+				if name != "" {
+					display = fmt.Sprintf("read %s\\%s -> %s", hive, path, name)
+				} else {
+					display = fmt.Sprintf("read %s\\%s (enumerate)", hive, path)
+				}
+			case "write":
+				data, _ := taskData.Args.GetStringArg("data")
+				regType, _ := taskData.Args.GetStringArg("reg_type")
+				displayName := name
+				if displayName == "" {
+					displayName = "(Default)"
+				}
+				display = fmt.Sprintf("write %s\\%s\\%s = %s [%s]", hive, path, displayName, data, regType)
+				createArtifact(taskData.Task.ID, "Registry Write", display)
+			case "delete":
+				if name != "" {
+					display = fmt.Sprintf("delete value %s\\%s\\%s", hive, path, name)
+				} else {
+					recursive, _ := taskData.Args.GetStringArg("recursive")
+					display = fmt.Sprintf("delete key %s\\%s (recursive=%s)", hive, path, recursive)
+				}
+				createArtifact(taskData.Task.ID, "Registry Write", display)
+			case "search":
+				pattern, _ := taskData.Args.GetStringArg("pattern")
+				display = fmt.Sprintf("search %s\\%s for %q", hive, path, pattern)
+			case "save":
+				output, _ := taskData.Args.GetStringArg("output")
+				display = fmt.Sprintf("save %s\\%s → %s", hive, path, output)
+				createArtifact(taskData.Task.ID, "File Write", display)
+			case "creds":
+				display = "creds (SAM+SECURITY+SYSTEM)"
+				createArtifact(taskData.Task.ID, "File Write", display)
+			default:
+				display = fmt.Sprintf("%s %s\\%s", action, hive, path)
+			}
+			response.DisplayParams = &display
+
+			return response
+		},
+	})
+}

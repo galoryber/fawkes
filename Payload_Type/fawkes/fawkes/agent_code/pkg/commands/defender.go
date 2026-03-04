@@ -466,7 +466,8 @@ func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 
 // defenderRunPowerShell runs a PowerShell command for Defender management.
 func defenderRunPowerShell(psCmd string) (string, error) {
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", psCmd)
+	args := BuildPSArgs(psCmd, InternalPSOptions())
+	cmd := exec.Command("powershell.exe", args...)
 	output, err := cmd.CombinedOutput()
 	return strings.TrimSpace(string(output)), err
 }

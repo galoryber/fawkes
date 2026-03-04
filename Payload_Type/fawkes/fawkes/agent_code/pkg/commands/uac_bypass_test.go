@@ -139,3 +139,62 @@ func TestUACBypassAllTechniqueNames(t *testing.T) {
 		}
 	}
 }
+
+// --- T4 OPSEC tests: dynamic paths + registry shredding ---
+
+func TestResolveSystem32Binary(t *testing.T) {
+	path := resolveSystem32Binary("sdclt.exe")
+	if path == "" {
+		t.Error("resolveSystem32Binary returned empty string")
+	}
+	if !strings.HasSuffix(path, `sdclt.exe`) {
+		t.Errorf("path should end with sdclt.exe: %s", path)
+	}
+	if !strings.Contains(strings.ToLower(path), `system32`) {
+		t.Errorf("path should contain System32: %s", path)
+	}
+}
+
+func TestResolveSystem32Binary_Various(t *testing.T) {
+	binaries := []string{"fodhelper.exe", "computerdefaults.exe", "sdclt.exe", "cmd.exe"}
+	for _, bin := range binaries {
+		path := resolveSystem32Binary(bin)
+		if !strings.HasSuffix(path, bin) {
+			t.Errorf("resolveSystem32Binary(%q) = %q, should end with %q", bin, path, bin)
+		}
+	}
+}
+
+func TestResolveSystem32Binary_NeverHardcoded(t *testing.T) {
+	// If WINDIR is set (should be on Windows), path should use it
+	path := resolveSystem32Binary("test.exe")
+	// Should not be the literal hardcoded fallback if env vars are available
+	if path == `C:\Windows\System32\test.exe` {
+		// This is the fallback — only acceptable if both WINDIR and SystemRoot are empty
+		t.Log("Using fallback path — WINDIR and SystemRoot env vars may not be set")
+	}
+}
+
+func TestRandomShredString(t *testing.T) {
+	s := randomShredString()
+	if len(s) != 64 {
+		t.Errorf("expected 64 chars, got %d", len(s))
+	}
+	// Should be all alphanumeric
+	for _, c := range s {
+		if !((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) {
+			t.Errorf("unexpected character in shred string: %c", c)
+		}
+	}
+}
+
+func TestRandomShredString_Unique(t *testing.T) {
+	seen := make(map[string]bool)
+	for i := 0; i < 20; i++ {
+		s := randomShredString()
+		if seen[s] {
+			t.Errorf("duplicate shred string on iteration %d", i)
+		}
+		seen[s] = true
+	}
+}

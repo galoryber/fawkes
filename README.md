@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **207 commands** total: 108 cross-platform, 83 Windows-only, 13 Unix-only, 7 Linux-only, and 5 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **201 commands** total: 108 cross-platform, 76 Windows-only, 13 Unix-only, 7 Linux-only, and 5 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -51,7 +51,7 @@ container-escape | `container-escape -action <check\|docker-sock\|cgroup\|nsente
 cp | `cp <source> <destination>` | Copy a file from source to destination.
 cred-check | `cred-check -hosts <IPs/CIDRs> -username <DOMAIN\user> -password <pass> [-hash <NTLM>] [-timeout <seconds>]` | Test credentials against SMB, WinRM, and LDAP on target hosts. Validates authentication across protocols in parallel with PTH support. Cross-platform (T1110.001, T1078).
 cred-harvest | `cred-harvest -action <shadow\|cloud\|configs\|windows\|all> [-user <username>]` | Harvest credentials: shadow hashes (Unix), cloud configs (AWS/GCP/Azure/K8s), application secrets, PowerShell history + env vars + RDP (Windows). Cross-platform (T1552.001, T1552.004, T1003.008).
-credential-prompt | `credential-prompt [-title "Update Required"] [-message "macOS needs your password..."] [-icon caution]` | **(macOS only)** Display native credential dialog to capture user password. Reports to Mythic credential vault. Custom title/message/icon (T1056.002).
+credential-prompt | `credential-prompt [-title "Windows Security"] [-message "Enter your credentials..."] [-icon caution]` | Display native credential dialog to capture user credentials. macOS: AppleScript dialog with custom icon. Windows: CredUI prompt (domain/user/password). Reports to Mythic credential vault (T1056.002).
 curl | `curl -url <URL> [-method GET\|POST\|PUT\|DELETE\|HEAD\|OPTIONS\|PATCH] [-headers '{"K":"V"}'] [-body <data>] [-output full\|body\|headers]` | Make HTTP/HTTPS requests from agent's network. Cloud metadata, internal services, SSRF. Cross-platform (T1106).
 cut | `cut -path <file> -delimiter <char> -fields <1,3\|1-3\|2-> [-chars <1-10>]` | Extract fields or character ranges from file lines. Custom delimiters, range specs. Cross-platform (T1083).
 credman | `credman [-action <list\|dump>] [-filter <pattern>]` | **(Windows only)** Enumerate Windows Credential Manager entries. `list` shows metadata, `dump` reveals passwords. MITRE T1555.004.
@@ -102,6 +102,7 @@ reflective-load | `reflective-load -dll_b64 <base64_dll> [-function <export>]` |
 iptables | `iptables -action <status\|rules\|nat\|add\|delete\|flush> [-rule <args>] [-table <name>]` | **(Linux only)** Linux firewall enumeration and management via iptables/nftables/ufw. IP forwarding, connection tracking, rule listing and modification. MITRE T1562.004.
 jobkill | `jobkill -id <task-uuid>` | Stop a running task by task ID. Use `jobs` to list running tasks. Cross-platform.
 jobs | `jobs` | List currently running tasks with task ID, command name, and duration. Cross-platform.
+jxa | `jxa -code '<script>' [-timeout 60]` or `jxa -file /path/to/script.js` | **(macOS only)** Execute JavaScript for Automation (JXA) scripts with ObjC bridge access to Foundation, AppKit, Security frameworks. Supports inline code and file input (T1059.007).
 kerberoast | `kerberoast -server <DC> -username <user@domain> -password <pass> [-spn <SPN>]` | Request TGS tickets for SPN accounts and extract hashes in hashcat format for offline cracking. Auto-enumerates via LDAP. Cross-platform (T1558.003).
 klist | `klist -action <list\|purge\|dump\|import> [-server <filter>] [-ticket <base64>] [-path <path>]` | Enumerate, dump, purge, and import Kerberos tickets. Import enables Pass-the-Ticket: Windows injects kirbi via LSA, Linux/macOS writes ccache + sets KRB5CCNAME. Cross-platform (T1558, T1550.003).
 keychain | `keychain -action <list\|dump\|find-password\|find-internet\|find-cert> [-service <name>] [-server <host>]` | **(macOS only)** Access macOS Keychain — list keychains, dump metadata, find generic/internet passwords, enumerate certificates.
@@ -128,12 +129,8 @@ mem-scan | `mem-scan -pid <PID> -pattern <string> [-hex] [-max_results <n>] [-co
 mount | `mount` | List mounted filesystems with device, mount point, type, and options. Cross-platform (T1082).
 mv | `mv <source> <destination>` | Move or rename a file from source to destination.
 named-pipes | `named-pipes [-filter <pattern>]` | **(Windows only)** List named pipes on the system for IPC discovery and pipe-based privilege escalation recon. Supports substring filtering (T1083).
-net-enum | `net-enum -action <users\|localgroups\|groupmembers\|domainusers\|domaingroups\|domaininfo> [-target <group>]` | **(Windows only)** Enumerate local/domain users, groups, and domain info via Win32 API (no subprocess).
+net-enum | `net-enum -action <users\|localgroups\|groupmembers\|admins\|domainusers\|domaingroups\|domaininfo\|loggedon\|sessions\|shares\|mapped> [-target <host>] [-group <name>]` | **(Windows only)** Unified Windows network enumeration via Win32 API. Users, local/domain groups, group members, logged-on users (T1033), SMB sessions (T1049), shares (T1135), mapped drives, domain info. Supports remote hosts via -target.
 net-group | `net-group -action <list\|members\|user\|privileged> -server <DC> [-group <name>] [-user <sAMAccountName>] -username <user@domain> -password <pass>` | Enumerate AD group memberships via LDAP. Recursive member resolution, user group lookup, privileged group enumeration. Cross-platform (T1069.002).
-net-localgroup | `net-localgroup -action <list\|members\|admins> [-group <name>] [-server <host>]` | **(Windows only)** Enumerate local groups and members on local or remote hosts. `admins` shortcut for quick local admin discovery. Shows SID type (User/Group/WellKnownGroup). MITRE T1069.001.
-net-loggedon | `net-loggedon [-target <host>]` | **(Windows only)** Enumerate logged-on users via NetWkstaUserEnum. Shows username, logon domain, and logon server. MITRE T1033.
-net-session | `net-session [-target <host>]` | **(Windows only)** Enumerate active SMB sessions via NetSessionEnum. Level 502 (admin, full detail) with fallback to level 10 (no admin). MITRE T1049.
-net-shares | `net-shares -action <local\|remote\|mapped> [-target <host>]` | **(Windows only)** Enumerate network shares and mapped drives via Win32 API (no subprocess).
 net-user | `net-user -action <add\|delete\|info\|password\|group-add\|group-remove> -username <name> [-password <pass>] [-group <group>]` | **(Windows only)** Manage local user accounts and group membership via netapi32 API. MITRE T1136.001, T1098.
 net-stat | `net-stat` | List active network connections and listening ports with protocol, state, and PID. Cross-platform.
 ntdll-unhook | `ntdll-unhook [-action unhook\|check]` | **(Windows only)** Remove EDR inline hooks from ntdll.dll by restoring the .text section from a clean on-disk copy. `check` reports hooks without removing them (T1562.001).
@@ -143,9 +140,10 @@ persist | `persist -method <registry\|startup-folder\|com-hijack\|screensaver\|i
 poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. All 8 variants supported. [Details](research/injection-techniques.md#poolparty-injection)
 ping | `ping -hosts <IP/CIDR/range> [-port 445] [-timeout 1000] [-threads 25]` | TCP connect host reachability check with subnet sweep. Supports CIDR, dash ranges, and comma-separated lists. Cross-platform (T1018).
 pipe-server | `pipe-server -action <check\|impersonate> [-name <pipe>] [-timeout 30]` | **(Windows only)** Named pipe impersonation for privilege escalation. Create pipe server, wait for privileged client connection, impersonate token. Requires SeImpersonatePrivilege (T1134.001).
+printspoofer | `printspoofer [-timeout 15]` | **(Windows only)** PrintSpoofer privilege escalation — SeImpersonate to SYSTEM via Print Spooler. Creates named pipe, triggers spooler connection via OpenPrinterW, impersonates SYSTEM token. One-step NETWORK SERVICE → SYSTEM (T1134.001).
 pkg-list | `pkg-list` | List installed packages and software. Enumerates dpkg/rpm/apk (Linux), Homebrew/Applications (macOS), or registry Uninstall keys (Windows). Cross-platform (T1518).
 port-scan | `port-scan -hosts <IPs/CIDRs> [-ports <ports>] [-timeout <s>]` | TCP connect scan for network service discovery. Supports CIDR, IP ranges, and port ranges. Cross-platform.
-powershell | `powershell [command]` | **(Windows only)** Execute a PowerShell command or script directly via powershell.exe with -NoProfile -ExecutionPolicy Bypass.
+powershell | `powershell <command> [--encoded]` | **(Windows only)** Execute a PowerShell command via powershell.exe with OPSEC-hardened flags (abbreviated, randomized). Supports encoded command mode to hide args from process tree.
 prefetch | `prefetch -action <list\|parse\|delete\|clear> [-name <exe>] [-count <max>]` | **(Windows only)** Parse and manage Windows Prefetch files. List executed programs, parse run history (up to 8 timestamps), delete specific entries, or clear all. Supports MAM-compressed files (T1070.004).
 privesc-check | `privesc-check -action <all\|privileges\|services\|registry\|uac\|...>` | Privilege escalation enumeration. Windows: token privileges, unquoted services, AlwaysInstallElevated, auto-logon, UAC, unattend files. Linux: SUID/SGID, capabilities, sudo, containers. macOS: LaunchDaemons, TCC, dylib hijacking, SIP. Cross-platform (T1548, T1574.009).
 psexec | `psexec -host <target> -command <cmd> [-name <svcname>] [-cleanup <true\|false>]` | **(Windows only)** Execute commands on remote hosts via SCM service creation — PSExec-style lateral movement. MITRE T1021.002, T1569.002.
@@ -158,11 +156,7 @@ ps | `ps [-v] [-i PID] [filter]` | List running processes with Mythic process br
 ptrace-inject | `ptrace-inject -action <check\|inject> [-pid <PID>] [-filename <shellcode>] [-restore <true>] [-timeout <30>]` | **(Linux only, x86_64)** Process injection via ptrace — PTRACE_ATTACH/POKETEXT/SETREGS with register and code restore. Check mode reports ptrace_scope, capabilities, and candidates (T1055.008).
 pwd | `pwd` | Print working directory.
 read-memory | `read-memory <dll_name> <function_name> <start_index> <num_bytes>` | **(Windows only)** Read bytes from a DLL function address.
-reg-delete | `reg-delete -hive <HIVE> -path <path> [-name <value>] [-recursive <true>]` | **(Windows only)** Delete a registry value, key, or key tree (recursive). MITRE T1112.
-reg-read | `reg-read -hive <HIVE> -path <path> [-name <value>]` | **(Windows only)** Read a registry value or enumerate all values/subkeys under a key.
-reg-save | `reg-save -action <save\|creds> [-hive HKLM] [-path SAM] [-output C:\Temp\sam.hiv]` | **(Windows only)** Export registry hives to files for offline credential extraction. Use 'creds' to export SAM+SECURITY+SYSTEM. MITRE T1003.002, T1003.004.
-reg-search | `reg-search -pattern <search> [-hive HKLM] [-path SOFTWARE] [-max_depth 5] [-max_results 50]` | **(Windows only)** Recursively search registry keys, value names, and value data for a case-insensitive pattern. MITRE T1012.
-reg-write | `reg-write -hive <HIVE> -path <path> -name <name> -data <data> -type <type>` | **(Windows only)** Write a value to the Windows Registry. Creates keys if needed.
+reg | `reg -action <read\|write\|delete\|search\|save\|creds> [-hive HKLM] [-path ...] [...]` | **(Windows only)** Unified registry operations — read, write, delete, search, and save hives (T1012, T1112, T1003.002).
 rev2self | `rev2self` | **(Windows only)** Revert to the original security context by dropping any active impersonation token.
 route | `route` | Display the system routing table. Windows: GetIpForwardTable API, Linux: /proc/net/route + IPv6, macOS: netstat -rn. Cross-platform (T1016).
 rpfwd | `rpfwd start <port> <remote_ip> <remote_port>` / `rpfwd stop <port>` | Reverse port forward -- agent listens, Mythic routes to target. Cross-platform (T1090).
@@ -289,15 +283,15 @@ Tracked artifact types:
 | Type | Commands |
 |------|----------|
 | Process Create | run, powershell, spawn, argue |
-| API Call | net-enum, net-loggedon, net-session, net-shares, net-user, service, wmi, schtask, procdump, hashdump, eventlog, ntdll-unhook, syscalls, firewall, dcom, vss (create/delete), psexec |
+| API Call | net-enum, net-user, service, wmi, schtask, procdump, hashdump, eventlog, ntdll-unhook, syscalls, firewall, dcom, vss (create/delete), psexec |
 | Process Kill | kill |
 | Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection, module-stomping, thread-hijack |
 | File Write | upload, cp, mv |
 | File Create | mkdir |
 | File Delete | rm |
 | File Modify | timestomp |
-| Registry Write | reg-write, reg-delete, persist (registry, com-hijack, screensaver methods), uac-bypass, defender (add/remove-exclusion) |
-| Registry Save | reg-save |
+| Registry Write | reg (write/delete), persist (registry, com-hijack, screensaver methods), uac-bypass, defender (add/remove-exclusion) |
+| Registry Save | reg (save/creds) |
 | Logon | make-token |
 | Token Steal | steal-token, getsystem |
 
@@ -321,7 +315,7 @@ Credential-harvesting commands automatically report discoveries to Mythic's **Cr
 | credman | plaintext | Credential Manager entries (on dump action) |
 | make-token | plaintext | Credentials used for token creation |
 | cred-harvest | hash/plaintext | Shadow hashes, cloud env vars, sensitive env vars |
-| credential-prompt | plaintext | macOS dialog-captured password |
+| credential-prompt | plaintext | Dialog-captured credentials (macOS/Windows) |
 
 ### Keylog Tracking
 

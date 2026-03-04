@@ -42,6 +42,7 @@ pre = "<b>2. </b>"
     * [wc](/agents/fawkes/commands/wc/)
     * [write-file](/agents/fawkes/commands/write-file/)
 - Command Execution
+    * [jxa](/agents/fawkes/commands/jxa/)
     * [powershell](/agents/fawkes/commands/powershell/)
     * [run](/agents/fawkes/commands/run/)
     * [runas](/agents/fawkes/commands/runas/)
@@ -133,10 +134,6 @@ pre = "<b>2. </b>"
     * [named-pipes](/agents/fawkes/commands/named-pipes/)
     * [net-enum](/agents/fawkes/commands/net-enum/)
     * [net-group](/agents/fawkes/commands/net-group/)
-    * [net-localgroup](/agents/fawkes/commands/net-localgroup/)
-    * [net-loggedon](/agents/fawkes/commands/net-loggedon/)
-    * [net-session](/agents/fawkes/commands/net-session/)
-    * [net-shares](/agents/fawkes/commands/net-shares/)
     * [pkg-list](/agents/fawkes/commands/pkg-list/)
     * [privesc-check](/agents/fawkes/commands/privesc-check/)
     * [proc-info](/agents/fawkes/commands/proc-info/)
@@ -154,11 +151,7 @@ pre = "<b>2. </b>"
     * [windows](/agents/fawkes/commands/windows/)
     * [whoami](/agents/fawkes/commands/whoami/)
 - Registry Operations
-    * [reg-delete](/agents/fawkes/commands/reg-delete/)
-    * [reg-read](/agents/fawkes/commands/reg-read/)
-    * [reg-save](/agents/fawkes/commands/reg-save/)
-    * [reg-search](/agents/fawkes/commands/reg-search/)
-    * [reg-write](/agents/fawkes/commands/reg-write/)
+    * [reg](/agents/fawkes/commands/reg/)
 - Persistence
     * [bits](/agents/fawkes/commands/bits/)
     * [crontab](/agents/fawkes/commands/crontab/)
@@ -203,6 +196,7 @@ pre = "<b>2. </b>"
 - Privilege Escalation
     * [getsystem](/agents/fawkes/commands/getsystem/)
     * [pipe-server](/agents/fawkes/commands/pipe-server/)
+    * [printspoofer](/agents/fawkes/commands/printspoofer/)
     * [uac-bypass](/agents/fawkes/commands/uac-bypass/)
 - Defense Evasion
     * [debug-detect](/agents/fawkes/commands/debug-detect/)

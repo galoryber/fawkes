@@ -198,7 +198,7 @@ func pkgListWindows() string {
 
 	// Use PowerShell to query installed programs from registry
 	psCmd := "Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*,HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName } | Sort-Object DisplayName | ForEach-Object { \"$($_.DisplayName)\t$($_.DisplayVersion)\" }"
-	output := runQuietCommand("powershell", "-NoProfile", "-NonInteractive", "-Command", psCmd)
+	output := runQuietCommand("powershell", BuildPSArgs(psCmd, InternalPSOptions())...)
 	if output != "" {
 		lines := strings.Split(strings.TrimSpace(output), "\n")
 		sb.WriteString(fmt.Sprintf("  Installed programs: %d\n\n", len(lines)))

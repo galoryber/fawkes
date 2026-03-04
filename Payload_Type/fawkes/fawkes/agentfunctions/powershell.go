@@ -7,33 +7,71 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "powershell",
-		Description:         "powershell [command] - Execute a PowerShell command or script",
-		HelpString:          "powershell [command]",
-		Version:             1,
+		Description:         "Execute a PowerShell command or script with OPSEC-hardened invocation flags",
+		HelpString:          "powershell <command> or powershell {\"command\": \"...\", \"encoded\": true}",
+		Version:             2,
 		MitreAttackMappings: []string{"T1059.001"}, // Command and Scripting Interpreter: PowerShell
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "command",
+				CLIName:          "command",
+				ModalDisplayName: "Command",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "The PowerShell command or script to execute",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 1},
+				},
+			},
+			{
+				Name:             "encoded",
+				CLIName:          "encoded",
+				ModalDisplayName: "Encoded Command",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Use -EncodedCommand (base64 UTF-16LE) to hide the command from process tree listings",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 2},
+				},
+			},
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			args.SetManualArgs(input)
-			return nil
+			if input == "" {
+				return nil
+			}
+			// Try JSON first (from UI modal or structured input)
+			if err := args.LoadArgsFromJSONString(input); err == nil {
+				return nil
+			}
+			// Not JSON — treat entire input as the command (backward compat + CLI usage)
+			return args.SetArgValue("command", input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
-			if cmd, ok := input["command"].(string); ok {
-				args.SetManualArgs(cmd)
-			}
-			return nil
+			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
-			if displayParams, err := task.Args.GetFinalArgs(); err == nil {
-				response.DisplayParams = &displayParams
-				createArtifact(task.Task.ID, "Process Create", "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "+displayParams)
+			cmd, _ := task.Args.GetStringArg("command")
+			encoded, _ := task.Args.GetBooleanArg("encoded")
+			if cmd != "" {
+				dp := cmd
+				if encoded {
+					dp = "[encoded] " + cmd
+				}
+				response.DisplayParams = &dp
+				// Artifact shows abbreviated flag form (actual flags are randomized at runtime)
+				if encoded {
+					createArtifact(task.Task.ID, "Process Create", "powershell.exe -nop -ep bypass -enc <base64>")
+				} else {
+					createArtifact(task.Task.ID, "Process Create", "powershell.exe -nop -ep bypass -Command "+cmd)
+				}
 			}
 			return response
 		},

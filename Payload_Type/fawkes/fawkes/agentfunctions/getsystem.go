@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,9 +10,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "getsystem",
-		Description:         "Elevate to SYSTEM by stealing a token from a SYSTEM process (requires admin/SeDebugPrivilege)",
-		HelpString:          "getsystem [-technique steal]",
-		Version:             2,
+		Description:         "Elevate to SYSTEM via token steal (SeDebugPrivilege) or DCOM potato (SeImpersonatePrivilege)",
+		HelpString:          "getsystem [-technique steal|potato]",
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1134.001"},
@@ -25,8 +26,8 @@ func init() {
 				ModalDisplayName: "Technique",
 				CLIName:          "technique",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"steal"},
-				Description:      "Escalation technique: steal (auto-find SYSTEM process and steal token)",
+				Choices:          []string{"steal", "potato"},
+				Description:      "steal = token theft from SYSTEM process (needs SeDebugPrivilege/admin). potato = DCOM OXID resolution hook (needs SeImpersonatePrivilege/service account).",
 				DefaultValue:     "steal",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -42,7 +43,12 @@ func init() {
 			if input == "" {
 				return nil
 			}
-			return args.LoadArgsFromJSONString(input)
+			if err := args.LoadArgsFromJSONString(input); err != nil {
+				// Plain text fallback: treat input as technique name
+				input = strings.TrimSpace(input)
+				return args.SetArgValue("technique", input)
+			}
+			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
@@ -58,7 +64,12 @@ func init() {
 			}
 			display := fmt.Sprintf("technique: %s", technique)
 			response.DisplayParams = &display
-			createArtifact(taskData.Task.ID, "Token Steal", "OpenProcess + OpenProcessToken + DuplicateTokenEx on SYSTEM process")
+			switch technique {
+			case "potato":
+				createArtifact(taskData.Task.ID, "DCOM OXID Hook", "combase.dll RPC dispatch table hook + named pipe impersonation")
+			default:
+				createArtifact(taskData.Task.ID, "Token Steal", "OpenProcess + OpenProcessToken + DuplicateTokenEx on SYSTEM process")
+			}
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

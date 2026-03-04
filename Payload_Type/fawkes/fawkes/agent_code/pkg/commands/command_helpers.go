@@ -165,27 +165,8 @@ func resolveProviderGUID(provider string) (string, string) {
 
 // --- BITS helpers (from bits.go) ---
 
-// bitsFormatBytes formats byte counts as human-readable strings
-func bitsFormatBytes(b uint64) string {
-	switch {
-	case b >= 1<<30:
-		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
-	case b >= 1<<20:
-		return fmt.Sprintf("%.1f MB", float64(b)/float64(1<<20))
-	case b >= 1<<10:
-		return fmt.Sprintf("%.1f KB", float64(b)/float64(1<<10))
-	default:
-		return fmt.Sprintf("%d B", b)
-	}
-}
-
-// bitsEllipsis truncates a string with ellipsis if it exceeds max length
-func bitsEllipsis(s string, max int) string {
-	if len(s) > max {
-		return s[:max-3] + "..."
-	}
-	return s
-}
+// bitsFormatBytes and bitsEllipsis consolidated into formatBytes and truncStr
+// in format_helpers.go
 
 // --- Credential Manager helpers (from credman.go) ---
 
@@ -705,10 +686,4 @@ func tsWaitReasonString(reason uint32) string {
 	}
 }
 
-// tsTruncateOwner truncates a process owner string to maxLen, adding "..." if truncated
-func tsTruncateOwner(owner string, maxLen int) string {
-	if len(owner) <= maxLen {
-		return owner
-	}
-	return owner[:maxLen-3] + "..."
-}
+// tsTruncateOwner consolidated into truncStr in format_helpers.go

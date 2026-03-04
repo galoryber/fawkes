@@ -2,6 +2,8 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -68,7 +70,39 @@ func init() {
 			if input == "" {
 				return nil
 			}
-			return args.LoadArgsFromJSONString(input)
+			// Try JSON first (from API/modal)
+			if err := args.LoadArgsFromJSONString(input); err == nil {
+				return nil
+			}
+			// Plain text: parse -flag value pairs
+			parts := strings.Fields(input)
+			for i := 0; i < len(parts); i++ {
+				switch parts[i] {
+				case "-action":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("action", parts[i])
+					}
+				case "-name", "-pipe_name":
+					if i+1 < len(parts) {
+						i++
+						args.SetArgValue("name", parts[i])
+					}
+				case "-timeout":
+					if i+1 < len(parts) {
+						i++
+						if t, err := strconv.Atoi(parts[i]); err == nil {
+							args.SetArgValue("timeout", t)
+						}
+					}
+				default:
+					// Single word without flag — treat as pipe name
+					if !strings.HasPrefix(parts[i], "-") {
+						args.SetArgValue("name", parts[i])
+					}
+				}
+			}
+			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
