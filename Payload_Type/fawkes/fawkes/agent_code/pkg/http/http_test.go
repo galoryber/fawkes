@@ -116,7 +116,7 @@ func TestEncryptDecrypt_RoundTrip(t *testing.T) {
 	}
 
 	original := []byte(`{"action":"checkin","uuid":"test-uuid-1234"}`)
-	encrypted, err := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("encryptMessage failed: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestEncryptDecrypt_RoundTrip(t *testing.T) {
 	fakeUUID := []byte("12345678-1234-1234-1234-123456789012")
 	withUUID := append(fakeUUID, encrypted...)
 
-	decrypted, err := profile.decryptResponse(withUUID)
+	decrypted, err := profile.decryptResponse(withUUID, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("decryptResponse failed: %v", err)
 	}
@@ -150,7 +150,7 @@ func TestEncryptDecrypt_EmptyKey(t *testing.T) {
 	}
 
 	original := []byte("test message")
-	encrypted, err := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("encryptMessage failed: %v", err)
 	}
@@ -167,7 +167,7 @@ func TestDecryptResponse_EmptyKey(t *testing.T) {
 	}
 
 	data := []byte("test data")
-	result, err := profile.decryptResponse(data)
+	result, err := profile.decryptResponse(data, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("decryptResponse with empty key should not error: %v", err)
 	}
@@ -186,7 +186,7 @@ func TestDecryptResponse_TooShort(t *testing.T) {
 
 	// Less than 36 (UUID) + 16 (IV) + 32 (HMAC) = 84 bytes
 	short := make([]byte, 50)
-	_, err := profile.decryptResponse(short)
+	_, err := profile.decryptResponse(short, profile.EncryptionKey)
 	if err == nil {
 		t.Error("decryptResponse should fail on data too short")
 	}
@@ -204,7 +204,7 @@ func TestDecryptResponse_InvalidHMAC(t *testing.T) {
 	}
 
 	original := []byte("test message for HMAC verification")
-	encrypted, err := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("encryptMessage failed: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestDecryptResponse_InvalidHMAC(t *testing.T) {
 	// Corrupt last byte of HMAC
 	withUUID[len(withUUID)-1] ^= 0xFF
 
-	_, decErr := profile.decryptResponse(withUUID)
+	_, decErr := profile.decryptResponse(withUUID, profile.EncryptionKey)
 	if decErr == nil {
 		t.Error("decryptResponse should fail with corrupted HMAC")
 	}
@@ -233,7 +233,7 @@ func TestDecryptResponse_InvalidPadding(t *testing.T) {
 	}
 
 	original := []byte("test")
-	encrypted, err := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("encryptMessage failed: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestDecryptResponse_InvalidPadding(t *testing.T) {
 		withUUID[55] ^= 0xFF
 	}
 
-	_, decErr := profile.decryptResponse(withUUID)
+	_, decErr := profile.decryptResponse(withUUID, profile.EncryptionKey)
 	if decErr == nil {
 		t.Error("decryptResponse should fail with corrupted ciphertext")
 	}
@@ -265,11 +265,11 @@ func TestEncryptMessage_DifferentEachTime(t *testing.T) {
 	}
 
 	msg := []byte("same message")
-	enc1, err := profile.encryptMessage(msg)
+	enc1, err := profile.encryptMessage(msg, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("encryptMessage failed: %v", err)
 	}
-	enc2, err := profile.encryptMessage(msg)
+	enc2, err := profile.encryptMessage(msg, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("encryptMessage failed: %v", err)
 	}
@@ -297,14 +297,14 @@ func TestEncryptDecrypt_LargeMessage(t *testing.T) {
 		original[i] = byte(i % 256)
 	}
 
-	encrypted, err := profile.encryptMessage(original)
+	encrypted, err := profile.encryptMessage(original, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("encryptMessage failed: %v", err)
 	}
 	fakeUUID := []byte("12345678-1234-1234-1234-123456789012")
 	withUUID := append(fakeUUID, encrypted...)
 
-	decrypted, err := profile.decryptResponse(withUUID)
+	decrypted, err := profile.decryptResponse(withUUID, profile.EncryptionKey)
 	if err != nil {
 		t.Fatalf("decryptResponse for large message failed: %v", err)
 	}
@@ -320,7 +320,7 @@ func TestEncryptDecrypt_InvalidKey(t *testing.T) {
 	}
 
 	msg := []byte("test")
-	_, err := profile.encryptMessage(msg)
+	_, err := profile.encryptMessage(msg, profile.EncryptionKey)
 	// With invalid key, should return an error (never fall back to plaintext)
 	if err == nil {
 		t.Error("encryptMessage with invalid key should return an error")
@@ -578,7 +578,7 @@ func TestGetActiveUUID_WithCallbackUUID(t *testing.T) {
 		PayloadUUID: "payload-uuid-456",
 	}
 
-	result := profile.getActiveUUID(agent)
+	result := profile.getActiveUUID(agent, nil)
 	if result != "callback-uuid-123" {
 		t.Errorf("getActiveUUID = %q, want callback UUID", result)
 	}
@@ -592,7 +592,7 @@ func TestGetActiveUUID_WithoutCallbackUUID(t *testing.T) {
 		PayloadUUID: "payload-uuid-456",
 	}
 
-	result := profile.getActiveUUID(agent)
+	result := profile.getActiveUUID(agent, nil)
 	if result != "payload-uuid-456" {
 		t.Errorf("getActiveUUID = %q, want payload UUID", result)
 	}
@@ -610,7 +610,7 @@ func TestEncryptMessage_WrongKeySizeBase64(t *testing.T) {
 	}
 
 	msg := []byte("test message")
-	_, err := profile.encryptMessage(msg)
+	_, err := profile.encryptMessage(msg, profile.EncryptionKey)
 
 	// With wrong key size, AES cipher creation fails — should return error (never plaintext)
 	if err == nil {
@@ -638,13 +638,13 @@ func TestEncryptDecrypt_MultipleBlockSizes(t *testing.T) {
 			msg[i] = byte(i % 256)
 		}
 
-		encrypted, err := profile.encryptMessage(msg)
+		encrypted, err := profile.encryptMessage(msg, profile.EncryptionKey)
 		if err != nil {
 			t.Fatalf("size %d: encryptMessage failed: %v", size, err)
 		}
 		withUUID := append(append([]byte{}, fakeUUID...), encrypted...)
 
-		decrypted, err := profile.decryptResponse(withUUID)
+		decrypted, err := profile.decryptResponse(withUUID, profile.EncryptionKey)
 		if err != nil {
 			t.Fatalf("size %d: decryptResponse failed: %v", size, err)
 		}
@@ -660,7 +660,7 @@ func TestDecryptResponse_InvalidEncryptionKeyBase64(t *testing.T) {
 	}
 
 	data := make([]byte, 100)
-	_, err := profile.decryptResponse(data)
+	_, err := profile.decryptResponse(data, profile.EncryptionKey)
 	if err == nil {
 		t.Error("decryptResponse with invalid base64 key should return error")
 	}
@@ -687,7 +687,7 @@ func TestDecryptResponse_CiphertextNotBlockAligned(t *testing.T) {
 	// Compute valid HMAC so it passes HMAC check (try both methods)
 	// Actually, HMAC will fail regardless since data is random, so this tests
 	// that the function doesn't panic on misaligned ciphertext
-	_, err := profile.decryptResponse(data)
+	_, err := profile.decryptResponse(data, profile.EncryptionKey)
 	if err == nil {
 		t.Error("decryptResponse with non-block-aligned ciphertext should fail")
 	}
@@ -709,7 +709,7 @@ func TestDecryptResponse_EmptyCiphertext(t *testing.T) {
 	data := make([]byte, 84)
 	copy(data[:36], []byte("12345678-1234-1234-1234-123456789012"))
 
-	_, err := profile.decryptResponse(data)
+	_, err := profile.decryptResponse(data, profile.EncryptionKey)
 	if err == nil {
 		t.Error("decryptResponse with zero-length ciphertext should fail, not panic")
 	}
@@ -758,5 +758,280 @@ func TestBuildTLSConfig_PinnedUppercaseHex(t *testing.T) {
 	// hex.DecodeString handles uppercase
 	if cfg.VerifyPeerCertificate == nil {
 		t.Error("pinned with uppercase hex should work")
+	}
+}
+
+// --- Config Vault Tests ---
+
+func TestSealConfig_EncryptsFields(t *testing.T) {
+	profile := &HTTPProfile{
+		BaseURL:       "http://c2.example.com:443",
+		UserAgent:     "Mozilla/5.0 Test",
+		EncryptionKey: "dGVzdGtleWJhc2U2NA==",
+		CallbackUUID:  "test-uuid-1234",
+		HostHeader:    "cdn.example.com",
+		GetEndpoint:   "/api/get",
+		PostEndpoint:  "/api/post",
+		CustomHeaders: map[string]string{"X-Custom": "value"},
+	}
+
+	err := profile.SealConfig()
+	if err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	// Struct fields should be zeroed
+	if profile.BaseURL != "" {
+		t.Errorf("BaseURL not zeroed: %q", profile.BaseURL)
+	}
+	if profile.UserAgent != "" {
+		t.Errorf("UserAgent not zeroed: %q", profile.UserAgent)
+	}
+	if profile.EncryptionKey != "" {
+		t.Errorf("EncryptionKey not zeroed: %q", profile.EncryptionKey)
+	}
+	if profile.CallbackUUID != "" {
+		t.Errorf("CallbackUUID not zeroed: %q", profile.CallbackUUID)
+	}
+	if profile.HostHeader != "" {
+		t.Errorf("HostHeader not zeroed: %q", profile.HostHeader)
+	}
+	if profile.CustomHeaders != nil {
+		t.Errorf("CustomHeaders not nil")
+	}
+
+	// Vault should be active
+	if !profile.IsSealed() {
+		t.Error("IsSealed() should return true after SealConfig")
+	}
+}
+
+func TestSealConfig_GetConfigReturnsOriginal(t *testing.T) {
+	profile := &HTTPProfile{
+		BaseURL:       "http://c2.example.com:443",
+		UserAgent:     "Mozilla/5.0 Test",
+		EncryptionKey: "dGVzdGtleWJhc2U2NA==",
+		CallbackUUID:  "test-uuid-1234",
+		HostHeader:    "cdn.example.com",
+		GetEndpoint:   "/api/get",
+		PostEndpoint:  "/api/post",
+		CustomHeaders: map[string]string{"X-Custom": "value"},
+	}
+
+	err := profile.SealConfig()
+	if err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	cfg := profile.getConfig()
+	if cfg == nil {
+		t.Fatal("getConfig returned nil")
+	}
+
+	if cfg.BaseURL != "http://c2.example.com:443" {
+		t.Errorf("BaseURL = %q, want %q", cfg.BaseURL, "http://c2.example.com:443")
+	}
+	if cfg.UserAgent != "Mozilla/5.0 Test" {
+		t.Errorf("UserAgent = %q, want %q", cfg.UserAgent, "Mozilla/5.0 Test")
+	}
+	if cfg.EncryptionKey != "dGVzdGtleWJhc2U2NA==" {
+		t.Errorf("EncryptionKey = %q", cfg.EncryptionKey)
+	}
+	if cfg.CallbackUUID != "test-uuid-1234" {
+		t.Errorf("CallbackUUID = %q", cfg.CallbackUUID)
+	}
+	if cfg.HostHeader != "cdn.example.com" {
+		t.Errorf("HostHeader = %q", cfg.HostHeader)
+	}
+	if cfg.GetEndpoint != "/api/get" {
+		t.Errorf("GetEndpoint = %q", cfg.GetEndpoint)
+	}
+	if cfg.PostEndpoint != "/api/post" {
+		t.Errorf("PostEndpoint = %q", cfg.PostEndpoint)
+	}
+	if cfg.CustomHeaders["X-Custom"] != "value" {
+		t.Errorf("CustomHeaders[X-Custom] = %q", cfg.CustomHeaders["X-Custom"])
+	}
+}
+
+func TestSealConfig_GetConfigConcurrent(t *testing.T) {
+	profile := &HTTPProfile{
+		BaseURL:       "http://c2.example.com:443",
+		EncryptionKey: "dGVzdGtleWJhc2U2NA==",
+		PostEndpoint:  "/api/post",
+	}
+	if err := profile.SealConfig(); err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	// Multiple concurrent getConfig calls should be safe
+	done := make(chan bool, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			cfg := profile.getConfig()
+			if cfg == nil || cfg.BaseURL != "http://c2.example.com:443" {
+				t.Errorf("concurrent getConfig returned wrong data")
+			}
+			done <- true
+		}()
+	}
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+}
+
+func TestUpdateCallbackUUID_Sealed(t *testing.T) {
+	profile := &HTTPProfile{
+		CallbackUUID: "original-uuid",
+		BaseURL:      "http://test:80",
+	}
+	if err := profile.SealConfig(); err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	profile.UpdateCallbackUUID("new-callback-uuid")
+
+	cfg := profile.getConfig()
+	if cfg.CallbackUUID != "new-callback-uuid" {
+		t.Errorf("CallbackUUID = %q, want %q", cfg.CallbackUUID, "new-callback-uuid")
+	}
+
+	// Struct field should still be zeroed
+	if profile.CallbackUUID != "" {
+		t.Errorf("struct CallbackUUID should be empty: %q", profile.CallbackUUID)
+	}
+}
+
+func TestUpdateCallbackUUID_Unsealed(t *testing.T) {
+	profile := &HTTPProfile{CallbackUUID: "original"}
+	profile.UpdateCallbackUUID("updated")
+	if profile.CallbackUUID != "updated" {
+		t.Errorf("CallbackUUID = %q, want %q", profile.CallbackUUID, "updated")
+	}
+}
+
+func TestGetCallbackUUID_Sealed(t *testing.T) {
+	profile := &HTTPProfile{
+		CallbackUUID: "my-uuid",
+		BaseURL:      "http://test:80",
+	}
+	if err := profile.SealConfig(); err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	got := profile.GetCallbackUUID()
+	if got != "my-uuid" {
+		t.Errorf("GetCallbackUUID = %q, want %q", got, "my-uuid")
+	}
+}
+
+func TestGetCallbackUUID_Unsealed(t *testing.T) {
+	profile := &HTTPProfile{CallbackUUID: "my-uuid"}
+	if got := profile.GetCallbackUUID(); got != "my-uuid" {
+		t.Errorf("GetCallbackUUID = %q, want %q", got, "my-uuid")
+	}
+}
+
+func TestIsSealed_Default(t *testing.T) {
+	profile := &HTTPProfile{}
+	if profile.IsSealed() {
+		t.Error("new profile should not be sealed")
+	}
+}
+
+func TestGetConfig_Unsealed(t *testing.T) {
+	profile := &HTTPProfile{
+		BaseURL:  "http://test:80",
+		UserAgent: "test-ua",
+	}
+	cfg := profile.getConfig()
+	if cfg == nil {
+		t.Fatal("getConfig should not return nil for unsealed profile")
+	}
+	if cfg.BaseURL != "http://test:80" {
+		t.Errorf("BaseURL = %q", cfg.BaseURL)
+	}
+	if cfg.UserAgent != "test-ua" {
+		t.Errorf("UserAgent = %q", cfg.UserAgent)
+	}
+}
+
+func TestVaultEncryptDecrypt_RoundTrip(t *testing.T) {
+	key := make([]byte, 32)
+	for i := range key {
+		key[i] = byte(i)
+	}
+	plaintext := []byte("sensitive C2 config data")
+
+	encrypted := vaultEncrypt(key, plaintext)
+	if encrypted == nil {
+		t.Fatal("vaultEncrypt returned nil")
+	}
+	if bytes.Equal(encrypted, plaintext) {
+		t.Error("encrypted should differ from plaintext")
+	}
+
+	decrypted := vaultDecrypt(key, encrypted)
+	if decrypted == nil {
+		t.Fatal("vaultDecrypt returned nil")
+	}
+	if !bytes.Equal(decrypted, plaintext) {
+		t.Errorf("round-trip failed: got %q, want %q", string(decrypted), string(plaintext))
+	}
+}
+
+func TestVaultDecrypt_WrongKey(t *testing.T) {
+	key1 := make([]byte, 32)
+	key2 := make([]byte, 32)
+	for i := range key2 {
+		key2[i] = byte(i + 1)
+	}
+
+	encrypted := vaultEncrypt(key1, []byte("secret"))
+	decrypted := vaultDecrypt(key2, encrypted)
+	if decrypted != nil {
+		t.Error("decrypting with wrong key should return nil")
+	}
+}
+
+func TestVaultZeroBytes(t *testing.T) {
+	data := []byte("sensitive")
+	vaultZeroBytes(data)
+	for i, b := range data {
+		if b != 0 {
+			t.Errorf("byte %d not zeroed: %d", i, b)
+		}
+	}
+}
+
+func TestGetActiveUUID_WithConfig(t *testing.T) {
+	profile := &HTTPProfile{}
+	agent := &structs.Agent{PayloadUUID: "payload-uuid"}
+	cfg := &sensitiveConfig{CallbackUUID: "cfg-callback-uuid"}
+
+	result := profile.getActiveUUID(agent, cfg)
+	if result != "cfg-callback-uuid" {
+		t.Errorf("getActiveUUID = %q, want config's CallbackUUID", result)
+	}
+}
+
+func TestGetActiveUUID_NilConfig(t *testing.T) {
+	profile := &HTTPProfile{CallbackUUID: "struct-uuid"}
+	agent := &structs.Agent{PayloadUUID: "payload-uuid"}
+
+	result := profile.getActiveUUID(agent, nil)
+	if result != "struct-uuid" {
+		t.Errorf("getActiveUUID = %q, want struct CallbackUUID", result)
+	}
+}
+
+func TestGetActiveUUID_EmptyConfigUUID(t *testing.T) {
+	profile := &HTTPProfile{}
+	agent := &structs.Agent{PayloadUUID: "payload-uuid"}
+	cfg := &sensitiveConfig{CallbackUUID: ""}
+
+	result := profile.getActiveUUID(agent, cfg)
+	if result != "payload-uuid" {
+		t.Errorf("getActiveUUID = %q, want payload UUID", result)
 	}
 }

