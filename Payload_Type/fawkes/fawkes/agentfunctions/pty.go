@@ -1,6 +1,9 @@
 package agentfunctions
 
 import (
+	"encoding/json"
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -61,10 +64,16 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// PTY typically takes no arguments — just start it
-			// But allow specifying a shell path as raw string
+			// Try JSON first (API-submitted params like {"shell": "/bin/zsh"})
 			if input != "" {
-				args.SetArgValue("shell", input)
+				var parsed map[string]interface{}
+				if err := json.Unmarshal([]byte(input), &parsed); err == nil {
+					return args.LoadArgsFromDictionary(parsed)
+				}
+				// Raw string that looks like a path → use as shell
+				if strings.HasPrefix(input, "/") {
+					args.SetArgValue("shell", input)
+				}
 			}
 			return nil
 		},
