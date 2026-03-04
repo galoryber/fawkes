@@ -4,8 +4,10 @@
 package commands
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"runtime"
 	"strings"
 
@@ -502,134 +504,44 @@ type schtaskListEntry struct {
 	NextRunTime string `json:"next_run_time,omitempty"`
 }
 
-// taskEnumEntry holds task info from COM-based enumeration.
-// Used by both schtask list and persist-enum.
-type taskEnumEntry struct {
-	Path    string // Full path like \Folder\TaskName
-	Name    string // Task name only
-	State   string // Ready, Disabled, etc.
-	NextRun string // Next run time
-	Command string // Action command path (from XML)
-}
-
-// enumerateTasksCOM walks the Task Scheduler folder tree via COM API,
-// returning all registered tasks. This avoids spawning schtasks.exe.
-func enumerateTasksCOM() ([]taskEnumEntry, error) {
-	conn, cleanup, err := connectTaskScheduler()
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	var entries []taskEnumEntry
-	enumerateFolderTasksCOM(conn.folder, &entries)
-	return entries, nil
-}
-
-// enumerateFolderTasksCOM recursively enumerates tasks in a folder and its subfolders.
-func enumerateFolderTasksCOM(folder *ole.IDispatch, entries *[]taskEnumEntry) {
-	// Get tasks in this folder (0 = include hidden tasks)
-	tasksResult, err := oleutil.CallMethod(folder, "GetTasks", 0)
-	if err == nil && tasksResult != nil {
-		tasksDisp := tasksResult.ToIDispatch()
-		countResult, _ := oleutil.GetProperty(tasksDisp, "Count")
-		if countResult != nil {
-			count := countResult.Val
-			countResult.Clear()
-			for i := int64(1); i <= count; i++ {
-				itemResult, err := oleutil.GetProperty(tasksDisp, "Item", i)
-				if err != nil || itemResult == nil {
-					continue
-				}
-				taskDisp := itemResult.ToIDispatch()
-				entry := readTaskEntry(taskDisp)
-				*entries = append(*entries, entry)
-				taskDisp.Release()
-				itemResult.Clear()
-			}
-		}
-		tasksDisp.Release()
-		tasksResult.Clear()
-	}
-
-	// Recurse into subfolders
-	foldersResult, err := oleutil.CallMethod(folder, "GetFolders", 0)
-	if err == nil && foldersResult != nil {
-		foldersDisp := foldersResult.ToIDispatch()
-		countResult, _ := oleutil.GetProperty(foldersDisp, "Count")
-		if countResult != nil {
-			count := countResult.Val
-			countResult.Clear()
-			for i := int64(1); i <= count; i++ {
-				itemResult, err := oleutil.GetProperty(foldersDisp, "Item", i)
-				if err != nil || itemResult == nil {
-					continue
-				}
-				subFolder := itemResult.ToIDispatch()
-				enumerateFolderTasksCOM(subFolder, entries)
-				subFolder.Release()
-				itemResult.Clear()
-			}
-		}
-		foldersDisp.Release()
-		foldersResult.Clear()
-	}
-}
-
-// readTaskEntry extracts task info from an IRegisteredTask COM object.
-func readTaskEntry(taskDisp *ole.IDispatch) taskEnumEntry {
-	var entry taskEnumEntry
-
-	if v, err := oleutil.GetProperty(taskDisp, "Path"); err == nil && v != nil {
-		entry.Path = v.ToString()
-		v.Clear()
-	}
-	if v, err := oleutil.GetProperty(taskDisp, "Name"); err == nil && v != nil {
-		entry.Name = v.ToString()
-		v.Clear()
-	}
-	if v, err := oleutil.GetProperty(taskDisp, "State"); err == nil && v != nil {
-		entry.State = taskStateToString(v.Value())
-		v.Clear()
-	}
-	if v, err := oleutil.GetProperty(taskDisp, "NextRunTime"); err == nil && v != nil {
-		s := fmt.Sprintf("%v", v.Value())
-		if s != "" && s != "0001-01-01 00:00:00 +0000 UTC" {
-			entry.NextRun = s
-		}
-		v.Clear()
-	}
-
-	// Extract command from task XML
-	if v, err := oleutil.GetProperty(taskDisp, "Xml"); err == nil && v != nil {
-		xml := v.ToString()
-		v.Clear()
-		entry.Command = extractXMLValue(xml, "Command")
-	}
-
-	return entry
-}
-
 func schtaskList() structs.CommandResult {
-	entries, err := enumerateTasksCOM()
+	// Use schtasks.exe /query /fo CSV — reliable across all Windows versions.
+	// COM-based iteration (ForEach, Count+Item) hangs in Go's COM apartment model.
+	out, err := exec.Command("schtasks.exe", "/query", "/fo", "CSV", "/nh").CombinedOutput()
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating tasks: %v", err),
+			Output:    fmt.Sprintf("Error running schtasks.exe: %v\n%s", err, string(out)),
 			Status:    "error",
 			Completed: true,
 		}
 	}
 
-	listEntries := make([]schtaskListEntry, 0, len(entries))
-	for _, e := range entries {
-		listEntries = append(listEntries, schtaskListEntry{
-			Name:        e.Path,
-			State:       e.State,
-			NextRunTime: e.NextRun,
+	var entries []schtaskListEntry
+	reader := csv.NewReader(strings.NewReader(string(out)))
+	for {
+		record, err := reader.Read()
+		if err != nil {
+			break
+		}
+		if len(record) < 3 {
+			continue
+		}
+		// CSV fields: TaskName, Next Run Time, Status
+		name := strings.TrimSpace(record[0])
+		if name == "" || name == "TaskName" || name == "INFO:" {
+			continue
+		}
+		nextRun := strings.TrimSpace(record[1])
+		status := strings.TrimSpace(record[2])
+
+		entries = append(entries, schtaskListEntry{
+			Name:        name,
+			State:       status,
+			NextRunTime: nextRun,
 		})
 	}
 
-	if len(listEntries) == 0 {
+	if len(entries) == 0 {
 		return structs.CommandResult{
 			Output:    "[]",
 			Status:    "success",
@@ -637,7 +549,7 @@ func schtaskList() structs.CommandResult {
 		}
 	}
 
-	data, err := json.Marshal(listEntries)
+	data, err := json.Marshal(entries)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error marshaling results: %v", err),
