@@ -96,15 +96,6 @@ func configShow(agent *structs.Agent) structs.CommandResult {
 
 	sb.WriteString("Working Hours\n")
 	sb.WriteString("-------------\n")
-	sb.WriteString("Opsec\n")
-	sb.WriteString("-----\n")
-	if agent.DefaultPPID > 0 {
-		sb.WriteString(fmt.Sprintf("  %-22s %d\n", "Default PPID:", agent.DefaultPPID))
-	} else {
-		sb.WriteString(fmt.Sprintf("  %-22s disabled\n", "Default PPID:"))
-	}
-	sb.WriteString("\n")
-
 	if agent.WorkingHoursEnabled() {
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", "Start:", structs.FormatWorkingHoursTime(agent.WorkingHoursStart)))
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", "End:", structs.FormatWorkingHoursTime(agent.WorkingHoursEnd)))
@@ -128,6 +119,15 @@ func configShow(agent *structs.Agent) structs.CommandResult {
 		}
 	} else {
 		sb.WriteString("  Always active (no restrictions)\n")
+	}
+	sb.WriteString("\n")
+
+	sb.WriteString("Opsec\n")
+	sb.WriteString("-----\n")
+	if agent.DefaultPPID > 0 {
+		sb.WriteString(fmt.Sprintf("  %-22s %d\n", "Default PPID:", agent.DefaultPPID))
+	} else {
+		sb.WriteString(fmt.Sprintf("  %-22s disabled\n", "Default PPID:"))
 	}
 
 	return structs.CommandResult{
