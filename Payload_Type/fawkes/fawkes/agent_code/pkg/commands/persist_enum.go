@@ -328,11 +328,10 @@ func persistEnumTaskTree(sb *strings.Builder, basePath string, prefix string) in
 			if uriErr == nil && uri != "" {
 				// Skip common Microsoft/Windows built-in tasks
 				uriLower := strings.ToLower(uri)
-				if strings.HasPrefix(uriLower, `\microsoft\`) {
-					return count
+				if !strings.HasPrefix(uriLower, `\microsoft\`) {
+					sb.WriteString(fmt.Sprintf("  %s\n", uri))
+					count++
 				}
-				sb.WriteString(fmt.Sprintf("  %s\n", uri))
-				count++
 			} else {
 				sb.WriteString(fmt.Sprintf("  %s (ID: %s)\n", taskName, id))
 				count++
