@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -286,79 +287,70 @@ func persistEnumAppInit(sb *strings.Builder) int {
 	return count
 }
 
-// persistEnumScheduledTasks enumerates scheduled tasks via registry.
+// persistEnumScheduledTasks enumerates non-Microsoft scheduled tasks via schtasks.exe.
 func persistEnumScheduledTasks(sb *strings.Builder) int {
-	sb.WriteString("--- Scheduled Tasks (Registry) ---\n")
+	sb.WriteString("--- Scheduled Tasks ---\n")
 	count := 0
 
-	// Check Task Scheduler registry (tasks with actions)
-	taskPath := `SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tree`
-	count += persistEnumTaskTree(sb, taskPath, "")
+	// Use schtasks /query which works at any privilege level
+	cmd := exec.Command("schtasks.exe", "/query", "/fo", "CSV", "/nh", "/v")
+	out, err := cmd.Output()
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("  (schtasks query failed: %v)\n", err))
+		sb.WriteString("\n")
+		return 0
+	}
+
+	lines := strings.Split(string(out), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// CSV format: "HostName","TaskName","Next Run Time","Status","Logon Mode","Last Run Time",
+		//             "Last Result","Author","Task To Run","Start In","Comment",...
+		fields := parseCSVLine(line)
+		if len(fields) < 9 {
+			continue
+		}
+		taskName := fields[1]
+		taskToRun := fields[8]
+
+		// Skip Microsoft/Windows built-in tasks
+		nameLower := strings.ToLower(taskName)
+		if strings.HasPrefix(nameLower, `\microsoft\`) {
+			continue
+		}
+
+		sb.WriteString(fmt.Sprintf("  %s → %s\n", taskName, taskToRun))
+		count++
+	}
 
 	if count == 0 {
-		sb.WriteString("  (none found in registry)\n")
+		sb.WriteString("  (no non-Microsoft tasks found)\n")
 	}
 	sb.WriteString("\n")
 	return count
 }
 
-// persistEnumTaskTree recursively walks the task scheduler tree.
-func persistEnumTaskTree(sb *strings.Builder, basePath string, prefix string) int {
-	key, err := registry.OpenKey(registry.LOCAL_MACHINE, basePath, registry.ENUMERATE_SUB_KEYS|registry.QUERY_VALUE)
-	if err != nil {
-		sb.WriteString(fmt.Sprintf("  [debug] OpenKey(0x9) failed: %s -> %v\n", basePath, err))
-		return 0
-	}
-	defer key.Close()
-
-	count := 0
-
-	// Check if this node has a task ID (leaf node = actual scheduled task)
-	id, _, err := key.GetStringValue("Id")
-	if err == nil && id != "" {
-		taskName := prefix
-		if taskName == "" {
-			taskName = "(root)"
-		}
-		// Look up the task URI in TaskCache\Tasks\{id}
-		actionPath := `SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\` + id
-		actionKey, err := registry.OpenKey(registry.LOCAL_MACHINE, actionPath, registry.QUERY_VALUE)
-		if err == nil {
-			uri, _, uriErr := actionKey.GetStringValue("URI")
-			actionKey.Close()
-			if uriErr == nil && uri != "" {
-				// Skip common Microsoft/Windows built-in tasks
-				uriLower := strings.ToLower(uri)
-				if !strings.HasPrefix(uriLower, `\microsoft\`) {
-					sb.WriteString(fmt.Sprintf("  %s\n", uri))
-					count++
-				}
-			} else {
-				sb.WriteString(fmt.Sprintf("  %s (ID: %s)\n", taskName, id))
-				count++
-			}
+// parseCSVLine splits a CSV line respecting quoted fields.
+func parseCSVLine(line string) []string {
+	var fields []string
+	var current strings.Builder
+	inQuotes := false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if c == '"' {
+			inQuotes = !inQuotes
+		} else if c == ',' && !inQuotes {
+			fields = append(fields, current.String())
+			current.Reset()
 		} else {
-			sb.WriteString(fmt.Sprintf("  [debug] Tasks lookup failed for %s: %v\n", id, err))
+			current.WriteByte(c)
 		}
 	}
-
-	// Enumerate sub-keys
-	subkeys, err := key.ReadSubKeyNames(0)
-	if err != nil {
-		sb.WriteString(fmt.Sprintf("  [debug] ReadSubKeyNames failed: %s -> %v\n", basePath, err))
-		return count
-	}
-	if prefix == "" {
-		sb.WriteString(fmt.Sprintf("  [debug] Top-level subkeys: %d\n", len(subkeys)))
-	}
-
-	for _, sk := range subkeys {
-		childPath := basePath + `\` + sk
-		childPrefix := prefix + `\` + sk
-		count += persistEnumTaskTree(sb, childPath, childPrefix)
-	}
-
-	return count
+	fields = append(fields, current.String())
+	return fields
 }
 
 // persistEnumServices checks for non-Microsoft services.
