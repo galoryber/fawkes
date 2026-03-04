@@ -159,6 +159,7 @@ pre = "<b>2. </b>"
     * [crontab](/agents/fawkes/commands/crontab/)
     * [launchagent](/agents/fawkes/commands/launchagent/)
     * [persist](/agents/fawkes/commands/persist/)
+    * [persist-enum](/agents/fawkes/commands/persist-enum/)
     * [schtask](/agents/fawkes/commands/schtask/)
     * [service](/agents/fawkes/commands/service/)
     * [shell-config](/agents/fawkes/commands/shell-config/)
