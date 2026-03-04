@@ -22,4 +22,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&CredentialPromptCommand{})
 	RegisterCommand(&TCCCheckCommand{})
 	RegisterCommand(&EnvScanCommand{})
+	RegisterCommand(&JXACommand{})
 }
