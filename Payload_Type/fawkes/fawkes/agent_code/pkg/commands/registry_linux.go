@@ -24,4 +24,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&XattrCommand{})
 	RegisterCommand(&ContainerEscapeCommand{})
 	RegisterCommand(&EnvScanCommand{})
+	RegisterCommand(&PtyCommand{})
 }

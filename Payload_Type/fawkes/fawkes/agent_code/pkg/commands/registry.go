@@ -189,6 +189,39 @@ func GetRunningTask(id string) (*structs.Task, bool) {
 	return nil, false
 }
 
+// RouteInteractiveInput sends inbound interactive messages to the correct tasks.
+func RouteInteractiveInput(msgs []structs.InteractiveMsg) {
+	for _, msg := range msgs {
+		if task, ok := GetRunningTask(msg.TaskID); ok && task.Job != nil {
+			select {
+			case task.Job.InteractiveTaskInputChannel <- msg:
+			default:
+				// Input channel full — drop message
+			}
+		}
+	}
+}
+
+// DrainInteractiveOutput collects all pending outbound interactive messages from running tasks.
+func DrainInteractiveOutput() []structs.InteractiveMsg {
+	var msgs []structs.InteractiveMsg
+	runningTasks.Range(func(_, value interface{}) bool {
+		t, ok := value.(*structs.Task)
+		if !ok || t.Job == nil {
+			return true
+		}
+		for {
+			select {
+			case msg := <-t.Job.InteractiveTaskOutputChannel:
+				msgs = append(msgs, msg)
+			default:
+				return true
+			}
+		}
+	})
+	return msgs
+}
+
 // GetAllCommands returns all registered commands
 func GetAllCommands() map[string]structs.Command {
 	registryMutex.RLock()

@@ -44,6 +44,7 @@ pre = "<b>2. </b>"
 - Command Execution
     * [jxa](/agents/fawkes/commands/jxa/)
     * [powershell](/agents/fawkes/commands/powershell/)
+    * [pty](/agents/fawkes/commands/pty/)
     * [run](/agents/fawkes/commands/run/)
     * [runas](/agents/fawkes/commands/runas/)
     * [wmi](/agents/fawkes/commands/wmi/)

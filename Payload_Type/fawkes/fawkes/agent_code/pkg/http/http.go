@@ -81,6 +81,10 @@ type HTTPProfile struct {
 	// Rpfwd hooks — set by main.go for reverse port forward message routing.
 	GetRpfwdOutbound func() []structs.SocksMsg
 	HandleRpfwd      func(msgs []structs.SocksMsg)
+
+	// Interactive hooks — set by main.go for PTY/terminal bidirectional streaming.
+	GetInteractiveOutbound func() []structs.InteractiveMsg
+	HandleInteractive      func(msgs []structs.InteractiveMsg)
 }
 
 // NewHTTPProfile creates a new HTTP profile
@@ -404,6 +408,14 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		}
 	}
 
+	// Collect interactive outbound messages (PTY output)
+	if h.GetInteractiveOutbound != nil {
+		interactiveMsgs := h.GetInteractiveOutbound()
+		if len(interactiveMsgs) > 0 {
+			taskingMsg.Interactive = interactiveMsgs
+		}
+	}
+
 	body, err := json.Marshal(taskingMsg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal tasking message: %w", err)
@@ -499,6 +511,18 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 				var rpfwdMsgs []structs.SocksMsg
 				if err := json.Unmarshal(rpfwdRaw, &rpfwdMsgs); err == nil && len(rpfwdMsgs) > 0 {
 					h.HandleRpfwd(rpfwdMsgs)
+				}
+			}
+		}
+	}
+
+	// Route interactive messages from Mythic to tasks (PTY input)
+	if h.HandleInteractive != nil {
+		if interactiveList, exists := taskResponse["interactive"]; exists {
+			if interactiveRaw, err := json.Marshal(interactiveList); err == nil {
+				var interactiveMsgs []structs.InteractiveMsg
+				if err := json.Unmarshal(interactiveRaw, &interactiveMsgs); err == nil && len(interactiveMsgs) > 0 {
+					h.HandleInteractive(interactiveMsgs)
 				}
 			}
 		}
@@ -647,6 +671,14 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 		}
 	}
 
+	// Collect interactive outbound messages (PTY output)
+	if h.GetInteractiveOutbound != nil {
+		interactiveMsgs := h.GetInteractiveOutbound()
+		if len(interactiveMsgs) > 0 {
+			responseMsg.Interactive = interactiveMsgs
+		}
+	}
+
 	body, err := json.Marshal(responseMsg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal response message: %w", err)
@@ -725,6 +757,17 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 						var delegates []structs.DelegateMessage
 						if err := json.Unmarshal(delegateRaw, &delegates); err == nil && len(delegates) > 0 {
 							h.HandleDelegates(delegates)
+						}
+					}
+				}
+			}
+			// Route interactive messages (PTY input)
+			if h.HandleInteractive != nil {
+				if interactiveList, exists := postRespData["interactive"]; exists {
+					if interactiveRaw, err := json.Marshal(interactiveList); err == nil {
+						var interactiveMsgs []structs.InteractiveMsg
+						if err := json.Unmarshal(interactiveRaw, &interactiveMsgs); err == nil && len(interactiveMsgs) > 0 {
+							h.HandleInteractive(interactiveMsgs)
 						}
 					}
 				}
