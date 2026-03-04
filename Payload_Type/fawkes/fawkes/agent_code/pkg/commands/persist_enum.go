@@ -90,8 +90,6 @@ func persistEnumRegistry(sb *strings.Builder) int {
 		{registry.LOCAL_MACHINE, "HKLM", `Software\Microsoft\Windows\CurrentVersion\RunOnce`},
 		{registry.LOCAL_MACHINE, "HKLM", `Software\Microsoft\Windows\CurrentVersion\RunServices`},
 		{registry.LOCAL_MACHINE, "HKLM", `Software\Microsoft\Windows\CurrentVersion\RunServicesOnce`},
-		{registry.CURRENT_USER, "HKCU", `Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders`},
-		{registry.LOCAL_MACHINE, "HKLM", `SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders`},
 	}
 
 	for _, rk := range runKeys {
@@ -314,27 +312,31 @@ func persistEnumTaskTree(sb *strings.Builder, basePath string, prefix string) in
 
 	count := 0
 
-	// Check if this node has a task ID
+	// Check if this node has a task ID (leaf node = actual scheduled task)
 	id, _, err := key.GetStringValue("Id")
 	if err == nil && id != "" {
 		taskName := prefix
 		if taskName == "" {
 			taskName = "(root)"
 		}
-		// Look up the task actions in TaskCache\Tasks\{id}
+		// Look up the task URI in TaskCache\Tasks\{id}
 		actionPath := `SOFTWARE\Microsoft\Windows NT\CurrentVersion\Schedule\TaskCache\Tasks\` + id
 		actionKey, err := registry.OpenKey(registry.LOCAL_MACHINE, actionPath, registry.QUERY_VALUE)
 		if err == nil {
-			// Try to read the Path value (command to execute)
-			path, _, pathErr := actionKey.GetStringValue("Path")
-			if pathErr == nil && path != "" {
-				sb.WriteString(fmt.Sprintf("  %s → %s\n", taskName, path))
+			uri, _, uriErr := actionKey.GetStringValue("URI")
+			actionKey.Close()
+			if uriErr == nil && uri != "" {
+				// Skip common Microsoft/Windows built-in tasks
+				uriLower := strings.ToLower(uri)
+				if strings.HasPrefix(uriLower, `\microsoft\`) {
+					return count
+				}
+				sb.WriteString(fmt.Sprintf("  %s\n", uri))
 				count++
 			} else {
 				sb.WriteString(fmt.Sprintf("  %s (ID: %s)\n", taskName, id))
 				count++
 			}
-			actionKey.Close()
 		}
 	}
 
@@ -397,15 +399,15 @@ func persistEnumServices(sb *strings.Builder) int {
 			continue
 		}
 
-		// Skip well-known Microsoft service paths
+		// Skip services under standard Windows/Microsoft directories.
+		// We only want to surface third-party or unusual services.
 		imgLower := strings.ToLower(imagePath)
-		if strings.Contains(imgLower, `\windows\system32\svchost.exe`) ||
-			strings.Contains(imgLower, `\windows\system32\lsass.exe`) ||
-			strings.Contains(imgLower, `\windows\system32\services.exe`) ||
-			strings.Contains(imgLower, `\windows\servicing\`) ||
-			strings.Contains(imgLower, `\windows\system32\dllhost.exe`) ||
-			strings.Contains(imgLower, `\windows\system32\wbem\`) ||
-			strings.Contains(imgLower, `\windows\system32\msiexec.exe`) {
+		if strings.Contains(imgLower, `\windows\`) ||
+			strings.Contains(imgLower, `%systemroot%`) ||
+			strings.Contains(imgLower, `%windir%`) ||
+			strings.Contains(imgLower, `\microsoft.net\`) ||
+			strings.Contains(imgLower, `\windows defender\`) ||
+			strings.Contains(imgLower, `%programfiles%\windows`) {
 			continue
 		}
 
