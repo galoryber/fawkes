@@ -306,6 +306,7 @@ func persistEnumScheduledTasks(sb *strings.Builder) int {
 func persistEnumTaskTree(sb *strings.Builder, basePath string, prefix string) int {
 	key, err := registry.OpenKey(registry.LOCAL_MACHINE, basePath, registry.READ)
 	if err != nil {
+		sb.WriteString(fmt.Sprintf("  [debug] OpenKey failed: %s -> %v\n", basePath, err))
 		return 0
 	}
 	defer key.Close()
@@ -336,13 +337,19 @@ func persistEnumTaskTree(sb *strings.Builder, basePath string, prefix string) in
 				sb.WriteString(fmt.Sprintf("  %s (ID: %s)\n", taskName, id))
 				count++
 			}
+		} else {
+			sb.WriteString(fmt.Sprintf("  [debug] Tasks lookup failed for %s: %v\n", id, err))
 		}
 	}
 
 	// Enumerate sub-keys
 	subkeys, err := key.ReadSubKeyNames(0)
 	if err != nil {
+		sb.WriteString(fmt.Sprintf("  [debug] ReadSubKeyNames failed: %s -> %v\n", basePath, err))
 		return count
+	}
+	if prefix == "" {
+		sb.WriteString(fmt.Sprintf("  [debug] Top-level subkeys: %d\n", len(subkeys)))
 	}
 
 	for _, sk := range subkeys {
