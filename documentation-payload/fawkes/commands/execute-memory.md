@@ -7,11 +7,34 @@ hidden = false
 
 ## Summary
 
-Execute a native binary from memory with minimal forensic footprint. Platform-specific implementations ensure the most covert execution method available on each OS.
+Execute a native binary from memory with zero or minimal disk artifacts. Auto-detects PE type on Windows and selects the optimal execution method.
 
 {{% notice info %}}Cross-Platform: Windows, Linux, macOS{{% /notice %}}
 
 ## How It Works
+
+### Windows — Smart PE Dispatcher
+The command auto-detects the PE type and selects the best execution method:
+
+**1. .NET Assemblies** (detected via CLR header in data directory[14]):
+- Routes to CLR hosting path (same as `inline-assembly`)
+- Assembly.Load() + entry point invocation — zero disk artifacts
+- Auto-starts CLR v4 if not already initialized
+- Tip: run `start-clr` with Autopatch first for AMSI bypass
+
+**2. Native EXEs** (in-memory PE mapping):
+1. Manual section mapping: headers, sections, BSS zeroing
+2. Base relocation processing (DIR64 for x64)
+3. Import resolution with IAT-level ExitProcess → ExitThread hook (prevents agent death)
+4. W^X section protections + instruction cache flush
+5. Thread-based execution with stdout/stderr capture via pipes
+6. Timeout enforcement with thread termination
+7. Falls back to temp file if in-memory mapping fails
+
+**3. Native DLLs** (reflective loading):
+1. Same PE mapping pipeline as EXEs
+2. Calls DllMain(DLL_PROCESS_ATTACH) instead of creating a thread
+3. Zero disk artifacts
 
 ### Linux (memfd_create)
 1. `memfd_create("")` creates an anonymous file backed by memory
@@ -29,16 +52,7 @@ No file is ever written to disk — the binary exists only in an anonymous memor
 4. The binary is executed with timeout enforcement
 5. The temp file is removed immediately after execution completes
 
-The temp file exists only for the duration of execution. Apple Silicon requires code signatures even for ad-hoc signed binaries, and macOS validates signatures at runtime (the file must persist while the process runs).
-
-### Windows (temp file + CreateProcess)
-1. The PE binary is validated (MZ header + PE signature at NT header offset)
-2. A temp file is created with a randomized name and `.exe` extension
-3. The binary is written and executed via `CreateProcess`
-4. stdout/stderr are captured and returned
-5. The temp file is removed immediately after execution completes
-
-The temp file exists only for the duration of execution. This approach handles both x86 and x64 PE binaries.
+The temp file exists only for the duration of execution. Apple Silicon requires code signatures at runtime.
 
 ## Arguments
 
@@ -71,11 +85,12 @@ execute-memory (upload file via UI) -arguments "-v" -timeout 120
 
 ## Notes
 
-- **Windows:** Binary must be a valid PE executable (MZ header + PE signature validated). Temp file is created with randomized name and `.exe` extension, removed immediately after execution.
+- **Windows:** Auto-detects .NET (CLR header) vs native PE. Native EXEs use in-memory mapping with ExitProcess hooking — no temp file, no disk IOCs. Falls back to temp file if in-memory loading fails (e.g., complex dependencies).
 - **Linux:** Binary must be a valid ELF executable (magic bytes validated). Requires kernel 3.17+ for memfd_create. Binary appears in `ps` as `/proc/<pid>/fd/<N>` or `memfd:`.
-- **macOS:** Binary must be a valid Mach-O executable (all 6 magic variants validated: 32/64-bit, universal/fat binaries). Ad-hoc codesign is applied automatically — required on Apple Silicon.
+- **macOS:** Binary must be a valid Mach-O executable (all 6 magic variants validated). Ad-hoc codesign is applied automatically — required on Apple Silicon.
 - Static binaries work best — dynamically linked binaries require shared libraries on the target
 - Maximum binary size is limited by available memory
+- For .NET assemblies, `start-clr` with AMSI patching is recommended before execution
 
 ## MITRE ATT&CK Mapping
 

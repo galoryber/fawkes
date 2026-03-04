@@ -12,7 +12,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "execute-memory",
-		Description:         "Execute a native binary from memory. Linux: memfd_create (no disk write). macOS/Windows: temp file with immediate cleanup (minimal disk footprint).",
+		Description:         "Execute a native binary from memory. Auto-detects PE type: .NET→CLR hosting, native→in-memory PE mapping, Linux→memfd_create. Zero disk artifacts on Windows/Linux.",
 		HelpString:          "execute-memory -arguments 'arg1 arg2' -timeout 60",
 		Version:             1,
 		Author:              "@galoryber",
@@ -150,7 +150,7 @@ func init() {
 				methodLabel = "tmpfile + codesign + execve"
 			} else if os == "Windows" {
 				binaryLabel = "PE"
-				methodLabel = "tmpfile + CreateProcess"
+				methodLabel = "in-memory PE loader"
 			}
 
 			// Check for direct base64 binary first (CLI/API usage)

