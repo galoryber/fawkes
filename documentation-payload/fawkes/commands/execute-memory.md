@@ -27,14 +27,17 @@ The command auto-detects the PE type and selects the best execution method:
 2. Base relocation processing (DIR64 for x64)
 3. Import resolution with IAT-level ExitProcess → ExitThread hook (prevents agent death)
 4. W^X section protections + instruction cache flush
-5. Thread-based execution with stdout/stderr capture via pipes
-6. Timeout enforcement with thread termination
-7. Falls back to temp file if in-memory mapping fails
+5. TLS callback invocation (required by C/C++ executables using thread-local storage)
+6. PEB CommandLine patching (GetCommandLineW returns operator-specified args, not agent path)
+7. Thread-based execution with stdout/stderr capture via pipes
+8. Timeout enforcement with thread termination
+9. Falls back to temp file if in-memory mapping fails
 
 **3. Native DLLs** (reflective loading):
 1. Same PE mapping pipeline as EXEs
-2. Calls DllMain(DLL_PROCESS_ATTACH) instead of creating a thread
-3. Zero disk artifacts
+2. TLS callbacks invoked before DllMain
+3. Calls DllMain(DLL_PROCESS_ATTACH) instead of creating a thread
+4. Zero disk artifacts
 
 ### Linux (memfd_create)
 1. `memfd_create("")` creates an anonymous file backed by memory
@@ -85,7 +88,7 @@ execute-memory (upload file via UI) -arguments "-v" -timeout 120
 
 ## Notes
 
-- **Windows:** Auto-detects .NET (CLR header) vs native PE. Native EXEs use in-memory mapping with ExitProcess hooking — no temp file, no disk IOCs. Falls back to temp file if in-memory loading fails (e.g., complex dependencies).
+- **Windows:** Auto-detects .NET (CLR header) vs native PE. Native EXEs use in-memory mapping with ExitProcess hooking, PEB command line patching, and TLS callback support — no temp file, no disk IOCs. Falls back to temp file if in-memory loading fails (e.g., complex dependencies).
 - **Linux:** Binary must be a valid ELF executable (magic bytes validated). Requires kernel 3.17+ for memfd_create. Binary appears in `ps` as `/proc/<pid>/fd/<N>` or `memfd:`.
 - **macOS:** Binary must be a valid Mach-O executable (all 6 magic variants validated). Ad-hoc codesign is applied automatically — required on Apple Silicon.
 - Static binaries work best — dynamically linked binaries require shared libraries on the target
