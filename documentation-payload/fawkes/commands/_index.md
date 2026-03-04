@@ -101,6 +101,7 @@ pre = "<b>2. </b>"
     * [ssh-keys](/agents/fawkes/commands/ssh-keys/)
     * [vss](/agents/fawkes/commands/vss/)
     * [steal-token](/agents/fawkes/commands/steal-token/)
+    * [token-store](/agents/fawkes/commands/token-store/)
     * [rev2self](/agents/fawkes/commands/rev2self/)
 - Discovery
     * [acl-edit](/agents/fawkes/commands/acl-edit/)
