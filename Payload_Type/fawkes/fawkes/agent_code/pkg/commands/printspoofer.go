@@ -32,10 +32,9 @@ type printSpooferArgs struct {
 }
 
 var (
-	winspoolDrv            = windows.NewLazySystemDLL("winspool.drv")
-	procOpenPrinterW       = winspoolDrv.NewProc("OpenPrinterW")
-	procClosePrinter       = winspoolDrv.NewProc("ClosePrinter")
-	procGetComputerNameExW = kernel32NP.NewProc("GetComputerNameExW")
+	winspoolDrv      = windows.NewLazySystemDLL("winspool.drv")
+	procOpenPrinterW = winspoolDrv.NewProc("OpenPrinterW")
+	procClosePrinter = winspoolDrv.NewProc("ClosePrinter")
 )
 
 func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
@@ -74,9 +73,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	var dnsNameBuf [256]uint16
 	dnsNameSize := uint32(len(dnsNameBuf))
 	var dnsHostname string
-	// ComputerNameDnsFullyQualified = 3
-	ret, _, _ := procGetComputerNameExW.Call(3, uintptr(unsafe.Pointer(&dnsNameBuf[0])), uintptr(unsafe.Pointer(&dnsNameSize)))
-	if ret != 0 {
+	if windows.GetComputerNameEx(windows.ComputerNameDnsFullyQualified, &dnsNameBuf[0], &dnsNameSize) == nil {
 		dnsHostname = windows.UTF16ToString(dnsNameBuf[:dnsNameSize])
 	}
 
