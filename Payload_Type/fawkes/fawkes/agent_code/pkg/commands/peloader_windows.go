@@ -149,6 +149,9 @@ func peLoaderExec(peData []byte, cmdLine string, timeout int) (string, error) {
 
 	loadSuccess = true
 
+	// Invoke TLS callbacks (if any) before entry point — required by PE spec
+	peLoaderInvokeTLSCallbacks(allocBase, optHeader, isDLL)
+
 	if isDLL {
 		// For DLLs, call DllMain and return
 		return peLoaderCallDllMain(allocBase, optHeader)
@@ -171,6 +174,49 @@ func peLoaderCallDllMain(allocBase uintptr, optHeader *rlOptionalHeader64) (stri
 		return "", fmt.Errorf("DllMain returned FALSE")
 	}
 	return "[+] DLL loaded and DllMain returned TRUE", nil
+}
+
+// imageTLSDirectory64 represents IMAGE_TLS_DIRECTORY64.
+type imageTLSDirectory64 struct {
+	StartAddressOfRawData uint64
+	EndAddressOfRawData   uint64
+	AddressOfIndex        uint64
+	AddressOfCallBacks    uint64 // pointer to null-terminated array of PIMAGE_TLS_CALLBACK
+	SizeOfZeroFill        uint32
+	Characteristics       uint32
+}
+
+// rlDirEntryTLS is data directory index 9 (IMAGE_DIRECTORY_ENTRY_TLS).
+const rlDirEntryTLS = 9
+
+// peLoaderInvokeTLSCallbacks calls any TLS callback functions registered in the PE.
+// TLS callbacks must be invoked before the entry point per the PE specification.
+// Each callback has the same signature as DllMain: func(hModule, reason, reserved).
+func peLoaderInvokeTLSCallbacks(allocBase uintptr, optHeader *rlOptionalHeader64, isDLL bool) {
+	if optHeader.NumberOfRvaAndSizes <= rlDirEntryTLS {
+		return
+	}
+
+	tlsDir := optHeader.DataDirectory[rlDirEntryTLS]
+	if tlsDir.VirtualAddress == 0 || tlsDir.Size == 0 {
+		return
+	}
+
+	tls := (*imageTLSDirectory64)(unsafe.Pointer(allocBase + uintptr(tlsDir.VirtualAddress)))
+	if tls.AddressOfCallBacks == 0 {
+		return
+	}
+
+	// Walk the null-terminated callback array
+	reason := uintptr(rlDllProcessAttach)
+	for i := uintptr(0); ; i++ {
+		callbackPtr := *(*uintptr)(unsafe.Pointer(uintptr(tls.AddressOfCallBacks) + i*8))
+		if callbackPtr == 0 {
+			break
+		}
+		// PIMAGE_TLS_CALLBACK has DllMain signature: (PVOID DllHandle, DWORD Reason, PVOID Reserved)
+		syscall.SyscallN(callbackPtr, allocBase, reason, 0)
+	}
 }
 
 // peLoaderExecThread executes a PE entry point in a new thread with stdout/stderr capture.
