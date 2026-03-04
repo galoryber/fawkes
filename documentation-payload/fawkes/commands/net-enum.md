@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Enumerate local and domain users, groups, and domain configuration using direct Win32 API calls (NetUserEnum, NetLocalGroupEnum, NetGroupEnum, DsGetDcNameW, DsEnumerateDomainTrustsW). No subprocess creation — all operations run in-process via netapi32.dll. Essential for situational awareness during red team engagements.
+Unified Windows network enumeration command using direct Win32 API calls. Consolidates user/group enumeration, logged-on users, SMB sessions, share discovery, and domain information into a single command with action dispatch. No subprocess creation — all operations run in-process via netapi32.dll and mpr.dll.
 
 {{% notice info %}}Windows Only{{% /notice %}}
 
@@ -15,72 +15,56 @@ Enumerate local and domain users, groups, and domain configuration using direct 
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | Enumeration action: `users`, `localgroups`, `groupmembers`, `domainusers`, `domaingroups`, `domaininfo` |
-| target | Conditional | Group name for `groupmembers` action |
+| action | Yes | Enumeration action (see table below) |
+| target | No | Remote hostname or IP (blank = local machine). For `groupmembers`: also used as group name if `-group` not set. |
+| group | No | Group name for `groupmembers` and `admins` actions (e.g., Administrators, "Remote Desktop Users") |
+
+### Actions
+
+| Action | API Used | Description |
+|--------|----------|-------------|
+| `users` | NetUserEnum | List local user accounts |
+| `localgroups` | NetLocalGroupEnum | List local groups (supports remote via -target) |
+| `groupmembers` | NetLocalGroupGetMembers | List members of a group with SID type info |
+| `admins` | NetLocalGroupGetMembers | Shortcut: members of Administrators group |
+| `domainusers` | NetUserEnum (via DC) | List domain user accounts |
+| `domaingroups` | NetGroupEnum (via DC) | List domain groups |
+| `domaininfo` | DsGetDcNameW + DsEnumerateDomainTrustsW | Domain controller, account policy, trusts |
+| `loggedon` | NetWkstaUserEnum | List logged-on users with domain and logon server |
+| `sessions` | NetSessionEnum | List active SMB sessions (level 502/10 fallback) |
+| `shares` | NetShareEnum | List shares (local if no target, remote if target set) |
+| `mapped` | WNetEnumResource | List mapped network drives |
 
 ## Usage
 
-### List local users
+### User & Group Enumeration
 ```
 net-enum -action users
-```
-
-### List local groups
-```
 net-enum -action localgroups
+net-enum -action localgroups -target DC01
+net-enum -action groupmembers -group Administrators
+net-enum -action groupmembers -group "Remote Desktop Users" -target SRV01
+net-enum -action admins
+net-enum -action admins -target DC01
 ```
 
-### List members of a specific group
-```
-net-enum -action groupmembers -target Administrators
-net-enum -action groupmembers -target "Remote Desktop Users"
-```
-
-### List domain users
+### Domain Enumeration
 ```
 net-enum -action domainusers
-```
-
-### List domain groups
-```
 net-enum -action domaingroups
-```
-
-### Get domain information (account policy, DCs, trusts)
-```
 net-enum -action domaininfo
 ```
 
-## Output Format
-
-Returns JSON output, rendered by a browser script into sortable tables. The structure varies by action.
-
-### List Actions (users, localgroups, domainusers, domaingroups, groupmembers)
-
-Returns a JSON array of entries:
-```json
-[
-  {"name": "Administrator", "type": "local_user", "comment": "Built-in account for administering the computer/domain", "source": ""},
-  {"name": "Guest", "type": "local_user", "comment": "Built-in account for guest access", "source": ""}
-]
+### Network Enumeration
 ```
-
-### domaininfo Action
-
-Returns a structured JSON object with DC information, account policy, and trust relationships:
-```json
-{
-  "dc": {"name": "DC01", "address": "\\\\192.168.1.10", "domain": "CORP.LOCAL", "forest": "CORP.LOCAL", "site": "Default-First-Site-Name"},
-  "policy": {"min_password_length": 7, "max_password_age_days": 42, "lockout_threshold": 0},
-  "trusts": [{"name": "CHILD.CORP.LOCAL", "type": "Uplevel", "direction": "Bidirectional", "attributes": "WithinForest"}]
-}
+net-enum -action loggedon
+net-enum -action loggedon -target FILESERVER
+net-enum -action sessions
+net-enum -action sessions -target DC01
+net-enum -action shares
+net-enum -action shares -target DC01
+net-enum -action mapped
 ```
-
-### Browser Script Rendering
-
-The browser script renders results as sortable tables:
-- **List actions**: Single sortable table with columns appropriate to the action (Name, Type, Comment, Source)
-- **domaininfo**: Two-table layout showing DC info/policy in one table and trust relationships in a second table
 
 ## MITRE ATT&CK Mapping
 
@@ -88,3 +72,6 @@ The browser script renders results as sortable tables:
 - **T1087.002** — Account Discovery: Domain Account
 - **T1069.001** — Permission Groups Discovery: Local Groups
 - **T1069.002** — Permission Groups Discovery: Domain Groups
+- **T1033** — System Owner/User Discovery (loggedon)
+- **T1049** — System Network Connections Discovery (sessions)
+- **T1135** — Network Share Discovery (shares)

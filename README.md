@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **204 commands** total: 108 cross-platform, 80 Windows-only, 13 Unix-only, 7 Linux-only, and 4 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **200 commands** total: 108 cross-platform, 76 Windows-only, 13 Unix-only, 7 Linux-only, and 4 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -128,12 +128,8 @@ mem-scan | `mem-scan -pid <PID> -pattern <string> [-hex] [-max_results <n>] [-co
 mount | `mount` | List mounted filesystems with device, mount point, type, and options. Cross-platform (T1082).
 mv | `mv <source> <destination>` | Move or rename a file from source to destination.
 named-pipes | `named-pipes [-filter <pattern>]` | **(Windows only)** List named pipes on the system for IPC discovery and pipe-based privilege escalation recon. Supports substring filtering (T1083).
-net-enum | `net-enum -action <users\|localgroups\|groupmembers\|domainusers\|domaingroups\|domaininfo> [-target <group>]` | **(Windows only)** Enumerate local/domain users, groups, and domain info via Win32 API (no subprocess).
+net-enum | `net-enum -action <users\|localgroups\|groupmembers\|admins\|domainusers\|domaingroups\|domaininfo\|loggedon\|sessions\|shares\|mapped> [-target <host>] [-group <name>]` | **(Windows only)** Unified Windows network enumeration via Win32 API. Users, local/domain groups, group members, logged-on users (T1033), SMB sessions (T1049), shares (T1135), mapped drives, domain info. Supports remote hosts via -target.
 net-group | `net-group -action <list\|members\|user\|privileged> -server <DC> [-group <name>] [-user <sAMAccountName>] -username <user@domain> -password <pass>` | Enumerate AD group memberships via LDAP. Recursive member resolution, user group lookup, privileged group enumeration. Cross-platform (T1069.002).
-net-localgroup | `net-localgroup -action <list\|members\|admins> [-group <name>] [-server <host>]` | **(Windows only)** Enumerate local groups and members on local or remote hosts. `admins` shortcut for quick local admin discovery. Shows SID type (User/Group/WellKnownGroup). MITRE T1069.001.
-net-loggedon | `net-loggedon [-target <host>]` | **(Windows only)** Enumerate logged-on users via NetWkstaUserEnum. Shows username, logon domain, and logon server. MITRE T1033.
-net-session | `net-session [-target <host>]` | **(Windows only)** Enumerate active SMB sessions via NetSessionEnum. Level 502 (admin, full detail) with fallback to level 10 (no admin). MITRE T1049.
-net-shares | `net-shares -action <local\|remote\|mapped> [-target <host>]` | **(Windows only)** Enumerate network shares and mapped drives via Win32 API (no subprocess).
 net-user | `net-user -action <add\|delete\|info\|password\|group-add\|group-remove> -username <name> [-password <pass>] [-group <group>]` | **(Windows only)** Manage local user accounts and group membership via netapi32 API. MITRE T1136.001, T1098.
 net-stat | `net-stat` | List active network connections and listening ports with protocol, state, and PID. Cross-platform.
 ntdll-unhook | `ntdll-unhook [-action unhook\|check]` | **(Windows only)** Remove EDR inline hooks from ntdll.dll by restoring the .text section from a clean on-disk copy. `check` reports hooks without removing them (T1562.001).
@@ -286,7 +282,7 @@ Tracked artifact types:
 | Type | Commands |
 |------|----------|
 | Process Create | run, powershell, spawn, argue |
-| API Call | net-enum, net-loggedon, net-session, net-shares, net-user, service, wmi, schtask, procdump, hashdump, eventlog, ntdll-unhook, syscalls, firewall, dcom, vss (create/delete), psexec |
+| API Call | net-enum, net-user, service, wmi, schtask, procdump, hashdump, eventlog, ntdll-unhook, syscalls, firewall, dcom, vss (create/delete), psexec |
 | Process Kill | kill |
 | Process Inject | vanilla-injection, apc-injection, threadless-inject, poolparty-injection, opus-injection, module-stomping, thread-hijack |
 | File Write | upload, cp, mv |
