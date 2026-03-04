@@ -4,63 +4,105 @@
 package commands
 
 import (
+	"encoding/binary"
 	"fmt"
 	"os"
-	"os/exec"
-	"strconv"
 	"strings"
 
 	"fawkes/pkg/structs"
+
+	"golang.org/x/sys/unix"
 )
 
-// readProcessEnviron reads environment variables from a process on macOS.
-// Uses ps eww to get command line with environment.
+// readProcessEnviron reads environment variables from a process on macOS
+// using sysctl(KERN_PROCARGS2) — no child process spawned.
 func readProcessEnviron(pid int) ([]string, string, error) {
-	// Get process name
 	processName := fmt.Sprintf("pid-%d", pid)
-	if out, err := exec.Command("ps", "-p", strconv.Itoa(pid), "-o", "comm=").Output(); err == nil {
-		processName = strings.TrimSpace(string(out))
-		// Get just the basename
-		if idx := strings.LastIndex(processName, "/"); idx >= 0 {
-			processName = processName[idx+1:]
-		}
-	}
 
-	// Read environment via ps eww
-	out, err := exec.Command("ps", "eww", "-p", strconv.Itoa(pid), "-o", "command=").Output()
+	// Read process arguments + environment via kern.procargs2.
+	// Layout: argc(int32) | exec_path\0 | args...\0 | \0-padding | env_vars\0
+	buf, err := unix.SysctlRaw("kern.procargs2", pid)
 	if err != nil {
-		return nil, processName, fmt.Errorf("cannot read process environment: %v", err)
+		return nil, processName, fmt.Errorf("sysctl kern.procargs2: %v", err)
 	}
 
-	// ps eww output includes command followed by env vars separated by spaces
-	// Each env var is KEY=VALUE
-	line := strings.TrimSpace(string(out))
-	if line == "" {
-		return nil, processName, fmt.Errorf("no output from ps")
+	if len(buf) < 4 {
+		return nil, processName, fmt.Errorf("buffer too small")
 	}
 
-	// Parse: the command comes first, then env vars. We need to identify where
-	// the command ends and env vars begin. Env vars contain '=' while command args
-	// typically don't (though some may). We extract everything that looks like KEY=VALUE.
-	var envVars []string
-	parts := strings.Fields(line)
-	for _, part := range parts {
-		if strings.Contains(part, "=") {
-			// Basic validation: key shouldn't start with - (likely a flag)
-			key := strings.SplitN(part, "=", 2)[0]
-			if len(key) > 0 && key[0] != '-' {
-				envVars = append(envVars, part)
-			}
+	// Parse argc.
+	argc := int(binary.LittleEndian.Uint32(buf[:4]))
+	pos := 4
+
+	// Extract exec path (process name).
+	end := pos
+	for end < len(buf) && buf[end] != 0 {
+		end++
+	}
+	if end > pos {
+		execPath := string(buf[pos:end])
+		if idx := strings.LastIndex(execPath, "/"); idx >= 0 {
+			processName = execPath[idx+1:]
+		} else {
+			processName = execPath
 		}
+	}
+	pos = end
+
+	// Skip null bytes after exec path.
+	for pos < len(buf) && buf[pos] == 0 {
+		pos++
+	}
+
+	// Skip argc command-line arguments.
+	for i := 0; i < argc && pos < len(buf); i++ {
+		for pos < len(buf) && buf[pos] != 0 {
+			pos++
+		}
+		pos++ // skip the null terminator
+	}
+
+	// Everything remaining is null-terminated environment variables.
+	var envVars []string
+	for pos < len(buf) {
+		// Find end of this string.
+		end = pos
+		for end < len(buf) && buf[end] != 0 {
+			end++
+		}
+		if end == pos {
+			break // empty string = end of env
+		}
+		s := string(buf[pos:end])
+		if strings.Contains(s, "=") {
+			envVars = append(envVars, s)
+		}
+		pos = end + 1
 	}
 
 	return envVars, processName, nil
 }
 
+// listAllPIDs enumerates all process IDs via sysctl(KERN_PROC_ALL)
+// using golang.org/x/sys/unix — no child process spawned.
+func listAllPIDs() ([]int, error) {
+	procs, err := unix.SysctlKinfoProcSlice("kern.proc.all")
+	if err != nil {
+		return nil, fmt.Errorf("sysctl kern.proc.all: %v", err)
+	}
+	pids := make([]int, 0, len(procs))
+	for _, p := range procs {
+		pid := int(p.Proc.P_pid)
+		if pid > 0 {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, nil
+}
+
 // envScanAllProcesses scans all accessible processes for sensitive env vars.
 func envScanAllProcesses(filter string) structs.CommandResult {
-	// Get all PIDs via ps
-	out, err := exec.Command("ps", "-axo", "pid=").Output()
+	pids, err := listAllPIDs()
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Failed to list processes: %v", err),
@@ -74,21 +116,12 @@ func envScanAllProcesses(filter string) structs.CommandResult {
 	accessibleProcesses := 0
 	myUID := os.Getuid()
 
-	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		pid, err := strconv.Atoi(line)
-		if err != nil || pid <= 0 {
-			continue
-		}
+	for _, pid := range pids {
 		totalProcesses++
 
-		// On macOS, ps eww only shows env for same-user processes (unless root)
-		// Skip known system PIDs to avoid noise
-		if pid == 0 || pid == 1 {
-			if myUID != 0 {
-				continue
-			}
+		// Skip kernel/launchd for non-root.
+		if pid <= 1 && myUID != 0 {
+			continue
 		}
 
 		envVars, processName, err := readProcessEnviron(pid)
