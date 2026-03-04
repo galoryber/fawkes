@@ -154,12 +154,7 @@ pre = "<b>2. </b>"
     * [windows](/agents/fawkes/commands/windows/)
     * [whoami](/agents/fawkes/commands/whoami/)
 - Registry Operations
-    * [reg](/agents/fawkes/commands/reg/) *(unified)*
-    * [reg-delete](/agents/fawkes/commands/reg-delete/)
-    * [reg-read](/agents/fawkes/commands/reg-read/)
-    * [reg-save](/agents/fawkes/commands/reg-save/)
-    * [reg-search](/agents/fawkes/commands/reg-search/)
-    * [reg-write](/agents/fawkes/commands/reg-write/)
+    * [reg](/agents/fawkes/commands/reg/)
 - Persistence
     * [bits](/agents/fawkes/commands/bits/)
     * [crontab](/agents/fawkes/commands/crontab/)
