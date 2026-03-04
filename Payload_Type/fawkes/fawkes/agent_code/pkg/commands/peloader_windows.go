@@ -208,7 +208,8 @@ func peLoaderExecThread(entryPoint uintptr, cmdLine string, timeout int) (string
 
 	// Set command line in PEB for GetCommandLineW compatibility
 	if cmdLine != "" {
-		peLoaderSetCommandLine(cmdLine)
+		restoreCmdLine := peLoaderSetCommandLine(cmdLine)
+		defer restoreCmdLine()
 	}
 
 	// Start reading pipe output in background
@@ -354,14 +355,97 @@ func peLoaderResolveImportsHooked(baseAddr uintptr, importRVA uintptr) error {
 	return nil
 }
 
-// peLoaderSetCommandLine patches the PEB command line for GetCommandLineW/A compatibility.
-// Many PE tools use GetCommandLineW to read their arguments.
-func peLoaderSetCommandLine(cmdLine string) {
-	// Accessing PEB via NtCurrentTeb is complex in Go.
-	// Instead, use the undocumented but stable approach of calling
-	// SetCommandLineW if available, or skip if not critical.
-	// Most PE tools check argc/argv which won't be affected anyway.
-	// For now, this is a best-effort — the most common tools work without it.
+// ntdll proc for PEB access in PE loader
+var procNtQueryInformationProcessPE = windows.NewLazySystemDLL("ntdll.dll").NewProc("NtQueryInformationProcess")
+
+// peLoaderSetCommandLine patches the PEB CommandLine UNICODE_STRING so that
+// GetCommandLineW/A returns the specified command line instead of the agent's
+// real executable path. Returns a restore function that must be called after
+// the PE thread completes to restore the original command line.
+func peLoaderSetCommandLine(cmdLine string) func() {
+	// Get PEB address via NtQueryInformationProcess(ProcessBasicInformation)
+	hProcess, _, _ := procGetCurrentProcRL.Call()
+	var pbi PROCESS_BASIC_INFORMATION
+	var retLen uint32
+	status, _, _ := procNtQueryInformationProcessPE.Call(
+		hProcess,
+		0, // ProcessBasicInformation
+		uintptr(unsafe.Pointer(&pbi)),
+		uintptr(unsafe.Sizeof(pbi)),
+		uintptr(unsafe.Pointer(&retLen)),
+	)
+	if status != 0 {
+		return func() {} // silently fail — PE will still work, just with wrong cmdline
+	}
+
+	// Read ProcessParameters pointer from PEB+0x20
+	processParamsPtr := *(*uintptr)(unsafe.Pointer(pbi.PebBaseAddress + 0x20))
+	if processParamsPtr == 0 {
+		return func() {}
+	}
+
+	// CommandLine UNICODE_STRING is at ProcessParameters+0x70
+	// Layout: Length(uint16) + MaximumLength(uint16) + pad(4) + Buffer(*uint16)
+	cmdLineUS := (*unicodeString)(unsafe.Pointer(processParamsPtr + 0x70))
+
+	// Save original values for restore
+	origLength := cmdLineUS.Length
+	origMaxLength := cmdLineUS.MaximumLength
+	origBufAddr := cmdLineUS.Buffer
+	origBuffer := make([]uint16, origLength/2)
+	if origBufAddr != 0 && origLength > 0 {
+		src := unsafe.Slice((*uint16)(unsafe.Pointer(origBufAddr)), origLength/2)
+		copy(origBuffer, src)
+	}
+
+	// Encode new command line as UTF-16
+	newUTF16, err := windows.UTF16FromString(cmdLine)
+	if err != nil {
+		return func() {}
+	}
+	// Length in bytes (excluding null terminator)
+	newLenBytes := uint16((len(newUTF16) - 1) * 2)
+
+	if newLenBytes <= cmdLineUS.MaximumLength {
+		// Fits in existing buffer — write directly
+		dst := unsafe.Slice((*uint16)(unsafe.Pointer(cmdLineUS.Buffer)), cmdLineUS.MaximumLength/2)
+		copy(dst, newUTF16)
+		cmdLineUS.Length = newLenBytes
+	} else {
+		// Need new buffer — allocate via VirtualAlloc (never freed, small leak acceptable)
+		allocSize := uintptr(len(newUTF16) * 2)
+		newBuf, _, allocErr := procVirtualAllocRL.Call(
+			0,
+			allocSize,
+			rlMemCommit|rlMemReserve,
+			rlPageReadWrite,
+		)
+		if newBuf == 0 {
+			_ = allocErr
+			return func() {}
+		}
+		dst := unsafe.Slice((*uint16)(unsafe.Pointer(newBuf)), len(newUTF16))
+		copy(dst, newUTF16)
+		cmdLineUS.Buffer = newBuf
+		cmdLineUS.Length = newLenBytes
+		cmdLineUS.MaximumLength = uint16(allocSize)
+	}
+
+	// Return restore function
+	return func() {
+		// Restore original command line
+		cmdLineUS.Buffer = origBufAddr
+		cmdLineUS.Length = origLength
+		cmdLineUS.MaximumLength = origMaxLength
+		if origBufAddr != 0 && len(origBuffer) > 0 {
+			dst := unsafe.Slice((*uint16)(unsafe.Pointer(origBufAddr)), origMaxLength/2)
+			copy(dst, origBuffer)
+			// Null-terminate if space permits
+			if int(origLength/2) < len(dst) {
+				dst[origLength/2] = 0
+			}
+		}
+	}
 }
 
 // peLoaderIsNETAssembly checks if a PE has a CLR header (data directory entry 14),
