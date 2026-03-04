@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -287,42 +286,30 @@ func persistEnumAppInit(sb *strings.Builder) int {
 	return count
 }
 
-// persistEnumScheduledTasks enumerates non-Microsoft scheduled tasks via schtasks.exe.
+// persistEnumScheduledTasks enumerates non-Microsoft scheduled tasks via COM API.
 func persistEnumScheduledTasks(sb *strings.Builder) int {
 	sb.WriteString("--- Scheduled Tasks ---\n")
 	count := 0
 
-	// Use schtasks /query which works at any privilege level
-	cmd := exec.Command("schtasks.exe", "/query", "/fo", "CSV", "/nh", "/v")
-	out, err := cmd.Output()
+	entries, err := enumerateTasksCOM()
 	if err != nil {
-		sb.WriteString(fmt.Sprintf("  (schtasks query failed: %v)\n", err))
+		sb.WriteString(fmt.Sprintf("  (task enumeration failed: %v)\n", err))
 		sb.WriteString("\n")
 		return 0
 	}
 
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		// CSV format: "HostName","TaskName","Next Run Time","Status","Logon Mode","Last Run Time",
-		//             "Last Result","Author","Task To Run","Start In","Comment",...
-		fields := parseCSVLine(line)
-		if len(fields) < 9 {
-			continue
-		}
-		taskName := fields[1]
-		taskToRun := fields[8]
-
+	for _, entry := range entries {
 		// Skip Microsoft/Windows built-in tasks
-		nameLower := strings.ToLower(taskName)
-		if strings.HasPrefix(nameLower, `\microsoft\`) {
+		pathLower := strings.ToLower(entry.Path)
+		if strings.HasPrefix(pathLower, `\microsoft\`) {
 			continue
 		}
 
-		sb.WriteString(fmt.Sprintf("  %s → %s\n", taskName, taskToRun))
+		cmd := entry.Command
+		if cmd == "" {
+			cmd = "(no command)"
+		}
+		sb.WriteString(fmt.Sprintf("  %s → %s\n", entry.Path, cmd))
 		count++
 	}
 
@@ -331,26 +318,6 @@ func persistEnumScheduledTasks(sb *strings.Builder) int {
 	}
 	sb.WriteString("\n")
 	return count
-}
-
-// parseCSVLine splits a CSV line respecting quoted fields.
-func parseCSVLine(line string) []string {
-	var fields []string
-	var current strings.Builder
-	inQuotes := false
-	for i := 0; i < len(line); i++ {
-		c := line[i]
-		if c == '"' {
-			inQuotes = !inQuotes
-		} else if c == ',' && !inQuotes {
-			fields = append(fields, current.String())
-			current.Reset()
-		} else {
-			current.WriteByte(c)
-		}
-	}
-	fields = append(fields, current.String())
-	return fields
 }
 
 // persistEnumServices checks for non-Microsoft services.
