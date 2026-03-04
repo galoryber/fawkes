@@ -304,9 +304,9 @@ func persistEnumScheduledTasks(sb *strings.Builder) int {
 
 // persistEnumTaskTree recursively walks the task scheduler tree.
 func persistEnumTaskTree(sb *strings.Builder, basePath string, prefix string) int {
-	key, err := registry.OpenKey(registry.LOCAL_MACHINE, basePath, registry.READ)
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, basePath, registry.ENUMERATE_SUB_KEYS|registry.QUERY_VALUE)
 	if err != nil {
-		sb.WriteString(fmt.Sprintf("  [debug] OpenKey failed: %s -> %v\n", basePath, err))
+		sb.WriteString(fmt.Sprintf("  [debug] OpenKey(0x9) failed: %s -> %v\n", basePath, err))
 		return 0
 	}
 	defer key.Close()
