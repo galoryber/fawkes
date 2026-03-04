@@ -4,14 +4,19 @@ package commands
 
 import (
 	"bufio"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"fawkes/pkg/structs"
+
+	_ "modernc.org/sqlite"
 )
 
 type PrivescCheckCommand struct{}
@@ -252,9 +257,8 @@ func macPrivescCheckSudo() structs.CommandResult {
 		}
 	}
 
-	// Check group memberships that grant admin
-	out, _ = exec.Command("id").CombinedOutput()
-	idOutput := strings.TrimSpace(string(out))
+	// Check group memberships that grant admin (native, no child process)
+	idOutput := nativeIDString()
 	sb.WriteString(fmt.Sprintf("\nCurrent identity: %s\n", idOutput))
 	if strings.Contains(idOutput, "(admin)") || strings.Contains(idOutput, "(wheel)") {
 		sb.WriteString("[*] User is in admin/wheel group — may have sudo access with password\n")
@@ -362,37 +366,39 @@ func macPrivescCheckTCC() structs.CommandResult {
 		}
 		sb.WriteString(fmt.Sprintf("%s: %s (%s)\n", tcc.desc, tcc.path, info.Mode().String()))
 
-		// Try reading with sqlite3
-		out, err := exec.Command("sqlite3", tcc.path,
-			"SELECT service, client, auth_value, auth_reason FROM access WHERE auth_value > 0 ORDER BY service;").CombinedOutput()
+		// Query TCC database using in-process SQLite (no child process)
+		db, err := sql.Open("sqlite", tcc.path+"?mode=ro")
 		if err != nil {
+			sb.WriteString(fmt.Sprintf("  Cannot open database: %v\n", err))
+			continue
+		}
+		rows, err := db.Query("SELECT service, client, auth_value, auth_reason FROM access WHERE auth_value > 0 ORDER BY service")
+		if err != nil {
+			db.Close()
 			sb.WriteString(fmt.Sprintf("  Cannot query (expected if not root): %v\n", err))
 			continue
 		}
 
-		output := strings.TrimSpace(string(out))
-		if output == "" {
-			sb.WriteString("  No granted permissions found.\n")
-			continue
-		}
-
-		// Parse and format results
 		interesting := 0
-		scanner := bufio.NewScanner(strings.NewReader(output))
-		for scanner.Scan() {
-			fields := strings.SplitN(scanner.Text(), "|", 4)
-			if len(fields) < 3 {
+		rowCount := 0
+		for rows.Next() {
+			var service, client string
+			var authVal, authReason int
+			if err := rows.Scan(&service, &client, &authVal, &authReason); err != nil {
 				continue
 			}
-			service := fields[0]
-			client := fields[1]
-			authVal := fields[2]
-
+			rowCount++
 			flag := macTCCServiceFlag(service)
-			sb.WriteString(fmt.Sprintf("  %s → %s (auth=%s)%s\n", service, client, authVal, flag))
+			sb.WriteString(fmt.Sprintf("  %s → %s (auth=%d)%s\n", service, client, authVal, flag))
 			if flag != "" {
 				interesting++
 			}
+		}
+		rows.Close()
+		db.Close()
+
+		if rowCount == 0 {
+			sb.WriteString("  No granted permissions found.\n")
 		}
 		if interesting > 0 {
 			sb.WriteString(fmt.Sprintf("  [*] %d high-value permission grants found\n", interesting))
@@ -555,6 +561,43 @@ func macPrivescCheckWritable() structs.CommandResult {
 		Status:    "success",
 		Completed: true,
 	}
+}
+
+// nativeIDString produces output similar to `id` using native Go APIs.
+// Returns "uid=501(gary) gid=20(staff) groups=20(staff),80(admin),..."
+func nativeIDString() string {
+	uid := os.Getuid()
+	gid := os.Getgid()
+
+	uidName := strconv.Itoa(uid)
+	if u, err := user.LookupId(strconv.Itoa(uid)); err == nil {
+		uidName = u.Username
+	}
+
+	gidName := strconv.Itoa(gid)
+	if g, err := user.LookupGroupId(strconv.Itoa(gid)); err == nil {
+		gidName = g.Name
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("uid=%d(%s) gid=%d(%s)", uid, uidName, gid, gidName))
+
+	groupIDs, err := os.Getgroups()
+	if err == nil && len(groupIDs) > 0 {
+		sb.WriteString(" groups=")
+		for i, gidNum := range groupIDs {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			name := strconv.Itoa(gidNum)
+			if g, err := user.LookupGroupId(strconv.Itoa(gidNum)); err == nil {
+				name = g.Name
+			}
+			sb.WriteString(fmt.Sprintf("%d(%s)", gidNum, name))
+		}
+	}
+
+	return sb.String()
 }
 
 // macIsWritable checks if the current user can write to a path
