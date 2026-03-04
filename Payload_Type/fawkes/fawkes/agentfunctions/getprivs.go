@@ -57,13 +57,10 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			if input != "" {
-				if input == "" {
+			if input == "" {
 				return nil
 			}
 			return args.LoadArgsFromJSONString(input)
-			}
-			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
