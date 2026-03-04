@@ -195,7 +195,7 @@ func netUserAdd(args netUserArgs) structs.CommandResult {
 
 	if ret != 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating user '%s': NetUserAdd returned %d (parm_err=%d)", args.Username, ret, parmErr),
+			Output:    fmt.Sprintf("Error creating user '%s': NetUserAdd returned %d %s (parm_err=%d)", args.Username, ret, netApiErrorDesc(ret), parmErr),
 			Status:    "error",
 			Completed: true,
 		}
@@ -226,7 +226,7 @@ func netUserDelete(args netUserArgs) structs.CommandResult {
 
 	if ret != 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error deleting user '%s': NetUserDel returned %d", args.Username, ret),
+			Output:    fmt.Sprintf("Error deleting user '%s': NetUserDel returned %d %s", args.Username, ret, netApiErrorDesc(ret)),
 			Status:    "error",
 			Completed: true,
 		}
@@ -260,7 +260,7 @@ func netUserInfo(args netUserArgs) structs.CommandResult {
 
 	if ret != 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error getting info for '%s': NetUserGetInfo returned %d", args.Username, ret),
+			Output:    fmt.Sprintf("Error getting info for '%s': NetUserGetInfo returned %d %s", args.Username, ret, netApiErrorDesc(ret)),
 			Status:    "error",
 			Completed: true,
 		}
@@ -392,7 +392,7 @@ func netUserPassword(args netUserArgs) structs.CommandResult {
 
 	if ret != 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error setting password for '%s': NetUserSetInfo returned %d", args.Username, ret),
+			Output:    fmt.Sprintf("Error setting password for '%s': NetUserSetInfo returned %d %s", args.Username, ret, netApiErrorDesc(ret)),
 			Status:    "error",
 			Completed: true,
 		}
@@ -438,7 +438,7 @@ func netUserGroupAdd(args netUserArgs) structs.CommandResult {
 
 	if ret != 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error adding '%s' to group '%s': NetLocalGroupAddMembers returned %d", args.Username, args.Group, ret),
+			Output:    fmt.Sprintf("Error adding '%s' to group '%s': NetLocalGroupAddMembers returned %d %s", args.Username, args.Group, ret, netApiErrorDesc(ret)),
 			Status:    "error",
 			Completed: true,
 		}
@@ -484,7 +484,7 @@ func netUserGroupRemove(args netUserArgs) structs.CommandResult {
 
 	if ret != 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error removing '%s' from group '%s': NetLocalGroupDelMembers returned %d", args.Username, args.Group, ret),
+			Output:    fmt.Sprintf("Error removing '%s' from group '%s': NetLocalGroupDelMembers returned %d %s", args.Username, args.Group, ret, netApiErrorDesc(ret)),
 			Status:    "error",
 			Completed: true,
 		}

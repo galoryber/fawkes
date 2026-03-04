@@ -77,6 +77,30 @@ const (
 	RESOURCE_CONNECTED = 0x00000001
 )
 
+// netApiErrorDesc returns a human-readable description for common Win32/NetAPI error codes.
+func netApiErrorDesc(code uintptr) string {
+	switch code {
+	case 5:
+		return "ACCESS_DENIED"
+	case 53:
+		return "BAD_NETPATH (host unreachable)"
+	case 1219:
+		return "MULTIPLE_CONNECTIONS (session conflict)"
+	case 1326:
+		return "LOGON_FAILURE (bad credentials)"
+	case 1355:
+		return "NO_SUCH_DOMAIN"
+	case 2114:
+		return "SERVICE_NOT_STARTED"
+	case 2221:
+		return "USER_NOT_FOUND"
+	case 2220:
+		return "GROUP_NOT_FOUND"
+	default:
+		return ""
+	}
+}
+
 // USER_INFO_0 - just the username
 type userInfo0 struct {
 	Name *uint16
@@ -413,7 +437,7 @@ func netEnumLocalUsers() structs.CommandResult {
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error enumerating local users: NetUserEnum returned %d", ret),
+				Output:    fmt.Sprintf("Error enumerating local users: NetUserEnum returned %d %s", ret, netApiErrorDesc(ret)),
 				Status:    "error",
 				Completed: true,
 			}
@@ -481,7 +505,7 @@ func netEnumLocalGroups(target string) structs.CommandResult {
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error enumerating local groups: NetLocalGroupEnum returned %d", ret),
+				Output:    fmt.Sprintf("Error enumerating local groups: NetLocalGroupEnum returned %d %s", ret, netApiErrorDesc(ret)),
 				Status:    "error",
 				Completed: true,
 			}
@@ -644,7 +668,7 @@ func netEnumDomainUsers() structs.CommandResult {
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error enumerating domain users from %s: NetUserEnum returned %d", dcName, ret),
+				Output:    fmt.Sprintf("Error enumerating domain users from %s: NetUserEnum returned %d %s (hint: use ldap-query -action users for authenticated domain queries)", dcName, ret, netApiErrorDesc(ret)),
 				Status:    "error",
 				Completed: true,
 			}
@@ -709,7 +733,7 @@ func netEnumDomainGroups() structs.CommandResult {
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error enumerating domain groups from %s: NetGroupEnum returned %d", dcName, ret),
+				Output:    fmt.Sprintf("Error enumerating domain groups from %s: NetGroupEnum returned %d %s (hint: use ldap-query -action groups for authenticated domain queries)", dcName, ret, netApiErrorDesc(ret)),
 				Status:    "error",
 				Completed: true,
 			}
@@ -1036,7 +1060,7 @@ func netEnumLocalShares() structs.CommandResult {
 
 	if ret != NERR_Success && ret != ERROR_MORE_DATA {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating local shares: NetShareEnum returned %d", ret),
+			Output:    fmt.Sprintf("Error enumerating local shares: NetShareEnum returned %d %s", ret, netApiErrorDesc(ret)),
 			Status:    "error",
 			Completed: true,
 		}
@@ -1095,7 +1119,7 @@ func netEnumRemoteShares(target string) structs.CommandResult {
 
 	if ret != NERR_Success && ret != ERROR_MORE_DATA {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating shares on %s: NetShareEnum returned %d", target, ret),
+			Output:    fmt.Sprintf("Error enumerating shares on %s: NetShareEnum returned %d %s", target, ret, netApiErrorDesc(ret)),
 			Status:    "error",
 			Completed: true,
 		}
@@ -1138,7 +1162,7 @@ func netEnumMappedDrives() structs.CommandResult {
 	)
 	if ret != NERR_Success {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening network drive enumeration: WNetOpenEnum returned %d", ret),
+			Output:    fmt.Sprintf("Error opening network drive enumeration: WNetOpenEnum returned %d %s", ret, netApiErrorDesc(ret)),
 			Status:    "error",
 			Completed: true,
 		}
