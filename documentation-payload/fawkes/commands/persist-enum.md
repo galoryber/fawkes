@@ -19,12 +19,12 @@ All enumeration is read-only — no registry writes or service modifications. Ea
 
 | Category | What It Checks |
 |----------|---------------|
-| `registry` | HKLM/HKCU Run, RunOnce, RunServices, RunServicesOnce, Shell Folders |
+| `registry` | HKLM/HKCU Run, RunOnce, RunServices, RunServicesOnce |
 | `startup` | User and All Users startup folders |
 | `winlogon` | Winlogon Shell, Userinit, AppInit_DLLs, TaskMan (flags non-default values) |
 | `ifeo` | Image File Execution Options — Debugger entries on all subkeys |
 | `appinit` | AppInit_DLLs (64-bit and WOW64) with enabled/disabled status |
-| `tasks` | Scheduled tasks via TaskCache registry tree (recursive walk) |
+| `tasks` | Non-Microsoft scheduled tasks via `schtasks /query` (works at any privilege) |
 | `services` | Non-Microsoft Win32 services (filters out svchost, lsass, dllhost, etc.) |
 
 ## Arguments
@@ -54,8 +54,8 @@ persist-enum -category tasks
 ## Notes
 
 - Read-only — no modifications are made to the system
-- Scheduled task enumeration reads the TaskCache registry tree, not the Task Scheduler service
-- Service enumeration filters common Microsoft service paths (svchost, lsass, services.exe, dllhost, wbem, msiexec)
+- Scheduled task enumeration uses `schtasks.exe /query` (works at standard user privilege; TaskCache registry requires admin)
+- Service enumeration filters standard Windows service paths under `%SystemRoot%`
 - Winlogon checks compare values against known defaults and only report deviations
 - Useful for situational awareness before or after deploying persistence
 
