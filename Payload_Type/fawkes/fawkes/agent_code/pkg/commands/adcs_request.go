@@ -23,7 +23,6 @@ import (
 	wcce_client "github.com/oiweiwei/go-msrpc/msrpc/dcom/wcce/client"
 	"github.com/oiweiwei/go-msrpc/msrpc/dcom/wcce/icertrequestd/v0"
 	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
-	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
@@ -144,15 +143,12 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 		cred = sspcred.NewFromPassword(credUser, args.Password)
 	}
 
-	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
-		gssapi.WithCredential(cred),
-		gssapi.WithMechanismFactory(ssp.SPNEGO),
-		gssapi.WithMechanismFactory(ssp.NTLM),
-	), time.Duration(args.Timeout)*time.Second)
+	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background()),
+		time.Duration(args.Timeout)*time.Second)
 	defer cancel()
 
-	// Submit CSR via DCOM
-	resp, err := adcsSubmitCSR(ctx, args.Server, args.CAName, args.Template, args.AltName, csrDER)
+	// Submit CSR via DCOM — pass credentials as dcerpc options (matching go-msrpc config pattern)
+	resp, err := adcsSubmitCSR(ctx, args.Server, args.CAName, args.Template, args.AltName, csrDER, cred)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error submitting certificate request: %v", err),
@@ -360,9 +356,12 @@ func adcsBuildSANExtension(altName string) (pkix.Extension, error) {
 }
 
 // adcsSubmitCSR connects to the CA via DCOM and submits the CSR.
-func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string, csrDER []byte) (*icertrequestd.RequestResponse, error) {
+// Credentials are passed via dcerpc.WithCredentials() matching the go-msrpc config pattern
+// (csra_enum_certdb.go, wmic_using_client_set.go).
+func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string, csrDER []byte, cred sspcred.Credential) (*icertrequestd.RequestResponse, error) {
+	credOpt := dcerpc.WithCredentials(cred)
+
 	// Step 1: Connect to EPM well-known endpoint (port 135) on the CA server
-	// Following go-msrpc DCOM examples: dial host:135 directly
 	cc, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"))
 	if err != nil {
 		return nil, fmt.Errorf("dial EPM on %s:135: %v", server, err)
@@ -370,7 +369,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	defer cc.Close(ctx)
 
 	// Step 2: ObjectExporter — ServerAlive2 to get COM version and bindings
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign())
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt)
 	if err != nil {
 		return nil, fmt.Errorf("object exporter client: %v", err)
 	}
@@ -381,15 +380,13 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	}
 
 	// Step 3: RemoteActivation — activate ICertRequestD via DCOM
-	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign())
+	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt)
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %v", err)
 	}
 
-	// ClassID for the certificate server COM class.
-	// d99e6e73 is used in go-msrpc's csra example for CertAdminD. The same COM
-	// server process hosts both admin and request interfaces, so we use the same
-	// ClassID but request the ICertRequestD IID.
+	// ClassID for the certificate server COM class (CertAdminD).
+	// The same COM server hosts both admin and request interfaces.
 	certServerClassID := dtyp.GUIDFromUUID(uuid.MustParse("d99e6e73-fc88-11d0-b498-00a0c90312f3"))
 
 	act, err := iact.RemoteActivation(ctx, &iactivation.RemoteActivationRequest{
@@ -413,9 +410,9 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	}
 	defer conn.Close(ctx)
 
-	// Step 5: Create WCCE client and set IPID — fresh security context per go-msrpc DCOM pattern
+	// Step 5: Create WCCE client — fresh security context, credentials via option
 	ctx = gssapi.NewSecurityContext(ctx)
-	wcceCli, err := wcce_client.NewClient(ctx, conn, dcerpc.WithSeal())
+	wcceCli, err := wcce_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt)
 	if err != nil {
 		return nil, fmt.Errorf("WCCE client: %v", err)
 	}
