@@ -5,6 +5,9 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/user"
+	"runtime"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -65,8 +68,36 @@ func (c *CrontabCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-// crontabList lists current cron jobs
+// crontabList lists current cron jobs by reading spool files directly (no child process).
+// Falls back to `crontab -l` if spool files are unreadable.
 func crontabList(args crontabArgs) structs.CommandResult {
+	username := args.User
+	if username == "" {
+		if u, err := user.Current(); err == nil {
+			username = u.Username
+		}
+	}
+
+	// Try native file reading first (OPSEC: no process creation)
+	if username != "" {
+		if content, err := crontabReadSpool(username); err == nil {
+			output := strings.TrimSpace(content)
+			if output == "" {
+				output = "(empty crontab)"
+			}
+			header := "Current crontab"
+			if args.User != "" {
+				header += fmt.Sprintf(" for user %s", args.User)
+			}
+			return structs.CommandResult{
+				Output:    fmt.Sprintf("%s:\n%s", header, output),
+				Status:    "success",
+				Completed: true,
+			}
+		}
+	}
+
+	// Fallback: use crontab binary
 	cmdArgs := []string{"-l"}
 	if args.User != "" {
 		cmdArgs = []string{"-u", args.User, "-l"}
@@ -75,7 +106,6 @@ func crontabList(args crontabArgs) structs.CommandResult {
 	out, err := execCmdTimeout("crontab", cmdArgs...)
 	if err != nil {
 		output := strings.TrimSpace(string(out))
-		// "no crontab for user" is not an error
 		if strings.Contains(output, "no crontab") {
 			return structs.CommandResult{
 				Output:    output,
@@ -104,6 +134,29 @@ func crontabList(args crontabArgs) structs.CommandResult {
 		Status:    "success",
 		Completed: true,
 	}
+}
+
+// crontabReadSpool reads a user's crontab directly from the spool directory.
+// Linux: /var/spool/cron/crontabs/<user> (Debian) or /var/spool/cron/<user> (RHEL)
+// macOS: /var/at/tabs/<user>
+func crontabReadSpool(username string) (string, error) {
+	var paths []string
+	switch runtime.GOOS {
+	case "darwin":
+		paths = []string{fmt.Sprintf("/var/at/tabs/%s", username)}
+	default:
+		paths = []string{
+			fmt.Sprintf("/var/spool/cron/crontabs/%s", username), // Debian/Ubuntu
+			fmt.Sprintf("/var/spool/cron/%s", username),          // RHEL/CentOS
+		}
+	}
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err == nil {
+			return string(data), nil
+		}
+	}
+	return "", fmt.Errorf("crontab spool not readable")
 }
 
 // crontabAdd adds a cron job entry
