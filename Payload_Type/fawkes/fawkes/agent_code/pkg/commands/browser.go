@@ -211,8 +211,9 @@ func decryptPassword(encryptedPassword []byte, key []byte) (string, error) {
 }
 
 // copyFile copies src to dst for safe reading of locked databases.
-// Uses CreateFileW with full sharing flags (READ|WRITE|DELETE) to bypass
-// browser file locks on Cookies/Login Data SQLite databases.
+// First tries CreateFileW with full sharing flags to bypass browser locks.
+// Falls back to esentutl /y /vss which uses Volume Shadow Copy for
+// exclusively-locked files (Chrome/Edge lock Cookies DB while running).
 func copyFile(src, dst string) error {
 	srcPtr, err := windows.UTF16PtrFromString(src)
 	if err != nil {
@@ -227,20 +228,25 @@ func copyFile(src, dst string) error {
 		windows.FILE_ATTRIBUTE_NORMAL,
 		0,
 	)
-	if err != nil {
-		return fmt.Errorf("open %s: %w", filepath.Base(src), err)
+	if err == nil {
+		in := os.NewFile(uintptr(h), src)
+		defer in.Close()
+		out, outErr := os.Create(dst)
+		if outErr != nil {
+			return outErr
+		}
+		defer out.Close()
+		_, copyErr := io.Copy(out, in)
+		return copyErr
 	}
-	in := os.NewFile(uintptr(h), src)
-	defer in.Close()
 
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
+	// Fallback: esentutl /y /vss copies via Volume Shadow Copy
+	_, vssErr := execCmdTimeout("esentutl", "/y", "/vss", src, "/d", dst)
+	if vssErr == nil {
+		return nil
 	}
-	defer out.Close()
-
-	_, err = io.Copy(out, in)
-	return err
+	// Return original CreateFile error as it's more descriptive
+	return fmt.Errorf("open %s: %w (VSS fallback also failed: %v)", filepath.Base(src), err, vssErr)
 }
 
 // findProfiles returns profile directories containing Login Data
