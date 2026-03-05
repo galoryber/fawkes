@@ -428,7 +428,7 @@ func spawnSuspendedThread(pid int) structs.CommandResult {
 	if hThread == 0 {
 		windows.CloseHandle(windows.Handle(hProcess))
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error: CreateRemoteThread failed: %v", err),
+			Output:    output + fmt.Sprintf("Error: remote thread creation failed: %v", err),
 			Status:    "error",
 			Completed: true,
 		}

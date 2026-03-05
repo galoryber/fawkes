@@ -49,7 +49,7 @@ func PerformRetPatch(dllName, functionName string) (string, error) {
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return "", fmt.Errorf("VirtualProtect failed: %v", err)
+		return "", fmt.Errorf("memory protection change failed: %v", err)
 	}
 
 	// Write 0xC3 (ret) at the function entry point

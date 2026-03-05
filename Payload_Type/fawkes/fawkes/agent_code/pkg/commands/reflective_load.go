@@ -233,7 +233,7 @@ func reflectiveLoad(peData []byte, exportFunc string) structs.CommandResult {
 	)
 	if allocBase == 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: VirtualAlloc failed: %v", err),
+			Output:    fmt.Sprintf("Error: memory allocation failed: %v", err),
 			Status:    "error",
 			Completed: true,
 		}
@@ -424,7 +424,7 @@ func rlResolveImports(baseAddr uintptr, importRVA uintptr) (int, error) {
 		dllNameBytes := append([]byte(dllName), 0)
 		hModule, _, err := procLoadLibraryARL.Call(uintptr(unsafe.Pointer(&dllNameBytes[0])))
 		if hModule == 0 {
-			return dllCount, fmt.Errorf("LoadLibrary(%s) failed: %v", dllName, err)
+			return dllCount, fmt.Errorf("failed to load module %s: %v", dllName, err)
 		}
 		dllCount++
 

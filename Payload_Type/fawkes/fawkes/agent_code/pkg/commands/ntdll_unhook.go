@@ -255,7 +255,7 @@ func unhookDLL(dllName string) (string, error) {
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return output, fmt.Errorf("VirtualProtect (RWX) failed: %v", err)
+		return output, fmt.Errorf("memory protection change (RWX) failed: %v", err)
 	}
 
 	// Step 7: Copy clean .text over hooked .text
