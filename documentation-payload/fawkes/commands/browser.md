@@ -9,13 +9,13 @@ hidden = false
 
 ## Summary
 
-Harvest saved credentials from Chromium-based browsers (Chrome, Edge) using DPAPI + AES-GCM decryption. Reads the browser's `Local State` file to extract the AES encryption key (protected by Windows DPAPI), then queries the `Login Data` SQLite database for saved passwords and decrypts them. Supports both modern AES-256-GCM encryption (v10/v11 prefix) and legacy DPAPI-only format. Automatically handles multiple browser profiles.
+Harvest saved credentials and cookies from Chromium-based browsers (Chrome, Edge) using DPAPI + AES-GCM decryption. Reads the browser's `Local State` file to extract the AES encryption key (protected by Windows DPAPI), then queries the `Login Data` or `Cookies` SQLite database. Supports both modern AES-256-GCM encryption (v10/v11 prefix) and legacy DPAPI-only format. Automatically handles multiple browser profiles.
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| action | choose_one | No | passwords | `passwords` — harvest saved login credentials |
+| action | choose_one | No | passwords | `passwords` — harvest saved login credentials; `cookies` — harvest session cookies |
 | browser | choose_one | No | all | `all`, `chrome`, or `edge` — which browser(s) to target |
 
 ## Usage
@@ -37,6 +37,27 @@ browser -action passwords -browser chrome
 Harvest from Edge only:
 ```
 browser -action passwords -browser edge
+```
+
+### Harvest Cookies
+
+Extract session cookies from all browsers:
+```
+browser -action cookies
+```
+
+Cookies from a specific browser:
+```
+browser -action cookies -browser chrome
+```
+
+### Example Cookie Output
+```
+=== Browser Cookies (5 found) ===
+
+[Chrome] .github.com  _gh_sess=abc123def...  (path=/ Secure HttpOnly)
+[Chrome] .example.com  session_id=xyz789...  (path=/)
+[Edge] .office.com  ESTSAUTHPERSISTENT=0.AQ...  (path=/ Secure HttpOnly)
 ```
 
 ### Example Output (credentials found)
@@ -79,9 +100,11 @@ No Chromium-based browsers found or no saved credentials.
 ## Notes
 
 - The agent must run as the same user who saved the credentials (DPAPI is user-bound)
-- The browser does not need to be closed — Login Data is copied to avoid lock conflicts
+- The browser does not need to be closed — databases are copied to avoid lock conflicts
 - Multi-profile support: automatically discovers Default and numbered profiles (Profile 1, Profile 2, etc.)
 - Legacy passwords (pre-v80 Chrome) use direct DPAPI encryption and are also supported
+- Cookie database location: Chrome 96+ stores cookies in `Network/Cookies`, older versions in profile `Cookies`
+- Cookies are valuable for session hijacking: cloud platforms (AWS, Azure, O365), SaaS tools, and internal portals
 
 ## MITRE ATT&CK Mapping
 

