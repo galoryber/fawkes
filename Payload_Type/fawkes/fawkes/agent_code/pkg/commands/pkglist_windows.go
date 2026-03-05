@@ -46,25 +46,19 @@ func pkgListWindowsNative() string {
 			}
 
 			displayName, _, err := subkey.GetStringValue("DisplayName")
-			subkey.Close()
 			if err != nil || displayName == "" {
+				subkey.Close()
 				continue
 			}
+
+			version, _, _ := subkey.GetStringValue("DisplayVersion")
+			subkey.Close()
 
 			// Deduplicate (WOW6432Node may contain same entries)
 			if seen[displayName] {
 				continue
 			}
 			seen[displayName] = true
-
-			// Re-open to get version (separate call to handle missing values)
-			subkey, err = registry.OpenKey(registry.LOCAL_MACHINE, path+`\`+subkeyName, registry.READ)
-			if err != nil {
-				pkgs = append(pkgs, installedPkg{name: displayName})
-				continue
-			}
-			version, _, _ := subkey.GetStringValue("DisplayVersion")
-			subkey.Close()
 
 			pkgs = append(pkgs, installedPkg{name: displayName, version: version})
 		}

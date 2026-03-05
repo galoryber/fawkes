@@ -69,9 +69,16 @@ func (c *SecurityInfoCommand) Execute(task structs.Task) structs.CommandResult {
 func securityInfoLinux() []secControl {
 	var controls []secControl
 
-	// SELinux
-	getenforce := runQuietCommand("getenforce")
-	if getenforce != "" {
+	// SELinux — read from sysfs first (no subprocess), fall back to getenforce
+	selinuxEnforce := readFileQuiet("/sys/fs/selinux/enforce")
+	if selinuxEnforce != "" {
+		val := strings.TrimSpace(selinuxEnforce)
+		if val == "1" {
+			controls = append(controls, secControl{"SELinux", "enabled", "Enforcing mode"})
+		} else {
+			controls = append(controls, secControl{"SELinux", "warning", "Permissive mode (logging only)"})
+		}
+	} else if getenforce := runQuietCommand("getenforce"); getenforce != "" {
 		mode := strings.TrimSpace(getenforce)
 		if strings.EqualFold(mode, "enforcing") {
 			controls = append(controls, secControl{"SELinux", "enabled", "Enforcing mode"})
@@ -81,20 +88,17 @@ func securityInfoLinux() []secControl {
 			controls = append(controls, secControl{"SELinux", "disabled", mode})
 		}
 	} else {
-		controls = append(controls, secControl{"SELinux", "not found", "getenforce not available"})
+		controls = append(controls, secControl{"SELinux", "not found", "not available"})
 	}
 
-	// AppArmor
-	aaStatus := runQuietCommand("aa-status", "--json")
-	if aaStatus != "" {
+	// AppArmor — check kernel module first (no subprocess), fall back to aa-status
+	aaEnabled := readFileQuiet("/sys/module/apparmor/parameters/enabled")
+	if strings.TrimSpace(aaEnabled) == "Y" {
+		controls = append(controls, secControl{"AppArmor", "enabled", "kernel module loaded"})
+	} else if aaStatus := runQuietCommand("aa-status", "--json"); aaStatus != "" {
 		controls = append(controls, secControl{"AppArmor", "enabled", "aa-status available"})
 	} else {
-		aaEnabled := runQuietCommand("cat", "/sys/module/apparmor/parameters/enabled")
-		if strings.TrimSpace(aaEnabled) == "Y" {
-			controls = append(controls, secControl{"AppArmor", "enabled", "kernel module loaded"})
-		} else {
-			controls = append(controls, secControl{"AppArmor", "not found", ""})
-		}
+		controls = append(controls, secControl{"AppArmor", "not found", ""})
 	}
 
 	// Seccomp
@@ -235,47 +239,45 @@ func securityInfoDarwin() []secControl {
 }
 
 func securityInfoWindows() []secControl {
-	var controls []secControl
+	// Try native registry reading first (no subprocess spawned for Defender/UAC/Firewall/CredGuard)
+	controls := securityInfoWindowsNative()
 
-	// Windows Defender status
-	defenderCmd := `(Get-MpComputerStatus).RealTimeProtectionEnabled`
-	defender := runQuietCommand("powershell", BuildPSArgs(defenderCmd, InternalPSOptions())...)
-	if strings.Contains(strings.TrimSpace(defender), "True") {
-		controls = append(controls, secControl{"Windows Defender RT", "enabled", "real-time protection"})
-	} else if strings.Contains(strings.TrimSpace(defender), "False") {
-		controls = append(controls, secControl{"Windows Defender RT", "disabled", ""})
+	// Fall back to PowerShell if native reading failed entirely
+	if controls == nil {
+		defenderCmd := `(Get-MpComputerStatus).RealTimeProtectionEnabled`
+		defender := runQuietCommand("powershell", BuildPSArgs(defenderCmd, InternalPSOptions())...)
+		if strings.Contains(strings.TrimSpace(defender), "True") {
+			controls = append(controls, secControl{"Windows Defender RT", "enabled", "real-time protection"})
+		} else if strings.Contains(strings.TrimSpace(defender), "False") {
+			controls = append(controls, secControl{"Windows Defender RT", "disabled", ""})
+		}
+
+		controls = append(controls, secControl{"AMSI", "enabled", "default on Windows 10+"})
+
+		credGuardCmd := `(Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard -ErrorAction SilentlyContinue).SecurityServicesRunning`
+		credGuard := runQuietCommand("powershell", BuildPSArgs(credGuardCmd, InternalPSOptions())...)
+		if strings.Contains(credGuard, "1") || strings.Contains(credGuard, "2") {
+			controls = append(controls, secControl{"Credential Guard", "enabled", ""})
+		} else {
+			controls = append(controls, secControl{"Credential Guard", "disabled", ""})
+		}
+
+		uacCmd := `(Get-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -Name EnableLUA -ErrorAction SilentlyContinue).EnableLUA`
+		uac := runQuietCommand("powershell", BuildPSArgs(uacCmd, InternalPSOptions())...)
+		if strings.TrimSpace(uac) == "1" {
+			controls = append(controls, secControl{"UAC", "enabled", ""})
+		} else {
+			controls = append(controls, secControl{"UAC", "disabled", ""})
+		}
+
+		fwCmd := `Get-NetFirewallProfile | ForEach-Object { "$($_.Name):$($_.Enabled)" }`
+		fw := runQuietCommand("powershell", BuildPSArgs(fwCmd, InternalPSOptions())...)
+		if fw != "" {
+			controls = append(controls, secControl{"Windows Firewall", "info", strings.TrimSpace(fw)})
+		}
 	}
 
-	// AMSI
-	controls = append(controls, secControl{"AMSI", "enabled", "default on Windows 10+"})
-
-	// Credential Guard
-	credGuardCmd := `(Get-CimInstance -ClassName Win32_DeviceGuard -Namespace root\Microsoft\Windows\DeviceGuard -ErrorAction SilentlyContinue).SecurityServicesRunning`
-	credGuard := runQuietCommand("powershell", BuildPSArgs(credGuardCmd, InternalPSOptions())...)
-	if strings.Contains(credGuard, "1") || strings.Contains(credGuard, "2") {
-		controls = append(controls, secControl{"Credential Guard", "enabled", ""})
-	} else {
-		controls = append(controls, secControl{"Credential Guard", "disabled", ""})
-	}
-
-	// UAC level
-	uacCmd := `(Get-ItemProperty HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System -Name EnableLUA -ErrorAction SilentlyContinue).EnableLUA`
-	uac := runQuietCommand("powershell", BuildPSArgs(uacCmd, InternalPSOptions())...)
-	if strings.TrimSpace(uac) == "1" {
-		controls = append(controls, secControl{"UAC", "enabled", ""})
-	} else {
-		controls = append(controls, secControl{"UAC", "disabled", ""})
-	}
-
-	// Windows Firewall
-	fwCmd := `Get-NetFirewallProfile | ForEach-Object { "$($_.Name):$($_.Enabled)" }`
-	fw := runQuietCommand("powershell", BuildPSArgs(fwCmd, InternalPSOptions())...)
-	if fw != "" {
-		profiles := strings.TrimSpace(fw)
-		controls = append(controls, secControl{"Windows Firewall", "info", profiles})
-	}
-
-	// BitLocker
+	// BitLocker and PS CLM always require PowerShell (no registry equivalent)
 	blCmd := `(Get-BitLockerVolume -MountPoint C: -ErrorAction SilentlyContinue).ProtectionStatus`
 	bl := runQuietCommand("powershell", BuildPSArgs(blCmd, InternalPSOptions())...)
 	if strings.TrimSpace(bl) == "On" {
@@ -284,7 +286,6 @@ func securityInfoWindows() []secControl {
 		controls = append(controls, secControl{"BitLocker (C:)", "disabled", ""})
 	}
 
-	// PowerShell Constrained Language Mode
 	clmCmd := `$ExecutionContext.SessionState.LanguageMode`
 	clm := runQuietCommand("powershell", BuildPSArgs(clmCmd, InternalPSOptions())...)
 	if strings.Contains(clm, "ConstrainedLanguage") {
