@@ -113,7 +113,7 @@ func (c *StringsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[*] %s (%s) — min length %d, scanned %s",
-		args.Path, statFormatSize(fileSize), args.MinLen, statFormatSize(scanSize)))
+		args.Path, formatFileSize(fileSize), args.MinLen, formatFileSize(scanSize)))
 	if args.Pattern != "" {
 		sb.WriteString(fmt.Sprintf(", filter: %q", args.Pattern))
 	}

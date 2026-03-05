@@ -121,7 +121,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 			errCount++
 			sb.WriteString(fmt.Sprintf("[-] %s — %s\n", r.Path, r.Err))
 		} else {
-			sb.WriteString(fmt.Sprintf("%s  %s  (%s)\n", r.Hash, r.Path, hashFormatSize(r.Size)))
+			sb.WriteString(fmt.Sprintf("%s  %s  (%s)\n", r.Hash, r.Path, formatFileSize(r.Size)))
 		}
 	}
 
@@ -230,20 +230,3 @@ func hashDirectory(root string, args hashArgs) []hashResult {
 	return results
 }
 
-func hashFormatSize(bytes int64) string {
-	const (
-		kb = 1024
-		mb = kb * 1024
-		gb = mb * 1024
-	)
-	switch {
-	case bytes >= gb:
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(gb))
-	case bytes >= mb:
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(mb))
-	case bytes >= kb:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(kb))
-	default:
-		return fmt.Sprintf("%d B", bytes)
-	}
-}

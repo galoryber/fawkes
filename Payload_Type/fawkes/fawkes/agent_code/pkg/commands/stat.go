@@ -77,7 +77,7 @@ func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("  Type: %s\n", fileType))
 
 	// Size
-	sb.WriteString(fmt.Sprintf("  Size: %d bytes (%s)\n", info.Size(), statFormatSize(info.Size())))
+	sb.WriteString(fmt.Sprintf("  Size: %d bytes (%s)\n", info.Size(), formatFileSize(info.Size())))
 
 	// Permissions
 	sb.WriteString(fmt.Sprintf("  Mode: %s (%04o)\n", info.Mode().String(), info.Mode().Perm()))
@@ -126,23 +126,3 @@ func statFileType(info os.FileInfo) string {
 	}
 }
 
-func statFormatSize(bytes int64) string {
-	const (
-		kb = 1024
-		mb = kb * 1024
-		gb = mb * 1024
-		tb = gb * 1024
-	)
-	switch {
-	case bytes >= tb:
-		return fmt.Sprintf("%.1f TB", float64(bytes)/float64(tb))
-	case bytes >= gb:
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(gb))
-	case bytes >= mb:
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(mb))
-	case bytes >= kb:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(kb))
-	default:
-		return fmt.Sprintf("%d B", bytes)
-	}
-}

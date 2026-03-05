@@ -124,7 +124,7 @@ func regSaveHive(hive, path, output string) structs.CommandResult {
 	fi, statErr := os.Stat(output)
 	sizeStr := "unknown size"
 	if statErr == nil {
-		sizeStr = formatRegSaveSize(fi.Size())
+		sizeStr = formatFileSize(fi.Size())
 	}
 
 	return structs.CommandResult{
@@ -181,7 +181,7 @@ func regSaveCredentialHives(outputDir string) structs.CommandResult {
 		fi, _ := os.Stat(outPath)
 		size := "unknown"
 		if fi != nil {
-			size = formatRegSaveSize(fi.Size())
+			size = formatFileSize(fi.Size())
 		}
 
 		sb.WriteString(fmt.Sprintf("[+] %s → %s (%s) — %s\n", h.path, outPath, size, h.desc))
@@ -221,11 +221,3 @@ func resolveHive(hive string) (uintptr, error) {
 	}
 }
 
-func formatRegSaveSize(bytes int64) string {
-	if bytes < 1024 {
-		return fmt.Sprintf("%d B", bytes)
-	} else if bytes < 1024*1024 {
-		return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
-	}
-	return fmt.Sprintf("%.1f MB", float64(bytes)/(1024*1024))
-}

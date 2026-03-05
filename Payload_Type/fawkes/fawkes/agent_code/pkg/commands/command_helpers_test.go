@@ -419,30 +419,7 @@ func TestBuildEventXPath(t *testing.T) {
 	}
 }
 
-func TestFormatEvtLogSize(t *testing.T) {
-	tests := []struct {
-		name     string
-		bytes    uint64
-		expected string
-	}{
-		{"zero", 0, "0 B"},
-		{"bytes", 512, "512 B"},
-		{"KB", 1024, "1.0 KB"},
-		{"MB", 1048576, "1.0 MB"},
-		{"GB", 1073741824, "1.0 GB"},
-		{"fractional KB", 1536, "1.5 KB"},
-		{"large MB", 20971520, "20.0 MB"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := formatEvtLogSize(tt.bytes)
-			if result != tt.expected {
-				t.Errorf("formatEvtLogSize(%d) = %q, want %q", tt.bytes, result, tt.expected)
-			}
-		})
-	}
-}
+// formatEvtLogSize tests removed — unified into format_helpers_test.go (formatBytes)
 
 // --- Scheduled Task helper tests ---
 

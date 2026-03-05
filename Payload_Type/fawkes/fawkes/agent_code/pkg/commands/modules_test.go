@@ -43,7 +43,7 @@ func TestModulesCommand_SelfModules(t *testing.T) {
 
 	t.Logf("Found %d modules for PID %d", len(modules), os.Getpid())
 	for _, m := range modules {
-		t.Logf("  %s %s (%s) %s", m.BaseAddr, formatModuleSize(m.Size), m.Name, m.Path)
+		t.Logf("  %s %s (%s) %s", m.BaseAddr, formatBytes(m.Size), m.Name, m.Path)
 	}
 }
 
@@ -94,26 +94,7 @@ func TestModulesCommand_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestFormatModuleSize(t *testing.T) {
-	tests := []struct {
-		size     uint64
-		expected string
-	}{
-		{0, "0 B"},
-		{512, "512 B"},
-		{1024, "1.0 KB"},
-		{4096, "4.0 KB"},
-		{1048576, "1.0 MB"},
-		{10485760, "10.0 MB"},
-	}
-
-	for _, tt := range tests {
-		result := formatModuleSize(tt.size)
-		if result != tt.expected {
-			t.Errorf("formatModuleSize(%d) = %q, want %q", tt.size, result, tt.expected)
-		}
-	}
-}
+// formatModuleSize tests removed — unified into format_helpers_test.go (formatBytes)
 
 func TestModulesCommand_WindowsDLLs(t *testing.T) {
 	if runtime.GOOS != "windows" {

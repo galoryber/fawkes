@@ -205,7 +205,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 			file.Close()
 			os.Remove(dumpPath)
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Successfully dumped %s (PID %d)\nDump size: %s\nFile uploaded to Mythic and cleaned from disk.", processName, targetPID, formatDumpSize(dumpSize)),
+				Output:    fmt.Sprintf("Successfully dumped %s (PID %d)\nDump size: %s\nFile uploaded to Mythic and cleaned from disk.", processName, targetPID, formatFileSize(dumpSize)),
 				Status:    "success",
 				Completed: true,
 			}
@@ -314,21 +314,3 @@ func enableThreadDebugPrivilege() error {
 	return windows.AdjustTokenPrivileges(token, false, &tp, 0, nil, nil)
 }
 
-// formatDumpSize formats bytes into human-readable size
-func formatDumpSize(bytes int64) string {
-	const (
-		KB = 1024
-		MB = 1024 * KB
-		GB = 1024 * MB
-	)
-	switch {
-	case bytes >= GB:
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(GB))
-	case bytes >= MB:
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(MB))
-	case bytes >= KB:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(KB))
-	default:
-		return fmt.Sprintf("%d bytes", bytes)
-	}
-}

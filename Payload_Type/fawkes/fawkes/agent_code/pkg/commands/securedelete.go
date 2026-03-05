@@ -93,7 +93,7 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	return structs.CommandResult{
-		Output:    fmt.Sprintf("[+] Securely deleted: %s (%s, %d passes)", args.Path, statFormatSize(size), args.Passes),
+		Output:    fmt.Sprintf("[+] Securely deleted: %s (%s, %d passes)", args.Path, formatFileSize(size), args.Passes),
 		Status:    "success",
 		Completed: true,
 	}

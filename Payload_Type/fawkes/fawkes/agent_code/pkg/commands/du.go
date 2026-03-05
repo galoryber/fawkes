@@ -71,7 +71,7 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if !info.IsDir() {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("[*] %s\n  Size: %s (%d bytes)", args.Path, statFormatSize(info.Size()), info.Size()),
+			Output:    fmt.Sprintf("[*] %s\n  Size: %s (%d bytes)", args.Path, formatFileSize(info.Size()), info.Size()),
 			Status:    "success",
 			Completed: true,
 		}
@@ -129,12 +129,12 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 	})
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] %s — %s total, %d files\n\n", basePath, statFormatSize(totalSize), fileCount))
+	sb.WriteString(fmt.Sprintf("[*] %s — %s total, %d files\n\n", basePath, formatFileSize(totalSize), fileCount))
 	sb.WriteString(fmt.Sprintf("  %10s  %s\n", "Size", "Path"))
 	sb.WriteString(fmt.Sprintf("  %10s  %s\n", "----", "----"))
 
 	for _, e := range entries {
-		sb.WriteString(fmt.Sprintf("  %10s  %s\n", statFormatSize(e.size), e.path))
+		sb.WriteString(fmt.Sprintf("  %10s  %s\n", formatFileSize(e.size), e.path))
 	}
 
 	return structs.CommandResult{

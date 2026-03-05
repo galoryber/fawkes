@@ -349,7 +349,7 @@ func evtInfo(channel string) structs.CommandResult {
 
 	// File size
 	size := evtGetLogProperty(logHandle, evtLogFileSize)
-	sb.WriteString(fmt.Sprintf("  File Size:   %s\n", formatEvtLogSize(size)))
+	sb.WriteString(fmt.Sprintf("  File Size:   %s\n", formatBytes(size)))
 
 	// Last write time
 	lastWrite := evtGetLogProperty(logHandle, evtLogLastWriteTime)

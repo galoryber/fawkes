@@ -151,25 +151,7 @@ func TestStatShowsOwnership(t *testing.T) {
 	}
 }
 
-func TestStatFormatSize(t *testing.T) {
-	tests := []struct {
-		bytes    int64
-		expected string
-	}{
-		{0, "0 B"},
-		{512, "512 B"},
-		{1024, "1.0 KB"},
-		{1048576, "1.0 MB"},
-		{1073741824, "1.0 GB"},
-	}
-
-	for _, tt := range tests {
-		result := statFormatSize(tt.bytes)
-		if result != tt.expected {
-			t.Errorf("statFormatSize(%d): expected '%s', got '%s'", tt.bytes, tt.expected, result)
-		}
-	}
-}
+// statFormatSize tests removed — unified into format_helpers_test.go (formatFileSize)
 
 func TestStatFileType(t *testing.T) {
 	// Regular file

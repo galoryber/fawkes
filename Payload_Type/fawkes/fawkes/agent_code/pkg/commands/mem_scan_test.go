@@ -142,25 +142,7 @@ func TestSearchInRegion_HexPattern(t *testing.T) {
 	}
 }
 
-func TestFormatScanSize(t *testing.T) {
-	tests := []struct {
-		input    uint64
-		expected string
-	}{
-		{500, "500 B"},
-		{1024, "1.0 KB"},
-		{1536, "1.5 KB"},
-		{1048576, "1.0 MB"},
-		{1073741824, "1.0 GB"},
-	}
-
-	for _, tc := range tests {
-		result := formatScanSize(tc.input)
-		if result != tc.expected {
-			t.Errorf("formatScanSize(%d): expected %q, got %q", tc.input, tc.expected, result)
-		}
-	}
-}
+// formatScanSize tests removed — unified into format_helpers_test.go (formatBytes)
 
 func TestFormatMemScanOutput_NoMatches(t *testing.T) {
 	args := memScanArgs{PID: 1234, Pattern: "test", MaxResults: 50}

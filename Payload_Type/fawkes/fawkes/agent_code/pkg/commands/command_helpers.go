@@ -346,18 +346,6 @@ func buildEventXPath(filter string, eventID int) string {
 	return fmt.Sprintf("*[System[%s]]", strings.Join(parts, " and "))
 }
 
-// formatEvtLogSize formats byte counts for event log display
-func formatEvtLogSize(bytes uint64) string {
-	if bytes < 1024 {
-		return fmt.Sprintf("%d B", bytes)
-	} else if bytes < 1024*1024 {
-		return fmt.Sprintf("%.1f KB", float64(bytes)/1024)
-	} else if bytes < 1024*1024*1024 {
-		return fmt.Sprintf("%.1f MB", float64(bytes)/(1024*1024))
-	}
-	return fmt.Sprintf("%.1f GB", float64(bytes)/(1024*1024*1024))
-}
-
 // --- Scheduled Task helpers (from schtask.go) ---
 
 // Task trigger type constants

@@ -111,7 +111,7 @@ func (c *HexdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	// Format xxd-style output
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[*] %s (%s) — offset 0x%08x, %d bytes\n",
-		args.Path, statFormatSize(fileSize), args.Offset, n))
+		args.Path, formatFileSize(fileSize), args.Offset, n))
 
 	for i := 0; i < n; i += 16 {
 		// Address

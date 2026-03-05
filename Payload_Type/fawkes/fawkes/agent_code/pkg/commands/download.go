@@ -147,7 +147,7 @@ func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult 
 	result := sendFileToMythic(task, zipFile, downloadName, dirPath)
 	if result.Status == "success" {
 		result.Output = fmt.Sprintf("Downloaded directory as zip: %s (%d files, %s original, %s compressed)",
-			dirPath, fileCount, statFormatSize(totalSize), statFormatSize(zipSize))
+			dirPath, fileCount, formatFileSize(totalSize), formatFileSize(zipSize))
 	}
 	return result
 }

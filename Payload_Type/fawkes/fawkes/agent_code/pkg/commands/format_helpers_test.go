@@ -156,3 +156,39 @@ func TestFormatFileSize_GB(t *testing.T) {
 		t.Errorf("formatFileSize(5368709120) = %q, want %q", got, "5.0 GB")
 	}
 }
+
+func TestFormatBytes_TB(t *testing.T) {
+	if got := formatBytes(1 << 40); got != "1.0 TB" {
+		t.Errorf("formatBytes(1TB) = %q, want %q", got, "1.0 TB")
+	}
+}
+
+func TestFormatBytes_FractionalTB(t *testing.T) {
+	if got := formatBytes(1649267441664); got != "1.5 TB" {
+		t.Errorf("formatBytes(1.5TB) = %q, want %q", got, "1.5 TB")
+	}
+}
+
+func TestFormatBytes_FractionalKB(t *testing.T) {
+	if got := formatBytes(1536); got != "1.5 KB" {
+		t.Errorf("formatBytes(1536) = %q, want %q", got, "1.5 KB")
+	}
+}
+
+func TestFormatBytes_LargeMB(t *testing.T) {
+	if got := formatBytes(20971520); got != "20.0 MB" {
+		t.Errorf("formatBytes(20MB) = %q, want %q", got, "20.0 MB")
+	}
+}
+
+func TestFormatBytes_150MB(t *testing.T) {
+	if got := formatBytes(157286400); got != "150.0 MB" {
+		t.Errorf("formatBytes(150MB) = %q, want %q", got, "150.0 MB")
+	}
+}
+
+func TestFormatFileSize_TB(t *testing.T) {
+	if got := formatFileSize(1 << 40); got != "1.0 TB" {
+		t.Errorf("formatFileSize(1TB) = %q, want %q", got, "1.0 TB")
+	}
+}

@@ -26,10 +26,13 @@ func truncate(s string, n int) string {
 	return s[:n]
 }
 
-// formatBytes formats a uint64 byte count as a human-readable string (KB, MB, GB).
-// Consolidates: bitsFormatBytes (command_helpers.go).
+// formatBytes formats a uint64 byte count as a human-readable string (KB, MB, GB, TB).
+// Consolidates: bitsFormatBytes, formatDumpSize, formatRegSaveSize, formatScanSize,
+// formatEvtLogSize, formatModuleSize, hashFormatSize, statFormatSize.
 func formatBytes(b uint64) string {
 	switch {
+	case b >= 1<<40:
+		return fmt.Sprintf("%.1f TB", float64(b)/float64(1<<40))
 	case b >= 1<<30:
 		return fmt.Sprintf("%.1f GB", float64(b)/float64(1<<30))
 	case b >= 1<<20:

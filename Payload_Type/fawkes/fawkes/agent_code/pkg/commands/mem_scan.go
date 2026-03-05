@@ -153,7 +153,7 @@ func formatMemScanOutput(args memScanArgs, matches []memScanMatch, regionsScanne
 
 	sb.WriteString(fmt.Sprintf("Memory Scan: PID %d\n", args.PID))
 	sb.WriteString(fmt.Sprintf("Pattern: %s (%d bytes)\n", patternDisplay, len(searchBytes)))
-	sb.WriteString(fmt.Sprintf("Regions scanned: %d | Bytes scanned: %s\n", regionsScanned, formatScanSize(bytesScanned)))
+	sb.WriteString(fmt.Sprintf("Regions scanned: %d | Bytes scanned: %s\n", regionsScanned, formatBytes(bytesScanned)))
 	sb.WriteString(fmt.Sprintf("Matches found: %d", len(matches)))
 	if len(matches) >= args.MaxResults {
 		sb.WriteString(" (limit reached, use -max_results to increase)")
@@ -226,15 +226,3 @@ func writeHexDump(sb *strings.Builder, data []byte, matchStart, matchLen int, ba
 	}
 }
 
-func formatScanSize(bytes uint64) string {
-	if bytes >= 1<<30 {
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(1<<30))
-	}
-	if bytes >= 1<<20 {
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(1<<20))
-	}
-	if bytes >= 1<<10 {
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(1<<10))
-	}
-	return fmt.Sprintf("%d B", bytes)
-}

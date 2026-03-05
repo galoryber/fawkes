@@ -98,7 +98,7 @@ func catReadFull(path string, maxBytes int) structs.CommandResult {
 	if size > int64(maxBytes) {
 		return structs.CommandResult{
 			Output: fmt.Sprintf("Error: file is %s (limit: %s). Use 'tail' for large files, or 'cat -max %d' to override.",
-				statFormatSize(size), statFormatSize(int64(maxBytes)), (size/1024)+1),
+				formatFileSize(size), formatFileSize(int64(maxBytes)), (size/1024)+1),
 			Status:    "error",
 			Completed: true,
 		}
@@ -165,7 +165,7 @@ func catReadLines(args catParams, maxBytes int) structs.CommandResult {
 		}
 
 		if sb.Len() > maxBytes {
-			sb.WriteString(fmt.Sprintf("\n... (output truncated at %s)", statFormatSize(int64(maxBytes))))
+			sb.WriteString(fmt.Sprintf("\n... (output truncated at %s)", formatFileSize(int64(maxBytes))))
 			break
 		}
 
