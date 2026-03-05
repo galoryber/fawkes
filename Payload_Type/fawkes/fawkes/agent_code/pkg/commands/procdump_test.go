@@ -18,8 +18,8 @@ func TestProcdumpCommand_NameAndDescription(t *testing.T) {
 	if cmd.Description() == "" {
 		t.Error("Description() should not be empty")
 	}
-	if !strings.Contains(cmd.Description(), "MiniDumpWriteDump") {
-		t.Error("Description should mention MiniDumpWriteDump")
+	if !strings.Contains(cmd.Description(), "Dump process memory") {
+		t.Error("Description should mention process memory dumping")
 	}
 }
 

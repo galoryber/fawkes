@@ -448,7 +448,7 @@ func peLoaderResolveImportsHooked(baseAddr uintptr, importRVA uintptr) error {
 			}
 
 			if funcAddr == 0 {
-				return fmt.Errorf("GetProcAddress failed for import in %s: %v", dllName, lastErr)
+				return fmt.Errorf("failed to resolve import in %s: %v", dllName, lastErr)
 			}
 
 			if isExitProcess {

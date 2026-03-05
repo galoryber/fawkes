@@ -458,7 +458,7 @@ func rlResolveImports(baseAddr uintptr, importRVA uintptr) (int, error) {
 			}
 
 			if funcAddr == 0 {
-				return dllCount, fmt.Errorf("GetProcAddress failed for import in %s: %v", dllName, err)
+				return dllCount, fmt.Errorf("failed to resolve import in %s: %v", dllName, err)
 			}
 
 			// Write resolved address into IAT

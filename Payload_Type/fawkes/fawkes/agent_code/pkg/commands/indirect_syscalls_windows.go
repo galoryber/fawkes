@@ -92,7 +92,7 @@ func (r *SyscallResolver) init() error {
 	ntdllName, _ := syscall.UTF16PtrFromString("ntdll.dll")
 	ntdllBase, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(ntdllName)))
 	if ntdllBase == 0 {
-		return fmt.Errorf("GetModuleHandleW(ntdll.dll) failed")
+		return fmt.Errorf("failed to resolve base module")
 	}
 
 	// Step 2: Parse PE headers to find export directory

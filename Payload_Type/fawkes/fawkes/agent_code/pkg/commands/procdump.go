@@ -35,7 +35,7 @@ func (c *ProcdumpCommand) Name() string {
 }
 
 func (c *ProcdumpCommand) Description() string {
-	return "Dump process memory using MiniDumpWriteDump (requires SeDebugPrivilege for protected processes)"
+	return "Dump process memory (requires SeDebugPrivilege for protected processes)"
 }
 
 type procdumpArgs struct {
@@ -156,7 +156,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	if ret == 0 {
 		os.Remove(dumpPath)
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("MiniDumpWriteDump failed for PID %d (%s): %v", targetPID, processName, callErr),
+			Output:    fmt.Sprintf("memory dump failed for PID %d (%s): %v", targetPID, processName, callErr),
 			Status:    "error",
 			Completed: true,
 		}

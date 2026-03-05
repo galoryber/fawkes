@@ -52,14 +52,14 @@ func injectAllocMemory(hProcess uintptr, size int, protect uint32) (uintptr, err
 		status := IndirectNtAllocateVirtualMemory(hProcess, &addr, &regionSize,
 			MEM_COMMIT|MEM_RESERVE, protect)
 		if status != 0 {
-			return 0, fmt.Errorf("NtAllocateVirtualMemory failed: NTSTATUS 0x%X", status)
+			return 0, fmt.Errorf("memory allocation failed: NTSTATUS 0x%X", status)
 		}
 		return addr, nil
 	}
 	addr, _, err := procVirtualAllocEx.Call(hProcess, 0, uintptr(size),
 		uintptr(MEM_COMMIT|MEM_RESERVE), uintptr(protect))
 	if addr == 0 {
-		return 0, fmt.Errorf("VirtualAllocEx failed: %v", err)
+		return 0, fmt.Errorf("memory allocation failed: %v", err)
 	}
 	return addr, nil
 }
@@ -74,7 +74,7 @@ func injectWriteMemory(hProcess, addr uintptr, data []byte) (int, error) {
 		status := IndirectNtWriteVirtualMemory(hProcess, addr,
 			uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)), &bytesWritten)
 		if status != 0 {
-			return 0, fmt.Errorf("NtWriteVirtualMemory failed: NTSTATUS 0x%X", status)
+			return 0, fmt.Errorf("memory write failed: NTSTATUS 0x%X", status)
 		}
 		return int(bytesWritten), nil
 	}
@@ -83,7 +83,7 @@ func injectWriteMemory(hProcess, addr uintptr, data []byte) (int, error) {
 		uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)),
 		uintptr(unsafe.Pointer(&bytesWritten)))
 	if ret == 0 {
-		return 0, fmt.Errorf("WriteProcessMemory failed: %v", err)
+		return 0, fmt.Errorf("memory write failed: %v", err)
 	}
 	return int(bytesWritten), nil
 }
@@ -96,7 +96,7 @@ func injectReadMemory(hProcess, addr uintptr, size int) ([]byte, error) {
 		status := IndirectNtReadVirtualMemory(hProcess, addr,
 			uintptr(unsafe.Pointer(&buf[0])), uintptr(size), &bytesRead)
 		if status != 0 {
-			return nil, fmt.Errorf("NtReadVirtualMemory failed: NTSTATUS 0x%X", status)
+			return nil, fmt.Errorf("memory read failed: NTSTATUS 0x%X", status)
 		}
 		return buf[:bytesRead], nil
 	}
@@ -105,7 +105,7 @@ func injectReadMemory(hProcess, addr uintptr, size int) ([]byte, error) {
 		uintptr(unsafe.Pointer(&buf[0])), uintptr(size),
 		uintptr(unsafe.Pointer(&bytesRead)))
 	if ret == 0 {
-		return nil, fmt.Errorf("ReadProcessMemory failed: %v", err)
+		return nil, fmt.Errorf("memory read failed: %v", err)
 	}
 	return buf[:bytesRead], nil
 }
@@ -117,7 +117,7 @@ func injectReadMemoryInto(hProcess, addr uintptr, buf unsafe.Pointer, size int) 
 		status := IndirectNtReadVirtualMemory(hProcess, addr,
 			uintptr(buf), uintptr(size), &bytesRead)
 		if status != 0 {
-			return fmt.Errorf("NtReadVirtualMemory failed: NTSTATUS 0x%X", status)
+			return fmt.Errorf("memory read failed: NTSTATUS 0x%X", status)
 		}
 		return nil
 	}
@@ -126,7 +126,7 @@ func injectReadMemoryInto(hProcess, addr uintptr, buf unsafe.Pointer, size int) 
 		uintptr(buf), uintptr(size),
 		uintptr(unsafe.Pointer(&bytesRead)))
 	if ret == 0 {
-		return fmt.Errorf("ReadProcessMemory failed: %v", err)
+		return fmt.Errorf("memory read failed: %v", err)
 	}
 	return nil
 }
@@ -140,7 +140,7 @@ func injectProtectMemory(hProcess, addr uintptr, size int, protect uint32) (uint
 		status := IndirectNtProtectVirtualMemory(hProcess, &protectAddr, &protectSize,
 			protect, &oldProtect)
 		if status != 0 {
-			return 0, fmt.Errorf("NtProtectVirtualMemory failed: NTSTATUS 0x%X", status)
+			return 0, fmt.Errorf("memory protection change failed: NTSTATUS 0x%X", status)
 		}
 		return oldProtect, nil
 	}

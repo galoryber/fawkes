@@ -186,7 +186,7 @@ func unhookDLL(dllName string) (string, error) {
 	dllNameW, _ := syscall.UTF16PtrFromString(dllName)
 	dllBase, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(dllNameW)))
 	if dllBase == 0 {
-		return output, fmt.Errorf("GetModuleHandleW(%s) failed — DLL not loaded", dllName)
+		return output, fmt.Errorf("module %s not loaded", dllName)
 	}
 	output += fmt.Sprintf("[*] In-memory base: 0x%X\n", dllBase)
 
@@ -327,7 +327,7 @@ func checkDLLHooks(dllName string) (string, error) {
 	dllNameW, _ := syscall.UTF16PtrFromString(dllName)
 	dllBase, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(dllNameW)))
 	if dllBase == 0 {
-		return output, fmt.Errorf("GetModuleHandleW(%s) failed — DLL not loaded", dllName)
+		return output, fmt.Errorf("module %s not loaded", dllName)
 	}
 
 	// Map clean copy

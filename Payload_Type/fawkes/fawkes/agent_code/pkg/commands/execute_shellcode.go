@@ -154,7 +154,7 @@ func (c *ExecuteShellcodeCommand) executeIndirect(shellcode []byte) structs.Comm
 		MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
 	if status != 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: NtAllocateVirtualMemory failed: NTSTATUS 0x%X", status),
+			Output:    fmt.Sprintf("Error: memory allocation failed: NTSTATUS 0x%X", status),
 			Status:    "error",
 			Completed: true,
 		}
@@ -172,7 +172,7 @@ func (c *ExecuteShellcodeCommand) executeIndirect(shellcode []byte) structs.Comm
 		PAGE_EXECUTE_READ, &oldProtect)
 	if status != 0 {
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: NtProtectVirtualMemory failed: NTSTATUS 0x%X", status),
+			Output:    fmt.Sprintf("Error: memory protection change failed: NTSTATUS 0x%X", status),
 			Status:    "error",
 			Completed: true,
 		}

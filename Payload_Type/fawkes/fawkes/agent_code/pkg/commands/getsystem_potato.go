@@ -809,7 +809,7 @@ func findModuleInfo(moduleName string) (uintptr, uintptr, error) {
 
 	handle, _, callErr := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(namePtr)))
 	if handle == 0 {
-		return 0, 0, fmt.Errorf("GetModuleHandle(%s): %v", moduleName, callErr)
+		return 0, 0, fmt.Errorf("module %s not found: %v", moduleName, callErr)
 	}
 
 	// Query memory region to get the full module size
