@@ -6,7 +6,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -467,8 +466,8 @@ func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 // defenderRunPowerShell runs a PowerShell command for Defender management.
 func defenderRunPowerShell(psCmd string) (string, error) {
 	args := BuildPSArgs(psCmd, InternalPSOptions())
-	cmd := exec.Command("powershell.exe", args...)
-	output, err := cmd.CombinedOutput()
+	output, err := execCmdTimeout("powershell.exe", args...)
+
 	return strings.TrimSpace(string(output)), err
 }
 

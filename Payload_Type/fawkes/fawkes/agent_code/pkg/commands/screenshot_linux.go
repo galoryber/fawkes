@@ -143,9 +143,11 @@ func tryScreenshotTools(tmpFile string, tools []screenshotTool) error {
 			lastErr = fmt.Errorf("%s not found", tool.name)
 			continue
 		}
-		cmd := exec.Command(path, tool.args...)
+		cmd, cancel := execCmdCtx(path, tool.args...)
 		cmd.Env = os.Environ()
-		if output, err := cmd.CombinedOutput(); err != nil {
+		output, err := cmd.CombinedOutput()
+		cancel()
+		if err != nil {
 			lastErr = fmt.Errorf("%s failed: %v (%s)", tool.name, err, string(output))
 			continue
 		}

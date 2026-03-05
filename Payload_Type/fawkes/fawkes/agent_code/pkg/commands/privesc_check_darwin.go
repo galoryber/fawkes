@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"strconv"
@@ -118,7 +117,7 @@ func macPrivescCheckAll() structs.CommandResult {
 func macPrivescCheckSIP() structs.CommandResult {
 	var sb strings.Builder
 
-	out, err := exec.Command("csrutil", "status").CombinedOutput()
+	out, err := execCmdTimeout("csrutil", "status")
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("csrutil status failed: %v\n", err))
 	} else {
@@ -132,7 +131,7 @@ func macPrivescCheckSIP() structs.CommandResult {
 	}
 
 	// Check Authenticated Root (macOS 11+)
-	out, err = exec.Command("csrutil", "authenticated-root", "status").CombinedOutput()
+	out, err = execCmdTimeout("csrutil", "authenticated-root", "status")
 	if err == nil {
 		output := strings.TrimSpace(string(out))
 		if output != "" {
@@ -224,7 +223,7 @@ func macPrivescCheckSUID() structs.CommandResult {
 func macPrivescCheckSudo() structs.CommandResult {
 	var sb strings.Builder
 
-	out, err := exec.Command("sudo", "-n", "-l").CombinedOutput()
+	out, err := execCmdTimeout("sudo", "-n", "-l")
 	output := strings.TrimSpace(string(out))
 	if err != nil {
 		if strings.Contains(output, "password is required") || strings.Contains(output, "a password is required") {
@@ -429,7 +428,7 @@ func macPrivescCheckDylib() structs.CommandResult {
 	// Check if Hardened Runtime is common (look at a few key binaries)
 	binaries := []string{"/usr/bin/ssh", "/usr/bin/sudo", "/usr/bin/login"}
 	for _, bin := range binaries {
-		out, err := exec.Command("codesign", "-dv", bin).CombinedOutput()
+		out, err := execCmdTimeout("codesign", "-dv", bin)
 		if err == nil {
 			output := string(out)
 			if strings.Contains(output, "runtime") {
@@ -463,7 +462,7 @@ func macPrivescCheckDylib() structs.CommandResult {
 			}
 			count++
 			appPath := filepath.Join(dir, entry.Name())
-			out, err := exec.Command("codesign", "-v", appPath).CombinedOutput()
+			out, err := execCmdTimeout("codesign", "-v", appPath)
 			if err != nil {
 				output := string(out)
 				if strings.Contains(output, "not signed") || strings.Contains(output, "invalid signature") {

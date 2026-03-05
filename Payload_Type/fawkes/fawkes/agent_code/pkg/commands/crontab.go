@@ -5,7 +5,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -73,7 +72,7 @@ func crontabList(args crontabArgs) structs.CommandResult {
 		cmdArgs = []string{"-u", args.User, "-l"}
 	}
 
-	out, err := exec.Command("crontab", cmdArgs...).CombinedOutput()
+	out, err := execCmdTimeout("crontab", cmdArgs...)
 	if err != nil {
 		output := strings.TrimSpace(string(out))
 		// "no crontab for user" is not an error
@@ -139,7 +138,7 @@ func crontabAdd(args crontabArgs) structs.CommandResult {
 		cmdArgs = []string{"-u", args.User, "-l"}
 	}
 
-	existing, err := exec.Command("crontab", cmdArgs...).Output()
+	existing, err := execCmdTimeoutOutput("crontab", cmdArgs...)
 	if err != nil {
 		existing = []byte{} // No existing crontab is fine
 	}
@@ -156,7 +155,8 @@ func crontabAdd(args crontabArgs) structs.CommandResult {
 	if args.User != "" {
 		installArgs = []string{"-u", args.User, "-"}
 	}
-	cmd := exec.Command("crontab", installArgs...)
+	cmd, cancel := execCmdCtx("crontab", installArgs...)
+	defer cancel()
 	cmd.Stdin = strings.NewReader(newCrontab)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -190,7 +190,7 @@ func crontabRemove(args crontabArgs) structs.CommandResult {
 		cmdArgs = []string{"-u", args.User, "-l"}
 	}
 
-	existing, err := exec.Command("crontab", cmdArgs...).Output()
+	existing, err := execCmdTimeoutOutput("crontab", cmdArgs...)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    "Error: no crontab exists to remove entries from",
@@ -230,7 +230,8 @@ func crontabRemove(args crontabArgs) structs.CommandResult {
 	if args.User != "" {
 		installArgs = []string{"-u", args.User, "-"}
 	}
-	cmd := exec.Command("crontab", installArgs...)
+	cmd, cancel := execCmdCtx("crontab", installArgs...)
+	defer cancel()
 	cmd.Stdin = strings.NewReader(newCrontab)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

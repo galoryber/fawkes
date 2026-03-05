@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -350,7 +349,7 @@ func privescCheckSudo() structs.CommandResult {
 	var sb strings.Builder
 
 	// Try sudo -l (may require password — handle gracefully)
-	out, err := exec.Command("sudo", "-n", "-l").CombinedOutput()
+	out, err := execCmdTimeout("sudo", "-n", "-l")
 	output := strings.TrimSpace(string(out))
 	if err != nil {
 		if strings.Contains(output, "password is required") || strings.Contains(output, "a password is required") {

@@ -5,7 +5,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -36,8 +35,7 @@ func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResu
 	tf.Close()
 
 	// Use screencapture: -x = no sound, -t png = PNG format
-	cmd := exec.Command("screencapture", "-x", "-t", "png", tmpFile)
-	if output, err := cmd.CombinedOutput(); err != nil {
+	if output, err := execCmdTimeout("screencapture", "-x", "-t", "png", tmpFile); err != nil {
 		// Clean up on failure
 		os.Remove(tmpFile)
 		return structs.CommandResult{

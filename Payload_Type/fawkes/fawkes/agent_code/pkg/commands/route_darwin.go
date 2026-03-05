@@ -5,14 +5,13 @@ package commands
 import (
 	"fmt"
 	"net"
-	"os/exec"
 	"strings"
 )
 
 func enumerateRoutes() ([]RouteEntry, error) {
 	// Use netstat -rn to get routing table on macOS
 	// This is a common approach since macOS doesn't expose /proc/net/route
-	out, err := exec.Command("netstat", "-rn").Output()
+	out, err := execCmdTimeoutOutput("netstat", "-rn")
 	if err != nil {
 		return nil, fmt.Errorf("netstat -rn failed: %v", err)
 	}

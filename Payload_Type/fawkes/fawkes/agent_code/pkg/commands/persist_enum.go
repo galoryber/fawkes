@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -293,8 +292,7 @@ func persistEnumScheduledTasks(sb *strings.Builder) int {
 	count := 0
 
 	// Use schtasks /query which works at any privilege level
-	cmd := exec.Command("schtasks.exe", "/query", "/fo", "CSV", "/nh", "/v")
-	out, err := cmd.Output()
+	out, err := execCmdTimeoutOutput("schtasks.exe", "/query", "/fo", "CSV", "/nh", "/v")
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("  (schtasks query failed: %v)\n", err))
 		sb.WriteString("\n")

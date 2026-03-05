@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"os/exec"
 	"strings"
 )
 
@@ -11,7 +10,7 @@ import (
 // macOS does not expose ARP entries via a file like Linux's /proc/net/arp,
 // so subprocess is the practical approach.
 func getArpTable() ([]arpEntry, error) {
-	out, err := exec.Command("arp", "-a").CombinedOutput()
+	out, err := execCmdTimeout("arp", "-a")
 	if err != nil {
 		return nil, err
 	}

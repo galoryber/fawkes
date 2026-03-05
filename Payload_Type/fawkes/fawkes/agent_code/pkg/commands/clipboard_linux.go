@@ -61,9 +61,11 @@ func writeClipboard(text string) structs.CommandResult {
 		if err != nil {
 			continue
 		}
-		cmd := exec.Command(path, tool.args...)
+		cmd, cancel := execCmdCtx(path, tool.args...)
 		cmd.Stdin = strings.NewReader(text)
-		if err := cmd.Run(); err != nil {
+		err = cmd.Run()
+		cancel()
+		if err != nil {
 			continue
 		}
 		return structs.CommandResult{
@@ -97,7 +99,7 @@ func clipReadWithTool() (string, string, error) {
 			lastErr = err
 			continue
 		}
-		out, err := exec.Command(path, tool.args...).Output()
+		out, err := execCmdTimeoutOutput(path, tool.args...)
 		if err != nil {
 			lastErr = err
 			continue

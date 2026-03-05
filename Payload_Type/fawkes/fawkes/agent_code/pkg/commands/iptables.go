@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -104,7 +103,7 @@ func iptablesStatus() structs.CommandResult {
 
 	// nftables check
 	sb.WriteString("\nnftables:\n")
-	if out, err := exec.Command("nft", "list", "tables").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("nft", "list", "tables"); err == nil {
 		lines := strings.TrimSpace(string(out))
 		if lines == "" {
 			sb.WriteString("  (no tables)\n")
@@ -119,7 +118,7 @@ func iptablesStatus() structs.CommandResult {
 
 	// ufw check
 	sb.WriteString("\nufw:\n")
-	if out, err := exec.Command("ufw", "status").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("ufw", "status"); err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			sb.WriteString(fmt.Sprintf("  %s\n", line))
 		}
@@ -156,7 +155,7 @@ func iptablesRules(args iptablesArgs) structs.CommandResult {
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
 
 	iptArgs := []string{"-t", table, "-L", "-n", "-v", "--line-numbers"}
-	if out, err := exec.Command("iptables", iptArgs...).CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("iptables", iptArgs...); err == nil {
 		sb.WriteString(string(out))
 	} else {
 		sb.WriteString(fmt.Sprintf("Error: %v\n%s\n", err, string(out)))
@@ -167,14 +166,14 @@ func iptablesRules(args iptablesArgs) structs.CommandResult {
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
 
 	ip6Args := []string{"-t", table, "-L", "-n", "-v", "--line-numbers"}
-	if out, err := exec.Command("ip6tables", ip6Args...).CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("ip6tables", ip6Args...); err == nil {
 		sb.WriteString(string(out))
 	} else {
 		sb.WriteString(fmt.Sprintf("Error: %v\n", err))
 	}
 
 	// Also show nftables if available
-	if out, err := exec.Command("nft", "list", "ruleset").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("nft", "list", "ruleset"); err == nil {
 		nftOut := strings.TrimSpace(string(out))
 		if nftOut != "" {
 			sb.WriteString("\nnftables ruleset\n")
@@ -196,14 +195,14 @@ func iptablesNAT() structs.CommandResult {
 	sb.WriteString("NAT Rules\n")
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
 
-	if out, err := exec.Command("iptables", "-t", "nat", "-L", "-n", "-v", "--line-numbers").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("iptables", "-t", "nat", "-L", "-n", "-v", "--line-numbers"); err == nil {
 		sb.WriteString(string(out))
 	} else {
 		sb.WriteString(fmt.Sprintf("iptables NAT error: %v\n%s\n", err, string(out)))
 	}
 
 	// nftables NAT
-	if out, err := exec.Command("nft", "list", "table", "ip", "nat").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("nft", "list", "table", "ip", "nat"); err == nil {
 		nftOut := strings.TrimSpace(string(out))
 		if nftOut != "" {
 			sb.WriteString("\nnftables NAT\n")
@@ -235,7 +234,7 @@ func iptablesAdd(args iptablesArgs) structs.CommandResult {
 	}
 	cmdArgs = append(cmdArgs, parts...)
 
-	out, err := exec.Command("iptables", cmdArgs...).CombinedOutput()
+	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
 		return structs.CommandResult{
 			Output: fmt.Sprintf("Error adding rule: %v\n%s", err, string(out)),
@@ -265,7 +264,7 @@ func iptablesDelete(args iptablesArgs) structs.CommandResult {
 	}
 	cmdArgs = append(cmdArgs, parts...)
 
-	out, err := exec.Command("iptables", cmdArgs...).CombinedOutput()
+	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
 		return structs.CommandResult{
 			Output: fmt.Sprintf("Error deleting rule: %v\n%s", err, string(out)),
@@ -292,7 +291,7 @@ func iptablesFlush(args iptablesArgs) structs.CommandResult {
 		cmdArgs = append(cmdArgs, chain)
 	}
 
-	out, err := exec.Command("iptables", cmdArgs...).CombinedOutput()
+	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
 		return structs.CommandResult{
 			Output: fmt.Sprintf("Error flushing rules: %v\n%s", err, string(out)),

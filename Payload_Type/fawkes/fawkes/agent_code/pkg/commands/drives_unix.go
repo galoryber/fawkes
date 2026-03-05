@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"syscall"
 
@@ -132,7 +131,7 @@ func parseProcMounts() []mountEntry {
 }
 
 func parseMountCommand() []mountEntry {
-	out, err := exec.Command("mount").Output()
+	out, err := execCmdTimeoutOutput("mount")
 	if err != nil {
 		return nil
 	}

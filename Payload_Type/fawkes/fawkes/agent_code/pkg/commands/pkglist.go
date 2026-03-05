@@ -3,7 +3,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 
@@ -223,10 +222,9 @@ func pkgListWindows() string {
 	return sb.String()
 }
 
-// runQuietCommand runs a command and returns stdout, or empty string on error.
+// runQuietCommand runs a command with a timeout and returns stdout, or empty string on error.
 func runQuietCommand(name string, args ...string) string {
-	cmd := exec.Command(name, args...)
-	out, err := cmd.Output()
+	out, err := execCmdTimeoutOutput(name, args...)
 	if err != nil {
 		return ""
 	}

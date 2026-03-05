@@ -4,7 +4,6 @@ package commands
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 )
 
@@ -14,7 +13,7 @@ func lastPlatform(args lastArgs) []lastLoginEntry {
 		cmdArgs = append(cmdArgs, args.User)
 	}
 
-	out, err := exec.Command("last", cmdArgs...).CombinedOutput()
+	out, err := execCmdTimeout("last", cmdArgs...)
 	if err != nil {
 		return nil
 	}

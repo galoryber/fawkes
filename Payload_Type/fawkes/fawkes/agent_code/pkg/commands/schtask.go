@@ -7,7 +7,6 @@ import (
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"runtime"
 	"strings"
 
@@ -507,7 +506,7 @@ type schtaskListEntry struct {
 func schtaskList() structs.CommandResult {
 	// Use schtasks.exe /query /fo CSV — reliable across all Windows versions.
 	// COM-based iteration (ForEach, Count+Item) hangs in Go's COM apartment model.
-	out, err := exec.Command("schtasks.exe", "/query", "/fo", "CSV", "/nh").CombinedOutput()
+	out, err := execCmdTimeout("schtasks.exe", "/query", "/fo", "CSV", "/nh")
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error running schtasks.exe: %v\n%s", err, string(out)),

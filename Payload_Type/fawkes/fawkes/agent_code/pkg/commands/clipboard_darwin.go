@@ -4,14 +4,13 @@ package commands
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"fawkes/pkg/structs"
 )
 
 func readClipboard() structs.CommandResult {
-	out, err := exec.Command("pbpaste").Output()
+	out, err := execCmdTimeoutOutput("pbpaste")
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Failed to read clipboard: %v", err),
@@ -37,7 +36,8 @@ func readClipboard() structs.CommandResult {
 }
 
 func writeClipboard(text string) structs.CommandResult {
-	cmd := exec.Command("pbcopy")
+	cmd, cancel := execCmdCtx("pbcopy")
+	defer cancel()
 	cmd.Stdin = strings.NewReader(text)
 	if err := cmd.Run(); err != nil {
 		return structs.CommandResult{
@@ -55,7 +55,7 @@ func writeClipboard(text string) structs.CommandResult {
 }
 
 func clipReadText() string {
-	out, err := exec.Command("pbpaste").Output()
+	out, err := execCmdTimeoutOutput("pbpaste")
 	if err != nil {
 		return ""
 	}

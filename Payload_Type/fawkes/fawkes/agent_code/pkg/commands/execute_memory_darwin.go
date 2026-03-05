@@ -88,8 +88,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 
 	// Ad-hoc codesign — required on Apple Silicon (arm64) for unsigned binaries.
 	// Without signing, macOS kills the process immediately with SIGKILL.
-	signCmd := exec.Command("/usr/bin/codesign", "-s", "-", tmpPath)
-	if signOut, signErr := signCmd.CombinedOutput(); signErr != nil {
+	if signOut, signErr := execCmdTimeout("/usr/bin/codesign", "-s", "-", tmpPath); signErr != nil {
 		os.Remove(tmpPath)
 		return errorf("Error code signing binary: %v: %s", signErr, string(signOut))
 	}
