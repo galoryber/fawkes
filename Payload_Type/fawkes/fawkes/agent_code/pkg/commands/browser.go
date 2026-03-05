@@ -605,6 +605,7 @@ func readCookieData(dbPath string, key []byte, browserName, profileName string) 
 		label = fmt.Sprintf("%s (%s)", browserName, profileName)
 	}
 
+	var total, decryptFails int
 	for rows.Next() {
 		var host, name, path string
 		var encValue []byte
@@ -619,8 +620,10 @@ func readCookieData(dbPath string, key []byte, browserName, profileName string) 
 			continue
 		}
 
+		total++
 		value, err := decryptPassword(encValue, key)
 		if err != nil || value == "" {
+			decryptFails++
 			continue
 		}
 
@@ -634,6 +637,10 @@ func readCookieData(dbPath string, key []byte, browserName, profileName string) 
 			Secure:   isSecure != 0,
 			HTTPOnly: isHTTPOnly != 0,
 		})
+	}
+
+	if decryptFails > 0 && len(cookies) == 0 {
+		return cookies, fmt.Errorf("all %d cookies failed to decrypt (Chrome 127+/Edge App-Bound Encryption may be active)", total)
 	}
 
 	return cookies, nil
