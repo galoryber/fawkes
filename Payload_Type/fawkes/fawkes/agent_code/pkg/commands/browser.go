@@ -210,12 +210,27 @@ func decryptPassword(encryptedPassword []byte, key []byte) (string, error) {
 	return string(plaintext), nil
 }
 
-// copyFile copies src to dst for safe reading of locked databases
+// copyFile copies src to dst for safe reading of locked databases.
+// Uses CreateFileW with full sharing flags (READ|WRITE|DELETE) to bypass
+// browser file locks on Cookies/Login Data SQLite databases.
 func copyFile(src, dst string) error {
-	in, err := os.Open(src)
+	srcPtr, err := windows.UTF16PtrFromString(src)
 	if err != nil {
 		return err
 	}
+	h, err := windows.CreateFile(
+		srcPtr,
+		windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_ATTRIBUTE_NORMAL,
+		0,
+	)
+	if err != nil {
+		return fmt.Errorf("open %s: %w", filepath.Base(src), err)
+	}
+	in := os.NewFile(uintptr(h), src)
 	defer in.Close()
 
 	out, err := os.Create(dst)
