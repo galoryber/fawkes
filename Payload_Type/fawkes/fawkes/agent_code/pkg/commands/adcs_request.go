@@ -174,7 +174,8 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 		}
 	}
 
-	if resp.Disposition == crDispIssued || resp.Disposition == crDispIssuedOutOfBand {
+	switch resp.Disposition {
+	case crDispIssued, crDispIssuedOutOfBand:
 		// Certificate was issued
 		if resp.EncodedCert != nil && len(resp.EncodedCert.Buffer) > 0 {
 			certPEM := pem.EncodeToMemory(&pem.Block{
@@ -210,10 +211,10 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 				}
 			}
 		}
-	} else if resp.Disposition == crDispUnderSubmission {
+	case crDispUnderSubmission:
 		sb.WriteString("\nCertificate request is PENDING manager approval.\n")
 		sb.WriteString(fmt.Sprintf("Use request ID %d to retrieve it later.\n", resp.RequestID))
-	} else {
+	default:
 		sb.WriteString("\nCertificate request was DENIED or failed.\n")
 	}
 
