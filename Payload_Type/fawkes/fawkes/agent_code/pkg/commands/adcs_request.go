@@ -385,15 +385,15 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		return nil, fmt.Errorf("activation client: %v", err)
 	}
 
-	// ClassID for CertRequestD COM class
-	// The cert server process hosts both CertAdminD and CertRequestD interfaces.
-	// CertAdminD ClassID d99e6e73 is used in go-msrpc examples; CertRequestD
-	// shares the same server. We request ICertRequestD IID from the activation.
-	certRequestClassID := dtyp.GUIDFromUUID(uuid.MustParse("d99e6e74-fc88-11d0-b498-00a0c90312f3"))
+	// ClassID for the certificate server COM class.
+	// d99e6e73 is used in go-msrpc's csra example for CertAdminD. The same COM
+	// server process hosts both admin and request interfaces, so we use the same
+	// ClassID but request the ICertRequestD IID.
+	certServerClassID := dtyp.GUIDFromUUID(uuid.MustParse("d99e6e73-fc88-11d0-b498-00a0c90312f3"))
 
 	act, err := iact.RemoteActivation(ctx, &iactivation.RemoteActivationRequest{
 		ORPCThis:                   &dcom.ORPCThis{Version: srv.COMVersion},
-		ClassID:                    certRequestClassID,
+		ClassID:                    certServerClassID,
 		IIDs:                       []*dcom.IID{icertrequestd.CertRequestDIID},
 		RequestedProtocolSequences: []uint16{7, 15}, // ncacn_ip_tcp, ncacn_np
 	})
