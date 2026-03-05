@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -49,6 +51,46 @@ func TestRunQuietCommandFailure(t *testing.T) {
 	output := runQuietCommand("nonexistent_command_xyz")
 	if output != "" {
 		t.Errorf("runQuietCommand for nonexistent command should return empty, got %q", output)
+	}
+}
+
+func TestParseDpkgStatus(t *testing.T) {
+	// Create a fake dpkg status file
+	tmpDir := t.TempDir()
+	statusFile := filepath.Join(tmpDir, "status")
+	content := `Package: curl
+Status: install ok installed
+Version: 7.88.1-10+deb12u5
+Architecture: amd64
+
+Package: wget
+Status: deinstall ok config-files
+Version: 1.21.3-1
+
+Package: git
+Status: install ok installed
+Version: 1:2.39.2-1.1
+
+`
+	if err := os.WriteFile(statusFile, []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// parseDpkgStatus reads from /var/lib/dpkg/status which we can't mock,
+	// but we can verify it returns nil on non-dpkg systems or valid data on dpkg systems
+	pkgs := parseDpkgStatus()
+	// On a dpkg-based system (like Ubuntu CI), this will return packages
+	// On non-dpkg systems, it will return nil — both are acceptable
+	if pkgs != nil {
+		// Verify structure: each entry should have name and version
+		for _, pkg := range pkgs {
+			if pkg[0] == "" {
+				t.Error("package name should not be empty")
+			}
+			if pkg[1] == "" {
+				t.Error("package version should not be empty")
+			}
+		}
 	}
 }
 

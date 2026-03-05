@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"runtime"
@@ -42,9 +43,18 @@ func pkgListLinux() string {
 
 	found := false
 
-	// Try dpkg (Debian/Ubuntu)
-	output := runQuietCommand("dpkg-query", "-W", "-f", "${Package}\t${Version}\t${Status}\n")
-	if output != "" {
+	// Try dpkg (Debian/Ubuntu) — native file parsing first, then subprocess fallback
+	if pkgs := parseDpkgStatus(); len(pkgs) > 0 {
+		sb.WriteString(fmt.Sprintf("  Package Manager: dpkg (%d installed)\n", len(pkgs)))
+		for i, pkg := range pkgs {
+			sb.WriteString(fmt.Sprintf("    %-40s %s\n", pkg[0], pkg[1]))
+			if i >= 99 {
+				sb.WriteString(fmt.Sprintf("    ... and %d more (showing first 100)\n", len(pkgs)-100))
+				break
+			}
+		}
+		found = true
+	} else if output := runQuietCommand("dpkg-query", "-W", "-f", "${Package}\t${Version}\t${Status}\n"); output != "" {
 		lines := strings.Split(strings.TrimSpace(output), "\n")
 		installed := 0
 		for _, line := range lines {
@@ -53,7 +63,6 @@ func pkgListLinux() string {
 			}
 		}
 		sb.WriteString(fmt.Sprintf("  Package Manager: dpkg (%d installed)\n", installed))
-		// Show first 50 packages to avoid huge output
 		count := 0
 		for _, line := range lines {
 			if !strings.Contains(line, "install ok installed") {
@@ -74,7 +83,7 @@ func pkgListLinux() string {
 
 	// Try rpm (RHEL/CentOS/Fedora)
 	if !found {
-		output = runQuietCommand("rpm", "-qa", "--queryformat", "%{NAME}\t%{VERSION}-%{RELEASE}\n")
+		output := runQuietCommand("rpm", "-qa", "--queryformat", "%{NAME}\t%{VERSION}-%{RELEASE}\n")
 		if output != "" {
 			lines := strings.Split(strings.TrimSpace(output), "\n")
 			sb.WriteString(fmt.Sprintf("  Package Manager: rpm (%d installed)\n", len(lines)))
@@ -94,7 +103,7 @@ func pkgListLinux() string {
 
 	// Try apk (Alpine)
 	if !found {
-		output = runQuietCommand("apk", "list", "--installed")
+		output := runQuietCommand("apk", "list", "--installed")
 		if output != "" {
 			lines := strings.Split(strings.TrimSpace(output), "\n")
 			sb.WriteString(fmt.Sprintf("  Package Manager: apk (%d installed)\n", len(lines)))
@@ -220,6 +229,43 @@ func pkgListWindows() string {
 	}
 
 	return sb.String()
+}
+
+// parseDpkgStatus reads /var/lib/dpkg/status directly to enumerate installed packages.
+// Returns [name, version] pairs for packages with Status: install ok installed.
+func parseDpkgStatus() [][2]string {
+	f, err := os.Open("/var/lib/dpkg/status")
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	var pkgs [][2]string
+	var name, version, status string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			// End of package block
+			if name != "" && status == "install ok installed" {
+				pkgs = append(pkgs, [2]string{name, version})
+			}
+			name, version, status = "", "", ""
+			continue
+		}
+		if strings.HasPrefix(line, "Package: ") {
+			name = line[9:]
+		} else if strings.HasPrefix(line, "Version: ") {
+			version = line[9:]
+		} else if strings.HasPrefix(line, "Status: ") {
+			status = line[8:]
+		}
+	}
+	// Handle last block if file doesn't end with blank line
+	if name != "" && status == "install ok installed" {
+		pkgs = append(pkgs, [2]string{name, version})
+	}
+	return pkgs
 }
 
 // runQuietCommand runs a command with a timeout and returns stdout, or empty string on error.
