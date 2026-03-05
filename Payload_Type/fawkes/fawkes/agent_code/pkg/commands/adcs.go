@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
@@ -13,6 +14,8 @@ import (
 	"fawkes/pkg/structs"
 
 	"github.com/go-ldap/ldap/v3"
+	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
+	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 )
 
 type AdcsCommand struct{}
@@ -158,7 +161,7 @@ func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 	case "templates":
 		return adcsEnumerateTemplates(conn, configDN)
 	case "find":
-		return adcsFindVulnerable(conn, configDN, baseDN)
+		return adcsFindVulnerable(conn, configDN, baseDN, args)
 	default:
 		return structs.CommandResult{
 			Output:    "Error: action must be one of: cas, templates, find, request",
@@ -325,12 +328,13 @@ func adcsEnumerateTemplates(conn *ldap.Conn, configDN string) structs.CommandRes
 }
 
 // adcsFindVulnerable checks published templates for ESC1-ESC4 vulnerabilities
-func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string) structs.CommandResult {
-	// Get published templates from CAs
+// and queries each CA via DCOM for ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2).
+func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs) structs.CommandResult {
+	// Get published templates from CAs (include dNSHostName for DCOM ESC6 check)
 	caBase := fmt.Sprintf("CN=Enrollment Services,CN=Public Key Services,CN=Services,%s", configDN)
 	caReq := ldap.NewSearchRequest(caBase, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
 		0, 30, false, "(objectCategory=pKIEnrollmentService)",
-		[]string{"cn", "certificateTemplates"}, nil)
+		[]string{"cn", "certificateTemplates", "dNSHostName"}, nil)
 
 	caResult, err := conn.Search(caReq)
 	if err != nil {
@@ -453,8 +457,77 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string) structs.Comman
 	} else {
 		sb.WriteString(fmt.Sprintf("Found %d vulnerable template(s)\n", vulnCount))
 	}
-	sb.WriteString("\nNote: ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2) and ESC8 (HTTP enrollment)\n")
-	sb.WriteString("require CA configuration checks not available via LDAP.\n")
+
+	// ESC6: Check each CA for EDITF_ATTRIBUTESUBJECTALTNAME2 via DCOM
+	if args.Username != "" && (args.Password != "" || args.Hash != "") {
+		sb.WriteString("\n" + strings.Repeat("-", 60) + "\n")
+		sb.WriteString("ESC6 Check (EDITF_ATTRIBUTESUBJECTALTNAME2)\n")
+		sb.WriteString(strings.Repeat("-", 60) + "\n")
+
+		domain := args.Domain
+		username := args.Username
+		if domain == "" {
+			if parts := strings.SplitN(username, `\`, 2); len(parts) == 2 {
+				domain = parts[0]
+				username = parts[1]
+			} else if parts := strings.SplitN(username, "@", 2); len(parts) == 2 {
+				domain = parts[1]
+				username = parts[0]
+			}
+		}
+		credUser := username
+		if domain != "" {
+			credUser = domain + `\` + username
+		}
+
+		var cred sspcred.Credential
+		if args.Hash != "" {
+			hash := args.Hash
+			if parts := strings.SplitN(hash, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
+				hash = parts[1]
+			}
+			cred = sspcred.NewFromNTHash(credUser, hash)
+		} else {
+			cred = sspcred.NewFromPassword(credUser, args.Password)
+		}
+
+		timeout := args.Timeout
+		if timeout <= 0 {
+			timeout = 30
+		}
+
+		for _, ca := range caResult.Entries {
+			caName := ca.GetAttributeValue("cn")
+			caHost := ca.GetAttributeValue("dNSHostName")
+			if caHost == "" {
+				sb.WriteString(fmt.Sprintf("  %s: SKIP (no dNSHostName in LDAP)\n", caName))
+				continue
+			}
+
+			ctx, cancel := context.WithTimeout(
+				gssapi.NewSecurityContext(context.Background()),
+				time.Duration(timeout)*time.Second)
+			editFlags, err := adcsQueryEditFlags(ctx, caHost, caName, cred)
+			cancel()
+
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("  %s (%s): ERROR — %v\n", caName, caHost, err))
+				continue
+			}
+
+			if editFlags&editfAttributeSubjectAltName2 != 0 {
+				vulnCount++
+				sb.WriteString(fmt.Sprintf("[!] %s (%s): ESC6 VULNERABLE\n", caName, caHost))
+				sb.WriteString(fmt.Sprintf("    EditFlags: 0x%08x (EDITF_ATTRIBUTESUBJECTALTNAME2 is SET)\n", editFlags))
+				sb.WriteString("    Any template with enrollment rights can be used for impersonation\n")
+			} else {
+				sb.WriteString(fmt.Sprintf("  %s (%s): EditFlags=0x%08x (ESC6 not vulnerable)\n", caName, caHost, editFlags))
+			}
+		}
+	} else {
+		sb.WriteString("\nNote: ESC6 check requires credentials (-username/-password or -hash).\n")
+		sb.WriteString("ESC8 (HTTP enrollment) requires manual verification.\n")
+	}
 
 	return structs.CommandResult{
 		Output:    sb.String(),

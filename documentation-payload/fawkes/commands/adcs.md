@@ -15,7 +15,7 @@ Includes binary security descriptor parsing to identify which users/groups can e
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `action` | Yes | `find` | `cas`: list CAs, `templates`: list templates, `find`: find vulnerable templates (ESC1-ESC4), `request`: request a certificate via DCOM |
+| `action` | Yes | `find` | `cas`: list CAs, `templates`: list templates, `find`: find vulnerable templates (ESC1-ESC4, ESC6), `request`: request a certificate via DCOM |
 | `server` | Yes | | Domain controller or CA server IP/hostname |
 | `username` | No | | Username (DOMAIN\user or user@domain format) |
 | `password` | No | | Password for authentication |
@@ -37,6 +37,7 @@ Includes binary security descriptor parsing to identify which users/groups can e
 | ESC2 | Any Purpose / SubCA | Any Purpose EKU or no EKU (SubCA) + low-priv enrollment |
 | ESC3 | Certificate Request Agent | Certificate Request Agent EKU + low-priv enrollment |
 | ESC4 | Template ACL Abuse | Low-priv user has WriteDACL/WriteOwner/GenericAll on template |
+| ESC6 | EDITF_ATTRIBUTESUBJECTALTNAME2 | CA policy EditFlags has `EDITF_ATTRIBUTESUBJECTALTNAME2` set (checked via DCOM ICertAdminD2::GetConfigEntry) |
 
 Low-privilege groups detected: Everyone, Authenticated Users, BUILTIN\Users, Domain Users (RID 513), Domain Computers (RID 515).
 
@@ -112,6 +113,13 @@ CAs: 1 | Templates: 40 | Published: 18
     EKUs: Client Authentication
 
 Found 1 vulnerable template(s)
+
+------------------------------------------------------------
+ESC6 Check (EDITF_ATTRIBUTESUBJECTALTNAME2)
+------------------------------------------------------------
+[!] ESSOS-CA (braavos.essos.local): ESC6 VULNERABLE
+    EditFlags: 0x00052000 (EDITF_ATTRIBUTESUBJECTALTNAME2 is SET)
+    Any template with enrollment rights can be used for impersonation
 ```
 
 ## Notes

@@ -18,6 +18,8 @@ import (
 	"github.com/oiweiwei/go-msrpc/dcerpc"
 	"github.com/oiweiwei/go-msrpc/midl/uuid"
 	"github.com/oiweiwei/go-msrpc/msrpc/dcom"
+	csra_client "github.com/oiweiwei/go-msrpc/msrpc/dcom/csra/client"
+	"github.com/oiweiwei/go-msrpc/msrpc/dcom/csra/icertadmind2/v0"
 	"github.com/oiweiwei/go-msrpc/msrpc/dcom/iactivation/v0"
 	"github.com/oiweiwei/go-msrpc/msrpc/dcom/iobjectexporter/v0"
 	wcce_client "github.com/oiweiwei/go-msrpc/msrpc/dcom/wcce/client"
@@ -455,6 +457,99 @@ func adcsDispositionString(d uint32) string {
 	default:
 		return "ERROR"
 	}
+}
+
+// EDITF_ATTRIBUTESUBJECTALTNAME2 — CA policy flag enabling ESC6.
+// When set, the CA accepts SANs specified in request attributes, allowing
+// any template to be used for impersonation regardless of template config.
+const editfAttributeSubjectAltName2 = 0x00040000
+
+// adcsQueryEditFlags connects to a CA via DCOM (ICertAdminD2) and retrieves
+// the EditFlags from the policy module configuration. This is used to detect
+// ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2).
+// Returns the EditFlags value, or an error if the query fails.
+func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred.Credential) (uint32, error) {
+	credOpt := dcerpc.WithCredentials(cred)
+
+	// Connect to EPM on port 135
+	cc, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"))
+	if err != nil {
+		return 0, fmt.Errorf("dial EPM on %s:135: %v", server, err)
+	}
+	defer cc.Close(ctx)
+
+	// ObjectExporter — ServerAlive2
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt)
+	if err != nil {
+		return 0, fmt.Errorf("object exporter client: %v", err)
+	}
+	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
+	if err != nil {
+		return 0, fmt.Errorf("ServerAlive2: %v", err)
+	}
+
+	// RemoteActivation — activate CertAdminD class (d99e6e73) with ICertAdminD2 IID
+	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt)
+	if err != nil {
+		return 0, fmt.Errorf("activation client: %v", err)
+	}
+
+	certAdminClassID := dtyp.GUIDFromUUID(uuid.MustParse("d99e6e73-fc88-11d0-b498-00a0c90312f3"))
+	act, err := iact.RemoteActivation(ctx, &iactivation.RemoteActivationRequest{
+		ORPCThis:                   &dcom.ORPCThis{Version: srv.COMVersion},
+		ClassID:                    certAdminClassID,
+		IIDs:                       []*dcom.IID{icertadmind2.CertAdminD2IID},
+		RequestedProtocolSequences: []uint16{7, 15},
+	})
+	if err != nil {
+		return 0, fmt.Errorf("RemoteActivation: %v", err)
+	}
+	if act.HResult != 0 {
+		return 0, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", act.HResult)
+	}
+
+	// Dial OXID endpoint
+	conn, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"),
+		act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp")...)
+	if err != nil {
+		return 0, fmt.Errorf("dial OXID endpoint: %v", err)
+	}
+	defer conn.Close(ctx)
+
+	// Create CSRA client (CertAdminD + CertAdminD2)
+	ctx = gssapi.NewSecurityContext(ctx)
+	csraCli, err := csra_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt)
+	if err != nil {
+		return 0, fmt.Errorf("CSRA client: %v", err)
+	}
+	csraCli = csraCli.IPID(ctx, act.InterfaceData[0].IPID())
+
+	// Query EditFlags via GetConfigEntry
+	resp, err := csraCli.CertAdminD2().GetConfigEntry(ctx, &icertadmind2.GetConfigEntryRequest{
+		This:      &dcom.ORPCThis{Version: srv.COMVersion},
+		Authority: caName,
+		NodePath:  `PolicyModules\CertificateAuthority_MicrosoftDefault.Policy`,
+		Entry:     "EditFlags",
+	})
+	if err != nil {
+		return 0, fmt.Errorf("GetConfigEntry(EditFlags): %v", err)
+	}
+
+	// EditFlags is REG_DWORD → VT_I4 → VarUnion.Long
+	if resp.Variant != nil && resp.Variant.VarUnion != nil {
+		if val := resp.Variant.VarUnion.GetValue(); val != nil {
+			switch v := val.(type) {
+			case int32:
+				return uint32(v), nil
+			case uint32:
+				return v, nil
+			case int64:
+				return uint32(v), nil
+			}
+		}
+	}
+
+	return 0, fmt.Errorf("unexpected variant type for EditFlags")
 }
 
 // adcsDecodeUTF16 decodes a UTF-16LE byte slice to a Go string.

