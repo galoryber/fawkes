@@ -121,6 +121,32 @@ func TestDcsyncDomainParsing(t *testing.T) {
 	}
 }
 
+func TestDcsyncDecodeUTF16LE(t *testing.T) {
+	tests := []struct {
+		name  string
+		input []byte
+		want  string
+	}{
+		{"empty", nil, ""},
+		{"single byte (odd)", []byte{0x41}, ""},
+		{"ASCII hello", []byte{'H', 0, 'e', 0, 'l', 0, 'l', 0, 'o', 0}, "Hello"},
+		{"with null terminator", []byte{'O', 0, 'K', 0, 0, 0}, "OK"},
+		{"unicode", []byte{0xE9, 0x00}, "\u00e9"},                // é
+		{"CJK", []byte{0x2D, 0x4E}, "\u4e2d"},                    // 中
+		{"multi-word", []byte{'A', 0, ' ', 0, 'B', 0}, "A B"},
+		{"only nulls", []byte{0, 0, 0, 0}, ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := dcsyncDecodeUTF16LE(tt.input)
+			if got != tt.want {
+				t.Errorf("dcsyncDecodeUTF16LE(%v) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestDcsyncTargetParsing(t *testing.T) {
 	tests := []struct {
 		target string
