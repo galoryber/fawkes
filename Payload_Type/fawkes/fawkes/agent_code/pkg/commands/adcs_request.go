@@ -367,7 +367,8 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	defer cc.Close(ctx)
 
 	// Step 2: ObjectExporter — ServerAlive2 to get COM version and bindings
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSeal())
+	// EPM/ObjectExporter at port 135 does not require authentication
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc)
 	if err != nil {
 		return nil, fmt.Errorf("object exporter client: %v", err)
 	}
@@ -378,7 +379,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	}
 
 	// Step 3: RemoteActivation — activate ICertRequestD via DCOM
-	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSeal())
+	iact, err := iactivation.NewActivationClient(ctx, cc)
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %v", err)
 	}
