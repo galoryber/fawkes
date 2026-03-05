@@ -620,6 +620,100 @@ func TestParseUserVValue_ValidStructure(t *testing.T) {
 	}
 }
 
+func TestParseUserVValue_WithHashes(t *testing.T) {
+	// Construct a V value that has actual hash data (length > 4) to exercise
+	// the decryption branches for both NT and LM hashes.
+	rid := uint32(500)
+	hashedBootKey := []byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10}
+
+	// Known plaintext hash (what we expect after decryption)
+	plainHash := []byte{0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE,
+		0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF}
+
+	// Build encrypted hash data for RC4 (revision 0x01):
+	// SAM_HASH: pekID(2) + revision(2) + encHash(16) = 20 bytes
+	key1, key2 := desKeysFromRID(rid)
+	block1, _ := des.NewCipher(key1)
+	block2, _ := des.NewCipher(key2)
+	desEnc := make([]byte, 16)
+	block1.Encrypt(desEnc[:8], plainHash[:8])
+	block2.Encrypt(desEnc[8:], plainHash[8:])
+
+	// RC4 encrypt with NTPASSWORD
+	ridBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(ridBytes, rid)
+	h := md5.New()
+	h.Write(hashedBootKey)
+	h.Write(ridBytes)
+	h.Write(samNTPASSWD)
+	rc4Key := h.Sum(nil)
+	c, _ := rc4.NewCipher(rc4Key)
+	rc4Enc := make([]byte, 16)
+	c.XORKeyStream(rc4Enc, desEnc)
+	ntHashData := make([]byte, 20)
+	copy(ntHashData[4:], rc4Enc)
+
+	// RC4 encrypt with LMPASSWORD
+	h2 := md5.New()
+	h2.Write(hashedBootKey)
+	h2.Write(ridBytes)
+	h2.Write(samLMPASSWD)
+	rc4KeyLM := h2.Sum(nil)
+	c2, _ := rc4.NewCipher(rc4KeyLM)
+	rc4EncLM := make([]byte, 16)
+	c2.XORKeyStream(rc4EncLM, desEnc)
+	lmHashData := make([]byte, 20)
+	copy(lmHashData[4:], rc4EncLM)
+
+	// Username "Admin" in UTF-16LE
+	nameUTF16 := []byte{0x41, 0x00, 0x64, 0x00, 0x6D, 0x00, 0x69, 0x00, 0x6E, 0x00}
+
+	// Build V value: header (0xCC bytes) + data area
+	// Data layout after 0xCC: [name(10)] [lmHash(20)] [ntHash(20)]
+	nameRelOff := uint32(0) // relative to 0xCC
+	lmRelOff := uint32(len(nameUTF16))
+	ntRelOff := lmRelOff + uint32(len(lmHashData))
+
+	dataSize := len(nameUTF16) + len(lmHashData) + len(ntHashData)
+	v := make([]byte, 0xCC+dataSize)
+
+	// Name: offset at v[0x0C], length at v[0x10]
+	binary.LittleEndian.PutUint32(v[0x0C:0x10], nameRelOff)
+	binary.LittleEndian.PutUint32(v[0x10:0x14], uint32(len(nameUTF16)))
+
+	// LM hash: offset at v[0x9C], length at v[0xA0]
+	binary.LittleEndian.PutUint32(v[0x9C:0xA0], lmRelOff)
+	binary.LittleEndian.PutUint32(v[0xA0:0xA4], uint32(len(lmHashData)))
+
+	// NT hash: offset at v[0xA8], length at v[0xAC]
+	binary.LittleEndian.PutUint32(v[0xA8:0xAC], ntRelOff)
+	binary.LittleEndian.PutUint32(v[0xAC:0xB0], uint32(len(ntHashData)))
+
+	// Copy data
+	copy(v[0xCC:], nameUTF16)
+	copy(v[0xCC+lmRelOff:], lmHashData)
+	copy(v[0xCC+ntRelOff:], ntHashData)
+
+	result, err := parseUserVValue(v, rid, hashedBootKey, 0x01)
+	if err != nil {
+		t.Fatalf("parseUserVValue failed: %v", err)
+	}
+	if result.username != "Admin" {
+		t.Errorf("username = %q, want %q", result.username, "Admin")
+	}
+	if result.rid != 500 {
+		t.Errorf("rid = %d, want 500", result.rid)
+	}
+	expectedHash := hex.EncodeToString(plainHash)
+	if result.ntHash != expectedHash {
+		t.Errorf("ntHash = %q, want %q", result.ntHash, expectedHash)
+	}
+	if result.lmHash != expectedHash {
+		t.Errorf("lmHash = %q, want %q", result.lmHash, expectedHash)
+	}
+}
+
 // --- SAM constant validation ---
 
 func TestSAMConstants_NonEmpty(t *testing.T) {

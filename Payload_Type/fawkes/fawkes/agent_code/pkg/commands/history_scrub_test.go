@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 
@@ -54,5 +55,41 @@ func TestHistoryScrubInvalidAction(t *testing.T) {
 	}
 	if !strings.Contains(result.Output, "Unknown action") {
 		t.Errorf("expected 'Unknown action' message, got: %s", result.Output)
+	}
+}
+
+func TestGetTargetHome_WithUser(t *testing.T) {
+	result := getTargetHome("testuser")
+	if runtime.GOOS == "windows" {
+		if result != `C:\Users\testuser` {
+			t.Errorf("expected Windows path, got %q", result)
+		}
+	} else {
+		if result != "/home/testuser" {
+			t.Errorf("expected /home/testuser, got %q", result)
+		}
+	}
+}
+
+func TestGetTargetHome_EmptyUser(t *testing.T) {
+	result := getTargetHome("")
+	if result == "" {
+		t.Error("expected non-empty home directory for current user")
+	}
+}
+
+func TestHistoryTargets_NonEmpty(t *testing.T) {
+	home := getTargetHome("")
+	targets := historyTargets(home)
+	if len(targets) == 0 {
+		t.Error("expected at least one history target")
+	}
+	for _, tgt := range targets {
+		if tgt.path == "" {
+			t.Error("target path should not be empty")
+		}
+		if tgt.htype == "" {
+			t.Error("target type should not be empty")
+		}
 	}
 }

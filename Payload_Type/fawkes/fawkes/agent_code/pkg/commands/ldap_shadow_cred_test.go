@@ -267,6 +267,22 @@ func TestFormatGUID(t *testing.T) {
 	}
 }
 
+func TestFormatGUID_Short(t *testing.T) {
+	// Fewer than 16 bytes — should fall back to hex encoding
+	short := []byte{0xAB, 0xCD, 0xEF}
+	result := formatGUID(short)
+	if result != "abcdef" {
+		t.Errorf("formatGUID short = %q, want %q", result, "abcdef")
+	}
+}
+
+func TestFormatGUID_Empty(t *testing.T) {
+	result := formatGUID([]byte{})
+	if result != "" {
+		t.Errorf("formatGUID empty = %q, want empty", result)
+	}
+}
+
 func TestExtractDomain(t *testing.T) {
 	tests := []struct {
 		dn     string
