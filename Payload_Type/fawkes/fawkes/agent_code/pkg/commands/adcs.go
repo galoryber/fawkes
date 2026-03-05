@@ -28,7 +28,14 @@ type adcsArgs struct {
 	Port     int    `json:"port"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+	Hash     string `json:"hash"`
+	Domain   string `json:"domain"`
 	UseTLS   bool   `json:"use_tls"`
+	CAName   string `json:"ca_name"`
+	Template string `json:"template"`
+	Subject  string `json:"subject"`
+	AltName  string `json:"alt_name"`
+	Timeout  int    `json:"timeout"`
 }
 
 // EKU OIDs relevant for ESC detection
@@ -71,7 +78,7 @@ var lowPrivRIDMap = map[uint32]string{
 func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
 		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <cas|templates|find> -server <DC>",
+			Output:    "Error: parameters required. Use -action <cas|templates|find|request> -server <DC>",
 			Status:    "error",
 			Completed: true,
 		}
@@ -88,10 +95,26 @@ func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if args.Server == "" {
 		return structs.CommandResult{
-			Output:    "Error: server parameter required (domain controller IP or hostname)",
+			Output:    "Error: server parameter required (domain controller or CA server IP/hostname)",
 			Status:    "error",
 			Completed: true,
 		}
+	}
+
+	// Request action uses DCOM (not LDAP) — handle separately
+	if strings.ToLower(args.Action) == "request" {
+		return adcsRequest(adcsRequestArgs{
+			Server:   args.Server,
+			Username: args.Username,
+			Password: args.Password,
+			Hash:     args.Hash,
+			Domain:   args.Domain,
+			CAName:   args.CAName,
+			Template: args.Template,
+			Subject:  args.Subject,
+			AltName:  args.AltName,
+			Timeout:  args.Timeout,
+		})
 	}
 
 	if args.Port <= 0 {
@@ -138,7 +161,7 @@ func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 		return adcsFindVulnerable(conn, configDN, baseDN)
 	default:
 		return structs.CommandResult{
-			Output:    "Error: action must be one of: cas, templates, find",
+			Output:    "Error: action must be one of: cas, templates, find, request",
 			Status:    "error",
 			Completed: true,
 		}
