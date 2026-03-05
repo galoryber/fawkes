@@ -422,6 +422,8 @@ func TestAdcsParseSubject(t *testing.T) {
 		{"CN=test, O=org, OU=unit", "test", "org", false},
 		{"CN=test,BADFIELD=val", "", "", true},
 		{"CN=", "", "", false},
+		{"CN=user,L=Seattle,ST=WA,C=US", "user", "", false},
+		{"CN=user,S=California", "user", "", false},
 	}
 
 	for _, tt := range tests {
@@ -438,6 +440,41 @@ func TestAdcsParseSubject(t *testing.T) {
 				t.Errorf("adcsParseSubject(%q) O = %v, want %q", tt.input, name.Organization, tt.wantO)
 			}
 		}
+	}
+}
+
+func TestAdcsParseSubject_AllFields(t *testing.T) {
+	name, err := adcsParseSubject("CN=user,O=corp,OU=IT,L=Seattle,ST=WA,C=US")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name.CommonName != "user" {
+		t.Errorf("CN = %q, want %q", name.CommonName, "user")
+	}
+	if len(name.Organization) == 0 || name.Organization[0] != "corp" {
+		t.Errorf("O = %v, want [corp]", name.Organization)
+	}
+	if len(name.OrganizationalUnit) == 0 || name.OrganizationalUnit[0] != "IT" {
+		t.Errorf("OU = %v, want [IT]", name.OrganizationalUnit)
+	}
+	if len(name.Locality) == 0 || name.Locality[0] != "Seattle" {
+		t.Errorf("L = %v, want [Seattle]", name.Locality)
+	}
+	if len(name.Province) == 0 || name.Province[0] != "WA" {
+		t.Errorf("ST = %v, want [WA]", name.Province)
+	}
+	if len(name.Country) == 0 || name.Country[0] != "US" {
+		t.Errorf("C = %v, want [US]", name.Country)
+	}
+}
+
+func TestAdcsParseSubject_SAlias(t *testing.T) {
+	name, err := adcsParseSubject("CN=user,S=California")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(name.Province) == 0 || name.Province[0] != "California" {
+		t.Errorf("S (Province) = %v, want [California]", name.Province)
 	}
 }
 
