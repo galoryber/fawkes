@@ -9,6 +9,7 @@ import (
 	"encoding/asn1"
 	"encoding/pem"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -22,7 +23,6 @@ import (
 	wcce_client "github.com/oiweiwei/go-msrpc/msrpc/dcom/wcce/client"
 	"github.com/oiweiwei/go-msrpc/msrpc/dcom/wcce/icertrequestd/v0"
 	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
-	"github.com/oiweiwei/go-msrpc/msrpc/well_known"
 	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
@@ -360,16 +360,16 @@ func adcsBuildSANExtension(altName string) (pkix.Extension, error) {
 
 // adcsSubmitCSR connects to the CA via DCOM and submits the CSR.
 func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string, csrDER []byte) (*icertrequestd.RequestResponse, error) {
-	// Step 1: Connect to EPM (port 135) on the CA server
-	// Use well_known endpoint mapper so go-msrpc can resolve IObjectExporter to port 135
-	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+server, well_known.EndpointMapper())
+	// Step 1: Connect to EPM well-known endpoint (port 135) on the CA server
+	// Following go-msrpc DCOM examples: dial host:135 directly
+	cc, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"))
 	if err != nil {
-		return nil, fmt.Errorf("dial EPM on %s: %v", server, err)
+		return nil, fmt.Errorf("dial EPM on %s:135: %v", server, err)
 	}
 	defer cc.Close(ctx)
 
 	// Step 2: ObjectExporter — ServerAlive2 to get COM version and bindings
-	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc)
+	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign())
 	if err != nil {
 		return nil, fmt.Errorf("object exporter client: %v", err)
 	}
@@ -380,7 +380,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	}
 
 	// Step 3: RemoteActivation — activate ICertRequestD via DCOM
-	iact, err := iactivation.NewActivationClient(ctx, cc)
+	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign())
 	if err != nil {
 		return nil, fmt.Errorf("activation client: %v", err)
 	}
@@ -405,14 +405,14 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	}
 
 	// Step 4: Dial the OXID endpoint for the activated object
-	conn, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+server,
+	conn, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"),
 		act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp")...)
 	if err != nil {
 		return nil, fmt.Errorf("dial OXID endpoint: %v", err)
 	}
 	defer conn.Close(ctx)
 
-	// Step 5: Create WCCE client and set IPID
+	// Step 5: Create WCCE client and set IPID — fresh security context per go-msrpc DCOM pattern
 	ctx = gssapi.NewSecurityContext(ctx)
 	wcceCli, err := wcce_client.NewClient(ctx, conn, dcerpc.WithSeal())
 	if err != nil {
