@@ -225,7 +225,13 @@ func pkgListWindows() string {
 	var sb strings.Builder
 	sb.WriteString("[*] Installed Software (Windows)\n\n")
 
-	// Use PowerShell to query installed programs from registry
+	// Try native registry reading first (no subprocess spawned)
+	if native := pkgListWindowsNative(); native != "" {
+		sb.WriteString(native)
+		return sb.String()
+	}
+
+	// Fall back to PowerShell
 	psCmd := "Get-ItemProperty HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*,HKLM:\\Software\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName } | Sort-Object DisplayName | ForEach-Object { \"$($_.DisplayName)\t$($_.DisplayVersion)\" }"
 	output := runQuietCommand("powershell", BuildPSArgs(psCmd, InternalPSOptions())...)
 	if output != "" {
