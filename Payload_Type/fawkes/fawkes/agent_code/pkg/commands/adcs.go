@@ -504,24 +504,30 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 				continue
 			}
 
+			// Try dNSHostName first; if DNS resolution fails, fall back to LDAP server IP
+			dcomTarget := caHost
+			if _, lookupErr := net.LookupHost(caHost); lookupErr != nil {
+				dcomTarget = args.Server
+			}
+
 			ctx, cancel := context.WithTimeout(
 				gssapi.NewSecurityContext(context.Background()),
 				time.Duration(timeout)*time.Second)
-			editFlags, err := adcsQueryEditFlags(ctx, caHost, caName, cred)
+			editFlags, err := adcsQueryEditFlags(ctx, dcomTarget, caName, cred)
 			cancel()
 
 			if err != nil {
-				sb.WriteString(fmt.Sprintf("  %s (%s): ERROR — %v\n", caName, caHost, err))
+				sb.WriteString(fmt.Sprintf("  %s (%s): ERROR — %v\n", caName, dcomTarget, err))
 				continue
 			}
 
 			if editFlags&editfAttributeSubjectAltName2 != 0 {
 				vulnCount++
-				sb.WriteString(fmt.Sprintf("[!] %s (%s): ESC6 VULNERABLE\n", caName, caHost))
+				sb.WriteString(fmt.Sprintf("[!] %s (%s): ESC6 VULNERABLE\n", caName, dcomTarget))
 				sb.WriteString(fmt.Sprintf("    EditFlags: 0x%08x (EDITF_ATTRIBUTESUBJECTALTNAME2 is SET)\n", editFlags))
 				sb.WriteString("    Any template with enrollment rights can be used for impersonation\n")
 			} else {
-				sb.WriteString(fmt.Sprintf("  %s (%s): EditFlags=0x%08x (ESC6 not vulnerable)\n", caName, caHost, editFlags))
+				sb.WriteString(fmt.Sprintf("  %s (%s): EditFlags=0x%08x (ESC6 not vulnerable)\n", caName, dcomTarget, editFlags))
 			}
 		}
 	} else {
