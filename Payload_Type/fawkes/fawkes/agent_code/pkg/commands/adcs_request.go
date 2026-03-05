@@ -385,9 +385,8 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		return nil, fmt.Errorf("activation client: %v", err)
 	}
 
-	// ClassID for the certificate server COM class (CertAdminD).
-	// The same COM server hosts both admin and request interfaces.
-	certServerClassID := dtyp.GUIDFromUUID(uuid.MustParse("d99e6e73-fc88-11d0-b498-00a0c90312f3"))
+	// ClassID for the certificate request COM class (CertRequestD).
+	certServerClassID := dtyp.GUIDFromUUID(uuid.MustParse("d99e6e74-fc88-11d0-b498-00a0c90312f3"))
 
 	act, err := iact.RemoteActivation(ctx, &iactivation.RemoteActivationRequest{
 		ORPCThis:                   &dcom.ORPCThis{Version: srv.COMVersion},
