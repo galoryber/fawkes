@@ -400,7 +400,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		return nil, fmt.Errorf("RemoteActivation: %v", err)
 	}
 	if act.HResult != 0 {
-		return nil, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", act.HResult)
+		return nil, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
 	}
 
 	// Step 4: Dial the OXID endpoint for the activated object
@@ -505,7 +505,7 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 		return 0, fmt.Errorf("RemoteActivation: %v", err)
 	}
 	if act.HResult != 0 {
-		return 0, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", act.HResult)
+		return 0, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
 	}
 
 	// Dial OXID endpoint
