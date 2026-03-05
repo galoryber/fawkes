@@ -75,3 +75,61 @@ func TestReadFileQuiet(t *testing.T) {
 		t.Error("readFileQuiet should return empty for nonexistent files")
 	}
 }
+
+func TestSecurityInfoWindowsNativeStub(t *testing.T) {
+	// On non-Windows, the stub should return nil
+	result := securityInfoWindowsNative()
+	if result != nil {
+		t.Errorf("securityInfoWindowsNative() on non-Windows should return nil, got %v", result)
+	}
+}
+
+func TestSecurityInfoLinuxSELinux(t *testing.T) {
+	controls := securityInfoLinux()
+	// Should always have an SELinux entry (either from sysfs, getenforce, or "not found")
+	found := false
+	for _, ctl := range controls {
+		if ctl.Name == "SELinux" {
+			found = true
+			// Status should be one of the expected values
+			switch ctl.Status {
+			case "enabled", "warning", "disabled", "not found":
+				// valid
+			default:
+				t.Errorf("SELinux status = %q, unexpected value", ctl.Status)
+			}
+		}
+	}
+	if !found {
+		t.Error("securityInfoLinux should include SELinux check")
+	}
+}
+
+func TestSecurityInfoLinuxASLR(t *testing.T) {
+	controls := securityInfoLinux()
+	found := false
+	for _, ctl := range controls {
+		if ctl.Name == "ASLR" {
+			found = true
+			if ctl.Status != "enabled" && ctl.Status != "disabled" {
+				t.Errorf("ASLR status = %q, expected enabled or disabled", ctl.Status)
+			}
+		}
+	}
+	if !found {
+		t.Error("securityInfoLinux should include ASLR check")
+	}
+}
+
+func TestSecurityInfoLinuxAppArmor(t *testing.T) {
+	controls := securityInfoLinux()
+	found := false
+	for _, ctl := range controls {
+		if ctl.Name == "AppArmor" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("securityInfoLinux should include AppArmor check")
+	}
+}
