@@ -22,6 +22,7 @@ import (
 	wcce_client "github.com/oiweiwei/go-msrpc/msrpc/dcom/wcce/client"
 	"github.com/oiweiwei/go-msrpc/msrpc/dcom/wcce/icertrequestd/v0"
 	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
+	"github.com/oiweiwei/go-msrpc/msrpc/well_known"
 	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
@@ -360,14 +361,14 @@ func adcsBuildSANExtension(altName string) (pkix.Extension, error) {
 // adcsSubmitCSR connects to the CA via DCOM and submits the CSR.
 func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string, csrDER []byte) (*icertrequestd.RequestResponse, error) {
 	// Step 1: Connect to EPM (port 135) on the CA server
-	cc, err := dcerpc.Dial(ctx, server, dcerpc.WithInsecure())
+	// Use well_known endpoint mapper so go-msrpc can resolve IObjectExporter to port 135
+	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+server, well_known.EndpointMapper())
 	if err != nil {
 		return nil, fmt.Errorf("dial EPM on %s: %v", server, err)
 	}
 	defer cc.Close(ctx)
 
 	// Step 2: ObjectExporter — ServerAlive2 to get COM version and bindings
-	// EPM/ObjectExporter at port 135 does not require authentication
 	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc)
 	if err != nil {
 		return nil, fmt.Errorf("object exporter client: %v", err)
@@ -404,9 +405,8 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	}
 
 	// Step 4: Dial the OXID endpoint for the activated object
-	conn, err := dcerpc.Dial(ctx, server,
-		append([]dcerpc.Option{dcerpc.WithInsecure()},
-			act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp")...)...)
+	conn, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+server,
+		act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp")...)
 	if err != nil {
 		return nil, fmt.Errorf("dial OXID endpoint: %v", err)
 	}
