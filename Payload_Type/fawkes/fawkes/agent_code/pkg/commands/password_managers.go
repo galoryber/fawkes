@@ -50,24 +50,9 @@ func (c *PasswordManagersCommand) Execute(task structs.Task) structs.CommandResu
 
 	var results []pmResult
 
-	// KeePass: search for .kdbx files in common locations
-	kdbxDirs := []string{home}
-	if runtime.GOOS == "windows" {
-		desktop := filepath.Join(home, "Desktop")
-		docs := filepath.Join(home, "Documents")
-		downloads := filepath.Join(home, "Downloads")
-		kdbxDirs = append(kdbxDirs, desktop, docs, downloads)
-		// Check common cloud sync folders
-		for _, sync := range []string{"OneDrive", "Dropbox", "Google Drive"} {
-			syncPath := filepath.Join(home, sync)
-			if _, err := os.Stat(syncPath); err == nil {
-				kdbxDirs = append(kdbxDirs, syncPath)
-			}
-		}
-	}
-	for _, dir := range kdbxDirs {
-		findKDBX(dir, args.Depth, &results)
-	}
+	// KeePass: search for .kdbx files starting from home directory
+	seen := make(map[string]bool)
+	findKDBX(home, args.Depth, &results, seen)
 
 	// 1Password
 	check1Password(home, &results)
@@ -108,7 +93,7 @@ func (c *PasswordManagersCommand) Execute(task structs.Task) structs.CommandResu
 	}
 }
 
-func findKDBX(root string, maxDepth int, results *[]pmResult) {
+func findKDBX(root string, maxDepth int, results *[]pmResult, seen map[string]bool) {
 	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return filepath.SkipDir
@@ -122,6 +107,11 @@ func findKDBX(root string, maxDepth int, results *[]pmResult) {
 		}
 
 		if !d.IsDir() && strings.HasSuffix(strings.ToLower(d.Name()), ".kdbx") {
+			absPath, _ := filepath.Abs(path)
+			if seen[absPath] {
+				return nil
+			}
+			seen[absPath] = true
 			info, _ := d.Info()
 			var size int64
 			var modTime string

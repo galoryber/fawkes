@@ -54,7 +54,7 @@ func TestFindKDBX(t *testing.T) {
 	os.WriteFile(filepath.Join(nestedDir, "nested.kdbx"), []byte("nested"), 0644)
 
 	var results []pmResult
-	findKDBX(tmpDir, 4, &results)
+	findKDBX(tmpDir, 4, &results, make(map[string]bool))
 
 	if len(results) != 2 {
 		t.Fatalf("expected 2 kdbx files, got %d", len(results))
@@ -73,14 +73,14 @@ func TestFindKDBX_DepthLimit(t *testing.T) {
 
 	// With depth 2, should not find it (it's 5 levels deep)
 	var results []pmResult
-	findKDBX(tmpDir, 2, &results)
+	findKDBX(tmpDir, 2, &results, make(map[string]bool))
 
 	if len(results) != 0 {
 		t.Errorf("expected 0 results with depth limit 2, got %d", len(results))
 	}
 
 	// With depth 6, should find it
-	findKDBX(tmpDir, 6, &results)
+	findKDBX(tmpDir, 6, &results, make(map[string]bool))
 	if len(results) != 1 {
 		t.Errorf("expected 1 result with depth limit 6, got %d", len(results))
 	}
@@ -91,7 +91,7 @@ func TestFindKDBX_CaseInsensitive(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "Test.KDBX"), []byte("upper"), 0644)
 
 	var results []pmResult
-	findKDBX(tmpDir, 1, &results)
+	findKDBX(tmpDir, 1, &results, make(map[string]bool))
 
 	if len(results) != 1 {
 		t.Errorf("expected 1 result for .KDBX, got %d", len(results))
