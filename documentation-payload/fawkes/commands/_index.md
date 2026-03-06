@@ -145,6 +145,7 @@ pre = "<b>2. </b>"
     * [ps](/agents/fawkes/commands/ps/)
     * [security-info](/agents/fawkes/commands/security-info/)
     * [sysinfo](/agents/fawkes/commands/sysinfo/)
+    * [sysmon-config](/agents/fawkes/commands/sysmon-config/)
     * [triage](/agents/fawkes/commands/triage/)
     * [trust](/agents/fawkes/commands/trust/)
     * [ts](/agents/fawkes/commands/ts/)
