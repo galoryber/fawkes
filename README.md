@@ -34,7 +34,7 @@ av-detect | `av-detect` | Detect installed AV/EDR/security products by scanning 
 autopatch | `autopatch <dll_name> <function_name> <num_bytes>` | **(Windows only)** Automatically patch a function by jumping to nearest return (C3) instruction. Useful for AMSI/ETW bypasses.
 base64 | `base64 -action <encode\|decode> -input <string_or_file> [-file true] [-output <path>]` | Encode/decode base64 for strings and files. File I/O support for encoding binaries and decoding to disk. Cross-platform (T1132.001).
 bits | `bits -action <list\|create\|persist\|cancel> [-name <job>] [-url <URL>] [-path <local>] [-command <exe>]` | **(Windows only)** Manage BITS transfer jobs for persistence and stealthy file download. Create download jobs, set notification commands for persistence. Jobs survive reboots (T1197).
-browser | `browser [-action <passwords\|cookies>] [-browser <all\|chrome\|edge>]` | **(Windows only)** Harvest saved credentials and cookies from Chromium-based browsers (Chrome, Edge) via DPAPI + AES-GCM decryption. Cookies enable session hijacking for SaaS/cloud platforms. MITRE T1555.003.
+browser | `browser [-action <passwords\|cookies\|history\|autofill\|bookmarks>] [-browser <all\|chrome\|edge>]` | **(Windows only)** Harvest saved credentials, cookies, browsing history, autofill form data, and bookmarks from Chromium-based browsers (Chrome, Edge). Uses DPAPI + AES-GCM decryption for encrypted data. MITRE T1555.003, T1217.
 cat | `cat <file>` or `cat -path <file> -start N -end N -number true` | Display file contents with optional line range, numbering, and 5MB size protection.
 cd | `cd <directory>` | Change the current working directory.
 chmod | `chmod -path <file> -mode <permissions> [-recursive true]` | Modify file/directory permissions with octal (755, 644) or symbolic (+x, u+rw, go-w) notation. Recursive support. Cross-platform (T1222).
@@ -313,7 +313,7 @@ Credential-harvesting commands automatically report discoveries to Mythic's **Cr
 | lsa-secrets | plaintext/hash/key | Service passwords, cached creds, DPAPI keys |
 | laps | plaintext | LAPS v1 & v2 passwords |
 | gpp-password | plaintext | GPP encrypted passwords from SYSVOL |
-| browser | plaintext | Chrome/Edge saved passwords |
+| browser | plaintext | Chrome/Edge saved passwords, cookies, history, autofill, bookmarks |
 | dpapi | plaintext/hash | DPAPI-protected secrets |
 | credman | plaintext | Credential Manager entries (on dump action) |
 | make-token | plaintext | Credentials used for token creation |

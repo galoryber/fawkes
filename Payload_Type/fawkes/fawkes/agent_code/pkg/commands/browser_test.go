@@ -240,3 +240,93 @@ func TestBrowserArgs_Full(t *testing.T) {
 		t.Errorf("expected 'chrome', got %q", args.Browser)
 	}
 }
+
+func TestChromeTimeToString(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    int64
+		expected string
+	}{
+		{"zero", 0, "never"},
+		{"negative", -1, "never"},
+		{"pre-unix-epoch", 100000, "unknown"},
+		// 2024-01-15 12:00:00 UTC = 13351536000000000 Chrome time
+		{"valid-date", 13351536000000000, "2024-01-15 12:00:00"},
+		// 2020-01-01 00:00:00 UTC
+		{"year-2020", 13228272000000000, "2020-01-01 00:00:00"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := chromeTimeToString(tt.input)
+			if got != tt.expected {
+				t.Errorf("chromeTimeToString(%d) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractBookmarks(t *testing.T) {
+	root := bookmarkNode{
+		Type: "folder",
+		Name: "Bookmark Bar",
+		Children: []bookmarkNode{
+			{Type: "url", Name: "Google", URL: "https://google.com"},
+			{Type: "folder", Name: "Work", Children: []bookmarkNode{
+				{Type: "url", Name: "GitHub", URL: "https://github.com"},
+				{Type: "url", Name: "Jira", URL: "https://jira.example.com"},
+			}},
+			{Type: "url", Name: "No URL", URL: ""},
+		},
+	}
+
+	var bookmarks []browserBookmarkEntry
+	extractBookmarks(&root, "Chrome", "bookmark_bar", &bookmarks)
+
+	if len(bookmarks) != 3 {
+		t.Fatalf("expected 3 bookmarks, got %d", len(bookmarks))
+	}
+
+	if bookmarks[0].Name != "Google" || bookmarks[0].URL != "https://google.com" {
+		t.Errorf("first bookmark: got %+v", bookmarks[0])
+	}
+	if bookmarks[1].Folder != "bookmark_bar/Work" {
+		t.Errorf("expected folder 'bookmark_bar/Work', got %q", bookmarks[1].Folder)
+	}
+	if bookmarks[2].Name != "Jira" {
+		t.Errorf("expected 'Jira', got %q", bookmarks[2].Name)
+	}
+}
+
+func TestExtractBookmarks_Empty(t *testing.T) {
+	root := bookmarkNode{Type: "folder", Name: "empty"}
+	var bookmarks []browserBookmarkEntry
+	extractBookmarks(&root, "Chrome", "other", &bookmarks)
+	if len(bookmarks) != 0 {
+		t.Errorf("expected 0 bookmarks, got %d", len(bookmarks))
+	}
+}
+
+func TestBrowserCommand_HistoryAction(t *testing.T) {
+	cmd := &BrowserCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"history"}`})
+	if result.Status != "success" {
+		t.Errorf("expected success for history action, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestBrowserCommand_AutofillAction(t *testing.T) {
+	cmd := &BrowserCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"autofill"}`})
+	if result.Status != "success" {
+		t.Errorf("expected success for autofill action, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestBrowserCommand_BookmarksAction(t *testing.T) {
+	cmd := &BrowserCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"bookmarks"}`})
+	if result.Status != "success" {
+		t.Errorf("expected success for bookmarks action, got %q: %s", result.Status, result.Output)
+	}
+}

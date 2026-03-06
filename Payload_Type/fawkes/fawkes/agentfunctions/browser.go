@@ -9,12 +9,12 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "browser",
-		Description:         "Harvest saved credentials and cookies from Chromium-based browsers (Chrome, Edge) via DPAPI + AES-GCM decryption (T1555.003)",
-		HelpString:          "browser [-action <passwords|cookies>] [-browser <all|chrome|edge>]",
-		Version:             1,
+		Description:         "Harvest saved credentials, cookies, history, autofill data, and bookmarks from Chromium-based browsers (Chrome, Edge) via DPAPI + AES-GCM decryption (T1555.003, T1217)",
+		HelpString:          "browser [-action <passwords|cookies|history|autofill|bookmarks>] [-browser <all|chrome|edge>]",
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1555.003"},
+		MitreAttackMappings: []string{"T1555.003", "T1217"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
@@ -25,8 +25,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"passwords", "cookies"},
-				Description:      "What to harvest: passwords (saved logins) or cookies (session tokens).",
+				Choices:          []string{"passwords", "cookies", "history", "autofill", "bookmarks"},
+				Description:      "What to harvest: passwords (saved logins), cookies (session tokens), history (browsing URLs), autofill (form data), or bookmarks (saved URLs).",
 				DefaultValue:     "passwords",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

