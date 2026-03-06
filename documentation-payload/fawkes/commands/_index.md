@@ -87,6 +87,7 @@ pre = "<b>2. </b>"
     * [hashdump](/agents/fawkes/commands/hashdump/)
     * [laps](/agents/fawkes/commands/laps/)
     * [lsa-secrets](/agents/fawkes/commands/lsa-secrets/)
+    * [password-managers](/agents/fawkes/commands/password-managers/)
     * [asrep-roast](/agents/fawkes/commands/asrep-roast/)
     * [kerberoast](/agents/fawkes/commands/kerberoast/)
     * [klist](/agents/fawkes/commands/klist/)
