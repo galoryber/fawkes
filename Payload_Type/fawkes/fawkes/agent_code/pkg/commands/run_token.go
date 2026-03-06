@@ -3,10 +3,8 @@
 
 package commands
 
-import "os/exec"
-
 // executeRunCommand runs a command using /bin/sh on non-Windows platforms.
 func executeRunCommand(cmdLine string) (string, error) {
-	output, err := exec.Command("/bin/sh", "-c", cmdLine).CombinedOutput()
+	output, err := execCmdTimeout("/bin/sh", "-c", cmdLine)
 	return string(output), err
 }
