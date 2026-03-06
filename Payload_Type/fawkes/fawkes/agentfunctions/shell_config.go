@@ -9,15 +9,15 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "shell-config",
-		Description:         "Read shell history, list/read/inject/remove shell config files for persistence and credential harvesting (T1546.004, T1552.003)",
+		Description:         "Read shell history, list/read/inject/remove shell config files for persistence. Unix: bashrc/zshrc (T1546.004, T1552.003). Windows: PowerShell profiles (T1546.013).",
 		HelpString:          "shell-config -action <history|list|read|inject|remove> [-file <.bashrc>] [-line <command>] [-user <username>] [-lines <count>]",
-		Version:             1,
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1546.004", "T1552.003"},
+		MitreAttackMappings: []string{"T1546.004", "T1546.013", "T1552.003"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{

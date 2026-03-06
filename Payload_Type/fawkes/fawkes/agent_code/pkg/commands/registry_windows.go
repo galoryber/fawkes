@@ -83,4 +83,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&ExecuteMemoryCommand{})
 	RegisterCommand(&CredentialPromptCommand{})
 	RegisterCommand(&PersistEnumCommand{})
+	RegisterCommand(&ShellConfigCommand{})
 }
