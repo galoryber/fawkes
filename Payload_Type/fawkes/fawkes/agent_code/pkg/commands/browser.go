@@ -1029,20 +1029,27 @@ func extractBookmarks(node *bookmarkNode, browser, folder string, out *[]browser
 	}
 }
 
-// chromeTimeToString converts a Chrome/Chromium timestamp (microseconds since 1601-01-01)
-// to a human-readable UTC string. Returns empty string for zero/invalid times.
-func chromeTimeToString(chromeTime int64) string {
-	if chromeTime <= 0 {
+// chromeTimeToString converts a Chrome/Chromium timestamp to a human-readable UTC string.
+// Chrome uses two epoch formats:
+// - History/cookies: microseconds since 1601-01-01 (very large numbers, >10^16)
+// - Autofill: seconds since Unix epoch (smaller numbers, ~10^9)
+// This function auto-detects based on magnitude.
+func chromeTimeToString(ts int64) string {
+	if ts <= 0 {
 		return "never"
 	}
-	// Chrome epoch: 1601-01-01 00:00:00 UTC
-	// Unix epoch:   1970-01-01 00:00:00 UTC
-	// Difference:   11644473600 seconds = 11644473600000000 microseconds
+	// Chrome epoch timestamps are >10^16, Unix epoch seconds are ~10^9
 	const chromeToUnixMicros = 11644473600000000
-	unixMicros := chromeTime - chromeToUnixMicros
-	if unixMicros < 0 {
-		return "unknown"
+	if ts > 1e13 {
+		// Chrome epoch: microseconds since 1601-01-01
+		unixMicros := ts - chromeToUnixMicros
+		if unixMicros < 0 {
+			return "unknown"
+		}
+		t := time.Unix(unixMicros/1000000, (unixMicros%1000000)*1000)
+		return t.UTC().Format("2006-01-02 15:04:05")
 	}
-	t := time.Unix(unixMicros/1000000, (unixMicros%1000000)*1000)
+	// Unix epoch seconds
+	t := time.Unix(ts, 0)
 	return t.UTC().Format("2006-01-02 15:04:05")
 }
