@@ -198,6 +198,7 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 				Comment:        fmt.Sprintf("credman %s (%s)", args.Action, typeName),
 			})
 		}
+		structs.ZeroString(&password)
 
 		switch cred.Type {
 		case credTypeGeneric:

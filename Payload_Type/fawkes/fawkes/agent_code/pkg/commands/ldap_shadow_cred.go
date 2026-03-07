@@ -271,6 +271,8 @@ func ldapShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 		Type:  "RSA PRIVATE KEY",
 		Bytes: keyDER,
 	})
+	structs.ZeroBytes(keyDER)
+	structs.ZeroBytes(credential)
 
 	return structs.CommandResult{
 		Output: fmt.Sprintf("[*] Shadow Credentials — msDS-KeyCredentialLink (T1556.006)\n"+

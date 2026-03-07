@@ -111,6 +111,7 @@ func sshKeysList(args sshKeysArgs) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer structs.ZeroBytes(content)
 
 	output := strings.TrimSpace(string(content))
 	if output == "" {
@@ -291,11 +292,13 @@ func sshKeysReadPrivate(args sshKeysArgs) structs.CommandResult {
 				Completed: true,
 			}
 		}
-		return structs.CommandResult{
+		result := structs.CommandResult{
 			Output:    fmt.Sprintf("=== %s ===\n%s", args.Path, string(content)),
 			Status:    "success",
 			Completed: true,
 		}
+		structs.ZeroBytes(content)
+		return result
 	}
 
 	// Enumerate and read common private key files
@@ -311,6 +314,7 @@ func sshKeysReadPrivate(args sshKeysArgs) structs.CommandResult {
 		}
 		found++
 		results = append(results, fmt.Sprintf("=== %s ===\n%s", keyPath, string(content)))
+		structs.ZeroBytes(content)
 	}
 
 	if found == 0 {
