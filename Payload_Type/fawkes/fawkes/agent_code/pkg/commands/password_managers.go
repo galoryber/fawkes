@@ -34,7 +34,7 @@ type pmResult struct {
 func (c *PasswordManagersCommand) Execute(task structs.Task) structs.CommandResult {
 	var args pmArgs
 	if task.Params != "" {
-		json.Unmarshal([]byte(task.Params), &args)
+		_ = json.Unmarshal([]byte(task.Params), &args)
 	}
 	if args.Depth <= 0 {
 		args.Depth = 4
@@ -94,7 +94,7 @@ func (c *PasswordManagersCommand) Execute(task structs.Task) structs.CommandResu
 }
 
 func findKDBX(root string, maxDepth int, results *[]pmResult, seen map[string]bool) {
-	filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return filepath.SkipDir
 		}

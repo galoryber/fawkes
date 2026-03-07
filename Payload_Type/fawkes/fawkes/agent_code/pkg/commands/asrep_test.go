@@ -2,8 +2,10 @@ package commands
 
 import (
 	"encoding/json"
+	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"fawkes/pkg/structs"
 )
@@ -128,10 +130,82 @@ func TestAsrepCommand_Registration(t *testing.T) {
 	}
 }
 
-func TestReadFull(t *testing.T) {
-	// Test with a mock net.Conn using a pipe
-	// readFull is a simple utility, test it with basic data
-	// We can't easily mock net.Conn here without TCP, so test the logic indirectly
-	// via the command flow. The parameter validation tests above cover the important paths.
-	t.Log("readFull tested indirectly through integration tests")
+func TestReadFull_Complete(t *testing.T) {
+	// Use net.Pipe as a mock connection
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	data := []byte("hello world!")
+	go func() {
+		// Simulate slow writes — send one byte at a time
+		for _, b := range data {
+			server.Write([]byte{b})
+			time.Sleep(time.Millisecond)
+		}
+	}()
+
+	buf := make([]byte, len(data))
+	n, err := readFull(client, buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if n != len(data) {
+		t.Errorf("read %d bytes, want %d", n, len(data))
+	}
+	if string(buf) != "hello world!" {
+		t.Errorf("got %q, want %q", string(buf), "hello world!")
+	}
+}
+
+func TestReadFull_EOF(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+
+	// Write partial data then close
+	go func() {
+		server.Write([]byte("hi"))
+		server.Close()
+	}()
+
+	buf := make([]byte, 10) // Ask for 10 bytes
+	_, err := readFull(client, buf)
+	if err == nil {
+		t.Error("expected error when connection closed before buffer filled")
+	}
+}
+
+func TestAsrepCommand_PortDefault(t *testing.T) {
+	// Verify default port is set when not specified
+	cmd := &AsrepCommand{}
+	params, _ := json.Marshal(asrepArgs{
+		Server:   "127.0.0.1",
+		Username: "user@test.local",
+		Password: "pass",
+		Account:  "target",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	// Should fail at KDC connection, not at parameter validation
+	if result.Status != "error" {
+		t.Log("Unexpected success (may have connected to something on port 88)")
+	}
+	if strings.Contains(result.Output, "parameters required") {
+		t.Error("should not fail at parameter validation")
+	}
+}
+
+func TestAsrepCommand_RealmUppercased(t *testing.T) {
+	cmd := &AsrepCommand{}
+	params, _ := json.Marshal(asrepArgs{
+		Server:   "127.0.0.1",
+		Username: "user@test.local",
+		Password: "pass",
+		Realm:    "test.local", // lowercase
+		Account:  "target",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	// Should fail at KDC connection (realm should be uppercased)
+	if strings.Contains(result.Output, "realm required") {
+		t.Error("realm was specified, should not require it")
+	}
 }
