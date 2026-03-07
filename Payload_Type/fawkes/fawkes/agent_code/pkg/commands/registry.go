@@ -132,6 +132,7 @@ func Initialize() {
 	RegisterCommand(&PasswordManagersCommand{})
 	RegisterCommand(&SecretScanCommand{})
 	RegisterCommand(&RemoteRegCommand{})
+	RegisterCommand(&RemoteServiceCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()

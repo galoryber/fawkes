@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **204 commands** total: 108 cross-platform, 78 Windows-only, 14 Unix-only, 7 Linux-only, and 5 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **206 commands** total: 110 cross-platform, 78 Windows-only, 14 Unix-only, 7 Linux-only, and 5 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -161,6 +161,7 @@ pwd | `pwd` | Print working directory.
 read-memory | `read-memory <dll_name> <function_name> <start_index> <num_bytes>` | **(Windows only)** Read bytes from a DLL function address.
 reg | `reg -action <read\|write\|delete\|search\|save\|creds> [-hive HKLM] [-path ...] [...]` | **(Windows only)** Unified registry operations — read, write, delete, search, and save hives (T1012, T1112, T1003.002).
 remote-reg | `remote-reg -action <query\|enum\|set\|delete> -server <host> -username <user> [-password <pass>\|-hash <NT>] [-hive HKLM] [-path ...] [-name <val>]` | Read/write registry on remote Windows hosts via WinReg RPC over SMB named pipes. Supports pass-the-hash. Cross-platform (T1012, T1112, T1021.002).
+remote-service | `remote-service -action <list\|query\|create\|start\|stop\|delete> -server <host> -username <user> [-password <pass>\|-hash <NT>] [-name <svc>] [-binpath <path>]` | Manage services on remote Windows hosts via SVCCTL RPC over SMB named pipes. Create/start for lateral movement, list/query for recon. Supports pass-the-hash. Cross-platform (T1569.002, T1543.003, T1007).
 rev2self | `rev2self` | **(Windows only)** Revert to the original security context by dropping any active impersonation token.
 route | `route` | Display the system routing table. Windows: GetIpForwardTable API, Linux: /proc/net/route + IPv6, macOS: netstat -rn. Cross-platform (T1016).
 rpfwd | `rpfwd start <port> <remote_ip> <remote_port>` / `rpfwd stop <port>` | Reverse port forward -- agent listens, Mythic routes to target. Cross-platform (T1090).
@@ -300,6 +301,7 @@ Tracked artifact types:
 | Registry Write | reg (write/delete), remote-reg (set/delete), persist (registry, com-hijack, screensaver methods), uac-bypass, defender (add/remove-exclusion) |
 | Registry Save | reg (save/creds) |
 | Remote Registry | remote-reg (query/enum/set/delete via WinReg RPC) |
+| Remote Service | remote-service (list/query/create/start/stop/delete via SVCCTL RPC) |
 | Logon | make-token |
 | Token Steal | steal-token, getsystem |
 
