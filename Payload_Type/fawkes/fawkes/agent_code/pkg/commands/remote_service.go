@@ -192,6 +192,7 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 	), time.Duration(args.Timeout)*time.Second)
 
 	cc, err := dcerpc.Dial(ctx, args.Server,
+		dcerpc.WithEndpoint("ncacn_np:[svcctl]"),
 		dcerpc.WithCredentials(cred),
 		dcerpc.WithMechanism(ssp.SPNEGO),
 		dcerpc.WithMechanism(ssp.NTLM),
@@ -201,7 +202,10 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %v", err)
 	}
 
-	cli, err := svcctl.NewSvcctlClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server), dcerpc.WithEndpoint("ncacn_np:[svcctl]"))
+	// Use WithInsecure() for DCE-RPC binding — SMB named pipes already provide
+	// transport-level encryption. WithSeal()/WithSign() cause response decode
+	// errors with go-msrpc SVCCTL due to a library bug.
+	cli, err := svcctl.NewSvcctlClient(ctx, cc, dcerpc.WithInsecure())
 	if err != nil {
 		cc.Close(ctx)
 		cancel()
