@@ -27,4 +27,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&BrowserCommand{})
 	RegisterCommand(&RunasCommand{})
 	RegisterCommand(&FirewallCommand{})
+	RegisterCommand(&GetPrivsCommand{})
 }

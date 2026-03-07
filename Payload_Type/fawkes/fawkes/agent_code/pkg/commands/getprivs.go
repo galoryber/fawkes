@@ -23,11 +23,6 @@ func (c *GetPrivsCommand) Description() string {
 	return "List, enable, disable, or strip token privileges"
 }
 
-type getPrivsParams struct {
-	Action    string `json:"action"`
-	Privilege string `json:"privilege"`
-}
-
 func (c *GetPrivsCommand) Execute(task structs.Task) structs.CommandResult {
 	var params getPrivsParams
 	if task.Params != "" {
@@ -70,21 +65,6 @@ func (c *GetPrivsCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
-}
-
-// privOutputEntry represents a token privilege for JSON output
-type privOutputEntry struct {
-	Name        string `json:"name"`
-	Status      string `json:"status"`
-	Description string `json:"description,omitempty"`
-}
-
-// privsOutput wraps the privilege listing with token metadata
-type privsOutput struct {
-	Identity   string            `json:"identity"`
-	Source     string            `json:"source"`
-	Integrity  string            `json:"integrity"`
-	Privileges []privOutputEntry `json:"privileges"`
 }
 
 func listPrivileges() structs.CommandResult {
