@@ -9,15 +9,19 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "runas",
-		Description:         "Execute a command as a different user via CreateProcessWithLogonW",
+		Description:         "Execute a command as a different user. Windows: CreateProcessWithLogonW. Linux/macOS: setuid (as root) or sudo -S (with password). (T1134.002)",
 		HelpString:          "runas -command <cmd> -username <user> -password <pass> [-domain <domain>] [-netonly true]",
-		Version:             1,
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1134.002"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{
+				agentstructs.SUPPORTED_OS_WINDOWS,
+				agentstructs.SUPPORTED_OS_LINUX,
+				agentstructs.SUPPORTED_OS_MACOS,
+			},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -53,11 +57,11 @@ func init() {
 				ModalDisplayName: "Password",
 				CLIName:          "password",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Target user's password",
+				Description:      "Target user's password. Required on Windows. On Linux/macOS: required if not root (uses sudo -S); optional if root (uses setuid).",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "Default",
 					},
 				},

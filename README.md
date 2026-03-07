@@ -167,7 +167,7 @@ route | `route` | Display the system routing table. Windows: GetIpForwardTable A
 rpfwd | `rpfwd start <port> <remote_ip> <remote_port>` / `rpfwd stop <port>` | Reverse port forward -- agent listens, Mythic routes to target. Cross-platform (T1090).
 rm | `rm <path>` | Remove a file or directory (recursively removes directories).
 run | `run <command>` | Execute a shell command and return the output.
-runas | `runas -command <cmd> -username <DOMAIN\user> -password <pass> [-netonly true]` | **(Windows only)** Execute a command as a different user via CreateProcessWithLogonW. Supports /netonly mode for network-only credentials. Creates new logon session (T1134.002).
+runas | `runas -command <cmd> -username <user> -password <pass> [-domain <domain>] [-netonly true]` | Execute a command as a different user. Windows: CreateProcessWithLogonW (supports /netonly). Linux/macOS: setuid as root, or sudo -S with password. Cross-platform (T1134.002).
 schtask | `schtask -action <create\|query\|delete\|run\|list> -name <name> [-program <path>]` | **(Windows only)** Create, query, run, or delete Windows scheduled tasks via COM API.
 screenshot | `screenshot` | Capture a screenshot of the current desktop session. Uploads as PNG. Windows: GDI multi-monitor capture. macOS: screencapture. Linux: auto-detects X11/Wayland tools (import, scrot, gnome-screenshot, grim). Cross-platform (T1113).
 secret-scan | `secret-scan [-path /home/user] [-depth 5] [-max_results 100]` | Search files for secrets, API keys, private keys, connection strings, and sensitive patterns. 20+ regex patterns (AWS, GitHub, Slack, Stripe, etc.) with value redaction. Depth-limited directory walk, skips noise dirs. Cross-platform (T1552.001, T1005).

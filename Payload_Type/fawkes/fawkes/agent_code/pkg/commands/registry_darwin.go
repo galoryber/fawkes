@@ -25,4 +25,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&JXACommand{})
 	RegisterCommand(&PtyCommand{})
 	RegisterCommand(&BrowserCommand{})
+	RegisterCommand(&RunasCommand{})
 }

@@ -31,14 +31,6 @@ type RunasCommand struct{}
 func (c *RunasCommand) Name() string        { return "runas" }
 func (c *RunasCommand) Description() string { return "Execute a command as a different user" }
 
-type runasArgs struct {
-	Command  string `json:"command"`  // command to run (e.g. "cmd.exe /c whoami")
-	Username string `json:"username"` // target username
-	Password string `json:"password"` // target password
-	Domain   string `json:"domain"`   // domain (optional)
-	NetOnly  bool   `json:"netonly"`  // LOGON_NETCREDENTIALS_ONLY (like runas /netonly)
-}
-
 func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	var args runasArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
