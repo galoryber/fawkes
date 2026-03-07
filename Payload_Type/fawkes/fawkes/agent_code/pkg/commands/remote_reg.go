@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -14,7 +13,6 @@ import (
 	"fawkes/pkg/structs"
 
 	"github.com/oiweiwei/go-msrpc/dcerpc"
-	"github.com/oiweiwei/go-msrpc/msrpc/epm/epm/v3"
 	"github.com/oiweiwei/go-msrpc/msrpc/rrp/winreg/v1"
 	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
@@ -134,11 +132,7 @@ func remoteRegConnect(args remoteRegArgs) (winreg.WinregClient, *winreg.Key, con
 		gssapi.WithMechanismFactory(ssp.NTLM),
 	), time.Duration(args.Timeout)*time.Second)
 
-	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
-		epm.EndpointMapper(ctx,
-			net.JoinHostPort(args.Server, "135"),
-			dcerpc.WithInsecure(),
-		))
+	cc, err := dcerpc.Dial(ctx, args.Server, dcerpc.WithEndpoint("ncacn_np:[winreg]"))
 	if err != nil {
 		cancel()
 		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %v", err)
