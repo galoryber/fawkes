@@ -28,4 +28,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&BrowserCommand{})
 	RegisterCommand(&RunasCommand{})
 	RegisterCommand(&GetPrivsCommand{})
+	RegisterCommand(&NamedPipesCommand{})
 }

@@ -25,10 +25,6 @@ func (c *NamedPipesCommand) Description() string {
 	return "List named pipes on the system"
 }
 
-type namedPipesArgs struct {
-	Filter string `json:"filter"`
-}
-
 // Windows constants for pipe enumeration
 var (
 	kernel32NP         = windows.NewLazySystemDLL("kernel32.dll")

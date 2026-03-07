@@ -9,15 +9,15 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "named-pipes",
-		Description:         "List named pipes on the system (useful for IPC discovery and pipe-based privilege escalation recon)",
-		HelpString:          "named-pipes [-filter <pattern>]",
-		Version:             1,
+		Description:         "List named pipes (Windows), Unix domain sockets, and FIFOs (Linux/macOS) for IPC discovery",
+		HelpString:          "named-pipes [-filter <pattern>]\nWindows: Enumerates \\\\.\\.\\pipe\\* via FindFirstFile/FindNextFile\nLinux: Reads /proc/net/unix for sockets + scans /tmp,/var/run for FIFOs\nmacOS: Scans /var/run,/tmp,/private/* for sockets and FIFOs",
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1083"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -57,7 +57,12 @@ func init() {
 				display += fmt.Sprintf(" (filter: %s)", filter)
 			}
 			response.DisplayParams = &display
-			createArtifact(taskData.Task.ID, "API Call", "FindFirstFile/FindNextFile on \\\\.\\pipe\\*")
+			os := taskData.Payload.OS
+			if os == "Windows" {
+				createArtifact(taskData.Task.ID, "API Call", "FindFirstFile/FindNextFile on \\\\.\\pipe\\*")
+			} else {
+				createArtifact(taskData.Task.ID, "FileOpen", "/proc/net/unix, /var/run, /tmp")
+			}
 			return response
 		},
 		TaskFunctionProcessResponse: nil,
