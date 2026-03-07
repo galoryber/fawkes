@@ -25,18 +25,6 @@ func (c *FirewallCommand) Description() string {
 	return "Manage Windows Firewall rules via COM API (HNetCfg.FwPolicy2)"
 }
 
-type firewallArgs struct {
-	Action     string `json:"action"`
-	Name       string `json:"name"`
-	Direction  string `json:"direction"`
-	RuleAction string `json:"rule_action"`
-	Protocol   string `json:"protocol"`
-	Port       string `json:"port"`
-	Program    string `json:"program"`
-	Filter     string `json:"filter"`
-	Enabled    string `json:"enabled"`
-}
-
 // fwIPProtocol*, fwRuleDirection*, fwAction* constants moved to command_helpers.go
 
 // Windows Firewall COM constants (profile types)

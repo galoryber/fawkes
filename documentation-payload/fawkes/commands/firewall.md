@@ -7,9 +7,9 @@ hidden = false
 
 ## Summary
 
-Manage Windows Firewall rules via the `HNetCfg.FwPolicy2` COM API. Supports listing, creating, deleting, enabling, disabling rules, and checking firewall profile status. No subprocess spawning (netsh.exe is never called).
+Manage firewall rules and check firewall status. Windows uses `HNetCfg.FwPolicy2` COM API (no subprocess spawning). macOS queries Application Layer Firewall (ALF) and Packet Filter (pf).
 
-{{% notice info %}}Windows Only{{% /notice %}}
+{{% notice info %}}Windows and macOS{{% /notice %}}
 
 ## Arguments
 
@@ -98,13 +98,30 @@ Firewall rule added:
   Profiles:  All
 ```
 
+## macOS Support
+
+On macOS, `firewall` supports `list` and `status` actions:
+
+- **status**: Shows Application Layer Firewall state (enabled/stealth/block-all), and Packet Filter (pf) status
+- **list**: Shows ALF application rules and pf filter/NAT rules
+
+Root access is required for full pf rule listing. ALF status is available at any privilege level.
+
 ## Operational Notes
 
+### Windows
 - **COM API**: Uses `HNetCfg.FwPolicy2` and `HNetCfg.FWRule` COM objects — no subprocess spawning, no netsh.exe
 - **Privileges**: Listing rules and checking status work at any privilege level. Adding, deleting, enabling, or disabling rules requires administrator privileges.
 - **All profiles**: New rules are created for all profiles (Domain + Private + Public) by default
 - **Rule names**: Multiple rules can share the same name in Windows Firewall. Delete removes by name match.
 - **Opsec**: Use legitimate-sounding rule names (e.g., "Windows Update Service", "BITS Transfer") to blend in with existing rules
+
+### macOS
+- Uses `socketfilterfw` for ALF queries and `pfctl` for pf rules
+- Read-only: `add`/`delete`/`enable`/`disable` not yet supported on macOS
+
+### Linux
+- Use the `iptables` command instead, which provides full iptables/nftables/ufw management
 
 ## MITRE ATT&CK Mapping
 

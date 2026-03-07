@@ -9,14 +9,14 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "firewall",
-		Description:         "Manage Windows Firewall rules — list, add, delete, enable/disable rules, and check firewall status. Uses HNetCfg.FwPolicy2 COM API.",
+		Description:         "Manage firewall rules — list, add, delete, enable/disable rules, and check firewall status. Windows: HNetCfg.FwPolicy2 COM. macOS: pf/ALF.",
 		HelpString:          "firewall -action <list|add|delete|enable|disable|status> [-name <rule_name>] [-direction <in|out>] [-rule_action <allow|block>] [-protocol <tcp|udp|any>] [-port <port>] [-program <path>]",
-		Version:             1,
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1562.004"}, // Impair Defenses: Disable or Modify System Firewall
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
