@@ -1076,7 +1076,8 @@ func TestAllURLs_WithFallbacks(t *testing.T) {
 }
 
 func TestAllURLs_RotatesOnActiveIdx(t *testing.T) {
-	p := &HTTPProfile{activeURLIdx: 1}
+	p := &HTTPProfile{}
+	p.activeURLIdx.Store(1)
 	cfg := &sensitiveConfig{
 		BaseURL:      "http://primary:80",
 		FallbackURLs: []string{"http://backup1:80", "http://backup2:80"},
@@ -1143,7 +1144,7 @@ func TestMakeRequest_FailoverToBackup(t *testing.T) {
 		t.Errorf("backup hit count = %d, want 1", hitCount)
 	}
 	// activeURLIdx should have been updated
-	if p.activeURLIdx == 0 {
+	if p.activeURLIdx.Load() == 0 {
 		t.Error("activeURLIdx should have been updated to fallback")
 	}
 }
@@ -1188,6 +1189,50 @@ func TestNewHTTPProfile_WithFallbackURLs(t *testing.T) {
 	}
 	if p.FallbackURLs[0] != "http://backup1:80" {
 		t.Errorf("FallbackURLs[0] = %q, want http://backup1:80", p.FallbackURLs[0])
+	}
+}
+
+func TestMakeRequest_ConcurrentFailover(t *testing.T) {
+	// Verify no data race when multiple goroutines call makeRequest concurrently
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		fmt.Fprint(w, "ok")
+	}))
+	defer server.Close()
+
+	p := NewHTTPProfile(
+		server.URL,
+		"TestAgent/1.0",
+		"",
+		1, 5, 0, false,
+		"/test", "/test",
+		"", "", "none", "",
+		[]string{server.URL + "/fb1", server.URL + "/fb2"},
+	)
+
+	cfg := &sensitiveConfig{
+		BaseURL:      server.URL,
+		FallbackURLs: []string{server.URL + "/fb1", server.URL + "/fb2"},
+		UserAgent:    "TestAgent/1.0",
+	}
+
+	// Launch concurrent requests — race detector will catch unsynchronized access
+	done := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		go func() {
+			resp, err := p.makeRequest("GET", "/test", nil, cfg)
+			if err != nil {
+				done <- err
+				return
+			}
+			resp.Body.Close()
+			done <- nil
+		}()
+	}
+	for i := 0; i < 20; i++ {
+		if err := <-done; err != nil {
+			t.Errorf("concurrent makeRequest failed: %v", err)
+		}
 	}
 }
 

