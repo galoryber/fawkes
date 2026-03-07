@@ -116,7 +116,7 @@ func TestTrustDNToDomain(t *testing.T) {
 	}
 }
 
-func TestTrustDirectionSimple(t *testing.T) {
+func TestTrustDirectionStr(t *testing.T) {
 	tests := []struct {
 		dir      int
 		expected string
@@ -129,9 +129,164 @@ func TestTrustDirectionSimple(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		result := trustDirectionSimple(tt.dir)
+		result := trustDirectionStr(tt.dir, "corp.local", "partner.local")
 		if !strings.Contains(result, tt.expected) {
-			t.Errorf("trustDirectionSimple(%d): expected to contain %q, got %q", tt.dir, tt.expected, result)
+			t.Errorf("trustDirectionStr(%d): expected to contain %q, got %q", tt.dir, tt.expected, result)
+		}
+	}
+}
+
+func TestTrustDirectionStrContext(t *testing.T) {
+	// Inbound: partner trusts us
+	result := trustDirectionStr(trustDirectionInbound, "corp.local", "partner.local")
+	if !strings.Contains(result, "partner.local trusts corp.local") {
+		t.Errorf("inbound should show 'partner trusts us', got %q", result)
+	}
+
+	// Outbound: we trust partner
+	result = trustDirectionStr(trustDirectionOutbound, "corp.local", "partner.local")
+	if !strings.Contains(result, "corp.local trusts partner.local") {
+		t.Errorf("outbound should show 'we trust partner', got %q", result)
+	}
+}
+
+func TestTrustCategory(t *testing.T) {
+	tests := []struct {
+		name     string
+		entry    trustEntry
+		expected string
+	}{
+		{"intra-forest", trustEntry{attributes: trustAttrWithinForest}, "Intra-Forest"},
+		{"forest transitive", trustEntry{attributes: trustAttrForestTransitive}, "Forest"},
+		{"treat as external", trustEntry{attributes: trustAttrTreatAsExternal}, "External (forced)"},
+		{"uplevel external", trustEntry{trustType: trustTypeUplevel}, "External"},
+		{"MIT kerberos", trustEntry{trustType: trustTypeMIT}, "MIT Kerberos"},
+		{"downlevel", trustEntry{trustType: trustTypeDownlevel}, "Downlevel"},
+		{"unknown", trustEntry{}, "Other"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := trustCategory(tt.entry)
+			if result != tt.expected {
+				t.Errorf("trustCategory: expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestTrustTransitivity(t *testing.T) {
+	tests := []struct {
+		name     string
+		entry    trustEntry
+		expected string
+	}{
+		{"non-transitive flag", trustEntry{attributes: trustAttrNonTransitive}, "Non-transitive"},
+		{"intra-forest", trustEntry{attributes: trustAttrWithinForest}, "Transitive (intra-forest)"},
+		{"forest transitive", trustEntry{attributes: trustAttrForestTransitive}, "Transitive (forest)"},
+		{"external uplevel", trustEntry{trustType: trustTypeUplevel}, "Non-transitive (external)"},
+		{"default", trustEntry{trustType: trustTypeMIT}, "Transitive"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := trustTransitivity(tt.entry)
+			if result != tt.expected {
+				t.Errorf("trustTransitivity: expected %q, got %q", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestTrustComputeRisks(t *testing.T) {
+	// Outbound trust without SID filtering
+	risks := trustComputeRisks(trustEntry{direction: trustDirectionOutbound})
+	if len(risks) == 0 || !strings.Contains(risks[0], "SID filtering") {
+		t.Error("outbound without SID filtering should flag risk")
+	}
+
+	// Inbound trust — no SID filtering risk
+	risks = trustComputeRisks(trustEntry{direction: trustDirectionInbound})
+	for _, r := range risks {
+		if strings.Contains(r, "SID filtering") {
+			t.Error("inbound trusts should not flag SID filtering risk")
+		}
+	}
+
+	// RC4 only
+	risks = trustComputeRisks(trustEntry{attributes: trustAttrUsesRC4Encryption})
+	found := false
+	for _, r := range risks {
+		if strings.Contains(r, "RC4") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("RC4-only trust should flag encryption risk")
+	}
+
+	// RC4 + AES — no RC4 risk
+	risks = trustComputeRisks(trustEntry{attributes: trustAttrUsesRC4Encryption | trustAttrUsesAESKeys})
+	for _, r := range risks {
+		if strings.Contains(r, "RC4") {
+			t.Error("RC4+AES trust should not flag RC4 risk")
+		}
+	}
+
+	// Selective authentication
+	risks = trustComputeRisks(trustEntry{attributes: trustAttrCrossOrganization})
+	found = false
+	for _, r := range risks {
+		if strings.Contains(r, "Selective authentication") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("cross-org trust should note selective authentication")
+	}
+
+	// TGT delegation
+	risks = trustComputeRisks(trustEntry{attributes: trustAttrCrossOrgEnableTGTDe})
+	found = false
+	for _, r := range risks {
+		if strings.Contains(r, "TGT delegation") {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("TGT delegation should be flagged")
+	}
+}
+
+func TestTrustFormatTimestamp(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"20230615142030.0Z", "2023-06-15 14:20:30 UTC"},
+		{"20200101000000.0Z", "2020-01-01 00:00:00 UTC"},
+		{"", ""},
+		{"short", "short"},
+	}
+	for _, tt := range tests {
+		result := trustFormatTimestamp(tt.input)
+		if result != tt.expected {
+			t.Errorf("trustFormatTimestamp(%q): expected %q, got %q", tt.input, tt.expected, result)
+		}
+	}
+}
+
+func TestTrustBuildConfigDN(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"DC=sevenkingdoms,DC=local", "CN=Configuration,DC=sevenkingdoms,DC=local"},
+		{"DC=corp,DC=com", "CN=Configuration,DC=corp,DC=com"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		result := trustBuildConfigDN(tt.input)
+		if result != tt.expected {
+			t.Errorf("trustBuildConfigDN(%q): expected %q, got %q", tt.input, tt.expected, result)
 		}
 	}
 }
@@ -187,20 +342,28 @@ func TestTrustAttributesStr(t *testing.T) {
 
 func TestTrustOutputEntryJSON(t *testing.T) {
 	e := trustOutputEntry{
-		Partner:    "north.sevenkingdoms.local",
-		FlatName:   "NORTH",
-		Direction:  "Bidirectional",
-		Type:       "Uplevel (Active Directory)",
-		Category:   "Intra-Forest",
-		Attributes: "WITHIN_FOREST",
-		SID:        "S-1-5-21-1234-5678-9012",
-		Risk:       "Intra-forest — implicit full trust",
+		Partner:     "north.sevenkingdoms.local",
+		FlatName:    "NORTH",
+		Direction:   "Bidirectional",
+		Type:        "Uplevel (Active Directory)",
+		Category:    "Intra-Forest",
+		Transitive:  "Transitive (intra-forest)",
+		Attributes:  "WITHIN_FOREST",
+		SID:         "S-1-5-21-1234-5678-9012",
+		WhenCreated: "2023-06-15 14:20:30 UTC",
+		Risk:        "Intra-forest — implicit full trust",
 	}
 	if e.Partner != "north.sevenkingdoms.local" {
 		t.Error("partner should be set")
 	}
 	if e.Category != "Intra-Forest" {
 		t.Error("category should be Intra-Forest")
+	}
+	if e.Transitive != "Transitive (intra-forest)" {
+		t.Error("transitive should be set")
+	}
+	if e.WhenCreated == "" {
+		t.Error("when_created should be set")
 	}
 	if e.Risk == "" {
 		t.Error("risk should be set for intra-forest trust")

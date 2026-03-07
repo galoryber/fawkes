@@ -61,26 +61,37 @@ const (
 )
 
 type trustEntry struct {
-	name       string
-	partner    string
-	flatName   string
-	direction  int
-	trustType  int
-	attributes int
-	sid        string
-	dn         string
+	name        string
+	partner     string
+	flatName    string
+	direction   int
+	trustType   int
+	attributes  int
+	sid         string
+	dn          string
+	whenCreated string
+	whenChanged string
 }
 
 // trustOutputEntry is a JSON-serializable trust for browser script rendering.
 type trustOutputEntry struct {
-	Partner    string `json:"partner"`
-	FlatName   string `json:"flat_name,omitempty"`
-	Direction  string `json:"direction"`
-	Type       string `json:"type"`
-	Category   string `json:"category"`
-	Attributes string `json:"attributes"`
-	SID        string `json:"sid,omitempty"`
-	Risk       string `json:"risk,omitempty"`
+	Partner     string `json:"partner"`
+	FlatName    string `json:"flat_name,omitempty"`
+	Direction   string `json:"direction"`
+	Type        string `json:"type"`
+	Category    string `json:"category"`
+	Transitive  string `json:"transitive"`
+	Attributes  string `json:"attributes"`
+	SID         string `json:"sid,omitempty"`
+	WhenCreated string `json:"when_created,omitempty"`
+	WhenChanged string `json:"when_changed,omitempty"`
+	Risk        string `json:"risk,omitempty"`
+}
+
+// trustForestInfo holds forest topology discovered from crossRef objects.
+type trustForestInfo struct {
+	ForestRoot string   `json:"forest_root"`
+	Domains    []string `json:"domains"`
 }
 
 func (c *TrustCommand) Execute(task structs.Task) structs.CommandResult {
@@ -183,6 +194,12 @@ func trustDetectBaseDN(conn *ldap.Conn) (string, error) {
 	return baseDN, nil
 }
 
+// trustTopLevelOutput wraps trust entries with forest topology info.
+type trustTopLevelOutput struct {
+	Forest *trustForestInfo  `json:"forest,omitempty"`
+	Trusts []trustOutputEntry `json:"trusts"`
+}
+
 func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	// Query trustedDomain objects in CN=System,<baseDN>
 	systemDN := fmt.Sprintf("CN=System,%s", baseDN)
@@ -210,10 +227,12 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	var trusts []trustEntry
 	for _, entry := range result.Entries {
 		t := trustEntry{
-			name:     entry.GetAttributeValue("cn"),
-			partner:  entry.GetAttributeValue("trustPartner"),
-			flatName: entry.GetAttributeValue("flatName"),
-			dn:       entry.DN,
+			name:        entry.GetAttributeValue("cn"),
+			partner:     entry.GetAttributeValue("trustPartner"),
+			flatName:    entry.GetAttributeValue("flatName"),
+			dn:          entry.DN,
+			whenCreated: entry.GetAttributeValue("whenCreated"),
+			whenChanged: entry.GetAttributeValue("whenChanged"),
 		}
 
 		if v := entry.GetAttributeValue("trustDirection"); v != "" {
@@ -238,49 +257,38 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	// Derive current domain from baseDN
 	currentDomain := trustDNToDomain(baseDN)
 
+	// Query forest topology from Configuration partition
+	forestInfo := trustQueryForestTopology(conn, baseDN)
+
 	if len(trusts) == 0 {
+		topLevel := trustTopLevelOutput{Forest: forestInfo}
+		data, _ := json.Marshal(topLevel)
 		return structs.CommandResult{
-			Output:    "[]",
+			Output:    string(data),
 			Status:    "success",
 			Completed: true,
 		}
 	}
 
-	// Build JSON entries with category and risk annotations
+	// Build JSON entries with category, transitivity, and risk annotations
 	var output []trustOutputEntry
 	for _, t := range trusts {
-		category := "Other"
-		if t.attributes&trustAttrWithinForest != 0 {
-			category = "Intra-Forest"
-		} else if t.attributes&trustAttrForestTransitive != 0 {
-			category = "Forest"
-		} else if t.trustType == trustTypeUplevel {
-			category = "External"
-		}
+		category := trustCategory(t)
+		transitive := trustTransitivity(t)
+		risks := trustComputeRisks(t)
 
-		// Compute risk
-		var risks []string
-		if t.direction == trustDirectionOutbound || t.direction == trustDirectionBidir {
-			if t.attributes&trustAttrFilterSIDs == 0 {
-				risks = append(risks, "No SID filtering — SID history attacks possible")
-			}
-			if t.attributes&trustAttrWithinForest != 0 {
-				risks = append(risks, "Intra-forest — implicit full trust")
-			}
-			if t.attributes&trustAttrForestTransitive != 0 && t.attributes&trustAttrFilterSIDs == 0 {
-				risks = append(risks, "Forest trust without SID filtering — cross-forest attack possible")
-			}
-		}
-
-		dirStr := trustDirectionSimple(t.direction)
+		dirStr := trustDirectionStr(t.direction, currentDomain, t.partner)
 		e := trustOutputEntry{
-			Partner:    t.partner,
-			FlatName:   t.flatName,
-			Direction:  dirStr,
-			Type:       trustTypeStr(t.trustType),
-			Category:   category,
-			Attributes: trustAttributesStr(t.attributes),
-			SID:        t.sid,
+			Partner:     t.partner,
+			FlatName:    t.flatName,
+			Direction:   dirStr,
+			Type:        trustTypeStr(t.trustType),
+			Category:    category,
+			Transitive:  transitive,
+			Attributes:  trustAttributesStr(t.attributes),
+			SID:         t.sid,
+			WhenCreated: trustFormatTimestamp(t.whenCreated),
+			WhenChanged: trustFormatTimestamp(t.whenChanged),
 		}
 		if len(risks) > 0 {
 			e.Risk = strings.Join(risks, "; ")
@@ -288,9 +296,11 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 		output = append(output, e)
 	}
 
-	_ = currentDomain // used for direction detail if needed
-
-	data, err := json.Marshal(output)
+	topLevel := trustTopLevelOutput{
+		Forest: forestInfo,
+		Trusts: output,
+	}
+	data, err := json.Marshal(topLevel)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error marshaling output: %v", err),
@@ -306,18 +316,170 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	}
 }
 
-func trustDirectionSimple(dir int) string {
+// trustCategory determines the trust category based on attributes and type.
+func trustCategory(t trustEntry) string {
+	if t.attributes&trustAttrWithinForest != 0 {
+		return "Intra-Forest"
+	}
+	if t.attributes&trustAttrForestTransitive != 0 {
+		return "Forest"
+	}
+	if t.attributes&trustAttrTreatAsExternal != 0 {
+		return "External (forced)"
+	}
+	if t.trustType == trustTypeUplevel {
+		return "External"
+	}
+	if t.trustType == trustTypeMIT {
+		return "MIT Kerberos"
+	}
+	if t.trustType == trustTypeDownlevel {
+		return "Downlevel"
+	}
+	return "Other"
+}
+
+// trustTransitivity returns whether the trust is transitive and why.
+func trustTransitivity(t trustEntry) string {
+	if t.attributes&trustAttrNonTransitive != 0 {
+		return "Non-transitive"
+	}
+	if t.attributes&trustAttrWithinForest != 0 {
+		return "Transitive (intra-forest)"
+	}
+	if t.attributes&trustAttrForestTransitive != 0 {
+		return "Transitive (forest)"
+	}
+	// External trusts are non-transitive by default
+	if t.trustType == trustTypeUplevel && t.attributes&trustAttrWithinForest == 0 && t.attributes&trustAttrForestTransitive == 0 {
+		return "Non-transitive (external)"
+	}
+	return "Transitive"
+}
+
+// trustComputeRisks analyzes a trust entry for security risks.
+func trustComputeRisks(t trustEntry) []string {
+	var risks []string
+
+	if t.direction == trustDirectionOutbound || t.direction == trustDirectionBidir {
+		if t.attributes&trustAttrFilterSIDs == 0 {
+			risks = append(risks, "No SID filtering — SID history attacks possible")
+		}
+		if t.attributes&trustAttrWithinForest != 0 {
+			risks = append(risks, "Intra-forest — implicit full trust")
+		}
+		if t.attributes&trustAttrForestTransitive != 0 && t.attributes&trustAttrFilterSIDs == 0 {
+			risks = append(risks, "Forest trust without SID filtering — cross-forest attack possible")
+		}
+	}
+
+	// RC4-only encryption is weak — AES should be preferred
+	if t.attributes&trustAttrUsesRC4Encryption != 0 && t.attributes&trustAttrUsesAESKeys == 0 {
+		risks = append(risks, "RC4 encryption only — vulnerable to offline cracking")
+	}
+
+	// Selective authentication means the trust requires explicit permissions
+	if t.attributes&trustAttrCrossOrganization != 0 {
+		// This is actually defensive, so note it rather than flag as risk
+		risks = append(risks, "Selective authentication enabled — restricted access")
+	}
+
+	// TGT delegation across organizations
+	if t.attributes&trustAttrCrossOrgEnableTGTDe != 0 {
+		risks = append(risks, "TGT delegation enabled across organizations")
+	}
+
+	return risks
+}
+
+// trustDirectionStr provides a detailed direction string including domain context.
+func trustDirectionStr(dir int, currentDomain, partner string) string {
 	switch dir {
 	case trustDirectionInbound:
-		return "Inbound"
+		return fmt.Sprintf("Inbound (%s trusts %s)", partner, currentDomain)
 	case trustDirectionOutbound:
-		return "Outbound"
+		return fmt.Sprintf("Outbound (%s trusts %s)", currentDomain, partner)
 	case trustDirectionBidir:
 		return "Bidirectional"
 	default:
 		return fmt.Sprintf("Unknown (%d)", dir)
 	}
 }
+
+// trustFormatTimestamp formats AD generalized time (20060102150405.0Z) to readable form.
+func trustFormatTimestamp(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	// AD timestamps use format: 20060102150405.0Z
+	raw = strings.TrimSuffix(raw, ".0Z")
+	if len(raw) >= 14 {
+		return raw[:4] + "-" + raw[4:6] + "-" + raw[6:8] + " " + raw[8:10] + ":" + raw[10:12] + ":" + raw[12:14] + " UTC"
+	}
+	return raw
+}
+
+// trustQueryForestTopology queries crossRef objects from the Configuration partition
+// to discover the forest root and all domains in the forest.
+func trustQueryForestTopology(conn *ldap.Conn, baseDN string) *trustForestInfo {
+	// Build Configuration DN from baseDN: DC=domain,DC=local -> CN=Partitions,CN=Configuration,DC=domain,DC=local
+	// Find the forest root by looking at the root domain's baseDN
+	configDN := trustBuildConfigDN(baseDN)
+	if configDN == "" {
+		return nil
+	}
+
+	partitionsDN := fmt.Sprintf("CN=Partitions,%s", configDN)
+
+	req := ldap.NewSearchRequest(partitionsDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
+		0, 30, false,
+		"(&(objectClass=crossRef)(systemFlags:1.2.840.113556.1.4.803:=1))", // SYSTEM_FLAG_CR_NTDS_NC
+		[]string{"dnsRoot", "nCName", "nETBIOSName", "trustParent"},
+		nil)
+
+	result, err := conn.SearchWithPaging(req, 100)
+	if err != nil {
+		return nil
+	}
+
+	if len(result.Entries) == 0 {
+		return nil
+	}
+
+	info := &trustForestInfo{}
+	for _, entry := range result.Entries {
+		dnsRoot := entry.GetAttributeValue("dnsRoot")
+		if dnsRoot == "" {
+			continue
+		}
+		info.Domains = append(info.Domains, dnsRoot)
+
+		// The entry with no trustParent (or trustParent pointing to itself) is the forest root
+		trustParent := entry.GetAttributeValue("trustParent")
+		if trustParent == "" {
+			info.ForestRoot = dnsRoot
+		}
+	}
+
+	// If we didn't find a root via trustParent, use the first domain
+	if info.ForestRoot == "" && len(info.Domains) > 0 {
+		info.ForestRoot = info.Domains[0]
+	}
+
+	return info
+}
+
+// trustBuildConfigDN derives CN=Configuration,DC=... from a baseDN.
+// For a child domain like DC=north,DC=sevenkingdoms,DC=local, the Configuration
+// partition is at the forest root (DC=sevenkingdoms,DC=local), but we try the
+// full DN first since LDAP will redirect if needed.
+func trustBuildConfigDN(baseDN string) string {
+	if baseDN == "" {
+		return ""
+	}
+	return fmt.Sprintf("CN=Configuration,%s", baseDN)
+}
+
 
 func trustTypeStr(t int) string {
 	switch t {
