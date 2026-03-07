@@ -461,6 +461,7 @@ func TestNewHTTPProfile_BasicConfig(t *testing.T) {
 		"",
 		"",
 		"none",
+		"",
 	)
 
 	if p.BaseURL != "http://localhost:80" {
@@ -491,6 +492,7 @@ func TestNewHTTPProfile_WithProxy(t *testing.T) {
 		"",
 		"http://proxy:8080",
 		"none",
+		"",
 	)
 
 	if p.client == nil {
@@ -512,6 +514,7 @@ func TestNewHTTPProfile_WithHostHeader(t *testing.T) {
 		"fronted.example.com",
 		"",
 		"none",
+		"",
 	)
 
 	if p.HostHeader != "fronted.example.com" {
@@ -536,6 +539,7 @@ func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
 		"",
 		"",
 		"system-ca",
+		"",
 	)
 
 	if p.EncryptionKey != keyB64 {
@@ -561,6 +565,7 @@ func TestNewHTTPProfile_InvalidProxy(t *testing.T) {
 		"",
 		"://not-a-valid-url",
 		"none",
+		"",
 	)
 
 	if p.client == nil {

@@ -88,7 +88,7 @@ type HTTPProfile struct {
 }
 
 // NewHTTPProfile creates a new HTTP profile
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify string) *HTTPProfile {
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify, tlsFingerprint string) *HTTPProfile {
 	profile := &HTTPProfile{
 		BaseURL:       baseURL,
 		UserAgent:     userAgent,
@@ -118,6 +118,16 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		if proxyU, err := url.Parse(proxyURL); err == nil {
 			transport.Proxy = http.ProxyURL(proxyU)
 		}
+	}
+
+	// If a TLS fingerprint is specified (not "go" or empty), use uTLS to spoof
+	// the TLS ClientHello. This replaces Go's default TLS stack with uTLS for
+	// HTTPS connections, producing a browser-matching JA3 fingerprint.
+	if helloID, ok := tlsFingerprintID(tlsFingerprint); ok {
+		transport.DialTLSContext = buildUTLSTransportDialer(helloID, tlsConfig)
+		// Clear TLSClientConfig — uTLS handles TLS now, and having both
+		// causes http.Transport to skip DialTLSContext for HTTPS.
+		transport.TLSClientConfig = nil
 	}
 
 	profile.client = &http.Client{

