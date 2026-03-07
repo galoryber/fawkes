@@ -156,6 +156,13 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{
+				Success: true,
+				TaskID:  taskData.Task.ID,
+			}
+			return response
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
