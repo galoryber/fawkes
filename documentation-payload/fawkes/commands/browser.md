@@ -5,47 +5,41 @@ weight = 25
 hidden = false
 +++
 
-{{% notice info %}}Windows Only{{% /notice %}}
-
 ## Summary
 
-Harvest saved credentials, cookies, browsing history, autofill form data, and bookmarks from Chromium-based browsers (Chrome, Edge). Reads the browser's `Local State` file to extract the AES encryption key (protected by Windows DPAPI), then queries the appropriate SQLite database. Supports both modern AES-256-GCM encryption (v10/v11 prefix) and legacy DPAPI-only format. Automatically handles multiple browser profiles.
+Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium). Cross-platform support for browsing history, autofill form data, and bookmarks. Windows additionally supports credential and cookie extraction via DPAPI + AES-GCM decryption. Automatically handles multiple browser profiles.
+
+### Platform Support
+
+| Action | Windows | macOS | Linux |
+|--------|---------|-------|-------|
+| passwords | Yes (DPAPI) | No | No |
+| cookies | Yes (DPAPI) | No | No |
+| history | Yes | Yes | Yes |
+| autofill | Yes | Yes | Yes |
+| bookmarks | Yes | Yes | Yes |
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| action | choose_one | No | passwords | `passwords` — saved login credentials; `cookies` — session cookies; `history` — browsing history; `autofill` — form data; `bookmarks` — saved URLs |
-| browser | choose_one | No | all | `all`, `chrome`, or `edge` — which browser(s) to target |
+| action | choose_one | No | history | `passwords` — saved login credentials (Windows only); `cookies` — session cookies (Windows only); `history` — browsing history; `autofill` — form data; `bookmarks` — saved URLs |
+| browser | choose_one | No | all | `all`, `chrome`, `edge`, or `chromium` — which browser(s) to target |
 
 ## Usage
-
-### Harvest All Browser Credentials
-
-Extract saved passwords from all installed Chromium-based browsers:
-```
-browser
-```
-
-### Target Specific Browser
-
-Harvest from Chrome only:
-```
-browser -action passwords -browser chrome
-```
-
-### Harvest Cookies
-
-Extract session cookies from all browsers:
-```
-browser -action cookies
-```
 
 ### Harvest Browsing History
 
 Extract recent browsing history (last 500 entries per profile):
 ```
 browser -action history
+```
+
+### Target Specific Browser
+
+Harvest from Chrome only:
+```
+browser -action history -browser chrome
 ```
 
 ### Harvest Autofill Data
@@ -60,6 +54,20 @@ browser -action autofill
 Extract saved bookmarks with folder structure:
 ```
 browser -action bookmarks
+```
+
+### Harvest Credentials (Windows Only)
+
+Extract saved passwords from all installed Chromium-based browsers:
+```
+browser -action passwords
+```
+
+### Harvest Cookies (Windows Only)
+
+Extract session cookies from all browsers:
+```
+browser -action cookies
 ```
 
 ### Example Output (history)
@@ -95,43 +103,32 @@ browser -action bookmarks
   https://dev.azure.com/company/
 ```
 
-### Example Output (credentials found)
-```
-=== Browser Credentials (3 found) ===
-
-Browser:  Edge
-URL:      https://login.example.com/
-Username: user@example.com
-Password: P@ssw0rd123
-
-Browser:  Chrome
-URL:      https://github.com/login
-Username: devuser
-Password: gh_token_abc123
-```
-
 ## How It Works
 
-1. Locates browser `User Data` directory in `%LOCALAPPDATA%`
-2. Reads `Local State` JSON to extract the base64-encoded encryption key
-3. Strips the "DPAPI" prefix and decrypts the AES key using `CryptUnprotectData`
-4. Copies the target SQLite database to a temp file (avoids browser lock)
-5. Queries the relevant table for the selected action
-6. For encrypted data (passwords, cookies): decrypts using AES-256-GCM with the recovered key
-7. Cleans up temp files after extraction
+### All Platforms (history, autofill, bookmarks)
+
+1. Locates browser data directories based on OS (e.g., `~/.config/google-chrome` on Linux, `~/Library/Application Support/Google/Chrome` on macOS, `%LOCALAPPDATA%\Google\Chrome\User Data` on Windows)
+2. Discovers profiles (Default, Profile 1, Profile 2, etc.)
+3. Copies SQLite databases to temp files to avoid browser lock contention
+4. Queries the relevant table (urls, autofill, or Bookmarks JSON file)
+5. Cleans up temp files after extraction
+
+### Windows Only (passwords, cookies)
+
+1. Additionally reads `Local State` JSON to extract the base64-encoded encryption key
+2. Strips the "DPAPI" prefix and decrypts the AES key using `CryptUnprotectData`
+3. For encrypted data: decrypts using AES-256-GCM with the recovered key
 
 ## Notes
 
-- The agent must run as the same user who saved the credentials (DPAPI is user-bound)
+- **Cross-platform:** History, autofill, and bookmarks work on Windows, macOS, and Linux
+- **Windows-only:** Passwords and cookies require DPAPI (user-bound key decryption)
 - The browser does not need to be closed — databases are copied to avoid lock conflicts
-- Multi-profile support: automatically discovers Default and numbered profiles (Profile 1, Profile 2, etc.)
-- Legacy passwords (pre-v80 Chrome) use direct DPAPI encryption and are also supported
-- Cookie database location: Chrome 96+ stores cookies in `Network/Cookies`, older versions in profile `Cookies`
-- History and autofill do not require DPAPI decryption — data is stored in plaintext SQLite
+- Multi-profile support: automatically discovers Default and numbered profiles
+- Supported browsers: Chrome, Edge, Chromium (all three on all platforms)
+- History/autofill returns up to 500 most recent entries per profile
+- Chrome timestamps use a custom epoch (microseconds since 1601-01-01 UTC); auto-detected
 - Bookmarks are stored as a JSON file (no database, no encryption)
-- History returns up to 500 most recent entries per profile, ordered by last visit time
-- Autofill returns up to 500 most recent entries per profile, ordered by last use date
-- Chrome timestamps use a custom epoch (microseconds since 1601-01-01 UTC)
 
 ## MITRE ATT&CK Mapping
 

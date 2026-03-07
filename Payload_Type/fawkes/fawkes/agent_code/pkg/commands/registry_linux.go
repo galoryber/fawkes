@@ -25,4 +25,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&ContainerEscapeCommand{})
 	RegisterCommand(&EnvScanCommand{})
 	RegisterCommand(&PtyCommand{})
+	RegisterCommand(&BrowserCommand{})
 }

