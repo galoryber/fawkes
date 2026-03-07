@@ -132,7 +132,12 @@ func remoteRegConnect(args remoteRegArgs) (winreg.WinregClient, *winreg.Key, con
 		gssapi.WithMechanismFactory(ssp.NTLM),
 	), time.Duration(args.Timeout)*time.Second)
 
-	cc, err := dcerpc.Dial(ctx, args.Server, dcerpc.WithEndpoint("ncacn_np:[winreg]"))
+	cc, err := dcerpc.Dial(ctx, args.Server,
+		dcerpc.WithEndpoint("ncacn_np:[winreg]"),
+		dcerpc.WithCredentials(cred),
+		dcerpc.WithMechanism(ssp.SPNEGO),
+		dcerpc.WithMechanism(ssp.NTLM),
+	)
 	if err != nil {
 		cancel()
 		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %v", err)
