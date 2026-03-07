@@ -32,6 +32,7 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer structs.ZeroString(&args.Password)
 
 	if args.Command == "" || args.Username == "" {
 		return structs.CommandResult{

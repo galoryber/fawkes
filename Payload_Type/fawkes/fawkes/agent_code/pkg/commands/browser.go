@@ -303,6 +303,7 @@ func browserPasswords(args browserArgs) structs.CommandResult {
 			errors = append(errors, fmt.Sprintf("%s: %v", browserName, err))
 			continue
 		}
+		defer structs.ZeroBytes(key)
 
 		// Find all profiles
 		profiles := findProfiles(userDataDir)
@@ -393,6 +394,12 @@ func browserPasswords(args browserArgs) structs.CommandResult {
 	if len(mythicCreds) > 0 {
 		result.Credentials = &mythicCreds
 	}
+
+	// Zero decrypted passwords from local credential cache
+	for i := range allCreds {
+		structs.ZeroString(&allCreds[i].Password)
+	}
+
 	return result
 }
 

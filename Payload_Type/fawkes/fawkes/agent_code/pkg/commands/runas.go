@@ -70,6 +70,7 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	username, _ := syscall.UTF16PtrFromString(args.Username)
 	domain, _ := syscall.UTF16PtrFromString(args.Domain)
 	password, _ := syscall.UTF16PtrFromString(args.Password)
+	defer zeroUTF16Ptr(password)
 	commandLine, _ := syscall.UTF16PtrFromString(args.Command)
 
 	var si windows.StartupInfo

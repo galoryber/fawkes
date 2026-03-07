@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"unsafe"
+
+	"fawkes/pkg/structs"
 
 	"golang.org/x/sys/windows"
 )
@@ -105,7 +108,8 @@ func RevertCurrentToken() error {
 		gIdentityToken = 0
 	}
 
-	// Clear stored credentials
+	// Clear stored credentials (zero password before releasing)
+	zeroStoredCredentials(gIdentityCreds)
 	gIdentityCreds = nil
 
 	// Call RevertToSelf to drop any thread impersonation
@@ -342,6 +346,7 @@ func RemoveTokenFromStore(name string) error {
 		return fmt.Errorf("no token stored with name %q", name)
 	}
 
+	zeroStoredCredentials(saved.Creds)
 	windows.CloseHandle(windows.Handle(saved.Token))
 	delete(gTokenStore, name)
 	return nil
@@ -357,4 +362,23 @@ func ListTokenStore() map[string]*SavedToken {
 		result[k] = v
 	}
 	return result
+}
+
+// zeroUTF16Ptr zeros a null-terminated UTF-16 string in-place.
+// Used to clear password buffers passed to Windows API calls like LogonUserW.
+func zeroUTF16Ptr(p *uint16) {
+	if p == nil {
+		return
+	}
+	for ptr := p; *ptr != 0; ptr = (*uint16)(unsafe.Add(unsafe.Pointer(ptr), 2)) {
+		*ptr = 0
+	}
+}
+
+// zeroStoredCredentials clears the password from a StoredCredentials struct.
+func zeroStoredCredentials(creds *StoredCredentials) {
+	if creds == nil {
+		return
+	}
+	structs.ZeroString(&creds.Password)
 }

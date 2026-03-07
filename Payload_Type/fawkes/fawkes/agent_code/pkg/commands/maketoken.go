@@ -109,6 +109,9 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		uintptr(unsafe.Pointer(&newToken)),   // phToken (output)
 	)
 
+	// Zero the UTF-16 password buffer immediately after use
+	zeroUTF16Ptr(passwordPtr)
+
 	if ret == 0 {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("LogonUserW failed: %v (check credentials and logon type)", err),

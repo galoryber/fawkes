@@ -71,6 +71,7 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer structs.ZeroBytes(bootKey)
 
 	// Step 2: Read SAM F value and derive hashed boot key
 	hashedBootKey, samRevision, err := deriveHashedBootKey(bootKey)
@@ -81,6 +82,7 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer structs.ZeroBytes(hashedBootKey)
 
 	// Step 3: Enumerate user accounts and extract hashes
 	users, err := enumerateAndDecryptUsers(hashedBootKey, samRevision)
@@ -91,6 +93,12 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer func() {
+		for i := range users {
+			structs.ZeroString(&users[i].lmHash)
+			structs.ZeroString(&users[i].ntHash)
+		}
+	}()
 
 	if len(users) == 0 {
 		return structs.CommandResult{

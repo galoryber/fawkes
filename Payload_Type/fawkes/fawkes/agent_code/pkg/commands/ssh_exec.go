@@ -82,6 +82,10 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Timeout = 60
 	}
 
+	// Zero sensitive parameters after use
+	defer structs.ZeroString(&args.Password)
+	defer structs.ZeroString(&args.KeyData)
+
 	// Build auth methods
 	var authMethods []ssh.AuthMethod
 
@@ -107,6 +111,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 				Completed: true,
 			}
 		}
+		defer structs.ZeroBytes(keyBytes)
 		signer, err := parsePrivateKey(keyBytes, args.Password)
 		if err != nil {
 			return structs.CommandResult{

