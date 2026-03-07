@@ -116,7 +116,7 @@ func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
 	// Strategy 1: Copy the DB to a temp file to avoid lock contention
 	srcData, readErr := os.ReadFile(dbPath)
 	if readErr == nil {
-		tmpFile, tmpErr := os.CreateTemp("", "browser-*.db")
+		tmpFile, tmpErr := os.CreateTemp("", "")
 		if tmpErr == nil {
 			tmpPath := tmpFile.Name()
 			if _, writeErr := tmpFile.Write(srcData); writeErr == nil {
