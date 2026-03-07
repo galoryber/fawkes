@@ -356,6 +356,16 @@ Go's standard TLS stack produces a distinctive JA3 hash that network security to
 | `random` | Randomized fingerprint per connection |
 | `go` | No spoofing — use Go's default TLS stack |
 
+### Fallback C2 URLs
+
+Multiple C2 callback URLs with automatic failover. If the primary callback host is unreachable, the agent transparently cycles through fallback URLs before applying backoff.
+
+| Parameter | Description |
+|-----------|-------------|
+| `fallback_hosts` | Comma-separated fallback C2 hosts (e.g. `http://backup1.example.com,https://backup2.example.com`) |
+
+Same port and encryption as primary. Remembers last successful URL. Works with config vault and XOR obfuscation.
+
 ### Environment Keying / Guardrails
 
 Prevent the agent from executing on unauthorized systems. Configured at build time — the agent silently exits before making any network contact if checks fail. No logging, no artifacts, no C2 traffic.

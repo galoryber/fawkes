@@ -122,6 +122,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 		{
+			Name:          "fallback_hosts",
+			Description:   "Optional: Comma-separated fallback C2 callback hosts for automatic failover. If the primary callback_host is unreachable, the agent cycles through these. Same port and encryption as primary. E.g. 'http://backup1.example.com,https://backup2.example.com'.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "tls_verify",
 			Description:   "TLS certificate verification mode. 'none' = skip verification (default). 'system-ca' = use OS trust store. 'pinned:<sha256hex>' = pin to specific certificate fingerprint (e.g. pinned:a1b2c3...).",
 			Required:      false,
@@ -403,6 +410,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	if proxyURL, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_url"); err == nil && proxyURL != "" {
 		ldflags += fmt.Sprintf(" -X '%s.proxyURL=%s'", fawkes_main_package, proxyURL)
 	}
+	if fbHosts, err := payloadBuildMsg.BuildParameters.GetStringArg("fallback_hosts"); err == nil && fbHosts != "" {
+		ldflags += fmt.Sprintf(" -X '%s.fallbackHosts=%s'", fawkes_main_package, fbHosts)
+	}
 	if tlsVerify, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_verify"); err == nil && tlsVerify != "" {
 		ldflags += fmt.Sprintf(" -X '%s.tlsVerify=%s'", fawkes_main_package, tlsVerify)
 	}
@@ -550,6 +560,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		}
 		if proxyURL, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_url"); err == nil && proxyURL != "" {
 			obfVars = append(obfVars, obfVar{"proxyURL", proxyURL})
+		}
+		if fbHosts, err := payloadBuildMsg.BuildParameters.GetStringArg("fallback_hosts"); err == nil && fbHosts != "" {
+			obfVars = append(obfVars, obfVar{"fallbackHosts", fbHosts})
 		}
 
 		// Replace plaintext values in ldflags with XOR-encoded versions
