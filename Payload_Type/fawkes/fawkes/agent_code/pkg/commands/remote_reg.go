@@ -235,14 +235,14 @@ func remoteRegQuery(args remoteRegArgs) structs.CommandResult {
 	}
 	defer cancel()
 	defer cleanup()
-	defer cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: hiveKey})
+	defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: hiveKey}) }()
 
 	subKey, err := openRemoteSubKey(ctx, cli, hiveKey, args.Path)
 	if err != nil {
 		return structs.CommandResult{Output: fmt.Sprintf("Error opening key %s\\%s: %v", args.Hive, args.Path, err), Status: "error", Completed: true}
 	}
 	if args.Path != "" {
-		defer cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey})
+		defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey}) }()
 	}
 
 	if args.Name == "" {
@@ -285,14 +285,14 @@ func remoteRegEnum(args remoteRegArgs) structs.CommandResult {
 	}
 	defer cancel()
 	defer cleanup()
-	defer cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: hiveKey})
+	defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: hiveKey}) }()
 
 	subKey, err := openRemoteSubKey(ctx, cli, hiveKey, args.Path)
 	if err != nil {
 		return structs.CommandResult{Output: fmt.Sprintf("Error opening key %s\\%s: %v", args.Hive, args.Path, err), Status: "error", Completed: true}
 	}
 	if args.Path != "" {
-		defer cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey})
+		defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey}) }()
 	}
 
 	// Get key info for buffer sizing
@@ -421,14 +421,14 @@ func remoteRegSet(args remoteRegArgs) structs.CommandResult {
 	}
 	defer cancel()
 	defer cleanup()
-	defer cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: hiveKey})
+	defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: hiveKey}) }()
 
 	subKey, err := openRemoteSubKey(ctx, cli, hiveKey, args.Path)
 	if err != nil {
 		return structs.CommandResult{Output: fmt.Sprintf("Error opening key %s\\%s: %v", args.Hive, args.Path, err), Status: "error", Completed: true}
 	}
 	if args.Path != "" {
-		defer cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey})
+		defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey}) }()
 	}
 
 	valType, valData, err := encodeRemoteRegValue(args.Data, args.RegType)
@@ -464,14 +464,14 @@ func remoteRegDelete(args remoteRegArgs) structs.CommandResult {
 	}
 	defer cancel()
 	defer cleanup()
-	defer cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: hiveKey})
+	defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: hiveKey}) }()
 
 	subKey, err := openRemoteSubKey(ctx, cli, hiveKey, args.Path)
 	if err != nil {
 		return structs.CommandResult{Output: fmt.Sprintf("Error opening key %s\\%s: %v", args.Hive, args.Path, err), Status: "error", Completed: true}
 	}
 	if args.Path != "" {
-		defer cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey})
+		defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey}) }()
 	}
 
 	if args.Name != "" {
@@ -510,7 +510,7 @@ func remoteRegDelete(args remoteRegArgs) structs.CommandResult {
 	}
 
 	// Need to close the subKey first since we opened it, then reopen parent
-	cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey})
+	_, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey})
 
 	parentKey := hiveKey
 	if parentPath != "" {
@@ -518,7 +518,7 @@ func remoteRegDelete(args remoteRegArgs) structs.CommandResult {
 		if err != nil {
 			return structs.CommandResult{Output: fmt.Sprintf("Error opening parent key: %v", err), Status: "error", Completed: true}
 		}
-		defer cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: parentKey})
+		defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: parentKey}) }()
 	}
 
 	resp, err := cli.BaseRegDeleteKey(ctx, &winreg.BaseRegDeleteKeyRequest{
