@@ -205,7 +205,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 			file.Close()
 			os.Remove(dumpPath)
 			return structs.CommandResult{
-				Output:    fmt.Sprintf("Successfully dumped %s (PID %d)\nDump size: %s\nFile uploaded to Mythic and cleaned from disk.", processName, targetPID, formatFileSize(dumpSize)),
+				Output:    fmt.Sprintf("Successfully dumped %s (PID %d)\nDump size: %s\nFile uploaded to server and cleaned from disk.", processName, targetPID, formatFileSize(dumpSize)),
 				Status:    "success",
 				Completed: true,
 			}

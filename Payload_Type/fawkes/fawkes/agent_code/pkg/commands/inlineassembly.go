@@ -151,7 +151,7 @@ func (c *InlineAssemblyCommand) Name() string {
 
 // Description returns the command description
 func (c *InlineAssemblyCommand) Description() string {
-	return "Execute a .NET assembly in memory from Mythic file storage"
+	return "Execute a .NET assembly in memory from uploaded file storage"
 }
 
 // InlineAssemblyParams represents the parameters for inline-assembly

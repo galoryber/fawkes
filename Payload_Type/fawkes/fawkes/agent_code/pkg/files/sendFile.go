@@ -30,7 +30,7 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 	if sendFileToMythic.Data == nil {
 		if sendFileToMythic.File == nil {
 			errResponse := sendFileToMythic.Task.NewResponse()
-			errResponse.UserOutput = "No data and no file specified when trying to send a file to Mythic"
+			errResponse.UserOutput = "No data and no file specified when trying to send a file to server"
 			sendFileToMythic.Task.Job.SendResponses <- errResponse
 			sendFileToMythic.FinishedTransfer <- 1
 			return
@@ -83,7 +83,7 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 	resp, ok := waitForFileResponse(sendFileToMythic.FileTransferResponse, fileTransferTimeout)
 	if !ok {
 		errResponse := sendFileToMythic.Task.NewResponse()
-		errResponse.UserOutput = "File transfer timed out waiting for file_id from Mythic"
+		errResponse.UserOutput = "File transfer timed out waiting for file_id from server"
 		sendFileToMythic.Task.Job.SendResponses <- errResponse
 		sendFileToMythic.FinishedTransfer <- 1
 		return
@@ -99,7 +99,7 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 
 	if _, hasFileID := fileDetails["file_id"]; !hasFileID {
 		errResponse := sendFileToMythic.Task.NewResponse()
-		errResponse.UserOutput = "Error: Mythic response did not contain file_id"
+		errResponse.UserOutput = "Error: server response did not contain file_id"
 		sendFileToMythic.Task.Job.SendResponses <- errResponse
 		sendFileToMythic.FinishedTransfer <- 1
 		return
@@ -169,7 +169,7 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 		if !ok {
 			errResponse := sendFileToMythic.Task.NewResponse()
 			errResponse.Completed = true
-			errResponse.UserOutput = "Error: file_id not found or not a string in Mythic response"
+			errResponse.UserOutput = "Error: file_id not found or not a string in server response"
 			sendFileToMythic.Task.Job.SendResponses <- errResponse
 			sendFileToMythic.FinishedTransfer <- 1
 			return
@@ -192,7 +192,7 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 		decResp, ok := waitForFileResponse(sendFileToMythic.FileTransferResponse, fileTransferTimeout)
 		if !ok {
 			errResponse := sendFileToMythic.Task.NewResponse()
-			errResponse.UserOutput = fmt.Sprintf("File transfer timed out waiting for chunk %d/%d acknowledgment from Mythic", int(i)+1, chunks)
+			errResponse.UserOutput = fmt.Sprintf("File transfer timed out waiting for chunk %d/%d acknowledgment from server", int(i)+1, chunks)
 			sendFileToMythic.Task.Job.SendResponses <- errResponse
 			sendFileToMythic.FinishedTransfer <- 1
 			return

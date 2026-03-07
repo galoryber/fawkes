@@ -70,6 +70,7 @@ rule MythicC2Indicators
         $mythic1 = "mythicrpc" ascii
         $mythic2 = "MythicMeta" ascii
         $mythic3 = "mythic_" ascii
+        $mythic4 = "Mythic" ascii
         $agent_msg = "agentMessage" ascii
     condition:
         any of them
