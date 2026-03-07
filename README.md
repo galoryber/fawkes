@@ -342,6 +342,19 @@ Control how the agent validates HTTPS certificates when communicating with the C
 
 Certificate pinning prevents MITM interception of agent traffic even if an attacker controls a trusted CA.
 
+### TLS Fingerprint Spoofing (JA3)
+
+Go's standard TLS stack produces a distinctive JA3 hash that network security tools can identify as non-browser traffic. The **tls_fingerprint** build parameter uses [uTLS](https://github.com/refraction-networking/utls) to spoof the TLS ClientHello, producing a browser-matching JA3 fingerprint.
+
+| Fingerprint | Description |
+|-------------|-------------|
+| `chrome` | Chrome/Chromium (default) — most common browser, best for blending |
+| `firefox` | Firefox |
+| `safari` | Safari |
+| `edge` | Microsoft Edge |
+| `random` | Randomized fingerprint per connection |
+| `go` | No spoofing — use Go's default TLS stack |
+
 ### Environment Keying / Guardrails
 
 Prevent the agent from executing on unauthorized systems. Configured at build time — the agent silently exits before making any network contact if checks fail. No logging, no artifacts, no C2 traffic.
