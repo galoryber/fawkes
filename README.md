@@ -160,6 +160,7 @@ pty | `pty [-shell /bin/bash] [-rows 24] [-cols 80]` | **(Linux/macOS)** Start a
 pwd | `pwd` | Print working directory.
 read-memory | `read-memory <dll_name> <function_name> <start_index> <num_bytes>` | **(Windows only)** Read bytes from a DLL function address.
 reg | `reg -action <read\|write\|delete\|search\|save\|creds> [-hive HKLM] [-path ...] [...]` | **(Windows only)** Unified registry operations — read, write, delete, search, and save hives (T1012, T1112, T1003.002).
+remote-reg | `remote-reg -action <query\|enum\|set\|delete> -server <host> -username <user> [-password <pass>\|-hash <NT>] [-hive HKLM] [-path ...] [-name <val>]` | Read/write registry on remote Windows hosts via WinReg RPC over SMB named pipes. Supports pass-the-hash. Cross-platform (T1012, T1112, T1021.002).
 rev2self | `rev2self` | **(Windows only)** Revert to the original security context by dropping any active impersonation token.
 route | `route` | Display the system routing table. Windows: GetIpForwardTable API, Linux: /proc/net/route + IPv6, macOS: netstat -rn. Cross-platform (T1016).
 rpfwd | `rpfwd start <port> <remote_ip> <remote_port>` / `rpfwd stop <port>` | Reverse port forward -- agent listens, Mythic routes to target. Cross-platform (T1090).
@@ -296,8 +297,9 @@ Tracked artifact types:
 | File Create | mkdir |
 | File Delete | rm |
 | File Modify | timestomp |
-| Registry Write | reg (write/delete), persist (registry, com-hijack, screensaver methods), uac-bypass, defender (add/remove-exclusion) |
+| Registry Write | reg (write/delete), remote-reg (set/delete), persist (registry, com-hijack, screensaver methods), uac-bypass, defender (add/remove-exclusion) |
 | Registry Save | reg (save/creds) |
+| Remote Registry | remote-reg (query/enum/set/delete via WinReg RPC) |
 | Logon | make-token |
 | Token Steal | steal-token, getsystem |
 

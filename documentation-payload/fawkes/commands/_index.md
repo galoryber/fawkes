@@ -157,6 +157,7 @@ pre = "<b>2. </b>"
     * [whoami](/agents/fawkes/commands/whoami/)
 - Registry Operations
     * [reg](/agents/fawkes/commands/reg/)
+    * [remote-reg](/agents/fawkes/commands/remote-reg/)
 - Persistence
     * [bits](/agents/fawkes/commands/bits/)
     * [crontab](/agents/fawkes/commands/crontab/)
