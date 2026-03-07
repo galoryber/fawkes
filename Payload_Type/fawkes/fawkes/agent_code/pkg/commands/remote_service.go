@@ -192,7 +192,7 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 	), time.Duration(args.Timeout)*time.Second)
 
 	cc, err := dcerpc.Dial(ctx, args.Server,
-		dcerpc.WithEndpoint("ncacn_np:[svcctl]"),
+		dcerpc.WithEndpoint("ncacn_np:[ntsvcs]"),
 		dcerpc.WithCredentials(cred),
 		dcerpc.WithMechanism(ssp.SPNEGO),
 		dcerpc.WithMechanism(ssp.NTLM),
