@@ -14,9 +14,9 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "df_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Report filesystem disk space usage. Shows total, used, available space and utilization percentage.",
-		HelpString:          "df",
-		Version:             1,
+		Description:         "Report filesystem disk space usage with optional filtering by device, mount point, or filesystem type.",
+		HelpString:          "df [-filesystem <device>] [-mount_point <path>] [-fstype <type>]",
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1082"},
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -26,7 +26,50 @@ func init() {
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
 		},
-		CommandParameters: []agentstructs.CommandParameter{},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:          "filesystem",
+				CLIName:       "filesystem",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Filter by device/filesystem name (substring match)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     1,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "mount_point",
+				CLIName:       "mount_point",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Filter by mount point path (substring match)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     2,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "fstype",
+				CLIName:       "fstype",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Filter by filesystem type (case-insensitive, e.g. 'ext4', 'ntfs')",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     3,
+						GroupName:            "Default",
+					},
+				},
+			},
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -41,7 +84,20 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
-			display := fmt.Sprintf("Disk space")
+			fs, _ := taskData.Args.GetStringArg("filesystem")
+			mp, _ := taskData.Args.GetStringArg("mount_point")
+			ft, _ := taskData.Args.GetStringArg("fstype")
+
+			display := "Disk space"
+			if fs != "" {
+				display += fmt.Sprintf(", filesystem=%s", fs)
+			}
+			if mp != "" {
+				display += fmt.Sprintf(", mount=%s", mp)
+			}
+			if ft != "" {
+				display += fmt.Sprintf(", fstype=%s", ft)
+			}
 			response.DisplayParams = &display
 			return response
 		},
