@@ -9,9 +9,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "handles",
-		Description:         "handles -pid <pid> [-type File] [-show_names] [-max_count 500] - Enumerate open handles in a target process. Windows-only using NtQuerySystemInformation.",
-		HelpString:          "handles -pid <pid> [-type File] [-show_names] [-max_count 500]",
-		Version:             1,
+		Description:         "handles -pid <pid> [-type File] [-show_names] [-max_count 500] - Enumerate open handles/file descriptors in a target process. Windows: NtQuerySystemInformation. Linux: /proc/<pid>/fd. macOS: lsof.",
+		HelpString:          "handles -pid <pid> [-type File] [-show_names] [-max_count 500]\n\nWindows: Enumerates NT handles (File, Key, Section, Mutant, etc.) via NtQuerySystemInformation.\nLinux: Reads /proc/<pid>/fd symlinks to enumerate open file descriptors (files, sockets, pipes).\nmacOS: Uses lsof to enumerate open file descriptors.\n\nTypes vary by platform:\n  Windows: File, Key, Section, Mutant, Event, Process, Thread, etc.\n  Linux: file, socket, pipe, device, tty, eventfd, eventpoll, etc.\n  macOS: file, socket, pipe, device, directory, kqueue, etc.",
+		Version:             2,
 		MitreAttackMappings: []string{"T1057", "T1082"}, // Process Discovery + System Information Discovery
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
@@ -19,7 +19,7 @@ func init() {
 			Author:     "@galoryber",
 		},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -93,7 +93,14 @@ func init() {
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
-			createArtifact(task.Task.ID, "API Call", "NtQuerySystemInformation(SystemHandleInformation) + NtQueryObject")
+			os := task.Payload.OS
+			if os == "Windows" {
+				createArtifact(task.Task.ID, "API Call", "NtQuerySystemInformation(SystemHandleInformation) + NtQueryObject")
+			} else if os == "macOS" {
+				createArtifact(task.Task.ID, "Process Create", "lsof -p <pid> -F ftn")
+			} else {
+				createArtifact(task.Task.ID, "FileOpen", "/proc/<pid>/fd")
+			}
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil && displayParams != "" {
 				response.DisplayParams = &displayParams
 			}

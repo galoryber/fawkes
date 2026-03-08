@@ -21,18 +21,7 @@ type HandlesCommand struct{}
 func (c *HandlesCommand) Name() string        { return "handles" }
 func (c *HandlesCommand) Description() string { return "Enumerate open handles in a process (T1057)" }
 
-type handlesArgs struct {
-	PID       int    `json:"pid"`
-	TypeName  string `json:"type"`
-	MaxCount  int    `json:"max_count"`
-	ShowNames bool   `json:"show_names"`
-}
-
-type handleInfo struct {
-	Handle   uint16 `json:"handle"`
-	TypeName string `json:"type"`
-	Name     string `json:"name,omitempty"`
-}
+// handlesArgs and handleInfo are defined in handles_common.go
 
 // Windows NT API constants
 const (
@@ -134,7 +123,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 
 		hi := handleInfo{
-			Handle: entry.HandleValue,
+			Handle: int(entry.HandleValue),
 		}
 
 		// Duplicate the handle into our process for querying

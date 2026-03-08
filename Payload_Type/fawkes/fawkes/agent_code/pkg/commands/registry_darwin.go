@@ -29,4 +29,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&FirewallCommand{})
 	RegisterCommand(&GetPrivsCommand{})
 	RegisterCommand(&NamedPipesCommand{})
+	RegisterCommand(&HandlesCommand{})
 }
