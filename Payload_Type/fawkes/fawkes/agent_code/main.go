@@ -325,6 +325,9 @@ func runAgent() {
 		commands.SetBlockDLLs(true)
 	}
 
+	// Share configured User-Agent with commands (e.g., curl) to avoid hardcoded duplicates
+	commands.DefaultUserAgent = userAgent
+
 	// Clear build-time globals — all values have been copied into agent/profile structs.
 	// Prevents memory forensics from extracting sensitive config from the data segment.
 	sandboxGuardEnabled := sandboxGuard == "true"

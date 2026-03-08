@@ -120,7 +120,7 @@ func enumerateUnixSocketsLinux() ([]string, error) {
 	for path := range seen {
 		result = append(result, path)
 	}
-	return result, nil
+	return result, scanner.Err()
 }
 
 // enumerateUnixSocketsScan scans common directories for socket files (macOS fallback).

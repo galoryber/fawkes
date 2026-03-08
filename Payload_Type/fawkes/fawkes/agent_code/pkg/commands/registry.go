@@ -14,6 +14,11 @@ var (
 	// runningTasks tracks currently executing tasks by task ID.
 	// Used by jobs/jobkill commands to list and cancel running tasks.
 	runningTasks sync.Map // map[string]*structs.Task
+
+	// DefaultUserAgent is set by main.go during initialization so commands
+	// that make HTTP requests (e.g., curl) can reuse the agent's configured UA
+	// instead of maintaining a separate hardcoded copy.
+	DefaultUserAgent string
 )
 
 // Initialize sets up all available commands
