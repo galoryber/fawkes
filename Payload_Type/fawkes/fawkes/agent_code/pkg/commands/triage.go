@@ -35,11 +35,7 @@ type triageResult struct {
 func (c *TriageCommand) Execute(task structs.Task) structs.CommandResult {
 	var args triageArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to parse arguments: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to parse arguments: %v", err)
 	}
 
 	if args.Action == "" {
@@ -65,44 +61,24 @@ func (c *TriageCommand) Execute(task structs.Task) structs.CommandResult {
 		results = triageConfigs(task, args)
 	case "custom":
 		if args.Path == "" {
-			return structs.CommandResult{
-				Output:    "Error: -path required for custom triage",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: -path required for custom triage")
 		}
 		results = triageCustom(task, args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: all, documents, credentials, configs, custom", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: all, documents, credentials, configs, custom", args.Action)
 	}
 
 	if task.DidStop() {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Triage cancelled. Found %d files before stop.", len(results)),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Triage cancelled. Found %d files before stop.", len(results))
 	}
 
 	if len(results) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	data, err := json.Marshal(results)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling output: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling output: %v", err)
 	}
 
 	return structs.CommandResult{

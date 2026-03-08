@@ -47,19 +47,11 @@ func (c *KeychainCommand) Execute(task structs.Task) structs.CommandResult {
 	var args keychainArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: list, dump, find-password, find-internet, find-cert",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: list, dump, find-password, find-internet, find-cert")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -74,11 +66,7 @@ func (c *KeychainCommand) Execute(task structs.Task) structs.CommandResult {
 	case "find-cert":
 		return keychainFindCert(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: list, dump, find-password, find-internet, find-cert", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: list, dump, find-password, find-internet, find-cert", args.Action)
 	}
 }
 
@@ -86,11 +74,7 @@ func (c *KeychainCommand) Execute(task structs.Task) structs.CommandResult {
 func keychainList() structs.CommandResult {
 	out, err := keychainExec("list-keychains")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing keychains: %v\n%s", err, string(out)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error listing keychains: %v\n%s", err, string(out))
 	}
 
 	// Also get default and login keychain info
@@ -117,11 +101,7 @@ func keychainList() structs.CommandResult {
 func keychainDump() structs.CommandResult {
 	out, err := keychainExec("dump-keychain")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error dumping keychain: %v\n%s", err, string(out)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error dumping keychain: %v\n%s", err, string(out))
 	}
 
 	output := string(out)
@@ -155,11 +135,7 @@ func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 	if err != nil {
 		output := string(out)
 		if macIsItemNotFound(output) {
-			return structs.CommandResult{
-				Output:    "No matching generic password found",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("No matching generic password found")
 		}
 		// Password retrieval failed — retry without -g for metadata only
 		cmdArgs = append([]string{"find-generic-password"}, filterArgs...)
@@ -167,17 +143,9 @@ func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 		if err2 != nil {
 			output2 := string(out2)
 			if macIsItemNotFound(output2) {
-				return structs.CommandResult{
-					Output:    "No matching generic password found",
-					Status:    "success",
-					Completed: true,
-				}
+				return successResult("No matching generic password found")
 			}
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: %v\n%s", err2, output2),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: %v\n%s", err2, output2)
 		}
 		return structs.CommandResult{
 			Output:    string(out2) + "\n[NOTE: Password data unavailable — authorization required or keychain locked]",
@@ -213,11 +181,7 @@ func keychainFindInternet(args keychainArgs) structs.CommandResult {
 	if err != nil {
 		output := string(out)
 		if macIsItemNotFound(output) {
-			return structs.CommandResult{
-				Output:    "No matching internet password found",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("No matching internet password found")
 		}
 		// Password retrieval failed — retry without -g for metadata only
 		cmdArgs = append([]string{"find-internet-password"}, filterArgs...)
@@ -225,17 +189,9 @@ func keychainFindInternet(args keychainArgs) structs.CommandResult {
 		if err2 != nil {
 			output2 := string(out2)
 			if macIsItemNotFound(output2) {
-				return structs.CommandResult{
-					Output:    "No matching internet password found",
-					Status:    "success",
-					Completed: true,
-				}
+				return successResult("No matching internet password found")
 			}
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: %v\n%s", err2, output2),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: %v\n%s", err2, output2)
 		}
 		return structs.CommandResult{
 			Output:    string(out2) + "\n[NOTE: Password data unavailable — authorization required or keychain locked]",
@@ -261,11 +217,7 @@ func keychainFindCert(args keychainArgs) structs.CommandResult {
 
 	out, err := keychainExec(cmdArgs...)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error finding certificates: %v\n%s", err, string(out)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error finding certificates: %v\n%s", err, string(out))
 	}
 
 	output := string(out)

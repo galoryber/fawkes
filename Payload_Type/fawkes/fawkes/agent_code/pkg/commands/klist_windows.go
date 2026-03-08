@@ -174,22 +174,14 @@ func klistList(args klistArgs) structs.CommandResult {
 	// Connect to LSA
 	handle, err := lsaConnect()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LSA: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LSA: %v", err)
 	}
 	defer lsaClose(handle)
 
 	// Lookup Kerberos package
 	authPkg, err := lsaLookupKerberos(handle)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error looking up Kerberos package: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error looking up Kerberos package: %v", err)
 	}
 
 	// Query ticket cache
@@ -211,11 +203,7 @@ func klistList(args klistArgs) structs.CommandResult {
 		uintptr(unsafe.Pointer(&protocolStatus)),
 	)
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying ticket cache: %v", lsaNtStatusToError(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying ticket cache: %v", lsaNtStatusToError(ret))
 	}
 	if responsePtr != 0 {
 		defer procLsaFreeReturnBuffer.Call(responsePtr)
@@ -223,25 +211,13 @@ func klistList(args klistArgs) structs.CommandResult {
 	if protocolStatus != 0 {
 		// STATUS_NO_LOGON_SERVERS (0xC000005F): machine not domain-joined or no DC reachable
 		if protocolStatus == 0xC000005F {
-			return structs.CommandResult{
-				Output:    "=== Kerberos Ticket Cache ===\n\nCached tickets: 0\n\nNo domain controller available — machine may not be domain-joined.\nKerberos tickets are only cached for domain-authenticated sessions.",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("=== Kerberos Ticket Cache ===\n\nCached tickets: 0\n\nNo domain controller available — machine may not be domain-joined.\nKerberos tickets are only cached for domain-authenticated sessions.")
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Kerberos protocol error: %v", lsaNtStatusToError(protocolStatus)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Kerberos protocol error: %v", lsaNtStatusToError(protocolStatus))
 	}
 
 	if responsePtr == 0 || responseLen < 8 {
-		return structs.CommandResult{
-			Output:    "=== Kerberos Ticket Cache ===\n\nCached tickets: 0\n\nNo ticket cache data returned.",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("=== Kerberos Ticket Cache ===\n\nCached tickets: 0\n\nNo ticket cache data returned.")
 	}
 
 	// Parse response header: MessageType (4 bytes) + CountOfTickets (4 bytes)
@@ -249,11 +225,7 @@ func klistList(args klistArgs) structs.CommandResult {
 	count := *countPtr
 
 	if count == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	// Parse ticket entries starting at offset 8
@@ -311,11 +283,7 @@ func klistList(args klistArgs) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling output: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling output: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -329,21 +297,13 @@ func klistPurge(args klistArgs) structs.CommandResult {
 	// Connect to LSA
 	handle, err := lsaConnect()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LSA: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LSA: %v", err)
 	}
 	defer lsaClose(handle)
 
 	authPkg, err := lsaLookupKerberos(handle)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error looking up Kerberos package: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error looking up Kerberos package: %v", err)
 	}
 
 	// Purge all tickets (empty ServerName and RealmName = purge all)
@@ -368,62 +328,34 @@ func klistPurge(args klistArgs) structs.CommandResult {
 		defer procLsaFreeReturnBuffer.Call(responsePtr)
 	}
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error purging ticket cache: %v", lsaNtStatusToError(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error purging ticket cache: %v", lsaNtStatusToError(ret))
 	}
 	if protocolStatus != 0 {
 		// STATUS_NO_LOGON_SERVERS or STATUS_INVALID_PARAMETER on non-domain machines
 		if protocolStatus == 0xC000005F || protocolStatus == 0xC000000D {
-			return structs.CommandResult{
-				Output:    "No Kerberos tickets to purge (no domain logon session)",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("No Kerberos tickets to purge (no domain logon session)")
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Kerberos purge protocol error: %v", lsaNtStatusToError(protocolStatus)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Kerberos purge protocol error: %v", lsaNtStatusToError(protocolStatus))
 	}
 
-	return structs.CommandResult{
-		Output:    "Kerberos ticket cache purged successfully",
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult("Kerberos ticket cache purged successfully")
 }
 
 func klistDump(args klistArgs) structs.CommandResult {
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: specify -server with the target SPN to dump (e.g., krbtgt/DOMAIN.LOCAL)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: specify -server with the target SPN to dump (e.g., krbtgt/DOMAIN.LOCAL)")
 	}
 
 	// Connect to LSA
 	handle, err := lsaConnect()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LSA: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LSA: %v", err)
 	}
 	defer lsaClose(handle)
 
 	authPkg, err := lsaLookupKerberos(handle)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error looking up Kerberos package: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error looking up Kerberos package: %v", err)
 	}
 
 	// Build UNICODE target name
@@ -459,26 +391,14 @@ func klistDump(args klistArgs) structs.CommandResult {
 		defer procLsaFreeReturnBuffer.Call(responsePtr)
 	}
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error retrieving ticket: %v", lsaNtStatusToError(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error retrieving ticket: %v", lsaNtStatusToError(ret))
 	}
 	if protocolStatus != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Kerberos retrieve error: %v", lsaNtStatusToError(protocolStatus)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Kerberos retrieve error: %v", lsaNtStatusToError(protocolStatus))
 	}
 
 	if responsePtr == 0 || responseLen == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No ticket found for %s", args.Server),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No ticket found for %s", args.Server)
 	}
 
 	// The response is KERB_RETRIEVE_TKT_RESPONSE which contains:
@@ -520,29 +440,17 @@ func klistDump(args klistArgs) structs.CommandResult {
 
 func klistImport(args klistArgs) structs.CommandResult {
 	if args.Ticket == "" {
-		return structs.CommandResult{
-			Output:    "Error: -ticket parameter required (base64-encoded kirbi data)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -ticket parameter required (base64-encoded kirbi data)")
 	}
 
 	// Decode base64
 	data, err := base64.StdEncoding.DecodeString(args.Ticket)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding base64 ticket data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding base64 ticket data: %v", err)
 	}
 
 	if len(data) < 4 {
-		return structs.CommandResult{
-			Output:    "Error: ticket data too short",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: ticket data too short")
 	}
 
 	// Auto-detect format
@@ -558,31 +466,19 @@ func klistImport(args klistArgs) structs.CommandResult {
 	}
 
 	if isCcache {
-		return structs.CommandResult{
-			Output:    "Error: ccache format detected. On Windows, use kirbi format instead.\nRe-forge with: ticket -action forge ... -format kirbi\nOr use impacket's ticketConverter.py to convert.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: ccache format detected. On Windows, use kirbi format instead.\nRe-forge with: ticket -action forge ... -format kirbi\nOr use impacket's ticketConverter.py to convert.")
 	}
 
 	// Connect to LSA
 	handle, err := lsaConnect()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LSA: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LSA: %v", err)
 	}
 	defer lsaClose(handle)
 
 	authPkg, err := lsaLookupKerberos(handle)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error looking up Kerberos package: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error looking up Kerberos package: %v", err)
 	}
 
 	// Build KERB_SUBMIT_TKT_REQUEST:
@@ -627,18 +523,10 @@ func klistImport(args klistArgs) structs.CommandResult {
 		defer procLsaFreeReturnBuffer.Call(responsePtr)
 	}
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error submitting ticket to LSA: %v", lsaNtStatusToError(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error submitting ticket to LSA: %v", lsaNtStatusToError(ret))
 	}
 	if protocolStatus != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Kerberos submit error: %v", lsaNtStatusToError(protocolStatus)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Kerberos submit error: %v", lsaNtStatusToError(protocolStatus))
 	}
 
 	var sb strings.Builder

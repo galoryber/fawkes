@@ -23,11 +23,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 	var args handlesArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -36,11 +32,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 		args.PID = os.Getpid()
 	}
 	if args.PID < 0 {
-		return structs.CommandResult{
-			Output:    "Error: pid is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: pid is required")
 	}
 
 	if args.MaxCount <= 0 {
@@ -49,11 +41,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 
 	handles, err := enumerateDarwinFDs(args.PID, args.MaxCount)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating file descriptors: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating file descriptors: %v", err)
 	}
 
 	// Apply type filter and build summary

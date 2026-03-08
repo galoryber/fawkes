@@ -32,11 +32,7 @@ func (c *TCCCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -56,11 +52,7 @@ func (c *TCCCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(allEntries) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No TCC records found.\n\nSearched:\n  User DB:   %s\n  System DB: %s\n\nNote: System DB requires Full Disk Access or root.", userDB, systemDB),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No TCC records found.\n\nSearched:\n  User DB:   %s\n  System DB: %s\n\nNote: System DB requires Full Disk Access or root.", userDB, systemDB)
 	}
 
 	// Format output

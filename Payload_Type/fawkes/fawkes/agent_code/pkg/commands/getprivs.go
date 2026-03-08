@@ -40,52 +40,32 @@ func (c *GetPrivsCommand) Execute(task structs.Task) structs.CommandResult {
 		return listPrivileges()
 	case "enable":
 		if params.Privilege == "" {
-			return structs.CommandResult{
-				Output:    "Error: 'privilege' parameter required for enable action",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: 'privilege' parameter required for enable action")
 		}
 		return adjustPrivilege(params.Privilege, true)
 	case "disable":
 		if params.Privilege == "" {
-			return structs.CommandResult{
-				Output:    "Error: 'privilege' parameter required for disable action",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: 'privilege' parameter required for disable action")
 		}
 		return adjustPrivilege(params.Privilege, false)
 	case "strip":
 		return stripPrivileges()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use 'list', 'enable', 'disable', or 'strip')", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use 'list', 'enable', 'disable', or 'strip')", params.Action)
 	}
 }
 
 func listPrivileges() structs.CommandResult {
 	token, tokenSource, err := getCurrentToken()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get current token: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get current token: %v", err)
 	}
 	defer token.Close()
 
 	identity, _ := GetTokenUserInfo(token)
 	privs, err := getTokenPrivileges(token)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enumerate privileges: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to enumerate privileges: %v", err)
 	}
 
 	integrity, err := getTokenIntegrityLevel(token)
@@ -111,11 +91,7 @@ func listPrivileges() structs.CommandResult {
 
 	data, err := json.Marshal(output)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling results: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling results: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -153,22 +129,14 @@ func getTokenForAdjust() (windows.Token, error) {
 func adjustPrivilege(privName string, enable bool) structs.CommandResult {
 	token, err := getTokenForAdjust()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get token: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get token: %v", err)
 	}
 	defer token.Close()
 
 	var luid windows.LUID
 	err = windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr(privName), &luid)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Privilege '%s' not found: %v", privName, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Privilege '%s' not found: %v", privName, err)
 	}
 
 	attrs := uint32(0)
@@ -185,11 +153,7 @@ func adjustPrivilege(privName string, enable bool) structs.CommandResult {
 
 	err = windows.AdjustTokenPrivileges(token, false, &tp, 0, nil, nil)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("AdjustTokenPrivileges failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("AdjustTokenPrivileges failed: %v", err)
 	}
 
 	action := "enabled"
@@ -213,22 +177,14 @@ func adjustPrivilege(privName string, enable bool) structs.CommandResult {
 func stripPrivileges() structs.CommandResult {
 	token, err := getTokenForAdjust()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get token: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get token: %v", err)
 	}
 	defer token.Close()
 
 	// Get current privileges
 	privs, err := getTokenPrivileges(token)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enumerate privileges: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to enumerate privileges: %v", err)
 	}
 
 	// Keep only SeChangeNotifyPrivilege enabled (benign, always present)

@@ -49,20 +49,12 @@ type sprayResult struct {
 
 func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action kerberos -server <DC> -domain <DOMAIN> -users <user1\\nuser2> -password <pass>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action kerberos -server <DC> -domain <DOMAIN> -users <user1\\nuser2> -password <pass>")
 	}
 
 	var args sprayArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 	defer structs.ZeroString(&args.Password)
 	defer structs.ZeroString(&args.Hash)
@@ -73,35 +65,19 @@ func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Validate required params — enumerate doesn't need password
 	if args.Server == "" || args.Domain == "" || args.Users == "" {
-		return structs.CommandResult{
-			Output:    "Error: server, domain, and users are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server, domain, and users are required")
 	}
 	if args.Action != "enumerate" && args.Password == "" && args.Hash == "" {
-		return structs.CommandResult{
-			Output:    "Error: password (or hash for SMB) is required for spray actions (not required for enumerate)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: password (or hash for SMB) is required for spray actions (not required for enumerate)")
 	}
 	if args.Hash != "" && args.Action != "smb" {
-		return structs.CommandResult{
-			Output:    "Error: hash-based spray is only supported for SMB action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: hash-based spray is only supported for SMB action")
 	}
 
 	// Parse user list
 	users := parseSprayUsers(args.Users)
 	if len(users) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: no valid usernames provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no valid usernames provided")
 	}
 
 	// Clamp jitter
@@ -122,11 +98,7 @@ func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
 	case "enumerate":
 		return sprayEnumerate(args, users)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: kerberos, ldap, smb, enumerate", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: kerberos, ldap, smb, enumerate", args.Action)
 	}
 }
 
@@ -159,11 +131,7 @@ func sprayDelay(args sprayArgs) {
 func sprayFormatResults(action string, args sprayArgs, users []string, results []sprayResult) structs.CommandResult {
 	data, err := json.Marshal(results)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling results: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling results: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -180,11 +148,7 @@ func sprayKerberos(args sprayArgs, users []string) structs.CommandResult {
 	krb5Conf := buildKrb5Config(realm, args.Server)
 	cfg, err := krbconfig.NewFromString(krb5Conf)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating Kerberos config: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating Kerberos config: %v", err)
 	}
 
 	results := make([]sprayResult, 0, len(users))
@@ -420,11 +384,7 @@ func sprayEnumerate(args sprayArgs, users []string) structs.CommandResult {
 	krb5Conf := buildKrb5Config(realm, args.Server)
 	cfg, err := krbconfig.NewFromString(krb5Conf)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating Kerberos config: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating Kerberos config: %v", err)
 	}
 
 	var entries []sprayEnumEntry
@@ -454,11 +414,7 @@ func sprayEnumerate(args sprayArgs, users []string) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling results: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling results: %v", err)
 	}
 
 	return structs.CommandResult{

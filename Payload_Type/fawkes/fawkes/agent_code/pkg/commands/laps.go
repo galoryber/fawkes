@@ -38,28 +38,16 @@ type lapsV2Password struct {
 
 func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -server <DC> -username <user@domain> -password <pass> [-filter <computer>]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -server <DC> -username <user@domain> -password <pass> [-filter <computer>]")
 	}
 
 	var args lapsArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: server parameter required (domain controller IP or hostname)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server parameter required (domain controller IP or hostname)")
 	}
 
 	// Reuse LDAP connection helpers from ldap_query.go
@@ -80,31 +68,19 @@ func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	conn, err := ldapConnect(connArgs)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LDAP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LDAP: %v", err)
 	}
 	defer conn.Close()
 
 	if err := ldapBind(conn, connArgs); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error binding to LDAP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error binding to LDAP: %v", err)
 	}
 
 	baseDN := args.BaseDN
 	if baseDN == "" {
 		baseDN, err = detectBaseDN(conn)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error detecting base DN: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error detecting base DN: %v", err)
 		}
 	}
 
@@ -132,11 +108,7 @@ func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	result, err := conn.SearchWithPaging(searchReq, 500)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error searching LDAP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error searching LDAP: %v", err)
 	}
 
 	output, creds := formatLAPSResults(result, baseDN, args.Filter)

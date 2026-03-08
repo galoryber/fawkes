@@ -24,11 +24,7 @@ type statArgs struct {
 
 func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -path <file>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -path <file>")
 	}
 
 	var args statArgs
@@ -37,11 +33,7 @@ func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path parameter is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path parameter is required")
 	}
 
 	// Resolve path
@@ -54,11 +46,7 @@ func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Lstat(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	// Build output

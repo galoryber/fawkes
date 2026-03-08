@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -198,11 +197,7 @@ type detectedProduct struct {
 func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
 	procs, err := process.Processes()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating processes: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating processes: %v", err)
 	}
 
 	var detected []detectedProduct
@@ -226,20 +221,12 @@ func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(detected) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	data, err := json.Marshal(detected)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling results: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling results: %v", err)
 	}
 
 	return structs.CommandResult{

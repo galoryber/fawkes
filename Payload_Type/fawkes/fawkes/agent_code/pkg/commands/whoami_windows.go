@@ -33,11 +33,7 @@ func (c *WhoamiCommand) Execute(task structs.Task) structs.CommandResult {
 	impersonating := HasActiveImpersonation()
 	token, tokenSource, err := getCurrentToken()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get current token: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get current token: %v", err)
 	}
 	defer token.Close()
 

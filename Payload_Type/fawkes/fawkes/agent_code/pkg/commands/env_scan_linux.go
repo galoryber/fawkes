@@ -36,11 +36,7 @@ func readProcessEnviron(pid int) ([]string, string, error) {
 func envScanAllProcesses(filter string) structs.CommandResult {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read /proc: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read /proc: %v", err)
 	}
 
 	var allResults []envScanResult

@@ -41,11 +41,7 @@ type amcacheOutputEntry struct {
 func (c *AmcacheCommand) Execute(task structs.Task) structs.CommandResult {
 	var params amcacheParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.Action == "" {
@@ -65,11 +61,7 @@ func (c *AmcacheCommand) Execute(task structs.Task) structs.CommandResult {
 	case "clear":
 		return amcacheClear()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use query, search, delete, or clear)", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use query, search, delete, or clear)", params.Action)
 	}
 }
 
@@ -95,11 +87,7 @@ func readShimcacheRaw() ([]byte, error) {
 func amcacheQuery(params amcacheParams) structs.CommandResult {
 	data, err := readShimcacheRaw()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading Shimcache: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading Shimcache: %v", err)
 	}
 
 	entries, _, err := parseShimcache(data)
@@ -133,11 +121,7 @@ func amcacheQuery(params amcacheParams) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling output: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling output: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -149,29 +133,17 @@ func amcacheQuery(params amcacheParams) structs.CommandResult {
 
 func amcacheSearch(params amcacheParams) structs.CommandResult {
 	if params.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: -name parameter required for search",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -name parameter required for search")
 	}
 
 	data, err := readShimcacheRaw()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading Shimcache: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading Shimcache: %v", err)
 	}
 
 	entries, _, err := parseShimcache(data)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing Shimcache: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing Shimcache: %v", err)
 	}
 
 	searchLower := strings.ToLower(params.Name)
@@ -197,11 +169,7 @@ func amcacheSearch(params amcacheParams) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling output: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling output: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -214,47 +182,27 @@ func amcacheSearch(params amcacheParams) structs.CommandResult {
 // amcacheDelete removes matching entries from the Shimcache by rewriting the registry value
 func amcacheDelete(params amcacheParams) structs.CommandResult {
 	if params.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: -name parameter required for delete",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -name parameter required for delete")
 	}
 
 	data, err := readShimcacheRaw()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading Shimcache: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading Shimcache: %v", err)
 	}
 
 	// Only support Win10/11 format for deletion
 	headerSize := binary.LittleEndian.Uint32(data[0:4])
 	if headerSize < 48 || headerSize > 128 || int(headerSize)+4 > len(data) {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Delete only supported for Windows 10/11 format (header: 0x%08X)", headerSize),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Delete only supported for Windows 10/11 format (header: 0x%08X)", headerSize)
 	}
 	entrySig := binary.LittleEndian.Uint32(data[headerSize : headerSize+4])
 	if entrySig != shimcacheWin10Sig {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Delete only supported for Windows 10/11 format (entry sig: 0x%08X)", entrySig),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Delete only supported for Windows 10/11 format (entry sig: 0x%08X)", entrySig)
 	}
 
 	entries, err := parseShimcacheWin10(data)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing Shimcache: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing Shimcache: %v", err)
 	}
 
 	// Find entries to keep (exclude matching ones)
@@ -271,30 +219,18 @@ func amcacheDelete(params amcacheParams) structs.CommandResult {
 	}
 
 	if removed == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No entries matching \"%s\" found in Shimcache", params.Name),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No entries matching \"%s\" found in Shimcache", params.Name)
 	}
 
 	// Rebuild the Shimcache binary data with matching entries removed
 	newData := rebuildShimcacheWin10(data[:headerSize], keepEntries, data)
 	if newData == nil {
-		return structs.CommandResult{
-			Output:    "Error rebuilding Shimcache data",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error rebuilding Shimcache data")
 	}
 
 	// Write back
 	if err := writeShimcache(newData); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing Shimcache: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing Shimcache: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -308,19 +244,11 @@ func amcacheDelete(params amcacheParams) structs.CommandResult {
 func amcacheClear() structs.CommandResult {
 	data, err := readShimcacheRaw()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading Shimcache: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading Shimcache: %v", err)
 	}
 
 	if len(data) < 52 {
-		return structs.CommandResult{
-			Output:    "Shimcache data too small",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Shimcache data too small")
 	}
 
 	entries, _, _ := parseShimcache(data)
@@ -335,18 +263,10 @@ func amcacheClear() structs.CommandResult {
 	copy(header, data[:headerSize])
 
 	if err := writeShimcache(header); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error clearing Shimcache: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error clearing Shimcache: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Cleared Shimcache — removed %d entries", totalEntries),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Cleared Shimcache — removed %d entries", totalEntries)
 }
 
 // rebuildShimcacheWin10 moved to forensics_helpers.go

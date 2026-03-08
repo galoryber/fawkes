@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"fmt"
 	"os"
 
 	"fawkes/pkg/structs"
@@ -25,11 +24,7 @@ func (c *PwdCommand) Execute(task structs.Task) structs.CommandResult {
 	// Get current working directory
 	currentDir, err := os.Getwd()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error getting current directory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error getting current directory: %v", err)
 	}
 
 	return structs.CommandResult{

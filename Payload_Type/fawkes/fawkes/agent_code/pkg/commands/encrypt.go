@@ -36,11 +36,7 @@ const (
 
 func (c *EncryptCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required (action, path). Actions: encrypt, decrypt",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required (action, path). Actions: encrypt, decrypt")
 	}
 
 	var args encryptArgs
@@ -56,11 +52,7 @@ func (c *EncryptCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	if abs, err := filepath.Abs(args.Path); err == nil {
@@ -73,11 +65,7 @@ func (c *EncryptCommand) Execute(task structs.Task) structs.CommandResult {
 	case "decrypt":
 		return decryptFile(args)
 	default:
-		return structs.CommandResult{
-			Output:    "Error: action must be 'encrypt' or 'decrypt'",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: action must be 'encrypt' or 'decrypt'")
 	}
 }
 
@@ -85,11 +73,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	// Read input file
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 	if info.Size() > encryptMaxFileSize {
 		return structs.CommandResult{
@@ -101,11 +85,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 
 	plaintext, err := os.ReadFile(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading file: %v", err)
 	}
 
 	// Get or generate key
@@ -113,11 +93,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	if args.Key != "" {
 		key, err = base64.StdEncoding.DecodeString(args.Key)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error decoding key: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error decoding key: %v", err)
 		}
 		if len(key) != aes256KeySize {
 			return structs.CommandResult{
@@ -129,40 +105,24 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	} else {
 		key = make([]byte, aes256KeySize)
 		if _, err := io.ReadFull(rand.Reader, key); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error generating key: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error generating key: %v", err)
 		}
 	}
 
 	// Encrypt with AES-256-GCM
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating cipher: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating cipher: %v", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating GCM: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating GCM: %v", err)
 	}
 
 	nonce := make([]byte, gcm.NonceSize())
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error generating nonce: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error generating nonce: %v", err)
 	}
 
 	// Output format: nonce + ciphertext (GCM tag appended by Seal)
@@ -178,11 +138,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	}
 
 	if err := os.WriteFile(outPath, ciphertext, 0600); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing encrypted file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing encrypted file: %v", err)
 	}
 
 	var sb strings.Builder
@@ -202,20 +158,12 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 
 func decryptFile(args encryptArgs) structs.CommandResult {
 	if args.Key == "" {
-		return structs.CommandResult{
-			Output:    "Error: key is required for decryption (base64-encoded AES-256 key)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: key is required for decryption (base64-encoded AES-256 key)")
 	}
 
 	key, err := base64.StdEncoding.DecodeString(args.Key)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding key: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding key: %v", err)
 	}
 	if len(key) != aes256KeySize {
 		return structs.CommandResult{
@@ -228,48 +176,28 @@ func decryptFile(args encryptArgs) structs.CommandResult {
 	// Read encrypted file
 	ciphertext, err := os.ReadFile(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading file: %v", err)
 	}
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating cipher: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating cipher: %v", err)
 	}
 
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating GCM: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating GCM: %v", err)
 	}
 
 	nonceSize := gcm.NonceSize()
 	if len(ciphertext) < nonceSize {
-		return structs.CommandResult{
-			Output:    "Error: encrypted file too small (corrupted?)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: encrypted file too small (corrupted?)")
 	}
 
 	nonce, ciphertext := ciphertext[:nonceSize], ciphertext[nonceSize:]
 	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decrypting: %v (wrong key or corrupted file)", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decrypting: %v (wrong key or corrupted file)", err)
 	}
 
 	// Determine output path
@@ -285,11 +213,7 @@ func decryptFile(args encryptArgs) structs.CommandResult {
 	}
 
 	if err := os.WriteFile(outPath, plaintext, 0600); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing decrypted file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing decrypted file: %v", err)
 	}
 
 	var sb strings.Builder

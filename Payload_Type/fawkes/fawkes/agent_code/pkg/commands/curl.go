@@ -72,11 +72,7 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.URL == "" {
-		return structs.CommandResult{
-			Output:    "Error: url is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: url is required")
 	}
 
 	if args.Method == "" {
@@ -119,11 +115,7 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 
 	req, err := http.NewRequestWithContext(ctx, args.Method, args.URL, bodyReader)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating request: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating request: %v", err)
 	}
 
 	// Set custom headers
@@ -140,22 +132,14 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error executing request: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error executing request: %v", err)
 	}
 	defer resp.Body.Close()
 
 	// Read response body with size limit
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(args.MaxSize)+1))
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading response: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading response: %v", err)
 	}
 
 	truncated := len(body) > args.MaxSize

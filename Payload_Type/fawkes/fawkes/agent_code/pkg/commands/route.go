@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -38,11 +37,7 @@ func (c *RouteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	routes, err := enumerateRoutes()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating routes: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating routes: %v", err)
 	}
 
 	// Apply filters
@@ -64,20 +59,12 @@ func (c *RouteCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(routes) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	out, err := json.Marshal(routes)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("JSON marshal error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("JSON marshal error: %v", err)
 	}
 
 	return structs.CommandResult{

@@ -64,62 +64,34 @@ type ApcInjectionParams struct {
 // Execute executes the apc-injection command
 func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	var params ApcInjectionParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.ShellcodeB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: No shellcode data provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No shellcode data provided")
 	}
 
 	if params.PID <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: Invalid PID specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: Invalid PID specified")
 	}
 
 	if params.TID <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: Invalid Thread ID specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: Invalid Thread ID specified")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding shellcode: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: Shellcode data is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: Shellcode data is empty")
 	}
 
 	output, err := performApcInjection(shellcode, params.PID, params.TID)

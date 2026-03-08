@@ -43,22 +43,14 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Ensure we're on Windows
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	// Parse parameters (default to "None" if empty/missing for backward compat)
 	var params StartCLRParams
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 	if params.AmsiPatch == "" {

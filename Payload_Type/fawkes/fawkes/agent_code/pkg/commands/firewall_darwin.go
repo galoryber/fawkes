@@ -19,20 +19,12 @@ func (c *FirewallCommand) Description() string { return "Manage macOS firewall (
 
 func (c *FirewallCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: list, add, delete, enable, disable, status",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: list, add, delete, enable, disable, status")
 	}
 
 	var args firewallArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -49,11 +41,7 @@ func (c *FirewallCommand) Execute(task structs.Task) structs.CommandResult {
 	case "disable":
 		return darwinFirewallEnable(false)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: list, add, delete, enable, disable, status", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: list, add, delete, enable, disable, status", args.Action)
 	}
 }
 
@@ -118,11 +106,7 @@ func darwinFirewallEnable(enable bool) structs.CommandResult {
 
 	out, err := execCmdTimeout(socketFilterFW, "--setglobalstate", state)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error setting firewall state: %v\n%s", err, string(out)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error setting firewall state: %v\n%s", err, string(out))
 	}
 
 	return structs.CommandResult{
@@ -135,21 +119,13 @@ func darwinFirewallEnable(enable bool) structs.CommandResult {
 // darwinFirewallAdd adds an application to the ALF and sets its allow/block policy.
 func darwinFirewallAdd(args firewallArgs) structs.CommandResult {
 	if args.Program == "" {
-		return structs.CommandResult{
-			Output:    "Error: program path is required for add action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: program path is required for add action")
 	}
 
 	// Add the application to the firewall
 	out, err := execCmdTimeout(socketFilterFW, "--add", args.Program)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error adding application: %v\n%s", err, string(out)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error adding application: %v\n%s", err, string(out))
 	}
 
 	var sb strings.Builder
@@ -182,20 +158,12 @@ func darwinFirewallAdd(args firewallArgs) structs.CommandResult {
 // darwinFirewallDelete removes an application from the ALF.
 func darwinFirewallDelete(args firewallArgs) structs.CommandResult {
 	if args.Program == "" {
-		return structs.CommandResult{
-			Output:    "Error: program path is required for delete action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: program path is required for delete action")
 	}
 
 	out, err := execCmdTimeout(socketFilterFW, "--remove", args.Program)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error removing application: %v\n%s", err, string(out)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error removing application: %v\n%s", err, string(out))
 	}
 
 	return structs.CommandResult{

@@ -11,9 +11,5 @@ func (c *WmiPersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return *errResult
 	}
 	_ = args
-	return structs.CommandResult{
-		Output:    "wmi-persist is only available on Windows",
-		Status:    "error",
-		Completed: true,
-	}
+	return errorResult("wmi-persist is only available on Windows")
 }

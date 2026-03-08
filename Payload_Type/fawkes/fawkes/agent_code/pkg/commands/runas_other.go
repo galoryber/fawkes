@@ -5,7 +5,6 @@ package commands
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"os/exec"
 	"os/user"
@@ -30,28 +29,16 @@ func (c *RunasCommand) Description() string { return "Execute a command as a dif
 func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	var args runasArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 	defer structs.ZeroString(&args.Password)
 
 	if args.Command == "" || args.Username == "" {
-		return structs.CommandResult{
-			Output:    "Error: -command and -username are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -command and -username are required")
 	}
 
 	if args.NetOnly {
-		return structs.CommandResult{
-			Output:    "Error: -netonly is Windows-only (LOGON_NETCREDENTIALS_ONLY). Not applicable on Unix.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -netonly is Windows-only (LOGON_NETCREDENTIALS_ONLY). Not applicable on Unix.")
 	}
 
 	// Strip domain prefix if provided (not meaningful on Unix, but handle gracefully)
@@ -65,28 +52,16 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	// Look up the target user
 	targetUser, err := user.Lookup(username)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: user '%s' not found: %v", username, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: user '%s' not found: %v", username, err)
 	}
 
 	uid, err := strconv.ParseUint(targetUser.Uid, 10, 32)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: invalid UID for user '%s': %v", username, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: invalid UID for user '%s': %v", username, err)
 	}
 	gid, err := strconv.ParseUint(targetUser.Gid, 10, 32)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: invalid GID for user '%s': %v", username, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: invalid GID for user '%s': %v", username, err)
 	}
 
 	if os.Getuid() == 0 {
@@ -96,11 +71,7 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 		return runasSudo(args.Command, username, args.Password)
 	}
 
-	return structs.CommandResult{
-		Output:    "Error: not running as root and no password provided. Either run agent as root or provide -password for sudo.",
-		Status:    "error",
-		Completed: true,
-	}
+	return errorResult("Error: not running as root and no password provided. Either run agent as root or provide -password for sudo.")
 }
 
 // runasRoot spawns a process as the target user using setuid/setgid.
@@ -121,17 +92,9 @@ func runasRoot(command, username string, uid, gid uint32) structs.CommandResult 
 	if err != nil {
 		outputStr := strings.TrimSpace(string(output))
 		if outputStr != "" {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("[runas %s (uid=%d)] %s\nError: %v", username, uid, outputStr, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("[runas %s (uid=%d)] %s\nError: %v", username, uid, outputStr, err)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[runas %s (uid=%d)] Error: %v", username, uid, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("[runas %s (uid=%d)] Error: %v", username, uid, err)
 	}
 
 	outputStr := strings.TrimSpace(string(output))
@@ -139,11 +102,7 @@ func runasRoot(command, username string, uid, gid uint32) structs.CommandResult 
 		outputStr = "(no output)"
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[runas %s (uid=%d, setuid)] %s", username, uid, outputStr),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[runas %s (uid=%d, setuid)] %s", username, uid, outputStr)
 }
 
 // runasSudo executes a command as the target user via sudo -S -u <user>.
@@ -162,28 +121,16 @@ func runasSudo(command, username, password string) structs.CommandResult {
 
 	if err != nil {
 		if outStr != "" {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("[runas %s (sudo)] %s\nError: %v", username, outStr, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("[runas %s (sudo)] %s\nError: %v", username, outStr, err)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[runas %s (sudo)] Error: %v", username, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("[runas %s (sudo)] Error: %v", username, err)
 	}
 
 	if outStr == "" {
 		outStr = "(no output)"
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[runas %s (sudo)] %s", username, outStr),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[runas %s (sudo)] %s", username, outStr)
 }
 
 // stripSudoPrompt removes common sudo password prompts from output.

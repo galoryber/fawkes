@@ -38,20 +38,12 @@ func (c *MemScanCommand) Execute(task structs.Task) structs.CommandResult {
 	var args memScanArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
 	if args.Pattern == "" {
-		return structs.CommandResult{
-			Output:    "Error: pattern is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: pattern is required")
 	}
 
 	// Default to current process
@@ -74,32 +66,20 @@ func (c *MemScanCommand) Execute(task structs.Task) structs.CommandResult {
 		var err error
 		searchBytes, err = hex.DecodeString(strings.ReplaceAll(args.Pattern, " ", ""))
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: invalid hex pattern: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: invalid hex pattern: %v", err)
 		}
 	} else {
 		searchBytes = []byte(args.Pattern)
 	}
 
 	if len(searchBytes) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: pattern is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: pattern is empty")
 	}
 
 	// Platform-specific memory scan
 	matches, regionsScanned, bytesScanned, err := scanProcessMemory(args.PID, searchBytes, args.MaxResults, args.ContextBytes)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error scanning PID %d: %v", args.PID, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error scanning PID %d: %v", args.PID, err)
 	}
 
 	return formatMemScanOutput(args, matches, regionsScanned, bytesScanned, searchBytes)

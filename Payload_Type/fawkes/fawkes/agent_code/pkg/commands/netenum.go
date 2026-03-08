@@ -254,11 +254,7 @@ func (c *NetEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -292,11 +288,7 @@ func (c *NetEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	case "mapped":
 		return netEnumMappedDrives()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: %s", args.Action, neAllActions),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: %s", args.Action, neAllActions)
 	}
 }
 
@@ -436,11 +428,7 @@ func netEnumLocalUsers() structs.CommandResult {
 		)
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error enumerating local users: NetUserEnum returned %d %s", ret, netApiErrorDesc(ret)),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error enumerating local users: NetUserEnum returned %d %s", ret, netApiErrorDesc(ret))
 		}
 
 		if buf != 0 {
@@ -464,7 +452,7 @@ func netEnumLocalUsers() structs.CommandResult {
 		entries = append(entries, netEnumEntry{Name: u, Type: "local_user"})
 	}
 	if len(entries) == 0 {
-		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+		return successResult("[]")
 	}
 	data, _ := json.Marshal(entries)
 	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
@@ -475,11 +463,7 @@ func netEnumLocalUsers() structs.CommandResult {
 func netEnumLocalGroups(target string) structs.CommandResult {
 	serverPtr, err := neGetServerPtr(target)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	var buf uintptr
@@ -504,11 +488,7 @@ func netEnumLocalGroups(target string) structs.CommandResult {
 		)
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error enumerating local groups: NetLocalGroupEnum returned %d %s", ret, netApiErrorDesc(ret)),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error enumerating local groups: NetLocalGroupEnum returned %d %s", ret, netApiErrorDesc(ret))
 		}
 
 		if buf != 0 {
@@ -538,7 +518,7 @@ func netEnumLocalGroups(target string) structs.CommandResult {
 		entries = append(entries, netEnumEntry{Name: g.name, Comment: g.comment, Type: "local_group", Server: target})
 	}
 	if len(entries) == 0 {
-		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+		return successResult("[]")
 	}
 	data, _ := json.Marshal(entries)
 	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
@@ -548,11 +528,7 @@ func netEnumLocalGroups(target string) structs.CommandResult {
 
 func netEnumGroupMembers(group, target string) structs.CommandResult {
 	if group == "" {
-		return structs.CommandResult{
-			Output:    "Error: group name is required for groupmembers/admins action. Use -group <name> or -target <name>.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: group name is required for groupmembers/admins action. Use -group <name> or -target <name>.")
 	}
 
 	// For groupmembers, target is the group name (backward compat) unless group param is set.
@@ -564,20 +540,12 @@ func netEnumGroupMembers(group, target string) structs.CommandResult {
 
 	serverPtr, err := neGetServerPtr(server)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	groupPtr, err := windows.UTF16PtrFromString(group)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	var buf uintptr
@@ -595,11 +563,7 @@ func netEnumGroupMembers(group, target string) structs.CommandResult {
 		0,
 	)
 	if ret != NERR_Success && ret != ERROR_MORE_DATA {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("NetLocalGroupGetMembers failed with error %d (group: %s)", ret, group),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("NetLocalGroupGetMembers failed with error %d (group: %s)", ret, group)
 	}
 	if buf != 0 {
 		defer procNetApiBufferFree.Call(buf)
@@ -622,15 +586,11 @@ func netEnumGroupMembers(group, target string) structs.CommandResult {
 	}
 
 	if len(entries) == 0 {
-		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+		return successResult("[]")
 	}
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling results: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling results: %v", err)
 	}
 	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
 }
@@ -640,11 +600,7 @@ func netEnumGroupMembers(group, target string) structs.CommandResult {
 func netEnumDomainUsers() structs.CommandResult {
 	dcName, err := getDomainControllerName()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	serverPtr, _ := syscall.UTF16PtrFromString("\\\\" + dcName)
@@ -695,7 +651,7 @@ func netEnumDomainUsers() structs.CommandResult {
 		entries = append(entries, netEnumEntry{Name: u, Type: "domain_user", Source: dcName})
 	}
 	if len(entries) == 0 {
-		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+		return successResult("[]")
 	}
 	data, _ := json.Marshal(entries)
 	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
@@ -706,11 +662,7 @@ func netEnumDomainUsers() structs.CommandResult {
 func netEnumDomainGroups() structs.CommandResult {
 	dcName, err := getDomainControllerName()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	serverPtr, _ := syscall.UTF16PtrFromString("\\\\" + dcName)
@@ -760,7 +712,7 @@ func netEnumDomainGroups() structs.CommandResult {
 		entries = append(entries, netEnumEntry{Name: g, Type: "domain_group", Source: dcName})
 	}
 	if len(entries) == 0 {
-		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+		return successResult("[]")
 	}
 	data, _ := json.Marshal(entries)
 	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
@@ -829,11 +781,7 @@ func netEnumDomainInfo() structs.CommandResult {
 			procNetApiBufferFree.Call(modalsInfo)
 		}
 	} else {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: DsGetDcNameW failed (error %d — machine may not be domain-joined)", ret),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: DsGetDcNameW failed (error %d — machine may not be domain-joined)", ret)
 	}
 
 	var trustCount uint32
@@ -872,11 +820,7 @@ func netEnumLoggedOn(target string) structs.CommandResult {
 	if target != "" {
 		serverName, err := windows.UTF16PtrFromString(`\\` + target)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: %v", err)
 		}
 		serverPtr = uintptr(unsafe.Pointer(serverName))
 	}
@@ -898,15 +842,11 @@ func netEnumLoggedOn(target string) structs.CommandResult {
 	}
 
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("NetWkstaUserEnum failed: error %d", ret),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("NetWkstaUserEnum failed: error %d", ret)
 	}
 
 	if entriesRead == 0 {
-		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+		return successResult("[]")
 	}
 
 	var entries []netEnumEntry
@@ -934,11 +874,7 @@ func netEnumSessions(target string) structs.CommandResult {
 		// Fall back to level 10 (less detail, no admin required)
 		output, err = neEnumSessions10(target)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error enumerating sessions: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error enumerating sessions: %v", err)
 		}
 	}
 	return structs.CommandResult{Output: output, Status: "success", Completed: true}
@@ -1059,15 +995,11 @@ func netEnumLocalShares() structs.CommandResult {
 	)
 
 	if ret != NERR_Success && ret != ERROR_MORE_DATA {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating local shares: NetShareEnum returned %d %s", ret, netApiErrorDesc(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating local shares: NetShareEnum returned %d %s", ret, netApiErrorDesc(ret))
 	}
 
 	if buf == 0 || entriesRead == 0 {
-		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+		return successResult("[]")
 	}
 	defer procNetApiBufferFree.Call(buf)
 
@@ -1118,15 +1050,11 @@ func netEnumRemoteShares(target string) structs.CommandResult {
 	)
 
 	if ret != NERR_Success && ret != ERROR_MORE_DATA {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating shares on %s: NetShareEnum returned %d %s", target, ret, netApiErrorDesc(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating shares on %s: NetShareEnum returned %d %s", target, ret, netApiErrorDesc(ret))
 	}
 
 	if buf == 0 || entriesRead == 0 {
-		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+		return successResult("[]")
 	}
 	defer procNetApiBufferFree.Call(buf)
 
@@ -1161,11 +1089,7 @@ func netEnumMappedDrives() structs.CommandResult {
 		uintptr(unsafe.Pointer(&handle)),
 	)
 	if ret != NERR_Success {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening network drive enumeration: WNetOpenEnum returned %d %s", ret, netApiErrorDesc(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening network drive enumeration: WNetOpenEnum returned %d %s", ret, netApiErrorDesc(ret))
 	}
 	defer procWNetCloseEnum.Call(uintptr(handle))
 
@@ -1210,7 +1134,7 @@ func netEnumMappedDrives() structs.CommandResult {
 	}
 
 	if len(out) == 0 {
-		return structs.CommandResult{Output: "[]", Status: "success", Completed: true}
+		return successResult("[]")
 	}
 
 	data, _ := json.Marshal(out)

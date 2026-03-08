@@ -58,28 +58,16 @@ type dcsyncResult struct {
 
 func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -server <DC> -username <user> -password <pass> -target <account>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -server <DC> -username <user> -password <pass> -target <account>")
 	}
 
 	var args dcsyncArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Server == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return structs.CommandResult{
-			Output:    "Error: server, username, and password (or hash) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server, username, and password (or hash) are required")
 	}
 
 	if args.Target == "" {
@@ -121,11 +109,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(targets) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: no valid target accounts specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no valid target accounts specified")
 	}
 
 	// Set up GSSAPI context (per-context to avoid global state conflicts)
@@ -158,11 +142,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 			dcerpc.WithInsecure(),
 		))
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to %s via DCE-RPC: %v", args.Server, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
 	defer cc.Close(ctx)
 
@@ -170,11 +150,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	targetName := args.Server
 	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(targetName))
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating DRSUAPI client: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating DRSUAPI client: %v", err)
 	}
 
 	// DRSBind
@@ -185,22 +161,14 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	capsBytes, err := ndr.Marshal(&clientCaps, ndr.Opaque)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling client capabilities: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling client capabilities: %v", err)
 	}
 
 	bindResp, err := cli.Bind(ctx, &drsuapi.BindRequest{
 		Client: &drsuapi.Extensions{Data: capsBytes},
 	})
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error DRSBind to %s: %v", args.Server, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error DRSBind to %s: %v", args.Server, err)
 	}
 
 	// CrackNames — resolve target account names to GUIDs.
@@ -234,20 +202,12 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		},
 	})
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error DRSCrackNames: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error DRSCrackNames: %v", err)
 	}
 
 	crackedReply, ok := cracked.Out.GetValue().(*drsuapi.MessageCrackNamesReplyV1)
 	if !ok || crackedReply == nil {
-		return structs.CommandResult{
-			Output:    "Error: unexpected DRSCrackNames response type",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: unexpected DRSCrackNames response type")
 	}
 	items := crackedReply.Result.Items
 

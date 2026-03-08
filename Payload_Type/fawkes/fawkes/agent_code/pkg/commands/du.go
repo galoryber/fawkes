@@ -36,11 +36,7 @@ type duEntry struct {
 
 func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args duArgs
@@ -49,11 +45,7 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	// Default max_depth = 1 (show immediate children)
@@ -63,11 +55,7 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	if !info.IsDir() {

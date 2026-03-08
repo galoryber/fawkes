@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
 	"strings"
 
@@ -37,11 +36,7 @@ func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
 
 	entries, err := getArpTable()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading ARP table: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading ARP table: %v", err)
 	}
 
 	// Apply filters
@@ -63,20 +58,12 @@ func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling ARP table: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling ARP table: %v", err)
 	}
 
 	return structs.CommandResult{

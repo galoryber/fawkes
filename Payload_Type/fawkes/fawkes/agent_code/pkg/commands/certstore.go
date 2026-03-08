@@ -116,11 +116,7 @@ type certEntry struct {
 func (c *CertstoreCommand) Execute(task structs.Task) structs.CommandResult {
 	var params certstoreParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.Action == "" {
@@ -133,11 +129,7 @@ func (c *CertstoreCommand) Execute(task structs.Task) structs.CommandResult {
 	case "find":
 		return certstoreFind(params.Store, params.Filter)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use 'list' or 'find')", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use 'list' or 'find')", params.Action)
 	}
 }
 
@@ -165,20 +157,12 @@ func certstoreList(store, filter string) structs.CommandResult {
 	}
 
 	if len(allCerts) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	out, err := json.Marshal(allCerts)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("JSON marshal error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("JSON marshal error: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -190,11 +174,7 @@ func certstoreList(store, filter string) structs.CommandResult {
 
 func certstoreFind(store, filter string) structs.CommandResult {
 	if filter == "" {
-		return structs.CommandResult{
-			Output:    "Error: filter is required for find action (search by subject, issuer, or thumbprint)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: filter is required for find action (search by subject, issuer, or thumbprint)")
 	}
 	return certstoreList(store, filter)
 }

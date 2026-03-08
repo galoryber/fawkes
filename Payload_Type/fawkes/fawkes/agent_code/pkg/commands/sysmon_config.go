@@ -56,11 +56,7 @@ func (c *SysmonConfigCommand) Execute(task structs.Task) structs.CommandResult {
 	case "events":
 		return sysmonEventsResult(info)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: check, rules, events", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: check, rules, events", args.Action)
 	}
 }
 
@@ -301,11 +297,7 @@ func sysmonCheckResult(info sysmonInfo) structs.CommandResult {
 
 func sysmonRulesResult(info sysmonInfo) structs.CommandResult {
 	if !info.Installed {
-		return structs.CommandResult{
-			Output:    "Sysmon not detected — no rules to extract",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Sysmon not detected — no rules to extract")
 	}
 
 	// Read raw rules binary from registry
@@ -325,11 +317,7 @@ func sysmonRulesResult(info sysmonInfo) structs.CommandResult {
 			continue
 		}
 		if len(rules) == 0 {
-			return structs.CommandResult{
-				Output:    "No custom rules configured (default Sysmon config)",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("No custom rules configured (default Sysmon config)")
 		}
 		// Hex dump the first 4KB max (rules can be large)
 		maxDump := len(rules)
@@ -352,11 +340,7 @@ func sysmonRulesResult(info sysmonInfo) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    "Could not read Sysmon rules from registry",
-		Status:    "error",
-		Completed: true,
-	}
+	return errorResult("Could not read Sysmon rules from registry")
 }
 
 func sysmonEventsResult(info sysmonInfo) structs.CommandResult {

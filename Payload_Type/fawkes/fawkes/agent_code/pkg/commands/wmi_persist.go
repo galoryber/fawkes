@@ -28,11 +28,7 @@ func (c *WmiPersistCommand) Execute(task structs.Task) structs.CommandResult {
 	case "list":
 		return wmiPersistList(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: install, remove, list", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: install, remove, list", args.Action)
 	}
 }
 
@@ -90,16 +86,10 @@ func wmiSubscriptionConnect(target string) (*ole.IDispatch, *ole.IDispatch, func
 
 func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output: "Error: name parameter required (used as subscription identifier)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: name parameter required (used as subscription identifier)")
 	}
 	if args.Command == "" {
-		return structs.CommandResult{
-			Output: "Error: command parameter required (executable path + arguments)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: command parameter required (executable path + arguments)")
 	}
 	if args.Trigger == "" {
 		args.Trigger = "logon"
@@ -107,18 +97,12 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 
 	wqlQuery, err := buildWQLTrigger(args.Trigger, args.IntervalSec, args.ProcessName)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	_, services, cleanup, err := wmiSubscriptionConnect(args.Target)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error connecting to WMI: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
@@ -128,20 +112,14 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	// Step 1: Create __EventFilter
 	filterResult, err := oleutil.CallMethod(services, "Get", "__EventFilter")
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error getting __EventFilter class: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error getting __EventFilter class: %v", err)
 	}
 	defer filterResult.Clear()
 
 	filterClass := filterResult.ToIDispatch()
 	filterInst, err := oleutil.CallMethod(filterClass, "SpawnInstance_")
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error spawning filter instance: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error spawning filter instance: %v", err)
 	}
 	defer filterInst.Clear()
 
@@ -153,10 +131,7 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 
 	_, err = oleutil.CallMethod(filterDisp, "Put_")
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error creating event filter: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error creating event filter: %v", err)
 	}
 
 	// For interval trigger, also create a __IntervalTimerInstruction
@@ -183,20 +158,14 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	// Step 2: Create CommandLineEventConsumer
 	consumerResult, err := oleutil.CallMethod(services, "Get", "CommandLineEventConsumer")
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error getting CommandLineEventConsumer class: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error getting CommandLineEventConsumer class: %v", err)
 	}
 	defer consumerResult.Clear()
 
 	consumerClass := consumerResult.ToIDispatch()
 	consumerInst, err := oleutil.CallMethod(consumerClass, "SpawnInstance_")
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error spawning consumer instance: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error spawning consumer instance: %v", err)
 	}
 	defer consumerInst.Clear()
 
@@ -207,10 +176,7 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	_, err = oleutil.CallMethod(consumerDisp, "Put_")
 	if err != nil {
 		deleteWMIObject(services, "__EventFilter", filterName)
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error creating event consumer: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error creating event consumer: %v", err)
 	}
 
 	// Step 3: Create __FilterToConsumerBinding
@@ -218,10 +184,7 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	if err != nil {
 		deleteWMIObject(services, "__EventFilter", filterName)
 		deleteWMIObject(services, "CommandLineEventConsumer", consumerName)
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error getting __FilterToConsumerBinding class: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error getting __FilterToConsumerBinding class: %v", err)
 	}
 	defer bindingResult.Clear()
 
@@ -230,10 +193,7 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	if err != nil {
 		deleteWMIObject(services, "__EventFilter", filterName)
 		deleteWMIObject(services, "CommandLineEventConsumer", consumerName)
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error spawning binding instance: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error spawning binding instance: %v", err)
 	}
 	defer bindingInst.Clear()
 
@@ -248,10 +208,7 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	if err != nil {
 		deleteWMIObject(services, "__EventFilter", filterName)
 		deleteWMIObject(services, "CommandLineEventConsumer", consumerName)
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error creating binding: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error creating binding: %v", err)
 	}
 
 	host := "localhost"
@@ -259,8 +216,7 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 		host = args.Target
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("WMI Event Subscription installed on %s:\n"+
+	return successf("WMI Event Subscription installed on %s:\n"+
 			"  Name:     %s\n"+
 			"  Trigger:  %s\n"+
 			"  Query:    %s\n"+
@@ -270,25 +226,17 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 			"  Binding:  %s → %s\n\n"+
 			"Subscription is persistent across reboots.",
 			host, args.Name, args.Trigger, wqlQuery, args.Command,
-			filterName, consumerName, filterRef, consumerRef),
-		Status: "success", Completed: true,
-	}
+			filterName, consumerName, filterRef, consumerRef)
 }
 
 func wmiPersistRemove(args wmiPersistArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output: "Error: name parameter required",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: name parameter required")
 	}
 
 	_, services, cleanup, err := wmiSubscriptionConnect(args.Target)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error connecting to WMI: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
@@ -340,10 +288,7 @@ func wmiPersistRemove(args wmiPersistArgs) structs.CommandResult {
 func wmiPersistList(args wmiPersistArgs) structs.CommandResult {
 	_, services, cleanup, err := wmiSubscriptionConnect(args.Target)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error connecting to WMI: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error connecting to WMI: %v", err)
 	}
 	defer cleanup()
 

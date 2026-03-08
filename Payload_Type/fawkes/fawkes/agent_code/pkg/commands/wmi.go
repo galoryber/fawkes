@@ -36,19 +36,11 @@ func (c *WmiCommand) Execute(task structs.Task) structs.CommandResult {
 	var args wmiArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: execute, query, process-list, os-info",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: execute, query, process-list, os-info")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -61,11 +53,7 @@ func (c *WmiCommand) Execute(task structs.Task) structs.CommandResult {
 	case "os-info":
 		return wmiOsInfo(args.Target)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: execute, query, process-list, os-info", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: execute, query, process-list, os-info", args.Action)
 	}
 }
 
@@ -227,31 +215,19 @@ func variantToString(v *ole.VARIANT) string {
 // wmiExecute creates a process on the target via WMI Win32_Process.Create
 func wmiExecute(target, command string) structs.CommandResult {
 	if command == "" {
-		return structs.CommandResult{
-			Output:    "Error: command parameter is required for execute action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: command parameter is required for execute action")
 	}
 
 	conn, cleanup, err := wmiConnect(target)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to WMI: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	// Get the Win32_Process class
 	classResult, err := oleutil.CallMethod(conn.services, "Get", "Win32_Process")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error getting Win32_Process class: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error getting Win32_Process class: %v", err)
 	}
 	defer classResult.Clear()
 	classDisp := classResult.ToIDispatch()
@@ -260,11 +236,7 @@ func wmiExecute(target, command string) structs.CommandResult {
 	// Parameters: CommandLine, CurrentDirectory, ProcessStartupInformation, ProcessId
 	createResult, err := oleutil.CallMethod(classDisp, "Create", command, nil, nil)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error calling Win32_Process.Create: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error calling Win32_Process.Create: %v", err)
 	}
 	defer createResult.Clear()
 
@@ -277,101 +249,57 @@ func wmiExecute(target, command string) structs.CommandResult {
 		host = target
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("WMI Process Create on %s:\n  Command: %s\n  Return Value: %v\n  (0 = Success, 2 = Access Denied, 3 = Insufficient Privilege, 8 = Unknown Failure, 21 = Invalid Parameter)", host, command, retVal),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("WMI Process Create on %s:\n  Command: %s\n  Return Value: %v\n  (0 = Success, 2 = Access Denied, 3 = Insufficient Privilege, 8 = Unknown Failure, 21 = Invalid Parameter)", host, command, retVal)
 }
 
 // wmiQuery runs an arbitrary WQL query
 func wmiQuery(target, query string) structs.CommandResult {
 	if query == "" {
-		return structs.CommandResult{
-			Output:    "Error: query parameter is required for query action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: query parameter is required for query action")
 	}
 
 	conn, cleanup, err := wmiConnect(target)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to WMI: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	result, err := wmiExecQuery(conn, query)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error running WMI query: %v\n%s", err, result),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error running WMI query: %v\n%s", err, result)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("WMI Query Result:\n%s", result),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("WMI Query Result:\n%s", result)
 }
 
 // wmiProcessList lists processes on the target
 func wmiProcessList(target string) structs.CommandResult {
 	conn, cleanup, err := wmiConnect(target)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to WMI: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	result, err := wmiExecQuery(conn, "SELECT Name, ProcessId, HandleCount, WorkingSetSize FROM Win32_Process")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing processes: %v\n%s", err, result),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error listing processes: %v\n%s", err, result)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("WMI Process List:\n%s", result),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("WMI Process List:\n%s", result)
 }
 
 // wmiOsInfo gets OS information from the target
 func wmiOsInfo(target string) structs.CommandResult {
 	conn, cleanup, err := wmiConnect(target)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to WMI: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to WMI: %v", err)
 	}
 	defer cleanup()
 
 	result, err := wmiExecQuery(conn, "SELECT Caption, Version, BuildNumber, OSArchitecture, LastBootUpTime, TotalVisibleMemorySize, FreePhysicalMemory FROM Win32_OperatingSystem")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error getting OS info: %v\n%s", err, result),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error getting OS info: %v\n%s", err, result)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("WMI OS Info:\n%s", result),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("WMI OS Info:\n%s", result)
 }

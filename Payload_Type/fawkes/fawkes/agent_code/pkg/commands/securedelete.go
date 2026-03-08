@@ -31,28 +31,16 @@ const secureDeleteDefaultPasses = 3
 
 func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args secureDeleteArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	if args.Passes <= 0 {
@@ -61,11 +49,7 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Lstat(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	if info.IsDir() {
@@ -86,11 +70,7 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	size := info.Size()
 	if err := secureDeleteFile(args.Path, size, args.Passes); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error securely deleting file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error securely deleting file: %v", err)
 	}
 
 	return structs.CommandResult{

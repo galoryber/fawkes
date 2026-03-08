@@ -55,11 +55,7 @@ var loginRecordFiles = []string{
 
 func (c *LinuxLogsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: list, read, logins, clear, truncate, shred",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: list, read, logins, clear, truncate, shred")
 	}
 
 	var args linuxLogsArgs
@@ -86,11 +82,7 @@ func (c *LinuxLogsCommand) Execute(task structs.Task) structs.CommandResult {
 	case "shred":
 		return linuxLogsShred(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: list, read, logins, clear, truncate, shred", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: list, read, logins, clear, truncate, shred", args.Action)
 	}
 }
 
@@ -158,18 +150,12 @@ func linuxLogsList() structs.CommandResult {
 
 func linuxLogsRead(args linuxLogsArgs) structs.CommandResult {
 	if args.File == "" {
-		return structs.CommandResult{
-			Output: "Error: file parameter required (e.g., /var/log/auth.log)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: file parameter required (e.g., /var/log/auth.log)")
 	}
 
 	content, err := os.ReadFile(args.File)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error reading %s: %v", args.File, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error reading %s: %v", args.File, err)
 	}
 
 	lines := strings.Split(strings.TrimRight(string(content), "\n"), "\n")
@@ -314,48 +300,29 @@ func utmpTypeName(t int16) string {
 
 func linuxLogsClear(args linuxLogsArgs) structs.CommandResult {
 	if args.File == "" {
-		return structs.CommandResult{
-			Output: "Error: file parameter required (e.g., /var/log/auth.log)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: file parameter required (e.g., /var/log/auth.log)")
 	}
 
 	// Truncate file to zero bytes (preserves file permissions and inode)
 	if err := os.Truncate(args.File, 0); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error clearing %s: %v", args.File, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error clearing %s: %v", args.File, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Cleared: %s (truncated to 0 bytes)", args.File),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Cleared: %s (truncated to 0 bytes)", args.File)
 }
 
 func linuxLogsTruncate(args linuxLogsArgs) structs.CommandResult {
 	if args.File == "" {
-		return structs.CommandResult{
-			Output: "Error: file parameter required",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: file parameter required")
 	}
 
 	content, err := os.ReadFile(args.File)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error reading %s: %v", args.File, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error reading %s: %v", args.File, err)
 	}
 
 	if args.Search == "" {
-		return structs.CommandResult{
-			Output: "Error: search parameter required (lines matching this string will be removed)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: search parameter required (lines matching this string will be removed)")
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -370,41 +337,24 @@ func linuxLogsTruncate(args linuxLogsArgs) structs.CommandResult {
 	}
 
 	if removed == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No lines matching '%s' found in %s", args.Search, args.File),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No lines matching '%s' found in %s", args.Search, args.File)
 	}
 
 	if err := os.WriteFile(args.File, []byte(strings.Join(kept, "\n")), 0644); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error writing %s: %v", args.File, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error writing %s: %v", args.File, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Removed %d lines matching '%s' from %s", removed, args.Search, args.File),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Removed %d lines matching '%s' from %s", removed, args.Search, args.File)
 }
 
 func linuxLogsShred(args linuxLogsArgs) structs.CommandResult {
 	if args.File == "" {
-		return structs.CommandResult{
-			Output: "Error: file parameter required",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: file parameter required")
 	}
 
 	info, err := os.Stat(args.File)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	size := info.Size()
@@ -412,20 +362,14 @@ func linuxLogsShred(args linuxLogsArgs) structs.CommandResult {
 	// Overwrite with zeros 3 times
 	f, err := os.OpenFile(args.File, os.O_WRONLY, 0)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error opening %s: %v", args.File, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error opening %s: %v", args.File, err)
 	}
 
 	zeros := make([]byte, 4096)
 	for pass := 0; pass < 3; pass++ {
 		if _, err := f.Seek(0, 0); err != nil {
 			f.Close()
-			return structs.CommandResult{
-				Output: fmt.Sprintf("Error seeking %s: %v", args.File, err),
-				Status: "error", Completed: true,
-			}
+			return errorf("Error seeking %s: %v", args.File, err)
 		}
 		remaining := size
 		for remaining > 0 {
@@ -441,19 +385,11 @@ func linuxLogsShred(args linuxLogsArgs) structs.CommandResult {
 		_ = f.Sync()
 	}
 	if err := f.Close(); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error closing %s after overwrite: %v", args.File, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error closing %s after overwrite: %v", args.File, err)
 	}
 
 	// Truncate to zero
 	_ = os.Truncate(args.File, 0)
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Shredded: %s (3-pass zero overwrite, %d bytes destroyed)", args.File, size),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Shredded: %s (3-pass zero overwrite, %d bytes destroyed)", args.File, size)
 }

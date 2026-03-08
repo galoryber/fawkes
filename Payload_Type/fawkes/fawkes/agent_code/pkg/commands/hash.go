@@ -43,11 +43,7 @@ type hashResult struct {
 
 func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -path <file_or_dir> [-algorithm md5|sha1|sha256|sha512] [-recursive true] [-pattern *.exe]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -path <file_or_dir> [-algorithm md5|sha1|sha256|sha512] [-recursive true] [-pattern *.exe]")
 	}
 
 	var args hashArgs
@@ -56,11 +52,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path parameter is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path parameter is required")
 	}
 
 	if args.Algorithm == "" {
@@ -74,11 +66,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Validate algorithm
 	if !hashValidAlgorithm(args.Algorithm) {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unsupported algorithm '%s'. Use md5, sha1, sha256, or sha512", args.Algorithm),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unsupported algorithm '%s'. Use md5, sha1, sha256, or sha512", args.Algorithm)
 	}
 
 	// Resolve path
@@ -91,11 +79,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	var results []hashResult

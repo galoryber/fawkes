@@ -102,11 +102,7 @@ func findProfilesWithFile(userDataDir string, relPath string) []string {
 func browserHistory(args browserArgs) structs.CommandResult {
 	paths := browserPaths(args.Browser)
 	if paths == nil {
-		return structs.CommandResult{
-			Output:    "Could not determine browser data paths",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Could not determine browser data paths")
 	}
 
 	type historyEntry struct {
@@ -206,11 +202,7 @@ func browserHistory(args browserArgs) structs.CommandResult {
 func browserAutofill(args browserArgs) structs.CommandResult {
 	paths := browserPaths(args.Browser)
 	if paths == nil {
-		return structs.CommandResult{
-			Output:    "Could not determine browser data paths",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Could not determine browser data paths")
 	}
 
 	type autofillEntry struct {
@@ -306,11 +298,7 @@ func browserAutofill(args browserArgs) structs.CommandResult {
 func browserBookmarks(args browserArgs) structs.CommandResult {
 	paths := browserPaths(args.Browser)
 	if paths == nil {
-		return structs.CommandResult{
-			Output:    "Could not determine browser data paths",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Could not determine browser data paths")
 	}
 
 	var allBookmarks []browserBookmarkEntry

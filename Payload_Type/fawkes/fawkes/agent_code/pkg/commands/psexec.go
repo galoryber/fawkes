@@ -38,35 +38,19 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 	var args psexecArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required (host, command)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required (host, command)")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Host == "" {
-		return structs.CommandResult{
-			Output:    "Error: host is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: host is required")
 	}
 
 	if args.Command == "" {
-		return structs.CommandResult{
-			Output:    "Error: command is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: command is required")
 	}
 
 	// Generate random service name if not provided

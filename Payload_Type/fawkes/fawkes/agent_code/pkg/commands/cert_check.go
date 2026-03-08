@@ -29,28 +29,16 @@ type certCheckArgs struct {
 
 func (c *CertCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -host <hostname> [-port 443] [-timeout 10]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -host <hostname> [-port 443] [-timeout 10]")
 	}
 
 	var args certCheckArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Host == "" {
-		return structs.CommandResult{
-			Output:    "Error: host parameter is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: host parameter is required")
 	}
 	if args.Port == 0 {
 		args.Port = 443
@@ -68,21 +56,13 @@ func (c *CertCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		InsecureSkipVerify: true,
 	})
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to %s: %v", addr, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to %s: %v", addr, err)
 	}
 	defer conn.Close()
 
 	state := conn.ConnectionState()
 	if len(state.PeerCertificates) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Connected to %s but no certificates presented", addr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Connected to %s but no certificates presented", addr)
 	}
 
 	var sb strings.Builder

@@ -44,11 +44,7 @@ func (c *ReadMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 		// Try parsing as space-separated string
 		parts := strings.Fields(task.Params)
 		if len(parts) != 4 {
-			return structs.CommandResult{
-				Output:    "Error: Invalid arguments. Usage: read-memory <dll_name> <function_name> <start_index> <num_bytes>",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: Invalid arguments. Usage: read-memory <dll_name> <function_name> <start_index> <num_bytes>")
 		}
 		args.DllName = parts[0]
 		args.FunctionName = parts[1]
@@ -59,22 +55,14 @@ func (c *ReadMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 	// Load DLL
 	dll, err := syscall.LoadDLL(args.DllName)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error loading DLL %s: %v", args.DllName, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error loading DLL %s: %v", args.DllName, err)
 	}
 	defer dll.Release()
 
 	// Get function address
 	proc, err := dll.FindProc(args.FunctionName)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error finding function %s: %v", args.FunctionName, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error finding function %s: %v", args.FunctionName, err)
 	}
 
 	// Calculate target address
@@ -97,11 +85,7 @@ func (c *ReadMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 	)
 
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading memory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading memory: %v", err)
 	}
 
 	// Format output

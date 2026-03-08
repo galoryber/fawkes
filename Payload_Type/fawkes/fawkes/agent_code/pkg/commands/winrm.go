@@ -40,36 +40,20 @@ type winrmArgs struct {
 
 func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -host <target> -username <user> -password <pass> -command <cmd>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -host <target> -username <user> -password <pass> -command <cmd>")
 	}
 
 	var args winrmArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Host == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return structs.CommandResult{
-			Output:    "Error: host, username, and password (or hash) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: host, username, and password (or hash) are required")
 	}
 
 	if args.Command == "" {
-		return structs.CommandResult{
-			Output:    "Error: command is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: command is required")
 	}
 
 	if args.Port <= 0 {
@@ -124,11 +108,7 @@ func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 
 	client, err := winrm.NewClientWithParameters(endpoint, args.Username, authCred, params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating WinRM client: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating WinRM client: %v", err)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(args.Timeout)*time.Second)
@@ -145,11 +125,7 @@ func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error executing command on %s: %v", args.Host, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error executing command on %s: %v", args.Host, err)
 	}
 
 	var sb strings.Builder

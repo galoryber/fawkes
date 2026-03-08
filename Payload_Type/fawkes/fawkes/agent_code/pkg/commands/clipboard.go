@@ -35,41 +35,25 @@ const (
 func readClipboard() structs.CommandResult {
 	ret, _, err := procOpenClipboard.Call(0)
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open clipboard: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open clipboard: %v", err)
 	}
 	defer procCloseClipboard.Call()
 
 	handle, _, _ := procGetClipboardData.Call(cfUnicodeText)
 	if handle == 0 {
-		return structs.CommandResult{
-			Output:    "Clipboard is empty or does not contain text",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("Clipboard is empty or does not contain text")
 	}
 
 	ptr, _, err := procGlobalLock.Call(handle)
 	if ptr == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to lock clipboard memory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to lock clipboard memory: %v", err)
 	}
 	defer procGlobalUnlock.Call(handle)
 
 	text := windows.UTF16PtrToString((*uint16)(unsafe.Pointer(ptr)))
 
 	if text == "" {
-		return structs.CommandResult{
-			Output:    "Clipboard is empty",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("Clipboard is empty")
 	}
 
 	return structs.CommandResult{
@@ -82,32 +66,20 @@ func readClipboard() structs.CommandResult {
 func writeClipboard(text string) structs.CommandResult {
 	utf16Text, err := syscall.UTF16FromString(text)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to encode text: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to encode text: %v", err)
 	}
 
 	size := len(utf16Text) * 2
 
 	hMem, _, err := procGlobalAlloc.Call(gmemMoveable, uintptr(size))
 	if hMem == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to allocate memory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to allocate memory: %v", err)
 	}
 
 	ptr, _, err := procGlobalLock.Call(hMem)
 	if ptr == 0 {
 		procGlobalFree.Call(hMem)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to lock memory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to lock memory: %v", err)
 	}
 
 	src := unsafe.Pointer(&utf16Text[0])
@@ -122,11 +94,7 @@ func writeClipboard(text string) structs.CommandResult {
 	ret, _, err := procOpenClipboard.Call(0)
 	if ret == 0 {
 		procGlobalFree.Call(hMem)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open clipboard: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open clipboard: %v", err)
 	}
 	defer procCloseClipboard.Call()
 
@@ -136,18 +104,10 @@ func writeClipboard(text string) structs.CommandResult {
 	ret, _, err = procSetClipboardData.Call(cfUnicodeText, hMem)
 	if ret == 0 {
 		procGlobalFree.Call(hMem)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to set clipboard data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to set clipboard data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully wrote %d characters to clipboard", len(text)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully wrote %d characters to clipboard", len(text))
 }
 
 func clipReadText() string {

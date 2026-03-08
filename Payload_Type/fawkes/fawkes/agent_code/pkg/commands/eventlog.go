@@ -69,11 +69,7 @@ func (c *EventLogCommand) Execute(task structs.Task) structs.CommandResult {
 	var args eventlogArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
@@ -95,11 +91,7 @@ func (c *EventLogCommand) Execute(task structs.Task) structs.CommandResult {
 	case "disable":
 		return evtSetChannelEnabled(args.Channel, false)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use list, query, clear, info, enable, disable)", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use list, query, clear, info, enable, disable)", args.Action)
 	}
 }
 
@@ -109,11 +101,7 @@ func evtListChannels(filter string) structs.CommandResult {
 
 	enumHandle, _, err := procEvtOpenChannelEnum.Call(0, 0)
 	if enumHandle == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("EvtOpenChannelEnum failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("EvtOpenChannelEnum failed: %v", err)
 	}
 	defer procEvtClose.Call(enumHandle)
 
@@ -176,11 +164,7 @@ func evtListChannels(filter string) structs.CommandResult {
 
 func evtQueryEvents(channel, filter string, eventID, maxCount int) structs.CommandResult {
 	if channel == "" {
-		return structs.CommandResult{
-			Output:    "Channel is required for query action (e.g., Security, System, Application)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Channel is required for query action (e.g., Security, System, Application)")
 	}
 
 	runtime.LockOSThread()
@@ -203,11 +187,7 @@ func evtQueryEvents(channel, filter string, eventID, maxCount int) structs.Comma
 		evtQueryChannelPath|evtQueryReverseDirection,
 	)
 	if queryHandle == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("EvtQuery failed on '%s': %v\nXPath: %s", channel, err, xpath),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("EvtQuery failed on '%s': %v\nXPath: %s", channel, err, xpath)
 	}
 	defer procEvtClose.Call(queryHandle)
 
@@ -277,11 +257,7 @@ func evtQueryEvents(channel, filter string, eventID, maxCount int) structs.Comma
 
 func evtClear(channel string) structs.CommandResult {
 	if channel == "" {
-		return structs.CommandResult{
-			Output:    "Channel is required for clear action (e.g., Security, System, Application)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Channel is required for clear action (e.g., Security, System, Application)")
 	}
 
 	runtime.LockOSThread()
@@ -302,11 +278,7 @@ func evtClear(channel string) structs.CommandResult {
 		0,
 	)
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("EvtClearLog failed for '%s': %v\nEnsure you have sufficient privileges (Administrator/SYSTEM for Security log).", channel, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("EvtClearLog failed for '%s': %v\nEnsure you have sufficient privileges (Administrator/SYSTEM for Security log).", channel, err)
 	}
 
 	msg := fmt.Sprintf("Successfully cleared '%s' event log", channel)
@@ -324,11 +296,7 @@ func evtClear(channel string) structs.CommandResult {
 
 func evtInfo(channel string) structs.CommandResult {
 	if channel == "" {
-		return structs.CommandResult{
-			Output:    "Channel is required for info action (e.g., Security, System, Application)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Channel is required for info action (e.g., Security, System, Application)")
 	}
 
 	runtime.LockOSThread()
@@ -341,11 +309,7 @@ func evtInfo(channel string) structs.CommandResult {
 		evtOpenChannelPath,
 	)
 	if logHandle == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("EvtOpenLog failed for '%s': %v", channel, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("EvtOpenLog failed for '%s': %v", channel, err)
 	}
 	defer procEvtClose.Call(logHandle)
 
@@ -448,11 +412,7 @@ func renderEventXML(eventHandle uintptr) (string, error) {
 // evtSetChannelEnabled enables or disables an event log channel via EvtOpenChannelConfig API.
 func evtSetChannelEnabled(channel string, enabled bool) structs.CommandResult {
 	if channel == "" {
-		return structs.CommandResult{
-			Output:    "Channel is required for enable/disable action (e.g., Microsoft-Windows-Sysmon/Operational)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Channel is required for enable/disable action (e.g., Microsoft-Windows-Sysmon/Operational)")
 	}
 
 	runtime.LockOSThread()
@@ -467,11 +427,7 @@ func evtSetChannelEnabled(channel string, enabled bool) structs.CommandResult {
 		0,
 	)
 	if cfgHandle == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("EvtOpenChannelConfig failed for '%s': %v", channel, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("EvtOpenChannelConfig failed for '%s': %v", channel, err)
 	}
 	defer procEvtClose.Call(cfgHandle)
 
@@ -504,21 +460,13 @@ func evtSetChannelEnabled(channel string, enabled bool) structs.CommandResult {
 		uintptr(unsafe.Pointer(&variant[0])),
 	)
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("EvtSetChannelConfigProperty failed for '%s': %v", channel, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("EvtSetChannelConfigProperty failed for '%s': %v", channel, err)
 	}
 
 	// Save the configuration
 	ret, _, err = procEvtSaveChannelConfig.Call(cfgHandle, 0)
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("EvtSaveChannelConfig failed for '%s': %v\nEnsure you have administrator privileges.", channel, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("EvtSaveChannelConfig failed for '%s': %v\nEnsure you have administrator privileges.", channel, err)
 	}
 
 	action := "Enabled"
@@ -530,11 +478,7 @@ func evtSetChannelEnabled(channel string, enabled bool) structs.CommandResult {
 		previousState = "disabled"
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("%s event log channel '%s' (was: %s)", action, channel, previousState),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("%s event log channel '%s' (was: %s)", action, channel, previousState)
 }
 
 // enableSecurityPrivilege enables SeSecurityPrivilege on the process token

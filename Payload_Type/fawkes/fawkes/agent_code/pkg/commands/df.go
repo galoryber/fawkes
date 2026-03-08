@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -33,19 +32,11 @@ func (c *DfCommand) Execute(task structs.Task) structs.CommandResult {
 
 	entries, err := getDiskFreeInfo()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	if len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	output := make([]dfOutputEntry, 0, len(entries))
@@ -76,20 +67,12 @@ func (c *DfCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(output) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	return structs.CommandResult{

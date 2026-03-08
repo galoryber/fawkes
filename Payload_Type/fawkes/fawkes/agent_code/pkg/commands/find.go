@@ -47,11 +47,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		if params.MinSize > 0 || params.MaxSize > 0 || params.Newer > 0 || params.Older > 0 || params.Type != "" {
 			params.Pattern = "*"
 		} else {
-			return structs.CommandResult{
-				Output:    "Error: pattern is required",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: pattern is required")
 		}
 	}
 	if params.MaxDepth <= 0 {
@@ -61,11 +57,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	// Resolve the starting path
 	startPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving path: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving path: %v", err)
 	}
 
 	// Precompute time boundaries

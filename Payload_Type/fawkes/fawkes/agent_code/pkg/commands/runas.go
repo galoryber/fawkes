@@ -34,20 +34,12 @@ func (c *RunasCommand) Description() string { return "Execute a command as a dif
 func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	var args runasArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 	defer structs.ZeroString(&args.Password)
 
 	if args.Command == "" || args.Username == "" || args.Password == "" {
-		return structs.CommandResult{
-			Output:    "Error: -command, -username, and -password are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -command, -username, and -password are required")
 	}
 
 	// Parse domain from username if DOMAIN\user format
@@ -98,11 +90,7 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	)
 
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: CreateProcessWithLogonW failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: CreateProcessWithLogonW failed: %v", err)
 	}
 
 	// Close handles
@@ -114,10 +102,6 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 		mode = "netonly (network credentials only)"
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[+] Process created as %s\\%s (PID: %d, mode: %s)\nCommand: %s",
-			args.Domain, args.Username, pi.ProcessId, mode, args.Command),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[+] Process created as %s\\%s (PID: %d, mode: %s)\nCommand: %s",
+			args.Domain, args.Username, pi.ProcessId, mode, args.Command)
 }

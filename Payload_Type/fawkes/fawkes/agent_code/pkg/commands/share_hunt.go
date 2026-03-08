@@ -73,19 +73,11 @@ var shareHuntHighValue = []string{
 func (c *ShareHuntCommand) Execute(task structs.Task) structs.CommandResult {
 	var args shareHuntArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Hosts == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return structs.CommandResult{
-			Output:    "Error: -hosts, -username, and -password (or -hash) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -hosts, -username, and -password (or -hash) are required")
 	}
 
 	if args.Depth <= 0 {
@@ -112,11 +104,7 @@ func (c *ShareHuntCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse hosts
 	hosts := lateralParseHosts(args.Hosts)
 	if len(hosts) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: no valid hosts parsed",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no valid hosts parsed")
 	}
 	if len(hosts) > 256 {
 		return structs.CommandResult{

@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"fawkes/pkg/structs"
@@ -24,11 +23,7 @@ func (c *MkdirCommand) Description() string {
 // Execute executes the mkdir command
 func (c *MkdirCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: No directory path provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No directory path provided")
 	}
 
 	// Try to parse as JSON first (Mythic API sends JSON parameters)
@@ -46,16 +41,8 @@ func (c *MkdirCommand) Execute(task structs.Task) structs.CommandResult {
 	// Create directory with parent directories if needed (0755 permissions)
 	err := os.MkdirAll(path, 0755)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating directory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating directory: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully created directory: %s", path),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully created directory: %s", path)
 }

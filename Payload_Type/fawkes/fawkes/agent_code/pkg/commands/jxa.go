@@ -40,28 +40,16 @@ func (c *JXACommand) Execute(task structs.Task) structs.CommandResult {
 
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
 	if args.Code == "" && args.File == "" {
-		return structs.CommandResult{
-			Output:    "Error: must specify either -code (inline script) or -file (script path)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: must specify either -code (inline script) or -file (script path)")
 	}
 
 	if args.Code != "" && args.File != "" {
-		return structs.CommandResult{
-			Output:    "Error: specify either -code or -file, not both",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: specify either -code or -file, not both")
 	}
 
 	timeout := args.Timeout
@@ -73,11 +61,7 @@ func (c *JXACommand) Execute(task structs.Task) structs.CommandResult {
 	if args.File != "" {
 		data, err := os.ReadFile(args.File)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error reading script file: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error reading script file: %v", err)
 		}
 		script = string(data)
 	} else {
@@ -93,24 +77,12 @@ func (c *JXACommand) Execute(task structs.Task) structs.CommandResult {
 
 	if err != nil {
 		if ctx.Err() == context.DeadlineExceeded {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Script timed out after %d seconds", timeout),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Script timed out after %d seconds", timeout)
 		}
 		if output != "" {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("JXA error: %s\n%v", output, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("JXA error: %s\n%v", output, err)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("JXA execution failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("JXA execution failed: %v", err)
 	}
 
 	if output == "" {

@@ -58,20 +58,12 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 	var args handlesArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
 	if args.PID <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: pid is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: pid is required")
 	}
 
 	if args.MaxCount <= 0 {
@@ -81,11 +73,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 	// Query all system handles
 	entries, err := querySystemHandles()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying system handles: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying system handles: %v", err)
 	}
 
 	// Filter to target PID
@@ -336,11 +324,7 @@ func formatHandleOutput(handles []handleInfo, typeCounts map[string]int, args ha
 
 	jsonBytes, err := json.Marshal(out)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling handle data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling handle data: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -385,11 +369,7 @@ func formatHandleSummary(entries []systemHandleEntry, args handlesArgs, sysTotal
 
 	jsonBytes, err := json.Marshal(out)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling handle data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling handle data: %v", err)
 	}
 
 	return structs.CommandResult{

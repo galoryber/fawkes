@@ -28,11 +28,7 @@ type chownArgs struct {
 
 func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -path <file> -owner <user> [-group <group>] [-recursive true]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -path <file> -owner <user> [-group <group>] [-recursive true]")
 	}
 
 	var args chownArgs
@@ -52,27 +48,15 @@ func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path parameter is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path parameter is required")
 	}
 
 	if args.Owner == "" && args.Group == "" {
-		return structs.CommandResult{
-			Output:    "Error: at least one of owner or group is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: at least one of owner or group is required")
 	}
 
 	if runtime.GOOS == "windows" {
-		return structs.CommandResult{
-			Output:    "Error: chown is not supported on Windows. Use icacls or Windows ACL tools instead.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: chown is not supported on Windows. Use icacls or Windows ACL tools instead.")
 	}
 
 	// Resolve path
@@ -85,11 +69,7 @@ func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	// Resolve UID
@@ -97,11 +77,7 @@ func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Owner != "" {
 		uid, err = chownResolveUID(args.Owner)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error resolving owner '%s': %v", args.Owner, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error resolving owner '%s': %v", args.Owner, err)
 		}
 	}
 
@@ -110,22 +86,14 @@ func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Group != "" {
 		gid, err = chownResolveGID(args.Group)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error resolving group '%s': %v", args.Group, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error resolving group '%s': %v", args.Group, err)
 		}
 	}
 
 	if !args.Recursive || !info.IsDir() {
 		// Single file
 		if err := os.Chown(path, uid, gid); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: %v", err)
 		}
 		return structs.CommandResult{
 			Output:    chownFormatResult(path, args.Owner, args.Group, uid, gid),

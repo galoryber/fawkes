@@ -48,11 +48,7 @@ func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 	// Get all connections (TCP and UDP)
 	conns, err := psnet.Connections("all")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating connections: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating connections: %v", err)
 	}
 
 	// Apply filters
@@ -74,11 +70,7 @@ func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(filtered) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	// Sort: LISTEN first, then ESTABLISHED, then by local port
@@ -118,11 +110,7 @@ func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling connections: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling connections: %v", err)
 	}
 
 	return structs.CommandResult{

@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -35,11 +34,7 @@ func (c *ModulesCommand) Execute(task structs.Task) structs.CommandResult {
 	var args modulesArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -49,11 +44,7 @@ func (c *ModulesCommand) Execute(task structs.Task) structs.CommandResult {
 
 	modules, err := listProcessModules(args.PID)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing modules for PID %d: %v", args.PID, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error listing modules for PID %d: %v", args.PID, err)
 	}
 
 	// Sort by base address
@@ -74,20 +65,12 @@ func (c *ModulesCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(modules) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	out, err := json.Marshal(modules)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("JSON marshal error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("JSON marshal error: %v", err)
 	}
 
 	return structs.CommandResult{

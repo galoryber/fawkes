@@ -37,19 +37,11 @@ func (c *LaunchAgentCommand) Execute(task structs.Task) structs.CommandResult {
 	var args launchAgentArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use action: install, remove, list",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use action: install, remove, list")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -60,11 +52,7 @@ func (c *LaunchAgentCommand) Execute(task structs.Task) structs.CommandResult {
 	case "list":
 		return launchAgentList(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: install, remove, list", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: install, remove, list", args.Action)
 	}
 }
 
@@ -85,11 +73,7 @@ func getPlistDir(daemon bool) (string, error) {
 // launchAgentInstall creates a LaunchAgent or LaunchDaemon plist
 func launchAgentInstall(args launchAgentArgs) structs.CommandResult {
 	if args.Label == "" {
-		return structs.CommandResult{
-			Output:    "Error: label is required (e.g., com.apple.security.updater)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: label is required (e.g., com.apple.security.updater)")
 	}
 
 	// Default to current executable if no path specified
@@ -97,31 +81,19 @@ func launchAgentInstall(args launchAgentArgs) structs.CommandResult {
 	if programPath == "" {
 		exe, err := os.Executable()
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error getting executable path: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error getting executable path: %v", err)
 		}
 		programPath = exe
 	}
 
 	plistDir, err := getPlistDir(args.Daemon)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	// Ensure the directory exists
 	if err := os.MkdirAll(plistDir, 0755); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating directory %s: %v", plistDir, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating directory %s: %v", plistDir, err)
 	}
 
 	plistPath := filepath.Join(plistDir, args.Label+".plist")
@@ -137,11 +109,7 @@ func launchAgentInstall(args launchAgentArgs) structs.CommandResult {
 	plist := macBuildPlist(args.Label, programArgs, args.RunAt, args.Interval)
 
 	if err := os.WriteFile(plistPath, []byte(plist), 0644); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing plist: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing plist: %v", err)
 	}
 
 	// Determine type description
@@ -158,40 +126,24 @@ func launchAgentInstall(args launchAgentArgs) structs.CommandResult {
 		triggerDesc = fmt.Sprintf("Calendar: %s", args.RunAt)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("Installed %s persistence:\n  Label:   %s\n  Path:    %s\n  Plist:   %s\n  Trigger: %s",
-			plistType, args.Label, programPath, plistPath, triggerDesc),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Installed %s persistence:\n  Label:   %s\n  Path:    %s\n  Plist:   %s\n  Trigger: %s",
+			plistType, args.Label, programPath, plistPath, triggerDesc)
 }
 
 // launchAgentRemove removes a LaunchAgent or LaunchDaemon plist
 func launchAgentRemove(args launchAgentArgs) structs.CommandResult {
 	if args.Label == "" {
-		return structs.CommandResult{
-			Output:    "Error: label is required to identify the plist to remove",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: label is required to identify the plist to remove")
 	}
 
 	plistDir, err := getPlistDir(args.Daemon)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	plistPath := filepath.Join(plistDir, args.Label+".plist")
 	if err := os.Remove(plistPath); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error removing %s: %v", plistPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error removing %s: %v", plistPath, err)
 	}
 
 	plistType := "LaunchAgent"
@@ -199,11 +151,7 @@ func launchAgentRemove(args launchAgentArgs) structs.CommandResult {
 		plistType = "LaunchDaemon"
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Removed %s: %s\nNote: Run 'launchctl remove %s' to unload if currently loaded", plistType, plistPath, args.Label),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Removed %s: %s\nNote: Run 'launchctl remove %s' to unload if currently loaded", plistType, plistPath, args.Label)
 }
 
 // launchAgentList enumerates LaunchAgent and LaunchDaemon plists

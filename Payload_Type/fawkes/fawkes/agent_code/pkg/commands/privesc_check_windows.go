@@ -35,11 +35,7 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -63,11 +59,7 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	case "uac":
 		return winPrivescCheckUAC()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac", args.Action)
 	}
 }
 
@@ -111,21 +103,13 @@ func winPrivescCheckPrivileges() structs.CommandResult {
 
 	token, _, err := getCurrentToken()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get current token: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get current token: %v", err)
 	}
 	defer token.Close()
 
 	privs, err := getTokenPrivileges(token)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enumerate privileges: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to enumerate privileges: %v", err)
 	}
 
 	// Privileges exploitable for privilege escalation
@@ -196,21 +180,13 @@ func winPrivescCheckServices() structs.CommandResult {
 
 	m, err := mgr.Connect()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to connect to SCM: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to connect to SCM: %v", err)
 	}
 	defer m.Disconnect()
 
 	services, err := m.ListServices()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to list services: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to list services: %v", err)
 	}
 
 	var unquoted []string

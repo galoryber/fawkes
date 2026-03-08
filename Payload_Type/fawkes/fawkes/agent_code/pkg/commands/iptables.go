@@ -27,11 +27,7 @@ type iptablesArgs struct {
 
 func (c *IptablesCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: status, rules, nat, add, delete, flush",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: status, rules, nat, add, delete, flush")
 	}
 
 	var args iptablesArgs
@@ -54,11 +50,7 @@ func (c *IptablesCommand) Execute(task structs.Task) structs.CommandResult {
 	case "flush":
 		return iptablesFlush(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: status, rules, nat, add, delete, flush", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: status, rules, nat, add, delete, flush", args.Action)
 	}
 }
 
@@ -220,10 +212,7 @@ func iptablesNAT() structs.CommandResult {
 
 func iptablesAdd(args iptablesArgs) structs.CommandResult {
 	if args.Rule == "" {
-		return structs.CommandResult{
-			Output: "Error: rule parameter required (e.g., '-A INPUT -p tcp --dport 4444 -j ACCEPT')",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: rule parameter required (e.g., '-A INPUT -p tcp --dport 4444 -j ACCEPT')")
 	}
 
 	// Split rule into args
@@ -236,10 +225,7 @@ func iptablesAdd(args iptablesArgs) structs.CommandResult {
 
 	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error adding rule: %v\n%s", err, string(out)),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error adding rule: %v\n%s", err, string(out))
 	}
 
 	return structs.CommandResult{
@@ -251,10 +237,7 @@ func iptablesAdd(args iptablesArgs) structs.CommandResult {
 
 func iptablesDelete(args iptablesArgs) structs.CommandResult {
 	if args.Rule == "" {
-		return structs.CommandResult{
-			Output: "Error: rule parameter required (e.g., '-D INPUT -p tcp --dport 4444 -j ACCEPT')",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: rule parameter required (e.g., '-D INPUT -p tcp --dport 4444 -j ACCEPT')")
 	}
 
 	parts := strings.Fields(args.Rule)
@@ -266,10 +249,7 @@ func iptablesDelete(args iptablesArgs) structs.CommandResult {
 
 	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error deleting rule: %v\n%s", err, string(out)),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error deleting rule: %v\n%s", err, string(out))
 	}
 
 	return structs.CommandResult{
@@ -293,10 +273,7 @@ func iptablesFlush(args iptablesArgs) structs.CommandResult {
 
 	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error flushing rules: %v\n%s", err, string(out)),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error flushing rules: %v\n%s", err, string(out))
 	}
 
 	target := "all chains"

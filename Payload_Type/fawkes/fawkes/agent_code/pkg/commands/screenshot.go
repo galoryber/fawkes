@@ -88,11 +88,7 @@ func (c *ScreenshotCommand) Execute(task structs.Task) structs.CommandResult {
 	// Capture screenshot
 	imgData, err := captureScreen()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error capturing screenshot: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error capturing screenshot: %v", err)
 	}
 
 	// Send screenshot to Mythic
@@ -112,18 +108,10 @@ func (c *ScreenshotCommand) Execute(task structs.Task) structs.CommandResult {
 	for {
 		select {
 		case <-screenshotMsg.FinishedTransfer:
-			return structs.CommandResult{
-				Output:    "Screenshot captured and uploaded successfully",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("Screenshot captured and uploaded successfully")
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
-				return structs.CommandResult{
-					Output:    "Screenshot upload cancelled",
-					Status:    "error",
-					Completed: true,
-				}
+				return errorResult("Screenshot upload cancelled")
 			}
 		}
 	}

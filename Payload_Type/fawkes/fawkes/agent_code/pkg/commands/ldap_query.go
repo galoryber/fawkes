@@ -73,29 +73,17 @@ var presetQueries = map[string]struct {
 
 func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|dacl|query> -server <DC>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|dacl|query> -server <DC>")
 	}
 
 	var args ldapQueryArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: server parameter required (domain controller IP or hostname)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Limit <= 0 {
@@ -111,31 +99,19 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Validate dacl action requires filter (target object name)
 	if strings.ToLower(args.Action) == "dacl" && args.Filter == "" {
-		return structs.CommandResult{
-			Output:    "Error: -filter parameter required for dacl action — specify the target object (sAMAccountName, CN, or full DN)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -filter parameter required for dacl action — specify the target object (sAMAccountName, CN, or full DN)")
 	}
 
 	// Connect to LDAP
 	conn, err := ldapConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LDAP server %s:%d: %v", args.Server, args.Port, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LDAP server %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	// Bind (authenticate)
 	if err := ldapBind(conn, args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error binding to LDAP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error binding to LDAP: %v", err)
 	}
 
 	// Determine base DN
@@ -143,11 +119,7 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	if baseDN == "" {
 		baseDN, err = detectBaseDN(conn)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error detecting base DN: %v. Specify -base_dn manually.", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error detecting base DN: %v. Specify -base_dn manually.", err)
 		}
 	}
 
@@ -159,11 +131,7 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	// Resolve filter and attributes
 	filter, attributes, desc := resolveQuery(args, baseDN)
 	if filter == "" {
-		return structs.CommandResult{
-			Output:    "Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, dacl, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, dacl, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
 	}
 
 	// Execute search — use SizeLimit=0 with paging to avoid "Size Limit Exceeded"
@@ -186,11 +154,7 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	result, err := conn.SearchWithPaging(searchRequest, pagingSize)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error executing LDAP search: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error executing LDAP search: %v", err)
 	}
 
 	// Truncate to requested limit
@@ -339,21 +303,13 @@ func formatLDAPResults(result *ldap.SearchResult, action, desc, baseDN, filter s
 func ldapQueryDACL(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.CommandResult {
 	target := args.Filter
 	if target == "" {
-		return structs.CommandResult{
-			Output:    "Error: -filter parameter required — specify the target object (sAMAccountName, CN, or full DN)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -filter parameter required — specify the target object (sAMAccountName, CN, or full DN)")
 	}
 
 	// Resolve target to DN
 	targetDN, err := ldapResolveDN(conn, target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target '%s': %v", target, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target '%s': %v", target, err)
 	}
 
 	// Query nTSecurityDescriptor (binary attribute)
@@ -369,19 +325,11 @@ func ldapQueryDACL(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 
 	result, err := conn.Search(searchReq)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying nTSecurityDescriptor: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying nTSecurityDescriptor: %v", err)
 	}
 
 	if len(result.Entries) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: object not found: %s", targetDN),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: object not found: %s", targetDN)
 	}
 
 	sd := result.Entries[0].GetRawAttributeValue("nTSecurityDescriptor")
@@ -462,11 +410,7 @@ func ldapQueryDACL(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 
 	data, err := json.Marshal(out)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling DACL JSON: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling DACL JSON: %v", err)
 	}
 
 	return structs.CommandResult{

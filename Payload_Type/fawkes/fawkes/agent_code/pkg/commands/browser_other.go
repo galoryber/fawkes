@@ -50,17 +50,9 @@ func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
 	case "bookmarks":
 		return browserBookmarks(args)
 	case "passwords", "cookies":
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Action '%s' requires DPAPI decryption and is only supported on Windows. Use 'history', 'autofill', or 'bookmarks' on %s.", args.Action, runtime.GOOS),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Action '%s' requires DPAPI decryption and is only supported on Windows. Use 'history', 'autofill', or 'bookmarks' on %s.", args.Action, runtime.GOOS)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: history, autofill, bookmarks (passwords/cookies are Windows-only)", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: history, autofill, bookmarks (passwords/cookies are Windows-only)", args.Action)
 	}
 }
 

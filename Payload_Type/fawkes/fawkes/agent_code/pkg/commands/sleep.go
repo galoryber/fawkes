@@ -25,11 +25,7 @@ func (c *SleepCommand) Description() string {
 
 // Execute executes the sleep command (fallback without agent access)
 func (c *SleepCommand) Execute(task structs.Task) structs.CommandResult {
-	return structs.CommandResult{
-		Output:    "Sleep command requires agent access",
-		Status:    "error",
-		Completed: true,
-	}
+	return errorResult("Sleep command requires agent access")
 }
 
 // ExecuteWithAgent executes the sleep command with agent access
@@ -51,22 +47,14 @@ func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent)
 			if interval, err := strconv.Atoi(parts[0]); err == nil {
 				args.Interval = interval
 			} else {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Invalid interval value: %s", parts[0]),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("Invalid interval value: %s", parts[0])
 			}
 		}
 		if len(parts) >= 2 {
 			if jitter, err := strconv.Atoi(parts[1]); err == nil {
 				args.Jitter = jitter
 			} else {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Invalid jitter value: %s", parts[1]),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("Invalid jitter value: %s", parts[1])
 			}
 		}
 		if len(parts) >= 3 {
@@ -82,19 +70,11 @@ func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent)
 
 	// Validate values
 	if args.Interval < 0 {
-		return structs.CommandResult{
-			Output:    "Sleep interval cannot be negative",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Sleep interval cannot be negative")
 	}
 
 	if args.Jitter < 0 || args.Jitter > 100 {
-		return structs.CommandResult{
-			Output:    "Jitter must be between 0 and 100",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Jitter must be between 0 and 100")
 	}
 
 	// Update sleep parameters in the actual agent
@@ -111,30 +91,18 @@ func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent)
 	if args.WorkingStart != "" || args.WorkingEnd != "" {
 		startMinutes, err := structs.ParseWorkingHoursTime(args.WorkingStart)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Invalid working_start: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Invalid working_start: %v", err)
 		}
 		endMinutes, err := structs.ParseWorkingHoursTime(args.WorkingEnd)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Invalid working_end: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Invalid working_end: %v", err)
 		}
 
 		var days []int
 		if args.WorkingDays != "" && args.WorkingDays != "0" {
 			days, err = structs.ParseWorkingDays(args.WorkingDays)
 			if err != nil {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Invalid working_days: %v", err),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("Invalid working_days: %v", err)
 			}
 		}
 
@@ -162,11 +130,7 @@ func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent)
 		} else {
 			days, err := structs.ParseWorkingDays(args.WorkingDays)
 			if err != nil {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Invalid working_days: %v", err),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("Invalid working_days: %v", err)
 			}
 			agent.WorkingDays = days
 			output += fmt.Sprintf("\nWorking days: %v", days)

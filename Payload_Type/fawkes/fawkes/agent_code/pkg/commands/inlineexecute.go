@@ -38,38 +38,22 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	var params InlineExecuteParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v\nRaw params: %s", err, task.Params),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v\nRaw params: %s", err, task.Params)
 	}
 
 	// Validate BOF data
 	if params.BOFB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: No BOF data provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No BOF data provided")
 	}
 
 	// Decode the base64-encoded BOF
 	bofBytes, err := base64.StdEncoding.DecodeString(params.BOFB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding BOF data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding BOF data: %v", err)
 	}
 
 	if len(bofBytes) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: BOF data is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: BOF data is empty")
 	}
 
 	// Pack the arguments using our custom PackArgs (fixes GC issues in goffloader)
@@ -77,11 +61,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 	if len(params.Arguments) > 0 {
 		argBytes, err = PackArgs(params.Arguments)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error packing BOF arguments: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error packing BOF arguments: %v", err)
 		}
 	}
 

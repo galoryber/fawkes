@@ -115,20 +115,12 @@ type lgMemberInfo3 struct {
 
 func (c *NetUserCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: add, delete, info, password, group-add, group-remove",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: add, delete, info, password, group-add, group-remove")
 	}
 
 	var args netUserArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 	defer structs.ZeroString(&args.Password)
 
@@ -146,28 +138,16 @@ func (c *NetUserCommand) Execute(task structs.Task) structs.CommandResult {
 	case "group-remove":
 		return netUserGroupRemove(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: add, delete, info, password, group-add, group-remove", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: add, delete, info, password, group-add, group-remove", args.Action)
 	}
 }
 
 func netUserAdd(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return structs.CommandResult{
-			Output:    "Error: username is required for add action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: username is required for add action")
 	}
 	if args.Password == "" {
-		return structs.CommandResult{
-			Output:    "Error: password is required for add action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: password is required for add action")
 	}
 
 	namePtr, _ := syscall.UTF16PtrFromString(args.Username)
@@ -202,20 +182,12 @@ func netUserAdd(args netUserArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully created user '%s'", args.Username),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully created user '%s'", args.Username)
 }
 
 func netUserDelete(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return structs.CommandResult{
-			Output:    "Error: username is required for delete action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: username is required for delete action")
 	}
 
 	namePtr, _ := syscall.UTF16PtrFromString(args.Username)
@@ -226,27 +198,15 @@ func netUserDelete(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error deleting user '%s': NetUserDel returned %d %s", args.Username, ret, netApiErrorDesc(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error deleting user '%s': NetUserDel returned %d %s", args.Username, ret, netApiErrorDesc(ret))
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully deleted user '%s'", args.Username),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully deleted user '%s'", args.Username)
 }
 
 func netUserInfo(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return structs.CommandResult{
-			Output:    "Error: username is required for info action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: username is required for info action")
 	}
 
 	namePtr, _ := syscall.UTF16PtrFromString(args.Username)
@@ -260,11 +220,7 @@ func netUserInfo(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error getting info for '%s': NetUserGetInfo returned %d %s", args.Username, ret, netApiErrorDesc(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error getting info for '%s': NetUserGetInfo returned %d %s", args.Username, ret, netApiErrorDesc(ret))
 	}
 	defer procNetApiBufferFreeNU.Call(buf)
 
@@ -362,18 +318,10 @@ func netUserInfo(args netUserArgs) structs.CommandResult {
 
 func netUserPassword(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return structs.CommandResult{
-			Output:    "Error: username is required for password action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: username is required for password action")
 	}
 	if args.Password == "" {
-		return structs.CommandResult{
-			Output:    "Error: password is required for password action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: password is required for password action")
 	}
 
 	namePtr, _ := syscall.UTF16PtrFromString(args.Username)
@@ -392,34 +340,18 @@ func netUserPassword(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error setting password for '%s': NetUserSetInfo returned %d %s", args.Username, ret, netApiErrorDesc(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error setting password for '%s': NetUserSetInfo returned %d %s", args.Username, ret, netApiErrorDesc(ret))
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully changed password for '%s'", args.Username),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully changed password for '%s'", args.Username)
 }
 
 func netUserGroupAdd(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return structs.CommandResult{
-			Output:    "Error: username is required for group-add action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: username is required for group-add action")
 	}
 	if args.Group == "" {
-		return structs.CommandResult{
-			Output:    "Error: group is required for group-add action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: group is required for group-add action")
 	}
 
 	groupPtr, _ := syscall.UTF16PtrFromString(args.Group)
@@ -438,34 +370,18 @@ func netUserGroupAdd(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error adding '%s' to group '%s': NetLocalGroupAddMembers returned %d %s", args.Username, args.Group, ret, netApiErrorDesc(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error adding '%s' to group '%s': NetLocalGroupAddMembers returned %d %s", args.Username, args.Group, ret, netApiErrorDesc(ret))
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully added '%s' to local group '%s'", args.Username, args.Group),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully added '%s' to local group '%s'", args.Username, args.Group)
 }
 
 func netUserGroupRemove(args netUserArgs) structs.CommandResult {
 	if args.Username == "" {
-		return structs.CommandResult{
-			Output:    "Error: username is required for group-remove action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: username is required for group-remove action")
 	}
 	if args.Group == "" {
-		return structs.CommandResult{
-			Output:    "Error: group is required for group-remove action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: group is required for group-remove action")
 	}
 
 	groupPtr, _ := syscall.UTF16PtrFromString(args.Group)
@@ -484,16 +400,8 @@ func netUserGroupRemove(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error removing '%s' from group '%s': NetLocalGroupDelMembers returned %d %s", args.Username, args.Group, ret, netApiErrorDesc(ret)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error removing '%s' from group '%s': NetLocalGroupDelMembers returned %d %s", args.Username, args.Group, ret, netApiErrorDesc(ret))
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully removed '%s' from local group '%s'", args.Username, args.Group),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully removed '%s' from local group '%s'", args.Username, args.Group)
 }

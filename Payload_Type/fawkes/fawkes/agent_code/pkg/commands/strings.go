@@ -38,11 +38,7 @@ const (
 
 func (c *StringsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args stringsArgs
@@ -51,11 +47,7 @@ func (c *StringsCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	if args.MinLen <= 0 {
@@ -67,39 +59,23 @@ func (c *StringsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	f, err := os.Open(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening file: %v", err)
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error stating file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error stating file: %v", err)
 	}
 
 	fileSize := info.Size()
 
 	if args.Offset > 0 {
 		if args.Offset >= fileSize {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: offset %d exceeds file size %d", args.Offset, fileSize),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: offset %d exceeds file size %d", args.Offset, fileSize)
 		}
 		if _, err := f.Seek(args.Offset, io.SeekStart); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error seeking: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error seeking: %v", err)
 		}
 	}
 

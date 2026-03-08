@@ -35,20 +35,12 @@ func (c *KillCommand) Description() string {
 func (c *KillCommand) Execute(task structs.Task) structs.CommandResult {
 	var params KillParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	pid := params.PID
 	if pid <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: PID must be greater than 0",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: PID must be greater than 0")
 	}
 
 	// Get process name before killing (best effort)
@@ -56,35 +48,19 @@ func (c *KillCommand) Execute(task structs.Task) structs.CommandResult {
 
 	proc, err := os.FindProcess(pid)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error finding process %d: %v", pid, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error finding process %d: %v", pid, err)
 	}
 
 	err = proc.Kill()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error killing process %d: %v", pid, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error killing process %d: %v", pid, err)
 	}
 
 	if procName != "" {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Successfully terminated process %d (%s)", pid, procName),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Successfully terminated process %d (%s)", pid, procName)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully terminated process %d", pid),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully terminated process %d", pid)
 }
 
 // killGetProcessName retrieves the process executable name by PID

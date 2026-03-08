@@ -59,11 +59,7 @@ func (c *PtyCommand) Execute(task structs.Task) structs.CommandResult {
 		Cols: uint16(cols),
 	})
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to start PTY: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to start PTY: %v", err)
 	}
 	defer ptmx.Close()
 
@@ -163,11 +159,7 @@ func (c *PtyCommand) Execute(task structs.Task) structs.CommandResult {
 		MessageType: structs.InteractiveExit,
 	}
 
-	return structs.CommandResult{
-		Output:    "PTY session ended",
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult("PTY session ended")
 }
 
 // handleInteractiveInput processes a single interactive message from Mythic.

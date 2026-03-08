@@ -37,36 +37,20 @@ type smbArgs struct {
 
 func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <ls|cat|upload|rm|shares> -host <target> -username <user> -password <pass>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action <ls|cat|upload|rm|shares> -host <target> -username <user> -password <pass>")
 	}
 
 	var args smbArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Host == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return structs.CommandResult{
-			Output:    "Error: host, username, and password (or hash) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: host, username, and password (or hash) are required")
 	}
 
 	if args.Action == "" {
-		return structs.CommandResult{
-			Output:    "Error: action required. Valid actions: ls, cat, upload, rm, shares",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: action required. Valid actions: ls, cat, upload, rm, shares")
 	}
 
 	if args.Port <= 0 {
@@ -89,46 +73,26 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 		return smbListShares(args)
 	case "ls":
 		if args.Share == "" {
-			return structs.CommandResult{
-				Output:    "Error: -share required for ls action",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: -share required for ls action")
 		}
 		return smbListDir(args)
 	case "cat":
 		if args.Share == "" || args.Path == "" {
-			return structs.CommandResult{
-				Output:    "Error: -share and -path required for cat action",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: -share and -path required for cat action")
 		}
 		return smbReadFile(args)
 	case "upload":
 		if args.Share == "" || args.Path == "" || args.Content == "" {
-			return structs.CommandResult{
-				Output:    "Error: -share, -path, and -content required for upload action",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: -share, -path, and -content required for upload action")
 		}
 		return smbWriteFile(args)
 	case "rm":
 		if args.Share == "" || args.Path == "" {
-			return structs.CommandResult{
-				Output:    "Error: -share and -path required for rm action",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: -share and -path required for rm action")
 		}
 		return smbDeleteFile(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown action %q. Valid: ls, cat, upload, rm, shares", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown action %q. Valid: ls, cat, upload, rm, shares", args.Action)
 	}
 }
 
@@ -217,11 +181,7 @@ func smbDecodeHash(hashStr string) ([]byte, error) {
 func smbListShares(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 	defer sc.close()
 
@@ -229,11 +189,7 @@ func smbListShares(args smbArgs) structs.CommandResult {
 	shares, err := sc.session.ListSharenames()
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing shares: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error listing shares: %v", err)
 	}
 
 	var sb strings.Builder
@@ -253,11 +209,7 @@ func smbListShares(args smbArgs) structs.CommandResult {
 func smbListDir(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 	defer sc.close()
 
@@ -265,11 +217,7 @@ func smbListDir(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -282,11 +230,7 @@ func smbListDir(args smbArgs) structs.CommandResult {
 	entries, err := share.ReadDir(dirPath)
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing \\\\%s\\%s\\%s: %v", args.Host, args.Share, dirPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error listing \\\\%s\\%s\\%s: %v", args.Host, args.Share, dirPath, err)
 	}
 
 	var sb strings.Builder
@@ -314,11 +258,7 @@ func smbListDir(args smbArgs) structs.CommandResult {
 func smbReadFile(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 	defer sc.close()
 
@@ -326,11 +266,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -338,11 +274,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	f, err := share.Open(args.Path)
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
 	}
 	defer func() { _ = f.Close() }()
 
@@ -351,11 +283,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	info, err := f.Stat()
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error getting file info: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error getting file info: %v", err)
 	}
 
 	// Limit to 10MB to avoid memory issues
@@ -372,11 +300,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	data, err := io.ReadAll(f)
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading file: %v", err)
 	}
 
 	var sb strings.Builder
@@ -394,11 +318,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 func smbWriteFile(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 	defer sc.close()
 
@@ -406,11 +326,7 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -418,11 +334,7 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 	f, err := share.OpenFile(args.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
 	}
 	defer func() { _ = f.Close() }()
 
@@ -430,28 +342,16 @@ func smbWriteFile(args smbArgs) structs.CommandResult {
 	n, err := f.Write([]byte(args.Content))
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing file: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[+] Written %d bytes to \\\\%s\\%s\\%s", n, args.Host, args.Share, args.Path),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[+] Written %d bytes to \\\\%s\\%s\\%s", n, args.Host, args.Share, args.Path)
 }
 
 func smbDeleteFile(args smbArgs) structs.CommandResult {
 	sc, err := smbConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 	defer sc.close()
 
@@ -459,11 +359,7 @@ func smbDeleteFile(args smbArgs) structs.CommandResult {
 	share, err := sc.session.Mount(args.Share)
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -471,18 +367,10 @@ func smbDeleteFile(args smbArgs) structs.CommandResult {
 	err = share.Remove(args.Path)
 	sc.clearDeadline()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error deleting \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error deleting \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[+] Deleted \\\\%s\\%s\\%s", args.Host, args.Share, args.Path),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[+] Deleted \\\\%s\\%s\\%s", args.Host, args.Share, args.Path)
 }
 
 // formatFileSize is defined in find.go

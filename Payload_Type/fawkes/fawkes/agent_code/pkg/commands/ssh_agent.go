@@ -47,11 +47,7 @@ func (c *SSHAgentCommand) Execute(task structs.Task) structs.CommandResult {
 	case "enum":
 		return sshAgentEnum()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: list, enum", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: list, enum", args.Action)
 	}
 }
 
@@ -59,11 +55,7 @@ func (c *SSHAgentCommand) Execute(task structs.Task) structs.CommandResult {
 func sshAgentEnum() structs.CommandResult {
 	sockets := discoverAgentSockets()
 	if len(sockets) == 0 {
-		return structs.CommandResult{
-			Output:    "No SSH agent sockets found",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("No SSH agent sockets found")
 	}
 
 	var sb strings.Builder
@@ -90,11 +82,7 @@ func sshAgentList(args sshAgentArgs) structs.CommandResult {
 	}
 
 	if len(sockets) == 0 {
-		return structs.CommandResult{
-			Output:    "No SSH agent sockets found. Set SSH_AUTH_SOCK or specify -socket.",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("No SSH agent sockets found. Set SSH_AUTH_SOCK or specify -socket.")
 	}
 
 	var sb strings.Builder

@@ -128,9 +128,5 @@ func (c *SyscallsCommand) initSyscalls() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[+] Indirect syscalls initialized: %d Nt* functions resolved, %d stubs active\n[+] Injection commands will now use indirect syscalls", len(entries), stubbed),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[+] Indirect syscalls initialized: %d Nt* functions resolved, %d stubs active\n[+] Injection commands will now use indirect syscalls", len(entries), stubbed)
 }

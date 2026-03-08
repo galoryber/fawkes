@@ -32,11 +32,7 @@ func (c *MountCommand) Execute(task structs.Task) structs.CommandResult {
 
 	entries, err := getMountInfo()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	// Apply filters
@@ -57,11 +53,7 @@ func (c *MountCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(filtered) == 0 && len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "[*] No mount points found",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[*] No mount points found")
 	}
 
 	var sb strings.Builder

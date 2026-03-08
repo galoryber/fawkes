@@ -104,11 +104,7 @@ func (c *SecretScanCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Path == "" {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error getting home directory: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error getting home directory: %v", err)
 		}
 		args.Path = home
 	}
@@ -216,11 +212,7 @@ func (c *SecretScanCommand) Execute(task structs.Task) structs.CommandResult {
 	})
 
 	if len(findings) == 0 {
-		return structs.CommandResult{
-			Output:    "No secrets found in scanned files",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("No secrets found in scanned files")
 	}
 
 	// Build output

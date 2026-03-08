@@ -4,7 +4,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -46,11 +45,7 @@ func (c *EnvScanCommand) Execute(task structs.Task) structs.CommandResult {
 func envScanSingleProcess(pid int, filter string) structs.CommandResult {
 	envVars, processName, err := readProcessEnviron(pid)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read environment for PID %d: %v", pid, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read environment for PID %d: %v", pid, err)
 	}
 
 	results := filterSensitiveVars(envVars, pid, processName)

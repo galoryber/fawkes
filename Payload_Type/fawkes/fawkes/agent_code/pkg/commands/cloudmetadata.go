@@ -55,11 +55,7 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 	args := cloudMetadataArgs{Action: "detect", Provider: "auto", Timeout: defaultCloudTimeout}
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 	if args.Action == "" {
@@ -176,11 +172,7 @@ func cloudAll(provider string, timeout time.Duration) structs.CommandResult {
 
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
-		return structs.CommandResult{
-			Output:    "[-] No cloud metadata service detected or specified provider not available",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[-] No cloud metadata service detected or specified provider not available")
 	}
 
 	for _, p := range providers {
@@ -207,11 +199,7 @@ func cloudCreds(provider string, timeout time.Duration) structs.CommandResult {
 
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
-		return structs.CommandResult{
-			Output:    "[-] No cloud metadata service detected or specified provider not available",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[-] No cloud metadata service detected or specified provider not available")
 	}
 
 	for _, p := range providers {
@@ -237,11 +225,7 @@ func cloudIdentity(provider string, timeout time.Duration) structs.CommandResult
 
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
-		return structs.CommandResult{
-			Output:    "[-] No cloud metadata service detected",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[-] No cloud metadata service detected")
 	}
 
 	for _, p := range providers {
@@ -267,11 +251,7 @@ func cloudUserdata(provider string, timeout time.Duration) structs.CommandResult
 
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
-		return structs.CommandResult{
-			Output:    "[-] No cloud metadata service detected",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[-] No cloud metadata service detected")
 	}
 
 	for _, p := range providers {
@@ -297,11 +277,7 @@ func cloudNetwork(provider string, timeout time.Duration) structs.CommandResult 
 
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
-		return structs.CommandResult{
-			Output:    "[-] No cloud metadata service detected",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[-] No cloud metadata service detected")
 	}
 
 	for _, p := range providers {

@@ -104,11 +104,7 @@ func listAllPIDs() ([]int, error) {
 func envScanAllProcesses(filter string) structs.CommandResult {
 	pids, err := listAllPIDs()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to list processes: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to list processes: %v", err)
 	}
 
 	var allResults []envScanResult

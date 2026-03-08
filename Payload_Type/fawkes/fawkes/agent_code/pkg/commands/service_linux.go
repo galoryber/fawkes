@@ -34,19 +34,11 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 	var args serviceArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: list, query, start, stop, enable, disable",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: list, query, start, stop, enable, disable")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -63,11 +55,7 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 	case "disable":
 		return serviceCtl(args, "disable")
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: list, query, start, stop, enable, disable", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: list, query, start, stop, enable, disable", args.Action)
 	}
 }
 
@@ -84,11 +72,7 @@ func serviceListLinux() structs.CommandResult {
 	// Use systemctl to list all service units with their status
 	out, err := execCmdTimeoutOutput("systemctl", "list-units", "--type=service", "--all", "--no-pager", "--no-legend")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing services: %v\n%s", err, string(out)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error listing services: %v\n%s", err, string(out))
 	}
 
 	var entries []linuxServiceEntry
@@ -146,20 +130,12 @@ func serviceListLinux() structs.CommandResult {
 	}
 
 	if len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling services: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling services: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -171,11 +147,7 @@ func serviceListLinux() structs.CommandResult {
 
 func serviceQueryLinux(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for query action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for query action")
 	}
 
 	unitName := args.Name
@@ -186,11 +158,7 @@ func serviceQueryLinux(args serviceArgs) structs.CommandResult {
 	// Use systemctl show for machine-readable properties
 	out, err := execCmdTimeoutOutput("systemctl", "show", unitName, "--no-pager")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying service %s: %v\n%s", args.Name, err, string(out)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying service %s: %v\n%s", args.Name, err, string(out))
 	}
 
 	// Parse key=value pairs, extract the most relevant ones
@@ -205,11 +173,7 @@ func serviceQueryLinux(args serviceArgs) structs.CommandResult {
 	// Check if service exists
 	loadState := props["LoadState"]
 	if loadState == "not-found" {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Service '%s' not found", args.Name),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Service '%s' not found", args.Name)
 	}
 
 	var sb strings.Builder
@@ -274,11 +238,7 @@ func readServiceFile(path string) ([]byte, error) {
 
 func serviceCtl(args serviceArgs, action string) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: name is required for %s action", action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: name is required for %s action", action)
 	}
 
 	unitName := args.Name
@@ -288,11 +248,7 @@ func serviceCtl(args serviceArgs, action string) structs.CommandResult {
 
 	out, err := execCmdTimeout("systemctl", action, unitName)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: systemctl %s %s failed: %v\n%s", action, args.Name, err, string(out)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: systemctl %s %s failed: %v\n%s", action, args.Name, err, string(out))
 	}
 
 	return structs.CommandResult{

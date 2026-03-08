@@ -65,11 +65,7 @@ func getPSProfiles() []psProfile {
 
 func (c *ShellConfigCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: list, read, inject, remove",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: list, read, inject, remove")
 	}
 
 	var args shellConfigArgs
@@ -94,11 +90,7 @@ func (c *ShellConfigCommand) Execute(task structs.Task) structs.CommandResult {
 	case "remove":
 		return psProfileRemove(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: list, read, inject, remove", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: list, read, inject, remove", args.Action)
 	}
 }
 
@@ -136,18 +128,12 @@ func psProfileList() structs.CommandResult {
 func psProfileRead(args shellConfigArgs) structs.CommandResult {
 	path := resolveProfilePath(args.File)
 	if path == "" {
-		return structs.CommandResult{
-			Output: "Error: file parameter required. Use profile name (e.g., 'PS7 CurrentUser CurrentHost') or full path.",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: file parameter required. Use profile name (e.g., 'PS7 CurrentUser CurrentHost') or full path.")
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error reading %s: %v", path, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error reading %s: %v", path, err)
 	}
 
 	return structs.CommandResult{
@@ -159,10 +145,7 @@ func psProfileRead(args shellConfigArgs) structs.CommandResult {
 
 func psProfileInject(args shellConfigArgs) structs.CommandResult {
 	if args.Line == "" {
-		return structs.CommandResult{
-			Output: "Error: line parameter required (PowerShell command to inject)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: line parameter required (PowerShell command to inject)")
 	}
 
 	path := resolveProfilePath(args.File)
@@ -180,28 +163,18 @@ func psProfileInject(args shellConfigArgs) structs.CommandResult {
 	// Read existing content
 	existing, _ := os.ReadFile(path)
 	if strings.Contains(string(existing), line) {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Line already exists in %s — skipping injection", path),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Line already exists in %s — skipping injection", path)
 	}
 
 	// Ensure parent directory exists
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error creating directory %s: %v", dir, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error creating directory %s: %v", dir, err)
 	}
 
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error opening %s: %v", path, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error opening %s: %v", path, err)
 	}
 	defer f.Close()
 
@@ -212,41 +185,25 @@ func psProfileInject(args shellConfigArgs) structs.CommandResult {
 	writeStr = writeStr + "\n"
 
 	if _, err := f.WriteString(writeStr); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error writing to %s: %v", path, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error writing to %s: %v", path, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Injected into %s:\n  %s\n\nThis will execute on every PowerShell session for this user.", path, strings.TrimSpace(writeStr)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Injected into %s:\n  %s\n\nThis will execute on every PowerShell session for this user.", path, strings.TrimSpace(writeStr))
 }
 
 func psProfileRemove(args shellConfigArgs) structs.CommandResult {
 	if args.Line == "" {
-		return structs.CommandResult{
-			Output: "Error: line parameter required (exact line to remove)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: line parameter required (exact line to remove)")
 	}
 
 	path := resolveProfilePath(args.File)
 	if path == "" {
-		return structs.CommandResult{
-			Output: "Error: file parameter required",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: file parameter required")
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error reading %s: %v", path, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error reading %s: %v", path, err)
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -262,25 +219,14 @@ func psProfileRemove(args shellConfigArgs) structs.CommandResult {
 	}
 
 	if removed == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Line not found in %s", path),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Line not found in %s", path)
 	}
 
 	if err := os.WriteFile(path, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error writing %s: %v", path, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error writing %s: %v", path, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Removed %d line(s) from %s", removed, path),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Removed %d line(s) from %s", removed, path)
 }
 
 // resolveProfilePath resolves a profile name or path to an absolute path.

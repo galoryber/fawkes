@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"fawkes/pkg/structs"
@@ -24,11 +23,7 @@ func (c *RmCommand) Description() string {
 // Execute executes the rm command
 func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: No path provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No path provided")
 	}
 
 	// Try to parse as JSON first (Mythic API sends JSON parameters)
@@ -47,17 +42,9 @@ func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 	fileInfo, err := os.Stat(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: Path does not exist: %s", path),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: Path does not exist: %s", path)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error checking path: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error checking path: %v", err)
 	}
 
 	// Determine if it's a file or directory
@@ -69,16 +56,8 @@ func (c *RmCommand) Execute(task structs.Task) structs.CommandResult {
 	// Remove the file or directory (recursively if directory)
 	err = os.RemoveAll(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error removing %s: %v", itemType, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error removing %s: %v", itemType, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully removed %s: %s", itemType, path),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully removed %s: %s", itemType, path)
 }

@@ -80,28 +80,16 @@ var lowPrivRIDMap = map[uint32]string{
 
 func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <cas|templates|find|request> -server <DC>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action <cas|templates|find|request> -server <DC>")
 	}
 
 	var args adcsArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: server parameter required (domain controller or CA server IP/hostname)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server parameter required (domain controller or CA server IP/hostname)")
 	}
 
 	// Request action uses DCOM (not LDAP) — handle separately
@@ -130,29 +118,17 @@ func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	conn, err := adcsConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	if err := adcsBind(conn, args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error binding to LDAP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error binding to LDAP: %v", err)
 	}
 
 	configDN, baseDN, err := adcsGetConfigDN(conn)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error detecting configuration DN: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error detecting configuration DN: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -163,11 +139,7 @@ func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 	case "find":
 		return adcsFindVulnerable(conn, configDN, baseDN, args)
 	default:
-		return structs.CommandResult{
-			Output:    "Error: action must be one of: cas, templates, find, request",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: action must be one of: cas, templates, find, request")
 	}
 }
 
@@ -220,11 +192,7 @@ func adcsEnumerateCAs(conn *ldap.Conn, configDN string) structs.CommandResult {
 
 	result, err := conn.Search(req)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying CAs: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying CAs: %v", err)
 	}
 
 	var sb strings.Builder
@@ -272,11 +240,7 @@ func adcsEnumerateTemplates(conn *ldap.Conn, configDN string) structs.CommandRes
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying templates: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying templates: %v", err)
 	}
 
 	var sb strings.Builder
@@ -338,11 +302,7 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 
 	caResult, err := conn.Search(caReq)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying CAs: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying CAs: %v", err)
 	}
 
 	// Build published template → CA name mapping
@@ -370,11 +330,7 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 
 	templateResult, err := conn.SearchWithPaging(templateReq, 100)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying templates: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying templates: %v", err)
 	}
 
 	var sb strings.Builder

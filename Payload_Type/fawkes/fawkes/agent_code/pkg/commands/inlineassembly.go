@@ -164,49 +164,29 @@ type InlineAssemblyParams struct {
 func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult {
 	// Ensure we're on Windows
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	// Parse parameters
 	var params InlineAssemblyParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	// Validate assembly_b64
 	if params.AssemblyB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: No assembly data provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No assembly data provided")
 	}
 
 	// Decode the base64-encoded assembly
 	assemblyBytes, err := base64.StdEncoding.DecodeString(params.AssemblyB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding assembly: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding assembly: %v", err)
 	}
 
 	if len(assemblyBytes) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: Assembly data is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: Assembly data is empty")
 	}
 
 	// Parse arguments string into array

@@ -63,36 +63,20 @@ type coerceResult struct {
 
 func (c *CoerceCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -server <target> -listener <attacker-ip> [-method petitpotam|printerbug|shadowcoerce|all]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -server <target> -listener <attacker-ip> [-method petitpotam|printerbug|shadowcoerce|all]")
 	}
 
 	var args coerceArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Server == "" || args.Listener == "" {
-		return structs.CommandResult{
-			Output:    "Error: server and listener are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server and listener are required")
 	}
 
 	if args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return structs.CommandResult{
-			Output:    "Error: username and password (or hash) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: username and password (or hash) are required")
 	}
 
 	if args.Timeout <= 0 {
@@ -152,11 +136,7 @@ func (c *CoerceCommand) Execute(task structs.Task) structs.CommandResult {
 	case "all":
 		methods = []string{"petitpotam", "printerbug", "shadowcoerce"}
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown method '%s'. Use petitpotam, printerbug, shadowcoerce, or all", args.Method),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown method '%s'. Use petitpotam, printerbug, shadowcoerce, or all", args.Method)
 	}
 
 	successCount := 0

@@ -29,28 +29,16 @@ type base64Args struct {
 
 func (c *Base64Command) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args base64Args
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Input == "" {
-		return structs.CommandResult{
-			Output:    "Error: input is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: input is required")
 	}
 
 	if args.Action == "" {
@@ -63,11 +51,7 @@ func (c *Base64Command) Execute(task structs.Task) structs.CommandResult {
 	case "decode":
 		return base64Decode(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown action '%s' (use encode or decode)", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown action '%s' (use encode or decode)", args.Action)
 	}
 }
 
@@ -77,11 +61,7 @@ func base64Encode(args base64Args) structs.CommandResult {
 	if args.File {
 		content, err := os.ReadFile(args.Input)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error reading file: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error reading file: %v", err)
 		}
 		data = content
 	} else {
@@ -93,11 +73,7 @@ func base64Encode(args base64Args) structs.CommandResult {
 	// Write to output file if specified
 	if args.Output != "" {
 		if err := os.WriteFile(args.Output, []byte(encoded), 0644); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error writing output file: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error writing output file: %v", err)
 		}
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("[+] Encoded %d bytes → %d chars, written to %s", len(data), len(encoded), args.Output),
@@ -110,11 +86,7 @@ func base64Encode(args base64Args) structs.CommandResult {
 	if args.File {
 		source = args.Input
 	}
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[*] Encoded %d bytes from %s\n%s", len(data), source, encoded),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] Encoded %d bytes from %s\n%s", len(data), source, encoded)
 }
 
 func base64Decode(args base64Args) structs.CommandResult {
@@ -123,11 +95,7 @@ func base64Decode(args base64Args) structs.CommandResult {
 	if args.File {
 		content, err := os.ReadFile(args.Input)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error reading file: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error reading file: %v", err)
 		}
 		encoded = string(content)
 	} else {
@@ -136,21 +104,13 @@ func base64Decode(args base64Args) structs.CommandResult {
 
 	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding base64: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding base64: %v", err)
 	}
 
 	// Write to output file if specified
 	if args.Output != "" {
 		if err := os.WriteFile(args.Output, decoded, 0644); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error writing output file: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error writing output file: %v", err)
 		}
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("[+] Decoded %d chars → %d bytes, written to %s", len(encoded), len(decoded), args.Output),

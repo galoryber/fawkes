@@ -42,11 +42,7 @@ func (c *RegCommand) Execute(task structs.Task) structs.CommandResult {
 	var args regArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v\nUsage: reg -action <read|write|delete|search|save> ...", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v\nUsage: reg -action <read|write|delete|search|save> ...", err)
 		}
 	}
 
@@ -86,21 +82,13 @@ func (c *RegCommand) Execute(task structs.Task) structs.CommandResult {
 		saveTask.Params = string(data)
 		return (&RegSaveCommand{}).Execute(saveTask)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use read, write, delete, search, save)", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use read, write, delete, search, save)", args.Action)
 	}
 }
 
 func regActionRead(args regArgs) structs.CommandResult {
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: -path is required for read action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -path is required for read action")
 	}
 
 	if args.Hive == "" {
@@ -118,22 +106,14 @@ func regActionRead(args regArgs) structs.CommandResult {
 
 	key, err := registry.OpenKey(hiveKey, args.Path, registry.READ)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening key %s\\%s: %v", args.Hive, args.Path, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening key %s\\%s: %v", args.Hive, args.Path, err)
 	}
 	defer key.Close()
 
 	if args.Name != "" {
 		output, err := readValue(key, args.Name)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error reading value '%s': %v", args.Name, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error reading value '%s': %v", args.Name, err)
 		}
 		return structs.CommandResult{
 			Output:    output,
@@ -144,11 +124,7 @@ func regActionRead(args regArgs) structs.CommandResult {
 
 	output, err := enumerateValues(key, args.Hive, args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating values: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating values: %v", err)
 	}
 	return structs.CommandResult{
 		Output:    output,
@@ -159,11 +135,7 @@ func regActionRead(args regArgs) structs.CommandResult {
 
 func regActionWrite(args regArgs) structs.CommandResult {
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: -path is required for write action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -path is required for write action")
 	}
 	if args.RegType == "" {
 		args.RegType = "REG_SZ"
@@ -183,20 +155,12 @@ func regActionWrite(args regArgs) structs.CommandResult {
 
 	key, _, err := registry.CreateKey(hiveKey, args.Path, registry.SET_VALUE)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening/creating key %s\\%s: %v", args.Hive, args.Path, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening/creating key %s\\%s: %v", args.Hive, args.Path, err)
 	}
 	defer key.Close()
 
 	if err := parseRegWriteValue(key, args.Name, args.Data, args.RegType); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing value: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing value: %v", err)
 	}
 
 	displayName := args.Name
@@ -204,11 +168,7 @@ func regActionWrite(args regArgs) structs.CommandResult {
 		displayName = "(Default)"
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully wrote %s\\%s\\%s = %s [%s]", args.Hive, args.Path, displayName, args.Data, args.RegType),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully wrote %s\\%s\\%s = %s [%s]", args.Hive, args.Path, displayName, args.Data, args.RegType)
 }
 
 func regActionDelete(task structs.Task, args regArgs) structs.CommandResult {
@@ -227,11 +187,7 @@ func regActionDelete(task structs.Task, args regArgs) structs.CommandResult {
 
 func regActionSearch(args regArgs) structs.CommandResult {
 	if args.Pattern == "" {
-		return structs.CommandResult{
-			Output:    "Error: -pattern is required for search action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -pattern is required for search action")
 	}
 
 	if args.Hive == "" {
@@ -260,20 +216,12 @@ func regActionSearch(args regArgs) structs.CommandResult {
 	regSearchRecursive(hiveKey, args.Path, strings.ToLower(args.Pattern), 0, args.MaxDepth, args.MaxResults, &results)
 
 	if len(results) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	data, err := json.Marshal(results)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling results: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling results: %v", err)
 	}
 
 	return structs.CommandResult{

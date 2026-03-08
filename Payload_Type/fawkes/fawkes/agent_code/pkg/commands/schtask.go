@@ -62,19 +62,11 @@ func (c *SchtaskCommand) Execute(task structs.Task) structs.CommandResult {
 	var args schtaskArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required (action, name)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required (action, name)")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -95,11 +87,7 @@ func (c *SchtaskCommand) Execute(task structs.Task) structs.CommandResult {
 	case "stop":
 		return schtaskStop(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: create, query, delete, run, list, enable, disable, stop", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: create, query, delete, run, list, enable, disable, stop", args.Action)
 	}
 }
 
@@ -239,27 +227,15 @@ func buildTaskXML(args schtaskArgs) string {
 
 func schtaskCreate(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for task creation",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for task creation")
 	}
 	if args.Program == "" {
-		return structs.CommandResult{
-			Output:    "Error: program is required for task creation",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: program is required for task creation")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to Task Scheduler: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
@@ -288,11 +264,7 @@ func schtaskCreate(args schtaskArgs) structs.CommandResult {
 	regResult, err := oleutil.CallMethod(conn.folder, "RegisterTask",
 		args.Name, taskXML, TASK_CREATE_OR_UPDATE, userParam, nil, logonType, nil)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error registering task '%s': %v", args.Name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error registering task '%s': %v", args.Name, err)
 	}
 	regResult.Clear()
 
@@ -327,30 +299,18 @@ func schtaskCreate(args schtaskArgs) structs.CommandResult {
 
 func schtaskQuery(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for task query",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for task query")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to Task Scheduler: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
 	taskResult, err := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying task '%s': %v", args.Name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying task '%s': %v", args.Name, err)
 	}
 	defer taskResult.Clear()
 	taskDisp := taskResult.ToIDispatch()
@@ -423,84 +383,48 @@ func schtaskQuery(args schtaskArgs) structs.CommandResult {
 
 func schtaskDelete(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for task deletion",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for task deletion")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to Task Scheduler: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
 	_, err = oleutil.CallMethod(conn.folder, "DeleteTask", args.Name, 0)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error deleting task '%s': %v", args.Name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error deleting task '%s': %v", args.Name, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Deleted scheduled task '%s'", args.Name),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Deleted scheduled task '%s'", args.Name)
 }
 
 func schtaskRun(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required to run a task",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required to run a task")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to Task Scheduler: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
 	taskResult, err := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error finding task '%s': %v", args.Name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error finding task '%s': %v", args.Name, err)
 	}
 	defer taskResult.Clear()
 	taskDisp := taskResult.ToIDispatch()
 
 	runResult, err := oleutil.CallMethod(taskDisp, "Run", nil)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error running task '%s': %v", args.Name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error running task '%s': %v", args.Name, err)
 	}
 	runResult.Clear()
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Triggered execution of '%s'", args.Name),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Triggered execution of '%s'", args.Name)
 }
 
 // schtaskListEntry represents a scheduled task for JSON output
@@ -515,11 +439,7 @@ func schtaskList(filter string) structs.CommandResult {
 	// COM-based iteration (ForEach, Count+Item) hangs in Go's COM apartment model.
 	out, err := execCmdTimeout("schtasks.exe", "/query", "/fo", "CSV", "/nh")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error running schtasks.exe: %v\n%s", err, string(out)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error running schtasks.exe: %v\n%s", err, string(out))
 	}
 
 	filterLower := strings.ToLower(filter)
@@ -553,20 +473,12 @@ func schtaskList(filter string) structs.CommandResult {
 	}
 
 	if len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling results: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling results: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -579,99 +491,59 @@ func schtaskList(filter string) structs.CommandResult {
 // schtaskSetEnabled enables or disables a scheduled task via IRegisteredTask.put_Enabled.
 func schtaskSetEnabled(args schtaskArgs, enabled bool) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to Task Scheduler: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
 	taskResult, err := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error finding task '%s': %v", args.Name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error finding task '%s': %v", args.Name, err)
 	}
 	defer taskResult.Clear()
 	taskDisp := taskResult.ToIDispatch()
 
 	_, err = oleutil.PutProperty(taskDisp, "Enabled", enabled)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error setting enabled state for '%s': %v", args.Name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error setting enabled state for '%s': %v", args.Name, err)
 	}
 
 	action := "Enabled"
 	if !enabled {
 		action = "Disabled"
 	}
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("%s scheduled task '%s'", action, args.Name),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("%s scheduled task '%s'", action, args.Name)
 }
 
 // schtaskStop stops a currently-running scheduled task instance.
 func schtaskStop(args schtaskArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required to stop a task",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required to stop a task")
 	}
 
 	conn, cleanup, err := connectTaskScheduler()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to Task Scheduler: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to Task Scheduler: %v", err)
 	}
 	defer cleanup()
 
 	taskResult, err := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error finding task '%s': %v", args.Name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error finding task '%s': %v", args.Name, err)
 	}
 	defer taskResult.Clear()
 	taskDisp := taskResult.ToIDispatch()
 
 	_, err = oleutil.CallMethod(taskDisp, "Stop", 0)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error stopping task '%s': %v", args.Name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error stopping task '%s': %v", args.Name, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Stopped running instance of '%s'", args.Name),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Stopped running instance of '%s'", args.Name)
 }
 
 // extractXMLValue extracts the text content of a simple XML element.

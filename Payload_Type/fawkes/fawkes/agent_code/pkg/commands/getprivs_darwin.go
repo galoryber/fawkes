@@ -37,17 +37,9 @@ func (c *GetPrivsCommand) Execute(task structs.Task) structs.CommandResult {
 	case "list":
 		return listDarwinPrivileges()
 	case "enable", "disable", "strip":
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Action '%s' is not supported on macOS (use Windows for token privilege manipulation)", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Action '%s' is not supported on macOS (use Windows for token privilege manipulation)", params.Action)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use 'list')", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use 'list')", params.Action)
 	}
 }
 
@@ -137,11 +129,7 @@ func listDarwinPrivileges() structs.CommandResult {
 
 	data, err := json.Marshal(output)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling results: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling results: %v", err)
 	}
 
 	return structs.CommandResult{

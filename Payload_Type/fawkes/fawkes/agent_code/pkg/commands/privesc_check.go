@@ -56,11 +56,7 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	case "container":
 		return privescCheckContainer()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container", args.Action)
 	}
 }
 

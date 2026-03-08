@@ -41,27 +41,15 @@ type grepMatch struct {
 func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	var args grepArgs
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Usage: grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Usage: grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100]")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Pattern == "" {
-		return structs.CommandResult{
-			Output:    "Error: pattern is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: pattern is required")
 	}
 
 	// Set defaults
@@ -85,11 +73,7 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	re, err := regexp.Compile(regexPattern)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: invalid regex pattern: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: invalid regex pattern: %v", err)
 	}
 
 	// Parse extension filter
@@ -108,21 +92,13 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	// Resolve start path
 	startPath, err := filepath.Abs(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving path: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving path: %v", err)
 	}
 
 	// Check if path is a single file
 	info, err := os.Stat(startPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	var matches []grepMatch
@@ -199,11 +175,7 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(matches) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No matches found for pattern %q in %s (%d files searched)", args.Pattern, startPath, filesSearched),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No matches found for pattern %q in %s (%d files searched)", args.Pattern, startPath, filesSearched)
 	}
 
 	// Format output

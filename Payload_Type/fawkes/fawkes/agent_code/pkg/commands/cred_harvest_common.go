@@ -29,11 +29,7 @@ func (c *CredHarvestCommand) Execute(task structs.Task) structs.CommandResult {
 		if runtime.GOOS == "windows" {
 			actions = "cloud, configs, windows, all"
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: parameters required. Actions: %s", actions),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: parameters required. Actions: %s", actions)
 	}
 
 	var args credHarvestArgs

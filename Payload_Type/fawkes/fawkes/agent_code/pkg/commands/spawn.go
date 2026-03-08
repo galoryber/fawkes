@@ -122,21 +122,13 @@ type SpawnParams struct {
 // Execute executes the spawn command
 func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	var params SpawnParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	params.Mode = strings.ToLower(params.Mode)
@@ -147,11 +139,7 @@ func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 	case "thread":
 		return spawnSuspendedThread(params.PID)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: Unknown mode '%s'. Use 'process' or 'thread'", params.Mode),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: Unknown mode '%s'. Use 'process' or 'thread'", params.Mode)
 	}
 }
 

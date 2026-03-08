@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -31,36 +30,20 @@ type writeFileArgs struct {
 
 func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args writeFileArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	if args.Content == "" {
-		return structs.CommandResult{
-			Output:    "Error: content is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: content is required")
 	}
 
 	// Determine the data to write
@@ -68,11 +51,7 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Base64 {
 		decoded, err := base64.StdEncoding.DecodeString(args.Content)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error decoding base64: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error decoding base64: %v", err)
 		}
 		data = decoded
 	} else {
@@ -83,11 +62,7 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.MkDirs {
 		dir := filepath.Dir(args.Path)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating directories: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating directories: %v", err)
 		}
 	}
 
@@ -101,21 +76,13 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 
 	f, err := os.OpenFile(args.Path, flags, 0644)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening file: %v", err)
 	}
 	defer f.Close()
 
 	n, err := f.Write(data)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing file: %v", err)
 	}
 
 	action := "Wrote"
@@ -123,9 +90,5 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 		action = "Appended"
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[+] %s %d bytes to %s", action, n, args.Path),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[+] %s %d bytes to %s", action, n, args.Path)
 }

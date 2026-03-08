@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"sort"
 	"strings"
@@ -56,11 +55,7 @@ func (c *EnvCommand) Execute(task structs.Task) structs.CommandResult {
 	case "unset":
 		return envUnset(args.Name)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: list, get, set, unset", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: list, get, set, unset", args.Action)
 	}
 }
 
@@ -89,11 +84,7 @@ func envList(filter string) structs.CommandResult {
 	}
 
 	if len(matched) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No environment variables matching '%s'", filter),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No environment variables matching '%s'", filter)
 	}
 
 	return structs.CommandResult{
@@ -105,90 +96,46 @@ func envList(filter string) structs.CommandResult {
 
 func envGet(name string) structs.CommandResult {
 	if name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for get action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for get action")
 	}
 
 	value, exists := os.LookupEnv(name)
 	if !exists {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Environment variable '%s' is not set", name),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Environment variable '%s' is not set", name)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("%s=%s", name, value),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("%s=%s", name, value)
 }
 
 func envSet(name, value string) structs.CommandResult {
 	if name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for set action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for set action")
 	}
 
 	oldValue, existed := os.LookupEnv(name)
 	if err := os.Setenv(name, value); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error setting %s: %v", name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error setting %s: %v", name, err)
 	}
 
 	if existed {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Updated %s (was: %s)", name, oldValue),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Updated %s (was: %s)", name, oldValue)
 	}
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Set %s=%s", name, value),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Set %s=%s", name, value)
 }
 
 func envUnset(name string) structs.CommandResult {
 	if name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for unset action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for unset action")
 	}
 
 	_, existed := os.LookupEnv(name)
 	if !existed {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Environment variable '%s' was not set", name),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Environment variable '%s' was not set", name)
 	}
 
 	if err := os.Unsetenv(name); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error unsetting %s: %v", name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error unsetting %s: %v", name, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Unset %s", name),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Unset %s", name)
 }

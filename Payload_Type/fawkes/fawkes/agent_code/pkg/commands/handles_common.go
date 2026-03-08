@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"sort"
 
 	"fawkes/pkg/structs"
@@ -54,11 +53,7 @@ func formatHandleResult(handles []handleInfo, typeCounts map[string]int, args ha
 
 	jsonBytes, err := json.Marshal(out)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling handle data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling handle data: %v", err)
 	}
 
 	return structs.CommandResult{

@@ -84,28 +84,16 @@ const fileTypeHeaderSize = 32 // Read first 32 bytes for identification
 
 func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required (path). Use -recursive true for directory mode.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required (path). Use -recursive true for directory mode.")
 	}
 
 	var args fileTypeArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	if args.MaxFiles <= 0 {
@@ -119,11 +107,7 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	var sb strings.Builder

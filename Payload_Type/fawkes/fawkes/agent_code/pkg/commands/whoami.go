@@ -28,11 +28,7 @@ func (c *WhoamiCommand) Execute(task structs.Task) structs.CommandResult {
 
 	u, err := user.Current()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get current user: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get current user: %v", err)
 	}
 
 	lines = append(lines, fmt.Sprintf("User:     %s", u.Username))

@@ -45,19 +45,11 @@ type lateralOutputEntry struct {
 func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	var args lateralCheckArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Hosts == "" {
-		return structs.CommandResult{
-			Output:    "Error: -hosts parameter required (IP, comma-separated IPs, or CIDR)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -hosts parameter required (IP, comma-separated IPs, or CIDR)")
 	}
 
 	if args.Timeout <= 0 {
@@ -68,11 +60,7 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse hosts
 	hosts := lateralParseHosts(args.Hosts)
 	if len(hosts) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: no valid hosts parsed from input",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no valid hosts parsed from input")
 	}
 
 	if len(hosts) > 256 {
@@ -210,11 +198,7 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	data, _ := json.Marshal(entries)
