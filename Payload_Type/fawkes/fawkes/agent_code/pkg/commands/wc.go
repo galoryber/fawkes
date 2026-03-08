@@ -69,7 +69,7 @@ func (c *WcCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if info.IsDir() {
-		return wcDirectory(args.Path, args.Pattern)
+		return wcDirectory(task, args.Path, args.Pattern)
 	}
 
 	result, err := wcFile(args.Path)
@@ -131,7 +131,7 @@ func countWords(s string) int {
 	return count
 }
 
-func wcDirectory(dirPath, pattern string) structs.CommandResult {
+func wcDirectory(task structs.Task, dirPath, pattern string) structs.CommandResult {
 	if pattern == "" {
 		pattern = "*"
 	}
@@ -141,6 +141,9 @@ func wcDirectory(dirPath, pattern string) structs.CommandResult {
 	total.path = "total"
 
 	_ = filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
 		if err != nil || d.IsDir() {
 			return nil
 		}

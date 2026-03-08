@@ -51,7 +51,7 @@ func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
 
 	switch params.Action {
 	case "create":
-		return compressCreate(params)
+		return compressCreate(task, params)
 	case "list":
 		return compressList(params)
 	case "extract":
@@ -65,7 +65,7 @@ func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-func compressCreate(params CompressParams) structs.CommandResult {
+func compressCreate(task structs.Task, params CompressParams) structs.CommandResult {
 	if params.Path == "" {
 		return structs.CommandResult{
 			Output:    "Error: 'path' is required for create action",
@@ -131,6 +131,9 @@ func compressCreate(params CompressParams) structs.CommandResult {
 	if srcInfo.IsDir() {
 		baseDir := srcPath
 		err = filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
+			if task.DidStop() {
+				return fmt.Errorf("cancelled")
+			}
 			if walkErr != nil {
 				return nil // skip inaccessible files
 			}

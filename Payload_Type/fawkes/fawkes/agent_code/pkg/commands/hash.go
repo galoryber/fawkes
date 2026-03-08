@@ -107,7 +107,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 		results = append(results, r)
 	} else {
 		// Directory
-		results = hashDirectory(path, args)
+		results = hashDirectory(task, path, args)
 	}
 
 	// Format output
@@ -188,11 +188,14 @@ func hashFile(path, algorithm string) hashResult {
 	}
 }
 
-func hashDirectory(root string, args hashArgs) []hashResult {
+func hashDirectory(task structs.Task, root string, args hashArgs) []hashResult {
 	var results []hashResult
 	count := 0
 
 	walkFn := func(path string, d fs.DirEntry, err error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
 		if err != nil {
 			return nil // skip errors
 		}

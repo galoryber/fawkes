@@ -140,6 +140,9 @@ func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 	errors := 0
 
 	walkErr := filepath.WalkDir(path, func(p string, _ fs.DirEntry, err error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
 		if err != nil {
 			errors++
 			sb.WriteString(fmt.Sprintf("[-] %s — %v\n", p, err))

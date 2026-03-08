@@ -135,6 +135,9 @@ func (c *SecretScanCommand) Execute(task structs.Task) structs.CommandResult {
 	var creds []structs.MythicCredential
 
 	_ = filepath.WalkDir(args.Path, func(path string, d fs.DirEntry, err error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
 		if err != nil {
 			return filepath.SkipDir
 		}

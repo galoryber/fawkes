@@ -131,6 +131,9 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 	if info.IsDir() {
 		count := 0
 		err := filepath.WalkDir(args.Path, func(path string, d fs.DirEntry, err error) error {
+			if task.DidStop() {
+				return fmt.Errorf("cancelled")
+			}
 			if err != nil || d.IsDir() {
 				if err != nil && !d.IsDir() {
 					return nil
