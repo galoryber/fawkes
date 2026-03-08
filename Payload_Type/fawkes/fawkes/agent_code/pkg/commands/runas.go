@@ -5,7 +5,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"syscall"
 	"unsafe"

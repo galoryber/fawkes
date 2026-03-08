@@ -4,7 +4,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"fawkes/pkg/structs"
 )
