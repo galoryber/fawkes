@@ -9,13 +9,13 @@ hidden = false
 
 ## Summary
 
-Create, query, run, or delete Windows scheduled tasks via Task Scheduler COM API (no subprocess creation). Uses ITaskService COM interface with XML-based task registration. Supports multiple trigger types, custom run-as accounts, and immediate execution.
+Manage Windows scheduled tasks via Task Scheduler COM API (no subprocess creation). Uses ITaskService COM interface with XML-based task registration. Supports multiple trigger types, custom run-as accounts, immediate execution, enable/disable, and stop.
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| action | choose_one | Yes | query | `create`, `query`, `delete`, `run`, or `list` |
+| action | choose_one | Yes | query | `create`, `query`, `delete`, `run`, `list`, `enable`, `disable`, or `stop` |
 | name | string | No* | - | Task name (e.g., `\MyTask`). *Required for all actions except `list`. |
 | program | string | No* | - | Path to executable. *Required for `create`. |
 | args | string | No | - | Arguments to pass to the program |
@@ -64,6 +64,21 @@ Enumerate all scheduled tasks on the system:
 schtask -action list
 ```
 
+### Enable/Disable a Task
+
+Toggle a scheduled task's enabled state:
+```
+schtask -action disable -name "WindowsUpdate"
+schtask -action enable -name "WindowsUpdate"
+```
+
+### Stop a Running Task
+
+Terminate a currently-running task instance:
+```
+schtask -action stop -name "SecurityScan"
+```
+
 ### Delete a Task
 
 Remove a scheduled task:
@@ -106,3 +121,4 @@ Other actions (create, query, delete, run) return plain text status messages.
 ## MITRE ATT&CK Mapping
 
 - T1053.005 — Scheduled Task/Job: Scheduled Task
+- T1562.001 — Impair Defenses: Disable or Modify Tools (disable action)

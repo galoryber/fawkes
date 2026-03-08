@@ -23,7 +23,7 @@ func (c *SchtaskCommand) Name() string {
 }
 
 func (c *SchtaskCommand) Description() string {
-	return "Create, query, run, or delete scheduled tasks via Task Scheduler COM API"
+	return "Manage scheduled tasks via Task Scheduler COM API (create, query, delete, run, list, enable, disable, stop)"
 }
 
 type schtaskArgs struct {
@@ -87,9 +87,15 @@ func (c *SchtaskCommand) Execute(task structs.Task) structs.CommandResult {
 		return schtaskRun(args)
 	case "list":
 		return schtaskList()
+	case "enable":
+		return schtaskSetEnabled(args, true)
+	case "disable":
+		return schtaskSetEnabled(args, false)
+	case "stop":
+		return schtaskStop(args)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: create, query, delete, run, list", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s. Use: create, query, delete, run, list, enable, disable, stop", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -559,6 +565,104 @@ func schtaskList() structs.CommandResult {
 
 	return structs.CommandResult{
 		Output:    string(data),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+// schtaskSetEnabled enables or disables a scheduled task via IRegisteredTask.put_Enabled.
+func schtaskSetEnabled(args schtaskArgs, enabled bool) structs.CommandResult {
+	if args.Name == "" {
+		return structs.CommandResult{
+			Output:    "Error: name is required",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	conn, cleanup, err := connectTaskScheduler()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error connecting to Task Scheduler: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer cleanup()
+
+	taskResult, err := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error finding task '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer taskResult.Clear()
+	taskDisp := taskResult.ToIDispatch()
+
+	_, err = oleutil.PutProperty(taskDisp, "Enabled", enabled)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error setting enabled state for '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	action := "Enabled"
+	if !enabled {
+		action = "Disabled"
+	}
+	return structs.CommandResult{
+		Output:    fmt.Sprintf("%s scheduled task '%s'", action, args.Name),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+// schtaskStop stops a currently-running scheduled task instance.
+func schtaskStop(args schtaskArgs) structs.CommandResult {
+	if args.Name == "" {
+		return structs.CommandResult{
+			Output:    "Error: name is required to stop a task",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	conn, cleanup, err := connectTaskScheduler()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error connecting to Task Scheduler: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer cleanup()
+
+	taskResult, err := oleutil.CallMethod(conn.folder, "GetTask", args.Name)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error finding task '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer taskResult.Clear()
+	taskDisp := taskResult.ToIDispatch()
+
+	_, err = oleutil.CallMethod(taskDisp, "Stop", 0)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error stopping task '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	return structs.CommandResult{
+		Output:    fmt.Sprintf("Stopped running instance of '%s'", args.Name),
 		Status:    "success",
 		Completed: true,
 	}

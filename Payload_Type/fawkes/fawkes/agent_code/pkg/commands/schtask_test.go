@@ -165,7 +165,43 @@ func TestTaskStateToString_Types(t *testing.T) {
 	}
 }
 
-// Integration test: create → query → run → delete lifecycle
+func TestSchtaskCommand_EnableNoName(t *testing.T) {
+	cmd := &SchtaskCommand{}
+	params, _ := json.Marshal(schtaskArgs{Action: "enable"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Error("expected error when name is empty")
+	}
+	if !strings.Contains(result.Output, "name is required") {
+		t.Errorf("expected name required message, got '%s'", result.Output)
+	}
+}
+
+func TestSchtaskCommand_DisableNoName(t *testing.T) {
+	cmd := &SchtaskCommand{}
+	params, _ := json.Marshal(schtaskArgs{Action: "disable"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Error("expected error when name is empty")
+	}
+	if !strings.Contains(result.Output, "name is required") {
+		t.Errorf("expected name required message, got '%s'", result.Output)
+	}
+}
+
+func TestSchtaskCommand_StopNoName(t *testing.T) {
+	cmd := &SchtaskCommand{}
+	params, _ := json.Marshal(schtaskArgs{Action: "stop"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Error("expected error when name is empty")
+	}
+	if !strings.Contains(result.Output, "name is required") {
+		t.Errorf("expected name required message, got '%s'", result.Output)
+	}
+}
+
+// Integration test: create → query → disable → enable → run → stop → delete lifecycle
 func TestSchtaskCommand_Lifecycle(t *testing.T) {
 	cmd := &SchtaskCommand{}
 	taskName := "FawkesUnitTest_schtask"
@@ -197,6 +233,32 @@ func TestSchtaskCommand_Lifecycle(t *testing.T) {
 	}
 	if !strings.Contains(result.Output, taskName) {
 		t.Errorf("expected task name in output, got '%s'", result.Output)
+	}
+
+	// Disable
+	disableParams, _ := json.Marshal(schtaskArgs{
+		Action: "disable",
+		Name:   taskName,
+	})
+	result = cmd.Execute(structs.Task{Params: string(disableParams)})
+	if result.Status != "success" {
+		t.Fatalf("disable failed: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Disabled") {
+		t.Errorf("expected disabled message, got '%s'", result.Output)
+	}
+
+	// Enable
+	enableParams, _ := json.Marshal(schtaskArgs{
+		Action: "enable",
+		Name:   taskName,
+	})
+	result = cmd.Execute(structs.Task{Params: string(enableParams)})
+	if result.Status != "success" {
+		t.Fatalf("enable failed: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Enabled") {
+		t.Errorf("expected enabled message, got '%s'", result.Output)
 	}
 
 	// Delete (cleanup)
