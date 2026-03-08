@@ -15,7 +15,7 @@ Query Windows Defender status, manage exclusions, and view threat history. Uses 
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | Yes | status | Action: `status`, `exclusions`, `add-exclusion`, `remove-exclusion`, `threats` |
+| action | Yes | status | Action: `status`, `exclusions`, `add-exclusion`, `remove-exclusion`, `threats`, `enable`, `disable` |
 | type | For add/remove-exclusion | path | Exclusion type: `path`, `process`, `extension` |
 | value | For add/remove-exclusion | - | Exclusion value (path, process name, or extension) |
 
@@ -46,6 +46,18 @@ Requires administrator privileges.
 defender -action remove-exclusion -type path -value "C:\Tools"
 ```
 Requires administrator privileges.
+
+### Disable Real-Time Protection
+```
+defender -action disable
+```
+Disables Defender real-time monitoring via `Set-MpPreference`. Requires administrator privileges. May fail if Tamper Protection is enabled.
+
+### Enable Real-Time Protection
+```
+defender -action enable
+```
+Re-enables Defender real-time monitoring.
 
 ### View Threat History
 ```
