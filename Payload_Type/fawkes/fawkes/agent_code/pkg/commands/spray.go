@@ -64,6 +64,8 @@ func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer structs.ZeroString(&args.Password)
+	defer structs.ZeroString(&args.Hash)
 
 	if args.Action == "" {
 		args.Action = "kerberos"

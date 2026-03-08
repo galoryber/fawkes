@@ -111,6 +111,7 @@ func (c *TrustCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" {
 		return structs.CommandResult{

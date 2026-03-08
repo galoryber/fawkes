@@ -187,6 +187,7 @@ func lsaDumpSecrets(lsaKey []byte) structs.CommandResult {
 					Comment:        "lsa-secrets (service account)",
 				})
 			}
+			structs.ZeroString(&password)
 		case name == "DefaultPassword":
 			password := lsaUTF16ToString(secret)
 			if password != "" {
@@ -197,6 +198,7 @@ func lsaDumpSecrets(lsaKey []byte) structs.CommandResult {
 					Comment:        "lsa-secrets (auto-logon)",
 				})
 			}
+			structs.ZeroString(&password)
 		case name == "DPAPI_SYSTEM" && len(secret) >= 44:
 			creds = append(creds, structs.MythicCredential{
 				CredentialType: "key",

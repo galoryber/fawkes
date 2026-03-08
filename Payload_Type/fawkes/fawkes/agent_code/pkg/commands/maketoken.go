@@ -43,6 +43,7 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer structs.ZeroString(&params.Password)
 
 	// Default to "." for local machine if domain not specified
 	if params.Domain == "" {

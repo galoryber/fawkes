@@ -111,6 +111,8 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 			}
 		}
 	}
+	defer structs.ZeroString(&args.Password)
+	defer structs.ZeroString(&args.Hash)
 
 	if args.Action == "" || args.Server == "" {
 		return structs.CommandResult{

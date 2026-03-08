@@ -130,6 +130,7 @@ func (c *NetUserCommand) Execute(task structs.Task) structs.CommandResult {
 			Completed: true,
 		}
 	}
+	defer structs.ZeroString(&args.Password)
 
 	switch strings.ToLower(args.Action) {
 	case "add":
