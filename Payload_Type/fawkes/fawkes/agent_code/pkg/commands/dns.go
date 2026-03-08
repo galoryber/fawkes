@@ -30,7 +30,7 @@ type dnsArgs struct {
 func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
 		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <resolve|reverse|srv|mx|ns|txt|cname|all|dc> -target <host>",
+			Output:    "Error: parameters required. Use -action <resolve|reverse|srv|mx|ns|txt|cname|all|dc|wildcard> -target <host>",
 			Status:    "error",
 			Completed: true,
 		}
@@ -55,7 +55,7 @@ func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if args.Action == "" {
 		return structs.CommandResult{
-			Output:    "Error: action required. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer",
+			Output:    "Error: action required. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard",
 			Status:    "error",
 			Completed: true,
 		}
@@ -104,9 +104,11 @@ func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
 		return dnsDC(ctx, resolver, args)
 	case "zone-transfer", "axfr":
 		return dnsAXFR(ctx, args)
+	case "wildcard":
+		return dnsWildcard(ctx, resolver, args)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown action %q. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer", args.Action),
+			Output:    fmt.Sprintf("Error: unknown action %q. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -528,6 +530,63 @@ func dnsAXFR(ctx context.Context, args dnsArgs) structs.CommandResult {
 	}
 
 	sb.WriteString(fmt.Sprintf("\n[+] Zone transfer complete: %d records\n", totalRecords))
+	return structs.CommandResult{
+		Output:    sb.String(),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+// dnsWildcard detects wildcard DNS by resolving random nonexistent subdomains.
+// If random names resolve, the domain has wildcard DNS configured — important
+// for filtering false positives during subdomain enumeration.
+func dnsWildcard(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
+	// Generate 3 random subdomain probes for reliability
+	probes := make([]string, 3)
+	for i := range probes {
+		probes[i] = fmt.Sprintf("fwkprb%08x.%s", rand.Uint32(), args.Target)
+	}
+
+	var resolved []string
+	var wildcardIPs []string
+
+	for _, probe := range probes {
+		addrs, err := r.LookupHost(ctx, probe)
+		if err == nil && len(addrs) > 0 {
+			resolved = append(resolved, probe)
+			for _, a := range addrs {
+				wildcardIPs = append(wildcardIPs, a)
+			}
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Wildcard DNS check for %s\n\n", args.Target))
+
+	if len(resolved) == 0 {
+		sb.WriteString("Result: No wildcard detected\n")
+		sb.WriteString("Random subdomains did not resolve — subdomain enumeration results are reliable.\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("Result: WILDCARD DETECTED (%d/%d probes resolved)\n\n", len(resolved), len(probes)))
+
+		// Deduplicate IPs
+		seen := make(map[string]bool)
+		var unique []string
+		for _, ip := range wildcardIPs {
+			if !seen[ip] {
+				seen[ip] = true
+				unique = append(unique, ip)
+			}
+		}
+
+		sb.WriteString("Wildcard IPs:\n")
+		for _, ip := range unique {
+			sb.WriteString(fmt.Sprintf("  %s\n", ip))
+		}
+		sb.WriteString("\nSubdomain enumeration will produce false positives.\n")
+		sb.WriteString("Filter results by excluding these IPs.\n")
+	}
+
 	return structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",

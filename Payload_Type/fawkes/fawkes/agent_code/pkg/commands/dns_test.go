@@ -966,6 +966,26 @@ func TestBuildAXFRQuery_DifferentDomains(t *testing.T) {
 	}
 }
 
+func TestDnsCommand_WildcardNonexistentDomain(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "wildcard",
+		Target:  "thisdomain.doesnotexist.invalid",
+		Timeout: 3,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Wildcard DNS check") {
+		t.Error("expected wildcard header in output")
+	}
+	// A nonexistent TLD should not have wildcard DNS
+	if !strings.Contains(result.Output, "No wildcard detected") {
+		t.Errorf("expected no wildcard for .invalid TLD, got: %s", result.Output)
+	}
+}
+
 // --- Benchmarks ---
 
 func BenchmarkDecodeDNSName(b *testing.B) {
