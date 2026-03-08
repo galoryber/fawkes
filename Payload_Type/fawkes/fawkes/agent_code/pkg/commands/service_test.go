@@ -157,6 +157,48 @@ func TestServiceCommand_List(t *testing.T) {
 	}
 }
 
+func TestServiceCommand_EnableNoName(t *testing.T) {
+	cmd := &ServiceCommand{}
+	params, _ := json.Marshal(serviceArgs{Action: "enable"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for enable without name, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "name is required") {
+		t.Errorf("expected 'name is required' in output, got: %s", result.Output)
+	}
+}
+
+func TestServiceCommand_DisableNoName(t *testing.T) {
+	cmd := &ServiceCommand{}
+	params, _ := json.Marshal(serviceArgs{Action: "disable"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for disable without name, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "name is required") {
+		t.Errorf("expected 'name is required' in output, got: %s", result.Output)
+	}
+}
+
+func TestStartTypeToString(t *testing.T) {
+	tests := []struct {
+		st       uint32
+		expected string
+	}{
+		{2, "Automatic"},
+		{3, "Manual"},
+		{4, "Disabled"},
+		{99, "Unknown(99)"},
+	}
+	for _, tt := range tests {
+		result := startTypeToString(tt.st)
+		if result != tt.expected {
+			t.Errorf("startTypeToString(%d) = %q, want %q", tt.st, result, tt.expected)
+		}
+	}
+}
+
 func TestServiceCommand_ActionCaseInsensitive(t *testing.T) {
 	cmd := &ServiceCommand{}
 	for _, action := range []string{"QUERY", "Query", "qUeRy"} {

@@ -21,7 +21,7 @@ func (c *ServiceCommand) Name() string {
 }
 
 func (c *ServiceCommand) Description() string {
-	return "Manage Windows services via SCM API (query, start, stop, create, delete, list)"
+	return "Manage Windows services via SCM API (query, start, stop, create, delete, list, enable, disable)"
 }
 
 type serviceArgs struct {
@@ -64,9 +64,13 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 		return serviceDelete(args)
 	case "list":
 		return serviceList()
+	case "enable":
+		return serviceSetStartType(args, mgr.StartAutomatic)
+	case "disable":
+		return serviceSetStartType(args, mgr.StartDisabled)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: query, start, stop, create, delete, list", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s. Use: query, start, stop, create, delete, list, enable, disable", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -352,6 +356,77 @@ func serviceDelete(args serviceArgs) structs.CommandResult {
 		Output:    fmt.Sprintf("Deleted service '%s'", args.Name),
 		Status:    "success",
 		Completed: true,
+	}
+}
+
+// serviceSetStartType changes a service's start type (enable=auto, disable=disabled).
+func serviceSetStartType(args serviceArgs, startType uint32) structs.CommandResult {
+	if args.Name == "" {
+		return structs.CommandResult{
+			Output:    "Error: name is required",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	m, err := mgr.Connect()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error connecting to SCM: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer m.Disconnect()
+
+	s, err := m.OpenService(args.Name)
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error opening service '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer s.Close()
+
+	cfg, err := s.Config()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error reading config for '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	oldType := startTypeToString(cfg.StartType)
+	cfg.StartType = startType
+
+	if err := s.UpdateConfig(cfg); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error updating service '%s': %v", args.Name, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	newType := startTypeToString(startType)
+	return structs.CommandResult{
+		Output:    fmt.Sprintf("Service '%s': start type changed from %s to %s", args.Name, oldType, newType),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+func startTypeToString(st uint32) string {
+	switch st {
+	case uint32(mgr.StartAutomatic):
+		return "Automatic"
+	case uint32(mgr.StartManual):
+		return "Manual"
+	case uint32(mgr.StartDisabled):
+		return "Disabled"
+	default:
+		return fmt.Sprintf("Unknown(%d)", st)
 	}
 }
 

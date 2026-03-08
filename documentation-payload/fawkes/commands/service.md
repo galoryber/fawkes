@@ -15,7 +15,7 @@ Manage Windows services — query, start, stop, create, or delete services using
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | Action to perform: `query`, `start`, `stop`, `create`, `delete`, or `list` |
+| action | Yes | Action to perform: `query`, `start`, `stop`, `create`, `delete`, `list`, `enable`, `disable` |
 | name | Conditional | Service name (required for all actions except `list`) |
 | binpath | Conditional | Path to service binary (required for `create`) |
 | display | No | Display name for the service (for `create`) |
@@ -53,6 +53,16 @@ service -action create -name MyService -binpath "C:\path\to\binary.exe" -display
 service -action delete -name MyService
 ```
 
+### Enable a service (set start type to Automatic)
+```
+service -action enable -name Spooler
+```
+
+### Disable a service (set start type to Disabled)
+```
+service -action disable -name WinDefend
+```
+
 ## Output Format
 
 The `list` action returns a JSON array rendered as a sortable table via browser script:
@@ -71,4 +81,5 @@ The browser script highlights running services in blue. Other actions (query, st
 ## MITRE ATT&CK Mapping
 
 - **T1543.003** — Create or Modify System Service: Windows Service
+- **T1562.001** — Impair Defenses: Disable or Modify Tools (enable/disable actions)
 - **T1569.002** — System Services: Service Execution

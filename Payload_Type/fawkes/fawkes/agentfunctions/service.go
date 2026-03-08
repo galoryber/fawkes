@@ -14,12 +14,12 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "service_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Manage Windows services via SCM API — query, start, stop, create, delete, list (T1543.003)",
-		HelpString:          "service -action <query|start|stop|create|delete|list> -name <service_name> [-binpath <path>] [-display <name>] [-start <auto|demand|disabled>]",
+		Description:         "Manage Windows services via SCM API — query, start, stop, create, delete, list, enable, disable",
+		HelpString:          "service -action <query|start|stop|create|delete|list|enable|disable> -name <service_name> [-binpath <path>] [-display <name>] [-start <auto|demand|disabled>]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1543.003"},
+		MitreAttackMappings: []string{"T1543.003", "T1562.001"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
@@ -30,7 +30,7 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"query", "start", "stop", "create", "delete", "list"},
+				Choices:          []string{"query", "start", "stop", "create", "delete", "list", "enable", "disable"},
 				Description:      "Action to perform on the service",
 				DefaultValue:     "query",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -132,6 +132,10 @@ func init() {
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ControlService(Stop) %s", name))
 			case "delete":
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM DeleteService %s", name))
+			case "enable":
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ChangeServiceConfig(%s, StartType=Automatic)", name))
+			case "disable":
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ChangeServiceConfig(%s, StartType=Disabled)", name))
 			}
 			return response
 		},
