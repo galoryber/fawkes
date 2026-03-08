@@ -15,7 +15,7 @@ func init() {
 			Author:     "@galoryber",
 		},
 		Description:         "Manage BITS transfer jobs for persistence and stealthy file download. Background Intelligent Transfer Service (BITS) jobs survive reboots and transfer files using the Windows BITS infrastructure.",
-		HelpString:          "bits -action [list|create|persist|cancel]",
+		HelpString:          "bits -action [list|create|persist|cancel|suspend|resume|complete]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -28,10 +28,10 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Action to perform: list (enumerate jobs), create (download file), persist (download + notification command), cancel (remove job)",
+				Description:      "Action to perform: list, create, persist, cancel, suspend, resume, or complete",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				DefaultValue:     "list",
-				Choices:          []string{"list", "create", "persist", "cancel"},
+				Choices:          []string{"list", "create", "persist", "cancel", "suspend", "resume", "complete"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
