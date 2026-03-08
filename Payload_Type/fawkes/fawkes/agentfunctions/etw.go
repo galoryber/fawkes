@@ -9,9 +9,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "etw",
-		Description:         "Enumerate, stop, or blind ETW trace sessions and providers. Use 'sessions'/'providers' for recon, 'stop' to kill a session, 'blind' to surgically disable a provider within a session.",
-		HelpString:          "etw -action <sessions|providers|stop|blind> [-session_name <name>] [-provider <guid|shorthand>]",
-		Version:             2,
+		Description:         "Enumerate, stop, blind, query, or enable ETW trace sessions and providers. Use 'sessions'/'providers' for recon, 'query' for details, 'stop'/'blind' for evasion, 'enable' for cleanup.",
+		HelpString:          "etw -action <sessions|providers|stop|blind|query|enable> [-session_name <name>] [-provider <guid|shorthand>]",
+		Version:             3,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1082", "T1562.002", "T1562.006"},
 		SupportedUIFeatures: []string{},
@@ -23,9 +23,9 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"sessions", "providers", "stop", "blind"},
+				Choices:       []string{"sessions", "providers", "stop", "blind", "query", "enable"},
 				DefaultValue:  "sessions",
-				Description:   "Action: sessions (list active traces), providers (enumerate registered), stop (kill a session), blind (disable a provider in a session)",
+				Description:   "Action: sessions (list active traces), providers (enumerate registered), stop (kill a session), blind (disable a provider), query (session details), enable (re-enable a provider)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -93,6 +93,8 @@ func init() {
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW ControlTrace(EVENT_TRACE_CONTROL_STOP) session=%s", sessionName))
 			case "blind":
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW EnableTraceEx2(EVENT_CONTROL_CODE_DISABLE_PROVIDER) session=%s provider=%s", sessionName, provider))
+			case "enable":
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW EnableTraceEx2(EVENT_CONTROL_CODE_ENABLE_PROVIDER) session=%s provider=%s", sessionName, provider))
 			}
 			return response
 		},
