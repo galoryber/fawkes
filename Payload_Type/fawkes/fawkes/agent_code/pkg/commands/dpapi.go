@@ -115,6 +115,7 @@ func (c *DpapiCommand) decrypt(args dpapiArgs) structs.CommandResult {
 	result := make([]byte, dataOut.Size)
 	copy(result, unsafe.Slice(dataOut.Data, dataOut.Size))
 	windows.LocalFree(windows.Handle(unsafe.Pointer(dataOut.Data)))
+	defer structs.ZeroBytes(result)
 
 	var sb strings.Builder
 	sb.WriteString("=== DPAPI DECRYPTION RESULT ===\n\n")
@@ -299,6 +300,7 @@ func (c *DpapiCommand) extractChromeKey() structs.CommandResult {
 			sb.WriteString(fmt.Sprintf("[%s] DPAPI decryption failed: %v\n", name, err))
 			continue
 		}
+		defer structs.ZeroBytes(plainKey)
 
 		keyHex := hex.EncodeToString(plainKey)
 		keyB64 := base64.StdEncoding.EncodeToString(plainKey)
