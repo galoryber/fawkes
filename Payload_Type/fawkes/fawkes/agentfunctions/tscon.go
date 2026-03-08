@@ -9,8 +9,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "tscon",
-		Description:         "RDP session management — list sessions, hijack disconnected sessions, disconnect users",
-		HelpString:          "tscon [-action <list|hijack|disconnect>] [-session_id <id>]",
+		Description:         "RDP session management — list sessions, hijack, disconnect, logoff users",
+		HelpString:          "tscon [-action <list|hijack|disconnect|logoff>] [-session_id <id>]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -27,7 +27,7 @@ func init() {
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Description:      "Action to perform",
 				DefaultValue:     "list",
-				Choices:          []string{"list", "hijack", "disconnect"},
+				Choices:          []string{"list", "hijack", "disconnect", "logoff"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -40,7 +40,7 @@ func init() {
 				ModalDisplayName: "Session ID",
 				CLIName:          "session_id",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "Target RDP session ID (required for hijack/disconnect)",
+				Description:      "Target RDP session ID (required for hijack/disconnect/logoff)",
 				DefaultValue:     0,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
