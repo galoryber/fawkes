@@ -14,15 +14,15 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "service_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Manage Windows services via SCM API — query, start, stop, create, delete, list, enable, disable",
+		Description:         "Manage services — Windows via SCM API, Linux via systemctl. Query, start, stop, create, delete, list, enable, disable.",
 		HelpString:          "service -action <query|start|stop|create|delete|list|enable|disable> -name <service_name> [-binpath <path>] [-display <name>] [-start <auto|demand|disabled>]",
-		Version:             1,
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1543.003", "T1562.001"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -122,20 +122,33 @@ func init() {
 				display := fmt.Sprintf("%s", action)
 				response.DisplayParams = &display
 			}
-			switch action {
-			case "create":
-				binpath, _ := taskData.Args.GetStringArg("binpath")
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM CreateService %s binpath=%q", name, binpath))
-			case "start":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM StartService %s", name))
-			case "stop":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ControlService(Stop) %s", name))
-			case "delete":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM DeleteService %s", name))
-			case "enable":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ChangeServiceConfig(%s, StartType=Automatic)", name))
-			case "disable":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ChangeServiceConfig(%s, StartType=Disabled)", name))
+			if taskData.Callback.OS == "Linux" {
+				// Linux: systemctl artifacts
+				switch action {
+				case "list":
+					createArtifact(taskData.Task.ID, "Process Create", "systemctl list-units --type=service --all")
+				case "query":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl show %s.service", name))
+				case "start", "stop", "enable", "disable":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl %s %s.service", action, name))
+				}
+			} else {
+				// Windows: SCM API artifacts
+				switch action {
+				case "create":
+					binpath, _ := taskData.Args.GetStringArg("binpath")
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM CreateService %s binpath=%q", name, binpath))
+				case "start":
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM StartService %s", name))
+				case "stop":
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ControlService(Stop) %s", name))
+				case "delete":
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM DeleteService %s", name))
+				case "enable":
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ChangeServiceConfig(%s, StartType=Automatic)", name))
+				case "disable":
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ChangeServiceConfig(%s, StartType=Disabled)", name))
+				}
 			}
 			return response
 		},

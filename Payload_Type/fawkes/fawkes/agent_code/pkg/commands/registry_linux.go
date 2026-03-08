@@ -31,4 +31,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&NamedPipesCommand{})
 	RegisterCommand(&HandlesCommand{})
 	RegisterCommand(&PersistEnumCommand{})
+	RegisterCommand(&ServiceCommand{})
 }
