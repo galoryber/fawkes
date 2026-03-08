@@ -7,17 +7,38 @@ hidden = false
 
 ## Summary
 
-List active network connections and listening ports. Shows protocol, local address, remote address, connection state, and PID.
+List active network connections and listening ports. Shows protocol, local address, remote address, connection state, and PID. Supports filtering by state, protocol, port, and process ID.
 
 Cross-platform — works on Windows, Linux, and macOS.
 
-### Arguments
+## Arguments
 
-No arguments required.
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| state | No | — | Filter by connection state: LISTEN, ESTABLISHED, TIME_WAIT, CLOSE_WAIT, SYN_SENT, etc. |
+| proto | No | — | Filter by protocol: tcp or udp |
+| port | No | — | Filter by port number (matches local or remote port) |
+| pid | No | — | Filter by process ID |
 
 ## Usage
 ```
+# Show all connections (default)
 net-stat
+
+# Show only listening ports
+net-stat -state LISTEN
+
+# Show only TCP connections
+net-stat -proto tcp
+
+# Show connections on port 443
+net-stat -port 443
+
+# Show connections for a specific process
+net-stat -pid 3456
+
+# Combine filters: TCP connections in ESTABLISHED state
+net-stat -state ESTABLISHED -proto tcp
 ```
 
 ### Example Output
@@ -35,6 +56,14 @@ UDP    0.0.0.0:5353              *:*                       -               1876
 ```
 
 Connections are sorted by state (LISTEN first, then ESTABLISHED) and then by local port.
+
+## Operational Notes
+
+- Without filters, all connections (TCP and UDP) are returned
+- Filters are case-insensitive for state and protocol
+- Port filter matches either local or remote port
+- Combine multiple filters to narrow results (e.g., `-state ESTABLISHED -proto tcp -port 443`)
+- Useful for identifying C2 connections (`-state ESTABLISHED`), open services (`-state LISTEN`), or processes with network activity (`-pid`)
 
 ## MITRE ATT&CK Mapping
 
