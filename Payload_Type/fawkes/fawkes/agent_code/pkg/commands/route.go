@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -12,6 +13,12 @@ type RouteCommand struct{}
 
 func (c *RouteCommand) Name() string        { return "route" }
 func (c *RouteCommand) Description() string { return "Display the system routing table (T1016)" }
+
+type routeArgs struct {
+	Destination string `json:"destination"` // filter by destination IP/subnet
+	Gateway     string `json:"gateway"`     // filter by gateway
+	Interface   string `json:"interface"`   // filter by interface name
+}
 
 // RouteEntry holds a single routing table entry
 type RouteEntry struct {
@@ -24,6 +31,11 @@ type RouteEntry struct {
 }
 
 func (c *RouteCommand) Execute(task structs.Task) structs.CommandResult {
+	var args routeArgs
+	if task.Params != "" {
+		_ = json.Unmarshal([]byte(task.Params), &args)
+	}
+
 	routes, err := enumerateRoutes()
 	if err != nil {
 		return structs.CommandResult{
@@ -31,6 +43,24 @@ func (c *RouteCommand) Execute(task structs.Task) structs.CommandResult {
 			Status:    "error",
 			Completed: true,
 		}
+	}
+
+	// Apply filters
+	if args.Destination != "" || args.Gateway != "" || args.Interface != "" {
+		var filtered []RouteEntry
+		for _, r := range routes {
+			if args.Destination != "" && !strings.Contains(r.Destination, args.Destination) {
+				continue
+			}
+			if args.Gateway != "" && !strings.Contains(r.Gateway, args.Gateway) {
+				continue
+			}
+			if args.Interface != "" && !strings.EqualFold(r.Interface, args.Interface) {
+				continue
+			}
+			filtered = append(filtered, r)
+		}
+		routes = filtered
 	}
 
 	if len(routes) == 0 {

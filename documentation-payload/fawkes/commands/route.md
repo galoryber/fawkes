@@ -7,19 +7,35 @@ hidden = false
 
 ## Summary
 
-Display the system routing table. Essential for understanding network segmentation, identifying pivot opportunities, and mapping internal network topology during post-exploitation.
+Display the system routing table with optional filtering. Essential for understanding network segmentation, identifying pivot opportunities, and mapping internal network topology during post-exploitation.
 
 Cross-platform — works on Windows, Linux, and macOS.
 
 ## Arguments
 
-No arguments required.
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| destination | No | — | Filter by destination IP or subnet (substring match) |
+| gateway | No | — | Filter by gateway IP (substring match) |
+| interface | No | — | Filter by network interface name (case-insensitive) |
 
 ## Usage
 
-### Display routing table
 ```
+# Show all routes (default)
 route
+
+# Filter by destination
+route -destination 192.168
+
+# Filter by gateway
+route -gateway 10.0.0.1
+
+# Filter by interface
+route -interface eth0
+
+# Combine filters
+route -destination 0.0.0.0 -interface eth0
 ```
 
 ### Browser Script

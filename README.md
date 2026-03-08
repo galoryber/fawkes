@@ -163,7 +163,7 @@ reg | `reg -action <read\|write\|delete\|search\|save\|creds> [-hive HKLM] [-pat
 remote-reg | `remote-reg -action <query\|enum\|set\|delete> -server <host> -username <user> [-password <pass>\|-hash <NT>] [-hive HKLM] [-path ...] [-name <val>]` | Read/write registry on remote Windows hosts via WinReg RPC over SMB named pipes. Supports pass-the-hash. Cross-platform (T1012, T1112, T1021.002).
 remote-service | `remote-service -action <list\|query\|create\|start\|stop\|delete> -server <host> -username <user> [-password <pass>\|-hash <NT>] [-name <svc>] [-binpath <path>]` | Manage services on remote Windows hosts via SVCCTL RPC over SMB named pipes. Create/start for lateral movement, list/query for recon. Supports pass-the-hash. Cross-platform (T1569.002, T1543.003, T1007).
 rev2self | `rev2self` | **(Windows only)** Revert to the original security context by dropping any active impersonation token.
-route | `route` | Display the system routing table. Windows: GetIpForwardTable API, Linux: /proc/net/route + IPv6, macOS: netstat -rn. Cross-platform (T1016).
+route | `route [-destination <IP>] [-gateway <IP>] [-interface <name>]` | Display the system routing table with optional filtering. Windows: GetIpForwardTable API, Linux: /proc/net/route + IPv6, macOS: netstat -rn. Cross-platform (T1016).
 rpfwd | `rpfwd start <port> <remote_ip> <remote_port>` / `rpfwd stop <port>` | Reverse port forward -- agent listens, Mythic routes to target. Cross-platform (T1090).
 rm | `rm <path>` | Remove a file or directory (recursively removes directories).
 run | `run <command>` | Execute a shell command and return the output.
