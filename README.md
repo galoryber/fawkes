@@ -28,7 +28,7 @@ amcache | `amcache -action <query\|search\|delete\|clear> [-name <pattern>] [-co
 apc-injection | `apc-injection` | **(Windows only)** Perform QueueUserAPC injection into an alertable thread. Use `ts` to find alertable threads (T1055.004).
 auditpol | `auditpol -action <query\|disable\|enable\|stealth> [-category <name\|all>]` | **(Windows only)** Query and modify Windows audit policies. Disable security event logging before sensitive operations. Stealth mode disables detection-critical subcategories. Uses AuditQuerySystemPolicy API (T1562.002).
 argue | `argue -command "cmd.exe /c whoami" -spoof "cmd.exe /c echo hello"` | **(Windows only)** Execute a command with spoofed process arguments. Defeats Sysmon Event ID 1 and EDR command-line telemetry (T1564.010).
-arp | `arp` | Display ARP table — shows IP-to-MAC address mappings for nearby hosts. Cross-platform.
+arp | `arp [-ip <subnet>] [-mac <prefix>] [-interface <name>]` | Display ARP table with optional IP, MAC, or interface filtering. Cross-platform.
 asrep-roast | `asrep-roast -server <DC> -username <user@domain> -password <pass> [-account <target>]` | Request AS-REP tickets for accounts without pre-authentication and extract hashes in hashcat format for offline cracking. Auto-enumerates via LDAP. Cross-platform (T1558.004).
 av-detect | `av-detect` | Detect installed AV/EDR/security products by scanning running processes against a 130+ signature database. Reports product, vendor, type, and PID. Cross-platform.
 autopatch | `autopatch <dll_name> <function_name> <num_bytes>` | **(Windows only)** Automatically patch a function by jumping to nearest return (C3) instruction. Useful for AMSI/ETW bypasses.

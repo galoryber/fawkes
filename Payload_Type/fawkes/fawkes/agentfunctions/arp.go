@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -9,10 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "arp",
-		Description:         "Display ARP table — shows IP-to-MAC address mappings for nearby hosts",
-		HelpString:          "arp",
-		Version:             1,
-		MitreAttackMappings: []string{"T1016.001"}, // System Network Configuration Discovery: Internet Connection Discovery
+		Description:         "Display ARP table — shows IP-to-MAC address mappings for nearby hosts. Filter by IP, MAC, or interface.",
+		HelpString:          "arp [-ip <subnet>] [-mac <prefix>] [-interface <name>]",
+		Version:             2,
+		MitreAttackMappings: []string{"T1016.001"},
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
@@ -22,23 +23,86 @@ func init() {
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:          "ip",
+				CLIName:       "ip",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Filter by IP address (substring match, e.g. '192.168')",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     1,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "mac",
+				CLIName:       "mac",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Filter by MAC address (substring match, case-insensitive)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     2,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "interface",
+				CLIName:       "interface",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Filter by interface name (case-insensitive exact match)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     3,
+						GroupName:            "Default",
+					},
+				},
+			},
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			return nil
+			if input == "" {
+				return nil
+			}
+			return args.LoadArgsFromJSONString(input)
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
-			return nil
+			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			// Windows: GetIpNetTable API, Linux: /proc/net/arp, macOS: arp -a
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{
+				Success: true,
+				TaskID:  task.Task.ID,
+			}
+			ip, _ := task.Args.GetStringArg("ip")
+			mac, _ := task.Args.GetStringArg("mac")
+			iface, _ := task.Args.GetStringArg("interface")
+
+			display := "ARP table"
+			if ip != "" {
+				display += fmt.Sprintf(", ip=%s", ip)
+			}
+			if mac != "" {
+				display += fmt.Sprintf(", mac=%s", mac)
+			}
+			if iface != "" {
+				display += fmt.Sprintf(", interface=%s", iface)
+			}
+			response.DisplayParams = &display
+
 			if task.Callback.OS == "macOS" {
 				createArtifact(task.Task.ID, "Process Create", "arp -a")
 			} else {
 				createArtifact(task.Task.ID, "API Call", "GetIpNetTable / /proc/net/arp")
 			}
-			return agentstructs.PTTaskCreateTaskingMessageResponse{
-				Success: true,
-				TaskID:  task.Task.ID,
-			}
+			return response
 		},
 	})
 }

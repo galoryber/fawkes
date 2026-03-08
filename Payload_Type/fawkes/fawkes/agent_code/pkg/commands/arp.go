@@ -22,8 +22,19 @@ func (c *ArpCommand) Description() string {
 	return "Display ARP table — shows IP-to-MAC address mappings for nearby hosts (T1016.001)"
 }
 
+type arpArgs struct {
+	IP        string `json:"ip"`        // filter by IP (substring match)
+	MAC       string `json:"mac"`       // filter by MAC address (substring match)
+	Interface string `json:"interface"` // filter by interface name (case-insensitive)
+}
+
 // Execute executes the arp command using platform-specific implementation
 func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
+	var args arpArgs
+	if task.Params != "" {
+		_ = json.Unmarshal([]byte(task.Params), &args)
+	}
+
 	entries, err := getArpTable()
 	if err != nil {
 		return structs.CommandResult{
@@ -31,6 +42,24 @@ func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
 			Status:    "error",
 			Completed: true,
 		}
+	}
+
+	// Apply filters
+	if args.IP != "" || args.MAC != "" || args.Interface != "" {
+		var filtered []arpEntry
+		for _, e := range entries {
+			if args.IP != "" && !strings.Contains(e.IP, args.IP) {
+				continue
+			}
+			if args.MAC != "" && !strings.Contains(strings.ToLower(e.MAC), strings.ToLower(args.MAC)) {
+				continue
+			}
+			if args.Interface != "" && !strings.EqualFold(e.Interface, args.Interface) {
+				continue
+			}
+			filtered = append(filtered, e)
+		}
+		entries = filtered
 	}
 
 	if len(entries) == 0 {
