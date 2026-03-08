@@ -166,17 +166,35 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+			program, _ := taskData.Args.GetStringArg("program")
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
+			isMac := taskData.Callback.OS == "macOS"
 			switch action {
 			case "add":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Add(%s) — Firewall rule created", name))
+				if isMac {
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("socketfilterfw --add %s", program))
+				} else {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Add(%s) — Firewall rule created", name))
+				}
 			case "delete":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Remove(%s) — Firewall rule deleted", name))
+				if isMac {
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("socketfilterfw --remove %s", program))
+				} else {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Remove(%s) — Firewall rule deleted", name))
+				}
 			case "enable":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Item(%s).Enabled=true — Firewall rule enabled", name))
+				if isMac {
+					createArtifact(taskData.Task.ID, "Process Create", "socketfilterfw --setglobalstate on")
+				} else {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Item(%s).Enabled=true — Firewall rule enabled", name))
+				}
 			case "disable":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Item(%s).Enabled=false — Firewall rule disabled", name))
+				if isMac {
+					createArtifact(taskData.Task.ID, "Process Create", "socketfilterfw --setglobalstate off")
+				} else {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Item(%s).Enabled=false — Firewall rule disabled", name))
+				}
 			}
 			return response
 		},

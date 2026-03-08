@@ -78,6 +78,32 @@ func TestFirewallDarwinListAction(t *testing.T) {
 	}
 }
 
+func TestFirewallDarwinAddMissingProgram(t *testing.T) {
+	cmd := &FirewallCommand{}
+	params, _ := json.Marshal(map[string]string{"action": "add"})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if result.Status != "error" {
+		t.Error("Expected error for add without program")
+	}
+	if !strings.Contains(result.Output, "program path is required") {
+		t.Errorf("Expected program required error, got: %s", result.Output)
+	}
+}
+
+func TestFirewallDarwinDeleteMissingProgram(t *testing.T) {
+	cmd := &FirewallCommand{}
+	params, _ := json.Marshal(map[string]string{"action": "delete"})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if result.Status != "error" {
+		t.Error("Expected error for delete without program")
+	}
+	if !strings.Contains(result.Output, "program path is required") {
+		t.Errorf("Expected program required error, got: %s", result.Output)
+	}
+}
+
 func TestFirewallDarwinActionCaseInsensitive(t *testing.T) {
 	cmd := &FirewallCommand{}
 	params, _ := json.Marshal(map[string]string{"action": "STATUS"})

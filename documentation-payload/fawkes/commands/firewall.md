@@ -100,12 +100,24 @@ Firewall rule added:
 
 ## macOS Support
 
-On macOS, `firewall` supports `list` and `status` actions:
+On macOS, `firewall` supports all 6 actions via the Application Layer Firewall (ALF) and Packet Filter (pf):
 
-- **status**: Shows Application Layer Firewall state (enabled/stealth/block-all), and Packet Filter (pf) status
+- **status**: Shows ALF state (enabled/stealth/block-all) and pf status
 - **list**: Shows ALF application rules and pf filter/NAT rules
+- **add**: Adds an application to the ALF (`-program` required, `-rule_action allow|block`)
+- **delete**: Removes an application from the ALF (`-program` required)
+- **enable**: Enables the Application Firewall globally
+- **disable**: Disables the Application Firewall globally
 
-Root access is required for full pf rule listing. ALF status is available at any privilege level.
+### macOS Examples
+```
+firewall -action status
+firewall -action add -program /usr/local/bin/myapp -rule_action block
+firewall -action delete -program /usr/local/bin/myapp
+firewall -action disable
+```
+
+Root access is required for enable/disable/add/delete and full pf rule listing. ALF status is available at any privilege level.
 
 ## Operational Notes
 
@@ -117,8 +129,9 @@ Root access is required for full pf rule listing. ALF status is available at any
 - **Opsec**: Use legitimate-sounding rule names (e.g., "Windows Update Service", "BITS Transfer") to blend in with existing rules
 
 ### macOS
-- Uses `socketfilterfw` for ALF queries and `pfctl` for pf rules
-- Read-only: `add`/`delete`/`enable`/`disable` not yet supported on macOS
+- Uses `socketfilterfw` for ALF management and `pfctl` for pf rule queries
+- The `add`/`delete` actions operate on the Application Layer Firewall (application-level allow/block), not pf rules
+- The `-name` parameter is not used on macOS — use `-program` with the application path instead
 
 ### Linux
 - Use the `iptables` command instead, which provides full iptables/nftables/ufw management
