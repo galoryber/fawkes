@@ -86,7 +86,7 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 	basePath := filepath.Clean(args.Path)
 	baseDepth := strings.Count(basePath, string(filepath.Separator))
 
-	filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() {
 			return fmt.Errorf("cancelled")
 		}

@@ -247,7 +247,7 @@ func triageConfigs(task structs.Task, args triageArgs) []triageResult {
 func triageCustom(task structs.Task, args triageArgs) []triageResult {
 	// Scan all files under the custom path
 	var results []triageResult
-	filepath.WalkDir(args.Path, func(path string, d fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(args.Path, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() || len(results) >= args.MaxFiles {
 			return fmt.Errorf("limit")
 		}
@@ -285,7 +285,7 @@ func triageScan(task structs.Task, paths []string, extensions []string, category
 			break
 		}
 		baseDepth := strings.Count(basePath, string(os.PathSeparator))
-		filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
 			if task.DidStop() || len(results) >= args.MaxFiles {
 				return fmt.Errorf("limit")
 			}
@@ -329,7 +329,7 @@ func triageScanPatterns(task structs.Task, paths []string, patterns []string, ca
 			break
 		}
 		baseDepth := strings.Count(basePath, string(os.PathSeparator))
-		filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
 			if task.DidStop() || len(results) >= args.MaxFiles {
 				return fmt.Errorf("limit")
 			}

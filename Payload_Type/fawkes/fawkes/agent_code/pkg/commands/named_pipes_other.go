@@ -138,7 +138,7 @@ func enumerateUnixSocketsScan() ([]string, error) {
 	seen := make(map[string]bool)
 
 	for _, dir := range dirs {
-		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}
@@ -166,7 +166,7 @@ func enumerateFIFOs() []string {
 	seen := make(map[string]bool)
 
 	for _, dir := range dirs {
-		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		_ = filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}

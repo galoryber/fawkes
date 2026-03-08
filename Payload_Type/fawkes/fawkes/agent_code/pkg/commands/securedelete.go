@@ -144,7 +144,7 @@ func secureDeleteDir(dirPath string, passes int) (int, []string) {
 	var count int
 	var errs []string
 
-	filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+	_ = filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", path, err))
 			return nil
