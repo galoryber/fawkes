@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"os/user"
 	"strings"
 
@@ -173,7 +172,7 @@ func getGroupMemberships() ([]string, error) {
 
 // checkSandboxStatus checks if the current process is sandboxed
 func checkSandboxStatus() bool {
-	out, err := exec.Command("sandbox-check", "--pid", fmt.Sprintf("%d", os.Getpid())).CombinedOutput()
+	out, err := execCmdTimeout("sandbox-check", "--pid", fmt.Sprintf("%d", os.Getpid()))
 	if err != nil {
 		// sandbox-check exits 1 if not sandboxed, 0 if sandboxed
 		return false
@@ -187,7 +186,7 @@ func getEntitlements() []string {
 	if err != nil {
 		return nil
 	}
-	out, err := exec.Command("codesign", "-d", "--entitlements", "-", "--xml", exePath).CombinedOutput()
+	out, err := execCmdTimeout("codesign", "-d", "--entitlements", "-", "--xml", exePath)
 	if err != nil {
 		return nil
 	}

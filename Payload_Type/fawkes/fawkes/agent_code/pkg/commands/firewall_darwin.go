@@ -5,7 +5,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -53,20 +52,20 @@ func darwinFirewallStatus() structs.CommandResult {
 	sb.WriteString("=== macOS Firewall Status ===\n\n")
 
 	// Check Application Layer Firewall (ALF) via socketfilterfw
-	alfOut, err := exec.Command("/usr/libexec/ApplicationFirewall/socketfilterfw", "--getglobalstate").CombinedOutput()
+	alfOut, err := execCmdTimeout("/usr/libexec/ApplicationFirewall/socketfilterfw", "--getglobalstate")
 	if err == nil {
 		sb.WriteString("Application Firewall (ALF):\n")
 		sb.WriteString("  " + strings.TrimSpace(string(alfOut)) + "\n")
 	}
 
 	// Check stealth mode
-	stealthOut, err := exec.Command("/usr/libexec/ApplicationFirewall/socketfilterfw", "--getstealthmode").CombinedOutput()
+	stealthOut, err := execCmdTimeout("/usr/libexec/ApplicationFirewall/socketfilterfw", "--getstealthmode")
 	if err == nil {
 		sb.WriteString("  " + strings.TrimSpace(string(stealthOut)) + "\n")
 	}
 
 	// Check block-all mode
-	blockOut, err := exec.Command("/usr/libexec/ApplicationFirewall/socketfilterfw", "--getblockall").CombinedOutput()
+	blockOut, err := execCmdTimeout("/usr/libexec/ApplicationFirewall/socketfilterfw", "--getblockall")
 	if err == nil {
 		sb.WriteString("  " + strings.TrimSpace(string(blockOut)) + "\n")
 	}
@@ -74,7 +73,7 @@ func darwinFirewallStatus() structs.CommandResult {
 	sb.WriteString("\n")
 
 	// Check PF (packet filter) status
-	pfOut, err := exec.Command("pfctl", "-s", "info").CombinedOutput()
+	pfOut, err := execCmdTimeout("pfctl", "-s", "info")
 	if err == nil {
 		sb.WriteString("Packet Filter (pf):\n")
 		for _, line := range strings.Split(string(pfOut), "\n") {
@@ -103,7 +102,7 @@ func darwinFirewallList() structs.CommandResult {
 	sb.WriteString("=== macOS Firewall Rules ===\n\n")
 
 	// List ALF application rules
-	alfOut, err := exec.Command("/usr/libexec/ApplicationFirewall/socketfilterfw", "--listapps").CombinedOutput()
+	alfOut, err := execCmdTimeout("/usr/libexec/ApplicationFirewall/socketfilterfw", "--listapps")
 	if err == nil {
 		sb.WriteString("--- Application Firewall Rules ---\n")
 		sb.WriteString(strings.TrimSpace(string(alfOut)))
@@ -111,7 +110,7 @@ func darwinFirewallList() structs.CommandResult {
 	}
 
 	// List PF rules
-	pfOut, err := exec.Command("pfctl", "-s", "rules").CombinedOutput()
+	pfOut, err := execCmdTimeout("pfctl", "-s", "rules")
 	if err == nil {
 		output := strings.TrimSpace(string(pfOut))
 		if output != "" {
@@ -122,7 +121,7 @@ func darwinFirewallList() structs.CommandResult {
 	}
 
 	// List PF NAT rules
-	natOut, err := exec.Command("pfctl", "-s", "nat").CombinedOutput()
+	natOut, err := execCmdTimeout("pfctl", "-s", "nat")
 	if err == nil {
 		output := strings.TrimSpace(string(natOut))
 		if output != "" {

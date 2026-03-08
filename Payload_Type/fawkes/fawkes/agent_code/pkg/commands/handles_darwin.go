@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"strconv"
 	"strings"
 
@@ -68,7 +67,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 
 // enumerateDarwinFDs uses lsof to enumerate open file descriptors.
 func enumerateDarwinFDs(pid, maxCount int) ([]handleInfo, error) {
-	out, err := exec.Command("lsof", "-p", strconv.Itoa(pid), "-F", "ftn").Output()
+	out, err := execCmdTimeoutOutput("lsof", "-p", strconv.Itoa(pid), "-F", "ftn")
 	if err != nil {
 		return nil, fmt.Errorf("lsof failed: %w", err)
 	}
