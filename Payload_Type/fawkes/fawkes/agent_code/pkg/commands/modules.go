@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -18,7 +19,8 @@ func (c *ModulesCommand) Description() string {
 }
 
 type modulesArgs struct {
-	PID int `json:"pid"`
+	PID    int    `json:"pid"`
+	Filter string `json:"filter"` // filter by module name (case-insensitive substring)
 }
 
 // ModuleInfo represents a loaded module/library
@@ -58,6 +60,18 @@ func (c *ModulesCommand) Execute(task structs.Task) structs.CommandResult {
 	sort.Slice(modules, func(i, j int) bool {
 		return modules[i].BaseAddr < modules[j].BaseAddr
 	})
+
+	// Apply name filter
+	if args.Filter != "" {
+		filterLower := strings.ToLower(args.Filter)
+		var filtered []ModuleInfo
+		for _, m := range modules {
+			if strings.Contains(strings.ToLower(m.Name), filterLower) || strings.Contains(strings.ToLower(m.Path), filterLower) {
+				filtered = append(filtered, m)
+			}
+		}
+		modules = filtered
+	}
 
 	if len(modules) == 0 {
 		return structs.CommandResult{

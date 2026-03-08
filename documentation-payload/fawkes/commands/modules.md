@@ -16,6 +16,7 @@ Cross-platform — works on Windows, Linux, and macOS.
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
 | pid | No | current process | Target process ID to enumerate |
+| filter | No | — | Filter by module name or path (case-insensitive substring) |
 
 ## Usage
 
@@ -26,8 +27,14 @@ modules
 # List modules for a specific process
 modules -pid 1234
 
-# Find loaded DLLs in a target process (Windows)
-modules -pid 4852
+# Search for specific DLLs (e.g., security-related)
+modules -pid 4852 -filter amsi
+
+# Find CLR/dotnet modules
+modules -filter clr
+
+# Search by path
+modules -filter system32
 ```
 
 ### Browser Script

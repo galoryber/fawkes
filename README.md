@@ -124,7 +124,7 @@ ls | `ls [path]` | List files and folders with owner/group and timestamps. File 
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it.
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
 module-stomping | `module-stomping -pid <PID> [-dll_name <DLL>]` | **(Windows only)** Inject shellcode by stomping a legitimate DLL's .text section. Shellcode executes from signed DLL address space, bypassing private-memory detection (T1055.001).
-modules | `modules [-pid <PID>]` | List loaded modules/DLLs/libraries in a process. Windows: CreateToolhelp32Snapshot. Linux: /proc/pid/maps. macOS: proc_info syscall. Default: current process. Cross-platform (T1057).
+modules | `modules [-pid <PID>] [-filter <name>]` | List loaded modules/DLLs/libraries in a process with optional name filtering. Cross-platform (T1057).
 mem-scan | `mem-scan -pid <PID> -pattern <string> [-hex] [-max_results <n>] [-context_bytes <n>]` | Search process memory for byte patterns with hex dump output. Windows: VirtualQueryEx/ReadProcessMemory. Linux: /proc/pid/maps+mem. Supports string and hex patterns (T1005, T1057).
 mount | `mount` | List mounted filesystems with device, mount point, type, and options. Cross-platform (T1082).
 mv | `mv <source> <destination>` | Move or rename a file from source to destination.
