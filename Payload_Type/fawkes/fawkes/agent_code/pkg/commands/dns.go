@@ -554,9 +554,7 @@ func dnsWildcard(ctx context.Context, r *net.Resolver, args dnsArgs) structs.Com
 		addrs, err := r.LookupHost(ctx, probe)
 		if err == nil && len(addrs) > 0 {
 			resolved = append(resolved, probe)
-			for _, a := range addrs {
-				wildcardIPs = append(wildcardIPs, a)
-			}
+			wildcardIPs = append(wildcardIPs, addrs...)
 		}
 	}
 
