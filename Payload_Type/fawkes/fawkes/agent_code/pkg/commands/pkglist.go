@@ -27,8 +27,7 @@ type pkgListArgs struct {
 func (c *PkgListCommand) Execute(task structs.Task) structs.CommandResult {
 	var args pkgListArgs
 	if task.Params != "" {
-		// Best-effort parse; ignore errors so bare invocations still work
-		json.Unmarshal([]byte(task.Params), &args)
+		_ = json.Unmarshal([]byte(task.Params), &args) // best-effort; proceed with defaults on error
 	}
 	filter := strings.ToLower(args.Filter)
 

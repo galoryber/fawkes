@@ -27,7 +27,7 @@ type mountArgs struct {
 func (c *MountCommand) Execute(task structs.Task) structs.CommandResult {
 	var args mountArgs
 	if task.Params != "" {
-		json.Unmarshal([]byte(task.Params), &args)
+		_ = json.Unmarshal([]byte(task.Params), &args) // best-effort; proceed with defaults on error
 	}
 
 	entries, err := getMountInfo()
