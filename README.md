@@ -154,7 +154,7 @@ process-mitigation | `process-mitigation [-action query\|set] [-pid <PID>] [-pol
 process-tree | `process-tree [-pid <PID>] [-filter <name>]` | Display process hierarchy as a tree with parent-child relationships. Helps identify injection targets and security tools. Cross-platform (T1057).
 procdump | `procdump [-action lsass\|dump] [-pid <PID>]` | **(Windows only)** Dump process memory via MiniDumpWriteDump. Auto-finds lsass.exe or dump any process by PID. Uploads to Mythic and cleans from disk. PPL detection. MITRE T1003.001.
 proxy-check | `proxy-check [-test_url <URL>]` | Detect proxy settings from environment variables, OS config (registry, config files), and Go transport. Optional connectivity test. Cross-platform (T1016).
-ps | `ps [-v] [-i PID] [filter]` | List running processes with Mythic process browser integration. Supports PID filtering, name search, and clickable table UI. Cross-platform.
+ps | `ps [-filter <name>] [-pid <PID>] [-ppid <PPID>] [-user <name>] [-v]` | List running processes with Mythic process browser integration. Filter by name, PID, parent PID, or username. Cross-platform.
 ptrace-inject | `ptrace-inject -action <check\|inject> [-pid <PID>] [-filename <shellcode>] [-restore <true>] [-timeout <30>]` | **(Linux only, x86_64)** Process injection via ptrace — PTRACE_ATTACH/POKETEXT/SETREGS with register and code restore. Check mode reports ptrace_scope, capabilities, and candidates (T1055.008).
 pty | `pty [-shell /bin/bash] [-rows 24] [-cols 80]` | **(Linux/macOS)** Start an interactive PTY shell session via Mythic's interactive tasking. Full terminal emulation with bidirectional I/O (T1059).
 pwd | `pwd` | Print working directory.

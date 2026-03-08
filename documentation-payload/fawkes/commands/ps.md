@@ -11,25 +11,37 @@ List running processes with Mythic process browser integration. Returns structur
 
 Integrates with Mythic's **Process Browser** UI — clicking the process browser icon in the callback table runs `ps` and displays results in a sortable, interactive table with expandable details for each process.
 
-### Arguments
+## Arguments
 
-#### -v (optional)
-Verbose mode (same JSON output, retained for CLI compatibility).
-
-#### -i PID (optional)
-Filter by a specific process ID.
-
-#### filter (optional)
-Search by process name (case-insensitive).
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| filter | No | — | Filter by process name (case-insensitive substring match) |
+| pid | No | 0 | Filter by specific process ID |
+| ppid | No | 0 | Filter by parent process ID (find child processes) |
+| user | No | — | Filter by username (case-insensitive substring match) |
+| verbose | No | false | Include command line in output (CLI: `-v`) |
 
 ## Usage
 ```
-ps [-v] [-i PID] [filter]
-```
-
-Example
-```
+# List all processes
 ps
+
+# Filter by name
+ps -filter svchost
+
+# Filter by specific PID
+ps -pid 1234
+
+# Find all children of a parent process
+ps -ppid 612
+
+# Filter by user
+ps -user SYSTEM
+
+# Combine filters
+ps -filter svc -user SYSTEM
+
+# Legacy CLI syntax still works
 ps svchost
 ps -i 1234
 ps -v explorer

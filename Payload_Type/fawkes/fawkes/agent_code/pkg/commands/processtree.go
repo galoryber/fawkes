@@ -26,7 +26,7 @@ func (c *ProcessTreeCommand) Execute(task structs.Task) structs.CommandResult {
 		_ = json.Unmarshal([]byte(task.Params), &args)
 	}
 
-	processes, err := getProcessList("", 0)
+	processes, err := getProcessList(PsArgs{})
 	if err != nil {
 		return structs.CommandResult{Output: fmt.Sprintf("Error listing processes: %v", err), Status: "error", Completed: true}
 	}
