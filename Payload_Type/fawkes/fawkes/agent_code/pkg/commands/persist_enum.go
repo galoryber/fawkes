@@ -22,9 +22,7 @@ func (c *PersistEnumCommand) Description() string {
 	return "Enumerate Windows persistence mechanisms — registry, startup, scheduled tasks, services, WMI (T1547)"
 }
 
-type persistEnumArgs struct {
-	Category string `json:"category"` // all, registry, startup, tasks, services, wmi, ifeo, winlogon
-}
+// persistEnumArgs is defined in persist_enum_common.go
 
 func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	var args persistEnumArgs

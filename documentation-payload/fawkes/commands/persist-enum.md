@@ -5,18 +5,24 @@ weight = 100
 hidden = false
 +++
 
+{{% notice info %}}Windows, Linux, and macOS{{% /notice %}}
+
 ## Summary
 
-Enumerate common Windows persistence mechanisms without making any changes. Checks registry Run keys, startup folders, Winlogon hijacks, Image File Execution Options (IFEO), AppInit_DLLs, scheduled tasks (via registry), and non-Microsoft services.
+Enumerate persistence mechanisms without making any changes. Cross-platform command with platform-specific checks.
 
-{{% notice info %}}Windows Only{{% /notice %}}
+### Windows
+Registry Run keys, startup folders, Winlogon hijacks, IFEO, AppInit_DLLs, scheduled tasks, non-Microsoft services.
 
-## How It Works
+### Linux
+Cron jobs (system + user), systemd services/timers, shell profiles, init.d scripts, rc.local, XDG autostart, SSH authorized_keys, LD_PRELOAD.
 
-All enumeration is read-only — no registry writes or service modifications. Each category queries specific registry keys or filesystem paths to identify persistence entries.
+### macOS
+LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout hooks, SSH authorized_keys, periodic scripts.
 
-### Categories
+## Categories by Platform
 
+### Windows
 | Category | What It Checks |
 |----------|---------------|
 | `registry` | HKLM/HKCU Run, RunOnce, RunServices, RunServicesOnce |
@@ -24,39 +30,61 @@ All enumeration is read-only — no registry writes or service modifications. Ea
 | `winlogon` | Winlogon Shell, Userinit, AppInit_DLLs, TaskMan (flags non-default values) |
 | `ifeo` | Image File Execution Options — Debugger entries on all subkeys |
 | `appinit` | AppInit_DLLs (64-bit and WOW64) with enabled/disabled status |
-| `tasks` | Non-Microsoft scheduled tasks via `schtasks /query` (works at any privilege) |
-| `services` | Non-Microsoft Win32 services (filters out svchost, lsass, dllhost, etc.) |
+| `tasks` | Non-Microsoft scheduled tasks via `schtasks /query` |
+| `services` | Non-Microsoft Win32 services |
+
+### Linux
+| Category | What It Checks |
+|----------|---------------|
+| `cron` | /etc/crontab, /etc/cron.d/*, user crontabs, cron.hourly/daily/weekly/monthly |
+| `systemd` | /etc/systemd/system/ and ~/.config/systemd/user/ (.service and .timer files) |
+| `shell` | System profiles (/etc/profile, /etc/bash.bashrc), user profiles (.bashrc, .zshrc, etc.), /etc/profile.d/ |
+| `startup` | /etc/rc.local, /etc/init.d/ scripts, XDG autostart (.desktop files) |
+| `ssh` | ~/.ssh/authorized_keys, /root/.ssh/authorized_keys |
+| `preload` | /etc/ld.so.preload, LD_PRELOAD env var, /etc/environment |
+
+### macOS
+| Category | What It Checks |
+|----------|---------------|
+| `launchd` | ~/Library/LaunchAgents, /Library/LaunchAgents, /Library/LaunchDaemons (non-Apple plists) |
+| `cron` | /etc/crontab, user crontabs |
+| `shell` | User profiles (.zshrc, .bash_profile, etc.), system profiles (/etc/profile, /etc/zshrc) |
+| `login` | Login/Logout hooks (com.apple.loginwindow), SSH authorized_keys |
+| `periodic` | /etc/periodic/daily, weekly, monthly scripts |
 
 ## Arguments
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| category | No | Which category to enumerate: `all` (default), `registry`, `startup`, `winlogon`, `ifeo`, `appinit`, `tasks`, `services` |
+| category | No | Which category to enumerate (default: `all`). Platform-specific — see tables above. |
 
 ## Usage
 
-Enumerate all persistence mechanisms:
 ```
+# Enumerate all persistence mechanisms
 persist-enum
 persist-enum -category all
-```
 
-Check only registry Run keys:
-```
+# Windows examples
 persist-enum -category registry
-```
-
-Check scheduled tasks:
-```
 persist-enum -category tasks
+
+# Linux examples
+persist-enum -category cron
+persist-enum -category systemd
+persist-enum -category preload
+
+# macOS examples
+persist-enum -category launchd
+persist-enum -category login
 ```
 
 ## Notes
 
 - Read-only — no modifications are made to the system
-- Scheduled task enumeration uses `schtasks.exe /query` (works at standard user privilege; TaskCache registry requires admin)
-- Service enumeration filters standard Windows service paths under `%SystemRoot%`
-- Winlogon checks compare values against known defaults and only report deviations
+- **Windows**: Scheduled task enumeration uses `schtasks.exe /query`; service enumeration filters standard Windows service paths
+- **Linux**: Reads /proc and filesystem only — no process spawning required
+- **macOS**: LaunchAgent/Daemon enumeration filters Apple system plists (com.apple.*); login hook check uses `defaults read`
 - Useful for situational awareness before or after deploying persistence
 
 ## MITRE ATT&CK Mapping
