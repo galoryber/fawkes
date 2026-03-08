@@ -521,6 +521,7 @@ func browserCookies(args browserArgs) structs.CommandResult {
 			errors = append(errors, fmt.Sprintf("%s: %v", browserName, err))
 			continue
 		}
+		defer structs.ZeroBytes(key)
 
 		profiles := findCookieProfiles(userDataDir)
 		if len(profiles) == 0 {
