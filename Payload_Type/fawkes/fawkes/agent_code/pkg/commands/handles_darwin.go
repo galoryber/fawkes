@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -30,7 +31,11 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	if args.PID <= 0 {
+	// pid 0 means "self" — resolve to current process
+	if args.PID == 0 {
+		args.PID = os.Getpid()
+	}
+	if args.PID < 0 {
 		return structs.CommandResult{
 			Output:    "Error: pid is required",
 			Status:    "error",

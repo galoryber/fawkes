@@ -20,11 +20,19 @@ func TestHandlesCommand_Metadata_Darwin(t *testing.T) {
 	}
 }
 
-func TestHandlesCommand_NoPID_Darwin(t *testing.T) {
+func TestHandlesCommand_NegativePID_Darwin(t *testing.T) {
 	cmd := &HandlesCommand{}
-	result := cmd.Execute(structs.Task{Params: `{}`})
+	result := cmd.Execute(structs.Task{Params: `{"pid": -1}`})
 	if result.Status != "error" {
-		t.Errorf("expected error for missing PID, got %q", result.Status)
+		t.Errorf("expected error for negative PID, got %q", result.Status)
+	}
+}
+
+func TestHandlesCommand_ZeroPIDMeansSelf_Darwin(t *testing.T) {
+	cmd := &HandlesCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"pid": 0}`})
+	if result.Status != "success" {
+		t.Errorf("pid 0 should resolve to self, got status %q: %s", result.Status, result.Output)
 	}
 }
 
