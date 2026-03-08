@@ -582,7 +582,7 @@ func bitsCancel(args bitsArgs) structs.CommandResult {
 }
 
 // bitsJobAction performs a vtable action (suspend/resume/complete) on a BITS job by name.
-func bitsJobAction(args bitsArgs, vtableOffset uintptr, actionLabel string) structs.CommandResult {
+func bitsJobAction(args bitsArgs, vtableIndex int, actionLabel string) structs.CommandResult {
 	if args.Name == "" {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Error: name is required for %s action (use 'list' to find job names)", strings.ToLower(actionLabel)),
@@ -632,7 +632,7 @@ func bitsJobAction(args bitsArgs, vtableOffset uintptr, actionLabel string) stru
 		}
 
 		if strings.EqualFold(name, args.Name) {
-			bitsComCall(pJob, vtableOffset)
+			bitsComCall(pJob, vtableIndex)
 			acted++
 		}
 
