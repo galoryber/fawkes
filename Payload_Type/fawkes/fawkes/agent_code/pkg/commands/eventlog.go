@@ -26,7 +26,11 @@ var (
 	procEvtClose           = wevtapi.NewProc("EvtClose")
 	procEvtOpenLog         = wevtapi.NewProc("EvtOpenLog")
 	procEvtGetLogInfo      = wevtapi.NewProc("EvtGetLogInfo")
-	procEvtClearLog        = wevtapi.NewProc("EvtClearLog")
+	procEvtClearLog              = wevtapi.NewProc("EvtClearLog")
+	procEvtOpenChannelConfig     = wevtapi.NewProc("EvtOpenChannelConfig")
+	procEvtSetChannelConfigProp  = wevtapi.NewProc("EvtSetChannelConfigProperty")
+	procEvtSaveChannelConfig     = wevtapi.NewProc("EvtSaveChannelConfig")
+	procEvtGetChannelConfigProp  = wevtapi.NewProc("EvtGetChannelConfigProperty")
 )
 
 const (
@@ -37,8 +41,9 @@ const (
 	evtLogNumberOfLogRecords = 5
 	evtLogFileSize           = 3
 	evtLogLastWriteTime      = 2
-	errorNoMoreItems         = 259
-	errorInsufficientBuffer  = 122
+	errorNoMoreItems             = 259
+	errorInsufficientBuffer      = 122
+	evtChannelConfigEnabled      = 0 // EvtChannelConfigEnabled property ID
 )
 
 // EventLogCommand manages Windows Event Logs
@@ -49,7 +54,7 @@ func (c *EventLogCommand) Name() string {
 }
 
 func (c *EventLogCommand) Description() string {
-	return "Manage Windows Event Logs — list channels, query events, clear logs, get info"
+	return "Manage Windows Event Logs — list, query, clear, info, enable, disable channels"
 }
 
 type eventlogArgs struct {
@@ -85,9 +90,13 @@ func (c *EventLogCommand) Execute(task structs.Task) structs.CommandResult {
 		return evtClear(args.Channel)
 	case "info":
 		return evtInfo(args.Channel)
+	case "enable":
+		return evtSetChannelEnabled(args.Channel, true)
+	case "disable":
+		return evtSetChannelEnabled(args.Channel, false)
 	default:
 		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use list, query, clear, info)", args.Action),
+			Output:    fmt.Sprintf("Unknown action: %s (use list, query, clear, info, enable, disable)", args.Action),
 			Status:    "error",
 			Completed: true,
 		}
@@ -435,6 +444,98 @@ func renderEventXML(eventHandle uintptr) (string, error) {
 // summarizeEventXML, extractXMLField, extractXMLAttr, buildEventXPath,
 // formatEvtLogSize moved to command_helpers.go
 // windowsFileTimeToString, daysToDate moved to eventlog_helpers.go
+
+// evtSetChannelEnabled enables or disables an event log channel via EvtOpenChannelConfig API.
+func evtSetChannelEnabled(channel string, enabled bool) structs.CommandResult {
+	if channel == "" {
+		return structs.CommandResult{
+			Output:    "Channel is required for enable/disable action (e.g., Microsoft-Windows-Sysmon/Operational)",
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	channelPtr, _ := windows.UTF16PtrFromString(channel)
+
+	// Open channel configuration
+	cfgHandle, _, err := procEvtOpenChannelConfig.Call(
+		0,
+		uintptr(unsafe.Pointer(channelPtr)),
+		0,
+	)
+	if cfgHandle == 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("EvtOpenChannelConfig failed for '%s': %v", channel, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+	defer procEvtClose.Call(cfgHandle)
+
+	// Read current enabled state
+	var propBuf [16]byte // EVT_VARIANT: 8 bytes value + 4 count + 4 type
+	var propBufUsed uint32
+	procEvtGetChannelConfigProp.Call(
+		cfgHandle,
+		evtChannelConfigEnabled,
+		16,
+		uintptr(unsafe.Pointer(&propBuf[0])),
+		uintptr(unsafe.Pointer(&propBufUsed)),
+	)
+	wasEnabled := propBuf[0] != 0
+
+	// Set the Enabled property
+	// EVT_VARIANT for bool: Type=13 (EvtVarTypeBoolean), value is uint32 (0 or 1)
+	var variant [16]byte
+	if enabled {
+		binary.LittleEndian.PutUint32(variant[:4], 1)
+	} else {
+		binary.LittleEndian.PutUint32(variant[:4], 0)
+	}
+	binary.LittleEndian.PutUint32(variant[12:16], 13) // EvtVarTypeBoolean = 13
+
+	ret, _, err := procEvtSetChannelConfigProp.Call(
+		cfgHandle,
+		evtChannelConfigEnabled,
+		0,
+		uintptr(unsafe.Pointer(&variant[0])),
+	)
+	if ret == 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("EvtSetChannelConfigProperty failed for '%s': %v", channel, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	// Save the configuration
+	ret, _, err = procEvtSaveChannelConfig.Call(cfgHandle, 0)
+	if ret == 0 {
+		return structs.CommandResult{
+			Output:    fmt.Sprintf("EvtSaveChannelConfig failed for '%s': %v\nEnsure you have administrator privileges.", channel, err),
+			Status:    "error",
+			Completed: true,
+		}
+	}
+
+	action := "Enabled"
+	if !enabled {
+		action = "Disabled"
+	}
+	previousState := "enabled"
+	if !wasEnabled {
+		previousState = "disabled"
+	}
+
+	return structs.CommandResult{
+		Output:    fmt.Sprintf("%s event log channel '%s' (was: %s)", action, channel, previousState),
+		Status:    "success",
+		Completed: true,
+	}
+}
 
 // enableSecurityPrivilege enables SeSecurityPrivilege on the process token
 func enableSecurityPrivilege() error {

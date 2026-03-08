@@ -11,7 +11,7 @@ Windows Only
 
 ## Summary
 
-Manage Windows Event Logs using the modern Windows Event Log API (`wevtapi.dll`). Supports listing available log channels, querying events with XPath filtering, clearing logs, and getting channel information.
+Manage Windows Event Logs using the modern Windows Event Log API (`wevtapi.dll`). Supports listing available log channels, querying events with XPath filtering, clearing logs, getting channel information, and enabling/disabling event log channels.
 
 ### Actions
 
@@ -19,6 +19,8 @@ Manage Windows Event Logs using the modern Windows Event Log API (`wevtapi.dll`)
 - **query** — Query events from a specific channel with XPath, EventID, or time filtering
 - **clear** — Clear all events from a specific log channel (generates Event ID 1102)
 - **info** — Display channel metadata: record count, file size, last write time
+- **enable** — Enable an event log channel (start collecting events)
+- **disable** — Disable an event log channel (stop collecting events)
 
 ### Requirements
 
@@ -34,9 +36,11 @@ The operation to perform. Default: `list`.
 - `query` — Query events from a channel
 - `clear` — Clear a log channel
 - `info` — Get channel information
+- `enable` — Enable an event log channel
+- `disable` — Disable an event log channel
 
 #### channel
-Event log channel name. Required for `query`, `clear`, and `info` actions.
+Event log channel name. Required for `query`, `clear`, `info`, `enable`, and `disable` actions.
 Common channels: `Security`, `System`, `Application`, `Microsoft-Windows-PowerShell/Operational`.
 
 #### event_id
@@ -92,6 +96,16 @@ Clear the Security log:
 eventlog -action clear -channel Security
 ```
 
+Disable Sysmon event collection:
+```
+eventlog -action disable -channel Microsoft-Windows-Sysmon/Operational
+```
+
+Re-enable a previously disabled channel:
+```
+eventlog -action enable -channel Microsoft-Windows-Sysmon/Operational
+```
+
 ## Example Output
 
 ### List Channels
@@ -144,3 +158,4 @@ Event Log Info: Application
 ## MITRE ATT&CK Mapping
 
 - T1070.001 — Indicator Removal: Clear Windows Event Logs
+- T1562.002 — Impair Defenses: Disable Windows Event Logging (disable action)
