@@ -34,6 +34,29 @@ func TestMountHasEntries(t *testing.T) {
 	}
 }
 
+func TestMountWithFilter(t *testing.T) {
+	cmd := &MountCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"filter":"nonexistent_xyz"}`})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "matching") {
+		t.Error("expected 'matching' in filtered output")
+	}
+}
+
+func TestMountWithFstype(t *testing.T) {
+	cmd := &MountCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"fstype":"nonexistent_xyz"}`})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	// Should show 0 matching
+	if !strings.Contains(result.Output, "0 matching") {
+		t.Error("expected '0 matching' for nonexistent fstype")
+	}
+}
+
 func TestMountHasRootFS(t *testing.T) {
 	cmd := &MountCommand{}
 	result := cmd.Execute(structs.Task{Params: ""})

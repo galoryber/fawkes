@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -18,7 +19,17 @@ func (c *MountCommand) Description() string {
 	return "List mounted filesystems and their types"
 }
 
+type mountArgs struct {
+	Filter string `json:"filter"`
+	FsType string `json:"fstype"`
+}
+
 func (c *MountCommand) Execute(task structs.Task) structs.CommandResult {
+	var args mountArgs
+	if task.Params != "" {
+		json.Unmarshal([]byte(task.Params), &args)
+	}
+
 	entries, err := getMountInfo()
 	if err != nil {
 		return structs.CommandResult{
@@ -28,7 +39,24 @@ func (c *MountCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	if len(entries) == 0 {
+	// Apply filters
+	filterLower := strings.ToLower(args.Filter)
+	fstypeLower := strings.ToLower(args.FsType)
+	var filtered []mountInfoEntry
+	for _, e := range entries {
+		if filterLower != "" {
+			lower := strings.ToLower(e.device + " " + e.mntPoint)
+			if !strings.Contains(lower, filterLower) {
+				continue
+			}
+		}
+		if fstypeLower != "" && !strings.EqualFold(e.mntType, fstypeLower) {
+			continue
+		}
+		filtered = append(filtered, e)
+	}
+
+	if len(filtered) == 0 && len(entries) == 0 {
 		return structs.CommandResult{
 			Output:    "[*] No mount points found",
 			Status:    "success",
@@ -37,11 +65,15 @@ func (c *MountCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] %d mount points\n\n", len(entries)))
+	sb.WriteString(fmt.Sprintf("[*] %d mount points", len(entries)))
+	if filterLower != "" || fstypeLower != "" {
+		sb.WriteString(fmt.Sprintf(" (%d matching)", len(filtered)))
+	}
+	sb.WriteString("\n\n")
 	sb.WriteString(fmt.Sprintf("%-30s %-20s %-12s %s\n", "Device", "Mount Point", "Type", "Options"))
 	sb.WriteString(fmt.Sprintf("%-30s %-20s %-12s %s\n", "------", "-----------", "----", "-------"))
 
-	for _, e := range entries {
+	for _, e := range filtered {
 		sb.WriteString(fmt.Sprintf("%-30s %-20s %-12s %s\n",
 			truncStr(e.device, 30),
 			truncStr(e.mntPoint, 20),

@@ -16,8 +16,8 @@ func init() {
 			Author:     "@galoryber",
 		},
 		Description:         "Manage Windows scheduled tasks via COM API (T1053.005)",
-		HelpString:          "schtask -action <create|query|delete|run|list|enable|disable|stop> -name <task_name> [-program <path>] [-args <arguments>] [-trigger <ONLOGON|DAILY|...>] [-time <HH:MM>] [-user <account>] [-run_now]",
-		Version:             1,
+		HelpString:          "schtask -action <create|query|delete|run|list|enable|disable|stop> -name <task_name> [-program <path>] [-args <arguments>] [-trigger <ONLOGON|DAILY|...>] [-time <HH:MM>] [-user <account>] [-run_now] [-filter <substring>]",
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1053.005", "T1562.001"},
@@ -140,6 +140,20 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "filter",
+				ModalDisplayName: "Name Filter",
+				CLIName:          "filter",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Case-insensitive substring filter on task name (used with list action)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
 		},
 		TaskFunctionOPSECPre:    nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
@@ -171,7 +185,11 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+			filter, _ := taskData.Args.GetStringArg("filter")
 			display := fmt.Sprintf("%s %s", action, name)
+			if filter != "" {
+				display += fmt.Sprintf(" (filter: %s)", filter)
+			}
 			response.DisplayParams = &display
 			switch action {
 			case "create":

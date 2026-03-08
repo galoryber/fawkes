@@ -23,6 +23,7 @@ Manage Windows scheduled tasks via Task Scheduler COM API (no subprocess creatio
 | time | string | No | - | Start time for time-based triggers (HH:MM format) |
 | user | string | No | - | Run-as user account (e.g., `SYSTEM`, `NT AUTHORITY\SYSTEM`) |
 | run_now | boolean | No | false | Execute the task immediately after creation |
+| filter | string | No | - | Case-insensitive substring filter on task name (used with `list` action) |
 
 ## Usage
 
@@ -62,6 +63,11 @@ schtask -action run -name "WindowsUpdate"
 Enumerate all scheduled tasks on the system:
 ```
 schtask -action list
+```
+
+Filter tasks by name:
+```
+schtask -action list -filter "Update"
 ```
 
 ### Enable/Disable a Task

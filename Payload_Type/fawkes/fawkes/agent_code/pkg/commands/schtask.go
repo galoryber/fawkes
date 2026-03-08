@@ -35,6 +35,7 @@ type schtaskArgs struct {
 	Time    string `json:"time"`
 	User    string `json:"user"`
 	RunNow  bool   `json:"run_now"`
+	Filter  string `json:"filter"`
 }
 
 // TASK_TRIGGER_* constants moved to command_helpers.go
@@ -86,7 +87,7 @@ func (c *SchtaskCommand) Execute(task structs.Task) structs.CommandResult {
 	case "run":
 		return schtaskRun(args)
 	case "list":
-		return schtaskList()
+		return schtaskList(args.Filter)
 	case "enable":
 		return schtaskSetEnabled(args, true)
 	case "disable":
@@ -509,7 +510,7 @@ type schtaskListEntry struct {
 	NextRunTime string `json:"next_run_time,omitempty"`
 }
 
-func schtaskList() structs.CommandResult {
+func schtaskList(filter string) structs.CommandResult {
 	// Use schtasks.exe /query /fo CSV — reliable across all Windows versions.
 	// COM-based iteration (ForEach, Count+Item) hangs in Go's COM apartment model.
 	out, err := execCmdTimeout("schtasks.exe", "/query", "/fo", "CSV", "/nh")
@@ -521,6 +522,7 @@ func schtaskList() structs.CommandResult {
 		}
 	}
 
+	filterLower := strings.ToLower(filter)
 	var entries []schtaskListEntry
 	reader := csv.NewReader(strings.NewReader(string(out)))
 	for {
@@ -534,6 +536,10 @@ func schtaskList() structs.CommandResult {
 		// CSV fields: TaskName, Next Run Time, Status
 		name := strings.TrimSpace(record[0])
 		if name == "" || name == "TaskName" || name == "INFO:" {
+			continue
+		}
+		// Apply filter on task name
+		if filterLower != "" && !strings.Contains(strings.ToLower(name), filterLower) {
 			continue
 		}
 		nextRun := strings.TrimSpace(record[1])
