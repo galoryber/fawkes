@@ -13,7 +13,7 @@ import (
 // pkgListWindowsNative enumerates installed software by reading the Windows
 // registry directly — no PowerShell subprocess spawned.
 // Reads from both Uninstall keys (64-bit and 32-bit/WOW6432Node).
-func pkgListWindowsNative() string {
+func pkgListWindowsNative(filter string) string {
 	type installedPkg struct {
 		name    string
 		version string
@@ -73,14 +73,26 @@ func pkgListWindowsNative() string {
 		return strings.ToLower(pkgs[i].name) < strings.ToLower(pkgs[j].name)
 	})
 
+	// Apply filter
+	var filtered []installedPkg
+	for _, pkg := range pkgs {
+		if pkgMatchesFilter(pkg.name, filter) {
+			filtered = append(filtered, pkg)
+		}
+	}
+
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("  Installed programs: %d\n\n", len(pkgs)))
+	sb.WriteString(fmt.Sprintf("  Installed programs: %d", len(pkgs)))
+	if filter != "" {
+		sb.WriteString(fmt.Sprintf(" (%d matching)", len(filtered)))
+	}
+	sb.WriteString("\n\n")
 	sb.WriteString(fmt.Sprintf("  %-55s %s\n", "Name", "Version"))
 	sb.WriteString("  " + strings.Repeat("-", 70) + "\n")
-	for i, pkg := range pkgs {
+	for i, pkg := range filtered {
 		sb.WriteString(fmt.Sprintf("  %-55s %s\n", pkg.name, pkg.version))
 		if i >= 199 {
-			sb.WriteString(fmt.Sprintf("  ... and %d more (showing first 200)\n", len(pkgs)-200))
+			sb.WriteString(fmt.Sprintf("  ... and %d more (showing first 200)\n", len(filtered)-200))
 			break
 		}
 	}

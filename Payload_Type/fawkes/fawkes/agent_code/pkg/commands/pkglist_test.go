@@ -36,6 +36,66 @@ func TestPkgListExecute(t *testing.T) {
 	}
 }
 
+func TestPkgListExecuteWithFilter(t *testing.T) {
+	cmd := &PkgListCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"filter":"nonexistent_pkg_xyz"}`})
+	if result.Status != "success" {
+		t.Errorf("Status = %q, want %q", result.Status, "success")
+	}
+	// With a filter that matches nothing, the output should still succeed
+	if !result.Completed {
+		t.Error("Completed should be true")
+	}
+}
+
+func TestPkgMatchesFilter(t *testing.T) {
+	tests := []struct {
+		name   string
+		filter string
+		want   bool
+	}{
+		{"bash", "", true},          // empty filter matches all
+		{"bash", "bash", true},      // exact match
+		{"libbash", "bash", true},   // substring
+		{"BASH", "bash", true},      // case-insensitive
+		{"curl", "bash", false},     // no match
+		{"OpenSSH", "ssh", true},    // partial match
+	}
+	for _, tt := range tests {
+		got := pkgMatchesFilter(tt.name, tt.filter)
+		if got != tt.want {
+			t.Errorf("pkgMatchesFilter(%q, %q) = %v, want %v", tt.name, tt.filter, got, tt.want)
+		}
+	}
+}
+
+func TestFilterPkgPairs(t *testing.T) {
+	pkgs := [][2]string{
+		{"bash", "5.1"},
+		{"curl", "7.88"},
+		{"libbash-dev", "5.1"},
+		{"zlib", "1.2.13"},
+	}
+
+	// No filter returns all
+	result := filterPkgPairs(pkgs, "")
+	if len(result) != 4 {
+		t.Errorf("no filter: got %d, want 4", len(result))
+	}
+
+	// Filter "bash" matches 2
+	result = filterPkgPairs(pkgs, "bash")
+	if len(result) != 2 {
+		t.Errorf("filter 'bash': got %d, want 2", len(result))
+	}
+
+	// Filter with no matches
+	result = filterPkgPairs(pkgs, "nonexistent")
+	if len(result) != 0 {
+		t.Errorf("filter 'nonexistent': got %d, want 0", len(result))
+	}
+}
+
 func TestRunQuietCommand(t *testing.T) {
 	// Test with a command that exists
 	output := runQuietCommand("echo", "hello")
@@ -200,7 +260,7 @@ func appendBE32(buf []byte, v uint32) []byte {
 }
 
 func TestPkgListLinux(t *testing.T) {
-	output := pkgListLinux()
+	output := pkgListLinux("")
 	if !strings.Contains(output, "Installed Packages") {
 		t.Error("Output should contain header")
 	}
@@ -211,5 +271,12 @@ func TestPkgListLinux(t *testing.T) {
 		strings.Contains(output, "No supported package manager")
 	if !hasPkgMgr {
 		t.Error("Output should report on package managers")
+	}
+}
+
+func TestPkgListLinuxWithFilter(t *testing.T) {
+	output := pkgListLinux("nonexistent_pkg_xyz")
+	if !strings.Contains(output, "Installed Packages") {
+		t.Error("Output should contain header even with filter")
 	}
 }

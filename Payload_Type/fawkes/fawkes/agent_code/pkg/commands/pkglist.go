@@ -3,6 +3,7 @@ package commands
 import (
 	"bufio"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -19,16 +20,27 @@ type PkgListCommand struct{}
 func (c *PkgListCommand) Name() string        { return "pkg-list" }
 func (c *PkgListCommand) Description() string { return "List installed packages and software" }
 
+type pkgListArgs struct {
+	Filter string `json:"filter"`
+}
+
 func (c *PkgListCommand) Execute(task structs.Task) structs.CommandResult {
+	var args pkgListArgs
+	if task.Params != "" {
+		// Best-effort parse; ignore errors so bare invocations still work
+		json.Unmarshal([]byte(task.Params), &args)
+	}
+	filter := strings.ToLower(args.Filter)
+
 	var output string
 
 	switch runtime.GOOS {
 	case "linux":
-		output = pkgListLinux()
+		output = pkgListLinux(filter)
 	case "darwin":
-		output = pkgListDarwin()
+		output = pkgListDarwin(filter)
 	case "windows":
-		output = pkgListWindows()
+		output = pkgListWindows(filter)
 	default:
 		output = fmt.Sprintf("Unsupported platform: %s", runtime.GOOS)
 	}
@@ -40,7 +52,15 @@ func (c *PkgListCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-func pkgListLinux() string {
+// pkgMatchesFilter returns true if the package name matches the filter (case-insensitive substring).
+func pkgMatchesFilter(name, filter string) bool {
+	if filter == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(name), filter)
+}
+
+func pkgListLinux(filter string) string {
 	var sb strings.Builder
 	sb.WriteString("[*] Installed Packages (Linux)\n\n")
 
@@ -48,67 +68,63 @@ func pkgListLinux() string {
 
 	// Try dpkg (Debian/Ubuntu) — native file parsing first, then subprocess fallback
 	if pkgs := parseDpkgStatus(); len(pkgs) > 0 {
-		sb.WriteString(fmt.Sprintf("  Package Manager: dpkg (%d installed)\n", len(pkgs)))
-		for i, pkg := range pkgs {
-			sb.WriteString(fmt.Sprintf("    %-40s %s\n", pkg[0], pkg[1]))
-			if i >= 99 {
-				sb.WriteString(fmt.Sprintf("    ... and %d more (showing first 100)\n", len(pkgs)-100))
-				break
-			}
+		filtered := filterPkgPairs(pkgs, filter)
+		sb.WriteString(fmt.Sprintf("  Package Manager: dpkg (%d installed", len(pkgs)))
+		if filter != "" {
+			sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
 		}
+		sb.WriteString(")\n")
+		writePkgPairs(&sb, filtered, 100)
 		found = true
 	} else if output := runQuietCommand("dpkg-query", "-W", "-f", "${Package}\t${Version}\t${Status}\n"); output != "" {
 		lines := strings.Split(strings.TrimSpace(output), "\n")
-		installed := 0
-		for _, line := range lines {
-			if strings.Contains(line, "install ok installed") {
-				installed++
-			}
-		}
-		sb.WriteString(fmt.Sprintf("  Package Manager: dpkg (%d installed)\n", installed))
-		count := 0
+		var pkgs [][2]string
 		for _, line := range lines {
 			if !strings.Contains(line, "install ok installed") {
 				continue
 			}
 			parts := strings.SplitN(line, "\t", 3)
 			if len(parts) >= 2 {
-				sb.WriteString(fmt.Sprintf("    %-40s %s\n", parts[0], parts[1]))
-			}
-			count++
-			if count >= 100 {
-				sb.WriteString(fmt.Sprintf("    ... and %d more (showing first 100)\n", installed-100))
-				break
+				pkgs = append(pkgs, [2]string{parts[0], parts[1]})
 			}
 		}
+		filtered := filterPkgPairs(pkgs, filter)
+		sb.WriteString(fmt.Sprintf("  Package Manager: dpkg (%d installed", len(pkgs)))
+		if filter != "" {
+			sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
+		}
+		sb.WriteString(")\n")
+		writePkgPairs(&sb, filtered, 100)
 		found = true
 	}
 
 	// Try rpm (RHEL/CentOS/Fedora) — native SQLite first, then subprocess fallback
 	if !found {
 		if pkgs := parseRpmDB(); len(pkgs) > 0 {
-			sb.WriteString(fmt.Sprintf("  Package Manager: rpm (%d installed)\n", len(pkgs)))
-			for i, pkg := range pkgs {
-				sb.WriteString(fmt.Sprintf("    %-40s %s\n", pkg[0], pkg[1]))
-				if i >= 99 {
-					sb.WriteString(fmt.Sprintf("    ... and %d more (showing first 100)\n", len(pkgs)-100))
-					break
-				}
+			filtered := filterPkgPairs(pkgs, filter)
+			sb.WriteString(fmt.Sprintf("  Package Manager: rpm (%d installed", len(pkgs)))
+			if filter != "" {
+				sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
 			}
+			sb.WriteString(")\n")
+			writePkgPairs(&sb, filtered, 100)
 			found = true
 		} else if output := runQuietCommand("rpm", "-qa", "--queryformat", "%{NAME}\t%{VERSION}-%{RELEASE}\n"); output != "" {
 			lines := strings.Split(strings.TrimSpace(output), "\n")
-			sb.WriteString(fmt.Sprintf("  Package Manager: rpm (%d installed)\n", len(lines)))
-			for i, line := range lines {
+			var pkgs [][2]string
+			for _, line := range lines {
 				parts := strings.SplitN(line, "\t", 2)
 				if len(parts) >= 2 {
-					sb.WriteString(fmt.Sprintf("    %-40s %s\n", parts[0], parts[1]))
-				}
-				if i >= 99 {
-					sb.WriteString(fmt.Sprintf("    ... and %d more (showing first 100)\n", len(lines)-100))
-					break
+					pkgs = append(pkgs, [2]string{parts[0], parts[1]})
 				}
 			}
+			filtered := filterPkgPairs(pkgs, filter)
+			sb.WriteString(fmt.Sprintf("  Package Manager: rpm (%d installed", len(pkgs)))
+			if filter != "" {
+				sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
+			}
+			sb.WriteString(")\n")
+			writePkgPairs(&sb, filtered, 100)
 			found = true
 		}
 	}
@@ -116,22 +132,31 @@ func pkgListLinux() string {
 	// Try apk (Alpine) — native file parsing first, then subprocess fallback
 	if !found {
 		if pkgs := parseApkInstalled(); len(pkgs) > 0 {
-			sb.WriteString(fmt.Sprintf("  Package Manager: apk (%d installed)\n", len(pkgs)))
-			for i, pkg := range pkgs {
-				sb.WriteString(fmt.Sprintf("    %-40s %s\n", pkg[0], pkg[1]))
-				if i >= 99 {
-					sb.WriteString(fmt.Sprintf("    ... and %d more (showing first 100)\n", len(pkgs)-100))
-					break
-				}
+			filtered := filterPkgPairs(pkgs, filter)
+			sb.WriteString(fmt.Sprintf("  Package Manager: apk (%d installed", len(pkgs)))
+			if filter != "" {
+				sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
 			}
+			sb.WriteString(")\n")
+			writePkgPairs(&sb, filtered, 100)
 			found = true
 		} else if output := runQuietCommand("apk", "list", "--installed"); output != "" {
 			lines := strings.Split(strings.TrimSpace(output), "\n")
-			sb.WriteString(fmt.Sprintf("  Package Manager: apk (%d installed)\n", len(lines)))
-			for i, line := range lines {
+			var filtered []string
+			for _, line := range lines {
+				if pkgMatchesFilter(line, filter) {
+					filtered = append(filtered, line)
+				}
+			}
+			sb.WriteString(fmt.Sprintf("  Package Manager: apk (%d installed", len(lines)))
+			if filter != "" {
+				sb.WriteString(fmt.Sprintf(", %d matching", len(filtered)))
+			}
+			sb.WriteString(")\n")
+			for i, line := range filtered {
 				sb.WriteString(fmt.Sprintf("    %s\n", line))
 				if i >= 99 {
-					sb.WriteString(fmt.Sprintf("    ... and %d more (showing first 100)\n", len(lines)-100))
+					sb.WriteString(fmt.Sprintf("    ... and %d more (showing first 100)\n", len(filtered)-100))
 					break
 				}
 			}
@@ -144,9 +169,23 @@ func pkgListLinux() string {
 	if snapOutput != "" {
 		lines := strings.Split(strings.TrimSpace(snapOutput), "\n")
 		if len(lines) > 1 {
-			sb.WriteString(fmt.Sprintf("\n  Snap packages: %d\n", len(lines)-1))
-			for _, line := range lines {
-				sb.WriteString(fmt.Sprintf("    %s\n", line))
+			var filtered []string
+			// Keep header (line 0), filter the rest
+			for _, line := range lines[1:] {
+				if pkgMatchesFilter(line, filter) {
+					filtered = append(filtered, line)
+				}
+			}
+			if filter == "" || len(filtered) > 0 {
+				sb.WriteString(fmt.Sprintf("\n  Snap packages: %d", len(lines)-1))
+				if filter != "" {
+					sb.WriteString(fmt.Sprintf(" (%d matching)", len(filtered)))
+				}
+				sb.WriteString("\n")
+				sb.WriteString(fmt.Sprintf("    %s\n", lines[0])) // header
+				for _, line := range filtered {
+					sb.WriteString(fmt.Sprintf("    %s\n", line))
+				}
 			}
 		}
 	}
@@ -155,9 +194,19 @@ func pkgListLinux() string {
 	flatpakOutput := runQuietCommand("flatpak", "list", "--columns=application,version")
 	if flatpakOutput != "" {
 		lines := strings.Split(strings.TrimSpace(flatpakOutput), "\n")
-		if len(lines) > 0 {
-			sb.WriteString(fmt.Sprintf("\n  Flatpak apps: %d\n", len(lines)))
-			for _, line := range lines {
+		var filtered []string
+		for _, line := range lines {
+			if pkgMatchesFilter(line, filter) {
+				filtered = append(filtered, line)
+			}
+		}
+		if filter == "" || len(filtered) > 0 {
+			sb.WriteString(fmt.Sprintf("\n  Flatpak apps: %d", len(lines)))
+			if filter != "" {
+				sb.WriteString(fmt.Sprintf(" (%d matching)", len(filtered)))
+			}
+			sb.WriteString("\n")
+			for _, line := range filtered {
 				sb.WriteString(fmt.Sprintf("    %s\n", line))
 			}
 		}
@@ -170,7 +219,32 @@ func pkgListLinux() string {
 	return sb.String()
 }
 
-func pkgListDarwin() string {
+// filterPkgPairs filters [name, version] pairs by name using the filter.
+func filterPkgPairs(pkgs [][2]string, filter string) [][2]string {
+	if filter == "" {
+		return pkgs
+	}
+	var result [][2]string
+	for _, pkg := range pkgs {
+		if pkgMatchesFilter(pkg[0], filter) {
+			result = append(result, pkg)
+		}
+	}
+	return result
+}
+
+// writePkgPairs writes [name, version] pairs to the builder with a limit.
+func writePkgPairs(sb *strings.Builder, pkgs [][2]string, limit int) {
+	for i, pkg := range pkgs {
+		sb.WriteString(fmt.Sprintf("    %-40s %s\n", pkg[0], pkg[1]))
+		if i >= limit-1 {
+			sb.WriteString(fmt.Sprintf("    ... and %d more (showing first %d)\n", len(pkgs)-limit, limit))
+			break
+		}
+	}
+}
+
+func pkgListDarwin(filter string) string {
 	var sb strings.Builder
 	sb.WriteString("[*] Installed Software (macOS)\n\n")
 
@@ -178,11 +252,21 @@ func pkgListDarwin() string {
 	brewOutput := runQuietCommand("brew", "list", "--versions")
 	if brewOutput != "" {
 		lines := strings.Split(strings.TrimSpace(brewOutput), "\n")
-		sb.WriteString(fmt.Sprintf("  Homebrew packages: %d\n", len(lines)))
-		for i, line := range lines {
+		var filtered []string
+		for _, line := range lines {
+			if pkgMatchesFilter(line, filter) {
+				filtered = append(filtered, line)
+			}
+		}
+		sb.WriteString(fmt.Sprintf("  Homebrew packages: %d", len(lines)))
+		if filter != "" {
+			sb.WriteString(fmt.Sprintf(" (%d matching)", len(filtered)))
+		}
+		sb.WriteString("\n")
+		for i, line := range filtered {
 			sb.WriteString(fmt.Sprintf("    %s\n", line))
 			if i >= 99 {
-				sb.WriteString(fmt.Sprintf("    ... and %d more (showing first 100)\n", len(lines)-100))
+				sb.WriteString(fmt.Sprintf("    ... and %d more (showing first 100)\n", len(filtered)-100))
 				break
 			}
 		}
@@ -194,12 +278,24 @@ func pkgListDarwin() string {
 	caskOutput := runQuietCommand("brew", "list", "--cask", "--versions")
 	if caskOutput != "" {
 		lines := strings.Split(strings.TrimSpace(caskOutput), "\n")
-		sb.WriteString(fmt.Sprintf("\n  Homebrew casks: %d\n", len(lines)))
-		for i, line := range lines {
-			sb.WriteString(fmt.Sprintf("    %s\n", line))
-			if i >= 99 {
-				sb.WriteString(fmt.Sprintf("    ... and %d more\n", len(lines)-100))
-				break
+		var filtered []string
+		for _, line := range lines {
+			if pkgMatchesFilter(line, filter) {
+				filtered = append(filtered, line)
+			}
+		}
+		if filter == "" || len(filtered) > 0 {
+			sb.WriteString(fmt.Sprintf("\n  Homebrew casks: %d", len(lines)))
+			if filter != "" {
+				sb.WriteString(fmt.Sprintf(" (%d matching)", len(filtered)))
+			}
+			sb.WriteString("\n")
+			for i, line := range filtered {
+				sb.WriteString(fmt.Sprintf("    %s\n", line))
+				if i >= 99 {
+					sb.WriteString(fmt.Sprintf("    ... and %d more\n", len(filtered)-100))
+					break
+				}
 			}
 		}
 	}
@@ -209,24 +305,32 @@ func pkgListDarwin() string {
 	entries, err := os.ReadDir("/Applications")
 	if err == nil {
 		count := 0
+		matched := 0
 		for _, entry := range entries {
 			if strings.HasSuffix(entry.Name(), ".app") {
-				sb.WriteString(fmt.Sprintf("    %s\n", entry.Name()))
 				count++
+				if pkgMatchesFilter(entry.Name(), filter) {
+					sb.WriteString(fmt.Sprintf("    %s\n", entry.Name()))
+					matched++
+				}
 			}
 		}
-		sb.WriteString(fmt.Sprintf("  Total .app bundles: %d\n", count))
+		sb.WriteString(fmt.Sprintf("  Total .app bundles: %d", count))
+		if filter != "" {
+			sb.WriteString(fmt.Sprintf(" (%d matching)", matched))
+		}
+		sb.WriteString("\n")
 	}
 
 	return sb.String()
 }
 
-func pkgListWindows() string {
+func pkgListWindows(filter string) string {
 	var sb strings.Builder
 	sb.WriteString("[*] Installed Software (Windows)\n\n")
 
 	// Try native registry reading first (no subprocess spawned)
-	if native := pkgListWindowsNative(); native != "" {
+	if native := pkgListWindowsNative(filter); native != "" {
 		sb.WriteString(native)
 		return sb.String()
 	}
@@ -236,18 +340,30 @@ func pkgListWindows() string {
 	output := runQuietCommand("powershell", BuildPSArgs(psCmd, InternalPSOptions())...)
 	if output != "" {
 		lines := strings.Split(strings.TrimSpace(output), "\n")
-		sb.WriteString(fmt.Sprintf("  Installed programs: %d\n\n", len(lines)))
+		var filtered [][2]string
+		for _, line := range lines {
+			parts := strings.SplitN(strings.TrimSpace(line), "\t", 2)
+			name := strings.TrimSpace(line)
+			version := ""
+			if len(parts) == 2 {
+				name = parts[0]
+				version = parts[1]
+			}
+			if pkgMatchesFilter(name, filter) {
+				filtered = append(filtered, [2]string{name, version})
+			}
+		}
+		sb.WriteString(fmt.Sprintf("  Installed programs: %d", len(lines)))
+		if filter != "" {
+			sb.WriteString(fmt.Sprintf(" (%d matching)", len(filtered)))
+		}
+		sb.WriteString("\n\n")
 		sb.WriteString(fmt.Sprintf("  %-55s %s\n", "Name", "Version"))
 		sb.WriteString("  " + strings.Repeat("-", 70) + "\n")
-		for i, line := range lines {
-			parts := strings.SplitN(strings.TrimSpace(line), "\t", 2)
-			if len(parts) == 2 {
-				sb.WriteString(fmt.Sprintf("  %-55s %s\n", parts[0], parts[1]))
-			} else {
-				sb.WriteString(fmt.Sprintf("  %s\n", strings.TrimSpace(line)))
-			}
+		for i, pkg := range filtered {
+			sb.WriteString(fmt.Sprintf("  %-55s %s\n", pkg[0], pkg[1]))
 			if i >= 199 {
-				sb.WriteString(fmt.Sprintf("  ... and %d more (showing first 200)\n", len(lines)-200))
+				sb.WriteString(fmt.Sprintf("  ... and %d more (showing first 200)\n", len(filtered)-200))
 				break
 			}
 		}
