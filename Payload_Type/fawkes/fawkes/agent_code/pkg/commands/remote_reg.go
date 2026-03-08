@@ -47,11 +47,7 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 	var args remoteRegArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 	defer structs.ZeroString(&args.Password)
@@ -99,11 +95,7 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 	case "delete":
 		return remoteRegDelete(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: query, enum, set, delete", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: query, enum, set, delete", args.Action)
 	}
 }
 
@@ -233,7 +225,7 @@ func openRemoteSubKey(ctx context.Context, cli winreg.WinregClient, parentKey *w
 func remoteRegQuery(args remoteRegArgs) structs.CommandResult {
 	cli, hiveKey, ctx, cancel, cleanup, err := remoteRegConnect(args)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error: %v", err), Status: "error", Completed: true}
+		return errorf("Error: %v", err)
 	}
 	defer cancel()
 	defer cleanup()
@@ -241,18 +233,14 @@ func remoteRegQuery(args remoteRegArgs) structs.CommandResult {
 
 	subKey, err := openRemoteSubKey(ctx, cli, hiveKey, args.Path)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error opening key %s\\%s: %v", args.Hive, args.Path, err), Status: "error", Completed: true}
+		return errorf("Error opening key %s\\%s: %v", args.Hive, args.Path, err)
 	}
 	if args.Path != "" {
 		defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey}) }()
 	}
 
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: -name is required for query action (use enum to list all values)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -name is required for query action (use enum to list all values)")
 	}
 
 	// Query the value
@@ -266,24 +254,20 @@ func remoteRegQuery(args remoteRegArgs) structs.CommandResult {
 		Length:     bufSize,
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error querying value '%s': %v", args.Name, err), Status: "error", Completed: true}
+		return errorf("Error querying value '%s': %v", args.Name, err)
 	}
 	if resp.Return != 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("Error querying value '%s': error code 0x%08x", args.Name, resp.Return), Status: "error", Completed: true}
+		return errorf("Error querying value '%s': error code 0x%08x", args.Name, resp.Return)
 	}
 
 	output := formatRemoteRegValue(args.Name, resp.Type, resp.Data[:resp.Length])
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Remote Registry: %s\\%s\\%s on %s\n\n%s", args.Hive, args.Path, args.Name, args.Server, output),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Remote Registry: %s\\%s\\%s on %s\n\n%s", args.Hive, args.Path, args.Name, args.Server, output)
 }
 
 func remoteRegEnum(args remoteRegArgs) structs.CommandResult {
 	cli, hiveKey, ctx, cancel, cleanup, err := remoteRegConnect(args)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error: %v", err), Status: "error", Completed: true}
+		return errorf("Error: %v", err)
 	}
 	defer cancel()
 	defer cleanup()
@@ -291,7 +275,7 @@ func remoteRegEnum(args remoteRegArgs) structs.CommandResult {
 
 	subKey, err := openRemoteSubKey(ctx, cli, hiveKey, args.Path)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error opening key %s\\%s: %v", args.Hive, args.Path, err), Status: "error", Completed: true}
+		return errorf("Error opening key %s\\%s: %v", args.Hive, args.Path, err)
 	}
 	if args.Path != "" {
 		defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey}) }()
@@ -303,7 +287,7 @@ func remoteRegEnum(args remoteRegArgs) structs.CommandResult {
 		ClassIn:  &winreg.UnicodeString{Buffer: "", MaximumLength: 256},
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error querying key info: %v", err), Status: "error", Completed: true}
+		return errorf("Error querying key info: %v", err)
 	}
 
 	var output strings.Builder
@@ -402,16 +386,12 @@ func remoteRegEnum(args remoteRegArgs) structs.CommandResult {
 		output.WriteString("(empty key)")
 	}
 
-	return structs.CommandResult{
-		Output:    output.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output.String())
 }
 
 func remoteRegSet(args remoteRegArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{Output: "Error: -name is required for set action", Status: "error", Completed: true}
+		return errorResult("Error: -name is required for set action")
 	}
 	if args.RegType == "" {
 		args.RegType = "REG_SZ"
@@ -419,7 +399,7 @@ func remoteRegSet(args remoteRegArgs) structs.CommandResult {
 
 	cli, hiveKey, ctx, cancel, cleanup, err := remoteRegConnect(args)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error: %v", err), Status: "error", Completed: true}
+		return errorf("Error: %v", err)
 	}
 	defer cancel()
 	defer cleanup()
@@ -427,7 +407,7 @@ func remoteRegSet(args remoteRegArgs) structs.CommandResult {
 
 	subKey, err := openRemoteSubKey(ctx, cli, hiveKey, args.Path)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error opening key %s\\%s: %v", args.Hive, args.Path, err), Status: "error", Completed: true}
+		return errorf("Error opening key %s\\%s: %v", args.Hive, args.Path, err)
 	}
 	if args.Path != "" {
 		defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey}) }()
@@ -435,7 +415,7 @@ func remoteRegSet(args remoteRegArgs) structs.CommandResult {
 
 	valType, valData, err := encodeRemoteRegValue(args.Data, args.RegType)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error encoding value: %v", err), Status: "error", Completed: true}
+		return errorf("Error encoding value: %v", err)
 	}
 
 	resp, err := cli.BaseRegSetValue(ctx, &winreg.BaseRegSetValueRequest{
@@ -446,23 +426,19 @@ func remoteRegSet(args remoteRegArgs) structs.CommandResult {
 		DataLength: uint32(len(valData)),
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error setting value: %v", err), Status: "error", Completed: true}
+		return errorf("Error setting value: %v", err)
 	}
 	if resp.Return != 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("Error setting value: error code 0x%08x", resp.Return), Status: "error", Completed: true}
+		return errorf("Error setting value: error code 0x%08x", resp.Return)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully set %s\\%s\\%s = %s (%s) on %s", args.Hive, args.Path, args.Name, args.Data, args.RegType, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully set %s\\%s\\%s = %s (%s) on %s", args.Hive, args.Path, args.Name, args.Data, args.RegType, args.Server)
 }
 
 func remoteRegDelete(args remoteRegArgs) structs.CommandResult {
 	cli, hiveKey, ctx, cancel, cleanup, err := remoteRegConnect(args)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error: %v", err), Status: "error", Completed: true}
+		return errorf("Error: %v", err)
 	}
 	defer cancel()
 	defer cleanup()
@@ -470,7 +446,7 @@ func remoteRegDelete(args remoteRegArgs) structs.CommandResult {
 
 	subKey, err := openRemoteSubKey(ctx, cli, hiveKey, args.Path)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error opening key %s\\%s: %v", args.Hive, args.Path, err), Status: "error", Completed: true}
+		return errorf("Error opening key %s\\%s: %v", args.Hive, args.Path, err)
 	}
 	if args.Path != "" {
 		defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: subKey}) }()
@@ -483,21 +459,17 @@ func remoteRegDelete(args remoteRegArgs) structs.CommandResult {
 			ValueName: &winreg.UnicodeString{Buffer: args.Name},
 		})
 		if err != nil {
-			return structs.CommandResult{Output: fmt.Sprintf("Error deleting value '%s': %v", args.Name, err), Status: "error", Completed: true}
+			return errorf("Error deleting value '%s': %v", args.Name, err)
 		}
 		if resp.Return != 0 {
-			return structs.CommandResult{Output: fmt.Sprintf("Error deleting value '%s': error code 0x%08x", args.Name, resp.Return), Status: "error", Completed: true}
+			return errorf("Error deleting value '%s': error code 0x%08x", args.Name, resp.Return)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Successfully deleted value '%s' from %s\\%s on %s", args.Name, args.Hive, args.Path, args.Server),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Successfully deleted value '%s' from %s\\%s on %s", args.Name, args.Hive, args.Path, args.Server)
 	}
 
 	// Delete a key (must specify path)
 	if args.Path == "" {
-		return structs.CommandResult{Output: "Error: -path is required for key deletion", Status: "error", Completed: true}
+		return errorResult("Error: -path is required for key deletion")
 	}
 
 	// Split path to get parent and leaf key
@@ -518,7 +490,7 @@ func remoteRegDelete(args remoteRegArgs) structs.CommandResult {
 	if parentPath != "" {
 		parentKey, err = openRemoteSubKey(ctx, cli, hiveKey, parentPath)
 		if err != nil {
-			return structs.CommandResult{Output: fmt.Sprintf("Error opening parent key: %v", err), Status: "error", Completed: true}
+			return errorf("Error opening parent key: %v", err)
 		}
 		defer func() { _, _ = cli.BaseRegCloseKey(ctx, &winreg.BaseRegCloseKeyRequest{Key: parentKey}) }()
 	}
@@ -528,16 +500,12 @@ func remoteRegDelete(args remoteRegArgs) structs.CommandResult {
 		SubKey: &winreg.UnicodeString{Buffer: leafKey},
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error deleting key '%s': %v", leafKey, err), Status: "error", Completed: true}
+		return errorf("Error deleting key '%s': %v", leafKey, err)
 	}
 	if resp.Return != 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("Error deleting key '%s': error code 0x%08x (key must be empty)", leafKey, resp.Return), Status: "error", Completed: true}
+		return errorf("Error deleting key '%s': error code 0x%08x (key must be empty)", leafKey, resp.Return)
 	}
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully deleted key %s\\%s on %s", args.Hive, args.Path, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully deleted key %s\\%s on %s", args.Hive, args.Path, args.Server)
 }
 
 func remoteRegTypeName(t uint32) string {

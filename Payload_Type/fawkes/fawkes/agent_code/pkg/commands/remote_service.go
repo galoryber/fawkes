@@ -104,11 +104,7 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 	var args remoteServiceArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 	defer structs.ZeroString(&args.Password)
@@ -158,11 +154,7 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 	case "delete":
 		return remoteSvcDelete(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: list, query, create, start, stop, delete", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: list, query, create, start, stop, delete", args.Action)
 	}
 }
 
@@ -239,7 +231,7 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 func remoteSvcList(args remoteServiceArgs) structs.CommandResult {
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect|scManagerEnumerateService)
 	if err != nil {
-		return structs.CommandResult{Output: err.Error(), Status: "error", Completed: true}
+		return errorResult(err.Error())
 	}
 	defer cancel()
 	defer cleanup()
@@ -253,12 +245,12 @@ func remoteSvcList(args remoteServiceArgs) structs.CommandResult {
 		BufferLength:   0,
 	})
 	if err != nil && resp == nil {
-		return structs.CommandResult{Output: fmt.Sprintf("EnumServicesStatusW failed: %v", err), Status: "error", Completed: true}
+		return errorf("EnumServicesStatusW failed: %v", err)
 	}
 
 	needed := resp.BytesNeededLength
 	if needed == 0 {
-		return structs.CommandResult{Output: "No services found", Status: "success", Completed: true}
+		return successResult("No services found")
 	}
 
 	// Second call with proper buffer size
@@ -269,10 +261,10 @@ func remoteSvcList(args remoteServiceArgs) structs.CommandResult {
 		BufferLength:   needed,
 	})
 	if err != nil && resp == nil {
-		return structs.CommandResult{Output: fmt.Sprintf("EnumServicesStatusW failed: %v", err), Status: "error", Completed: true}
+		return errorf("EnumServicesStatusW failed: %v", err)
 	}
 	if resp.Return != 0 && resp.ServicesReturned == 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("EnumServicesStatusW error: 0x%08x", resp.Return), Status: "error", Completed: true}
+		return errorf("EnumServicesStatusW error: 0x%08x", resp.Return)
 	}
 
 	services := parseEnumServiceStatusW(resp.Buffer, resp.ServicesReturned)
@@ -290,17 +282,17 @@ func remoteSvcList(args remoteServiceArgs) structs.CommandResult {
 		))
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
+	return successResult(sb.String())
 }
 
 func remoteSvcQuery(args remoteServiceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{Output: "Error: -name is required for query action", Status: "error", Completed: true}
+		return errorResult("Error: -name is required for query action")
 	}
 
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect)
 	if err != nil {
-		return structs.CommandResult{Output: err.Error(), Status: "error", Completed: true}
+		return errorResult(err.Error())
 	}
 	defer cancel()
 	defer cleanup()
@@ -312,10 +304,10 @@ func remoteSvcQuery(args remoteServiceArgs) structs.CommandResult {
 		DesiredAccess:  svcQueryConfig | svcQueryStatus,
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Failed to open service %q: %v", args.Name, err), Status: "error", Completed: true}
+		return errorf("Failed to open service %q: %v", args.Name, err)
 	}
 	if svcResp.Return != 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("OpenServiceW error for %q: 0x%08x", args.Name, svcResp.Return), Status: "error", Completed: true}
+		return errorf("OpenServiceW error for %q: 0x%08x", args.Name, svcResp.Return)
 	}
 	defer func() { _, _ = cli.CloseService(ctx, &svcctl.CloseServiceRequest{ServiceObject: svcResp.Service}) }()
 
@@ -325,7 +317,7 @@ func remoteSvcQuery(args remoteServiceArgs) structs.CommandResult {
 		BufferLength: 8192,
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("QueryServiceConfigW failed: %v", err), Status: "error", Completed: true}
+		return errorf("QueryServiceConfigW failed: %v", err)
 	}
 
 	// Query status
@@ -333,7 +325,7 @@ func remoteSvcQuery(args remoteServiceArgs) structs.CommandResult {
 		Service: svcResp.Service,
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("QueryServiceStatus failed: %v", err), Status: "error", Completed: true}
+		return errorf("QueryServiceStatus failed: %v", err)
 	}
 
 	var sb strings.Builder
@@ -348,15 +340,15 @@ func remoteSvcQuery(args remoteServiceArgs) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("  State        : %s\n", remoteSvcStateName(statusResp.ServiceStatus.CurrentState)))
 
-	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
+	return successResult(sb.String())
 }
 
 func remoteSvcCreate(args remoteServiceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{Output: "Error: -name is required for create action", Status: "error", Completed: true}
+		return errorResult("Error: -name is required for create action")
 	}
 	if args.BinPath == "" {
-		return structs.CommandResult{Output: "Error: -binpath is required for create action", Status: "error", Completed: true}
+		return errorResult("Error: -binpath is required for create action")
 	}
 
 	startType := parseStartType(args.StartType)
@@ -367,7 +359,7 @@ func remoteSvcCreate(args remoteServiceArgs) structs.CommandResult {
 
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerCreateService)
 	if err != nil {
-		return structs.CommandResult{Output: err.Error(), Status: "error", Completed: true}
+		return errorResult(err.Error())
 	}
 	defer cancel()
 	defer cleanup()
@@ -384,28 +376,24 @@ func remoteSvcCreate(args remoteServiceArgs) structs.CommandResult {
 		BinaryPathName: args.BinPath,
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("CreateServiceW failed: %v", err), Status: "error", Completed: true}
+		return errorf("CreateServiceW failed: %v", err)
 	}
 	if createResp.Return != 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("CreateServiceW error: 0x%08x", createResp.Return), Status: "error", Completed: true}
+		return errorf("CreateServiceW error: 0x%08x", createResp.Return)
 	}
 	defer func() { _, _ = cli.CloseService(ctx, &svcctl.CloseServiceRequest{ServiceObject: createResp.Service}) }()
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Service %q created on %s\n  Binary: %s\n  Start Type: %s", args.Name, args.Server, args.BinPath, remoteSvcStartTypeName(startType)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Service %q created on %s\n  Binary: %s\n  Start Type: %s", args.Name, args.Server, args.BinPath, remoteSvcStartTypeName(startType))
 }
 
 func remoteSvcStart(args remoteServiceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{Output: "Error: -name is required for start action", Status: "error", Completed: true}
+		return errorResult("Error: -name is required for start action")
 	}
 
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect)
 	if err != nil {
-		return structs.CommandResult{Output: err.Error(), Status: "error", Completed: true}
+		return errorResult(err.Error())
 	}
 	defer cancel()
 	defer cleanup()
@@ -417,10 +405,10 @@ func remoteSvcStart(args remoteServiceArgs) structs.CommandResult {
 		DesiredAccess:  svcStart | svcQueryStatus,
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Failed to open service %q: %v", args.Name, err), Status: "error", Completed: true}
+		return errorf("Failed to open service %q: %v", args.Name, err)
 	}
 	if svcResp.Return != 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("OpenServiceW error: 0x%08x", svcResp.Return), Status: "error", Completed: true}
+		return errorf("OpenServiceW error: 0x%08x", svcResp.Return)
 	}
 	defer func() { _, _ = cli.CloseService(ctx, &svcctl.CloseServiceRequest{ServiceObject: svcResp.Service}) }()
 
@@ -428,27 +416,23 @@ func remoteSvcStart(args remoteServiceArgs) structs.CommandResult {
 		Service: svcResp.Service,
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("StartServiceW failed: %v", err), Status: "error", Completed: true}
+		return errorf("StartServiceW failed: %v", err)
 	}
 	if startResp.Return != 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("StartServiceW error: 0x%08x", startResp.Return), Status: "error", Completed: true}
+		return errorf("StartServiceW error: 0x%08x", startResp.Return)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Service %q started on %s", args.Name, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Service %q started on %s", args.Name, args.Server)
 }
 
 func remoteSvcStop(args remoteServiceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{Output: "Error: -name is required for stop action", Status: "error", Completed: true}
+		return errorResult("Error: -name is required for stop action")
 	}
 
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect)
 	if err != nil {
-		return structs.CommandResult{Output: err.Error(), Status: "error", Completed: true}
+		return errorResult(err.Error())
 	}
 	defer cancel()
 	defer cleanup()
@@ -460,10 +444,10 @@ func remoteSvcStop(args remoteServiceArgs) structs.CommandResult {
 		DesiredAccess:  svcStop | svcQueryStatus,
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Failed to open service %q: %v", args.Name, err), Status: "error", Completed: true}
+		return errorf("Failed to open service %q: %v", args.Name, err)
 	}
 	if svcResp.Return != 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("OpenServiceW error: 0x%08x", svcResp.Return), Status: "error", Completed: true}
+		return errorf("OpenServiceW error: 0x%08x", svcResp.Return)
 	}
 	defer func() { _, _ = cli.CloseService(ctx, &svcctl.CloseServiceRequest{ServiceObject: svcResp.Service}) }()
 
@@ -472,28 +456,24 @@ func remoteSvcStop(args remoteServiceArgs) structs.CommandResult {
 		Control: svcControlStop,
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("ControlService(STOP) failed: %v", err), Status: "error", Completed: true}
+		return errorf("ControlService(STOP) failed: %v", err)
 	}
 	if ctrlResp.Return != 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("ControlService(STOP) error: 0x%08x", ctrlResp.Return), Status: "error", Completed: true}
+		return errorf("ControlService(STOP) error: 0x%08x", ctrlResp.Return)
 	}
 
 	state := remoteSvcStateName(ctrlResp.ServiceStatus.CurrentState)
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Service %q stop requested on %s (current state: %s)", args.Name, args.Server, state),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Service %q stop requested on %s (current state: %s)", args.Name, args.Server, state)
 }
 
 func remoteSvcDelete(args remoteServiceArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{Output: "Error: -name is required for delete action", Status: "error", Completed: true}
+		return errorResult("Error: -name is required for delete action")
 	}
 
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect)
 	if err != nil {
-		return structs.CommandResult{Output: err.Error(), Status: "error", Completed: true}
+		return errorResult(err.Error())
 	}
 	defer cancel()
 	defer cleanup()
@@ -505,10 +485,10 @@ func remoteSvcDelete(args remoteServiceArgs) structs.CommandResult {
 		DesiredAccess:  svcDelete,
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Failed to open service %q: %v", args.Name, err), Status: "error", Completed: true}
+		return errorf("Failed to open service %q: %v", args.Name, err)
 	}
 	if svcResp.Return != 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("OpenServiceW error: 0x%08x", svcResp.Return), Status: "error", Completed: true}
+		return errorf("OpenServiceW error: 0x%08x", svcResp.Return)
 	}
 	defer func() { _, _ = cli.CloseService(ctx, &svcctl.CloseServiceRequest{ServiceObject: svcResp.Service}) }()
 
@@ -516,17 +496,13 @@ func remoteSvcDelete(args remoteServiceArgs) structs.CommandResult {
 		Service: svcResp.Service,
 	})
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("DeleteService failed: %v", err), Status: "error", Completed: true}
+		return errorf("DeleteService failed: %v", err)
 	}
 	if delResp.Return != 0 {
-		return structs.CommandResult{Output: fmt.Sprintf("DeleteService error: 0x%08x", delResp.Return), Status: "error", Completed: true}
+		return errorf("DeleteService error: 0x%08x", delResp.Return)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Service %q marked for deletion on %s", args.Name, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Service %q marked for deletion on %s", args.Name, args.Server)
 }
 
 // parsedService holds parsed enum results
