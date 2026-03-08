@@ -58,7 +58,7 @@ func TestEncryptRoundTrip(t *testing.T) {
 	cmd := &EncryptCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("encrypt failed: %s", result.Output)
 	}
 	if !strings.Contains(result.Output, "Encrypted:") {
@@ -93,7 +93,7 @@ func TestEncryptRoundTrip(t *testing.T) {
 	params, _ = json.Marshal(encryptArgs{Action: "decrypt", Path: encFile, Output: decFile, Key: key})
 	result = cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("decrypt failed: %s", result.Output)
 	}
 	if !strings.Contains(result.Output, "Decrypted:") {
@@ -131,7 +131,7 @@ func TestEncryptWithProvidedKey(t *testing.T) {
 	cmd := &EncryptCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("encrypt failed: %s", result.Output)
 	}
 	if !strings.Contains(result.Output, keyB64) {
@@ -142,7 +142,7 @@ func TestEncryptWithProvidedKey(t *testing.T) {
 	params, _ = json.Marshal(encryptArgs{Action: "decrypt", Path: encFile, Output: decFile, Key: keyB64})
 	result = cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("decrypt failed: %s", result.Output)
 	}
 
@@ -171,7 +171,7 @@ func TestEncryptWrongKey(t *testing.T) {
 	params, _ := json.Marshal(encryptArgs{Action: "encrypt", Path: inputFile})
 	cmd := &EncryptCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("encrypt failed: %s", result.Output)
 	}
 
@@ -251,7 +251,7 @@ func TestEncryptCustomOutput(t *testing.T) {
 	cmd := &EncryptCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("encrypt failed: %s", result.Output)
 	}
 	if !strings.Contains(result.Output, "custom_output.dat") {
@@ -272,7 +272,7 @@ func TestEncryptEmptyFile(t *testing.T) {
 	cmd := &EncryptCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("encrypt failed on empty file: %s", result.Output)
 	}
 
@@ -290,7 +290,7 @@ func TestEncryptEmptyFile(t *testing.T) {
 	params, _ = json.Marshal(encryptArgs{Action: "decrypt", Path: encFile, Output: decFile, Key: key})
 	result = cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("decrypt failed on empty file: %s", result.Output)
 	}
 
@@ -309,7 +309,7 @@ func TestDecryptAutoOutputPath(t *testing.T) {
 	params, _ := json.Marshal(encryptArgs{Action: "encrypt", Path: inputFile})
 	cmd := &EncryptCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("encrypt failed: %s", result.Output)
 	}
 
@@ -329,7 +329,7 @@ func TestDecryptAutoOutputPath(t *testing.T) {
 	os.Remove(inputFile)
 
 	result = cmd.Execute(structs.Task{Params: string(params)})
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("decrypt failed: %s", result.Output)
 	}
 

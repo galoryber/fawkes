@@ -118,7 +118,7 @@ func (c *ThreadHijackCommand) Execute(task structs.Task) structs.CommandResult {
 
 	return structs.CommandResult{
 		Output:    output,
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }

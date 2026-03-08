@@ -256,7 +256,7 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 
 	return structs.CommandResult{
 		Output:    output,
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }
@@ -355,7 +355,7 @@ func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, out
 
 	return structs.CommandResult{
 		Output:    output,
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }

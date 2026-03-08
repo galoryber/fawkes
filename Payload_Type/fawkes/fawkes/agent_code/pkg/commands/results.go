@@ -29,7 +29,7 @@ func errorf(format string, args ...interface{}) structs.CommandResult {
 func successResult(msg string) structs.CommandResult {
 	return structs.CommandResult{
 		Output:    msg,
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }
@@ -38,7 +38,7 @@ func successResult(msg string) structs.CommandResult {
 func successf(format string, args ...interface{}) structs.CommandResult {
 	return structs.CommandResult{
 		Output:    fmt.Sprintf(format, args...),
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }

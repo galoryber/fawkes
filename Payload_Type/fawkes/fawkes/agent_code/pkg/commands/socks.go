@@ -36,13 +36,13 @@ func (c *SocksCommand) Execute(task structs.Task) structs.CommandResult {
 	case "start":
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("[+] SOCKS5 proxy active on server port %d. Agent is processing proxy traffic.", params.Port),
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 	case "stop":
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("[+] SOCKS5 proxy on port %d stopped.", params.Port),
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 	default:

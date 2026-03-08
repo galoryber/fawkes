@@ -264,7 +264,7 @@ func (c *ThreadlessInjectCommand) Execute(task structs.Task) structs.CommandResu
 
 	return structs.CommandResult{
 		Output:    output,
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }

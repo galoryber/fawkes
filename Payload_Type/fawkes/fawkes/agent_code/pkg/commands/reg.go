@@ -137,7 +137,7 @@ func regActionRead(args regArgs) structs.CommandResult {
 		}
 		return structs.CommandResult{
 			Output:    output,
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 	}
@@ -152,7 +152,7 @@ func regActionRead(args regArgs) structs.CommandResult {
 	}
 	return structs.CommandResult{
 		Output:    output,
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }
@@ -206,7 +206,7 @@ func regActionWrite(args regArgs) structs.CommandResult {
 
 	return structs.CommandResult{
 		Output:    fmt.Sprintf("Successfully wrote %s\\%s\\%s = %s [%s]", args.Hive, args.Path, displayName, args.Data, args.RegType),
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }

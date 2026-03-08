@@ -30,7 +30,7 @@ func TestSocksStart(t *testing.T) {
 	}{Action: "start", Port: 1080})
 
 	result := cmd.Execute(structs.Task{Params: string(params)})
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Errorf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	if !result.Completed {
@@ -52,7 +52,7 @@ func TestSocksStop(t *testing.T) {
 	}{Action: "stop", Port: 1080})
 
 	result := cmd.Execute(structs.Task{Params: string(params)})
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Errorf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "stopped") {

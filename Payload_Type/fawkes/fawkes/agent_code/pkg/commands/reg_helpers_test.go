@@ -335,7 +335,7 @@ func TestRegCommandReadAction(t *testing.T) {
 	})
 	task := structs.Task{Params: string(params)}
 	result := cmd.Execute(task)
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Errorf("Expected completed, got: %s — %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "regcmd") {
@@ -361,7 +361,7 @@ func TestRegCommandWriteAction(t *testing.T) {
 	})
 	task := structs.Task{Params: string(params)}
 	result := cmd.Execute(task)
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Errorf("Expected completed, got: %s — %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "Successfully wrote") {

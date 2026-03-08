@@ -75,14 +75,14 @@ func (c *KillCommand) Execute(task structs.Task) structs.CommandResult {
 	if procName != "" {
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("Successfully terminated process %d (%s)", pid, procName),
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 	}
 
 	return structs.CommandResult{
 		Output:    fmt.Sprintf("Successfully terminated process %d", pid),
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }

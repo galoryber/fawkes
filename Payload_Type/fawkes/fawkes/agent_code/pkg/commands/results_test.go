@@ -36,7 +36,7 @@ func TestSuccessResult(t *testing.T) {
 	if r.Output != "operation complete" {
 		t.Errorf("expected 'operation complete', got %q", r.Output)
 	}
-	if r.Status != "completed" {
+	if r.Status != "success" {
 		t.Errorf("expected 'completed' status, got %q", r.Status)
 	}
 	if !r.Completed {
@@ -49,7 +49,7 @@ func TestSuccessf(t *testing.T) {
 	if r.Output != "deleted 5 files" {
 		t.Errorf("expected 'deleted 5 files', got %q", r.Output)
 	}
-	if r.Status != "completed" {
+	if r.Status != "success" {
 		t.Errorf("expected 'completed' status, got %q", r.Status)
 	}
 }

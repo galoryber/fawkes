@@ -277,7 +277,7 @@ func watchDirFormatResult(targetPath string, events []watchEvent, startTime time
 		sb.WriteString("\nNo changes detected.")
 		return structs.CommandResult{
 			Output:    sb.String(),
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 	}
@@ -310,7 +310,7 @@ func watchDirFormatResult(targetPath string, events []watchEvent, startTime time
 
 	return structs.CommandResult{
 		Output:    sb.String(),
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }

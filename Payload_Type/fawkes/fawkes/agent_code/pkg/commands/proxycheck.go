@@ -100,7 +100,7 @@ func (c *ProxyCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	return structs.CommandResult{
 		Output:    sb.String(),
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }

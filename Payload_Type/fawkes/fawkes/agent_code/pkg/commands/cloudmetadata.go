@@ -167,7 +167,7 @@ func cloudDetect(timeout time.Duration) structs.CommandResult {
 		sb.WriteString("    Tested: AWS IMDS, Azure IMDS, GCP metadata, DigitalOcean metadata\n")
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
 }
 
 // cloudAll dumps all available metadata from the detected/specified provider
@@ -178,7 +178,7 @@ func cloudAll(provider string, timeout time.Duration) structs.CommandResult {
 	if len(providers) == 0 {
 		return structs.CommandResult{
 			Output:    "[-] No cloud metadata service detected or specified provider not available",
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 	}
@@ -197,7 +197,7 @@ func cloudAll(provider string, timeout time.Duration) structs.CommandResult {
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
 }
 
 // cloudCreds extracts IAM credentials from the detected provider
@@ -209,7 +209,7 @@ func cloudCreds(provider string, timeout time.Duration) structs.CommandResult {
 	if len(providers) == 0 {
 		return structs.CommandResult{
 			Output:    "[-] No cloud metadata service detected or specified provider not available",
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 	}
@@ -227,7 +227,7 @@ func cloudCreds(provider string, timeout time.Duration) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
 }
 
 // cloudIdentity extracts instance identity information
@@ -239,7 +239,7 @@ func cloudIdentity(provider string, timeout time.Duration) structs.CommandResult
 	if len(providers) == 0 {
 		return structs.CommandResult{
 			Output:    "[-] No cloud metadata service detected",
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 	}
@@ -257,7 +257,7 @@ func cloudIdentity(provider string, timeout time.Duration) structs.CommandResult
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
 }
 
 // cloudUserdata extracts instance user-data (may contain secrets)
@@ -269,7 +269,7 @@ func cloudUserdata(provider string, timeout time.Duration) structs.CommandResult
 	if len(providers) == 0 {
 		return structs.CommandResult{
 			Output:    "[-] No cloud metadata service detected",
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 	}
@@ -287,7 +287,7 @@ func cloudUserdata(provider string, timeout time.Duration) structs.CommandResult
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
 }
 
 // cloudNetwork extracts network configuration
@@ -299,7 +299,7 @@ func cloudNetwork(provider string, timeout time.Duration) structs.CommandResult 
 	if len(providers) == 0 {
 		return structs.CommandResult{
 			Output:    "[-] No cloud metadata service detected",
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 	}
@@ -317,7 +317,7 @@ func cloudNetwork(provider string, timeout time.Duration) structs.CommandResult 
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
 }
 
 // --- Helper functions ---

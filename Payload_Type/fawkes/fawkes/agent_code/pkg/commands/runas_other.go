@@ -3,6 +3,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,9 +12,12 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 
 	"fawkes/pkg/structs"
 )
+
+const runasTimeout = 5 * time.Minute
 
 // RunasCommand executes a command as a different user on Linux/macOS.
 // As root: uses setuid/setgid via SysProcAttr.Credential.
@@ -102,7 +106,9 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 // runasRoot spawns a process as the target user using setuid/setgid.
 // Requires the agent to be running as root (UID 0).
 func runasRoot(command, username string, uid, gid uint32) structs.CommandResult {
-	cmd := exec.Command("/bin/sh", "-c", command)
+	ctx, cancel := context.WithTimeout(context.Background(), runasTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Credential: &syscall.Credential{
 			Uid: uid,
@@ -144,7 +150,9 @@ func runasRoot(command, username string, uid, gid uint32) structs.CommandResult 
 // The password is provided via stdin. This does not require root but
 // requires sudo to be installed and the current user to have sudo rights.
 func runasSudo(command, username, password string) structs.CommandResult {
-	cmd := exec.Command("sudo", "-S", "-u", username, "--", "/bin/sh", "-c", command)
+	ctx, cancel := context.WithTimeout(context.Background(), runasTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "sudo", "-S", "-u", username, "--", "/bin/sh", "-c", command)
 	cmd.Stdin = strings.NewReader(password + "\n")
 
 	output, err := cmd.CombinedOutput()

@@ -139,7 +139,7 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 
 	return structs.CommandResult{
 		Output:    output,
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }

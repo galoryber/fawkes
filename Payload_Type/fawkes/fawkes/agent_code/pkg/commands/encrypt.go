@@ -195,7 +195,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 
 	return structs.CommandResult{
 		Output:    sb.String(),
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }
@@ -299,7 +299,7 @@ func decryptFile(args encryptArgs) structs.CommandResult {
 
 	return structs.CommandResult{
 		Output:    sb.String(),
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }

@@ -378,7 +378,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 
 	return structs.CommandResult{
 		Output:    output.String(),
-		Status:    "completed",
+		Status:    "success",
 		Completed: true,
 	}
 }

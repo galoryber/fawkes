@@ -67,7 +67,7 @@ func (c *RpfwdCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("[+] Reverse port forward started — listening on 0.0.0.0:%d", port),
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 
@@ -81,7 +81,7 @@ func (c *RpfwdCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 		return structs.CommandResult{
 			Output:    fmt.Sprintf("[+] Reverse port forward on port %d stopped", port),
-			Status:    "completed",
+			Status:    "success",
 			Completed: true,
 		}
 

@@ -29,7 +29,7 @@ func TestSocksCommand(t *testing.T) {
 		params, _ := json.Marshal(map[string]interface{}{"action": "start", "port": 1080})
 		task := structs.Task{Params: string(params)}
 		result := cmd.Execute(task)
-		if result.Status != "completed" {
+		if result.Status != "success" {
 			t.Errorf("expected completed, got %q: %s", result.Status, result.Output)
 		}
 		if !strings.Contains(result.Output, "1080") {
@@ -44,7 +44,7 @@ func TestSocksCommand(t *testing.T) {
 		params, _ := json.Marshal(map[string]interface{}{"action": "stop", "port": 1080})
 		task := structs.Task{Params: string(params)}
 		result := cmd.Execute(task)
-		if result.Status != "completed" {
+		if result.Status != "success" {
 			t.Errorf("expected completed, got %q: %s", result.Status, result.Output)
 		}
 		if !strings.Contains(result.Output, "stopped") {
