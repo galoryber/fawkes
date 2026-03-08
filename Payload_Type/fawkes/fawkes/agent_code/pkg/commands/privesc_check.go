@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,11 +117,19 @@ func privescCheckSUID() structs.CommandResult {
 		"/bin", "/sbin", "/snap"}
 
 	for _, searchPath := range searchPaths {
-		_ = filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
+		_ = filepath.WalkDir(searchPath, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil // Skip permission errors
 			}
-			if info.IsDir() {
+			if d.IsDir() {
+				return nil
+			}
+			t := d.Type()
+			if t&os.ModeSetuid == 0 && t&os.ModeSetgid == 0 {
+				return nil
+			}
+			info, infoErr := d.Info()
+			if infoErr != nil {
 				return nil
 			}
 			mode := info.Mode()
@@ -194,8 +203,8 @@ func privescCheckCapabilities() structs.CommandResult {
 
 	var capEntries []string
 	for _, searchPath := range searchPaths {
-		_ = filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
+		_ = filepath.WalkDir(searchPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
 				return nil
 			}
 			capStr := readFileCaps(path)

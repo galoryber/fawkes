@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -137,11 +138,11 @@ func enumerateUnixSocketsScan() ([]string, error) {
 	seen := make(map[string]bool)
 
 	for _, dir := range dirs {
-		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}
-			if info.Mode()&os.ModeSocket != 0 {
+			if d.Type()&os.ModeSocket != 0 {
 				if !seen[path] {
 					seen[path] = true
 					sockets = append(sockets, path)
@@ -165,11 +166,11 @@ func enumerateFIFOs() []string {
 	seen := make(map[string]bool)
 
 	for _, dir := range dirs {
-		filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil
 			}
-			if info.Mode()&os.ModeNamedPipe != 0 {
+			if d.Type()&os.ModeNamedPipe != 0 {
 				if !seen[path] {
 					seen[path] = true
 					fifos = append(fifos, path)

@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -106,14 +107,20 @@ func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 	changed := 0
 	errors := 0
 
-	walkErr := filepath.Walk(path, func(p string, fi os.FileInfo, err error) error {
+	walkErr := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			errors++
 			sb.WriteString(fmt.Sprintf("[-] %s — %v\n", p, err))
 			return nil
 		}
 
-		before := fi.Mode()
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			errors++
+			sb.WriteString(fmt.Sprintf("[-] %s — %v\n", p, infoErr))
+			return nil
+		}
+		before := info.Mode()
 		if err := os.Chmod(p, mode); err != nil {
 			errors++
 			sb.WriteString(fmt.Sprintf("[-] %s — %v\n", p, err))

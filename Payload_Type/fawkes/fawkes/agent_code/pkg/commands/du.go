@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -85,14 +86,18 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 	basePath := filepath.Clean(args.Path)
 	baseDepth := strings.Count(basePath, string(filepath.Separator))
 
-	filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
+	filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() {
 			return fmt.Errorf("cancelled")
 		}
 		if err != nil {
 			return nil
 		}
-		if !info.IsDir() {
+		if !d.IsDir() {
+			info, infoErr := d.Info()
+			if infoErr != nil {
+				return nil
+			}
 			totalSize += info.Size()
 			fileCount++
 

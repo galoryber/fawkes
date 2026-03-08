@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,7 +84,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	var accessErrors []string
 	const maxResults = 500
 
-	_ = filepath.Walk(startPath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.WalkDir(startPath, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() {
 			return fmt.Errorf("cancelled")
 		}
@@ -95,28 +96,34 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		// Check depth limit
 		currentDepth := strings.Count(path, string(os.PathSeparator)) - startDepth
 		if currentDepth > params.MaxDepth {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
 		// Type filter
-		if params.Type == "f" && info.IsDir() {
+		if params.Type == "f" && d.IsDir() {
 			return nil
 		}
-		if params.Type == "d" && !info.IsDir() {
+		if params.Type == "d" && !d.IsDir() {
 			return nil
 		}
 
 		// Match filename against pattern
-		matched, _ := filepath.Match(params.Pattern, info.Name())
+		matched, _ := filepath.Match(params.Pattern, filepath.Base(path))
 		if !matched {
 			return nil
 		}
 
+		// Get full file info (Size/ModTime) only for entries that pass filters
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			return nil
+		}
+
 		// Size filters (only apply to files)
-		if !info.IsDir() {
+		if !d.IsDir() {
 			if params.MinSize > 0 && info.Size() < params.MinSize {
 				return nil
 			}
@@ -136,7 +143,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 
 		// Format output
 		sizeStr := ""
-		if !info.IsDir() {
+		if !d.IsDir() {
 			sizeStr = formatFileSize(info.Size())
 		} else {
 			sizeStr = "<DIR>"

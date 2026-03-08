@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -191,11 +192,11 @@ func hashDirectory(root string, args hashArgs) []hashResult {
 	var results []hashResult
 	count := 0
 
-	walkFn := func(path string, info os.FileInfo, err error) error {
+	walkFn := func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip errors
 		}
-		if info.IsDir() {
+		if d.IsDir() {
 			if !args.Recursive && path != root {
 				return filepath.SkipDir
 			}
@@ -214,13 +215,16 @@ func hashDirectory(root string, args hashArgs) []hashResult {
 		}
 
 		r := hashFile(path, args.Algorithm)
-		r.Size = info.Size()
+		info, infoErr := d.Info()
+		if infoErr == nil {
+			r.Size = info.Size()
+		}
 		results = append(results, r)
 		count++
 		return nil
 	}
 
-	_ = filepath.Walk(root, walkFn)
+	_ = filepath.WalkDir(root, walkFn)
 
 	// Sort by path
 	sort.Slice(results, func(i, j int) bool {

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -129,7 +130,7 @@ func compressCreate(params CompressParams) structs.CommandResult {
 
 	if srcInfo.IsDir() {
 		baseDir := srcPath
-		err = filepath.Walk(srcPath, func(path string, info os.FileInfo, walkErr error) error {
+		err = filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return nil // skip inaccessible files
 			}
@@ -143,23 +144,29 @@ func compressCreate(params CompressParams) structs.CommandResult {
 			relPath, _ := filepath.Rel(baseDir, path)
 			depth := len(strings.Split(relPath, string(os.PathSeparator)))
 			if depth > params.MaxDepth {
-				if info.IsDir() {
+				if d.IsDir() {
 					return filepath.SkipDir
 				}
 				return nil
 			}
 
 			// Skip directories (they're created implicitly)
-			if info.IsDir() {
+			if d.IsDir() {
 				return nil
 			}
 
 			// Apply pattern filter
 			if params.Pattern != "" {
-				matched, matchErr := filepath.Match(params.Pattern, info.Name())
+				matched, matchErr := filepath.Match(params.Pattern, filepath.Base(path))
 				if matchErr != nil || !matched {
 					return nil
 				}
+			}
+
+			// Get full file info for entries passing filters
+			info, infoErr := d.Info()
+			if infoErr != nil {
+				return nil
 			}
 
 			// Check file size

@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -138,7 +139,7 @@ func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 	changed := 0
 	errors := 0
 
-	walkErr := filepath.Walk(path, func(p string, fi os.FileInfo, err error) error {
+	walkErr := filepath.WalkDir(path, func(p string, _ fs.DirEntry, err error) error {
 		if err != nil {
 			errors++
 			sb.WriteString(fmt.Sprintf("[-] %s — %v\n", p, err))

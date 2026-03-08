@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -143,12 +144,17 @@ func secureDeleteDir(dirPath string, passes int) (int, []string) {
 	var count int
 	var errs []string
 
-	filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+	filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", path, err))
 			return nil
 		}
-		if info.IsDir() {
+		if d.IsDir() {
+			return nil
+		}
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", path, infoErr))
 			return nil
 		}
 		if err := secureDeleteFile(path, info.Size(), passes); err != nil {

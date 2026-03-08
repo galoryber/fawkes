@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -246,11 +247,15 @@ func triageConfigs(task structs.Task, args triageArgs) []triageResult {
 func triageCustom(task structs.Task, args triageArgs) []triageResult {
 	// Scan all files under the custom path
 	var results []triageResult
-	filepath.Walk(args.Path, func(path string, info os.FileInfo, err error) error {
+	filepath.WalkDir(args.Path, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() || len(results) >= args.MaxFiles {
 			return fmt.Errorf("limit")
 		}
-		if err != nil || info.IsDir() {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		info, infoErr := d.Info()
+		if infoErr != nil {
 			return nil
 		}
 		if info.Size() > args.MaxSize || info.Size() == 0 {
@@ -280,7 +285,7 @@ func triageScan(task structs.Task, paths []string, extensions []string, category
 			break
 		}
 		baseDepth := strings.Count(basePath, string(os.PathSeparator))
-		filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
+		filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
 			if task.DidStop() || len(results) >= args.MaxFiles {
 				return fmt.Errorf("limit")
 			}
@@ -288,16 +293,20 @@ func triageScan(task structs.Task, paths []string, extensions []string, category
 				return nil
 			}
 			depth := strings.Count(path, string(os.PathSeparator)) - baseDepth
-			if depth > maxDepth && info.IsDir() {
+			if depth > maxDepth && d.IsDir() {
 				return filepath.SkipDir
 			}
-			if info.IsDir() {
+			if d.IsDir() {
+				return nil
+			}
+			info, infoErr := d.Info()
+			if infoErr != nil {
 				return nil
 			}
 			if info.Size() > args.MaxSize || info.Size() == 0 {
 				return nil
 			}
-			ext := strings.ToLower(filepath.Ext(info.Name()))
+			ext := strings.ToLower(filepath.Ext(filepath.Base(path)))
 			if extMap[ext] {
 				results = append(results, triageResult{
 					Path:     path,
@@ -320,7 +329,7 @@ func triageScanPatterns(task structs.Task, paths []string, patterns []string, ca
 			break
 		}
 		baseDepth := strings.Count(basePath, string(os.PathSeparator))
-		filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
+		filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
 			if task.DidStop() || len(results) >= args.MaxFiles {
 				return fmt.Errorf("limit")
 			}
@@ -328,16 +337,20 @@ func triageScanPatterns(task structs.Task, paths []string, patterns []string, ca
 				return nil
 			}
 			depth := strings.Count(path, string(os.PathSeparator)) - baseDepth
-			if depth > maxDepth && info.IsDir() {
+			if depth > maxDepth && d.IsDir() {
 				return filepath.SkipDir
 			}
-			if info.IsDir() {
+			if d.IsDir() {
+				return nil
+			}
+			info, infoErr := d.Info()
+			if infoErr != nil {
 				return nil
 			}
 			if info.Size() > args.MaxSize || info.Size() == 0 {
 				return nil
 			}
-			name := info.Name()
+			name := filepath.Base(path)
 			for _, pattern := range patterns {
 				if matched, _ := filepath.Match(pattern, name); matched {
 					results = append(results, triageResult{

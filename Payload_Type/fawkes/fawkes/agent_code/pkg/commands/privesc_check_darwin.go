@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -156,8 +157,16 @@ func macPrivescCheckSUID() structs.CommandResult {
 		"/bin", "/sbin", "/opt/homebrew/bin", "/opt/local/bin"}
 
 	for _, searchPath := range searchPaths {
-		_ = filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
+		_ = filepath.WalkDir(searchPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			t := d.Type()
+			if t&os.ModeSetuid == 0 && t&os.ModeSetgid == 0 {
+				return nil
+			}
+			info, infoErr := d.Info()
+			if infoErr != nil {
 				return nil
 			}
 			mode := info.Mode()

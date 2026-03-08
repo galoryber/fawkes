@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -129,9 +130,9 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if info.IsDir() {
 		count := 0
-		err := filepath.Walk(args.Path, func(path string, fi os.FileInfo, err error) error {
-			if err != nil || fi.IsDir() {
-				if err != nil && !fi.IsDir() {
+		err := filepath.WalkDir(args.Path, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				if err != nil && !d.IsDir() {
 					return nil
 				}
 				if !args.Recursive && path != args.Path {
@@ -141,6 +142,10 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 			if count >= args.MaxFiles {
 				return filepath.SkipAll
+			}
+			fi, infoErr := d.Info()
+			if infoErr != nil {
+				return nil
 			}
 			result := identifyFile(path, fi)
 			sb.WriteString(result)

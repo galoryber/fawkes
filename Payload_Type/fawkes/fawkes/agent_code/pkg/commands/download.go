@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,7 +162,7 @@ func zipDirectory(w *os.File, dirPath string) (int, int64, error) {
 	var totalSize int64
 	const maxDepth = 10
 
-	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, walkErr error) error {
+	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil // skip inaccessible entries
 		}
@@ -174,19 +175,24 @@ func zipDirectory(w *os.File, dirPath string) (int, int64, error) {
 		// Check depth
 		depth := len(strings.Split(relPath, string(os.PathSeparator)))
 		if depth > maxDepth {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
 		// Skip directories (created implicitly by file paths)
-		if info.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
 
 		// Skip symlinks
-		if info.Mode()&os.ModeSymlink != 0 {
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+
+		info, infoErr := d.Info()
+		if infoErr != nil {
 			return nil
 		}
 
