@@ -154,16 +154,18 @@ func linuxUserInfo(args netUserArgs) structs.CommandResult {
 		}
 	}
 
-	// Get group membership
-	if out, err := execCmdTimeout("groups", args.Username); err == nil {
-		sb.WriteString(fmt.Sprintf("Groups:  %s", strings.TrimSpace(string(out))))
-	}
+	// Get group membership natively from /etc/group (no subprocess spawned)
+	groups := findUserGroups(args.Username, fields[3])
+	if len(groups) > 0 {
+		sb.WriteString(fmt.Sprintf("Groups:  %s", strings.Join(groups, ", ")))
 
-	// Check sudo access
-	if out, err := execCmdTimeout("groups", args.Username); err == nil {
-		groups := strings.ToLower(string(out))
-		if strings.Contains(groups, "sudo") || strings.Contains(groups, "wheel") || strings.Contains(groups, "root") {
-			sb.WriteString("\nPrivilege: Sudo/Admin access")
+		// Check sudo access
+		for _, g := range groups {
+			gl := strings.ToLower(g)
+			if gl == "sudo" || gl == "wheel" || gl == "root" {
+				sb.WriteString("\nPrivilege: Sudo/Admin access")
+				break
+			}
 		}
 	}
 
@@ -219,6 +221,55 @@ func linuxUserGroupRemove(args netUserArgs) structs.CommandResult {
 	}
 
 	return successf("Successfully removed '%s' from group '%s'", args.Username, args.Group)
+}
+
+// findUserGroups returns all group names a user belongs to by parsing /etc/group natively.
+// primaryGID is the user's primary group ID from /etc/passwd (used to include the primary group).
+// No subprocess spawned — opsec safe.
+func findUserGroups(username, primaryGID string) []string {
+	var groups []string
+	seen := make(map[string]bool)
+
+	f, err := os.Open("/etc/group")
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		// Format: group_name:password:GID:user_list
+		fields := strings.SplitN(line, ":", 4)
+		if len(fields) < 4 {
+			continue
+		}
+		groupName := fields[0]
+		gid := fields[2]
+		members := fields[3]
+
+		// Include if this is the user's primary group (by GID match)
+		if gid == primaryGID && !seen[groupName] {
+			groups = append(groups, groupName)
+			seen[groupName] = true
+		}
+
+		// Include if user is in the member list
+		for _, member := range strings.Split(members, ",") {
+			if strings.TrimSpace(member) == username {
+				if !seen[groupName] {
+					groups = append(groups, groupName)
+					seen[groupName] = true
+				}
+				break
+			}
+		}
+	}
+
+	return groups
 }
 
 // findPasswdEntry searches /etc/passwd for a username and returns the matching line.

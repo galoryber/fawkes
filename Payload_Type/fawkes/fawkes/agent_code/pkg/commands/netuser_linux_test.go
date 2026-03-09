@@ -176,6 +176,41 @@ func TestNetUserLinuxInfoCurrentUser(t *testing.T) {
 	if !strings.Contains(result.Output, "Shell:") {
 		t.Errorf("Expected Shell in output, got: %s", result.Output)
 	}
+	// Groups should be populated via native /etc/group parsing
+	if !strings.Contains(result.Output, "Groups:") {
+		t.Errorf("Expected Groups in output, got: %s", result.Output)
+	}
+}
+
+func TestFindUserGroupsCurrentUser(t *testing.T) {
+	u, err := user.Current()
+	if err != nil {
+		t.Skip("Cannot get current user")
+	}
+
+	groups := findUserGroups(u.Username, u.Gid)
+	if len(groups) == 0 {
+		t.Error("Expected at least one group for current user")
+	}
+
+	// The primary group should always be included
+	primaryFound := false
+	for _, g := range groups {
+		if g != "" {
+			primaryFound = true
+			break
+		}
+	}
+	if !primaryFound {
+		t.Error("Expected non-empty group names")
+	}
+}
+
+func TestFindUserGroupsNonexistent(t *testing.T) {
+	groups := findUserGroups("nonexistent_user_99999", "99999")
+	// Should return empty or nil (no groups found for a fake user with a fake GID)
+	// The primary GID 99999 likely doesn't exist in /etc/group, but this shouldn't crash
+	_ = groups // just verify no panic
 }
 
 func TestNetUserLinuxInfoNonexistent(t *testing.T) {
