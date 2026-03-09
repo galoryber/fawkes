@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"fmt"
 	"syscall"
 	"unsafe"
 
