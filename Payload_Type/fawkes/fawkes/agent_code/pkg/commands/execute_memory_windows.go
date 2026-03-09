@@ -139,7 +139,7 @@ func executeMemoryTempFile(binaryData []byte, arguments string, timeout int, pre
 
 	if _, err := tmpFile.Write(binaryData); err != nil {
 		tmpFile.Close()
-		os.Remove(tmpPath)
+		secureRemove(tmpPath)
 		return errorf("Error writing binary: %v", err)
 	}
 	tmpFile.Close()
@@ -159,7 +159,7 @@ func executeMemoryTempFile(binaryData []byte, arguments string, timeout int, pre
 	cmd.Stderr = &stderr
 
 	execErr := cmd.Run()
-	os.Remove(tmpPath)
+	secureRemove(tmpPath)
 
 	var sb strings.Builder
 	sb.WriteString(prefix)

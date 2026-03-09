@@ -364,11 +364,11 @@ func linuxLogsShred(args linuxLogsArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error opening %s: %v", args.File, err)
 	}
+	defer f.Close()
 
 	zeros := make([]byte, 4096)
 	for pass := 0; pass < 3; pass++ {
 		if _, err := f.Seek(0, 0); err != nil {
-			f.Close()
 			return errorf("Error seeking %s: %v", args.File, err)
 		}
 		remaining := size
@@ -383,9 +383,6 @@ func linuxLogsShred(args linuxLogsArgs) structs.CommandResult {
 			remaining -= writeSize
 		}
 		_ = f.Sync()
-	}
-	if err := f.Close(); err != nil {
-		return errorf("Error closing %s after overwrite: %v", args.File, err)
 	}
 
 	// Truncate to zero

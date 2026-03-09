@@ -75,21 +75,21 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	// Write the binary
 	if _, err := tmpFile.Write(binaryData); err != nil {
 		tmpFile.Close()
-		os.Remove(tmpPath)
+		secureRemove(tmpPath)
 		return errorf("Error writing binary: %v", err)
 	}
 	tmpFile.Close()
 
 	// Make executable
 	if err := os.Chmod(tmpPath, 0700); err != nil {
-		os.Remove(tmpPath)
+		secureRemove(tmpPath)
 		return errorf("Error setting executable permission: %v", err)
 	}
 
 	// Ad-hoc codesign — required on Apple Silicon (arm64) for unsigned binaries.
 	// Without signing, macOS kills the process immediately with SIGKILL.
 	if signOut, signErr := execCmdTimeout("/usr/bin/codesign", "-s", "-", tmpPath); signErr != nil {
-		os.Remove(tmpPath)
+		secureRemove(tmpPath)
 		return errorf("Error code signing binary: %v: %s", signErr, string(signOut))
 	}
 
@@ -113,7 +113,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	// because macOS validates code signatures at runtime — unlinking the file
 	// while the process runs causes SIGKILL on Apple Silicon.
 	execErr := cmd.Run()
-	os.Remove(tmpPath) // Clean up after execution completes
+	secureRemove(tmpPath) // Overwrite before removal — temp binary is a forensic artifact
 
 	// Build output from stdout + stderr
 	var sb strings.Builder

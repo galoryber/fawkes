@@ -79,8 +79,8 @@ func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult 
 	}
 	tmpPath := tmpFile.Name()
 
-	// Ensure cleanup of temp file
-	defer os.Remove(tmpPath)
+	// Ensure cleanup of temp file — overwrite before removal
+	defer secureRemove(tmpPath)
 
 	// Create zip archive of directory
 	fileCount, totalSize, zipErr := zipDirectory(tmpFile, dirPath)

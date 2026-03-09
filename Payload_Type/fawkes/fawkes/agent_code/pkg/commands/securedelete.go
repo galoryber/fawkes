@@ -119,6 +119,20 @@ func secureDeleteFile(path string, size int64, passes int) error {
 	return os.Remove(path)
 }
 
+// secureRemove overwrites a file with one pass of random data before removing it.
+// Use this instead of os.Remove() for temp files containing sensitive data (executables,
+// memory dumps, credential databases). Falls back to plain os.Remove if overwrite fails.
+func secureRemove(path string) {
+	info, err := os.Stat(path)
+	if err != nil {
+		os.Remove(path) // may already be gone
+		return
+	}
+	if err := secureDeleteFile(path, info.Size(), 1); err != nil {
+		os.Remove(path) // fallback to plain removal
+	}
+}
+
 // secureDeleteDir recursively securely deletes all files in a directory
 func secureDeleteDir(dirPath string, passes int) (int, []string) {
 	var count int

