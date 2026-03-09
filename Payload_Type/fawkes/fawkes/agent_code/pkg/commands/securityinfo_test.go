@@ -133,3 +133,33 @@ func TestSecurityInfoLinuxAppArmor(t *testing.T) {
 		t.Error("securityInfoLinux should include AppArmor check")
 	}
 }
+
+func TestSecurityInfoLinuxNewControls(t *testing.T) {
+	controls := securityInfoLinux()
+	names := make(map[string]bool)
+	for _, ctl := range controls {
+		names[ctl.Name] = true
+	}
+
+	// kptr_restrict should be present on modern Linux
+	if !names["kptr_restrict"] {
+		t.Log("kptr_restrict not detected (may not be available on this kernel)")
+	}
+
+	// dmesg_restrict should be present on modern Linux
+	if !names["dmesg_restrict"] {
+		t.Log("dmesg_restrict not detected (may not be available on this kernel)")
+	}
+
+	// LSM Stack should be present if /sys/kernel/security/lsm is readable
+	lsm := readFileQuiet("/sys/kernel/security/lsm")
+	if lsm != "" && !names["LSM Stack"] {
+		t.Error("LSM Stack should be reported when /sys/kernel/security/lsm is readable")
+	}
+
+	// Unprivileged BPF restriction should be present on modern kernels
+	bpf := readFileQuiet("/proc/sys/kernel/unprivileged_bpf_disabled")
+	if bpf != "" && !names["Unprivileged BPF"] {
+		t.Error("Unprivileged BPF should be reported when sysctl is readable")
+	}
+}

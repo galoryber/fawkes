@@ -185,6 +185,75 @@ func securityInfoLinux() []secControl {
 		}
 	}
 
+	// Active LSMs (Landlock, BPF LSM, TOMOYO, etc.)
+	lsm := readFileQuiet("/sys/kernel/security/lsm")
+	if lsm != "" {
+		modules := strings.TrimSpace(lsm)
+		controls = append(controls, secControl{"LSM Stack", "info", modules})
+		if strings.Contains(modules, "landlock") {
+			controls = append(controls, secControl{"Landlock", "enabled", "sandboxing LSM"})
+		}
+		if strings.Contains(modules, "bpf") {
+			controls = append(controls, secControl{"BPF LSM", "enabled", "eBPF security hooks"})
+		}
+		if strings.Contains(modules, "tomoyo") {
+			controls = append(controls, secControl{"TOMOYO", "enabled", "pathname-based MAC"})
+		}
+	}
+
+	// Unprivileged BPF restriction
+	bpfRestrict := readFileQuiet("/proc/sys/kernel/unprivileged_bpf_disabled")
+	if bpfRestrict != "" {
+		val := strings.TrimSpace(bpfRestrict)
+		switch val {
+		case "0":
+			controls = append(controls, secControl{"Unprivileged BPF", "disabled", "any user can load BPF programs"})
+		case "1":
+			controls = append(controls, secControl{"Unprivileged BPF", "enabled", "restricted to CAP_BPF"})
+		case "2":
+			controls = append(controls, secControl{"Unprivileged BPF", "enabled", "permanently restricted"})
+		}
+	}
+
+	// kptr_restrict — hides kernel pointers from non-root
+	kptr := readFileQuiet("/proc/sys/kernel/kptr_restrict")
+	if kptr != "" {
+		val := strings.TrimSpace(kptr)
+		switch val {
+		case "0":
+			controls = append(controls, secControl{"kptr_restrict", "disabled", "kernel pointers visible"})
+		case "1":
+			controls = append(controls, secControl{"kptr_restrict", "enabled", "hidden from non-CAP_SYSLOG"})
+		case "2":
+			controls = append(controls, secControl{"kptr_restrict", "enabled", "hidden from all users"})
+		}
+	}
+
+	// dmesg_restrict — limits dmesg to root
+	dmesg := readFileQuiet("/proc/sys/kernel/dmesg_restrict")
+	if dmesg != "" {
+		if strings.TrimSpace(dmesg) == "1" {
+			controls = append(controls, secControl{"dmesg_restrict", "enabled", "kernel logs require CAP_SYSLOG"})
+		} else {
+			controls = append(controls, secControl{"dmesg_restrict", "disabled", "kernel logs readable by all"})
+		}
+	}
+
+	// Disk encryption — check for dm-crypt/LUKS devices
+	if dmEntries, err := os.ReadDir("/dev/mapper"); err == nil {
+		var encrypted []string
+		for _, e := range dmEntries {
+			name := e.Name()
+			if name != "control" && !strings.HasPrefix(name, ".") {
+				encrypted = append(encrypted, name)
+			}
+		}
+		if len(encrypted) > 0 {
+			controls = append(controls, secControl{"dm-crypt/LUKS", "enabled",
+				fmt.Sprintf("%d device(s): %s", len(encrypted), strings.Join(encrypted, ", "))})
+		}
+	}
+
 	return controls
 }
 
