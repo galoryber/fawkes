@@ -147,14 +147,14 @@ func kdMarshalResult(entries []kdOutputEntry) structs.CommandResult {
 	if err != nil {
 		return errorf("Error marshaling output: %v", err)
 	}
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // kdFindUnconstrained finds accounts with TRUSTED_FOR_DELEGATION (excluding DCs)
 func kdFindUnconstrained(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	entries, err := kdUnconstrainedEntries(conn, baseDN)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error searching for unconstrained delegation: %v", err), Status: "error", Completed: true}
+		return errorf("Error searching for unconstrained delegation: %v", err)
 	}
 	return kdMarshalResult(entries)
 }
@@ -195,7 +195,7 @@ func kdUnconstrainedEntries(conn *ldap.Conn, baseDN string) ([]kdOutputEntry, er
 func kdFindConstrained(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	entries, err := kdConstrainedEntries(conn, baseDN)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error searching for constrained delegation: %v", err), Status: "error", Completed: true}
+		return errorf("Error searching for constrained delegation: %v", err)
 	}
 	return kdMarshalResult(entries)
 }
@@ -245,7 +245,7 @@ func kdConstrainedEntries(conn *ldap.Conn, baseDN string) ([]kdOutputEntry, erro
 func kdFindRBCD(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	entries, err := kdRBCDEntries(conn, baseDN)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error searching for RBCD: %v", err), Status: "error", Completed: true}
+		return errorf("Error searching for RBCD: %v", err)
 	}
 	return kdMarshalResult(entries)
 }

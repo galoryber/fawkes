@@ -13,5 +13,5 @@ func (c *SyscallsCommand) Description() string {
 }
 
 func (c *SyscallsCommand) Execute(task structs.Task) structs.CommandResult {
-	return structs.CommandResult{Output: "Indirect syscalls are only supported on Windows", Status: "error", Completed: true}
+	return errorResult("Indirect syscalls are only supported on Windows")
 }

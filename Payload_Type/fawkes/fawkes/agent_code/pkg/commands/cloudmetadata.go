@@ -69,7 +69,6 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 
 	timeout := time.Duration(args.Timeout) * time.Second
-	var sb strings.Builder
 
 	switch args.Action {
 	case "detect":
@@ -85,8 +84,7 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 	case "network":
 		return cloudNetwork(args.Provider, timeout)
 	default:
-		sb.WriteString("Error: unknown action. Available: detect, all, creds, identity, userdata, network")
-		return structs.CommandResult{Output: sb.String(), Status: "error", Completed: true}
+		return errorResult("Error: unknown action. Available: detect, all, creds, identity, userdata, network")
 	}
 }
 
@@ -163,7 +161,7 @@ func cloudDetect(timeout time.Duration) structs.CommandResult {
 		sb.WriteString("    Tested: AWS IMDS, Azure IMDS, GCP metadata, DigitalOcean metadata\n")
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
+	return successResult(sb.String())
 }
 
 // cloudAll dumps all available metadata from the detected/specified provider
@@ -189,7 +187,7 @@ func cloudAll(provider string, timeout time.Duration) structs.CommandResult {
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
+	return successResult(sb.String())
 }
 
 // cloudCreds extracts IAM credentials from the detected provider
@@ -215,7 +213,7 @@ func cloudCreds(provider string, timeout time.Duration) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
+	return successResult(sb.String())
 }
 
 // cloudIdentity extracts instance identity information
@@ -241,7 +239,7 @@ func cloudIdentity(provider string, timeout time.Duration) structs.CommandResult
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
+	return successResult(sb.String())
 }
 
 // cloudUserdata extracts instance user-data (may contain secrets)
@@ -267,7 +265,7 @@ func cloudUserdata(provider string, timeout time.Duration) structs.CommandResult
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
+	return successResult(sb.String())
 }
 
 // cloudNetwork extracts network configuration
@@ -293,7 +291,7 @@ func cloudNetwork(provider string, timeout time.Duration) structs.CommandResult 
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "success", Completed: true}
+	return successResult(sb.String())
 }
 
 // --- Helper functions ---
