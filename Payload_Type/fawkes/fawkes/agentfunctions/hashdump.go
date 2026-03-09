@@ -25,7 +25,12 @@ func init() {
 				Description:   "Output format (Linux only)",
 				DefaultValue:  "text",
 				Choices:       []string{"text", "json"},
-				Required:      false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
