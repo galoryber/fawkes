@@ -69,7 +69,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 				break
 			}
 			if strings.Contains(loadErr.Error(), "cannot find the file") {
-				time.Sleep(500 * time.Millisecond)
+				jitterSleep(300*time.Millisecond, 700*time.Millisecond)
 				continue
 			}
 			break
@@ -225,7 +225,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 			}
 			if strings.Contains(loadErr.Error(), "cannot find the file") {
 				output.WriteString(fmt.Sprintf("[*] CLR load attempt %d: transient error, retrying...\n", attempt))
-				time.Sleep(500 * time.Millisecond)
+				jitterSleep(300*time.Millisecond, 700*time.Millisecond)
 				continue
 			}
 			break

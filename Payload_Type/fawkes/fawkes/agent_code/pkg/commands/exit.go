@@ -34,7 +34,7 @@ func (c *ExitCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Exit in a goroutine after a short delay to allow the response to be posted
 	go func() {
-		time.Sleep(3 * time.Second)
+		jitterSleep(2*time.Second, 4*time.Second)
 		log.Printf("shutting down")
 		os.Exit(0)
 	}()
