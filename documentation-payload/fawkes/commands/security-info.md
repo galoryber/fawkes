@@ -27,7 +27,7 @@ security-info
 | SELinux | `/sys/fs/selinux/enforce` (native), `getenforce` fallback |
 | AppArmor | `/sys/module/apparmor/parameters/enabled` (native), `aa-status` fallback |
 | Seccomp | `/proc/self/status` Seccomp field |
-| Linux Audit (auditd) | `auditctl -s` |
+| Linux Audit (auditd) | `/proc/self/loginuid` + `/var/run/auditd.pid` (native) |
 | iptables | `iptables -L -n` rule count |
 | nftables | `nft list ruleset` |
 | ASLR | `/proc/sys/kernel/randomize_va_space` |
@@ -61,7 +61,7 @@ security-info
 
 ## OPSEC Considerations
 
-- Linux: Most checks use native sysfs/procfs reads (zero subprocess overhead). Falls back to `getenforce`, `aa-status`, `auditctl`, `iptables`, `nft` when needed — some require root for full results
+- Linux: Most checks use native sysfs/procfs reads (zero subprocess overhead). Falls back to `getenforce`, `aa-status` when native files are unavailable. `iptables`/`nft` require subprocess for firewall rules — some require root for full results
 - macOS: Runs `csrutil`, `spctl`, `fdesetup`, `system_profiler` — standard utility commands
 - Windows: Spawns `powershell.exe` for WMI/registry queries — may trigger command-line logging
 - Passive reconnaissance — does not modify any security settings

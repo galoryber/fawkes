@@ -116,12 +116,30 @@ func securityInfoLinux() []secControl {
 		}
 	}
 
-	// Audit daemon
-	auditStatus := runQuietCommand("auditctl", "-s")
-	if strings.Contains(auditStatus, "enabled") {
-		controls = append(controls, secControl{"Linux Audit (auditd)", "enabled", ""})
-	} else if auditStatus != "" {
-		controls = append(controls, secControl{"Linux Audit (auditd)", "info", strings.TrimSpace(auditStatus)})
+	// Audit daemon — native detection via procfs/pidfile (no subprocess)
+	auditDetected := false
+	// Check loginuid: a valid UID (not 4294967295) means audit tracking is active
+	loginuid := readFileQuiet("/proc/self/loginuid")
+	if loginuid != "" {
+		val := strings.TrimSpace(loginuid)
+		if val != "4294967295" && val != "" {
+			auditDetected = true
+		}
+	}
+	// Check if auditd PID file exists (standard location)
+	auditPid := readFileQuiet("/var/run/auditd.pid")
+	if auditPid == "" {
+		auditPid = readFileQuiet("/run/auditd.pid")
+	}
+	if auditPid != "" {
+		auditDetected = true
+	}
+	if auditDetected {
+		details := "kernel audit active"
+		if auditPid != "" {
+			details += ", auditd running (pid " + strings.TrimSpace(auditPid) + ")"
+		}
+		controls = append(controls, secControl{"Linux Audit (auditd)", "enabled", details})
 	} else {
 		controls = append(controls, secControl{"Linux Audit (auditd)", "not found", ""})
 	}
