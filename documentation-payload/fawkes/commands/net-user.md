@@ -7,9 +7,10 @@ hidden = false
 
 ## Summary
 
-Manage local user accounts and group membership via Win32 netapi32.dll API. Create users, delete users, change passwords, query account details, and manage local group membership — all without spawning `net.exe` (opsec-friendly).
+Manage local user accounts and group membership. Create users, delete users, change passwords, query account details, and manage local group membership.
 
-{{% notice info %}}Windows Only{{% /notice %}}
+- **Windows**: Uses Win32 netapi32.dll API — no subprocess creation, opsec-friendly
+- **Linux**: Uses `useradd`/`userdel`/`usermod`/`chpasswd`/`gpasswd` system commands
 
 ## Arguments
 
@@ -38,9 +39,13 @@ net-user -action info -username setup
 net-user -action password -username backdoor -password "N3w!P@ss"
 ```
 
-### Add user to Administrators group
+### Add user to a privileged group
 ```
+# Windows
 net-user -action group-add -username backdoor -group Administrators
+
+# Linux
+net-user -action group-add -username backdoor -group sudo
 ```
 
 ### Remove user from a group
@@ -55,7 +60,7 @@ net-user -action delete -username backdoor
 
 ## Example Output
 
-### Info
+### Info (Windows)
 ```
 User: setup
 Full Name: setup
@@ -69,8 +74,22 @@ Logon Server: \\WIN1123H2
 Primary Group ID: 513
 ```
 
+### Info (Linux)
+```
+User:    gary
+UID:     1000
+GID:     1000
+Comment: Gary Lobermier
+Home:    /home/gary
+Shell:   /bin/bash
+Login:   Enabled
+Password: Set
+Groups:  gary : gary adm sudo docker
+```
+
 ## How It Works
 
+### Windows
 All operations use **netapi32.dll Win32 API** — no subprocess creation, no `net.exe`:
 
 | Action | API Call |
@@ -82,15 +101,26 @@ All operations use **netapi32.dll Win32 API** — no subprocess creation, no `ne
 | group-add | `NetLocalGroupAddMembers` (level 3) |
 | group-remove | `NetLocalGroupDelMembers` (level 3) |
 
-New accounts are created with `UF_SCRIPT | UF_NORMAL_ACCOUNT | UF_DONT_EXPIRE_PASSWD` flags.
+### Linux
+Operations use standard system administration commands:
+
+| Action | Command |
+|--------|---------|
+| add | `useradd -m -s /bin/bash [-c comment] username` + `chpasswd` |
+| delete | `userdel -r username` |
+| info | Parse `/etc/passwd`, `/etc/shadow`, `groups` |
+| password | `chpasswd` (via stdin pipe) |
+| group-add | `usermod -aG group username` |
+| group-remove | `gpasswd -d username group` |
 
 ## Operational Notes
 
-- **Requires administrator privileges** for all write operations (add, delete, password, group-add, group-remove)
-- The `info` action works at any privilege level for local accounts
-- Account creation uses `USER_PRIV_USER` (standard user) — add to Administrators group separately for admin access
-- No process creation artifacts (no `net.exe`, `net1.exe`) — only API calls logged
-- Common error codes: 2221 (user not found), 2224 (user already exists), 2220 (group not found), 1378 (already a member), 5 (access denied)
+- **Requires root/administrator privileges** for write operations (add, delete, password, group-add, group-remove)
+- The `info` action parses `/etc/passwd` (all users) and `/etc/shadow` (root only) on Linux
+- **Linux `info`** also reports password status (set/locked/empty), group memberships, and sudo access
+- Linux creates users with `/bin/bash` shell and home directory by default
+- **Linux `delete`** removes the home directory with `-r` flag
+- Password credentials are zeroed from memory after use
 
 ## MITRE ATT&CK Mapping
 

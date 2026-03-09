@@ -4,21 +4,20 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
-	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "net-user",
-		Description:         "Manage local user accounts and group membership via Win32 API (T1136.001, T1098)",
+		Description:         "Manage local user accounts and group membership (T1136.001, T1098). Windows: Win32 NetUser API. Linux: useradd/userdel/usermod/chpasswd.",
 		HelpString:          "net-user -action <add|delete|info|password|group-add|group-remove> -username <name> [-password <pass>] [-group <group>]",
-		Version:             1,
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1136.001", "T1098"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -113,39 +112,40 @@ func init() {
 			username, _ := taskData.Args.GetStringArg("username")
 			display := fmt.Sprintf("%s user: %s", action, username)
 			response.DisplayParams = &display
+			isLinux := taskData.Callback.OS == "Linux"
 			switch action {
 			case "add":
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:          taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage: fmt.Sprintf("NetUserAdd(%s)", username),
-				})
+				if isLinux {
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("useradd -m -s /bin/bash %s", username))
+				} else {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("NetUserAdd(%s)", username))
+				}
 			case "delete":
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:          taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage: fmt.Sprintf("NetUserDel(%s)", username),
-				})
+				if isLinux {
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("userdel -r %s", username))
+				} else {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("NetUserDel(%s)", username))
+				}
 			case "password":
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:          taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage: fmt.Sprintf("NetUserSetInfo(%s, level=1003)", username),
-				})
+				if isLinux {
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("chpasswd (user: %s)", username))
+				} else {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("NetUserSetInfo(%s, level=1003)", username))
+				}
 			case "group-add":
 				group, _ := taskData.Args.GetStringArg("group")
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:          taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage: fmt.Sprintf("NetLocalGroupAddMembers(%s, %s)", group, username),
-				})
+				if isLinux {
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("usermod -aG %s %s", group, username))
+				} else {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("NetLocalGroupAddMembers(%s, %s)", group, username))
+				}
 			case "group-remove":
 				group, _ := taskData.Args.GetStringArg("group")
-				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:          taskData.Task.ID,
-					BaseArtifactType: "API Call",
-					ArtifactMessage: fmt.Sprintf("NetLocalGroupDelMembers(%s, %s)", group, username),
-				})
+				if isLinux {
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("gpasswd -d %s %s", username, group))
+				} else {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("NetLocalGroupDelMembers(%s, %s)", group, username))
+				}
 			}
 			return response
 		},

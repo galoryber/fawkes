@@ -24,15 +24,6 @@ func (c *NetUserCommand) Description() string {
 	return "Manage local user accounts and group membership via Win32 API"
 }
 
-type netUserArgs struct {
-	Action   string `json:"action"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Group    string `json:"group"`
-	FullName string `json:"fullname"`
-	Comment  string `json:"comment"`
-}
-
 var (
 	netapi32NU              = windows.NewLazySystemDLL("netapi32.dll")
 	procNetUserAdd          = netapi32NU.NewProc("NetUserAdd")
