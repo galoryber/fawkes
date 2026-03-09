@@ -25,7 +25,7 @@ func (c *SyscallsCommand) Execute(task structs.Task) structs.CommandResult {
 	var params syscallsParams
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-			return errorResult(fmt.Sprintf("Error parsing parameters: %v", err))
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 	if params.Action == "" {
@@ -40,7 +40,7 @@ func (c *SyscallsCommand) Execute(task structs.Task) structs.CommandResult {
 	case "init":
 		return c.initSyscalls()
 	default:
-		return errorResult(fmt.Sprintf("Unknown action: %s. Use: status, list, init", params.Action))
+		return errorf("Unknown action: %s. Use: status, list, init", params.Action)
 	}
 }
 
@@ -117,7 +117,7 @@ func (c *SyscallsCommand) initSyscalls() structs.CommandResult {
 	}
 
 	if err := InitIndirectSyscalls(); err != nil {
-		return errorResult(fmt.Sprintf("Error initializing indirect syscalls: %v", err))
+		return errorf("Error initializing indirect syscalls: %v", err)
 	}
 
 	entries := GetResolvedSyscalls()

@@ -47,7 +47,7 @@ var (
 func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
 	var params argueParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorResult(fmt.Sprintf("Error parsing parameters: %v", err))
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.Command == "" {
@@ -63,9 +63,9 @@ func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
 	output, err := executeSpoofedProcess(params.Command, params.Spoof)
 	if err != nil {
 		if output != "" {
-			return errorResult(fmt.Sprintf("%s\nError: %v", output, err))
+			return errorf("%s\nError: %v", output, err)
 		}
-		return errorResult(fmt.Sprintf("Error: %v", err))
+		return errorf("Error: %v", err)
 	}
 
 	trimmed := strings.TrimSpace(output)
