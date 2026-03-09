@@ -129,7 +129,7 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 	} else {
 		sb.WriteString("  Started.\n")
 		// Wait briefly for command to execute
-		time.Sleep(2 * time.Second)
+		jitterSleep(1500*time.Millisecond, 3*time.Second)
 	}
 
 	// Step 4: Cleanup — delete the service

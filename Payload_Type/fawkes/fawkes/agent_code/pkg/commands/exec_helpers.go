@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"math/rand"
 	"os/exec"
 	"time"
 )
@@ -27,4 +28,15 @@ func execCmdTimeoutOutput(name string, args ...string) ([]byte, error) {
 func execCmdCtx(name string, args ...string) (*exec.Cmd, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultExecTimeout)
 	return exec.CommandContext(ctx, name, args...), cancel
+}
+
+// jitterSleep sleeps for a randomized duration between min and max (inclusive).
+// Avoids fixed timing signatures that EDR behavioral analysis can detect.
+func jitterSleep(min, max time.Duration) {
+	if max <= min {
+		time.Sleep(min)
+		return
+	}
+	jitter := time.Duration(rand.Int63n(int64(max - min)))
+	time.Sleep(min + jitter)
 }

