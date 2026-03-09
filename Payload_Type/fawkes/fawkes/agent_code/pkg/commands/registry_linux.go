@@ -35,4 +35,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&NetUserCommand{})
 	RegisterCommand(&HashdumpCommand{})
 	RegisterCommand(&LogonSessionsCommand{})
+	RegisterCommand(&FirewallCommand{})
 }

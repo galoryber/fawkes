@@ -7,9 +7,9 @@ hidden = false
 
 ## Summary
 
-Manage firewall rules and check firewall status. Windows uses `HNetCfg.FwPolicy2` COM API (no subprocess spawning). macOS queries Application Layer Firewall (ALF) and Packet Filter (pf).
+Manage firewall rules and check firewall status. Windows uses `HNetCfg.FwPolicy2` COM API (no subprocess spawning). macOS queries Application Layer Firewall (ALF) and Packet Filter (pf). Linux auto-detects nftables or iptables and supports listing, adding, and deleting rules.
 
-{{% notice info %}}Windows and macOS{{% /notice %}}
+{{% notice info %}}Windows, macOS, and Linux{{% /notice %}}
 
 ## Arguments
 
@@ -134,7 +134,23 @@ Root access is required for enable/disable/add/delete and full pf rule listing. 
 - The `-name` parameter is not used on macOS — use `-program` with the application path instead
 
 ### Linux
-- Use the `iptables` command instead, which provides full iptables/nftables/ufw management
+- **Auto-detection**: Prefers nftables (`nft`) if available, falls back to iptables
+- **status**: Shows chain policies and rule counts. Detects UFW if present.
+- **list**: Lists all rules from all tables (filter/nat/mangle/raw). Supports `-filter` substring matching.
+- **add**: Adds a rule to INPUT or OUTPUT chain. `-name` sets a comment for later identification. `-protocol` and `-port` supported. `-rule_action` maps to ACCEPT/DROP.
+- **delete**: Mirrors the add rule spec with `-D` (iptables) or searches by comment handle (nftables)
+- **enable/disable**: Not supported — Linux has no global firewall toggle. Returns informative guidance.
+- Root access generally required for all operations
+- Note: The separate `iptables` command also exists for lower-level iptables/nftables management
+
+### Linux Examples
+```
+firewall -action status
+firewall -action list
+firewall -action list -filter "ssh"
+firewall -action add -name "Allow HTTPS" -direction in -protocol tcp -port 443 -rule_action allow
+firewall -action delete -name "Allow HTTPS" -direction in -protocol tcp -port 443 -rule_action allow
+```
 
 ## MITRE ATT&CK Mapping
 
