@@ -56,11 +56,7 @@ func envScanSingleProcess(pid int, filter string) structs.CommandResult {
 	}
 
 	output := formatEnvScanResults(results, 1, 1)
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // applyEnvFilter filters results by variable name pattern.

@@ -177,11 +177,7 @@ func launchAgentList(args launchAgentArgs) structs.CommandResult {
 	lines = append(lines, "--- LaunchDaemons: /Library/LaunchDaemons ---")
 	lines = append(lines, listPlistDir("/Library/LaunchDaemons")...)
 
-	return structs.CommandResult{
-		Output:    strings.Join(lines, "\n"),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(strings.Join(lines, "\n"))
 }
 
 // listPlistDir reads a directory and returns formatted plist entries

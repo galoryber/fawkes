@@ -144,11 +144,7 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error marshaling output: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 // findAdminCheckSMB tests admin access by connecting to the C$ admin share.

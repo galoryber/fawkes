@@ -103,9 +103,5 @@ func (c *UniqCommand) Execute(task structs.Task) structs.CommandResult {
 		outputCount++
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

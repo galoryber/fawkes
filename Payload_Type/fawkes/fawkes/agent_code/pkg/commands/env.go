@@ -64,11 +64,7 @@ func envList(filter string) structs.CommandResult {
 	sort.Strings(envVars)
 
 	if filter == "" {
-		return structs.CommandResult{
-			Output:    strings.Join(envVars, "\n"),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(strings.Join(envVars, "\n"))
 	}
 
 	upperFilter := strings.ToUpper(filter)
@@ -87,11 +83,7 @@ func envList(filter string) structs.CommandResult {
 		return successf("No environment variables matching '%s'", filter)
 	}
 
-	return structs.CommandResult{
-		Output:    strings.Join(matched, "\n"),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(strings.Join(matched, "\n"))
 }
 
 func envGet(name string) structs.CommandResult {

@@ -79,11 +79,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		if bofOutput != "" {
 			output += fmt.Sprintf("\n\nBOF Output:\n%s", bofOutput)
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output)
 	}
 
 	// Clean up the output (remove trailing newlines)
@@ -94,9 +90,5 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		bofOutput = "[+] BOF executed successfully (no output)"
 	}
 
-	return structs.CommandResult{
-		Output:    bofOutput,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(bofOutput)
 }

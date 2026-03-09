@@ -27,9 +27,5 @@ func (c *PwdCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error getting current directory: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    currentDir,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(currentDir)
 }

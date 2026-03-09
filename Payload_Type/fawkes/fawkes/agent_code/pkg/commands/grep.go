@@ -198,11 +198,7 @@ func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n[Results truncated at %d matches]", args.MaxResults))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func searchFile(path string, re *regexp.Regexp, contextLines int, maxResults int) []grepMatch {

@@ -113,11 +113,7 @@ func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error marshalling connections: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 func protoName(connType uint32) string {

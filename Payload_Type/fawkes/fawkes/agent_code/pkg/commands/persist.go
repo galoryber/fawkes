@@ -325,11 +325,7 @@ func listPersistence(args persistArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    strings.Join(lines, "\n"),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(strings.Join(lines, "\n"))
 }
 
 // defaultCLSID is MruPidlList — loaded by explorer.exe at shell startup, highly reliable.
@@ -450,11 +446,7 @@ func persistScreensaver(args persistArgs) structs.CommandResult {
 		// Disable screensaver
 		_ = key.SetStringValue("ScreenSaveActive", "0")
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Removed screensaver persistence (shredded):\n  Shredded SCRNSAVE.EXE value\n  Disabled screensaver (ScreenSaveActive = 0)"),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Removed screensaver persistence (shredded):\n  Shredded SCRNSAVE.EXE value\n  Disabled screensaver (ScreenSaveActive = 0)")
 
 	default:
 		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)

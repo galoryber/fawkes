@@ -147,11 +147,7 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(identifyFile(args.Path, info))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func identifyFile(path string, info os.FileInfo) string {

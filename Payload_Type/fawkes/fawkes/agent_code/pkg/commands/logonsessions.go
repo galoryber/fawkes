@@ -227,11 +227,7 @@ func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 		return errorf("Error marshaling output: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 type userEntry struct {
@@ -306,9 +302,5 @@ func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 		return errorf("Error marshaling output: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }

@@ -44,11 +44,7 @@ func (c *PkgListCommand) Execute(task structs.Task) structs.CommandResult {
 		output = fmt.Sprintf("Unsupported platform: %s", runtime.GOOS)
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // pkgMatchesFilter returns true if the package name matches the filter (case-insensitive substring).

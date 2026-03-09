@@ -182,11 +182,7 @@ func usnQuery(volume string) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("  Alloc Delta:      %s\n", formatBytes(journal.AllocationDelta)))
 	sb.WriteString(fmt.Sprintf("  Record Range:     %s (approx)\n", formatBytes(uint64(recordRange))))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func usnRecent(volume string) structs.CommandResult {
@@ -318,11 +314,7 @@ func usnRecent(volume string) structs.CommandResult {
 		))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func usnDelete(volume string) structs.CommandResult {

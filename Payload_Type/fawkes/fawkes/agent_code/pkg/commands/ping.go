@@ -68,11 +68,7 @@ func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Cap at 65536 hosts to prevent memory issues
 	if len(targets) > 65536 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: too many hosts (%d). Max 65536. Use a smaller range.", len(targets)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: too many hosts (%d). Max 65536. Use a smaller range.", len(targets))
 	}
 
 	timeout := time.Duration(args.Timeout) * time.Millisecond
@@ -118,11 +114,7 @@ func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\n[*] Results: %d/%d hosts alive (port %d open)", alive, len(targets), args.Port))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func tcpPing(host string, port int, timeout time.Duration) pingResult {

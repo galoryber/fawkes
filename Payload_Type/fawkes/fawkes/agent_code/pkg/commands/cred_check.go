@@ -71,11 +71,7 @@ func (c *CredCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: no valid hosts parsed")
 	}
 	if len(hosts) > 256 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: too many hosts (%d). Maximum 256.", len(hosts)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: too many hosts (%d). Maximum 256.", len(hosts))
 	}
 
 	// Test each host concurrently
@@ -139,11 +135,7 @@ func (c *CredCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("--- %d host(s) checked, %d successful auth(s) ---\n", len(hosts), successCount))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func credCheckHost(task structs.Task, host string, args credCheckArgs, timeout time.Duration) []credCheckResult {

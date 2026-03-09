@@ -107,11 +107,7 @@ func (c *ShareHuntCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: no valid hosts parsed")
 	}
 	if len(hosts) > 256 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: too many hosts (%d). Maximum 256.", len(hosts)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: too many hosts (%d). Maximum 256.", len(hosts))
 	}
 
 	// Build extension set for matching
@@ -193,11 +189,7 @@ func (c *ShareHuntCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("--- %d host(s) had errors ---\n", len(hostErrors)))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func shareHuntHost(task structs.Task, host string, args shareHuntArgs, matchExts map[string]string, maxResults int) ([]shareHuntResult, error) {

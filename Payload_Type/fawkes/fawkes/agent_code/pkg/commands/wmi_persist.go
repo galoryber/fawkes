@@ -333,11 +333,7 @@ func wmiPersistList(args wmiPersistArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // wmiQuerySubscription runs a WQL query on root\subscription and returns results as maps

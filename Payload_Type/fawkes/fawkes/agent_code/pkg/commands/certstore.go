@@ -165,11 +165,7 @@ func certstoreList(store, filter string) structs.CommandResult {
 		return errorf("JSON marshal error: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(out),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(out))
 }
 
 func certstoreFind(store, filter string) structs.CommandResult {

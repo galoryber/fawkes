@@ -236,11 +236,7 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	if len(trusts) == 0 {
 		topLevel := trustTopLevelOutput{Forest: forestInfo}
 		data, _ := json.Marshal(topLevel)
-		return structs.CommandResult{
-			Output:    string(data),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(string(data))
 	}
 
 	// Build JSON entries with category, transitivity, and risk annotations
@@ -278,11 +274,7 @@ func trustEnumerate(conn *ldap.Conn, baseDN string) structs.CommandResult {
 		return errorf("Error marshaling output: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 // trustCategory determines the trust category based on attributes and type.

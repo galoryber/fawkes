@@ -229,11 +229,7 @@ func ldapShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 		if strings.Contains(err.Error(), "unwilling") || strings.Contains(err.Error(), "Unwilling") {
 			errMsg += "\n[!] DC may not support Key Trust. Requires Windows Server 2016+ domain functional level."
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 
 	// Encode certificate and private key as PEM

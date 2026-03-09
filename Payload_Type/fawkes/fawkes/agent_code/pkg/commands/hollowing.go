@@ -64,18 +64,10 @@ func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
 
 	output, err := performHollowing(shellcode, params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("\n[!] Hollowing failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("\n[!] Hollowing failed: %v", err))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func performHollowing(shellcode []byte, params hollowParams) (string, error) {

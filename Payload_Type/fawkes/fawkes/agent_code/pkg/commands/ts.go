@@ -270,11 +270,7 @@ func (c *TsCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error listing threads: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // getThreadInfo enumerates threads using NtQuerySystemInformation

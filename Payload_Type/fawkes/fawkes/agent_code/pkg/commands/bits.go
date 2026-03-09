@@ -270,11 +270,7 @@ func bitsList() structs.CommandResult {
 		return errorf("Error marshaling results: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 func bitsCreate(args bitsArgs) structs.CommandResult {
@@ -488,11 +484,7 @@ func bitsCancel(args bitsArgs) structs.CommandResult {
 // bitsJobAction performs a vtable action (suspend/resume/complete) on a BITS job by name.
 func bitsJobAction(args bitsArgs, vtableIndex int, actionLabel string) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: name is required for %s action (use 'list' to find job names)", strings.ToLower(actionLabel)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: name is required for %s action (use 'list' to find job names)", strings.ToLower(actionLabel))
 	}
 
 	mgr, cleanup, err := bitsConnect()

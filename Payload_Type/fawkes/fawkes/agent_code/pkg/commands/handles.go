@@ -85,11 +85,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(pidEntries) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No handles found for PID %d (0 of %d system handles)", args.PID, len(entries)),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No handles found for PID %d (0 of %d system handles)", args.PID, len(entries))
 	}
 
 	// Open target process to duplicate handles from
@@ -327,11 +323,7 @@ func formatHandleOutput(handles []handleInfo, typeCounts map[string]int, args ha
 		return errorf("Error marshalling handle data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 func formatHandleSummary(entries []systemHandleEntry, args handlesArgs, sysTotal int, _ error) structs.CommandResult {
@@ -372,9 +364,5 @@ func formatHandleSummary(entries []systemHandleEntry, args handlesArgs, sysTotal
 		return errorf("Error marshalling handle data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }

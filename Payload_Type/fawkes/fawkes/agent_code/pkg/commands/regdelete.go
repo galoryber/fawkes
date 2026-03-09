@@ -47,11 +47,7 @@ func (c *RegDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	hiveKey, err := parseHive(args.Hive)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    err.Error(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(err.Error())
 	}
 
 	if args.Name != "" {
@@ -106,19 +102,11 @@ func regDeleteKeyRecursive(hiveKey registry.Key, args regDeleteArgs) structs.Com
 	count, err := deleteSubKeysRecursive(hiveKey, args.Path, &sb)
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("Error during recursive delete: %v\n", err))
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String())
 	}
 
 	sb.WriteString(fmt.Sprintf("\nDeleted %s\\%s (%d keys removed)", args.Hive, args.Path, count))
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func deleteSubKeysRecursive(hiveKey registry.Key, path string, sb *strings.Builder) (int, error) {

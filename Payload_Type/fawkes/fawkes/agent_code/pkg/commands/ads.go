@@ -123,11 +123,7 @@ func adsRead(args adsArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // WIN32_FIND_STREAM_DATA structure
@@ -190,11 +186,7 @@ func adsListFile(filePath string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n%d stream(s) total, %d alternate\n", len(streams), altCount))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func adsListDir(dirPath string) structs.CommandResult {
@@ -243,11 +235,7 @@ func adsListDir(dirPath string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n%d file(s) with %d alternate stream(s)\n", filesWithADS, totalADS))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 type adsStreamInfo struct {

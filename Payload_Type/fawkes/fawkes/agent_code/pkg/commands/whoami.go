@@ -65,9 +65,5 @@ func (c *WhoamiCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    strings.Join(lines, "\n"),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(strings.Join(lines, "\n"))
 }

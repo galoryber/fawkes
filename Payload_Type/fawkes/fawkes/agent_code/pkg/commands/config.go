@@ -118,11 +118,7 @@ func configShow(agent *structs.Agent) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  %-22s disabled\n", "Default PPID:"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
@@ -161,21 +157,13 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 		if ts, err := strconv.ParseInt(value, 10, 64); err == nil && ts > 0 {
 			agent.KillDate = ts
 			t := time.Unix(ts, 0)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("[+] Kill date set: %s (unix: %d)", t.Format("2006-01-02 15:04:05"), ts),
-				Status:    "success",
-				Completed: true,
-			}
+			return successf("[+] Kill date set: %s (unix: %d)", t.Format("2006-01-02 15:04:05"), ts)
 		}
 		// Try date format
 		for _, layout := range []string{"2006-01-02", "2006-01-02 15:04:05", "01/02/2006"} {
 			if t, err := time.ParseInLocation(layout, value, time.Local); err == nil {
 				agent.KillDate = t.Unix()
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("[+] Kill date set: %s (unix: %d)", t.Format("2006-01-02 15:04:05"), agent.KillDate),
-					Status:    "success",
-					Completed: true,
-				}
+				return successf("[+] Kill date set: %s (unix: %d)", t.Format("2006-01-02 15:04:05"), agent.KillDate)
 			}
 		}
 		return errorf("Error: invalid killdate '%s'. Use unix timestamp, YYYY-MM-DD, or 'disable'.", value)
@@ -248,10 +236,6 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 		return successf("[+] Default PPID set: %d (run/powershell child processes will appear under PID %d)", n, n)
 
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown config key '%s'. Settable keys: sleep, jitter, killdate, working_hours_start (wh_start), working_hours_end (wh_end), working_days (wh_days), default_ppid (ppid)", key),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown config key '%s'. Settable keys: sleep, jitter, killdate, working_hours_start (wh_start), working_hours_end (wh_end), working_days (wh_days), default_ppid (ppid)", key)
 	}
 }

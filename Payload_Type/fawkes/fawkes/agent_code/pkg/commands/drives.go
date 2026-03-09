@@ -76,11 +76,7 @@ func (c *DrivesCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error marshalling drive data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 func getDriveType(drive string) string {

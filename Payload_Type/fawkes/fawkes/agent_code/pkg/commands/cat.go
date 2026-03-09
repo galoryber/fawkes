@@ -93,11 +93,7 @@ func catReadFull(path string, maxBytes int) structs.CommandResult {
 		return errorf("Error reading file: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(content),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(content))
 }
 
 // catReadLines reads specific line ranges with optional numbering
@@ -166,9 +162,5 @@ func catReadLines(args catParams, maxBytes int) structs.CommandResult {
 		header = fmt.Sprintf("[*] %s (%d lines)\n", args.Path, outputLines)
 	}
 
-	return structs.CommandResult{
-		Output:    header + sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(header + sb.String())
 }

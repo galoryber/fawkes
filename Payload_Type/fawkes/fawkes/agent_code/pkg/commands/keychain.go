@@ -89,11 +89,7 @@ func keychainList() structs.CommandResult {
 	sb.WriteString("\nLogin keychain:  ")
 	sb.WriteString(strings.TrimSpace(string(loginKc)))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // keychainDump dumps keychain metadata (no passwords without -g flag)
@@ -108,22 +104,14 @@ func keychainDump() structs.CommandResult {
 		output = output[:500000] + "\n\n[OUTPUT TRUNCATED — keychain dump exceeded 500KB]"
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // keychainFindGeneric searches for generic password items
 func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 	// If no filters specified, inform user
 	if args.Service == "" && args.Account == "" && args.Label == "" {
-		return structs.CommandResult{
-			Output:    "Error: specify at least one filter: service, account, or label\nExample: keychain -action find-password -service \"Wi-Fi\"",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: specify at least one filter: service, account, or label\nExample: keychain -action find-password -service \"Wi-Fi\"")
 	}
 
 	filterArgs := macBuildFilterArgs(args.Service, args.Account, args.Label)
@@ -146,29 +134,17 @@ func keychainFindGeneric(args keychainArgs) structs.CommandResult {
 			}
 			return errorf("Error: %v\n%s", err2, output2)
 		}
-		return structs.CommandResult{
-			Output:    string(out2) + "\n[NOTE: Password data unavailable — authorization required or keychain locked]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(string(out2) + "\n[NOTE: Password data unavailable — authorization required or keychain locked]")
 	}
 
-	return structs.CommandResult{
-		Output:    string(out),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(out))
 }
 
 // keychainFindInternet searches for internet password items
 func keychainFindInternet(args keychainArgs) structs.CommandResult {
 	// If no filters specified, inform user
 	if args.Server == "" && args.Account == "" && args.Label == "" {
-		return structs.CommandResult{
-			Output:    "Error: specify at least one filter: server, account, or label\nExample: keychain -action find-internet -server \"github.com\"",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: specify at least one filter: server, account, or label\nExample: keychain -action find-internet -server \"github.com\"")
 	}
 
 	// For internet passwords, -s is server (not service)
@@ -192,18 +168,10 @@ func keychainFindInternet(args keychainArgs) structs.CommandResult {
 			}
 			return errorf("Error: %v\n%s", err2, output2)
 		}
-		return structs.CommandResult{
-			Output:    string(out2) + "\n[NOTE: Password data unavailable — authorization required or keychain locked]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(string(out2) + "\n[NOTE: Password data unavailable — authorization required or keychain locked]")
 	}
 
-	return structs.CommandResult{
-		Output:    string(out),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(out))
 }
 
 // keychainFindCert searches for certificates in keychains
@@ -224,9 +192,5 @@ func keychainFindCert(args keychainArgs) structs.CommandResult {
 		output = output[:500000] + "\n\n[OUTPUT TRUNCATED — certificate list exceeded 500KB]"
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }

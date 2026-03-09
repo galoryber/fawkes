@@ -88,9 +88,5 @@ func (c *JXACommand) Execute(task structs.Task) structs.CommandResult {
 		output = "Script executed successfully (no output)"
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }

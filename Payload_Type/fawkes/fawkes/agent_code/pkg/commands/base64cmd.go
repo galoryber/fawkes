@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"fawkes/pkg/structs"
@@ -75,11 +74,7 @@ func base64Encode(args base64Args) structs.CommandResult {
 		if err := os.WriteFile(args.Output, []byte(encoded), 0644); err != nil {
 			return errorf("Error writing output file: %v", err)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] Encoded %d bytes → %d chars, written to %s", len(data), len(encoded), args.Output),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[+] Encoded %d bytes → %d chars, written to %s", len(data), len(encoded), args.Output)
 	}
 
 	source := "string"
@@ -112,20 +107,12 @@ func base64Decode(args base64Args) structs.CommandResult {
 		if err := os.WriteFile(args.Output, decoded, 0644); err != nil {
 			return errorf("Error writing output file: %v", err)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] Decoded %d chars → %d bytes, written to %s", len(encoded), len(decoded), args.Output),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[+] Decoded %d chars → %d bytes, written to %s", len(encoded), len(decoded), args.Output)
 	}
 
 	source := "string"
 	if args.File {
 		source = args.Input
 	}
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[*] Decoded %d chars from %s → %d bytes\n%s", len(encoded), source, len(decoded), string(decoded)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] Decoded %d chars from %s → %d bytes\n%s", len(encoded), source, len(decoded), string(decoded))
 }

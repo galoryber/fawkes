@@ -183,11 +183,7 @@ func vssList() structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("\nTotal: %d shadow copies\n", count))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // vssCreate creates a new shadow copy.

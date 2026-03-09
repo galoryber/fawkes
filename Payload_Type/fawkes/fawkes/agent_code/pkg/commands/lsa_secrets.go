@@ -225,11 +225,7 @@ func lsaDumpCachedCreds(lsaKey []byte) structs.CommandResult {
 	defer structs.ZeroBytes(nlkm)
 
 	if len(nlkm) < 32 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("NL$KM key too short (%d bytes, need 32)", len(nlkm)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("NL$KM key too short (%d bytes, need 32)", len(nlkm))
 	}
 
 	// Read global iteration count

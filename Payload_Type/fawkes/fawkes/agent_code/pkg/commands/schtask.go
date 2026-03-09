@@ -290,11 +290,7 @@ func schtaskCreate(args schtaskArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    result,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(result)
 }
 
 func schtaskQuery(args schtaskArgs) structs.CommandResult {
@@ -374,11 +370,7 @@ func schtaskQuery(args schtaskArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func schtaskDelete(args schtaskArgs) structs.CommandResult {
@@ -481,11 +473,7 @@ func schtaskList(filter string) structs.CommandResult {
 		return errorf("Error marshaling results: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 // schtaskSetEnabled enables or disables a scheduled task via IRegisteredTask.put_Enabled.

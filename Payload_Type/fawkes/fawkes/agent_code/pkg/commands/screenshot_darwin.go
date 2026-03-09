@@ -67,11 +67,7 @@ func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResu
 	for {
 		select {
 		case <-screenshotMsg.FinishedTransfer:
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Screenshot captured and uploaded (%d bytes)", len(imgData)),
-				Status:    "success",
-				Completed: true,
-			}
+			return successf("Screenshot captured and uploaded (%d bytes)", len(imgData))
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
 				return errorResult("Screenshot upload cancelled")

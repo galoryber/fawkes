@@ -138,11 +138,7 @@ func serviceListLinux() structs.CommandResult {
 		return errorf("Error marshalling services: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 func serviceQueryLinux(args serviceArgs) structs.CommandResult {
@@ -219,11 +215,7 @@ func serviceQueryLinux(args serviceArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // readServiceFile reads a file and returns its contents (for reading unit files).
@@ -251,9 +243,5 @@ func serviceCtl(args serviceArgs, action string) structs.CommandResult {
 		return errorf("Error: systemctl %s %s failed: %v\n%s", action, args.Name, err, string(out))
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully executed: systemctl %s %s\n%s", action, args.Name, strings.TrimSpace(string(out))),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully executed: systemctl %s %s\n%s", action, args.Name, strings.TrimSpace(string(out)))
 }

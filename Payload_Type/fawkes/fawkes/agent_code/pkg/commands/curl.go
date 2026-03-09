@@ -59,11 +59,7 @@ const (
 
 func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -url <URL> [-method GET] [-headers '{\"key\":\"val\"}'] [-body <data>]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -url <URL> [-method GET] [-headers '{\"key\":\"val\"}'] [-body <data>]")
 	}
 
 	var args curlArgs

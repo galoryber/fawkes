@@ -385,11 +385,7 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 		} else {
 			errMsg += "\nTrigger: completed (no error)"
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 
 	// Store SYSTEM token
@@ -411,10 +407,6 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("New: %s\n", newIdentity))
 	sb.WriteString("\nUse 'rev2self' to revert to original identity.\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 

@@ -166,11 +166,7 @@ func netUserAdd(args netUserArgs) structs.CommandResult {
 	)
 
 	if ret != 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating user '%s': NetUserAdd returned %d %s (parm_err=%d)", args.Username, ret, netApiErrorDesc(ret), parmErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating user '%s': NetUserAdd returned %d %s (parm_err=%d)", args.Username, ret, netApiErrorDesc(ret), parmErr)
 	}
 
 	return successf("Successfully created user '%s'", args.Username)
@@ -300,11 +296,7 @@ func netUserInfo(args netUserArgs) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("Primary Group ID: %d\n", info.PrimaryGroupID))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func netUserPassword(args netUserArgs) structs.CommandResult {

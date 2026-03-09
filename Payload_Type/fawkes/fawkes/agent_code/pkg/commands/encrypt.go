@@ -76,11 +76,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 		return errorf("Error: %v", err)
 	}
 	if info.Size() > encryptMaxFileSize {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: file too large (%d bytes, max %d)", info.Size(), encryptMaxFileSize),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: file too large (%d bytes, max %d)", info.Size(), encryptMaxFileSize)
 	}
 
 	plaintext, err := os.ReadFile(args.Path)
@@ -96,11 +92,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 			return errorf("Error decoding key: %v", err)
 		}
 		if len(key) != aes256KeySize {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: key must be %d bytes (got %d)", aes256KeySize, len(key)),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: key must be %d bytes (got %d)", aes256KeySize, len(key))
 		}
 	} else {
 		key = make([]byte, aes256KeySize)
@@ -149,11 +141,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("Output size: %d bytes\n", len(ciphertext)))
 	sb.WriteString("\n⚠ Save the key — it is required for decryption")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func decryptFile(args encryptArgs) structs.CommandResult {
@@ -166,11 +154,7 @@ func decryptFile(args encryptArgs) structs.CommandResult {
 		return errorf("Error decoding key: %v", err)
 	}
 	if len(key) != aes256KeySize {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: key must be %d bytes (got %d)", aes256KeySize, len(key)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: key must be %d bytes (got %d)", aes256KeySize, len(key))
 	}
 
 	// Read encrypted file
@@ -221,9 +205,5 @@ func decryptFile(args encryptArgs) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("Input size:  %d bytes\n", len(ciphertext)+nonceSize))
 	sb.WriteString(fmt.Sprintf("Output size: %d bytes\n", len(plaintext)))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

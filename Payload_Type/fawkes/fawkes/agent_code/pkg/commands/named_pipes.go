@@ -85,11 +85,7 @@ func (c *NamedPipesCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  \\\\.\\pipe\\%s\n", p))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // enumerateNamedPipes lists all named pipes using FindFirstFile/FindNextFile

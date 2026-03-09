@@ -142,11 +142,7 @@ func tsconList() structs.CommandResult {
 	tsconPidToSessionId.Call(uintptr(pid), uintptr(unsafe.Pointer(&currentSession)))
 	sb.WriteString(fmt.Sprintf("\nCurrent session: %d\n", currentSession))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func tsconHijack(targetSession int) structs.CommandResult {
@@ -206,11 +202,7 @@ func tsconLogoff(sessionID int) structs.CommandResult {
 		msg = fmt.Sprintf("[+] Logged off session %d (%s\\%s)", sessionID, domain, username)
 	}
 
-	return structs.CommandResult{
-		Output:    msg,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(msg)
 }
 
 func tsconQueryInfo(sessionID uint32, infoClass uint32) string {

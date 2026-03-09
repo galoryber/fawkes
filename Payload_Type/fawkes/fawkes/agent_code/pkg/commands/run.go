@@ -44,9 +44,5 @@ func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
 		outputStr = "Command executed successfully (no output)"
 	}
 
-	return structs.CommandResult{
-		Output:    outputStr,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(outputStr)
 }

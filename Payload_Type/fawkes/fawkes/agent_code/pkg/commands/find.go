@@ -156,11 +156,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		if len(accessErrors) > 0 {
 			output += fmt.Sprintf("\n\n%d path(s) inaccessible", len(accessErrors))
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(output)
 	}
 
 	output := fmt.Sprintf("Found %d match(es) for '%s' in %s:\n\n%s",
@@ -172,11 +168,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		output += fmt.Sprintf("\n\n%d path(s) inaccessible", len(accessErrors))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // findFilterSummary returns a human-readable summary of active filters

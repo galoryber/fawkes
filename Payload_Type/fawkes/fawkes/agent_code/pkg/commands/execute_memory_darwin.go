@@ -136,11 +136,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		if output == "" {
 			output = fmt.Sprintf("Error executing binary: %v", execErr)
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output)
 	}
 
 	output := sb.String()
@@ -148,11 +144,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		output = fmt.Sprintf("[+] Binary executed successfully (%d bytes, no output)", len(binaryData))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // isValidMachO checks for valid Mach-O magic bytes.

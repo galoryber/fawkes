@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"net"
 	"strings"
 	"sync"
@@ -64,11 +63,7 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(hosts) > 256 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: too many hosts (%d). Maximum 256.", len(hosts)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: too many hosts (%d). Maximum 256.", len(hosts))
 	}
 
 	// Check each host concurrently
@@ -202,11 +197,7 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	data, _ := json.Marshal(entries)
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 // lateralParseHosts parses comma-separated IPs and CIDR ranges

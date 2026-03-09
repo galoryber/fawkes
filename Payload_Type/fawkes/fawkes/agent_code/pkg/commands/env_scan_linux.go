@@ -72,11 +72,7 @@ func envScanAllProcesses(filter string) structs.CommandResult {
 	}
 
 	output := formatEnvScanResults(allResults, totalProcesses, accessibleProcesses)
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // deduplicateResults removes duplicate findings (same variable+value from forked processes).

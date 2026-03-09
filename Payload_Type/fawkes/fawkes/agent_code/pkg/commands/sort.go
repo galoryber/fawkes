@@ -93,11 +93,7 @@ func (c *SortCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func extractNumber(s string) float64 {

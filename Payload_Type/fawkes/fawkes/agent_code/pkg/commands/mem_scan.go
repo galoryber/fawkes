@@ -141,11 +141,7 @@ func formatMemScanOutput(args memScanArgs, matches []memScanMatch, regionsScanne
 	sb.WriteString("\n")
 
 	if len(matches) == 0 {
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 	}
 
 	sb.WriteString(strings.Repeat("-", 80) + "\n\n")
@@ -159,11 +155,7 @@ func formatMemScanOutput(args memScanArgs, matches []memScanMatch, regionsScanne
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // writeHexDump writes a hex dump with ASCII sidebar, highlighting the match

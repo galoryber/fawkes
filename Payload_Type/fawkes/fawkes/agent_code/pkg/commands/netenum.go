@@ -246,11 +246,7 @@ func (c *NetEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	var args netEnumArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: action parameter required.\nAvailable: " + neAllActions,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: action parameter required.\nAvailable: " + neAllActions)
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -623,11 +619,7 @@ func netEnumDomainUsers() structs.CommandResult {
 		)
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error enumerating domain users from %s: NetUserEnum returned %d %s (hint: use ldap-query -action users for authenticated domain queries)", dcName, ret, netApiErrorDesc(ret)),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error enumerating domain users from %s: NetUserEnum returned %d %s (hint: use ldap-query -action users for authenticated domain queries)", dcName, ret, netApiErrorDesc(ret))
 		}
 
 		if buf != 0 {
@@ -684,11 +676,7 @@ func netEnumDomainGroups() structs.CommandResult {
 		)
 
 		if ret != NERR_Success && ret != ERROR_MORE_DATA {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error enumerating domain groups from %s: NetGroupEnum returned %d %s (hint: use ldap-query -action groups for authenticated domain queries)", dcName, ret, netApiErrorDesc(ret)),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error enumerating domain groups from %s: NetGroupEnum returned %d %s (hint: use ldap-query -action groups for authenticated domain queries)", dcName, ret, netApiErrorDesc(ret))
 		}
 
 		if buf != 0 {

@@ -124,11 +124,7 @@ func amcacheQuery(params amcacheParams) structs.CommandResult {
 		return errorf("Error marshaling output: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 func amcacheSearch(params amcacheParams) structs.CommandResult {
@@ -172,11 +168,7 @@ func amcacheSearch(params amcacheParams) structs.CommandResult {
 		return errorf("Error marshaling output: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 // amcacheDelete removes matching entries from the Shimcache by rewriting the registry value
@@ -233,11 +225,7 @@ func amcacheDelete(params amcacheParams) structs.CommandResult {
 		return errorf("Error writing Shimcache: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Removed %d entries matching \"%s\" from Shimcache (%d remaining)", removed, params.Name, len(keepEntries)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Removed %d entries matching \"%s\" from Shimcache (%d remaining)", removed, params.Name, len(keepEntries))
 }
 
 // amcacheClear removes all Shimcache entries

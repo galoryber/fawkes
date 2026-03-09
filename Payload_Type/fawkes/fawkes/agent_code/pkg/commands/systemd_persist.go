@@ -169,11 +169,7 @@ func systemdInstall(args systemdPersistArgs) structs.CommandResult {
 		output.WriteString(fmt.Sprintf("enable --now %s.timer", args.Name))
 	}
 
-	return structs.CommandResult{
-		Output:    output.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output.String())
 }
 
 func systemdRemove(args systemdPersistArgs) structs.CommandResult {
@@ -248,11 +244,7 @@ func systemdList(args systemdPersistArgs) structs.CommandResult {
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
 	listUnits(&sb, "/etc/systemd/system")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func listUnits(sb *strings.Builder, dir string) {

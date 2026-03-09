@@ -54,9 +54,5 @@ func (c *Rev2SelfCommand) Execute(task structs.Task) structs.CommandResult {
 		output = fmt.Sprintf("Not impersonating. Current identity: %s", newIdentity)
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }

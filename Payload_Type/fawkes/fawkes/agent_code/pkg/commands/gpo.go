@@ -133,11 +133,7 @@ func (c *GpoCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Unknown action: %s. Use: list, links, find, all", action)
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func gpoConnect(args gpoArgs) (*ldap.Conn, error) {

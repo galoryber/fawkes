@@ -65,11 +65,7 @@ func (c *WcCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    formatWcResult(result),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(formatWcResult(result))
 }
 
 func wcFile(path string) (wcResult, error) {
@@ -167,11 +163,7 @@ func wcDirectory(task structs.Task, dirPath, pattern string) structs.CommandResu
 		sb.WriteString(fmt.Sprintf("  %8d %8d %8d %10d  %s\n", total.lines, total.words, total.chars, total.bytes, "total"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func formatWcResult(r wcResult) string {

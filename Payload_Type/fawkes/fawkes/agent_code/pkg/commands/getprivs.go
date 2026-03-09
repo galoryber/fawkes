@@ -94,11 +94,7 @@ func listPrivileges() structs.CommandResult {
 		return errorf("Error marshaling results: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 // getTokenForAdjust opens the current token with ADJUST_PRIVILEGES access.
@@ -167,11 +163,7 @@ func adjustPrivilege(privName string, enable bool) structs.CommandResult {
 		output += fmt.Sprintf(" (%s)", desc)
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func stripPrivileges() structs.CommandResult {
@@ -232,11 +224,7 @@ func stripPrivileges() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // privilegeDescription returns a human-readable description for known privileges

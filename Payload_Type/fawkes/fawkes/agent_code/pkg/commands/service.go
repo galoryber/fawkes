@@ -113,11 +113,7 @@ func serviceQuery(args serviceArgs) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  Dependencies:  %s\n", strings.Join(config.Dependencies, ", ")))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func serviceStart(args serviceArgs) structs.CommandResult {
@@ -167,11 +163,7 @@ func serviceStop(args serviceArgs) structs.CommandResult {
 		return errorf("Error stopping service '%s': %v", args.Name, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Stopped service '%s' (state: %s)", args.Name, describeServiceState(status.State)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Stopped service '%s' (state: %s)", args.Name, describeServiceState(status.State))
 }
 
 func serviceCreate(args serviceArgs) structs.CommandResult {
@@ -223,11 +215,7 @@ func serviceCreate(args serviceArgs) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("  Start Type:   %s\n", startTypeStr))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func serviceDelete(args serviceArgs) structs.CommandResult {
@@ -354,11 +342,7 @@ func serviceList() structs.CommandResult {
 		return errorf("Error: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 func describeServiceState(state svc.State) string {

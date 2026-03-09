@@ -229,9 +229,5 @@ func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error marshaling results: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }

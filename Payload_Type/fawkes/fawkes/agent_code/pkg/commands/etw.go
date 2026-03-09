@@ -169,11 +169,7 @@ func etwSessions() structs.CommandResult {
 			truncStr(sessionName, 35), "", relevance))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func etwProviders() structs.CommandResult {
@@ -245,21 +241,13 @@ func etwProviders() structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\n%d other (non-security) providers registered\n", otherCount))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // etwStop stops an ETW trace session entirely using ControlTrace
 func etwStop(sessionName string) structs.CommandResult {
 	if sessionName == "" {
-		return structs.CommandResult{
-			Output:    "Error: session_name is required for stop action\nUsage: etw -action stop -session_name \"EventLog-Security\"",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: session_name is required for stop action\nUsage: etw -action stop -session_name \"EventLog-Security\"")
 	}
 
 	props := make([]byte, eventTracePropsSize)
@@ -289,11 +277,7 @@ func etwStop(sessionName string) structs.CommandResult {
 		default:
 			errMsg += fmt.Sprintf(" (%v)", sysErr)
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 
 	return successf("Successfully stopped ETW trace session: %s\nTelemetry from this session will no longer be collected.", sessionName)
@@ -304,11 +288,7 @@ func etwStop(sessionName string) structs.CommandResult {
 // but the specified provider no longer generates events.
 func etwBlind(sessionName, provider string) structs.CommandResult {
 	if sessionName == "" {
-		return structs.CommandResult{
-			Output:    "Error: session_name is required for blind action\nUsage: etw -action blind -session_name \"EventLog-Security\" -provider sysmon",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: session_name is required for blind action\nUsage: etw -action blind -session_name \"EventLog-Security\" -provider sysmon")
 	}
 	if provider == "" {
 		return errorResult("Error: provider is required for blind action (GUID or shorthand name)\nShorthands: sysmon, amsi, powershell, dotnet, winrm, wmi, security-auditing, kernel-process, kernel-file, kernel-network, kernel-registry, api-calls, task-scheduler, dns-client")
@@ -343,11 +323,7 @@ func etwBlind(sessionName, provider string) structs.CommandResult {
 		if errCode == 4201 {
 			errMsg += " — session not found"
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 
 	// Get session handle from WNODE_HEADER.HistoricalContext (offset 8, 8 bytes)
@@ -381,11 +357,7 @@ func etwBlind(sessionName, provider string) structs.CommandResult {
 		if errCode == 5 {
 			errMsg += " — access denied (requires Administrator/SYSTEM)"
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 
 	displayName := resolvedName
@@ -399,11 +371,7 @@ func etwBlind(sessionName, provider string) structs.CommandResult {
 // etwQuery queries a specific ETW trace session for detailed information
 func etwQuery(sessionName string) structs.CommandResult {
 	if sessionName == "" {
-		return structs.CommandResult{
-			Output:    "Error: session_name is required for query action\nUsage: etw -action query -session_name \"EventLog-Security\"",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: session_name is required for query action\nUsage: etw -action query -session_name \"EventLog-Security\"")
 	}
 
 	props := make([]byte, eventTracePropsSize)
@@ -433,11 +401,7 @@ func etwQuery(sessionName string) structs.CommandResult {
 		default:
 			errMsg += fmt.Sprintf(" (%v)", sysErr)
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 
 	// Parse EVENT_TRACE_PROPERTIES fields
@@ -517,21 +481,13 @@ func etwQuery(sessionName string) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("Log File Mode:        %s\n", modeStr))
 	sb.WriteString(fmt.Sprintf("Log File:             %s\n", logFile))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // etwEnable re-enables a previously blinded ETW provider within a trace session
 func etwEnable(sessionName, provider string) structs.CommandResult {
 	if sessionName == "" {
-		return structs.CommandResult{
-			Output:    "Error: session_name is required for enable action\nUsage: etw -action enable -session_name \"EventLog-Security\" -provider sysmon",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: session_name is required for enable action\nUsage: etw -action enable -session_name \"EventLog-Security\" -provider sysmon")
 	}
 	if provider == "" {
 		return errorResult("Error: provider is required for enable action (GUID or shorthand name)\nShorthands: sysmon, amsi, powershell, dotnet, winrm, wmi, security-auditing, kernel-process, kernel-file, kernel-network, kernel-registry, api-calls, task-scheduler, dns-client")
@@ -564,11 +520,7 @@ func etwEnable(sessionName, provider string) structs.CommandResult {
 		if errCode == 4201 {
 			errMsg += " — session not found"
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 
 	sessionHandle := binary.LittleEndian.Uint64(props[8:16])
@@ -600,11 +552,7 @@ func etwEnable(sessionName, provider string) structs.CommandResult {
 		if errCode == 5 {
 			errMsg += " — access denied (requires Administrator/SYSTEM)"
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 
 	displayName := resolvedName

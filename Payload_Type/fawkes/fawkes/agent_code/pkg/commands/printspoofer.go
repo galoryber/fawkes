@@ -307,11 +307,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString("\nUse 'rev2self' to revert to original identity.\n")
 		sb.WriteString("Use 'whoami' to verify current context.\n")
 
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 	}
 
 	// Timeout — no SYSTEM connection received
@@ -328,11 +324,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 			sb.WriteString(fmt.Sprintf("  %s\n", w))
 		}
 	}
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "error",
-		Completed: true,
-	}
+	return errorResult(sb.String())
 }
 
 // triggerSpooler calls OpenPrinterW with a crafted path that causes the

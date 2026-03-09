@@ -577,11 +577,7 @@ func browserCookies(args browserArgs) structs.CommandResult {
 		sb.WriteString("No Chromium-based browsers found or no cookies.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func readCookieData(dbPath string, key []byte, browserName, profileName string) ([]browserCookie, error) {

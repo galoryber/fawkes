@@ -233,11 +233,7 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 		result += fmt.Sprintf(" | Skipped: %d (exceeded max_size)", skipped)
 	}
 
-	return structs.CommandResult{
-		Output:    result,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(result)
 }
 
 func compressList(params CompressParams) structs.CommandResult {
@@ -283,11 +279,7 @@ func compressList(params CompressParams) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf(" | Ratio: %.1f%%", ratio))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func compressExtract(params CompressParams) structs.CommandResult {
@@ -376,9 +368,5 @@ func compressExtract(params CompressParams) structs.CommandResult {
 		totalSize += written
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Extracted %d files (%s) to %s", extracted, formatFileSize(totalSize), outputDir),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Extracted %d files (%s) to %s", extracted, formatFileSize(totalSize), outputDir)
 }

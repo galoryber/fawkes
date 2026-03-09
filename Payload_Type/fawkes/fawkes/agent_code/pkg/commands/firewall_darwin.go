@@ -88,11 +88,7 @@ func darwinFirewallStatus() structs.CommandResult {
 		sb.WriteString("Packet Filter (pf): not accessible (requires root)\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // darwinFirewallEnable enables or disables the Application Layer Firewall.
@@ -109,11 +105,7 @@ func darwinFirewallEnable(enable bool) structs.CommandResult {
 		return errorf("Error setting firewall state: %v\n%s", err, string(out))
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("%s macOS Application Firewall\n%s", label, strings.TrimSpace(string(out))),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("%s macOS Application Firewall\n%s", label, strings.TrimSpace(string(out)))
 }
 
 // darwinFirewallAdd adds an application to the ALF and sets its allow/block policy.
@@ -148,11 +140,7 @@ func darwinFirewallAdd(args firewallArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // darwinFirewallDelete removes an application from the ALF.
@@ -166,11 +154,7 @@ func darwinFirewallDelete(args firewallArgs) structs.CommandResult {
 		return errorf("Error removing application: %v\n%s", err, string(out))
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Removed: %s", strings.TrimSpace(string(out))),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Removed: %s", strings.TrimSpace(string(out)))
 }
 
 func darwinFirewallList() structs.CommandResult {
@@ -211,9 +195,5 @@ func darwinFirewallList() structs.CommandResult {
 		sb.WriteString("No firewall rules found or insufficient privileges.\nRun as root for full pf rule listing.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

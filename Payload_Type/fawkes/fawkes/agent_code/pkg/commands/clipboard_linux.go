@@ -33,26 +33,14 @@ var clipboardWriteTools = []struct {
 func readClipboard() structs.CommandResult {
 	text, tool, err := clipReadWithTool()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read clipboard: %v\nEnsure xclip, xsel (X11) or wl-paste (Wayland) is installed.", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read clipboard: %v\nEnsure xclip, xsel (X11) or wl-paste (Wayland) is installed.", err)
 	}
 
 	if text == "" {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Clipboard is empty (via %s)", tool),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Clipboard is empty (via %s)", tool)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Clipboard contents (%d chars, via %s):\n%s", len(text), tool, text),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Clipboard contents (%d chars, via %s):\n%s", len(text), tool, text)
 }
 
 func writeClipboard(text string) structs.CommandResult {
@@ -68,18 +56,10 @@ func writeClipboard(text string) structs.CommandResult {
 		if err != nil {
 			continue
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Successfully wrote %d characters to clipboard (via %s)", len(text), tool.name),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Successfully wrote %d characters to clipboard (via %s)", len(text), tool.name)
 	}
 
-	return structs.CommandResult{
-		Output:    "Failed to write to clipboard: no clipboard tool found. Install xclip, xsel (X11) or wl-copy (Wayland).",
-		Status:    "error",
-		Completed: true,
-	}
+	return errorResult("Failed to write to clipboard: no clipboard tool found. Install xclip, xsel (X11) or wl-copy (Wayland).")
 }
 
 func clipReadText() string {

@@ -73,9 +73,5 @@ func (c *IfconfigCommand) Execute(task structs.Task) structs.CommandResult {
 		output = "No network interfaces found"
 	}
 
-	return structs.CommandResult{
-		Output:    strings.TrimRight(output, "\n"),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(strings.TrimRight(output, "\n"))
 }

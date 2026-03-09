@@ -167,11 +167,7 @@ func linuxUserInfo(args netUserArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func linuxUserPassword(args netUserArgs) structs.CommandResult {

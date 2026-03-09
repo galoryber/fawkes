@@ -209,11 +209,7 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func ticketFormatOutput(args ticketArgs, realm string, isGolden bool, sessionKey types.EncryptionKey, start, end time.Time, b64 string) string {
@@ -416,11 +412,7 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func ticketRequestFormatOutput(args ticketArgs, realm string, sessionKey types.EncryptionKey, start, end time.Time, b64 string) string {
@@ -533,11 +525,7 @@ func ticketS4U(args ticketArgs) structs.CommandResult {
 		return errorf("Error: unknown format %q. Use: kirbi, ccache", args.Format)
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func ticketS4UFormatOutput(args ticketArgs, realm string, selfSessionKey, proxySessionKey types.EncryptionKey, start, end time.Time, b64 string) string {

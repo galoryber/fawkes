@@ -132,11 +132,7 @@ func clipMonitorStop() structs.CommandResult {
 	cm.mu.Unlock()
 
 	output := formatClipEntries(entries, duration, true)
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func clipMonitorDump() structs.CommandResult {
@@ -152,11 +148,7 @@ func clipMonitorDump() structs.CommandResult {
 	cm.mu.Unlock()
 
 	output := formatClipEntries(entries, duration, false)
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func clipMonitorLoop(intervalSec int) {

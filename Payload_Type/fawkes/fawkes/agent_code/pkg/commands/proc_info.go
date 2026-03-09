@@ -203,11 +203,7 @@ func procInfoDetail(pid int) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // procInfoConnections parses /proc/net/tcp and /proc/net/tcp6 for active connections
@@ -262,11 +258,7 @@ func procInfoConnections() structs.CommandResult {
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // procInfoMounts shows mount information from /proc/self/mountinfo
@@ -286,11 +278,7 @@ func procInfoMounts() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // procInfoModules lists loaded kernel modules from /proc/modules
@@ -317,11 +305,7 @@ func procInfoModules() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // parseHexAddr converts a hex encoded address (e.g., "0100007F:1F90") to IP:port

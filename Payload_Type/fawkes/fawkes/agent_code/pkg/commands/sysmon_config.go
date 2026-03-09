@@ -241,11 +241,7 @@ func sysmonCheckResult(info sysmonInfo) structs.CommandResult {
 			}
 		}
 		data, _ := json.Marshal(info)
-		return structs.CommandResult{
-			Output:    sb.String() + "\n" + string(data),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String() + "\n" + string(data))
 	}
 
 	sb.WriteString("=== Sysmon Configuration ===\n\n")
@@ -288,11 +284,7 @@ func sysmonCheckResult(info sysmonInfo) structs.CommandResult {
 	}
 
 	data, _ := json.Marshal(info)
-	return structs.CommandResult{
-		Output:    sb.String() + "\n" + string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String() + "\n" + string(data))
 }
 
 func sysmonRulesResult(info sysmonInfo) structs.CommandResult {
@@ -333,11 +325,7 @@ func sysmonRulesResult(info sysmonInfo) structs.CommandResult {
 			sb.WriteString(fmt.Sprintf("(Showing first 4096 of %d bytes)\n\n", len(rules)))
 		}
 		sb.WriteString(rulesHex)
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 	}
 
 	return errorResult("Could not read Sysmon rules from registry")
@@ -406,9 +394,5 @@ func sysmonEventsResult(info sysmonInfo) structs.CommandResult {
 		sb.WriteString("Use 'sysmon-config -action rules' to dump the raw rule configuration.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

@@ -147,11 +147,7 @@ func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
 				sb.WriteString("\n")
 			}
 		}
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 
 	default:
 		return errorf("Unknown action: %s. Use: unhook, check", args.Action)

@@ -56,11 +56,7 @@ func readClipboard() structs.CommandResult {
 		return successResult("Clipboard is empty")
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Clipboard contents (%d chars):\n%s", len(text), text),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Clipboard contents (%d chars):\n%s", len(text), text)
 }
 
 func writeClipboard(text string) structs.CommandResult {

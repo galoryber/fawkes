@@ -57,10 +57,6 @@ func (c *TCCCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	// Format output
 	output := formatTCCOutput(allEntries, args.Service, userDB, systemDB)
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 

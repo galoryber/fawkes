@@ -82,11 +82,7 @@ func timestompGet(target string) structs.CommandResult {
 	// Platform-specific timestamps (access time, creation time)
 	output += getPlatformTimestamps(target, info)
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // timestompCopy copies timestamps from source to target
@@ -119,11 +115,7 @@ func timestompCopy(target, source string) structs.CommandResult {
 	output += fmt.Sprintf("  Source modified:  %s\n", mtime.Format(time.RFC3339))
 	output += fmt.Sprintf("  Source accessed:  %s\n", atime.Format(time.RFC3339))
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // timestompSet sets timestamps to a specific time

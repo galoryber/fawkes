@@ -215,11 +215,7 @@ func adcsEnumerateCAs(conn *ldap.Conn, configDN string) structs.CommandResult {
 		sb.WriteString("\nNo Certificate Authorities found. ADCS may not be installed.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // adcsEnumerateTemplates lists all certificate templates with security-relevant attributes
@@ -284,11 +280,7 @@ func adcsEnumerateTemplates(conn *ldap.Conn, configDN string) structs.CommandRes
 		sb.WriteString(fmt.Sprintf("  Schema:      v%s\n", schemaVer))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // adcsFindVulnerable checks published templates for ESC1-ESC4 vulnerabilities
@@ -491,11 +483,7 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 		sb.WriteString("ESC8 (HTTP enrollment) requires manual verification.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // adcsResolveEKU converts an OID to a human-readable name

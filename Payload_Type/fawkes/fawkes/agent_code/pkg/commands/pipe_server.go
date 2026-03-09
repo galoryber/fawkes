@@ -133,11 +133,7 @@ func pipeServerCheck(task structs.Task) structs.CommandResult {
 	sb.WriteString("pipe-server -action impersonate -name mypipe -timeout 30\n")
 	sb.WriteString("Then trigger a connection from a privileged service (e.g., SpoolSample, PetitPotam).\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // pipeServerImpersonate creates a named pipe, waits for connection, and impersonates
@@ -331,11 +327,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	sb.WriteString("\nUse 'rev2self' to revert to original identity.\n")
 	sb.WriteString("Use 'whoami' to verify current context.\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // checkPrivilege checks if the current process has a specific privilege

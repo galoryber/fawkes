@@ -71,11 +71,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Target == "" {
-		return structs.CommandResult{
-			Output:    "Error: target account(s) required. Use -target Administrator or -target \"admin,krbtgt\"",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: target account(s) required. Use -target Administrator or -target \"admin,krbtgt\"")
 	}
 
 	if args.Timeout <= 0 {

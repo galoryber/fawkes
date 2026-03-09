@@ -77,9 +77,5 @@ func (c *WlanProfilesCommand) Execute(task structs.Task) structs.CommandResult {
 			p.Source))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

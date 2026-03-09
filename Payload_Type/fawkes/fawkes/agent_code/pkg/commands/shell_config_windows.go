@@ -118,11 +118,7 @@ func psProfileList() structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  %s %s%s%s\n      %s\n", exists, p.Name, sizeInfo, adminNote, p.Path))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func psProfileRead(args shellConfigArgs) structs.CommandResult {
@@ -136,11 +132,7 @@ func psProfileRead(args shellConfigArgs) structs.CommandResult {
 		return errorf("Error reading %s: %v", path, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("=== %s (%d bytes) ===\n%s", path, len(content), string(content)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("=== %s (%d bytes) ===\n%s", path, len(content), string(content))
 }
 
 func psProfileInject(args shellConfigArgs) structs.CommandResult {

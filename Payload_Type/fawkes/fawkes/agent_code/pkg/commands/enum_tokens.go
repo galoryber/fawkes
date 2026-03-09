@@ -99,11 +99,7 @@ func enumTokensList(filterUser string) structs.CommandResult {
 		return errorf("Error marshalling token data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 // enumTokensUnique shows unique user tokens with process counts
@@ -200,11 +196,7 @@ func enumTokensUnique(filterUser string) structs.CommandResult {
 		return errorf("Error marshalling token data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 // enumerateProcessTokens walks all processes and reads their token info

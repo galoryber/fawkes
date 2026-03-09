@@ -82,11 +82,7 @@ func (c *CertCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(certFormatCert(cert, args.Host))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // certFormatCert formats a single X.509 certificate for display

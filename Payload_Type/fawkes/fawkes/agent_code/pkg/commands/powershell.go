@@ -75,11 +75,7 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		if outputStr == "" {
 			outputStr = "Command executed successfully (no output)"
 		}
-		return structs.CommandResult{
-			Output:    outputStr,
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(outputStr)
 	}
 
 	// Standard path — no impersonation
@@ -99,11 +95,7 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		if outputStr == "" {
 			outputStr = "Command executed successfully (no output)"
 		}
-		return structs.CommandResult{
-			Output:    outputStr,
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(outputStr)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -135,9 +127,5 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		outputStr = "Command executed successfully (no output)"
 	}
 
-	return structs.CommandResult{
-		Output:    outputStr,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(outputStr)
 }

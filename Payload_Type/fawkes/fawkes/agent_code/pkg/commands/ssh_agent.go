@@ -63,11 +63,7 @@ func sshAgentEnum() structs.CommandResult {
 	for _, s := range sockets {
 		sb.WriteString(fmt.Sprintf("  %s  (%s)\n", s.Path, s.Source))
 	}
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // sshAgentList connects to agent sockets and lists loaded keys.

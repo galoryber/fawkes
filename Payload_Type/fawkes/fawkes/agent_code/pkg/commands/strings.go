@@ -111,11 +111,7 @@ func (c *StringsCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n[!] Output truncated (showing partial results of %d strings)\n", len(found)))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // extractStrings scans a reader for sequences of printable ASCII characters

@@ -101,9 +101,5 @@ func (c *ReadMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 	output += fmt.Sprintf("Bytes in \\x format: %s\n", strings.Join(hexOutput, ""))
 	output += fmt.Sprintf("Bytes in hex format: %s\n", simpleHex)
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }

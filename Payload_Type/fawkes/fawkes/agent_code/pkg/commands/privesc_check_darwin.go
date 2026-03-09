@@ -99,11 +99,7 @@ func macPrivescCheckAll() structs.CommandResult {
 	sb.WriteString("--- Writable Paths ---\n")
 	sb.WriteString(macPrivescCheckWritable().Output)
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckSIP checks System Integrity Protection status
@@ -132,11 +128,7 @@ func macPrivescCheckSIP() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckSUID finds SUID and SGID binaries
@@ -213,11 +205,7 @@ func macPrivescCheckSUID() structs.CommandResult {
 		sb.WriteString(strings.Join(flagged, "\n"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckSudo checks sudo rules
@@ -264,11 +252,7 @@ func macPrivescCheckSudo() structs.CommandResult {
 		sb.WriteString("[*] User is in admin/wheel group — may have sudo access with password\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckLaunchDaemons checks for writable LaunchDaemons and LaunchAgents
@@ -331,11 +315,7 @@ func macPrivescCheckLaunchDaemons() structs.CommandResult {
 		sb.WriteString("[!] /Library/LaunchAgents is WRITABLE — can create user-level persistence\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckTCC inspects TCC database for permission grants
@@ -405,11 +385,7 @@ func macPrivescCheckTCC() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckDylib checks for dylib hijacking opportunities
@@ -484,11 +460,7 @@ func macPrivescCheckDylib() structs.CommandResult {
 		sb.WriteString("No obvious dylib hijacking vectors found.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckWritable checks for writable sensitive paths
@@ -556,11 +528,7 @@ func macPrivescCheckWritable() structs.CommandResult {
 		sb.WriteString(strings.Join(readable, "\n") + "\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // nativeIDString produces output similar to `id` using native Go APIs.

@@ -67,11 +67,7 @@ func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 		if err := os.Chmod(path, mode); err != nil {
 			return errorf("Error: %v", err)
 		}
-		return structs.CommandResult{
-			Output:    chmodFormatResult(path, before, mode),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(chmodFormatResult(path, before, mode))
 	}
 
 	// Recursive directory chmod
@@ -117,11 +113,7 @@ func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf(", %d errors", errors))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // chmodParseMode parses an octal mode string (e.g., "755") or symbolic mode (e.g., "+x", "u+rw")

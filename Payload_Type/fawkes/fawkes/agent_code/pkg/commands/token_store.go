@@ -50,11 +50,7 @@ func (c *TokenStoreCommand) Execute(task structs.Task) structs.CommandResult {
 
 func tokenStoreSave(name string) structs.CommandResult {
 	if name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for save action\nUsage: token-store -action save -name \"admin\"",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for save action\nUsage: token-store -action save -name \"admin\"")
 	}
 
 	// Determine the source of the current token
@@ -119,20 +115,12 @@ func tokenStoreList() structs.CommandResult {
 		sb.WriteString("Active: (process token — no impersonation)")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func tokenStoreUse(name string) structs.CommandResult {
 	if name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for use action\nUsage: token-store -action use -name \"admin\"",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for use action\nUsage: token-store -action use -name \"admin\"")
 	}
 
 	oldIdentity := "(process token)"
@@ -150,11 +138,7 @@ func tokenStoreUse(name string) structs.CommandResult {
 
 func tokenStoreRemove(name string) structs.CommandResult {
 	if name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for remove action\nUsage: token-store -action remove -name \"admin\"",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for remove action\nUsage: token-store -action remove -name \"admin\"")
 	}
 
 	if err := RemoveTokenFromStore(name); err != nil {

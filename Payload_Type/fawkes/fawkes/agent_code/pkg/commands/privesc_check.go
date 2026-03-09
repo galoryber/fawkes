@@ -95,11 +95,7 @@ func privescCheckAll() structs.CommandResult {
 	containerResult := privescCheckContainer()
 	sb.WriteString(containerResult.Output)
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // privescCheckSUID finds SUID and SGID binaries
@@ -181,11 +177,7 @@ func privescCheckSUID() structs.CommandResult {
 		sb.WriteString(strings.Join(flagged, "\n"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // privescCheckCapabilities finds binaries with Linux capabilities set.
@@ -254,11 +246,7 @@ func privescCheckCapabilities() structs.CommandResult {
 		sb.WriteString(strings.Join(flagged, "\n"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // capNames maps capability bit positions to names (Linux capability constants).
@@ -416,11 +404,7 @@ func privescCheckSudo() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // privescCheckWritable finds world-writable directories in PATH and other sensitive locations
@@ -514,11 +498,7 @@ func privescCheckWritable() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // privescCheckContainer detects if running inside a container
@@ -615,11 +595,7 @@ func privescCheckContainer() structs.CommandResult {
 		sb.WriteString("No container indicators found — likely running on bare metal/VM host.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // isWritable checks if the current user can write to a path

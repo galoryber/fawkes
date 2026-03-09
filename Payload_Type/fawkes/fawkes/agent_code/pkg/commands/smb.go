@@ -199,11 +199,7 @@ func smbListShares(args smbArgs) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  \\\\%s\\%s\n", args.Host, share))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func smbListDir(args smbArgs) structs.CommandResult {
@@ -248,11 +244,7 @@ func smbListDir(args smbArgs) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("%-12s  %-20s  %s\n", size, modified, name))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func smbReadFile(args smbArgs) structs.CommandResult {
@@ -289,11 +281,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	// Limit to 10MB to avoid memory issues
 	const maxSize = 10 * 1024 * 1024
 	if info.Size() > maxSize {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: file too large (%s). Max 10MB for cat. Use download for large files.", formatFileSize(info.Size())),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: file too large (%s). Max 10MB for cat. Use download for large files.", formatFileSize(info.Size()))
 	}
 
 	sc.setDeadline(smbOperationTimeout)
@@ -308,11 +296,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	sb.WriteString(strings.Repeat("-", 60) + "\n")
 	sb.WriteString(string(data))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func smbWriteFile(args smbArgs) structs.CommandResult {

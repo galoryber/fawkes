@@ -90,11 +90,7 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("  Error: %v\n", err))
 		sb.WriteString("\nHint: Ensure you have admin credentials on the target. Use make-token first.")
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String())
 	}
 	defer m.Disconnect()
 	sb.WriteString("  Connected.\n")
@@ -116,11 +112,7 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 	)
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("  Error: %v\n", err))
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String())
 	}
 	sb.WriteString("  Created.\n")
 
@@ -156,11 +148,7 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 
 	sb.WriteString("\nDone.")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func randomServiceName() string {

@@ -65,11 +65,7 @@ func wdigestStatus() structs.CommandResult {
 		sb.WriteString("  Status:             DISABLED (default on Windows 10+)\n")
 		sb.WriteString("\n  Use 'wdigest -action enable' to enable plaintext credential caching.\n")
 		sb.WriteString("  Credentials will be captured at next interactive logon.\n")
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 	}
 	defer key.Close()
 
@@ -94,11 +90,7 @@ func wdigestStatus() structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n  Negotiate:          %d\n", negVal))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // wdigestSet enables or disables WDigest credential caching
@@ -142,9 +134,5 @@ func wdigestSet(value uint32) structs.CommandResult {
 		sb.WriteString("  Existing cached credentials remain in LSASS until process restart.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

@@ -150,26 +150,14 @@ func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult 
 	case 4:
 		output, err = executeOpusVariant4(shellcode, uint32(params.PID))
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: Unsupported variant %d. Currently supported: 1 (Ctrl-C Handler), 4 (KernelCallbackTable)", params.Variant),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: Unsupported variant %d. Currently supported: 1 (Ctrl-C Handler), 4 (KernelCallbackTable)", params.Variant)
 	}
 
 	if err != nil {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("\n[!] Injection failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("\n[!] Injection failed: %v", err))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // executeOpusVariant1 implements Ctrl-C Handler Chain Injection

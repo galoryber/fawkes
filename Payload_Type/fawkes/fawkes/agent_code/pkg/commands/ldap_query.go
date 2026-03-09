@@ -166,11 +166,7 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	// Format output
 	output := formatLDAPResults(result, args.Action, desc, baseDN, filter, totalFound)
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func ldapConnect(args ldapQueryArgs) (*ldap.Conn, error) {
@@ -334,11 +330,7 @@ func ldapQueryDACL(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 
 	sd := result.Entries[0].GetRawAttributeValue("nTSecurityDescriptor")
 	if len(sd) < 20 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: nTSecurityDescriptor too short or not returned (length %d). May need elevated privileges.", len(sd)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: nTSecurityDescriptor too short or not returned (length %d). May need elevated privileges.", len(sd))
 	}
 
 	objClass := result.Entries[0].GetAttributeValues("objectClass")
@@ -413,11 +405,7 @@ func ldapQueryDACL(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 		return errorf("Error marshaling DACL JSON: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 type daclACE struct {

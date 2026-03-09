@@ -102,11 +102,7 @@ func (c *DomainPolicyCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Unknown action: %s. Use: password, lockout, fgpp, all", action)
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func domainPolicyConnect(args domainPolicyArgs) (*ldap.Conn, error) {

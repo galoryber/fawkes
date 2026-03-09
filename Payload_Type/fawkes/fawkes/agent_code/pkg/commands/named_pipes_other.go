@@ -68,11 +68,7 @@ func (c *NamedPipesCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // enumerateUnixSockets reads active Unix domain sockets from /proc/net/unix (Linux)

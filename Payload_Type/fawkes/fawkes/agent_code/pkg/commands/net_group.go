@@ -179,11 +179,7 @@ func ngList(conn *ldap.Conn, baseDN string) structs.CommandResult {
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // ngMembers lists members of a specific group (recursive)
@@ -268,11 +264,7 @@ func ngMembers(conn *ldap.Conn, baseDN, groupName string) structs.CommandResult 
 		sb.WriteString("No members found.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // ngUserGroups finds all groups a user belongs to (recursive)
@@ -357,11 +349,7 @@ func ngUserGroups(conn *ldap.Conn, baseDN, userName string) structs.CommandResul
 		sb.WriteString("User has no group memberships (besides primary group).\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // ngPrivileged finds all privileged groups and their members
@@ -437,11 +425,7 @@ func ngPrivileged(conn *ldap.Conn, baseDN string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("Total privileged accounts: %d\n", totalMembers))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // ngFindGroupDN finds the DN of a group by name

@@ -19,11 +19,7 @@ func (c *UptimeCommand) Execute(task structs.Task) structs.CommandResult {
 		output = "Unable to determine system uptime on this platform"
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // formatUptime formats a duration in seconds to a human-readable string

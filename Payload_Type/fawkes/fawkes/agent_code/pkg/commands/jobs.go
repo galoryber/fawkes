@@ -53,9 +53,5 @@ func (c *JobsCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("%-36s  %-20s  %s\n", e.id, e.task.Command, duration))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

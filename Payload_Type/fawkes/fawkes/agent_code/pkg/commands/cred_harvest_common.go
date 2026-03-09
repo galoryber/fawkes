@@ -506,11 +506,7 @@ func credConfigs(args credHarvestArgs) structs.CommandResult {
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func credIndentLines(s string, prefix string) string {

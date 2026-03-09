@@ -73,11 +73,7 @@ func (c *MountCommand) Execute(task structs.Task) structs.CommandResult {
 			truncStr(e.mntOpts, 50)))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 type mountInfoEntry struct {

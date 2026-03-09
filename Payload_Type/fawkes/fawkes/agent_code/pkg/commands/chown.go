@@ -95,11 +95,7 @@ func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 		if err := os.Chown(path, uid, gid); err != nil {
 			return errorf("Error: %v", err)
 		}
-		return structs.CommandResult{
-			Output:    chownFormatResult(path, args.Owner, args.Group, uid, gid),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(chownFormatResult(path, args.Owner, args.Group, uid, gid))
 	}
 
 	// Recursive
@@ -135,11 +131,7 @@ func (c *ChownCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf(", %d errors", errors))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func chownResolveUID(owner string) (int, error) {

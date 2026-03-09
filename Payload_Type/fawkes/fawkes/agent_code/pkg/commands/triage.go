@@ -81,11 +81,7 @@ func (c *TriageCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error marshaling output: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 func triageAll(task structs.Task, args triageArgs) []triageResult {

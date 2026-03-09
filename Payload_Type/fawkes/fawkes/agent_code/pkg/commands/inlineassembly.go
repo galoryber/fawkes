@@ -233,11 +233,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		if loadErr != nil {
 			assemblyMutex.Unlock()
 			output.WriteString(fmt.Sprintf("[!] Error loading CLR: %v\n", loadErr))
-			return structs.CommandResult{
-				Output:    output.String(),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(output.String())
 		}
 		clrStarted = true
 		output.WriteString("[+] CLR started successfully\n")
@@ -293,11 +289,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		output.WriteString("  - Verify the assembly is not corrupted\n")
 		output.WriteString(fmt.Sprintf("  - Assembly size: %d bytes\n", len(assemblyBytes)))
 
-		return structs.CommandResult{
-			Output:    output.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output.String())
 	}
 
 	output.WriteString("[+] Assembly loaded successfully\n")
@@ -329,11 +321,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		output.WriteString("  - Verify no external dependencies are required\n")
 		output.WriteString("  - Try running the assembly at command line first\n")
 
-		return structs.CommandResult{
-			Output:    output.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output.String())
 	}
 
 	output.WriteString("[+] Assembly executed successfully\n")
@@ -356,9 +344,5 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    output.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output.String())
 }

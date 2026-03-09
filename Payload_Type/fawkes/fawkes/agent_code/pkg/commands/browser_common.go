@@ -191,11 +191,7 @@ func browserHistory(args browserArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // browserAutofill extracts autofill form data from Chromium-based browsers.
@@ -287,11 +283,7 @@ func browserAutofill(args browserArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // browserBookmarks extracts bookmarks from Chromium-based browsers.
@@ -365,9 +357,5 @@ func browserBookmarks(args browserArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

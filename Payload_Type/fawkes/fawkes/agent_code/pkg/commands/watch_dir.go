@@ -275,11 +275,7 @@ func watchDirFormatResult(targetPath string, events []watchEvent, startTime time
 
 	if len(events) == 0 {
 		sb.WriteString("\nNo changes detected.")
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 	}
 
 	// Count by type
@@ -308,9 +304,5 @@ func watchDirFormatResult(targetPath string, events []watchEvent, startTime time
 		sb.WriteString(line + "\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

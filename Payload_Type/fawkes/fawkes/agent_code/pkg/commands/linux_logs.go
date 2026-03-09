@@ -141,11 +141,7 @@ func linuxLogsList() structs.CommandResult {
 		sb.WriteString("  (none found)\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func linuxLogsRead(args linuxLogsArgs) structs.CommandResult {
@@ -192,11 +188,7 @@ func linuxLogsRead(args linuxLogsArgs) structs.CommandResult {
 		sb.WriteString(lines[i] + "\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // utmpRecordSize is 384 bytes on x86_64 Linux
@@ -272,11 +264,7 @@ func linuxLogsLogins(args linuxLogsArgs) structs.CommandResult {
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func utmpTypeName(t int16) string {

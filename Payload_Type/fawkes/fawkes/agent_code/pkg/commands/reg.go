@@ -96,11 +96,7 @@ func regActionRead(args regArgs) structs.CommandResult {
 
 	hiveKey, err := parseHive(args.Hive)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    err.Error(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(err.Error())
 	}
 
 	key, err := registry.OpenKey(hiveKey, args.Path, registry.READ)
@@ -114,22 +110,14 @@ func regActionRead(args regArgs) structs.CommandResult {
 		if err != nil {
 			return errorf("Error reading value '%s': %v", args.Name, err)
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(output)
 	}
 
 	output, err := enumerateValues(key, args.Hive, args.Path)
 	if err != nil {
 		return errorf("Error enumerating values: %v", err)
 	}
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func regActionWrite(args regArgs) structs.CommandResult {
@@ -145,11 +133,7 @@ func regActionWrite(args regArgs) structs.CommandResult {
 
 	hiveKey, err := parseHive(args.Hive)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    err.Error(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(err.Error())
 	}
 
 	key, _, err := registry.CreateKey(hiveKey, args.Path, registry.SET_VALUE)
@@ -204,11 +188,7 @@ func regActionSearch(args regArgs) structs.CommandResult {
 
 	hiveKey, err := parseHive(args.Hive)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    err.Error(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(err.Error())
 	}
 
 	var results []regSearchResult
@@ -223,9 +203,5 @@ func regActionSearch(args regArgs) structs.CommandResult {
 		return errorf("Error marshaling results: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }

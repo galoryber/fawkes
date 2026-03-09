@@ -83,9 +83,5 @@ func (c *DriversCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("%-30s %-12s %-55s %s\n", d.Name, sizeStr, path, status))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

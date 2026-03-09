@@ -152,11 +152,7 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	output += fmt.Sprintf("New: %s", newIdentity)
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // ExecuteWithAgent implements the AgentCommand interface

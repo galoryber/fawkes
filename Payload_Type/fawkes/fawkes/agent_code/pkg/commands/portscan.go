@@ -139,11 +139,7 @@ func (c *PortScanCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    strings.Join(lines, "\n"),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(strings.Join(lines, "\n"))
 }
 
 // parseHosts parses a comma-separated list of IPs and CIDR ranges

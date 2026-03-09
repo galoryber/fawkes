@@ -61,11 +61,7 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 				output += fmt.Sprintf("\n    - %s", e)
 			}
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(output)
 	}
 
 	size := info.Size()
@@ -73,11 +69,7 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error securely deleting file: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[+] Securely deleted: %s (%s, %d passes)", args.Path, formatFileSize(size), args.Passes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[+] Securely deleted: %s (%s, %d passes)", args.Path, formatFileSize(size), args.Passes)
 }
 
 // secureDeleteFile overwrites a file with random data then removes it

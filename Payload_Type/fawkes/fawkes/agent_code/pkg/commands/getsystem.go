@@ -147,11 +147,7 @@ func getSystemViaSteal(oldIdentity string) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("New: %s\n", newIdentity))
 	sb.WriteString("Use rev2self to revert to original context")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // findSystemProcess enumerates processes and finds one running as NT AUTHORITY\SYSTEM.

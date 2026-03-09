@@ -270,11 +270,7 @@ func defenderStatusRegistry() structs.CommandResult {
 		defKey.Close()
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // defenderExclusions reads all Defender exclusions from the registry.
@@ -343,11 +339,7 @@ func defenderExclusions() structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\n  Total: %d exclusions\n", totalExclusions))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // defenderAddExclusion adds a path, process, or extension exclusion.
@@ -439,11 +431,7 @@ func defenderSetRealtime(enable bool) structs.CommandResult {
 		if strings.Contains(errMsg, "denied") || strings.Contains(errMsg, "Tamper") {
 			errMsg += "\nNote: Tamper Protection may be blocking this change. Disable it via Windows Security UI or Group Policy first."
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 
 	action := "Enabled"
@@ -455,11 +443,7 @@ func defenderSetRealtime(enable bool) structs.CommandResult {
 		result += fmt.Sprintf("\n%s", output)
 	}
 
-	return structs.CommandResult{
-		Output:    result,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(result)
 }
 
 // defenderRunPowerShell runs a PowerShell command for Defender management.

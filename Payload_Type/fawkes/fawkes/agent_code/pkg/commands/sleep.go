@@ -140,9 +140,5 @@ func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent)
 	// Log the change
 	log.Printf("timing updated: %d/%d", args.Interval, args.Jitter)
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }

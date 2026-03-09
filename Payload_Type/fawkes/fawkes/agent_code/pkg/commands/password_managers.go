@@ -83,11 +83,7 @@ func (c *PasswordManagersCommand) Execute(task structs.Task) structs.CommandResu
 		sb.WriteString("No password manager databases or configurations detected.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func findKDBX(root string, maxDepth int, results *[]pmResult, seen map[string]bool) {

@@ -53,18 +53,10 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 
 	output, err := PerformAutoPatch(args.DllName, args.FunctionName, args.NumBytes)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    err.Error(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(err.Error())
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // PerformAutoPatch applies a jump-to-ret patch on the specified function.

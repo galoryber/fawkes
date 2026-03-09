@@ -64,11 +64,7 @@ func (c *DiffCommand) Execute(task structs.Task) structs.CommandResult {
 	hunks := diffLines(lines1, lines2, args.Context)
 
 	if len(hunks) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[*] Files are identical (%d lines)", len(lines1)),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[*] Files are identical (%d lines)", len(lines1))
 	}
 
 	var sb strings.Builder
@@ -79,11 +75,7 @@ func (c *DiffCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(hunk)
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func readLines(path string) ([]string, error) {

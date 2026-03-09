@@ -127,11 +127,7 @@ func iptablesStatus() structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  Max connections:    %s\n", strings.TrimSpace(string(max))))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func iptablesRules(args iptablesArgs) structs.CommandResult {
@@ -174,11 +170,7 @@ func iptablesRules(args iptablesArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func iptablesNAT() structs.CommandResult {
@@ -203,11 +195,7 @@ func iptablesNAT() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func iptablesAdd(args iptablesArgs) structs.CommandResult {
@@ -228,11 +216,7 @@ func iptablesAdd(args iptablesArgs) structs.CommandResult {
 		return errorf("Error adding rule: %v\n%s", err, string(out))
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Rule added: iptables %s\n%s", strings.Join(cmdArgs, " "), string(out)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Rule added: iptables %s\n%s", strings.Join(cmdArgs, " "), string(out))
 }
 
 func iptablesDelete(args iptablesArgs) structs.CommandResult {
@@ -252,11 +236,7 @@ func iptablesDelete(args iptablesArgs) structs.CommandResult {
 		return errorf("Error deleting rule: %v\n%s", err, string(out))
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Rule deleted: iptables %s\n%s", strings.Join(cmdArgs, " "), string(out)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Rule deleted: iptables %s\n%s", strings.Join(cmdArgs, " "), string(out))
 }
 
 func iptablesFlush(args iptablesArgs) structs.CommandResult {
@@ -281,9 +261,5 @@ func iptablesFlush(args iptablesArgs) structs.CommandResult {
 		target = chain
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Flushed %s: iptables %s\n%s", target, strings.Join(cmdArgs, " "), string(out)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Flushed %s: iptables %s\n%s", target, strings.Join(cmdArgs, " "), string(out))
 }

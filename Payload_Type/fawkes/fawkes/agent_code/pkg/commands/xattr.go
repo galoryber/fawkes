@@ -97,11 +97,7 @@ func xattrList(args xattrArgs) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  %-40s  %d bytes\n", attr, size))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func xattrGet(args xattrArgs) structs.CommandResult {
@@ -122,11 +118,7 @@ func xattrGet(args xattrArgs) structs.CommandResult {
 		sb.WriteString(string(data))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func xattrSet(args xattrArgs) structs.CommandResult {
@@ -149,11 +141,7 @@ func xattrSet(args xattrArgs) structs.CommandResult {
 		return errorf("Error setting xattr '%s': %v", args.Name, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[+] Set xattr '%s' on %s (%d bytes)", args.Name, args.Path, len(data)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[+] Set xattr '%s' on %s (%d bytes)", args.Name, args.Path, len(data))
 }
 
 func xattrDelete(args xattrArgs) structs.CommandResult {

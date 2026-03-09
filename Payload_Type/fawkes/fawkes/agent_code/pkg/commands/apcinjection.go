@@ -96,18 +96,10 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 
 	output, err := performApcInjection(shellcode, params.PID, params.TID)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("\n[!] Injection failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("\n[!] Injection failed: %v", err))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // performApcInjection dispatches to indirect or standard APC injection

@@ -83,11 +83,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		if output == "" {
 			output = fmt.Sprintf("[+] PE executed in-memory successfully (%d bytes, no output)", len(binaryData))
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(output)
 	}
 
 	// In-memory failed — fall back to temp file
@@ -109,11 +105,7 @@ func executeMemoryNET(assemblyBytes []byte, arguments string) structs.CommandRes
 	output, err := ExecuteNETAssembly(assemblyBytes, args)
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("[!] %v\n", err))
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String())
 	}
 
 	sb.WriteString("[+] .NET assembly executed successfully (zero disk artifacts)\n")
@@ -122,11 +114,7 @@ func executeMemoryNET(assemblyBytes []byte, arguments string) structs.CommandRes
 		sb.WriteString(output)
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // executeMemoryTempFile is the legacy fallback that writes to a temp file.
@@ -182,11 +170,7 @@ func executeMemoryTempFile(binaryData []byte, arguments string, timeout int, pre
 		if output == "" {
 			output = fmt.Sprintf("Error executing binary: %v", execErr)
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output)
 	}
 
 	output := sb.String()
@@ -194,11 +178,7 @@ func executeMemoryTempFile(binaryData []byte, arguments string, timeout int, pre
 		output = fmt.Sprintf("[+] Binary executed successfully (%d bytes, no output)", len(binaryData))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // isValidPE is defined in execute_memory_helpers.go (cross-platform)

@@ -218,11 +218,7 @@ func weDoEnum(args weArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func wetrunc(s string, max int) string {

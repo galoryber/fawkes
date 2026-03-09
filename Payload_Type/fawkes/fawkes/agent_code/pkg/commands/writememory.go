@@ -97,9 +97,5 @@ func (c *WriteMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 		bytesWritten, args.DllName, args.FunctionName, args.StartIndex, targetAddress)
 	output += fmt.Sprintf("Bytes written: %s", strings.ToUpper(args.HexBytes))
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }

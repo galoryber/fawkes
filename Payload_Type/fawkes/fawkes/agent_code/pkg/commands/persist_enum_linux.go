@@ -59,11 +59,7 @@ func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\n=== Total: %d persistence items found ===\n", found))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // persistEnumCron checks system and user crontabs.

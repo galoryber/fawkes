@@ -193,11 +193,7 @@ func historyList(user string) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("\n[%d history files, %d total lines, %s total]\n", len(files), totalLines, formatFileSize(totalSize)))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func historyClear(user string, clearAll bool) structs.CommandResult {

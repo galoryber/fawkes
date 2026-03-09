@@ -191,11 +191,7 @@ func firewallStatus() structs.CommandResult {
 		countResult.Clear()
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // firewallList enumerates firewall rules, optionally filtered by name/direction/port.
@@ -327,11 +323,7 @@ func firewallList(args firewallArgs) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\nShowing %d/%d rules", matchCount, ruleCount))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // firewallAdd creates a new firewall rule.
@@ -418,11 +410,7 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 	sb.WriteString("  Enabled:   true\n")
 	sb.WriteString("  Profiles:  All\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // firewallDelete removes a firewall rule by name.

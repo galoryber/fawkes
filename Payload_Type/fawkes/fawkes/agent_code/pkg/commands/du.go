@@ -59,11 +59,7 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if !info.IsDir() {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[*] %s\n  Size: %s (%d bytes)", args.Path, formatFileSize(info.Size()), info.Size()),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[*] %s\n  Size: %s (%d bytes)", args.Path, formatFileSize(info.Size()), info.Size())
 	}
 
 	// Walk directory and collect sizes
@@ -130,9 +126,5 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  %10s  %s\n", formatFileSize(e.size), e.path))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

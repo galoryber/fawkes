@@ -56,9 +56,5 @@ func formatHandleResult(handles []handleInfo, typeCounts map[string]int, args ha
 		return errorf("Error marshalling handle data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }

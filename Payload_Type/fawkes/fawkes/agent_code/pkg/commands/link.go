@@ -50,11 +50,7 @@ func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Host == "" || args.Port == 0 {
-		return structs.CommandResult{
-			Output:    "Both host and port are required (e.g., {\"host\": \"10.0.0.2\", \"port\": 7777})",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Both host and port are required (e.g., {\"host\": \"10.0.0.2\", \"port\": 7777})")
 	}
 
 	if tcpProfileInstance == nil {

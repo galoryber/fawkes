@@ -59,11 +59,7 @@ func (c *SecurityInfoCommand) Execute(task structs.Task) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\n[*] %d/%d security controls active\n", enabledCount, len(controls)))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func securityInfoLinux() []secControl {

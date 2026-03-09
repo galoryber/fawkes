@@ -95,11 +95,7 @@ func crontabList(args crontabArgs) structs.CommandResult {
 	if err != nil {
 		output := strings.TrimSpace(string(out))
 		if strings.Contains(output, "no crontab") {
-			return structs.CommandResult{
-				Output:    output,
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult(output)
 		}
 		return errorf("Error listing crontab: %v\n%s", err, output)
 	}

@@ -158,11 +158,7 @@ func prefetchList(count int, filter string) structs.CommandResult {
 		return errorf("Error: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 func prefetchParse(name string) structs.CommandResult {
@@ -221,11 +217,7 @@ func prefetchParse(name string) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func prefetchDelete(name string) structs.CommandResult {

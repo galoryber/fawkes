@@ -90,11 +90,7 @@ func winPrivescCheckAll() structs.CommandResult {
 	sb.WriteString("--- Unattended Install Files ---\n")
 	sb.WriteString(winPrivescCheckUnattend().Output)
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckPrivileges enumerates exploitable token privileges
@@ -167,11 +163,7 @@ func winPrivescCheckPrivileges() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckServices checks for unquoted service paths and modifiable service binaries
@@ -254,11 +246,7 @@ func winPrivescCheckServices() structs.CommandResult {
 		sb.WriteString(strings.Join(writableDir, "\n"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckRegistry checks registry for AlwaysInstallElevated, auto-logon, etc.
@@ -344,11 +332,7 @@ func winPrivescCheckRegistry() structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n[!] %d exploitable registry finding(s) detected", findings))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckWritable checks for writable directories in PATH
@@ -403,11 +387,7 @@ func winPrivescCheckWritable() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckUnattend checks for unattended install files containing credentials
@@ -488,11 +468,7 @@ func winPrivescCheckUnattend() structs.CommandResult {
 		sb.WriteString(strings.Join(interestingFiles, "\n"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckUAC reports the current UAC configuration
@@ -540,11 +516,7 @@ func winPrivescCheckUAC() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // --- Windows-specific helper functions ---

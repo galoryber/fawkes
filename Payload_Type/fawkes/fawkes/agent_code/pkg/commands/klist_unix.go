@@ -311,11 +311,7 @@ func klistImport(args klistArgs) structs.CommandResult {
 	isKirbi := data[0] == 0x76
 
 	if !isCcache && !isKirbi {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unrecognized ticket format (first byte: 0x%02x). Expected ccache (0x0503/0x0504) or kirbi (0x76).", data[0]),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unrecognized ticket format (first byte: 0x%02x). Expected ccache (0x0503/0x0504) or kirbi (0x76).", data[0])
 	}
 
 	var ccacheData []byte
@@ -373,11 +369,7 @@ func klistImport(args klistArgs) structs.CommandResult {
 	sb.WriteString("\n[*] Kerberos auth is now available for tools using KRB5CCNAME.")
 	sb.WriteString("\n[*] Use 'run' to execute Kerberos-aware tools (e.g., smbclient -k, impacket-psexec -k).")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func klistList(args klistArgs) structs.CommandResult {
@@ -441,11 +433,7 @@ func klistList(args klistArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error marshaling output: %v", err)
 	}
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 func klistPurge(args klistArgs) structs.CommandResult {
@@ -490,9 +478,5 @@ func klistDump(args klistArgs) structs.CommandResult {
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

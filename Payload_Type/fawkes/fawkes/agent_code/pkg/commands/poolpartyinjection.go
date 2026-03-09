@@ -102,18 +102,10 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 	}
 
 	if err != nil {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("\n[!] Injection failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("\n[!] Injection failed: %v", err))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // executeVariant1 implements Worker Factory Start Routine Overwrite

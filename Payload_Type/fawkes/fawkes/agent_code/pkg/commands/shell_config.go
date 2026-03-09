@@ -155,11 +155,7 @@ func shellHistory(args shellConfigArgs) structs.CommandResult {
 		return successf("No shell history files found in %s", homeDir)
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func shellList(args shellConfigArgs) structs.CommandResult {
@@ -224,11 +220,7 @@ func shellList(args shellConfigArgs) structs.CommandResult {
 		sb.WriteString("  (none found)\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func shellRead(args shellConfigArgs) structs.CommandResult {
@@ -251,11 +243,7 @@ func shellRead(args shellConfigArgs) structs.CommandResult {
 		return errorf("Error reading %s: %v", path, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("=== %s (%d bytes) ===\n%s", path, len(content), string(content)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("=== %s (%d bytes) ===\n%s", path, len(content), string(content))
 }
 
 func shellInject(args shellConfigArgs) structs.CommandResult {

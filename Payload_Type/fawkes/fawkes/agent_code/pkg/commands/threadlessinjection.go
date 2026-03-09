@@ -238,11 +238,7 @@ func (c *ThreadlessInjectCommand) Execute(task structs.Task) structs.CommandResu
 		return errorf("Threadless injection failed: %v\n%s", err, output)
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func (c *ThreadlessInjectCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent) structs.CommandResult {

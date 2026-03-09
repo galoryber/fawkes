@@ -85,18 +85,10 @@ func (c *ThreadHijackCommand) Execute(task structs.Task) structs.CommandResult {
 
 	output, err := performThreadHijack(shellcode, uint32(params.PID), uint32(params.TID))
 	if err != nil {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("\n[!] Thread hijack failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("\n[!] Thread hijack failed: %v", err))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // performThreadHijack executes the thread hijacking injection pipeline

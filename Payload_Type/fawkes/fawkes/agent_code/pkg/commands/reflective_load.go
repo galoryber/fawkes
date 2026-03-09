@@ -244,11 +244,7 @@ func reflectiveLoad(peData []byte, exportFunc string) structs.CommandResult {
 		if relocDir.VirtualAddress > 0 && relocDir.Size > 0 {
 			nRelocs, relocErr := rlProcessRelocations(allocBase, uintptr(relocDir.VirtualAddress), uintptr(relocDir.Size), delta)
 			if relocErr != nil {
-				return structs.CommandResult{
-					Output:    sb.String() + fmt.Sprintf("Error processing relocations: %v", relocErr),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorResult(sb.String() + fmt.Sprintf("Error processing relocations: %v", relocErr))
 			}
 			sb.WriteString(fmt.Sprintf("[+] Processed %d relocations (delta: 0x%X)\n", nRelocs, uint64(delta)))
 		}
@@ -261,11 +257,7 @@ func reflectiveLoad(peData []byte, exportFunc string) structs.CommandResult {
 	if importDir.VirtualAddress > 0 && importDir.Size > 0 {
 		nImports, importErr := rlResolveImports(allocBase, uintptr(importDir.VirtualAddress))
 		if importErr != nil {
-			return structs.CommandResult{
-				Output:    sb.String() + fmt.Sprintf("Error resolving imports: %v", importErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(sb.String() + fmt.Sprintf("Error resolving imports: %v", importErr))
 		}
 		sb.WriteString(fmt.Sprintf("[+] Resolved imports from %d DLLs\n", nImports))
 	}
@@ -319,11 +311,7 @@ func reflectiveLoad(peData []byte, exportFunc string) structs.CommandResult {
 
 	sb.WriteString("[+] Reflective load complete\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func rlProcessRelocations(baseAddr uintptr, relocRVA, relocSize uintptr, delta int64) (int, error) {

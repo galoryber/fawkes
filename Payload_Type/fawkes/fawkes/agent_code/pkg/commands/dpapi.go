@@ -106,11 +106,7 @@ func (c *DpapiCommand) decrypt(args dpapiArgs) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("Plaintext (b64): %s\n", base64.StdEncoding.EncodeToString(result)))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // listMasterKeys enumerates DPAPI master key files
@@ -208,11 +204,7 @@ func (c *DpapiCommand) listMasterKeys(args dpapiArgs) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\n--- Total: %d master key files found ---\n", totalKeys))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // extractChromeKey extracts the Chrome/Edge Local State encryption key via DPAPI

@@ -107,11 +107,7 @@ func dnsResolve(ctx context.Context, r *net.Resolver, args dnsArgs) structs.Comm
 		sb.WriteString(fmt.Sprintf("  %s\n", addr))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsReverse(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
@@ -126,11 +122,7 @@ func dnsReverse(ctx context.Context, r *net.Resolver, args dnsArgs) structs.Comm
 		sb.WriteString(fmt.Sprintf("  %s\n", name))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsSRV(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
@@ -152,11 +144,7 @@ func dnsSRV(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 		for _, srv := range addrs {
 			sb.WriteString(fmt.Sprintf("  %s:%d (priority=%d, weight=%d)\n", srv.Target, srv.Port, srv.Priority, srv.Weight))
 		}
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 	}
 
 	// Default: query _ldap._tcp for the domain
@@ -175,11 +163,7 @@ func dnsSRV(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 		sb.WriteString(fmt.Sprintf("  %s:%d (priority=%d, weight=%d)\n", srv.Target, srv.Port, srv.Priority, srv.Weight))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsMX(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
@@ -194,11 +178,7 @@ func dnsMX(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandRe
 		sb.WriteString(fmt.Sprintf("  %s (preference=%d)\n", mx.Host, mx.Pref))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsNS(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
@@ -213,11 +193,7 @@ func dnsNS(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandRe
 		sb.WriteString(fmt.Sprintf("  %s\n", ns.Host))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsTXT(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
@@ -232,11 +208,7 @@ func dnsTXT(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 		sb.WriteString(fmt.Sprintf("  \"%s\"\n", txt))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsCNAME(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
@@ -298,11 +270,7 @@ func dnsAll(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsDC(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
@@ -343,11 +311,7 @@ func dnsDC(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandRe
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // dnsAXFR performs a DNS zone transfer (AXFR) via raw TCP DNS protocol.
@@ -401,11 +365,7 @@ func dnsAXFR(ctx context.Context, args dnsArgs) structs.CommandResult {
 			if totalRecords > 0 {
 				break // Normal end
 			}
-			return structs.CommandResult{
-				Output:    sb.String() + fmt.Sprintf("\n[!] Error reading response: %v\n", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(sb.String() + fmt.Sprintf("\n[!] Error reading response: %v\n", err))
 		}
 		msgLen := binary.BigEndian.Uint16(lenBuf)
 		if msgLen == 0 {
@@ -433,11 +393,7 @@ func dnsAXFR(ctx context.Context, args dnsArgs) structs.CommandResult {
 			if rcode == 5 {
 				sb.WriteString("[*] Zone transfers are typically restricted to authorized secondary DNS servers\n")
 			}
-			return structs.CommandResult{
-				Output:    sb.String(),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(sb.String())
 		}
 
 		for _, r := range records {
@@ -454,19 +410,11 @@ func dnsAXFR(ctx context.Context, args dnsArgs) structs.CommandResult {
 
 	if totalRecords == 0 {
 		sb.WriteString("\n[!] No records received — zone transfer may be denied\n")
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String())
 	}
 
 	sb.WriteString(fmt.Sprintf("\n[+] Zone transfer complete: %d records\n", totalRecords))
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // dnsWildcard detects wildcard DNS by resolving random nonexistent subdomains.
@@ -517,11 +465,7 @@ func dnsWildcard(ctx context.Context, r *net.Resolver, args dnsArgs) structs.Com
 		sb.WriteString("Filter results by excluding these IPs.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // dnsReadFull reads exactly len(buf) bytes from conn.

@@ -103,11 +103,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		} else {
 			errMsg += "\nEnsure you have admin privileges and SeDebugPrivilege."
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 	defer windows.CloseHandle(hProcess)
 
@@ -172,11 +168,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		case <-downloadMsg.FinishedTransfer:
 			file.Close()
 			secureRemove(dumpPath)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Successfully dumped %s (PID %d)\nDump size: %s\nFile uploaded to server and cleaned from disk.", processName, targetPID, formatFileSize(dumpSize)),
-				Status:    "success",
-				Completed: true,
-			}
+			return successf("Successfully dumped %s (PID %d)\nDump size: %s\nFile uploaded to server and cleaned from disk.", processName, targetPID, formatFileSize(dumpSize))
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
 				file.Close()

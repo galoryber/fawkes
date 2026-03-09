@@ -134,11 +134,7 @@ func sprayFormatResults(action string, args sprayArgs, users []string, results [
 		return errorf("Error marshaling results: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 // --- Kerberos spray ---
@@ -417,11 +413,7 @@ func sprayEnumerate(args sprayArgs, users []string) structs.CommandResult {
 		return errorf("Error marshaling results: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 func enumKerberosUser(cfg *krbconfig.Config, realm, kdc, username string) string {

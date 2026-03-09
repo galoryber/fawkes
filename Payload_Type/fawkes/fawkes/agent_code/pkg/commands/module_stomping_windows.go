@@ -169,11 +169,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 	sb.WriteString("[+] Shellcode executing from signed DLL address space\n")
 	sb.WriteString("[+] Module stomping injection completed successfully\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // stompLoadRemoteDLL loads a DLL into the target process via CreateRemoteThread + LoadLibraryW,

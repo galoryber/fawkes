@@ -84,11 +84,7 @@ func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func statFileType(info os.FileInfo) string {
