@@ -295,11 +295,11 @@ func linuxNftAdd(args firewallArgs) structs.CommandResult {
 	ruleExpr := strings.Join(ruleParts, " ")
 	nftCmd := fmt.Sprintf("add rule inet filter %s %s", chain, ruleExpr)
 
-	out, err := execCmdTimeout("nft", strings.Fields(nftCmd)...)
+	_, err := execCmdTimeout("nft", strings.Fields(nftCmd)...)
 	if err != nil {
 		// Try with ip (legacy) table if inet fails
 		nftCmd = fmt.Sprintf("add rule ip filter %s %s", chain, ruleExpr)
-		out, err = execCmdTimeout("nft", strings.Fields(nftCmd)...)
+		out, err := execCmdTimeout("nft", strings.Fields(nftCmd)...)
 		if err != nil {
 			return errorf("nft add rule failed: %v\n%s\nCommand: nft %s", err, string(out), nftCmd)
 		}
