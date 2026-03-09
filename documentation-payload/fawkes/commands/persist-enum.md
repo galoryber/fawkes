@@ -15,10 +15,10 @@ Enumerate persistence mechanisms without making any changes. Cross-platform comm
 Registry Run keys, startup folders, Winlogon hijacks, IFEO, AppInit_DLLs, scheduled tasks, non-Microsoft services.
 
 ### Linux
-Cron jobs (system + user), systemd services/timers, shell profiles, init.d scripts, rc.local, XDG autostart, SSH authorized_keys, LD_PRELOAD.
+Cron jobs (system + user), systemd services/timers, shell profiles, init.d scripts, rc.local, XDG autostart, SSH authorized_keys + private keys + agent sockets, LD_PRELOAD.
 
 ### macOS
-LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout hooks, SSH authorized_keys, periodic scripts.
+LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout hooks, SSH authorized_keys + private keys + agent sockets, periodic scripts.
 
 ## Categories by Platform
 
@@ -40,7 +40,7 @@ LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout 
 | `systemd` | /etc/systemd/system/ and ~/.config/systemd/user/ (.service and .timer files) |
 | `shell` | System profiles (/etc/profile, /etc/bash.bashrc), user profiles (.bashrc, .zshrc, etc.), /etc/profile.d/ |
 | `startup` | /etc/rc.local, /etc/init.d/ scripts, XDG autostart (.desktop files) |
-| `ssh` | ~/.ssh/authorized_keys, /root/.ssh/authorized_keys |
+| `ssh` | ~/.ssh/authorized_keys, /root/.ssh/authorized_keys, private keys (encrypted/plaintext detection), SSH agent sockets |
 | `preload` | /etc/ld.so.preload, LD_PRELOAD env var, /etc/environment |
 
 ### macOS
@@ -49,7 +49,7 @@ LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout 
 | `launchd` | ~/Library/LaunchAgents, /Library/LaunchAgents, /Library/LaunchDaemons (non-Apple plists) |
 | `cron` | /etc/crontab, user crontabs |
 | `shell` | User profiles (.zshrc, .bash_profile, etc.), system profiles (/etc/profile, /etc/zshrc) |
-| `login` | Login/Logout hooks (com.apple.loginwindow), SSH authorized_keys |
+| `login` | Login/Logout hooks (com.apple.loginwindow), SSH authorized_keys, private keys (encrypted/plaintext detection), SSH agent sockets |
 | `periodic` | /etc/periodic/daily, weekly, monthly scripts |
 
 ## Arguments
