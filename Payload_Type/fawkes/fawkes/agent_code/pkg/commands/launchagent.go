@@ -142,8 +142,9 @@ func launchAgentRemove(args launchAgentArgs) structs.CommandResult {
 	}
 
 	plistPath := filepath.Join(plistDir, args.Label+".plist")
-	if err := os.Remove(plistPath); err != nil {
-		return errorf("Error removing %s: %v", plistPath, err)
+	secureRemove(plistPath)
+	if _, err := os.Stat(plistPath); err == nil {
+		return errorf("Error removing %s: file still exists", plistPath)
 	}
 
 	plistType := "LaunchAgent"

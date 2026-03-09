@@ -454,11 +454,9 @@ func klistPurge(args klistArgs) structs.CommandResult {
 		return successResult("No file-based ccache found to purge.")
 	}
 
-	if err := os.Remove(ccachePath); err != nil {
-		if os.IsNotExist(err) {
-			return successResult("No ccache file to purge (already clean).")
-		}
-		return errorf("Error removing ccache %s: %v", ccachePath, err)
+	secureRemove(ccachePath)
+	if _, err := os.Stat(ccachePath); err == nil {
+		return errorf("Error removing ccache %s: file still exists", ccachePath)
 	}
 
 	return successf("Kerberos ccache purged: %s", ccachePath)

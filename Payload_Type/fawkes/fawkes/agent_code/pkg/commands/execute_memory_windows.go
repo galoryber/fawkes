@@ -131,7 +131,7 @@ func executeMemoryNET(assemblyBytes []byte, arguments string) structs.CommandRes
 
 // executeMemoryTempFile is the legacy fallback that writes to a temp file.
 func executeMemoryTempFile(binaryData []byte, arguments string, timeout int, prefix string) structs.CommandResult {
-	tmpFile, err := os.CreateTemp("", "*.exe")
+	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
 		return errorf("Error creating temp file: %v", err)
 	}

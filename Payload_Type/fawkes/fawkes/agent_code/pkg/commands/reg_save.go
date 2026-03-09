@@ -75,7 +75,7 @@ func regSaveHive(hive, path, output string) structs.CommandResult {
 	}
 
 	// Remove output file if it exists (RegSaveKeyEx fails if file exists)
-	os.Remove(output)
+	secureRemove(output)
 
 	// Open the key with backup semantics
 	hKey, err := regOpenKey(rootKey, path)
@@ -128,7 +128,7 @@ func regSaveCredentialHives(outputDir string) structs.CommandResult {
 
 	for _, h := range hives {
 		outPath := outputDir + `\` + h.file
-		os.Remove(outPath) // RegSaveKeyEx fails if file exists
+		secureRemove(outPath) // RegSaveKeyEx fails if file exists
 
 		hKey, err := regOpenKey(hkeyLocalMachine, h.path)
 		if err != nil {

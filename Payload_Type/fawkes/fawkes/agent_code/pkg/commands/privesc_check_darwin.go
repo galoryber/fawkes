@@ -607,13 +607,13 @@ func macIsWritable(path string) bool {
 		return false
 	}
 	if info.IsDir() {
-		f, err := os.CreateTemp(path, ".*")
+		f, err := os.CreateTemp(path, "")
 		if err != nil {
 			return false
 		}
 		name := f.Name()
 		f.Close()
-		os.Remove(name)
+		secureRemove(name)
 		return true
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)

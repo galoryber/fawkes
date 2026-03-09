@@ -247,8 +247,9 @@ func prefetchDelete(name string) structs.CommandResult {
 		}
 		if strings.Contains(strings.ToUpper(entry.Name()), upperName) {
 			path := filepath.Join(dir, entry.Name())
-			if err := os.Remove(path); err != nil {
-				failed = append(failed, fmt.Sprintf("%s: %v", entry.Name(), err))
+			secureRemove(path)
+			if _, err := os.Stat(path); err == nil {
+				failed = append(failed, fmt.Sprintf("%s: still exists", entry.Name()))
 			} else {
 				deleted = append(deleted, entry.Name())
 			}
@@ -298,7 +299,8 @@ func prefetchClear() structs.CommandResult {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		if err := os.Remove(path); err != nil {
+		secureRemove(path)
+		if _, err := os.Stat(path); err == nil {
 			failed++
 		} else {
 			deleted++

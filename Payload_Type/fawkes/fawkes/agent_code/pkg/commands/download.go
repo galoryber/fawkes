@@ -73,7 +73,7 @@ func downloadFile(task structs.Task, fullPath string) structs.CommandResult {
 // downloadDirectory zips a directory into a temp file, downloads it, then cleans up
 func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult {
 	// Create temp zip file
-	tmpFile, err := os.CreateTemp("", "*.zip")
+	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
 		return errorf("Error creating temp file: %v", err)
 	}

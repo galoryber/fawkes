@@ -184,8 +184,9 @@ func persistStartupFolder(args persistArgs) structs.CommandResult {
 		}
 
 		destPath := filepath.Join(startupDir, args.Name)
-		if err := os.Remove(destPath); err != nil {
-			return errorf("Error removing '%s': %v", destPath, err)
+		secureRemove(destPath)
+		if _, err := os.Stat(destPath); err == nil {
+			return errorf("Error removing '%s': file still exists", destPath)
 		}
 
 		return successf("Removed startup folder entry: %s", destPath)

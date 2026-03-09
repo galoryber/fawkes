@@ -307,8 +307,10 @@ func adsDelete(args adsArgs) structs.CommandResult {
 	}
 
 	streamPath := args.File + ":" + args.Stream
-	if err := os.Remove(streamPath); err != nil {
-		return errorf("Error deleting %s: %v", streamPath, err)
+	secureRemove(streamPath)
+	// Verify removal (stat on ADS path confirms deletion)
+	if _, err := os.Stat(streamPath); err == nil {
+		return errorf("Error deleting %s: stream still exists", streamPath)
 	}
 
 	return successf("Deleted stream: %s", streamPath)

@@ -190,20 +190,22 @@ func systemdRemove(args systemdPersistArgs) structs.CommandResult {
 	errors := 0
 
 	servicePath := filepath.Join(unitDir, args.Name+".service")
-	if err := os.Remove(servicePath); err != nil {
-		if os.IsNotExist(err) {
-			sb.WriteString(fmt.Sprintf("Service file not found: %s\n", servicePath))
-		} else {
-			sb.WriteString(fmt.Sprintf("Error removing service: %v\n", err))
-			errors++
-		}
+	if _, statErr := os.Stat(servicePath); os.IsNotExist(statErr) {
+		sb.WriteString(fmt.Sprintf("Service file not found: %s\n", servicePath))
 	} else {
-		sb.WriteString(fmt.Sprintf("Removed: %s\n", servicePath))
+		secureRemove(servicePath)
+		if _, statErr := os.Stat(servicePath); statErr == nil {
+			sb.WriteString("Error removing service: file still exists\n")
+			errors++
+		} else {
+			sb.WriteString(fmt.Sprintf("Removed: %s\n", servicePath))
+		}
 	}
 
 	// Also try to remove timer if it exists
 	timerPath := filepath.Join(unitDir, args.Name+".timer")
-	if err := os.Remove(timerPath); err == nil {
+	if _, statErr := os.Stat(timerPath); statErr == nil {
+		secureRemove(timerPath)
 		sb.WriteString(fmt.Sprintf("Removed: %s\n", timerPath))
 	}
 
