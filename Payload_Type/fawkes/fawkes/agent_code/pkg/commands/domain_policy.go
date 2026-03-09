@@ -212,10 +212,12 @@ func queryDefaultPolicy(conn *ldap.Conn, baseDN string, section string) string {
 					safeAttempts = 1
 				}
 				windowDur := parseADInterval(window)
-				sb.WriteString(fmt.Sprintf("\n    [+] Spray Recommendation:  max %d attempts per %s window\n", safeAttempts, formatDuration(windowDur)))
 				if windowDur > 0 {
+					sb.WriteString(fmt.Sprintf("\n    [+] Spray Recommendation:  max %d attempts per %s window\n", safeAttempts, formatDuration(windowDur)))
 					delayMs := int(windowDur.Milliseconds()) / safeAttempts
 					sb.WriteString(fmt.Sprintf("    [+] Suggested Delay:       %dms between attempts\n", delayMs))
+				} else {
+					sb.WriteString(fmt.Sprintf("\n    [+] Spray Recommendation:  max %d attempts (observation window not configured)\n", safeAttempts))
 				}
 			}
 		} else if threshold == "0" {

@@ -394,7 +394,7 @@ func trustQueryForestTopology(conn *ldap.Conn, baseDN string) *trustForestInfo {
 
 	req := ldap.NewSearchRequest(partitionsDN, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
 		0, 30, false,
-		"(&(objectClass=crossRef)(systemFlags:1.2.840.113556.1.4.803:=1))", // SYSTEM_FLAG_CR_NTDS_NC
+		"(&(objectClass=crossRef)(systemFlags:1.2.840.113556.1.4.803:=2))", // SYSTEM_FLAG_CR_NTDS_DOMAIN (excludes DNS zone partitions)
 		[]string{"dnsRoot", "nCName", "nETBIOSName", "trustParent"},
 		nil)
 
@@ -408,11 +408,13 @@ func trustQueryForestTopology(conn *ldap.Conn, baseDN string) *trustForestInfo {
 	}
 
 	info := &trustForestInfo{}
+	seen := make(map[string]bool)
 	for _, entry := range result.Entries {
 		dnsRoot := entry.GetAttributeValue("dnsRoot")
-		if dnsRoot == "" {
+		if dnsRoot == "" || seen[dnsRoot] {
 			continue
 		}
+		seen[dnsRoot] = true
 		info.Domains = append(info.Domains, dnsRoot)
 
 		// The entry with no trustParent (or trustParent pointing to itself) is the forest root
