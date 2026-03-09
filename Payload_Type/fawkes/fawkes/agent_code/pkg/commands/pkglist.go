@@ -473,6 +473,7 @@ func parseRpmDB() [][2]string {
 			pkgs = append(pkgs, [2]string{name, version})
 		}
 	}
+	_ = rows.Err() // best-effort; return partial results on iteration error
 	return pkgs
 }
 

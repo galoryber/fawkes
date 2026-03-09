@@ -167,6 +167,9 @@ func browserHistory(args browserArgs) structs.CommandResult {
 					LastVisit:  lastVisit,
 				})
 			}
+			if err := rows.Err(); err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): iteration: %v", browserName, profileName, err))
+			}
 			rows.Close()
 			cleanup()
 		}
@@ -262,6 +265,9 @@ func browserAutofill(args browserArgs) structs.CommandResult {
 					Count:        count,
 					DateLastUsed: lastUsed,
 				})
+			}
+			if err := rows.Err(); err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): iteration: %v", browserName, profileName, err))
 			}
 			rows.Close()
 			cleanup()

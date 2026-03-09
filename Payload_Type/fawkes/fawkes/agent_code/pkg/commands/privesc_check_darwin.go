@@ -374,6 +374,9 @@ func macPrivescCheckTCC() structs.CommandResult {
 				interesting++
 			}
 		}
+		if err := rows.Err(); err != nil {
+			sb.WriteString(fmt.Sprintf("  Row iteration error: %v\n", err))
+		}
 		rows.Close()
 		db.Close()
 

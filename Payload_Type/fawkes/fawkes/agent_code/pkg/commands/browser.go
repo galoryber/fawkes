@@ -443,6 +443,9 @@ func readLoginData(dbPath string, key []byte, browserName, profileName string) (
 			Password: password,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return creds, fmt.Errorf("row iteration error: %v", err)
+	}
 
 	return creds, nil
 }
@@ -631,6 +634,9 @@ func readCookieData(dbPath string, key []byte, browserName, profileName string) 
 			Secure:   isSecure != 0,
 			HTTPOnly: isHTTPOnly != 0,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return cookies, fmt.Errorf("row iteration error: %v", err)
 	}
 
 	if decryptFails > 0 && len(cookies) == 0 {

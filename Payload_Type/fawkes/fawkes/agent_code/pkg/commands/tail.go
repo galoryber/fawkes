@@ -93,12 +93,8 @@ func tailReadBytes(args tailArgs) structs.CommandResult {
 		mode = "first"
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] %s %d bytes of %s (%s total)\n%s",
-			mode, readSize, args.Path, formatFileSize(size), string(buf)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] %s %d bytes of %s (%s total)\n%s",
+		mode, readSize, args.Path, formatFileSize(size), string(buf))
 }
 
 func tailReadLines(args tailArgs) structs.CommandResult {
@@ -133,12 +129,8 @@ func tailReadHead(f *os.File, args tailArgs) structs.CommandResult {
 		sizeStr = fmt.Sprintf(" (%s)", formatFileSize(info.Size()))
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] first %d lines of %s%s\n%s",
-			len(lines), args.Path, sizeStr, strings.Join(lines, "\n")),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] first %d lines of %s%s\n%s",
+		len(lines), args.Path, sizeStr, strings.Join(lines, "\n"))
 }
 
 func tailReadTail(f *os.File, args tailArgs) structs.CommandResult {
@@ -227,10 +219,6 @@ func tailReadTailLarge(f *os.File, args tailArgs, size int64) structs.CommandRes
 	}
 	lines := allLines[len(allLines)-count:]
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] last %d lines of %s (%s)\n%s",
-			count, args.Path, formatFileSize(size), strings.Join(lines, "\n")),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] last %d lines of %s (%s)\n%s",
+		count, args.Path, formatFileSize(size), strings.Join(lines, "\n"))
 }
