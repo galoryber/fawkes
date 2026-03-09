@@ -15,7 +15,7 @@ func Initialize() {
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("[ERROR] File send goroutine panic: %v", r)
+					log.Printf("send goroutine panic: %v", r)
 				}
 			}()
 			listenForSendFileToMythicMessages()
@@ -24,7 +24,7 @@ func Initialize() {
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("[ERROR] File get goroutine panic: %v", r)
+					log.Printf("recv goroutine panic: %v", r)
 				}
 			}()
 			listenForGetFromMythicMessages()

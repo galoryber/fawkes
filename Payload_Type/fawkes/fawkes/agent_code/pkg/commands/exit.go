@@ -23,7 +23,7 @@ func (c *ExitCommand) Description() string {
 
 // Execute executes the exit command
 func (c *ExitCommand) Execute(task structs.Task) structs.CommandResult {
-	log.Printf("[INFO] Exit command received, terminating agent")
+	log.Printf("exit received")
 
 	// Send response before exiting
 	result := structs.CommandResult{
@@ -35,7 +35,7 @@ func (c *ExitCommand) Execute(task structs.Task) structs.CommandResult {
 	// Exit in a goroutine after a short delay to allow the response to be posted
 	go func() {
 		time.Sleep(3 * time.Second)
-		log.Printf("[INFO] Agent shutting down")
+		log.Printf("shutting down")
 		os.Exit(0)
 	}()
 

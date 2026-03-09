@@ -95,14 +95,14 @@ func (m *Manager) HandleMessages(msgs []structs.SocksMsg) {
 func (m *Manager) handleNewConnection(serverId uint32, b64Data string) {
 	data, err := base64.StdEncoding.DecodeString(b64Data)
 	if err != nil || len(data) < 4 {
-		log.Printf("[SOCKS] Failed to decode initial data for server_id %d", serverId)
+		log.Printf("decode error sid=%d", serverId)
 		m.queueExit(serverId)
 		return
 	}
 
 	// Parse SOCKS5 CONNECT request (RFC 1928 §4)
 	if data[0] != socksVersion || data[1] != connectCommand {
-		log.Printf("[SOCKS] Invalid SOCKS5 CONNECT request for server_id %d (ver=%d cmd=%d)", serverId, data[0], data[1])
+		log.Printf("invalid connect sid=%d (ver=%d cmd=%d)", serverId, data[0], data[1])
 		m.sendReply(serverId, replyConnectionRefused)
 		m.queueExit(serverId)
 		return
@@ -145,7 +145,7 @@ func (m *Manager) handleNewConnection(serverId uint32, b64Data string) {
 		host = net.IP(data[4:20]).String()
 		portOffset = 20
 	default:
-		log.Printf("[SOCKS] Unsupported address type %d for server_id %d", addrType, serverId)
+		log.Printf("unsupported addr=%d sid=%d", addrType, serverId)
 		m.sendReply(serverId, replyConnectionRefused)
 		m.queueExit(serverId)
 		return
@@ -157,7 +157,7 @@ func (m *Manager) handleNewConnection(serverId uint32, b64Data string) {
 	// Establish TCP connection
 	conn, err := net.DialTimeout("tcp", target, dialTimeout)
 	if err != nil {
-		log.Printf("[SOCKS] Failed to connect to %s for server_id %d: %v", target, serverId, err)
+		log.Printf("connect failed %s sid=%d: %v", target, serverId, err)
 		m.sendReply(serverId, replyConnectionRefused)
 		m.queueExit(serverId)
 		return
@@ -185,11 +185,11 @@ func (m *Manager) forwardData(serverId uint32, conn net.Conn, b64Data string) {
 	}
 	data, err := base64.StdEncoding.DecodeString(b64Data)
 	if err != nil {
-		log.Printf("[SOCKS] Failed to decode data for server_id %d: %v", serverId, err)
+		log.Printf("decode error sid=%d: %v", serverId, err)
 		return
 	}
 	if _, err := conn.Write(data); err != nil {
-		log.Printf("[SOCKS] Write failed for server_id %d: %v", serverId, err)
+		log.Printf("write error sid=%d: %v", serverId, err)
 		m.closeConnection(serverId)
 	}
 }
@@ -224,9 +224,9 @@ func (m *Manager) readFromConnection(serverId uint32, conn net.Conn) {
 					return
 				}
 				// Connection still active but idle for too long — close it
-				log.Printf("[SOCKS] Idle timeout for server_id %d, closing", serverId)
+				log.Printf("idle timeout sid=%d", serverId)
 			} else if err != io.EOF {
-				log.Printf("[SOCKS] Read error for server_id %d: %v", serverId, err)
+				log.Printf("read error sid=%d: %v", serverId, err)
 			}
 			// Connection closed, timed out, or errored — send exit and clean up
 			m.mu.Lock()

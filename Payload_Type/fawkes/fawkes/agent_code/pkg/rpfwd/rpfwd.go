@@ -65,7 +65,7 @@ func (m *Manager) Start(port uint32) error {
 
 	go m.acceptConnections(listener, port)
 
-	log.Printf("[RPFWD] Listening on port %d", port)
+	log.Printf("listen :%d", port)
 	return nil
 }
 
@@ -83,7 +83,7 @@ func (m *Manager) Stop(port uint32) error {
 	delete(m.listeners, port)
 	m.closeConnectionsForPort(port)
 
-	log.Printf("[RPFWD] Stopped listening on port %d", port)
+	log.Printf("stop listen :%d", port)
 	return nil
 }
 
@@ -140,7 +140,7 @@ func (m *Manager) HandleMessages(msgs []structs.SocksMsg) {
 		case tracker.writeCh <- msg:
 		default:
 			// Channel full, drop data (shouldn't happen with reasonable buffer)
-			log.Printf("[RPFWD] Write channel full for server_id %d, dropping data", msg.ServerId)
+			log.Printf("channel full sid=%d, dropping", msg.ServerId)
 		}
 	}
 }
@@ -167,7 +167,7 @@ func (m *Manager) acceptConnections(listener net.Listener, port uint32) {
 		m.connections[serverID] = tracker
 		m.mu.Unlock()
 
-		log.Printf("[RPFWD] New connection on port %d, server_id %d from %s", port, serverID, conn.RemoteAddr())
+		log.Printf("conn :%d sid=%d from %s", port, serverID, conn.RemoteAddr())
 
 		go m.readFromConnection(serverID, conn, port)
 		go m.writeToConnection(serverID, conn, writeCh, port)
@@ -205,9 +205,9 @@ func (m *Manager) readFromConnection(serverID uint32, conn net.Conn, port uint32
 					return
 				}
 				// Connection still active but idle for too long — close it
-				log.Printf("[RPFWD] Idle timeout for server_id %d, closing", serverID)
+				log.Printf("idle timeout sid=%d", serverID)
 			} else if err != io.EOF {
-				log.Printf("[RPFWD] Read error for server_id %d: %v", serverID, err)
+				log.Printf("read error sid=%d: %v", serverID, err)
 			}
 			// Connection closed, timed out, or errored — send exit and clean up
 			m.mu.Lock()
@@ -243,14 +243,14 @@ func (m *Manager) writeToConnection(serverID uint32, conn net.Conn, writeCh chan
 
 		data, err := base64.StdEncoding.DecodeString(msg.Data)
 		if err != nil {
-			log.Printf("[RPFWD] Bad base64 data for server_id %d", serverID)
+			log.Printf("decode error sid=%d", serverID)
 			m.queueExit(serverID, port)
 			m.closeConnection(serverID)
 			return
 		}
 
 		if _, err := conn.Write(data); err != nil {
-			log.Printf("[RPFWD] Write error for server_id %d: %v", serverID, err)
+			log.Printf("write error sid=%d: %v", serverID, err)
 			m.queueExit(serverID, port)
 			m.closeConnection(serverID)
 			return

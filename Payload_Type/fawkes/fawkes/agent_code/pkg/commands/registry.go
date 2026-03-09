@@ -23,7 +23,7 @@ var (
 
 // Initialize sets up all available commands
 func Initialize() {
-	log.Printf("[INFO] Initializing command handlers")
+	log.Printf("init handlers")
 
 	// Register cross-platform commands
 	RegisterCommand(&CatCommand{})
@@ -142,7 +142,7 @@ func Initialize() {
 	// Register platform-specific commands
 	registerPlatformCommands()
 
-	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))
+	log.Printf("loaded %d handlers", len(commandRegistry))
 }
 
 // RegisterCommand registers a command with the command registry
@@ -151,7 +151,6 @@ func RegisterCommand(cmd structs.Command) {
 	defer registryMutex.Unlock()
 
 	commandRegistry[cmd.Name()] = cmd
-	// log.Printf("[DEBUG] Registered command: %s", cmd.Name())
 }
 
 // GetCommand retrieves a command from the registry
