@@ -33,4 +33,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&PersistEnumCommand{})
 	RegisterCommand(&ServiceCommand{})
 	RegisterCommand(&NetUserCommand{})
+	RegisterCommand(&HashdumpCommand{})
 }

@@ -5,62 +5,93 @@ weight = 105
 hidden = false
 +++
 
-{{% notice info %}}
-Windows Only
-{{% /notice %}}
-
 ## Summary
 
-Extract local account NTLM password hashes from the SAM (Security Account Manager) database by reading and decrypting the SYSTEM and SAM registry hives in-memory. No files are written to disk.
+Extract local account password hashes from the system. Supports both Windows (SAM database) and Linux (/etc/shadow).
+
+### Windows — SAM Hash Extraction
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Reads and decrypts the SYSTEM and SAM registry hives in-memory to extract NTLM password hashes. No files are written to disk.
 
 Output format matches the standard `pwdump` format:
 ```
 username:RID:LM_hash:NT_hash:::
 ```
 
-### How It Works
+**How It Works:**
 
 1. **Boot Key Extraction** — Reads class names from four LSA subkeys (`JD`, `Skew1`, `GBG`, `Data`) under `HKLM\SYSTEM\CurrentControlSet\Control\Lsa` and applies a permutation to derive the 16-byte boot key.
 2. **Hashed Boot Key Derivation** — Reads the SAM `F` value from `HKLM\SAM\SAM\Domains\Account` and decrypts it using the boot key. Supports both RC4 (SAM revision 1, pre-Win10) and AES-128-CBC (SAM revision 2, Win10+).
 3. **User Enumeration** — Enumerates user RID subkeys under `HKLM\SAM\SAM\Domains\Account\Users` and reads each user's `V` value.
 4. **Hash Decryption** — Decrypts each user's NT and LM hashes using the hashed boot key and RID-derived DES keys.
 
-### Requirements
+**Requirements:**
+- Administrator privileges (High integrity for SeBackupPrivilege)
+- SYSTEM token recommended — run `getsystem` first
 
-- **Administrator privileges** — High integrity required for SeBackupPrivilege
-- Uses `RegCreateKeyExW` with `REG_OPTION_BACKUP_RESTORE` to bypass SAM DACL restrictions
-- **SYSTEM token recommended** — Run `getsystem` first for maximum reliability
-- No files written to disk — all operations are registry reads
+### Linux — /etc/shadow Extraction
 
-### Arguments
+{{% notice info %}}Linux Only{{% /notice %}}
 
-None. The command takes no parameters.
+Reads `/etc/shadow` and `/etc/passwd` to extract password hashes with enriched user context (UID, GID, home directory, shell).
+
+Identifies hash algorithms: yescrypt, SHA-512, SHA-256, bcrypt, MD5, DES.
+
+Skips locked and disabled accounts (`!`, `!!`, `*`).
+
+Reports extracted credentials to the Mythic credential vault automatically.
+
+**Requirements:**
+- Root privileges (shadow file is root-readable only)
+
+## Arguments
+
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| format | No | text | Output format: `text` or `json` (Linux only) |
 
 ## Usage
 
 ```
 hashdump
+hashdump -format json
 ```
 
 ## Example Output
 
+**Windows:**
 ```
 Administrator:500:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
 Guest:501:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
-DefaultAccount:503:aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::
-WDAGUtilityAccount:504:aad3b435b51404eeaad3b435b51404ee:b20b7632d036ba2dae0705764042a750:::
 setup:1001:aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c:::
 ```
 
-The LM hash `aad3b435b51404ee` indicates LM hashing is disabled (default on modern Windows). The NT hash is the NTLM hash that can be used for pass-the-hash or offline cracking.
+**Linux:**
+```
+[*] Dumping /etc/shadow — 2 hashes found
+
+root:$y$j9T$abc123$longhashvalue
+  UID=0 GID=0 Home=/root Shell=/bin/bash Type=yescrypt
+setup:$6$rounds=5000$salt$hashvalue
+  UID=1000 GID=1000 Home=/home/setup Shell=/bin/bash Type=SHA-512
+```
 
 ## Workflow
 
-1. Run `getsystem` to get SYSTEM token (recommended)
+**Windows:**
+1. Run `getsystem` to get SYSTEM token
 2. Run `hashdump`
-3. Use hashes for pass-the-hash (`smb`, `winrm`) or crack offline with hashcat (`-m 1000`)
+3. Use hashes for pass-the-hash (`smb`, `winrm`) or crack with hashcat (`-m 1000`)
 4. Run `rev2self` to drop SYSTEM privileges
+
+**Linux:**
+1. Ensure callback is running as root
+2. Run `hashdump`
+3. Crack with hashcat (`-m 1800` for SHA-512, `-m 3200` for bcrypt)
 
 ## MITRE ATT&CK Mapping
 
 - T1003.002 — OS Credential Dumping: Security Account Manager
+- T1003.008 — OS Credential Dumping: /etc/passwd and /etc/shadow
