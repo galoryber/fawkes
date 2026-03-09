@@ -5,21 +5,20 @@ weight = 105
 hidden = false
 +++
 
-{{% notice info %}}
-Windows Only
-{{% /notice %}}
-
 ## Summary
 
-Enumerate active logon sessions on the system using the Windows Terminal Services (WTS) API. Shows which users are logged in, their session IDs, connection state, and terminal station.
+Enumerate active logon sessions on the system. Shows which users are logged in, their session IDs, connection state, and terminal station.
 
 Two actions are available:
 - **list** (default): Show all sessions including system sessions
 - **users**: Show only unique logged-on users with their session details
 
-Optional username/domain filter to narrow results.
+Optional username filter to narrow results.
 
-Uses `WTSEnumerateSessionsW` + `WTSQuerySessionInformationW` — no subprocess creation.
+### Platform Details
+
+- **Windows**: Uses `WTSEnumerateSessionsW` + `WTSQuerySessionInformationW` — no subprocess creation.
+- **Linux**: Natively parses `/var/run/utmp` binary (384-byte utmp records) — no subprocess creation. Shows active USER_PROCESS entries with PID, terminal, login time, and remote host.
 
 ### Arguments
 
@@ -27,7 +26,7 @@ Uses `WTSEnumerateSessionsW` + `WTSQuerySessionInformationW` — no subprocess c
 Action to perform. Options: `list` (default), `users`.
 
 #### filter
-Optional: filter results by username or domain substring (case-insensitive).
+Optional: filter results by username substring (case-insensitive). On Windows, also matches domain.
 
 ## Usage
 
@@ -50,11 +49,19 @@ logonsessions -action list -filter setup
 
 Returns JSON array of session entries, rendered by a browser script into a sortable table.
 
-### JSON Structure
+### JSON Structure (Windows)
 ```json
 [
   {"session_id": 0, "username": "(none)", "domain": "-", "station": "Services", "state": "Disconnected", "client": ""},
   {"session_id": 2, "username": "setup", "domain": "Win1123H2", "station": "Console", "state": "Active", "client": ""}
+]
+```
+
+### JSON Structure (Linux)
+```json
+[
+  {"session_id": 42, "username": "gary", "domain": "", "station": "pts/0", "state": "Active", "client": "192.168.1.100", "pid": 1234, "login_time": "2026-03-09 16:00:00"},
+  {"session_id": 43, "username": "root", "domain": "", "station": "tty1", "state": "Active", "pid": 567, "login_time": "2026-03-09 12:00:00"}
 ]
 ```
 

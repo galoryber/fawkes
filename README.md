@@ -119,7 +119,7 @@ launchagent | `launchagent -action <install\|remove\|list> -label <com.example.n
 link | `link -host <ip> -port <port>` | Link to a TCP P2P agent for internal pivoting. Target agent must be built with TCP profile. Cross-platform (T1572).
 ln | `ln -target <existing> -link <new> [-symbolic true] [-force true]` | Create symbolic or hard links. Symlinks can point to non-existent paths. Force mode replaces existing link. Cross-platform (T1036).
 linux-logs | `linux-logs -action <list\|read\|logins\|clear\|truncate\|shred> [-file <path>] [-search <filter>] [-lines <n>]` | **(Linux only)** List, read, clear, or tamper with Linux log files and binary login records (wtmp/btmp/utmp). Supports selective line removal and secure shredding (T1070.002).
-logonsessions | `logonsessions [-action list\|users] [-filter <name>]` | **(Windows only)** Enumerate active logon sessions — users, session IDs, stations, connection state. Filter by username/domain.
+logonsessions | `logonsessions [-action list\|users] [-filter <name>]` | **(Windows, Linux)** Enumerate active logon sessions — users, session IDs, stations, connection state. Filter by username. Windows: WTS API. Linux: native utmp parsing.
 ls | `ls [path]` | List files and folders with owner/group and timestamps. File browser integration. Defaults to cwd.
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it.
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
