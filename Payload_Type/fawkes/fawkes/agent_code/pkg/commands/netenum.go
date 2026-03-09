@@ -451,7 +451,7 @@ func netEnumLocalUsers() structs.CommandResult {
 		return successResult("[]")
 	}
 	data, _ := json.Marshal(entries)
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // --- Action: localgroups (enhanced with remote server support) ---
@@ -517,7 +517,7 @@ func netEnumLocalGroups(target string) structs.CommandResult {
 		return successResult("[]")
 	}
 	data, _ := json.Marshal(entries)
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // --- Action: groupmembers (enhanced with remote server + SID type) ---
@@ -588,7 +588,7 @@ func netEnumGroupMembers(group, target string) structs.CommandResult {
 	if err != nil {
 		return errorf("Error marshaling results: %v", err)
 	}
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // --- Action: domainusers ---
@@ -646,7 +646,7 @@ func netEnumDomainUsers() structs.CommandResult {
 		return successResult("[]")
 	}
 	data, _ := json.Marshal(entries)
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // --- Action: domaingroups ---
@@ -703,7 +703,7 @@ func netEnumDomainGroups() structs.CommandResult {
 		return successResult("[]")
 	}
 	data, _ := json.Marshal(entries)
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // --- Action: domaininfo ---
@@ -798,7 +798,7 @@ func netEnumDomainInfo() structs.CommandResult {
 	}
 
 	data, _ := json.Marshal(out)
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // --- Action: loggedon ---
@@ -850,7 +850,7 @@ func netEnumLoggedOn(target string) structs.CommandResult {
 	}
 
 	data, _ := json.Marshal(entries)
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // --- Action: sessions ---
@@ -865,7 +865,7 @@ func netEnumSessions(target string) structs.CommandResult {
 			return errorf("Error enumerating sessions: %v", err)
 		}
 	}
-	return structs.CommandResult{Output: output, Status: "success", Completed: true}
+	return successResult(output)
 }
 
 func neEnumSessions502(target string) (string, error) {
@@ -1010,7 +1010,7 @@ func netEnumLocalShares() structs.CommandResult {
 	}
 
 	data, _ := json.Marshal(out)
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // --- Action: shares (remote, when target is specified) ---
@@ -1062,7 +1062,7 @@ func netEnumRemoteShares(target string) structs.CommandResult {
 	}
 
 	data, _ := json.Marshal(out)
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // --- Action: mapped ---
@@ -1126,5 +1126,5 @@ func netEnumMappedDrives() structs.CommandResult {
 	}
 
 	data, _ := json.Marshal(out)
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
