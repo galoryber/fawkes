@@ -108,7 +108,7 @@ Operations use standard system administration commands:
 |--------|---------|
 | add | `useradd -m -s /bin/bash [-c comment] username` + `chpasswd` |
 | delete | `userdel -r username` |
-| info | Parse `/etc/passwd`, `/etc/shadow`, `groups` |
+| info | Parse `/etc/passwd`, `/etc/shadow`, `/etc/group` (native) |
 | password | `chpasswd` (via stdin pipe) |
 | group-add | `usermod -aG group username` |
 | group-remove | `gpasswd -d username group` |
@@ -116,7 +116,7 @@ Operations use standard system administration commands:
 ## Operational Notes
 
 - **Requires root/administrator privileges** for write operations (add, delete, password, group-add, group-remove)
-- The `info` action parses `/etc/passwd` (all users) and `/etc/shadow` (root only) on Linux
+- The `info` action parses `/etc/passwd`, `/etc/shadow`, and `/etc/group` natively on Linux (no subprocess for group enumeration)
 - **Linux `info`** also reports password status (set/locked/empty), group memberships, and sudo access
 - Linux creates users with `/bin/bash` shell and home directory by default
 - **Linux `delete`** removes the home directory with `-r` flag
