@@ -111,29 +111,25 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 	defer structs.ZeroString(&args.Hash)
 
 	if args.Action == "" || args.Server == "" {
-		return structs.CommandResult{
-			Output: "Usage: remote-service -action <list|query|create|start|stop|delete> -server <host> [options]\n\n" +
-				"Actions:\n" +
-				"  list   — Enumerate all services\n" +
-				"  query  — Query a specific service's config and status\n" +
-				"  create — Create a new service\n" +
-				"  start  — Start a service\n" +
-				"  stop   — Stop a service\n" +
-				"  delete — Delete a service\n\n" +
-				"Options:\n" +
-				"  -server       Target host (required)\n" +
-				"  -name         Service name (required for query/create/start/stop/delete)\n" +
-				"  -display_name Display name (for create)\n" +
-				"  -binpath      Binary path (required for create)\n" +
-				"  -start_type   Start type: auto, demand, disabled (default: demand)\n" +
-				"  -username     Username for authentication\n" +
-				"  -password     Password for authentication\n" +
-				"  -hash         NTLM hash for pass-the-hash (LM:NT or just NT)\n" +
-				"  -domain       Domain for authentication\n" +
-				"  -timeout      Timeout in seconds (default: 30)\n",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("Usage: remote-service -action <list|query|create|start|stop|delete> -server <host> [options]\n\n" +
+			"Actions:\n" +
+			"  list   — Enumerate all services\n" +
+			"  query  — Query a specific service's config and status\n" +
+			"  create — Create a new service\n" +
+			"  start  — Start a service\n" +
+			"  stop   — Stop a service\n" +
+			"  delete — Delete a service\n\n" +
+			"Options:\n" +
+			"  -server       Target host (required)\n" +
+			"  -name         Service name (required for query/create/start/stop/delete)\n" +
+			"  -display_name Display name (for create)\n" +
+			"  -binpath      Binary path (required for create)\n" +
+			"  -start_type   Start type: auto, demand, disabled (default: demand)\n" +
+			"  -username     Username for authentication\n" +
+			"  -password     Password for authentication\n" +
+			"  -hash         NTLM hash for pass-the-hash (LM:NT or just NT)\n" +
+			"  -domain       Domain for authentication\n" +
+			"  -timeout      Timeout in seconds (default: 30)\n")
 	}
 
 	if args.Timeout <= 0 {

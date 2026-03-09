@@ -54,28 +54,24 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 	defer structs.ZeroString(&args.Hash)
 
 	if args.Action == "" || args.Server == "" {
-		return structs.CommandResult{
-			Output: "Usage: remote-reg -action <query|set|enum|delete> -server <host> [options]\n\n" +
-				"Actions:\n" +
-				"  query  — Read a registry value\n" +
-				"  enum   — List subkeys and values under a key\n" +
-				"  set    — Write a registry value\n" +
-				"  delete — Delete a registry key or value\n\n" +
-				"Options:\n" +
-				"  -server   Target host (required)\n" +
-				"  -hive     Registry hive: HKLM, HKCU, HKU, HKCR (default: HKLM)\n" +
-				"  -path     Registry key path (e.g., SOFTWARE\\Microsoft\\Windows)\n" +
-				"  -name     Value name (for query/set/delete value)\n" +
-				"  -data     Value data (for set)\n" +
-				"  -reg_type Value type: REG_SZ, REG_DWORD, REG_BINARY, REG_QWORD, REG_EXPAND_SZ (for set)\n" +
-				"  -username Username for authentication\n" +
-				"  -password Password for authentication\n" +
-				"  -hash     NTLM hash for pass-the-hash (LM:NT or just NT)\n" +
-				"  -domain   Domain for authentication\n" +
-				"  -timeout  Timeout in seconds (default: 30)\n",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("Usage: remote-reg -action <query|set|enum|delete> -server <host> [options]\n\n" +
+			"Actions:\n" +
+			"  query  — Read a registry value\n" +
+			"  enum   — List subkeys and values under a key\n" +
+			"  set    — Write a registry value\n" +
+			"  delete — Delete a registry key or value\n\n" +
+			"Options:\n" +
+			"  -server   Target host (required)\n" +
+			"  -hive     Registry hive: HKLM, HKCU, HKU, HKCR (default: HKLM)\n" +
+			"  -path     Registry key path (e.g., SOFTWARE\\Microsoft\\Windows)\n" +
+			"  -name     Value name (for query/set/delete value)\n" +
+			"  -data     Value data (for set)\n" +
+			"  -reg_type Value type: REG_SZ, REG_DWORD, REG_BINARY, REG_QWORD, REG_EXPAND_SZ (for set)\n" +
+			"  -username Username for authentication\n" +
+			"  -password Password for authentication\n" +
+			"  -hash     NTLM hash for pass-the-hash (LM:NT or just NT)\n" +
+			"  -domain   Domain for authentication\n" +
+			"  -timeout  Timeout in seconds (default: 30)\n")
 	}
 
 	if args.Hive == "" {

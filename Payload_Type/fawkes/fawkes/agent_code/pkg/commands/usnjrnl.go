@@ -349,12 +349,8 @@ func usnDelete(volume string) structs.CommandResult {
 	}
 
 	recordRange := journal.NextUsn - journal.FirstUsn
-	return structs.CommandResult{
-		Output: fmt.Sprintf("USN Journal deleted on %s\n  Journal ID: 0x%016X\n  Records cleared: ~%s of forensic data destroyed\n  Note: deletion continues in background",
-			volume, journal.UsnJournalID, formatBytes(uint64(recordRange))),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("USN Journal deleted on %s\n  Journal ID: 0x%016X\n  Records cleared: ~%s of forensic data destroyed\n  Note: deletion continues in background",
+		volume, journal.UsnJournalID, formatBytes(uint64(recordRange)))
 }
 
 // formatBytes (duplicate of bitsFormatBytes in command_helpers.go) and
