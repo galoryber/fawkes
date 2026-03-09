@@ -300,41 +300,20 @@ func cloudNetwork(provider string, timeout time.Duration) structs.CommandResult 
 
 // metadataGet makes a GET request to a metadata endpoint with optional headers
 func metadataGet(url string, timeout time.Duration, headers map[string]string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return ""
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return ""
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, metadataMaxSize))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(body))
+	return metadataRequest("GET", url, timeout, headers, metadataMaxSize)
 }
 
 // metadataPut makes a PUT request (used for AWS IMDSv2 token)
 func metadataPut(url string, timeout time.Duration, headers map[string]string) string {
+	return metadataRequest("PUT", url, timeout, headers, 1024)
+}
+
+// metadataRequest makes an HTTP request to a metadata endpoint and returns the response body
+func metadataRequest(method, url string, timeout time.Duration, headers map[string]string, maxBody int64) string {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, nil)
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return ""
 	}
@@ -353,7 +332,7 @@ func metadataPut(url string, timeout time.Duration, headers map[string]string) s
 		return ""
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
 		return ""
 	}
