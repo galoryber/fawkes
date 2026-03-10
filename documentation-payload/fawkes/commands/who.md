@@ -60,8 +60,9 @@ The browser script highlights active sessions in blue and disconnected sessions 
 - Filters to active/disconnected sessions by default
 
 ### macOS
-- Uses the native `who` command
-- Parses output for user, TTY, login time, and source host
+- Natively parses `/var/run/utmpx` binary records (628-byte utmpx format) — no subprocess creation
+- Filters to USER_PROCESS entries (type 7) by default
+- Shows username, TTY, login time, and remote host
 
 ## MITRE ATT&CK Mapping
 

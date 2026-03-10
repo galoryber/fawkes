@@ -1,59 +1,66 @@
 //go:build darwin
-// +build darwin
 
 package commands
 
 import (
+	"encoding/binary"
+	"fmt"
+	"os"
 	"strings"
+	"time"
 )
 
-func whoPlatform(args whoArgs) []whoSessionEntry {
-	cmdArgs := []string{}
-	if args.All {
-		cmdArgs = append(cmdArgs, "-a")
-	}
+const (
+	whoUtmpxRecordSize  = 628
+	whoUtmpxUserProcess = 7
+)
 
-	out, err := execCmdTimeout("who", cmdArgs...)
+// whoUtmpxPath can be overridden in tests.
+var whoUtmpxPath = "/var/run/utmpx"
+
+func whoPlatform(args whoArgs) []whoSessionEntry {
+	data, err := os.ReadFile(whoUtmpxPath)
 	if err != nil {
 		return nil
 	}
 
-	output := strings.TrimSpace(string(out))
-	if output == "" {
-		return nil
-	}
-
 	var entries []whoSessionEntry
-	for _, line := range strings.Split(output, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) < 3 {
+	for offset := 0; offset+whoUtmpxRecordSize <= len(data); offset += whoUtmpxRecordSize {
+		rec := data[offset : offset+whoUtmpxRecordSize]
+
+		utType := int16(binary.LittleEndian.Uint16(rec[296:298]))
+
+		if !args.All && utType != whoUtmpxUserProcess {
 			continue
 		}
 
-		user := fields[0]
-		tty := fields[1]
-		loginTime := strings.Join(fields[2:], " ")
-		host := ""
+		user := extractCString(rec[0:256])
+		tty := extractCString(rec[260:292])
+		host := extractCString(rec[308:564])
+		tvSec := int64(binary.LittleEndian.Uint32(rec[300:304]))
+		loginTime := time.Unix(tvSec, 0).Format("2006-01-02 15:04:05")
 
-		if idx := strings.Index(loginTime, "("); idx != -1 {
-			endIdx := strings.Index(loginTime, ")")
-			if endIdx > idx {
-				host = loginTime[idx+1 : endIdx]
-				loginTime = strings.TrimSpace(loginTime[:idx])
-			}
+		if user == "" && !args.All {
+			continue
 		}
 
-		from := host
-		if from == "" {
-			from = "-"
+		status := "active"
+		if utType != whoUtmpxUserProcess {
+			status = fmt.Sprintf("type=%d", utType)
+		}
+		if host == "" {
+			host = "-"
+		}
+		if tty == "" {
+			tty = "-"
 		}
 
 		entries = append(entries, whoSessionEntry{
 			User:      user,
 			TTY:       tty,
 			LoginTime: loginTime,
-			From:      from,
-			Status:    "active",
+			From:      strings.TrimSpace(host),
+			Status:    status,
 		})
 	}
 
