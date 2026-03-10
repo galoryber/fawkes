@@ -57,6 +57,43 @@ func TestUtf16LEToUTF8_Unicode(t *testing.T) {
 	}
 }
 
+func TestUtf16LEToUTF8_TrailingNulls(t *testing.T) {
+	// Simulate Windows fixed-size buffer with trailing null characters
+	input := "hello"
+	data := testUTF8ToUTF16LE(input)
+	// Append 6 null bytes (3 null uint16 values)
+	data = append(data, 0, 0, 0, 0, 0, 0)
+
+	result, err := utf16LEToUTF8(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != input {
+		t.Errorf("got %q (len %d), want %q (len %d)", result, len(result), input, len(input))
+	}
+}
+
+func TestUtf16LEToUTF8_TrailingNullsJSON(t *testing.T) {
+	// Simulate a .tbres file with trailing nulls after JSON content
+	jsonStr := `{"key":"value"}`
+	data := testUTF8ToUTF16LE(jsonStr)
+	data = append(data, 0, 0, 0, 0) // trailing nulls
+
+	result, err := utf16LEToUTF8(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Verify the result is valid JSON
+	var parsed map[string]string
+	if err := json.Unmarshal([]byte(result), &parsed); err != nil {
+		t.Fatalf("result should be valid JSON, got error: %v (raw: %q)", err, result)
+	}
+	if parsed["key"] != "value" {
+		t.Errorf("parsed[key] = %q", parsed["key"])
+	}
+}
+
 func TestMatchAuthCookie_KnownPatterns(t *testing.T) {
 	tests := []struct {
 		host     string

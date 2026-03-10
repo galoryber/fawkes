@@ -72,7 +72,8 @@ var authCookiePatterns = []struct {
 	{"outlook.office365.com", "ClientId", "Outlook 365 client ID"},
 }
 
-// utf16LEToUTF8 converts a byte slice from UTF-16LE (with optional BOM) to a UTF-8 string
+// utf16LEToUTF8 converts a byte slice from UTF-16LE (with optional BOM) to a UTF-8 string.
+// Strips trailing null characters which are common in Windows fixed-size buffers.
 func utf16LEToUTF8(data []byte) (string, error) {
 	if len(data) < 2 {
 		return "", fmt.Errorf("data too short")
@@ -85,6 +86,11 @@ func utf16LEToUTF8(data []byte) (string, error) {
 
 	if len(data)%2 != 0 {
 		data = data[:len(data)-1] // trim trailing byte if odd
+	}
+
+	// Strip trailing null uint16 values (0x00 0x00 pairs) — common in Windows buffers
+	for len(data) >= 2 && data[len(data)-1] == 0 && data[len(data)-2] == 0 {
+		data = data[:len(data)-2]
 	}
 
 	u16s := make([]uint16, len(data)/2)
