@@ -124,10 +124,14 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	defer filterInst.Clear()
 
 	filterDisp := filterInst.ToIDispatch()
-	oleutil.PutProperty(filterDisp, "Name", filterName)
-	oleutil.PutProperty(filterDisp, "QueryLanguage", "WQL")
-	oleutil.PutProperty(filterDisp, "Query", wqlQuery)
-	oleutil.PutProperty(filterDisp, "EventNamespace", `root\CIMV2`)
+	for _, prop := range [][2]interface{}{
+		{"Name", filterName}, {"QueryLanguage", "WQL"},
+		{"Query", wqlQuery}, {"EventNamespace", `root\CIMV2`},
+	} {
+		if _, err := oleutil.PutProperty(filterDisp, prop[0].(string), prop[1]); err != nil {
+			return errorf("Error setting filter %s: %v", prop[0], err)
+		}
+	}
 
 	_, err = oleutil.CallMethod(filterDisp, "Put_")
 	if err != nil {
@@ -148,8 +152,12 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 			if err == nil {
 				defer timerInst.Clear()
 				timerDisp := timerInst.ToIDispatch()
-				oleutil.PutProperty(timerDisp, "TimerID", "PerfDataTimer")
-				oleutil.PutProperty(timerDisp, "IntervalBetweenEvents", intervalMs)
+				if _, err := oleutil.PutProperty(timerDisp, "TimerID", "PerfDataTimer"); err != nil {
+					return errorf("Error setting timer TimerID: %v", err)
+				}
+				if _, err := oleutil.PutProperty(timerDisp, "IntervalBetweenEvents", intervalMs); err != nil {
+					return errorf("Error setting timer IntervalBetweenEvents: %v", err)
+				}
 				oleutil.CallMethod(timerDisp, "Put_")
 			}
 		}
@@ -170,8 +178,12 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	defer consumerInst.Clear()
 
 	consumerDisp := consumerInst.ToIDispatch()
-	oleutil.PutProperty(consumerDisp, "Name", consumerName)
-	oleutil.PutProperty(consumerDisp, "CommandLineTemplate", args.Command)
+	if _, err := oleutil.PutProperty(consumerDisp, "Name", consumerName); err != nil {
+		return errorf("Error setting consumer Name: %v", err)
+	}
+	if _, err := oleutil.PutProperty(consumerDisp, "CommandLineTemplate", args.Command); err != nil {
+		return errorf("Error setting consumer CommandLineTemplate: %v", err)
+	}
 
 	_, err = oleutil.CallMethod(consumerDisp, "Put_")
 	if err != nil {
@@ -201,8 +213,16 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 
 	filterRef := fmt.Sprintf(`__EventFilter.Name="%s"`, filterName)
 	consumerRef := fmt.Sprintf(`CommandLineEventConsumer.Name="%s"`, consumerName)
-	oleutil.PutProperty(bindingDisp, "Filter", filterRef)
-	oleutil.PutProperty(bindingDisp, "Consumer", consumerRef)
+	if _, err := oleutil.PutProperty(bindingDisp, "Filter", filterRef); err != nil {
+		deleteWMIObject(services, "__EventFilter", filterName)
+		deleteWMIObject(services, "CommandLineEventConsumer", consumerName)
+		return errorf("Error setting binding Filter: %v", err)
+	}
+	if _, err := oleutil.PutProperty(bindingDisp, "Consumer", consumerRef); err != nil {
+		deleteWMIObject(services, "__EventFilter", filterName)
+		deleteWMIObject(services, "CommandLineEventConsumer", consumerName)
+		return errorf("Error setting binding Consumer: %v", err)
+	}
 
 	_, err = oleutil.CallMethod(bindingDisp, "Put_")
 	if err != nil {
