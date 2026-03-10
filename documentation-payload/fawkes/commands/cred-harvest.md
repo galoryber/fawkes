@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Cross-platform credential harvesting across system files, cloud infrastructure, application configurations, and Windows-specific sources. On Unix: extracts password hashes from `/etc/shadow`, discovers cloud provider credentials, and finds application secrets. On Windows: harvests PowerShell history, sensitive environment variables, RDP connections, WiFi profiles, and Windows Vault locations.
+Cross-platform credential harvesting across system files, cloud infrastructure, application configurations, Windows-specific sources, and Microsoft 365 OAuth tokens. On Unix: extracts password hashes from `/etc/shadow`, discovers cloud provider credentials, and finds application secrets. On Windows: harvests PowerShell history, sensitive environment variables, RDP connections, WiFi profiles, Windows Vault locations, and M365 OAuth/JWT tokens from TokenBroker, Teams, and Outlook.
 
 {{% notice info %}}Cross-Platform — works on Windows, Linux, and macOS. Actions vary by platform.{{% /notice %}}
 
@@ -15,7 +15,7 @@ Cross-platform credential harvesting across system files, cloud infrastructure, 
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | `shadow` (Unix): system password hashes. `cloud`: cloud/infrastructure credentials. `configs`: application secrets. `windows` (Windows): PowerShell history, env vars, RDP, WiFi. `all`: run all platform-appropriate actions. |
+| action | Yes | `shadow` (Unix): system password hashes. `cloud`: cloud/infrastructure credentials. `configs`: application secrets. `windows` (Windows): PowerShell history, env vars, RDP, WiFi. `m365-tokens` (Windows): OAuth/JWT tokens from TokenBroker, Teams, Outlook. `all`: run all platform-appropriate actions. |
 | user | No | Filter results by username (case-insensitive substring match) |
 
 ## Usage
@@ -40,11 +40,14 @@ cred-harvest -action shadow -user root
 
 ### Windows
 ```
-# Extract all credentials (windows + cloud + configs)
+# Extract all credentials (windows + cloud + configs + m365-tokens)
 cred-harvest -action all
 
 # Windows-specific sources (PowerShell history, env vars, RDP, WiFi)
 cred-harvest -action windows
+
+# Microsoft 365 OAuth/JWT tokens (TokenBroker, Teams, Outlook)
+cred-harvest -action m365-tokens
 
 # Cloud provider credentials (same as Unix)
 cred-harvest -action cloud
@@ -109,6 +112,21 @@ Harvests Windows-specific credential sources:
 | **WiFi Profiles** | Profile locations (use `netsh wlan show profiles` to extract keys) |
 | **Windows Vault** | Vault directory locations (use `credman` command for detailed enumeration) |
 
+## M365 Tokens Action (Windows Only)
+
+Extracts OAuth/JWT tokens from three Microsoft 365 sources:
+
+| Source | Location | Encryption | What's Extracted |
+|--------|----------|------------|------------------|
+| **TokenBroker Cache** | `%LOCALAPPDATA%\Microsoft\TokenBroker\Cache\*.tbres` | DPAPI | Access tokens, refresh tokens, resource URLs, client IDs |
+| **Teams EBWebView** | `%LOCALAPPDATA%\Packages\MSTeams_*\...\EBWebView\` | AES-256-GCM (DPAPI key) | Auth cookies: ESTSAUTH, authtoken, skypetoken_asm, etc. |
+| **Outlook (New) EBWebView** | `%LOCALAPPDATA%\Microsoft\Olk\EBWebView\` | AES-256-GCM (DPAPI key) | Auth cookies: ESTSAUTH, OIDCAuthCookie, FedAuth, etc. |
+| **OneAuth Metadata** | `%LOCALAPPDATA%\Microsoft\OneAuth\accounts\` | Plaintext | Account UPN, tenant ID, display name |
+
+Recognizes 17 specific M365 auth cookie patterns plus generic token name detection. TokenBroker files are UTF-16LE JSON with DPAPI-protected response bytes containing structured token data.
+
+EBWebView cookie decryption uses the same Chromium pattern as the `browser` command: reads `Local State` → DPAPI decrypts the AES key → AES-256-GCM decrypts cookie values.
+
 ## Credential Vault Integration
 
 Harvested credentials are automatically reported to Mythic's Credentials store:
@@ -118,12 +136,15 @@ Harvested credentials are automatically reported to Mythic's Credentials store:
 | `/etc/shadow` hashes | hash | Username + password hash (e.g., `$6$...`, `$y$...`) |
 | Cloud env vars | plaintext | Environment variable name + value (e.g., `AWS_ACCESS_KEY_ID`, `VAULT_TOKEN`) |
 | Windows sensitive env vars | plaintext | Environment variable name + value (e.g., `PASSWORD`, `SECRET`, `API_KEY` patterns) |
+| TokenBroker tokens | token | Client ID + access/refresh token, resource URL |
+| EBWebView auth cookies | token | Cookie name + decrypted value, host domain |
 
 Credentials are searchable in the Mythic UI under the Credentials tab.
 
 ## OPSEC Considerations
 
-- All actions use only file read operations — no subprocess execution, no API calls
+- Most actions use only file read operations — no subprocess execution, no API calls
+- M365 tokens action calls `CryptUnprotectData` (DPAPI) — standard Windows API, same user context
 - `/etc/shadow` and `/etc/gshadow` require root — non-root gets permission denied
 - Cloud credential files are user-readable — no elevation needed
 - SSH private keys require same-user or root access
@@ -138,3 +159,4 @@ Credentials are searchable in the Mythic UI under the Credentials tab.
 - **T1552.001** — Unsecured Credentials: Credentials In Files
 - **T1552.004** — Unsecured Credentials: Private Keys
 - **T1003.008** — OS Credential Dumping: /etc/passwd and /etc/shadow
+- **T1528** — Steal Application Access Token

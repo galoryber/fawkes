@@ -50,7 +50,7 @@ container-detect | `container-detect` | Detect container runtime and environment
 container-escape | `container-escape -action <check\|docker-sock\|cgroup\|nsenter\|mount-host> [-command '<cmd>']` | **(Linux only)** Container breakout — Docker socket abuse, cgroup release_agent, PID namespace nsenter, host device mount. Enumerate or exploit escape vectors (T1611).
 cp | `cp <source> <destination>` | Copy a file from source to destination.
 cred-check | `cred-check -hosts <IPs/CIDRs> -username <DOMAIN\user> -password <pass> [-hash <NTLM>] [-timeout <seconds>]` | Test credentials against SMB, WinRM, and LDAP on target hosts. Validates authentication across protocols in parallel with PTH support. Cross-platform (T1110.001, T1078).
-cred-harvest | `cred-harvest -action <shadow\|cloud\|configs\|windows\|all> [-user <username>]` | Harvest credentials: shadow hashes (Unix), cloud configs (AWS/GCP/Azure/K8s), application secrets, PowerShell history + env vars + RDP (Windows). Cross-platform (T1552.001, T1552.004, T1003.008).
+cred-harvest | `cred-harvest -action <shadow\|cloud\|configs\|windows\|m365-tokens\|all> [-user <username>]` | Harvest credentials: shadow hashes (Unix), cloud configs (AWS/GCP/Azure/K8s), application secrets, PowerShell history + env vars + RDP (Windows), M365 OAuth/JWT tokens from TokenBroker/Teams/Outlook (Windows). Cross-platform (T1552, T1003.008, T1528).
 credential-prompt | `credential-prompt [-title "Windows Security"] [-message "Enter your credentials..."] [-icon caution]` | Display native credential dialog to capture user credentials. macOS: AppleScript dialog with custom icon. Windows: CredUI prompt (domain/user/password). Reports to Mythic credential vault (T1056.002).
 curl | `curl -url <URL> [-method GET\|POST\|PUT\|DELETE\|HEAD\|OPTIONS\|PATCH] [-headers '{"K":"V"}'] [-body <data>] [-output full\|body\|headers]` | Make HTTP/HTTPS requests from agent's network. Cloud metadata, internal services, SSRF. Cross-platform (T1106).
 cut | `cut -path <file> -delimiter <char> -fields <1,3\|1-3\|2-> [-chars <1-10>]` | Extract fields or character ranges from file lines. Custom delimiters, range specs. Cross-platform (T1083).
@@ -324,7 +324,7 @@ Credential-harvesting commands automatically report discoveries to Mythic's **Cr
 | dpapi | plaintext/hash | DPAPI-protected secrets |
 | credman | plaintext | Credential Manager entries (on dump action) |
 | make-token | plaintext | Credentials used for token creation |
-| cred-harvest | hash/plaintext | Shadow hashes, cloud env vars, sensitive env vars |
+| cred-harvest | hash/plaintext/token | Shadow hashes, cloud env vars, sensitive env vars, M365 OAuth/JWT tokens |
 | credential-prompt | plaintext | Dialog-captured credentials (macOS/Windows) |
 
 ### Keylog Tracking
