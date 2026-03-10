@@ -174,6 +174,7 @@ pre = "<b>2. </b>"
     * [net-user](/agents/fawkes/commands/net-user/)
 - Post-Exploitation
     * [clipboard](/agents/fawkes/commands/clipboard/)
+    * [email](/agents/fawkes/commands/email/)
     * [keylog](/agents/fawkes/commands/keylog/)
     * [screenshot](/agents/fawkes/commands/screenshot/)
 - Networking
