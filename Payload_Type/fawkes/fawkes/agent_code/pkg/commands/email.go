@@ -88,7 +88,11 @@ func outlookConnect() (*outlookConnection, func(), error) {
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("failed to create Outlook.Application (is Outlook installed?): %v", err)
+		// Detect "New Outlook" (UWP/WebView2) which lacks COM support
+		msg := "failed to create Outlook.Application: %v. "
+		msg += "Classic Outlook (Microsoft 365/Office) is required — "
+		msg += "the new Outlook for Windows (UWP) does not support COM automation"
+		return nil, nil, fmt.Errorf(msg, err)
 	}
 
 	app, err := unknown.QueryInterface(ole.IID_IDispatch)
