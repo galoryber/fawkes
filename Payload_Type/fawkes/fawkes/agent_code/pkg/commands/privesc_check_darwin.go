@@ -4,14 +4,19 @@ package commands
 
 import (
 	"bufio"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
-	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"fawkes/pkg/structs"
+
+	_ "modernc.org/sqlite"
 )
 
 type PrivescCheckCommand struct{}
@@ -33,11 +38,7 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -63,11 +64,7 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	case "writable":
 		return macPrivescCheckWritable()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: all, suid, sudo, launchdaemons, tcc, dylib, sip, writable", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: all, suid, sudo, launchdaemons, tcc, dylib, sip, writable", args.Action)
 	}
 }
 
@@ -102,18 +99,14 @@ func macPrivescCheckAll() structs.CommandResult {
 	sb.WriteString("--- Writable Paths ---\n")
 	sb.WriteString(macPrivescCheckWritable().Output)
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckSIP checks System Integrity Protection status
 func macPrivescCheckSIP() structs.CommandResult {
 	var sb strings.Builder
 
-	out, err := exec.Command("csrutil", "status").CombinedOutput()
+	out, err := execCmdTimeout("csrutil", "status")
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("csrutil status failed: %v\n", err))
 	} else {
@@ -127,7 +120,7 @@ func macPrivescCheckSIP() structs.CommandResult {
 	}
 
 	// Check Authenticated Root (macOS 11+)
-	out, err = exec.Command("csrutil", "authenticated-root", "status").CombinedOutput()
+	out, err = execCmdTimeout("csrutil", "authenticated-root", "status")
 	if err == nil {
 		output := strings.TrimSpace(string(out))
 		if output != "" {
@@ -135,11 +128,7 @@ func macPrivescCheckSIP() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckSUID finds SUID and SGID binaries
@@ -152,8 +141,16 @@ func macPrivescCheckSUID() structs.CommandResult {
 		"/bin", "/sbin", "/opt/homebrew/bin", "/opt/local/bin"}
 
 	for _, searchPath := range searchPaths {
-		_ = filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
-			if err != nil || info.IsDir() {
+		_ = filepath.WalkDir(searchPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			t := d.Type()
+			if t&os.ModeSetuid == 0 && t&os.ModeSetgid == 0 {
+				return nil
+			}
+			info, infoErr := d.Info()
+			if infoErr != nil {
 				return nil
 			}
 			mode := info.Mode()
@@ -208,18 +205,14 @@ func macPrivescCheckSUID() structs.CommandResult {
 		sb.WriteString(strings.Join(flagged, "\n"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckSudo checks sudo rules
 func macPrivescCheckSudo() structs.CommandResult {
 	var sb strings.Builder
 
-	out, err := exec.Command("sudo", "-n", "-l").CombinedOutput()
+	out, err := execCmdTimeout("sudo", "-n", "-l")
 	output := strings.TrimSpace(string(out))
 	if err != nil {
 		if strings.Contains(output, "password is required") || strings.Contains(output, "a password is required") {
@@ -252,19 +245,14 @@ func macPrivescCheckSudo() structs.CommandResult {
 		}
 	}
 
-	// Check group memberships that grant admin
-	out, _ = exec.Command("id").CombinedOutput()
-	idOutput := strings.TrimSpace(string(out))
+	// Check group memberships that grant admin (native, no child process)
+	idOutput := nativeIDString()
 	sb.WriteString(fmt.Sprintf("\nCurrent identity: %s\n", idOutput))
 	if strings.Contains(idOutput, "(admin)") || strings.Contains(idOutput, "(wheel)") {
 		sb.WriteString("[*] User is in admin/wheel group — may have sudo access with password\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckLaunchDaemons checks for writable LaunchDaemons and LaunchAgents
@@ -327,11 +315,7 @@ func macPrivescCheckLaunchDaemons() structs.CommandResult {
 		sb.WriteString("[!] /Library/LaunchAgents is WRITABLE — can create user-level persistence\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckTCC inspects TCC database for permission grants
@@ -362,48 +346,49 @@ func macPrivescCheckTCC() structs.CommandResult {
 		}
 		sb.WriteString(fmt.Sprintf("%s: %s (%s)\n", tcc.desc, tcc.path, info.Mode().String()))
 
-		// Try reading with sqlite3
-		out, err := exec.Command("sqlite3", tcc.path,
-			"SELECT service, client, auth_value, auth_reason FROM access WHERE auth_value > 0 ORDER BY service;").CombinedOutput()
+		// Query TCC database using in-process SQLite (no child process)
+		db, err := sql.Open("sqlite", tcc.path+"?mode=ro")
 		if err != nil {
+			sb.WriteString(fmt.Sprintf("  Cannot open database: %v\n", err))
+			continue
+		}
+		rows, err := db.Query("SELECT service, client, auth_value, auth_reason FROM access WHERE auth_value > 0 ORDER BY service")
+		if err != nil {
+			db.Close()
 			sb.WriteString(fmt.Sprintf("  Cannot query (expected if not root): %v\n", err))
 			continue
 		}
 
-		output := strings.TrimSpace(string(out))
-		if output == "" {
-			sb.WriteString("  No granted permissions found.\n")
-			continue
-		}
-
-		// Parse and format results
 		interesting := 0
-		scanner := bufio.NewScanner(strings.NewReader(output))
-		for scanner.Scan() {
-			fields := strings.SplitN(scanner.Text(), "|", 4)
-			if len(fields) < 3 {
+		rowCount := 0
+		for rows.Next() {
+			var service, client string
+			var authVal, authReason int
+			if err := rows.Scan(&service, &client, &authVal, &authReason); err != nil {
 				continue
 			}
-			service := fields[0]
-			client := fields[1]
-			authVal := fields[2]
-
+			rowCount++
 			flag := macTCCServiceFlag(service)
-			sb.WriteString(fmt.Sprintf("  %s → %s (auth=%s)%s\n", service, client, authVal, flag))
+			sb.WriteString(fmt.Sprintf("  %s → %s (auth=%d)%s\n", service, client, authVal, flag))
 			if flag != "" {
 				interesting++
 			}
+		}
+		if err := rows.Err(); err != nil {
+			sb.WriteString(fmt.Sprintf("  Row iteration error: %v\n", err))
+		}
+		rows.Close()
+		db.Close()
+
+		if rowCount == 0 {
+			sb.WriteString("  No granted permissions found.\n")
 		}
 		if interesting > 0 {
 			sb.WriteString(fmt.Sprintf("  [*] %d high-value permission grants found\n", interesting))
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckDylib checks for dylib hijacking opportunities
@@ -423,7 +408,7 @@ func macPrivescCheckDylib() structs.CommandResult {
 	// Check if Hardened Runtime is common (look at a few key binaries)
 	binaries := []string{"/usr/bin/ssh", "/usr/bin/sudo", "/usr/bin/login"}
 	for _, bin := range binaries {
-		out, err := exec.Command("codesign", "-dv", bin).CombinedOutput()
+		out, err := execCmdTimeout("codesign", "-dv", bin)
 		if err == nil {
 			output := string(out)
 			if strings.Contains(output, "runtime") {
@@ -457,7 +442,7 @@ func macPrivescCheckDylib() structs.CommandResult {
 			}
 			count++
 			appPath := filepath.Join(dir, entry.Name())
-			out, err := exec.Command("codesign", "-v", appPath).CombinedOutput()
+			out, err := execCmdTimeout("codesign", "-v", appPath)
 			if err != nil {
 				output := string(out)
 				if strings.Contains(output, "not signed") || strings.Contains(output, "invalid signature") {
@@ -478,11 +463,7 @@ func macPrivescCheckDylib() structs.CommandResult {
 		sb.WriteString("No obvious dylib hijacking vectors found.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // macPrivescCheckWritable checks for writable sensitive paths
@@ -550,11 +531,44 @@ func macPrivescCheckWritable() structs.CommandResult {
 		sb.WriteString(strings.Join(readable, "\n") + "\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
+	return successResult(sb.String())
+}
+
+// nativeIDString produces output similar to `id` using native Go APIs.
+// Returns "uid=501(gary) gid=20(staff) groups=20(staff),80(admin),..."
+func nativeIDString() string {
+	uid := os.Getuid()
+	gid := os.Getgid()
+
+	uidName := strconv.Itoa(uid)
+	if u, err := user.LookupId(strconv.Itoa(uid)); err == nil {
+		uidName = u.Username
 	}
+
+	gidName := strconv.Itoa(gid)
+	if g, err := user.LookupGroupId(strconv.Itoa(gid)); err == nil {
+		gidName = g.Name
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("uid=%d(%s) gid=%d(%s)", uid, uidName, gid, gidName))
+
+	groupIDs, err := os.Getgroups()
+	if err == nil && len(groupIDs) > 0 {
+		sb.WriteString(" groups=")
+		for i, gidNum := range groupIDs {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			name := strconv.Itoa(gidNum)
+			if g, err := user.LookupGroupId(strconv.Itoa(gidNum)); err == nil {
+				name = g.Name
+			}
+			sb.WriteString(fmt.Sprintf("%d(%s)", gidNum, name))
+		}
+	}
+
+	return sb.String()
 }
 
 // macIsWritable checks if the current user can write to a path
@@ -564,19 +578,19 @@ func macIsWritable(path string) bool {
 		return false
 	}
 	if info.IsDir() {
-		f, err := os.CreateTemp(path, ".*")
+		f, err := os.CreateTemp(path, "")
 		if err != nil {
 			return false
 		}
 		name := f.Name()
 		f.Close()
-		os.Remove(name)
+		secureRemove(name)
 		return true
 	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
 	if err != nil {
 		return false
 	}
-	f.Close()
+	defer f.Close()
 	return true
 }

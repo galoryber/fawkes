@@ -28,11 +28,7 @@ func (c *ConfigCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent
 	var params ConfigParams
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -47,21 +43,13 @@ func (c *ConfigCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent
 	case "set":
 		return configSet(agent, params.Key, params.Value)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action '%s'. Use 'show' or 'set'.", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action '%s'. Use 'show' or 'set'.", params.Action)
 	}
 }
 
 // Execute implements Command (fallback — should not be called since we use AgentCommand).
 func (c *ConfigCommand) Execute(task structs.Task) structs.CommandResult {
-	return structs.CommandResult{
-		Output:    "Error: config command requires agent context",
-		Status:    "error",
-		Completed: true,
-	}
+	return errorResult("Error: config command requires agent context")
 }
 
 func configShow(agent *structs.Agent) structs.CommandResult {
@@ -96,15 +84,6 @@ func configShow(agent *structs.Agent) structs.CommandResult {
 
 	sb.WriteString("Working Hours\n")
 	sb.WriteString("-------------\n")
-	sb.WriteString("Opsec\n")
-	sb.WriteString("-----\n")
-	if agent.DefaultPPID > 0 {
-		sb.WriteString(fmt.Sprintf("  %-22s %d\n", "Default PPID:", agent.DefaultPPID))
-	} else {
-		sb.WriteString(fmt.Sprintf("  %-22s disabled\n", "Default PPID:"))
-	}
-	sb.WriteString("\n")
-
 	if agent.WorkingHoursEnabled() {
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", "Start:", structs.FormatWorkingHoursTime(agent.WorkingHoursStart)))
 		sb.WriteString(fmt.Sprintf("  %-22s %s\n", "End:", structs.FormatWorkingHoursTime(agent.WorkingHoursEnd)))
@@ -129,12 +108,17 @@ func configShow(agent *structs.Agent) structs.CommandResult {
 	} else {
 		sb.WriteString("  Always active (no restrictions)\n")
 	}
+	sb.WriteString("\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
+	sb.WriteString("Opsec\n")
+	sb.WriteString("-----\n")
+	if agent.DefaultPPID > 0 {
+		sb.WriteString(fmt.Sprintf("  %-22s %d\n", "Default PPID:", agent.DefaultPPID))
+	} else {
+		sb.WriteString(fmt.Sprintf("  %-22s disabled\n", "Default PPID:"))
 	}
+
+	return successResult(sb.String())
 }
 
 func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
@@ -142,150 +126,82 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 	value = strings.TrimSpace(value)
 
 	if key == "" {
-		return structs.CommandResult{
-			Output:    "Error: key is required. Settable keys: sleep, jitter, killdate, working_hours_start, working_hours_end, working_days, default_ppid",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: key is required. Settable keys: sleep, jitter, killdate, working_hours_start, working_hours_end, working_days, default_ppid")
 	}
 
 	switch key {
 	case "sleep":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: invalid sleep value '%s' (must be non-negative integer seconds)", value),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: invalid sleep value '%s' (must be non-negative integer seconds)", value)
 		}
 		old := agent.SleepInterval
 		agent.SleepInterval = n
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] Sleep interval changed: %ds → %ds", old, n),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[+] Sleep interval changed: %ds → %ds", old, n)
 
 	case "jitter":
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 || n > 100 {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: invalid jitter value '%s' (must be 0-100)", value),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: invalid jitter value '%s' (must be 0-100)", value)
 		}
 		old := agent.Jitter
 		agent.Jitter = n
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] Jitter changed: %d%% → %d%%", old, n),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[+] Jitter changed: %d%% → %d%%", old, n)
 
 	case "killdate":
 		if value == "0" || value == "disable" || value == "off" || value == "" {
 			agent.KillDate = 0
-			return structs.CommandResult{
-				Output:    "[+] Kill date disabled",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("[+] Kill date disabled")
 		}
 		// Try unix timestamp first
 		if ts, err := strconv.ParseInt(value, 10, 64); err == nil && ts > 0 {
 			agent.KillDate = ts
 			t := time.Unix(ts, 0)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("[+] Kill date set: %s (unix: %d)", t.Format("2006-01-02 15:04:05"), ts),
-				Status:    "success",
-				Completed: true,
-			}
+			return successf("[+] Kill date set: %s (unix: %d)", t.Format("2006-01-02 15:04:05"), ts)
 		}
 		// Try date format
 		for _, layout := range []string{"2006-01-02", "2006-01-02 15:04:05", "01/02/2006"} {
 			if t, err := time.ParseInLocation(layout, value, time.Local); err == nil {
 				agent.KillDate = t.Unix()
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("[+] Kill date set: %s (unix: %d)", t.Format("2006-01-02 15:04:05"), agent.KillDate),
-					Status:    "success",
-					Completed: true,
-				}
+				return successf("[+] Kill date set: %s (unix: %d)", t.Format("2006-01-02 15:04:05"), agent.KillDate)
 			}
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: invalid killdate '%s'. Use unix timestamp, YYYY-MM-DD, or 'disable'.", value),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: invalid killdate '%s'. Use unix timestamp, YYYY-MM-DD, or 'disable'.", value)
 
 	case "working_hours_start", "wh_start":
 		if value == "" || value == "disable" || value == "off" {
 			agent.WorkingHoursStart = 0
-			return structs.CommandResult{
-				Output:    "[+] Working hours start cleared",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("[+] Working hours start cleared")
 		}
 		minutes, err := structs.ParseWorkingHoursTime(value)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: %v", err)
 		}
 		old := structs.FormatWorkingHoursTime(agent.WorkingHoursStart)
 		agent.WorkingHoursStart = minutes
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] Working hours start changed: %s → %s", old, value),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[+] Working hours start changed: %s → %s", old, value)
 
 	case "working_hours_end", "wh_end":
 		if value == "" || value == "disable" || value == "off" {
 			agent.WorkingHoursEnd = 0
-			return structs.CommandResult{
-				Output:    "[+] Working hours end cleared",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("[+] Working hours end cleared")
 		}
 		minutes, err := structs.ParseWorkingHoursTime(value)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: %v", err)
 		}
 		old := structs.FormatWorkingHoursTime(agent.WorkingHoursEnd)
 		agent.WorkingHoursEnd = minutes
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] Working hours end changed: %s → %s", old, value),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[+] Working hours end changed: %s → %s", old, value)
 
 	case "working_days", "wh_days":
 		if value == "" || value == "disable" || value == "off" || value == "all" {
 			agent.WorkingDays = nil
-			return structs.CommandResult{
-				Output:    "[+] Working days restriction cleared (active all days)",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("[+] Working days restriction cleared (active all days)")
 		}
 		days, err := structs.ParseWorkingDays(value)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: %v", err)
 		}
 		agent.WorkingDays = days
 		dayNames := []string{"", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"}
@@ -295,11 +211,7 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 				names = append(names, dayNames[d])
 			}
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] Working days set: %s", strings.Join(names, ", ")),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[+] Working days set: %s", strings.Join(names, ", "))
 
 	case "default_ppid", "ppid":
 		if value == "" || value == "0" || value == "disable" || value == "off" {
@@ -307,47 +219,23 @@ func configSet(agent *structs.Agent, key, value string) structs.CommandResult {
 			agent.DefaultPPID = 0
 			SetDefaultPPID(0)
 			if old > 0 {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("[+] Default PPID disabled (was %d)", old),
-					Status:    "success",
-					Completed: true,
-				}
+				return successf("[+] Default PPID disabled (was %d)", old)
 			}
-			return structs.CommandResult{
-				Output:    "[+] Default PPID disabled",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("[+] Default PPID disabled")
 		}
 		n, err := strconv.Atoi(value)
 		if err != nil || n < 0 {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: invalid PPID value '%s' (must be non-negative integer)", value),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: invalid PPID value '%s' (must be non-negative integer)", value)
 		}
 		old := agent.DefaultPPID
 		agent.DefaultPPID = n
 		SetDefaultPPID(n)
 		if old > 0 {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("[+] Default PPID changed: %d → %d (run/powershell child processes will appear under PID %d)", old, n, n),
-				Status:    "success",
-				Completed: true,
-			}
+			return successf("[+] Default PPID changed: %d → %d (run/powershell child processes will appear under PID %d)", old, n, n)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] Default PPID set: %d (run/powershell child processes will appear under PID %d)", n, n),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[+] Default PPID set: %d (run/powershell child processes will appear under PID %d)", n, n)
 
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown config key '%s'. Settable keys: sleep, jitter, killdate, working_hours_start (wh_start), working_hours_end (wh_end), working_days (wh_days), default_ppid (ppid)", key),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown config key '%s'. Settable keys: sleep, jitter, killdate, working_hours_start (wh_start), working_hours_end (wh_end), working_days (wh_days), default_ppid (ppid)", key)
 	}
 }

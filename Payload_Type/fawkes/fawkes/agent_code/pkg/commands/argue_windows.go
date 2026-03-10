@@ -47,11 +47,11 @@ var (
 func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
 	var params argueParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error parsing parameters: %v", err), Status: "error", Completed: true}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.Command == "" {
-		return structs.CommandResult{Output: "Error: command is required", Status: "error", Completed: true}
+		return errorResult("Error: command is required")
 	}
 
 	// If no spoof string provided, use just the executable name
@@ -63,16 +63,16 @@ func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
 	output, err := executeSpoofedProcess(params.Command, params.Spoof)
 	if err != nil {
 		if output != "" {
-			return structs.CommandResult{Output: fmt.Sprintf("%s\nError: %v", output, err), Status: "error", Completed: true}
+			return errorf("%s\nError: %v", output, err)
 		}
-		return structs.CommandResult{Output: fmt.Sprintf("Error: %v", err), Status: "error", Completed: true}
+		return errorf("Error: %v", err)
 	}
 
 	trimmed := strings.TrimSpace(output)
 	if trimmed == "" {
 		trimmed = "Command executed successfully (no output)"
 	}
-	return structs.CommandResult{Output: trimmed, Status: "success", Completed: true}
+	return successResult(trimmed)
 }
 
 // executeSpoofedProcess creates a process with spoofed command line args

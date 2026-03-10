@@ -42,11 +42,7 @@ func (c *EnumTokensCommand) Execute(task structs.Task) structs.CommandResult {
 	var args enumTokensArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
@@ -60,11 +56,7 @@ func (c *EnumTokensCommand) Execute(task structs.Task) structs.CommandResult {
 	case "unique":
 		return enumTokensUnique(args.User)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Available: list, unique", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Available: list, unique", args.Action)
 	}
 }
 
@@ -75,11 +67,7 @@ func enumTokensList(filterUser string) structs.CommandResult {
 
 	entries, err := enumerateProcessTokens()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enumerate processes: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to enumerate processes: %v", err)
 	}
 
 	// Filter by user if specified
@@ -95,11 +83,7 @@ func enumTokensList(filterUser string) structs.CommandResult {
 	}
 
 	if len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	// Sort by user then PID
@@ -112,18 +96,10 @@ func enumTokensList(filterUser string) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling token data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling token data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 // enumTokensUnique shows unique user tokens with process counts
@@ -132,11 +108,7 @@ func enumTokensUnique(filterUser string) structs.CommandResult {
 
 	entries, err := enumerateProcessTokens()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enumerate processes: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to enumerate processes: %v", err)
 	}
 
 	// Group by user
@@ -189,11 +161,7 @@ func enumTokensUnique(filterUser string) structs.CommandResult {
 		sortedUsers = append(sortedUsers, u)
 	}
 	if len(sortedUsers) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 	sort.Slice(sortedUsers, func(i, j int) bool {
 		return sortedUsers[i].User < sortedUsers[j].User
@@ -225,18 +193,10 @@ func enumTokensUnique(filterUser string) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(uniqueEntries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling token data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling token data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 // enumerateProcessTokens walks all processes and reads their token info

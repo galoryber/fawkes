@@ -1,7 +1,11 @@
 package commands
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
 	"encoding/binary"
+	"strings"
 	"testing"
 
 	"fawkes/pkg/structs"
@@ -403,3 +407,226 @@ func buildTestACEBytes(ace testACE) []byte {
 }
 
 // contains is already defined in ldap_query_test.go (same package)
+
+// Tests for adcs_request.go pure functions
+
+func TestAdcsParseSubject(t *testing.T) {
+	tests := []struct {
+		input   string
+		wantCN  string
+		wantO   string
+		wantErr bool
+	}{
+		{"CN=admin", "admin", "", false},
+		{"CN=admin,O=corp", "admin", "corp", false},
+		{"CN=test, O=org, OU=unit", "test", "org", false},
+		{"CN=test,BADFIELD=val", "", "", true},
+		{"CN=", "", "", false},
+		{"CN=user,L=Seattle,ST=WA,C=US", "user", "", false},
+		{"CN=user,S=California", "user", "", false},
+	}
+
+	for _, tt := range tests {
+		name, err := adcsParseSubject(tt.input)
+		if (err != nil) != tt.wantErr {
+			t.Errorf("adcsParseSubject(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+			continue
+		}
+		if !tt.wantErr {
+			if name.CommonName != tt.wantCN {
+				t.Errorf("adcsParseSubject(%q) CN = %q, want %q", tt.input, name.CommonName, tt.wantCN)
+			}
+			if tt.wantO != "" && (len(name.Organization) == 0 || name.Organization[0] != tt.wantO) {
+				t.Errorf("adcsParseSubject(%q) O = %v, want %q", tt.input, name.Organization, tt.wantO)
+			}
+		}
+	}
+}
+
+func TestAdcsParseSubject_AllFields(t *testing.T) {
+	name, err := adcsParseSubject("CN=user,O=corp,OU=IT,L=Seattle,ST=WA,C=US")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if name.CommonName != "user" {
+		t.Errorf("CN = %q, want %q", name.CommonName, "user")
+	}
+	if len(name.Organization) == 0 || name.Organization[0] != "corp" {
+		t.Errorf("O = %v, want [corp]", name.Organization)
+	}
+	if len(name.OrganizationalUnit) == 0 || name.OrganizationalUnit[0] != "IT" {
+		t.Errorf("OU = %v, want [IT]", name.OrganizationalUnit)
+	}
+	if len(name.Locality) == 0 || name.Locality[0] != "Seattle" {
+		t.Errorf("L = %v, want [Seattle]", name.Locality)
+	}
+	if len(name.Province) == 0 || name.Province[0] != "WA" {
+		t.Errorf("ST = %v, want [WA]", name.Province)
+	}
+	if len(name.Country) == 0 || name.Country[0] != "US" {
+		t.Errorf("C = %v, want [US]", name.Country)
+	}
+}
+
+func TestAdcsParseSubject_SAlias(t *testing.T) {
+	name, err := adcsParseSubject("CN=user,S=California")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(name.Province) == 0 || name.Province[0] != "California" {
+		t.Errorf("S (Province) = %v, want [California]", name.Province)
+	}
+}
+
+func TestAdcsDecodeUTF16(t *testing.T) {
+	// "Hello" in UTF-16LE with null terminator
+	hello := []byte{0x48, 0x00, 0x65, 0x00, 0x6C, 0x00, 0x6C, 0x00, 0x6F, 0x00, 0x00, 0x00}
+	if got := adcsDecodeUTF16(hello); got != "Hello" {
+		t.Errorf("adcsDecodeUTF16(Hello) = %q, want %q", got, "Hello")
+	}
+
+	// Empty
+	if got := adcsDecodeUTF16(nil); got != "" {
+		t.Errorf("adcsDecodeUTF16(nil) = %q, want empty", got)
+	}
+	if got := adcsDecodeUTF16([]byte{0x00}); got != "" {
+		t.Errorf("adcsDecodeUTF16(single byte) = %q, want empty", got)
+	}
+}
+
+func TestAdcsDispositionString(t *testing.T) {
+	tests := []struct {
+		d    uint32
+		want string
+	}{
+		{crDispIssued, "ISSUED"},
+		{crDispUnderSubmission, "PENDING"},
+		{crDispDenied, "DENIED"},
+		{crDispIssuedOutOfBand, "ISSUED_OUT_OF_BAND"},
+		{0x00000099, "ERROR"},
+	}
+	for _, tt := range tests {
+		got := adcsDispositionString(tt.d)
+		if got != tt.want {
+			t.Errorf("adcsDispositionString(0x%x) = %q, want %q", tt.d, got, tt.want)
+		}
+	}
+}
+
+func TestAdcsBuildCSR(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("GenerateKey: %v", err)
+	}
+
+	// Basic CSR without SAN
+	csrDER, err := adcsBuildCSR(key, "CN=testuser", "")
+	if err != nil {
+		t.Fatalf("adcsBuildCSR: %v", err)
+	}
+	csr, err := x509.ParseCertificateRequest(csrDER)
+	if err != nil {
+		t.Fatalf("ParseCertificateRequest: %v", err)
+	}
+	if csr.Subject.CommonName != "testuser" {
+		t.Errorf("CSR CN = %q, want %q", csr.Subject.CommonName, "testuser")
+	}
+
+	// CSR with UPN SAN
+	csrDER, err = adcsBuildCSR(key, "CN=admin", "admin@domain.local")
+	if err != nil {
+		t.Fatalf("adcsBuildCSR with SAN: %v", err)
+	}
+	csr, err = x509.ParseCertificateRequest(csrDER)
+	if err != nil {
+		t.Fatalf("ParseCertificateRequest with SAN: %v", err)
+	}
+	// The UPN is in an OtherName extension — check that extensions exist
+	hasExtension := false
+	for _, ext := range csr.Extensions {
+		if ext.Id.Equal(oidSubjectAltName) {
+			hasExtension = true
+			break
+		}
+	}
+	if !hasExtension {
+		t.Error("CSR with UPN should have SAN extension")
+	}
+
+	// CSR with DNS SAN
+	csrDER, err = adcsBuildCSR(key, "CN=server", "server.domain.local")
+	if err != nil {
+		t.Fatalf("adcsBuildCSR with DNS SAN: %v", err)
+	}
+	csr, err = x509.ParseCertificateRequest(csrDER)
+	if err != nil {
+		t.Fatalf("ParseCertificateRequest with DNS SAN: %v", err)
+	}
+	if len(csr.DNSNames) == 0 || csr.DNSNames[0] != "server.domain.local" {
+		t.Errorf("CSR DNS SAN = %v, want [server.domain.local]", csr.DNSNames)
+	}
+}
+
+func TestAdcsBuildSANExtension(t *testing.T) {
+	// UPN SAN
+	ext, err := adcsBuildSANExtension("admin@domain.local")
+	if err != nil {
+		t.Fatalf("UPN SAN: %v", err)
+	}
+	if !ext.Id.Equal(oidSubjectAltName) {
+		t.Errorf("SAN OID = %v, want %v", ext.Id, oidSubjectAltName)
+	}
+	if ext.Critical {
+		t.Error("SAN should not be critical")
+	}
+
+	// DNS SAN
+	ext, err = adcsBuildSANExtension("server.local")
+	if err != nil {
+		t.Fatalf("DNS SAN: %v", err)
+	}
+	if len(ext.Value) == 0 {
+		t.Error("DNS SAN extension value should not be empty")
+	}
+}
+
+func TestAdcsRequestValidation(t *testing.T) {
+	// Missing CA name
+	result := adcsRequest(adcsRequestArgs{
+		Server:   "1.2.3.4",
+		Username: "user",
+		Password: "pass",
+		Template: "User",
+	})
+	if result.Status != "error" || !strings.Contains(result.Output, "ca_name") {
+		t.Error("missing ca_name should return error mentioning ca_name")
+	}
+
+	// Missing template
+	result = adcsRequest(adcsRequestArgs{
+		Server:   "1.2.3.4",
+		Username: "user",
+		Password: "pass",
+		CAName:   "CA",
+	})
+	if result.Status != "error" || !strings.Contains(result.Output, "template") {
+		t.Error("missing template should return error mentioning template")
+	}
+
+	// Missing credentials
+	result = adcsRequest(adcsRequestArgs{
+		Server:   "1.2.3.4",
+		CAName:   "CA",
+		Template: "User",
+	})
+	if result.Status != "error" || !strings.Contains(result.Output, "username") {
+		t.Error("missing credentials should return error mentioning username")
+	}
+}
+
+func TestAdcsEditFlagConstant(t *testing.T) {
+	// Verify the ESC6 flag constant matches the expected value
+	if editfAttributeSubjectAltName2 != 0x00040000 {
+		t.Errorf("editfAttributeSubjectAltName2 = 0x%08x, want 0x00040000", editfAttributeSubjectAltName2)
+	}
+}

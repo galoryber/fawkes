@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"fawkes/pkg/structs"
 )
@@ -25,28 +24,16 @@ func (c *UnlinkCommand) Execute(task structs.Task) structs.CommandResult {
 	var args unlinkArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
 	if args.ConnectionID == "" {
-		return structs.CommandResult{
-			Output:    "connection_id is required (UUID of the linked agent)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("connection_id is required (UUID of the linked agent)")
 	}
 
 	if tcpProfileInstance == nil {
-		return structs.CommandResult{
-			Output:    "TCP P2P not available — agent was not built with TCP profile support",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("TCP P2P not available — agent was not built with TCP profile support")
 	}
 
 	// Remove the child connection
@@ -65,9 +52,5 @@ func (c *UnlinkCommand) Execute(task structs.Task) structs.CommandResult {
 		shortUUID = shortUUID[:8]
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully unlinked agent %s", shortUUID),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully unlinked agent %s", shortUUID)
 }

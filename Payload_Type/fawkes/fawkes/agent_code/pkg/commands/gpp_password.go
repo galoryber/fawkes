@@ -53,35 +53,19 @@ var gppAESKey = []byte{
 
 func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -server <DC> -username <user@domain> -password <pass>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -server <DC> -username <user@domain> -password <pass>")
 	}
 
 	var args gppArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: server (domain controller) is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server (domain controller) is required")
 	}
 	if args.Username == "" || args.Password == "" {
-		return structs.CommandResult{
-			Output:    "Error: username and password are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: username and password are required")
 	}
 
 	if args.Port <= 0 {
@@ -101,11 +85,7 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 
 	output, creds, err := searchGPPPasswords(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	result := structs.CommandResult{

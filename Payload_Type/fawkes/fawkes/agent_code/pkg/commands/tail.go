@@ -31,28 +31,16 @@ type tailArgs struct {
 
 func (c *TailCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args tailArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	// Default to 10 lines if neither lines nor bytes specified
@@ -72,21 +60,13 @@ func (c *TailCommand) Execute(task structs.Task) structs.CommandResult {
 func tailReadBytes(args tailArgs) structs.CommandResult {
 	f, err := os.Open(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening file: %v", err)
 	}
 	defer f.Close()
 
 	info, err := f.Stat()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error stating file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error stating file: %v", err)
 	}
 
 	size := info.Size()
@@ -105,11 +85,7 @@ func tailReadBytes(args tailArgs) structs.CommandResult {
 		_, err = f.ReadAt(buf, size-readSize)
 	}
 	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading file: %v", err)
 	}
 
 	mode := "last"
@@ -117,22 +93,14 @@ func tailReadBytes(args tailArgs) structs.CommandResult {
 		mode = "first"
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] %s %d bytes of %s (%s total)\n%s",
-			mode, readSize, args.Path, statFormatSize(size), string(buf)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] %s %d bytes of %s (%s total)\n%s",
+		mode, readSize, args.Path, formatFileSize(size), string(buf))
 }
 
 func tailReadLines(args tailArgs) structs.CommandResult {
 	f, err := os.Open(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening file: %v", err)
 	}
 	defer f.Close()
 
@@ -152,25 +120,17 @@ func tailReadHead(f *os.File, args tailArgs) structs.CommandResult {
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading file: %v", err)
 	}
 
 	info, _ := f.Stat()
 	sizeStr := ""
 	if info != nil {
-		sizeStr = fmt.Sprintf(" (%s)", statFormatSize(info.Size()))
+		sizeStr = fmt.Sprintf(" (%s)", formatFileSize(info.Size()))
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] first %d lines of %s%s\n%s",
-			len(lines), args.Path, sizeStr, strings.Join(lines, "\n")),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] first %d lines of %s%s\n%s",
+		len(lines), args.Path, sizeStr, strings.Join(lines, "\n"))
 }
 
 func tailReadTail(f *os.File, args tailArgs) structs.CommandResult {
@@ -195,11 +155,7 @@ func tailReadTail(f *os.File, args tailArgs) structs.CommandResult {
 		total++
 	}
 	if err := scanner.Err(); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading file: %v", err)
 	}
 
 	// Extract lines in order from ring buffer
@@ -215,15 +171,11 @@ func tailReadTail(f *os.File, args tailArgs) structs.CommandResult {
 
 	sizeStr := ""
 	if info != nil {
-		sizeStr = fmt.Sprintf(" (%s)", statFormatSize(info.Size()))
+		sizeStr = fmt.Sprintf(" (%s)", formatFileSize(info.Size()))
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] last %d lines of %s%s\n%s",
-			count, args.Path, sizeStr, strings.Join(lines, "\n")),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] last %d lines of %s%s\n%s",
+			count, args.Path, sizeStr, strings.Join(lines, "\n"))
 }
 
 func tailReadTailLarge(f *os.File, args tailArgs, size int64) structs.CommandResult {
@@ -244,11 +196,7 @@ func tailReadTailLarge(f *os.File, args tailArgs, size int64) structs.CommandRes
 		buf := make([]byte, readSize)
 		_, err := f.ReadAt(buf, offset)
 		if err != nil && err != io.EOF {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error reading file: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error reading file: %v", err)
 		}
 
 		tailBytes = append(buf, tailBytes...)
@@ -271,10 +219,6 @@ func tailReadTailLarge(f *os.File, args tailArgs, size int64) structs.CommandRes
 	}
 	lines := allLines[len(allLines)-count:]
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] last %d lines of %s (%s)\n%s",
-			count, args.Path, statFormatSize(size), strings.Join(lines, "\n")),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] last %d lines of %s (%s)\n%s",
+		count, args.Path, formatFileSize(size), strings.Join(lines, "\n"))
 }

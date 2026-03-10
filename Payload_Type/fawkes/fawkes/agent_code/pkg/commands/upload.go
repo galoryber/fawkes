@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,11 +35,7 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 
 	err := json.Unmarshal([]byte(task.Params), &args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to parse arguments: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to parse arguments: %v", err)
 	}
 
 	// Handle tilde expansion
@@ -48,21 +43,13 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	if strings.HasPrefix(fixedFilePath, "~/") {
 		dirname, err := os.UserHomeDir()
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to resolve home directory: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to resolve home directory: %v", err)
 		}
 		fixedFilePath = filepath.Join(dirname, fixedFilePath[2:])
 	}
 	fullPath, err := filepath.Abs(fixedFilePath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to resolve absolute path for %s: %v", fixedFilePath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to resolve absolute path for %s: %v", fixedFilePath, err)
 	}
 
 	// Set up the file transfer request
@@ -78,22 +65,14 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	fileExists := err == nil
 
 	if fileExists && !args.Overwrite {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("File %s already exists. Reupload with the overwrite parameter, or remove the file before uploading again.", fullPath),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("File %s already exists. Reupload with the overwrite parameter, or remove the file before uploading again.", fullPath)
 	}
 
 	// Open file for writing — truncate if overwriting, create if new
 	// Use 0700 permissions: owner rwx only (opsec — prevent other users from reading/executing)
 	fp, err := os.OpenFile(fullPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0700)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open %s for writing: %v", fullPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open %s for writing: %v", fullPath, err)
 	}
 	defer fp.Close() // Safety net: ensure fd is closed even if transfer goroutine panics
 	r.ReceivedChunkChannel = make(chan []byte)
@@ -118,24 +97,12 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if writeErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing to %s after %d bytes: %v", fullPath, totalBytesWritten, writeErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing to %s after %d bytes: %v", fullPath, totalBytesWritten, writeErr)
 	}
 
 	if task.DidStop() {
-		return structs.CommandResult{
-			Output:    "Task stopped early",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Task stopped early")
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Uploaded %d bytes to %s", totalBytesWritten, fullPath),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Uploaded %d bytes to %s", totalBytesWritten, fullPath)
 }

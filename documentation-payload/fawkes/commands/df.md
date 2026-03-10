@@ -11,13 +11,29 @@ Report filesystem disk space usage. Shows total size, used space, available spac
 
 ## Arguments
 
-No arguments required. Reports all mounted filesystems.
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| filesystem | No | — | Filter by device name (substring match) |
+| mount_point | No | — | Filter by mount point path (substring match) |
+| fstype | No | — | Filter by filesystem type (case-insensitive, e.g. 'ext4', 'ntfs') |
 
 ## Usage
 
-Show disk space:
 ```
+# Show all filesystems
 df
+
+# Filter by device
+df -filesystem /dev/sda
+
+# Filter by mount point
+df -mount_point /home
+
+# Filter by filesystem type
+df -fstype ext4
+
+# Combine filters
+df -fstype ntfs -filesystem C:
 ```
 
 ## Output Format

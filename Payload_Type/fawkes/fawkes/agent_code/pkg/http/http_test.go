@@ -6,6 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"fawkes/pkg/structs"
@@ -461,6 +464,8 @@ func TestNewHTTPProfile_BasicConfig(t *testing.T) {
 		"",
 		"",
 		"none",
+		"",
+		nil,
 	)
 
 	if p.BaseURL != "http://localhost:80" {
@@ -491,6 +496,8 @@ func TestNewHTTPProfile_WithProxy(t *testing.T) {
 		"",
 		"http://proxy:8080",
 		"none",
+		"",
+		nil,
 	)
 
 	if p.client == nil {
@@ -512,6 +519,8 @@ func TestNewHTTPProfile_WithHostHeader(t *testing.T) {
 		"fronted.example.com",
 		"",
 		"none",
+		"",
+		nil,
 	)
 
 	if p.HostHeader != "fronted.example.com" {
@@ -536,6 +545,8 @@ func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
 		"",
 		"",
 		"system-ca",
+		"",
+		nil,
 	)
 
 	if p.EncryptionKey != keyB64 {
@@ -561,6 +572,8 @@ func TestNewHTTPProfile_InvalidProxy(t *testing.T) {
 		"",
 		"://not-a-valid-url",
 		"none",
+		"",
+		nil,
 	)
 
 	if p.client == nil {
@@ -1035,3 +1048,225 @@ func TestGetActiveUUID_EmptyConfigUUID(t *testing.T) {
 		t.Errorf("getActiveUUID = %q, want payload UUID", result)
 	}
 }
+
+// --- Fallback C2 URL Tests ---
+
+func TestAllURLs_NoFallbacks(t *testing.T) {
+	p := &HTTPProfile{BaseURL: "http://primary:80"}
+	cfg := &sensitiveConfig{BaseURL: "http://primary:80"}
+	urls := p.allURLs(cfg)
+	if len(urls) != 1 || urls[0] != "http://primary:80" {
+		t.Errorf("allURLs = %v, want [http://primary:80]", urls)
+	}
+}
+
+func TestAllURLs_WithFallbacks(t *testing.T) {
+	p := &HTTPProfile{}
+	cfg := &sensitiveConfig{
+		BaseURL:      "http://primary:80",
+		FallbackURLs: []string{"http://backup1:80", "http://backup2:80"},
+	}
+	urls := p.allURLs(cfg)
+	if len(urls) != 3 {
+		t.Fatalf("allURLs returned %d URLs, want 3", len(urls))
+	}
+	if urls[0] != "http://primary:80" || urls[1] != "http://backup1:80" || urls[2] != "http://backup2:80" {
+		t.Errorf("allURLs = %v, want [primary, backup1, backup2]", urls)
+	}
+}
+
+func TestAllURLs_RotatesOnActiveIdx(t *testing.T) {
+	p := &HTTPProfile{}
+	p.activeURLIdx.Store(1)
+	cfg := &sensitiveConfig{
+		BaseURL:      "http://primary:80",
+		FallbackURLs: []string{"http://backup1:80", "http://backup2:80"},
+	}
+	urls := p.allURLs(cfg)
+	if len(urls) != 3 {
+		t.Fatalf("allURLs returned %d URLs, want 3", len(urls))
+	}
+	// Should rotate so backup1 is first
+	if urls[0] != "http://backup1:80" {
+		t.Errorf("allURLs[0] = %q, want http://backup1:80 (rotated)", urls[0])
+	}
+	if urls[1] != "http://backup2:80" {
+		t.Errorf("allURLs[1] = %q, want http://backup2:80", urls[1])
+	}
+	if urls[2] != "http://primary:80" {
+		t.Errorf("allURLs[2] = %q, want http://primary:80", urls[2])
+	}
+}
+
+func TestAllURLs_NilCfg(t *testing.T) {
+	p := &HTTPProfile{
+		BaseURL:      "http://struct:80",
+		FallbackURLs: []string{"http://fb:80"},
+	}
+	urls := p.allURLs(nil)
+	if len(urls) != 2 || urls[0] != "http://struct:80" || urls[1] != "http://fb:80" {
+		t.Errorf("allURLs with nil cfg = %v, want [struct, fb]", urls)
+	}
+}
+
+func TestMakeRequest_FailoverToBackup(t *testing.T) {
+	// Primary server is down, backup responds
+	hitCount := 0
+	backup := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hitCount++
+		w.WriteHeader(200)
+		fmt.Fprint(w, "ok")
+	}))
+	defer backup.Close()
+
+	p := NewHTTPProfile(
+		"http://127.0.0.1:1", // unreachable port
+		"TestAgent/1.0",
+		"",
+		1, 5, 0, false,
+		"/test", "/test",
+		"", "", "none", "",
+		[]string{backup.URL}, // fallback
+	)
+
+	cfg := &sensitiveConfig{
+		BaseURL:      "http://127.0.0.1:1",
+		FallbackURLs: []string{backup.URL},
+		UserAgent:    "TestAgent/1.0",
+	}
+
+	resp, err := p.makeRequest("GET", "/test", nil, cfg)
+	if err != nil {
+		t.Fatalf("makeRequest should succeed via fallback, got: %v", err)
+	}
+	resp.Body.Close()
+	if hitCount != 1 {
+		t.Errorf("backup hit count = %d, want 1", hitCount)
+	}
+	// activeURLIdx should have been updated
+	if p.activeURLIdx.Load() == 0 {
+		t.Error("activeURLIdx should have been updated to fallback")
+	}
+}
+
+func TestMakeRequest_AllFail(t *testing.T) {
+	p := NewHTTPProfile(
+		"http://127.0.0.1:1",
+		"TestAgent/1.0",
+		"",
+		1, 5, 0, false,
+		"/test", "/test",
+		"", "", "none", "",
+		[]string{"http://127.0.0.1:2"},
+	)
+
+	cfg := &sensitiveConfig{
+		BaseURL:      "http://127.0.0.1:1",
+		FallbackURLs: []string{"http://127.0.0.1:2"},
+		UserAgent:    "TestAgent/1.0",
+	}
+
+	_, err := p.makeRequest("GET", "/test", nil, cfg)
+	if err == nil {
+		t.Fatal("makeRequest should fail when all URLs unreachable")
+	}
+}
+
+func TestNewHTTPProfile_WithFallbackURLs(t *testing.T) {
+	fallbacks := []string{"http://backup1:80", "http://backup2:80"}
+	p := NewHTTPProfile(
+		"http://primary:80",
+		"TestAgent/1.0",
+		"",
+		10, 5, 10, false,
+		"/get", "/post",
+		"", "", "none", "",
+		fallbacks,
+	)
+
+	if len(p.FallbackURLs) != 2 {
+		t.Fatalf("FallbackURLs = %v, want 2 entries", p.FallbackURLs)
+	}
+	if p.FallbackURLs[0] != "http://backup1:80" {
+		t.Errorf("FallbackURLs[0] = %q, want http://backup1:80", p.FallbackURLs[0])
+	}
+}
+
+func TestMakeRequest_ConcurrentFailover(t *testing.T) {
+	// Verify no data race when multiple goroutines call makeRequest concurrently
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(200)
+		fmt.Fprint(w, "ok")
+	}))
+	defer server.Close()
+
+	p := NewHTTPProfile(
+		server.URL,
+		"TestAgent/1.0",
+		"",
+		1, 5, 0, false,
+		"/test", "/test",
+		"", "", "none", "",
+		[]string{server.URL + "/fb1", server.URL + "/fb2"},
+	)
+
+	cfg := &sensitiveConfig{
+		BaseURL:      server.URL,
+		FallbackURLs: []string{server.URL + "/fb1", server.URL + "/fb2"},
+		UserAgent:    "TestAgent/1.0",
+	}
+
+	// Launch concurrent requests — race detector will catch unsynchronized access
+	done := make(chan error, 20)
+	for i := 0; i < 20; i++ {
+		go func() {
+			resp, err := p.makeRequest("GET", "/test", nil, cfg)
+			if err != nil {
+				done <- err
+				return
+			}
+			resp.Body.Close()
+			done <- nil
+		}()
+	}
+	for i := 0; i < 20; i++ {
+		if err := <-done; err != nil {
+			t.Errorf("concurrent makeRequest failed: %v", err)
+		}
+	}
+}
+
+func TestSealConfig_PreservesFallbackURLs(t *testing.T) {
+	p := NewHTTPProfile(
+		"http://primary:80",
+		"TestAgent/1.0",
+		"",
+		10, 5, 10, false,
+		"/get", "/post",
+		"", "", "none", "",
+		[]string{"http://backup:80"},
+	)
+
+	if err := p.SealConfig(); err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	cfg := p.getConfig()
+	if cfg == nil {
+		t.Fatal("getConfig returned nil after seal")
+	}
+	if cfg.BaseURL != "http://primary:80" {
+		t.Errorf("BaseURL = %q after seal, want http://primary:80", cfg.BaseURL)
+	}
+	if len(cfg.FallbackURLs) != 1 || cfg.FallbackURLs[0] != "http://backup:80" {
+		t.Errorf("FallbackURLs = %v after seal, want [http://backup:80]", cfg.FallbackURLs)
+	}
+	// Struct fields should be zeroed
+	if p.BaseURL != "" {
+		t.Error("BaseURL should be zeroed after seal")
+	}
+	if p.FallbackURLs != nil {
+		t.Error("FallbackURLs should be nil after seal")
+	}
+}
+

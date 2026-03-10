@@ -33,28 +33,16 @@ type adsArgs struct {
 
 func (c *ADSCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <write|read|list|delete> -file <path> [-stream <name>] [-data <content>]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action <write|read|list|delete> -file <path> [-stream <name>] [-data <content>]")
 	}
 
 	var args adsArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.File == "" {
-		return structs.CommandResult{
-			Output:    "Error: file path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: file path is required")
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -67,28 +55,16 @@ func (c *ADSCommand) Execute(task structs.Task) structs.CommandResult {
 	case "delete":
 		return adsDelete(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown action %q (use write, read, list, delete)", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown action %q (use write, read, list, delete)", args.Action)
 	}
 }
 
 func adsWrite(args adsArgs) structs.CommandResult {
 	if args.Stream == "" {
-		return structs.CommandResult{
-			Output:    "Error: stream name is required for write action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: stream name is required for write action")
 	}
 	if args.Data == "" {
-		return structs.CommandResult{
-			Output:    "Error: data is required for write action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: data is required for write action")
 	}
 
 	var writeData []byte
@@ -96,11 +72,7 @@ func adsWrite(args adsArgs) structs.CommandResult {
 		var err error
 		writeData, err = hex.DecodeString(args.Data)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error decoding hex data: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error decoding hex data: %v", err)
 		}
 	} else {
 		writeData = []byte(args.Data)
@@ -108,37 +80,21 @@ func adsWrite(args adsArgs) structs.CommandResult {
 
 	streamPath := args.File + ":" + args.Stream
 	if err := os.WriteFile(streamPath, writeData, 0644); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing to %s: %v", streamPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing to %s: %v", streamPath, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Wrote %d bytes to %s", len(writeData), streamPath),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Wrote %d bytes to %s", len(writeData), streamPath)
 }
 
 func adsRead(args adsArgs) structs.CommandResult {
 	if args.Stream == "" {
-		return structs.CommandResult{
-			Output:    "Error: stream name is required for read action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: stream name is required for read action")
 	}
 
 	streamPath := args.File + ":" + args.Stream
 	data, err := os.ReadFile(streamPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading %s: %v", streamPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading %s: %v", streamPath, err)
 	}
 
 	var sb strings.Builder
@@ -167,11 +123,7 @@ func adsRead(args adsArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // WIN32_FIND_STREAM_DATA structure
@@ -197,11 +149,7 @@ func adsList(args adsArgs) structs.CommandResult {
 	// Check if file exists
 	info, err := os.Stat(absPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	// If directory, list ADS on all files in the directory
@@ -215,11 +163,7 @@ func adsList(args adsArgs) structs.CommandResult {
 func adsListFile(filePath string) structs.CommandResult {
 	streams, err := adsEnumerateStreams(filePath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating streams for %s: %v", filePath, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating streams for %s: %v", filePath, err)
 	}
 
 	var sb strings.Builder
@@ -242,21 +186,13 @@ func adsListFile(filePath string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n%d stream(s) total, %d alternate\n", len(streams), altCount))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func adsListDir(dirPath string) structs.CommandResult {
 	entries, err := os.ReadDir(dirPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading directory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading directory: %v", err)
 	}
 
 	var sb strings.Builder
@@ -299,11 +235,7 @@ func adsListDir(dirPath string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n%d file(s) with %d alternate stream(s)\n", filesWithADS, totalADS))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 type adsStreamInfo struct {
@@ -359,25 +291,15 @@ func adsEnumerateStreams(filePath string) ([]adsStreamInfo, error) {
 
 func adsDelete(args adsArgs) structs.CommandResult {
 	if args.Stream == "" {
-		return structs.CommandResult{
-			Output:    "Error: stream name is required for delete action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: stream name is required for delete action")
 	}
 
 	streamPath := args.File + ":" + args.Stream
-	if err := os.Remove(streamPath); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error deleting %s: %v", streamPath, err),
-			Status:    "error",
-			Completed: true,
-		}
+	secureRemove(streamPath)
+	// Verify removal (stat on ADS path confirms deletion)
+	if _, err := os.Stat(streamPath); err == nil {
+		return errorf("Error deleting %s: stream still exists", streamPath)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Deleted stream: %s", streamPath),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Deleted stream: %s", streamPath)
 }

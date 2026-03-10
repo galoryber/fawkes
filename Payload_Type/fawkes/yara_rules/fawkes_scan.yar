@@ -50,11 +50,12 @@ rule LeakedBuildPaths
         severity = "high"
         category = "opsec"
     strings:
-        $home = "/home/" ascii
-        $users = "C:\\Users\\" ascii nocase
         $gopath = "/go/pkg/mod/" ascii
         $goroot = "/usr/local/go/" ascii
-        $mythic = "/Mythic/" ascii
+        $gosrc = "/go/src/" ascii
+        $mythic_path = "/home/gary/" ascii
+        $build_dir = "/build/" ascii
+        $tmp_build = "/tmp/go-build" ascii
     condition:
         any of them
 }
@@ -69,6 +70,7 @@ rule MythicC2Indicators
         $mythic1 = "mythicrpc" ascii
         $mythic2 = "MythicMeta" ascii
         $mythic3 = "mythic_" ascii
+        $mythic4 = "Mythic" ascii
         $agent_msg = "agentMessage" ascii
     condition:
         any of them
@@ -192,9 +194,129 @@ rule GarbleObfuscated
         severity = "info"
         category = "opsec"
     strings:
-        $garble_seed = "garble" ascii
-        $no_gopclntab = ".gopclntab" ascii
-        $no_go_buildid = "Go build ID:" ascii
+        $fawkes_pkg = "fawkes/pkg/commands" ascii
+        $go_func = "runtime.goexit" ascii
     condition:
-        ($garble_seed or (not $no_gopclntab and not $no_go_buildid))
+        not $fawkes_pkg and $go_func
+}
+
+rule OffensiveToolReferences
+{
+    meta:
+        description = "References to known offensive tools in output strings"
+        severity = "medium"
+        category = "opsec"
+    strings:
+        $rubeus = "Rubeus" ascii nocase
+        $mimikatz = "Mimikatz" ascii nocase
+        $hashcat = "hashcat" ascii nocase
+        $impacket = "impacket" ascii nocase
+        $bloodhound = "BloodHound" ascii nocase
+    condition:
+        any of them
+}
+
+rule InjectionTechniqueNames
+{
+    meta:
+        description = "Contains named injection technique identifiers"
+        severity = "medium"
+        category = "injection"
+    strings:
+        $poolparty = "PoolParty" ascii
+        $module_stomp = "Module Stomping" ascii
+        $thread_hijack = "Thread Hijack" ascii
+        $opus_inject = "opus-injection" ascii
+        $hollowing = "Hollowing" ascii
+        $ptrace_inject = "ptrace" ascii
+        $apc_inject = "QueueUserAPC" ascii wide
+    condition:
+        2 of them
+}
+
+rule TokenManipulationAPIs
+{
+    meta:
+        description = "Contains token manipulation APIs used for privilege escalation"
+        severity = "medium"
+        category = "privilege"
+    strings:
+        $adjust_priv = "AdjustTokenPrivileges" ascii wide
+        $impersonate = "ImpersonateNamedPipeClient" ascii wide
+        $duplicate = "DuplicateTokenEx" ascii wide
+        $logon_user = "LogonUserW" ascii wide
+        $revert = "RevertToSelf" ascii wide
+        $set_thread = "SetThreadToken" ascii wide
+    condition:
+        3 of them
+}
+
+rule ADAttackStrings
+{
+    meta:
+        description = "Contains Active Directory attack technique identifiers"
+        severity = "medium"
+        category = "credential"
+    strings:
+        $dcsync = "DCSync" ascii nocase
+        $kerberoast = "kerberoast" ascii nocase
+        $asrep = "AS-REP" ascii
+        $golden_ticket = "golden ticket" ascii nocase
+        $silver_ticket = "silver ticket" ascii nocase
+        $shadow_cred = "Shadow Credential" ascii nocase
+        $laps = "ms-LAPS-Password" ascii
+        $drs_changes = "DS-Replication-Get-Changes" ascii
+    condition:
+        2 of them
+}
+
+rule LateralMovementAPIs
+{
+    meta:
+        description = "Contains APIs/strings associated with lateral movement"
+        severity = "medium"
+        category = "lateral"
+    strings:
+        $wnet = "WNetAddConnection" ascii wide
+        $svcctl = "svcctl" ascii
+        $psexec_pattern = "CreateServiceW" ascii wide
+        $wmi_exec = "Win32_Process" ascii wide
+        $dcom = "MMC20.Application" ascii
+        $winrm_port = ":5985" ascii
+        $smb_pipe = "ncacn_np" ascii
+    condition:
+        2 of them
+}
+
+rule FawkesAgentIdentifiers
+{
+    meta:
+        description = "Contains Fawkes agent-specific identifiers (use garble to obfuscate)"
+        severity = "high"
+        category = "opsec"
+    strings:
+        $fawkes_pkg = "fawkes/pkg/" ascii
+        $fawkes_cmd = "fawkes/pkg/commands" ascii
+        $fawkes_http = "fawkes/pkg/http" ascii
+        $agent_name = "fawkes" ascii
+    condition:
+        2 of them
+}
+
+rule SuspiciousRegistryPaths
+{
+    meta:
+        description = "Contains registry paths commonly abused for persistence or credential access"
+        severity = "low"
+        category = "persistence"
+    strings:
+        $sam = "SAM\\Domains\\Account" ascii wide nocase
+        $security = "SECURITY\\Policy\\Secrets" ascii wide nocase
+        $lsa_key = "SECURITY\\Policy\\PolEKList" ascii wide nocase
+        $cached = "SECURITY\\Cache" ascii wide nocase
+        $winlogon = "Winlogon" ascii wide nocase
+        $ifeo = "Image File Execution Options" ascii wide nocase
+        $appinit = "AppInit_DLLs" ascii wide nocase
+    condition:
+        2 of them
 }

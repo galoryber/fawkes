@@ -1,15 +1,17 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "pkg-list",
-		Description:         "List installed packages and software. Enumerates dpkg/rpm/apk (Linux), Homebrew/Applications (macOS), or registry Uninstall keys (Windows).",
-		HelpString:          "pkg-list",
-		Version:             1,
+		Description:         "List installed packages and software. Enumerates dpkg/rpm/apk (Linux), Homebrew/Applications (macOS), or registry Uninstall keys (Windows). Supports filtering by name.",
+		HelpString:          "pkg-list [-filter <substring>]",
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1518"},
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -19,7 +21,22 @@ func init() {
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
 		},
-		CommandParameters: []agentstructs.CommandParameter{},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:          "filter",
+				CLIName:       "filter",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Case-insensitive substring filter on package/software name",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     1,
+						GroupName:            "Default",
+					},
+				},
+			},
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -30,7 +47,13 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			return agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			filter, _ := taskData.Args.GetStringArg("filter")
+			if filter != "" {
+				display := fmt.Sprintf("Installed packages (filter: %s)", filter)
+				response.DisplayParams = &display
+			}
+			return response
 		},
 	})
 }

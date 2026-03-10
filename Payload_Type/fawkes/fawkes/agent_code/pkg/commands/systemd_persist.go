@@ -33,11 +33,7 @@ type systemdPersistArgs struct {
 
 func (c *SystemdPersistCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: install, remove, list",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: install, remove, list")
 	}
 
 	var args systemdPersistArgs
@@ -58,11 +54,7 @@ func (c *SystemdPersistCommand) Execute(task structs.Task) structs.CommandResult
 	case "list":
 		return systemdList(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: install, remove, list", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: install, remove, list", args.Action)
 	}
 }
 
@@ -84,24 +76,15 @@ func systemdUnitDir(system bool) (string, error) {
 
 func systemdInstall(args systemdPersistArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output: "Error: name parameter required (unit name without .service suffix)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: name parameter required (unit name without .service suffix)")
 	}
 	if args.ExecStart == "" {
-		return structs.CommandResult{
-			Output: "Error: exec_start parameter required (command to execute)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: exec_start parameter required (command to execute)")
 	}
 
 	unitDir, err := systemdUnitDir(args.System)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	desc := args.Description
@@ -135,10 +118,7 @@ func systemdInstall(args systemdPersistArgs) structs.CommandResult {
 
 	servicePath := filepath.Join(unitDir, args.Name+".service")
 	if err := os.WriteFile(servicePath, []byte(sb.String()), 0644); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error writing unit file: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error writing unit file: %v", err)
 	}
 
 	var output strings.Builder
@@ -189,47 +169,39 @@ func systemdInstall(args systemdPersistArgs) structs.CommandResult {
 		output.WriteString(fmt.Sprintf("enable --now %s.timer", args.Name))
 	}
 
-	return structs.CommandResult{
-		Output:    output.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output.String())
 }
 
 func systemdRemove(args systemdPersistArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output: "Error: name parameter required",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: name parameter required")
 	}
 
 	unitDir, err := systemdUnitDir(args.System)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	var sb strings.Builder
 	errors := 0
 
 	servicePath := filepath.Join(unitDir, args.Name+".service")
-	if err := os.Remove(servicePath); err != nil {
-		if os.IsNotExist(err) {
-			sb.WriteString(fmt.Sprintf("Service file not found: %s\n", servicePath))
-		} else {
-			sb.WriteString(fmt.Sprintf("Error removing service: %v\n", err))
-			errors++
-		}
+	if _, statErr := os.Stat(servicePath); os.IsNotExist(statErr) {
+		sb.WriteString(fmt.Sprintf("Service file not found: %s\n", servicePath))
 	} else {
-		sb.WriteString(fmt.Sprintf("Removed: %s\n", servicePath))
+		secureRemove(servicePath)
+		if _, statErr := os.Stat(servicePath); statErr == nil {
+			sb.WriteString("Error removing service: file still exists\n")
+			errors++
+		} else {
+			sb.WriteString(fmt.Sprintf("Removed: %s\n", servicePath))
+		}
 	}
 
 	// Also try to remove timer if it exists
 	timerPath := filepath.Join(unitDir, args.Name+".timer")
-	if err := os.Remove(timerPath); err == nil {
+	if _, statErr := os.Stat(timerPath); statErr == nil {
+		secureRemove(timerPath)
 		sb.WriteString(fmt.Sprintf("Removed: %s\n", timerPath))
 	}
 
@@ -272,11 +244,7 @@ func systemdList(args systemdPersistArgs) structs.CommandResult {
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
 	listUnits(&sb, "/etc/systemd/system")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func listUnits(sb *strings.Builder, dir string) {

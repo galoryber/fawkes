@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"fawkes/pkg/structs"
 )
@@ -25,31 +24,15 @@ func (c *SocksCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to parse parameters: %v", err)
 	}
 
 	switch params.Action {
 	case "start":
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] SOCKS5 proxy active on Mythic port %d. Agent is processing proxy traffic.", params.Port),
-			Status:    "completed",
-			Completed: true,
-		}
+		return successf("[+] SOCKS5 proxy active on server port %d. Agent is processing proxy traffic.", params.Port)
 	case "stop":
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] SOCKS5 proxy on port %d stopped.", params.Port),
-			Status:    "completed",
-			Completed: true,
-		}
+		return successf("[+] SOCKS5 proxy on port %d stopped.", params.Port)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use 'start' or 'stop')", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use 'start' or 'stop')", params.Action)
 	}
 }

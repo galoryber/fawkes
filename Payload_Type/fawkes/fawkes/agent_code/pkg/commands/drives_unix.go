@@ -5,9 +5,7 @@ package commands
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 	"syscall"
 
@@ -36,11 +34,7 @@ func (c *DrivesUnixCommand) Description() string {
 func (c *DrivesUnixCommand) Execute(task structs.Task) structs.CommandResult {
 	mounts := getMountPoints()
 	if len(mounts) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	var entries []driveEntry
@@ -63,27 +57,15 @@ func (c *DrivesUnixCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling drive data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling drive data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 type mountEntry struct {
@@ -132,7 +114,7 @@ func parseProcMounts() []mountEntry {
 }
 
 func parseMountCommand() []mountEntry {
-	out, err := exec.Command("mount").Output()
+	out, err := execCmdTimeoutOutput("mount")
 	if err != nil {
 		return nil
 	}

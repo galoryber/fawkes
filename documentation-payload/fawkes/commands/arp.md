@@ -17,12 +17,29 @@ Display the ARP (Address Resolution Protocol) table, showing IP-to-MAC address m
 
 ## Arguments
 
-None.
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| ip | No | — | Filter by IP address (substring match, e.g. '192.168') |
+| mac | No | — | Filter by MAC address (substring match, case-insensitive) |
+| interface | No | — | Filter by interface name (case-insensitive exact match) |
 
 ## Usage
 
 ```
+# Show all ARP entries
 arp
+
+# Filter by IP subnet
+arp -ip 192.168
+
+# Filter by MAC prefix
+arp -mac 52:54:00
+
+# Filter by interface
+arp -interface eth0
+
+# Combine filters
+arp -ip 192.168 -interface eth0
 ```
 
 ### Browser Script

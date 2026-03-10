@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"runtime"
 	"sync"
+	"unsafe"
+
+	"fawkes/pkg/structs"
 
 	"golang.org/x/sys/windows"
 )
@@ -25,7 +28,19 @@ var (
 
 	// tokenMutex protects token operations from race conditions
 	tokenMutex sync.Mutex
+
+	// gTokenStore holds named tokens for quick switching between identities.
+	// Tokens are saved via token-store save and restored via token-store use.
+	gTokenStore = make(map[string]*SavedToken)
 )
+
+// SavedToken holds a duplicated token along with metadata for the token store.
+type SavedToken struct {
+	Token    windows.Token
+	Identity string             // DOMAIN\username at save time
+	Source   string             // "steal-token", "make-token", "printspoofer", etc.
+	Creds    *StoredCredentials // non-nil if from make-token
+}
 
 // StoredCredentials holds plaintext credentials for use by commands
 // that need explicit authentication (e.g., DCOM remote COM activation)
@@ -93,7 +108,8 @@ func RevertCurrentToken() error {
 		gIdentityToken = 0
 	}
 
-	// Clear stored credentials
+	// Clear stored credentials (zero password before releasing)
+	zeroStoredCredentials(gIdentityCreds)
 	gIdentityCreds = nil
 
 	// Call RevertToSelf to drop any thread impersonation
@@ -214,4 +230,155 @@ func GetIdentityCredentials() *StoredCredentials {
 		Username: gIdentityCreds.Username,
 		Password: gIdentityCreds.Password,
 	}
+}
+
+// SaveTokenToStore saves the current impersonation token to the store under the given name.
+// The token is duplicated so the active token and stored token are independent handles.
+func SaveTokenToStore(name, source string) error {
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+
+	if gIdentityToken == 0 {
+		return fmt.Errorf("no active impersonation token to save")
+	}
+
+	// Duplicate the token so stored and active are independent handles
+	var dupToken windows.Token
+	err := windows.DuplicateTokenEx(
+		gIdentityToken,
+		windows.MAXIMUM_ALLOWED,
+		nil,
+		windows.SecurityImpersonation,
+		windows.TokenPrimary,
+		&dupToken,
+	)
+	if err != nil {
+		return fmt.Errorf("DuplicateTokenEx failed: %v", err)
+	}
+
+	identity, _ := GetTokenUserInfo(dupToken)
+
+	// Close any existing token with the same name
+	if old, exists := gTokenStore[name]; exists {
+		windows.CloseHandle(windows.Handle(old.Token))
+	}
+
+	var savedCreds *StoredCredentials
+	if gIdentityCreds != nil {
+		savedCreds = &StoredCredentials{
+			Domain:   gIdentityCreds.Domain,
+			Username: gIdentityCreds.Username,
+			Password: gIdentityCreds.Password,
+		}
+	}
+
+	gTokenStore[name] = &SavedToken{
+		Token:    dupToken,
+		Identity: identity,
+		Source:   source,
+		Creds:    savedCreds,
+	}
+
+	return nil
+}
+
+// UseTokenFromStore activates a stored token by name, replacing the current impersonation.
+func UseTokenFromStore(name string) (string, error) {
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+
+	saved, exists := gTokenStore[name]
+	if !exists {
+		return "", fmt.Errorf("no token stored with name %q", name)
+	}
+
+	// Duplicate the stored token so the store keeps its copy
+	var dupToken windows.Token
+	err := windows.DuplicateTokenEx(
+		saved.Token,
+		windows.MAXIMUM_ALLOWED,
+		nil,
+		windows.SecurityImpersonation,
+		windows.TokenPrimary,
+		&dupToken,
+	)
+	if err != nil {
+		return "", fmt.Errorf("DuplicateTokenEx failed: %v", err)
+	}
+
+	// Clear current impersonation
+	if gIdentityToken != 0 {
+		windows.CloseHandle(windows.Handle(gIdentityToken))
+		gIdentityToken = 0
+		procRevertToSelf.Call()
+	}
+
+	// Impersonate the stored token
+	ret, _, sysErr := procImpersonateLoggedOnUser.Call(uintptr(dupToken))
+	if ret == 0 {
+		windows.CloseHandle(windows.Handle(dupToken))
+		return "", fmt.Errorf("ImpersonateLoggedOnUser failed: %v", sysErr)
+	}
+
+	gIdentityToken = dupToken
+
+	// Restore credentials if the saved token had them
+	if saved.Creds != nil {
+		gIdentityCreds = &StoredCredentials{
+			Domain:   saved.Creds.Domain,
+			Username: saved.Creds.Username,
+			Password: saved.Creds.Password,
+		}
+	} else {
+		gIdentityCreds = nil
+	}
+
+	return saved.Identity, nil
+}
+
+// RemoveTokenFromStore removes and closes a stored token by name.
+func RemoveTokenFromStore(name string) error {
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+
+	saved, exists := gTokenStore[name]
+	if !exists {
+		return fmt.Errorf("no token stored with name %q", name)
+	}
+
+	zeroStoredCredentials(saved.Creds)
+	windows.CloseHandle(windows.Handle(saved.Token))
+	delete(gTokenStore, name)
+	return nil
+}
+
+// ListTokenStore returns a copy of all stored token entries (without the actual handles).
+func ListTokenStore() map[string]*SavedToken {
+	tokenMutex.Lock()
+	defer tokenMutex.Unlock()
+
+	result := make(map[string]*SavedToken, len(gTokenStore))
+	for k, v := range gTokenStore {
+		result[k] = v
+	}
+	return result
+}
+
+// zeroUTF16Ptr zeros a null-terminated UTF-16 string in-place.
+// Used to clear password buffers passed to Windows API calls like LogonUserW.
+func zeroUTF16Ptr(p *uint16) {
+	if p == nil {
+		return
+	}
+	for ptr := p; *ptr != 0; ptr = (*uint16)(unsafe.Add(unsafe.Pointer(ptr), 2)) {
+		*ptr = 0
+	}
+}
+
+// zeroStoredCredentials clears the password from a StoredCredentials struct.
+func zeroStoredCredentials(creds *StoredCredentials) {
+	if creds == nil {
+		return
+	}
+	structs.ZeroString(&creds.Password)
 }

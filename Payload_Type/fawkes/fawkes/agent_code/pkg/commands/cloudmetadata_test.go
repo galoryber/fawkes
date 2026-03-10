@@ -20,7 +20,7 @@ func TestCloudMetadataNoParams(t *testing.T) {
 	params, _ := json.Marshal(cloudMetadataArgs{Action: "all", Provider: "invalid_provider", Timeout: 1})
 	cmd := &CloudMetadataCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "not available") {
@@ -33,7 +33,7 @@ func TestCloudMetadataDetectNoCloud(t *testing.T) {
 	cmd := &CloudMetadataCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	// On a non-cloud machine, should report no detection
@@ -60,7 +60,7 @@ func TestCloudMetadataInvalidProvider(t *testing.T) {
 	cmd := &CloudMetadataCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "not available") {
@@ -181,7 +181,7 @@ func TestCloudMetadataCredsNoCloud(t *testing.T) {
 	cmd := &CloudMetadataCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 }
@@ -192,7 +192,7 @@ func TestCloudMetadataIdentityNoCloud(t *testing.T) {
 	cmd := &CloudMetadataCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 }
@@ -203,7 +203,7 @@ func TestCloudMetadataUserdataNoCloud(t *testing.T) {
 	cmd := &CloudMetadataCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 }
@@ -214,7 +214,7 @@ func TestCloudMetadataNetworkNoCloud(t *testing.T) {
 	cmd := &CloudMetadataCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 }

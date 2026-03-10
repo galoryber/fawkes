@@ -34,44 +34,24 @@ type sshExecArgs struct {
 
 func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -host <target> -username <user> [-password <pass> | -key_path <path>] -command <cmd>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -host <target> -username <user> [-password <pass> | -key_path <path>] -command <cmd>")
 	}
 
 	var args sshExecArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Host == "" || args.Username == "" {
-		return structs.CommandResult{
-			Output:    "Error: host and username are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: host and username are required")
 	}
 
 	if args.Command == "" {
-		return structs.CommandResult{
-			Output:    "Error: command is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: command is required")
 	}
 
 	if args.Password == "" && args.KeyPath == "" && args.KeyData == "" {
-		return structs.CommandResult{
-			Output:    "Error: at least one auth method required (password, key_path, or key_data)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: at least one auth method required (password, key_path, or key_data)")
 	}
 
 	if args.Port <= 0 {
@@ -82,6 +62,10 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Timeout = 60
 	}
 
+	// Zero sensitive parameters after use
+	defer structs.ZeroString(&args.Password)
+	defer structs.ZeroString(&args.KeyData)
+
 	// Build auth methods
 	var authMethods []ssh.AuthMethod
 
@@ -89,11 +73,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.KeyData != "" {
 		signer, err := parsePrivateKey([]byte(args.KeyData), args.Password)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing inline key: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing inline key: %v", err)
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
@@ -101,19 +81,12 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.KeyPath != "" {
 		keyBytes, err := os.ReadFile(args.KeyPath)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error reading key file %s: %v", args.KeyPath, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error reading key file %s: %v", args.KeyPath, err)
 		}
+		defer structs.ZeroBytes(keyBytes)
 		signer, err := parsePrivateKey(keyBytes, args.Password)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing key file %s: %v", args.KeyPath, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing key file %s: %v", args.KeyPath, err)
 		}
 		authMethods = append(authMethods, ssh.PublicKeys(signer))
 	}
@@ -147,22 +120,14 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	// Connect with context-aware dialer
 	client, err := sshDialContext(ctx, "tcp", addr, config)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to %s: %v", addr, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to %s: %v", addr, err)
 	}
 	defer client.Close()
 
 	// Create session
 	session, err := client.NewSession()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating SSH session on %s: %v", addr, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating SSH session on %s: %v", addr, err)
 	}
 	defer session.Close()
 
@@ -181,11 +146,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	case res := <-resultCh:
 		return formatSSHResult(args, addr, res.output, res.err)
 	case <-ctx.Done():
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: command execution on %s timed out after %ds", addr, args.Timeout),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: command execution on %s timed out after %ds", addr, args.Timeout)
 	}
 }
 

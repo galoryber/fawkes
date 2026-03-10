@@ -20,7 +20,7 @@ type tacArgs struct {
 
 func (c *TacCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{Output: "Error: no parameters provided", Status: "error", Completed: true}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args tacArgs
@@ -28,12 +28,12 @@ func (c *TacCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Path = strings.TrimSpace(task.Params)
 	}
 	if args.Path == "" {
-		return structs.CommandResult{Output: "Error: path is required", Status: "error", Completed: true}
+		return errorResult("Error: path is required")
 	}
 
 	lines, err := readLines(args.Path)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error: %v", err), Status: "error", Completed: true}
+		return errorf("Error: %v", err)
 	}
 
 	// Reverse lines
@@ -53,5 +53,5 @@ func (c *TacCommand) Execute(task structs.Task) structs.CommandResult {
 		out = out[:100000] + "\n... (truncated)"
 	}
 
-	return structs.CommandResult{Output: out, Status: "success", Completed: true}
+	return successResult(out)
 }

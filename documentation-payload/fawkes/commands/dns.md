@@ -15,7 +15,7 @@ Supports custom DNS server targeting for querying internal domain DNS (e.g., Act
 
 Argument | Required | Description
 ---------|----------|------------
-action | Yes | Query type: `resolve` (A/AAAA), `reverse` (PTR), `srv`, `mx`, `ns`, `txt`, `cname`, `all` (comprehensive), `dc` (domain controller discovery), `zone-transfer` (AXFR)
+action | Yes | Query type: `resolve` (A/AAAA), `reverse` (PTR), `srv`, `mx`, `ns`, `txt`, `cname`, `all` (comprehensive), `dc` (domain controller discovery), `zone-transfer` (AXFR), `wildcard` (detect wildcard DNS)
 target | Yes | Hostname, IP address, or domain name to query
 server | No | Custom DNS server IP (default: system resolver). **Required** for `zone-transfer` action.
 timeout | No | Query timeout in seconds (default: 5)
@@ -50,6 +50,11 @@ dns -action srv -target _ldap._tcp.sevenkingdoms.local -server 192.168.100.51
 Attempt a zone transfer (AXFR):
 ```
 dns -action zone-transfer -target sevenkingdoms.local -server 192.168.100.51
+```
+
+Detect wildcard DNS (useful before subdomain enumeration):
+```
+dns -action wildcard -target example.com
 ```
 
 ## Example Output

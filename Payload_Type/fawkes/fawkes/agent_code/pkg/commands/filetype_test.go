@@ -50,7 +50,7 @@ func TestFileTypeSingleText(t *testing.T) {
 	cmd := &FileTypeCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "Text/ASCII") {
@@ -70,7 +70,7 @@ func TestFileTypePEMagic(t *testing.T) {
 	cmd := &FileTypeCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "Windows PE") {
@@ -89,7 +89,7 @@ func TestFileTypeELFMagic(t *testing.T) {
 	cmd := &FileTypeCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "ELF") {
@@ -108,7 +108,7 @@ func TestFileTypePDFMagic(t *testing.T) {
 	cmd := &FileTypeCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "PDF") {
@@ -127,7 +127,7 @@ func TestFileTypePNGMagic(t *testing.T) {
 	cmd := &FileTypeCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "PNG") {
@@ -145,7 +145,7 @@ func TestFileTypeDirectory(t *testing.T) {
 	cmd := &FileTypeCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "3 files analyzed") {
@@ -163,7 +163,7 @@ func TestFileTypeMaxFiles(t *testing.T) {
 	cmd := &FileTypeCommand{}
 	result := cmd.Execute(structs.Task{Params: string(params)})
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Fatalf("expected completed, got %s: %s", result.Status, result.Output)
 	}
 	if !strings.Contains(result.Output, "2 files analyzed") {

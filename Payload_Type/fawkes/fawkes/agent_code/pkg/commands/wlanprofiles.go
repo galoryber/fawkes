@@ -36,11 +36,7 @@ func (c *WlanProfilesCommand) Execute(task structs.Task) structs.CommandResult {
 
 	profiles, err := getWlanProfiles()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	// Filter by name if specified
@@ -56,11 +52,7 @@ func (c *WlanProfilesCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(profiles) == 0 {
-		return structs.CommandResult{
-			Output:    "[*] No WiFi profiles found",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[*] No WiFi profiles found")
 	}
 
 	var sb strings.Builder
@@ -85,9 +77,5 @@ func (c *WlanProfilesCommand) Execute(task structs.Task) structs.CommandResult {
 			p.Source))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

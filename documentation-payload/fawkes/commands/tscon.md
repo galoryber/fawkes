@@ -9,7 +9,7 @@ hidden = false
 
 ## Summary
 
-RDP session management via Windows Terminal Services API. Lists active/disconnected RDP sessions, hijacks disconnected sessions (requires SYSTEM), and disconnects users.
+RDP session management via Windows Terminal Services API. Lists active/disconnected RDP sessions, hijacks disconnected sessions (requires SYSTEM), disconnects users, and forces session logoff.
 
 Session hijacking allows an operator running as SYSTEM to take over another user's disconnected RDP session without knowing their password. This is particularly useful after obtaining SYSTEM via `getsystem` or `pipe-server`.
 
@@ -17,8 +17,8 @@ Session hijacking allows an operator running as SYSTEM to take over another user
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | list | Action: list, hijack, disconnect |
-| session_id | No | - | Target session ID (required for hijack/disconnect) |
+| action | No | list | Action: list, hijack, disconnect, logoff |
+| session_id | No | - | Target session ID (required for hijack/disconnect/logoff) |
 
 ## Usage
 
@@ -35,6 +35,11 @@ tscon -action hijack -session_id 2
 Disconnect a user's session:
 ```
 tscon -action disconnect -session_id 3
+```
+
+Force logoff a user's session:
+```
+tscon -action logoff -session_id 2
 ```
 
 ## Sample Output

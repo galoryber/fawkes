@@ -131,11 +131,7 @@ func (c *DebugDetectCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString("[+] All checks CLEAN — no debugger/analysis activity detected\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // scanForDebuggerProcesses scans running processes for known debugger/analysis tools.

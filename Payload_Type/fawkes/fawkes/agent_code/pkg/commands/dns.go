@@ -29,36 +29,20 @@ type dnsArgs struct {
 
 func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <resolve|reverse|srv|mx|ns|txt|cname|all|dc> -target <host>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action <resolve|reverse|srv|mx|ns|txt|cname|all|dc|wildcard> -target <host>")
 	}
 
 	var args dnsArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Target == "" {
-		return structs.CommandResult{
-			Output:    "Error: target is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: target is required")
 	}
 
 	if args.Action == "" {
-		return structs.CommandResult{
-			Output:    "Error: action required. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: action required. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard")
 	}
 
 	if args.Timeout <= 0 {
@@ -104,23 +88,17 @@ func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
 		return dnsDC(ctx, resolver, args)
 	case "zone-transfer", "axfr":
 		return dnsAXFR(ctx, args)
+	case "wildcard":
+		return dnsWildcard(ctx, resolver, args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown action %q. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown action %q. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard", args.Action)
 	}
 }
 
 func dnsResolve(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	addrs, err := r.LookupHost(ctx, args.Target)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving %s: %v", args.Target, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving %s: %v", args.Target, err)
 	}
 
 	var sb strings.Builder
@@ -129,21 +107,13 @@ func dnsResolve(ctx context.Context, r *net.Resolver, args dnsArgs) structs.Comm
 		sb.WriteString(fmt.Sprintf("  %s\n", addr))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsReverse(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	names, err := r.LookupAddr(ctx, args.Target)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reverse lookup %s: %v", args.Target, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reverse lookup %s: %v", args.Target, err)
 	}
 
 	var sb strings.Builder
@@ -152,11 +122,7 @@ func dnsReverse(ctx context.Context, r *net.Resolver, args dnsArgs) structs.Comm
 		sb.WriteString(fmt.Sprintf("  %s\n", name))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsSRV(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
@@ -171,22 +137,14 @@ func dnsSRV(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 		// Full SRV record like _ldap._tcp.domain.local
 		_, addrs, err := r.LookupSRV(ctx, "", "", target)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error SRV lookup %s: %v", target, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error SRV lookup %s: %v", target, err)
 		}
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("[*] SRV records for %s (%d found)\n", target, len(addrs)))
 		for _, srv := range addrs {
 			sb.WriteString(fmt.Sprintf("  %s:%d (priority=%d, weight=%d)\n", srv.Target, srv.Port, srv.Priority, srv.Weight))
 		}
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 	}
 
 	// Default: query _ldap._tcp for the domain
@@ -196,11 +154,7 @@ func dnsSRV(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 
 	_, addrs, err := r.LookupSRV(ctx, service, proto, domain)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error SRV lookup _%s._%s.%s: %v", service, proto, domain, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error SRV lookup _%s._%s.%s: %v", service, proto, domain, err)
 	}
 
 	var sb strings.Builder
@@ -209,21 +163,13 @@ func dnsSRV(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 		sb.WriteString(fmt.Sprintf("  %s:%d (priority=%d, weight=%d)\n", srv.Target, srv.Port, srv.Priority, srv.Weight))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsMX(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	records, err := r.LookupMX(ctx, args.Target)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error MX lookup %s: %v", args.Target, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error MX lookup %s: %v", args.Target, err)
 	}
 
 	var sb strings.Builder
@@ -232,21 +178,13 @@ func dnsMX(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandRe
 		sb.WriteString(fmt.Sprintf("  %s (preference=%d)\n", mx.Host, mx.Pref))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsNS(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	records, err := r.LookupNS(ctx, args.Target)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error NS lookup %s: %v", args.Target, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error NS lookup %s: %v", args.Target, err)
 	}
 
 	var sb strings.Builder
@@ -255,21 +193,13 @@ func dnsNS(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandRe
 		sb.WriteString(fmt.Sprintf("  %s\n", ns.Host))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsTXT(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	records, err := r.LookupTXT(ctx, args.Target)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error TXT lookup %s: %v", args.Target, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error TXT lookup %s: %v", args.Target, err)
 	}
 
 	var sb strings.Builder
@@ -278,28 +208,16 @@ func dnsTXT(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 		sb.WriteString(fmt.Sprintf("  \"%s\"\n", txt))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsCNAME(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
 	cname, err := r.LookupCNAME(ctx, args.Target)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error CNAME lookup %s: %v", args.Target, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error CNAME lookup %s: %v", args.Target, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[*] CNAME for %s\n  %s\n", args.Target, cname),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] CNAME for %s\n  %s\n", args.Target, cname)
 }
 
 func dnsAll(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
@@ -352,11 +270,7 @@ func dnsAll(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandR
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func dnsDC(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
@@ -397,11 +311,7 @@ func dnsDC(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandRe
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // dnsAXFR performs a DNS zone transfer (AXFR) via raw TCP DNS protocol.
@@ -409,11 +319,7 @@ func dnsDC(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandRe
 // Requires a DNS server parameter — zone transfers use TCP, not the system resolver.
 func dnsAXFR(ctx context.Context, args dnsArgs) structs.CommandResult {
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: -server is required for zone transfers (e.g., -server 192.168.1.1)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -server is required for zone transfers (e.g., -server 192.168.1.1)")
 	}
 
 	server := args.Server
@@ -434,22 +340,14 @@ func dnsAXFR(ctx context.Context, args dnsArgs) structs.CommandResult {
 	d := net.Dialer{Timeout: time.Duration(args.Timeout) * time.Second}
 	conn, err := d.DialContext(ctx, "tcp", server)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to %s: %v", server, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to %s: %v", server, err)
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(time.Duration(args.Timeout) * time.Second))
 
 	// Send query
 	if _, err := conn.Write(tcpMsg); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error sending AXFR query: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error sending AXFR query: %v", err)
 	}
 
 	// Read all response messages (AXFR may span multiple TCP messages)
@@ -467,11 +365,7 @@ func dnsAXFR(ctx context.Context, args dnsArgs) structs.CommandResult {
 			if totalRecords > 0 {
 				break // Normal end
 			}
-			return structs.CommandResult{
-				Output:    sb.String() + fmt.Sprintf("\n[!] Error reading response: %v\n", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(sb.String() + fmt.Sprintf("\n[!] Error reading response: %v\n", err))
 		}
 		msgLen := binary.BigEndian.Uint16(lenBuf)
 		if msgLen == 0 {
@@ -499,11 +393,7 @@ func dnsAXFR(ctx context.Context, args dnsArgs) structs.CommandResult {
 			if rcode == 5 {
 				sb.WriteString("[*] Zone transfers are typically restricted to authorized secondary DNS servers\n")
 			}
-			return structs.CommandResult{
-				Output:    sb.String(),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(sb.String())
 		}
 
 		for _, r := range records {
@@ -520,19 +410,62 @@ func dnsAXFR(ctx context.Context, args dnsArgs) structs.CommandResult {
 
 	if totalRecords == 0 {
 		sb.WriteString("\n[!] No records received — zone transfer may be denied\n")
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String())
 	}
 
 	sb.WriteString(fmt.Sprintf("\n[+] Zone transfer complete: %d records\n", totalRecords))
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
+	return successResult(sb.String())
+}
+
+// dnsWildcard detects wildcard DNS by resolving random nonexistent subdomains.
+// If random names resolve, the domain has wildcard DNS configured — important
+// for filtering false positives during subdomain enumeration.
+func dnsWildcard(ctx context.Context, r *net.Resolver, args dnsArgs) structs.CommandResult {
+	// Generate 3 random subdomain probes for reliability
+	probes := make([]string, 3)
+	for i := range probes {
+		probes[i] = fmt.Sprintf("fwkprb%08x.%s", rand.Uint32(), args.Target)
 	}
+
+	var resolved []string
+	var wildcardIPs []string
+
+	for _, probe := range probes {
+		addrs, err := r.LookupHost(ctx, probe)
+		if err == nil && len(addrs) > 0 {
+			resolved = append(resolved, probe)
+			wildcardIPs = append(wildcardIPs, addrs...)
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Wildcard DNS check for %s\n\n", args.Target))
+
+	if len(resolved) == 0 {
+		sb.WriteString("Result: No wildcard detected\n")
+		sb.WriteString("Random subdomains did not resolve — subdomain enumeration results are reliable.\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("Result: WILDCARD DETECTED (%d/%d probes resolved)\n\n", len(resolved), len(probes)))
+
+		// Deduplicate IPs
+		seen := make(map[string]bool)
+		var unique []string
+		for _, ip := range wildcardIPs {
+			if !seen[ip] {
+				seen[ip] = true
+				unique = append(unique, ip)
+			}
+		}
+
+		sb.WriteString("Wildcard IPs:\n")
+		for _, ip := range unique {
+			sb.WriteString(fmt.Sprintf("  %s\n", ip))
+		}
+		sb.WriteString("\nSubdomain enumeration will produce false positives.\n")
+		sb.WriteString("Filter results by excluding these IPs.\n")
+	}
+
+	return successResult(sb.String())
 }
 
 // dnsReadFull reads exactly len(buf) bytes from conn.

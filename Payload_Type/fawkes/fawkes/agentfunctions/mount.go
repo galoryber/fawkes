@@ -9,9 +9,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "mount",
-		Description:         "List mounted filesystems with device, mount point, type, and options.",
-		HelpString:          "mount",
-		Version:             1,
+		Description:         "List mounted filesystems with device, mount point, type, and options. Supports filtering by name or filesystem type.",
+		HelpString:          "mount [-filter <substring>] [-fstype <type>]",
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1082"},
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -21,7 +21,36 @@ func init() {
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
 		},
-		CommandParameters: []agentstructs.CommandParameter{},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:          "filter",
+				CLIName:       "filter",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Case-insensitive substring filter on device or mount point",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     1,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "fstype",
+				CLIName:       "fstype",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Filter by filesystem type (e.g., ext4, nfs, tmpfs, ntfs)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     2,
+						GroupName:            "Default",
+					},
+				},
+			},
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -36,7 +65,15 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
-			display := fmt.Sprintf("Mounted filesystems")
+			filter, _ := taskData.Args.GetStringArg("filter")
+			fstype, _ := taskData.Args.GetStringArg("fstype")
+			display := "Mounted filesystems"
+			if filter != "" {
+				display += fmt.Sprintf(", filter=%s", filter)
+			}
+			if fstype != "" {
+				display += fmt.Sprintf(", fstype=%s", fstype)
+			}
 			response.DisplayParams = &display
 			return response
 		},

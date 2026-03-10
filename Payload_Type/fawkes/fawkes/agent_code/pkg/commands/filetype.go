@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,28 +84,16 @@ const fileTypeHeaderSize = 32 // Read first 32 bytes for identification
 
 func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required (path). Use -recursive true for directory mode.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required (path). Use -recursive true for directory mode.")
 	}
 
 	var args fileTypeArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	if args.MaxFiles <= 0 {
@@ -118,20 +107,19 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	var sb strings.Builder
 
 	if info.IsDir() {
 		count := 0
-		err := filepath.Walk(args.Path, func(path string, fi os.FileInfo, err error) error {
-			if err != nil || fi.IsDir() {
-				if err != nil && !fi.IsDir() {
+		err := filepath.WalkDir(args.Path, func(path string, d fs.DirEntry, err error) error {
+			if task.DidStop() {
+				return fmt.Errorf("cancelled")
+			}
+			if err != nil || d.IsDir() {
+				if err != nil && !d.IsDir() {
 					return nil
 				}
 				if !args.Recursive && path != args.Path {
@@ -141,6 +129,10 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 			if count >= args.MaxFiles {
 				return filepath.SkipAll
+			}
+			fi, infoErr := d.Info()
+			if infoErr != nil {
+				return nil
 			}
 			result := identifyFile(path, fi)
 			sb.WriteString(result)
@@ -155,11 +147,7 @@ func (c *FileTypeCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(identifyFile(args.Path, info))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "completed",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func identifyFile(path string, info os.FileInfo) string {

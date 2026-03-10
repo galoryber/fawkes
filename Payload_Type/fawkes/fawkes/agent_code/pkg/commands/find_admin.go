@@ -44,36 +44,20 @@ type findAdminResult struct {
 
 func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -hosts <targets> -username <user> -password <pass>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -hosts <targets> -username <user> -password <pass>")
 	}
 
 	var args findAdminArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Hosts == "" {
-		return structs.CommandResult{
-			Output:    "Error: hosts parameter is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: hosts parameter is required")
 	}
 
 	if args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return structs.CommandResult{
-			Output:    "Error: username and password (or hash) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: username and password (or hash) are required")
 	}
 
 	if args.Timeout <= 0 {
@@ -101,19 +85,11 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse host list (reuses parseHosts from port_scan.go)
 	hosts, err := parseHosts(args.Hosts)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing hosts: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing hosts: %v", err)
 	}
 
 	if len(hosts) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: no valid hosts found",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no valid hosts found")
 	}
 
 	// Run parallel checks
@@ -160,27 +136,15 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 	})
 
 	if len(results) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	data, err := json.Marshal(results)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling output: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling output: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 // findAdminCheckSMB tests admin access by connecting to the C$ admin share.

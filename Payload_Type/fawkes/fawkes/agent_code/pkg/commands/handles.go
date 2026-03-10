@@ -21,18 +21,7 @@ type HandlesCommand struct{}
 func (c *HandlesCommand) Name() string        { return "handles" }
 func (c *HandlesCommand) Description() string { return "Enumerate open handles in a process (T1057)" }
 
-type handlesArgs struct {
-	PID       int    `json:"pid"`
-	TypeName  string `json:"type"`
-	MaxCount  int    `json:"max_count"`
-	ShowNames bool   `json:"show_names"`
-}
-
-type handleInfo struct {
-	Handle   uint16 `json:"handle"`
-	TypeName string `json:"type"`
-	Name     string `json:"name,omitempty"`
-}
+// handlesArgs and handleInfo are defined in handles_common.go
 
 // Windows NT API constants
 const (
@@ -69,20 +58,12 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 	var args handlesArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
 	if args.PID <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: pid is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: pid is required")
 	}
 
 	if args.MaxCount <= 0 {
@@ -92,11 +73,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 	// Query all system handles
 	entries, err := querySystemHandles()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying system handles: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying system handles: %v", err)
 	}
 
 	// Filter to target PID
@@ -108,11 +85,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(pidEntries) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No handles found for PID %d (0 of %d system handles)", args.PID, len(entries)),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No handles found for PID %d (0 of %d system handles)", args.PID, len(entries))
 	}
 
 	// Open target process to duplicate handles from
@@ -134,7 +107,7 @@ func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 
 		hi := handleInfo{
-			Handle: entry.HandleValue,
+			Handle: int(entry.HandleValue),
 		}
 
 		// Duplicate the handle into our process for querying
@@ -347,18 +320,10 @@ func formatHandleOutput(handles []handleInfo, typeCounts map[string]int, args ha
 
 	jsonBytes, err := json.Marshal(out)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling handle data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling handle data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 func formatHandleSummary(entries []systemHandleEntry, args handlesArgs, sysTotal int, _ error) structs.CommandResult {
@@ -396,16 +361,8 @@ func formatHandleSummary(entries []systemHandleEntry, args handlesArgs, sysTotal
 
 	jsonBytes, err := json.Marshal(out)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling handle data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling handle data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }

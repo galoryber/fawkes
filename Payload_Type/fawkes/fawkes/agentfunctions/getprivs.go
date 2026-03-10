@@ -13,15 +13,15 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "getprivs_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "List, enable, disable, or strip token privileges. Strip disables all non-essential privileges to reduce EDR detection surface.",
-		HelpString:          "getprivs\ngetprivs -action list\ngetprivs -action enable -privilege SeDebugPrivilege\ngetprivs -action disable -privilege SeDebugPrivilege\ngetprivs -action strip",
-		Version:             2,
+		Description:         "List, enable, disable, or strip token privileges. On Windows, shows token privileges with enable/disable/strip support. On Linux, shows process capabilities (CapEff/CapPrm) and security context (SELinux/AppArmor). On macOS, shows entitlements, sandbox status, and group memberships.",
+		HelpString:          "getprivs\ngetprivs -action list\ngetprivs -action enable -privilege SeDebugPrivilege (Windows only)\ngetprivs -action disable -privilege SeDebugPrivilege (Windows only)\ngetprivs -action strip (Windows only)",
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1134.002"}, // Access Token Manipulation: Create Process with Token
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -57,13 +57,10 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			if input != "" {
-				if input == "" {
+			if input == "" {
 				return nil
 			}
 			return args.LoadArgsFromJSONString(input)
-			}
-			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)

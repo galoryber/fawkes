@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -38,11 +39,7 @@ type wcResult struct {
 
 func (c *WcCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args wcArgs
@@ -51,40 +48,24 @@ func (c *WcCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	if info.IsDir() {
-		return wcDirectory(args.Path, args.Pattern)
+		return wcDirectory(task, args.Path, args.Pattern)
 	}
 
 	result, err := wcFile(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    formatWcResult(result),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(formatWcResult(result))
 }
 
 func wcFile(path string) (wcResult, error) {
@@ -130,7 +111,7 @@ func countWords(s string) int {
 	return count
 }
 
-func wcDirectory(dirPath, pattern string) structs.CommandResult {
+func wcDirectory(task structs.Task, dirPath, pattern string) structs.CommandResult {
 	if pattern == "" {
 		pattern = "*"
 	}
@@ -139,8 +120,11 @@ func wcDirectory(dirPath, pattern string) structs.CommandResult {
 	var total wcResult
 	total.path = "total"
 
-	filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info.IsDir() {
+	_ = filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
+		if err != nil || d.IsDir() {
 			return nil
 		}
 		if pattern != "*" {
@@ -179,11 +163,7 @@ func wcDirectory(dirPath, pattern string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  %8d %8d %8d %10d  %s\n", total.lines, total.words, total.chars, total.bytes, "total"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func formatWcResult(r wcResult) string {

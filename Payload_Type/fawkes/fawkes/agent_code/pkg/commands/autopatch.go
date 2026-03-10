@@ -42,37 +42,21 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 		// Try parsing as space-separated string
 		parts := strings.Fields(task.Params)
 		if len(parts) != 3 {
-			return structs.CommandResult{
-				Output:    "Error: Invalid arguments. Usage: autopatch <dll_name> <function_name> <num_bytes>",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: Invalid arguments. Usage: autopatch <dll_name> <function_name> <num_bytes>")
 		}
 		args.DllName = parts[0]
 		args.FunctionName = parts[1]
 		if n, _ := fmt.Sscanf(parts[2], "%d", &args.NumBytes); n != 1 || args.NumBytes <= 0 {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: num_bytes must be a positive integer, got %q", parts[2]),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: num_bytes must be a positive integer, got %q", parts[2])
 		}
 	}
 
 	output, err := PerformAutoPatch(args.DllName, args.FunctionName, args.NumBytes)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    err.Error(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(err.Error())
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // PerformAutoPatch applies a jump-to-ret patch on the specified function.

@@ -51,11 +51,7 @@ func (c *HistoryScrubCommand) Execute(task structs.Task) structs.CommandResult {
 	case "clear-all":
 		return historyClear(params.User, true)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action '%s'. Use 'list', 'clear', or 'clear-all'.", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action '%s'. Use 'list', 'clear', or 'clear-all'.", params.Action)
 	}
 }
 
@@ -179,11 +175,7 @@ func historyList(user string) structs.CommandResult {
 		if user != "" {
 			target = user
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No history files found for %s", target),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No history files found for %s", target)
 	}
 
 	var sb strings.Builder
@@ -201,11 +193,7 @@ func historyList(user string) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("\n[%d history files, %d total lines, %s total]\n", len(files), totalLines, formatFileSize(totalSize)))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func historyClear(user string, clearAll bool) structs.CommandResult {
@@ -215,11 +203,7 @@ func historyClear(user string, clearAll bool) structs.CommandResult {
 		if user != "" {
 			target = user
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No history files found for %s", target),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No history files found for %s", target)
 	}
 
 	var sb strings.Builder

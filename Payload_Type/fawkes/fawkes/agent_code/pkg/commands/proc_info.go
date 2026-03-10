@@ -62,11 +62,7 @@ func (c *ProcInfoCommand) Execute(task structs.Task) structs.CommandResult {
 	case "modules":
 		return procInfoModules()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: info, connections, mounts, modules", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: info, connections, mounts, modules", args.Action)
 	}
 }
 
@@ -76,11 +72,7 @@ func procInfoDetail(pid int) structs.CommandResult {
 	procDir := fmt.Sprintf("/proc/%d", pid)
 
 	if _, err := os.Stat(procDir); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Process %d not found (/proc/%d does not exist)", pid, pid),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Process %d not found (/proc/%d does not exist)", pid, pid)
 	}
 
 	sb.WriteString(fmt.Sprintf("=== Process Info: PID %d ===\n\n", pid))
@@ -211,11 +203,7 @@ func procInfoDetail(pid int) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // procInfoConnections parses /proc/net/tcp and /proc/net/tcp6 for active connections
@@ -270,11 +258,7 @@ func procInfoConnections() structs.CommandResult {
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // procInfoMounts shows mount information from /proc/self/mountinfo
@@ -284,11 +268,7 @@ func procInfoMounts() structs.CommandResult {
 
 	data, err := os.ReadFile("/proc/self/mounts")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading /proc/self/mounts: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading /proc/self/mounts: %v", err)
 	}
 
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
@@ -298,11 +278,7 @@ func procInfoMounts() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // procInfoModules lists loaded kernel modules from /proc/modules
@@ -312,11 +288,7 @@ func procInfoModules() structs.CommandResult {
 
 	data, err := os.ReadFile("/proc/modules")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading /proc/modules: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading /proc/modules: %v", err)
 	}
 
 	sb.WriteString(fmt.Sprintf("%-30s %-12s %s\n", "Module", "Size", "Used By"))
@@ -333,11 +305,7 @@ func procInfoModules() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // parseHexAddr converts a hex encoded address (e.g., "0100007F:1F90") to IP:port

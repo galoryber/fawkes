@@ -140,5 +140,27 @@ func TestExtractXMLField_WithAttributes(t *testing.T) {
 	}
 }
 
+func TestEventLogCommand_EnableNoChannel(t *testing.T) {
+	cmd := &EventLogCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"enable"}`})
+	if result.Status != "error" {
+		t.Errorf("expected error when enable without channel, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "Channel is required") {
+		t.Errorf("expected channel required message, got: %s", result.Output)
+	}
+}
+
+func TestEventLogCommand_DisableNoChannel(t *testing.T) {
+	cmd := &EventLogCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"disable"}`})
+	if result.Status != "error" {
+		t.Errorf("expected error when disable without channel, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "Channel is required") {
+		t.Errorf("expected channel required message, got: %s", result.Output)
+	}
+}
+
 // TestExtractXMLAttr, TestSummarizeEventXML, TestFormatEvtLogSize moved to
 // command_helpers_test.go. TestDaysToDate moved to eventlog_helpers_test.go.

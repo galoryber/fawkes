@@ -9,14 +9,14 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "firewall",
-		Description:         "Manage Windows Firewall rules — list, add, delete, enable/disable rules, and check firewall status. Uses HNetCfg.FwPolicy2 COM API.",
+		Description:         "Manage firewall rules — list, add, delete, enable/disable rules, and check firewall status. Windows: HNetCfg.FwPolicy2 COM. macOS: pf/ALF. Linux: iptables/nftables (auto-detected).",
 		HelpString:          "firewall -action <list|add|delete|enable|disable|status> [-name <rule_name>] [-direction <in|out>] [-rule_action <allow|block>] [-protocol <tcp|udp|any>] [-port <port>] [-program <path>]",
-		Version:             1,
+		Version:             3,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1562.004"}, // Impair Defenses: Disable or Modify System Firewall
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -166,17 +166,47 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+			program, _ := taskData.Args.GetStringArg("program")
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
+			osName := taskData.Callback.OS
 			switch action {
 			case "add":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Add(%s) — Firewall rule created", name))
+				switch osName {
+				case "macOS":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("socketfilterfw --add %s", program))
+				case "Linux":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("iptables/nft — add rule %s", name))
+				default:
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Add(%s) — Firewall rule created", name))
+				}
 			case "delete":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Remove(%s) — Firewall rule deleted", name))
+				switch osName {
+				case "macOS":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("socketfilterfw --remove %s", program))
+				case "Linux":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("iptables/nft — delete rule %s", name))
+				default:
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Remove(%s) — Firewall rule deleted", name))
+				}
 			case "enable":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Item(%s).Enabled=true — Firewall rule enabled", name))
+				switch osName {
+				case "macOS":
+					createArtifact(taskData.Task.ID, "Process Create", "socketfilterfw --setglobalstate on")
+				default:
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Item(%s).Enabled=true — Firewall rule enabled", name))
+				}
 			case "disable":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Item(%s).Enabled=false — Firewall rule disabled", name))
+				switch osName {
+				case "macOS":
+					createArtifact(taskData.Task.ID, "Process Create", "socketfilterfw --setglobalstate off")
+				default:
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("HNetCfg.FwPolicy2.Rules.Item(%s).Enabled=false — Firewall rule disabled", name))
+				}
+			case "list", "status":
+				if osName == "Linux" {
+					createArtifact(taskData.Task.ID, "Process Create", "iptables/nft — list rules")
+				}
 			}
 			return response
 		},

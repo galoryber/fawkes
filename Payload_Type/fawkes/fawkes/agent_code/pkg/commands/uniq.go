@@ -29,11 +29,7 @@ type uniqArgs struct {
 
 func (c *UniqCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args uniqArgs
@@ -42,20 +38,12 @@ func (c *UniqCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	lines, err := readLines(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading %s: %v", args.Path, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading %s: %v", args.Path, err)
 	}
 
 	// Count consecutive duplicates (like Unix uniq)
@@ -115,9 +103,5 @@ func (c *UniqCommand) Execute(task structs.Task) structs.CommandResult {
 		outputCount++
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

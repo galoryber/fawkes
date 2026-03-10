@@ -38,20 +38,12 @@ func (c *MemScanCommand) Execute(task structs.Task) structs.CommandResult {
 	var args memScanArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
 	if args.Pattern == "" {
-		return structs.CommandResult{
-			Output:    "Error: pattern is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: pattern is required")
 	}
 
 	// Default to current process
@@ -74,32 +66,20 @@ func (c *MemScanCommand) Execute(task structs.Task) structs.CommandResult {
 		var err error
 		searchBytes, err = hex.DecodeString(strings.ReplaceAll(args.Pattern, " ", ""))
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: invalid hex pattern: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: invalid hex pattern: %v", err)
 		}
 	} else {
 		searchBytes = []byte(args.Pattern)
 	}
 
 	if len(searchBytes) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: pattern is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: pattern is empty")
 	}
 
 	// Platform-specific memory scan
 	matches, regionsScanned, bytesScanned, err := scanProcessMemory(args.PID, searchBytes, args.MaxResults, args.ContextBytes)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error scanning PID %d: %v", args.PID, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error scanning PID %d: %v", args.PID, err)
 	}
 
 	return formatMemScanOutput(args, matches, regionsScanned, bytesScanned, searchBytes)
@@ -153,7 +133,7 @@ func formatMemScanOutput(args memScanArgs, matches []memScanMatch, regionsScanne
 
 	sb.WriteString(fmt.Sprintf("Memory Scan: PID %d\n", args.PID))
 	sb.WriteString(fmt.Sprintf("Pattern: %s (%d bytes)\n", patternDisplay, len(searchBytes)))
-	sb.WriteString(fmt.Sprintf("Regions scanned: %d | Bytes scanned: %s\n", regionsScanned, formatScanSize(bytesScanned)))
+	sb.WriteString(fmt.Sprintf("Regions scanned: %d | Bytes scanned: %s\n", regionsScanned, formatBytes(bytesScanned)))
 	sb.WriteString(fmt.Sprintf("Matches found: %d", len(matches)))
 	if len(matches) >= args.MaxResults {
 		sb.WriteString(" (limit reached, use -max_results to increase)")
@@ -161,11 +141,7 @@ func formatMemScanOutput(args memScanArgs, matches []memScanMatch, regionsScanne
 	sb.WriteString("\n")
 
 	if len(matches) == 0 {
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 	}
 
 	sb.WriteString(strings.Repeat("-", 80) + "\n\n")
@@ -179,11 +155,7 @@ func formatMemScanOutput(args memScanArgs, matches []memScanMatch, regionsScanne
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // writeHexDump writes a hex dump with ASCII sidebar, highlighting the match
@@ -226,15 +198,3 @@ func writeHexDump(sb *strings.Builder, data []byte, matchStart, matchLen int, ba
 	}
 }
 
-func formatScanSize(bytes uint64) string {
-	if bytes >= 1<<30 {
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(1<<30))
-	}
-	if bytes >= 1<<20 {
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(1<<20))
-	}
-	if bytes >= 1<<10 {
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(1<<10))
-	}
-	return fmt.Sprintf("%d B", bytes)
-}

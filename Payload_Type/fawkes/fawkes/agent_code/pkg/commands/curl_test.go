@@ -284,6 +284,11 @@ func TestCurlEmptyHeadersString(t *testing.T) {
 }
 
 func TestCurlDefaultUserAgent(t *testing.T) {
+	// Set the package-level default UA (normally set by main.go)
+	origUA := DefaultUserAgent
+	DefaultUserAgent = "Mozilla/5.0 TestAgent"
+	defer func() { DefaultUserAgent = origUA }()
+
 	var receivedUA string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		receivedUA = r.Header.Get("User-Agent")
@@ -295,7 +300,29 @@ func TestCurlDefaultUserAgent(t *testing.T) {
 	params, _ := json.Marshal(curlArgs{URL: server.URL})
 	_ = cmd.Execute(structs.Task{Params: string(params)})
 
-	if !strings.Contains(receivedUA, "Mozilla") {
-		t.Errorf("expected Mozilla user agent, got %s", receivedUA)
+	if receivedUA != "Mozilla/5.0 TestAgent" {
+		t.Errorf("expected configured UA, got %q", receivedUA)
+	}
+}
+
+func TestCurlNoDefaultUserAgent(t *testing.T) {
+	// When DefaultUserAgent is empty, Go's default should be used
+	origUA := DefaultUserAgent
+	DefaultUserAgent = ""
+	defer func() { DefaultUserAgent = origUA }()
+
+	var receivedUA string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedUA = r.Header.Get("User-Agent")
+		fmt.Fprint(w, "ok")
+	}))
+	defer server.Close()
+
+	cmd := &CurlCommand{}
+	params, _ := json.Marshal(curlArgs{URL: server.URL})
+	_ = cmd.Execute(structs.Task{Params: string(params)})
+
+	if receivedUA == "" {
+		t.Error("expected Go default user agent, got empty")
 	}
 }

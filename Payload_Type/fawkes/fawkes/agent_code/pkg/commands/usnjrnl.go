@@ -88,11 +88,7 @@ type usnRecordV2 struct {
 func (c *UsnJrnlCommand) Execute(task structs.Task) structs.CommandResult {
 	var params usnJrnlParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.Volume == "" {
@@ -112,11 +108,7 @@ func (c *UsnJrnlCommand) Execute(task structs.Task) structs.CommandResult {
 	case "delete":
 		return usnDelete(params.Volume)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use 'query', 'recent', or 'delete')", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use 'query', 'recent', or 'delete')", params.Action)
 	}
 }
 
@@ -169,21 +161,13 @@ func queryJournal(handle windows.Handle) (*usnJournalData, error) {
 func usnQuery(volume string) structs.CommandResult {
 	handle, err := openVolume(volume, false)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open volume: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open volume: %v", err)
 	}
 	defer windows.CloseHandle(handle)
 
 	journal, err := queryJournal(handle)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to query journal: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to query journal: %v", err)
 	}
 
 	recordRange := journal.NextUsn - journal.FirstUsn
@@ -198,31 +182,19 @@ func usnQuery(volume string) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("  Alloc Delta:      %s\n", formatBytes(journal.AllocationDelta)))
 	sb.WriteString(fmt.Sprintf("  Record Range:     %s (approx)\n", formatBytes(uint64(recordRange))))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func usnRecent(volume string) structs.CommandResult {
 	handle, err := openVolume(volume, false)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open volume: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open volume: %v", err)
 	}
 	defer windows.CloseHandle(handle)
 
 	journal, err := queryJournal(handle)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to query journal: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to query journal: %v", err)
 	}
 
 	// Read recent records from the journal
@@ -342,31 +314,19 @@ func usnRecent(volume string) structs.CommandResult {
 		))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func usnDelete(volume string) structs.CommandResult {
 	handle, err := openVolume(volume, true)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open volume (admin required): %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open volume (admin required): %v", err)
 	}
 	defer windows.CloseHandle(handle)
 
 	journal, err := queryJournal(handle)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to query journal: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to query journal: %v", err)
 	}
 
 	deleteData := deleteUsnJournalData{
@@ -385,20 +345,12 @@ func usnDelete(volume string) structs.CommandResult {
 		nil,
 	)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("FSCTL_DELETE_USN_JOURNAL failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("FSCTL_DELETE_USN_JOURNAL failed: %v", err)
 	}
 
 	recordRange := journal.NextUsn - journal.FirstUsn
-	return structs.CommandResult{
-		Output: fmt.Sprintf("USN Journal deleted on %s\n  Journal ID: 0x%016X\n  Records cleared: ~%s of forensic data destroyed\n  Note: deletion continues in background",
-			volume, journal.UsnJournalID, formatBytes(uint64(recordRange))),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("USN Journal deleted on %s\n  Journal ID: 0x%016X\n  Records cleared: ~%s of forensic data destroyed\n  Note: deletion continues in background",
+		volume, journal.UsnJournalID, formatBytes(uint64(recordRange)))
 }
 
 // formatBytes (duplicate of bitsFormatBytes in command_helpers.go) and

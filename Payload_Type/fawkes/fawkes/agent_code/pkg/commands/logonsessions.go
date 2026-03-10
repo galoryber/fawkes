@@ -79,11 +79,7 @@ func (c *LogonSessionsCommand) Execute(task structs.Task) structs.CommandResult 
 	var args logonSessionsArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
@@ -98,11 +94,7 @@ func (c *LogonSessionsCommand) Execute(task structs.Task) structs.CommandResult 
 	case "users":
 		return logonSessionsUsers(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: list, users", action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: list, users", action)
 	}
 }
 
@@ -210,11 +202,7 @@ func utf16PtrToSlice(p *uint16) []uint16 {
 func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateWTSSessions()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	// Filter
@@ -231,27 +219,15 @@ func logonSessionsList(args logonSessionsArgs) structs.CommandResult {
 	}
 
 	if len(filtered) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	data, err := json.Marshal(filtered)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling output: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling output: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 type userEntry struct {
@@ -265,11 +241,7 @@ type userEntry struct {
 func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 	sessions, err := enumerateWTSSessions()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	type userInfo struct {
@@ -308,11 +280,7 @@ func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 	}
 
 	if len(users) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	var entries []userEntry
@@ -331,16 +299,8 @@ func logonSessionsUsers(args logonSessionsArgs) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling output: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling output: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }

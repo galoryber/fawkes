@@ -37,12 +37,9 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse arguments
 	var params MakeTokenParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to parse parameters: %v", err)
 	}
+	defer structs.ZeroString(&params.Password)
 
 	// Default to "." for local machine if domain not specified
 	if params.Domain == "" {
@@ -66,29 +63,17 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	// Convert strings to UTF-16 for Windows API (LogonUserW requires wide strings)
 	usernamePtr, err := syscall.UTF16PtrFromString(params.Username)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to convert username: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to convert username: %v", err)
 	}
 
 	domainPtr, err := syscall.UTF16PtrFromString(params.Domain)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to convert domain: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to convert domain: %v", err)
 	}
 
 	passwordPtr, err := syscall.UTF16PtrFromString(params.Password)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to convert password: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to convert password: %v", err)
 	}
 
 	// Select provider based on logon type (Xenon Token.c lines 220-226)
@@ -109,30 +94,21 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		uintptr(unsafe.Pointer(&newToken)),   // phToken (output)
 	)
 
+	// Zero the UTF-16 password buffer immediately after use
+	zeroUTF16Ptr(passwordPtr)
+
 	if ret == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("LogonUserW failed: %v (check credentials and logon type)", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("LogonUserW failed: %v (check credentials and logon type)", err)
 	}
 
 	if newToken == 0 {
-		return structs.CommandResult{
-			Output:    "LogonUserW succeeded but returned null token",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("LogonUserW succeeded but returned null token")
 	}
 
 	// Store and impersonate the new token
 	if err := SetIdentityToken(newToken); err != nil {
 		windows.CloseHandle(windows.Handle(newToken))
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to impersonate token: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to impersonate token: %v", err)
 	}
 
 	// Store plaintext credentials for commands needing explicit auth (DCOM)
@@ -141,11 +117,7 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	// Get new identity to confirm impersonation
 	newIdentity, err := GetCurrentIdentity()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Token created but failed to verify identity: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Token created but failed to verify identity: %v", err)
 	}
 
 	// Format output similar to other Mythic agents

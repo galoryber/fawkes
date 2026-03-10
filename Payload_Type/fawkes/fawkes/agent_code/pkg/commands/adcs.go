@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
@@ -13,6 +14,8 @@ import (
 	"fawkes/pkg/structs"
 
 	"github.com/go-ldap/ldap/v3"
+	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
+	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 )
 
 type AdcsCommand struct{}
@@ -28,7 +31,14 @@ type adcsArgs struct {
 	Port     int    `json:"port"`
 	Username string `json:"username"`
 	Password string `json:"password"`
+	Hash     string `json:"hash"`
+	Domain   string `json:"domain"`
 	UseTLS   bool   `json:"use_tls"`
+	CAName   string `json:"ca_name"`
+	Template string `json:"template"`
+	Subject  string `json:"subject"`
+	AltName  string `json:"alt_name"`
+	Timeout  int    `json:"timeout"`
 }
 
 // EKU OIDs relevant for ESC detection
@@ -70,28 +80,32 @@ var lowPrivRIDMap = map[uint32]string{
 
 func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <cas|templates|find> -server <DC>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action <cas|templates|find|request> -server <DC>")
 	}
 
 	var args adcsArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: server parameter required (domain controller IP or hostname)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server parameter required (domain controller or CA server IP/hostname)")
+	}
+
+	// Request action uses DCOM (not LDAP) — handle separately
+	if strings.ToLower(args.Action) == "request" {
+		return adcsRequest(adcsRequestArgs{
+			Server:   args.Server,
+			Username: args.Username,
+			Password: args.Password,
+			Hash:     args.Hash,
+			Domain:   args.Domain,
+			CAName:   args.CAName,
+			Template: args.Template,
+			Subject:  args.Subject,
+			AltName:  args.AltName,
+			Timeout:  args.Timeout,
+		})
 	}
 
 	if args.Port <= 0 {
@@ -104,29 +118,17 @@ func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 
 	conn, err := adcsConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	if err := adcsBind(conn, args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error binding to LDAP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error binding to LDAP: %v", err)
 	}
 
 	configDN, baseDN, err := adcsGetConfigDN(conn)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error detecting configuration DN: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error detecting configuration DN: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -135,13 +137,9 @@ func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 	case "templates":
 		return adcsEnumerateTemplates(conn, configDN)
 	case "find":
-		return adcsFindVulnerable(conn, configDN, baseDN)
+		return adcsFindVulnerable(conn, configDN, baseDN, args)
 	default:
-		return structs.CommandResult{
-			Output:    "Error: action must be one of: cas, templates, find",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: action must be one of: cas, templates, find, request")
 	}
 }
 
@@ -194,11 +192,7 @@ func adcsEnumerateCAs(conn *ldap.Conn, configDN string) structs.CommandResult {
 
 	result, err := conn.Search(req)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying CAs: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying CAs: %v", err)
 	}
 
 	var sb strings.Builder
@@ -221,11 +215,7 @@ func adcsEnumerateCAs(conn *ldap.Conn, configDN string) structs.CommandResult {
 		sb.WriteString("\nNo Certificate Authorities found. ADCS may not be installed.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // adcsEnumerateTemplates lists all certificate templates with security-relevant attributes
@@ -246,11 +236,7 @@ func adcsEnumerateTemplates(conn *ldap.Conn, configDN string) structs.CommandRes
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying templates: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying templates: %v", err)
 	}
 
 	var sb strings.Builder
@@ -294,28 +280,21 @@ func adcsEnumerateTemplates(conn *ldap.Conn, configDN string) structs.CommandRes
 		sb.WriteString(fmt.Sprintf("  Schema:      v%s\n", schemaVer))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // adcsFindVulnerable checks published templates for ESC1-ESC4 vulnerabilities
-func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string) structs.CommandResult {
-	// Get published templates from CAs
+// and queries each CA via DCOM for ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2).
+func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs) structs.CommandResult {
+	// Get published templates from CAs (include dNSHostName for DCOM ESC6 check)
 	caBase := fmt.Sprintf("CN=Enrollment Services,CN=Public Key Services,CN=Services,%s", configDN)
 	caReq := ldap.NewSearchRequest(caBase, ldap.ScopeWholeSubtree, ldap.NeverDerefAliases,
 		0, 30, false, "(objectCategory=pKIEnrollmentService)",
-		[]string{"cn", "certificateTemplates"}, nil)
+		[]string{"cn", "certificateTemplates", "dNSHostName"}, nil)
 
 	caResult, err := conn.Search(caReq)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying CAs: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying CAs: %v", err)
 	}
 
 	// Build published template → CA name mapping
@@ -343,11 +322,7 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string) structs.Comman
 
 	templateResult, err := conn.SearchWithPaging(templateReq, 100)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying templates: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying templates: %v", err)
 	}
 
 	var sb strings.Builder
@@ -430,14 +405,85 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string) structs.Comman
 	} else {
 		sb.WriteString(fmt.Sprintf("Found %d vulnerable template(s)\n", vulnCount))
 	}
-	sb.WriteString("\nNote: ESC6 (EDITF_ATTRIBUTESUBJECTALTNAME2) and ESC8 (HTTP enrollment)\n")
-	sb.WriteString("require CA configuration checks not available via LDAP.\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
+	// ESC6: Check each CA for EDITF_ATTRIBUTESUBJECTALTNAME2 via DCOM
+	if args.Username != "" && (args.Password != "" || args.Hash != "") {
+		sb.WriteString("\n" + strings.Repeat("-", 60) + "\n")
+		sb.WriteString("ESC6 Check (EDITF_ATTRIBUTESUBJECTALTNAME2)\n")
+		sb.WriteString(strings.Repeat("-", 60) + "\n")
+
+		domain := args.Domain
+		username := args.Username
+		if domain == "" {
+			if parts := strings.SplitN(username, `\`, 2); len(parts) == 2 {
+				domain = parts[0]
+				username = parts[1]
+			} else if parts := strings.SplitN(username, "@", 2); len(parts) == 2 {
+				domain = parts[1]
+				username = parts[0]
+			}
+		}
+		credUser := username
+		if domain != "" {
+			credUser = domain + `\` + username
+		}
+
+		var cred sspcred.Credential
+		if args.Hash != "" {
+			hash := args.Hash
+			if parts := strings.SplitN(hash, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
+				hash = parts[1]
+			}
+			cred = sspcred.NewFromNTHash(credUser, hash)
+		} else {
+			cred = sspcred.NewFromPassword(credUser, args.Password)
+		}
+
+		timeout := args.Timeout
+		if timeout <= 0 {
+			timeout = 30
+		}
+
+		for _, ca := range caResult.Entries {
+			caName := ca.GetAttributeValue("cn")
+			caHost := ca.GetAttributeValue("dNSHostName")
+			if caHost == "" {
+				sb.WriteString(fmt.Sprintf("  %s: SKIP (no dNSHostName in LDAP)\n", caName))
+				continue
+			}
+
+			// Try dNSHostName first; if DNS resolution fails, fall back to LDAP server IP
+			dcomTarget := caHost
+			if _, lookupErr := net.LookupHost(caHost); lookupErr != nil {
+				dcomTarget = args.Server
+			}
+
+			ctx, cancel := context.WithTimeout(
+				gssapi.NewSecurityContext(context.Background()),
+				time.Duration(timeout)*time.Second)
+			editFlags, err := adcsQueryEditFlags(ctx, dcomTarget, caName, cred)
+			cancel()
+
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("  %s (%s): ERROR — %v\n", caName, dcomTarget, err))
+				continue
+			}
+
+			if editFlags&editfAttributeSubjectAltName2 != 0 {
+				vulnCount++
+				sb.WriteString(fmt.Sprintf("[!] %s (%s): ESC6 VULNERABLE\n", caName, dcomTarget))
+				sb.WriteString(fmt.Sprintf("    EditFlags: 0x%08x (EDITF_ATTRIBUTESUBJECTALTNAME2 is SET)\n", editFlags))
+				sb.WriteString("    Any template with enrollment rights can be used for impersonation\n")
+			} else {
+				sb.WriteString(fmt.Sprintf("  %s (%s): EditFlags=0x%08x (ESC6 not vulnerable)\n", caName, dcomTarget, editFlags))
+			}
+		}
+	} else {
+		sb.WriteString("\nNote: ESC6 check requires credentials (-username/-password or -hash).\n")
+		sb.WriteString("ESC8 (HTTP enrollment) requires manual verification.\n")
 	}
+
+	return successResult(sb.String())
 }
 
 // adcsResolveEKU converts an OID to a human-readable name

@@ -63,31 +63,19 @@ var gpoLinkRegex = regexp.MustCompile(`\[LDAP://[Cc][Nn]=\{([0-9A-Fa-f-]+)\}[^;]
 
 func (c *GpoCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <list|links|find|all> -server <DC> -username <user@domain> -password <pass>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action <list|links|find|all> -server <DC> -username <user@domain> -password <pass>")
 	}
 
 	var args gpoArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Action == "" {
 		args.Action = "all"
 	}
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: server parameter required (domain controller IP or hostname)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Port <= 0 {
@@ -101,30 +89,18 @@ func (c *GpoCommand) Execute(task structs.Task) structs.CommandResult {
 	// Connect
 	conn, err := gpoConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to %s:%d: %v", args.Server, args.Port, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	// Bind
 	if args.Username != "" && args.Password != "" {
 		if err := conn.Bind(args.Username, args.Password); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error binding: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error binding: %v", err)
 		}
 	} else {
 		if err := conn.UnauthenticatedBind(""); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error anonymous bind: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error anonymous bind: %v", err)
 		}
 	}
 
@@ -133,11 +109,7 @@ func (c *GpoCommand) Execute(task structs.Task) structs.CommandResult {
 	if baseDN == "" {
 		baseDN, err = gpoDetectBaseDN(conn)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error detecting base DN: %v. Specify -base_dn manually.", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error detecting base DN: %v. Specify -base_dn manually.", err)
 		}
 	}
 
@@ -158,18 +130,10 @@ func (c *GpoCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString("\n")
 		sb.WriteString(gpoFindInteresting(conn, baseDN, args.Filter))
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: list, links, find, all", action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: list, links, find, all", action)
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func gpoConnect(args gpoArgs) (*ldap.Conn, error) {

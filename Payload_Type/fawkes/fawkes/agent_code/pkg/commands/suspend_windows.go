@@ -31,19 +31,11 @@ var (
 func (c *SuspendCommand) Execute(task structs.Task) structs.CommandResult {
 	var params SuspendParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.PID <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: PID must be greater than 0",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: PID must be greater than 0")
 	}
 
 	if params.Action == "" {
@@ -53,11 +45,7 @@ func (c *SuspendCommand) Execute(task structs.Task) structs.CommandResult {
 	// Open the target process
 	hProcess, err := windows.OpenProcess(windows.PROCESS_SUSPEND_RESUME, false, uint32(params.PID))
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open process %d: %v", params.PID, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open process %d: %v", params.PID, err)
 	}
 	defer windows.CloseHandle(hProcess)
 
@@ -67,47 +55,27 @@ func (c *SuspendCommand) Execute(task structs.Task) structs.CommandResult {
 	case "suspend":
 		status, _, _ := procNtSuspendProcess.Call(uintptr(hProcess))
 		if status != 0 {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("NtSuspendProcess failed for PID %d: NTSTATUS 0x%X", params.PID, status),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("NtSuspendProcess failed for PID %d: NTSTATUS 0x%X", params.PID, status)
 		}
 		name := ""
 		if procName != "" {
 			name = fmt.Sprintf(" (%s)", procName)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Process %d%s suspended. Use 'suspend -action resume -pid %d' to resume.", params.PID, name, params.PID),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Process %d%s suspended. Use 'suspend -action resume -pid %d' to resume.", params.PID, name, params.PID)
 
 	case "resume":
 		status, _, _ := procNtResumeProcess.Call(uintptr(hProcess))
 		if status != 0 {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("NtResumeProcess failed for PID %d: NTSTATUS 0x%X", params.PID, status),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("NtResumeProcess failed for PID %d: NTSTATUS 0x%X", params.PID, status)
 		}
 		name := ""
 		if procName != "" {
 			name = fmt.Sprintf(" (%s)", procName)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Process %d%s resumed.", params.PID, name),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Process %d%s resumed.", params.PID, name)
 
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: suspend, resume", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: suspend, resume", params.Action)
 	}
 }
 

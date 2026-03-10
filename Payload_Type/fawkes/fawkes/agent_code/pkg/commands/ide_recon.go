@@ -59,11 +59,7 @@ func (c *IdeReconCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Unknown action: %s. Use: vscode, jetbrains, all", args.Action)
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // ideGetUserHomes returns home directories to scan.

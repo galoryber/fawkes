@@ -98,9 +98,5 @@ func (c *ProxyCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString("\n[-] No proxy configuration detected — traffic is likely direct\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "completed",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

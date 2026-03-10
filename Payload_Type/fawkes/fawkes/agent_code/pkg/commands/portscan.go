@@ -39,27 +39,15 @@ func (c *PortScanCommand) Execute(task structs.Task) structs.CommandResult {
 	var args portScanArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: hosts parameter is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: hosts parameter is required")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Hosts == "" {
-		return structs.CommandResult{
-			Output:    "Error: hosts parameter is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: hosts parameter is required")
 	}
 
 	if args.Ports == "" {
@@ -77,29 +65,17 @@ func (c *PortScanCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse hosts
 	hosts, err := parseHosts(args.Hosts)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing hosts: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing hosts: %v", err)
 	}
 
 	// Parse ports
 	ports, err := parsePorts(args.Ports)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing ports: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing ports: %v", err)
 	}
 
 	if len(hosts) == 0 || len(ports) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: no valid hosts or ports to scan",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no valid hosts or ports to scan")
 	}
 
 	timeout := time.Duration(args.Timeout) * time.Second
@@ -163,11 +139,7 @@ func (c *PortScanCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    strings.Join(lines, "\n"),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(strings.Join(lines, "\n"))
 }
 
 // parseHosts parses a comma-separated list of IPs and CIDR ranges

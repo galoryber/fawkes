@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
@@ -30,28 +31,16 @@ const secureDeleteDefaultPasses = 3
 
 func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args secureDeleteArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	if args.Passes <= 0 {
@@ -60,11 +49,7 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Lstat(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	if info.IsDir() {
@@ -76,27 +61,15 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 				output += fmt.Sprintf("\n    - %s", e)
 			}
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(output)
 	}
 
 	size := info.Size()
 	if err := secureDeleteFile(args.Path, size, args.Passes); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error securely deleting file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error securely deleting file: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[+] Securely deleted: %s (%s, %d passes)", args.Path, statFormatSize(size), args.Passes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[+] Securely deleted: %s (%s, %d passes)", args.Path, formatFileSize(size), args.Passes)
 }
 
 // secureDeleteFile overwrites a file with random data then removes it
@@ -138,17 +111,36 @@ func secureDeleteFile(path string, size int64, passes int) error {
 	return os.Remove(path)
 }
 
+// secureRemove overwrites a file with one pass of random data before removing it.
+// Use this instead of os.Remove() for temp files containing sensitive data (executables,
+// memory dumps, credential databases). Falls back to plain os.Remove if overwrite fails.
+func secureRemove(path string) {
+	info, err := os.Stat(path)
+	if err != nil {
+		os.Remove(path) // may already be gone
+		return
+	}
+	if err := secureDeleteFile(path, info.Size(), 1); err != nil {
+		os.Remove(path) // fallback to plain removal
+	}
+}
+
 // secureDeleteDir recursively securely deletes all files in a directory
 func secureDeleteDir(dirPath string, passes int) (int, []string) {
 	var count int
 	var errs []string
 
-	filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", path, err))
 			return nil
 		}
-		if info.IsDir() {
+		if d.IsDir() {
+			return nil
+		}
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", path, infoErr))
 			return nil
 		}
 		if err := secureDeleteFile(path, info.Size(), passes); err != nil {

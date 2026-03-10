@@ -330,7 +330,7 @@ func TestPsCommand_JSONOutput(t *testing.T) {
 }
 
 func TestPsCommand_GetProcessList(t *testing.T) {
-	procs, err := getProcessList("", 0)
+	procs, err := getProcessList(PsArgs{})
 	if err != nil {
 		t.Fatalf("getProcessList error: %v", err)
 	}

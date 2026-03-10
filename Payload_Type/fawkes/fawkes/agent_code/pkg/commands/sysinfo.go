@@ -47,9 +47,5 @@ func (c *SysinfoCommand) Execute(task structs.Task) structs.CommandResult {
 	sb.WriteString("\n")
 	collectPlatformSysinfo(&sb)
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

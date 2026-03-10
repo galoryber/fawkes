@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"fawkes/pkg/structs"
 )
@@ -20,34 +19,18 @@ type jobkillArgs struct {
 func (c *JobkillCommand) Execute(task structs.Task) structs.CommandResult {
 	var args jobkillArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to parse arguments: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to parse arguments: %v", err)
 	}
 
 	if args.ID == "" {
-		return structs.CommandResult{
-			Output:    "Task ID is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Task ID is required")
 	}
 
 	target, ok := GetRunningTask(args.ID)
 	if !ok {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No running task found with ID: %s", args.ID),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("No running task found with ID: %s", args.ID)
 	}
 
 	target.SetStop()
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Stop signal sent to task %s (%s)", args.ID, target.Command),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Stop signal sent to task %s (%s)", args.ID, target.Command)
 }

@@ -65,5 +65,5 @@ func getDiskFreeInfo() ([]dfEntry, error) {
 		})
 	}
 
-	return entries, nil
+	return entries, scanner.Err()
 }

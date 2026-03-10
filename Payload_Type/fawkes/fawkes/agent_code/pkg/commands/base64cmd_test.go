@@ -164,6 +164,58 @@ func TestBase64EncodeToFile(t *testing.T) {
 	}
 }
 
+func TestBase64DecodeFromFile(t *testing.T) {
+	dir := t.TempDir()
+	// Write base64-encoded content to a file
+	encoded := base64.StdEncoding.EncodeToString([]byte("hello from file"))
+	inPath := filepath.Join(dir, "encoded.txt")
+	os.WriteFile(inPath, []byte(encoded), 0644)
+
+	c := &Base64Command{}
+	params, _ := json.Marshal(base64Args{Action: "decode", Input: inPath, File: true})
+	result := c.Execute(structs.Task{Params: string(params)})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "hello from file") {
+		t.Errorf("expected decoded text in output, got: %s", result.Output)
+	}
+}
+
+func TestBase64DecodeFromFileToFile(t *testing.T) {
+	dir := t.TempDir()
+	encoded := base64.StdEncoding.EncodeToString([]byte("file to file"))
+	inPath := filepath.Join(dir, "encoded.txt")
+	outPath := filepath.Join(dir, "decoded.txt")
+	os.WriteFile(inPath, []byte(encoded), 0644)
+
+	c := &Base64Command{}
+	params, _ := json.Marshal(base64Args{Action: "decode", Input: inPath, File: true, Output: outPath})
+	result := c.Execute(structs.Task{Params: string(params)})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "file to file" {
+		t.Errorf("expected 'file to file', got '%s'", string(data))
+	}
+}
+
+func TestBase64DecodeNonexistentFile(t *testing.T) {
+	c := &Base64Command{}
+	params, _ := json.Marshal(base64Args{Action: "decode", Input: "/nonexistent/encoded.txt", File: true})
+	result := c.Execute(structs.Task{Params: string(params)})
+
+	if result.Status != "error" {
+		t.Errorf("expected error for nonexistent decode file, got %s", result.Status)
+	}
+}
+
 func TestBase64InvalidBase64(t *testing.T) {
 	c := &Base64Command{}
 	params, _ := json.Marshal(base64Args{Action: "decode", Input: "not!valid!base64!!!"})

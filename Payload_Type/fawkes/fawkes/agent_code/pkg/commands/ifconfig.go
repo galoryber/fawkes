@@ -21,11 +21,7 @@ func (c *IfconfigCommand) Description() string {
 func (c *IfconfigCommand) Execute(task structs.Task) structs.CommandResult {
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating interfaces: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating interfaces: %v", err)
 	}
 
 	var lines []string
@@ -77,9 +73,5 @@ func (c *IfconfigCommand) Execute(task structs.Task) structs.CommandResult {
 		output = "No network interfaces found"
 	}
 
-	return structs.CommandResult{
-		Output:    strings.TrimRight(output, "\n"),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(strings.TrimRight(output, "\n"))
 }

@@ -394,3 +394,66 @@ func TestCompressRoundTrip(t *testing.T) {
 		t.Error("sub/b.txt roundtrip failed")
 	}
 }
+
+func TestCompressCreateReportsFileErrors(t *testing.T) {
+	tmpDir := t.TempDir()
+	srcDir := filepath.Join(tmpDir, "src")
+	os.MkdirAll(srcDir, 0755)
+
+	// Create a readable file and an unreadable file
+	os.WriteFile(filepath.Join(srcDir, "good.txt"), []byte("readable"), 0644)
+	unreadable := filepath.Join(srcDir, "secret.txt")
+	os.WriteFile(unreadable, []byte("no access"), 0000)
+
+	outputZip := filepath.Join(tmpDir, "partial.zip")
+
+	cmd := &CompressCommand{}
+	params := CompressParams{Action: "create", Path: srcDir, Output: outputZip}
+	data, _ := json.Marshal(params)
+	result := cmd.Execute(structs.Task{Params: string(data)})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success (partial), got: %s", result.Output)
+	}
+	// Should have compressed the good file
+	if !strings.Contains(result.Output, "Files: 1") {
+		t.Errorf("expected 1 file compressed, got: %s", result.Output)
+	}
+	// Should report the error for the unreadable file
+	if !strings.Contains(result.Output, "file errors") {
+		t.Errorf("expected file errors in output, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "secret.txt") {
+		t.Errorf("expected secret.txt mentioned in errors, got: %s", result.Output)
+	}
+}
+
+func TestCompressExtractReportsErrors(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a zip
+	zipPath := filepath.Join(tmpDir, "test.zip")
+	zipFile, _ := os.Create(zipPath)
+	w := zip.NewWriter(zipFile)
+	f1, _ := w.Create("good.txt")
+	f1.Write([]byte("good content"))
+	w.Close()
+	zipFile.Close()
+
+	// Extract to a read-only directory so file creation fails
+	outputDir := filepath.Join(tmpDir, "readonly")
+	os.MkdirAll(outputDir, 0755)
+
+	cmd := &CompressCommand{}
+	params := CompressParams{Action: "extract", Path: zipPath, Output: outputDir}
+	data, _ := json.Marshal(params)
+	result := cmd.Execute(structs.Task{Params: string(data)})
+
+	// Should succeed (extracted the file)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Extracted 1 files") {
+		t.Errorf("expected 1 file extracted, got: %s", result.Output)
+	}
+}

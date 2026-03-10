@@ -59,11 +59,7 @@ const (
 
 func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -url <URL> [-method GET] [-headers '{\"key\":\"val\"}'] [-body <data>]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -url <URL> [-method GET] [-headers '{\"key\":\"val\"}'] [-body <data>]")
 	}
 
 	var args curlArgs
@@ -72,11 +68,7 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.URL == "" {
-		return structs.CommandResult{
-			Output:    "Error: url is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: url is required")
 	}
 
 	if args.Method == "" {
@@ -119,11 +111,7 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 
 	req, err := http.NewRequestWithContext(ctx, args.Method, args.URL, bodyReader)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating request: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating request: %v", err)
 	}
 
 	// Set custom headers
@@ -132,30 +120,22 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 		req.Header.Set(key, val)
 	}
 
-	// Set default User-Agent if not provided
-	if req.Header.Get("User-Agent") == "" {
-		req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36")
+	// Set default User-Agent if not provided — uses agent's configured UA
+	if req.Header.Get("User-Agent") == "" && DefaultUserAgent != "" {
+		req.Header.Set("User-Agent", DefaultUserAgent)
 	}
 
 	// Execute request
 	resp, err := client.Do(req)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error executing request: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error executing request: %v", err)
 	}
 	defer resp.Body.Close()
 
 	// Read response body with size limit
 	body, err := io.ReadAll(io.LimitReader(resp.Body, int64(args.MaxSize)+1))
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading response: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading response: %v", err)
 	}
 
 	truncated := len(body) > args.MaxSize

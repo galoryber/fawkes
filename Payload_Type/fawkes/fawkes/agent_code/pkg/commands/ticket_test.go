@@ -11,6 +11,7 @@ import (
 
 	"fawkes/pkg/structs"
 
+	"github.com/jcmturner/gofork/encoding/asn1"
 	"github.com/jcmturner/gokrb5/v8/types"
 )
 
@@ -732,4 +733,200 @@ func TestTicketS4UFormatOutput(t *testing.T) {
 
 func now() time.Time {
 	return time.Now().UTC()
+}
+
+// --- ticketGenerateSessionKey Tests ---
+
+func TestTicketGenerateSessionKey_AES256(t *testing.T) {
+	key, err := ticketGenerateSessionKey(18) // AES256
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key.KeyType != 18 {
+		t.Errorf("KeyType = %d, want 18", key.KeyType)
+	}
+	if len(key.KeyValue) != 32 {
+		t.Errorf("key length = %d, want 32 for AES256", len(key.KeyValue))
+	}
+}
+
+func TestTicketGenerateSessionKey_AES128(t *testing.T) {
+	key, err := ticketGenerateSessionKey(17) // AES128
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key.KeyType != 17 {
+		t.Errorf("KeyType = %d, want 17", key.KeyType)
+	}
+	if len(key.KeyValue) != 16 {
+		t.Errorf("key length = %d, want 16 for AES128", len(key.KeyValue))
+	}
+}
+
+func TestTicketGenerateSessionKey_RC4(t *testing.T) {
+	key, err := ticketGenerateSessionKey(23) // RC4-HMAC
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if key.KeyType != 23 {
+		t.Errorf("KeyType = %d, want 23", key.KeyType)
+	}
+	if len(key.KeyValue) != 16 {
+		t.Errorf("key length = %d, want 16 for RC4", len(key.KeyValue))
+	}
+}
+
+func TestTicketGenerateSessionKey_InvalidEtype(t *testing.T) {
+	_, err := ticketGenerateSessionKey(999)
+	if err == nil {
+		t.Error("expected error for invalid etype")
+	}
+}
+
+func TestTicketGenerateSessionKey_Randomness(t *testing.T) {
+	// Two keys with same etype should not be identical
+	key1, _ := ticketGenerateSessionKey(18)
+	key2, _ := ticketGenerateSessionKey(18)
+	if base64.StdEncoding.EncodeToString(key1.KeyValue) == base64.StdEncoding.EncodeToString(key2.KeyValue) {
+		t.Error("two generated keys should not be identical")
+	}
+}
+
+// --- ccacheWritePrincipal Tests ---
+
+func TestCcacheWritePrincipal_Basic(t *testing.T) {
+	var buf []byte
+	buf = ccacheWritePrincipal(buf, "CORP.LOCAL", []string{"admin"})
+
+	// Expected layout:
+	// 4 bytes name_type (1 = KRB_NT_PRINCIPAL)
+	// 4 bytes num_components (1)
+	// 4 bytes realm length (10 = "CORP.LOCAL")
+	// 10 bytes realm
+	// 4 bytes component length (5 = "admin")
+	// 5 bytes component
+	expectedLen := 4 + 4 + 4 + 10 + 4 + 5
+	if len(buf) != expectedLen {
+		t.Fatalf("buf length = %d, want %d", len(buf), expectedLen)
+	}
+
+	// Check name_type
+	nameType := binary.BigEndian.Uint32(buf[0:4])
+	if nameType != 1 {
+		t.Errorf("name_type = %d, want 1", nameType)
+	}
+
+	// Check num_components
+	numComponents := binary.BigEndian.Uint32(buf[4:8])
+	if numComponents != 1 {
+		t.Errorf("num_components = %d, want 1", numComponents)
+	}
+
+	// Check realm
+	realmLen := binary.BigEndian.Uint32(buf[8:12])
+	if realmLen != 10 {
+		t.Errorf("realm length = %d, want 10", realmLen)
+	}
+	realm := string(buf[12:22])
+	if realm != "CORP.LOCAL" {
+		t.Errorf("realm = %q, want CORP.LOCAL", realm)
+	}
+}
+
+func TestCcacheWritePrincipal_SPN(t *testing.T) {
+	var buf []byte
+	buf = ccacheWritePrincipal(buf, "CORP.LOCAL", []string{"krbtgt", "CORP.LOCAL"})
+
+	// num_components should be 2
+	numComponents := binary.BigEndian.Uint32(buf[4:8])
+	if numComponents != 2 {
+		t.Errorf("num_components = %d, want 2 for SPN", numComponents)
+	}
+}
+
+func TestCcacheWritePrincipal_Empty(t *testing.T) {
+	var buf []byte
+	buf = ccacheWritePrincipal(buf, "", []string{})
+	// Should handle empty gracefully
+	numComponents := binary.BigEndian.Uint32(buf[4:8])
+	if numComponents != 0 {
+		t.Errorf("num_components = %d, want 0 for empty", numComponents)
+	}
+}
+
+// --- ticketToCCache Tests ---
+
+func TestTicketToCCache_Header(t *testing.T) {
+	ticketBytes := []byte{0xDE, 0xAD, 0xBE, 0xEF}
+	key := types.EncryptionKey{KeyType: 18, KeyValue: make([]byte, 32)}
+	sname := types.PrincipalName{NameString: []string{"krbtgt", "CORP.LOCAL"}}
+	flags := asn1BitStringFromUint32(0x40e10000)
+	authTime := time.Unix(1700000000, 0)
+	endTime := time.Unix(1700036000, 0)
+	renewTill := time.Unix(1700604800, 0)
+
+	ccache := ticketToCCache(ticketBytes, key, "admin", "CORP.LOCAL", sname, flags, authTime, endTime, renewTill)
+
+	// Check magic bytes: 0x0504 (ccache v4)
+	if ccache[0] != 0x05 || ccache[1] != 0x04 {
+		t.Errorf("magic = %02x%02x, want 0504", ccache[0], ccache[1])
+	}
+
+	// Check header length
+	headerLen := binary.BigEndian.Uint16(ccache[2:4])
+	if headerLen != 12 {
+		t.Errorf("header length = %d, want 12", headerLen)
+	}
+
+	// Verify output is non-trivial (should contain ticket data)
+	if len(ccache) < 100 {
+		t.Errorf("ccache too short: %d bytes", len(ccache))
+	}
+
+	// Find the ticket data at the end — should contain our test bytes
+	found := false
+	for i := 0; i < len(ccache)-4; i++ {
+		if ccache[i] == 0xDE && ccache[i+1] == 0xAD && ccache[i+2] == 0xBE && ccache[i+3] == 0xEF {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("ticket data not found in ccache output")
+	}
+}
+
+func TestTicketToCCache_TimesEncoded(t *testing.T) {
+	ticketBytes := []byte{0x01}
+	key := types.EncryptionKey{KeyType: 23, KeyValue: make([]byte, 16)}
+	sname := types.PrincipalName{NameString: []string{"krbtgt", "TEST.LOCAL"}}
+	flags := asn1BitStringFromUint32(0)
+	authTime := time.Unix(1700000000, 0)
+	endTime := time.Unix(1700036000, 0)
+	renewTill := time.Unix(1700604800, 0)
+
+	ccache := ticketToCCache(ticketBytes, key, "user", "TEST.LOCAL", sname, flags, authTime, endTime, renewTill)
+
+	// Verify times are present somewhere in the binary data
+	expectedAuth := make([]byte, 4)
+	binary.BigEndian.PutUint32(expectedAuth, uint32(1700000000))
+
+	found := false
+	for i := 0; i < len(ccache)-3; i++ {
+		if ccache[i] == expectedAuth[0] && ccache[i+1] == expectedAuth[1] &&
+			ccache[i+2] == expectedAuth[2] && ccache[i+3] == expectedAuth[3] {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("auth time not found in ccache binary output")
+	}
+}
+
+// helper to create ASN.1 BitString from uint32 for tests
+func asn1BitStringFromUint32(val uint32) asn1.BitString {
+	b := make([]byte, 4)
+	binary.BigEndian.PutUint32(b, val)
+	return asn1.BitString{Bytes: b, BitLength: 32}
 }

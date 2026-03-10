@@ -6,8 +6,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -56,11 +56,7 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	case "container":
 		return privescCheckContainer()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container", args.Action)
 	}
 }
 
@@ -99,11 +95,7 @@ func privescCheckAll() structs.CommandResult {
 	containerResult := privescCheckContainer()
 	sb.WriteString(containerResult.Output)
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // privescCheckSUID finds SUID and SGID binaries
@@ -117,11 +109,19 @@ func privescCheckSUID() structs.CommandResult {
 		"/bin", "/sbin", "/snap"}
 
 	for _, searchPath := range searchPaths {
-		_ = filepath.Walk(searchPath, func(path string, info os.FileInfo, err error) error {
+		_ = filepath.WalkDir(searchPath, func(path string, d fs.DirEntry, err error) error {
 			if err != nil {
 				return nil // Skip permission errors
 			}
-			if info.IsDir() {
+			if d.IsDir() {
+				return nil
+			}
+			t := d.Type()
+			if t&os.ModeSetuid == 0 && t&os.ModeSetgid == 0 {
+				return nil
+			}
+			info, infoErr := d.Info()
+			if infoErr != nil {
 				return nil
 			}
 			mode := info.Mode()
@@ -177,33 +177,40 @@ func privescCheckSUID() structs.CommandResult {
 		sb.WriteString(strings.Join(flagged, "\n"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
-// privescCheckCapabilities finds binaries with Linux capabilities set
+// privescCheckCapabilities finds binaries with Linux capabilities set.
+// Uses native xattr reading instead of spawning getcap (OPSEC: no child process).
 func privescCheckCapabilities() structs.CommandResult {
 	var sb strings.Builder
 
-	// Try getcap on common paths
-	out, err := exec.Command("getcap", "-r", "/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin").CombinedOutput()
-	if err != nil {
-		// getcap might not be available, or might fail on some dirs
-		// Try alternative: read /proc/self/status for current process capabilities
-		sb.WriteString("getcap output (partial — errors on inaccessible paths are normal):\n")
+	// Scan common binary paths for files with security.capability xattr
+	searchPaths := []string{"/usr/bin", "/usr/sbin", "/usr/local/bin", "/usr/local/sbin",
+		"/bin", "/sbin"}
+
+	var capEntries []string
+	for _, searchPath := range searchPaths {
+		_ = filepath.WalkDir(searchPath, func(path string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			capStr := readFileCaps(path)
+			if capStr != "" {
+				capEntries = append(capEntries, fmt.Sprintf("  %s %s", path, capStr))
+			}
+			return nil
+		})
 	}
 
-	output := strings.TrimSpace(string(out))
-	if output != "" {
-		sb.WriteString(output)
+	sb.WriteString(fmt.Sprintf("File capabilities (%d found):\n", len(capEntries)))
+	if len(capEntries) > 0 {
+		sb.WriteString(strings.Join(capEntries, "\n"))
 	} else {
-		sb.WriteString("  (no capabilities found or getcap not available)")
+		sb.WriteString("  (no capabilities found)")
 	}
 
-	// Current process capabilities
+	// Current process capabilities from /proc/self/status
 	sb.WriteString("\n\nCurrent process capabilities:\n")
 	capData, err := os.ReadFile("/proc/self/status")
 	if err == nil {
@@ -218,34 +225,116 @@ func privescCheckCapabilities() structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  (error reading /proc/self/status: %v)", err))
 	}
 
-	// Interesting capabilities to flag
+	// Flag interesting capabilities
 	interestingCaps := []string{"cap_sys_admin", "cap_sys_ptrace", "cap_dac_override",
 		"cap_dac_read_search", "cap_setuid", "cap_setgid", "cap_net_raw",
 		"cap_net_admin", "cap_net_bind_service", "cap_sys_module", "cap_fowner",
 		"cap_chown", "cap_sys_chroot"}
 
-	if output != "" {
-		var flagged []string
-		for _, line := range strings.Split(output, "\n") {
-			lower := strings.ToLower(line)
-			for _, cap := range interestingCaps {
-				if strings.Contains(lower, cap) {
-					flagged = append(flagged, "  "+strings.TrimSpace(line))
-					break
-				}
+	var flagged []string
+	for _, entry := range capEntries {
+		lower := strings.ToLower(entry)
+		for _, cap := range interestingCaps {
+			if strings.Contains(lower, cap) {
+				flagged = append(flagged, entry)
+				break
 			}
 		}
-		if len(flagged) > 0 {
-			sb.WriteString(fmt.Sprintf("\n[!] INTERESTING capabilities (%d):\n", len(flagged)))
-			sb.WriteString(strings.Join(flagged, "\n"))
+	}
+	if len(flagged) > 0 {
+		sb.WriteString(fmt.Sprintf("\n[!] INTERESTING capabilities (%d):\n", len(flagged)))
+		sb.WriteString(strings.Join(flagged, "\n"))
+	}
+
+	return successResult(sb.String())
+}
+
+// capNames maps capability bit positions to names (Linux capability constants).
+var capNames = [...]string{
+	0: "cap_chown", 1: "cap_dac_override", 2: "cap_dac_read_search",
+	3: "cap_fowner", 4: "cap_fsetid", 5: "cap_kill",
+	6: "cap_setgid", 7: "cap_setuid", 8: "cap_setpcap",
+	9: "cap_linux_immutable", 10: "cap_net_bind_service", 11: "cap_net_broadcast",
+	12: "cap_net_admin", 13: "cap_net_raw", 14: "cap_ipc_lock",
+	15: "cap_ipc_owner", 16: "cap_sys_module", 17: "cap_sys_rawio",
+	18: "cap_sys_chroot", 19: "cap_sys_ptrace", 20: "cap_sys_pacct",
+	21: "cap_sys_admin", 22: "cap_sys_boot", 23: "cap_sys_nice",
+	24: "cap_sys_resource", 25: "cap_sys_time", 26: "cap_sys_tty_config",
+	27: "cap_mknod", 28: "cap_lease", 29: "cap_audit_write",
+	30: "cap_audit_control", 31: "cap_setfcap", 32: "cap_mac_override",
+	33: "cap_mac_admin", 34: "cap_syslog", 35: "cap_wake_alarm",
+	36: "cap_block_suspend", 37: "cap_audit_read", 38: "cap_perfmon",
+	39: "cap_bpf", 40: "cap_checkpoint_restore",
+}
+
+// readFileCaps reads the security.capability xattr and returns a human-readable string.
+// Returns empty string if no capabilities are set.
+func readFileCaps(path string) string {
+	data, err := getXattr(path, "security.capability")
+	if err != nil || len(data) < 4 {
+		return ""
+	}
+
+	// VFS capability header: magic_etc (4 bytes LE)
+	// Version in upper byte (VFS_CAP_REVISION_MASK = 0xFF000000)
+	// Effective flag in bit 0 (VFS_CAP_FLAGS_EFFECTIVE = 0x000001)
+	magicEtc := uint32(data[0]) | uint32(data[1])<<8 | uint32(data[2])<<16 | uint32(data[3])<<24
+	version := magicEtc & 0xFF000000
+	effective := magicEtc&0x000001 != 0
+
+	var permitted, inheritable uint64
+
+	switch version {
+	case 0x01000000: // VFS_CAP_REVISION_1 — 32-bit caps
+		if len(data) < 12 {
+			return ""
+		}
+		permitted = uint64(uint32(data[4]) | uint32(data[5])<<8 | uint32(data[6])<<16 | uint32(data[7])<<24)
+		inheritable = uint64(uint32(data[8]) | uint32(data[9])<<8 | uint32(data[10])<<16 | uint32(data[11])<<24)
+
+	case 0x02000000: // VFS_CAP_REVISION_2/3 — 64-bit caps
+		if len(data) < 20 {
+			return ""
+		}
+		permLow := uint32(data[4]) | uint32(data[5])<<8 | uint32(data[6])<<16 | uint32(data[7])<<24
+		inhLow := uint32(data[8]) | uint32(data[9])<<8 | uint32(data[10])<<16 | uint32(data[11])<<24
+		permHigh := uint32(data[12]) | uint32(data[13])<<8 | uint32(data[14])<<16 | uint32(data[15])<<24
+		inhHigh := uint32(data[16]) | uint32(data[17])<<8 | uint32(data[18])<<16 | uint32(data[19])<<24
+		permitted = uint64(permLow) | uint64(permHigh)<<32
+		inheritable = uint64(inhLow) | uint64(inhHigh)<<32
+
+	default:
+		return fmt.Sprintf("(unknown cap version 0x%08x)", version)
+	}
+
+	if permitted == 0 && inheritable == 0 {
+		return ""
+	}
+
+	// Format like getcap: "= cap_name1,cap_name2+eip"
+	var names []string
+	for i := 0; i < len(capNames) && i < 64; i++ {
+		if permitted&(1<<i) != 0 {
+			if i < len(capNames) && capNames[i] != "" {
+				names = append(names, capNames[i])
+			} else {
+				names = append(names, fmt.Sprintf("cap_%d", i))
+			}
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
+	flags := ""
+	if effective {
+		flags += "e"
 	}
+	if permitted != 0 {
+		flags += "p"
+	}
+	if inheritable != 0 {
+		flags += "i"
+	}
+
+	return fmt.Sprintf("= %s+%s", strings.Join(names, ","), flags)
 }
 
 // privescCheckSudo enumerates sudo rules for the current user
@@ -253,7 +342,7 @@ func privescCheckSudo() structs.CommandResult {
 	var sb strings.Builder
 
 	// Try sudo -l (may require password — handle gracefully)
-	out, err := exec.Command("sudo", "-n", "-l").CombinedOutput()
+	out, err := execCmdTimeout("sudo", "-n", "-l")
 	output := strings.TrimSpace(string(out))
 	if err != nil {
 		if strings.Contains(output, "password is required") || strings.Contains(output, "a password is required") {
@@ -315,11 +404,7 @@ func privescCheckSudo() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // privescCheckWritable finds world-writable directories in PATH and other sensitive locations
@@ -413,11 +498,7 @@ func privescCheckWritable() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // privescCheckContainer detects if running inside a container
@@ -514,22 +595,18 @@ func privescCheckContainer() structs.CommandResult {
 		sb.WriteString("No container indicators found — likely running on bare metal/VM host.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // isWritable checks if the current user can write to a path
 func isWritable(path string) bool {
-	f, err := os.CreateTemp(path, ".*")
+	f, err := os.CreateTemp(path, "")
 	if err != nil {
 		return false
 	}
 	name := f.Name()
 	f.Close()
-	os.Remove(name)
+	secureRemove(name)
 	return true
 }
 

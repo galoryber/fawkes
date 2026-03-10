@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -25,36 +26,20 @@ type chmodArgs struct {
 
 func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -path <file> -mode <permissions> [-recursive true]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -path <file> -mode <permissions> [-recursive true]")
 	}
 
 	var args chmodArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path parameter is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path parameter is required")
 	}
 
 	if args.Mode == "" {
-		return structs.CommandResult{
-			Output:    "Error: mode parameter is required (e.g., '755', '644', '+x', 'u+rw')",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: mode parameter is required (e.g., '755', '644', '+x', 'u+rw')")
 	}
 
 	// Resolve path
@@ -67,38 +52,22 @@ func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	// Parse the mode
 	mode, err := chmodParseMode(args.Mode, info.Mode())
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	if !args.Recursive || !info.IsDir() {
 		// Single file or non-recursive
 		before := info.Mode()
 		if err := os.Chmod(path, mode); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error: %v", err)
 		}
-		return structs.CommandResult{
-			Output:    chmodFormatResult(path, before, mode),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(chmodFormatResult(path, before, mode))
 	}
 
 	// Recursive directory chmod
@@ -106,14 +75,23 @@ func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 	changed := 0
 	errors := 0
 
-	walkErr := filepath.Walk(path, func(p string, fi os.FileInfo, err error) error {
+	walkErr := filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
 		if err != nil {
 			errors++
 			sb.WriteString(fmt.Sprintf("[-] %s — %v\n", p, err))
 			return nil
 		}
 
-		before := fi.Mode()
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			errors++
+			sb.WriteString(fmt.Sprintf("[-] %s — %v\n", p, infoErr))
+			return nil
+		}
+		before := info.Mode()
 		if err := os.Chmod(p, mode); err != nil {
 			errors++
 			sb.WriteString(fmt.Sprintf("[-] %s — %v\n", p, err))
@@ -135,11 +113,7 @@ func (c *ChmodCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf(", %d errors", errors))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // chmodParseMode parses an octal mode string (e.g., "755") or symbolic mode (e.g., "+x", "u+rw")

@@ -5,7 +5,6 @@ package commands
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -43,7 +42,7 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 	}
 
 	// Serial number — no native API, must use ioreg
-	if out, err := exec.Command("ioreg", "-rd1", "-c", "IOPlatformExpertDevice").Output(); err == nil {
+	if out, err := execCmdTimeoutOutput("ioreg", "-rd1", "-c", "IOPlatformExpertDevice"); err == nil {
 		if serial := parseIoregSerial(string(out)); serial != "" {
 			sb.WriteString(fmt.Sprintf("Serial:        %s\n", serial))
 		}
@@ -93,7 +92,7 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 	sb.WriteString("\n--- Security Status ---\n")
 
 	// SIP status — no native API, must use csrutil
-	if out, err := exec.Command("csrutil", "status").Output(); err == nil {
+	if out, err := execCmdTimeoutOutput("csrutil", "status"); err == nil {
 		status := strings.TrimSpace(string(out))
 		if strings.Contains(status, "enabled") {
 			sb.WriteString("SIP:           enabled\n")
@@ -103,19 +102,19 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 	}
 
 	// Gatekeeper status — no native API, must use spctl
-	if out, err := exec.Command("spctl", "--status").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("spctl", "--status"); err == nil {
 		gk := parseSpctlStatus(string(out))
 		sb.WriteString(fmt.Sprintf("Gatekeeper:    %s\n", gk))
 	}
 
 	// FileVault status — no native API, must use fdesetup
-	if out, err := exec.Command("fdesetup", "status").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("fdesetup", "status"); err == nil {
 		fv := parseFdesetupStatus(string(out))
 		sb.WriteString(fmt.Sprintf("FileVault:     %s\n", fv))
 	}
 
 	// MDM enrollment — no native API, must use profiles
-	if out, err := exec.Command("profiles", "status", "-type", "enrollment").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("profiles", "status", "-type", "enrollment"); err == nil {
 		mdm := parseMDMEnrollment(string(out))
 		if mdm.Enrolled {
 			sb.WriteString("MDM Enrolled:  yes\n")

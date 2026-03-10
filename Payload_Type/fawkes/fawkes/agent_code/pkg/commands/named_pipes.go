@@ -25,10 +25,6 @@ func (c *NamedPipesCommand) Description() string {
 	return "List named pipes on the system"
 }
 
-type namedPipesArgs struct {
-	Filter string `json:"filter"`
-}
-
 // Windows constants for pipe enumeration
 var (
 	kernel32NP         = windows.NewLazySystemDLL("kernel32.dll")
@@ -55,21 +51,13 @@ func (c *NamedPipesCommand) Execute(task structs.Task) structs.CommandResult {
 	var args namedPipesArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
 	pipes, err := enumerateNamedPipes()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enumerate named pipes: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to enumerate named pipes: %v", err)
 	}
 
 	// Filter if specified
@@ -97,11 +85,7 @@ func (c *NamedPipesCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  \\\\.\\pipe\\%s\n", p))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // enumerateNamedPipes lists all named pipes using FindFirstFile/FindNextFile

@@ -44,6 +44,7 @@ pre = "<b>2. </b>"
 - Command Execution
     * [jxa](/agents/fawkes/commands/jxa/)
     * [powershell](/agents/fawkes/commands/powershell/)
+    * [pty](/agents/fawkes/commands/pty/)
     * [run](/agents/fawkes/commands/run/)
     * [runas](/agents/fawkes/commands/runas/)
     * [wmi](/agents/fawkes/commands/wmi/)
@@ -86,6 +87,8 @@ pre = "<b>2. </b>"
     * [hashdump](/agents/fawkes/commands/hashdump/)
     * [laps](/agents/fawkes/commands/laps/)
     * [lsa-secrets](/agents/fawkes/commands/lsa-secrets/)
+    * [password-managers](/agents/fawkes/commands/password-managers/)
+    * [secret-scan](/agents/fawkes/commands/secret-scan/)
     * [asrep-roast](/agents/fawkes/commands/asrep-roast/)
     * [kerberoast](/agents/fawkes/commands/kerberoast/)
     * [klist](/agents/fawkes/commands/klist/)
@@ -100,6 +103,7 @@ pre = "<b>2. </b>"
     * [ssh-keys](/agents/fawkes/commands/ssh-keys/)
     * [vss](/agents/fawkes/commands/vss/)
     * [steal-token](/agents/fawkes/commands/steal-token/)
+    * [token-store](/agents/fawkes/commands/token-store/)
     * [rev2self](/agents/fawkes/commands/rev2self/)
 - Discovery
     * [acl-edit](/agents/fawkes/commands/acl-edit/)
@@ -142,6 +146,7 @@ pre = "<b>2. </b>"
     * [ps](/agents/fawkes/commands/ps/)
     * [security-info](/agents/fawkes/commands/security-info/)
     * [sysinfo](/agents/fawkes/commands/sysinfo/)
+    * [sysmon-config](/agents/fawkes/commands/sysmon-config/)
     * [triage](/agents/fawkes/commands/triage/)
     * [trust](/agents/fawkes/commands/trust/)
     * [ts](/agents/fawkes/commands/ts/)
@@ -152,11 +157,14 @@ pre = "<b>2. </b>"
     * [whoami](/agents/fawkes/commands/whoami/)
 - Registry Operations
     * [reg](/agents/fawkes/commands/reg/)
+    * [remote-reg](/agents/fawkes/commands/remote-reg/)
+    * [remote-service](/agents/fawkes/commands/remote-service/)
 - Persistence
     * [bits](/agents/fawkes/commands/bits/)
     * [crontab](/agents/fawkes/commands/crontab/)
     * [launchagent](/agents/fawkes/commands/launchagent/)
     * [persist](/agents/fawkes/commands/persist/)
+    * [persist-enum](/agents/fawkes/commands/persist-enum/)
     * [schtask](/agents/fawkes/commands/schtask/)
     * [service](/agents/fawkes/commands/service/)
     * [shell-config](/agents/fawkes/commands/shell-config/)

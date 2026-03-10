@@ -33,11 +33,7 @@ func (c *WhoamiCommand) Execute(task structs.Task) structs.CommandResult {
 	impersonating := HasActiveImpersonation()
 	token, tokenSource, err := getCurrentToken()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get current token: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get current token: %v", err)
 	}
 	defer token.Close()
 
@@ -86,11 +82,7 @@ func (c *WhoamiCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    strings.Join(lines, "\n"),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(strings.Join(lines, "\n"))
 }
 
 // getCurrentToken returns the active token and its source description.

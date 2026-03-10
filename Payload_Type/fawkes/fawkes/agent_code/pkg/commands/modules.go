@@ -2,9 +2,9 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -18,7 +18,8 @@ func (c *ModulesCommand) Description() string {
 }
 
 type modulesArgs struct {
-	PID int `json:"pid"`
+	PID    int    `json:"pid"`
+	Filter string `json:"filter"` // filter by module name (case-insensitive substring)
 }
 
 // ModuleInfo represents a loaded module/library
@@ -33,11 +34,7 @@ func (c *ModulesCommand) Execute(task structs.Task) structs.CommandResult {
 	var args modulesArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -47,11 +44,7 @@ func (c *ModulesCommand) Execute(task structs.Task) structs.CommandResult {
 
 	modules, err := listProcessModules(args.PID)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing modules for PID %d: %v", args.PID, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error listing modules for PID %d: %v", args.PID, err)
 	}
 
 	// Sort by base address
@@ -59,36 +52,27 @@ func (c *ModulesCommand) Execute(task structs.Task) structs.CommandResult {
 		return modules[i].BaseAddr < modules[j].BaseAddr
 	})
 
-	if len(modules) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
+	// Apply name filter
+	if args.Filter != "" {
+		filterLower := strings.ToLower(args.Filter)
+		var filtered []ModuleInfo
+		for _, m := range modules {
+			if strings.Contains(strings.ToLower(m.Name), filterLower) || strings.Contains(strings.ToLower(m.Path), filterLower) {
+				filtered = append(filtered, m)
+			}
 		}
+		modules = filtered
+	}
+
+	if len(modules) == 0 {
+		return successResult("[]")
 	}
 
 	out, err := json.Marshal(modules)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("JSON marshal error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("JSON marshal error: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(out),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(out))
 }
 
-func formatModuleSize(size uint64) string {
-	if size >= 1024*1024 {
-		return fmt.Sprintf("%.1f MB", float64(size)/(1024*1024))
-	}
-	if size >= 1024 {
-		return fmt.Sprintf("%.1f KB", float64(size)/1024)
-	}
-	return fmt.Sprintf("%d B", size)
-}

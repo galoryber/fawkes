@@ -17,9 +17,9 @@ The `blind` action is the preferred evasion method — it disables a specific pr
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | sessions | Action: `sessions`, `providers`, `stop`, or `blind` |
-| session_name | For stop/blind | — | Target trace session name |
-| provider | For blind | — | Provider GUID or shorthand name to disable |
+| action | No | sessions | Action: `sessions`, `providers`, `stop`, `blind`, `query`, or `enable` |
+| session_name | For stop/blind/query/enable | — | Target trace session name |
+| provider | For blind/enable | — | Provider GUID or shorthand name |
 
 ### Actions
 
@@ -27,6 +27,8 @@ The `blind` action is the preferred evasion method — it disables a specific pr
 - **providers** — Enumerate all registered ETW providers, highlighting security-relevant ones
 - **stop** — Stop an entire ETW trace session (ControlTrace API). Disables all telemetry from that session.
 - **blind** — Surgically disable a specific provider within a trace session (EnableTraceEx2 API). The session remains active but the targeted provider no longer generates events. Stealthier than `stop`.
+- **query** — Get detailed information about a specific trace session: buffer sizes, events lost, log file mode, flush timer, and security relevance.
+- **enable** — Re-enable a previously blinded ETW provider within a session. Restores event generation at TRACE_LEVEL_VERBOSE with all keywords. Use for cleanup after operations.
 
 ### Provider Shorthands
 
@@ -69,6 +71,12 @@ etw -action blind -session_name "EventLog-Microsoft-Windows-PowerShell/Operation
 
 # Disable AMSI provider using raw GUID
 etw -action blind -session_name "EventLog-Security" -provider "F4E1897A-BB65-5399-F245-102D38640FFE"
+
+# Query detailed session information
+etw -action query -session_name "EventLog-Security"
+
+# Re-enable a previously blinded provider (cleanup)
+etw -action enable -session_name "EventLog-Microsoft-Windows-Sysmon/Operational" -provider sysmon
 ```
 
 ## Operational Notes
@@ -83,6 +91,8 @@ etw -action blind -session_name "EventLog-Security" -provider "F4E1897A-BB65-539
   - **Kernel-Process** — disable process creation events
   - **AMSI** — disable script content inspection (also achievable via `autopatch`)
 - Pair with `auditpol -action stealth` and `autopatch` for comprehensive telemetry evasion
+- Use `enable` for cleanup after operations — restores blinded providers to full verbose logging
+- `query` shows buffer stats and events lost, useful for confirming a blind/stop took effect
 - Note: stopping `EventLog-Security` prevents new Security events but generates no 1102 indicator (unlike `eventlog -action clear`)
 
 ## MITRE ATT&CK Mapping

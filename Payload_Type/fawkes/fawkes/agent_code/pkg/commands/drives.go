@@ -5,7 +5,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"syscall"
 	"unsafe"
 
@@ -47,11 +46,7 @@ func (c *DrivesCommand) Execute(task structs.Task) structs.CommandResult {
 	// Get logical drive bitmask
 	mask, _, _ := procGetLogicalDrives.Call()
 	if mask == 0 {
-		return structs.CommandResult{
-			Output:    "Error: GetLogicalDrives returned 0",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: GetLogicalDrives returned 0")
 	}
 
 	var entries []driveEntry
@@ -73,27 +68,15 @@ func (c *DrivesCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling drive data: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling drive data: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 func getDriveType(drive string) string {

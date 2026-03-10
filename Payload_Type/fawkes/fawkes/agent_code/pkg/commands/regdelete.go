@@ -34,36 +34,20 @@ func (c *RegDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 	var args regDeleteArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required (hive, path)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required (hive, path)")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	hiveKey, err := parseHive(args.Hive)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    err.Error(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(err.Error())
 	}
 
 	if args.Name != "" {
@@ -79,11 +63,7 @@ func (c *RegDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 func regDeleteValue(hiveKey registry.Key, args regDeleteArgs) structs.CommandResult {
 	key, err := registry.OpenKey(hiveKey, args.Path, registry.SET_VALUE)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening key %s\\%s: %v", args.Hive, args.Path, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening key %s\\%s: %v", args.Hive, args.Path, err)
 	}
 	defer key.Close()
 
@@ -93,22 +73,14 @@ func regDeleteValue(hiveKey registry.Key, args regDeleteArgs) structs.CommandRes
 		if displayName == "" {
 			displayName = "(Default)"
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error deleting value '%s': %v", displayName, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error deleting value '%s': %v", displayName, err)
 	}
 
 	displayName := args.Name
 	if displayName == "" {
 		displayName = "(Default)"
 	}
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Deleted value: %s\\%s\\%s", args.Hive, args.Path, displayName),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Deleted value: %s\\%s\\%s", args.Hive, args.Path, displayName)
 }
 
 func regDeleteKey(hiveKey registry.Key, args regDeleteArgs, recursive bool) structs.CommandResult {
@@ -119,18 +91,10 @@ func regDeleteKey(hiveKey registry.Key, args regDeleteArgs, recursive bool) stru
 	// Non-recursive: delete the leaf key only
 	err := registry.DeleteKey(hiveKey, args.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error deleting key %s\\%s: %v (if key has subkeys, use -recursive true)", args.Hive, args.Path, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error deleting key %s\\%s: %v (if key has subkeys, use -recursive true)", args.Hive, args.Path, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Deleted key: %s\\%s", args.Hive, args.Path),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Deleted key: %s\\%s", args.Hive, args.Path)
 }
 
 func regDeleteKeyRecursive(hiveKey registry.Key, args regDeleteArgs) structs.CommandResult {
@@ -138,19 +102,11 @@ func regDeleteKeyRecursive(hiveKey registry.Key, args regDeleteArgs) structs.Com
 	count, err := deleteSubKeysRecursive(hiveKey, args.Path, &sb)
 	if err != nil {
 		sb.WriteString(fmt.Sprintf("Error during recursive delete: %v\n", err))
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String())
 	}
 
 	sb.WriteString(fmt.Sprintf("\nDeleted %s\\%s (%d keys removed)", args.Hive, args.Path, count))
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func deleteSubKeysRecursive(hiveKey registry.Key, path string, sb *strings.Builder) (int, error) {

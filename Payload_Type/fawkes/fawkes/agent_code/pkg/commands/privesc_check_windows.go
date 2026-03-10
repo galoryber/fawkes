@@ -35,11 +35,7 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -63,11 +59,7 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	case "uac":
 		return winPrivescCheckUAC()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac", args.Action)
 	}
 }
 
@@ -98,11 +90,7 @@ func winPrivescCheckAll() structs.CommandResult {
 	sb.WriteString("--- Unattended Install Files ---\n")
 	sb.WriteString(winPrivescCheckUnattend().Output)
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckPrivileges enumerates exploitable token privileges
@@ -111,21 +99,13 @@ func winPrivescCheckPrivileges() structs.CommandResult {
 
 	token, _, err := getCurrentToken()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to get current token: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to get current token: %v", err)
 	}
 	defer token.Close()
 
 	privs, err := getTokenPrivileges(token)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to enumerate privileges: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to enumerate privileges: %v", err)
 	}
 
 	// Privileges exploitable for privilege escalation
@@ -183,11 +163,7 @@ func winPrivescCheckPrivileges() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckServices checks for unquoted service paths and modifiable service binaries
@@ -196,21 +172,13 @@ func winPrivescCheckServices() structs.CommandResult {
 
 	m, err := mgr.Connect()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to connect to SCM: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to connect to SCM: %v", err)
 	}
 	defer m.Disconnect()
 
 	services, err := m.ListServices()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to list services: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to list services: %v", err)
 	}
 
 	var unquoted []string
@@ -278,11 +246,7 @@ func winPrivescCheckServices() structs.CommandResult {
 		sb.WriteString(strings.Join(writableDir, "\n"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckRegistry checks registry for AlwaysInstallElevated, auto-logon, etc.
@@ -368,11 +332,7 @@ func winPrivescCheckRegistry() structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n[!] %d exploitable registry finding(s) detected", findings))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckWritable checks for writable directories in PATH
@@ -427,11 +387,7 @@ func winPrivescCheckWritable() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckUnattend checks for unattended install files containing credentials
@@ -512,11 +468,7 @@ func winPrivescCheckUnattend() structs.CommandResult {
 		sb.WriteString(strings.Join(interestingFiles, "\n"))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // winPrivescCheckUAC reports the current UAC configuration
@@ -564,11 +516,7 @@ func winPrivescCheckUAC() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // --- Windows-specific helper functions ---
@@ -578,7 +526,7 @@ func isFileWritable(path string) bool {
 	if err != nil {
 		return false
 	}
-	f.Close()
+	defer f.Close()
 	return true
 }
 

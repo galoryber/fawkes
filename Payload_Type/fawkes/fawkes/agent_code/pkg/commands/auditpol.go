@@ -109,11 +109,7 @@ var (
 func (c *AuditPolCommand) Execute(task structs.Task) structs.CommandResult {
 	var params auditPolParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.Action == "" {
@@ -130,11 +126,7 @@ func (c *AuditPolCommand) Execute(task structs.Task) structs.CommandResult {
 	case "stealth":
 		return auditPolStealth()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use 'query', 'disable', 'enable', or 'stealth')", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use 'query', 'disable', 'enable', or 'stealth')", params.Action)
 	}
 }
 
@@ -164,27 +156,15 @@ func auditPolQuery() structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(output)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(jsonBytes))
 }
 
 func auditPolDisable(category string) structs.CommandResult {
 	if category == "" {
-		return structs.CommandResult{
-			Output:    "Category required. Use 'all' to disable everything, or specify a category name (e.g., 'Logon/Logoff', 'Process Creation').",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Category required. Use 'all' to disable everything, or specify a category name (e.g., 'Logon/Logoff', 'Process Creation').")
 	}
 
 	var modified []string
@@ -192,11 +172,7 @@ func auditPolDisable(category string) structs.CommandResult {
 
 	targets := matchSubcategories(category)
 	if len(targets) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No matching subcategories for '%s'. Use 'query' to see available categories.", category),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("No matching subcategories for '%s'. Use 'query' to see available categories.", category)
 	}
 
 	for _, sub := range targets {
@@ -236,11 +212,7 @@ func auditPolDisable(category string) structs.CommandResult {
 
 func auditPolEnable(category string) structs.CommandResult {
 	if category == "" {
-		return structs.CommandResult{
-			Output:    "Category required. Use 'all' to enable everything, or specify a category name.",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Category required. Use 'all' to enable everything, or specify a category name.")
 	}
 
 	var modified []string
@@ -248,11 +220,7 @@ func auditPolEnable(category string) structs.CommandResult {
 
 	targets := matchSubcategories(category)
 	if len(targets) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No matching subcategories for '%s'. Use 'query' to see available categories.", category),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("No matching subcategories for '%s'. Use 'query' to see available categories.", category)
 	}
 
 	for _, sub := range targets {

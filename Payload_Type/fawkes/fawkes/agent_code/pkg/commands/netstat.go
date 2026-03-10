@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"fawkes/pkg/structs"
 
@@ -20,6 +21,13 @@ func (c *NetstatCommand) Description() string {
 	return "List active network connections and listening ports"
 }
 
+type netstatArgs struct {
+	State string `json:"state"` // LISTEN, ESTABLISHED, TIME_WAIT, CLOSE_WAIT, etc.
+	Proto string `json:"proto"` // tcp, udp
+	Port  int    `json:"port"`  // filter by local or remote port
+	PID   int32  `json:"pid"`   // filter by process ID
+}
+
 // netstatEntry represents a single network connection for JSON output.
 type netstatEntry struct {
 	Proto      string `json:"proto"`
@@ -32,36 +40,51 @@ type netstatEntry struct {
 }
 
 func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
+	var args netstatArgs
+	if task.Params != "" {
+		_ = json.Unmarshal([]byte(task.Params), &args)
+	}
+
 	// Get all connections (TCP and UDP)
 	conns, err := psnet.Connections("all")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating connections: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating connections: %v", err)
 	}
 
-	if len(conns) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
+	// Apply filters
+	var filtered []psnet.ConnectionStat
+	for _, conn := range conns {
+		if args.State != "" && !strings.EqualFold(conn.Status, args.State) {
+			continue
 		}
+		if args.Proto != "" && !strings.EqualFold(protoName(conn.Type), args.Proto) {
+			continue
+		}
+		if args.Port != 0 && conn.Laddr.Port != uint32(args.Port) && conn.Raddr.Port != uint32(args.Port) {
+			continue
+		}
+		if args.PID != 0 && conn.Pid != args.PID {
+			continue
+		}
+		filtered = append(filtered, conn)
+	}
+
+	if len(filtered) == 0 {
+		return successResult("[]")
 	}
 
 	// Sort: LISTEN first, then ESTABLISHED, then by local port
-	sort.Slice(conns, func(i, j int) bool {
-		si := statusPriority(conns[i].Status)
-		sj := statusPriority(conns[j].Status)
+	sort.Slice(filtered, func(i, j int) bool {
+		si := statusPriority(filtered[i].Status)
+		sj := statusPriority(filtered[j].Status)
 		if si != sj {
 			return si < sj
 		}
-		return conns[i].Laddr.Port < conns[j].Laddr.Port
+		return filtered[i].Laddr.Port < filtered[j].Laddr.Port
 	})
 
-	entries := make([]netstatEntry, len(conns))
-	for i, conn := range conns {
+	entries := make([]netstatEntry, len(filtered))
+	for i, conn := range filtered {
 		state := conn.Status
 		if state == "" {
 			state = "-"
@@ -87,28 +110,10 @@ func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 
 	jsonBytes, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshalling connections: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshalling connections: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
-	}
-}
-
-func formatAddr(ip string, port uint32) string {
-	if ip == "" {
-		ip = "*"
-	}
-	if port == 0 {
-		return fmt.Sprintf("%s:*", ip)
-	}
-	return fmt.Sprintf("%s:%d", ip, port)
+	return successResult(string(jsonBytes))
 }
 
 func protoName(connType uint32) string {

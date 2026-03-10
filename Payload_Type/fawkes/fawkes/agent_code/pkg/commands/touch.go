@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,11 +28,7 @@ type touchArgs struct {
 
 func (c *TouchCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args touchArgs
@@ -42,22 +37,14 @@ func (c *TouchCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path is required")
 	}
 
 	// Create parent directories if requested
 	if args.MkDir {
 		dir := filepath.Dir(args.Path)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating directories: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating directories: %v", err)
 		}
 	}
 
@@ -69,45 +56,21 @@ func (c *TouchCommand) Execute(task structs.Task) structs.CommandResult {
 		// Create the file
 		f, err := os.Create(args.Path)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating file: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating file: %v", err)
 		}
 		if err := f.Close(); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating file: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating file: %v", err)
 		}
 
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] Created %s", args.Path),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[+] Created %s", args.Path)
 	} else if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error accessing file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error accessing file: %v", err)
 	}
 
 	// File exists — update timestamps
 	if err := os.Chtimes(args.Path, now, now); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error updating timestamps: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error updating timestamps: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[+] Updated timestamps on %s", args.Path),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[+] Updated timestamps on %s", args.Path)
 }

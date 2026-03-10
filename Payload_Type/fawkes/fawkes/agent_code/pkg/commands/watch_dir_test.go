@@ -91,7 +91,7 @@ func TestWatchDirNoChanges(t *testing.T) {
 	})
 	task := structs.NewTask("test-5", "watch-dir", string(params))
 	result := cmd.Execute(task)
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Errorf("expected completed, got: %s", result.Status)
 	}
 	if !strings.Contains(result.Output, "No changes detected") {
@@ -120,7 +120,7 @@ func TestWatchDirDetectsNewFile(t *testing.T) {
 	})
 	task := structs.NewTask("test-6", "watch-dir", string(params))
 	result := cmd.Execute(task)
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Errorf("expected completed, got: %s", result.Status)
 	}
 	if !strings.Contains(result.Output, "CREATED") {
@@ -290,7 +290,7 @@ func TestWatchDirTaskCancellation(t *testing.T) {
 	if elapsed > 5*time.Second {
 		t.Errorf("task should have been cancelled quickly, took %s", elapsed)
 	}
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Errorf("expected completed after cancellation, got: %s", result.Status)
 	}
 }
@@ -561,7 +561,7 @@ func TestWatchDirFormatResult(t *testing.T) {
 	params := watchDirParams{Path: "/tmp/test", Interval: 5, Depth: 3}
 	result := watchDirFormatResult("/tmp/test", events, time.Now().Add(-10*time.Second), params)
 
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Errorf("expected completed, got %s", result.Status)
 	}
 	if !strings.Contains(result.Output, "2 total") {
@@ -602,7 +602,7 @@ func TestWatchDirDefaultParams(t *testing.T) {
 	})
 	task := structs.NewTask("test-defaults", "watch-dir", string(params))
 	result := cmd.Execute(task)
-	if result.Status != "completed" {
+	if result.Status != "success" {
 		t.Errorf("expected completed, got: %s", result.Status)
 	}
 	// Defaults: interval=5, depth=3

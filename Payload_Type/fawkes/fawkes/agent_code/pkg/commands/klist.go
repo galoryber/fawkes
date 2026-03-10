@@ -44,11 +44,7 @@ func (c *KlistCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -66,11 +62,7 @@ func (c *KlistCommand) Execute(task structs.Task) structs.CommandResult {
 	case "import":
 		return klistImport(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: list, purge, dump, import", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: list, purge, dump, import", args.Action)
 	}
 }
 

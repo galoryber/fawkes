@@ -267,18 +267,10 @@ func (c *TsCommand) Execute(task structs.Task) structs.CommandResult {
 	// Get thread information
 	output, err := getThreadInfo(args.All, args.PID)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error listing threads: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error listing threads: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // getThreadInfo enumerates threads using NtQuerySystemInformation

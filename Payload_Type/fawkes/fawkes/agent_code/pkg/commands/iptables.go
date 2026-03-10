@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -28,11 +27,7 @@ type iptablesArgs struct {
 
 func (c *IptablesCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: status, rules, nat, add, delete, flush",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: status, rules, nat, add, delete, flush")
 	}
 
 	var args iptablesArgs
@@ -55,11 +50,7 @@ func (c *IptablesCommand) Execute(task structs.Task) structs.CommandResult {
 	case "flush":
 		return iptablesFlush(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: status, rules, nat, add, delete, flush", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: status, rules, nat, add, delete, flush", args.Action)
 	}
 }
 
@@ -104,7 +95,7 @@ func iptablesStatus() structs.CommandResult {
 
 	// nftables check
 	sb.WriteString("\nnftables:\n")
-	if out, err := exec.Command("nft", "list", "tables").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("nft", "list", "tables"); err == nil {
 		lines := strings.TrimSpace(string(out))
 		if lines == "" {
 			sb.WriteString("  (no tables)\n")
@@ -119,7 +110,7 @@ func iptablesStatus() structs.CommandResult {
 
 	// ufw check
 	sb.WriteString("\nufw:\n")
-	if out, err := exec.Command("ufw", "status").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("ufw", "status"); err == nil {
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			sb.WriteString(fmt.Sprintf("  %s\n", line))
 		}
@@ -136,11 +127,7 @@ func iptablesStatus() structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  Max connections:    %s\n", strings.TrimSpace(string(max))))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func iptablesRules(args iptablesArgs) structs.CommandResult {
@@ -156,7 +143,7 @@ func iptablesRules(args iptablesArgs) structs.CommandResult {
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
 
 	iptArgs := []string{"-t", table, "-L", "-n", "-v", "--line-numbers"}
-	if out, err := exec.Command("iptables", iptArgs...).CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("iptables", iptArgs...); err == nil {
 		sb.WriteString(string(out))
 	} else {
 		sb.WriteString(fmt.Sprintf("Error: %v\n%s\n", err, string(out)))
@@ -167,14 +154,14 @@ func iptablesRules(args iptablesArgs) structs.CommandResult {
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
 
 	ip6Args := []string{"-t", table, "-L", "-n", "-v", "--line-numbers"}
-	if out, err := exec.Command("ip6tables", ip6Args...).CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("ip6tables", ip6Args...); err == nil {
 		sb.WriteString(string(out))
 	} else {
 		sb.WriteString(fmt.Sprintf("Error: %v\n", err))
 	}
 
 	// Also show nftables if available
-	if out, err := exec.Command("nft", "list", "ruleset").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("nft", "list", "ruleset"); err == nil {
 		nftOut := strings.TrimSpace(string(out))
 		if nftOut != "" {
 			sb.WriteString("\nnftables ruleset\n")
@@ -183,11 +170,7 @@ func iptablesRules(args iptablesArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func iptablesNAT() structs.CommandResult {
@@ -196,14 +179,14 @@ func iptablesNAT() structs.CommandResult {
 	sb.WriteString("NAT Rules\n")
 	sb.WriteString(strings.Repeat("=", 60) + "\n")
 
-	if out, err := exec.Command("iptables", "-t", "nat", "-L", "-n", "-v", "--line-numbers").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("iptables", "-t", "nat", "-L", "-n", "-v", "--line-numbers"); err == nil {
 		sb.WriteString(string(out))
 	} else {
 		sb.WriteString(fmt.Sprintf("iptables NAT error: %v\n%s\n", err, string(out)))
 	}
 
 	// nftables NAT
-	if out, err := exec.Command("nft", "list", "table", "ip", "nat").CombinedOutput(); err == nil {
+	if out, err := execCmdTimeout("nft", "list", "table", "ip", "nat"); err == nil {
 		nftOut := strings.TrimSpace(string(out))
 		if nftOut != "" {
 			sb.WriteString("\nnftables NAT\n")
@@ -212,19 +195,12 @@ func iptablesNAT() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func iptablesAdd(args iptablesArgs) structs.CommandResult {
 	if args.Rule == "" {
-		return structs.CommandResult{
-			Output: "Error: rule parameter required (e.g., '-A INPUT -p tcp --dport 4444 -j ACCEPT')",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: rule parameter required (e.g., '-A INPUT -p tcp --dport 4444 -j ACCEPT')")
 	}
 
 	// Split rule into args
@@ -235,27 +211,17 @@ func iptablesAdd(args iptablesArgs) structs.CommandResult {
 	}
 	cmdArgs = append(cmdArgs, parts...)
 
-	out, err := exec.Command("iptables", cmdArgs...).CombinedOutput()
+	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error adding rule: %v\n%s", err, string(out)),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error adding rule: %v\n%s", err, string(out))
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Rule added: iptables %s\n%s", strings.Join(cmdArgs, " "), string(out)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Rule added: iptables %s\n%s", strings.Join(cmdArgs, " "), string(out))
 }
 
 func iptablesDelete(args iptablesArgs) structs.CommandResult {
 	if args.Rule == "" {
-		return structs.CommandResult{
-			Output: "Error: rule parameter required (e.g., '-D INPUT -p tcp --dport 4444 -j ACCEPT')",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: rule parameter required (e.g., '-D INPUT -p tcp --dport 4444 -j ACCEPT')")
 	}
 
 	parts := strings.Fields(args.Rule)
@@ -265,19 +231,12 @@ func iptablesDelete(args iptablesArgs) structs.CommandResult {
 	}
 	cmdArgs = append(cmdArgs, parts...)
 
-	out, err := exec.Command("iptables", cmdArgs...).CombinedOutput()
+	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error deleting rule: %v\n%s", err, string(out)),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error deleting rule: %v\n%s", err, string(out))
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Rule deleted: iptables %s\n%s", strings.Join(cmdArgs, " "), string(out)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Rule deleted: iptables %s\n%s", strings.Join(cmdArgs, " "), string(out))
 }
 
 func iptablesFlush(args iptablesArgs) structs.CommandResult {
@@ -292,12 +251,9 @@ func iptablesFlush(args iptablesArgs) structs.CommandResult {
 		cmdArgs = append(cmdArgs, chain)
 	}
 
-	out, err := exec.Command("iptables", cmdArgs...).CombinedOutput()
+	out, err := execCmdTimeout("iptables", cmdArgs...)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error flushing rules: %v\n%s", err, string(out)),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error flushing rules: %v\n%s", err, string(out))
 	}
 
 	target := "all chains"
@@ -305,9 +261,5 @@ func iptablesFlush(args iptablesArgs) structs.CommandResult {
 		target = chain
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Flushed %s: iptables %s\n%s", target, strings.Join(cmdArgs, " "), string(out)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Flushed %s: iptables %s\n%s", target, strings.Join(cmdArgs, " "), string(out))
 }

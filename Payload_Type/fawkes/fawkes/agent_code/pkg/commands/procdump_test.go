@@ -18,8 +18,8 @@ func TestProcdumpCommand_NameAndDescription(t *testing.T) {
 	if cmd.Description() == "" {
 		t.Error("Description() should not be empty")
 	}
-	if !strings.Contains(cmd.Description(), "MiniDumpWriteDump") {
-		t.Error("Description should mention MiniDumpWriteDump")
+	if !strings.Contains(cmd.Description(), "Dump process memory") {
+		t.Error("Description should mention process memory dumping")
 	}
 }
 
@@ -153,23 +153,4 @@ func TestGetProcessName_NotFound(t *testing.T) {
 	}
 }
 
-func TestFormatDumpSize(t *testing.T) {
-	tests := []struct {
-		input    int64
-		expected string
-	}{
-		{0, "0 bytes"},
-		{512, "512 bytes"},
-		{1024, "1.0 KB"},
-		{1536, "1.5 KB"},
-		{1048576, "1.0 MB"},
-		{157286400, "150.0 MB"},
-		{1073741824, "1.0 GB"},
-	}
-	for _, tt := range tests {
-		result := formatDumpSize(tt.input)
-		if result != tt.expected {
-			t.Errorf("formatDumpSize(%d) = %q, want %q", tt.input, result, tt.expected)
-		}
-	}
-}
+// formatDumpSize tests removed — unified into format_helpers_test.go (formatFileSize)

@@ -22,7 +22,7 @@ func init() {
 		MitreAttackMappings: []string{"T1033"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -72,7 +72,11 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
-			createArtifact(taskData.Task.ID, "API Call", "LsaEnumerateLogonSessions + LsaGetLogonSessionData + WTSEnumerateSessionsW")
+			if taskData.Payload.OS == "Windows" {
+				createArtifact(taskData.Task.ID, "API Call", "LsaEnumerateLogonSessions + LsaGetLogonSessionData + WTSEnumerateSessionsW")
+			} else {
+				createArtifact(taskData.Task.ID, "FileOpen", "/var/run/utmp")
+			}
 			return response
 		},
 	})

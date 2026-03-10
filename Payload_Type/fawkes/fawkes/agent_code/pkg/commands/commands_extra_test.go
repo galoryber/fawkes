@@ -29,7 +29,7 @@ func TestSocksCommand(t *testing.T) {
 		params, _ := json.Marshal(map[string]interface{}{"action": "start", "port": 1080})
 		task := structs.Task{Params: string(params)}
 		result := cmd.Execute(task)
-		if result.Status != "completed" {
+		if result.Status != "success" {
 			t.Errorf("expected completed, got %q: %s", result.Status, result.Output)
 		}
 		if !strings.Contains(result.Output, "1080") {
@@ -44,7 +44,7 @@ func TestSocksCommand(t *testing.T) {
 		params, _ := json.Marshal(map[string]interface{}{"action": "stop", "port": 1080})
 		task := structs.Task{Params: string(params)}
 		result := cmd.Execute(task)
-		if result.Status != "completed" {
+		if result.Status != "success" {
 			t.Errorf("expected completed, got %q: %s", result.Status, result.Output)
 		}
 		if !strings.Contains(result.Output, "stopped") {
@@ -134,31 +134,6 @@ func TestArpCommand_Name(t *testing.T) {
 // =============================================================================
 // netstat helper function tests
 // =============================================================================
-
-func TestFormatAddr(t *testing.T) {
-	tests := []struct {
-		name     string
-		ip       string
-		port     uint32
-		expected string
-	}{
-		{"normal", "192.168.1.1", 80, "192.168.1.1:80"},
-		{"high port", "10.0.0.1", 65535, "10.0.0.1:65535"},
-		{"empty IP", "", 80, "*:80"},
-		{"zero port", "192.168.1.1", 0, "192.168.1.1:*"},
-		{"both empty", "", 0, "*:*"},
-		{"ipv6", "::1", 443, "::1:443"},
-		{"localhost", "127.0.0.1", 8080, "127.0.0.1:8080"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := formatAddr(tt.ip, tt.port)
-			if result != tt.expected {
-				t.Errorf("formatAddr(%q, %d) = %q, want %q", tt.ip, tt.port, result, tt.expected)
-			}
-		})
-	}
-}
 
 func TestProtoName(t *testing.T) {
 	tests := []struct {

@@ -74,7 +74,7 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 		var err error
 		addr, err = virtualAllocRW(uint32(allocationSize))
 		if err != nil {
-			return "", fmt.Errorf("VirtualAlloc failed for section %s: %v", section.NameString(), err)
+			return "", fmt.Errorf("memory allocation failed for section %s: %v", section.NameString(), err)
 		}
 
 		if strings.HasPrefix(section.NameString(), ".bss") {
@@ -102,7 +102,7 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 	}
 	gotBaseAddress, err := virtualAllocRW(gotSize)
 	if err != nil {
-		return "", fmt.Errorf("VirtualAlloc for GOT failed: %v", err)
+		return "", fmt.Errorf("GOT memory allocation failed: %v", err)
 	}
 
 	// Process relocations
@@ -169,7 +169,7 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 				continue
 			}
 			if err := virtualProtectRX(sec.Address, size); err != nil {
-				return "", fmt.Errorf("VirtualProtect failed for section %s: %v", section.NameString(), err)
+				return "", fmt.Errorf("protection change failed for section %s: %v", section.NameString(), err)
 			}
 			flushInstructionCache(sec.Address, size)
 		}

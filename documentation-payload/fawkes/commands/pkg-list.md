@@ -11,12 +11,16 @@ List installed packages and software. Enumerates system packages and application
 
 ## Arguments
 
-No arguments required.
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `-filter` | No | (none) | Case-insensitive substring filter on package/software name |
 
 ## Usage
 
 ```
 pkg-list
+pkg-list -filter python
+pkg-list -filter chrome
 ```
 
 ## Platform Details
@@ -35,7 +39,8 @@ pkg-list
 - Output limited to first 100 entries per source
 
 ### Windows
-- Queries registry Uninstall keys (both 32-bit and 64-bit) via PowerShell
+- **Primary:** Reads registry Uninstall keys directly (both 32-bit and 64-bit) — no subprocess spawned
+- **Fallback:** PowerShell registry query if native reading fails
 - Reports program name and version
 - Output limited to first 200 entries
 

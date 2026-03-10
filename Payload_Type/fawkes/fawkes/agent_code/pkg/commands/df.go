@@ -2,7 +2,7 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
+	"strings"
 
 	"fawkes/pkg/structs"
 )
@@ -18,26 +18,39 @@ func (c *DfCommand) Description() string {
 	return "Report filesystem disk space usage"
 }
 
+type dfArgs struct {
+	Filesystem string `json:"filesystem"`  // filter by device name (substring)
+	MountPoint string `json:"mount_point"` // filter by mount point (substring)
+	FsType     string `json:"fstype"`      // filter by filesystem type (case-insensitive)
+}
+
 func (c *DfCommand) Execute(task structs.Task) structs.CommandResult {
+	var args dfArgs
+	if task.Params != "" {
+		_ = json.Unmarshal([]byte(task.Params), &args)
+	}
+
 	entries, err := getDiskFreeInfo()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	if len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	output := make([]dfOutputEntry, 0, len(entries))
 	for _, e := range entries {
+		if args.Filesystem != "" && !strings.Contains(e.device, args.Filesystem) {
+			continue
+		}
+		if args.MountPoint != "" && !strings.Contains(e.mountpoint, args.MountPoint) {
+			continue
+		}
+		if args.FsType != "" && !strings.EqualFold(e.fstype, args.FsType) {
+			continue
+		}
+
 		usePct := 0
 		if e.total > 0 {
 			usePct = int(float64(e.used) * 100.0 / float64(e.total))
@@ -53,20 +66,16 @@ func (c *DfCommand) Execute(task structs.Task) structs.CommandResult {
 		})
 	}
 
-	jsonBytes, err := json.Marshal(output)
-	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+	if len(output) == 0 {
+		return successResult("[]")
 	}
 
-	return structs.CommandResult{
-		Output:    string(jsonBytes),
-		Status:    "success",
-		Completed: true,
+	jsonBytes, err := json.Marshal(output)
+	if err != nil {
+		return errorf("Error: %v", err)
 	}
+
+	return successResult(string(jsonBytes))
 }
 
 type dfEntry struct {

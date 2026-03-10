@@ -36,11 +36,7 @@ func readProcessEnviron(pid int) ([]string, string, error) {
 func envScanAllProcesses(filter string) structs.CommandResult {
 	entries, err := os.ReadDir("/proc")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to read /proc: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to read /proc: %v", err)
 	}
 
 	var allResults []envScanResult
@@ -76,11 +72,7 @@ func envScanAllProcesses(filter string) structs.CommandResult {
 	}
 
 	output := formatEnvScanResults(allResults, totalProcesses, accessibleProcesses)
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // deduplicateResults removes duplicate findings (same variable+value from forked processes).

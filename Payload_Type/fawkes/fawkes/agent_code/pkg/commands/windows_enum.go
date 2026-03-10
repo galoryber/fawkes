@@ -59,11 +59,7 @@ type weEntry struct {
 func (c *WindowsEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	var args weArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Action == "" {
@@ -74,11 +70,7 @@ func (c *WindowsEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	case "list", "search":
 		return weDoEnum(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use: list, search)", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use: list, search)", args.Action)
 	}
 }
 
@@ -226,11 +218,7 @@ func weDoEnum(args weArgs) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func wetrunc(s string, max int) string {

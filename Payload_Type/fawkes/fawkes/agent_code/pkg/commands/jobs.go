@@ -19,11 +19,7 @@ func (c *JobsCommand) Execute(task structs.Task) structs.CommandResult {
 	tasks := GetRunningTasks()
 
 	if len(tasks) == 0 {
-		return structs.CommandResult{
-			Output:    "No running tasks",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("No running tasks")
 	}
 
 	// Sort by start time for consistent output
@@ -45,11 +41,7 @@ func (c *JobsCommand) Execute(task structs.Task) structs.CommandResult {
 	})
 
 	if len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "No running tasks (only this jobs command)",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("No running tasks (only this jobs command)")
 	}
 
 	var sb strings.Builder
@@ -61,9 +53,5 @@ func (c *JobsCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("%-36s  %-20s  %s\n", e.id, e.task.Command, duration))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

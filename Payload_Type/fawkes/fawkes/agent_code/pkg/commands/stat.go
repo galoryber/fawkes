@@ -24,11 +24,7 @@ type statArgs struct {
 
 func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -path <file>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -path <file>")
 	}
 
 	var args statArgs
@@ -37,11 +33,7 @@ func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path parameter is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path parameter is required")
 	}
 
 	// Resolve path
@@ -54,11 +46,7 @@ func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Lstat(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	// Build output
@@ -77,7 +65,7 @@ func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("  Type: %s\n", fileType))
 
 	// Size
-	sb.WriteString(fmt.Sprintf("  Size: %d bytes (%s)\n", info.Size(), statFormatSize(info.Size())))
+	sb.WriteString(fmt.Sprintf("  Size: %d bytes (%s)\n", info.Size(), formatFileSize(info.Size())))
 
 	// Permissions
 	sb.WriteString(fmt.Sprintf("  Mode: %s (%04o)\n", info.Mode().String(), info.Mode().Perm()))
@@ -96,11 +84,7 @@ func (c *StatCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func statFileType(info os.FileInfo) string {
@@ -126,23 +110,3 @@ func statFileType(info os.FileInfo) string {
 	}
 }
 
-func statFormatSize(bytes int64) string {
-	const (
-		kb = 1024
-		mb = kb * 1024
-		gb = mb * 1024
-		tb = gb * 1024
-	)
-	switch {
-	case bytes >= tb:
-		return fmt.Sprintf("%.1f TB", float64(bytes)/float64(tb))
-	case bytes >= gb:
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(gb))
-	case bytes >= mb:
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(mb))
-	case bytes >= kb:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(kb))
-	default:
-		return fmt.Sprintf("%d B", bytes)
-	}
-}

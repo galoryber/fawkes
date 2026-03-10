@@ -40,28 +40,16 @@ const (
 
 func (c *KerbDelegationCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <unconstrained|constrained|rbcd|all> -server <DC>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action <unconstrained|constrained|rbcd|all> -server <DC>")
 	}
 
 	var args kerbDelegArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: server parameter required (domain controller IP or hostname)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Port <= 0 {
@@ -74,29 +62,17 @@ func (c *KerbDelegationCommand) Execute(task structs.Task) structs.CommandResult
 
 	conn, err := kdConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	if err := kdBind(conn, args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error binding to LDAP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error binding to LDAP: %v", err)
 	}
 
 	baseDN, err := kdDetectBaseDN(conn)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error detecting base DN: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error detecting base DN: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -109,11 +85,7 @@ func (c *KerbDelegationCommand) Execute(task structs.Task) structs.CommandResult
 	case "all":
 		return kdFindAll(conn, baseDN)
 	default:
-		return structs.CommandResult{
-			Output:    "Error: action must be one of: unconstrained, constrained, rbcd, all",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: action must be one of: unconstrained, constrained, rbcd, all")
 	}
 }
 
@@ -173,18 +145,16 @@ func kdMarshalResult(entries []kdOutputEntry) structs.CommandResult {
 	}
 	data, err := json.Marshal(entries)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error marshaling output: %v", err), Status: "error", Completed: true,
-		}
+		return errorf("Error marshaling output: %v", err)
 	}
-	return structs.CommandResult{Output: string(data), Status: "success", Completed: true}
+	return successResult(string(data))
 }
 
 // kdFindUnconstrained finds accounts with TRUSTED_FOR_DELEGATION (excluding DCs)
 func kdFindUnconstrained(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	entries, err := kdUnconstrainedEntries(conn, baseDN)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error searching for unconstrained delegation: %v", err), Status: "error", Completed: true}
+		return errorf("Error searching for unconstrained delegation: %v", err)
 	}
 	return kdMarshalResult(entries)
 }
@@ -225,7 +195,7 @@ func kdUnconstrainedEntries(conn *ldap.Conn, baseDN string) ([]kdOutputEntry, er
 func kdFindConstrained(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	entries, err := kdConstrainedEntries(conn, baseDN)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error searching for constrained delegation: %v", err), Status: "error", Completed: true}
+		return errorf("Error searching for constrained delegation: %v", err)
 	}
 	return kdMarshalResult(entries)
 }
@@ -275,7 +245,7 @@ func kdConstrainedEntries(conn *ldap.Conn, baseDN string) ([]kdOutputEntry, erro
 func kdFindRBCD(conn *ldap.Conn, baseDN string) structs.CommandResult {
 	entries, err := kdRBCDEntries(conn, baseDN)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error searching for RBCD: %v", err), Status: "error", Completed: true}
+		return errorf("Error searching for RBCD: %v", err)
 	}
 	return kdMarshalResult(entries)
 }

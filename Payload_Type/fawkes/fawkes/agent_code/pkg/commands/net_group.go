@@ -50,28 +50,16 @@ var privilegedGroups = []string{
 
 func (c *NetGroupCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <list|members|user|privileged> -server <DC>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action <list|members|user|privileged> -server <DC>")
 	}
 
 	var args netGroupArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: server parameter required (domain controller IP or hostname)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Port <= 0 {
@@ -84,29 +72,17 @@ func (c *NetGroupCommand) Execute(task structs.Task) structs.CommandResult {
 
 	conn, err := ngConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to LDAP %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	if err := ngBind(conn, args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error binding to LDAP: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error binding to LDAP: %v", err)
 	}
 
 	baseDN, err := ngDetectBaseDN(conn)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error detecting base DN: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error detecting base DN: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -114,30 +90,18 @@ func (c *NetGroupCommand) Execute(task structs.Task) structs.CommandResult {
 		return ngList(conn, baseDN)
 	case "members":
 		if args.Group == "" {
-			return structs.CommandResult{
-				Output:    "Error: group parameter required for members action",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: group parameter required for members action")
 		}
 		return ngMembers(conn, baseDN, args.Group)
 	case "user":
 		if args.User == "" {
-			return structs.CommandResult{
-				Output:    "Error: user parameter required for user action",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: user parameter required for user action")
 		}
 		return ngUserGroups(conn, baseDN, args.User)
 	case "privileged":
 		return ngPrivileged(conn, baseDN)
 	default:
-		return structs.CommandResult{
-			Output:    "Error: action must be one of: list, members, user, privileged",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: action must be one of: list, members, user, privileged")
 	}
 }
 
@@ -186,11 +150,7 @@ func ngList(conn *ldap.Conn, baseDN string) structs.CommandResult {
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error searching groups: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error searching groups: %v", err)
 	}
 
 	domain := trustDNToDomain(baseDN)
@@ -219,11 +179,7 @@ func ngList(conn *ldap.Conn, baseDN string) structs.CommandResult {
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // ngMembers lists members of a specific group (recursive)
@@ -231,11 +187,7 @@ func ngMembers(conn *ldap.Conn, baseDN, groupName string) structs.CommandResult 
 	// First find the group DN
 	groupDN, err := ngFindGroupDN(conn, baseDN, groupName)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error finding group %q: %v", groupName, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error finding group %q: %v", groupName, err)
 	}
 
 	// Recursive member query using LDAP_MATCHING_RULE_IN_CHAIN
@@ -248,11 +200,7 @@ func ngMembers(conn *ldap.Conn, baseDN, groupName string) structs.CommandResult 
 
 	result, err := conn.SearchWithPaging(req, 100)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying members: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying members: %v", err)
 	}
 
 	var sb strings.Builder
@@ -316,11 +264,7 @@ func ngMembers(conn *ldap.Conn, baseDN, groupName string) structs.CommandResult 
 		sb.WriteString("No members found.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // ngUserGroups finds all groups a user belongs to (recursive)
@@ -334,19 +278,11 @@ func ngUserGroups(conn *ldap.Conn, baseDN, userName string) structs.CommandResul
 
 	result, err := conn.Search(req)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error finding user %q: %v", userName, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error finding user %q: %v", userName, err)
 	}
 
 	if len(result.Entries) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("User %q not found", userName),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("User %q not found", userName)
 	}
 
 	userDN := result.Entries[0].GetAttributeValue("distinguishedName")
@@ -360,11 +296,7 @@ func ngUserGroups(conn *ldap.Conn, baseDN, userName string) structs.CommandResul
 
 	groupResult, err := conn.SearchWithPaging(groupReq, 100)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying groups for %q: %v", userName, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying groups for %q: %v", userName, err)
 	}
 
 	var sb strings.Builder
@@ -417,11 +349,7 @@ func ngUserGroups(conn *ldap.Conn, baseDN, userName string) structs.CommandResul
 		sb.WriteString("User has no group memberships (besides primary group).\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // ngPrivileged finds all privileged groups and their members
@@ -497,11 +425,7 @@ func ngPrivileged(conn *ldap.Conn, baseDN string) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("Total privileged accounts: %d\n", totalMembers))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // ngFindGroupDN finds the DN of a group by name

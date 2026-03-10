@@ -36,28 +36,16 @@ type pingResult struct {
 
 func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -hosts <IP/CIDR/range> [-port 445] [-timeout 1000] [-threads 25]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -hosts <IP/CIDR/range> [-port 445] [-timeout 1000] [-threads 25]")
 	}
 
 	var args pingArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Hosts == "" {
-		return structs.CommandResult{
-			Output:    "Error: hosts parameter is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: hosts parameter is required")
 	}
 	if args.Port == 0 {
 		args.Port = 445
@@ -75,20 +63,12 @@ func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 	// Expand hosts to individual IPs
 	targets := expandHosts(args.Hosts)
 	if len(targets) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: no valid hosts from '%s'", args.Hosts),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: no valid hosts from '%s'", args.Hosts)
 	}
 
 	// Cap at 65536 hosts to prevent memory issues
 	if len(targets) > 65536 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: too many hosts (%d). Max 65536. Use a smaller range.", len(targets)),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: too many hosts (%d). Max 65536. Use a smaller range.", len(targets))
 	}
 
 	timeout := time.Duration(args.Timeout) * time.Millisecond
@@ -134,11 +114,7 @@ func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\n[*] Results: %d/%d hosts alive (port %d open)", alive, len(targets), args.Port))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func tcpPing(host string, port int, timeout time.Duration) pingResult {

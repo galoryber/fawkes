@@ -24,15 +24,20 @@ security-info
 ### Linux
 | Control | Detection Method |
 |---------|-----------------|
-| SELinux | `getenforce` command |
-| AppArmor | `aa-status` or `/sys/module/apparmor/parameters/enabled` |
+| SELinux | `/sys/fs/selinux/enforce` (native), `getenforce` fallback |
+| AppArmor | `/sys/module/apparmor/parameters/enabled` (native), `aa-status` fallback |
 | Seccomp | `/proc/self/status` Seccomp field |
-| Linux Audit (auditd) | `auditctl -s` |
+| Linux Audit (auditd) | `/proc/self/loginuid` + `/var/run/auditd.pid` (native) |
 | iptables | `iptables -L -n` rule count |
 | nftables | `nft list ruleset` |
 | ASLR | `/proc/sys/kernel/randomize_va_space` |
 | Kernel Lockdown | `/sys/kernel/security/lockdown` |
 | YAMA ptrace | `/proc/sys/kernel/yama/ptrace_scope` |
+| LSM Stack | `/sys/kernel/security/lsm` (Landlock, BPF LSM, TOMOYO) |
+| Unprivileged BPF | `/proc/sys/kernel/unprivileged_bpf_disabled` |
+| kptr_restrict | `/proc/sys/kernel/kptr_restrict` |
+| dmesg_restrict | `/proc/sys/kernel/dmesg_restrict` |
+| dm-crypt/LUKS | `/dev/mapper/` encrypted device enumeration |
 
 ### macOS
 | Control | Detection Method |
@@ -56,7 +61,7 @@ security-info
 
 ## OPSEC Considerations
 
-- Linux: Runs `getenforce`, `aa-status`, `auditctl`, `iptables`, `nft` — some require root for full results
+- Linux: Most checks use native sysfs/procfs reads (zero subprocess overhead). Falls back to `getenforce`, `aa-status` when native files are unavailable. `iptables`/`nft` require subprocess for firewall rules — some require root for full results
 - macOS: Runs `csrutil`, `spctl`, `fdesetup`, `system_profiler` — standard utility commands
 - Windows: Spawns `powershell.exe` for WMI/registry queries — may trigger command-line logging
 - Passive reconnaissance — does not modify any security settings

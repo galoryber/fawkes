@@ -29,11 +29,7 @@ type diffArgs struct {
 
 func (c *DiffCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: no parameters provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: no parameters provided")
 	}
 
 	var args diffArgs
@@ -48,11 +44,7 @@ func (c *DiffCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.File1 == "" || args.File2 == "" {
-		return structs.CommandResult{
-			Output:    "Error: both file1 and file2 are required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: both file1 and file2 are required")
 	}
 
 	if args.Context == 0 {
@@ -61,30 +53,18 @@ func (c *DiffCommand) Execute(task structs.Task) structs.CommandResult {
 
 	lines1, err := readLines(args.File1)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading %s: %v", args.File1, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading %s: %v", args.File1, err)
 	}
 
 	lines2, err := readLines(args.File2)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error reading %s: %v", args.File2, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error reading %s: %v", args.File2, err)
 	}
 
 	hunks := diffLines(lines1, lines2, args.Context)
 
 	if len(hunks) == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[*] Files are identical (%d lines)", len(lines1)),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("[*] Files are identical (%d lines)", len(lines1))
 	}
 
 	var sb strings.Builder
@@ -95,11 +75,7 @@ func (c *DiffCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString(hunk)
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func readLines(path string) ([]string, error) {

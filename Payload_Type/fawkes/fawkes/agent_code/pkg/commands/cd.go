@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 
 	"fawkes/pkg/structs"
@@ -30,11 +29,7 @@ func (c *CdCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Check if parameters are provided
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: No directory path specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No directory path specified")
 	}
 
 	// Try to parse as JSON first
@@ -48,35 +43,19 @@ func (c *CdCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Ensure we have a path
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: No directory path specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No directory path specified")
 	}
 
 	// Change directory
 	if err := os.Chdir(args.Path); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error changing directory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error changing directory: %v", err)
 	}
 
 	// Get the new current directory to confirm the change
 	newDir, err := os.Getwd()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Changed directory but failed to get new path: %v", err),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Changed directory but failed to get new path: %v", err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Changed directory to: %s", newDir),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Changed directory to: %s", newDir)
 }

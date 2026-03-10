@@ -55,11 +55,7 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 	args := cloudMetadataArgs{Action: "detect", Provider: "auto", Timeout: defaultCloudTimeout}
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 	if args.Action == "" {
@@ -73,7 +69,6 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 
 	timeout := time.Duration(args.Timeout) * time.Second
-	var sb strings.Builder
 
 	switch args.Action {
 	case "detect":
@@ -89,8 +84,7 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 	case "network":
 		return cloudNetwork(args.Provider, timeout)
 	default:
-		sb.WriteString("Error: unknown action. Available: detect, all, creds, identity, userdata, network")
-		return structs.CommandResult{Output: sb.String(), Status: "error", Completed: true}
+		return errorResult("Error: unknown action. Available: detect, all, creds, identity, userdata, network")
 	}
 }
 
@@ -167,7 +161,7 @@ func cloudDetect(timeout time.Duration) structs.CommandResult {
 		sb.WriteString("    Tested: AWS IMDS, Azure IMDS, GCP metadata, DigitalOcean metadata\n")
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return successResult(sb.String())
 }
 
 // cloudAll dumps all available metadata from the detected/specified provider
@@ -176,11 +170,7 @@ func cloudAll(provider string, timeout time.Duration) structs.CommandResult {
 
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
-		return structs.CommandResult{
-			Output:    "[-] No cloud metadata service detected or specified provider not available",
-			Status:    "completed",
-			Completed: true,
-		}
+		return successResult("[-] No cloud metadata service detected or specified provider not available")
 	}
 
 	for _, p := range providers {
@@ -197,7 +187,7 @@ func cloudAll(provider string, timeout time.Duration) structs.CommandResult {
 		sb.WriteString("\n")
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return successResult(sb.String())
 }
 
 // cloudCreds extracts IAM credentials from the detected provider
@@ -207,11 +197,7 @@ func cloudCreds(provider string, timeout time.Duration) structs.CommandResult {
 
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
-		return structs.CommandResult{
-			Output:    "[-] No cloud metadata service detected or specified provider not available",
-			Status:    "completed",
-			Completed: true,
-		}
+		return successResult("[-] No cloud metadata service detected or specified provider not available")
 	}
 
 	for _, p := range providers {
@@ -227,7 +213,7 @@ func cloudCreds(provider string, timeout time.Duration) structs.CommandResult {
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return successResult(sb.String())
 }
 
 // cloudIdentity extracts instance identity information
@@ -237,11 +223,7 @@ func cloudIdentity(provider string, timeout time.Duration) structs.CommandResult
 
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
-		return structs.CommandResult{
-			Output:    "[-] No cloud metadata service detected",
-			Status:    "completed",
-			Completed: true,
-		}
+		return successResult("[-] No cloud metadata service detected")
 	}
 
 	for _, p := range providers {
@@ -257,7 +239,7 @@ func cloudIdentity(provider string, timeout time.Duration) structs.CommandResult
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return successResult(sb.String())
 }
 
 // cloudUserdata extracts instance user-data (may contain secrets)
@@ -267,11 +249,7 @@ func cloudUserdata(provider string, timeout time.Duration) structs.CommandResult
 
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
-		return structs.CommandResult{
-			Output:    "[-] No cloud metadata service detected",
-			Status:    "completed",
-			Completed: true,
-		}
+		return successResult("[-] No cloud metadata service detected")
 	}
 
 	for _, p := range providers {
@@ -287,7 +265,7 @@ func cloudUserdata(provider string, timeout time.Duration) structs.CommandResult
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return successResult(sb.String())
 }
 
 // cloudNetwork extracts network configuration
@@ -297,11 +275,7 @@ func cloudNetwork(provider string, timeout time.Duration) structs.CommandResult 
 
 	providers := resolveProviders(provider, timeout)
 	if len(providers) == 0 {
-		return structs.CommandResult{
-			Output:    "[-] No cloud metadata service detected",
-			Status:    "completed",
-			Completed: true,
-		}
+		return successResult("[-] No cloud metadata service detected")
 	}
 
 	for _, p := range providers {
@@ -317,48 +291,27 @@ func cloudNetwork(provider string, timeout time.Duration) structs.CommandResult 
 		}
 	}
 
-	return structs.CommandResult{Output: sb.String(), Status: "completed", Completed: true}
+	return successResult(sb.String())
 }
 
 // --- Helper functions ---
 
 // metadataGet makes a GET request to a metadata endpoint with optional headers
 func metadataGet(url string, timeout time.Duration, headers map[string]string) string {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return ""
-	}
-	for k, v := range headers {
-		req.Header.Set(k, v)
-	}
-
-	client := &http.Client{Timeout: timeout}
-	resp, err := client.Do(req)
-	if err != nil {
-		return ""
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return ""
-	}
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, metadataMaxSize))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(body))
+	return metadataRequest("GET", url, timeout, headers, metadataMaxSize)
 }
 
 // metadataPut makes a PUT request (used for AWS IMDSv2 token)
 func metadataPut(url string, timeout time.Duration, headers map[string]string) string {
+	return metadataRequest("PUT", url, timeout, headers, 1024)
+}
+
+// metadataRequest makes an HTTP request to a metadata endpoint and returns the response body
+func metadataRequest(method, url string, timeout time.Duration, headers map[string]string, maxBody int64) string {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "PUT", url, nil)
+	req, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return ""
 	}
@@ -377,7 +330,7 @@ func metadataPut(url string, timeout time.Duration, headers map[string]string) s
 		return ""
 	}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1024))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
 		return ""
 	}

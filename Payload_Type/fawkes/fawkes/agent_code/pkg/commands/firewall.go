@@ -25,18 +25,6 @@ func (c *FirewallCommand) Description() string {
 	return "Manage Windows Firewall rules via COM API (HNetCfg.FwPolicy2)"
 }
 
-type firewallArgs struct {
-	Action     string `json:"action"`
-	Name       string `json:"name"`
-	Direction  string `json:"direction"`
-	RuleAction string `json:"rule_action"`
-	Protocol   string `json:"protocol"`
-	Port       string `json:"port"`
-	Program    string `json:"program"`
-	Filter     string `json:"filter"`
-	Enabled    string `json:"enabled"`
-}
-
 // fwIPProtocol*, fwRuleDirection*, fwAction* constants moved to command_helpers.go
 
 // Windows Firewall COM constants (profile types)
@@ -52,19 +40,11 @@ func (c *FirewallCommand) Execute(task structs.Task) structs.CommandResult {
 	var args firewallArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: list, add, delete, enable, disable, status",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: list, add, delete, enable, disable, status")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -81,11 +61,7 @@ func (c *FirewallCommand) Execute(task structs.Task) structs.CommandResult {
 	case "status":
 		return firewallStatus()
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: list, add, delete, enable, disable, status", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: list, add, delete, enable, disable, status", args.Action)
 	}
 }
 
@@ -151,11 +127,7 @@ func connectFirewall() (*firewallConnection, func(), error) {
 func firewallStatus() structs.CommandResult {
 	conn, cleanup, err := connectFirewall()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to firewall: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to firewall: %v", err)
 	}
 	defer cleanup()
 
@@ -219,22 +191,14 @@ func firewallStatus() structs.CommandResult {
 		countResult.Clear()
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // firewallList enumerates firewall rules, optionally filtered by name/direction/port.
 func firewallList(args firewallArgs) structs.CommandResult {
 	conn, cleanup, err := connectFirewall()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to firewall: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to firewall: %v", err)
 	}
 	defer cleanup()
 
@@ -354,59 +318,35 @@ func firewallList(args firewallArgs) structs.CommandResult {
 	})
 
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error enumerating rules: %v\n%s", err, sb.String()),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error enumerating rules: %v\n%s", err, sb.String())
 	}
 
 	sb.WriteString(fmt.Sprintf("\nShowing %d/%d rules", matchCount, ruleCount))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // firewallAdd creates a new firewall rule.
 func firewallAdd(args firewallArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for adding a rule",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for adding a rule")
 	}
 
 	conn, cleanup, err := connectFirewall()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to firewall: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to firewall: %v", err)
 	}
 	defer cleanup()
 
 	// Create a new FwRule COM object
 	ruleUnknown, err := oleutil.CreateObject("HNetCfg.FWRule")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating FwRule: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating FwRule: %v", err)
 	}
 	rule, err := ruleUnknown.QueryInterface(ole.IID_IDispatch)
 	ruleUnknown.Release()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying FwRule IDispatch: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying FwRule IDispatch: %v", err)
 	}
 	defer rule.Release()
 
@@ -452,11 +392,7 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 	// Add the rule to the collection
 	_, err = oleutil.CallMethod(conn.rules, "Add", rule)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error adding firewall rule: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error adding firewall rule: %v", err)
 	}
 
 	var sb strings.Builder
@@ -474,66 +410,38 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 	sb.WriteString("  Enabled:   true\n")
 	sb.WriteString("  Profiles:  All\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // firewallDelete removes a firewall rule by name.
 func firewallDelete(args firewallArgs) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required for deleting a rule",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required for deleting a rule")
 	}
 
 	conn, cleanup, err := connectFirewall()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to firewall: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to firewall: %v", err)
 	}
 	defer cleanup()
 
 	_, err = oleutil.CallMethod(conn.rules, "Remove", args.Name)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error deleting firewall rule '%s': %v", args.Name, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error deleting firewall rule '%s': %v", args.Name, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Deleted firewall rule: %s", args.Name),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Deleted firewall rule: %s", args.Name)
 }
 
 // firewallEnableDisable enables or disables a rule by name.
 func firewallEnableDisable(args firewallArgs, enable bool) structs.CommandResult {
 	if args.Name == "" {
-		return structs.CommandResult{
-			Output:    "Error: name is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: name is required")
 	}
 
 	conn, cleanup, err := connectFirewall()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to firewall: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to firewall: %v", err)
 	}
 	defer cleanup()
 
@@ -560,30 +468,18 @@ func firewallEnableDisable(args firewallArgs, enable bool) structs.CommandResult
 	})
 
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error modifying rule: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error modifying rule: %v", err)
 	}
 
 	if !found {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Rule not found: %s", args.Name),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Rule not found: %s", args.Name)
 	}
 
 	action := "Disabled"
 	if enable {
 		action = "Enabled"
 	}
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("%s firewall rule: %s", action, args.Name),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("%s firewall rule: %s", action, args.Name)
 }
 
 // Helper functions

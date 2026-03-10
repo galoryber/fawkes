@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"fawkes/pkg/rpfwd"
 	"fawkes/pkg/structs"
@@ -39,19 +38,11 @@ func (c *RpfwdCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to parse parameters: %v", err)
 	}
 
 	if rpfwdManagerInstance == nil {
-		return structs.CommandResult{
-			Output:    "rpfwd manager not initialized",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("rpfwd manager not initialized")
 	}
 
 	port := uint32(params.Port)
@@ -59,37 +50,17 @@ func (c *RpfwdCommand) Execute(task structs.Task) structs.CommandResult {
 	switch params.Action {
 	case "start":
 		if err := rpfwdManagerInstance.Start(port); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to start rpfwd on port %d: %v", port, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to start rpfwd on port %d: %v", port, err)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] Reverse port forward started — listening on 0.0.0.0:%d", port),
-			Status:    "completed",
-			Completed: true,
-		}
+		return successf("[+] Reverse port forward started — listening on 0.0.0.0:%d", port)
 
 	case "stop":
 		if err := rpfwdManagerInstance.Stop(port); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to stop rpfwd on port %d: %v", port, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to stop rpfwd on port %d: %v", port, err)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("[+] Reverse port forward on port %d stopped", port),
-			Status:    "completed",
-			Completed: true,
-		}
+		return successf("[+] Reverse port forward on port %d stopped", port)
 
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use 'start' or 'stop')", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use 'start' or 'stop')", params.Action)
 	}
 }

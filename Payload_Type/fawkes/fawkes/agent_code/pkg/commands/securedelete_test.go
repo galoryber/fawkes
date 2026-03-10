@@ -143,6 +143,22 @@ func TestSecureDeleteEmptyFile(t *testing.T) {
 	}
 }
 
+func TestSecureRemove(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "secure_remove_test.txt")
+	os.WriteFile(tmp, []byte("sensitive temp data"), 0644)
+
+	secureRemove(tmp)
+
+	if _, err := os.Stat(tmp); !os.IsNotExist(err) {
+		t.Error("file should not exist after secureRemove")
+	}
+}
+
+func TestSecureRemoveNonexistent(t *testing.T) {
+	// Should not panic on nonexistent path
+	secureRemove(filepath.Join(t.TempDir(), "does_not_exist"))
+}
+
 func TestSecureDeleteFileFunction(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "func_test.txt")
 	original := []byte("original content that should be overwritten")

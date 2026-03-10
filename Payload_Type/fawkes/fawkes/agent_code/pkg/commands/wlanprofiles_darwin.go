@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"os/exec"
 	"strings"
 )
 
@@ -9,10 +8,10 @@ func getWlanProfiles() ([]wlanProfile, error) {
 	var profiles []wlanProfile
 
 	// List known networks using networksetup
-	out, err := exec.Command("/usr/sbin/networksetup", "-listpreferredwirelessnetworks", "en0").Output()
+	out, err := execCmdTimeoutOutput("/usr/sbin/networksetup", "-listpreferredwirelessnetworks", "en0")
 	if err != nil {
 		// Try en1 as fallback
-		out, err = exec.Command("/usr/sbin/networksetup", "-listpreferredwirelessnetworks", "en1").Output()
+		out, err = execCmdTimeoutOutput("/usr/sbin/networksetup", "-listpreferredwirelessnetworks", "en1")
 		if err != nil {
 			return nil, nil
 		}
@@ -29,12 +28,12 @@ func getWlanProfiles() ([]wlanProfile, error) {
 
 		// Try to get the password from keychain
 		key := ""
-		keyOut, err := exec.Command("/usr/bin/security",
+		keyOut, err := execCmdTimeoutOutput("/usr/bin/security",
 			"find-generic-password",
 			"-D", "AirPort network password",
 			"-a", ssid,
 			"-w",
-		).Output()
+		)
 		if err == nil {
 			key = strings.TrimSpace(string(keyOut))
 		}

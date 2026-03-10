@@ -5,7 +5,6 @@ package commands
 
 import (
 	"fmt"
-	"os/exec"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -27,9 +26,8 @@ func executeRunCommand(cmdLine string) (string, error) {
 		if blockDLLsEnabled || ppid > 0 {
 			return runWithExtendedAttrs("cmd.exe /c "+cmdLine, ppid, blockDLLsEnabled)
 		}
-		// No impersonation, no BlockDLLs, no PPID — use standard exec.Command
-		cmd := exec.Command("cmd.exe", "/c", cmdLine)
-		output, err := cmd.CombinedOutput()
+		// No impersonation, no BlockDLLs, no PPID — use standard exec with timeout
+		output, err := execCmdTimeout("cmd.exe", "/c", cmdLine)
 		return string(output), err
 	}
 
@@ -93,9 +91,8 @@ func runWithExtendedAttrs(cmdLine string, ppid int, blockDLLs bool) (string, err
 				// Retry with only BlockDLLs
 				return runWithExtendedAttrs(cmdLine, 0, true)
 			}
-			// No attributes needed, fall back to exec.Command
-			cmd := exec.Command("cmd.exe", "/c", cmdLine)
-			output, execErr := cmd.CombinedOutput()
+			// No attributes needed, fall back to exec with timeout
+			output, execErr := execCmdTimeout("cmd.exe", "/c", cmdLine)
 			return string(output), execErr
 		}
 		parentHandle = hParent

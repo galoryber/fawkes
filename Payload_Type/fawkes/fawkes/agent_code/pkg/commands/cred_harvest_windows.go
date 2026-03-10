@@ -22,11 +22,7 @@ func credHarvestDispatch(args credHarvestArgs) structs.CommandResult {
 	case "all":
 		return credAllWindows(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: cloud, configs, windows, all", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: cloud, configs, windows, all", args.Action)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -112,7 +113,7 @@ func (c *WatchDirCommand) Execute(task structs.Task) structs.CommandResult {
 func scanDirectory(root string, maxDepth int, pattern string, doHash bool) map[string]fileSnapshot {
 	result := make(map[string]fileSnapshot)
 
-	_ = filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // skip inaccessible files
 		}
@@ -129,27 +130,33 @@ func scanDirectory(root string, maxDepth int, pattern string, doHash bool) map[s
 		// For directories, depth = number of components (a/b = depth 2)
 		// For files, depth = number of parent dirs (a/b/file.txt = depth 2)
 		dirDepth := len(parts)
-		if !info.IsDir() {
+		if !d.IsDir() {
 			dirDepth = len(parts) - 1
 		}
 		if dirDepth > maxDepth {
-			if info.IsDir() {
+			if d.IsDir() {
 				return filepath.SkipDir
 			}
 			return nil
 		}
 
 		// Skip directories — we only track files
-		if info.IsDir() {
+		if d.IsDir() {
 			return nil
 		}
 
 		// Apply pattern filter
 		if pattern != "" {
-			matched, matchErr := filepath.Match(pattern, info.Name())
+			matched, matchErr := filepath.Match(pattern, filepath.Base(path))
 			if matchErr != nil || !matched {
 				return nil
 			}
+		}
+
+		// Get full file info only for entries passing all filters
+		info, infoErr := d.Info()
+		if infoErr != nil {
+			return nil
 		}
 
 		snap := fileSnapshot{
@@ -268,11 +275,7 @@ func watchDirFormatResult(targetPath string, events []watchEvent, startTime time
 
 	if len(events) == 0 {
 		sb.WriteString("\nNo changes detected.")
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "completed",
-			Completed: true,
-		}
+		return successResult(sb.String())
 	}
 
 	// Count by type
@@ -301,9 +304,5 @@ func watchDirFormatResult(targetPath string, events []watchEvent, startTime time
 		sb.WriteString(line + "\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "completed",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }

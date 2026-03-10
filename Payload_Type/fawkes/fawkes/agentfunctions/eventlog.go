@@ -9,11 +9,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "eventlog",
-		Description:         "Manage Windows Event Logs — list channels, query events, clear logs, get channel info. Uses wevtapi.dll (modern Event Log API).",
-		HelpString:          "eventlog -action <list|query|clear|info> [-channel <name>] [-event_id <id>] [-filter <xpath|keyword>] [-count <max>]",
+		Description:         "Manage Windows Event Logs — list, query, clear, info, enable, disable channels. Uses wevtapi.dll (modern Event Log API).",
+		HelpString:          "eventlog -action <list|query|clear|info|enable|disable> [-channel <name>] [-event_id <id>] [-filter <xpath|keyword>] [-count <max>]",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1070.001"}, // Indicator Removal: Clear Windows Event Logs
+		MitreAttackMappings: []string{"T1070.001", "T1562.002"}, // T1070.001: Clear Event Logs, T1562.002: Disable Windows Event Logging
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
@@ -23,9 +23,9 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"list", "query", "clear", "info"},
+				Choices:       []string{"list", "query", "clear", "info", "enable", "disable"},
 				DefaultValue:  "list",
-				Description:   "Action to perform: list channels, query events, clear a log, or get log info",
+				Description:   "Action to perform: list, query, clear, info, enable, or disable channels",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -112,8 +112,19 @@ func init() {
 				display += fmt.Sprintf(", channel: %s", channel)
 			}
 			response.DisplayParams = &display
-			if action == "clear" && channel != "" {
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("EvtClearLog(%s) — Windows Event Log cleared", channel))
+			switch action {
+			case "clear":
+				if channel != "" {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("EvtClearLog(%s) — Windows Event Log cleared", channel))
+				}
+			case "enable":
+				if channel != "" {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("EvtSetChannelConfigProperty(%s, Enabled=true)", channel))
+				}
+			case "disable":
+				if channel != "" {
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("EvtSetChannelConfigProperty(%s, Enabled=false)", channel))
+				}
 			}
 			return response
 		},

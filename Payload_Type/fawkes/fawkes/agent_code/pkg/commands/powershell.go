@@ -6,7 +6,6 @@ package commands
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os/exec"
 	"strings"
 	"time"
@@ -47,20 +46,12 @@ func parsePowershellParams(params string) (string, bool) {
 // Execute executes the powershell command
 func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: No command specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No command specified")
 	}
 
 	command, encoded := parsePowershellParams(task.Params)
 	if command == "" {
-		return structs.CommandResult{
-			Output:    "Error: No command specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No command specified")
 	}
 
 	opts := DefaultPSOptions()
@@ -76,27 +67,15 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		if err != nil {
 			outputStr := strings.TrimSpace(output)
 			if outputStr != "" {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("%s\nError: %v", outputStr, err),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("%s\nError: %v", outputStr, err)
 			}
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error executing PowerShell: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error executing PowerShell: %v", err)
 		}
 		outputStr := strings.TrimSpace(output)
 		if outputStr == "" {
 			outputStr = "Command executed successfully (no output)"
 		}
-		return structs.CommandResult{
-			Output:    outputStr,
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(outputStr)
 	}
 
 	// Standard path — no impersonation
@@ -108,27 +87,15 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		if err != nil {
 			outputStr := strings.TrimSpace(output)
 			if outputStr != "" {
-				return structs.CommandResult{
-					Output:    fmt.Sprintf("%s\nError: %v", outputStr, err),
-					Status:    "error",
-					Completed: true,
-				}
+				return errorf("%s\nError: %v", outputStr, err)
 			}
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error executing PowerShell: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error executing PowerShell: %v", err)
 		}
 		outputStr := strings.TrimSpace(output)
 		if outputStr == "" {
 			outputStr = "Command executed successfully (no output)"
 		}
-		return structs.CommandResult{
-			Output:    outputStr,
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(outputStr)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -147,24 +114,12 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 	if err != nil {
 		outputStr := string(output)
 		if ctx.Err() == context.DeadlineExceeded {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("PowerShell command timed out after 5 minutes\n%s", outputStr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("PowerShell command timed out after 5 minutes\n%s", outputStr)
 		}
 		if outputStr != "" {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("%s\nError: %v", outputStr, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("%s\nError: %v", outputStr, err)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error executing PowerShell: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error executing PowerShell: %v", err)
 	}
 
 	outputStr := strings.TrimSpace(string(output))
@@ -172,9 +127,5 @@ func (c *PowershellCommand) Execute(task structs.Task) structs.CommandResult {
 		outputStr = "Command executed successfully (no output)"
 	}
 
-	return structs.CommandResult{
-		Output:    outputStr,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(outputStr)
 }

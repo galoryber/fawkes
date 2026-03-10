@@ -180,6 +180,9 @@ func readTCCDatabase(dbPath, serviceFilter, source string) ([]tccEntry, error) {
 		}
 		entries = append(entries, e)
 	}
+	if err := rows.Err(); err != nil {
+		return entries, fmt.Errorf("row iteration error: %v", err)
+	}
 
 	return entries, nil
 }

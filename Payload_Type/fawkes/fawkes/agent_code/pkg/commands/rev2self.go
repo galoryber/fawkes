@@ -33,21 +33,13 @@ func (c *Rev2SelfCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Revert to original token (Xenon Identity.c lines 35-52)
 	if err := RevertCurrentToken(); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("RevertToSelf failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("RevertToSelf failed: %v", err)
 	}
 
 	// Get new identity after reverting
 	newIdentity, err := GetCurrentIdentity()
 	if err != nil {
-		return structs.CommandResult{
-			Output:    "Reverted but failed to get current identity",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("Reverted but failed to get current identity")
 	}
 
 	// Format output
@@ -62,9 +54,5 @@ func (c *Rev2SelfCommand) Execute(task structs.Task) structs.CommandResult {
 		output = fmt.Sprintf("Not impersonating. Current identity: %s", newIdentity)
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(output)
 }

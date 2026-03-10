@@ -21,11 +21,7 @@ func credHarvestDispatch(args credHarvestArgs) structs.CommandResult {
 	case "all":
 		return credAll(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: shadow, cloud, configs, all", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: shadow, cloud, configs, all", args.Action)
 	}
 }
 

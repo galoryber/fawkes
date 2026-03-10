@@ -6,7 +6,6 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -26,7 +25,7 @@ func (c *DefenderCommand) Name() string {
 }
 
 func (c *DefenderCommand) Description() string {
-	return "Query Windows Defender status, manage exclusions, and view threat history"
+	return "Manage Windows Defender — status, exclusions, threats, enable/disable real-time protection"
 }
 
 type defenderArgs struct {
@@ -39,19 +38,11 @@ func (c *DefenderCommand) Execute(task structs.Task) structs.CommandResult {
 	var args defenderArgs
 
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: status, exclusions, add-exclusion, remove-exclusion, threats",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: status, exclusions, add-exclusion, remove-exclusion, threats, enable, disable")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	switch strings.ToLower(args.Action) {
@@ -65,12 +56,12 @@ func (c *DefenderCommand) Execute(task structs.Task) structs.CommandResult {
 		return defenderRemoveExclusion(args)
 	case "threats":
 		return defenderThreats()
+	case "enable":
+		return defenderSetRealtime(true)
+	case "disable":
+		return defenderSetRealtime(false)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: status, exclusions, add-exclusion, remove-exclusion, threats", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: status, exclusions, add-exclusion, remove-exclusion, threats, enable, disable", args.Action)
 	}
 }
 
@@ -219,11 +210,7 @@ func defenderStatus() structs.CommandResult {
 		15*time.Second,
 	)
 	if err == nil && wmiResult != "" && wmiResult != "(no results)" {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Windows Defender Status:\n\n%s\n\n--- Registry Details ---\n%s", wmiResult, regResult.Output),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Windows Defender Status:\n\n%s\n\n--- Registry Details ---\n%s", wmiResult, regResult.Output)
 	}
 
 	// WMI failed or timed out — return registry results
@@ -283,11 +270,7 @@ func defenderStatusRegistry() structs.CommandResult {
 		defKey.Close()
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // defenderExclusions reads all Defender exclusions from the registry.
@@ -356,22 +339,14 @@ func defenderExclusions() structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("\n  Total: %d exclusions\n", totalExclusions))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 // defenderAddExclusion adds a path, process, or extension exclusion.
 // Uses PowerShell Add-MpPreference cmdlet which works with Tamper Protection.
 func defenderAddExclusion(args defenderArgs) structs.CommandResult {
 	if args.Value == "" {
-		return structs.CommandResult{
-			Output:    "Error: value is required (path, process name, or extension)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: value is required (path, process name, or extension)")
 	}
 
 	exType := strings.ToLower(args.Type)
@@ -388,11 +363,7 @@ func defenderAddExclusion(args defenderArgs) structs.CommandResult {
 	case "extension":
 		paramName = "ExclusionExtension"
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown exclusion type: %s\nAvailable: path, process, extension", exType),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown exclusion type: %s\nAvailable: path, process, extension", exType)
 	}
 
 	// Use PowerShell Add-MpPreference — works through official Defender API
@@ -400,29 +371,17 @@ func defenderAddExclusion(args defenderArgs) structs.CommandResult {
 	psCmd := fmt.Sprintf("Add-MpPreference -%s '%s'", paramName, strings.ReplaceAll(args.Value, "'", "''"))
 	output, err := defenderRunPowerShell(psCmd)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error adding exclusion: %v\n%s\nRequires administrator privileges.", err, output),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error adding exclusion: %v\n%s\nRequires administrator privileges.", err, output)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Added Defender %s exclusion: %s", exType, args.Value),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Added Defender %s exclusion: %s", exType, args.Value)
 }
 
 // defenderRemoveExclusion removes a path, process, or extension exclusion.
 // Uses PowerShell Remove-MpPreference cmdlet which works with Tamper Protection.
 func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 	if args.Value == "" {
-		return structs.CommandResult{
-			Output:    "Error: value is required (path, process name, or extension)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: value is required (path, process name, or extension)")
 	}
 
 	exType := strings.ToLower(args.Type)
@@ -439,36 +398,59 @@ func defenderRemoveExclusion(args defenderArgs) structs.CommandResult {
 	case "extension":
 		paramName = "ExclusionExtension"
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown exclusion type: %s\nAvailable: path, process, extension", exType),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown exclusion type: %s\nAvailable: path, process, extension", exType)
 	}
 
 	// Use PowerShell Remove-MpPreference — works through official Defender API
 	psCmd := fmt.Sprintf("Remove-MpPreference -%s '%s'", paramName, strings.ReplaceAll(args.Value, "'", "''"))
 	output, err := defenderRunPowerShell(psCmd)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error removing exclusion: %v\n%s\nRequires administrator privileges.", err, output),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error removing exclusion: %v\n%s\nRequires administrator privileges.", err, output)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Removed Defender %s exclusion: %s", exType, args.Value),
-		Status:    "success",
-		Completed: true,
+	return successf("Removed Defender %s exclusion: %s", exType, args.Value)
+}
+
+// defenderSetRealtime enables or disables Windows Defender real-time protection.
+// Uses Set-MpPreference via PowerShell. Requires administrator privileges.
+// May fail if Tamper Protection is enabled (Windows 10 1903+).
+func defenderSetRealtime(enable bool) structs.CommandResult {
+	var psCmd string
+	if enable {
+		psCmd = "Set-MpPreference -DisableRealtimeMonitoring $false"
+	} else {
+		psCmd = "Set-MpPreference -DisableRealtimeMonitoring $true"
 	}
+
+	output, err := defenderRunPowerShell(psCmd)
+	if err != nil {
+		errMsg := fmt.Sprintf("Error: %v", err)
+		if output != "" {
+			errMsg += fmt.Sprintf("\nOutput: %s", output)
+		}
+		if strings.Contains(errMsg, "denied") || strings.Contains(errMsg, "Tamper") {
+			errMsg += "\nNote: Tamper Protection may be blocking this change. Disable it via Windows Security UI or Group Policy first."
+		}
+		return errorResult(errMsg)
+	}
+
+	action := "Enabled"
+	if !enable {
+		action = "Disabled"
+	}
+	result := fmt.Sprintf("%s Windows Defender real-time protection", action)
+	if output != "" {
+		result += fmt.Sprintf("\n%s", output)
+	}
+
+	return successResult(result)
 }
 
 // defenderRunPowerShell runs a PowerShell command for Defender management.
 func defenderRunPowerShell(psCmd string) (string, error) {
 	args := BuildPSArgs(psCmd, InternalPSOptions())
-	cmd := exec.Command("powershell.exe", args...)
-	output, err := cmd.CombinedOutput()
+	output, err := execCmdTimeout("powershell.exe", args...)
+
 	return strings.TrimSpace(string(output)), err
 }
 
@@ -476,24 +458,12 @@ func defenderRunPowerShell(psCmd string) (string, error) {
 func defenderThreats() structs.CommandResult {
 	result, err := defenderWMIQueryWithTimeout("SELECT * FROM MSFT_MpThreatDetection", 15*time.Second)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error querying threats: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error querying threats: %v", err)
 	}
 
 	if result == "(no results)" {
-		return structs.CommandResult{
-			Output:    "No recent threat detections found.",
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult("No recent threat detections found.")
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Recent Threat Detections:\n\n%s", result),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Recent Threat Detections:\n\n%s", result)
 }

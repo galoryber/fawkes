@@ -57,26 +57,14 @@ func (c *LsCommand) Execute(task structs.Task) structs.CommandResult {
 		// Return JSON for file browser
 		jsonBytes, err := json.Marshal(result)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Failed to marshal ls result: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Failed to marshal ls result: %v", err)
 		}
 
-		return structs.CommandResult{
-			Output:    string(jsonBytes),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(string(jsonBytes))
 	}
 
 	// Return formatted text output
-	return structs.CommandResult{
-		Output:    formatLsOutput(result),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(formatLsOutput(result))
 }
 
 func performLs(path string) structs.FileListing {

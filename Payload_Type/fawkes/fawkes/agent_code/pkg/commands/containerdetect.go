@@ -52,11 +52,7 @@ func (c *ContainerDetectCommand) Execute(task structs.Task) structs.CommandResul
 		sb.WriteString(fmt.Sprintf("%-35s %-12s %s\n", e.Check, e.Result, e.Details))
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func containerDetectLinux() ([]containerEvidence, string) {

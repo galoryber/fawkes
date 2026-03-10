@@ -34,31 +34,19 @@ type domainPolicyArgs struct {
 
 func (c *DomainPolicyCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Use -action <password|lockout|fgpp|all> -server <DC> -username <user@domain> -password <pass>",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Use -action <password|lockout|fgpp|all> -server <DC> -username <user@domain> -password <pass>")
 	}
 
 	var args domainPolicyArgs
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if args.Action == "" {
 		args.Action = "all"
 	}
 	if args.Server == "" {
-		return structs.CommandResult{
-			Output:    "Error: server parameter required (domain controller IP or hostname)",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: server parameter required (domain controller IP or hostname)")
 	}
 
 	if args.Port <= 0 {
@@ -72,30 +60,18 @@ func (c *DomainPolicyCommand) Execute(task structs.Task) structs.CommandResult {
 	// Connect
 	conn, err := domainPolicyConnect(args)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error connecting to %s:%d: %v", args.Server, args.Port, err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error connecting to %s:%d: %v", args.Server, args.Port, err)
 	}
 	defer conn.Close()
 
 	// Bind
 	if args.Username != "" && args.Password != "" {
 		if err := conn.Bind(args.Username, args.Password); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error binding: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error binding: %v", err)
 		}
 	} else {
 		if err := conn.UnauthenticatedBind(""); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error anonymous bind: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error anonymous bind: %v", err)
 		}
 	}
 
@@ -104,11 +80,7 @@ func (c *DomainPolicyCommand) Execute(task structs.Task) structs.CommandResult {
 	if baseDN == "" {
 		baseDN, err = domainPolicyDetectBaseDN(conn)
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error detecting base DN: %v. Specify -base_dn manually.", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error detecting base DN: %v. Specify -base_dn manually.", err)
 		}
 	}
 
@@ -127,18 +99,10 @@ func (c *DomainPolicyCommand) Execute(task structs.Task) structs.CommandResult {
 		sb.WriteString("\n")
 		sb.WriteString(queryFGPPs(conn, baseDN))
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: password, lockout, fgpp, all", action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: password, lockout, fgpp, all", action)
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func domainPolicyConnect(args domainPolicyArgs) (*ldap.Conn, error) {
@@ -248,10 +212,12 @@ func queryDefaultPolicy(conn *ldap.Conn, baseDN string, section string) string {
 					safeAttempts = 1
 				}
 				windowDur := parseADInterval(window)
-				sb.WriteString(fmt.Sprintf("\n    [+] Spray Recommendation:  max %d attempts per %s window\n", safeAttempts, formatDuration(windowDur)))
 				if windowDur > 0 {
+					sb.WriteString(fmt.Sprintf("\n    [+] Spray Recommendation:  max %d attempts per %s window\n", safeAttempts, formatDuration(windowDur)))
 					delayMs := int(windowDur.Milliseconds()) / safeAttempts
 					sb.WriteString(fmt.Sprintf("    [+] Suggested Delay:       %dms between attempts\n", delayMs))
+				} else {
+					sb.WriteString(fmt.Sprintf("\n    [+] Spray Recommendation:  max %d attempts (observation window not configured)\n", safeAttempts))
 				}
 			}
 		} else if threshold == "0" {

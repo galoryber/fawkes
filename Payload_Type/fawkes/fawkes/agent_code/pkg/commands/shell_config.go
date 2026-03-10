@@ -66,11 +66,7 @@ var systemConfigFiles = []string{
 
 func (c *ShellConfigCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required. Actions: history, list, read, inject, remove",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required. Actions: history, list, read, inject, remove")
 	}
 
 	var args shellConfigArgs
@@ -98,11 +94,7 @@ func (c *ShellConfigCommand) Execute(task structs.Task) structs.CommandResult {
 	case "remove":
 		return shellRemove(args)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s\nAvailable: history, list, read, inject, remove", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s\nAvailable: history, list, read, inject, remove", args.Action)
 	}
 }
 
@@ -124,10 +116,7 @@ func getHomeDir(targetUser string) (string, error) {
 func shellHistory(args shellConfigArgs) structs.CommandResult {
 	homeDir, err := getHomeDir(args.User)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	maxLines := args.Lines
@@ -163,27 +152,16 @@ func shellHistory(args shellConfigArgs) structs.CommandResult {
 	}
 
 	if found == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("No shell history files found in %s", homeDir),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("No shell history files found in %s", homeDir)
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func shellList(args shellConfigArgs) structs.CommandResult {
 	homeDir, err := getHomeDir(args.User)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error: %v", err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error: %v", err)
 	}
 
 	var sb strings.Builder
@@ -242,19 +220,12 @@ func shellList(args shellConfigArgs) structs.CommandResult {
 		sb.WriteString("  (none found)\n")
 	}
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func shellRead(args shellConfigArgs) structs.CommandResult {
 	if args.File == "" {
-		return structs.CommandResult{
-			Output: "Error: file parameter required (e.g., .bashrc, .zshrc, /etc/profile)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: file parameter required (e.g., .bashrc, .zshrc, /etc/profile)")
 	}
 
 	path := args.File
@@ -262,51 +233,32 @@ func shellRead(args shellConfigArgs) structs.CommandResult {
 	if !filepath.IsAbs(path) {
 		homeDir, err := getHomeDir(args.User)
 		if err != nil {
-			return structs.CommandResult{
-				Output: fmt.Sprintf("Error: %v", err),
-				Status: "error", Completed: true,
-			}
+			return errorf("Error: %v", err)
 		}
 		path = filepath.Join(homeDir, path)
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error reading %s: %v", path, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error reading %s: %v", path, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("=== %s (%d bytes) ===\n%s", path, len(content), string(content)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("=== %s (%d bytes) ===\n%s", path, len(content), string(content))
 }
 
 func shellInject(args shellConfigArgs) structs.CommandResult {
 	if args.File == "" {
-		return structs.CommandResult{
-			Output: "Error: file parameter required (e.g., .bashrc, .zshrc, .profile)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: file parameter required (e.g., .bashrc, .zshrc, .profile)")
 	}
 	if args.Line == "" {
-		return structs.CommandResult{
-			Output: "Error: line parameter required (command to inject)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: line parameter required (command to inject)")
 	}
 
 	path := args.File
 	if !filepath.IsAbs(path) {
 		homeDir, err := getHomeDir(args.User)
 		if err != nil {
-			return structs.CommandResult{
-				Output: fmt.Sprintf("Error: %v", err),
-				Status: "error", Completed: true,
-			}
+			return errorf("Error: %v", err)
 		}
 		path = filepath.Join(homeDir, path)
 	}
@@ -320,20 +272,13 @@ func shellInject(args shellConfigArgs) structs.CommandResult {
 	// Read existing content to check if already present
 	existing, _ := os.ReadFile(path)
 	if strings.Contains(string(existing), line) {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Line already exists in %s — skipping injection", path),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Line already exists in %s — skipping injection", path)
 	}
 
 	// Append to file
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error opening %s: %v", path, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error opening %s: %v", path, err)
 	}
 	defer f.Close()
 
@@ -344,51 +289,32 @@ func shellInject(args shellConfigArgs) structs.CommandResult {
 	line = line + "\n"
 
 	if _, err := f.WriteString(line); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error writing to %s: %v", path, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error writing to %s: %v", path, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Injected into %s:\n  %s", path, strings.TrimSpace(line)),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Injected into %s:\n  %s", path, strings.TrimSpace(line))
 }
 
 func shellRemove(args shellConfigArgs) structs.CommandResult {
 	if args.File == "" {
-		return structs.CommandResult{
-			Output: "Error: file parameter required",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: file parameter required")
 	}
 	if args.Line == "" {
-		return structs.CommandResult{
-			Output: "Error: line parameter required (exact line to remove)",
-			Status: "error", Completed: true,
-		}
+		return errorResult("Error: line parameter required (exact line to remove)")
 	}
 
 	path := args.File
 	if !filepath.IsAbs(path) {
 		homeDir, err := getHomeDir(args.User)
 		if err != nil {
-			return structs.CommandResult{
-				Output: fmt.Sprintf("Error: %v", err),
-				Status: "error", Completed: true,
-			}
+			return errorf("Error: %v", err)
 		}
 		path = filepath.Join(homeDir, path)
 	}
 
 	content, err := os.ReadFile(path)
 	if err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error reading %s: %v", path, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error reading %s: %v", path, err)
 	}
 
 	lines := strings.Split(string(content), "\n")
@@ -404,23 +330,12 @@ func shellRemove(args shellConfigArgs) structs.CommandResult {
 	}
 
 	if removed == 0 {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Line not found in %s", path),
-			Status:    "success",
-			Completed: true,
-		}
+		return successf("Line not found in %s", path)
 	}
 
 	if err := os.WriteFile(path, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
-		return structs.CommandResult{
-			Output: fmt.Sprintf("Error writing %s: %v", path, err),
-			Status: "error", Completed: true,
-		}
+		return errorf("Error writing %s: %v", path, err)
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Removed %d line(s) from %s", removed, path),
-		Status:    "success",
-		Completed: true,
-	}
+	return successf("Removed %d line(s) from %s", removed, path)
 }

