@@ -14,15 +14,15 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "service_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Manage services — Windows via SCM API, Linux via systemctl. Query, start, stop, create, delete, list, enable, disable.",
+		Description:         "Manage services — Windows via SCM API, Linux via systemctl, macOS via launchctl. Query, start, stop, create, delete, list, enable, disable.",
 		HelpString:          "service -action <query|start|stop|create|delete|list|enable|disable> -name <service_name> [-binpath <path>] [-display <name>] [-start <auto|demand|disabled>]",
-		Version:             2,
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1543.003", "T1562.001"},
+		MitreAttackMappings: []string{"T1543.003", "T1543.004", "T1562.001"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -45,7 +45,7 @@ func init() {
 				ModalDisplayName: "Service Name",
 				CLIName:          "name",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Name of the Windows service (e.g., Spooler, wuauserv)",
+				Description:      "Service name/label (Windows: Spooler; Linux: sshd; macOS: com.apple.ssh)",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -131,6 +131,22 @@ func init() {
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl show %s.service", name))
 				case "start", "stop", "enable", "disable":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl %s %s.service", action, name))
+				}
+			} else if taskData.Callback.OS == "macOS" {
+				// macOS: launchctl artifacts
+				switch action {
+				case "list":
+					createArtifact(taskData.Task.ID, "Process Create", "launchctl list")
+				case "query":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl print system/%s", name))
+				case "start":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl kickstart system/%s", name))
+				case "stop":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl kill SIGTERM system/%s", name))
+				case "enable":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl enable system/%s", name))
+				case "disable":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl disable system/%s", name))
 				}
 			} else {
 				// Windows: SCM API artifacts
