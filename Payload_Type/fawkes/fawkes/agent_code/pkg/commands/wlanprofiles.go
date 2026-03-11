@@ -77,5 +77,10 @@ func (c *WlanProfilesCommand) Execute(task structs.Task) structs.CommandResult {
 			p.Source))
 	}
 
+	// Opsec: zero WiFi keys from profile structs after output is built
+	for i := range profiles {
+		structs.ZeroString(&profiles[i].Key)
+	}
+
 	return successResult(sb.String())
 }
