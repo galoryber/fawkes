@@ -106,21 +106,22 @@ func (c *CoerceCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Build credential
 	var cred sspcred.Credential
+	authMethod := "password"
 	if args.Hash != "" {
+		authMethod = "PTH"
 		hash := args.Hash
 		if parts := strings.SplitN(hash, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
 			hash = parts[1]
 		}
 		cred = sspcred.NewFromNTHash(credUser, hash)
+		structs.ZeroString(&hash)
 	} else {
 		cred = sspcred.NewFromPassword(credUser, args.Password)
 	}
+	structs.ZeroString(&args.Password)
+	structs.ZeroString(&args.Hash)
 
 	var sb strings.Builder
-	authMethod := "password"
-	if args.Hash != "" {
-		authMethod = "PTH"
-	}
 	sb.WriteString(fmt.Sprintf("[*] NTLM coercion against %s → %s (%s)\n", args.Server, args.Listener, authMethod))
 	sb.WriteString(fmt.Sprintf("[*] Credentials: %s\n", credUser))
 	sb.WriteString(strings.Repeat("-", 60) + "\n")

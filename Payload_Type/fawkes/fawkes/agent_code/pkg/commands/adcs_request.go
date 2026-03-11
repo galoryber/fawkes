@@ -121,9 +121,12 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 			hash = parts[1]
 		}
 		cred = sspcred.NewFromNTHash(credUser, hash)
+		structs.ZeroString(&hash)
 	} else {
 		cred = sspcred.NewFromPassword(credUser, args.Password)
 	}
+	structs.ZeroString(&args.Password)
+	structs.ZeroString(&args.Hash)
 
 	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background()),
 		time.Duration(args.Timeout)*time.Second)
@@ -156,15 +159,18 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 				Type:  "CERTIFICATE",
 				Bytes: resp.EncodedCert.Buffer,
 			})
+			keyDER := x509.MarshalPKCS1PrivateKey(key)
 			keyPEM := pem.EncodeToMemory(&pem.Block{
 				Type:  "RSA PRIVATE KEY",
-				Bytes: x509.MarshalPKCS1PrivateKey(key),
+				Bytes: keyDER,
 			})
+			structs.ZeroBytes(keyDER)
 
 			sb.WriteString("\n--- ISSUED CERTIFICATE ---\n")
 			sb.Write(certPEM)
 			sb.WriteString("\n--- PRIVATE KEY ---\n")
 			sb.Write(keyPEM)
+			structs.ZeroBytes(keyPEM)
 
 			// Parse cert for summary
 			if cert, err := x509.ParseCertificate(resp.EncodedCert.Buffer); err == nil {

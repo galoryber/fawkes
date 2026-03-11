@@ -437,9 +437,12 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 				hash = parts[1]
 			}
 			cred = sspcred.NewFromNTHash(credUser, hash)
+			structs.ZeroString(&hash)
 		} else {
 			cred = sspcred.NewFromPassword(credUser, args.Password)
 		}
+		structs.ZeroString(&args.Password)
+		structs.ZeroString(&args.Hash)
 
 		timeout := args.Timeout
 		if timeout <= 0 {
