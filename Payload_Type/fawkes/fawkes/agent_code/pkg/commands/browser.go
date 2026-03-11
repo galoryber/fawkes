@@ -197,7 +197,9 @@ func decryptPassword(encryptedPassword []byte, key []byte) (string, error) {
 			return "", fmt.Errorf("GCM decrypt: %w", err)
 		}
 
-		return string(plaintext), nil
+		result := string(plaintext)
+		structs.ZeroBytes(plaintext)
+		return result, nil
 	}
 
 	// Legacy DPAPI-only encryption (no v10/v11 prefix)
@@ -205,7 +207,9 @@ func decryptPassword(encryptedPassword []byte, key []byte) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("DPAPI decrypt: %w", err)
 	}
-	return string(plaintext), nil
+	result := string(plaintext)
+	structs.ZeroBytes(plaintext)
+	return result, nil
 }
 
 // copyFile copies src to dst for safe reading of locked databases.

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode/utf16"
+
+	"fawkes/pkg/structs"
 )
 
 // lsaCachedCred holds parsed cached domain credential information.
@@ -85,14 +87,17 @@ func lsaDecryptSecret(data, lsaKey []byte) ([]byte, error) {
 
 	// LSA_SECRET_BLOB: length(4) + unknown(12) + secret(rest)
 	if len(plaintext) < 16 {
+		structs.ZeroBytes(plaintext)
 		return nil, fmt.Errorf("decrypted blob too short")
 	}
 
 	secretLen := binary.LittleEndian.Uint32(plaintext[0:4])
-	secret := plaintext[16:]
+	secret := make([]byte, len(plaintext[16:]))
+	copy(secret, plaintext[16:])
 	if secretLen > 0 && int(secretLen) < len(secret) {
 		secret = secret[:secretLen]
 	}
+	structs.ZeroBytes(plaintext)
 
 	return secret, nil
 }
@@ -248,6 +253,7 @@ func lsaParseCachedCred(data, nlkm []byte, globalIterCount uint32) (*lsaCachedCr
 	mode := cipher.NewCBCDecrypter(block, iv)
 	plaintext := make([]byte, len(encryptedData))
 	mode.CryptBlocks(plaintext, encryptedData)
+	defer structs.ZeroBytes(plaintext)
 
 	// Decrypted layout:
 	// MSCacheV2Hash(16) + username(userNameLen) + pad4 + domain(domainNameLen) + ...
