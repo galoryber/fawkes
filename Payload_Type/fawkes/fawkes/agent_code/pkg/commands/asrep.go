@@ -46,6 +46,7 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
+	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" || args.Username == "" || args.Password == "" {
 		return errorResult("Error: server, username, and password are required. Username should be in UPN format (user@domain.local)")

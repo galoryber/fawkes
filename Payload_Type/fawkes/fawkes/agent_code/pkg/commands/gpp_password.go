@@ -60,6 +60,7 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
+	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" {
 		return errorResult("Error: server (domain controller) is required")
