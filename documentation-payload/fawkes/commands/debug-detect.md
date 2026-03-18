@@ -30,11 +30,14 @@ Detect attached debuggers, analysis tools, and instrumentation. Runs multiple pl
 | Process Status | /proc/self/status (Seccomp, CapEff) | Sandbox/container restrictions, zero capabilities |
 | VM/Sandbox Detection | /proc/cpuinfo, DMI, /.dockerenv | Hypervisor flag, VirtualBox/VMware/KVM/Xen, Docker/container |
 
-### macOS (2 checks)
+### macOS (5 checks)
 | Check | Method | Detects |
 |-------|--------|---------|
 | sysctl P_TRACED | kern.proc.pid sysctl | Debugger attached via ptrace |
 | DYLD_INSERT_LIBRARIES | Environment variable | Library injection |
+| VM Detection | sysctl (kern.hv_vmm_present, hw.model, CPU brand) | VMware, Parallels, VirtualBox, QEMU, UTM, hypervisor |
+| Security Products | LaunchDaemon plists + SystemExtensions | CrowdStrike, SentinelOne, Defender, Carbon Black, Cortex XDR, Elastic, JAMF, osquery, Santa, etc. |
+| Sandbox/Analysis Environment | Environment variables | App Sandbox, malloc debugging (NSZombie, MallocScribble), DYLD tracing |
 
 ### Cross-Platform (1 check)
 | Check | Method | Detects |
