@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -12,7 +11,6 @@ import (
 
 	"fawkes/pkg/structs"
 
-	"github.com/go-ldap/ldap/v3"
 	"github.com/hirochachacha/go-smb2"
 	"github.com/jcmturner/gokrb5/v8/client"
 	krbconfig "github.com/jcmturner/gokrb5/v8/config"
@@ -218,17 +216,7 @@ func sprayLDAP(args sprayArgs, users []string) structs.CommandResult {
 
 		r := sprayResult{Username: user}
 
-		var conn *ldap.Conn
-		var err error
-		dialer := &net.Dialer{Timeout: 10 * time.Second}
-		if args.UseTLS {
-			conn, err = ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", args.Server, port),
-				ldap.DialWithDialer(dialer),
-				ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
-		} else {
-			conn, err = ldap.DialURL(fmt.Sprintf("ldap://%s:%d", args.Server, port),
-				ldap.DialWithDialer(dialer))
-		}
+		conn, err := ldapDial(args.Server, port, args.UseTLS)
 		if err != nil {
 			r.Message = fmt.Sprintf("Connection error: %v", err)
 			results = append(results, r)

@@ -1,10 +1,8 @@
 package commands
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"net"
 	"regexp"
 	"sort"
 	"strconv"
@@ -138,14 +136,7 @@ func (c *GpoCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func gpoConnect(args gpoArgs) (*ldap.Conn, error) {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	if args.UseTLS {
-		return ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", args.Server, args.Port),
-			ldap.DialWithDialer(dialer),
-			ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
-	}
-	return ldap.DialURL(fmt.Sprintf("ldap://%s:%d", args.Server, args.Port),
-		ldap.DialWithDialer(dialer))
+	return ldapDial(args.Server, args.Port, args.UseTLS)
 }
 
 func gpoDetectBaseDN(conn *ldap.Conn) (string, error) {

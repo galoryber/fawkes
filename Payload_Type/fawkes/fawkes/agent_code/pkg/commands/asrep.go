@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"crypto/tls"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -150,23 +149,14 @@ type asrepOutputEntry struct {
 }
 
 func enumerateAsrepTargets(args asrepArgs) ([]asrepTarget, error) {
-	var conn *ldap.Conn
-	var err error
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	if args.UseTLS {
-		if args.Port <= 0 {
+	if args.Port <= 0 {
+		if args.UseTLS {
 			args.Port = 636
-		}
-		conn, err = ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", args.Server, args.Port),
-			ldap.DialWithDialer(dialer),
-			ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
-	} else {
-		if args.Port <= 0 {
+		} else {
 			args.Port = 389
 		}
-		conn, err = ldap.DialURL(fmt.Sprintf("ldap://%s:%d", args.Server, args.Port),
-			ldap.DialWithDialer(dialer))
 	}
+	conn, err := ldapDial(args.Server, args.Port, args.UseTLS)
 	if err != nil {
 		return nil, fmt.Errorf("LDAP connect: %v", err)
 	}

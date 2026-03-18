@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -146,21 +145,11 @@ func (c *AdcsCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func adcsConnect(args adcsArgs) (*ldap.Conn, error) {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	if args.UseTLS {
-		return ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", args.Server, args.Port),
-			ldap.DialWithDialer(dialer),
-			ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
-	}
-	return ldap.DialURL(fmt.Sprintf("ldap://%s:%d", args.Server, args.Port),
-		ldap.DialWithDialer(dialer))
+	return ldapDial(args.Server, args.Port, args.UseTLS)
 }
 
 func adcsBind(conn *ldap.Conn, args adcsArgs) error {
-	if args.Username != "" && args.Password != "" {
-		return conn.Bind(args.Username, args.Password)
-	}
-	return conn.UnauthenticatedBind("")
+	return ldapBindSimple(conn, args.Username, args.Password)
 }
 
 func adcsGetConfigDN(conn *ldap.Conn) (string, string, error) {

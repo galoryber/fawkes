@@ -1,14 +1,11 @@
 package commands
 
 import (
-	"crypto/tls"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"net"
 	"strconv"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
 
@@ -136,21 +133,11 @@ func (c *TrustCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func trustConnect(args trustArgs) (*ldap.Conn, error) {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	if args.UseTLS {
-		return ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", args.Server, args.Port),
-			ldap.DialWithDialer(dialer),
-			ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
-	}
-	return ldap.DialURL(fmt.Sprintf("ldap://%s:%d", args.Server, args.Port),
-		ldap.DialWithDialer(dialer))
+	return ldapDial(args.Server, args.Port, args.UseTLS)
 }
 
 func trustBind(conn *ldap.Conn, args trustArgs) error {
-	if args.Username != "" && args.Password != "" {
-		return conn.Bind(args.Username, args.Password)
-	}
-	return conn.UnauthenticatedBind("")
+	return ldapBindSimple(conn, args.Username, args.Password)
 }
 
 func trustDetectBaseDN(conn *ldap.Conn) (string, error) {

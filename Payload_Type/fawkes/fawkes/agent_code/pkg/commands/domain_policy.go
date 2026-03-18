@@ -1,11 +1,9 @@
 package commands
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"math"
-	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -107,14 +105,7 @@ func (c *DomainPolicyCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func domainPolicyConnect(args domainPolicyArgs) (*ldap.Conn, error) {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	if args.UseTLS {
-		return ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", args.Server, args.Port),
-			ldap.DialWithDialer(dialer),
-			ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
-	}
-	return ldap.DialURL(fmt.Sprintf("ldap://%s:%d", args.Server, args.Port),
-		ldap.DialWithDialer(dialer))
+	return ldapDial(args.Server, args.Port, args.UseTLS)
 }
 
 func domainPolicyDetectBaseDN(conn *ldap.Conn) (string, error) {
