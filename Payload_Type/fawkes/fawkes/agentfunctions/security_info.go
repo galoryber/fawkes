@@ -7,9 +7,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "security-info",
-		Description:         "Report security posture and active controls. Linux: SELinux, AppArmor, seccomp, ASLR, YAMA. macOS: SIP, Gatekeeper, FileVault. Windows: Defender, Credential Guard, UAC, BitLocker, CLM.",
+		Description:         "Report security posture and active controls. Linux: SELinux, AppArmor, seccomp, ASLR, YAMA, LSM, BPF. macOS: SIP, Gatekeeper, FileVault, MDM, TCC, SSH, JAMF, ARD. Windows: Defender, Credential Guard, UAC, BitLocker, CLM.",
 		HelpString:          "security-info",
-		Version:             1,
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1082", "T1518.001"},
 		CommandAttributes: agentstructs.CommandAttribute{
