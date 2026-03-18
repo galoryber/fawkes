@@ -129,7 +129,7 @@ func darwinUserDelete(args netUserArgs) structs.CommandResult {
 	// Try to remove home directory
 	home := "/Users/" + args.Username
 	if info, err := os.Stat(home); err == nil && info.IsDir() {
-		os.RemoveAll(home) //nolint:errcheck
+		os.RemoveAll(home)
 	}
 
 	return successf("Successfully deleted user '%s'", args.Username)

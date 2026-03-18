@@ -115,10 +115,10 @@ func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
 				tmpFile.Close()
 				// Also copy WAL and SHM journals if they exist — required for WAL-mode DBs
 				if walData, walErr := os.ReadFile(dbPath + "-wal"); walErr == nil {
-					os.WriteFile(tmpPath+"-wal", walData, 0600) //nolint:errcheck
+					os.WriteFile(tmpPath+"-wal", walData, 0600)
 				}
 				if shmData, shmErr := os.ReadFile(dbPath + "-shm"); shmErr == nil {
-					os.WriteFile(tmpPath+"-shm", shmData, 0600) //nolint:errcheck
+					os.WriteFile(tmpPath+"-shm", shmData, 0600)
 				}
 				db, dbErr := sql.Open("sqlite", tmpPath)
 				if dbErr == nil {

@@ -480,7 +480,7 @@ func secureRemoveDir(dirPath string) {
 		secureRemove(path)
 		return nil
 	})
-	os.RemoveAll(dirPath) //nolint:errcheck
+	os.RemoveAll(dirPath)
 }
 
 // credOneAuth enumerates OneAuth account metadata (not DPAPI-protected)
