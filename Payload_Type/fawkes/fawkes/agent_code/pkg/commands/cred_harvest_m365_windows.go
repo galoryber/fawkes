@@ -199,11 +199,12 @@ func parseTbresFile(path string) ([]extractedToken, error) {
 
 	// Extract ResponseBytes (DPAPI-protected)
 	respBytes, ok := obj.TBDataStoreObject.ObjectData.SystemDefinedProperties["ResponseBytes"]
-	if !ok || respBytes.Value == "" {
+	valueStr := tbresValueString(respBytes)
+	if !ok || valueStr == "" {
 		return nil, nil
 	}
 
-	decoded, err := base64.StdEncoding.DecodeString(respBytes.Value)
+	decoded, err := base64.StdEncoding.DecodeString(valueStr)
 	if err != nil || len(decoded) == 0 {
 		return nil, fmt.Errorf("base64 decode: empty or invalid")
 	}

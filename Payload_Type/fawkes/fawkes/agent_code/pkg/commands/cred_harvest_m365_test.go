@@ -329,8 +329,32 @@ func TestTbresObjectParsing_TokenResponse(t *testing.T) {
 	if !rb.IsProtected {
 		t.Error("expected IsProtected=true")
 	}
-	if rb.Value != "dGVzdA==" {
-		t.Errorf("Value = %q", rb.Value)
+	if tbresValueString(rb) != "dGVzdA==" {
+		t.Errorf("Value = %q", string(rb.Value))
+	}
+}
+
+func TestTbresValueString(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string // raw JSON for Value field
+		expected string
+	}{
+		{"string", `"hello"`, "hello"},
+		{"number", `42`, ""},
+		{"array", `["a","b"]`, ""},
+		{"null", `null`, ""},
+		{"empty string", `""`, ""},
+		{"base64", `"dGVzdA=="`, "dGVzdA=="},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := tbresProperty{Value: json.RawMessage(tt.value)}
+			got := tbresValueString(p)
+			if got != tt.expected {
+				t.Errorf("tbresValueString(%s) = %q, want %q", tt.value, got, tt.expected)
+			}
+		})
 	}
 }
 

@@ -20,9 +20,19 @@ type tbresObject struct {
 }
 
 type tbresProperty struct {
-	Type        string `json:"Type"`
-	IsProtected bool   `json:"IsProtected"`
-	Value       string `json:"Value"`
+	Type        string          `json:"Type"`
+	IsProtected bool            `json:"IsProtected"`
+	Value       json.RawMessage `json:"Value"`
+}
+
+// tbresValueString extracts a string from a tbresProperty's Value field.
+// Value can be a JSON string, array, or other type — only strings are returned.
+func tbresValueString(p tbresProperty) string {
+	var s string
+	if err := json.Unmarshal(p.Value, &s); err == nil {
+		return s
+	}
+	return ""
 }
 
 // tokenResponse represents the decrypted token data inside ResponseBytes
