@@ -21,11 +21,14 @@ Detect attached debuggers, analysis tools, and instrumentation. Runs multiple pl
 | PEB.BeingDebugged | Read PEB offset 0x2 | PEB flag set by ntdll!LdrpInitialize |
 | Hardware Breakpoints (DR0-3) | GetThreadContext | Debug registers set by analyst |
 
-### Linux (2 checks)
+### Linux (5 checks)
 | Check | Method | Detects |
 |-------|--------|---------|
 | TracerPid | /proc/self/status | ptrace-attached debugger (GDB, strace, ltrace) |
 | LD_PRELOAD | Environment variable | Library injection/hooking |
+| Memory Maps | /proc/self/maps | Frida, Valgrind, sanitizers (ASAN/TSAN/UBSAN), Intel Pin, DynamoRIO |
+| Process Status | /proc/self/status (Seccomp, CapEff) | Sandbox/container restrictions, zero capabilities |
+| VM/Sandbox Detection | /proc/cpuinfo, DMI, /.dockerenv | Hypervisor flag, VirtualBox/VMware/KVM/Xen, Docker/container |
 
 ### macOS (2 checks)
 | Check | Method | Detects |

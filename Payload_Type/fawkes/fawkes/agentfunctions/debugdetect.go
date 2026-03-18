@@ -7,9 +7,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "debug-detect",
-		Description:         "Detect attached debuggers, analysis tools, and instrumentation (IsDebuggerPresent, NtQueryInformationProcess, PEB, DR registers, TracerPid, known debugger processes).",
+		Description:         "Detect attached debuggers, analysis tools, and instrumentation. Windows: IsDebuggerPresent, NtQueryInformationProcess, PEB, DR registers. Linux: TracerPid, LD_PRELOAD, memory maps (Frida/Valgrind/sanitizers), process status, VM/sandbox detection. All: known debugger process scan.",
 		HelpString:          "debug-detect",
-		Version:             1,
+		Version:             2,
 		MitreAttackMappings: []string{"T1497.001"}, // Virtualization/Sandbox Evasion: System Checks
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
