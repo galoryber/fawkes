@@ -32,4 +32,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&HandlesCommand{})
 	RegisterCommand(&PersistEnumCommand{})
 	RegisterCommand(&ServiceCommand{})
+	RegisterCommand(&NetUserCommand{})
 }
