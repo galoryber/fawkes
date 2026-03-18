@@ -47,6 +47,8 @@ func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
+	defer structs.ZeroString(&args.Password)
+	defer structs.ZeroString(&args.Hash)
 
 	if args.Host == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
 		return errorResult("Error: host, username, and password (or hash) are required")
