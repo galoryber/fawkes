@@ -134,6 +134,119 @@ func TestSecurityInfoLinuxAppArmor(t *testing.T) {
 	}
 }
 
+// --- parseSshdConfig tests ---
+
+func TestParseSshdConfig_Defaults(t *testing.T) {
+	port, permitRoot := parseSshdConfig("")
+	if port != "22" {
+		t.Errorf("default port = %q, want %q", port, "22")
+	}
+	if permitRoot != "unknown" {
+		t.Errorf("default permitRoot = %q, want %q", permitRoot, "unknown")
+	}
+}
+
+func TestParseSshdConfig_CustomPort(t *testing.T) {
+	config := "Port 2222\nPermitRootLogin no"
+	port, permitRoot := parseSshdConfig(config)
+	if port != "2222" {
+		t.Errorf("port = %q, want %q", port, "2222")
+	}
+	if permitRoot != "no" {
+		t.Errorf("permitRoot = %q, want %q", permitRoot, "no")
+	}
+}
+
+func TestParseSshdConfig_ProhibitPassword(t *testing.T) {
+	config := "PermitRootLogin prohibit-password"
+	_, permitRoot := parseSshdConfig(config)
+	if permitRoot != "prohibit-password" {
+		t.Errorf("permitRoot = %q, want %q", permitRoot, "prohibit-password")
+	}
+}
+
+func TestParseSshdConfig_CommentsIgnored(t *testing.T) {
+	config := "# Port 9999\n#PermitRootLogin yes\nPort 22\nPermitRootLogin no"
+	port, permitRoot := parseSshdConfig(config)
+	if port != "22" {
+		t.Errorf("port = %q, want %q (comments not ignored)", port, "22")
+	}
+	if permitRoot != "no" {
+		t.Errorf("permitRoot = %q, want %q (comments not ignored)", permitRoot, "no")
+	}
+}
+
+func TestParseSshdConfig_EmptyLines(t *testing.T) {
+	config := "\n\nPort 443\n\n\nPermitRootLogin yes\n\n"
+	port, permitRoot := parseSshdConfig(config)
+	if port != "443" {
+		t.Errorf("port = %q, want %q", port, "443")
+	}
+	if permitRoot != "yes" {
+		t.Errorf("permitRoot = %q, want %q", permitRoot, "yes")
+	}
+}
+
+func TestParseSshdConfig_CaseInsensitive(t *testing.T) {
+	config := "port 8022\npermitRootLogin Yes"
+	port, permitRoot := parseSshdConfig(config)
+	if port != "8022" {
+		t.Errorf("port = %q, want %q", port, "8022")
+	}
+	if permitRoot != "Yes" {
+		t.Errorf("permitRoot = %q, want %q", permitRoot, "Yes")
+	}
+}
+
+func TestParseSshdConfig_LastValueWins(t *testing.T) {
+	config := "Port 22\nPort 2222\nPermitRootLogin yes\nPermitRootLogin no"
+	port, permitRoot := parseSshdConfig(config)
+	if port != "2222" {
+		t.Errorf("port = %q, want %q (last value should win)", port, "2222")
+	}
+	if permitRoot != "no" {
+		t.Errorf("permitRoot = %q, want %q (last value should win)", permitRoot, "no")
+	}
+}
+
+func TestParseSshdConfig_WithExtraWhitespace(t *testing.T) {
+	config := "  Port   3333  \n  PermitRootLogin   without-password  "
+	port, permitRoot := parseSshdConfig(config)
+	if port != "3333" {
+		t.Errorf("port = %q, want %q", port, "3333")
+	}
+	if permitRoot != "without-password" {
+		t.Errorf("permitRoot = %q, want %q", permitRoot, "without-password")
+	}
+}
+
+func TestParseSshdConfig_RealisticConfig(t *testing.T) {
+	config := `# This is the sshd_config
+# See sshd_config(5)
+
+#Port 22
+#AddressFamily any
+Port 22
+#ListenAddress 0.0.0.0
+
+# Authentication:
+#LoginGraceTime 2m
+PermitRootLogin prohibit-password
+#StrictModes yes
+MaxAuthTries 3
+
+PubkeyAuthentication yes
+PasswordAuthentication no
+`
+	port, permitRoot := parseSshdConfig(config)
+	if port != "22" {
+		t.Errorf("port = %q, want %q", port, "22")
+	}
+	if permitRoot != "prohibit-password" {
+		t.Errorf("permitRoot = %q, want %q", permitRoot, "prohibit-password")
+	}
+}
+
 func TestSecurityInfoLinuxNewControls(t *testing.T) {
 	controls := securityInfoLinux()
 	names := make(map[string]bool)
