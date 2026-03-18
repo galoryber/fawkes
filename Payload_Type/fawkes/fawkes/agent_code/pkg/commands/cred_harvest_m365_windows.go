@@ -441,7 +441,7 @@ func openDBViaCmdCopy(dbPath string) (*sql.DB, func(), error) {
 	}
 
 	if !copied {
-		os.RemoveAll(tmpDir) //nolint:errcheck
+		secureRemoveDir(tmpDir)
 		return nil, func() {}, fmt.Errorf("DB locked by process (all copy strategies failed)")
 	}
 
@@ -452,20 +452,20 @@ func openDBViaCmdCopy(dbPath string) (*sql.DB, func(), error) {
 
 	db, err := sql.Open("sqlite", tmpFile)
 	if err != nil {
-		os.RemoveAll(tmpDir) //nolint:errcheck
+		secureRemoveDir(tmpDir)
 		return nil, func() {}, err
 	}
 
 	// Verify the DB is actually usable
 	if pingErr := db.Ping(); pingErr != nil {
 		db.Close()
-		os.RemoveAll(tmpDir) //nolint:errcheck
+		secureRemoveDir(tmpDir)
 		return nil, func() {}, fmt.Errorf("DB copy unusable: %w", pingErr)
 	}
 
 	cleanup := func() {
 		db.Close()
-		os.RemoveAll(tmpDir) //nolint:errcheck
+		secureRemoveDir(tmpDir)
 	}
 	return db, cleanup, nil
 }

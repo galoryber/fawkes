@@ -125,6 +125,19 @@ func secureRemove(path string) {
 	}
 }
 
+// secureRemoveDir securely overwrites all files in a directory, then removes it.
+// Use instead of os.RemoveAll() for directories containing sensitive data (credential DBs, etc.).
+func secureRemoveDir(dirPath string) {
+	_ = filepath.WalkDir(dirPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		secureRemove(path)
+		return nil
+	})
+	os.RemoveAll(dirPath) //nolint:errcheck
+}
+
 // secureDeleteDir recursively securely deletes all files in a directory
 func secureDeleteDir(dirPath string, passes int) (int, []string) {
 	var count int
