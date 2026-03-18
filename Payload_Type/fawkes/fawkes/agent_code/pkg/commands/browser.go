@@ -657,22 +657,33 @@ func readCookieData(dbPath string, key []byte, browserName, profileName string) 
 // openBrowserDB opens a browser SQLite database using the copy+fallback pattern.
 // Returns (db, cleanup func, error). Caller must call cleanup when done.
 func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
-	// Strategy 1: Copy DB to temp file
+	// Strategy 1: Copy DB (and WAL/SHM journals) to temp file
 	tf, tfErr := os.CreateTemp("", "")
 	if tfErr == nil {
 		tmpFile := tf.Name()
 		tf.Close()
 		if copyErr := copyFile(dbPath, tmpFile); copyErr == nil {
+			// Also copy WAL and SHM journals if they exist — required for WAL-mode DBs
+			copyFile(dbPath+"-wal", tmpFile+"-wal") //nolint:errcheck
+			copyFile(dbPath+"-shm", tmpFile+"-shm") //nolint:errcheck
 			db, err := sql.Open("sqlite", tmpFile)
 			if err == nil {
-				cleanup := func() {
-					db.Close()
-					secureRemove(tmpFile)
+				// Verify the DB is actually usable (sql.Open is lazy)
+				if pingErr := db.Ping(); pingErr == nil {
+					cleanup := func() {
+						db.Close()
+						secureRemove(tmpFile)
+						secureRemove(tmpFile + "-wal")
+						secureRemove(tmpFile + "-shm")
+					}
+					return db, cleanup, nil
 				}
-				return db, cleanup, nil
+				db.Close()
 			}
 		}
 		secureRemove(tmpFile)
+		secureRemove(tmpFile + "-wal")
+		secureRemove(tmpFile + "-shm")
 	}
 
 	// Strategy 2: Open in immutable mode
@@ -680,6 +691,11 @@ func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
 	db, err := sql.Open("sqlite", immutableURI)
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("open %s: %w", filepath.Base(dbPath), err)
+	}
+	// Verify immutable mode works
+	if pingErr := db.Ping(); pingErr != nil {
+		db.Close()
+		return nil, func() {}, fmt.Errorf("open %s: %w", filepath.Base(dbPath), pingErr)
 	}
 	cleanup := func() { db.Close() }
 	return db, cleanup, nil

