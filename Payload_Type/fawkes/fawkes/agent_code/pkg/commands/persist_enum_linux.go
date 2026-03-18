@@ -18,7 +18,7 @@ type PersistEnumCommand struct{}
 
 func (c *PersistEnumCommand) Name() string { return "persist-enum" }
 func (c *PersistEnumCommand) Description() string {
-	return "Enumerate Linux persistence mechanisms — cron, systemd, shell profiles, SSH keys, init scripts (T1547)"
+	return "Enumerate Linux persistence mechanisms — cron, systemd, shell profiles, SSH keys, init scripts, udev rules, kernel modules, motd, at jobs (T1547/T1546)"
 }
 
 func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
@@ -55,6 +55,18 @@ func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	if cat == "all" || cat == "preload" {
 		found += persistEnumPreload(&sb)
+	}
+	if cat == "all" || cat == "udev" {
+		found += persistEnumUdev(&sb)
+	}
+	if cat == "all" || cat == "modules" {
+		found += persistEnumKernelModules(&sb)
+	}
+	if cat == "all" || cat == "motd" {
+		found += persistEnumMotd(&sb)
+	}
+	if cat == "all" || cat == "at" {
+		found += persistEnumAtJobs(&sb)
 	}
 
 	sb.WriteString(fmt.Sprintf("\n=== Total: %d persistence items found ===\n", found))
@@ -434,6 +446,229 @@ func persistEnumPreload(sb *strings.Builder) int {
 				count++
 			}
 		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumUdev checks for custom udev rules that can execute scripts on device events (T1546).
+func persistEnumUdev(sb *strings.Builder) int {
+	sb.WriteString("--- Udev Rules ---\n")
+	count := 0
+
+	udevDirs := []struct {
+		path string
+		desc string
+	}{
+		{"/etc/udev/rules.d", "custom"},
+		{"/lib/udev/rules.d", "system"},
+		{"/usr/lib/udev/rules.d", "vendor"},
+	}
+
+	for _, ud := range udevDirs {
+		entries, err := os.ReadDir(ud.path)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".rules") {
+				continue
+			}
+			path := filepath.Join(ud.path, entry.Name())
+			content, err := os.ReadFile(path)
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("  [%s] %s (unreadable)\n", ud.desc, entry.Name()))
+				count++
+				continue
+			}
+
+			// Check for RUN= directives that execute programs
+			hasRun := false
+			for _, line := range strings.Split(string(content), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				if strings.Contains(line, "RUN+=") || strings.Contains(line, "RUN=") ||
+					strings.Contains(line, "PROGRAM=") {
+					hasRun = true
+					break
+				}
+			}
+
+			if ud.desc == "custom" || hasRun {
+				flag := ""
+				if hasRun {
+					flag = " [!] executes programs"
+				}
+				sb.WriteString(fmt.Sprintf("  [%s] %s%s\n", ud.desc, entry.Name(), flag))
+				count++
+			}
+		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumKernelModules checks for kernel modules configured to auto-load (T1547.006).
+func persistEnumKernelModules(sb *strings.Builder) int {
+	sb.WriteString("--- Kernel Modules (Auto-Load) ---\n")
+	count := 0
+
+	// /etc/modules — legacy file listing modules to load at boot
+	if content, err := os.ReadFile("/etc/modules"); err == nil {
+		for _, line := range strings.Split(string(content), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("  [/etc/modules] %s\n", line))
+			count++
+		}
+	}
+
+	// /etc/modules-load.d/ — systemd module loading
+	if entries, err := os.ReadDir("/etc/modules-load.d"); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			path := filepath.Join("/etc/modules-load.d", entry.Name())
+			content, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			for _, line := range strings.Split(string(content), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
+					continue
+				}
+				sb.WriteString(fmt.Sprintf("  [modules-load.d/%s] %s\n", entry.Name(), line))
+				count++
+			}
+		}
+	}
+
+	// /etc/modprobe.d/ — module options, blacklists, and install directives
+	if entries, err := os.ReadDir("/etc/modprobe.d"); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			path := filepath.Join("/etc/modprobe.d", entry.Name())
+			content, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			for _, line := range strings.Split(string(content), "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				// Flag "install" directives — these run arbitrary commands when a module is loaded
+				if strings.HasPrefix(line, "install ") {
+					sb.WriteString(fmt.Sprintf("  [!] [modprobe.d/%s] %s\n", entry.Name(), line))
+					count++
+				}
+			}
+		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumMotd checks for MOTD (Message of the Day) scripts that run on login (T1546).
+func persistEnumMotd(sb *strings.Builder) int {
+	sb.WriteString("--- MOTD Scripts ---\n")
+	count := 0
+
+	motdDirs := []string{"/etc/update-motd.d", "/etc/profile.d"}
+
+	for _, dir := range motdDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			// For /etc/profile.d only show .sh files (they're sourced on login)
+			if dir == "/etc/profile.d" && !strings.HasSuffix(entry.Name(), ".sh") {
+				continue
+			}
+			// For update-motd.d, skip if already counted in startup check
+			if dir == "/etc/update-motd.d" {
+				info, err := entry.Info()
+				if err != nil {
+					continue
+				}
+				mode := info.Mode()
+				if mode&0111 == 0 {
+					continue // Not executable
+				}
+				sb.WriteString(fmt.Sprintf("  [%s] %s (%s)\n", dir, entry.Name(), mode.String()))
+				count++
+			}
+		}
+	}
+
+	// Also check /etc/motd for static MOTD
+	if info, err := os.Stat("/etc/motd"); err == nil && info.Size() > 0 {
+		sb.WriteString(fmt.Sprintf("  [/etc/motd] static message (%d bytes)\n", info.Size()))
+		count++
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumAtJobs checks for scheduled at jobs (one-time execution).
+func persistEnumAtJobs(sb *strings.Builder) int {
+	sb.WriteString("--- At Jobs ---\n")
+	count := 0
+
+	atDirs := []string{"/var/spool/at", "/var/spool/atjobs"}
+
+	for _, dir := range atDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("  [%s] %s (%d bytes, modified: %s)\n",
+				dir, entry.Name(), info.Size(), info.ModTime().Format("2006-01-02 15:04")))
+			count++
+		}
+	}
+
+	// Check /etc/at.allow and /etc/at.deny for access control
+	if _, err := os.Stat("/etc/at.allow"); err == nil {
+		sb.WriteString("  [access] /etc/at.allow exists (only listed users can use at)\n")
+	} else if _, err := os.Stat("/etc/at.deny"); err == nil {
+		sb.WriteString("  [access] /etc/at.deny exists (listed users denied at)\n")
 	}
 
 	if count == 0 {
