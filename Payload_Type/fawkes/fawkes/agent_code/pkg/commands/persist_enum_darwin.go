@@ -18,7 +18,7 @@ type PersistEnumCommand struct{}
 
 func (c *PersistEnumCommand) Name() string { return "persist-enum" }
 func (c *PersistEnumCommand) Description() string {
-	return "Enumerate macOS persistence mechanisms — LaunchAgents, LaunchDaemons, login items, shell profiles, cron (T1547)"
+	return "Enumerate macOS persistence mechanisms — LaunchAgents, LaunchDaemons, login items, shell profiles, cron, auth plugins, emond, at jobs (T1547)"
 }
 
 func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
@@ -52,6 +52,15 @@ func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	if cat == "all" || cat == "periodic" {
 		found += persistEnumPeriodic(&sb)
+	}
+	if cat == "all" || cat == "authplugins" {
+		found += persistEnumAuthPlugins(&sb)
+	}
+	if cat == "all" || cat == "emond" {
+		found += persistEnumEmond(&sb)
+	}
+	if cat == "all" || cat == "at" {
+		found += persistEnumAtJobs(&sb)
 	}
 
 	sb.WriteString(fmt.Sprintf("\n=== Total: %d persistence items found ===\n", found))
@@ -299,6 +308,108 @@ func persistEnumPeriodic(sb *strings.Builder) int {
 			sb.WriteString(fmt.Sprintf("  [%s] %s\n", filepath.Base(dir), name))
 			count++
 		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumAuthPlugins checks for SecurityAgent authorization plugins (T1547.002).
+func persistEnumAuthPlugins(sb *strings.Builder) int {
+	sb.WriteString("--- Authorization Plugins ---\n")
+	count := 0
+
+	pluginDir := "/Library/Security/SecurityAgentPlugins"
+	entries, err := os.ReadDir(pluginDir)
+	if err != nil {
+		sb.WriteString("  (directory not readable)\n\n")
+		return 0
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasPrefix(name, ".") {
+			continue
+		}
+		info, _ := entry.Info()
+		detail := ""
+		if info != nil {
+			detail = fmt.Sprintf(" (modified: %s)", info.ModTime().Format("2006-01-02 15:04"))
+		}
+		sb.WriteString(fmt.Sprintf("  [!] %s%s\n", name, detail))
+		count++
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumEmond checks for Event Monitor daemon rules (T1546.014).
+func persistEnumEmond(sb *strings.Builder) int {
+	sb.WriteString("--- Emond Rules ---\n")
+	count := 0
+
+	emondDir := "/etc/emond.d/rules"
+	entries, err := os.ReadDir(emondDir)
+	if err != nil {
+		sb.WriteString("  (directory not readable)\n\n")
+		return 0
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || strings.HasPrefix(name, ".") {
+			continue
+		}
+		if !strings.HasSuffix(name, ".plist") {
+			continue
+		}
+		info, _ := entry.Info()
+		detail := ""
+		if info != nil {
+			detail = fmt.Sprintf(" (modified: %s, size: %d)", info.ModTime().Format("2006-01-02 15:04"), info.Size())
+		}
+		sb.WriteString(fmt.Sprintf("  [!] %s%s\n", name, detail))
+		count++
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumAtJobs checks for scheduled at(1) jobs.
+func persistEnumAtJobs(sb *strings.Builder) int {
+	sb.WriteString("--- At Jobs ---\n")
+	count := 0
+
+	atDir := "/var/at/jobs"
+	entries, err := os.ReadDir(atDir)
+	if err != nil {
+		sb.WriteString("  (directory not readable)\n\n")
+		return 0
+	}
+
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || strings.HasPrefix(name, ".") {
+			continue
+		}
+		info, _ := entry.Info()
+		detail := ""
+		if info != nil {
+			detail = fmt.Sprintf(" (modified: %s, size: %d)", info.ModTime().Format("2006-01-02 15:04"), info.Size())
+		}
+		sb.WriteString(fmt.Sprintf("  %s%s\n", name, detail))
+		count++
 	}
 
 	if count == 0 {

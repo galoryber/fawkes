@@ -7,11 +7,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "persist-enum",
-		Description:         "Enumerate persistence mechanisms — Windows: registry, startup, tasks, services. Linux: cron, systemd, shell profiles, SSH keys. macOS: LaunchAgents, login items, periodic scripts.",
-		HelpString:          "persist-enum -category all\n\nCategories by platform:\n  Windows: all, registry, startup, winlogon, ifeo, appinit, tasks, services\n  Linux: all, cron, systemd, shell, startup, ssh, preload\n  macOS: all, launchd, cron, shell, login, periodic",
-		Version:             2,
+		Description:         "Enumerate persistence mechanisms — Windows: registry, startup, tasks, services. Linux: cron, systemd, shell profiles, SSH keys. macOS: LaunchAgents, login items, periodic scripts, auth plugins, emond, at jobs.",
+		HelpString:          "persist-enum -category all\n\nCategories by platform:\n  Windows: all, registry, startup, winlogon, ifeo, appinit, tasks, services\n  Linux: all, cron, systemd, shell, startup, ssh, preload\n  macOS: all, launchd, cron, shell, login, periodic, authplugins, emond, at",
+		Version:             3,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1547", "T1053", "T1543"}, // Boot/Logon Autostart, Scheduled Task, Create/Modify System Process
+		MitreAttackMappings: []string{"T1547", "T1547.002", "T1546.014", "T1053", "T1543"}, // Boot/Logon Autostart, Auth Plugins, Emond, Scheduled Task, Create/Modify System Process
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},

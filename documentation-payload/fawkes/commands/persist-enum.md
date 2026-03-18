@@ -18,7 +18,7 @@ Registry Run keys, startup folders, Winlogon hijacks, IFEO, AppInit_DLLs, schedu
 Cron jobs (system + user), systemd services/timers, shell profiles, init.d scripts, rc.local, XDG autostart, SSH authorized_keys + private keys + agent sockets, LD_PRELOAD.
 
 ### macOS
-LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout hooks, SSH authorized_keys + private keys + agent sockets, periodic scripts.
+LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout hooks, SSH authorized_keys + private keys + agent sockets, periodic scripts, authorization plugins, emond rules, at jobs.
 
 ## Categories by Platform
 
@@ -51,6 +51,9 @@ LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout 
 | `shell` | User profiles (.zshrc, .bash_profile, etc.), system profiles (/etc/profile, /etc/zshrc) |
 | `login` | Login/Logout hooks (com.apple.loginwindow), SSH authorized_keys, private keys (encrypted/plaintext detection), SSH agent sockets |
 | `periodic` | /etc/periodic/daily, weekly, monthly scripts |
+| `authplugins` | /Library/Security/SecurityAgentPlugins/ (T1547.002) |
+| `emond` | /etc/emond.d/rules/ Event Monitor daemon rules (T1546.014) |
+| `at` | /var/at/jobs/ scheduled one-time jobs |
 
 ## Arguments
 
@@ -77,6 +80,7 @@ persist-enum -category preload
 # macOS examples
 persist-enum -category launchd
 persist-enum -category login
+persist-enum -category authplugins
 ```
 
 ## Notes
@@ -90,5 +94,7 @@ persist-enum -category login
 ## MITRE ATT&CK Mapping
 
 - **T1547** — Boot or Logon Autostart Execution
+- **T1547.002** — Authentication Process (Authorization Plugins)
+- **T1546.014** — Event Triggered Execution: Emond
 - **T1053** — Scheduled Task/Job
 - **T1543** — Create or Modify System Process
