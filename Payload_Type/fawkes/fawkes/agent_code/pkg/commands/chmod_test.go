@@ -390,3 +390,141 @@ func TestChmodParseModeInvalid(t *testing.T) {
 		t.Error("expected error for octal mode 888")
 	}
 }
+
+// --- chmodParseSymbolic direct tests ---
+
+func TestChmodParseSymbolic_MultiClause(t *testing.T) {
+	// u+rwx,g+rx,o+r on 0000 → 0754
+	mode, err := chmodParseSymbolic("u+rwx,g+rx,o+r", 0000)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mode != 0754 {
+		t.Errorf("expected 0754, got %04o", mode)
+	}
+}
+
+func TestChmodParseSymbolic_EqualsUser(t *testing.T) {
+	// u=rw on 0777 → only user changes, group/other preserved
+	mode, err := chmodParseSymbolic("u=rw", 0777)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// u=rw: user becomes rw- (6), group/other stay 7,7 → 0677
+	if mode != 0677 {
+		t.Errorf("expected 0677, got %04o", mode)
+	}
+}
+
+func TestChmodParseSymbolic_EqualsGroup(t *testing.T) {
+	// g=rx on 0777 → group becomes r-x, user/other preserved
+	mode, err := chmodParseSymbolic("g=rx", 0777)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mode != 0757 {
+		t.Errorf("expected 0757, got %04o", mode)
+	}
+}
+
+func TestChmodParseSymbolic_MinusAll(t *testing.T) {
+	// -rwx on 0777 → 0000
+	mode, err := chmodParseSymbolic("-rwx", 0777)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mode != 0000 {
+		t.Errorf("expected 0000, got %04o", mode)
+	}
+}
+
+func TestChmodParseSymbolic_InvalidWho(t *testing.T) {
+	_, err := chmodParseSymbolic("z+r", 0644)
+	if err == nil {
+		t.Error("expected error for invalid who character 'z'")
+	}
+	if !strings.Contains(err.Error(), "invalid who character") {
+		t.Errorf("error should mention invalid who character, got: %v", err)
+	}
+}
+
+func TestChmodParseSymbolic_InvalidPermChar(t *testing.T) {
+	_, err := chmodParseSymbolic("u+q", 0644)
+	if err == nil {
+		t.Error("expected error for invalid permission character 'q'")
+	}
+	if !strings.Contains(err.Error(), "invalid permission character") {
+		t.Errorf("error should mention invalid permission, got: %v", err)
+	}
+}
+
+func TestChmodParseSymbolic_MissingOperator(t *testing.T) {
+	_, err := chmodParseSymbolic("urwx", 0644)
+	if err == nil {
+		t.Error("expected error for missing operator")
+	}
+}
+
+func TestChmodParseSymbolic_TooShort(t *testing.T) {
+	_, err := chmodParseSymbolic("x", 0644)
+	if err == nil {
+		t.Error("expected error for single-char mode")
+	}
+}
+
+func TestChmodParseSymbolic_OtherEquals(t *testing.T) {
+	// o=rw on 0755 → other becomes rw- (6), user/group preserved → 0756
+	mode, err := chmodParseSymbolic("o=rw", 0755)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mode != 0756 {
+		t.Errorf("expected 0756, got %04o", mode)
+	}
+}
+
+func TestChmodParseSymbolic_MultiWho(t *testing.T) {
+	// ug+x on 0600 → user and group get execute → 0710
+	mode, err := chmodParseSymbolic("ug+x", 0600)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if mode != 0710 {
+		t.Errorf("expected 0710, got %04o", mode)
+	}
+}
+
+// --- chmodFormatResult tests ---
+
+func TestChmodFormatResult_Basic(t *testing.T) {
+	result := chmodFormatResult("/tmp/test.txt", 0644, 0755)
+	if !strings.Contains(result, "/tmp/test.txt") {
+		t.Error("output should contain path")
+	}
+	if !strings.Contains(result, "Before:") {
+		t.Error("output should contain Before")
+	}
+	if !strings.Contains(result, "After:") {
+		t.Error("output should contain After")
+	}
+	if !strings.Contains(result, "rw-r--r--") {
+		t.Error("output should show 0644 in rwx format")
+	}
+	if !strings.Contains(result, "rwxr-xr-x") {
+		t.Error("output should show 0755 in rwx format")
+	}
+	if !strings.Contains(result, "0644") {
+		t.Error("output should show octal 0644")
+	}
+	if !strings.Contains(result, "0755") {
+		t.Error("output should show octal 0755")
+	}
+}
+
+func TestChmodFormatResult_SamePerm(t *testing.T) {
+	result := chmodFormatResult("/tmp/file", 0644, 0644)
+	// Should still format even if same
+	if !strings.Contains(result, "Before:") || !strings.Contains(result, "After:") {
+		t.Error("output should show before/after even when same")
+	}
+}
