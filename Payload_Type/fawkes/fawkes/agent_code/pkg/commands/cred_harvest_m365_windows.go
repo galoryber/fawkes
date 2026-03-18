@@ -470,6 +470,19 @@ func openDBViaCmdCopy(dbPath string) (*sql.DB, func(), error) {
 	return db, cleanup, nil
 }
 
+// secureRemoveDir securely overwrites all files in a directory, then removes it.
+// Use instead of os.RemoveAll() for directories containing sensitive data (credential DBs, etc.).
+func secureRemoveDir(dirPath string) {
+	_ = filepath.WalkDir(dirPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		secureRemove(path)
+		return nil
+	})
+	os.RemoveAll(dirPath) //nolint:errcheck
+}
+
 // credOneAuth enumerates OneAuth account metadata (not DPAPI-protected)
 func credOneAuth(sb *strings.Builder) {
 	sb.WriteString("--- OneAuth Account Metadata ---\n")
