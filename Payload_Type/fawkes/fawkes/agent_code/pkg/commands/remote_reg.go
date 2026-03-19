@@ -110,11 +110,14 @@ func remoteRegConnect(args remoteRegArgs) (winreg.WinregClient, *winreg.Key, con
 			hash = parts[1]
 		}
 		cred = sspcred.NewFromNTHash(credUser, hash)
+		structs.ZeroString(&hash)
 	} else if args.Password != "" {
 		cred = sspcred.NewFromPassword(credUser, args.Password)
 	} else {
 		return nil, nil, nil, nil, nil, fmt.Errorf("either -password or -hash is required for remote registry access")
 	}
+	structs.ZeroString(&args.Password)
+	structs.ZeroString(&args.Hash)
 
 	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
 		gssapi.WithCredential(cred),

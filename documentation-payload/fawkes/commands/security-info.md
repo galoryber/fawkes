@@ -46,7 +46,13 @@ security-info
 | Gatekeeper | `spctl --status` |
 | FileVault | `fdesetup status` |
 | macOS Firewall | `com.apple.alf` plist |
-| XProtect | `system_profiler` |
+| XProtect | XProtect.bundle file stat (native) |
+| Configuration Profiles | `/var/db/ConfigurationProfiles/` directory scan (native) |
+| MDM Enrollment | `.profilesAreInstalled` indicator file (native) |
+| Remote Login (SSH) | `/etc/ssh/sshd_config` parsing (native) |
+| TCC System DB | `/Library/Application Support/com.apple.TCC/TCC.db` readability probe (native) |
+| JAMF (Casper) | `/usr/local/jamf/bin/jamf` file stat (native) |
+| Apple Remote Desktop | ARDAgent.app + plist detection (native) |
 
 ### Windows
 | Control | Detection Method |
@@ -62,7 +68,7 @@ security-info
 ## OPSEC Considerations
 
 - Linux: Most checks use native sysfs/procfs reads (zero subprocess overhead). Falls back to `getenforce`, `aa-status` when native files are unavailable. `iptables`/`nft` require subprocess for firewall rules — some require root for full results
-- macOS: Runs `csrutil`, `spctl`, `fdesetup`, `system_profiler` — standard utility commands
+- macOS: `csrutil`, `spctl`, `fdesetup` require subprocess; 7 new checks use native file reads (zero subprocess overhead): XProtect, Configuration Profiles, MDM, SSH config, TCC DB, JAMF, ARD
 - Windows: Spawns `powershell.exe` for WMI/registry queries — may trigger command-line logging
 - Passive reconnaissance — does not modify any security settings
 

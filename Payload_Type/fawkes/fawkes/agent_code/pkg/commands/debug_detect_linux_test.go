@@ -45,8 +45,8 @@ func TestCheckLdPreload_Set(t *testing.T) {
 
 func TestRunPlatformDebugChecks(t *testing.T) {
 	checks := runPlatformDebugChecks()
-	if len(checks) < 2 {
-		t.Errorf("expected at least 2 checks, got %d", len(checks))
+	if len(checks) < 5 {
+		t.Errorf("expected at least 5 checks, got %d", len(checks))
 	}
 	// Verify each check has a name and status
 	for i, c := range checks {
@@ -56,5 +56,60 @@ func TestRunPlatformDebugChecks(t *testing.T) {
 		if c.Status == "" {
 			t.Errorf("check[%d] %q has empty status", i, c.Name)
 		}
+	}
+}
+
+func TestCheckProcMaps(t *testing.T) {
+	result := checkProcMaps()
+	if !strings.Contains(result.Name, "Memory Maps") {
+		t.Errorf("expected 'Memory Maps' in name, got %q", result.Name)
+	}
+	// In normal CI, should be CLEAN (no frida/valgrind)
+	if result.Status == "ERROR" {
+		t.Errorf("unexpected error: %s", result.Details)
+	}
+	if result.Status == "CLEAN" && !strings.Contains(result.Details, "mappings") {
+		t.Errorf("CLEAN status should report mapping count, got %q", result.Details)
+	}
+}
+
+func TestCheckProcStatus(t *testing.T) {
+	result := checkProcStatus()
+	if !strings.Contains(result.Name, "Process Status") {
+		t.Errorf("expected 'Process Status' in name, got %q", result.Name)
+	}
+	// Should not error on a normal system
+	if result.Status == "ERROR" {
+		t.Errorf("unexpected error: %s", result.Details)
+	}
+}
+
+func TestCheckSandboxIndicators(t *testing.T) {
+	result := checkSandboxIndicators()
+	if !strings.Contains(result.Name, "VM/Sandbox") {
+		t.Errorf("expected 'VM/Sandbox' in name, got %q", result.Name)
+	}
+	// Status should be valid
+	switch result.Status {
+	case "CLEAN", "WARNING":
+		// expected
+	default:
+		t.Errorf("unexpected status %q: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckProcMaps_NoInstrumentation(t *testing.T) {
+	// In a normal Go test, there should be no frida/valgrind in memory maps
+	result := checkProcMaps()
+	if result.Status == "DETECTED" {
+		t.Logf("Instrumentation detected (may be expected in some CI): %s", result.Details)
+	}
+}
+
+func TestCheckSandboxIndicators_VMDetection(t *testing.T) {
+	// On CI runners (often VMs), this may detect hypervisor flag
+	result := checkSandboxIndicators()
+	if result.Status == "WARNING" {
+		t.Logf("VM/sandbox indicators found (expected on CI): %s", result.Details)
 	}
 }

@@ -45,6 +45,8 @@ func (c *CredCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
+	defer structs.ZeroString(&args.Password)
+	defer structs.ZeroString(&args.Hash)
 
 	if args.Hosts == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
 		return errorResult("Error: -hosts, -username, and -password (or -hash) are required")

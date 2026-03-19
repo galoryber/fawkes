@@ -113,18 +113,32 @@ func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
 			tmpPath := tmpFile.Name()
 			if _, writeErr := tmpFile.Write(srcData); writeErr == nil {
 				tmpFile.Close()
+				// Also copy WAL and SHM journals if they exist — required for WAL-mode DBs
+				if walData, walErr := os.ReadFile(dbPath + "-wal"); walErr == nil {
+					os.WriteFile(tmpPath+"-wal", walData, 0600)
+				}
+				if shmData, shmErr := os.ReadFile(dbPath + "-shm"); shmErr == nil {
+					os.WriteFile(tmpPath+"-shm", shmData, 0600)
+				}
 				db, dbErr := sql.Open("sqlite", tmpPath)
 				if dbErr == nil {
-					cleanup := func() {
-						db.Close()
-						secureRemove(tmpPath)
+					if pingErr := db.Ping(); pingErr == nil {
+						cleanup := func() {
+							db.Close()
+							secureRemove(tmpPath)
+							secureRemove(tmpPath + "-wal")
+							secureRemove(tmpPath + "-shm")
+						}
+						return db, cleanup, nil
 					}
-					return db, cleanup, nil
+					db.Close()
 				}
 			} else {
 				tmpFile.Close()
 			}
 			secureRemove(tmpPath)
+			secureRemove(tmpPath + "-wal")
+			secureRemove(tmpPath + "-shm")
 		}
 	}
 
@@ -133,6 +147,10 @@ func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
 	db, err := sql.Open("sqlite", immutableURI)
 	if err != nil {
 		return nil, func() {}, fmt.Errorf("open %s: %w", filepath.Base(dbPath), err)
+	}
+	if pingErr := db.Ping(); pingErr != nil {
+		db.Close()
+		return nil, func() {}, fmt.Errorf("open %s: %w", filepath.Base(dbPath), pingErr)
 	}
 	cleanup := func() { db.Close() }
 	return db, cleanup, nil

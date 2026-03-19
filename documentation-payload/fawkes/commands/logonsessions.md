@@ -19,6 +19,7 @@ Optional username filter to narrow results.
 
 - **Windows**: Uses `WTSEnumerateSessionsW` + `WTSQuerySessionInformationW` — no subprocess creation.
 - **Linux**: Natively parses `/var/run/utmp` binary (384-byte utmp records) — no subprocess creation. Shows active USER_PROCESS entries with PID, terminal, login time, and remote host.
+- **macOS**: Natively parses `/var/run/utmpx` binary (628-byte utmpx records) — no subprocess creation. Shows active USER_PROCESS entries with PID, terminal, login time, and remote host.
 
 ### Arguments
 
@@ -62,6 +63,14 @@ Returns JSON array of session entries, rendered by a browser script into a sorta
 [
   {"session_id": 42, "username": "gary", "domain": "", "station": "pts/0", "state": "Active", "client": "192.168.1.100", "pid": 1234, "login_time": "2026-03-09 16:00:00"},
   {"session_id": 43, "username": "root", "domain": "", "station": "tty1", "state": "Active", "pid": 567, "login_time": "2026-03-09 12:00:00"}
+]
+```
+
+### JSON Structure (macOS)
+```json
+[
+  {"session_id": 0, "username": "gary", "domain": "", "station": "ttys000", "state": "Active", "pid": 1234, "login_time": "2026-03-10 10:00:00"},
+  {"session_id": 0, "username": "gary", "domain": "", "station": "ttys001", "state": "Active", "client": "workstation.local", "pid": 5678, "login_time": "2026-03-10 11:00:00"}
 ]
 ```
 

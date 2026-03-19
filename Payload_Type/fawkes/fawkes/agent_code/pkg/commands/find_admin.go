@@ -51,6 +51,8 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
+	defer structs.ZeroString(&args.Password)
+	defer structs.ZeroString(&args.Hash)
 
 	if args.Hosts == "" {
 		return errorResult("Error: hosts parameter is required")

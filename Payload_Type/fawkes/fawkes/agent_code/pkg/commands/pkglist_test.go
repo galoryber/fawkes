@@ -280,3 +280,118 @@ func TestPkgListLinuxWithFilter(t *testing.T) {
 		t.Error("Output should contain header even with filter")
 	}
 }
+
+// --- writePkgPairs tests ---
+
+func TestWritePkgPairs_Basic(t *testing.T) {
+	pkgs := [][2]string{
+		{"bash", "5.1"},
+		{"curl", "7.88.1"},
+		{"zlib", "1.2.13"},
+	}
+	var sb strings.Builder
+	writePkgPairs(&sb, pkgs, 100)
+	output := sb.String()
+	if !strings.Contains(output, "bash") {
+		t.Error("output should contain bash")
+	}
+	if !strings.Contains(output, "curl") {
+		t.Error("output should contain curl")
+	}
+	if !strings.Contains(output, "zlib") {
+		t.Error("output should contain zlib")
+	}
+	// Should have 3 lines
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) != 3 {
+		t.Errorf("expected 3 lines, got %d", len(lines))
+	}
+}
+
+func TestWritePkgPairs_Empty(t *testing.T) {
+	var sb strings.Builder
+	writePkgPairs(&sb, nil, 100)
+	if sb.String() != "" {
+		t.Errorf("expected empty output for nil pkgs, got %q", sb.String())
+	}
+}
+
+func TestWritePkgPairs_TruncationAtLimit(t *testing.T) {
+	var pkgs [][2]string
+	for i := 0; i < 10; i++ {
+		pkgs = append(pkgs, [2]string{
+			strings.Repeat("p", 5) + string(rune('0'+i)),
+			"1.0",
+		})
+	}
+	var sb strings.Builder
+	writePkgPairs(&sb, pkgs, 5)
+	output := sb.String()
+	// Should show exactly 5 packages then truncation message
+	if !strings.Contains(output, "... and 5 more (showing first 5)") {
+		t.Errorf("expected truncation message, got:\n%s", output)
+	}
+	// Packages 0-4 should appear, package 5+ should not
+	if !strings.Contains(output, "ppppp0") {
+		t.Error("first package should appear")
+	}
+	if !strings.Contains(output, "ppppp4") {
+		t.Error("5th package should appear")
+	}
+	if strings.Contains(output, "ppppp5") {
+		t.Error("6th package should NOT appear after truncation")
+	}
+}
+
+func TestWritePkgPairs_ExactlyAtLimit(t *testing.T) {
+	var pkgs [][2]string
+	for i := 0; i < 5; i++ {
+		pkgs = append(pkgs, [2]string{"pkg" + string(rune('A'+i)), "1.0"})
+	}
+	var sb strings.Builder
+	writePkgPairs(&sb, pkgs, 5)
+	output := sb.String()
+	// All 5 shown, truncation message says "0 more" (boundary behavior)
+	if !strings.Contains(output, "pkgE") {
+		t.Error("last package should appear")
+	}
+	if !strings.Contains(output, "... and 0 more") {
+		t.Error("boundary case shows '0 more' truncation message")
+	}
+}
+
+func TestWritePkgPairs_UnderLimit(t *testing.T) {
+	pkgs := [][2]string{
+		{"pkgA", "1.0"},
+		{"pkgB", "2.0"},
+	}
+	var sb strings.Builder
+	writePkgPairs(&sb, pkgs, 100)
+	output := sb.String()
+	// Under limit — no truncation message
+	if strings.Contains(output, "... and") {
+		t.Error("should not show truncation message when under limit")
+	}
+	if !strings.Contains(output, "pkgA") || !strings.Contains(output, "pkgB") {
+		t.Error("all packages should appear")
+	}
+}
+
+func TestWritePkgPairs_ColumnAlignment(t *testing.T) {
+	pkgs := [][2]string{
+		{"short", "1.0"},
+		{"a-much-longer-package-name-here", "2.5.3"},
+	}
+	var sb strings.Builder
+	writePkgPairs(&sb, pkgs, 100)
+	output := sb.String()
+	// Each line should have the name padded to 40 chars
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimPrefix(line, "    ")
+		// The version should appear after the 40-char name column
+		if len(trimmed) < 40 {
+			t.Errorf("line too short for column alignment: %q", line)
+		}
+	}
+}

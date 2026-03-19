@@ -9,15 +9,15 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "net-user",
-		Description:         "Manage local user accounts and group membership (T1136.001, T1098). Windows: Win32 NetUser API. Linux: useradd/userdel/usermod/chpasswd.",
+		Description:         "Manage local user accounts and group membership (T1136.001, T1098). Windows: Win32 NetUser API. Linux: useradd/userdel/usermod/chpasswd. macOS: dscl/dseditgroup.",
 		HelpString:          "net-user -action <add|delete|info|password|group-add|group-remove> -username <name> [-password <pass>] [-group <group>]",
-		Version:             2,
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1136.001", "T1098"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -112,38 +112,53 @@ func init() {
 			username, _ := taskData.Args.GetStringArg("username")
 			display := fmt.Sprintf("%s user: %s", action, username)
 			response.DisplayParams = &display
-			isLinux := taskData.Callback.OS == "Linux"
+			osType := taskData.Callback.OS
 			switch action {
 			case "add":
-				if isLinux {
+				switch osType {
+				case "Linux":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("useradd -m -s /bin/bash %s", username))
-				} else {
+				case "macOS":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("dscl . -create /Users/%s", username))
+				default:
 					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("NetUserAdd(%s)", username))
 				}
 			case "delete":
-				if isLinux {
+				switch osType {
+				case "Linux":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("userdel -r %s", username))
-				} else {
+				case "macOS":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("dscl . -delete /Users/%s", username))
+				default:
 					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("NetUserDel(%s)", username))
 				}
 			case "password":
-				if isLinux {
+				switch osType {
+				case "Linux":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("chpasswd (user: %s)", username))
-				} else {
+				case "macOS":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("dscl . -passwd /Users/%s", username))
+				default:
 					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("NetUserSetInfo(%s, level=1003)", username))
 				}
 			case "group-add":
 				group, _ := taskData.Args.GetStringArg("group")
-				if isLinux {
+				switch osType {
+				case "Linux":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("usermod -aG %s %s", group, username))
-				} else {
+				case "macOS":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("dseditgroup -o edit -a %s -t user %s", username, group))
+				default:
 					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("NetLocalGroupAddMembers(%s, %s)", group, username))
 				}
 			case "group-remove":
 				group, _ := taskData.Args.GetStringArg("group")
-				if isLinux {
+				switch osType {
+				case "Linux":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("gpasswd -d %s %s", username, group))
-				} else {
+				case "macOS":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("dseditgroup -o edit -d %s -t user %s", username, group))
+				default:
 					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("NetLocalGroupDelMembers(%s, %s)", group, username))
 				}
 			}

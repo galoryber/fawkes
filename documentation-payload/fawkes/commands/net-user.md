@@ -11,6 +11,7 @@ Manage local user accounts and group membership. Create users, delete users, cha
 
 - **Windows**: Uses Win32 netapi32.dll API — no subprocess creation, opsec-friendly
 - **Linux**: Uses `useradd`/`userdel`/`usermod`/`chpasswd`/`gpasswd` system commands
+- **macOS**: Uses `dscl` (Directory Service command line) and `dseditgroup` — native macOS user management
 
 ## Arguments
 
@@ -46,6 +47,9 @@ net-user -action group-add -username backdoor -group Administrators
 
 # Linux
 net-user -action group-add -username backdoor -group sudo
+
+# macOS
+net-user -action group-add -username backdoor -group admin
 ```
 
 ### Remove user from a group
@@ -113,6 +117,18 @@ Operations use standard system administration commands:
 | group-add | `usermod -aG group username` |
 | group-remove | `gpasswd -d username group` |
 
+### macOS
+Operations use Directory Service commands:
+
+| Action | Command |
+|--------|---------|
+| add | `dscl . -create /Users/username` (+ shell, UID, GID, home, password) |
+| delete | `dscl . -delete /Users/username` |
+| info | `dscl . -read /Users/username` + `id -Gn` |
+| password | `dscl . -passwd /Users/username` |
+| group-add | `dseditgroup -o edit -a username -t user group` |
+| group-remove | `dseditgroup -o edit -d username -t user group` |
+
 ## Operational Notes
 
 - **Requires root/administrator privileges** for write operations (add, delete, password, group-add, group-remove)
@@ -120,6 +136,8 @@ Operations use standard system administration commands:
 - **Linux `info`** also reports password status (set/locked/empty), group memberships, and sudo access
 - Linux creates users with `/bin/bash` shell and home directory by default
 - **Linux `delete`** removes the home directory with `-r` flag
+- **macOS** `add` auto-assigns the next available UID starting from 501
+- **macOS** `info` shows user properties, groups, admin access, and ShadowHash authentication status
 - Password credentials are zeroed from memory after use
 
 ## MITRE ATT&CK Mapping

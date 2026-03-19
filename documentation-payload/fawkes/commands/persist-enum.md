@@ -15,10 +15,10 @@ Enumerate persistence mechanisms without making any changes. Cross-platform comm
 Registry Run keys, startup folders, Winlogon hijacks, IFEO, AppInit_DLLs, scheduled tasks, non-Microsoft services.
 
 ### Linux
-Cron jobs (system + user), systemd services/timers, shell profiles, init.d scripts, rc.local, XDG autostart, SSH authorized_keys + private keys + agent sockets, LD_PRELOAD.
+Cron jobs (system + user), systemd services/timers, shell profiles, init.d scripts, rc.local, XDG autostart, SSH authorized_keys + private keys + agent sockets, LD_PRELOAD, udev rules, kernel modules (auto-load + modprobe install), MOTD scripts, at jobs.
 
 ### macOS
-LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout hooks, SSH authorized_keys + private keys + agent sockets, periodic scripts.
+LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout hooks, SSH authorized_keys + private keys + agent sockets, periodic scripts, authorization plugins, emond rules, at jobs.
 
 ## Categories by Platform
 
@@ -42,6 +42,10 @@ LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout 
 | `startup` | /etc/rc.local, /etc/init.d/ scripts, XDG autostart (.desktop files) |
 | `ssh` | ~/.ssh/authorized_keys, /root/.ssh/authorized_keys, private keys (encrypted/plaintext detection), SSH agent sockets |
 | `preload` | /etc/ld.so.preload, LD_PRELOAD env var, /etc/environment |
+| `udev` | /etc/udev/rules.d/ (custom), /lib/udev/rules.d/ (system) — flags RUN= directives (T1546) |
+| `modules` | /etc/modules, /etc/modules-load.d/ (systemd), /etc/modprobe.d/ install directives (T1547.006) |
+| `motd` | /etc/update-motd.d/ executable scripts, /etc/motd static message (T1546) |
+| `at` | /var/spool/at/ and /var/spool/atjobs/ scheduled one-time jobs, at.allow/at.deny access control |
 
 ### macOS
 | Category | What It Checks |
@@ -51,6 +55,9 @@ LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout 
 | `shell` | User profiles (.zshrc, .bash_profile, etc.), system profiles (/etc/profile, /etc/zshrc) |
 | `login` | Login/Logout hooks (com.apple.loginwindow), SSH authorized_keys, private keys (encrypted/plaintext detection), SSH agent sockets |
 | `periodic` | /etc/periodic/daily, weekly, monthly scripts |
+| `authplugins` | /Library/Security/SecurityAgentPlugins/ (T1547.002) |
+| `emond` | /etc/emond.d/rules/ Event Monitor daemon rules (T1546.014) |
+| `at` | /var/at/jobs/ scheduled one-time jobs |
 
 ## Arguments
 
@@ -73,10 +80,15 @@ persist-enum -category tasks
 persist-enum -category cron
 persist-enum -category systemd
 persist-enum -category preload
+persist-enum -category udev
+persist-enum -category modules
+persist-enum -category motd
+persist-enum -category at
 
 # macOS examples
 persist-enum -category launchd
 persist-enum -category login
+persist-enum -category authplugins
 ```
 
 ## Notes
@@ -90,5 +102,9 @@ persist-enum -category login
 ## MITRE ATT&CK Mapping
 
 - **T1547** — Boot or Logon Autostart Execution
+- **T1547.002** — Authentication Process (Authorization Plugins)
+- **T1547.006** — Kernel Modules and Extensions
+- **T1546** — Event Triggered Execution (udev rules, MOTD scripts)
+- **T1546.014** — Event Triggered Execution: Emond
 - **T1053** — Scheduled Task/Job
 - **T1543** — Create or Modify System Process

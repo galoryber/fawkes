@@ -36,4 +36,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&HashdumpCommand{})
 	RegisterCommand(&LogonSessionsCommand{})
 	RegisterCommand(&FirewallCommand{})
+	RegisterCommand(&EventLogCommand{})
 }

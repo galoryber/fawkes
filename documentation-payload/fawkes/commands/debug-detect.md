@@ -21,17 +21,23 @@ Detect attached debuggers, analysis tools, and instrumentation. Runs multiple pl
 | PEB.BeingDebugged | Read PEB offset 0x2 | PEB flag set by ntdll!LdrpInitialize |
 | Hardware Breakpoints (DR0-3) | GetThreadContext | Debug registers set by analyst |
 
-### Linux (2 checks)
+### Linux (5 checks)
 | Check | Method | Detects |
 |-------|--------|---------|
 | TracerPid | /proc/self/status | ptrace-attached debugger (GDB, strace, ltrace) |
 | LD_PRELOAD | Environment variable | Library injection/hooking |
+| Memory Maps | /proc/self/maps | Frida, Valgrind, sanitizers (ASAN/TSAN/UBSAN), Intel Pin, DynamoRIO |
+| Process Status | /proc/self/status (Seccomp, CapEff) | Sandbox/container restrictions, zero capabilities |
+| VM/Sandbox Detection | /proc/cpuinfo, DMI, /.dockerenv | Hypervisor flag, VirtualBox/VMware/KVM/Xen, Docker/container |
 
-### macOS (2 checks)
+### macOS (5 checks)
 | Check | Method | Detects |
 |-------|--------|---------|
 | sysctl P_TRACED | kern.proc.pid sysctl | Debugger attached via ptrace |
 | DYLD_INSERT_LIBRARIES | Environment variable | Library injection |
+| VM Detection | sysctl (kern.hv_vmm_present, hw.model, CPU brand) | VMware, Parallels, VirtualBox, QEMU, UTM, hypervisor |
+| Security Products | LaunchDaemon plists + SystemExtensions | CrowdStrike, SentinelOne, Defender, Carbon Black, Cortex XDR, Elastic, JAMF, osquery, Santa, etc. |
+| Sandbox/Analysis Environment | Environment variables | App Sandbox, malloc debugging (NSZombie, MallocScribble), DYLD tracing |
 
 ### Cross-Platform (1 check)
 | Check | Method | Detects |

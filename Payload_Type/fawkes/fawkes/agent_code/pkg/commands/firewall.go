@@ -351,23 +351,41 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 	defer rule.Release()
 
 	// Set rule properties
-	oleutil.PutProperty(rule, "Name", args.Name)
-	oleutil.PutProperty(rule, "Enabled", true)
-	oleutil.PutProperty(rule, "Profiles", fwProfileAll)
+	setProp := func(name string, val interface{}) error {
+		_, err := oleutil.PutProperty(rule, name, val)
+		if err != nil {
+			return fmt.Errorf("setting %s: %w", name, err)
+		}
+		return nil
+	}
+
+	if err := setProp("Name", args.Name); err != nil {
+		return errorf("Error %v", err)
+	}
+	if err := setProp("Enabled", true); err != nil {
+		return errorf("Error %v", err)
+	}
+	if err := setProp("Profiles", fwProfileAll); err != nil {
+		return errorf("Error %v", err)
+	}
 
 	// Direction (default: inbound)
 	dir := fwRuleDirectionIn
 	if strings.EqualFold(args.Direction, "out") || strings.EqualFold(args.Direction, "outbound") {
 		dir = fwRuleDirectionOut
 	}
-	oleutil.PutProperty(rule, "Direction", dir)
+	if err := setProp("Direction", dir); err != nil {
+		return errorf("Error %v", err)
+	}
 
 	// Action (default: allow)
 	action := fwActionAllow
 	if strings.EqualFold(args.RuleAction, "block") {
 		action = fwActionBlock
 	}
-	oleutil.PutProperty(rule, "Action", action)
+	if err := setProp("Action", action); err != nil {
+		return errorf("Error %v", err)
+	}
 
 	// Protocol
 	proto := fwIPProtocolAny
@@ -377,16 +395,22 @@ func firewallAdd(args firewallArgs) structs.CommandResult {
 	case "udp":
 		proto = fwIPProtocolUDP
 	}
-	oleutil.PutProperty(rule, "Protocol", proto)
+	if err := setProp("Protocol", proto); err != nil {
+		return errorf("Error %v", err)
+	}
 
 	// Ports (only for TCP/UDP)
 	if args.Port != "" && (proto == fwIPProtocolTCP || proto == fwIPProtocolUDP) {
-		oleutil.PutProperty(rule, "LocalPorts", args.Port)
+		if err := setProp("LocalPorts", args.Port); err != nil {
+			return errorf("Error %v", err)
+		}
 	}
 
 	// Program path
 	if args.Program != "" {
-		oleutil.PutProperty(rule, "ApplicationName", args.Program)
+		if err := setProp("ApplicationName", args.Program); err != nil {
+			return errorf("Error %v", err)
+		}
 	}
 
 	// Add the rule to the collection

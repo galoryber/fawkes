@@ -29,26 +29,15 @@ func TestPersistEnumCommand_DefaultAll(t *testing.T) {
 	if !strings.Contains(result.Output, "Persistence Enumeration (Linux)") {
 		t.Error("output missing Linux header")
 	}
-	if !strings.Contains(result.Output, "Cron Jobs") {
-		t.Error("output missing Cron section")
+	expectedSections := []string{
+		"Cron Jobs", "Systemd Units", "Shell Profiles", "Startup / Init",
+		"SSH Authorized Keys", "LD_PRELOAD", "Udev Rules", "Kernel Modules",
+		"MOTD Scripts", "At Jobs", "Total:",
 	}
-	if !strings.Contains(result.Output, "Systemd Units") {
-		t.Error("output missing Systemd section")
-	}
-	if !strings.Contains(result.Output, "Shell Profiles") {
-		t.Error("output missing Shell Profiles section")
-	}
-	if !strings.Contains(result.Output, "Startup / Init") {
-		t.Error("output missing Startup section")
-	}
-	if !strings.Contains(result.Output, "SSH Authorized Keys") {
-		t.Error("output missing SSH section")
-	}
-	if !strings.Contains(result.Output, "LD_PRELOAD") {
-		t.Error("output missing Preload section")
-	}
-	if !strings.Contains(result.Output, "Total:") {
-		t.Error("output missing total count")
+	for _, section := range expectedSections {
+		if !strings.Contains(result.Output, section) {
+			t.Errorf("output missing %q section", section)
+		}
 	}
 }
 
@@ -141,5 +130,142 @@ func TestPersistEnumArgs_Unmarshal(t *testing.T) {
 	}
 	if args.Category != "cron" {
 		t.Errorf("Category = %q, want %q", args.Category, "cron")
+	}
+}
+
+// --- Tests for new persistence categories ---
+
+func TestPersistEnumCommand_UdevCategory(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	params, _ := json.Marshal(persistEnumArgs{Category: "udev"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Udev Rules") {
+		t.Error("output missing Udev Rules section")
+	}
+}
+
+func TestPersistEnumCommand_ModulesCategory(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	params, _ := json.Marshal(persistEnumArgs{Category: "modules"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Kernel Modules") {
+		t.Error("output missing Kernel Modules section")
+	}
+}
+
+func TestPersistEnumCommand_MotdCategory(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	params, _ := json.Marshal(persistEnumArgs{Category: "motd"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "MOTD Scripts") {
+		t.Error("output missing MOTD Scripts section")
+	}
+}
+
+func TestPersistEnumCommand_AtJobsCategory(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	params, _ := json.Marshal(persistEnumArgs{Category: "at"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "At Jobs") {
+		t.Error("output missing At Jobs section")
+	}
+}
+
+func TestPersistEnumCommand_AllIncludesNewCategories(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"category":"all"}`})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Verify all new sections appear in "all" output
+	for _, section := range []string{"Udev Rules", "Kernel Modules", "MOTD Scripts", "At Jobs"} {
+		if !strings.Contains(result.Output, section) {
+			t.Errorf("'all' output missing %q section", section)
+		}
+	}
+}
+
+func TestPersistEnumUdev_OutputFormat(t *testing.T) {
+	var sb strings.Builder
+	count := persistEnumUdev(&sb)
+	output := sb.String()
+	if !strings.Contains(output, "Udev Rules") {
+		t.Error("missing section header")
+	}
+	// On a real system, /lib/udev/rules.d/ should exist
+	// Count may be 0 or positive depending on system
+	if count < 0 {
+		t.Error("count should not be negative")
+	}
+}
+
+func TestPersistEnumKernelModules_OutputFormat(t *testing.T) {
+	var sb strings.Builder
+	count := persistEnumKernelModules(&sb)
+	output := sb.String()
+	if !strings.Contains(output, "Kernel Modules") {
+		t.Error("missing section header")
+	}
+	if count < 0 {
+		t.Error("count should not be negative")
+	}
+}
+
+func TestPersistEnumMotd_OutputFormat(t *testing.T) {
+	var sb strings.Builder
+	count := persistEnumMotd(&sb)
+	output := sb.String()
+	if !strings.Contains(output, "MOTD Scripts") {
+		t.Error("missing section header")
+	}
+	if count < 0 {
+		t.Error("count should not be negative")
+	}
+}
+
+func TestPersistEnumAtJobs_OutputFormat(t *testing.T) {
+	var sb strings.Builder
+	count := persistEnumAtJobs(&sb)
+	output := sb.String()
+	if !strings.Contains(output, "At Jobs") {
+		t.Error("missing section header")
+	}
+	if count < 0 {
+		t.Error("count should not be negative")
+	}
+}
+
+func TestPersistEnumUdev_DetectsCustomRules(t *testing.T) {
+	// /etc/udev/rules.d/ may or may not have custom rules
+	// This test verifies the function doesn't crash and produces valid output
+	var sb strings.Builder
+	persistEnumUdev(&sb)
+	output := sb.String()
+	// Output must have header and either rules or "(none found)"
+	if !strings.Contains(output, "Udev Rules") {
+		t.Error("missing header")
+	}
+}
+
+func TestPersistEnumKernelModules_ChecksModprobeInstall(t *testing.T) {
+	// /etc/modprobe.d/ should exist on most Linux systems
+	var sb strings.Builder
+	persistEnumKernelModules(&sb)
+	output := sb.String()
+	// Verify it checks modprobe.d — output should contain either a finding or "(none found)"
+	if !strings.Contains(output, "Kernel Modules") {
+		t.Error("missing header")
 	}
 }

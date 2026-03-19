@@ -117,7 +117,11 @@ func evtListChannels(filter string) structs.CommandResult {
 			uintptr(unsafe.Pointer(&used)),
 		)
 		if ret == 0 {
-			errno := uintptr(callErr.(windows.Errno))
+			e, ok := callErr.(windows.Errno)
+			if !ok {
+				break
+			}
+			errno := uintptr(e)
 			if errno == errorNoMoreItems {
 				break
 			}
@@ -210,8 +214,12 @@ func evtQueryEvents(channel, filter string, eventID, maxCount int) structs.Comma
 			uintptr(unsafe.Pointer(&returned)),
 		)
 		if ret == 0 {
-			errno := uintptr(fetchErr.(windows.Errno))
-			if errno == errorNoMoreItems {
+			e, ok := fetchErr.(windows.Errno)
+			if !ok {
+				sb.WriteString(fmt.Sprintf("EvtNext error: %v\n", fetchErr))
+				break
+			}
+			if uintptr(e) == errorNoMoreItems {
 				break
 			}
 			sb.WriteString(fmt.Sprintf("EvtNext error: %v\n", fetchErr))

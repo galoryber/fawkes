@@ -74,6 +74,8 @@ func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func ticketForge(args ticketArgs) structs.CommandResult {
+	defer structs.ZeroString(&args.Key)
+
 	// Validate required args
 	if args.Realm == "" || args.Username == "" || args.Key == "" || args.DomainSID == "" {
 		return errorResult("Error: realm, username, key, and domain_sid are required for forging")
@@ -103,6 +105,7 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error decoding key hex: %v", err)
 	}
+	defer structs.ZeroBytes(keyBytes)
 
 	// Validate key type and length using shared helper
 	etypeID, _, errResult := ticketParseKeyType(args.KeyType, keyBytes)
@@ -120,6 +123,7 @@ func ticketForge(args ticketArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error generating session key: %v", err)
 	}
+	defer structs.ZeroBytes(sessionKey.KeyValue)
 
 	// Determine service principal
 	var sname types.PrincipalName
@@ -243,6 +247,8 @@ func ticketFormatOutput(args ticketArgs, realm string, isGolden bool, sessionKey
 // a real TGT from the KDC using an extracted Kerberos key. The resulting TGT can be
 // exported as kirbi or ccache and injected via klist import. (T1550.002)
 func ticketRequest(args ticketArgs) structs.CommandResult {
+	defer structs.ZeroString(&args.Key)
+
 	if args.Realm == "" || args.Username == "" || args.Key == "" || args.Server == "" {
 		return errorResult("Error: realm, username, key, and server (KDC) are required for request")
 	}
@@ -260,6 +266,7 @@ func ticketRequest(args ticketArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error decoding key hex: %v", err)
 	}
+	defer structs.ZeroBytes(keyBytes)
 
 	etypeID, etypeCfgName, errResult := ticketParseKeyType(args.KeyType, keyBytes)
 	if errResult != nil {
@@ -440,6 +447,8 @@ func ticketRequestFormatOutput(args ticketArgs, realm string, sessionKey types.E
 // user via constrained delegation. Uses a service account's key to get a TGT, then
 // S4U2Self for impersonation, then S4U2Proxy to access the target SPN. (T1134.001)
 func ticketS4U(args ticketArgs) structs.CommandResult {
+	defer structs.ZeroString(&args.Key)
+
 	if args.Realm == "" || args.Username == "" || args.Key == "" || args.Server == "" || args.Impersonate == "" || args.SPN == "" {
 		return errorResult("Error: realm, username (service account), key, server (KDC), impersonate (target user), and spn (target service) are required for s4u")
 	}
@@ -457,6 +466,7 @@ func ticketS4U(args ticketArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error decoding key hex: %v", err)
 	}
+	defer structs.ZeroBytes(keyBytes)
 
 	etypeID, etypeCfgName, errResult := ticketParseKeyType(args.KeyType, keyBytes)
 	if errResult != nil {

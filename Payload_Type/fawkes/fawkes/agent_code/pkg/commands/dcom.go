@@ -111,6 +111,7 @@ func (c *DcomCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
+	defer structs.ZeroString(&args.Password)
 
 	switch strings.ToLower(args.Action) {
 	case "exec":

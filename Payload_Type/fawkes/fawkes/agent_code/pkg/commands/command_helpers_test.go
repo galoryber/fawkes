@@ -855,6 +855,171 @@ func TestBofPackWideString_Empty(t *testing.T) {
 	}
 }
 
+// --- bofPack individual function tests ---
+
+func TestBofPackString_NonEmpty(t *testing.T) {
+	result := bofPackString("hello")
+	// 4-byte length + 5 chars + 1 null = 10
+	if len(result) != 10 {
+		t.Fatalf("expected 10 bytes, got %d", len(result))
+	}
+	strLen := binary.LittleEndian.Uint32(result[:4])
+	if strLen != 6 { // "hello" + null
+		t.Errorf("expected length 6, got %d", strLen)
+	}
+	if string(result[4:9]) != "hello" {
+		t.Errorf("expected 'hello', got %q", string(result[4:9]))
+	}
+	if result[9] != 0 {
+		t.Error("expected null terminator")
+	}
+}
+
+func TestBofPackWideString_NonEmpty(t *testing.T) {
+	result := bofPackWideString("AB")
+	// 4-byte length + 2 chars * 2 bytes + 2 null bytes = 10
+	if len(result) != 10 {
+		t.Fatalf("expected 10 bytes, got %d", len(result))
+	}
+	wstrLen := binary.LittleEndian.Uint32(result[:4])
+	if wstrLen != 6 { // 2 chars * 2 + 2 null
+		t.Errorf("expected length 6, got %d", wstrLen)
+	}
+	// 'A' = 0x41,0x00  'B' = 0x42,0x00  null = 0x00,0x00
+	if result[4] != 0x41 || result[5] != 0x00 {
+		t.Errorf("expected 'A' as UTF-16LE, got %02x %02x", result[4], result[5])
+	}
+	if result[6] != 0x42 || result[7] != 0x00 {
+		t.Errorf("expected 'B' as UTF-16LE, got %02x %02x", result[6], result[7])
+	}
+}
+
+func TestBofPackBinary_Valid(t *testing.T) {
+	result, err := bofPackBinary("deadbeef")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4-byte length + 4 bytes decoded = 8
+	if len(result) != 8 {
+		t.Fatalf("expected 8 bytes, got %d", len(result))
+	}
+	dataLen := binary.LittleEndian.Uint32(result[:4])
+	if dataLen != 4 {
+		t.Errorf("expected length 4, got %d", dataLen)
+	}
+	if result[4] != 0xDE || result[5] != 0xAD || result[6] != 0xBE || result[7] != 0xEF {
+		t.Errorf("expected DEADBEEF, got %X", result[4:8])
+	}
+}
+
+func TestBofPackBinary_InvalidHex(t *testing.T) {
+	_, err := bofPackBinary("xyz")
+	if err == nil {
+		t.Error("expected error for invalid hex")
+	}
+}
+
+func TestBofPackBinary_Empty(t *testing.T) {
+	result, err := bofPackBinary("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 4-byte length prefix with 0 data
+	if len(result) != 4 {
+		t.Fatalf("expected 4 bytes, got %d", len(result))
+	}
+	dataLen := binary.LittleEndian.Uint32(result[:4])
+	if dataLen != 0 {
+		t.Errorf("expected length 0, got %d", dataLen)
+	}
+}
+
+func TestBofPackInt_Valid(t *testing.T) {
+	result, err := bofPackInt("42")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 4 {
+		t.Fatalf("expected 4 bytes, got %d", len(result))
+	}
+	val := binary.LittleEndian.Uint32(result)
+	if val != 42 {
+		t.Errorf("expected 42, got %d", val)
+	}
+}
+
+func TestBofPackInt_Zero(t *testing.T) {
+	result, err := bofPackInt("0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	val := binary.LittleEndian.Uint32(result)
+	if val != 0 {
+		t.Errorf("expected 0, got %d", val)
+	}
+}
+
+func TestBofPackInt_MaxUint32(t *testing.T) {
+	result, err := bofPackInt("4294967295")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	val := binary.LittleEndian.Uint32(result)
+	if val != 4294967295 {
+		t.Errorf("expected 4294967295, got %d", val)
+	}
+}
+
+func TestBofPackInt_Invalid(t *testing.T) {
+	_, err := bofPackInt("notanumber")
+	if err == nil {
+		t.Error("expected error for non-numeric input")
+	}
+}
+
+func TestBofPackShort_Valid(t *testing.T) {
+	result, err := bofPackShort("1234")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 bytes, got %d", len(result))
+	}
+	val := binary.LittleEndian.Uint16(result)
+	if val != 1234 {
+		t.Errorf("expected 1234, got %d", val)
+	}
+}
+
+func TestBofPackShort_Zero(t *testing.T) {
+	result, err := bofPackShort("0")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	val := binary.LittleEndian.Uint16(result)
+	if val != 0 {
+		t.Errorf("expected 0, got %d", val)
+	}
+}
+
+func TestBofPackShort_MaxUint16(t *testing.T) {
+	result, err := bofPackShort("65535")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	val := binary.LittleEndian.Uint16(result)
+	if val != 65535 {
+		t.Errorf("expected 65535, got %d", val)
+	}
+}
+
+func TestBofPackShort_Invalid(t *testing.T) {
+	_, err := bofPackShort("notanumber")
+	if err == nil {
+		t.Error("expected error for non-numeric input")
+	}
+}
+
 // --- Thread Scan helpers tests ---
 
 func TestTsWaitReasonString_AllKnown(t *testing.T) {

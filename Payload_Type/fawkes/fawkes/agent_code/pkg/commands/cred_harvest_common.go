@@ -250,10 +250,12 @@ func credCloudK8sServiceAccount(sb *strings.Builder) {
 		sb.WriteString("--- Kubernetes Service Account (In-Pod) ---\n")
 		sb.WriteString(fmt.Sprintf("  [TOKEN] %s (%d bytes)\n", tokenPath, len(data)))
 		token := string(data)
+		structs.ZeroBytes(data) // opsec: clear raw token bytes
 		if len(token) > 200 {
 			token = token[:100] + "..." + token[len(token)-50:]
 		}
 		sb.WriteString(fmt.Sprintf("  Value: %s\n", token))
+		structs.ZeroString(&token) // opsec: clear token string after use
 
 		// Also grab namespace and CA cert
 		if ns, err := os.ReadFile(filepath.Join(saDir, "namespace")); err == nil {

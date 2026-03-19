@@ -15,7 +15,7 @@ func init() {
 		},
 		Description:         "Show currently logged-in users and active sessions. Linux: parses utmp. Windows: WTSEnumerateSessions API. macOS: parses utmpx.",
 		HelpString:          "who\nwho -all true",
-		Version:             1,
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1033"},
 		CommandAttributes: agentstructs.CommandAttribute{

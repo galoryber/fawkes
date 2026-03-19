@@ -1,14 +1,11 @@
 package commands
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
-	"net"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
 
@@ -57,6 +54,7 @@ func (c *NetGroupCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
+	defer structs.ZeroString(&args.Password)
 
 	if args.Server == "" {
 		return errorResult("Error: server parameter required (domain controller IP or hostname)")
@@ -106,21 +104,11 @@ func (c *NetGroupCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func ngConnect(args netGroupArgs) (*ldap.Conn, error) {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
-	if args.UseTLS {
-		return ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", args.Server, args.Port),
-			ldap.DialWithDialer(dialer),
-			ldap.DialWithTLSConfig(&tls.Config{InsecureSkipVerify: true}))
-	}
-	return ldap.DialURL(fmt.Sprintf("ldap://%s:%d", args.Server, args.Port),
-		ldap.DialWithDialer(dialer))
+	return ldapDial(args.Server, args.Port, args.UseTLS)
 }
 
 func ngBind(conn *ldap.Conn, args netGroupArgs) error {
-	if args.Username != "" && args.Password != "" {
-		return conn.Bind(args.Username, args.Password)
-	}
-	return conn.UnauthenticatedBind("")
+	return ldapBindSimple(conn, args.Username, args.Password)
 }
 
 func ngDetectBaseDN(conn *ldap.Conn) (string, error) {
