@@ -10,9 +10,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "find",
-		Description:         "Search for files by name pattern with optional size, date, and type filters",
-		HelpString:          "find -path <dir> -pattern <glob> [-min_size <bytes>] [-max_size <bytes>] [-newer <minutes>] [-older <minutes>] [-type f|d]",
-		Version:             2,
+		Description:         "Search for files by name, size, date, permissions, or owner. Find SUID binaries, world-writable files, or files owned by specific users",
+		HelpString:          "find -path <dir> -pattern <glob> [-min_size <bytes>] [-max_size <bytes>] [-newer <minutes>] [-older <minutes>] [-type f|d] [-perm suid|sgid|writable|executable|<octal>] [-owner <user|uid>]",
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1083"},
@@ -133,6 +133,34 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "perm",
+				ModalDisplayName: "Permission Filter",
+				CLIName:          "perm",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Filter by permissions: 'suid', 'sgid', 'writable' (world-writable), 'executable', or octal (e.g. '4000' for SUID, '0002' for world-writable)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "owner",
+				ModalDisplayName: "Owner Filter",
+				CLIName:          "owner",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Filter by file owner: username (e.g. 'root') or numeric UID (e.g. '0')",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -176,6 +204,14 @@ func init() {
 			}
 			if typeFilter != "" {
 				filters = append(filters, fmt.Sprintf("type=%s", typeFilter))
+			}
+			perm, _ := taskData.Args.GetStringArg("perm")
+			if perm != "" {
+				filters = append(filters, fmt.Sprintf("perm=%s", perm))
+			}
+			owner, _ := taskData.Args.GetStringArg("owner")
+			if owner != "" {
+				filters = append(filters, fmt.Sprintf("owner=%s", owner))
 			}
 			if len(filters) > 0 {
 				display += " (" + strings.Join(filters, ", ") + ")"

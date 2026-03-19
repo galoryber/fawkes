@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -31,6 +34,8 @@ type FindParams struct {
 	Newer    int    `json:"newer"`    // modified within the last N minutes (0 = no filter)
 	Older    int    `json:"older"`    // modified more than N minutes ago (0 = no filter)
 	Type     string `json:"type"`     // "f" = files only, "d" = dirs only, "" = both
+	Perm     string `json:"perm"`     // permission filter: "suid", "sgid", "writable", "executable", or octal like "4000"
+	Owner    string `json:"owner"`    // owner filter: username or UID
 }
 
 func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
@@ -44,7 +49,7 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	if params.Pattern == "" {
 		// Default pattern matches everything when using filters
-		if params.MinSize > 0 || params.MaxSize > 0 || params.Newer > 0 || params.Older > 0 || params.Type != "" {
+		if params.MinSize > 0 || params.MaxSize > 0 || params.Newer > 0 || params.Older > 0 || params.Type != "" || params.Perm != "" || params.Owner != "" {
 			params.Pattern = "*"
 		} else {
 			return errorResult("Error: pattern is required")
@@ -68,6 +73,15 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	if params.Older > 0 {
 		olderThan = now.Add(-time.Duration(params.Older) * time.Minute)
+	}
+
+	// Precompute permission filter
+	permFilter := findParsePerm(params.Perm)
+
+	// Precompute owner filter (resolve username to UID)
+	var ownerUID int64 = -1
+	if params.Owner != "" {
+		ownerUID = findResolveOwner(params.Owner)
 	}
 
 	startDepth := strings.Count(startPath, string(os.PathSeparator))
@@ -133,6 +147,22 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 			return nil
 		}
 
+		// Permission filter
+		if permFilter.set {
+			if !findMatchPerm(info.Mode(), permFilter) {
+				return nil
+			}
+		}
+
+		// Owner filter
+		if ownerUID >= 0 {
+			if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+				if int64(stat.Uid) != ownerUID {
+					return nil
+				}
+			}
+		}
+
 		// Format output
 		sizeStr := ""
 		if !d.IsDir() {
@@ -192,10 +222,83 @@ func findFilterSummary(params FindParams) string {
 	if params.Type != "" {
 		filters = append(filters, fmt.Sprintf("type=%s", params.Type))
 	}
+	if params.Perm != "" {
+		filters = append(filters, fmt.Sprintf("perm=%s", params.Perm))
+	}
+	if params.Owner != "" {
+		filters = append(filters, fmt.Sprintf("owner=%s", params.Owner))
+	}
 	if len(filters) > 0 {
 		return fmt.Sprintf(" (filters: %s)", strings.Join(filters, ", "))
 	}
 	return ""
+}
+
+// findPermFilter holds a parsed permission filter.
+type findPermFilter struct {
+	set        bool
+	specialBit fs.FileMode // ModeSetuid, ModeSetgid, or 0
+	permBits   fs.FileMode // permission bits to match (e.g., 0002)
+}
+
+// findParsePerm converts a permission filter string to a findPermFilter.
+// Supports keywords (suid, sgid, writable, executable) and octal (e.g., "4000", "0002").
+func findParsePerm(perm string) findPermFilter {
+	switch strings.ToLower(perm) {
+	case "":
+		return findPermFilter{}
+	case "suid":
+		return findPermFilter{set: true, specialBit: os.ModeSetuid}
+	case "sgid":
+		return findPermFilter{set: true, specialBit: os.ModeSetgid}
+	case "writable":
+		return findPermFilter{set: true, permBits: 0002}
+	case "executable":
+		return findPermFilter{set: true, permBits: 0111}
+	default:
+		val, err := strconv.ParseUint(perm, 8, 32)
+		if err != nil {
+			return findPermFilter{}
+		}
+		// Octal values: 4000=SUID, 2000=SGID, rest are perm bits
+		var f findPermFilter
+		f.set = true
+		if val&04000 != 0 {
+			f.specialBit |= os.ModeSetuid
+		}
+		if val&02000 != 0 {
+			f.specialBit |= os.ModeSetgid
+		}
+		f.permBits = fs.FileMode(val & 07777)
+		return f
+	}
+}
+
+// findMatchPerm checks if a file mode matches the permission filter.
+func findMatchPerm(mode fs.FileMode, f findPermFilter) bool {
+	if f.specialBit != 0 && mode&f.specialBit != f.specialBit {
+		return false
+	}
+	if f.permBits != 0 && mode.Perm()&f.permBits != f.permBits {
+		return false
+	}
+	return true
+}
+
+// findResolveOwner resolves a username or UID string to a numeric UID.
+// Returns -1 if the owner cannot be resolved.
+func findResolveOwner(owner string) int64 {
+	// Try as numeric UID first
+	if uid, err := strconv.ParseInt(owner, 10, 64); err == nil {
+		return uid
+	}
+	// Try as username
+	if u, err := user.Lookup(owner); err == nil {
+		if uid, err := strconv.ParseInt(u.Uid, 10, 64); err == nil {
+			return uid
+		}
+	}
+	return -1
 }
 
 // formatFileSize moved to format_helpers.go

@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Recursively search for files by name pattern (glob) with optional size, date, and type filters. Useful for post-exploitation reconnaissance — locating config files, credentials, documents, recently modified files, and large data targets.
+Recursively search for files by name pattern (glob) with optional size, date, type, permission, and owner filters. Useful for post-exploitation reconnaissance — locating config files, credentials, SUID binaries, world-writable files, and files owned by specific users.
 
 Cross-platform — works on Windows, Linux, and macOS.
 
@@ -23,8 +23,10 @@ Cross-platform — works on Windows, Linux, and macOS.
 | newer | No | 0 | Only files modified within the last N minutes |
 | older | No | 0 | Only files modified more than N minutes ago |
 | type | No | - | `f` for files only, `d` for directories only |
+| perm | No | - | Permission filter: `suid`, `sgid`, `writable` (world-writable), `executable`, or octal (e.g., `4000` for SUID, `0002` for world-writable) |
+| owner | No | - | Owner filter: username (e.g., `root`) or numeric UID (e.g., `0`) |
 
-*Pattern is required unless at least one filter (size, date, or type) is specified, in which case it defaults to `*`.
+*Pattern is required unless at least one filter (size, date, type, perm, or owner) is specified, in which case it defaults to `*`.
 
 ## Usage
 
@@ -62,6 +64,35 @@ Word documents larger than 10KB modified in the last 2 hours.
 ### Find directories only
 ```
 find -path /home -type d -pattern .ssh
+```
+
+### Find SUID binaries (privilege escalation)
+```
+find -path /usr -perm suid -type f
+```
+Finds all SUID binaries under /usr — critical for privilege escalation enumeration.
+
+### Find world-writable files
+```
+find -path / -perm writable -type f -max_depth 3
+```
+Finds world-writable files that could be modified for persistence or exploitation.
+
+### Find files owned by root
+```
+find -path /tmp -owner root -type f
+```
+Finds root-owned files in /tmp — potential targets for symlink attacks or race conditions.
+
+### Find executable files owned by a specific user
+```
+find -path /opt -perm executable -owner www-data
+```
+Finds executable files owned by web server user — useful for understanding web app deployment.
+
+### Find SGID binaries using octal
+```
+find -path /usr -perm 2000 -type f
 ```
 
 ## Example Output
