@@ -92,7 +92,7 @@ grep | `grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_cas
 hash | `hash -path <file_or_dir> [-algorithm md5\|sha1\|sha256\|sha512] [-recursive true] [-pattern *.exe] [-max_files 500]` | Compute file hashes (MD5, SHA-1, SHA-256, SHA-512). Single files or directories with glob pattern filtering and depth control. Cross-platform (T1083).
 hexdump | `hexdump -path <file> [-offset <bytes>] [-length <bytes>]` | Display file contents in xxd-style hex+ASCII format. Offset/length control for examining specific regions, max 4096 bytes. Cross-platform (T1005).
 handles | `handles -pid <pid> [-type File] [-show_names] [-max_count 500]` | **(Windows, Linux, macOS)** Enumerate open handles/file descriptors in a process. Windows: NtQuerySystemInformation. Linux: /proc/pid/fd. macOS: lsof (T1057, T1082).
-hashdump | `hashdump [-format json]` | **(Windows, Linux)** Extract local account password hashes. Windows: NTLM hashes from SAM registry (requires SYSTEM). Linux: /etc/shadow hashes with hash-type identification (requires root). MITRE T1003.002, T1003.008.
+hashdump | `hashdump [-format json]` | **(Windows, Linux, macOS)** Extract local account password hashes. Windows: NTLM hashes from SAM registry (requires SYSTEM). Linux: /etc/shadow hashes with hash-type identification (requires root). macOS: Directory Services PBKDF2 hashes from user plists (requires root). MITRE T1003.002, T1003.008.
 history-scrub | `history-scrub [-action list\|clear\|clear-all] [-user <username>]` | List or clear shell/application command history files. Covers bash, zsh, fish, PowerShell, python, mysql, and more. Cross-platform (T1070.003).
 hollow | `hollow -filename <shellcode> [-target <process>] [-ppid <pid>] [-block_dlls true]` | **(Windows only)** Process hollowing — create suspended process, write shellcode, redirect thread via SetThreadContext. PPID spoofing + DLL blocking. MITRE T1055.012.
 ide-recon | `ide-recon -action <vscode\|jetbrains\|all> [-user <filter>]` | Enumerate IDE configurations — VS Code extensions, remote SSH hosts, recent projects, settings with secrets. JetBrains data sources, deployment servers, recent projects. Cross-platform (T1005, T1083).
@@ -314,7 +314,7 @@ Credential-harvesting commands automatically report discoveries to Mythic's **Cr
 
 | Command | Credential Type | What's Reported |
 |---------|----------------|-----------------|
-| hashdump | hash | SAM NTLM hashes |
+| hashdump | hash | SAM NTLM hashes (Windows), /etc/shadow hashes (Linux), PBKDF2 hashes (macOS) |
 | kerberoast | hash | TGS tickets for offline cracking |
 | asrep-roast | hash | AS-REP hashes |
 | dcsync | hash | NTLM + AES keys via DRSGetNCChanges |

@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Extract local account password hashes from the system. Supports both Windows (SAM database) and Linux (/etc/shadow).
+Extract local account password hashes from the system. Supports Windows (SAM database), Linux (/etc/shadow), and macOS (Directory Services).
 
 ### Windows — SAM Hash Extraction
 
@@ -46,11 +46,30 @@ Reports extracted credentials to the Mythic credential vault automatically.
 **Requirements:**
 - Root privileges (shadow file is root-readable only)
 
+### macOS — Directory Services Hash Extraction
+
+{{% notice info %}}macOS Only{{% /notice %}}
+
+Reads user plist files from `/var/db/dslocal/nodes/Default/users/` and extracts password hashes using a native binary plist parser (no subprocess).
+
+Parses the `ShadowHashData` attribute, which contains a nested binary plist with the actual hash algorithms:
+
+- **SALTED-SHA512-PBKDF2** (macOS 10.8+) — Most common. Extracted as `$ml$<iterations>$<salt>$<entropy>` (hashcat mode 7100).
+- **SRP-RFC5054-4096-SHA512-PBKDF2** (macOS 10.14+) — Secure Remote Password variant.
+- **SALTED-SHA512** (macOS 10.7) — Legacy format, extracted as `$LION$<salt><hash>`.
+
+Automatically skips system/daemon accounts (usernames starting with `_`).
+
+Reports extracted credentials to the Mythic credential vault automatically.
+
+**Requirements:**
+- Root privileges (plist files are root-readable only)
+
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| format | No | text | Output format: `text` or `json` (Linux only) |
+| format | No | text | Output format: `text` or `json` (Linux/macOS only) |
 
 ## Usage
 
@@ -90,6 +109,22 @@ setup:$6$rounds=5000$salt$hashvalue
 1. Ensure callback is running as root
 2. Run `hashdump`
 3. Crack with hashcat (`-m 1800` for SHA-512, `-m 3200` for bcrypt)
+
+**macOS:**
+1. Ensure callback is running as root
+2. Run `hashdump`
+3. Crack PBKDF2 hashes with hashcat (`-m 7100`)
+
+## Example Output (macOS)
+
+```
+[*] Dumping macOS Directory Services — 2 hashes found
+
+gary:$ml$50000$0001020304...salt...$8081828384...entropy...
+  UID=501 GID=20 Home=/Users/gary Shell=/bin/zsh Type=SALTED-SHA512-PBKDF2
+admin:$ml$38000$aabbccdd...salt...$deadbeef...entropy...
+  UID=502 GID=20 Home=/Users/admin Shell=/bin/bash Type=SALTED-SHA512-PBKDF2
+```
 
 ## MITRE ATT&CK Mapping
 
