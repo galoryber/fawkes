@@ -33,4 +33,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&ServiceCommand{})
 	RegisterCommand(&NetUserCommand{})
 	RegisterCommand(&LogonSessionsCommand{})
+	RegisterCommand(&EventLogCommand{})
 }
