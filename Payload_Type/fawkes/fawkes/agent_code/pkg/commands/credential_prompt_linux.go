@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
 	"os/user"
 	"strings"
@@ -74,6 +75,11 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 	message := args.Message
 	if message == "" {
 		message = "Enter your password to continue."
+	}
+
+	// Check for display server — GUI dialogs need X11 or Wayland
+	if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+		return errorResult("No display server available (DISPLAY and WAYLAND_DISPLAY unset). GUI credential dialog requires a desktop session.")
 	}
 
 	tool, toolPath := findDialogTool()
