@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+
+	"fawkes/pkg/structs"
 )
 
 // darwinHashEntry represents a parsed macOS user hash.
@@ -69,6 +71,7 @@ func parseDarwinUserPlist(username string, data []byte) (*darwinHashEntry, error
 	if len(hashBlob) == 0 {
 		return nil, nil
 	}
+	defer structs.ZeroBytes(hashBlob) // opsec: clear raw hash data
 
 	return parseShadowHashData(entry, hashBlob)
 }
