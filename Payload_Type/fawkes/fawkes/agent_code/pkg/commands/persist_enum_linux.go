@@ -387,6 +387,7 @@ func persistEnumSSHKeys(sb *strings.Builder) int {
 			if strings.Contains(string(content), "ENCRYPTED") {
 				encrypted = "encrypted"
 			}
+			structs.ZeroBytes(content)
 		}
 		sb.WriteString(fmt.Sprintf("  [private key] %s (%d bytes, %s)\n", name, info.Size(), encrypted))
 		count++
