@@ -94,10 +94,20 @@ func parseProcMounts() []mountEntry {
 	}
 	defer f.Close()
 
-	var mounts []mountEntry
+	var lines []string
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
+		lines = append(lines, scanner.Text())
+	}
+	return parseProcMountsData(lines)
+}
+
+// parseProcMountsData parses /proc/mounts-formatted lines into mount entries.
+// Format: "device mountpoint fstype options dump pass"
+func parseProcMountsData(lines []string) []mountEntry {
+	var mounts []mountEntry
+	for _, line := range lines {
+		fields := strings.Fields(line)
 		if len(fields) < 3 {
 			continue
 		}
@@ -118,10 +128,14 @@ func parseMountCommand() []mountEntry {
 	if err != nil {
 		return nil
 	}
+	return parseMountOutput(string(out))
+}
 
+// parseMountOutput parses macOS-style mount command output into mount entries.
+// Format: "/dev/disk1s1 on / (apfs, local, journaled)"
+func parseMountOutput(output string) []mountEntry {
 	var mounts []mountEntry
-	for _, line := range strings.Split(string(out), "\n") {
-		// macOS format: /dev/disk1s1 on / (apfs, local, journaled)
+	for _, line := range strings.Split(output, "\n") {
 		parts := strings.SplitN(line, " on ", 2)
 		if len(parts) != 2 {
 			continue
