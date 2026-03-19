@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -156,10 +155,8 @@ func (c *FindCommand) Execute(task structs.Task) structs.CommandResult {
 
 		// Owner filter
 		if ownerUID >= 0 {
-			if stat, ok := info.Sys().(*syscall.Stat_t); ok {
-				if int64(stat.Uid) != ownerUID {
-					return nil
-				}
+			if !findFileOwnedBy(info, ownerUID) {
+				return nil
 			}
 		}
 
