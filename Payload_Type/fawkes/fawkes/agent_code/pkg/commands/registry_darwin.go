@@ -16,7 +16,6 @@ func registerPlatformCommands() {
 	RegisterCommand(&DrivesUnixCommand{})
 	RegisterCommand(&DebugDetectCommand{})
 	RegisterCommand(&XattrCommand{})
-	RegisterCommand(&MemScanCommand{})
 	RegisterCommand(&PrivescCheckCommand{})
 	RegisterCommand(&ExecuteMemoryCommand{})
 	RegisterCommand(&CredentialPromptCommand{})
@@ -33,4 +32,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&PersistEnumCommand{})
 	RegisterCommand(&ServiceCommand{})
 	RegisterCommand(&NetUserCommand{})
+	RegisterCommand(&LogonSessionsCommand{})
 }
