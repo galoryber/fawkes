@@ -7,9 +7,7 @@ hidden = false
 
 ## Summary
 
-Low-level keyboard logger using Windows `SetWindowsHookExW` with `WH_KEYBOARD_LL`. Captures all keystrokes system-wide with active window context (shows which application the user is typing in).
-
-{{% notice info %}}Windows Only{{% /notice %}}
+Low-level keyboard logger. Windows: `SetWindowsHookExW` with `WH_KEYBOARD_LL` captures all keystrokes system-wide with active window context. Linux: `/dev/input/event*` evdev interface captures keystrokes from all keyboard devices.
 
 ## Arguments
 
@@ -36,7 +34,7 @@ keylog -action stop
 
 ## Output Format
 
-Captured keystrokes include window context headers:
+Captured keystrokes include window context headers (Windows):
 
 ```
 [14:23:05] --- Google Chrome ---
@@ -47,16 +45,38 @@ dir C:\Users[ENTER]
 cd ..[ENTER]
 ```
 
-Special keys are shown in brackets: `[ENTER]`, `[TAB]`, `[BS]` (backspace), `[DEL]`, `[ESC]`, `[F1]`-`[F12]`, `[CAPS]`, `[WIN]`, arrow keys.
+Linux output (no window context):
+
+```
+ssh root@10.0.0.1[ENTER]
+P@ssw0rd123[ENTER]
+sudo apt update[ENTER]
+```
+
+Special keys are shown in brackets: `[ENTER]`, `[TAB]`, `[BS]` (backspace), `[DEL]`, `[ESC]`, `[F1]`-`[F12]`, `[CAPS]`, `[SUPER]`, arrow keys.
+
+## Platform Notes
+
+### Windows
+- Uses `SetWindowsHookExW` with `WH_KEYBOARD_LL` for system-wide capture
+- Includes active window title for context (shows which app keystrokes belong to)
+- Requires a message pump running in a background thread
+- Uses `GetKeyNameTextW` for key name resolution
+
+### Linux
+- Uses `/dev/input/event*` evdev interface to read raw keyboard events
+- Automatically detects keyboard devices via `/sys/class/input/*/device/capabilities/`
+- Requires root or membership in the `input` group
+- Tracks shift state for correct uppercase/symbol output
+- Monitors all detected keyboard devices simultaneously
+- No window context (headless-compatible)
 
 ## Notes
 
-- **Mythic Keylogs**: When `stop` or `dump` returns captured keystrokes, they are automatically parsed by window title and sent to Mythic's Keylogs tracker with user attribution. Keylogs are searchable in the Mythic UI.
+- **Mythic Keylogs**: When `stop` or `dump` returns captured keystrokes, they are automatically parsed and sent to Mythic's Keylogs tracker with user attribution. Keylogs are searchable in the Mythic UI.
 - The keylogger runs in a background goroutine and does not block the agent
 - Only one keylogger instance can run at a time
-- Window titles provide context for what application keystrokes belong to
 - Modifier keys (Shift, Ctrl, Alt) are suppressed from output for readability
-- The keyboard hook requires a message pump, which runs in the background thread
 
 ## MITRE ATT&CK Mapping
 

