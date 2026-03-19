@@ -11,13 +11,14 @@ Display a native credential dialog to capture user credentials. Uses platform-na
 
 - **macOS**: AppleScript `display dialog` with hidden answer field and custom icon
 - **Windows**: `CredUIPromptForWindowsCredentialsW` (native Windows credential dialog with domain/username/password)
+- **Linux**: `zenity` (GNOME), `kdialog` (KDE), or `yad` (GTK alternative) password entry dialog
 
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| title | No | "Windows Security" (Win) / "Update Required" (macOS) | Dialog title bar text |
-| message | No | "Enter your credentials to continue." (Win) / "macOS needs your password to apply system updates." (macOS) | Body text displayed in the dialog |
+| title | No | "Windows Security" (Win) / "Update Required" (macOS) / "Authentication Required" (Linux) | Dialog title bar text |
+| message | No | "Enter your credentials to continue." (Win) / "macOS needs your password..." (macOS) / "Enter your password to continue." (Linux) | Body text displayed in the dialog |
 | icon | No | caution | Dialog icon (macOS only): caution, note, or stop |
 
 ## Usage
@@ -54,6 +55,16 @@ Password: P@ssw0rd123
 Dialog:   Keychain Access
 ```
 
+### Example Output (Linux)
+
+```
+=== Credential Prompt Result ===
+
+User:     gary
+Password: P@ssw0rd123
+Dialog:   Authentication Required (zenity)
+```
+
 ## Operational Notes
 
 ### Windows
@@ -69,7 +80,13 @@ Dialog:   Keychain Access
 - Choose icons strategically: `caution` for updates, `note` for preferences, `stop` for security alerts
 - Pair with `keychain` for password-protected keychain access after capturing credentials
 
-### Both Platforms
+### Linux
+- Detects available dialog tool in order: zenity (GNOME), kdialog (KDE), yad
+- Returns clear error if no GUI dialog tool is installed
+- 5-minute timeout prevents indefinite waiting
+- Best suited for Linux desktops (Ubuntu, Fedora, etc.) — headless servers lack GUI tools
+
+### All Platforms
 - Cancel detection: user clicking Cancel returns success status with "User cancelled" message
 - Empty password submissions are detected and reported
 - Credentials are automatically stored in Mythic's credential vault as plaintext
