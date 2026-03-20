@@ -66,11 +66,36 @@ var presetQueries = map[string]struct {
 		attributes: []string{"sAMAccountName", "userPrincipalName", "userAccountControl", "pwdLastSet"},
 		desc:       "AS-REP roastable accounts (pre-auth disabled)",
 	},
+	"admins": {
+		filter:     "(&(objectCategory=person)(objectClass=user)(adminCount=1))",
+		attributes: []string{"sAMAccountName", "userPrincipalName", "displayName", "memberOf", "pwdLastSet", "lastLogonTimestamp", "userAccountControl"},
+		desc:       "All administrative accounts (adminCount=1)",
+	},
+	"disabled": {
+		filter:     "(&(objectCategory=person)(objectClass=user)(userAccountControl:1.2.840.113556.1.4.803:=2))",
+		attributes: []string{"sAMAccountName", "userPrincipalName", "displayName", "description", "pwdLastSet", "whenChanged"},
+		desc:       "Disabled user accounts",
+	},
+	"gpo": {
+		filter:     "(objectClass=groupPolicyContainer)",
+		attributes: []string{"displayName", "cn", "gPCFileSysPath", "gPCMachineExtensionNames", "whenCreated", "whenChanged"},
+		desc:       "Group Policy Objects",
+	},
+	"ou": {
+		filter:     "(objectClass=organizationalUnit)",
+		attributes: []string{"ou", "description", "gpLink", "whenCreated"},
+		desc:       "Organizational Units",
+	},
+	"password-never-expires": {
+		filter:     "(&(objectCategory=person)(objectClass=user)(userAccountControl:1.2.840.113556.1.4.803:=65536))",
+		attributes: []string{"sAMAccountName", "userPrincipalName", "pwdLastSet", "lastLogonTimestamp", "description"},
+		desc:       "Accounts with password never expires flag",
+	},
 }
 
 func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|dacl|query> -server <DC>")
+		return errorResult("Error: parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|admins|disabled|gpo|ou|password-never-expires|dacl|query> -server <DC>")
 	}
 
 	var args ldapQueryArgs
@@ -128,7 +153,7 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	// Resolve filter and attributes
 	filter, attributes, desc := resolveQuery(args, baseDN)
 	if filter == "" {
-		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, dacl, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
+		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, admins, disabled, gpo, ou, password-never-expires, dacl, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
 	}
 
 	// Execute search — use SizeLimit=0 with paging to avoid "Size Limit Exceeded"

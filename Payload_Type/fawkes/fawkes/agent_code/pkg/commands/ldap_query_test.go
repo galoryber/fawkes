@@ -161,6 +161,98 @@ func TestResolveQuery_CustomAttrs(t *testing.T) {
 	}
 }
 
+func TestResolveQuery_Admins(t *testing.T) {
+	args := ldapQueryArgs{Action: "admins"}
+	filter, attrs, desc := resolveQuery(args, "DC=test,DC=local")
+	if !strings.Contains(filter, "adminCount=1") {
+		t.Errorf("admins filter should check adminCount=1, got %s", filter)
+	}
+	if len(attrs) == 0 {
+		t.Error("expected attributes for admins")
+	}
+	if desc == "" {
+		t.Error("expected description for admins")
+	}
+}
+
+func TestResolveQuery_Disabled(t *testing.T) {
+	args := ldapQueryArgs{Action: "disabled"}
+	filter, attrs, desc := resolveQuery(args, "DC=test,DC=local")
+	// UAC flag 2 = ACCOUNTDISABLE
+	if !strings.Contains(filter, "1.2.840.113556.1.4.803:=2)") {
+		t.Errorf("disabled filter should check UAC ACCOUNTDISABLE flag, got %s", filter)
+	}
+	if len(attrs) == 0 {
+		t.Error("expected attributes for disabled")
+	}
+	if desc == "" {
+		t.Error("expected description for disabled")
+	}
+}
+
+func TestResolveQuery_GPO(t *testing.T) {
+	args := ldapQueryArgs{Action: "gpo"}
+	filter, attrs, desc := resolveQuery(args, "DC=test,DC=local")
+	if filter != "(objectClass=groupPolicyContainer)" {
+		t.Errorf("expected GPO filter, got %s", filter)
+	}
+	if len(attrs) == 0 {
+		t.Error("expected attributes for GPO")
+	}
+	// Should include gPCFileSysPath for SYSVOL path
+	hasFileSysPath := false
+	for _, a := range attrs {
+		if a == "gPCFileSysPath" {
+			hasFileSysPath = true
+			break
+		}
+	}
+	if !hasFileSysPath {
+		t.Error("GPO attributes should include gPCFileSysPath")
+	}
+	if desc == "" {
+		t.Error("expected description for GPO")
+	}
+}
+
+func TestResolveQuery_OU(t *testing.T) {
+	args := ldapQueryArgs{Action: "ou"}
+	filter, attrs, desc := resolveQuery(args, "DC=test,DC=local")
+	if filter != "(objectClass=organizationalUnit)" {
+		t.Errorf("expected OU filter, got %s", filter)
+	}
+	if len(attrs) == 0 {
+		t.Error("expected attributes for OU")
+	}
+	if desc == "" {
+		t.Error("expected description for OU")
+	}
+}
+
+func TestResolveQuery_PasswordNeverExpires(t *testing.T) {
+	args := ldapQueryArgs{Action: "password-never-expires"}
+	filter, attrs, desc := resolveQuery(args, "DC=test,DC=local")
+	// UAC flag 65536 = DONT_EXPIRE_PASSWORD
+	if !strings.Contains(filter, "65536") {
+		t.Errorf("password-never-expires filter should check UAC flag 65536, got %s", filter)
+	}
+	if len(attrs) == 0 {
+		t.Error("expected attributes for password-never-expires")
+	}
+	if desc == "" {
+		t.Error("expected description for password-never-expires")
+	}
+}
+
+func TestResolveQuery_CaseInsensitive(t *testing.T) {
+	// resolveQuery lowercases action, so mixed case should work
+	args := ldapQueryArgs{Action: "Admins"}
+	filter, _, _ := resolveQuery(args, "DC=test,DC=local")
+	if !strings.Contains(filter, "adminCount=1") {
+		t.Errorf("expected admins filter with mixed case action, got %s", filter)
+	}
+}
+
 func TestResolveQuery_InvalidAction(t *testing.T) {
 	args := ldapQueryArgs{Action: "nonexistent"}
 	filter, _, _ := resolveQuery(args, "DC=test,DC=local")
@@ -200,7 +292,7 @@ func TestDefaultPort_LDAPS(t *testing.T) {
 }
 
 func TestPresetQueries_AllExist(t *testing.T) {
-	expected := []string{"users", "computers", "groups", "domain-admins", "spns", "asrep"}
+	expected := []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "admins", "disabled", "gpo", "ou", "password-never-expires"}
 	for _, name := range expected {
 		if _, ok := presetQueries[name]; !ok {
 			t.Errorf("missing preset query: %s", name)
