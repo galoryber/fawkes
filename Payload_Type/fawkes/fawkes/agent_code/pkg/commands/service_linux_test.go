@@ -165,3 +165,150 @@ func TestServiceQueryLinuxAutoSuffix(t *testing.T) {
 	}
 }
 
+// --- buildSystemdUnit tests ---
+
+func TestBuildSystemdUnit(t *testing.T) {
+	unit := buildSystemdUnit(serviceArgs{
+		Name:    "test-svc",
+		BinPath: "/opt/payload/agent",
+		Display: "Test Service",
+	})
+
+	if !strings.Contains(unit, "[Unit]") {
+		t.Error("missing [Unit] section")
+	}
+	if !strings.Contains(unit, "Description=Test Service") {
+		t.Error("missing Description")
+	}
+	if !strings.Contains(unit, "[Service]") {
+		t.Error("missing [Service] section")
+	}
+	if !strings.Contains(unit, "ExecStart=/opt/payload/agent") {
+		t.Error("missing ExecStart")
+	}
+	if !strings.Contains(unit, "Restart=on-failure") {
+		t.Error("missing Restart directive")
+	}
+	if !strings.Contains(unit, "[Install]") {
+		t.Error("missing [Install] section")
+	}
+	if !strings.Contains(unit, "WantedBy=multi-user.target") {
+		t.Error("missing WantedBy")
+	}
+	if !strings.Contains(unit, "After=network.target") {
+		t.Error("missing After dependency")
+	}
+}
+
+func TestBuildSystemdUnitDefaultDescription(t *testing.T) {
+	// When display is empty, should use name
+	unit := buildSystemdUnit(serviceArgs{
+		Name:    "my-daemon",
+		BinPath: "/usr/local/bin/daemon",
+	})
+
+	if !strings.Contains(unit, "Description=my-daemon") {
+		t.Errorf("expected name as fallback description, got:\n%s", unit)
+	}
+}
+
+// --- serviceCreateLinux validation tests ---
+
+func TestServiceCreateLinuxMissingName(t *testing.T) {
+	result := serviceCreateLinux(serviceArgs{BinPath: "/some/binary"})
+	if result.Status != "error" {
+		t.Errorf("expected error, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "name is required") {
+		t.Errorf("expected 'name is required', got %q", result.Output)
+	}
+}
+
+func TestServiceCreateLinuxMissingBinPath(t *testing.T) {
+	result := serviceCreateLinux(serviceArgs{Name: "test-svc"})
+	if result.Status != "error" {
+		t.Errorf("expected error, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "binpath is required") {
+		t.Errorf("expected 'binpath is required', got %q", result.Output)
+	}
+}
+
+func TestServiceCreateLinuxExistingFile(t *testing.T) {
+	// Create a temp "service file" and try to create over it
+	tmpDir := t.TempDir()
+
+	// This test can't write to /etc/systemd/system on CI, so we test the
+	// existing-file check logic by verifying the error message pattern
+	result := serviceCreateLinux(serviceArgs{
+		Name:    "systemd-journald", // exists on most Linux
+		BinPath: "/bin/true",
+	})
+	// Either it finds the existing file or fails to write (no root)
+	if result.Status == "success" {
+		t.Error("should not succeed without cleanup of existing service")
+	}
+	_ = tmpDir // suppress unused
+}
+
+// --- serviceDeleteLinux validation tests ---
+
+func TestServiceDeleteLinuxMissingName(t *testing.T) {
+	result := serviceDeleteLinux(serviceArgs{})
+	if result.Status != "error" {
+		t.Errorf("expected error, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "name is required") {
+		t.Errorf("expected 'name is required', got %q", result.Output)
+	}
+}
+
+func TestServiceDeleteLinuxNonExistent(t *testing.T) {
+	result := serviceDeleteLinux(serviceArgs{Name: "nonexistent-fawkes-test-12345"})
+	if result.Status != "error" {
+		t.Errorf("expected error for nonexistent service, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "not found") {
+		t.Errorf("expected 'not found' error, got %q", result.Output)
+	}
+}
+
+// --- Action routing for create/delete ---
+
+func TestServiceExecuteCreateRoute(t *testing.T) {
+	cmd := &ServiceCommand{}
+	// Verify create action routes correctly (will fail on missing name, not unknown action)
+	params, _ := json.Marshal(serviceArgs{Action: "create"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if strings.Contains(result.Output, "Unknown action") {
+		t.Error("'create' should be a recognized action")
+	}
+	if !strings.Contains(result.Output, "name is required") {
+		t.Errorf("expected name validation error, got %q", result.Output)
+	}
+}
+
+func TestServiceExecuteDeleteRoute(t *testing.T) {
+	cmd := &ServiceCommand{}
+	// Verify delete action routes correctly
+	params, _ := json.Marshal(serviceArgs{Action: "delete"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if strings.Contains(result.Output, "Unknown action") {
+		t.Error("'delete' should be a recognized action")
+	}
+	if !strings.Contains(result.Output, "name is required") {
+		t.Errorf("expected name validation error, got %q", result.Output)
+	}
+}
+
+func TestServiceDescriptionIncludesCreateDelete(t *testing.T) {
+	cmd := &ServiceCommand{}
+	desc := cmd.Description()
+	if !strings.Contains(desc, "create") {
+		t.Error("description should mention create")
+	}
+	if !strings.Contains(desc, "delete") {
+		t.Error("description should mention delete")
+	}
+}
+

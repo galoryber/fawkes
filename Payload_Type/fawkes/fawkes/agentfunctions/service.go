@@ -16,10 +16,10 @@ func init() {
 		},
 		Description:         "Manage services — Windows via SCM API, Linux via systemctl, macOS via launchctl. Query, start, stop, create, delete, list, enable, disable.",
 		HelpString:          "service -action <query|start|stop|create|delete|list|enable|disable> -name <service_name> [-binpath <path>] [-display <name>] [-start <auto|demand|disabled>]",
-		Version:             3,
+		Version:             4,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1543.003", "T1543.004", "T1562.001"},
+		MitreAttackMappings: []string{"T1543.002", "T1543.003", "T1543.004", "T1562.001"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
@@ -131,6 +131,15 @@ func init() {
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl show %s.service", name))
 				case "start", "stop", "enable", "disable":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl %s %s.service", action, name))
+				case "create":
+					binpath, _ := taskData.Args.GetStringArg("binpath")
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("/etc/systemd/system/%s.service (ExecStart=%s)", name, binpath))
+					createArtifact(taskData.Task.ID, "Process Create", "systemctl daemon-reload")
+				case "delete":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl stop %s.service", name))
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl disable %s.service", name))
+					createArtifact(taskData.Task.ID, "File Delete", fmt.Sprintf("/etc/systemd/system/%s.service", name))
+					createArtifact(taskData.Task.ID, "Process Create", "systemctl daemon-reload")
 				}
 			} else if taskData.Callback.OS == "macOS" {
 				// macOS: launchctl artifacts
@@ -147,6 +156,13 @@ func init() {
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl enable system/%s", name))
 				case "disable":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl disable system/%s", name))
+				case "create":
+					binpath, _ := taskData.Args.GetStringArg("binpath")
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("%s.plist (Program=%s)", name, binpath))
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl load %s.plist", name))
+				case "delete":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl unload %s.plist", name))
+					createArtifact(taskData.Task.ID, "File Delete", fmt.Sprintf("%s.plist", name))
 				}
 			} else {
 				// Windows: SCM API artifacts
