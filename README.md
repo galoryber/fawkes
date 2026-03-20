@@ -321,7 +321,7 @@ Credential-harvesting commands automatically report discoveries to Mythic's **Cr
 | lsa-secrets | plaintext/hash/key | Service passwords, cached creds, DPAPI keys |
 | laps | plaintext | LAPS v1 & v2 passwords |
 | gpp-password | plaintext | GPP encrypted passwords from SYSVOL |
-| browser | plaintext | Chrome/Edge saved passwords, cookies, history, autofill, bookmarks |
+| browser | plaintext | Chrome/Edge/Firefox saved passwords, cookies, history, autofill, bookmarks |
 | dpapi | plaintext/hash | DPAPI-protected secrets |
 | credman | plaintext | Credential Manager entries (on dump action) |
 | make-token | plaintext | Credentials used for token creation |

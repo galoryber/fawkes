@@ -72,6 +72,44 @@ func chromeTimeToString(ts int64) string {
 	return t.UTC().Format("2006-01-02 15:04:05")
 }
 
+// firefoxTimeToString converts a Firefox PRTime timestamp (microseconds since Unix epoch)
+// to a human-readable UTC string.
+func firefoxTimeToString(ts int64) string {
+	if ts <= 0 {
+		return "never"
+	}
+	t := time.Unix(ts/1000000, (ts%1000000)*1000)
+	return t.UTC().Format("2006-01-02 15:04:05")
+}
+
+// isFirefoxBrowser returns true if the browser name indicates Firefox.
+func isFirefoxBrowser(name string) bool {
+	return strings.EqualFold(name, "Firefox")
+}
+
+// findFirefoxProfiles discovers Firefox profile directories within the given base path.
+// Firefox profiles use random prefixes (e.g., "a1b2c3d4.default-release").
+func findFirefoxProfiles(baseDir string) []string {
+	var profiles []string
+
+	entries, err := os.ReadDir(baseDir)
+	if err != nil {
+		return nil
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		// Firefox profile dirs contain ".default" or ".default-release" suffix
+		if strings.Contains(name, ".default") {
+			profiles = append(profiles, filepath.Join(baseDir, name))
+		}
+	}
+	return profiles
+}
+
 // findProfilesWithFile returns Chromium profile directories containing the given file.
 func findProfilesWithFile(userDataDir string, relPath string) []string {
 	var profiles []string
@@ -121,13 +159,28 @@ func browserHistory(args browserArgs) structs.CommandResult {
 			continue
 		}
 
-		profiles := findProfilesWithFile(userDataDir, "History")
+		var profiles []string
+		var dbFile, query string
+		var timeConvert func(int64) string
+
+		if isFirefoxBrowser(browserName) {
+			profiles = findFirefoxProfiles(userDataDir)
+			dbFile = "places.sqlite"
+			query = "SELECT url, title, visit_count, last_visit_date FROM moz_places WHERE visit_count > 0 ORDER BY last_visit_date DESC LIMIT 500"
+			timeConvert = firefoxTimeToString
+		} else {
+			profiles = findProfilesWithFile(userDataDir, "History")
+			dbFile = "History"
+			query = "SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 500"
+			timeConvert = chromeTimeToString
+		}
+
 		if len(profiles) == 0 {
 			continue
 		}
 
 		for _, profileDir := range profiles {
-			dbPath := filepath.Join(profileDir, "History")
+			dbPath := filepath.Join(profileDir, dbFile)
 			profileName := filepath.Base(profileDir)
 
 			db, cleanup, err := openBrowserDB(dbPath)
@@ -136,7 +189,7 @@ func browserHistory(args browserArgs) structs.CommandResult {
 				continue
 			}
 
-			rows, err := db.Query("SELECT url, title, visit_count, last_visit_time FROM urls ORDER BY last_visit_time DESC LIMIT 500")
+			rows, err := db.Query(query)
 			if err != nil {
 				errors = append(errors, fmt.Sprintf("%s (%s): query: %v", browserName, profileName, err))
 				cleanup()
@@ -157,14 +210,12 @@ func browserHistory(args browserArgs) structs.CommandResult {
 					continue
 				}
 
-				lastVisit := chromeTimeToString(lastVisitTime)
-
 				allEntries = append(allEntries, historyEntry{
 					Browser:    label,
 					URL:        url,
 					Title:      title,
 					VisitCount: visitCount,
-					LastVisit:  lastVisit,
+					LastVisit:  timeConvert(lastVisitTime),
 				})
 			}
 			if err := rows.Err(); err != nil {
@@ -220,13 +271,28 @@ func browserAutofill(args browserArgs) structs.CommandResult {
 			continue
 		}
 
-		profiles := findProfilesWithFile(userDataDir, "Web Data")
+		var profiles []string
+		var dbFile, query string
+		var timeConvert func(int64) string
+
+		if isFirefoxBrowser(browserName) {
+			profiles = findFirefoxProfiles(userDataDir)
+			dbFile = "formhistory.sqlite"
+			query = "SELECT fieldname, value, timesUsed, lastUsed FROM moz_formhistory ORDER BY lastUsed DESC LIMIT 500"
+			timeConvert = firefoxTimeToString
+		} else {
+			profiles = findProfilesWithFile(userDataDir, "Web Data")
+			dbFile = "Web Data"
+			query = "SELECT name, value, count, date_last_used FROM autofill ORDER BY date_last_used DESC LIMIT 500"
+			timeConvert = chromeTimeToString
+		}
+
 		if len(profiles) == 0 {
 			continue
 		}
 
 		for _, profileDir := range profiles {
-			dbPath := filepath.Join(profileDir, "Web Data")
+			dbPath := filepath.Join(profileDir, dbFile)
 			profileName := filepath.Base(profileDir)
 
 			db, cleanup, err := openBrowserDB(dbPath)
@@ -235,7 +301,7 @@ func browserAutofill(args browserArgs) structs.CommandResult {
 				continue
 			}
 
-			rows, err := db.Query("SELECT name, value, count, date_last_used FROM autofill ORDER BY date_last_used DESC LIMIT 500")
+			rows, err := db.Query(query)
 			if err != nil {
 				errors = append(errors, fmt.Sprintf("%s (%s): query: %v", browserName, profileName, err))
 				cleanup()
@@ -256,14 +322,12 @@ func browserAutofill(args browserArgs) structs.CommandResult {
 					continue
 				}
 
-				lastUsed := chromeTimeToString(dateLastUsed)
-
 				allEntries = append(allEntries, autofillEntry{
 					Browser:      label,
 					FieldName:    name,
 					Value:        value,
 					Count:        count,
-					DateLastUsed: lastUsed,
+					DateLastUsed: timeConvert(dateLastUsed),
 				})
 			}
 			if err := rows.Err(); err != nil {
@@ -307,6 +371,65 @@ func browserBookmarks(args browserArgs) structs.CommandResult {
 			continue
 		}
 
+		if isFirefoxBrowser(browserName) {
+			// Firefox: bookmarks are in places.sqlite (moz_bookmarks + moz_places)
+			profiles := findFirefoxProfiles(userDataDir)
+			for _, profileDir := range profiles {
+				dbPath := filepath.Join(profileDir, "places.sqlite")
+				profileName := filepath.Base(profileDir)
+
+				db, cleanup, err := openBrowserDB(dbPath)
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
+					continue
+				}
+
+				label := browserName
+				if profileName != "Default" {
+					label = fmt.Sprintf("%s (%s)", browserName, profileName)
+				}
+
+				// moz_bookmarks type=1 are URL bookmarks; join with moz_places for URLs
+				// parent folder names come from moz_bookmarks where type=2 (folders)
+				rows, err := db.Query(`
+					SELECT b.title, p.url, COALESCE(f.title, '') AS folder
+					FROM moz_bookmarks b
+					JOIN moz_places p ON b.fk = p.id
+					LEFT JOIN moz_bookmarks f ON b.parent = f.id AND f.type = 2
+					WHERE b.type = 1 AND p.url NOT LIKE 'place:%'
+					ORDER BY b.dateAdded DESC
+					LIMIT 500`)
+				if err != nil {
+					errors = append(errors, fmt.Sprintf("%s (%s): query: %v", browserName, profileName, err))
+					cleanup()
+					continue
+				}
+
+				for rows.Next() {
+					var title, url, folder string
+					if err := rows.Scan(&title, &url, &folder); err != nil {
+						continue
+					}
+					if title == "" {
+						title = url
+					}
+					allBookmarks = append(allBookmarks, browserBookmarkEntry{
+						Browser: label,
+						Name:    title,
+						URL:     url,
+						Folder:  folder,
+					})
+				}
+				if err := rows.Err(); err != nil {
+					errors = append(errors, fmt.Sprintf("%s (%s): iteration: %v", browserName, profileName, err))
+				}
+				rows.Close()
+				cleanup()
+			}
+			continue
+		}
+
+		// Chromium-based: bookmarks are in JSON Bookmarks file
 		profiles := findProfilesWithFile(userDataDir, "Bookmarks")
 		if len(profiles) == 0 {
 			continue
@@ -354,6 +477,116 @@ func browserBookmarks(args browserArgs) structs.CommandResult {
 	for _, b := range allBookmarks {
 		sb.WriteString(fmt.Sprintf("[%s] [%s] %s\n  %s\n",
 			b.Browser, b.Folder, truncStr(b.Name, 80), truncStr(b.URL, 120)))
+	}
+
+	if len(errors) > 0 {
+		sb.WriteString("\n--- Errors ---\n")
+		for _, e := range errors {
+			sb.WriteString(fmt.Sprintf("  %s\n", e))
+		}
+	}
+
+	return successResult(sb.String())
+}
+
+// browserFirefoxCookies extracts cookies from Firefox's cookies.sqlite (plaintext, no encryption).
+// This works on all platforms since Firefox doesn't encrypt cookie values.
+func browserFirefoxCookies(args browserArgs) structs.CommandResult {
+	paths := browserPaths(args.Browser)
+	if paths == nil {
+		return errorResult("Could not determine browser data paths")
+	}
+
+	type cookieEntry struct {
+		Browser    string
+		Host       string
+		Name       string
+		Value      string
+		Path       string
+		Expiry     string
+		IsSecure   bool
+		IsHTTPOnly bool
+	}
+
+	var allEntries []cookieEntry
+	var errors []string
+
+	for browserName, userDataDir := range paths {
+		if !isFirefoxBrowser(browserName) {
+			continue
+		}
+		if _, err := os.Stat(userDataDir); os.IsNotExist(err) {
+			continue
+		}
+
+		profiles := findFirefoxProfiles(userDataDir)
+		for _, profileDir := range profiles {
+			dbPath := filepath.Join(profileDir, "cookies.sqlite")
+			profileName := filepath.Base(profileDir)
+
+			db, cleanup, err := openBrowserDB(dbPath)
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): %v", browserName, profileName, err))
+				continue
+			}
+
+			rows, err := db.Query("SELECT host, name, value, path, expiry, isSecure, isHttpOnly FROM moz_cookies ORDER BY lastAccessed DESC LIMIT 500")
+			if err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): query: %v", browserName, profileName, err))
+				cleanup()
+				continue
+			}
+
+			label := browserName
+			if profileName != "Default" {
+				label = fmt.Sprintf("%s (%s)", browserName, profileName)
+			}
+
+			for rows.Next() {
+				var host, name, value, path string
+				var expiry int64
+				var isSecure, isHTTPOnly int
+
+				if err := rows.Scan(&host, &name, &value, &path, &expiry, &isSecure, &isHTTPOnly); err != nil {
+					continue
+				}
+
+				allEntries = append(allEntries, cookieEntry{
+					Browser:    label,
+					Host:       host,
+					Name:       name,
+					Value:      truncStr(value, 100),
+					Path:       path,
+					Expiry:     firefoxTimeToString(expiry * 1000000), // expiry is in seconds
+					IsSecure:   isSecure != 0,
+					IsHTTPOnly: isHTTPOnly != 0,
+				})
+			}
+			if err := rows.Err(); err != nil {
+				errors = append(errors, fmt.Sprintf("%s (%s): iteration: %v", browserName, profileName, err))
+			}
+			rows.Close()
+			cleanup()
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("=== Firefox Cookies (%d entries) ===\n\n", len(allEntries)))
+
+	for _, e := range allEntries {
+		flags := ""
+		if e.IsSecure {
+			flags += " [Secure]"
+		}
+		if e.IsHTTPOnly {
+			flags += " [HttpOnly]"
+		}
+		sb.WriteString(fmt.Sprintf("[%s] %s: %s = %s  (path: %s, expires: %s)%s\n",
+			e.Browser, e.Host, e.Name, e.Value, e.Path, e.Expiry, flags))
+	}
+
+	if len(allEntries) == 0 {
+		sb.WriteString("No Firefox cookies found.\n")
 	}
 
 	if len(errors) > 0 {

