@@ -31,7 +31,9 @@ type arpArgs struct {
 func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
 	var args arpArgs
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &args)
+		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+			return errorf("Invalid parameters: %v", err)
+		}
 	}
 
 	entries, err := getArpTable()

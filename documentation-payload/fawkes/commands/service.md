@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Manage system services — Windows via SCM API, Linux via systemctl, macOS via launchctl. Query, start, stop, create, delete, list, enable, or disable services.
+Manage system services — Windows via SCM API, Linux via systemctl, macOS via launchctl. Query, start, stop, restart, create, delete, list, enable, or disable services.
 
 - **Windows:** Uses Win32 Service Control Manager API (OpenSCManager, CreateService, etc.). No subprocess creation — all operations run in-process via `golang.org/x/sys/windows/svc/mgr`.
 - **Linux:** Uses systemctl for service management. Create writes systemd unit files to `/etc/systemd/system/` and reloads the daemon. Delete stops, disables, and removes the unit file. List and query enrich output with unit file state and service details.
@@ -19,7 +19,7 @@ Manage system services — Windows via SCM API, Linux via systemctl, macOS via l
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | Action to perform: `query`, `start`, `stop`, `create`, `delete`, `list`, `enable`, `disable` |
+| action | Yes | Action to perform: `query`, `start`, `stop`, `restart`, `create`, `delete`, `list`, `enable`, `disable` |
 | name | Conditional | Service name (required for all actions except `list`) |
 | binpath | Conditional | Path to service binary (required for `create`) |
 | display | No | Display name / description for the service (for `create`) |
@@ -54,6 +54,18 @@ service -action start -name nginx
 ```
 service -action stop -name Spooler
 service -action stop -name apache2
+```
+
+### Restart a service
+```
+# Windows: stops via SCM then starts (waits for stop to complete)
+service -action restart -name Spooler
+
+# Linux: systemctl restart
+service -action restart -name nginx
+
+# macOS: launchctl kickstart -k (kills and restarts)
+service -action restart -name com.apple.sshd-keygen-wrapper
 ```
 
 ### Enable a service (set to start on boot)

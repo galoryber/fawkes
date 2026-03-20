@@ -27,7 +27,9 @@ type dfArgs struct {
 func (c *DfCommand) Execute(task structs.Task) structs.CommandResult {
 	var args dfArgs
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &args)
+		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+			return errorf("Invalid parameters: %v", err)
+		}
 	}
 
 	entries, err := getDiskFreeInfo()

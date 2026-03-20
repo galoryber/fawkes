@@ -19,7 +19,7 @@ func (c *ServiceCommand) Name() string {
 }
 
 func (c *ServiceCommand) Description() string {
-	return "Manage macOS services via launchctl (list, query, start, stop, create, delete, enable, disable)"
+	return "Manage macOS services via launchctl (list, query, start, stop, restart, create, delete, enable, disable)"
 }
 
 type serviceArgs struct {
@@ -50,6 +50,8 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 		return serviceStartDarwin(args)
 	case "stop":
 		return serviceStopDarwin(args)
+	case "restart":
+		return serviceRestartDarwin(args)
 	case "enable":
 		return serviceEnableDarwin(args)
 	case "create":
@@ -59,7 +61,7 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 	case "disable":
 		return serviceDisableDarwin(args)
 	default:
-		return errorf("Unknown action: %s. Use: list, query, start, stop, create, delete, enable, disable", args.Action)
+		return errorf("Unknown action: %s. Use: list, query, start, stop, restart, create, delete, enable, disable", args.Action)
 	}
 }
 
@@ -265,6 +267,25 @@ func serviceStopDarwin(args serviceArgs) structs.CommandResult {
 	}
 
 	return successf("Stopped service '%s'\n%s", args.Name, strings.TrimSpace(string(out)))
+}
+
+func serviceRestartDarwin(args serviceArgs) structs.CommandResult {
+	if args.Name == "" {
+		return errorResult("Error: name is required to restart a service")
+	}
+
+	// Use kickstart -k which kills the running instance and restarts it
+	out, err := execCmdTimeoutOutput("launchctl", "kickstart", "-k", "system/"+args.Name)
+	if err != nil {
+		// Try gui domain
+		uid := fmt.Sprintf("%d", os.Getuid())
+		out, err = execCmdTimeoutOutput("launchctl", "kickstart", "-k", "gui/"+uid+"/"+args.Name)
+		if err != nil {
+			return errorf("Error restarting service '%s': %v\n%s", args.Name, err, string(out))
+		}
+	}
+
+	return successf("Restarted service '%s'\n%s", args.Name, strings.TrimSpace(string(out)))
 }
 
 func serviceEnableDarwin(args serviceArgs) structs.CommandResult {

@@ -23,7 +23,9 @@ type processTreeArgs struct {
 func (c *ProcessTreeCommand) Execute(task structs.Task) structs.CommandResult {
 	var args processTreeArgs
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &args)
+		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+			return errorf("Invalid parameters: %v", err)
+		}
 	}
 
 	processes, err := getProcessList(PsArgs{})

@@ -32,7 +32,9 @@ type ptyParams struct {
 func (c *PtyCommand) Execute(task structs.Task) structs.CommandResult {
 	var params ptyParams
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &params)
+		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
+			return errorf("Invalid parameters: %v", err)
+		}
 	}
 
 	// Auto-detect shell if not specified

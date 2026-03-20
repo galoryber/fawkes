@@ -98,7 +98,9 @@ const maxFileSize = 10 * 1024 * 1024 // 10MB
 func (c *SecretScanCommand) Execute(task structs.Task) structs.CommandResult {
 	var args secretScanArgs
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &args)
+		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+			return errorf("Invalid parameters: %v", err)
+		}
 	}
 
 	if args.Path == "" {

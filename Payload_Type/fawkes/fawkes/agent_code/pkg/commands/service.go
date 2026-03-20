@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
 
@@ -21,7 +22,7 @@ func (c *ServiceCommand) Name() string {
 }
 
 func (c *ServiceCommand) Description() string {
-	return "Manage Windows services via SCM API (query, start, stop, create, delete, list, enable, disable)"
+	return "Manage Windows services via SCM API (query, start, stop, restart, create, delete, list, enable, disable)"
 }
 
 type serviceArgs struct {
@@ -50,6 +51,8 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 		return serviceStart(args)
 	case "stop":
 		return serviceStop(args)
+	case "restart":
+		return serviceRestart(args)
 	case "create":
 		return serviceCreate(args)
 	case "delete":
@@ -61,7 +64,7 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 	case "disable":
 		return serviceSetStartType(args, mgr.StartDisabled)
 	default:
-		return errorf("Unknown action: %s. Use: query, start, stop, create, delete, list, enable, disable", args.Action)
+		return errorf("Unknown action: %s. Use: query, start, stop, restart, create, delete, list, enable, disable", args.Action)
 	}
 }
 
@@ -164,6 +167,51 @@ func serviceStop(args serviceArgs) structs.CommandResult {
 	}
 
 	return successf("Stopped service '%s' (state: %s)", args.Name, describeServiceState(status.State))
+}
+
+func serviceRestart(args serviceArgs) structs.CommandResult {
+	if args.Name == "" {
+		return errorResult("Error: name is required to restart a service")
+	}
+
+	m, err := mgr.Connect()
+	if err != nil {
+		return errorf("Error connecting to SCM: %v", err)
+	}
+	defer m.Disconnect()
+
+	s, err := m.OpenService(args.Name)
+	if err != nil {
+		return errorf("Error opening service '%s': %v", args.Name, err)
+	}
+	defer s.Close()
+
+	// Stop the service
+	_, err = s.Control(svc.Stop)
+	if err != nil {
+		return errorf("Error stopping service '%s': %v", args.Name, err)
+	}
+
+	// Wait for the service to stop (up to 30 seconds)
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		status, qErr := s.Query()
+		if qErr != nil {
+			return errorf("Error querying service '%s': %v", args.Name, qErr)
+		}
+		if status.State == svc.Stopped {
+			break
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Start the service
+	err = s.Start()
+	if err != nil {
+		return errorf("Service '%s' stopped but failed to start: %v", args.Name, err)
+	}
+
+	return successf("Restarted service '%s'", args.Name)
 }
 
 func serviceCreate(args serviceArgs) structs.CommandResult {

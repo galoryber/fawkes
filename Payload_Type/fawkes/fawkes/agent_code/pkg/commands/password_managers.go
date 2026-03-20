@@ -34,7 +34,9 @@ type pmResult struct {
 func (c *PasswordManagersCommand) Execute(task structs.Task) structs.CommandResult {
 	var args pmArgs
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &args)
+		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+			return errorf("Invalid parameters: %v", err)
+		}
 	}
 	if args.Depth <= 0 {
 		args.Depth = 4

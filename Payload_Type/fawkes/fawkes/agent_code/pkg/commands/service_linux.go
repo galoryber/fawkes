@@ -19,7 +19,7 @@ func (c *ServiceCommand) Name() string {
 }
 
 func (c *ServiceCommand) Description() string {
-	return "Manage Linux services via systemctl (list, query, start, stop, create, delete, enable, disable)"
+	return "Manage Linux services via systemctl (list, query, start, stop, restart, create, delete, enable, disable)"
 }
 
 type serviceArgs struct {
@@ -50,6 +50,8 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 		return serviceCtl(args, "start")
 	case "stop":
 		return serviceCtl(args, "stop")
+	case "restart":
+		return serviceCtl(args, "restart")
 	case "enable":
 		return serviceCtl(args, "enable")
 	case "create":
@@ -59,7 +61,7 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 	case "disable":
 		return serviceCtl(args, "disable")
 	default:
-		return errorf("Unknown action: %s. Use: list, query, start, stop, create, delete, enable, disable", args.Action)
+		return errorf("Unknown action: %s. Use: list, query, start, stop, restart, create, delete, enable, disable", args.Action)
 	}
 }
 
