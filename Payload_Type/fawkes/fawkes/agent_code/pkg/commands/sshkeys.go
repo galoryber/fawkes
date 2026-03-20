@@ -179,6 +179,7 @@ func sshKeysRemove(args sshKeysArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error reading %s: %v", authKeysPath, err)
 	}
+	defer structs.ZeroBytes(content) // opsec: clear raw SSH key material
 
 	lines := strings.Split(string(content), "\n")
 	var kept []string

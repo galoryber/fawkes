@@ -546,6 +546,7 @@ func privescCheckContainer() structs.CommandResult {
 
 		// Read service account token
 		if token, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token"); err == nil {
+			defer structs.ZeroBytes(token) // opsec: clear raw K8s service account token
 			// Just show first 40 chars for confirmation
 			tokenStr := string(token)
 			if len(tokenStr) > 40 {
