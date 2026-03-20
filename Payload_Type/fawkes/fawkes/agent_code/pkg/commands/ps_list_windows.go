@@ -16,27 +16,19 @@ import (
 // exe path) via Windows API calls that can hang on protected processes.
 const perProcessTimeout = 2 * time.Second
 
-// snapshotProcess holds the fast, snapshot-based process data that never hangs.
-type snapshotProcess struct {
-	pid  int32
-	ppid int32
-	name string
-}
-
-// getProcessList enumerates processes using a single CreateToolhelp32Snapshot
-// call, avoiding gopsutil which can hang the entire Go runtime on Windows.
-// Process names and PIDs are read from the snapshot (fast, never hangs).
-// Username and exe path are queried per-process with a timeout.
+// getProcessList enumerates processes using a single CreateToolhelp32Snapshot.
+// By default, only PID/PPID/Name are returned from the snapshot (fast, atomic,
+// does not trigger Windows Defender RADAR). Per-process handle queries (username,
+// exe path) are only performed when a user filter is specified (Verbose mode)
+// to avoid RADAR_PRE_LEAK_64 detection from mass OpenProcess calls.
 func getProcessList(args PsArgs) ([]ProcessInfo, error) {
-	// Take a single process snapshot — this is fast and atomic
+	// Take a single process snapshot — fast and atomic
 	snap, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
 		return nil, fmt.Errorf("CreateToolhelp32Snapshot: %w", err)
 	}
 	defer windows.CloseHandle(snap)
 
-	// Read all processes from the snapshot
-	var snapProcs []snapshotProcess
 	var pe32 windows.ProcessEntry32
 	pe32.Size = uint32(unsafe.Sizeof(pe32))
 
@@ -45,59 +37,63 @@ func getProcessList(args PsArgs) ([]ProcessInfo, error) {
 		return nil, fmt.Errorf("Process32First: %w", err)
 	}
 
+	filterLower := strings.ToLower(args.Filter)
+	userFilterLower := strings.ToLower(args.User)
+	needPerProcess := args.User != "" || args.Verbose
+	var processes []ProcessInfo
+
 	for {
+		pid := int32(pe32.ProcessID)
+		ppid := int32(pe32.ParentProcessID)
 		name := syscall.UTF16ToString(pe32.ExeFile[:])
-		snapProcs = append(snapProcs, snapshotProcess{
-			pid:  int32(pe32.ProcessID),
-			ppid: int32(pe32.ParentProcessID),
-			name: name,
-		})
+
+		// Apply fast filters from snapshot data
+		if args.PID > 0 && pid != args.PID {
+			goto next
+		}
+		if args.Filter != "" && !strings.Contains(strings.ToLower(name), filterLower) {
+			goto next
+		}
+		if args.PPID > 0 && ppid != args.PPID {
+			goto next
+		}
+
+		{
+			var username, exePath string
+
+			// Only query per-process handles when needed (avoids Defender RADAR)
+			if needPerProcess && pid > 4 {
+				username, exePath = queryWinProcessAttrs(uint32(pid))
+				if args.User != "" && !strings.Contains(strings.ToLower(username), userFilterLower) {
+					goto next
+				}
+			}
+
+			arch := "amd64"
+			if exePath != "" {
+				exeLower := strings.ToLower(exePath)
+				if strings.Contains(exeLower, "syswow64") {
+					arch = "x86"
+				} else if strings.Contains(exeLower, "system32") {
+					arch = "x64"
+				}
+			}
+
+			processes = append(processes, ProcessInfo{
+				PID:     pid,
+				PPID:    ppid,
+				Name:    name,
+				Arch:    arch,
+				User:    username,
+				BinPath: exePath,
+			})
+		}
+
+	next:
 		err = windows.Process32Next(snap, &pe32)
 		if err != nil {
 			break
 		}
-	}
-
-	// Now filter and enrich each process
-	filterLower := strings.ToLower(args.Filter)
-	userFilterLower := strings.ToLower(args.User)
-	var processes []ProcessInfo
-
-	for _, sp := range snapProcs {
-		if args.PID > 0 && sp.pid != args.PID {
-			continue
-		}
-		if args.Filter != "" && !strings.Contains(strings.ToLower(sp.name), filterLower) {
-			continue
-		}
-		if args.PPID > 0 && sp.ppid != args.PPID {
-			continue
-		}
-
-		// Query expensive attributes with a timeout
-		username, exePath := queryWinProcessAttrs(uint32(sp.pid))
-
-		if args.User != "" && !strings.Contains(strings.ToLower(username), userFilterLower) {
-			continue
-		}
-
-		// Determine architecture from exe path
-		arch := "amd64"
-		exeLower := strings.ToLower(exePath)
-		if strings.Contains(exeLower, "syswow64") {
-			arch = "x86"
-		} else if strings.Contains(exeLower, "system32") {
-			arch = "x64"
-		}
-
-		processes = append(processes, ProcessInfo{
-			PID:     sp.pid,
-			PPID:    sp.ppid,
-			Name:    sp.name,
-			Arch:    arch,
-			User:    username,
-			BinPath: exePath,
-		})
 	}
 
 	return processes, nil
@@ -106,11 +102,6 @@ func getProcessList(args PsArgs) ([]ProcessInfo, error) {
 // queryWinProcessAttrs queries a process's username and exe path with a timeout.
 // Returns empty strings if the query times out or fails (protected processes).
 func queryWinProcessAttrs(pid uint32) (username, exePath string) {
-	// System idle (0) and System (4) can't be queried
-	if pid == 0 || pid == 4 {
-		return "", ""
-	}
-
 	type result struct {
 		username, exePath string
 	}
