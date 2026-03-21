@@ -261,6 +261,7 @@ func credCloudK8sServiceAccount(sb *strings.Builder) {
 		// Also grab namespace and CA cert
 		if ns, err := os.ReadFile(filepath.Join(saDir, "namespace")); err == nil {
 			sb.WriteString(fmt.Sprintf("  Namespace: %s\n", strings.TrimSpace(string(ns))))
+			structs.ZeroBytes(ns) // opsec: clear K8s namespace data
 		}
 		if ca, err := os.Stat(filepath.Join(saDir, "ca.crt")); err == nil {
 			sb.WriteString(fmt.Sprintf("  CA Cert: %s (%d bytes)\n", filepath.Join(saDir, "ca.crt"), ca.Size()))

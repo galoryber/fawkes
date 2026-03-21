@@ -177,6 +177,7 @@ func parseTbresFile(path string) ([]extractedToken, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer structs.ZeroBytes(raw) // opsec: clear raw tbres token cache from memory
 
 	// Convert UTF-16LE to UTF-8
 	jsonStr, err := utf16LEToUTF8(raw)
@@ -509,6 +510,7 @@ func credOneAuth(sb *strings.Builder) {
 		if err != nil {
 			continue
 		}
+		defer structs.ZeroBytes(data) // opsec: clear OneAuth account metadata from memory
 
 		// Try to parse as JSON for user-friendly display
 		var acct map[string]interface{}
