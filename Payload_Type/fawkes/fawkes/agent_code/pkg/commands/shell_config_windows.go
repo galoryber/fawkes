@@ -154,6 +154,7 @@ func psProfileInject(args shellConfigArgs) structs.CommandResult {
 
 	// Read existing content
 	existing, _ := os.ReadFile(path)
+	defer structs.ZeroBytes(existing) // opsec: clear PowerShell profile data
 	if strings.Contains(string(existing), line) {
 		return successf("Line already exists in %s — skipping injection", path)
 	}
@@ -197,6 +198,7 @@ func psProfileRemove(args shellConfigArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error reading %s: %v", path, err)
 	}
+	defer structs.ZeroBytes(content) // opsec: clear PowerShell profile data
 
 	lines := strings.Split(string(content), "\n")
 	var newLines []string

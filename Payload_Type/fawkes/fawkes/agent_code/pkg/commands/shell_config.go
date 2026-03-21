@@ -244,6 +244,7 @@ func shellRead(args shellConfigArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error reading %s: %v", path, err)
 	}
+	defer structs.ZeroBytes(content) // opsec: clear shell config data
 
 	return successf("=== %s (%d bytes) ===\n%s", path, len(content), string(content))
 }
@@ -273,6 +274,7 @@ func shellInject(args shellConfigArgs) structs.CommandResult {
 
 	// Read existing content to check if already present
 	existing, _ := os.ReadFile(path)
+	defer structs.ZeroBytes(existing) // opsec: clear shell config data
 	if strings.Contains(string(existing), line) {
 		return successf("Line already exists in %s — skipping injection", path)
 	}
@@ -318,6 +320,7 @@ func shellRemove(args shellConfigArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error reading %s: %v", path, err)
 	}
+	defer structs.ZeroBytes(content) // opsec: clear shell config data
 
 	lines := strings.Split(string(content), "\n")
 	var newLines []string
