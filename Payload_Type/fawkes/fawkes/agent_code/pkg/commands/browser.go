@@ -122,6 +122,7 @@ func getEncryptionKey(userDataDir string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read Local State: %w", err)
 	}
+	defer structs.ZeroBytes(data)
 
 	var localState struct {
 		OsCrypt struct {
@@ -140,15 +141,15 @@ func getEncryptionKey(userDataDir string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("base64 decode key: %w", err)
 	}
+	defer structs.ZeroBytes(encryptedKey)
 
 	// Strip "DPAPI" prefix (5 bytes)
 	if len(encryptedKey) < 5 || string(encryptedKey[:5]) != "DPAPI" {
 		return nil, fmt.Errorf("unexpected key prefix (not DPAPI)")
 	}
-	encryptedKey = encryptedKey[5:]
 
-	// Decrypt with DPAPI
-	return dpapiDecrypt(encryptedKey)
+	// Decrypt with DPAPI (pass slice past DPAPI prefix)
+	return dpapiDecrypt(encryptedKey[5:])
 }
 
 // dpapiDecrypt calls CryptUnprotectData to decrypt DPAPI-protected data
