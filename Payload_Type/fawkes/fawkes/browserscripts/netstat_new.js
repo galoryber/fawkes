@@ -21,6 +21,7 @@ function(task, responses){
             {"plaintext": "remote", "type": "string", "fillWidth": true},
             {"plaintext": "state", "type": "string", "width": 130},
             {"plaintext": "pid", "type": "number", "width": 80},
+            {"plaintext": "process", "type": "string", "width": 150},
         ];
         let rows = [];
         for(let j = 0; j < data.length; j++){
@@ -40,6 +41,7 @@ function(task, responses){
                 "remote": {"plaintext": remoteAddr, "copyIcon": true},
                 "state": {"plaintext": conn["state"]},
                 "pid": {"plaintext": conn["pid"] > 0 ? conn["pid"] : "-"},
+                "process": {"plaintext": conn["process"] || "-"},
                 "rowStyle": rowStyle,
             });
         }

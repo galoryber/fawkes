@@ -85,3 +85,65 @@ func TestNetstatJSONFields(t *testing.T) {
 		t.Error("expected non-empty state field")
 	}
 }
+
+func TestNetstatProcessName(t *testing.T) {
+	cmd := &NetstatCommand{}
+	result := cmd.Execute(structs.Task{})
+	if result.Status != "success" {
+		t.Skipf("netstat failed: %s", result.Output)
+	}
+	var entries []netstatEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+	if len(entries) == 0 {
+		t.Skip("no connections to validate")
+	}
+	// At least some entries should have process names resolved
+	hasProcess := false
+	for _, e := range entries {
+		if e.Process != "" {
+			hasProcess = true
+			break
+		}
+	}
+	if !hasProcess {
+		t.Log("no process names resolved (may need elevated permissions)")
+	}
+}
+
+func TestNetstatProcessNameInJSON(t *testing.T) {
+	cmd := &NetstatCommand{}
+	result := cmd.Execute(structs.Task{})
+	if result.Status != "success" {
+		t.Skipf("netstat failed: %s", result.Output)
+	}
+	// Verify the JSON includes the "process" field
+	var raw []map[string]interface{}
+	if err := json.Unmarshal([]byte(result.Output), &raw); err != nil {
+		t.Fatalf("failed to parse raw JSON: %v", err)
+	}
+	if len(raw) == 0 {
+		t.Skip("no connections to validate")
+	}
+	// Check that entries with process names have them in the JSON
+	for _, entry := range raw {
+		if _, hasPID := entry["pid"]; !hasPID {
+			t.Error("missing 'pid' field in JSON entry")
+		}
+		// "process" is omitempty, so it may not be present for PID 0
+		if proc, ok := entry["process"]; ok {
+			if _, isStr := proc.(string); !isStr {
+				t.Error("'process' field should be a string")
+			}
+		}
+	}
+}
+
+func TestResolveProcessNames(t *testing.T) {
+	// Test with an empty slice
+	names := resolveProcessNames(nil)
+	if len(names) != 0 {
+		t.Errorf("expected empty map for nil input, got %d entries", len(names))
+	}
+}
