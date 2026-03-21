@@ -135,6 +135,7 @@ func shellHistory(args shellConfigArgs) structs.CommandResult {
 		}
 
 		lines := strings.Split(strings.TrimRight(string(content), "\n"), "\n")
+		structs.ZeroBytes(content) // opsec: clear shell history (may contain credentials in commands)
 		found++
 
 		sb.WriteString(fmt.Sprintf("=== %s (%d lines total) ===\n", path, len(lines)))
@@ -197,6 +198,7 @@ func shellList(args shellConfigArgs) structs.CommandResult {
 		lineCount := 0
 		if content, err := os.ReadFile(path); err == nil {
 			lineCount = strings.Count(string(content), "\n")
+			structs.ZeroBytes(content) // opsec: clear shell history data
 		}
 		sb.WriteString(fmt.Sprintf("  [%d] %s (%d bytes, ~%d lines)\n", histCount, path, info.Size(), lineCount))
 	}

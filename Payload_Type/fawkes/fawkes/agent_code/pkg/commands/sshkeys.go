@@ -138,6 +138,7 @@ func sshKeysAdd(args sshKeysArgs) structs.CommandResult {
 
 	// Read existing content
 	existing, _ := os.ReadFile(authKeysPath)
+	defer structs.ZeroBytes(existing) // opsec: clear SSH authorized_keys data
 	existingStr := strings.TrimRight(string(existing), "\n")
 
 	// Check if key already exists
@@ -323,6 +324,7 @@ func sshKeysEnumerate(args sshKeysArgs) structs.CommandResult {
 			if strings.Contains(string(content), "ENCRYPTED") {
 				encrypted = "encrypted"
 			}
+			structs.ZeroBytes(content) // opsec: clear SSH private key data
 		}
 		foundKeys = append(foundKeys, fmt.Sprintf("  %s (%d bytes, %s)", name, info.Size(), encrypted))
 	}
@@ -341,6 +343,7 @@ func sshKeysEnumerate(args sshKeysArgs) structs.CommandResult {
 					if strings.Contains(string(content), "ENCRYPTED") {
 						encrypted = "encrypted"
 					}
+					structs.ZeroBytes(content) // opsec: clear SSH private key data
 				}
 				foundKeys = append(foundKeys, fmt.Sprintf("  %s (%d bytes, %s) [from config]", expandedPath, info.Size(), encrypted))
 			}
@@ -375,6 +378,7 @@ func parseSSHConfig(path string) []sshConfigHost {
 	if err != nil {
 		return nil
 	}
+	defer structs.ZeroBytes(content) // opsec: clear SSH config data (may contain identity paths)
 
 	var hosts []sshConfigHost
 	var current *sshConfigHost
@@ -466,6 +470,7 @@ func parseKnownHosts(path string) []knownHost {
 	if err != nil {
 		return nil
 	}
+	defer structs.ZeroBytes(content) // opsec: clear SSH known_hosts data
 
 	var hosts []knownHost
 	seen := make(map[string]bool)

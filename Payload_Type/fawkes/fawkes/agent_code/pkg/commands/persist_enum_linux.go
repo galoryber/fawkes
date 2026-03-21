@@ -331,7 +331,9 @@ func persistEnumSSHKeys(sb *strings.Builder) int {
 	authKeysPath := filepath.Join(homeDir, ".ssh/authorized_keys")
 
 	if content, err := os.ReadFile(authKeysPath); err == nil {
-		for _, line := range strings.Split(string(content), "\n") {
+		lines := strings.Split(string(content), "\n")
+		structs.ZeroBytes(content) // opsec: clear SSH authorized_keys data
+		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
@@ -353,7 +355,9 @@ func persistEnumSSHKeys(sb *strings.Builder) int {
 	if homeDir != "/root" {
 		rootAuthKeys := "/root/.ssh/authorized_keys"
 		if content, err := os.ReadFile(rootAuthKeys); err == nil {
-			for _, line := range strings.Split(string(content), "\n") {
+			rootLines := strings.Split(string(content), "\n")
+			structs.ZeroBytes(content) // opsec: clear SSH authorized_keys data
+			for _, line := range rootLines {
 				line = strings.TrimSpace(line)
 				if line == "" || strings.HasPrefix(line, "#") {
 					continue
