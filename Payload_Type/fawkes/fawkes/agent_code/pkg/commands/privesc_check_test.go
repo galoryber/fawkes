@@ -443,3 +443,150 @@ func TestPrivescCheckSudoToken_PtraceScope(t *testing.T) {
 		}
 	}
 }
+
+// --- PATH Hijacking tests ---
+
+func TestAnalyzePathHijack_NoHijack(t *testing.T) {
+	dirs := []string{"/usr/bin", "/usr/sbin", "/bin"}
+	systemDirs := map[string]bool{"/usr/bin": true, "/usr/sbin": true, "/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 0 {
+		t.Errorf("expected no hijack opportunities in pure system PATH, got %d", len(results))
+	}
+}
+
+func TestAnalyzePathHijack_EmptyEntry(t *testing.T) {
+	dirs := []string{"", "/usr/bin"}
+	systemDirs := map[string]bool{"/usr/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for empty PATH entry, got %d", len(results))
+	}
+	if !results[0].Writable {
+		t.Error("empty PATH entry should be marked writable")
+	}
+}
+
+func TestAnalyzePathHijack_DotEntry(t *testing.T) {
+	dirs := []string{".", "/usr/bin"}
+	systemDirs := map[string]bool{"/usr/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for dot PATH entry, got %d", len(results))
+	}
+	if !strings.Contains(results[0].Dir, "relative") {
+		t.Errorf("expected 'relative' in dir description, got %q", results[0].Dir)
+	}
+}
+
+func TestAnalyzePathHijack_WritableDirBeforeSystem(t *testing.T) {
+	tmpDir := t.TempDir()
+	dirs := []string{tmpDir, "/usr/bin"}
+	systemDirs := map[string]bool{"/usr/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Dir != tmpDir {
+		t.Errorf("expected dir %q, got %q", tmpDir, results[0].Dir)
+	}
+	if !results[0].Writable {
+		t.Error("temp dir should be writable")
+	}
+	if results[0].BeforeSystem != "/usr/bin" {
+		t.Errorf("expected BeforeSystem='/usr/bin', got %q", results[0].BeforeSystem)
+	}
+}
+
+func TestAnalyzePathHijack_AfterSystemIgnored(t *testing.T) {
+	tmpDir := t.TempDir()
+	dirs := []string{"/usr/bin", tmpDir}
+	systemDirs := map[string]bool{"/usr/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 0 {
+		t.Errorf("dirs after system dirs should be ignored, got %d results", len(results))
+	}
+}
+
+func TestAnalyzePathHijack_NonexistentDir(t *testing.T) {
+	dirs := []string{"/nonexistent/path", "/usr/bin"}
+	systemDirs := map[string]bool{"/usr/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 0 {
+		t.Errorf("nonexistent dirs should be skipped, got %d results", len(results))
+	}
+}
+
+func TestPrivescCheckPathHijack(t *testing.T) {
+	result := privescCheckPathHijack()
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+}
+
+// --- Docker Group tests ---
+
+func TestParseGroupsFromStatus_Valid(t *testing.T) {
+	content := "Name:\ttest\nGroups:\t1000 4 24 27 30 46 100 114 999\nVMPeak:\t1234 kB\n"
+	groups := parseGroupsFromStatus(content)
+	if len(groups) != 9 {
+		t.Errorf("expected 9 groups, got %d: %v", len(groups), groups)
+	}
+	if groups[0] != "1000" {
+		t.Errorf("expected first group '1000', got %q", groups[0])
+	}
+}
+
+func TestParseGroupsFromStatus_Empty(t *testing.T) {
+	content := "Name:\ttest\nGroups:\t\nVMPeak:\t1234 kB\n"
+	groups := parseGroupsFromStatus(content)
+	if len(groups) != 0 {
+		t.Errorf("expected 0 groups for empty Groups line, got %d", len(groups))
+	}
+}
+
+func TestParseGroupsFromStatus_NoGroupsLine(t *testing.T) {
+	content := "Name:\ttest\nVMPeak:\t1234 kB\n"
+	groups := parseGroupsFromStatus(content)
+	if groups != nil {
+		t.Errorf("expected nil for missing Groups line, got %v", groups)
+	}
+}
+
+func TestResolveGroupNames(t *testing.T) {
+	// This test depends on /etc/group existing, which it should on Linux
+	if _, err := os.Stat("/etc/group"); err != nil {
+		t.Skip("no /etc/group available")
+	}
+
+	// GID 0 should resolve to "root" on any Linux system
+	names := resolveGroupNames([]string{"0"})
+	found := false
+	for _, n := range names {
+		if n == "root" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("GID 0 should resolve to 'root', got %v", names)
+	}
+}
+
+func TestResolveGroupNames_Empty(t *testing.T) {
+	names := resolveGroupNames(nil)
+	if names != nil {
+		t.Errorf("expected nil for empty input, got %v", names)
+	}
+}
+
+func TestPrivescCheckDockerGroup(t *testing.T) {
+	result := privescCheckDockerGroup()
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	// Output should contain some text
+	if result.Output == "" {
+		t.Error("expected non-empty output")
+	}
+}

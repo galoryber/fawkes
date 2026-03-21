@@ -21,7 +21,7 @@ func (c *PrivescCheckCommand) Name() string {
 }
 
 func (c *PrivescCheckCommand) Description() string {
-	return "Linux privilege escalation enumeration: SUID/SGID binaries, capabilities, sudo rules, writable paths, container detection, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse (T1548)"
+	return "Linux privilege escalation enumeration: SUID/SGID binaries, capabilities, sudo rules, writable paths, container detection, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse, PATH hijacking, docker group (T1548)"
 }
 
 type privescCheckArgs struct {
@@ -63,8 +63,12 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return privescCheckSystemdUnits()
 	case "sudo-token":
 		return privescCheckSudoToken()
+	case "path-hijack":
+		return privescCheckPathHijack()
+	case "docker-group":
+		return privescCheckDockerGroup()
 	default:
-		return errorf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container, cron, nfs, systemd, sudo-token", args.Action)
+		return errorf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group", args.Action)
 	}
 }
 
@@ -126,6 +130,18 @@ func privescCheckAll() structs.CommandResult {
 	sb.WriteString("--- Sudo Token Reuse ---\n")
 	sudoTokenResult := privescCheckSudoToken()
 	sb.WriteString(sudoTokenResult.Output)
+	sb.WriteString("\n\n")
+
+	// PATH hijacking
+	sb.WriteString("--- PATH Hijacking ---\n")
+	pathResult := privescCheckPathHijack()
+	sb.WriteString(pathResult.Output)
+	sb.WriteString("\n\n")
+
+	// Docker group
+	sb.WriteString("--- Docker Group ---\n")
+	dockerResult := privescCheckDockerGroup()
+	sb.WriteString(dockerResult.Output)
 
 	return successResult(sb.String())
 }
@@ -934,4 +950,228 @@ func privescCheckSudoToken() structs.CommandResult {
 	}
 
 	return successResult(sb.String())
+}
+
+// privescCheckPathHijack checks for writable directories in PATH that appear
+// before system directories, enabling command hijacking for privilege escalation.
+func privescCheckPathHijack() structs.CommandResult {
+	var sb strings.Builder
+
+	pathEnv := os.Getenv("PATH")
+	if pathEnv == "" {
+		sb.WriteString("PATH is empty — no hijack analysis possible")
+		return successResult(sb.String())
+	}
+
+	dirs := strings.Split(pathEnv, ":")
+	systemDirs := map[string]bool{
+		"/usr/bin": true, "/usr/sbin": true, "/bin": true, "/sbin": true,
+		"/usr/local/bin": true, "/usr/local/sbin": true,
+	}
+
+	results := analyzePathHijack(dirs, systemDirs)
+
+	if len(results) == 0 {
+		sb.WriteString("No PATH hijacking opportunities found")
+		return successResult(sb.String())
+	}
+
+	sb.WriteString(fmt.Sprintf("Found %d PATH hijacking opportunities:\n\n", len(results)))
+	for _, r := range results {
+		sb.WriteString(fmt.Sprintf("  [!] %s (position %d, before %s)\n", r.Dir, r.Position, r.BeforeSystem))
+		sb.WriteString(fmt.Sprintf("      Writable: %v | Owner: %s | Mode: %s\n", r.Writable, r.Owner, r.Mode))
+		if r.Writable {
+			sb.WriteString("      → Place a malicious binary here to hijack commands\n")
+		}
+	}
+
+	return successResult(sb.String())
+}
+
+// pathHijackResult represents a single PATH hijacking opportunity.
+type pathHijackResult struct {
+	Dir          string
+	Position     int
+	BeforeSystem string
+	Writable     bool
+	Owner        string
+	Mode         string
+}
+
+// analyzePathHijack inspects PATH directories for hijacking opportunities.
+// A directory is a hijack candidate if it's writable and appears before a system directory.
+func analyzePathHijack(dirs []string, systemDirs map[string]bool) []pathHijackResult {
+	var results []pathHijackResult
+
+	// Find first system directory position
+	firstSystem := -1
+	firstSystemDir := ""
+	for i, d := range dirs {
+		if systemDirs[d] {
+			firstSystem = i
+			firstSystemDir = d
+			break
+		}
+	}
+
+	for i, d := range dirs {
+		if d == "" || d == "." {
+			// Current directory or empty entry — always a hijack risk
+			results = append(results, pathHijackResult{
+				Dir:          fmt.Sprintf("%q (relative)", d),
+				Position:     i + 1,
+				BeforeSystem: firstSystemDir,
+				Writable:     true,
+				Owner:        "n/a",
+				Mode:         "n/a",
+			})
+			continue
+		}
+
+		if systemDirs[d] {
+			continue // Skip system dirs themselves
+		}
+
+		// Only report dirs that appear before a system directory
+		if firstSystem >= 0 && i >= firstSystem {
+			continue
+		}
+
+		info, err := os.Stat(d)
+		if err != nil {
+			continue // Dir doesn't exist
+		}
+
+		writable := isDirWritable(d)
+		ownerStr, groupStr := getFileOwner(d)
+		owner := ownerStr + ":" + groupStr
+		mode := info.Mode().Perm().String()
+
+		results = append(results, pathHijackResult{
+			Dir:          d,
+			Position:     i + 1,
+			BeforeSystem: firstSystemDir,
+			Writable:     writable,
+			Owner:        owner,
+			Mode:         mode,
+		})
+	}
+
+	return results
+}
+
+// privescCheckDockerGroup checks if the current user is in the docker group,
+// which allows trivial root escalation via container escape.
+func privescCheckDockerGroup() structs.CommandResult {
+	var sb strings.Builder
+
+	groups := parseDockerGroupMembership()
+
+	if groups.inDocker {
+		sb.WriteString("[!] CRITICAL: Current user is in the 'docker' group\n")
+		sb.WriteString("    → Can escalate to root via: docker run -v /:/mnt --rm -it alpine chroot /mnt sh\n")
+		sb.WriteString("    → Or mount /etc/shadow, /etc/passwd, /root/.ssh, etc.\n")
+	}
+
+	if groups.inLxd {
+		sb.WriteString("[!] CRITICAL: Current user is in the 'lxd' group\n")
+		sb.WriteString("    → Can escalate to root via LXD container with host filesystem mount\n")
+	}
+
+	if groups.inPodman {
+		sb.WriteString("[!] WARNING: Current user has rootless podman access\n")
+		sb.WriteString("    → May be able to escalate via user namespace manipulation\n")
+	}
+
+	if groups.dockerSocket {
+		sb.WriteString("[!] Docker socket is accessible at /var/run/docker.sock\n")
+		sb.WriteString("    → Direct API access enables root escalation even without group membership\n")
+	}
+
+	if !groups.inDocker && !groups.inLxd && !groups.inPodman && !groups.dockerSocket {
+		sb.WriteString("Not in docker/lxd/podman groups, no docker socket access")
+	}
+
+	return successResult(sb.String())
+}
+
+// dockerGroupInfo holds the results of docker/container group membership checks.
+type dockerGroupInfo struct {
+	inDocker     bool
+	inLxd        bool
+	inPodman     bool
+	dockerSocket bool
+}
+
+// parseDockerGroupMembership checks group membership and socket access.
+func parseDockerGroupMembership() dockerGroupInfo {
+	var info dockerGroupInfo
+
+	// Read current user's groups from /proc/self/status
+	data, err := os.ReadFile("/proc/self/status")
+	if err == nil {
+		groups := parseGroupsFromStatus(string(data))
+		groupNames := resolveGroupNames(groups)
+
+		for _, name := range groupNames {
+			switch name {
+			case "docker":
+				info.inDocker = true
+			case "lxd":
+				info.inLxd = true
+			case "podman":
+				info.inPodman = true
+			}
+		}
+	}
+
+	// Check docker socket accessibility
+	if fi, err := os.Stat("/var/run/docker.sock"); err == nil {
+		// Check if we can actually connect (socket exists and is accessible)
+		if fi.Mode()&os.ModeSocket != 0 {
+			info.dockerSocket = true
+		}
+	}
+
+	return info
+}
+
+// parseGroupsFromStatus extracts group IDs from /proc/self/status content.
+func parseGroupsFromStatus(content string) []string {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "Groups:") {
+			parts := strings.Fields(strings.TrimPrefix(line, "Groups:"))
+			return parts
+		}
+	}
+	return nil
+}
+
+// resolveGroupNames maps group IDs to names using /etc/group.
+func resolveGroupNames(gids []string) []string {
+	if len(gids) == 0 {
+		return nil
+	}
+
+	gidSet := make(map[string]bool)
+	for _, g := range gids {
+		gidSet[g] = true
+	}
+
+	f, err := os.Open("/etc/group")
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	var names []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.SplitN(line, ":", 4)
+		if len(parts) >= 3 && gidSet[parts[2]] {
+			names = append(names, parts[0])
+		}
+	}
+	return names
 }

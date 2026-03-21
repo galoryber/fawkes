@@ -10,7 +10,7 @@ hidden = false
 Cross-platform privilege escalation enumeration. Scans for common privilege escalation vectors with platform-specific checks for Windows, Linux, and macOS.
 
 - **Windows:** Token privileges (potato attacks, SeDebug, SeBackup), unquoted service paths, modifiable service binaries, AlwaysInstallElevated, auto-logon credentials, UAC configuration, LSA protection, writable PATH directories, unattended install files
-- **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse
+- **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse, PATH hijacking, docker/lxd/podman group
 - **macOS:** LaunchDaemons/Agents, TCC database, dylib hijacking, SIP status
 
 ## Arguments
@@ -42,6 +42,8 @@ Cross-platform privilege escalation enumeration. Scans for common privilege esca
 - **nfs** — Check /etc/exports for NFS shares with no_root_squash (SUID binary deployment)
 - **systemd** — Find writable systemd service/timer files (ExecStart hijacking)
 - **sudo-token** — Check for sudo timestamp files and ptrace_scope (token reuse via ptrace)
+- **path-hijack** — Check for writable directories in PATH before system directories (command hijacking)
+- **docker-group** — Check docker/lxd/podman group membership and Docker socket access (trivial root escalation)
 
 ### macOS-Only Actions
 
@@ -63,6 +65,8 @@ privesc-check -action cron
 privesc-check -action nfs
 privesc-check -action systemd
 privesc-check -action sudo-token
+privesc-check -action path-hijack
+privesc-check -action docker-group
 privesc-check -action launchdaemons
 ```
 

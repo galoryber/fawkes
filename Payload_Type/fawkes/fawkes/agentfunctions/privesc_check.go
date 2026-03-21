@@ -7,9 +7,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "privesc-check",
-		Description:         "Privilege escalation enumeration. Windows: token privileges, unquoted services, AlwaysInstallElevated, auto-logon, UAC. Linux: SUID/SGID, capabilities, sudo, containers, cron hijacking, NFS, systemd units, sudo tokens. macOS: LaunchDaemons, TCC, dylib hijacking, SIP (T1548)",
-		HelpString:          "privesc-check -action <all|...> (Windows: privileges, services, registry, uac, unattend. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable)",
-		Version:             4,
+		Description:         "Privilege escalation enumeration. Windows: token privileges, unquoted services, AlwaysInstallElevated, auto-logon, UAC. Linux: SUID/SGID, capabilities, sudo, containers, cron hijacking, NFS, systemd units, sudo tokens, PATH hijacking, docker group. macOS: LaunchDaemons, TCC, dylib hijacking, SIP (T1548)",
+		HelpString:          "privesc-check -action <all|...> (Windows: privileges, services, registry, uac, unattend. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable)",
+		Version:             5,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1548", "T1548.001", "T1548.002", "T1574.009", "T1552.001", "T1613", "T1082"},
@@ -23,8 +23,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "privileges", "services", "registry", "uac", "unattend", "writable", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "launchdaemons", "tcc", "dylib", "sip"},
-				Description:      "Check to perform. Windows: privileges, services, registry, uac, unattend. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
+				Choices:          []string{"all", "privileges", "services", "registry", "uac", "unattend", "writable", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "path-hijack", "docker-group", "launchdaemons", "tcc", "dylib", "sip"},
+				Description:      "Check to perform. Windows: privileges, services, registry, uac, unattend. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
