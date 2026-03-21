@@ -15,7 +15,7 @@ Enumerate persistence mechanisms without making any changes. Cross-platform comm
 Registry Run keys, startup folders, Winlogon hijacks, IFEO, AppInit_DLLs, scheduled tasks, non-Microsoft services.
 
 ### Linux
-Cron jobs (system + user), systemd services/timers, shell profiles, init.d scripts, rc.local, XDG autostart, SSH authorized_keys + private keys + agent sockets, LD_PRELOAD, udev rules, kernel modules (auto-load + modprobe install), MOTD scripts, at jobs.
+Cron jobs (system + user), systemd services/timers, shell profiles, init.d scripts, rc.local, XDG autostart, SSH authorized_keys + private keys + agent sockets, LD_PRELOAD, udev rules, kernel modules (auto-load + modprobe install), MOTD scripts, at jobs, D-Bus service activation, PAM modules (non-standard + recently modified), package manager hooks (APT/dpkg/yum/dnf), logrotate postrotate scripts, NetworkManager dispatcher scripts, anacron jobs.
 
 ### macOS
 LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout hooks, SSH authorized_keys + private keys + agent sockets, periodic scripts, authorization plugins, emond rules, at jobs.
@@ -46,6 +46,12 @@ LaunchAgents/LaunchDaemons (non-Apple), cron jobs, shell profiles, login/logout 
 | `modules` | /etc/modules, /etc/modules-load.d/ (systemd), /etc/modprobe.d/ install directives (T1547.006) |
 | `motd` | /etc/update-motd.d/ executable scripts, /etc/motd static message (T1546) |
 | `at` | /var/spool/at/ and /var/spool/atjobs/ scheduled one-time jobs, at.allow/at.deny access control |
+| `dbus` | D-Bus system and session service files — shows Exec= activation command (T1543) |
+| `pam` | Non-standard PAM modules in /etc/pam.d/ configs, recently modified PAM libraries (T1556.003) |
+| `packages` | APT/dpkg hook directives, yum/dnf plugins — commands run during package operations (T1546) |
+| `logrotate` | /etc/logrotate.d/ and /etc/logrotate.conf postrotate/prerotate script blocks (T1053) |
+| `networkmanager` | /etc/NetworkManager/dispatcher.d/ scripts executed on network events (T1546) |
+| `anacron` | /etc/anacrontab periodic jobs with delay, /var/spool/anacron last-run timestamps (T1053) |
 
 ### macOS
 | Category | What It Checks |
@@ -84,6 +90,12 @@ persist-enum -category udev
 persist-enum -category modules
 persist-enum -category motd
 persist-enum -category at
+persist-enum -category dbus
+persist-enum -category pam
+persist-enum -category packages
+persist-enum -category logrotate
+persist-enum -category networkmanager
+persist-enum -category anacron
 
 # macOS examples
 persist-enum -category launchd
@@ -108,3 +120,4 @@ persist-enum -category authplugins
 - **T1546.014** — Event Triggered Execution: Emond
 - **T1053** — Scheduled Task/Job
 - **T1543** — Create or Modify System Process
+- **T1556.003** — Modify Authentication Process: Pluggable Authentication Modules
