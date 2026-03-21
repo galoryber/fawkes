@@ -252,6 +252,77 @@ func TestSecretScanCommand_MaxResults(t *testing.T) {
 	}
 }
 
+func TestScanFileForSecrets_VaultToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "vault.env")
+	os.WriteFile(f, []byte("VAULT_TOKEN=hvs.CAESIIG1z2Bq4NzHNO6WfPHkIuBBBBBB\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Vault token")
+	}
+	if results[0].Type != "HashiCorp Vault Token" {
+		t.Errorf("type = %q, want 'HashiCorp Vault Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_DigitalOceanToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "do.env")
+	os.WriteFile(f, []byte("DO_TOKEN=dop_v1_"+strings.Repeat("a1b2c3d4", 8)+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find DigitalOcean token")
+	}
+	if results[0].Type != "DigitalOcean Token" {
+		t.Errorf("type = %q, want 'DigitalOcean Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_ShopifyToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "shopify.env")
+	os.WriteFile(f, []byte("SHOPIFY_TOKEN=shpat_"+strings.Repeat("a1b2c3d4", 4)+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Shopify token")
+	}
+	if results[0].Type != "Shopify Token" {
+		t.Errorf("type = %q, want 'Shopify Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_DatabricksToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "databricks.env")
+	os.WriteFile(f, []byte("DB_TOKEN=dapi"+strings.Repeat("ab12cd34", 4)+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Databricks token")
+	}
+	if results[0].Type != "Databricks Token" {
+		t.Errorf("type = %q, want 'Databricks Token'", results[0].Type)
+	}
+}
+
+func TestSecretPatternsCompile(t *testing.T) {
+	// Verify all patterns compiled successfully
+	if len(secretPatterns) < 25 {
+		t.Errorf("expected at least 25 secret patterns, got %d", len(secretPatterns))
+	}
+	for _, p := range secretPatterns {
+		if p.Name == "" {
+			t.Error("pattern has empty name")
+		}
+		if p.Pattern == nil {
+			t.Errorf("pattern %q has nil regex", p.Name)
+		}
+	}
+}
+
 func TestSecretScanCommand_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	cmd := &SecretScanCommand{}

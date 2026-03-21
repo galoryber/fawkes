@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Search files on the target system for secrets, API keys, private keys, connection strings, and other sensitive patterns. Uses 20+ compiled regex patterns to detect common credential formats.
+Search files on the target system for secrets, API keys, private keys, connection strings, and other sensitive patterns. Uses 27 compiled regex patterns to detect common credential formats.
 
 Complements `env-scan` (environment variables) and `cred-harvest` (OS credential stores) by scanning **file contents** for embedded secrets that aren't stored in standard credential locations.
 
@@ -28,7 +28,9 @@ Complements `env-scan` (environment variables) and `cred-harvest` (OS credential
 - **Email:** SendGrid, Twilio
 - **Generic:** API keys, secrets, tokens, passwords, connection strings (JDBC, MongoDB, PostgreSQL, Redis, etc.)
 - **Crypto:** Private keys (RSA, EC, DSA, OpenSSH)
-- **Package:** NPM tokens, Heroku API keys
+- **SaaS/Cloud:** HashiCorp Vault tokens, DigitalOcean tokens, Databricks tokens, Shopify tokens
+- **AI/ML:** Anthropic API keys, OpenAI API keys
+- **Package:** NPM tokens, PyPI tokens, Heroku API keys
 
 ## File Types Scanned
 

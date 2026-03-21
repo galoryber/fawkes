@@ -66,6 +66,14 @@ var secretPatterns = func() []secretPattern {
 		{"SendGrid API Key", `SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}`},
 		{"Stripe Key", `[sr]k_(live|test)_[A-Za-z0-9]{20,}`},
 		{"Heroku API Key", `(?i)heroku[_-]?api[_-]?key\s*[:=]\s*['"]?[0-9a-f-]{36}['"]?`},
+		// Modern SaaS and cloud API tokens
+		{"HashiCorp Vault Token", `hvs\.[A-Za-z0-9_-]{24,}`},
+		{"DigitalOcean Token", `do[op]_v1_[a-f0-9]{64}`},
+		{"PyPI API Token", `pypi-[A-Za-z0-9_-]{100,}`},
+		{"Anthropic API Key", `sk-ant-[A-Za-z0-9_-]{90,}`},
+		{"OpenAI API Key", `sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}`},
+		{"Shopify Token", `shp(at|ca|pa|ss)_[a-fA-F0-9]{32}`},
+		{"Databricks Token", `dapi[a-f0-9]{32}`},
 	}
 
 	compiled := make([]secretPattern, 0, len(patterns))

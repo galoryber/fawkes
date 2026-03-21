@@ -9,7 +9,7 @@ func init() {
 		Name:                "secret-scan",
 		Description:         "Search files for secrets, API keys, private keys, and sensitive patterns (T1552.001, T1005)",
 		HelpString:          "secret-scan [-path /home/user] [-depth 5] [-max_results 100]",
-		Version:             1,
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1552.001", "T1005"},
