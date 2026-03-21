@@ -234,6 +234,136 @@ func vmDetectLinux() ([]vmEvidence, string) {
 		}
 	}
 
+	// Check /sys/hypervisor/type (Xen, KVM)
+	if data, err := os.ReadFile("/sys/hypervisor/type"); err == nil {
+		hyperType := strings.TrimSpace(string(data))
+		if hyperType != "" {
+			vm := classifyHypervisorType(hyperType)
+			if vm != "" {
+				evidence = append(evidence, vmEvidence{"Hypervisor type", "VM", fmt.Sprintf("%s → %s", hyperType, vm)})
+				if detected == "" {
+					detected = vm
+				}
+			}
+		}
+	}
+
+	// Check /sys/class/dmi/id/board_name for cloud providers
+	if data, err := os.ReadFile("/sys/class/dmi/id/board_name"); err == nil {
+		board := strings.TrimSpace(string(data))
+		if cloud := classifyCloudBoard(board); cloud != "" {
+			evidence = append(evidence, vmEvidence{"DMI board_name", "cloud", fmt.Sprintf("%s → %s", board, cloud)})
+			if detected == "" {
+				detected = cloud
+			}
+		}
+	}
+
+	// Check for VM guest agent processes via /proc
+	procEvidence, procVM := vmDetectLinuxProcesses()
+	evidence = append(evidence, procEvidence...)
+	if procVM != "" && detected == "" {
+		detected = procVM
+	}
+
+	return evidence, detected
+}
+
+// vmGuestProcesses maps process names to VM types for guest agent detection.
+var vmGuestProcesses = map[string]string{
+	"vmtoolsd":          "VMware",
+	"vmware-vmblock":    "VMware",
+	"vmhgfs-fuse":       "VMware",
+	"VBoxService":       "VirtualBox",
+	"VBoxClient":        "VirtualBox",
+	"qemu-ga":           "QEMU/KVM",
+	"spice-vdagent":     "QEMU/KVM",
+	"hv_kvp_daemon":     "Hyper-V",
+	"hv_vss_daemon":     "Hyper-V",
+	"hv_fcopy_daemon":   "Hyper-V",
+	"xe-daemon":         "Xen",
+	"xenstore":          "Xen",
+	"prl_tools_service": "Parallels",
+}
+
+// classifyHypervisorType maps /sys/hypervisor/type values to VM names.
+func classifyHypervisorType(hyperType string) string {
+	switch strings.ToLower(hyperType) {
+	case "xen":
+		return "Xen"
+	case "kvm":
+		return "KVM"
+	default:
+		return hyperType
+	}
+}
+
+// classifyCloudBoard maps DMI board_name values to cloud provider names.
+func classifyCloudBoard(boardName string) string {
+	lower := strings.ToLower(boardName)
+	switch {
+	case strings.Contains(lower, "google compute"):
+		return "GCP"
+	case strings.Contains(lower, "amazon ec2"):
+		return "AWS EC2"
+	case strings.Contains(lower, "virtual machine"):
+		// Azure uses "Virtual Machine" as board_name
+		return ""
+	default:
+		return ""
+	}
+}
+
+// classifyVMProcess checks if a process name indicates a VM guest agent.
+// Returns the VM type or empty string if not recognized.
+func classifyVMProcess(procName string) string {
+	if vm, ok := vmGuestProcesses[procName]; ok {
+		return vm
+	}
+	return ""
+}
+
+// vmDetectLinuxProcesses scans /proc for VM guest agent processes.
+func vmDetectLinuxProcesses() ([]vmEvidence, string) {
+	var evidence []vmEvidence
+	detected := ""
+
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return evidence, ""
+	}
+
+	found := make(map[string]string) // process name → VM type (deduplicate)
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		// Only check numeric directories (PIDs)
+		name := entry.Name()
+		if len(name) == 0 || name[0] < '0' || name[0] > '9' {
+			continue
+		}
+		comm, err := os.ReadFile(fmt.Sprintf("/proc/%s/comm", name))
+		if err != nil {
+			continue
+		}
+		procName := strings.TrimSpace(string(comm))
+		if vm := classifyVMProcess(procName); vm != "" {
+			found[procName] = vm
+		}
+	}
+
+	if len(found) > 0 {
+		for proc, vm := range found {
+			evidence = append(evidence, vmEvidence{"VM Guest Process", "VM", fmt.Sprintf("%s → %s", proc, vm)})
+			if detected == "" {
+				detected = vm
+			}
+		}
+	} else {
+		evidence = append(evidence, vmEvidence{"VM Guest Process Scan", "clean", "no VM guest agents found"})
+	}
+
 	return evidence, detected
 }
 
