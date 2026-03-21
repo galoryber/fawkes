@@ -889,20 +889,6 @@ func TestParseBplist_NonStringDictKey(t *testing.T) {
 	}
 }
 
-func bplistFloat32(v float32) []byte {
-	b := make([]byte, 5)
-	b[0] = 0x22 // real, 4 bytes (1 << 2)
-	binary.BigEndian.PutUint32(b[1:], math.Float32bits(v))
-	return b
-}
-
-func bplistFloat64(v float64) []byte {
-	b := make([]byte, 9)
-	b[0] = 0x23 // real, 8 bytes (1 << 3)
-	binary.BigEndian.PutUint64(b[1:], math.Float64bits(v))
-	return b
-}
-
 func TestParseBplist_UnsupportedRealSize(t *testing.T) {
 	// Real with objInfo=0 → 1 byte (1 << 0), not 4 or 8 → error
 	objects := [][]byte{
