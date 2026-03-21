@@ -15,8 +15,9 @@ Cross-platform (Windows, Linux, macOS).
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | all | Triage mode: `all` (docs+creds+configs), `documents`, `credentials`, `configs`, `custom` |
+| action | No | all | Triage mode: `all` (docs+creds+configs), `documents`, `credentials`, `configs`, `recent`, `custom` |
 | path | For custom | - | Directory to scan when using `custom` action |
+| hours | No | 24 | Time window in hours for `recent` action |
 | max_size | No | 10485760 | Maximum file size in bytes (default 10MB) |
 | max_files | No | 200 | Maximum number of files to return |
 
@@ -41,6 +42,13 @@ triage -action credentials
 ### Find configuration files
 ```
 triage -action configs
+```
+
+### Find recently modified files
+```
+triage -action recent
+triage -action recent -hours 48
+triage -action recent -hours 1
 ```
 
 ### Scan custom directory
@@ -69,6 +77,11 @@ Key files (.kdbx, .kdb, .key, .pem, .pfx, .p12, .ppk), SSH keys (id_rsa, id_ed25
 Configuration files (.conf, .cfg, .ini, .yaml, .yml, .json, .xml, .properties, .env, .toml).
 
 **Search paths:** /etc, ~/.config, ~/.kube, ~/.docker, ~/.aws, ~/.azure, ProgramData (Windows).
+
+### Recent
+Files modified within the specified time window (default: 24 hours). Automatically categorizes files as cred, doc, config, script, log, database, or other based on name/extension. Results sorted by modification time (newest first). Skips noise directories (.cache, node_modules, .git, __pycache__, etc.).
+
+**Search paths:** Home directory, /tmp, /var/log, /opt (Linux), Desktop/Documents/Downloads/AppData (Windows).
 
 ## Output Format
 

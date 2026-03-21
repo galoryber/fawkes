@@ -231,6 +231,92 @@ func TestTriageScan(t *testing.T) {
 	}
 }
 
+// --- triageCategorizeFile tests ---
+
+func TestTriageCategorizeFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		expected string
+	}{
+		// Credentials
+		{"id_rsa", "cred"},
+		{"id_ed25519", "cred"},
+		{"server.pem", "cred"},
+		{"cert.pfx", "cred"},
+		{"backup.kdbx", "cred"},
+		{"user.rdp", "cred"},
+		{"client.ovpn", "cred"},
+		{".netrc", "cred"},
+		{"credentials.json", "cred"},
+
+		// Documents
+		{"report.docx", "doc"},
+		{"budget.xlsx", "doc"},
+		{"slides.pptx", "doc"},
+		{"manual.pdf", "doc"},
+		{"data.csv", "doc"},
+
+		// Configs
+		{"app.yaml", "config"},
+		{"settings.json", "config"},
+		{"config.toml", "config"},
+		{"nginx.conf", "config"},
+		{".env", "config"},
+		{"app.ini", "config"},
+
+		// Scripts
+		{"deploy.sh", "script"},
+		{"setup.py", "script"},
+		{"build.ps1", "script"},
+		{"run.bat", "script"},
+
+		// Logs
+		{"auth.log", "log"},
+		{"app.log", "log"},
+		{"syslog", "log"},
+
+		// Databases
+		{"app.db", "database"},
+		{"data.sqlite", "database"},
+		{"history.sqlite3", "database"},
+
+		// Other
+		{"photo.jpg", "other"},
+		{"program.exe", "other"},
+		{"archive.tar.gz", "other"},
+	}
+
+	for _, tc := range tests {
+		got := triageCategorizeFile(tc.name)
+		if got != tc.expected {
+			t.Errorf("triageCategorizeFile(%q) = %q, want %q", tc.name, got, tc.expected)
+		}
+	}
+}
+
+func TestTriageRecent(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a recently modified file
+	os.WriteFile(filepath.Join(tmpDir, "recent.txt"), []byte("recent data"), 0644)
+
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "recent", Hours: 1, Path: tmpDir})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("Expected success for recent, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestTriageRecentDefaultHours(t *testing.T) {
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "recent"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("Expected success for recent (default hours), got %s: %s", result.Status, result.Output)
+	}
+}
+
 func TestTriageScanPatterns(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.WriteFile(filepath.Join(tmpDir, "id_rsa"), []byte("key"), 0644)

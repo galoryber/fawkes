@@ -15,8 +15,8 @@ func init() {
 			Author:     "@galoryber",
 		},
 		Description:         "Find high-value files for exfiltration — documents, credentials, configs, or custom path scan (T1083, T1005)",
-		HelpString:          "triage -action <all|documents|credentials|configs|custom> [-path /opt/app] [-max_size 10485760] [-max_files 200]",
-		Version:             1,
+		HelpString:          "triage -action <all|documents|credentials|configs|recent|custom> [-path /opt/app] [-hours 24] [-max_size 10485760] [-max_files 200]",
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1083", "T1005"},
@@ -34,8 +34,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "documents", "credentials", "configs", "custom"},
-				Description:      "Triage mode: all (docs+creds+configs), documents (office/text files), credentials (keys/passwords), configs (yaml/json/env), custom (scan specific path)",
+				Choices:          []string{"all", "documents", "credentials", "configs", "recent", "custom"},
+				Description:      "Triage mode: all (docs+creds+configs), documents (office/text files), credentials (keys/passwords), configs (yaml/json/env), recent (files modified within time window), custom (scan specific path)",
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -51,6 +51,20 @@ func init() {
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "Directory to scan (required for 'custom' action)",
 				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "hours",
+				ModalDisplayName: "Hours (recent)",
+				CLIName:          "hours",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Time window in hours for 'recent' action (default: 24)",
+				DefaultValue:     24,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
