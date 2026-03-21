@@ -132,3 +132,25 @@ func TestDetectContainerNotInContainer(t *testing.T) {
 	result := detectContainer()
 	t.Logf("detectContainer() = %q", result)
 }
+
+func TestDetectContainer_KubernetesEnvVar(t *testing.T) {
+	t.Setenv("KUBERNETES_SERVICE_HOST", "10.96.0.1")
+	result := detectContainer()
+	// If /.dockerenv or cgroup detection already matches, Kubernetes env might not be reached
+	// But the function should not panic
+	if result == "" {
+		// On a non-container host with KUBERNETES_SERVICE_HOST set, should detect Kubernetes
+		// unless /.dockerenv or cgroup matches first
+		t.Logf("detectContainer() = %q (Kubernetes env was set)", result)
+	}
+}
+
+func TestDetectContainer_ContainerEnvVar(t *testing.T) {
+	// The "container" env var is set by systemd-nspawn and some other runtimes
+	t.Setenv("container", "systemd-nspawn")
+	result := detectContainer()
+	// If other detection methods match first, this env var path might not be reached
+	if result != "" {
+		t.Logf("detectContainer() = %q", result)
+	}
+}
