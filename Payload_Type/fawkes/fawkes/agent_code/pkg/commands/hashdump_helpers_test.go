@@ -841,3 +841,99 @@ func TestFullSAMDecryptionPipeline_AES(t *testing.T) {
 		}
 	}
 }
+
+// --- Padding path tests ---
+
+func TestDeriveHashedBootKeyAES_UnalignedPadding(t *testing.T) {
+	// Test the padding branch: encData length not aligned to AES block size.
+	// Build F value where dataLen is 20 (not a multiple of 16).
+	bootKey := make([]byte, 16)
+	for i := range bootKey {
+		bootKey[i] = byte(i + 0x70)
+	}
+
+	salt := make([]byte, 16)
+	for i := range salt {
+		salt[i] = byte(i + 0x80)
+	}
+
+	// Encrypt 32 bytes (2 blocks) of known data
+	knownHBK := make([]byte, 32)
+	for i := range knownHBK {
+		knownHBK[i] = byte(i + 0xA0)
+	}
+	block, _ := aes.NewCipher(bootKey)
+	modeEnc := cipher.NewCBCEncrypter(block, salt)
+	encrypted := make([]byte, 32)
+	modeEnc.CryptBlocks(encrypted, knownHBK)
+
+	// Build F value with dataLen=20 (unaligned). The function should pad to 32.
+	dataLen := uint32(20)
+	fValue := make([]byte, 0x88+32)
+	binary.LittleEndian.PutUint32(fValue[0x74:0x78], dataLen)
+	copy(fValue[0x78:0x88], salt)
+	// Copy only first 20 bytes of encrypted data — rest is zeros
+	copy(fValue[0x88:0x88+20], encrypted[:20])
+
+	// Should not panic, and should return 16 bytes
+	result, rev, err := deriveHashedBootKeyAES(fValue, bootKey)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if rev != 0x02 {
+		t.Errorf("expected revision 0x02, got 0x%02x", rev)
+	}
+	if len(result) != 16 {
+		t.Errorf("expected 16-byte result, got %d", len(result))
+	}
+}
+
+func TestDecryptSAMHashAES_UnalignedPadding(t *testing.T) {
+	// Test the padding branch: encrypted hash length not aligned to AES block size.
+	rid := uint32(1001)
+	hashedBootKey := make([]byte, 16)
+	for i := range hashedBootKey {
+		hashedBootKey[i] = byte(i + 0x30)
+	}
+
+	// Create DES-encrypted inner layer (16 bytes)
+	key1, key2 := desKeysFromRID(rid)
+	plainHash := []byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22,
+		0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0x00}
+	block1, _ := des.NewCipher(key1)
+	block2, _ := des.NewCipher(key2)
+	desEncrypted := make([]byte, 16)
+	block1.Encrypt(desEncrypted[:8], plainHash[:8])
+	block2.Encrypt(desEncrypted[8:], plainHash[8:])
+
+	// AES encrypt with 32 bytes (pad the 16 DES bytes to 32)
+	salt := make([]byte, 16)
+	for i := range salt {
+		salt[i] = byte(i + 0x40)
+	}
+	aesBlock, _ := aes.NewCipher(hashedBootKey)
+	aesMode := cipher.NewCBCEncrypter(aesBlock, salt)
+	padded := make([]byte, 32)
+	copy(padded, desEncrypted)
+	aesEncrypted := make([]byte, 32)
+	aesMode.CryptBlocks(aesEncrypted, padded)
+
+	// Build SAM_HASH_AES with only 20 bytes of encrypted data (triggers padding)
+	hashData := make([]byte, 0x18+20)
+	copy(hashData[0x08:0x18], salt)
+	copy(hashData[0x18:], aesEncrypted[:20])
+
+	// Should not panic — padding will add zeros but decryption will produce different result
+	_, err := decryptSAMHashAES(hashData, rid, hashedBootKey)
+	// Error is acceptable (padding zeros corrupt the ciphertext), but no panic
+	_ = err
+}
+
+func TestDecryptSAMHashAES_EncHashTooShort(t *testing.T) {
+	// hashData is >= 0x28 but the encrypted hash portion (hashData[0x18:]) is < 16 bytes
+	hashData := make([]byte, 0x24) // 0x24 - 0x18 = 12 bytes of enc data (< 16)
+	_, err := decryptSAMHashAES(hashData, 500, make([]byte, 16))
+	if err == nil {
+		t.Error("expected error for encrypted hash < 16 bytes")
+	}
+}
