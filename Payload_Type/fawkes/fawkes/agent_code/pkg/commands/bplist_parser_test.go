@@ -827,6 +827,125 @@ func TestReadSizeAndStart(t *testing.T) {
 	}
 }
 
+// --- parseObject edge cases ---
+
+func TestParseBplist_UnsupportedType(t *testing.T) {
+	// UID type marker (0x80) — should be treated as null
+	objects := [][]byte{
+		{0x80}, // obj 0: UID type (unsupported → null)
+	}
+	data := buildBplist(objects, 0)
+
+	val, err := parseBplist(data)
+	if err != nil {
+		t.Fatalf("parseBplist: %v", err)
+	}
+	if val.kind != 'n' {
+		t.Errorf("expected null ('n') for unsupported type, got '%c'", val.kind)
+	}
+}
+
+func TestParseBplist_DateType(t *testing.T) {
+	// Date type marker (0x33) — unsupported, returns null
+	objects := [][]byte{
+		append([]byte{0x33}, make([]byte, 8)...), // 8 bytes of date data
+	}
+	data := buildBplist(objects, 0)
+
+	val, err := parseBplist(data)
+	if err != nil {
+		t.Fatalf("parseBplist: %v", err)
+	}
+	if val.kind != 'n' {
+		t.Errorf("expected null ('n') for date type, got '%c'", val.kind)
+	}
+}
+
+func TestParseBplist_NonStringDictKey(t *testing.T) {
+	// Dict with integer key — should be skipped (only string keys kept)
+	// obj 0: dict with key=1 (int), value=2 (string); key=3 (string), value=4 (string)
+	objects := [][]byte{
+		bplistDict([]int{1, 3}, []int{2, 4}), // obj 0: dict
+		bplistInt(99),                         // obj 1: integer key (not string)
+		bplistString("skipped"),               // obj 2: value for int key
+		bplistString("realkey"),               // obj 3: string key
+		bplistString("realval"),               // obj 4: value for string key
+	}
+	data := buildBplist(objects, 0)
+
+	val, err := parseBplist(data)
+	if err != nil {
+		t.Fatalf("parseBplist: %v", err)
+	}
+	if val.kind != 'm' {
+		t.Fatalf("expected dict, got '%c'", val.kind)
+	}
+	// Integer key should be skipped, only string key kept
+	if len(val.dictVal) != 1 {
+		t.Errorf("expected 1 dict entry (non-string key skipped), got %d", len(val.dictVal))
+	}
+	if v, ok := val.dictVal["realkey"]; !ok || v.strVal != "realval" {
+		t.Errorf("expected realkey=realval, got %+v", val.dictVal)
+	}
+}
+
+func bplistFloat32(v float32) []byte {
+	b := make([]byte, 5)
+	b[0] = 0x22 // real, 4 bytes (1 << 2)
+	binary.BigEndian.PutUint32(b[1:], math.Float32bits(v))
+	return b
+}
+
+func bplistFloat64(v float64) []byte {
+	b := make([]byte, 9)
+	b[0] = 0x23 // real, 8 bytes (1 << 3)
+	binary.BigEndian.PutUint64(b[1:], math.Float64bits(v))
+	return b
+}
+
+func TestParseBplist_UnsupportedRealSize(t *testing.T) {
+	// Real with objInfo=0 → 1 byte (1 << 0), not 4 or 8 → error
+	objects := [][]byte{
+		{0x20, 0x42}, // real marker 0x20 means 1-byte real (unsupported)
+	}
+	data := buildBplist(objects, 0)
+
+	_, err := parseBplist(data)
+	if err == nil {
+		t.Error("expected error for unsupported real size (1 byte)")
+	}
+}
+
+func TestParseBplist_ObjectIndexOutOfRange(t *testing.T) {
+	// Array referencing object index 99 when only 2 objects exist
+	objects := [][]byte{
+		{0xA1, 99}, // array of 1 element, ref=99
+		bplistString("unused"),
+	}
+	data := buildBplist(objects, 0)
+
+	_, err := parseBplist(data)
+	if err == nil {
+		t.Error("expected error for out-of-range object reference")
+	}
+}
+
+func TestParseBplist_FillMarker(t *testing.T) {
+	// Fill byte (0x0F) — should return null (default case in 0x0 switch)
+	objects := [][]byte{
+		{0x0F}, // fill marker
+	}
+	data := buildBplist(objects, 0)
+
+	val, err := parseBplist(data)
+	if err != nil {
+		t.Fatalf("parseBplist: %v", err)
+	}
+	if val.kind != 'n' {
+		t.Errorf("expected null for fill marker, got '%c'", val.kind)
+	}
+}
+
 func TestReadBEInt_SignedBehavior(t *testing.T) {
 	// 4-byte values should be sign-extended (int32 -> int64)
 	// 2-byte values should NOT be sign-extended (uint16)
