@@ -680,3 +680,172 @@ func TestParseDarwinUserPlist_NoShadowHash(t *testing.T) {
 		t.Errorf("expected nil for user without ShadowHashData, got %+v", result)
 	}
 }
+
+// --- Tests for bplist parser helper functions (Session 202) ---
+
+func TestReadBEInt(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want int64
+	}{
+		{"1 byte zero", []byte{0x00}, 0},
+		{"1 byte max", []byte{0xFF}, 255},
+		{"1 byte mid", []byte{0x42}, 66},
+		{"2 bytes zero", []byte{0x00, 0x00}, 0},
+		{"2 bytes one", []byte{0x00, 0x01}, 1},
+		{"2 bytes 256", []byte{0x01, 0x00}, 256},
+		{"2 bytes max", []byte{0xFF, 0xFF}, 65535},
+		{"4 bytes zero", []byte{0x00, 0x00, 0x00, 0x00}, 0},
+		{"4 bytes one", []byte{0x00, 0x00, 0x00, 0x01}, 1},
+		{"4 bytes max positive", []byte{0x7F, 0xFF, 0xFF, 0xFF}, 2147483647},
+		{"4 bytes negative", []byte{0xFF, 0xFF, 0xFF, 0xFF}, -1},        // int32 -1
+		{"4 bytes min negative", []byte{0x80, 0x00, 0x00, 0x00}, -2147483648}, // int32 min
+		{"8 bytes zero", []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 0},
+		{"8 bytes one", []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, 1},
+		{"8 bytes large", []byte{0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00}, 4294967296},
+		// Non-standard sizes (3, 5, 6, 7 bytes) use default path
+		{"3 bytes", []byte{0x01, 0x02, 0x03}, 0x010203},
+		{"5 bytes", []byte{0x00, 0x00, 0x01, 0x00, 0x00}, 65536},
+		{"empty", []byte{}, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := readBEInt(tt.data)
+			if got != tt.want {
+				t.Errorf("readBEInt(%v) = %d, want %d", tt.data, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadSizedInt(t *testing.T) {
+	tests := []struct {
+		name string
+		data []byte
+		want int
+	}{
+		{"empty", []byte{}, 0},
+		{"1 byte", []byte{0x42}, 0x42},
+		{"2 bytes", []byte{0x01, 0x00}, 0x0100},
+		{"3 bytes", []byte{0x01, 0x02, 0x03}, 0x010203},
+		{"4 bytes", []byte{0x00, 0x01, 0x00, 0x00}, 0x00010000},
+		{"single zero", []byte{0x00}, 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := readSizedInt(nil, tt.data)
+			if got != tt.want {
+				t.Errorf("readSizedInt(nil, %v) = %d (0x%X), want %d (0x%X)",
+					tt.data, got, got, tt.want, tt.want)
+			}
+		})
+	}
+}
+
+func TestReadSizeAndStart(t *testing.T) {
+	// readSizeAndStart operates on a bplistContext and reads size info from offset
+	tests := []struct {
+		name    string
+		data    []byte
+		offset  int
+		objInfo int
+		wantSz  int
+		wantSt  int
+		wantErr bool
+	}{
+		{
+			name:    "non-extended size",
+			data:    []byte{0x00},
+			offset:  0,
+			objInfo: 5,
+			wantSz:  5,
+			wantSt:  1,
+		},
+		{
+			name:    "zero size non-extended",
+			data:    []byte{0x00},
+			offset:  0,
+			objInfo: 0,
+			wantSz:  0,
+			wantSt:  1,
+		},
+		{
+			name:    "max non-extended size",
+			data:    []byte{0x00},
+			offset:  0,
+			objInfo: 14, // 0x0E — anything < 0x0F is non-extended
+			wantSz:  14,
+			wantSt:  1,
+		},
+		{
+			name:    "extended size 1 byte",
+			data:    []byte{0x00, 0x10, 0x20}, // marker=0x10 (int, 1 byte), value=0x20
+			offset:  0,
+			objInfo: 0x0F,
+			wantSz:  0x20,
+			wantSt:  3,
+		},
+		{
+			name:    "extended size truncated",
+			data:    []byte{0x00},
+			offset:  0,
+			objInfo: 0x0F,
+			wantErr: true,
+		},
+		{
+			name:    "extended size bad marker",
+			data:    []byte{0x00, 0x50, 0x20}, // marker 0x50 is not an int marker (>>4 != 1)
+			offset:  0,
+			objInfo: 0x0F,
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := &bplistContext{data: tt.data}
+			sz, st, err := ctx.readSizeAndStart(tt.offset, tt.objInfo)
+			if tt.wantErr {
+				if err == nil {
+					t.Error("expected error, got nil")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if sz != tt.wantSz {
+				t.Errorf("size = %d, want %d", sz, tt.wantSz)
+			}
+			if st != tt.wantSt {
+				t.Errorf("start = %d, want %d", st, tt.wantSt)
+			}
+		})
+	}
+}
+
+func TestReadBEInt_SignedBehavior(t *testing.T) {
+	// 4-byte values should be sign-extended (int32 -> int64)
+	// 2-byte values should NOT be sign-extended (uint16)
+	tests := []struct {
+		name string
+		data []byte
+		want int64
+	}{
+		{"2 bytes 0x8000 = 32768 (unsigned)", []byte{0x80, 0x00}, 32768},
+		{"4 bytes 0x80000000 = -2147483648 (signed)", []byte{0x80, 0x00, 0x00, 0x00}, -2147483648},
+		{"4 bytes 0xFFFFFFFE = -2 (signed)", []byte{0xFF, 0xFF, 0xFF, 0xFE}, -2},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := readBEInt(tt.data)
+			if got != tt.want {
+				t.Errorf("readBEInt(%v) = %d, want %d", tt.data, got, tt.want)
+			}
+		})
+	}
+}
