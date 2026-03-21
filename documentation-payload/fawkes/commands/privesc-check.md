@@ -10,7 +10,7 @@ hidden = false
 Cross-platform privilege escalation enumeration. Scans for common privilege escalation vectors with platform-specific checks for Windows, Linux, and macOS.
 
 - **Windows:** Token privileges (potato attacks, SeDebug, SeBackup), unquoted service paths, modifiable service binaries, AlwaysInstallElevated, auto-logon credentials, UAC configuration, LSA protection, writable PATH directories, unattended install files
-- **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers
+- **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse
 - **macOS:** LaunchDaemons/Agents, TCC database, dylib hijacking, SIP status
 
 ## Arguments
@@ -38,6 +38,10 @@ Cross-platform privilege escalation enumeration. Scans for common privilege esca
 - **sudo** — Check `sudo -l` (non-interactive), read `/etc/sudoers` if accessible
 - **capabilities** — Enumerate file capabilities via `getcap` and current process capabilities
 - **container** — Detect Docker, Kubernetes, LXC, overlay FS, container cgroups
+- **cron** — Find writable cron scripts that run as root (hijackable for command injection)
+- **nfs** — Check /etc/exports for NFS shares with no_root_squash (SUID binary deployment)
+- **systemd** — Find writable systemd service/timer files (ExecStart hijacking)
+- **sudo-token** — Check for sudo timestamp files and ptrace_scope (token reuse via ptrace)
 
 ### macOS-Only Actions
 
@@ -55,6 +59,10 @@ privesc-check -action services
 privesc-check -action registry
 privesc-check -action uac
 privesc-check -action suid
+privesc-check -action cron
+privesc-check -action nfs
+privesc-check -action systemd
+privesc-check -action sudo-token
 privesc-check -action launchdaemons
 ```
 

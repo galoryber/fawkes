@@ -277,3 +277,169 @@ func TestPrivescCheck_CapabilitiesNoExecCommand(t *testing.T) {
 		t.Error("Expected 'Current process capabilities' section in output")
 	}
 }
+
+// --- Tests for new privesc-check categories (Session 202) ---
+
+func TestPrivescCheck_CronAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"cron"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Output should mention cron scripts regardless of findings
+	if !strings.Contains(result.Output, "cron") {
+		t.Error("output should mention cron")
+	}
+}
+
+func TestPrivescCheck_NFSAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"nfs"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Output should mention NFS
+	if !strings.Contains(result.Output, "NFS") && !strings.Contains(result.Output, "exports") {
+		t.Error("output should mention NFS or exports")
+	}
+}
+
+func TestPrivescCheck_SystemdAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"systemd"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "systemd") {
+		t.Error("output should mention systemd")
+	}
+}
+
+func TestPrivescCheck_SudoTokenAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"sudo-token"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Should mention either sudo token status or ptrace scope
+	if !strings.Contains(result.Output, "sudo") && !strings.Contains(result.Output, "ptrace") {
+		t.Error("output should mention sudo or ptrace")
+	}
+}
+
+func TestPrivescCheck_AllIncludesNewChecks(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"all"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Verify all new sections appear in "all" output
+	for _, section := range []string{
+		"Cron Script Hijacking", "NFS Shares",
+		"Systemd Unit Hijacking", "Sudo Token Reuse",
+	} {
+		if !strings.Contains(result.Output, section) {
+			t.Errorf("'all' output missing %q section", section)
+		}
+	}
+}
+
+func TestExtractScriptPaths(t *testing.T) {
+	tests := []struct {
+		name  string
+		line  string
+		count int
+	}{
+		{"empty", "", 0},
+		{"comment", "# this is a comment", 0},
+		{"simple cron", "0 * * * * root /usr/local/bin/backup.sh", 1},
+		{"multiple scripts", "0 * * * * root /usr/bin/foo /etc/bar.conf", 2},
+		{"no paths", "0 * * * * root echo hello", 0},
+		{"dev null ignored", "0 * * * * root /usr/bin/foo > /dev/null", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			paths := extractScriptPaths(tt.line)
+			if len(paths) != tt.count {
+				t.Errorf("extractScriptPaths(%q) returned %d paths, want %d: %v",
+					tt.line, len(paths), tt.count, paths)
+			}
+		})
+	}
+}
+
+func TestIsWritableFile_Nonexistent(t *testing.T) {
+	if isWritableFile("/nonexistent/path/file.txt") {
+		t.Error("nonexistent file should not be writable")
+	}
+}
+
+func TestIsWritableFile_ReadOnly(t *testing.T) {
+	// /etc/hostname should exist and not be writable by non-root
+	if os.Geteuid() != 0 {
+		if isWritableFile("/etc/hostname") {
+			t.Error("/etc/hostname should not be writable by non-root user")
+		}
+	}
+}
+
+func TestPrivescCheckCronScripts_OutputFormat(t *testing.T) {
+	result := privescCheckCronScripts()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Output should either find writable scripts or report none
+	if !strings.Contains(result.Output, "cron") {
+		t.Error("output should mention cron")
+	}
+}
+
+func TestPrivescCheckNFS_OutputFormat(t *testing.T) {
+	result := privescCheckNFS()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "NFS") && !strings.Contains(result.Output, "exports") {
+		t.Error("output should mention NFS or exports")
+	}
+}
+
+func TestPrivescCheckSystemdUnits_OutputFormat(t *testing.T) {
+	result := privescCheckSystemdUnits()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "systemd") {
+		t.Error("output should mention systemd")
+	}
+}
+
+func TestPrivescCheckSudoToken_OutputFormat(t *testing.T) {
+	result := privescCheckSudoToken()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Should report on either timestamps or ptrace scope
+	if result.Output == "" {
+		t.Error("output should not be empty")
+	}
+}
+
+func TestPrivescCheckSudoToken_PtraceScope(t *testing.T) {
+	result := privescCheckSudoToken()
+	// On most Linux systems, ptrace_scope should be reported
+	if strings.Contains(result.Output, "ptrace_scope") {
+		// Verify it includes the scope interpretation
+		if !strings.Contains(result.Output, "classic") &&
+			!strings.Contains(result.Output, "restricted") &&
+			!strings.Contains(result.Output, "admin only") &&
+			!strings.Contains(result.Output, "disabled") {
+			t.Error("ptrace_scope should include interpretation text")
+		}
+	}
+}
