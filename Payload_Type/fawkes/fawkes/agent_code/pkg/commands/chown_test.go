@@ -249,6 +249,21 @@ func TestChownResolveGID(t *testing.T) {
 	if gid != 0 {
 		t.Errorf("expected GID 0, got %d", gid)
 	}
+
+	// Test group name lookup (root group exists on all Unix systems)
+	gid, err = chownResolveGID("root")
+	if err != nil {
+		t.Errorf("failed to resolve group 'root': %v", err)
+	}
+	if gid != 0 {
+		t.Errorf("expected GID 0 for root group, got %d", gid)
+	}
+
+	// Test non-existent group
+	_, err = chownResolveGID("nonexistent_group_xyz_12345")
+	if err == nil {
+		t.Error("expected error for non-existent group")
+	}
 }
 
 func TestChownFormatOwnership(t *testing.T) {
