@@ -82,8 +82,8 @@ func procdumpLinux(task structs.Task, pid int) structs.CommandResult {
 	dumpable := filterDumpableRegions(regions)
 
 	if len(dumpable) == 0 {
-		return errorf("No dumpable memory regions found for PID %d (maps: %d bytes, %d total regions, %d after filter)",
-			pid, len(mapsContent), len(regions), len(dumpable))
+		return errorf("No dumpable memory regions found for PID %d (%d regions parsed, none passed filter)",
+			pid, len(regions))
 	}
 
 	totalSize := totalRegionSize(dumpable)
@@ -318,4 +318,3 @@ func getLinuxProcessOwner(pid int) string {
 	return "unknown"
 }
 
-// sanitizeFileName and truncateString are defined in procdump_helpers.go (cross-platform)
