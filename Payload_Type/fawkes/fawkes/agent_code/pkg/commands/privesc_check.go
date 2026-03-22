@@ -417,6 +417,7 @@ func privescCheckSudo() structs.CommandResult {
 
 	// Check if /etc/sudoers is readable
 	if data, err := os.ReadFile("/etc/sudoers"); err == nil {
+		defer structs.ZeroBytes(data) // opsec: clear sudoers rules from memory
 		sb.WriteString("\n\n/etc/sudoers is READABLE (unusual — potential misconfiguration):\n")
 		// Show non-comment, non-empty lines
 		scanner := bufio.NewScanner(strings.NewReader(string(data)))
@@ -444,6 +445,7 @@ func privescCheckSudo() structs.CommandResult {
 			if data, err := os.ReadFile(path); err == nil {
 				readableFiles = append(readableFiles, fmt.Sprintf("  %s:\n    %s",
 					path, strings.ReplaceAll(strings.TrimSpace(string(data)), "\n", "\n    ")))
+				structs.ZeroBytes(data) // opsec: clear sudoers.d file contents
 			}
 		}
 		if len(readableFiles) > 0 {
@@ -604,6 +606,7 @@ func privescCheckContainer() structs.CommandResult {
 		}
 		if ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
 			sb.WriteString(fmt.Sprintf("  Namespace: %s\n", strings.TrimSpace(string(ns))))
+			structs.ZeroBytes(ns) // opsec: clear K8s namespace info
 		}
 	}
 
@@ -700,6 +703,7 @@ func privescCheckCronScripts() structs.CommandResult {
 		if err != nil {
 			continue
 		}
+		defer structs.ZeroBytes(data) // opsec: clear cron config (may contain embedded secrets)
 		for _, line := range strings.Split(string(data), "\n") {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {

