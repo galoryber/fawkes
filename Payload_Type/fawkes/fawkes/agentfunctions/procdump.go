@@ -9,23 +9,23 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "procdump",
-		Description:         "Dump process memory to a minidump file. Supports automatic LSASS discovery or dumping any process by PID. Dumps are uploaded to Mythic and cleaned from disk.",
-		HelpString:          "procdump\nprocdump -action lsass\nprocdump -action dump -pid 1234",
-		Version:             1,
+		Description:         "Dump process memory. Windows: MiniDumpWriteDump (lsass auto-discovery or any PID). Linux: /proc/<pid>/mem with maps-based region dumping. Dumps are uploaded to Mythic and cleaned from disk.",
+		HelpString:          "procdump\nprocdump -action lsass\nprocdump -action dump -pid 1234\nprocdump -action search  (Linux: find credential-holding processes)",
+		Version:             2,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1003.001"}, // OS Credential Dumping: LSASS Memory
+		MitreAttackMappings: []string{"T1003.001", "T1003.007"}, // OS Credential Dumping: LSASS Memory + Proc Filesystem
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Dump type: lsass (auto-find and dump lsass.exe), dump (dump process by PID)",
+				Description:      "Dump type: lsass (Windows: auto-find lsass.exe), dump (dump process by PID), search (Linux: find credential-holding processes)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"lsass", "dump"},
+				Choices:          []string{"lsass", "dump", "search"},
 				DefaultValue:     "lsass",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
@@ -62,14 +62,23 @@ func init() {
 			pid, _ := taskData.Args.GetNumberArg("pid")
 
 			var displayMsg string
-			if action == "dump" && pid > 0 {
-				displayMsg = fmt.Sprintf("Dump PID %d", int(pid))
-			} else {
+			switch action {
+			case "dump":
+				if pid > 0 {
+					displayMsg = fmt.Sprintf("Dump PID %d", int(pid))
+				} else {
+					displayMsg = "Dump (PID required)"
+				}
+			case "search":
+				displayMsg = "Search for credential-holding processes"
+			default:
 				displayMsg = "Dump lsass.exe"
 			}
 			response.DisplayParams = &displayMsg
 
-			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Process memory dump — %s", displayMsg))
+			if action != "search" {
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Process memory dump — %s", displayMsg))
+			}
 
 			return response
 		},

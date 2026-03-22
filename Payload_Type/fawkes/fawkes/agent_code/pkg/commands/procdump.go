@@ -38,10 +38,7 @@ func (c *ProcdumpCommand) Description() string {
 	return "Dump process memory (requires SeDebugPrivilege for protected processes)"
 }
 
-type procdumpArgs struct {
-	Action string `json:"action"`
-	PID    int    `json:"pid"`
-}
+// procdumpArgs is defined in procdump_helpers.go (cross-platform)
 
 func (c *ProcdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	var args procdumpArgs
