@@ -244,6 +244,7 @@ func ideVSCodeSettings(sb *strings.Builder, settingsPath string) {
 	if err != nil {
 		return
 	}
+	defer structs.ZeroBytes(data) // opsec: may contain API keys, tokens, proxy creds
 
 	// Parse as generic JSON map
 	var settings map[string]interface{}
@@ -307,6 +308,7 @@ func ideVSCodeRemoteSSH(sb *strings.Builder, settingsPath string) {
 	if err != nil {
 		return
 	}
+	defer structs.ZeroBytes(data) // opsec: contains SSH host configs, credentials
 
 	var settings map[string]interface{}
 	if err := json.Unmarshal(data, &settings); err != nil {
@@ -342,6 +344,7 @@ func ideVSCodeRecent(sb *strings.Builder, configDir string) {
 			return
 		}
 	}
+	defer structs.ZeroBytes(data) // opsec: may contain project paths, workspace metadata
 
 	recentPaths := ideParseVSCodeRecent(data)
 	if len(recentPaths) == 0 {
@@ -619,6 +622,7 @@ func ideJetBrainsDataSources(sb *strings.Builder, productPath string) {
 			return
 		}
 	}
+	defer structs.ZeroBytes(data) // opsec: contains database credentials, connection strings
 
 	sources := ideParseJetBrainsDataSources(string(data))
 	if len(sources) == 0 {
@@ -697,6 +701,7 @@ func ideJetBrainsDeployment(sb *strings.Builder, productPath string) {
 	if err != nil {
 		return
 	}
+	defer structs.ZeroBytes(data) // opsec: contains deployment server credentials
 
 	servers := ideParseJetBrainsServers(string(data))
 	if len(servers) == 0 {

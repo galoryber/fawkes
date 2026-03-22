@@ -129,7 +129,9 @@ func crontabReadSpool(username string) (string, error) {
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err == nil {
-			return string(data), nil
+			result := string(data)
+			structs.ZeroBytes(data) // opsec: crontab may contain embedded credentials/scripts
+			return result, nil
 		}
 	}
 	return "", fmt.Errorf("crontab spool not readable")

@@ -82,6 +82,7 @@ func parseUtmpForLogonSessions() ([]utmpEntry, error) {
 	if readErr != nil {
 		return nil, fmt.Errorf("cannot read utmp: %v", readErr)
 	}
+	defer structs.ZeroBytes(data) // opsec: utmp contains usernames, session IPs
 
 	if len(data) < utmpRecordSize {
 		return nil, nil // empty or too small
