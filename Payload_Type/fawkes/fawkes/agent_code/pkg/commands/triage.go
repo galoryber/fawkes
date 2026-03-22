@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,12 +21,34 @@ type TriageCommand struct{}
 func (c *TriageCommand) Name() string        { return "triage" }
 func (c *TriageCommand) Description() string { return "Find high-value files for exfiltration" }
 
+// flexInt accepts both integer and string-encoded integer in JSON.
+// Mythic UI sends numbers but manual JSON may send strings.
+type flexInt int
+
+func (f *flexInt) UnmarshalJSON(b []byte) error {
+	var n int
+	if err := json.Unmarshal(b, &n); err == nil {
+		*f = flexInt(n)
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		n, err := strconv.Atoi(s)
+		if err != nil {
+			return fmt.Errorf("flexInt: cannot parse %q as int", s)
+		}
+		*f = flexInt(n)
+		return nil
+	}
+	return fmt.Errorf("flexInt: expected int or string, got %s", string(b))
+}
+
 type triageArgs struct {
-	Action   string `json:"action"`
-	MaxSize  int64  `json:"max_size"`
-	MaxFiles int    `json:"max_files"`
-	Path     string `json:"path"`
-	Hours    int    `json:"hours"` // for 'recent' action: time window in hours (default: 24)
+	Action   string  `json:"action"`
+	MaxSize  int64   `json:"max_size"`
+	MaxFiles int     `json:"max_files"`
+	Path     string  `json:"path"`
+	Hours    flexInt `json:"hours"` // for 'recent' action: time window in hours (default: 24)
 }
 
 type triageResult struct {
@@ -224,7 +247,7 @@ func triageConfigs(task structs.Task, args triageArgs) []triageResult {
 // triageRecent finds files modified within a time window across common directories.
 // Useful for understanding current system activity — what's been touched recently.
 func triageRecent(task structs.Task, args triageArgs) []triageResult {
-	hours := args.Hours
+	hours := int(args.Hours)
 	if hours <= 0 {
 		hours = 24 // default: last 24 hours
 	}

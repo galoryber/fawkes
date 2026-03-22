@@ -317,6 +317,54 @@ func TestTriageRecentDefaultHours(t *testing.T) {
 	}
 }
 
+func TestTriageRecentStringHours(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.WriteFile(filepath.Join(tmpDir, "recent.txt"), []byte("data"), 0644)
+
+	cmd := &TriageCommand{}
+	// Mythic UI or manual JSON may send hours as string
+	result := cmd.Execute(structs.Task{Params: `{"action":"recent","hours":"2","path":"` + tmpDir + `"}`})
+	if result.Status != "success" {
+		t.Errorf("Expected success for string hours, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestFlexIntUnmarshal(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected int
+		wantErr  bool
+	}{
+		{"integer", `42`, 42, false},
+		{"string_int", `"24"`, 24, false},
+		{"zero", `0`, 0, false},
+		{"string_zero", `"0"`, 0, false},
+		{"negative", `-1`, -1, false},
+		{"invalid_string", `"abc"`, 0, true},
+		{"null_value", `null`, 0, false}, // null → zero (Go default)
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var v flexInt
+			err := json.Unmarshal([]byte(tt.input), &v)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error for %s", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if int(v) != tt.expected {
+				t.Errorf("got %d, want %d", int(v), tt.expected)
+			}
+		})
+	}
+}
+
 func TestTriageScanPatterns(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.WriteFile(filepath.Join(tmpDir, "id_rsa"), []byte("key"), 0644)
