@@ -82,7 +82,8 @@ func procdumpLinux(task structs.Task, pid int) structs.CommandResult {
 	dumpable := filterDumpableRegions(regions)
 
 	if len(dumpable) == 0 {
-		return errorf("No dumpable memory regions found for PID %d", pid)
+		return errorf("No dumpable memory regions found for PID %d (maps: %d bytes, %d total regions, %d after filter)",
+			pid, len(mapsContent), len(regions), len(dumpable))
 	}
 
 	totalSize := totalRegionSize(dumpable)
