@@ -123,7 +123,9 @@ func adsRead(args adsArgs) structs.CommandResult {
 		}
 	}
 
-	return successResult(sb.String())
+	result := successResult(sb.String())
+	structs.ZeroBytes(data)
+	return result
 }
 
 // WIN32_FIND_STREAM_DATA structure

@@ -449,9 +449,11 @@ func browserBookmarks(args browserArgs) structs.CommandResult {
 				Roots map[string]json.RawMessage `json:"roots"`
 			}
 			if err := json.Unmarshal(data, &bmFile); err != nil {
+				structs.ZeroBytes(data)
 				errors = append(errors, fmt.Sprintf("%s (%s): parse: %v", browserName, profileName, err))
 				continue
 			}
+			structs.ZeroBytes(data)
 
 			label := browserName
 			if profileName != "Default" {

@@ -191,6 +191,7 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 		status = "error"
 	}
 
+	structs.ZeroBytes(body)
 	return structs.CommandResult{
 		Output:    sb.String(),
 		Status:    status,

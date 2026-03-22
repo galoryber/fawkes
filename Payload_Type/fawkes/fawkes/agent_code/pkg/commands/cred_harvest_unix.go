@@ -142,6 +142,7 @@ func getUserHomes(filterUser string) []string {
 		}
 		return nil
 	}
+	defer structs.ZeroBytes(data)
 
 	for _, line := range strings.Split(string(data), "\n") {
 		parts := strings.Split(line, ":")

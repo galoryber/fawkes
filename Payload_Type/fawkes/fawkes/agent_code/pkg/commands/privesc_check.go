@@ -269,6 +269,7 @@ func privescCheckCapabilities() structs.CommandResult {
 				sb.WriteString("  " + line + "\n")
 			}
 		}
+		structs.ZeroBytes(capData)
 	} else {
 		sb.WriteString(fmt.Sprintf("  (error reading /proc/self/status: %v)", err))
 	}
@@ -542,6 +543,7 @@ func privescCheckWritable() structs.CommandResult {
 				uid0 = append(uid0, "  "+scanner.Text())
 			}
 		}
+		structs.ZeroBytes(data)
 		if len(uid0) > 0 {
 			sb.WriteString(fmt.Sprintf("\n\n[!] NON-ROOT accounts with UID 0 (%d):\n", len(uid0)))
 			sb.WriteString(strings.Join(uid0, "\n"))
@@ -567,6 +569,7 @@ func privescCheckContainer() structs.CommandResult {
 		sb.WriteString("[!] CONTAINER DETECTED — /run/.containerenv exists\n")
 		if data, err := os.ReadFile("/run/.containerenv"); err == nil && len(data) > 0 {
 			sb.WriteString(fmt.Sprintf("  Container env: %s\n", strings.TrimSpace(string(data))))
+			structs.ZeroBytes(data)
 		}
 		containerFound = true
 	}
@@ -574,6 +577,7 @@ func privescCheckContainer() structs.CommandResult {
 	// Check cgroup for container indicators
 	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
 		content := string(data)
+		structs.ZeroBytes(data)
 		if strings.Contains(content, "docker") || strings.Contains(content, "kubepods") ||
 			strings.Contains(content, "lxc") || strings.Contains(content, "containerd") {
 			sb.WriteString("[!] CONTAINER DETECTED via /proc/1/cgroup\n")
@@ -622,6 +626,7 @@ func privescCheckContainer() structs.CommandResult {
 	// Check PID 1 process name
 	if data, err := os.ReadFile("/proc/1/comm"); err == nil {
 		comm := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
 		sb.WriteString(fmt.Sprintf("\nPID 1 process: %s\n", comm))
 		if comm != "systemd" && comm != "init" {
 			sb.WriteString("  [!] Unusual PID 1 — may indicate container (expected systemd/init on host)\n")
@@ -637,6 +642,7 @@ func privescCheckContainer() structs.CommandResult {
 	// Check mount namespace
 	if data, err := os.ReadFile("/proc/1/mountinfo"); err == nil {
 		content := string(data)
+		structs.ZeroBytes(data)
 		if strings.Contains(content, "overlay") || strings.Contains(content, "aufs") {
 			sb.WriteString("[!] Overlay/AUFS filesystem detected — consistent with container\n")
 			containerFound = true
@@ -785,6 +791,7 @@ func privescCheckNFS() structs.CommandResult {
 	if err != nil {
 		return successResult("No /etc/exports found — NFS is not configured")
 	}
+	defer structs.ZeroBytes(data)
 
 	var noSquash []string
 	var allShares []string
@@ -935,6 +942,7 @@ func privescCheckSudoToken() structs.CommandResult {
 	// Check if ptrace is restricted
 	if data, err := os.ReadFile("/proc/sys/kernel/yama/ptrace_scope"); err == nil {
 		scope := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
 		sb.WriteString(fmt.Sprintf("\nptrace_scope: %s", scope))
 		switch scope {
 		case "0":
@@ -1115,6 +1123,7 @@ func parseDockerGroupMembership() dockerGroupInfo {
 	data, err := os.ReadFile("/proc/self/status")
 	if err == nil {
 		groups := parseGroupsFromStatus(string(data))
+		structs.ZeroBytes(data)
 		groupNames := resolveGroupNames(groups)
 
 		for _, name := range groupNames {

