@@ -62,6 +62,7 @@ func base64Encode(args base64Args) structs.CommandResult {
 		if err != nil {
 			return errorf("Error reading file: %v", err)
 		}
+		defer structs.ZeroBytes(content) // opsec: file may contain sensitive data
 		data = content
 	} else {
 		data = []byte(args.Input)
@@ -92,6 +93,7 @@ func base64Decode(args base64Args) structs.CommandResult {
 		if err != nil {
 			return errorf("Error reading file: %v", err)
 		}
+		defer structs.ZeroBytes(content) // opsec: file may contain encoded secrets
 		encoded = string(content)
 	} else {
 		encoded = args.Input
@@ -101,6 +103,7 @@ func base64Decode(args base64Args) structs.CommandResult {
 	if err != nil {
 		return errorf("Error decoding base64: %v", err)
 	}
+	defer structs.ZeroBytes(decoded) // opsec: decoded data may be sensitive
 
 	// Write to output file if specified
 	if args.Output != "" {

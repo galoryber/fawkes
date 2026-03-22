@@ -128,6 +128,7 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	// Check /sys/class/dmi/id/product_name
 	if data, err := os.ReadFile("/sys/class/dmi/id/product_name"); err == nil {
 		product := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data) // opsec
 		productLower := strings.ToLower(product)
 		vm := ""
 		if strings.Contains(productLower, "virtualbox") {
@@ -154,6 +155,7 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	// Check /sys/class/dmi/id/sys_vendor
 	if data, err := os.ReadFile("/sys/class/dmi/id/sys_vendor"); err == nil {
 		vendor := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data) // opsec
 		vendorLower := strings.ToLower(vendor)
 		vendorVM := ""
 		if strings.Contains(vendorLower, "vmware") {
@@ -184,6 +186,7 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	// Check /sys/class/dmi/id/bios_vendor
 	if data, err := os.ReadFile("/sys/class/dmi/id/bios_vendor"); err == nil {
 		bios := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data) // opsec
 		biosLower := strings.ToLower(bios)
 		biosVM := ""
 		if strings.Contains(biosLower, "innotek") {
@@ -208,6 +211,7 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	// Check /proc/scsi/scsi for virtual disk
 	if data, err := os.ReadFile("/proc/scsi/scsi"); err == nil {
 		content := strings.ToLower(string(data))
+		structs.ZeroBytes(data) // opsec
 		scsiVM := ""
 		if strings.Contains(content, "vmware") {
 			scsiVM = "VMware"
@@ -227,6 +231,7 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	// Check hypervisor flag in cpuinfo
 	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
 		content := string(data)
+		structs.ZeroBytes(data) // opsec: cpuinfo may reveal hardware details
 		if strings.Contains(content, "hypervisor") {
 			evidence = append(evidence, vmEvidence{"CPU hypervisor flag", "VM", "hypervisor bit set in CPUID"})
 		} else {
@@ -237,6 +242,7 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	// Check /sys/hypervisor/type (Xen, KVM)
 	if data, err := os.ReadFile("/sys/hypervisor/type"); err == nil {
 		hyperType := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data) // opsec
 		if hyperType != "" {
 			vm := classifyHypervisorType(hyperType)
 			if vm != "" {
@@ -251,6 +257,7 @@ func vmDetectLinux() ([]vmEvidence, string) {
 	// Check /sys/class/dmi/id/board_name for cloud providers
 	if data, err := os.ReadFile("/sys/class/dmi/id/board_name"); err == nil {
 		board := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data) // opsec
 		if cloud := classifyCloudBoard(board); cloud != "" {
 			evidence = append(evidence, vmEvidence{"DMI board_name", "cloud", fmt.Sprintf("%s → %s", board, cloud)})
 			if detected == "" {

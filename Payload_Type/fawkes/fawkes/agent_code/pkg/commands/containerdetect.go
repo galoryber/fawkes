@@ -79,6 +79,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 				}
 			}
 		}
+		structs.ZeroBytes(data) // opsec
 		evidence = append(evidence, containerEvidence{"/run/.containerenv", "FOUND", details})
 		if detected == "none" {
 			detected = "Podman"
@@ -90,6 +91,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	// Check cgroup for container indicators
 	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
 		content := string(data)
+		structs.ZeroBytes(data) // opsec: cgroup paths may reveal infrastructure
 		if strings.Contains(content, "docker") {
 			evidence = append(evidence, containerEvidence{"/proc/1/cgroup", "DOCKER", "docker found in cgroup"})
 			if detected == "none" {
@@ -116,6 +118,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	// Check /proc/1/environ for container_* vars
 	if data, err := os.ReadFile("/proc/1/environ"); err == nil {
 		content := string(data)
+		structs.ZeroBytes(data) // opsec: environ may contain secrets/tokens
 		if strings.Contains(content, "KUBERNETES_") {
 			evidence = append(evidence, containerEvidence{"/proc/1/environ", "K8S", "KUBERNETES_* env vars present"})
 			detected = "Kubernetes"
@@ -143,6 +146,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	// Check /proc/1/sched for PID namespace
 	if data, err := os.ReadFile("/proc/1/sched"); err == nil {
 		lines := strings.SplitN(string(data), "\n", 2)
+		structs.ZeroBytes(data) // opsec
 		if len(lines) > 0 {
 			// In containers, PID 1 is usually not systemd/init
 			first := strings.TrimSpace(lines[0])
@@ -157,6 +161,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	// Check for WSL
 	if data, err := os.ReadFile("/proc/version"); err == nil {
 		content := strings.ToLower(string(data))
+		structs.ZeroBytes(data) // opsec
 		if strings.Contains(content, "microsoft") || strings.Contains(content, "wsl") {
 			evidence = append(evidence, containerEvidence{"/proc/version", "WSL", "WSL kernel detected"})
 			detected = "WSL"
@@ -166,6 +171,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	// Check capabilities (reduced caps = likely container)
 	if data, err := os.ReadFile("/proc/self/status"); err == nil {
 		content := string(data)
+		structs.ZeroBytes(data) // opsec
 		for _, line := range strings.Split(content, "\n") {
 			if strings.HasPrefix(line, "CapEff:") {
 				cap := strings.TrimSpace(strings.TrimPrefix(line, "CapEff:"))
@@ -194,6 +200,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	// Check for mounted host paths (escape vectors)
 	if data, err := os.ReadFile("/proc/1/mounts"); err == nil {
 		hostMounts := findHostMounts(string(data))
+		structs.ZeroBytes(data) // opsec: mount info may reveal infrastructure
 		for _, m := range hostMounts {
 			evidence = append(evidence, containerEvidence{"Host Mount", "ESCAPE", fmt.Sprintf("%s at %s", m.Device, m.MountPoint)})
 		}
@@ -202,6 +209,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	// Check AppArmor profile
 	if data, err := os.ReadFile("/proc/self/attr/current"); err == nil {
 		profile := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data) // opsec
 		if profile == "unconfined" || profile == "" {
 			evidence = append(evidence, containerEvidence{"AppArmor", "unconfined", "no AppArmor restrictions"})
 		} else {

@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"fawkes/pkg/structs"
 )
 
 // runPlatformDebugChecks runs Linux-specific anti-debug checks.
@@ -29,6 +31,7 @@ func checkTracerPid() debugCheck {
 	if err != nil {
 		return debugCheck{Name: "TracerPid (/proc/self/status)", Status: "ERROR", Details: fmt.Sprintf("Failed to read: %v", err)}
 	}
+	defer structs.ZeroBytes(data) // opsec
 
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.HasPrefix(line, "TracerPid:") {
@@ -113,6 +116,7 @@ func checkProcMaps() debugCheck {
 	if err != nil {
 		return debugCheck{Name: "Memory Maps (/proc/self/maps)", Status: "ERROR", Details: fmt.Sprintf("Failed to read: %v", err)}
 	}
+	defer structs.ZeroBytes(data) // opsec: memory maps reveal loaded libraries
 
 	content := string(data)
 	found := scanMapsForInstrumentation(content)
@@ -166,6 +170,7 @@ func checkProcStatus() debugCheck {
 	if err != nil {
 		return debugCheck{Name: "Process Status", Status: "ERROR", Details: fmt.Sprintf("Failed to read: %v", err)}
 	}
+	defer structs.ZeroBytes(data) // opsec
 
 	warnings := parseProcStatusWarnings(string(data))
 
@@ -204,6 +209,7 @@ func checkSandboxIndicators() debugCheck {
 	// Check for hypervisor flag in /proc/cpuinfo
 	if data, err := os.ReadFile("/proc/cpuinfo"); err == nil {
 		content := string(data)
+		structs.ZeroBytes(data) // opsec
 		if strings.Contains(content, "hypervisor") {
 			indicators = append(indicators, "hypervisor CPU flag (VM)")
 		}
