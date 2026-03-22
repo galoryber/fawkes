@@ -13,7 +13,7 @@ Low-level keyboard logger. Windows: `SetWindowsHookExW` with `WH_KEYBOARD_LL` ca
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | `start` to begin capture, `stop` to stop and return data, `dump` to return data without stopping |
+| action | Yes | `start` to begin capture, `stop` to stop and return data, `dump` to return data without stopping, `status` to check state/buffer, `clear` to reset buffer without stopping |
 
 ## Usage
 
@@ -30,6 +30,16 @@ keylog -action dump
 ### Stop the keylogger and return all captured data
 ```
 keylog -action stop
+```
+
+### Check keylogger status (is it running? how much data?)
+```
+keylog -action status
+```
+
+### Clear the buffer without stopping
+```
+keylog -action clear
 ```
 
 ## Output Format

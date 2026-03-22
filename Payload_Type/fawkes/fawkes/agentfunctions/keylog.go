@@ -18,8 +18,8 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "keylog",
 		Description:         "Start, stop, or dump a low-level keyboard logger. Windows: SetWindowsHookEx. Linux: /dev/input evdev (T1056.001).",
-		HelpString:          "keylog -action <start|stop|dump>",
-		Version:             2,
+		HelpString:          "keylog -action <start|stop|dump|status|clear>",
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1056.001"},
@@ -33,8 +33,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"start", "stop", "dump"},
-				Description:      "start: begin capturing keystrokes, stop: stop and return captured data, dump: return captured data without stopping",
+				Choices:          []string{"start", "stop", "dump", "status", "clear"},
+				Description:      "start: begin capturing, stop: stop and return data, dump: return data without stopping, status: check state/buffer size, clear: reset buffer without stopping",
 				DefaultValue:     "start",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
