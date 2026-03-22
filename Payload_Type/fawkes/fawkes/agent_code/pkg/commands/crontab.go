@@ -137,24 +137,9 @@ func crontabReadSpool(username string) (string, error) {
 
 // crontabAdd adds a cron job entry
 func crontabAdd(args crontabArgs) structs.CommandResult {
-	var entry string
-
-	if args.Entry != "" {
-		// Use raw entry (e.g., "*/5 * * * * /path/to/command")
-		entry = args.Entry
-	} else if args.Program != "" {
-		// Build entry from schedule + program + args
-		schedule := args.Schedule
-		if schedule == "" {
-			schedule = "@reboot" // Default to persistence on reboot
-		}
-		if args.Args != "" {
-			entry = fmt.Sprintf("%s %s %s", schedule, args.Program, args.Args)
-		} else {
-			entry = fmt.Sprintf("%s %s", schedule, args.Program)
-		}
-	} else {
-		return errorResult("Error: provide either 'entry' (raw cron line) or 'program' (with optional schedule/args)")
+	entry, err := buildCrontabEntry(args)
+	if err != nil {
+		return errorf("Error: %v", err)
 	}
 
 	// Get existing crontab
@@ -168,12 +153,7 @@ func crontabAdd(args crontabArgs) structs.CommandResult {
 		existing = []byte{} // No existing crontab is fine
 	}
 
-	// Append new entry
-	newCrontab := strings.TrimRight(string(existing), "\n")
-	if newCrontab != "" {
-		newCrontab += "\n"
-	}
-	newCrontab += entry + "\n"
+	newCrontab := mergeCrontab(string(existing), entry)
 
 	// Write new crontab
 	installArgs := []string{"-"}
@@ -215,15 +195,7 @@ func crontabRemove(args crontabArgs) structs.CommandResult {
 	}
 
 	lines := strings.Split(string(existing), "\n")
-	var kept []string
-	removedCount := 0
-	for _, line := range lines {
-		if strings.Contains(line, matchStr) {
-			removedCount++
-			continue
-		}
-		kept = append(kept, line)
-	}
+	kept, removedCount := filterCrontabLines(lines, matchStr)
 
 	if removedCount == 0 {
 		return errorf("No cron entries matching '%s' found", matchStr)
