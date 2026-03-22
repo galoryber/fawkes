@@ -29,7 +29,12 @@ func init() {
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
 				DefaultValue:  false,
 				Description:   "Enable deep scanning: check kernel modules, systemd units, and config directories beyond process enumeration (Linux/macOS).",
-				Required:      false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
