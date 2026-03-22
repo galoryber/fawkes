@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -251,5 +252,83 @@ func TestCoerceNetworkErrorOutput(t *testing.T) {
 	}
 	if !strings.Contains(result.Output, "connection failed") && !strings.Contains(result.Output, "failed") {
 		t.Fatalf("expected connection failure message, got: %s", result.Output)
+	}
+}
+
+// --- coerceIsRPCProcessed tests ---
+
+func TestCoerceIsRPCProcessed_NilError(t *testing.T) {
+	if !coerceIsRPCProcessed(nil) {
+		t.Error("nil error should indicate RPC was processed")
+	}
+}
+
+func TestCoerceIsRPCProcessed_KnownIndicators(t *testing.T) {
+	indicators := []struct {
+		errMsg string
+		desc   string
+	}{
+		{"ERROR_BAD_NETPATH", "bad net path"},
+		{"ERROR_ACCESS_DENIED", "access denied"},
+		{"ERROR_BAD_NET_NAME", "bad net name"},
+		{"ERROR_NOT_FOUND", "not found"},
+		{"ERROR_INVALID_PARAMETER", "invalid parameter"},
+		{"0x00000035", "BAD_NETPATH numeric"},
+		{"0x00000005", "ACCESS_DENIED numeric"},
+		{"RPC_S_SERVER_UNAVAILABLE", "RPC server unavailable"},
+		{"0x000006ba", "RPC_S_SERVER_UNAVAILABLE numeric"},
+	}
+	for _, tt := range indicators {
+		err := fmt.Errorf("RPC call failed: %s on pipe efsrpc", tt.errMsg)
+		if !coerceIsRPCProcessed(err) {
+			t.Errorf("%s: expected processed=true for error containing %q", tt.desc, tt.errMsg)
+		}
+	}
+}
+
+func TestCoerceIsRPCProcessed_TransportFailure(t *testing.T) {
+	// Transport-level errors should return false (RPC not processed)
+	transportErrors := []string{
+		"connection refused",
+		"network is unreachable",
+		"no route to host",
+		"i/o timeout",
+		"connection reset by peer",
+		"dial tcp 10.0.0.1:445: connect: connection timed out",
+	}
+	for _, errMsg := range transportErrors {
+		err := fmt.Errorf("%s", errMsg)
+		if coerceIsRPCProcessed(err) {
+			t.Errorf("transport error %q should return false", errMsg)
+		}
+	}
+}
+
+func TestCoerceIsRPCProcessed_WrappedIndicator(t *testing.T) {
+	// Indicator embedded in longer error message
+	err := fmt.Errorf("EfsRpcOpenFileRaw returned ERROR_BAD_NETPATH on \\\\10.0.0.5\\share")
+	if !coerceIsRPCProcessed(err) {
+		t.Error("wrapped ERROR_BAD_NETPATH should be detected")
+	}
+}
+
+func TestCoerceIsRPCProcessed_NumericInContext(t *testing.T) {
+	err := fmt.Errorf("DCERPC error: server returned 0x00000005")
+	if !coerceIsRPCProcessed(err) {
+		t.Error("numeric 0x00000005 in context should be detected")
+	}
+}
+
+func TestCoerceIsRPCProcessed_UnrelatedError(t *testing.T) {
+	err := fmt.Errorf("something completely unrelated happened")
+	if coerceIsRPCProcessed(err) {
+		t.Error("unrelated error should return false")
+	}
+}
+
+func TestCoerceIsRPCProcessed_EmptyError(t *testing.T) {
+	err := fmt.Errorf("")
+	if coerceIsRPCProcessed(err) {
+		t.Error("empty error message should return false")
 	}
 }
