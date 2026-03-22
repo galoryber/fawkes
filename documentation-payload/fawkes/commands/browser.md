@@ -18,12 +18,13 @@ Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium) and F
 | history | Yes | Yes | Yes | Yes |
 | autofill | Yes | Yes | Yes | Yes |
 | bookmarks | Yes | Yes | Yes | Yes |
+| downloads | Yes | Yes | Yes | Yes |
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| action | choose_one | No | history | `passwords` — saved login credentials (Windows Chromium only); `cookies` — session cookies (Windows Chromium DPAPI; Firefox plaintext on all platforms); `history` — browsing history; `autofill` — form data; `bookmarks` — saved URLs |
+| action | choose_one | No | history | `passwords` — saved login credentials (Windows Chromium only); `cookies` — session cookies (Windows Chromium DPAPI; Firefox plaintext on all platforms); `history` — browsing history; `autofill` — form data; `bookmarks` — saved URLs; `downloads` — download history |
 | browser | choose_one | No | all | `all`, `chrome`, `edge`, `chromium`, or `firefox` — which browser(s) to target |
 
 ## Usage
@@ -54,6 +55,13 @@ browser -action autofill
 Extract saved bookmarks with folder structure:
 ```
 browser -action bookmarks
+```
+
+### Harvest Download History
+
+Extract recent download history (file paths, URLs, sizes, states):
+```
+browser -action downloads
 ```
 
 ### Harvest Credentials (Windows Chromium Only)
@@ -117,6 +125,7 @@ browser -action cookies -browser chrome
    - Bookmarks: `moz_bookmarks` + `moz_places` in `places.sqlite`
    - Autofill: `moz_formhistory` in `formhistory.sqlite`
    - Cookies: `moz_cookies` in `cookies.sqlite` (plaintext values)
+   - Downloads: `downloads.json` (plaintext JSON with source URLs, file paths, sizes)
 5. Firefox timestamps (PRTime) are microseconds since Unix epoch
 
 ### Windows Chromium Decryption (passwords, cookies)
@@ -127,7 +136,7 @@ browser -action cookies -browser chrome
 
 ## Notes
 
-- **Cross-platform:** History, autofill, and bookmarks work on Windows, macOS, and Linux for all browsers
+- **Cross-platform:** History, autofill, bookmarks, and downloads work on Windows, macOS, and Linux for all browsers
 - **Firefox cookies:** Plaintext on all platforms — no decryption needed
 - **Chromium passwords/cookies:** Require DPAPI (Windows only, user-bound key decryption)
 - The browser does not need to be closed — databases are copied to avoid lock conflicts

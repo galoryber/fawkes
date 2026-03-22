@@ -324,6 +324,92 @@ func TestBrowserCommand_CookiesFirefox(t *testing.T) {
 	}
 }
 
+func TestBrowserCommand_DownloadsAction(t *testing.T) {
+	cmd := &BrowserCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"downloads"}`})
+	if result.Status != "success" {
+		t.Errorf("expected success for downloads action, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestChromeDownloadState(t *testing.T) {
+	tests := []struct {
+		state    int
+		expected string
+	}{
+		{0, "In Progress"},
+		{1, "Complete"},
+		{2, "Cancelled"},
+		{3, "Interrupted"},
+		{99, "Unknown(99)"},
+		{-1, "Unknown(-1)"},
+	}
+
+	for _, tt := range tests {
+		got := chromeDownloadState(tt.state)
+		if got != tt.expected {
+			t.Errorf("chromeDownloadState(%d) = %q, want %q", tt.state, got, tt.expected)
+		}
+	}
+}
+
+func TestFirefoxDownloadState(t *testing.T) {
+	tests := []struct {
+		state    int
+		expected string
+	}{
+		{0, "Downloading"},
+		{1, "Complete"},
+		{2, "Failed"},
+		{3, "Cancelled"},
+		{4, "Paused"},
+		{5, "Blocked"},
+		{99, "Unknown(99)"},
+		{-1, "Unknown(-1)"},
+	}
+
+	for _, tt := range tests {
+		got := firefoxDownloadState(tt.state)
+		if got != tt.expected {
+			t.Errorf("firefoxDownloadState(%d) = %q, want %q", tt.state, got, tt.expected)
+		}
+	}
+}
+
+func TestBrowserDownloads_FirefoxJSON(t *testing.T) {
+	// Create a temp directory mimicking Firefox profile with downloads.json
+	tmpDir := t.TempDir()
+	profileDir := filepath.Join(tmpDir, "a1b2c3d4.default-release")
+	os.MkdirAll(profileDir, 0755)
+
+	downloadsJSON := `{
+		"schemaVersion": 1,
+		"list": [
+			{
+				"source": "https://example.com/file.zip",
+				"target": "file:///home/user/Downloads/file.zip",
+				"startTime": 1705320000000,
+				"totalBytes": 1048576,
+				"state": 1,
+				"contentType": "application/zip"
+			},
+			{
+				"source": "https://example.com/doc.pdf",
+				"target": "file:///home/user/Downloads/doc.pdf",
+				"startTime": 1705310000000,
+				"totalBytes": 2048,
+				"state": 3,
+				"contentType": "application/pdf"
+			}
+		]
+	}`
+	os.WriteFile(filepath.Join(profileDir, "downloads.json"), []byte(downloadsJSON), 0644)
+
+	// We can't easily inject custom paths into browserDownloads, but we can verify
+	// the helper functions work correctly and the overall action routing is correct.
+	// The real integration test happens on live VMs.
+}
+
 func TestBrowserBookmarks_WithTempData(t *testing.T) {
 	// Create a temp directory with fake Chromium bookmark data
 	tmpDir := t.TempDir()

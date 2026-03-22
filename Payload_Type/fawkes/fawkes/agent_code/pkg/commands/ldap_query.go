@@ -91,11 +91,26 @@ var presetQueries = map[string]struct {
 		attributes: []string{"sAMAccountName", "userPrincipalName", "pwdLastSet", "lastLogonTimestamp", "description"},
 		desc:       "Accounts with password never expires flag",
 	},
+	"trusts": {
+		filter:     "(objectClass=trustedDomain)",
+		attributes: []string{"cn", "trustPartner", "trustDirection", "trustType", "trustAttributes", "flatName", "whenCreated", "whenChanged"},
+		desc:       "Domain trust relationships",
+	},
+	"unconstrained": {
+		filter:     "(&(objectCategory=computer)(userAccountControl:1.2.840.113556.1.4.803:=524288)(!(primaryGroupID=516)))",
+		attributes: []string{"sAMAccountName", "dNSHostName", "operatingSystem", "userAccountControl", "lastLogonTimestamp", "description"},
+		desc:       "Computers with unconstrained delegation (excluding DCs)",
+	},
+	"constrained": {
+		filter:     "(msDS-AllowedToDelegateTo=*)",
+		attributes: []string{"sAMAccountName", "userPrincipalName", "msDS-AllowedToDelegateTo", "userAccountControl", "objectClass", "description"},
+		desc:       "Accounts with constrained delegation",
+	},
 }
 
 func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|admins|disabled|gpo|ou|password-never-expires|dacl|query> -server <DC>")
+		return errorResult("Error: parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|admins|disabled|gpo|ou|password-never-expires|trusts|unconstrained|constrained|dacl|query> -server <DC>")
 	}
 
 	var args ldapQueryArgs
@@ -153,7 +168,7 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	// Resolve filter and attributes
 	filter, attributes, desc := resolveQuery(args, baseDN)
 	if filter == "" {
-		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, admins, disabled, gpo, ou, password-never-expires, dacl, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
+		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, admins, disabled, gpo, ou, password-never-expires, trusts, unconstrained, constrained, dacl, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
 	}
 
 	// Execute search — use SizeLimit=0 with paging to avoid "Size Limit Exceeded"

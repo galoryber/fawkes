@@ -292,7 +292,7 @@ func TestDefaultPort_LDAPS(t *testing.T) {
 }
 
 func TestPresetQueries_AllExist(t *testing.T) {
-	expected := []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "admins", "disabled", "gpo", "ou", "password-never-expires"}
+	expected := []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "admins", "disabled", "gpo", "ou", "password-never-expires", "trusts", "unconstrained", "constrained"}
 	for _, name := range expected {
 		if _, ok := presetQueries[name]; !ok {
 			t.Errorf("missing preset query: %s", name)
@@ -325,6 +325,81 @@ func containsStr(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestResolveQuery_Trusts(t *testing.T) {
+	args := ldapQueryArgs{Action: "trusts"}
+	filter, attrs, desc := resolveQuery(args, "DC=test,DC=local")
+	if filter != "(objectClass=trustedDomain)" {
+		t.Errorf("expected trustedDomain filter, got %s", filter)
+	}
+	if len(attrs) == 0 {
+		t.Error("expected attributes for trusts")
+	}
+	// Should include trustPartner and trustDirection
+	hasTrustPartner := false
+	hasTrustDirection := false
+	for _, a := range attrs {
+		if a == "trustPartner" {
+			hasTrustPartner = true
+		}
+		if a == "trustDirection" {
+			hasTrustDirection = true
+		}
+	}
+	if !hasTrustPartner {
+		t.Error("trusts attributes should include trustPartner")
+	}
+	if !hasTrustDirection {
+		t.Error("trusts attributes should include trustDirection")
+	}
+	if desc == "" {
+		t.Error("expected description for trusts")
+	}
+}
+
+func TestResolveQuery_Unconstrained(t *testing.T) {
+	args := ldapQueryArgs{Action: "unconstrained"}
+	filter, attrs, desc := resolveQuery(args, "DC=test,DC=local")
+	// UAC flag 524288 = TRUSTED_FOR_DELEGATION
+	if !strings.Contains(filter, "524288") {
+		t.Errorf("unconstrained filter should check UAC flag 524288, got %s", filter)
+	}
+	// Should exclude domain controllers (primaryGroupID 516)
+	if !strings.Contains(filter, "primaryGroupID") {
+		t.Errorf("unconstrained filter should exclude DCs, got %s", filter)
+	}
+	if len(attrs) == 0 {
+		t.Error("expected attributes for unconstrained")
+	}
+	if desc == "" {
+		t.Error("expected description for unconstrained")
+	}
+}
+
+func TestResolveQuery_Constrained(t *testing.T) {
+	args := ldapQueryArgs{Action: "constrained"}
+	filter, attrs, desc := resolveQuery(args, "DC=test,DC=local")
+	if !strings.Contains(filter, "msDS-AllowedToDelegateTo") {
+		t.Errorf("constrained filter should check msDS-AllowedToDelegateTo, got %s", filter)
+	}
+	if len(attrs) == 0 {
+		t.Error("expected attributes for constrained")
+	}
+	// Should include msDS-AllowedToDelegateTo in attributes
+	hasDelegate := false
+	for _, a := range attrs {
+		if a == "msDS-AllowedToDelegateTo" {
+			hasDelegate = true
+			break
+		}
+	}
+	if !hasDelegate {
+		t.Error("constrained attributes should include msDS-AllowedToDelegateTo")
+	}
+	if desc == "" {
+		t.Error("expected description for constrained")
+	}
 }
 
 // DACL tests

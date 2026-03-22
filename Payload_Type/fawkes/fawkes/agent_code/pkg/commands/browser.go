@@ -76,8 +76,10 @@ func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
 		return browserAutofill(args)
 	case "bookmarks":
 		return browserBookmarks(args)
+	case "downloads":
+		return browserDownloads(args)
 	default:
-		return errorf("Unknown action: %s. Use: passwords, cookies, history, autofill, bookmarks", args.Action)
+		return errorf("Unknown action: %s. Use: passwords, cookies, history, autofill, bookmarks, downloads", args.Action)
 	}
 }
 
