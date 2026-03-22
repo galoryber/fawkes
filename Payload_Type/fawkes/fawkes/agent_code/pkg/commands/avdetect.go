@@ -20,6 +20,10 @@ func (c *AvDetectCommand) Description() string {
 	return "Detect installed AV/EDR/security products by scanning running processes"
 }
 
+type avDetectArgs struct {
+	Deep bool `json:"deep"`
+}
+
 // securityProduct maps a process name to its product info
 type securityProduct struct {
 	Product  string
@@ -195,6 +199,11 @@ type detectedProduct struct {
 }
 
 func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
+	var args avDetectArgs
+	if task.Params != "" {
+		_ = json.Unmarshal([]byte(task.Params), &args)
+	}
+
 	procs, err := process.Processes()
 	if err != nil {
 		return errorf("Error enumerating processes: %v", err)
@@ -218,6 +227,12 @@ func (c *AvDetectCommand) Execute(task structs.Task) structs.CommandResult {
 				PID:         p.Pid,
 			})
 		}
+	}
+
+	// Deep scanning: check beyond running processes
+	if args.Deep {
+		supplementary := avDeepScan()
+		detected = append(detected, supplementary...)
 	}
 
 	if len(detected) == 0 {
