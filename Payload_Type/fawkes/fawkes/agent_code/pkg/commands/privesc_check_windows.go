@@ -424,6 +424,7 @@ func winPrivescCheckUnattend() structs.CommandResult {
 		}
 
 		content := string(data)
+		structs.ZeroBytes(data)
 		hasPassword := strings.Contains(strings.ToLower(content), "<password>") ||
 			strings.Contains(strings.ToLower(content), "cpassword") ||
 			strings.Contains(strings.ToLower(content), "adminpassword")

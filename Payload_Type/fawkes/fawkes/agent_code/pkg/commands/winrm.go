@@ -247,6 +247,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		return nil, err
 	}
+	defer structs.ZeroBytes(bodyBytes)
 
 	req1 := req.Clone(req.Context())
 	req1.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))

@@ -265,14 +265,15 @@ func gppWalkDir(share *smb2.Share, path string, results *[]gppResult, filesSearc
 		if err != nil {
 			continue
 		}
-
 		content := string(data)
 		if !strings.Contains(content, "cpassword") {
+			structs.ZeroBytes(data)
 			continue
 		}
 
 		// Parse based on file type
 		gppParseXML(data, fullPath, results)
+		structs.ZeroBytes(data)
 	}
 
 	return nil
