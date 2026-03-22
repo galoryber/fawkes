@@ -3,7 +3,11 @@
 package commands
 
 import (
+	"strings"
 	"testing"
+	"time"
+
+	"fawkes/pkg/structs"
 )
 
 func TestLinuxKeyToStringLetters(t *testing.T) {
@@ -197,5 +201,235 @@ func TestLinuxKeyToStringUnknownCode(t *testing.T) {
 	got := linuxKeyToString(200, false)
 	if got != "" {
 		t.Errorf("linuxKeyToString(200) = %q, want empty string", got)
+	}
+}
+
+// --- Keylog state management tests ---
+
+// resetKeylogState ensures kl is in a clean stopped state for testing.
+func resetKeylogState() {
+	kl.mu.Lock()
+	defer kl.mu.Unlock()
+	kl.running = false
+	kl.buffer.Reset()
+	kl.keyCount = 0
+	kl.shiftDown = false
+	kl.stopCh = nil
+}
+
+func TestKeylogExecuteEmptyParams(t *testing.T) {
+	cmd := &KeylogCommand{}
+	result := cmd.Execute(structs.Task{Params: ""})
+	if result.Status != "error" {
+		t.Errorf("expected error for empty params, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "action required") {
+		t.Errorf("expected 'action required' message, got %q", result.Output)
+	}
+}
+
+func TestKeylogExecuteInvalidJSON(t *testing.T) {
+	cmd := &KeylogCommand{}
+	result := cmd.Execute(structs.Task{Params: "not-json"})
+	if result.Status != "error" {
+		t.Errorf("expected error for invalid JSON, got %q", result.Status)
+	}
+}
+
+func TestKeylogExecuteUnknownAction(t *testing.T) {
+	cmd := &KeylogCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"invalid"}`})
+	if result.Status != "error" {
+		t.Errorf("expected error for unknown action, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "Unknown action") {
+		t.Errorf("expected 'Unknown action' message, got %q", result.Output)
+	}
+}
+
+func TestKeylogStopWhenNotRunning(t *testing.T) {
+	resetKeylogState()
+	result := keylogStop()
+	if result.Status != "error" {
+		t.Errorf("expected error when stopping non-running keylogger, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "not running") {
+		t.Errorf("expected 'not running' message, got %q", result.Output)
+	}
+}
+
+func TestKeylogDumpWhenNotRunning(t *testing.T) {
+	resetKeylogState()
+	result := keylogDump()
+	if result.Status != "error" {
+		t.Errorf("expected error when dumping non-running keylogger, got %q", result.Status)
+	}
+}
+
+func TestKeylogClearWhenNotRunning(t *testing.T) {
+	resetKeylogState()
+	result := keylogClear()
+	if result.Status != "error" {
+		t.Errorf("expected error when clearing non-running keylogger, got %q", result.Status)
+	}
+}
+
+func TestKeylogStatusWhenNotRunning(t *testing.T) {
+	resetKeylogState()
+	result := keylogStatus()
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "not running") {
+		t.Errorf("expected 'not running' message, got %q", result.Output)
+	}
+}
+
+func TestKeylogStatusWhenRunning(t *testing.T) {
+	resetKeylogState()
+	// Simulate running state
+	kl.mu.Lock()
+	kl.running = true
+	kl.startTime = time.Now().Add(-30 * time.Second)
+	kl.keyCount = 42
+	kl.buffer.WriteString("test keystrokes")
+	kl.stopCh = make(chan struct{})
+	kl.mu.Unlock()
+	defer resetKeylogState()
+
+	result := keylogStatus()
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "running") {
+		t.Errorf("expected 'running' in output, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "42") {
+		t.Errorf("expected keystroke count '42' in output, got %q", result.Output)
+	}
+}
+
+func TestKeylogDumpWhenRunningEmpty(t *testing.T) {
+	resetKeylogState()
+	kl.mu.Lock()
+	kl.running = true
+	kl.startTime = time.Now().Add(-10 * time.Second)
+	kl.keyCount = 0
+	kl.stopCh = make(chan struct{})
+	kl.mu.Unlock()
+	defer resetKeylogState()
+
+	result := keylogDump()
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "no keystrokes captured") {
+		t.Errorf("expected 'no keystrokes' message, got %q", result.Output)
+	}
+}
+
+func TestKeylogDumpWhenRunningWithData(t *testing.T) {
+	resetKeylogState()
+	kl.mu.Lock()
+	kl.running = true
+	kl.startTime = time.Now().Add(-60 * time.Second)
+	kl.keyCount = 5
+	kl.buffer.WriteString("hello")
+	kl.stopCh = make(chan struct{})
+	kl.mu.Unlock()
+	defer resetKeylogState()
+
+	result := keylogDump()
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "5 keystrokes") {
+		t.Errorf("expected '5 keystrokes' in output, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "hello") {
+		t.Errorf("expected captured text in output, got %q", result.Output)
+	}
+}
+
+func TestKeylogClearWhenRunning(t *testing.T) {
+	resetKeylogState()
+	kl.mu.Lock()
+	kl.running = true
+	kl.startTime = time.Now()
+	kl.keyCount = 10
+	kl.buffer.WriteString("some data")
+	kl.stopCh = make(chan struct{})
+	kl.mu.Unlock()
+	defer resetKeylogState()
+
+	result := keylogClear()
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "10 keystrokes removed") {
+		t.Errorf("expected '10 keystrokes removed', got %q", result.Output)
+	}
+
+	// Verify buffer is cleared
+	kl.mu.Lock()
+	if kl.keyCount != 0 {
+		t.Errorf("keyCount should be 0 after clear, got %d", kl.keyCount)
+	}
+	if kl.buffer.Len() != 0 {
+		t.Error("buffer should be empty after clear")
+	}
+	if !kl.running {
+		t.Error("keylogger should still be running after clear")
+	}
+	kl.mu.Unlock()
+}
+
+func TestKeylogStopWhenRunning(t *testing.T) {
+	resetKeylogState()
+	kl.mu.Lock()
+	kl.running = true
+	kl.startTime = time.Now().Add(-120 * time.Second)
+	kl.keyCount = 25
+	kl.buffer.WriteString("captured text here")
+	kl.stopCh = make(chan struct{})
+	kl.mu.Unlock()
+	defer resetKeylogState()
+
+	result := keylogStop()
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "Keylogger stopped") {
+		t.Errorf("expected 'stopped' message, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "25") {
+		t.Errorf("expected keystroke count in output, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "captured text here") {
+		t.Errorf("expected captured text in output, got %q", result.Output)
+	}
+
+	// Verify state is cleaned up
+	kl.mu.Lock()
+	if kl.running {
+		t.Error("keylogger should not be running after stop")
+	}
+	kl.mu.Unlock()
+}
+
+func TestKeylogStartAlreadyRunning(t *testing.T) {
+	resetKeylogState()
+	kl.mu.Lock()
+	kl.running = true
+	kl.stopCh = make(chan struct{})
+	kl.mu.Unlock()
+	defer resetKeylogState()
+
+	result := keylogStart()
+	if result.Status != "error" {
+		t.Errorf("expected error for double start, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "already running") {
+		t.Errorf("expected 'already running' message, got %q", result.Output)
 	}
 }
