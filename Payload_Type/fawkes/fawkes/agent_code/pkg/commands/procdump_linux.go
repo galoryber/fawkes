@@ -73,9 +73,12 @@ func procdumpLinux(task structs.Task, pid int) structs.CommandResult {
 	if err != nil {
 		return errorf("Cannot read %s: %v\nEnsure you have ptrace permissions (root or CAP_SYS_PTRACE)", mapsPath, err)
 	}
+
+	// Parse before zeroing — string() copies the bytes
+	mapsContent := string(mapsData)
 	structs.ZeroBytes(mapsData)
 
-	regions := parseMapsContent(string(mapsData))
+	regions := parseMapsContent(mapsContent)
 	dumpable := filterDumpableRegions(regions)
 
 	if len(dumpable) == 0 {
