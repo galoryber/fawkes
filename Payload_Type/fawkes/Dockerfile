@@ -19,6 +19,8 @@ RUN git clone https://github.com/monoxgas/sRDI /opt/sRDI && \
 
 COPY [".", "."]
 
+ENV GOTOOLCHAIN=auto
+
 RUN make build
 
 CMD make run
