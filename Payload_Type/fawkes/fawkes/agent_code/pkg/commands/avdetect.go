@@ -179,9 +179,45 @@ var knownSecurityProcesses = map[string]securityProduct{
 	// Rapid7
 	"ir_agent.exe": {"Rapid7 InsightIDR", "Rapid7", "EDR"},
 
-	// macOS-specific
-	"xprotectservice":   {"XProtect", "Apple", "AV"},
-	"endpointsecurityd": {"Endpoint Security", "Apple", "EDR"},
+	// macOS-specific (Apple built-in)
+	"xprotectservice":            {"XProtect", "Apple", "AV"},
+	"endpointsecurityd":          {"Endpoint Security", "Apple", "EDR"},
+	"mrt":                        {"Malware Removal Tool", "Apple", "AV"},
+	"xprotectpluginservice":      {"XProtect", "Apple", "AV"},
+	"gatekeeperd":                {"Gatekeeper", "Apple", "AV"},
+	"syspolicyd":                 {"Gatekeeper", "Apple", "AV"},
+	"tcc":                        {"TCC", "Apple", "HIPS"},
+
+	// macOS-specific (third-party)
+	"wdavdaemon":                 {"Defender for Endpoint", "Microsoft", "EDR"},
+	"com.microsoft.wdav.daemon":  {"Defender for Endpoint", "Microsoft", "EDR"},
+	"sophos endpoint":            {"Sophos Endpoint", "Sophos", "AV"},
+	"sophosscanagent":            {"Sophos Endpoint", "Sophos", "AV"},
+	"sophoswebintelligence":      {"Sophos Endpoint", "Sophos", "AV"},
+	"sophosnetworkextension":     {"Sophos Endpoint", "Sophos", "AV"},
+	"cortex xdr":                 {"Cortex XDR", "Palo Alto", "EDR"},
+	"traps_agent":                {"Cortex XDR", "Palo Alto", "EDR"},
+	"jamfprotect":                {"Jamf Protect", "Jamf", "EDR"},
+	"jamfdaemon":                 {"Jamf Pro", "Jamf", "Logging"},
+	"ampdaemon":                  {"Cisco Secure Endpoint", "Cisco", "EDR"},
+	"ampscansvc":                 {"Cisco Secure Endpoint", "Cisco", "EDR"},
+	"malwarebytes":               {"Malwarebytes", "Malwarebytes", "AV"},
+	"rtprotection":               {"Malwarebytes", "Malwarebytes", "AV"},
+	"littlesnitch":               {"Little Snitch", "Objective Development", "Firewall"},
+	"at.obdev.littlesnitchd":     {"Little Snitch", "Objective Development", "Firewall"},
+	"lulu":                       {"LuLu", "Objective-See", "Firewall"},
+	"blockblock":                 {"BlockBlock", "Objective-See", "HIPS"},
+	"oversight":                  {"OverSight", "Objective-See", "Logging"},
+	"kandji-daemon":              {"Kandji Agent", "Kandji", "Logging"},
+	"esets_proxy":                {"ESET Endpoint Security", "ESET", "AV"},
+	"esets_ctl":                  {"ESET Endpoint Security", "ESET", "AV"},
+	"norton":                     {"Norton", "Gen Digital", "AV"},
+	"navapsvc":                   {"Norton", "Gen Digital", "AV"},
+	"avastsecd":                  {"Avast", "Gen Digital", "AV"},
+	"avgsecd":                    {"AVG", "Gen Digital", "AV"},
+	"intego virusbarrier":        {"VirusBarrier", "Intego", "AV"},
+	"virusbarrier":               {"VirusBarrier", "Intego", "AV"},
+	"clamxav":                    {"ClamXAV", "ClamXAV", "AV"},
 
 	// Linux-specific
 	"clamd":     {"ClamAV", "Open Source", "AV"},

@@ -13,9 +13,9 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "avdetect_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Detect installed AV/EDR/security products by scanning running processes and optionally checking kernel modules, systemd units, and config directories (--deep).",
+		Description:         "Detect installed AV/EDR/security products by scanning running processes and optionally checking kernel modules, system extensions, LaunchDaemons, application bundles, and config directories (--deep).",
 		HelpString:          "av-detect [-deep true]",
-		Version:             2,
+		Version:             3,
 		MitreAttackMappings: []string{"T1518.001"}, // Software Discovery: Security Software Discovery
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",

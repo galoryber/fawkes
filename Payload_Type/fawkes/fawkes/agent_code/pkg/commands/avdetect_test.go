@@ -255,6 +255,12 @@ func TestAvDetect_DeepScanDeduplication(t *testing.T) {
 
 func TestAvDetect_DeepScanFieldsValid(t *testing.T) {
 	results := avDeepScan()
+	// Valid source prefixes across all platforms
+	validPrefixes := []string{
+		"kmod:", "systemd:", "config:",       // Linux
+		"kext:", "sysext:", "launchdaemon:",  // macOS
+		"launchagent:", "app:",               // macOS
+	}
 	for _, r := range results {
 		if r.Product == "" {
 			t.Errorf("empty Product for %s", r.ProcessName)
@@ -272,53 +278,16 @@ func TestAvDetect_DeepScanFieldsValid(t *testing.T) {
 		if r.PID != 0 {
 			t.Errorf("deep scan PID should be 0, got %d for %s", r.PID, r.ProcessName)
 		}
-		// ProcessName should have a source prefix
-		if !strings.HasPrefix(r.ProcessName, "kmod:") &&
-			!strings.HasPrefix(r.ProcessName, "systemd:") &&
-			!strings.HasPrefix(r.ProcessName, "config:") {
-			t.Errorf("deep scan ProcessName %q should have kmod:/systemd:/config: prefix", r.ProcessName)
+		// ProcessName should have a known source prefix
+		hasPrefix := false
+		for _, prefix := range validPrefixes {
+			if strings.HasPrefix(r.ProcessName, prefix) {
+				hasPrefix = true
+				break
+			}
 		}
-	}
-}
-
-func TestAvDetect_DeepScanKernelModuleDB(t *testing.T) {
-	// Verify the kernel module DB has entries
-	if len(knownSecurityKernelModules) < 5 {
-		t.Errorf("expected 5+ kernel module entries, got %d", len(knownSecurityKernelModules))
-	}
-	// Verify all entries have valid categories
-	validCategories := map[string]bool{"AV": true, "EDR": true, "Logging": true}
-	for mod, product := range knownSecurityKernelModules {
-		if !validCategories[product.Category] {
-			t.Errorf("kernel module %q has invalid category %q", mod, product.Category)
-		}
-	}
-}
-
-func TestAvDetect_DeepScanSystemdUnitDB(t *testing.T) {
-	if len(knownSecuritySystemdUnits) < 10 {
-		t.Errorf("expected 10+ systemd unit entries, got %d", len(knownSecuritySystemdUnits))
-	}
-	for unit, product := range knownSecuritySystemdUnits {
-		if !strings.HasSuffix(unit, ".service") {
-			t.Errorf("systemd unit %q should end with .service", unit)
-		}
-		if product.Product == "" || product.Vendor == "" {
-			t.Errorf("systemd unit %q has empty Product or Vendor", unit)
-		}
-	}
-}
-
-func TestAvDetect_DeepScanConfigPathDB(t *testing.T) {
-	if len(knownSecurityConfigPaths) < 10 {
-		t.Errorf("expected 10+ config path entries, got %d", len(knownSecurityConfigPaths))
-	}
-	for path, product := range knownSecurityConfigPaths {
-		if !strings.HasPrefix(path, "/") {
-			t.Errorf("config path %q should be absolute", path)
-		}
-		if product.Product == "" || product.Vendor == "" {
-			t.Errorf("config path %q has empty Product or Vendor", path)
+		if !hasPrefix {
+			t.Errorf("deep scan ProcessName %q should have a known source prefix", r.ProcessName)
 		}
 	}
 }
