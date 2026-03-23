@@ -5,6 +5,8 @@ package commands
 import (
 	"strings"
 	"testing"
+
+	"fawkes/pkg/structs"
 )
 
 func TestCheckTracerPid(t *testing.T) {
@@ -45,8 +47,8 @@ func TestCheckLdPreload_Set(t *testing.T) {
 
 func TestRunPlatformDebugChecks(t *testing.T) {
 	checks := runPlatformDebugChecks()
-	if len(checks) < 5 {
-		t.Errorf("expected at least 5 checks, got %d", len(checks))
+	if len(checks) < 8 {
+		t.Errorf("expected at least 8 checks, got %d", len(checks))
 	}
 	// Verify each check has a name and status
 	for i, c := range checks {
@@ -315,5 +317,83 @@ func TestClassifyDMIProduct_Empty(t *testing.T) {
 func TestClassifyDMIProduct_CaseInsensitive(t *testing.T) {
 	if got := classifyDMIProduct("VIRTUALBOX"); got != "VirtualBox (DMI)" {
 		t.Errorf("expected case-insensitive match, got %q", got)
+	}
+}
+
+// --- eBPF, Auditd, Ptrace Scope tests (Session 216) ---
+
+func TestCheckEBPF(t *testing.T) {
+	result := checkEBPF()
+	if !strings.Contains(result.Name, "eBPF") {
+		t.Errorf("expected 'eBPF' in name, got %q", result.Name)
+	}
+	// Status should be valid
+	switch result.Status {
+	case "CLEAN", "DETECTED":
+		// expected
+	default:
+		t.Errorf("unexpected status %q: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckAuditd(t *testing.T) {
+	result := checkAuditd()
+	if !strings.Contains(result.Name, "Audit") {
+		t.Errorf("expected 'Audit' in name, got %q", result.Name)
+	}
+	switch result.Status {
+	case "CLEAN", "WARNING":
+		// expected
+	default:
+		t.Errorf("unexpected status %q: %s", result.Status, result.Details)
+	}
+}
+
+func TestCheckPtraceScope(t *testing.T) {
+	result := checkPtraceScope()
+	if !strings.Contains(result.Name, "Ptrace") {
+		t.Errorf("expected 'Ptrace' in name, got %q", result.Name)
+	}
+	switch result.Status {
+	case "CLEAN", "WARNING", "DETECTED":
+		// expected — depends on system config
+	default:
+		t.Errorf("unexpected status %q: %s", result.Status, result.Details)
+	}
+	// Details should contain ptrace_scope value or Yama info
+	if !strings.Contains(result.Details, "ptrace") && !strings.Contains(result.Details, "Yama") {
+		t.Errorf("expected ptrace info in details, got %q", result.Details)
+	}
+}
+
+func TestRunPlatformDebugChecks_IncludesNewChecks(t *testing.T) {
+	checks := runPlatformDebugChecks()
+	// Should now have 8 checks (was 5, added 3)
+	if len(checks) < 8 {
+		t.Errorf("expected at least 8 checks, got %d", len(checks))
+	}
+	// Verify new check names present
+	names := make(map[string]bool)
+	for _, c := range checks {
+		names[c.Name] = true
+	}
+	for _, expected := range []string{"eBPF Monitoring", "Audit Framework (auditd)", "Ptrace Scope"} {
+		if !names[expected] {
+			t.Errorf("missing check %q in platform checks", expected)
+		}
+	}
+}
+
+func TestDebugDetect_IncludesNewChecks(t *testing.T) {
+	cmd := &DebugDetectCommand{}
+	task := structs.NewTask("t", "debug-detect", "")
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	for _, name := range []string{"eBPF", "Audit", "Ptrace"} {
+		if !strings.Contains(result.Output, name) {
+			t.Errorf("expected %q in output, got: %s", name, result.Output)
+		}
 	}
 }
