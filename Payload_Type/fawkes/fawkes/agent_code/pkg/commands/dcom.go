@@ -127,6 +127,23 @@ type dcomAuthState struct {
 	identity *secWinNTAuthIdentityW
 }
 
+// cleanup zeroes the credential buffers held by the auth state.
+func (a *dcomAuthState) cleanup() {
+	if a == nil || a.identity == nil {
+		return
+	}
+	if a.identity.Password != nil {
+		zeroUTF16Ptr(a.identity.Password)
+	}
+	if a.identity.User != nil {
+		zeroUTF16Ptr(a.identity.User)
+	}
+	if a.identity.Domain != nil {
+		zeroUTF16Ptr(a.identity.Domain)
+	}
+	a.identity = nil
+}
+
 // setProxyBlanket calls CoSetProxyBlanket on an IDispatch to authenticate
 // subsequent method calls on the remote COM proxy.
 func (a *dcomAuthState) setProxyBlanket(disp *ole.IDispatch) error {
@@ -301,6 +318,7 @@ func dcomExecMMC20(args dcomArgs) structs.CommandResult {
 	defer ole.CoUninitialize()
 
 	domain, username, password, hasCreds := resolveCredentials(args)
+	defer structs.ZeroString(&password) // opsec: clear password after use
 	credInfo := ""
 	if hasCreds {
 		credInfo = fmt.Sprintf("\n  Auth: %s\\%s (explicit)", domain, username)
@@ -315,6 +333,7 @@ func dcomExecMMC20(args dcomArgs) structs.CommandResult {
 		return errorf("Failed to create MMC20.Application on %s: %v%s", args.Host, err, hint)
 	}
 	defer mmc.Release()
+	defer authState.cleanup() // opsec: zero credential buffers
 
 	// Get Document property
 	docResult, err := oleutil.GetProperty(mmc, "Document")
@@ -368,6 +387,7 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 	defer ole.CoUninitialize()
 
 	domain, username, password, hasCreds := resolveCredentials(args)
+	defer structs.ZeroString(&password) // opsec: clear password after use
 	credInfo := ""
 	if hasCreds {
 		credInfo = fmt.Sprintf("\n  Auth: %s\\%s (explicit)", domain, username)
@@ -382,6 +402,7 @@ func dcomExecShellWindows(args dcomArgs) structs.CommandResult {
 		return errorf("Failed to create ShellWindows on %s: %v%s", args.Host, err, hint)
 	}
 	defer shellWin.Release()
+	defer authState.cleanup() // opsec: zero credential buffers
 
 	// Get Item(0) — returns an Internet Explorer / Explorer window
 	itemResult, err := oleutil.CallMethod(shellWin, "Item")
@@ -445,6 +466,7 @@ func dcomExecShellBrowser(args dcomArgs) structs.CommandResult {
 	defer ole.CoUninitialize()
 
 	domain, username, password, hasCreds := resolveCredentials(args)
+	defer structs.ZeroString(&password) // opsec: clear password after use
 	credInfo := ""
 	if hasCreds {
 		credInfo = fmt.Sprintf("\n  Auth: %s\\%s (explicit)", domain, username)
@@ -459,6 +481,7 @@ func dcomExecShellBrowser(args dcomArgs) structs.CommandResult {
 		return errorf("Failed to create ShellBrowserWindow on %s: %v%s", args.Host, err, hint)
 	}
 	defer browser.Release()
+	defer authState.cleanup() // opsec: zero credential buffers
 
 	// Get Document
 	docResult, err := oleutil.GetProperty(browser, "Document")
