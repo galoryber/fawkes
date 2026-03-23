@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"fawkes/pkg/structs"
 )
 
 func TestParseEnvironBlock(t *testing.T) {
@@ -447,5 +449,82 @@ func TestEnvScanResultStruct(t *testing.T) {
 
 	if r.PID != 42 || r.Process != "myservice" || r.Variable != "SECRET_KEY" {
 		t.Error("struct fields not set correctly")
+	}
+}
+
+// --- Execute routing ---
+
+func TestEnvScanExecuteEmptyParams(t *testing.T) {
+	cmd := &EnvScanCommand{}
+	result := cmd.Execute(structs.Task{Params: ""})
+	// Empty params should scan all processes — success or error depending on permissions
+	if result.Status != "success" && result.Status != "error" {
+		t.Errorf("unexpected status: %s", result.Status)
+	}
+}
+
+func TestEnvScanExecuteWithFilter(t *testing.T) {
+	cmd := &EnvScanCommand{}
+	// Plain text treated as filter when not valid JSON
+	result := cmd.Execute(structs.Task{Params: "AWS"})
+	if result.Status != "success" && result.Status != "error" {
+		t.Errorf("unexpected status: %s", result.Status)
+	}
+}
+
+func TestEnvScanExecuteWithJSONFilter(t *testing.T) {
+	cmd := &EnvScanCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"filter":"AWS"}`})
+	if result.Status != "success" && result.Status != "error" {
+		t.Errorf("unexpected status: %s", result.Status)
+	}
+}
+
+func TestEnvScanExecuteSpecificPID(t *testing.T) {
+	cmd := &EnvScanCommand{}
+	// PID 1 (init) should be readable on Linux
+	result := cmd.Execute(structs.Task{Params: `{"pid":1}`})
+	// May succeed or fail depending on permissions
+	if result.Status != "success" && result.Status != "error" {
+		t.Errorf("unexpected status: %s", result.Status)
+	}
+}
+
+func TestEnvScanExecuteInvalidPID(t *testing.T) {
+	cmd := &EnvScanCommand{}
+	// PID 99999999 shouldn't exist
+	result := cmd.Execute(structs.Task{Params: `{"pid":99999999}`})
+	if result.Status != "error" {
+		t.Errorf("expected error for nonexistent PID, got: %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "Failed to read") {
+		t.Errorf("expected read failure message, got: %s", result.Output)
+	}
+}
+
+func TestApplyEnvFilterEmpty(t *testing.T) {
+	results := []envScanResult{
+		{Variable: "API_KEY", Category: "API Key"},
+	}
+	// Empty filter should return nothing (no match)
+	filtered := applyEnvFilter(results, "")
+	// Empty string matches everything via strings.Contains
+	if len(filtered) != 1 {
+		t.Errorf("empty filter should match all, got %d", len(filtered))
+	}
+}
+
+func TestApplyEnvFilterCaseInsensitive(t *testing.T) {
+	results := []envScanResult{
+		{Variable: "AWS_SECRET_KEY", Category: "AWS Credential"},
+		{Variable: "db_password", Category: "Database Password"},
+	}
+	filtered := applyEnvFilter(results, "AWS")
+	if len(filtered) != 1 || filtered[0].Variable != "AWS_SECRET_KEY" {
+		t.Errorf("expected 1 AWS result, got %d", len(filtered))
+	}
+	filtered = applyEnvFilter(results, "aws")
+	if len(filtered) != 1 || filtered[0].Variable != "AWS_SECRET_KEY" {
+		t.Errorf("case-insensitive filter should match, got %d", len(filtered))
 	}
 }

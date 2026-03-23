@@ -930,3 +930,101 @@ func asn1BitStringFromUint32(val uint32) asn1.BitString {
 	binary.BigEndian.PutUint32(b, val)
 	return asn1.BitString{Bytes: b, BitLength: 32}
 }
+
+// --- ticketRequestFormatOutput ---
+
+func TestTicketRequestFormatOutputKirbi(t *testing.T) {
+	args := ticketArgs{
+		Username: "Administrator",
+		Server:   "dc01.corp.local",
+		KeyType:  "aes256",
+		Format:   "kirbi",
+	}
+	realm := "CORP.LOCAL"
+	sessionKey := types.EncryptionKey{KeyType: 18, KeyValue: make([]byte, 32)}
+	start := time.Date(2026, 3, 23, 10, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 3, 24, 10, 0, 0, 0, time.UTC)
+	b64 := base64.StdEncoding.EncodeToString([]byte("test-ticket-data"))
+
+	output := ticketRequestFormatOutput(args, realm, sessionKey, start, end, b64)
+
+	checks := []struct {
+		label    string
+		expected string
+	}{
+		{"header", "TGT obtained via Overpass-the-Hash"},
+		{"user", "Administrator@CORP.LOCAL"},
+		{"kdc", "dc01.corp.local"},
+		{"key type label", "aes256"},
+		{"etype", "etype 18"},
+		{"start time", "2026-03-23 10:00:00 UTC"},
+		{"end time", "2026-03-24 10:00:00 UTC"},
+		{"format", "kirbi"},
+		{"ticket data", b64},
+		{"kirbi import", "klist -action import"},
+		{"rubeus", "Rubeus.exe ptt"},
+	}
+	for _, c := range checks {
+		if !strings.Contains(output, c.expected) {
+			t.Errorf("%s: expected output to contain %q", c.label, c.expected)
+		}
+	}
+}
+
+func TestTicketRequestFormatOutputCcache(t *testing.T) {
+	args := ticketArgs{
+		Username: "user1",
+		Server:   "kdc.test.local",
+		KeyType:  "rc4",
+		Format:   "ccache",
+	}
+	realm := "TEST.LOCAL"
+	sessionKey := types.EncryptionKey{KeyType: 23, KeyValue: make([]byte, 16)}
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)
+	b64 := "dGVzdA=="
+
+	output := ticketRequestFormatOutput(args, realm, sessionKey, start, end, b64)
+
+	if !strings.Contains(output, "ccache") {
+		t.Error("expected ccache format reference")
+	}
+	if !strings.Contains(output, "KRB5CCNAME") {
+		t.Error("ccache format should include KRB5CCNAME export instructions")
+	}
+	if strings.Contains(output, "Rubeus.exe") {
+		t.Error("ccache format should not mention Rubeus (kirbi-only)")
+	}
+	if !strings.Contains(output, "user1@TEST.LOCAL") {
+		t.Error("expected user@realm")
+	}
+}
+
+func TestTicketS4UFormatOutputCcache(t *testing.T) {
+	args := ticketArgs{
+		Username:    "svc_sql",
+		Server:      "dc01.corp.local",
+		KeyType:     "aes256",
+		Format:      "ccache",
+		SPN:         "cifs/fileserver.corp.local",
+		Impersonate: "Administrator",
+	}
+	realm := "CORP.LOCAL"
+	selfKey := types.EncryptionKey{KeyType: 18, KeyValue: make([]byte, 32)}
+	proxyKey := types.EncryptionKey{KeyType: 18, KeyValue: make([]byte, 32)}
+	start := time.Date(2026, 3, 23, 10, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 3, 24, 10, 0, 0, 0, time.UTC)
+	b64 := "dGVzdA=="
+
+	output := ticketS4UFormatOutput(args, realm, selfKey, proxyKey, start, end, b64)
+
+	if !strings.Contains(output, "ccache") {
+		t.Error("expected ccache format reference")
+	}
+	if !strings.Contains(output, "KRB5CCNAME") {
+		t.Error("ccache format should include KRB5CCNAME export instructions")
+	}
+	if strings.Contains(output, "Rubeus.exe") {
+		t.Error("ccache format should not mention Rubeus")
+	}
+}

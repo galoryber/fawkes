@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 	"testing"
+	"time"
 
 	"fawkes/pkg/structs"
 )
@@ -425,6 +426,70 @@ func TestSprayReadFull(t *testing.T) {
 	}
 	if buf[0] != 0x01 || buf[1] != 0x02 || buf[2] != 0x03 || buf[3] != 0x04 {
 		t.Errorf("expected [1,2,3,4], got %v", buf)
+	}
+}
+
+// --- sprayDelay ---
+
+func TestSprayDelayZero(t *testing.T) {
+	// Zero delay should return immediately
+	start := time.Now()
+	sprayDelay(sprayArgs{Delay: 0})
+	elapsed := time.Since(start)
+	if elapsed > 50*time.Millisecond {
+		t.Errorf("zero delay took %v, expected near-instant", elapsed)
+	}
+}
+
+func TestSprayDelayNegative(t *testing.T) {
+	// Negative delay should return immediately
+	start := time.Now()
+	sprayDelay(sprayArgs{Delay: -100})
+	elapsed := time.Since(start)
+	if elapsed > 50*time.Millisecond {
+		t.Errorf("negative delay took %v, expected near-instant", elapsed)
+	}
+}
+
+func TestSprayDelayPositive(t *testing.T) {
+	// 100ms delay with no jitter should sleep ~100ms
+	start := time.Now()
+	sprayDelay(sprayArgs{Delay: 100, Jitter: 0})
+	elapsed := time.Since(start)
+	if elapsed < 80*time.Millisecond || elapsed > 200*time.Millisecond {
+		t.Errorf("100ms delay took %v, expected ~100ms", elapsed)
+	}
+}
+
+func TestSprayDelayWithJitter(t *testing.T) {
+	// 200ms delay with 50% jitter should vary between 100-300ms
+	// Run multiple iterations to verify variance
+	var durations []time.Duration
+	for i := 0; i < 5; i++ {
+		start := time.Now()
+		sprayDelay(sprayArgs{Delay: 200, Jitter: 50})
+		durations = append(durations, time.Since(start))
+	}
+
+	for i, d := range durations {
+		// With 50% jitter on 200ms, range is 100-300ms (+ execution overhead)
+		if d < 50*time.Millisecond || d > 400*time.Millisecond {
+			t.Errorf("iteration %d: delay %v out of expected range (50-400ms)", i, d)
+		}
+	}
+}
+
+func TestSprayFormatResultsEmpty(t *testing.T) {
+	result := sprayFormatResults("kerberos", sprayArgs{}, nil, []sprayResult{})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s", result.Status)
+	}
+	var parsed []sprayResult
+	if err := json.Unmarshal([]byte(result.Output), &parsed); err != nil {
+		t.Fatalf("output is not valid JSON: %v", err)
+	}
+	if len(parsed) != 0 {
+		t.Errorf("expected 0 results, got %d", len(parsed))
 	}
 }
 

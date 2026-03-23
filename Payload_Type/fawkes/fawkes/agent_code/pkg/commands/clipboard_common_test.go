@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"fawkes/pkg/structs"
 )
 
 // --- detectCredPatterns ---
@@ -244,6 +246,58 @@ func TestFormatClipEntries_Empty(t *testing.T) {
 	}
 	if !strings.Contains(output, "No clipboard changes captured") {
 		t.Error("expected empty message")
+	}
+}
+
+// --- Execute routing ---
+
+func TestClipboardExecuteInvalidJSON(t *testing.T) {
+	cmd := &ClipboardCommand{}
+	result := cmd.Execute(structs.Task{Params: "not json"})
+	if result.Status != "error" || !strings.Contains(result.Output, "parsing parameters") {
+		t.Errorf("expected parse error, got: %s", result.Output)
+	}
+}
+
+func TestClipboardExecuteUnknownAction(t *testing.T) {
+	cmd := &ClipboardCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"invalid"}`})
+	if result.Status != "error" || !strings.Contains(result.Output, "Unknown action") {
+		t.Errorf("expected unknown action error, got: %s", result.Output)
+	}
+}
+
+func TestClipboardExecuteWriteMissingData(t *testing.T) {
+	cmd := &ClipboardCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"write"}`})
+	if result.Status != "error" || !strings.Contains(result.Output, "data") {
+		t.Errorf("expected missing data error, got: %s", result.Output)
+	}
+}
+
+func TestClipboardExecuteStopNotRunning(t *testing.T) {
+	// Ensure monitor is not running
+	cm.mu.Lock()
+	cm.running = false
+	cm.mu.Unlock()
+
+	cmd := &ClipboardCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"stop"}`})
+	if result.Status != "error" || !strings.Contains(result.Output, "not running") {
+		t.Errorf("expected 'not running' error for stop, got: %s", result.Output)
+	}
+}
+
+func TestClipboardExecuteDumpNotRunning(t *testing.T) {
+	// Ensure monitor is not running
+	cm.mu.Lock()
+	cm.running = false
+	cm.mu.Unlock()
+
+	cmd := &ClipboardCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"dump"}`})
+	if result.Status != "error" || !strings.Contains(result.Output, "not running") {
+		t.Errorf("expected 'not running' error for dump, got: %s", result.Output)
 	}
 }
 
