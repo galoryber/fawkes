@@ -97,6 +97,29 @@ func TestParseDangerousCaps_OnlySysModule(t *testing.T) {
 	}
 }
 
+func TestParseDangerousCaps_UppercaseHex(t *testing.T) {
+	// Same as AllCaps but with uppercase hex to test the A-F branch
+	caps := parseDangerousCaps("000001FFFFFFFFFF")
+	if len(caps) == 0 {
+		t.Error("Uppercase hex should parse the same as lowercase")
+	}
+	found := make(map[string]bool)
+	for _, c := range caps {
+		found[c] = true
+	}
+	if !found["CAP_SYS_ADMIN"] {
+		t.Errorf("Expected CAP_SYS_ADMIN in uppercase hex caps, got %v", caps)
+	}
+}
+
+func TestParseDangerousCaps_MixedCase(t *testing.T) {
+	// Mix of uppercase and lowercase hex
+	caps := parseDangerousCaps("000001FfFfFfFfFf")
+	if len(caps) == 0 {
+		t.Error("Mixed case hex should parse correctly")
+	}
+}
+
 func TestIdentifyDangerousCaps(t *testing.T) {
 	status := "Name:\ttest\nCapEff:\t000001ffffffffff\nSeccomp:\t0\n"
 	caps := identifyDangerousCaps(status)

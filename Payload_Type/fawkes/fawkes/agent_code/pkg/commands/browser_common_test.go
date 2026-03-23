@@ -38,6 +38,15 @@ func TestChromeTimeToString(t *testing.T) {
 	}
 }
 
+func TestChromeTimeToString_PreEpochChrome(t *testing.T) {
+	// A Chrome-epoch timestamp (> 1e13) that represents a date before Unix epoch
+	// 50000000000000 < 11644473600000000 (Chrome epoch offset), so unixMicros < 0
+	got := chromeTimeToString(50000000000000)
+	if got != "unknown" {
+		t.Errorf("expected 'unknown' for pre-epoch Chrome timestamp, got %q", got)
+	}
+}
+
 func TestExtractBookmarks(t *testing.T) {
 	root := bookmarkNode{
 		Type: "folder",
