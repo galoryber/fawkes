@@ -310,8 +310,8 @@ func TestScanFileForSecrets_DatabricksToken(t *testing.T) {
 
 func TestSecretPatternsCompile(t *testing.T) {
 	// Verify all patterns compiled successfully
-	if len(secretPatterns) < 25 {
-		t.Errorf("expected at least 25 secret patterns, got %d", len(secretPatterns))
+	if len(secretPatterns) < 33 {
+		t.Errorf("expected at least 33 secret patterns, got %d", len(secretPatterns))
 	}
 	for _, p := range secretPatterns {
 		if p.Name == "" {
@@ -320,6 +320,81 @@ func TestSecretPatternsCompile(t *testing.T) {
 		if p.Pattern == nil {
 			t.Errorf("pattern %q has nil regex", p.Name)
 		}
+	}
+}
+
+func TestScanFileForSecrets_GoogleAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "gcp.env")
+	// AIza + 35 alphanumeric chars = 39 total
+	os.WriteFile(f, []byte("credential=AIzaSyA01234567890123456789012345678ABC\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	found := false
+	for _, r := range results {
+		if r.Type == "Google API Key" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		types := make([]string, len(results))
+		for i, r := range results {
+			types[i] = r.Type
+		}
+		t.Errorf("expected to find Google API Key in results, got types: %v", types)
+	}
+}
+
+func TestScanFileForSecrets_TelegramBotToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "bot.conf")
+	// Pattern: [0-9]{8,10}:AA[0-9A-Za-z_-]{33}
+	// 1234567890 (10 digits) : AA + 33 alphanumeric chars
+	os.WriteFile(f, []byte("BOT_TOKEN=1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaBx\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	found := false
+	for _, r := range results {
+		if r.Type == "Telegram Bot Token" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		types := make([]string, len(results))
+		for i, r := range results {
+			types[i] = r.Type
+		}
+		t.Errorf("expected to find Telegram Bot Token in results, got types: %v", types)
+	}
+}
+
+func TestScanFileForSecrets_MailgunKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "mail.env")
+	os.WriteFile(f, []byte("MAILGUN_KEY=key-"+strings.Repeat("a1b2c3d4", 4)+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Mailgun API Key")
+	}
+	if results[0].Type != "Mailgun API Key" {
+		t.Errorf("type = %q, want 'Mailgun API Key'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_SquareToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "square.env")
+	os.WriteFile(f, []byte("SQUARE_TOKEN=sq0atp-"+strings.Repeat("AbCd", 6)+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Square Access Token")
+	}
+	if results[0].Type != "Square Access Token" {
+		t.Errorf("type = %q, want 'Square Access Token'", results[0].Type)
 	}
 }
 

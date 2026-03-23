@@ -74,6 +74,15 @@ var secretPatterns = func() []secretPattern {
 		{"OpenAI API Key", `sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}`},
 		{"Shopify Token", `shp(at|ca|pa|ss)_[a-fA-F0-9]{32}`},
 		{"Databricks Token", `dapi[a-f0-9]{32}`},
+		// Additional high-value patterns
+		{"Google API Key", `AIza[0-9A-Za-z\-_]{35}`},
+		{"Telegram Bot Token", `[0-9]{8,10}:AA[0-9A-Za-z_-]{33}`},
+		{"Docker Hub PAT", `dckr_pat_[A-Za-z0-9_-]{50,}`},
+		{"Discord Bot Token", `[NM][A-Za-z0-9]{23,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}`},
+		{"Cloudflare API Token", `(?i)cloudflare[_-]?api[_-]?(token|key)\s*[:=]\s*['"]?[A-Za-z0-9_-]{37,}['"]?`},
+		{"Mailgun API Key", `key-[0-9a-zA-Z]{32}`},
+		{"Square Access Token", `sq0[a-z]{3}-[0-9A-Za-z\-_]{22,}`},
+		{"Atlassian API Token", `(?i)(jira|confluence|atlassian|bitbucket)[_-]?(api[_-]?)?(token|key|secret)\s*[:=]\s*['"]?[A-Za-z0-9+/=_-]{20,}['"]?`},
 	}
 
 	compiled := make([]secretPattern, 0, len(patterns))
