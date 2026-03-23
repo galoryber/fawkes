@@ -321,6 +321,134 @@ func TestScanHistoryLines_FindingFields(t *testing.T) {
 	}
 }
 
+// --- Edge cases for individual patterns ---
+
+func TestScanHistoryLines_CurlAuthorizationHeader(t *testing.T) {
+	lines := []string{
+		`curl -H "Authorization: Bearer eyJtoken" https://api.example.com`,
+		`curl -H "Content-Type: application/json" https://api.example.com`, // not auth, should NOT match
+	}
+	findings := scanHistoryLines(lines, "Bash", "test")
+	if len(findings) != 1 {
+		t.Fatalf("expected 1 finding (non-auth header excluded), got %d", len(findings))
+	}
+	if !strings.Contains(findings[0].Value, "Bearer") {
+		t.Errorf("expected Bearer in value, got %q", findings[0].Value)
+	}
+}
+
+func TestScanHistoryLines_ExportNonSensitive(t *testing.T) {
+	// Environment variables that don't contain sensitive keywords should be ignored
+	lines := []string{
+		"export GOPATH=/home/user/go",
+		"export EDITOR=vim",
+		"export LANG=en_US.UTF-8",
+		"export HISTSIZE=10000",
+	}
+	findings := scanHistoryLines(lines, "Bash", "test")
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings for non-sensitive exports, got %d", len(findings))
+	}
+}
+
+func TestScanHistoryLines_MySQLInteractivePrompt(t *testing.T) {
+	// mysql -p (with space, no password) prompts interactively — should NOT match
+	lines := []string{
+		"mysql -u root -p",
+		"mysql -u root -p -h localhost",
+		"mysql -u root -p --database test",
+	}
+	findings := scanHistoryLines(lines, "Bash", "test")
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings for interactive mysql -p, got %d", len(findings))
+	}
+}
+
+func TestScanHistoryLines_MultiplePatternsSameLine(t *testing.T) {
+	// Line matches both "export" and "curl" patterns
+	line := "export API_TOKEN=secret123 && curl -u user:pass https://api.example.com"
+	findings := scanHistoryLines([]string{line}, "Bash", "test")
+	// Both patterns should match
+	if len(findings) < 2 {
+		t.Errorf("expected at least 2 findings for multi-match line, got %d", len(findings))
+	}
+}
+
+func TestScanHistoryLines_GitCloneSSH(t *testing.T) {
+	// SSH git URLs should NOT match (git@ is not a token)
+	lines := []string{
+		"git clone git@github.com:user/repo.git",
+		"git clone git@bitbucket.org:team/project.git",
+	}
+	findings := scanHistoryLines(lines, "Bash", "test")
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings for SSH git clone, got %d", len(findings))
+	}
+}
+
+func TestScanHistoryLines_GitCloneNoAuth(t *testing.T) {
+	// Public HTTPS git clone without token should NOT match
+	lines := []string{
+		"git clone https://github.com/user/repo.git",
+		"git clone https://gitlab.com/user/project.git",
+	}
+	findings := scanHistoryLines(lines, "Bash", "test")
+	if len(findings) != 0 {
+		t.Errorf("expected 0 findings for public git clone, got %d", len(findings))
+	}
+}
+
+func TestParseZshHistory_NoSemicolon(t *testing.T) {
+	// Malformed zsh extended history — no semicolon
+	input := `: 1234567890
+regular line
+`
+	lines := parseZshHistory([]byte(input))
+	// Should still parse, first line stays as-is
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines, got %d", len(lines))
+	}
+}
+
+func TestParseFishHistory_IgnoresNonCmd(t *testing.T) {
+	input := `- cmd: ls -la
+  when: 1234567890
+  paths:
+    - /tmp
+- cmd: pwd
+  when: 1234567891
+`
+	lines := parseFishHistory([]byte(input))
+	if len(lines) != 2 {
+		t.Fatalf("expected 2 lines (only cmd lines), got %d: %v", len(lines), lines)
+	}
+}
+
+func TestHistoryCredPatterns_AllHaveCategory(t *testing.T) {
+	for i, p := range historyCredPatterns {
+		if p.category == "" {
+			t.Errorf("pattern %d has empty category", i)
+		}
+		if p.contains == "" {
+			t.Errorf("pattern %d has empty contains", i)
+		}
+		if p.matchFunc == nil {
+			t.Errorf("pattern %d has nil matchFunc", i)
+		}
+	}
+}
+
+func TestHistoryFiles_AllHaveName(t *testing.T) {
+	for i, hf := range historyFiles {
+		if hf.name == "" {
+			t.Errorf("historyFile %d has empty name", i)
+		}
+		if len(hf.relPaths) == 0 {
+			t.Errorf("historyFile %d has no paths", i)
+		}
+	}
+}
+
 // --- credIndentLines ---
 
 func TestCredIndentLines_Basic(t *testing.T) {
