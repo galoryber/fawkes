@@ -131,6 +131,7 @@ func parseCapabilities() map[string]uint64 {
 			}
 		}
 	}
+	structs.ZeroBytes(data)
 	return caps
 }
 
@@ -159,6 +160,7 @@ func getSecurityContext() string {
 	// SELinux
 	if data, err := os.ReadFile("/proc/self/attr/current"); err == nil {
 		ctx := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
 		if ctx != "" && ctx != "unconfined" {
 			return "SELinux: " + ctx
 		}
@@ -167,6 +169,7 @@ func getSecurityContext() string {
 	// AppArmor
 	if data, err := os.ReadFile("/proc/self/attr/apparmor/current"); err == nil {
 		ctx := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
 		if ctx != "" && ctx != "unconfined" {
 			return "AppArmor: " + ctx
 		}
@@ -175,6 +178,7 @@ func getSecurityContext() string {
 	// Check LSM from /sys/kernel/security/lsm
 	if data, err := os.ReadFile("/sys/kernel/security/lsm"); err == nil {
 		lsm := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
 		if lsm != "" {
 			return "LSM: " + lsm
 		}

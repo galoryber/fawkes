@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"fawkes/pkg/structs"
 )
 
 func uptimePlatform() string {
@@ -17,6 +19,7 @@ func uptimePlatform() string {
 	if err != nil {
 		return fmt.Sprintf("Error reading /proc/uptime: %v", err)
 	}
+	defer structs.ZeroBytes(data)
 
 	fields := strings.Fields(string(data))
 	if len(fields) < 1 {
@@ -40,6 +43,7 @@ func uptimePlatform() string {
 	loadData, err := os.ReadFile("/proc/loadavg")
 	if err == nil {
 		loadFields := strings.Fields(string(loadData))
+		structs.ZeroBytes(loadData)
 		if len(loadFields) >= 3 {
 			sb.WriteString(fmt.Sprintf("  Load avg:  %s %s %s (1m 5m 15m)\n", loadFields[0], loadFields[1], loadFields[2]))
 		}

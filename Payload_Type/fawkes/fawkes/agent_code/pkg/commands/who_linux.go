@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"fawkes/pkg/structs"
 )
 
 const (
@@ -24,6 +26,7 @@ func whoPlatform(args whoArgs) []whoSessionEntry {
 			return nil
 		}
 	}
+	defer structs.ZeroBytes(data)
 
 	var entries []whoSessionEntry
 	for i := 0; i+whoUtmpRecordSize <= len(data); i += whoUtmpRecordSize {

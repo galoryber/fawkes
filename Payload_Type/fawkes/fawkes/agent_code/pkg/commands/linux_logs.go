@@ -155,6 +155,7 @@ func linuxLogsRead(args linuxLogsArgs) structs.CommandResult {
 	}
 
 	lines := strings.Split(strings.TrimRight(string(content), "\n"), "\n")
+	structs.ZeroBytes(content)
 
 	// Apply search filter if specified
 	if args.Search != "" {
@@ -208,6 +209,7 @@ func linuxLogsLogins(args linuxLogsArgs) structs.CommandResult {
 		if err != nil {
 			continue
 		}
+		defer structs.ZeroBytes(data)
 
 		sb.WriteString(fmt.Sprintf("=== %s ===\n", path))
 
@@ -308,6 +310,7 @@ func linuxLogsTruncate(args linuxLogsArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error reading %s: %v", args.File, err)
 	}
+	defer structs.ZeroBytes(content)
 
 	if args.Search == "" {
 		return errorResult("Error: search parameter required (lines matching this string will be removed)")

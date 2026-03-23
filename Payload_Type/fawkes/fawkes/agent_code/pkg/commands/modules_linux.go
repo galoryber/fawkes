@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"fawkes/pkg/structs"
 )
 
 func listProcessModules(pid int) ([]ModuleInfo, error) {
@@ -16,6 +18,7 @@ func listProcessModules(pid int) ([]ModuleInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("reading %s: %v", mapsPath, err)
 	}
+	defer structs.ZeroBytes(data)
 
 	// Track first/last address per path for size calculation
 	type addrRange struct {

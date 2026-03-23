@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"fawkes/pkg/structs"
 )
 
 // Linux utmp record structure
@@ -32,6 +34,7 @@ func lastPlatform(args lastArgs) []lastLoginEntry {
 
 		recSize := detectRecordSize(data)
 		if recSize == 0 {
+			structs.ZeroBytes(data)
 			continue
 		}
 
@@ -76,6 +79,8 @@ func lastPlatform(args lastArgs) []lastLoginEntry {
 				LoginTime: loginTime.Format("2006-01-02 15:04:05"),
 			})
 		}
+
+		structs.ZeroBytes(data)
 
 		if len(entries) > 0 {
 			break
@@ -124,6 +129,7 @@ func lastFromAuthLogEntries(args lastArgs) []lastLoginEntry {
 		}
 
 		lines := strings.Split(string(data), "\n")
+		structs.ZeroBytes(data)
 		for i := len(lines) - 1; i >= 0 && len(entries) < args.Count; i-- {
 			line := lines[i]
 			if !strings.Contains(line, "session opened") && !strings.Contains(line, "Accepted") {

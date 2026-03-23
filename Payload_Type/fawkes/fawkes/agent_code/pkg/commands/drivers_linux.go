@@ -7,6 +7,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"fawkes/pkg/structs"
 )
 
 func enumerateDrivers() ([]DriverInfo, error) {
@@ -15,6 +17,7 @@ func enumerateDrivers() ([]DriverInfo, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read /proc/modules: %v", err)
 	}
+	defer structs.ZeroBytes(data)
 
 	var drivers []DriverInfo
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {

@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"fawkes/pkg/structs"
 )
 
 func enumerateDrivers() ([]DriverInfo, error) {
@@ -82,6 +84,7 @@ func readKextVersion(kextPath string) string {
 
 	// Simple XML parsing for CFBundleShortVersionString
 	content := string(data)
+	structs.ZeroBytes(data)
 	key := "CFBundleShortVersionString"
 	idx := strings.Index(content, key)
 	if idx < 0 {

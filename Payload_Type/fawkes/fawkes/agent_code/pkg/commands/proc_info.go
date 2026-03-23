@@ -81,11 +81,13 @@ func procInfoDetail(pid int) structs.CommandResult {
 	if data, err := os.ReadFile(filepath.Join(procDir, "cmdline")); err == nil {
 		cmdline := strings.ReplaceAll(string(data), "\x00", " ")
 		sb.WriteString(fmt.Sprintf("Command line: %s\n", strings.TrimSpace(cmdline)))
+		structs.ZeroBytes(data)
 	}
 
 	// Comm (short process name)
 	if data, err := os.ReadFile(filepath.Join(procDir, "comm")); err == nil {
 		sb.WriteString(fmt.Sprintf("Process name: %s\n", strings.TrimSpace(string(data))))
+		structs.ZeroBytes(data)
 	}
 
 	// Status (contains UID, GID, capabilities, threads, memory)
@@ -105,6 +107,7 @@ func procInfoDetail(pid int) structs.CommandResult {
 				sb.WriteString(fmt.Sprintf("  %s\n", strings.TrimSpace(line)))
 			}
 		}
+		structs.ZeroBytes(data)
 	}
 
 	// Exe (actual binary path)
@@ -129,6 +132,7 @@ func procInfoDetail(pid int) structs.CommandResult {
 	// Environment variables
 	if data, err := os.ReadFile(filepath.Join(procDir, "environ")); err == nil {
 		envVars := strings.Split(string(data), "\x00")
+		structs.ZeroBytes(data)
 		sb.WriteString(fmt.Sprintf("\nEnvironment (%d vars):\n", len(envVars)-1))
 		for _, v := range envVars {
 			v = strings.TrimSpace(v)
@@ -148,6 +152,7 @@ func procInfoDetail(pid int) structs.CommandResult {
 				sb.WriteString(fmt.Sprintf("  %s\n", line))
 			}
 		}
+		structs.ZeroBytes(data)
 	}
 
 	// Namespaces
@@ -197,6 +202,7 @@ func procInfoDetail(pid int) structs.CommandResult {
 				}
 			}
 		}
+		structs.ZeroBytes(data)
 		sb.WriteString(fmt.Sprintf("\nLoaded libraries (%d):\n", len(libs)))
 		for lib := range libs {
 			sb.WriteString(fmt.Sprintf("  %s\n", lib))
@@ -227,6 +233,7 @@ func procInfoConnections() structs.CommandResult {
 		}
 
 		lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+		structs.ZeroBytes(data)
 		if len(lines) <= 1 {
 			continue
 		}
@@ -270,6 +277,7 @@ func procInfoMounts() structs.CommandResult {
 	if err != nil {
 		return errorf("Error reading /proc/self/mounts: %v", err)
 	}
+	defer structs.ZeroBytes(data)
 
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
 		fields := strings.Fields(line)
@@ -290,6 +298,7 @@ func procInfoModules() structs.CommandResult {
 	if err != nil {
 		return errorf("Error reading /proc/modules: %v", err)
 	}
+	defer structs.ZeroBytes(data)
 
 	sb.WriteString(fmt.Sprintf("%-30s %-12s %s\n", "Module", "Size", "Used By"))
 	sb.WriteString(strings.Repeat("-", 70) + "\n")
@@ -420,6 +429,7 @@ func findPIDForInode(inode string) string {
 				comm := pid
 				if data, err := os.ReadFile(filepath.Join(procDir, pid, "comm")); err == nil {
 					comm = fmt.Sprintf("%s(%s)", pid, strings.TrimSpace(string(data)))
+					structs.ZeroBytes(data)
 				}
 				return comm
 			}
