@@ -18,10 +18,12 @@ func credHarvestDispatch(args credHarvestArgs) structs.CommandResult {
 		return credCloud(args)
 	case "configs":
 		return credConfigs(args)
+	case "history":
+		return credHistory(args)
 	case "all":
 		return credAll(args)
 	default:
-		return errorf("Unknown action: %s\nAvailable: shadow, cloud, configs, all", args.Action)
+		return errorf("Unknown action: %s\nAvailable: shadow, cloud, configs, history, all", args.Action)
 	}
 }
 
@@ -116,8 +118,15 @@ func credAll(args credHarvestArgs) structs.CommandResult {
 
 	configs := credConfigs(args)
 	sb.WriteString(configs.Output)
+	sb.WriteString("\n")
 	if configs.Credentials != nil {
 		allCreds = append(allCreds, *configs.Credentials...)
+	}
+
+	history := credHistory(args)
+	sb.WriteString(history.Output)
+	if history.Credentials != nil {
+		allCreds = append(allCreds, *history.Credentials...)
 	}
 
 	result := structs.CommandResult{

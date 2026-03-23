@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Cross-platform credential harvesting across system files, cloud infrastructure, application configurations, Windows-specific sources, and Microsoft 365 OAuth tokens. On Unix: extracts password hashes from `/etc/shadow`, discovers cloud provider credentials, and finds application secrets. On Windows: harvests PowerShell history, sensitive environment variables, RDP connections, WiFi profiles, Windows Vault locations, and M365 OAuth/JWT tokens from TokenBroker, Teams, and Outlook.
+Cross-platform credential harvesting across system files, cloud infrastructure, application configurations, shell history, Windows-specific sources, and Microsoft 365 OAuth tokens. On Unix: extracts password hashes from `/etc/shadow`, discovers cloud provider credentials, finds application secrets, and scans shell history for leaked credentials. On Windows: harvests PowerShell history, sensitive environment variables, RDP connections, WiFi profiles, Windows Vault locations, M365 OAuth/JWT tokens, and scans shell history.
 
 {{% notice info %}}Cross-Platform — works on Windows, Linux, and macOS. Actions vary by platform.{{% /notice %}}
 
@@ -15,14 +15,14 @@ Cross-platform credential harvesting across system files, cloud infrastructure, 
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | `shadow` (Unix): system password hashes. `cloud`: cloud/infrastructure credentials. `configs`: application secrets. `windows` (Windows): PowerShell history, env vars, RDP, WiFi. `m365-tokens` (Windows): OAuth/JWT tokens from TokenBroker, Teams, Outlook. `all`: run all platform-appropriate actions. |
+| action | Yes | `shadow` (Unix): system password hashes. `cloud`: cloud/infrastructure credentials. `configs`: application secrets. `history`: scan shell history for leaked passwords, tokens, and API keys. `windows` (Windows): PowerShell history, env vars, RDP, WiFi. `m365-tokens` (Windows): OAuth/JWT tokens from TokenBroker, Teams, Outlook. `all`: run all platform-appropriate actions. |
 | user | No | Filter results by username (case-insensitive substring match) |
 
 ## Usage
 
 ### Linux/macOS
 ```
-# Extract all credentials (shadow + cloud + configs)
+# Extract all credentials (shadow + cloud + configs + history)
 cred-harvest -action all
 
 # System password hashes (/etc/shadow, /etc/passwd, /etc/gshadow)
@@ -34,13 +34,16 @@ cred-harvest -action cloud
 # Application configs and secrets
 cred-harvest -action configs
 
+# Scan shell history for leaked credentials
+cred-harvest -action history
+
 # Filter by specific user
 cred-harvest -action shadow -user root
 ```
 
 ### Windows
 ```
-# Extract all credentials (windows + cloud + configs + m365-tokens)
+# Extract all credentials (windows + cloud + configs + m365-tokens + history)
 cred-harvest -action all
 
 # Windows-specific sources (PowerShell history, env vars, RDP, WiFi)
@@ -54,6 +57,9 @@ cred-harvest -action cloud
 
 # Application configs and secrets (SSH keys, git creds, .env files)
 cred-harvest -action configs
+
+# Scan shell/PowerShell history for leaked credentials
+cred-harvest -action history
 
 # Filter by user profile
 cred-harvest -action all -user admin
@@ -99,6 +105,40 @@ Searches for application secrets and credentials:
 | System DB Configs (Unix) | `/etc/mysql/debian.cnf`, PostgreSQL `pg_hba.conf`, Redis, MongoDB configs |
 
 For system database configs, extracts lines containing `password`, `secret`, `token`, or `key`.
+
+## History Action (Cross-Platform)
+
+Scans shell history files for leaked credentials — passwords, tokens, and API keys accidentally typed into commands. Supports multiple shell formats and application-specific histories.
+
+| Shell/App | History Files Checked |
+|-----------|---------------------|
+| Bash | `~/.bash_history` |
+| Zsh | `~/.zsh_history`, `~/.zhistory` (extended format supported) |
+| Fish | `~/.local/share/fish/fish_history` (YAML format parsed) |
+| MySQL | `~/.mysql_history` |
+| PostgreSQL | `~/.psql_history` |
+| Redis CLI | `~/.rediscli_history` |
+| Python | `~/.python_history` |
+| Node.js | `~/.node_repl_history` |
+| PowerShell (Windows) | `%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt` |
+
+**Credential patterns detected:**
+
+| Pattern | Example | Category |
+|---------|---------|----------|
+| `sshpass -p` | `sshpass -p 'secret' ssh user@host` | SSH Password |
+| `mysql -p<pass>` | `mysql -u root -pSECRET mydb` | MySQL Password |
+| `curl -u user:pass` | `curl -u admin:pass123 https://api.example.com` | HTTP Credential |
+| `curl -H Authorization` | `curl -H "Authorization: Bearer eyJ..."` | HTTP Credential |
+| `wget --password=` | `wget --password=secret ftp://server/file` | HTTP Credential |
+| `docker login -p` | `docker login -p token registry.io` | Docker Registry Password |
+| `htpasswd -b` | `htpasswd -b .htpasswd admin pass` | htpasswd Password |
+| `psql postgres://` | `psql postgres://user:pass@host/db` | PostgreSQL Credential |
+| `export SECRET_KEY=` | `export AWS_SECRET_ACCESS_KEY=wJalr...` | Exported Secret |
+| `git clone https://token@` | `git clone https://ghp_abc@github.com/...` | Git Token |
+| `echo pass \| sudo -S` | `echo 'pass' \| sudo -S cmd` | Sudo Password |
+
+Findings are deduplicated and grouped by category. Values are partially redacted in output (first 4 + last 4 characters for values >12 chars).
 
 ## Windows Action (Windows Only)
 
@@ -153,10 +193,14 @@ Credentials are searchable in the Mythic UI under the Credentials tab.
 - Large credential files (>10KB for cloud, >4KB for configs) show metadata only, not contents
 - Environment variable values longer than 40/60 characters are partially masked
 - PowerShell history may contain sensitive commands — entire history is returned for review
+- History action reads history files from disk — file read only, no subprocess execution
+- Shell history credential values are partially redacted in output (first 4 + last 4 characters)
+- History findings are deduplicated to reduce output volume
 
 ## MITRE ATT&CK Mapping
 
 - **T1552.001** — Unsecured Credentials: Credentials In Files
+- **T1552.003** — Unsecured Credentials: Bash History
 - **T1552.004** — Unsecured Credentials: Private Keys
 - **T1003.008** — OS Credential Dumping: /etc/passwd and /etc/shadow
 - **T1528** — Steal Application Access Token
