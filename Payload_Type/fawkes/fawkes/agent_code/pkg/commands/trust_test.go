@@ -318,11 +318,17 @@ func TestTrustAttributesStr(t *testing.T) {
 	}{
 		{0, "None"},
 		{trustAttrNonTransitive, "NON_TRANSITIVE"},
+		{trustAttrUplevelOnly, "UPLEVEL_ONLY"},
 		{trustAttrFilterSIDs, "SID_FILTERING"},
 		{trustAttrForestTransitive, "FOREST_TRANSITIVE"},
+		{trustAttrCrossOrganization, "CROSS_ORGANIZATION"},
 		{trustAttrWithinForest, "WITHIN_FOREST"},
+		{trustAttrTreatAsExternal, "TREAT_AS_EXTERNAL"},
 		{trustAttrUsesRC4Encryption, "RC4_ENCRYPTION"},
 		{trustAttrUsesAESKeys, "AES_KEYS"},
+		{trustAttrCrossOrgNoTGTDeleg, "NO_TGT_DELEGATION"},
+		{trustAttrPIMTrust, "PIM_TRUST"},
+		{trustAttrCrossOrgEnableTGTDe, "ENABLE_TGT_DELEGATION"},
 		{trustAttrWithinForest | trustAttrUsesAESKeys, "WITHIN_FOREST"},
 	}
 
@@ -337,6 +343,12 @@ func TestTrustAttributesStr(t *testing.T) {
 	combined := trustAttributesStr(trustAttrWithinForest | trustAttrUsesAESKeys)
 	if !strings.Contains(combined, "WITHIN_FOREST") || !strings.Contains(combined, "AES_KEYS") {
 		t.Errorf("combined flags should contain both WITHIN_FOREST and AES_KEYS, got %q", combined)
+	}
+
+	// Unknown flag bits that don't match any known pattern
+	unknown := trustAttributesStr(0x10000)
+	if !strings.Contains(unknown, "0x10000") {
+		t.Errorf("expected hex fallback for unknown flags, got %q", unknown)
 	}
 }
 

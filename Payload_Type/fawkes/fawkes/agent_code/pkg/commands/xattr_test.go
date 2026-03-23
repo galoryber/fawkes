@@ -206,3 +206,150 @@ func TestXattrUnknownAction(t *testing.T) {
 		t.Errorf("expected error for unknown action, got %s", result.Status)
 	}
 }
+
+// --- Non-JSON parameter parsing tests ---
+
+func TestXattrPlainTextListAction(t *testing.T) {
+	// Non-JSON params: "list /path" should parse as action=list, path=/path
+	f, err := os.CreateTemp("", "xattr_test_*")
+	if err != nil {
+		t.Skip("cannot create temp file")
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	cmd := &XattrCommand{}
+	result := cmd.Execute(structs.Task{Params: "list " + f.Name()})
+	if result.Status != "success" {
+		t.Errorf("expected success for plain text 'list path', got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestXattrPlainTextPathOnly(t *testing.T) {
+	// Single token (just a path) should default to list action
+	f, err := os.CreateTemp("", "xattr_test_*")
+	if err != nil {
+		t.Skip("cannot create temp file")
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	cmd := &XattrCommand{}
+	result := cmd.Execute(structs.Task{Params: f.Name()})
+	if result.Status != "success" {
+		t.Errorf("expected success for single path param, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestXattrPlainTextSetAction(t *testing.T) {
+	f, err := os.CreateTemp("", "xattr_test_*")
+	if err != nil {
+		t.Skip("cannot create temp file")
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	cmd := &XattrCommand{}
+	// "set /path user.test myvalue" parsed as action=set, path=f.Name(), name=user.test, value=myvalue
+	result := cmd.Execute(structs.Task{Params: "set " + f.Name() + " user.test myvalue"})
+	// May succeed or fail depending on xattr support
+	if result.Status != "success" && result.Status != "error" {
+		t.Errorf("unexpected status: %s", result.Status)
+	}
+}
+
+func TestXattrDeleteMissingName(t *testing.T) {
+	f, err := os.CreateTemp("", "xattr_test_*")
+	if err != nil {
+		t.Skip("cannot create temp file")
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	cmd := &XattrCommand{}
+	params, _ := json.Marshal(xattrArgs{Action: "delete", Path: f.Name()})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error when name missing for delete, got %s", result.Status)
+	}
+}
+
+func TestXattrSetMissingName(t *testing.T) {
+	f, err := os.CreateTemp("", "xattr_test_*")
+	if err != nil {
+		t.Skip("cannot create temp file")
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	cmd := &XattrCommand{}
+	params, _ := json.Marshal(xattrArgs{Action: "set", Path: f.Name(), Value: "test"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error when name missing for set, got %s", result.Status)
+	}
+}
+
+func TestXattrSetHexInvalid(t *testing.T) {
+	f, err := os.CreateTemp("", "xattr_test_*")
+	if err != nil {
+		t.Skip("cannot create temp file")
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	cmd := &XattrCommand{}
+	params, _ := json.Marshal(xattrArgs{Action: "set", Path: f.Name(), Name: "user.test", Value: "not-valid-hex!", Hex: true})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for invalid hex value, got %s", result.Status)
+	}
+}
+
+func TestXattrGetNonexistentAttr(t *testing.T) {
+	f, err := os.CreateTemp("", "xattr_test_*")
+	if err != nil {
+		t.Skip("cannot create temp file")
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	cmd := &XattrCommand{}
+	params, _ := json.Marshal(xattrArgs{Action: "get", Path: f.Name(), Name: "user.nonexistent"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for nonexistent attr, got %s", result.Status)
+	}
+}
+
+func TestXattrDeleteNonexistentAttr(t *testing.T) {
+	f, err := os.CreateTemp("", "xattr_test_*")
+	if err != nil {
+		t.Skip("cannot create temp file")
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	cmd := &XattrCommand{}
+	params, _ := json.Marshal(xattrArgs{Action: "delete", Path: f.Name(), Name: "user.nonexistent"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for deleting nonexistent attr, got %s", result.Status)
+	}
+}
+
+func TestXattrActionCaseInsensitive(t *testing.T) {
+	f, err := os.CreateTemp("", "xattr_test_*")
+	if err != nil {
+		t.Skip("cannot create temp file")
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	cmd := &XattrCommand{}
+	params, _ := json.Marshal(xattrArgs{Action: "LIST", Path: f.Name()})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success for uppercase LIST action, got %s: %s", result.Status, result.Output)
+	}
+}

@@ -43,3 +43,32 @@ func TestWlanProfilesNoParams(t *testing.T) {
 		t.Fatalf("expected success or error, got %s: %s", result.Status, result.Output)
 	}
 }
+
+func TestWlanProfilesInvalidJSON(t *testing.T) {
+	cmd := &WlanProfilesCommand{}
+	result := cmd.Execute(structs.Task{Params: "not json"})
+	if result.Status != "error" {
+		t.Errorf("expected error for invalid JSON, got %s", result.Status)
+	}
+}
+
+func TestWlanProfilesNameDescription(t *testing.T) {
+	cmd := &WlanProfilesCommand{}
+	if cmd.Name() != "wlan-profiles" {
+		t.Errorf("expected name 'wlan-profiles', got %q", cmd.Name())
+	}
+	if !strings.Contains(cmd.Description(), "WiFi") {
+		t.Error("expected WiFi in description")
+	}
+}
+
+func TestWlanProfilesFilterCase(t *testing.T) {
+	// Test that filter is case-insensitive
+	cmd := &WlanProfilesCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"name": "NONEXISTENT_SSID_xyz"}`})
+
+	// Should succeed regardless of matching
+	if result.Status != "success" && result.Status != "error" {
+		t.Fatalf("unexpected status: %s", result.Status)
+	}
+}

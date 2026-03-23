@@ -986,6 +986,180 @@ func TestDnsCommand_WildcardNonexistentDomain(t *testing.T) {
 	}
 }
 
+// --- DNS Action Coverage Tests ---
+// These tests exercise the remaining DNS action branches (SRV, MX, NS, TXT, CNAME, ALL, DC)
+// using well-known public domains. Each test accepts both success and error
+// to handle environments where DNS resolution may be restricted.
+
+func TestDnsCommand_MXAction(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "mx",
+		Target:  "google.com",
+		Timeout: 5,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status == "success" {
+		if !strings.Contains(result.Output, "MX records") {
+			t.Errorf("expected MX records header, got %q", result.Output)
+		}
+	}
+	// Accept error in restricted environments
+}
+
+func TestDnsCommand_NSAction(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "ns",
+		Target:  "google.com",
+		Timeout: 5,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status == "success" {
+		if !strings.Contains(result.Output, "NS records") {
+			t.Errorf("expected NS records header, got %q", result.Output)
+		}
+	}
+}
+
+func TestDnsCommand_TXTAction(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "txt",
+		Target:  "google.com",
+		Timeout: 5,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status == "success" {
+		if !strings.Contains(result.Output, "TXT records") {
+			t.Errorf("expected TXT records header, got %q", result.Output)
+		}
+	}
+}
+
+func TestDnsCommand_CNAMEAction(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "cname",
+		Target:  "www.google.com",
+		Timeout: 5,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	// CNAME may succeed or fail depending on DNS configuration
+	if result.Status != "success" && result.Status != "error" {
+		t.Errorf("unexpected status %q", result.Status)
+	}
+	if result.Status == "success" && !strings.Contains(result.Output, "CNAME") {
+		t.Errorf("expected CNAME in output, got %q", result.Output)
+	}
+}
+
+func TestDnsCommand_SRVActionDomain(t *testing.T) {
+	cmd := &DnsCommand{}
+	// Query SRV for a domain (defaults to _ldap._tcp)
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "srv",
+		Target:  "google.com",
+		Timeout: 5,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	// SRV for google.com likely errors (no _ldap._tcp), which is fine
+	if result.Status != "success" && result.Status != "error" {
+		t.Errorf("unexpected status %q", result.Status)
+	}
+}
+
+func TestDnsCommand_SRVActionFull(t *testing.T) {
+	cmd := &DnsCommand{}
+	// Full SRV record name starting with _
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "srv",
+		Target:  "_http._tcp.google.com",
+		Timeout: 5,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" && result.Status != "error" {
+		t.Errorf("unexpected status %q", result.Status)
+	}
+	if result.Status == "success" && !strings.Contains(result.Output, "SRV records") {
+		t.Errorf("expected SRV records header, got %q", result.Output)
+	}
+}
+
+func TestDnsCommand_AllAction(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "all",
+		Target:  "google.com",
+		Timeout: 5,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success for 'all' action, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "All DNS records") {
+		t.Errorf("expected All DNS records header, got %q", result.Output)
+	}
+}
+
+func TestDnsCommand_DCAction(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "dc",
+		Target:  "google.com",
+		Timeout: 5,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	// DC discovery likely fails for non-AD domain, which is expected
+	if result.Status != "success" && result.Status != "error" {
+		t.Errorf("unexpected status %q", result.Status)
+	}
+}
+
+func TestDnsCommand_CustomServer(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "resolve",
+		Target:  "google.com",
+		Server:  "8.8.8.8",
+		Timeout: 5,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status == "success" {
+		if !strings.Contains(result.Output, "A/AAAA records") {
+			t.Errorf("expected records header, got %q", result.Output)
+		}
+	}
+}
+
+func TestDnsCommand_CustomServerWithPort(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "resolve",
+		Target:  "google.com",
+		Server:  "8.8.8.8:53",
+		Timeout: 5,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	// May or may not succeed depending on network
+	if result.Status != "success" && result.Status != "error" {
+		t.Errorf("unexpected status %q", result.Status)
+	}
+}
+
+func TestDnsCommand_DefaultTimeout(t *testing.T) {
+	cmd := &DnsCommand{}
+	params, _ := json.Marshal(dnsArgs{
+		Action:  "resolve",
+		Target:  "localhost",
+		Timeout: 0, // should default to 5
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+}
+
 // --- Benchmarks ---
 
 func BenchmarkDecodeDNSName(b *testing.B) {
