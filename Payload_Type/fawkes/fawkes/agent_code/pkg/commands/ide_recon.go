@@ -551,6 +551,7 @@ func ideJetBrainsRecentProjects(sb *strings.Builder, productPath string) {
 			return
 		}
 	}
+	defer structs.ZeroBytes(data) // opsec: clear recent project paths (may reveal sensitive project names)
 
 	projects := ideParseJetBrainsRecentXML(string(data))
 	if len(projects) == 0 {
