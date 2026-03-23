@@ -1287,3 +1287,54 @@ func TestResolveProviderGUID_KnownSecurityProvidersConsistency(t *testing.T) {
 		})
 	}
 }
+
+// --- Edge case tests for near-100% functions ---
+
+func TestIsGUID_NonDashAtDashPosition(t *testing.T) {
+	// Position 8 should be a dash but has '0' instead
+	// "12345678" (8 hex) + "0" (pos 8) + "abcd" (4) + "-" (pos 13) + "ef01" (4) + "-" (pos 18) + "2345" (4) + "-" (pos 23) + "678901234567" (12) = 36
+	result := isGUID("123456780abcd-ef01-2345-678901234567")
+	if result {
+		t.Error("expected false when dash position has non-dash character")
+	}
+}
+
+func TestExtractXMLField_AttrTagUnclosedAngleBracket(t *testing.T) {
+	// Attribute-style open tag with no closing '>'
+	result := extractXMLField("<EventID Qualifiers='0'", "EventID")
+	if result != "" {
+		t.Errorf("expected empty for unclosed attribute tag, got %q", result)
+	}
+}
+
+func TestExtractXMLAttr_UnclosedQuote(t *testing.T) {
+	// Attribute value with no closing quote
+	result := extractXMLAttr("<TimeCreated SystemTime='2025-01-15", "TimeCreated", "SystemTime")
+	if result != "" {
+		t.Errorf("expected empty for unclosed quote, got %q", result)
+	}
+}
+
+func TestExtractXMLAttr_DoubleQuotedUnclosed(t *testing.T) {
+	result := extractXMLAttr(`<Provider Name="TestProvider`, "Provider", "Name")
+	if result != "" {
+		t.Errorf("expected empty for unclosed double quote, got %q", result)
+	}
+}
+
+func TestBuildTriggerXML_WeeklyWithCustomTime(t *testing.T) {
+	result := buildTriggerXML("WEEKLY", "16:00")
+	if !strings.Contains(result, "T16:00:00") {
+		t.Errorf("expected custom time in weekly trigger, got %q", result)
+	}
+	if !strings.Contains(result, "<WeeksInterval>") {
+		t.Error("expected WeeksInterval in weekly trigger")
+	}
+}
+
+func TestBuildTriggerXML_OnceDefaultTime(t *testing.T) {
+	result := buildTriggerXML("ONCE", "")
+	if !strings.Contains(result, "T23:59:00") {
+		t.Errorf("expected default 23:59 time for ONCE trigger, got %q", result)
+	}
+}
