@@ -10,7 +10,7 @@ hidden = false
 Cross-platform privilege escalation enumeration. Scans for common privilege escalation vectors with platform-specific checks for Windows, Linux, and macOS.
 
 - **Windows:** Token privileges (potato attacks, SeDebug, SeBackup), unquoted service paths, modifiable service binaries, AlwaysInstallElevated, auto-logon credentials, UAC configuration, LSA protection, writable PATH directories, unattended install files
-- **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse, PATH hijacking, docker/lxd/podman group
+- **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse, PATH hijacking, docker/lxd/podman group, dangerous group memberships, Polkit rules, modprobe hooks
 - **macOS:** LaunchDaemons/Agents, TCC database, dylib hijacking, SIP status
 
 ## Arguments
@@ -44,6 +44,9 @@ Cross-platform privilege escalation enumeration. Scans for common privilege esca
 - **sudo-token** — Check for sudo timestamp files and ptrace_scope (token reuse via ptrace)
 - **path-hijack** — Check for writable directories in PATH before system directories (command hijacking)
 - **docker-group** — Check docker/lxd/podman group membership and Docker socket access (trivial root escalation)
+- **group** — Check membership in 18 dangerous groups (disk, shadow, adm, sudo, kvm, etc.) with risk levels and exploitation guidance
+- **polkit** — Enumerate Polkit JS rules, legacy .pkla files, and action policies. Detects writable rules directories, SUID pkexec (CVE-2021-4034), and unauthenticated access rules
+- **modprobe** — Scan modprobe.d for writable configs and install/remove hooks that execute commands on module load. Check module auto-load lists and modprobe SUID
 
 ### macOS-Only Actions
 
@@ -67,6 +70,9 @@ privesc-check -action systemd
 privesc-check -action sudo-token
 privesc-check -action path-hijack
 privesc-check -action docker-group
+privesc-check -action group
+privesc-check -action polkit
+privesc-check -action modprobe
 privesc-check -action launchdaemons
 ```
 
