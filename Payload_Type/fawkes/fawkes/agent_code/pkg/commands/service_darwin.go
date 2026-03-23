@@ -177,6 +177,7 @@ func serviceQueryDarwin(args serviceArgs) structs.CommandResult {
 		if readErr == nil && len(content) > 0 {
 			sb.WriteString("\nPlist contents:\n")
 			text := string(content)
+			structs.ZeroBytes(content)
 			if len(text) > 2000 {
 				text = text[:2000] + "\n[TRUNCATED]"
 			}

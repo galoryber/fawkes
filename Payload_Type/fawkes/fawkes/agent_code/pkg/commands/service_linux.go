@@ -214,6 +214,7 @@ func serviceQueryLinux(args serviceArgs) structs.CommandResult {
 		if readErr == nil && len(unitContent) > 0 {
 			sb.WriteString(fmt.Sprintf("\nUnit file (%s):\n", fragPath))
 			content := string(unitContent)
+			structs.ZeroBytes(unitContent)
 			if len(content) > 2000 {
 				content = content[:2000] + "\n[TRUNCATED]"
 			}

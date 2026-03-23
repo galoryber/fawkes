@@ -107,6 +107,7 @@ func parseUtmpxForLogonSessions() ([]utmpxEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot read utmpx: %v", err)
 	}
+	defer structs.ZeroBytes(data)
 
 	if len(data) < utmpxRecordSize {
 		return nil, nil
