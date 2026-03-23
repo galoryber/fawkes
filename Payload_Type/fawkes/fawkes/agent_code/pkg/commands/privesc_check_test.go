@@ -590,3 +590,173 @@ func TestPrivescCheckDockerGroup(t *testing.T) {
 		t.Error("expected non-empty output")
 	}
 }
+
+// --- Dangerous Groups tests (Session 216) ---
+
+func TestPrivescCheck_GroupAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"group"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Current user groups") {
+		t.Error("output should list current user groups")
+	}
+	if !strings.Contains(result.Output, "Dangerous group memberships") {
+		t.Error("output should contain dangerous group memberships heading")
+	}
+}
+
+func TestPrivescCheck_GroupPlainText(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	result := cmd.Execute(structs.Task{Params: "group"})
+	if result.Status != "success" {
+		t.Fatalf("plain text 'group' should succeed, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestPrivescCheckDangerousGroups_OutputFormat(t *testing.T) {
+	result := privescCheckDangerousGroups()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Should always list current groups
+	if !strings.Contains(result.Output, "Current user groups:") {
+		t.Error("output should contain 'Current user groups:' header")
+	}
+	// Should always have the dangerous groups summary
+	if !strings.Contains(result.Output, "Dangerous group memberships") {
+		t.Error("output should contain dangerous group memberships count")
+	}
+}
+
+func TestDangerousGroupsTable(t *testing.T) {
+	// Verify the dangerous groups table is well-formed
+	for i, dg := range dangerousGroups {
+		if dg.Name == "" {
+			t.Errorf("dangerousGroups[%d] has empty name", i)
+		}
+		if dg.Risk == "" {
+			t.Errorf("dangerousGroups[%d] (%s) has empty risk", i, dg.Name)
+		}
+		if dg.Impact == "" {
+			t.Errorf("dangerousGroups[%d] (%s) has empty impact", i, dg.Name)
+		}
+		// Risk should be one of the known levels
+		switch dg.Risk {
+		case "CRITICAL", "HIGH", "MEDIUM", "LOW":
+			// ok
+		default:
+			t.Errorf("dangerousGroups[%d] (%s) has unknown risk level %q", i, dg.Name, dg.Risk)
+		}
+	}
+	// Should have at least 10 groups
+	if len(dangerousGroups) < 10 {
+		t.Errorf("expected at least 10 dangerous groups, got %d", len(dangerousGroups))
+	}
+}
+
+func TestDangerousGroups_NoDuplicates(t *testing.T) {
+	seen := make(map[string]bool)
+	for _, dg := range dangerousGroups {
+		if seen[dg.Name] {
+			t.Errorf("duplicate dangerous group: %s", dg.Name)
+		}
+		seen[dg.Name] = true
+	}
+}
+
+// --- Polkit tests (Session 216) ---
+
+func TestPrivescCheck_PolkitAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"polkit"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestPrivescCheck_PolkitPlainText(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	result := cmd.Execute(structs.Task{Params: "polkit"})
+	if result.Status != "success" {
+		t.Fatalf("plain text 'polkit' should succeed, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestPrivescCheckPolkit_OutputFormat(t *testing.T) {
+	result := privescCheckPolkit()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Output should not be empty
+	if result.Output == "" {
+		t.Error("output should not be empty")
+	}
+}
+
+// --- Modprobe tests (Session 216) ---
+
+func TestPrivescCheck_ModprobeAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"modprobe"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestPrivescCheck_ModprobePlainText(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	result := cmd.Execute(structs.Task{Params: "modprobe"})
+	if result.Status != "success" {
+		t.Fatalf("plain text 'modprobe' should succeed, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestPrivescCheckModprobe_OutputFormat(t *testing.T) {
+	result := privescCheckModprobe()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Output should not be empty — at minimum reports "no writable" or finds hooks
+	if result.Output == "" {
+		t.Error("output should not be empty")
+	}
+}
+
+func TestPrivescCheckModprobe_DetectsInstallHooks(t *testing.T) {
+	// On most Linux systems, modprobe.d has some configs (e.g., blacklists)
+	// This test just ensures the function runs without error
+	result := privescCheckModprobe()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Should either find hooks or report none
+	if !strings.Contains(result.Output, "hooks") &&
+		!strings.Contains(result.Output, "modprobe") &&
+		!strings.Contains(result.Output, "WRITABLE") &&
+		!strings.Contains(result.Output, "not an escalation vector") {
+		t.Error("output should mention hooks, modprobe, writable, or 'not an escalation vector'")
+	}
+}
+
+// --- Verify "all" includes new sections ---
+
+func TestPrivescCheck_AllIncludesNewSession216Checks(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"all"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	for _, section := range []string{
+		"Dangerous Groups", "Polkit Rules", "Modprobe Hooks",
+	} {
+		if !strings.Contains(result.Output, section) {
+			t.Errorf("'all' output missing %q section", section)
+		}
+	}
+}

@@ -67,8 +67,14 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return privescCheckPathHijack()
 	case "docker-group":
 		return privescCheckDockerGroup()
+	case "group":
+		return privescCheckDangerousGroups()
+	case "polkit":
+		return privescCheckPolkit()
+	case "modprobe":
+		return privescCheckModprobe()
 	default:
-		return errorf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group", args.Action)
+		return errorf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe", args.Action)
 	}
 }
 
@@ -142,6 +148,24 @@ func privescCheckAll() structs.CommandResult {
 	sb.WriteString("--- Docker Group ---\n")
 	dockerResult := privescCheckDockerGroup()
 	sb.WriteString(dockerResult.Output)
+	sb.WriteString("\n\n")
+
+	// Dangerous group memberships
+	sb.WriteString("--- Dangerous Groups ---\n")
+	groupResult := privescCheckDangerousGroups()
+	sb.WriteString(groupResult.Output)
+	sb.WriteString("\n\n")
+
+	// Polkit rules
+	sb.WriteString("--- Polkit Rules ---\n")
+	polkitResult := privescCheckPolkit()
+	sb.WriteString(polkitResult.Output)
+	sb.WriteString("\n\n")
+
+	// Modprobe hooks
+	sb.WriteString("--- Modprobe Hooks ---\n")
+	modprobeResult := privescCheckModprobe()
+	sb.WriteString(modprobeResult.Output)
 
 	return successResult(sb.String())
 }
@@ -1187,4 +1211,355 @@ func resolveGroupNames(gids []string) []string {
 		}
 	}
 	return names
+}
+
+// dangerousGroup describes a group that grants elevated privileges.
+type dangerousGroup struct {
+	Name   string
+	Risk   string
+	Impact string
+}
+
+// dangerousGroups lists Linux groups that grant elevated access beyond normal users.
+// docker/lxd/podman are excluded since they're covered by the docker-group action.
+var dangerousGroups = []dangerousGroup{
+	{"disk", "CRITICAL", "Raw disk device access (/dev/sd*) — read entire filesystem including /etc/shadow"},
+	{"shadow", "CRITICAL", "Read /etc/shadow — extract password hashes for offline cracking"},
+	{"sudo", "HIGH", "Sudo access (may require password)"},
+	{"wheel", "HIGH", "Sudo access (may require password, common on RHEL/Fedora)"},
+	{"adm", "MEDIUM", "Read /var/log/* — access system logs, may contain credentials/tokens"},
+	{"staff", "MEDIUM", "Write to /usr/local — binary hijacking in PATH"},
+	{"root", "CRITICAL", "Root group membership — may grant access to root-owned files"},
+	{"video", "LOW", "Framebuffer/video device access — keylogger via /dev/fb0, screen capture"},
+	{"kvm", "MEDIUM", "KVM virtual machine management — VM escape, credential extraction"},
+	{"dialout", "MEDIUM", "Serial port access (/dev/ttyS*) — potential OT/SCADA interaction"},
+	{"tape", "LOW", "Tape device access — read backup media"},
+	{"cdrom", "LOW", "CD/DVD device access"},
+	{"plugdev", "LOW", "USB/removable device access"},
+	{"render", "LOW", "GPU compute access — may enable GPU-based hash cracking"},
+	{"lpadmin", "LOW", "CUPS printer admin — potential lateral movement via printer exploitation"},
+	{"bluetooth", "LOW", "Bluetooth device access"},
+	{"netdev", "MEDIUM", "Network device management — interface manipulation"},
+	{"wireshark", "MEDIUM", "Packet capture — network credential sniffing"},
+}
+
+// privescCheckDangerousGroups checks the current user's group memberships for
+// groups that grant elevated or unusual access. Complements docker-group check.
+func privescCheckDangerousGroups() structs.CommandResult {
+	var sb strings.Builder
+
+	// Get current user's groups
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return errorf("Cannot read /proc/self/status: %v", err)
+	}
+	gids := parseGroupsFromStatus(string(data))
+	structs.ZeroBytes(data)
+	groupNames := resolveGroupNames(gids)
+
+	nameSet := make(map[string]bool)
+	for _, n := range groupNames {
+		nameSet[n] = true
+	}
+
+	var critical, high, medium, low []string
+	for _, dg := range dangerousGroups {
+		if nameSet[dg.Name] {
+			entry := fmt.Sprintf("  [%s] %s — %s", dg.Risk, dg.Name, dg.Impact)
+			switch dg.Risk {
+			case "CRITICAL":
+				critical = append(critical, entry)
+			case "HIGH":
+				high = append(high, entry)
+			case "MEDIUM":
+				medium = append(medium, entry)
+			default:
+				low = append(low, entry)
+			}
+		}
+	}
+
+	total := len(critical) + len(high) + len(medium) + len(low)
+	sb.WriteString(fmt.Sprintf("Current user groups: %s\n", strings.Join(groupNames, ", ")))
+	sb.WriteString(fmt.Sprintf("Dangerous group memberships (%d found):\n", total))
+
+	if total == 0 {
+		sb.WriteString("  (none — user is in standard groups only)")
+		return successResult(sb.String())
+	}
+
+	if len(critical) > 0 {
+		sb.WriteString("\n[!!] CRITICAL:\n")
+		sb.WriteString(strings.Join(critical, "\n"))
+		sb.WriteString("\n")
+	}
+	if len(high) > 0 {
+		sb.WriteString("\n[!] HIGH:\n")
+		sb.WriteString(strings.Join(high, "\n"))
+		sb.WriteString("\n")
+	}
+	if len(medium) > 0 {
+		sb.WriteString("\nMEDIUM:\n")
+		sb.WriteString(strings.Join(medium, "\n"))
+		sb.WriteString("\n")
+	}
+	if len(low) > 0 {
+		sb.WriteString("\nLOW:\n")
+		sb.WriteString(strings.Join(low, "\n"))
+		sb.WriteString("\n")
+	}
+
+	return successResult(sb.String())
+}
+
+// privescCheckPolkit enumerates Polkit rules and policies that may allow
+// unprivileged users to perform privileged operations without authentication.
+func privescCheckPolkit() structs.CommandResult {
+	var sb strings.Builder
+
+	// Check if pkexec has SUID (common privesc vector — CVE-2021-4034)
+	if info, err := os.Stat("/usr/bin/pkexec"); err == nil {
+		if info.Mode()&os.ModeSetuid != 0 {
+			sb.WriteString("[!] /usr/bin/pkexec is SUID — potential CVE-2021-4034 (PwnKit) if unpatched\n")
+		}
+	}
+
+	// Check Polkit version via polkitd
+	if data, err := os.ReadFile("/usr/lib/polkit-1/polkitd"); err == nil {
+		structs.ZeroBytes(data)
+		sb.WriteString("polkitd binary exists at /usr/lib/polkit-1/polkitd\n")
+	} else if data, err := os.ReadFile("/usr/libexec/polkitd"); err == nil {
+		structs.ZeroBytes(data)
+		sb.WriteString("polkitd binary exists at /usr/libexec/polkitd\n")
+	}
+
+	// Scan JavaScript rules in /etc/polkit-1/rules.d/ and /usr/share/polkit-1/rules.d/
+	rulesDirs := []string{
+		"/etc/polkit-1/rules.d",
+		"/usr/share/polkit-1/rules.d",
+	}
+	var jsRules []string
+	for _, dir := range rulesDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".rules") {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			content := string(data)
+			structs.ZeroBytes(data)
+
+			// Flag rules that return YES (allow without password)
+			interesting := strings.Contains(content, "return polkit.Result.YES") ||
+				strings.Contains(content, "YES")
+			writable := isWritableFile(path)
+
+			status := ""
+			if interesting {
+				status = " [!] ALLOWS WITHOUT AUTH"
+			}
+			if writable {
+				status += " [!] WRITABLE"
+			}
+			jsRules = append(jsRules, fmt.Sprintf("  %s%s", path, status))
+		}
+	}
+
+	if len(jsRules) > 0 {
+		sb.WriteString(fmt.Sprintf("\nPolkit JS rules (%d):\n", len(jsRules)))
+		sb.WriteString(strings.Join(jsRules, "\n"))
+		sb.WriteString("\n")
+	}
+
+	// Scan legacy .pkla files in /etc/polkit-1/localauthority/
+	pklaDir := "/etc/polkit-1/localauthority"
+	var pklaFiles []string
+	_ = filepath.WalkDir(pklaDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".pkla") {
+			return nil
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			pklaFiles = append(pklaFiles, fmt.Sprintf("  %s (unreadable)", path))
+			return nil
+		}
+		content := string(data)
+		structs.ZeroBytes(data)
+
+		interesting := strings.Contains(content, "ResultAny=yes") ||
+			strings.Contains(content, "ResultInactive=yes") ||
+			strings.Contains(content, "ResultActive=yes")
+		writable := isWritableFile(path)
+
+		status := ""
+		if interesting {
+			status = " [!] GRANTS ACCESS"
+		}
+		if writable {
+			status += " [!] WRITABLE"
+		}
+		pklaFiles = append(pklaFiles, fmt.Sprintf("  %s%s", path, status))
+		return nil
+	})
+
+	if len(pklaFiles) > 0 {
+		sb.WriteString(fmt.Sprintf("\nPolkit legacy .pkla files (%d):\n", len(pklaFiles)))
+		sb.WriteString(strings.Join(pklaFiles, "\n"))
+		sb.WriteString("\n")
+	}
+
+	// Scan Polkit action definitions for interesting actions
+	actionsDir := "/usr/share/polkit-1/actions"
+	var interestingActions []string
+	if entries, err := os.ReadDir(actionsDir); err == nil {
+		// Only check for writable action files (not parsing XML — too noisy)
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".policy") {
+				continue
+			}
+			path := filepath.Join(actionsDir, entry.Name())
+			if isWritableFile(path) {
+				interestingActions = append(interestingActions,
+					fmt.Sprintf("  [!] WRITABLE policy: %s", path))
+			}
+		}
+	}
+
+	if len(interestingActions) > 0 {
+		sb.WriteString(fmt.Sprintf("\nWritable Polkit action policies (%d):\n", len(interestingActions)))
+		sb.WriteString(strings.Join(interestingActions, "\n"))
+		sb.WriteString("\n")
+	}
+
+	// Check if rules directories are writable (drop a rule → instant privesc)
+	for _, dir := range rulesDirs {
+		if isDirWritable(dir) {
+			sb.WriteString(fmt.Sprintf("\n[!!] CRITICAL: %s is WRITABLE — drop a .rules file for instant root\n", dir))
+		}
+	}
+
+	if len(jsRules) == 0 && len(pklaFiles) == 0 && len(interestingActions) == 0 {
+		sb.WriteString("\nNo custom Polkit rules or writable policies found")
+	}
+
+	return successResult(sb.String())
+}
+
+// privescCheckModprobe checks for writable modprobe configuration files and
+// kernel module loading hooks that could be abused for privilege escalation.
+// install directives in modprobe.d run arbitrary commands when a module is loaded.
+func privescCheckModprobe() structs.CommandResult {
+	var sb strings.Builder
+
+	// Check modprobe.d directories for writable configs and install hooks
+	modprobeDirs := []string{"/etc/modprobe.d", "/lib/modprobe.d", "/usr/lib/modprobe.d", "/run/modprobe.d"}
+	var installHooks []string
+	var writableConfigs []string
+
+	for _, dir := range modprobeDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+
+			if isWritableFile(path) {
+				writableConfigs = append(writableConfigs, fmt.Sprintf("  [!] WRITABLE: %s", path))
+			}
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			content := string(data)
+			structs.ZeroBytes(data)
+
+			// Look for install/remove directives that run commands
+			for _, line := range strings.Split(content, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				if strings.HasPrefix(line, "install ") || strings.HasPrefix(line, "remove ") {
+					installHooks = append(installHooks, fmt.Sprintf("  %s: %s", path, line))
+				}
+			}
+		}
+	}
+
+	// Check modprobe.d directory writability
+	for _, dir := range modprobeDirs {
+		if isDirWritable(dir) {
+			sb.WriteString(fmt.Sprintf("[!!] CRITICAL: %s is WRITABLE — drop config to run commands on module load\n", dir))
+		}
+	}
+
+	if len(writableConfigs) > 0 {
+		sb.WriteString(fmt.Sprintf("\nWritable modprobe configs (%d):\n", len(writableConfigs)))
+		sb.WriteString(strings.Join(writableConfigs, "\n"))
+		sb.WriteString("\n")
+	}
+
+	if len(installHooks) > 0 {
+		sb.WriteString(fmt.Sprintf("\nInstall/remove hooks (%d) — commands run on module load/unload:\n", len(installHooks)))
+		sb.WriteString(strings.Join(installHooks, "\n"))
+		sb.WriteString("\n")
+	}
+
+	// Check /etc/modules and /etc/modules-load.d/ for writable module lists
+	modulesFiles := []string{"/etc/modules"}
+	if entries, err := os.ReadDir("/etc/modules-load.d"); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				modulesFiles = append(modulesFiles, filepath.Join("/etc/modules-load.d", entry.Name()))
+			}
+		}
+	}
+
+	var writableModules []string
+	for _, path := range modulesFiles {
+		if isWritableFile(path) {
+			writableModules = append(writableModules,
+				fmt.Sprintf("  [!] WRITABLE: %s — can add modules to auto-load", path))
+		}
+	}
+
+	if len(writableModules) > 0 {
+		sb.WriteString(fmt.Sprintf("\nWritable module lists (%d):\n", len(writableModules)))
+		sb.WriteString(strings.Join(writableModules, "\n"))
+		sb.WriteString("\n")
+	}
+
+	// Check if modprobe binary itself has unusual permissions
+	modprobePaths := []string{"/usr/sbin/modprobe", "/sbin/modprobe"}
+	for _, mp := range modprobePaths {
+		info, err := os.Stat(mp)
+		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSetuid != 0 {
+			sb.WriteString(fmt.Sprintf("\n[!] %s is SUID — unusual, potential escalation\n", mp))
+		}
+		break
+	}
+
+	if len(installHooks) == 0 && len(writableConfigs) == 0 && len(writableModules) == 0 {
+		sb.WriteString("No writable modprobe configs or install hooks found — modprobe is not an escalation vector")
+	}
+
+	return successResult(sb.String())
 }
