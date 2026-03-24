@@ -425,3 +425,56 @@ func TestTriageScanPatterns(t *testing.T) {
 		t.Errorf("Expected 2 results (id_rsa+kdbx), got %d", len(results))
 	}
 }
+
+func TestTriageMail(t *testing.T) {
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "mail"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success for mail triage, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestTriageMailFindsFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Create mock mail files
+	os.WriteFile(filepath.Join(tmpDir, "inbox.pst"), []byte("PST data"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "message.eml"), []byte("From: test"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "archive.mbox"), []byte("mbox data"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "not_mail.txt"), []byte("text"), 0644)
+
+	task := structs.NewTask("mail-test", "triage", "")
+	args := triageArgs{MaxSize: 10 * 1024 * 1024, MaxFiles: 200}
+	exts := []string{".pst", ".ost", ".eml", ".msg", ".mbox", ".emlx", ".dbx", ".nsf"}
+	results := triageScan(task, []string{tmpDir}, exts, "mail", args, 3)
+	if len(results) != 3 {
+		t.Errorf("expected 3 mail files, got %d", len(results))
+	}
+	for _, r := range results {
+		if r.Category != "mail" {
+			t.Errorf("expected category 'mail', got %q for %s", r.Category, r.Path)
+		}
+	}
+}
+
+func TestTriageCategorizeFileMail(t *testing.T) {
+	mailTests := []struct {
+		name     string
+		expected string
+	}{
+		{"inbox.pst", "mail"},
+		{"outlook.ost", "mail"},
+		{"message.eml", "mail"},
+		{"report.msg", "mail"},
+		{"archive.mbox", "mail"},
+		{"old.emlx", "mail"},
+		{"legacy.dbx", "mail"},
+		{"notes.nsf", "mail"},
+	}
+	for _, tc := range mailTests {
+		got := triageCategorizeFile(tc.name)
+		if got != tc.expected {
+			t.Errorf("triageCategorizeFile(%q) = %q, want %q", tc.name, got, tc.expected)
+		}
+	}
+}

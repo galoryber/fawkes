@@ -15,8 +15,8 @@ func init() {
 			Author:     "@galoryber",
 		},
 		Description:         "Find high-value files for exfiltration — documents, credentials, configs, databases, scripts, archives, or custom path scan (T1083, T1005)",
-		HelpString:          "triage -action <all|documents|credentials|configs|database|scripts|archives|recent|custom> [-path /opt/app] [-hours 24] [-max_size 10485760] [-max_files 200]",
-		Version:             3,
+		HelpString:          "triage -action <all|documents|credentials|configs|database|scripts|archives|mail|recent|custom> [-path /opt/app] [-hours 24] [-max_size 10485760] [-max_files 200]",
+		Version:             4,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1083", "T1005"},
@@ -34,8 +34,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "documents", "credentials", "configs", "database", "scripts", "archives", "recent", "custom"},
-				Description:      "Triage mode: all (docs+creds+configs), documents (office/text files), credentials (keys/passwords), configs (yaml/json/env), database (.db/.sqlite/.mdb), scripts (.py/.sh/.ps1), archives (.zip/.tar/.7z), recent (files modified within time window), custom (scan specific path)",
+				Choices:          []string{"all", "documents", "credentials", "configs", "database", "scripts", "archives", "mail", "recent", "custom"},
+				Description:      "Triage mode: all (docs+creds+configs), documents (office/text files), credentials (keys/passwords), configs (yaml/json/env), database (.db/.sqlite/.mdb), scripts (.py/.sh/.ps1), archives (.zip/.tar/.7z), mail (.pst/.ost/.eml/.mbox), recent (files modified within time window), custom (scan specific path)",
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

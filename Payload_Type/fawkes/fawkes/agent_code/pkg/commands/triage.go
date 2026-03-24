@@ -93,13 +93,15 @@ func (c *TriageCommand) Execute(task structs.Task) structs.CommandResult {
 		results = triageScripts(task, args)
 	case "archives":
 		results = triageArchives(task, args)
+	case "mail":
+		results = triageMail(task, args)
 	case "custom":
 		if args.Path == "" {
 			return errorResult("Error: -path required for custom triage")
 		}
 		results = triageCustom(task, args)
 	default:
-		return errorf("Unknown action: %s. Use: all, documents, credentials, configs, database, scripts, archives, recent, custom", args.Action)
+		return errorf("Unknown action: %s. Use: all, documents, credentials, configs, database, scripts, archives, mail, recent, custom", args.Action)
 	}
 
 	if task.DidStop() {
@@ -387,6 +389,12 @@ func triageCategorizeFile(name string) string {
 		return "database"
 	}
 
+	// Mail files
+	mailExts := map[string]bool{".pst": true, ".ost": true, ".eml": true, ".msg": true, ".mbox": true, ".emlx": true, ".dbx": true, ".nsf": true}
+	if mailExts[ext] {
+		return "mail"
+	}
+
 	return "other"
 }
 
@@ -482,6 +490,43 @@ func triageArchives(task structs.Task, args triageArgs) []triageResult {
 	}
 
 	return triageScan(task, searchPaths, extensions, "archive", args, 3)
+}
+
+func triageMail(task structs.Task, args triageArgs) []triageResult {
+	extensions := []string{
+		".pst", ".ost", ".eml", ".msg", ".mbox",
+		".emlx", ".dbx", ".nsf",
+	}
+
+	var searchPaths []string
+	home, _ := os.UserHomeDir()
+
+	switch runtime.GOOS {
+	case "windows":
+		searchPaths = []string{
+			filepath.Join(home, "Documents", "Outlook Files"),
+			filepath.Join(home, "AppData", "Local", "Microsoft", "Outlook"),
+			filepath.Join(home, "AppData", "Roaming", "Thunderbird", "Profiles"),
+			filepath.Join(home, "Documents"),
+			filepath.Join(home, "Desktop"),
+		}
+	case "darwin":
+		searchPaths = []string{
+			filepath.Join(home, "Library", "Mail"),
+			filepath.Join(home, "Library", "Thunderbird", "Profiles"),
+			filepath.Join(home, "Documents"),
+		}
+	default:
+		searchPaths = []string{
+			home,
+			filepath.Join(home, ".thunderbird"),
+			filepath.Join(home, ".local", "share", "evolution", "mail"),
+			"/var/mail",
+			"/var/spool/mail",
+		}
+	}
+
+	return triageScan(task, searchPaths, extensions, "mail", args, 3)
 }
 
 func triageCustom(task structs.Task, args triageArgs) []triageResult {
