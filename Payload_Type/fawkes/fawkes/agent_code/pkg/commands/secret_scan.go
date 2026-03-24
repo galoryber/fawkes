@@ -83,6 +83,14 @@ var secretPatterns = func() []secretPattern {
 		{"Mailgun API Key", `key-[0-9a-zA-Z]{32}`},
 		{"Square Access Token", `sq0[a-z]{3}-[0-9A-Za-z\-_]{22,}`},
 		{"Atlassian API Token", `(?i)(jira|confluence|atlassian|bitbucket)[_-]?(api[_-]?)?(token|key|secret)\s*[:=]\s*['"]?[A-Za-z0-9+/=_-]{20,}['"]?`},
+		// SaaS monitoring, identity, and CI/CD tokens
+		{"AWS STS Session Token", `ASIA[0-9A-Z]{16}`},
+		{"New Relic API Key", `NRAK-[A-Z0-9]{27}`},
+		{"PagerDuty API Token", `pd[a-z]_[A-Za-z0-9_-]{20,}`},
+		{"Okta API Token", `(?i)ssws\s+[A-Za-z0-9_-]{40,}`},
+		{"Sentry DSN", `https://[a-f0-9]{32}@[a-z0-9.-]+\.ingest\.sentry\.io/[0-9]+`},
+		{"Datadog API Key", `(?i)dd[_-]?(api[_-]?key|app[_-]?key)\s*[:=]\s*['"]?[a-f0-9]{32,}['"]?`},
+		{"CircleCI Token", `circle-token\s*[:=]\s*['"]?[a-f0-9]{40}['"]?`},
 	}
 
 	compiled := make([]secretPattern, 0, len(patterns))

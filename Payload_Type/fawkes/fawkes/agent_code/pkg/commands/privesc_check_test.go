@@ -754,9 +754,115 @@ func TestPrivescCheck_AllIncludesNewSession216Checks(t *testing.T) {
 	}
 	for _, section := range []string{
 		"Dangerous Groups", "Polkit Rules", "Modprobe Hooks",
+		"ld.so.preload", "Security Modules",
 	} {
 		if !strings.Contains(result.Output, section) {
 			t.Errorf("'all' output missing %q section", section)
 		}
+	}
+}
+
+// --- ld-preload action tests ---
+
+func TestPrivescCheck_LdPreloadAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"ld-preload"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	if !result.Completed {
+		t.Error("expected completed")
+	}
+	// Output should mention ld.so.preload status (exists or not)
+	if !strings.Contains(result.Output, "ld.so.preload") {
+		t.Error("output should mention ld.so.preload")
+	}
+}
+
+func TestPrivescCheck_LdPreloadPlainText(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `ld-preload`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Errorf("expected success for plain-text action, got %q", result.Status)
+	}
+}
+
+func TestPrivescCheckLdPreload_ChecksEnvVars(t *testing.T) {
+	result := privescCheckLdPreload()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q", result.Status)
+	}
+	// On a normal system without LD_PRELOAD set, should report clean
+	if os.Getenv("LD_PRELOAD") == "" {
+		// Should not report LD_PRELOAD findings
+		if strings.Contains(result.Output, "LD_PRELOAD is set") {
+			t.Error("should not report LD_PRELOAD when not set")
+		}
+	}
+}
+
+func TestPrivescCheckLdPreload_OutputFormat(t *testing.T) {
+	result := privescCheckLdPreload()
+	// Output should contain useful information regardless of system state
+	output := result.Output
+	if !strings.Contains(output, "ld.so.preload") &&
+		!strings.Contains(output, "escalation") &&
+		!strings.Contains(output, "CRITICAL") {
+		t.Error("output should contain meaningful ld.so analysis")
+	}
+}
+
+// --- security action tests ---
+
+func TestPrivescCheck_SecurityAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"security"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	if !result.Completed {
+		t.Error("expected completed")
+	}
+}
+
+func TestPrivescCheck_SecurityPlainText(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `security`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Errorf("expected success for plain-text action, got %q", result.Status)
+	}
+}
+
+func TestPrivescCheckSecurityModules_OutputFormat(t *testing.T) {
+	result := privescCheckSecurityModules()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q", result.Status)
+	}
+	// Output should always contain AppArmor and SELinux sections
+	if !strings.Contains(result.Output, "AppArmor") {
+		t.Error("output should mention AppArmor")
+	}
+	if !strings.Contains(result.Output, "SELinux") {
+		t.Error("output should mention SELinux")
+	}
+}
+
+func TestPrivescCheckSecurityModules_ReportsStatus(t *testing.T) {
+	result := privescCheckSecurityModules()
+	output := result.Output
+	// Should report one of: ENABLED, DISABLED, Not installed, ENFORCING, PERMISSIVE, not active
+	hasStatus := strings.Contains(output, "ENABLED") ||
+		strings.Contains(output, "DISABLED") ||
+		strings.Contains(output, "Not installed") ||
+		strings.Contains(output, "ENFORCING") ||
+		strings.Contains(output, "PERMISSIVE") ||
+		strings.Contains(output, "not active") ||
+		strings.Contains(output, "No mandatory access control")
+	if !hasStatus {
+		t.Errorf("output should report security module status, got:\n%s", output)
 	}
 }

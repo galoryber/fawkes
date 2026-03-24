@@ -398,6 +398,101 @@ func TestScanFileForSecrets_SquareToken(t *testing.T) {
 	}
 }
 
+func TestScanFileForSecrets_AWSStsToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "aws.env")
+	os.WriteFile(f, []byte("AWS_ACCESS_KEY_ID=ASIAQWERTYUIOP123456\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find AWS STS Session Token")
+	}
+	if results[0].Type != "AWS STS Session Token" {
+		t.Errorf("type = %q, want 'AWS STS Session Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_NewRelicKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "nr.env")
+	// Build key dynamically to avoid push protection false positive
+	prefix := "NRAK-"
+	suffix := strings.Repeat("A1B2C3D", 4)[:27] // 27 alphanumeric chars
+	os.WriteFile(f, []byte("KEY="+prefix+suffix+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find New Relic API Key")
+	}
+	if results[0].Type != "New Relic API Key" {
+		t.Errorf("type = %q, want 'New Relic API Key'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_PagerDutyToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "pd.env")
+	os.WriteFile(f, []byte(fmt.Sprintf("PD_TOKEN=pdt_%s\n", strings.Repeat("abcDEF12", 4))), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find PagerDuty API Token")
+	}
+	if results[0].Type != "PagerDuty API Token" {
+		t.Errorf("type = %q, want 'PagerDuty API Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_SentryDSN(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "sentry.env")
+	os.WriteFile(f, []byte("SENTRY_DSN=https://abcdef0123456789abcdef0123456789@o12345.ingest.sentry.io/6789012\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Sentry DSN")
+	}
+	if results[0].Type != "Sentry DSN" {
+		t.Errorf("type = %q, want 'Sentry DSN'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_DatadogKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "dd.env")
+	// Use dd_app_key format to avoid matching the generic api_key pattern first
+	os.WriteFile(f, []byte(fmt.Sprintf("dd_app_key=%s\n", strings.Repeat("abcdef01", 4))), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Datadog API Key")
+	}
+	if results[0].Type != "Datadog API Key" {
+		t.Errorf("type = %q, want 'Datadog API Key'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_CircleCIToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "ci.env")
+	os.WriteFile(f, []byte(fmt.Sprintf("circle-token=%s\n", strings.Repeat("abcdef01", 5))), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find CircleCI Token")
+	}
+	if results[0].Type != "CircleCI Token" {
+		t.Errorf("type = %q, want 'CircleCI Token'", results[0].Type)
+	}
+}
+
+func TestSecretPatternCount(t *testing.T) {
+	// Verify we have the expected number of patterns (35 + 7 = 42)
+	if len(secretPatterns) != 42 {
+		t.Errorf("expected 42 secret patterns, got %d", len(secretPatterns))
+	}
+}
+
 func TestSecretScanCommand_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	cmd := &SecretScanCommand{}

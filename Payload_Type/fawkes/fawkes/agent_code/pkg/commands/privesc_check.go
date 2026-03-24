@@ -21,7 +21,7 @@ func (c *PrivescCheckCommand) Name() string {
 }
 
 func (c *PrivescCheckCommand) Description() string {
-	return "Linux privilege escalation enumeration: SUID/SGID binaries, capabilities, sudo rules, writable paths, container detection, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse, PATH hijacking, docker group (T1548)"
+	return "Linux privilege escalation enumeration: SUID/SGID binaries, capabilities, sudo rules, writable paths, container detection, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse, PATH hijacking, docker group, ld.so.preload, security modules (T1548)"
 }
 
 type privescCheckArgs struct {
@@ -73,8 +73,12 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return privescCheckPolkit()
 	case "modprobe":
 		return privescCheckModprobe()
+	case "ld-preload":
+		return privescCheckLdPreload()
+	case "security":
+		return privescCheckSecurityModules()
 	default:
-		return errorf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe", args.Action)
+		return errorf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security", args.Action)
 	}
 }
 
@@ -166,6 +170,18 @@ func privescCheckAll() structs.CommandResult {
 	sb.WriteString("--- Modprobe Hooks ---\n")
 	modprobeResult := privescCheckModprobe()
 	sb.WriteString(modprobeResult.Output)
+	sb.WriteString("\n\n")
+
+	// ld.so.preload library injection
+	sb.WriteString("--- ld.so.preload ---\n")
+	ldResult := privescCheckLdPreload()
+	sb.WriteString(ldResult.Output)
+	sb.WriteString("\n\n")
+
+	// Security modules (AppArmor / SELinux)
+	sb.WriteString("--- Security Modules ---\n")
+	secResult := privescCheckSecurityModules()
+	sb.WriteString(secResult.Output)
 
 	return successResult(sb.String())
 }
@@ -1559,6 +1575,228 @@ func privescCheckModprobe() structs.CommandResult {
 
 	if len(installHooks) == 0 && len(writableConfigs) == 0 && len(writableModules) == 0 {
 		sb.WriteString("No writable modprobe configs or install hooks found — modprobe is not an escalation vector")
+	}
+
+	return successResult(sb.String())
+}
+
+// privescCheckLdPreload checks for ld.so.preload abuse vectors.
+// /etc/ld.so.preload causes the dynamic linker to load specified libraries into every process,
+// making it a powerful persistence and privilege escalation mechanism.
+func privescCheckLdPreload() structs.CommandResult {
+	var sb strings.Builder
+	var findings int
+
+	// Check /etc/ld.so.preload
+	preloadPath := "/etc/ld.so.preload"
+	if data, err := os.ReadFile(preloadPath); err == nil {
+		content := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
+
+		if content != "" {
+			sb.WriteString(fmt.Sprintf("[!] /etc/ld.so.preload EXISTS with content:\n"))
+			for _, line := range strings.Split(content, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				sb.WriteString(fmt.Sprintf("  → %s", line))
+				// Check if the preloaded library is writable
+				if isWritableFile(line) {
+					sb.WriteString(" [WRITABLE — can inject code into ALL processes]")
+					findings++
+				}
+				// Check if the library exists
+				if _, err := os.Stat(line); os.IsNotExist(err) {
+					sb.WriteString(" [MISSING — create this file to inject code]")
+					findings++
+				}
+				sb.WriteString("\n")
+			}
+		} else {
+			sb.WriteString("/etc/ld.so.preload exists but is empty\n")
+		}
+
+		// Check if ld.so.preload itself is writable
+		if isWritableFile(preloadPath) {
+			sb.WriteString("[!!] CRITICAL: /etc/ld.so.preload is WRITABLE — add library path to inject into all processes\n")
+			findings++
+		}
+	} else {
+		// File doesn't exist — check if we can create it
+		if isDirWritable("/etc") {
+			sb.WriteString("[!!] CRITICAL: /etc is writable — can create /etc/ld.so.preload for global library injection\n")
+			findings++
+		} else {
+			sb.WriteString("/etc/ld.so.preload does not exist (normal)\n")
+		}
+	}
+
+	// Check LD_PRELOAD environment variable
+	if val := os.Getenv("LD_PRELOAD"); val != "" {
+		sb.WriteString(fmt.Sprintf("[!] LD_PRELOAD is set: %s\n", val))
+		sb.WriteString("  → Libraries are injected into this process's children\n")
+		findings++
+	}
+
+	// Check LD_LIBRARY_PATH for writable directories
+	if val := os.Getenv("LD_LIBRARY_PATH"); val != "" {
+		var writableDirs []string
+		for _, dir := range strings.Split(val, ":") {
+			if dir != "" && isDirWritable(dir) {
+				writableDirs = append(writableDirs, dir)
+			}
+		}
+		if len(writableDirs) > 0 {
+			sb.WriteString(fmt.Sprintf("[!] LD_LIBRARY_PATH has %d writable directories:\n", len(writableDirs)))
+			for _, d := range writableDirs {
+				sb.WriteString(fmt.Sprintf("  → %s — place malicious .so to hijack library loading\n", d))
+			}
+			findings++
+		}
+	}
+
+	// Check /etc/ld.so.conf.d/ for writable configs
+	ldConfDirs := []string{"/etc/ld.so.conf.d"}
+	for _, dir := range ldConfDirs {
+		if isDirWritable(dir) {
+			sb.WriteString(fmt.Sprintf("[!] %s is writable — can add library search paths\n", dir))
+			findings++
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			if isWritableFile(path) {
+				sb.WriteString(fmt.Sprintf("  [!] Writable ld config: %s\n", path))
+				findings++
+			}
+		}
+	}
+
+	if findings == 0 {
+		sb.WriteString("No ld.so.preload or library path escalation vectors found")
+	}
+
+	return successResult(sb.String())
+}
+
+// privescCheckSecurityModules checks the status of Linux security modules
+// (AppArmor, SELinux). Disabled or permissive security modules indicate
+// reduced system hardening — potential for unmonitored privilege escalation.
+func privescCheckSecurityModules() structs.CommandResult {
+	var sb strings.Builder
+
+	// --- AppArmor ---
+	sb.WriteString("AppArmor:\n")
+	appArmorFound := false
+
+	// Check if AppArmor kernel module is loaded
+	if _, err := os.Stat("/sys/module/apparmor"); err == nil {
+		appArmorFound = true
+		// Read status
+		if data, err := os.ReadFile("/sys/module/apparmor/parameters/enabled"); err == nil {
+			enabled := strings.TrimSpace(string(data))
+			structs.ZeroBytes(data)
+			if enabled == "Y" {
+				sb.WriteString("  Status: ENABLED (kernel module loaded)\n")
+			} else {
+				sb.WriteString("  [!] Status: DISABLED (module loaded but not enforcing)\n")
+			}
+		}
+
+		// Read mode
+		if data, err := os.ReadFile("/sys/module/apparmor/parameters/mode"); err == nil {
+			mode := strings.TrimSpace(string(data))
+			structs.ZeroBytes(data)
+			sb.WriteString(fmt.Sprintf("  Mode: %s\n", mode))
+		}
+
+		// Count loaded profiles
+		if data, err := os.ReadFile("/sys/kernel/security/apparmor/profiles"); err == nil {
+			content := string(data)
+			structs.ZeroBytes(data)
+			var enforce, complain, unconfined int
+			for _, line := range strings.Split(content, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				if strings.Contains(line, "(enforce)") {
+					enforce++
+				} else if strings.Contains(line, "(complain)") {
+					complain++
+				} else {
+					unconfined++
+				}
+			}
+			sb.WriteString(fmt.Sprintf("  Profiles: %d enforce, %d complain, %d other\n", enforce, complain, unconfined))
+			if complain > 0 {
+				sb.WriteString(fmt.Sprintf("  [!] %d profiles in COMPLAIN mode — violations logged but not blocked\n", complain))
+			}
+		}
+	}
+
+	if !appArmorFound {
+		sb.WriteString("  Not installed/loaded\n")
+	}
+
+	// --- SELinux ---
+	sb.WriteString("\nSELinux:\n")
+	selinuxFound := false
+
+	// Check SELinux status via /sys/fs/selinux/enforce
+	if data, err := os.ReadFile("/sys/fs/selinux/enforce"); err == nil {
+		selinuxFound = true
+		enforce := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
+		switch enforce {
+		case "1":
+			sb.WriteString("  Status: ENFORCING\n")
+		case "0":
+			sb.WriteString("  [!] Status: PERMISSIVE — violations logged but not blocked\n")
+		default:
+			sb.WriteString(fmt.Sprintf("  Status: unknown (%s)\n", enforce))
+		}
+	}
+
+	// Check SELinux config file for persistent setting
+	if data, err := os.ReadFile("/etc/selinux/config"); err == nil {
+		content := string(data)
+		structs.ZeroBytes(data)
+		for _, line := range strings.Split(content, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "SELINUX=") {
+				value := strings.TrimPrefix(line, "SELINUX=")
+				sb.WriteString(fmt.Sprintf("  Config: %s\n", value))
+				if value == "disabled" {
+					sb.WriteString("  [!] SELinux is DISABLED in config — no mandatory access control\n")
+				} else if value == "permissive" {
+					sb.WriteString("  [!] SELinux is PERMISSIVE in config — violations logged but not blocked\n")
+				}
+			}
+			if strings.HasPrefix(line, "SELINUXTYPE=") {
+				sb.WriteString(fmt.Sprintf("  Policy: %s\n", strings.TrimPrefix(line, "SELINUXTYPE=")))
+			}
+		}
+	}
+
+	if !selinuxFound {
+		if _, err := os.Stat("/etc/selinux"); os.IsNotExist(err) {
+			sb.WriteString("  Not installed\n")
+		} else {
+			sb.WriteString("  Installed but not active\n")
+		}
+	}
+
+	// --- Summary ---
+	if !appArmorFound && !selinuxFound {
+		sb.WriteString("\n[!] No mandatory access control (MAC) system active — reduced security posture")
 	}
 
 	return successResult(sb.String())
