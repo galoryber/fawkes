@@ -403,6 +403,29 @@ func TestFindParsePerm_OctalSuid(t *testing.T) {
 	}
 }
 
+func TestFindParsePerm_OctalSgid(t *testing.T) {
+	f := findParsePerm("2000")
+	if !f.set {
+		t.Fatal("2000 should be set")
+	}
+	if f.specialBit&os.ModeSetgid == 0 {
+		t.Error("2000 should set SGID special bit")
+	}
+}
+
+func TestFindParsePerm_OctalSuidSgid(t *testing.T) {
+	f := findParsePerm("6755")
+	if !f.set {
+		t.Fatal("6755 should be set")
+	}
+	if f.specialBit&os.ModeSetuid == 0 {
+		t.Error("6xxx should set SUID special bit")
+	}
+	if f.specialBit&os.ModeSetgid == 0 {
+		t.Error("x2xx should set SGID special bit")
+	}
+}
+
 func TestFindParsePerm_OctalWorldWritable(t *testing.T) {
 	f := findParsePerm("0002")
 	if !f.set {

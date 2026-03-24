@@ -360,3 +360,14 @@ func TestCatReadLinesNonexistent(t *testing.T) {
 		t.Errorf("expected error, got %q", result.Status)
 	}
 }
+
+func TestCatReadLinesDirectory(t *testing.T) {
+	dir := t.TempDir()
+	result := catReadLines(catParams{Path: dir, Number: true}, maxCatBytes)
+	if result.Status != "error" {
+		t.Errorf("expected error for directory, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "is a directory") {
+		t.Errorf("expected 'is a directory' message, got: %s", result.Output)
+	}
+}
