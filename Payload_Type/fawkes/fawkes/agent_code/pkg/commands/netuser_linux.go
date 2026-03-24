@@ -4,6 +4,7 @@ package commands
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -69,7 +70,10 @@ func linuxUserAdd(args netUserArgs) structs.CommandResult {
 	// Set password via chpasswd (reads username:password from stdin)
 	cmd, cancel := execCmdCtx("chpasswd")
 	defer cancel()
-	cmd.Stdin = strings.NewReader(fmt.Sprintf("%s:%s", args.Username, args.Password))
+	// opsec: build stdin as byte slice so we can zero it after use
+	stdinBuf := []byte(args.Username + ":" + args.Password)
+	defer structs.ZeroBytes(stdinBuf)
+	cmd.Stdin = bytes.NewReader(stdinBuf)
 	passOut, passErr := cmd.CombinedOutput()
 	if passErr != nil {
 		return errorf("User '%s' created but password set failed: %v\n%s", args.Username, passErr, string(passOut))
@@ -182,7 +186,10 @@ func linuxUserPassword(args netUserArgs) structs.CommandResult {
 
 	cmd, cancel := execCmdCtx("chpasswd")
 	defer cancel()
-	cmd.Stdin = strings.NewReader(fmt.Sprintf("%s:%s", args.Username, args.Password))
+	// opsec: build stdin as byte slice so we can zero it after use
+	stdinBuf := []byte(args.Username + ":" + args.Password)
+	defer structs.ZeroBytes(stdinBuf)
+	cmd.Stdin = bytes.NewReader(stdinBuf)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return errorf("Error setting password for '%s': %v\n%s", args.Username, err, string(out))
