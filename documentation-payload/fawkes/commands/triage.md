@@ -15,7 +15,7 @@ Cross-platform (Windows, Linux, macOS).
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | all | Triage mode: `all` (docs+creds+configs), `documents`, `credentials`, `configs`, `database`, `scripts`, `archives`, `recent`, `custom` |
+| action | No | all | Triage mode: `all` (docs+creds+configs), `documents`, `credentials`, `configs`, `database`, `scripts`, `archives`, `mail`, `recent`, `custom` |
 | path | For custom | - | Directory to scan when using `custom` action |
 | hours | No | 24 | Time window in hours for `recent` action |
 | max_size | No | 10485760 | Maximum file size in bytes (default 10MB) |
@@ -66,6 +66,11 @@ triage -action scripts
 triage -action archives
 ```
 
+### Find email files
+```
+triage -action mail
+```
+
 ### Scan custom directory
 ```
 triage -action custom -path /opt/webapp
@@ -107,6 +112,11 @@ Script files (.py, .sh, .bash, .ps1, .psm1, .bat, .cmd, .vbs, .js, .rb, .pl, .ph
 Archive files (.zip, .7z, .rar, .tar, .gz, .tgz, .bz2, .xz, .cab, .iso, .dmg).
 
 **Search paths:** Home directory, /tmp, /var/backups, /opt (Linux). Documents, Desktop, Downloads, C:\Backups, C:\Temp (Windows).
+
+### Mail
+Email files (.pst, .ost, .eml, .msg, .mbox, .emlx, .dbx, .nsf).
+
+**Search paths:** Home directory, ~/.thunderbird, ~/.local/share/evolution/mail, /var/mail, /var/spool/mail (Linux). Outlook Files, AppData/Local/Microsoft/Outlook, Thunderbird Profiles, Documents, Desktop (Windows). Library/Mail, Library/Thunderbird/Profiles, Documents (macOS).
 
 ### Recent
 Files modified within the specified time window (default: 24 hours). Automatically categorizes files as cred, doc, config, script, log, database, or other based on name/extension. Results sorted by modification time (newest first). Skips noise directories (.cache, node_modules, .git, __pycache__, etc.).
