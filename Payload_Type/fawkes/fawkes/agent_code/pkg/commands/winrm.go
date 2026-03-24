@@ -228,10 +228,14 @@ func (t *winrmHashTransport) Post(_ *winrm.Client, request *soap.SoapMessage) (s
 	}
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("http error %d: %s", resp.StatusCode, string(respBody))
+		errMsg := fmt.Errorf("http error %d: %s", resp.StatusCode, string(respBody))
+		structs.ZeroBytes(respBody) // opsec: clear error response (may contain auth info)
+		return "", errMsg
 	}
 
-	return string(respBody), nil
+	result := string(respBody)
+	structs.ZeroBytes(respBody) // opsec: clear WinRM response (may contain command output)
+	return result, nil
 }
 
 // winrmNtlmHashRT is an http.RoundTripper that performs NTLM auth using a hash.

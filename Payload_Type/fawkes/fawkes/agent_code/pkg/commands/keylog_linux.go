@@ -260,6 +260,7 @@ func isKeyboard(path string) bool {
 		return false
 	}
 	keyStr := strings.TrimSpace(string(keyData))
+	structs.ZeroBytes(keyData) // opsec: clear device capability data
 	// A real keyboard will have many bits set. A simple check: the key
 	// capabilities string should be longer than a few characters.
 	return len(keyStr) > 10
