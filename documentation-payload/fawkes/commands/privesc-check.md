@@ -10,7 +10,7 @@ hidden = false
 Cross-platform privilege escalation enumeration. Scans for common privilege escalation vectors with platform-specific checks for Windows, Linux, and macOS.
 
 - **Windows:** Token privileges (potato attacks, SeDebug, SeBackup), unquoted service paths, modifiable service binaries, AlwaysInstallElevated, auto-logon credentials, UAC configuration, LSA protection, writable PATH directories, unattended install files
-- **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse, PATH hijacking, docker/lxd/podman group, dangerous group memberships, Polkit rules, modprobe hooks
+- **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse, PATH hijacking, docker/lxd/podman group, dangerous group memberships, Polkit rules, modprobe hooks, ld.so.preload injection, security module status
 - **macOS:** LaunchDaemons/Agents, TCC database, dylib hijacking, SIP status
 
 ## Arguments
@@ -47,6 +47,8 @@ Cross-platform privilege escalation enumeration. Scans for common privilege esca
 - **group** — Check membership in 18 dangerous groups (disk, shadow, adm, sudo, kvm, etc.) with risk levels and exploitation guidance
 - **polkit** — Enumerate Polkit JS rules, legacy .pkla files, and action policies. Detects writable rules directories, SUID pkexec (CVE-2021-4034), and unauthenticated access rules
 - **modprobe** — Scan modprobe.d for writable configs and install/remove hooks that execute commands on module load. Check module auto-load lists and modprobe SUID
+- **ld-preload** — Check /etc/ld.so.preload writability (global library injection), LD_PRELOAD env var, LD_LIBRARY_PATH writable directories, writable /etc/ld.so.conf.d configs
+- **security** — Check AppArmor status (enabled/disabled, enforce/complain profile counts) and SELinux status (enforcing/permissive/disabled, config file, policy type)
 
 ### macOS-Only Actions
 
@@ -73,6 +75,8 @@ privesc-check -action docker-group
 privesc-check -action group
 privesc-check -action polkit
 privesc-check -action modprobe
+privesc-check -action ld-preload
+privesc-check -action security
 privesc-check -action launchdaemons
 ```
 
