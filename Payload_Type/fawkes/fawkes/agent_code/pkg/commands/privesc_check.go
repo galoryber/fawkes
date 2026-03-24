@@ -1594,7 +1594,7 @@ func privescCheckLdPreload() structs.CommandResult {
 		structs.ZeroBytes(data)
 
 		if content != "" {
-			sb.WriteString(fmt.Sprintf("[!] /etc/ld.so.preload EXISTS with content:\n"))
+			sb.WriteString("[!] /etc/ld.so.preload EXISTS with content:\n")
 			for _, line := range strings.Split(content, "\n") {
 				line = strings.TrimSpace(line)
 				if line == "" || strings.HasPrefix(line, "#") {
@@ -1774,9 +1774,10 @@ func privescCheckSecurityModules() structs.CommandResult {
 			if strings.HasPrefix(line, "SELINUX=") {
 				value := strings.TrimPrefix(line, "SELINUX=")
 				sb.WriteString(fmt.Sprintf("  Config: %s\n", value))
-				if value == "disabled" {
+				switch value {
+				case "disabled":
 					sb.WriteString("  [!] SELinux is DISABLED in config — no mandatory access control\n")
-				} else if value == "permissive" {
+				case "permissive":
 					sb.WriteString("  [!] SELinux is PERMISSIVE in config — violations logged but not blocked\n")
 				}
 			}
