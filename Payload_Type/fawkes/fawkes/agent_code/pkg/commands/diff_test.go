@@ -248,6 +248,34 @@ func TestDiffRemovedLines(t *testing.T) {
 	}
 }
 
+func TestDiffLinesLargeFileTruncation(t *testing.T) {
+	// diffLines truncates files > 10000 lines
+	a := make([]string, 10500)
+	b := make([]string, 10500)
+	for i := range a {
+		a[i] = "same"
+		b[i] = "same"
+	}
+	// Change something in the first 10000 lines (will be included)
+	a[5000] = "old_line"
+	b[5000] = "new_line"
+	// Change something beyond 10000 lines (will be truncated)
+	a[10200] = "old_beyond"
+	b[10200] = "new_beyond"
+
+	hunks := diffLines(a, b, 1)
+	combined := strings.Join(hunks, "")
+
+	// Should find the change within first 10000 lines
+	if !strings.Contains(combined, "-old_line") || !strings.Contains(combined, "+new_line") {
+		t.Errorf("expected diff within 10k lines, got: %s", combined[:200])
+	}
+	// Should NOT find the change beyond 10000 lines
+	if strings.Contains(combined, "beyond") {
+		t.Errorf("expected truncation of lines > 10000, but found beyond-10k change")
+	}
+}
+
 func TestReadLinesPermissionDenied(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "noperm.txt")
 	os.WriteFile(tmp, []byte("data\n"), 0644)

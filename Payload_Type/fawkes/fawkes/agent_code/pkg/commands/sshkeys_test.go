@@ -326,6 +326,52 @@ func TestParseKnownHosts_Deduplication(t *testing.T) {
 	}
 }
 
+func TestParseKnownHosts_MalformedLines(t *testing.T) {
+	tmp := t.TempDir()
+	khPath := filepath.Join(tmp, "known_hosts")
+	os.WriteFile(khPath, []byte(`too_few_fields
+just_one
+10.0.0.1 ssh-rsa AAAAB3...
+`), 0600)
+
+	hosts := parseKnownHosts(khPath)
+	// Only the valid 3-field line should parse
+	if len(hosts) != 1 {
+		t.Errorf("expected 1 host (malformed lines skipped), got %d", len(hosts))
+	}
+}
+
+func TestParseKnownHosts_BracketedNoPorts(t *testing.T) {
+	// Test [host] format without :port (just closing bracket)
+	tmp := t.TempDir()
+	khPath := filepath.Join(tmp, "known_hosts")
+	os.WriteFile(khPath, []byte(`[barehost] ssh-rsa AAAAB3...
+`), 0600)
+
+	hosts := parseKnownHosts(khPath)
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host, got %d", len(hosts))
+	}
+	if hosts[0].host != "barehost" {
+		t.Errorf("expected 'barehost', got '%s'", hosts[0].host)
+	}
+}
+
+func TestParseKnownHosts_CommentsSkipped(t *testing.T) {
+	tmp := t.TempDir()
+	khPath := filepath.Join(tmp, "known_hosts")
+	os.WriteFile(khPath, []byte(`# comment line
+10.0.0.1 ssh-rsa AAAAB3...
+
+# another comment
+`), 0600)
+
+	hosts := parseKnownHosts(khPath)
+	if len(hosts) != 1 {
+		t.Errorf("expected 1 host (comments and blanks skipped), got %d", len(hosts))
+	}
+}
+
 func TestParseKnownHosts_EmptyFile(t *testing.T) {
 	tmp := t.TempDir()
 	khPath := filepath.Join(tmp, "known_hosts")
