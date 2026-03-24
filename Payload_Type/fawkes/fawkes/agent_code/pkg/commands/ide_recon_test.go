@@ -411,6 +411,38 @@ func TestIdeExtractXMLAttr_EmptyLine(t *testing.T) {
 	}
 }
 
+func TestIdeExtractXMLAttr_UnclosedQuote(t *testing.T) {
+	line := `<option value="no-closing-quote`
+	val := ideExtractXMLAttr(line, "value")
+	if val != "" {
+		t.Errorf("expected empty for unclosed quote, got %q", val)
+	}
+}
+
+func TestIdeParseJetBrainsServers_ValueAttr(t *testing.T) {
+	xml := `<component>
+  <server name="MyServer" />
+  <option url="http://api.example.com" value="http://api.example.com" />
+</component>`
+	servers := ideParseJetBrainsServers(xml)
+	if len(servers) == 0 {
+		t.Error("expected at least 1 server from value attr")
+	}
+}
+
+func TestIdeParseJetBrainsServers_NoName(t *testing.T) {
+	xml := `<config>
+  <option host="standalone.example.com" />
+</config>`
+	servers := ideParseJetBrainsServers(xml)
+	if len(servers) == 0 {
+		t.Error("expected at least 1 server")
+	}
+	if len(servers) > 0 && servers[0] != "standalone.example.com" {
+		t.Errorf("expected plain hostname, got %q", servers[0])
+	}
+}
+
 // --- ideVSCodeConfigDirs ---
 
 func TestIdeVSCodeConfigDirs_NotEmpty(t *testing.T) {

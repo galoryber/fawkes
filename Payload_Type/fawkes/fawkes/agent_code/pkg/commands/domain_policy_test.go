@@ -132,6 +132,18 @@ func TestParseADInterval(t *testing.T) {
 	if d != 0 {
 		t.Errorf("expected 0, got %v", d)
 	}
+
+	// Non-numeric string
+	d = parseADInterval("not-a-number")
+	if d != 0 {
+		t.Errorf("parseADInterval(\"not-a-number\") = %v, want 0", d)
+	}
+
+	// Invalid with special characters
+	d = parseADInterval("12abc")
+	if d != 0 {
+		t.Errorf("parseADInterval(\"12abc\") = %v, want 0", d)
+	}
 }
 
 func TestFormatDuration(t *testing.T) {
@@ -146,6 +158,9 @@ func TestFormatDuration(t *testing.T) {
 		{"1 day 2 hours", 26 * time.Hour, "1d 2h"},
 		{"42 days", 42 * 24 * time.Hour, "42d"},
 		{"5 seconds", 5 * time.Second, "5s"},
+		{"never expires", 365 * 24 * time.Hour * 200, "Never"},
+		{"sub-second milliseconds", 500 * time.Millisecond, "500ms"},
+		{"days hours minutes", 2*24*time.Hour + 3*time.Hour + 15*time.Minute, "2d 3h 15m"},
 	}
 
 	for _, tt := range tests {

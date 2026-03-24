@@ -236,6 +236,53 @@ func TestBase64NonexistentFile(t *testing.T) {
 	}
 }
 
+func TestBase64EncodeToUnwritablePath(t *testing.T) {
+	c := &Base64Command{}
+	params, _ := json.Marshal(base64Args{Action: "encode", Input: "test", Output: "/nonexistent/dir/output.txt"})
+	result := c.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for unwritable output path, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "Error writing output file") {
+		t.Errorf("expected write error message, got: %s", result.Output)
+	}
+}
+
+func TestBase64DecodeToUnwritablePath(t *testing.T) {
+	c := &Base64Command{}
+	encoded := base64.StdEncoding.EncodeToString([]byte("test"))
+	params, _ := json.Marshal(base64Args{Action: "decode", Input: encoded, Output: "/nonexistent/dir/output.bin"})
+	result := c.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for unwritable output path, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "Error writing output file") {
+		t.Errorf("expected write error message, got: %s", result.Output)
+	}
+}
+
+func TestBase64EncodeFileToFile(t *testing.T) {
+	dir := t.TempDir()
+	inPath := filepath.Join(dir, "input.txt")
+	outPath := filepath.Join(dir, "output.txt")
+	os.WriteFile(inPath, []byte("file encode to file test"), 0644)
+
+	c := &Base64Command{}
+	params, _ := json.Marshal(base64Args{Action: "encode", Input: inPath, File: true, Output: outPath})
+	result := c.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "written to") {
+		t.Errorf("expected 'written to' in output, got: %s", result.Output)
+	}
+	data, _ := os.ReadFile(outPath)
+	expected := base64.StdEncoding.EncodeToString([]byte("file encode to file test"))
+	if string(data) != expected {
+		t.Errorf("output file content mismatch")
+	}
+}
+
 func TestBase64BinaryContent(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "binary.bin")

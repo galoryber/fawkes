@@ -110,3 +110,85 @@ func TestParseRanges(t *testing.T) {
 		t.Fatalf("expected [3,4,5], got %v", r)
 	}
 }
+
+func TestParseRangesEdgeCases(t *testing.T) {
+	tests := []struct {
+		name   string
+		spec   string
+		maxVal int
+		want   []int
+	}{
+		{"empty spec", "", 10, nil},
+		{"empty parts with commas", ",,", 10, nil},
+		{"whitespace parts", " , , ", 10, nil},
+		{"open-start range -3", "-3", 5, []int{1, 2, 3}},
+		{"start below 1 clamped", "0-3", 10, []int{1, 2, 3}},
+		{"end exceeds max clamped", "8-20", 10, []int{8, 9, 10}},
+		{"non-numeric single value", "abc", 10, nil},
+		{"non-numeric range start", "abc-5", 10, []int{1, 2, 3, 4, 5}},
+		{"non-numeric range end", "3-xyz", 10, []int{3, 4, 5, 6, 7, 8, 9, 10}},
+		{"duplicate values", "1,1,2,2", 10, []int{1, 2}},
+		{"overlapping ranges", "1-3,2-4", 10, []int{1, 2, 3, 4}},
+		{"single value out of range high", "15", 10, nil},
+		{"single value at boundary", "10", 10, []int{10}},
+		{"max=0 returns nothing", "1-5", 0, nil},
+		{"single value equals maxVal", "5", 5, []int{5}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := parseRanges(tt.spec, tt.maxVal)
+			if len(got) != len(tt.want) {
+				t.Errorf("parseRanges(%q, %d) = %v (len %d), want %v (len %d)",
+					tt.spec, tt.maxVal, got, len(got), tt.want, len(tt.want))
+				return
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Errorf("parseRanges(%q, %d)[%d] = %d, want %d",
+						tt.spec, tt.maxVal, i, got[i], tt.want[i])
+				}
+			}
+		})
+	}
+}
+
+func TestCutBadJSON(t *testing.T) {
+	cmd := &CutCommand{}
+	result := cmd.Execute(structs.Task{Params: "not json"})
+	if result.Status != "error" {
+		t.Errorf("expected error for bad JSON, got %s", result.Status)
+	}
+}
+
+func TestCutDefaultDelimiter(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "tabs.txt")
+	os.WriteFile(f, []byte("a\tb\tc\n1\t2\t3\n"), 0644)
+
+	params, _ := json.Marshal(cutArgs{Path: f, Fields: "1,3"})
+	cmd := &CutCommand{}
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "a\tc") {
+		t.Errorf("expected tab-separated output, got: %s", result.Output)
+	}
+}
+
+func TestCutOpenStartRange(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "data.txt")
+	os.WriteFile(f, []byte("a,b,c,d,e\n"), 0644)
+
+	params, _ := json.Marshal(cutArgs{Path: f, Delimiter: ",", Fields: "-3"})
+	cmd := &CutCommand{}
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "a,b,c") {
+		t.Errorf("expected a,b,c for range -3, got: %s", result.Output)
+	}
+}

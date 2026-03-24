@@ -71,6 +71,25 @@ func TestDaysToDate_EndOfYear(t *testing.T) {
 	}
 }
 
+func TestDaysToDate_NegativeDays(t *testing.T) {
+	// Dates before Unix epoch (negative day values)
+	y, m, d := daysToDate(-1)
+	if y != 1969 || m != 12 || d != 31 {
+		t.Errorf("day -1: got %d-%02d-%02d, want 1969-12-31", y, m, d)
+	}
+
+	// Very negative to exercise z < 0 branch: need days < -719468
+	// This represents a date before ~0 AD. Day -720000 should be a valid ancient date.
+	y, m, d = daysToDate(-720000)
+	// Just verify it returns reasonable values (year < 0) without panicking
+	if y > 0 {
+		t.Errorf("day -720000: expected year <= 0, got %d-%02d-%02d", y, m, d)
+	}
+	if m < 1 || m > 12 || d < 1 || d > 31 {
+		t.Errorf("day -720000: invalid month/day: %d-%02d-%02d", y, m, d)
+	}
+}
+
 // --- windowsFileTimeToString tests ---
 
 func TestWindowsFileTimeToString_Zero(t *testing.T) {
