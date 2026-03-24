@@ -87,13 +87,19 @@ func (c *TriageCommand) Execute(task structs.Task) structs.CommandResult {
 		results = triageConfigs(task, args)
 	case "recent":
 		results = triageRecent(task, args)
+	case "database":
+		results = triageDatabase(task, args)
+	case "scripts":
+		results = triageScripts(task, args)
+	case "archives":
+		results = triageArchives(task, args)
 	case "custom":
 		if args.Path == "" {
 			return errorResult("Error: -path required for custom triage")
 		}
 		results = triageCustom(task, args)
 	default:
-		return errorf("Unknown action: %s. Use: all, documents, credentials, configs, recent, custom", args.Action)
+		return errorf("Unknown action: %s. Use: all, documents, credentials, configs, database, scripts, archives, recent, custom", args.Action)
 	}
 
 	if task.DidStop() {
@@ -382,6 +388,100 @@ func triageCategorizeFile(name string) string {
 	}
 
 	return "other"
+}
+
+func triageDatabase(task structs.Task, args triageArgs) []triageResult {
+	extensions := []string{
+		".db", ".sqlite", ".sqlite3", ".mdb", ".accdb",
+		".ldf", ".mdf", ".sdf", ".bak",
+	}
+
+	var searchPaths []string
+	home, _ := os.UserHomeDir()
+
+	switch runtime.GOOS {
+	case "windows":
+		searchPaths = []string{
+			home,
+			filepath.Join(home, "Documents"),
+			filepath.Join(home, "AppData"),
+			`C:\inetpub`,
+			`C:\ProgramData`,
+		}
+	default:
+		searchPaths = []string{
+			home,
+			"/var/lib",
+			"/opt",
+			"/var/www",
+			"/srv",
+			"/tmp",
+		}
+	}
+
+	return triageScan(task, searchPaths, extensions, "database", args, 4)
+}
+
+func triageScripts(task structs.Task, args triageArgs) []triageResult {
+	extensions := []string{
+		".py", ".sh", ".bash", ".ps1", ".psm1", ".psd1",
+		".bat", ".cmd", ".vbs", ".js", ".rb", ".pl",
+		".php", ".lua", ".go", ".rs",
+	}
+
+	var searchPaths []string
+	home, _ := os.UserHomeDir()
+
+	switch runtime.GOOS {
+	case "windows":
+		searchPaths = []string{
+			filepath.Join(home, "Documents"),
+			filepath.Join(home, "Desktop"),
+			filepath.Join(home, "Downloads"),
+			`C:\Scripts`,
+			`C:\Tools`,
+		}
+	default:
+		searchPaths = []string{
+			home,
+			"/opt",
+			"/usr/local/bin",
+			"/var/www",
+			"/srv",
+		}
+	}
+
+	return triageScan(task, searchPaths, extensions, "script", args, 3)
+}
+
+func triageArchives(task structs.Task, args triageArgs) []triageResult {
+	extensions := []string{
+		".zip", ".7z", ".rar", ".tar", ".gz", ".tgz",
+		".bz2", ".xz", ".cab", ".iso", ".dmg",
+	}
+
+	var searchPaths []string
+	home, _ := os.UserHomeDir()
+
+	switch runtime.GOOS {
+	case "windows":
+		searchPaths = []string{
+			filepath.Join(home, "Documents"),
+			filepath.Join(home, "Desktop"),
+			filepath.Join(home, "Downloads"),
+			`C:\Backups`,
+			`C:\Temp`,
+		}
+	default:
+		searchPaths = []string{
+			home,
+			"/tmp",
+			"/var/backups",
+			"/opt",
+		}
+	}
+
+	return triageScan(task, searchPaths, extensions, "archive", args, 3)
 }
 
 func triageCustom(task structs.Task, args triageArgs) []triageResult {

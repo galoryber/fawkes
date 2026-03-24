@@ -365,6 +365,52 @@ func TestFlexIntUnmarshal(t *testing.T) {
 	}
 }
 
+func TestTriageDatabase(t *testing.T) {
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "database", MaxFiles: 10})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestTriageScripts(t *testing.T) {
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "scripts", MaxFiles: 10})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestTriageArchives(t *testing.T) {
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "archives", MaxFiles: 10})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestTriageDatabaseFindsFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.WriteFile(filepath.Join(tmpDir, "app.db"), []byte("SQLite format"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "data.sqlite3"), []byte("data"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "readme.txt"), []byte("text"), 0644)
+
+	task := structs.NewTask("db-test", "triage", "")
+	args := triageArgs{MaxSize: 10 * 1024 * 1024, MaxFiles: 200}
+	results := triageScan(task, []string{tmpDir}, []string{".db", ".sqlite3"}, "database", args, 3)
+
+	if len(results) != 2 {
+		names := make([]string, len(results))
+		for i, r := range results {
+			names[i] = r.Path
+		}
+		t.Errorf("expected 2 database files, got %d: %v", len(results), names)
+	}
+}
+
 func TestTriageScanPatterns(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.WriteFile(filepath.Join(tmpDir, "id_rsa"), []byte("key"), 0644)
