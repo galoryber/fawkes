@@ -236,9 +236,10 @@ func linuxLogsLogins(args linuxLogsArgs) structs.CommandResult {
 			record := data[offset : offset+utmpRecordSize]
 			recType := int16(binary.LittleEndian.Uint16(record[0:2]))
 			pid := int32(binary.LittleEndian.Uint32(record[4:8]))
-			user := strings.TrimRight(string(record[12:44]), "\x00")
-			host := strings.TrimRight(string(record[44:300]), "\x00")
-			line := strings.TrimRight(string(record[8:12]), "\x00")
+			// Correct utmp offsets: line@8(32), user@44(32), host@76(256)
+			line := extractCString(record[8 : 8+utmpLineSize])
+			user := extractCString(record[44 : 44+utmpUserSize])
+			host := extractCString(record[76 : 76+utmpHostSize])
 			tvSec := int64(binary.LittleEndian.Uint32(record[340:344]))
 			ts := time.Unix(tvSec, 0).Format("2006-01-02 15:04:05")
 

@@ -59,6 +59,34 @@ func TestLastDefaultCount(t *testing.T) {
 	}
 }
 
+func TestLastFailedAction(t *testing.T) {
+	cmd := &LastCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action": "failed"}`})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	var entries []lastLoginEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Errorf("expected valid JSON output: %v (got: %s)", err, result.Output)
+	}
+}
+
+func TestLastLoginsAction(t *testing.T) {
+	cmd := &LastCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action": "logins"}`})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestLastUnknownAction(t *testing.T) {
+	cmd := &LastCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action": "invalid"}`})
+	if result.Status != "error" {
+		t.Errorf("expected error for unknown action, got %s", result.Status)
+	}
+}
+
 func TestLastLoginEntryJSON(t *testing.T) {
 	entry := lastLoginEntry{
 		User:      "gary",

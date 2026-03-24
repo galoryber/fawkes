@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+// lastFailedPlatform is not yet implemented on macOS.
+func lastFailedPlatform(_ lastArgs) []lastLoginEntry {
+	return nil
+}
+
 func lastPlatform(args lastArgs) []lastLoginEntry {
 	cmdArgs := []string{"-n", fmt.Sprintf("%d", args.Count)}
 	if args.User != "" {

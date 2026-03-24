@@ -14,11 +14,11 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "last_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Show recent login history. Linux: parses wtmp/utmp or auth.log. Windows: queries Security event log (4624). macOS: uses last command.",
-		HelpString:          "last\nlast -count 50\nlast -user admin",
-		Version:             1,
+		Description:         "Show login history and failed login attempts. Linux: parses wtmp/btmp/auth.log. Windows: queries Security event log (4624/4625). macOS: uses last command.",
+		HelpString:          "last\nlast -action logins -count 50\nlast -action failed -user admin\nlogins: login history (default)\nfailed: failed login attempts (Linux: btmp, Windows: Event 4625)",
+		Version:             2,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1087.001"},
+		MitreAttackMappings: []string{"T1087.001", "T1110"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -28,13 +28,25 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
+				Name:             "action",
+				CLIName:          "action",
+				ModalDisplayName: "Action",
+				Description:      "logins: login history (default). failed: failed login attempts (Linux: /var/log/btmp, Windows: Event 4625).",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"logins", "failed"},
+				DefaultValue:     "logins",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 0},
+				},
+			},
+			{
 				Name:          "count",
 				CLIName:       "count",
 				Description:   "Number of entries to show (default: 25)",
 				DefaultValue:  25,
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{ParameterIsRequired: false, GroupName: "Default"},
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 1},
 				},
 			},
 			{
@@ -44,7 +56,7 @@ func init() {
 				DefaultValue:  "",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
-					{ParameterIsRequired: false, GroupName: "Default"},
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 2},
 				},
 			},
 		},
@@ -59,21 +71,27 @@ func init() {
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			action, _ := taskData.Args.GetStringArg("action")
 			count, _ := taskData.Args.GetNumberArg("count")
 			user, _ := taskData.Args.GetStringArg("user")
-			dp := ""
+
+			dp := action
 			if user != "" {
-				dp = fmt.Sprintf("user: %s", user)
+				dp += fmt.Sprintf(", user: %s", user)
 			}
 			if count > 0 && int(count) != 25 {
-				if dp != "" {
-					dp += ", "
-				}
-				dp += fmt.Sprintf("count: %d", int(count))
+				dp += fmt.Sprintf(", count: %d", int(count))
 			}
 			if dp != "" {
 				response.DisplayParams = &dp
 			}
+
+			if action == "failed" {
+				createArtifact(taskData.Task.ID, "File Read", "/var/log/btmp")
+			} else {
+				createArtifact(taskData.Task.ID, "File Read", "/var/log/wtmp")
+			}
+
 			return response
 		},
 	})

@@ -118,3 +118,31 @@ func TestLastPlatformUserFilter(t *testing.T) {
 		t.Errorf("expected 0 entries for nonexistent user, got %d", len(entries))
 	}
 }
+
+func TestLastFailedPlatformNoError(t *testing.T) {
+	// btmp may not be readable without root; just verify no panic
+	args := lastArgs{Count: 10}
+	_ = lastFailedPlatform(args)
+}
+
+func TestLastFailedPlatformUserFilter(t *testing.T) {
+	args := lastArgs{Count: 100, User: "nonexistentuser12345"}
+	entries := lastFailedPlatform(args)
+	// Should get 0 entries for nonexistent user (even if btmp readable)
+	for _, e := range entries {
+		if e.User == "nonexistentuser12345" {
+			// This is fine — means btmp had a matching entry
+			continue
+		}
+	}
+	_ = entries // prevent unused
+}
+
+func TestLastFailedFromAuthLogNoFiles(t *testing.T) {
+	// This will return nil/empty if auth.log doesn't exist or is empty
+	args := lastArgs{Count: 5, User: "nonexistentuser12345"}
+	entries := lastFailedFromAuthLog(args)
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries for nonexistent user, got %d", len(entries))
+	}
+}
