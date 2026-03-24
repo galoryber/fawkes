@@ -458,8 +458,8 @@ func TestDeriveHashedBootKeyRC4_RoundTrip(t *testing.T) {
 	c, _ := rc4.NewCipher(rc4Key)
 	c.XORKeyStream(combined, combined)
 
-	copy(fValue[0x80:0x90], combined[:16])  // encrypted key
-	copy(fValue[0x90:0xA0], combined[16:])  // encrypted checksum
+	copy(fValue[0x80:0x90], combined[:16]) // encrypted key
+	copy(fValue[0x90:0xA0], combined[16:]) // encrypted checksum
 
 	// Decrypt
 	result, rev, err := deriveHashedBootKeyRC4(fValue, bootKey)
@@ -540,7 +540,7 @@ func TestDeriveHashedBootKeyAES_RoundTrip(t *testing.T) {
 
 	// Build F value
 	fValue := make([]byte, 0x88+len(encrypted))
-	fValue[0x68] = 0x02 // revision
+	fValue[0x68] = 0x02                                                      // revision
 	binary.LittleEndian.PutUint32(fValue[0x74:0x78], uint32(len(encrypted))) // dataLen
 	copy(fValue[0x78:0x88], salt)
 	copy(fValue[0x88:], encrypted)
@@ -572,7 +572,7 @@ func TestParseUserVValue_NameOutOfBounds(t *testing.T) {
 	// Construct V value with name offset pointing past the end
 	v := make([]byte, 0xCC+64)
 	binary.LittleEndian.PutUint32(v[0x0C:0x10], 0xFFFF) // name offset (relative to 0xCC)
-	binary.LittleEndian.PutUint32(v[0x10:0x14], 10)      // name length
+	binary.LittleEndian.PutUint32(v[0x10:0x14], 10)     // name length
 
 	_, err := parseUserVValue(v, 500, make([]byte, 16), 0x01)
 	if err == nil {

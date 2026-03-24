@@ -233,8 +233,8 @@ func TestMakeRequest_CustomHeadersOverrideDefaults(t *testing.T) {
 		client:    ts.Client(),
 		CustomHeaders: map[string]string{
 			"Accept-Language": "fr-FR,fr;q=0.9",
-			"Content-Type":   "application/json",
-			"X-Custom":       "custom-value",
+			"Content-Type":    "application/json",
+			"X-Custom":        "custom-value",
 		},
 	}
 

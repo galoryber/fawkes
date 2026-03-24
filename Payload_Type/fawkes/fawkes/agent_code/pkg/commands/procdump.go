@@ -266,4 +266,3 @@ func enableThreadDebugPrivilege() error {
 
 	return windows.AdjustTokenPrivileges(token, false, &tp, 0, nil, nil)
 }
-

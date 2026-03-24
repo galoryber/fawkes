@@ -510,7 +510,7 @@ func TestLsaParseCachedCred_EmptySlot(t *testing.T) {
 func TestLsaParseCachedCred_InvalidEntry(t *testing.T) {
 	data := make([]byte, 200)
 	// userNameLen > 0 but valid = 0
-	binary.LittleEndian.PutUint16(data[0:2], 10) // userNameLen
+	binary.LittleEndian.PutUint16(data[0:2], 10)  // userNameLen
 	binary.LittleEndian.PutUint32(data[48:52], 0) // valid = 0
 	result, err := lsaParseCachedCred(data, make([]byte, 32), 10240)
 	if err != nil {
@@ -531,7 +531,7 @@ func TestLsaParseCachedCred_ValidEntry(t *testing.T) {
 
 	// NL_RECORD header (100 bytes)
 	header := make([]byte, 100)
-	binary.LittleEndian.PutUint16(header[0:2], uint16(len(userUTF16)))  // userNameLen
+	binary.LittleEndian.PutUint16(header[0:2], uint16(len(userUTF16)))   // userNameLen
 	binary.LittleEndian.PutUint16(header[2:4], uint16(len(domainUTF16))) // domainNameLen
 	binary.LittleEndian.PutUint32(header[48:52], 1)                      // valid
 	binary.LittleEndian.PutUint32(header[52:56], 0)                      // entryIterCount (use global)
@@ -614,9 +614,9 @@ func TestLsaParseCachedCred_ValidEntry(t *testing.T) {
 func TestLsaParseCachedCred_EntryIterCount(t *testing.T) {
 	// Build minimal valid entry with entry-specific iteration count
 	header := make([]byte, 100)
-	binary.LittleEndian.PutUint16(header[0:2], 2)  // userNameLen (1 UTF-16 char)
-	binary.LittleEndian.PutUint16(header[2:4], 2)   // domainNameLen
-	binary.LittleEndian.PutUint32(header[48:52], 1)  // valid
+	binary.LittleEndian.PutUint16(header[0:2], 2)      // userNameLen (1 UTF-16 char)
+	binary.LittleEndian.PutUint16(header[2:4], 2)      // domainNameLen
+	binary.LittleEndian.PutUint32(header[48:52], 1)    // valid
 	binary.LittleEndian.PutUint32(header[52:56], 5000) // entryIterCount overrides global
 
 	iv := make([]byte, 16)
@@ -627,7 +627,7 @@ func TestLsaParseCachedCred_EntryIterCount(t *testing.T) {
 
 	// Plaintext: hash(16) + username(2) + pad(2) + domain(2)
 	plaintext := make([]byte, 32) // padded to block size
-	plaintext[16] = 'A' // username 'A' in UTF-16LE
+	plaintext[16] = 'A'           // username 'A' in UTF-16LE
 
 	block, _ := aes.NewCipher(cacheKey)
 	mode := cipher.NewCBCEncrypter(block, iv)
@@ -653,8 +653,8 @@ func TestLsaParseCachedCred_EntryIterCount(t *testing.T) {
 
 func TestLsaParseCachedCred_EncryptedDataTooShort(t *testing.T) {
 	header := make([]byte, 100)
-	binary.LittleEndian.PutUint16(header[0:2], 100)  // userNameLen = 100
-	binary.LittleEndian.PutUint32(header[48:52], 1)  // valid
+	binary.LittleEndian.PutUint16(header[0:2], 100) // userNameLen = 100
+	binary.LittleEndian.PutUint32(header[48:52], 1) // valid
 
 	// Only 10 bytes of encrypted data, but needs 16 + 100 = 116
 	data := make([]byte, 110)

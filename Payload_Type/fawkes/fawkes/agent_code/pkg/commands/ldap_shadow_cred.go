@@ -309,8 +309,8 @@ func ldapClearShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) str
 
 	if existingCount == 0 {
 		return successf("[*] Shadow Credentials — msDS-KeyCredentialLink\n"+
-				"[+] Target: %s\n"+
-				"[+] Status: No key credentials found (attribute empty)\n", targetDN)
+			"[+] Target: %s\n"+
+			"[+] Status: No key credentials found (attribute empty)\n", targetDN)
 	}
 
 	// Clear by replacing with empty value list
@@ -322,9 +322,9 @@ func ldapClearShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) str
 	}
 
 	return successf("[*] Shadow Credentials Cleared\n"+
-			"[+] Target:  %s\n"+
-			"[+] Removed: %d key credential(s)\n"+
-			"[+] Server:  %s\n", targetDN, existingCount, args.Server)
+		"[+] Target:  %s\n"+
+		"[+] Removed: %d key credential(s)\n"+
+		"[+] Server:  %s\n", targetDN, existingCount, args.Server)
 }
 
 // extractDomain extracts a domain name from a distinguished name

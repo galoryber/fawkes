@@ -214,9 +214,9 @@ func buildWin10Entry(path string, filetime uint64) []byte {
 	entrySize := 12 + dataSize // sig + unknown + data_size + data
 
 	buf := make([]byte, entrySize)
-	binary.LittleEndian.PutUint32(buf[0:4], shimcacheWin10Sig)   // sig
-	binary.LittleEndian.PutUint32(buf[4:8], 0)                   // unknown
-	binary.LittleEndian.PutUint32(buf[8:12], uint32(dataSize))   // data_size
+	binary.LittleEndian.PutUint32(buf[0:4], shimcacheWin10Sig)        // sig
+	binary.LittleEndian.PutUint32(buf[4:8], 0)                        // unknown
+	binary.LittleEndian.PutUint32(buf[8:12], uint32(dataSize))        // data_size
 	binary.LittleEndian.PutUint16(buf[12:14], uint16(len(pathBytes))) // path_len
 	copy(buf[14:14+len(pathBytes)], pathBytes)
 	binary.LittleEndian.PutUint64(buf[14+len(pathBytes):], filetime)

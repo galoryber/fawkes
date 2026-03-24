@@ -98,10 +98,10 @@ func TestIdeExtractInterestingSettings_Proxy(t *testing.T) {
 
 func TestIdeExtractInterestingSettings_SensitiveKeys(t *testing.T) {
 	settings := map[string]interface{}{
-		"myextension.apiToken":     "ghp_abc123def456",
-		"custom.password":          "secret123",
-		"editor.fontSize":          14,
-		"some.api_key":             "AKIA1234567890123456",
+		"myextension.apiToken":      "ghp_abc123def456",
+		"custom.password":           "secret123",
+		"editor.fontSize":           14,
+		"some.api_key":              "AKIA1234567890123456",
 		"remote.SSH.remotePlatform": map[string]interface{}{"server1": "linux"},
 	}
 	items := ideExtractInterestingSettings(settings)

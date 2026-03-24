@@ -17,20 +17,20 @@ import (
 )
 
 var (
-	wevtapi                = windows.NewLazySystemDLL("wevtapi.dll")
-	procEvtOpenChannelEnum = wevtapi.NewProc("EvtOpenChannelEnum")
-	procEvtNextChannelPath = wevtapi.NewProc("EvtNextChannelPath")
-	procEvtQuery           = wevtapi.NewProc("EvtQuery")
-	procEvtNext            = wevtapi.NewProc("EvtNext")
-	procEvtRender          = wevtapi.NewProc("EvtRender")
-	procEvtClose           = wevtapi.NewProc("EvtClose")
-	procEvtOpenLog         = wevtapi.NewProc("EvtOpenLog")
-	procEvtGetLogInfo      = wevtapi.NewProc("EvtGetLogInfo")
-	procEvtClearLog              = wevtapi.NewProc("EvtClearLog")
-	procEvtOpenChannelConfig     = wevtapi.NewProc("EvtOpenChannelConfig")
-	procEvtSetChannelConfigProp  = wevtapi.NewProc("EvtSetChannelConfigProperty")
-	procEvtSaveChannelConfig     = wevtapi.NewProc("EvtSaveChannelConfig")
-	procEvtGetChannelConfigProp  = wevtapi.NewProc("EvtGetChannelConfigProperty")
+	wevtapi                     = windows.NewLazySystemDLL("wevtapi.dll")
+	procEvtOpenChannelEnum      = wevtapi.NewProc("EvtOpenChannelEnum")
+	procEvtNextChannelPath      = wevtapi.NewProc("EvtNextChannelPath")
+	procEvtQuery                = wevtapi.NewProc("EvtQuery")
+	procEvtNext                 = wevtapi.NewProc("EvtNext")
+	procEvtRender               = wevtapi.NewProc("EvtRender")
+	procEvtClose                = wevtapi.NewProc("EvtClose")
+	procEvtOpenLog              = wevtapi.NewProc("EvtOpenLog")
+	procEvtGetLogInfo           = wevtapi.NewProc("EvtGetLogInfo")
+	procEvtClearLog             = wevtapi.NewProc("EvtClearLog")
+	procEvtOpenChannelConfig    = wevtapi.NewProc("EvtOpenChannelConfig")
+	procEvtSetChannelConfigProp = wevtapi.NewProc("EvtSetChannelConfigProperty")
+	procEvtSaveChannelConfig    = wevtapi.NewProc("EvtSaveChannelConfig")
+	procEvtGetChannelConfigProp = wevtapi.NewProc("EvtGetChannelConfigProperty")
 )
 
 const (
@@ -41,9 +41,9 @@ const (
 	evtLogNumberOfLogRecords = 5
 	evtLogFileSize           = 3
 	evtLogLastWriteTime      = 2
-	errorNoMoreItems             = 259
-	errorInsufficientBuffer      = 122
-	evtChannelConfigEnabled      = 0 // EvtChannelConfigEnabled property ID
+	errorNoMoreItems         = 259
+	errorInsufficientBuffer  = 122
+	evtChannelConfigEnabled  = 0 // EvtChannelConfigEnabled property ID
 )
 
 // EventLogCommand manages Windows Event Logs

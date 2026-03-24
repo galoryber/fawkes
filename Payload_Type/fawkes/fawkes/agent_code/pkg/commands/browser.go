@@ -712,4 +712,3 @@ func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
 	cleanup := func() { db.Close() }
 	return db, cleanup, nil
 }
-

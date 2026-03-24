@@ -120,7 +120,7 @@ func TestScanHistoryLines_MySQL(t *testing.T) {
 	lines := []string{
 		"mysql -u root -pSECRET123 mydb",
 		"mysql --password=hunter2 -u admin",
-		"mysql -u user -p",     // interactive prompt, should NOT match
+		"mysql -u user -p",      // interactive prompt, should NOT match
 		"mysql -u user -p -h x", // -p followed by space+flag, should NOT match
 	}
 	findings := scanHistoryLines(lines, "Bash", "test")
@@ -189,8 +189,8 @@ func TestScanHistoryLines_Export(t *testing.T) {
 	lines := []string{
 		"export AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
 		"export PASSWORD=hunter2",
-		"export PATH=/usr/bin:/bin",         // not sensitive
-		"export HOME=/home/user",            // not sensitive
+		"export PATH=/usr/bin:/bin", // not sensitive
+		"export HOME=/home/user",    // not sensitive
 		"export API_KEY=abcdef123456",
 	}
 	findings := scanHistoryLines(lines, "Bash", "test")
@@ -208,7 +208,7 @@ func TestScanHistoryLines_GitClone(t *testing.T) {
 	lines := []string{
 		"git clone https://ghp_abc123def456@github.com/user/repo.git",
 		"git clone https://user:token123@gitlab.com/user/repo.git",
-		"git clone git@github.com:user/repo.git",  // SSH, should NOT match
+		"git clone git@github.com:user/repo.git",     // SSH, should NOT match
 		"git clone https://github.com/user/repo.git", // no token, should NOT match
 	}
 	findings := scanHistoryLines(lines, "Bash", "test")
@@ -223,7 +223,7 @@ func TestScanHistoryLines_GitClone(t *testing.T) {
 func TestScanHistoryLines_Psql(t *testing.T) {
 	lines := []string{
 		"psql postgres://admin:dbpass@localhost:5432/mydb",
-		"psql -h localhost mydb",  // no inline cred
+		"psql -h localhost mydb", // no inline cred
 	}
 	findings := scanHistoryLines(lines, "Bash", "test")
 	if len(findings) != 1 {
@@ -253,7 +253,7 @@ func TestScanHistoryLines_SudoPipe(t *testing.T) {
 	lines := []string{
 		"echo 'mypassword' | sudo -S apt update",
 		"echo secret123 | sudo -S mount /dev/sda1 /mnt",
-		"sudo apt update",  // no echo pipe, should NOT match
+		"sudo apt update", // no echo pipe, should NOT match
 	}
 	findings := scanHistoryLines(lines, "Bash", "test")
 	if len(findings) != 2 {

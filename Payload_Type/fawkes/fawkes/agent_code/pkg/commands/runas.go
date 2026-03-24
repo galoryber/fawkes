@@ -102,5 +102,5 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	return successf("[+] Process created as %s\\%s (PID: %d, mode: %s)\nCommand: %s",
-			args.Domain, args.Username, pi.ProcessId, mode, args.Command)
+		args.Domain, args.Username, pi.ProcessId, mode, args.Command)
 }

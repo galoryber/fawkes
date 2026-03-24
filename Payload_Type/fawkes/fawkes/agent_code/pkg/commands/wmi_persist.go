@@ -239,16 +239,16 @@ func wmiPersistInstall(args wmiPersistArgs) structs.CommandResult {
 	}
 
 	return successf("WMI Event Subscription installed on %s:\n"+
-			"  Name:     %s\n"+
-			"  Trigger:  %s\n"+
-			"  Query:    %s\n"+
-			"  Command:  %s\n"+
-			"  Filter:   %s\n"+
-			"  Consumer: %s\n"+
-			"  Binding:  %s → %s\n\n"+
-			"Subscription is persistent across reboots.",
-			host, args.Name, args.Trigger, wqlQuery, args.Command,
-			filterName, consumerName, filterRef, consumerRef)
+		"  Name:     %s\n"+
+		"  Trigger:  %s\n"+
+		"  Query:    %s\n"+
+		"  Command:  %s\n"+
+		"  Filter:   %s\n"+
+		"  Consumer: %s\n"+
+		"  Binding:  %s → %s\n\n"+
+		"Subscription is persistent across reboots.",
+		host, args.Name, args.Trigger, wqlQuery, args.Command,
+		filterName, consumerName, filterRef, consumerRef)
 }
 
 func wmiPersistRemove(args wmiPersistArgs) structs.CommandResult {

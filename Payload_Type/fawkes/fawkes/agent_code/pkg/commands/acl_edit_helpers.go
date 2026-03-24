@@ -101,13 +101,13 @@ func buildACE(aceType byte, mask uint32, sid []byte, objectGUID []byte) []byte {
 		// Header(4) + Mask(4) + Flags(4) + ObjectType(16) + SID
 		aceSize := 4 + 4 + 4 + 16 + len(sid)
 		ace := make([]byte, aceSize)
-		ace[0] = 0x05                                                         // AceType
-		ace[1] = 0x00                                                         // AceFlags (no inheritance)
-		binary.LittleEndian.PutUint16(ace[2:4], uint16(aceSize))              // AceSize
-		binary.LittleEndian.PutUint32(ace[4:8], mask)                         // AccessMask
-		binary.LittleEndian.PutUint32(ace[8:12], 0x01)                        // Flags: ACE_OBJECT_TYPE_PRESENT
-		copy(ace[12:28], objectGUID)                                          // ObjectType GUID
-		copy(ace[28:], sid)                                                   // SID
+		ace[0] = 0x05                                            // AceType
+		ace[1] = 0x00                                            // AceFlags (no inheritance)
+		binary.LittleEndian.PutUint16(ace[2:4], uint16(aceSize)) // AceSize
+		binary.LittleEndian.PutUint32(ace[4:8], mask)            // AccessMask
+		binary.LittleEndian.PutUint32(ace[8:12], 0x01)           // Flags: ACE_OBJECT_TYPE_PRESENT
+		copy(ace[12:28], objectGUID)                             // ObjectType GUID
+		copy(ace[28:], sid)                                      // SID
 		return ace
 	}
 

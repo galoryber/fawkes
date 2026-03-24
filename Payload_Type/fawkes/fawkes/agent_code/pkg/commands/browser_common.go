@@ -536,10 +536,10 @@ func browserDownloads(args browserArgs) structs.CommandResult {
 				var dlFile struct {
 					List []struct {
 						Source      string `json:"source"`
-						Target     string `json:"target"`
-						StartTime  int64  `json:"startTime"`   // milliseconds since epoch
-						TotalBytes int64  `json:"totalBytes"`
-						State      int    `json:"state"`       // 0=downloading, 1=succeeded, 2=failed, 3=canceled, 4=paused, 5=blocked
+						Target      string `json:"target"`
+						StartTime   int64  `json:"startTime"` // milliseconds since epoch
+						TotalBytes  int64  `json:"totalBytes"`
+						State       int    `json:"state"` // 0=downloading, 1=succeeded, 2=failed, 3=canceled, 4=paused, 5=blocked
 						ContentType string `json:"contentType"`
 					} `json:"list"`
 				}

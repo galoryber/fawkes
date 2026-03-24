@@ -22,10 +22,10 @@ import (
 
 // SCM access rights
 const (
-	scManagerConnect         = 0x0001
+	scManagerConnect          = 0x0001
 	scManagerEnumerateService = 0x0004
-	scManagerCreateService   = 0x0002
-	scManagerAllAccess       = 0xF003F
+	scManagerCreateService    = 0x0002
+	scManagerAllAccess        = 0xF003F
 )
 
 // Service access rights

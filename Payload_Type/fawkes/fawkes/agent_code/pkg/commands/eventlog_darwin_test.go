@@ -24,8 +24,8 @@ func TestExtractSubsystems(t *testing.T) {
 			expected: nil,
 		},
 		{
-			name:  "single subsystem",
-			input: `{"timestamp":"2024-01-01","subsystem":"com.apple.xpc","message":"test"}`,
+			name:     "single subsystem",
+			input:    `{"timestamp":"2024-01-01","subsystem":"com.apple.xpc","message":"test"}`,
 			expected: []string{"com.apple.xpc"},
 		},
 		{

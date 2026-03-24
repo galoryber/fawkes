@@ -127,7 +127,7 @@ func launchAgentInstall(args launchAgentArgs) structs.CommandResult {
 	}
 
 	return successf("Installed %s persistence:\n  Label:   %s\n  Path:    %s\n  Plist:   %s\n  Trigger: %s",
-			plistType, args.Label, programPath, plistPath, triggerDesc)
+		plistType, args.Label, programPath, plistPath, triggerDesc)
 }
 
 // launchAgentRemove removes a LaunchAgent or LaunchDaemon plist
@@ -210,4 +210,3 @@ func listPlistDir(dir string) []string {
 	}
 	return lines
 }
-

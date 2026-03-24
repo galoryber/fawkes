@@ -34,7 +34,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
-						GroupName:            "Default",
+						GroupName:           "Default",
 						UIModalPosition:     1,
 					},
 				},
@@ -48,21 +48,21 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
-						GroupName:            "New File",
+						GroupName:           "New File",
 						UIModalPosition:     1,
 					},
 				},
 			},
 			{
-				Name:             "shellcode_b64",
-				CLIName:          "shellcode_b64",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Base64-encoded shellcode (for API/CLI usage)",
-				DefaultValue:     "",
+				Name:          "shellcode_b64",
+				CLIName:       "shellcode_b64",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:   "Base64-encoded shellcode (for API/CLI usage)",
+				DefaultValue:  "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
-						GroupName:            "CLI",
+						GroupName:           "CLI",
 						UIModalPosition:     1,
 					},
 				},

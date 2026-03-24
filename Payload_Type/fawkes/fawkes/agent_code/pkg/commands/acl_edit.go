@@ -9,8 +9,8 @@ import (
 
 	"fawkes/pkg/structs"
 
-	"github.com/go-ldap/ldap/v3"
 	ber "github.com/go-asn1-ber/asn1-ber"
+	"github.com/go-ldap/ldap/v3"
 )
 
 type AclEditCommand struct{}
@@ -379,9 +379,9 @@ func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, prin
 	modReq := ldap.NewModifyRequest(targetDN, []ldap.Control{sdFlagsControl})
 	// When using SD_FLAGS, write a minimal SD with just the DACL
 	minSD := make([]byte, 20+len(newACL))
-	minSD[0] = 1                                                         // Revision
-	binary.LittleEndian.PutUint16(minSD[2:4], 0x8004)                    // SE_DACL_PRESENT | SE_SELF_RELATIVE
-	binary.LittleEndian.PutUint32(minSD[16:20], 20)                      // OffsetDacl
+	minSD[0] = 1                                      // Revision
+	binary.LittleEndian.PutUint16(minSD[2:4], 0x8004) // SE_DACL_PRESENT | SE_SELF_RELATIVE
+	binary.LittleEndian.PutUint32(minSD[16:20], 20)   // OffsetDacl
 	copy(minSD[20:], newACL)
 	modReq.Replace("nTSecurityDescriptor", []string{string(minSD)})
 

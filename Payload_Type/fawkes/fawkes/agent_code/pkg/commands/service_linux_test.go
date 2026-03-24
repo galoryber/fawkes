@@ -311,4 +311,3 @@ func TestServiceDescriptionIncludesCreateDelete(t *testing.T) {
 		t.Error("description should mention delete")
 	}
 }
-

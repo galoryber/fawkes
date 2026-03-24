@@ -14,8 +14,10 @@ import (
 // IdeReconCommand enumerates IDE configurations for intelligence gathering.
 type IdeReconCommand struct{}
 
-func (c *IdeReconCommand) Name() string        { return "ide-recon" }
-func (c *IdeReconCommand) Description() string { return "Enumerate IDE configurations — extensions, remote hosts, recent projects, secrets (T1005)" }
+func (c *IdeReconCommand) Name() string { return "ide-recon" }
+func (c *IdeReconCommand) Description() string {
+	return "Enumerate IDE configurations — extensions, remote hosts, recent projects, secrets (T1005)"
+}
 
 type ideReconArgs struct {
 	Action string `json:"action"` // vscode, jetbrains, all

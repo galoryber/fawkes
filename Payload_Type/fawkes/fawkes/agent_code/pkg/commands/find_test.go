@@ -142,8 +142,8 @@ func TestFindFormatFileSize(t *testing.T) {
 
 func TestFindMinSize(t *testing.T) {
 	tmp := t.TempDir()
-	os.WriteFile(filepath.Join(tmp, "small.txt"), []byte("x"), 0644)           // 1 byte
-	os.WriteFile(filepath.Join(tmp, "big.txt"), make([]byte, 1024), 0644)      // 1 KB
+	os.WriteFile(filepath.Join(tmp, "small.txt"), []byte("x"), 0644)      // 1 byte
+	os.WriteFile(filepath.Join(tmp, "big.txt"), make([]byte, 1024), 0644) // 1 KB
 
 	cmd := &FindCommand{}
 	task := structs.NewTask("t", "find", "")
@@ -162,8 +162,8 @@ func TestFindMinSize(t *testing.T) {
 
 func TestFindMaxSize(t *testing.T) {
 	tmp := t.TempDir()
-	os.WriteFile(filepath.Join(tmp, "small.txt"), []byte("x"), 0644)           // 1 byte
-	os.WriteFile(filepath.Join(tmp, "big.txt"), make([]byte, 2048), 0644)      // 2 KB
+	os.WriteFile(filepath.Join(tmp, "small.txt"), []byte("x"), 0644)      // 1 byte
+	os.WriteFile(filepath.Join(tmp, "big.txt"), make([]byte, 2048), 0644) // 2 KB
 
 	cmd := &FindCommand{}
 	task := structs.NewTask("t", "find", "")

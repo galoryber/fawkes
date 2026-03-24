@@ -79,4 +79,3 @@ func TestLastLoginEntryJSON(t *testing.T) {
 		t.Errorf("unexpected decoded values: %+v", decoded)
 	}
 }
-

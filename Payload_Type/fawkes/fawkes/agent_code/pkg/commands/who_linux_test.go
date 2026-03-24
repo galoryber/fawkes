@@ -17,11 +17,12 @@ import (
 // Wait — let me re-read who_linux.go to get exact offsets.
 //
 // From who_linux.go:
-//   utType := int32(binary.LittleEndian.Uint32(record[0:4]))
-//   user := strings.TrimRight(string(record[4:36]), "\x00")
-//   tty := strings.TrimRight(string(record[36:68]), "\x00")
-//   host := strings.TrimRight(string(record[76:332]), "\x00")
-//   tvSec := int64(binary.LittleEndian.Uint32(record[340:344]))
+//
+//	utType := int32(binary.LittleEndian.Uint32(record[0:4]))
+//	user := strings.TrimRight(string(record[4:36]), "\x00")
+//	tty := strings.TrimRight(string(record[36:68]), "\x00")
+//	host := strings.TrimRight(string(record[76:332]), "\x00")
+//	tvSec := int64(binary.LittleEndian.Uint32(record[340:344]))
 func buildSyntheticUtmpRecord(utType int32, user, tty, host string, tvSec uint32) []byte {
 	record := make([]byte, whoUtmpRecordSize)
 

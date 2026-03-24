@@ -31,7 +31,7 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						UIModalPosition:     1,
-						GroupName:            "Default",
+						GroupName:           "Default",
 					},
 				},
 			},
@@ -46,7 +46,7 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						UIModalPosition:     2,
-						GroupName:            "Default",
+						GroupName:           "Default",
 					},
 				},
 			},
@@ -60,7 +60,7 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						UIModalPosition:     3,
-						GroupName:            "Default",
+						GroupName:           "Default",
 					},
 				},
 			},

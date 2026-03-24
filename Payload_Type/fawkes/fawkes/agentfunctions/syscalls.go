@@ -58,9 +58,9 @@ func init() {
 				displayStr = "Initializing indirect syscall resolver"
 
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
-					TaskID:            taskData.Task.ID,
-					BaseArtifactType:  "API Call",
-					ArtifactMessage:   "Parse ntdll export table + VirtualAlloc RWX for indirect syscall stubs",
+					TaskID:           taskData.Task.ID,
+					BaseArtifactType: "API Call",
+					ArtifactMessage:  "Parse ntdll export table + VirtualAlloc RWX for indirect syscall stubs",
 				})
 			}
 			response.DisplayParams = &displayStr

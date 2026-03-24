@@ -300,4 +300,3 @@ func kdFindAll(conn *ldap.Conn, baseDN string) structs.CommandResult {
 
 	return kdMarshalResult(allEntries)
 }
-

@@ -54,12 +54,12 @@ func TestPkgMatchesFilter(t *testing.T) {
 		filter string
 		want   bool
 	}{
-		{"bash", "", true},          // empty filter matches all
-		{"bash", "bash", true},      // exact match
-		{"libbash", "bash", true},   // substring
-		{"BASH", "bash", true},      // case-insensitive
-		{"curl", "bash", false},     // no match
-		{"OpenSSH", "ssh", true},    // partial match
+		{"bash", "", true},        // empty filter matches all
+		{"bash", "bash", true},    // exact match
+		{"libbash", "bash", true}, // substring
+		{"BASH", "bash", true},    // case-insensitive
+		{"curl", "bash", false},   // no match
+		{"OpenSSH", "ssh", true},  // partial match
 	}
 	for _, tt := range tests {
 		got := pkgMatchesFilter(tt.name, tt.filter)

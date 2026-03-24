@@ -27,10 +27,10 @@ func TestParseShadowLines_ValidEntries(t *testing.T) {
 
 func TestParseShadowLines_LockedAccounts(t *testing.T) {
 	lines := []string{
-		"locked1:!$6$hash:19000:0:99999:7:::",     // locked (! prefix)
-		"locked2:!!:19000:0:99999:7:::",            // double-locked
-		"disabled:*:19000:0:99999:7:::",            // disabled
-		"empty::19000:0:99999:7:::",                // empty hash
+		"locked1:!$6$hash:19000:0:99999:7:::",        // locked (! prefix)
+		"locked2:!!:19000:0:99999:7:::",              // double-locked
+		"disabled:*:19000:0:99999:7:::",              // disabled
+		"empty::19000:0:99999:7:::",                  // empty hash
 		"active:$6$salt$realhash:19000:0:99999:7:::", // active
 	}
 	entries := parseShadowLines(lines, "")

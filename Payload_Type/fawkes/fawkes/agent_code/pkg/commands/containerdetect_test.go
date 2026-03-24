@@ -158,7 +158,6 @@ func TestParseSeccompStatus(t *testing.T) {
 	}
 }
 
-
 func TestDangerousCapBitsConsistency(t *testing.T) {
 	// Ensure all dangerous caps have valid bit positions
 	for bit, name := range dangerousCapBits {

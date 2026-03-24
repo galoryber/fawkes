@@ -310,14 +310,14 @@ this is not a valid line
 
 func TestFilterDumpableRegions(t *testing.T) {
 	regions := []memoryRegion{
-		{Start: 0x1000, End: 0x2000, Perms: "rw-p", Pathname: "[heap]"},       // dumpable
-		{Start: 0x2000, End: 0x3000, Perms: "rw-p", Pathname: ""},             // dumpable (anonymous)
-		{Start: 0x3000, End: 0x4000, Perms: "r-xp", Pathname: "[vdso]"},       // skip (vdso)
-		{Start: 0x4000, End: 0x5000, Perms: "r--p", Pathname: "[vvar]"},       // skip (vvar)
-		{Start: 0x5000, End: 0x6000, Perms: "r-xp", Pathname: "[vsyscall]"},   // skip (vsyscall)
-		{Start: 0x6000, End: 0x7000, Perms: "r--s", Pathname: "/dev/shm/foo"}, // skip (shared)
-		{Start: 0x7000, End: 0x8000, Perms: "---p", Pathname: ""},             // skip (not readable)
-		{Start: 0x8000, End: 0x9000, Perms: "rw-p", Pathname: "[stack]"},      // dumpable
+		{Start: 0x1000, End: 0x2000, Perms: "rw-p", Pathname: "[heap]"},             // dumpable
+		{Start: 0x2000, End: 0x3000, Perms: "rw-p", Pathname: ""},                   // dumpable (anonymous)
+		{Start: 0x3000, End: 0x4000, Perms: "r-xp", Pathname: "[vdso]"},             // skip (vdso)
+		{Start: 0x4000, End: 0x5000, Perms: "r--p", Pathname: "[vvar]"},             // skip (vvar)
+		{Start: 0x5000, End: 0x6000, Perms: "r-xp", Pathname: "[vsyscall]"},         // skip (vsyscall)
+		{Start: 0x6000, End: 0x7000, Perms: "r--s", Pathname: "/dev/shm/foo"},       // skip (shared)
+		{Start: 0x7000, End: 0x8000, Perms: "---p", Pathname: ""},                   // skip (not readable)
+		{Start: 0x8000, End: 0x9000, Perms: "rw-p", Pathname: "[stack]"},            // dumpable
 		{Start: 0x9000, End: 0xa000, Perms: "r--p", Pathname: "/usr/lib/libc.so.6"}, // dumpable (file-backed but readable+private)
 	}
 

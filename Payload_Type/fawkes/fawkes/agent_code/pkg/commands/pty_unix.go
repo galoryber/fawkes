@@ -147,7 +147,7 @@ func (c *PtyCommand) Execute(task structs.Task) structs.CommandResult {
 	}():
 		// Task killed via jobkill
 		close(exitCh)
-		ptmx.Close()     // Close PTY to unblock reads
+		ptmx.Close() // Close PTY to unblock reads
 		_ = cmd.Process.Kill()
 	}
 

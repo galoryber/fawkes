@@ -540,11 +540,11 @@ func etwEnable(sessionName, provider string) structs.CommandResult {
 		uintptr(sessionHandle),
 		uintptr(unsafe.Pointer(&guid)),
 		eventControlCodeEnableProvider,
-		5,                    // TRACE_LEVEL_VERBOSE
-		0xFFFFFFFFFFFFFFFF,   // MatchAnyKeyword: all
-		0,                    // MatchAllKeyword
-		0,                    // Timeout
-		0,                    // EnableParameters: NULL
+		5,                  // TRACE_LEVEL_VERBOSE
+		0xFFFFFFFFFFFFFFFF, // MatchAnyKeyword: all
+		0,                  // MatchAllKeyword
+		0,                  // Timeout
+		0,                  // EnableParameters: NULL
 	)
 	if r1 != 0 {
 		errCode := uint32(r1)

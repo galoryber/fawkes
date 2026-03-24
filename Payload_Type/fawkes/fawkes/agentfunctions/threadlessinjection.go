@@ -168,10 +168,10 @@ func init() {
 			// Build the actual parameters JSON that will be sent to the agent
 			// Encode shellcode contents as base64 to embed in JSON
 			params := map[string]interface{}{
-				"shellcode_b64":  base64.StdEncoding.EncodeToString(fileContents),
-				"pid":            int(pid),
-				"dll_name":       dllName,
-				"function_name":  functionName,
+				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
+				"pid":           int(pid),
+				"dll_name":      dllName,
+				"function_name": functionName,
 			}
 
 			paramsJSON, err := json.Marshal(params)

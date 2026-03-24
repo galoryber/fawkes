@@ -25,7 +25,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-
 // getSystemViaPotato wraps the DCOM OXID exploit with a watchdog timer.
 // If the exploit hangs (e.g., COM call deadlock), the watchdog returns
 // diagnostic output indicating which phase was reached.
@@ -409,4 +408,3 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 
 	return successResult(sb.String())
 }
-

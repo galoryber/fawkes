@@ -204,9 +204,9 @@ func TestRightToMaskAndGUID_AllRights(t *testing.T) {
 func aclTestSID(rid uint32) []byte {
 	// S-1-5-21-100-200-300-<rid>
 	sid := make([]byte, 28)
-	sid[0] = 1  // Revision
-	sid[1] = 4  // SubAuthorityCount
-	sid[7] = 5  // IdentifierAuthority = 5 (NT Authority)
+	sid[0] = 1 // Revision
+	sid[1] = 4 // SubAuthorityCount
+	sid[7] = 5 // IdentifierAuthority = 5 (NT Authority)
 	binary.LittleEndian.PutUint32(sid[8:12], 21)
 	binary.LittleEndian.PutUint32(sid[12:16], 100)
 	binary.LittleEndian.PutUint32(sid[16:20], 200)
@@ -456,14 +456,14 @@ func TestRemoveMatchingACEs_ObjectACEWithInheritedType(t *testing.T) {
 	// Manually build an object ACE with flags=0x03 (both ObjectType and InheritedObjectType present)
 	aceSize := 4 + 4 + 4 + 16 + 16 + len(sid) // header + mask + flags + objGUID + inheritGUID + SID
 	ace := make([]byte, aceSize)
-	ace[0] = 0x05                                                         // ACCESS_ALLOWED_OBJECT_ACE_TYPE
-	ace[1] = 0x00                                                         // AceFlags
-	binary.LittleEndian.PutUint16(ace[2:4], uint16(aceSize))              // AceSize
-	binary.LittleEndian.PutUint32(ace[4:8], 0x00000100)                   // AccessMask
-	binary.LittleEndian.PutUint32(ace[8:12], 0x03)                        // Flags: both ObjectType and InheritedObjectType
-	copy(ace[12:28], guid)                                                // ObjectType GUID
-	copy(ace[28:44], inheritGUID)                                         // InheritedObjectType GUID
-	copy(ace[44:], sid)                                                   // SID
+	ace[0] = 0x05                                            // ACCESS_ALLOWED_OBJECT_ACE_TYPE
+	ace[1] = 0x00                                            // AceFlags
+	binary.LittleEndian.PutUint16(ace[2:4], uint16(aceSize)) // AceSize
+	binary.LittleEndian.PutUint32(ace[4:8], 0x00000100)      // AccessMask
+	binary.LittleEndian.PutUint32(ace[8:12], 0x03)           // Flags: both ObjectType and InheritedObjectType
+	copy(ace[12:28], guid)                                   // ObjectType GUID
+	copy(ace[28:44], inheritGUID)                            // InheritedObjectType GUID
+	copy(ace[44:], sid)                                      // SID
 
 	result, remaining := removeMatchingACEs(ace, 1, sidStr, 0x00000100, guid, 0x05)
 	if remaining != 0 {

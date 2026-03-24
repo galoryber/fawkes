@@ -317,4 +317,3 @@ func getLinuxProcessOwner(pid int) string {
 	}
 	return "unknown"
 }
-

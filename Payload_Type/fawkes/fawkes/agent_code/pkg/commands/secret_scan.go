@@ -15,7 +15,7 @@ import (
 
 type SecretScanCommand struct{}
 
-func (c *SecretScanCommand) Name() string        { return "secret-scan" }
+func (c *SecretScanCommand) Name() string { return "secret-scan" }
 func (c *SecretScanCommand) Description() string {
 	return "Search files for secrets, API keys, private keys, and sensitive patterns (T1552.001, T1005)"
 }

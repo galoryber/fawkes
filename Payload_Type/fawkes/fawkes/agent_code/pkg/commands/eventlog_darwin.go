@@ -424,4 +424,3 @@ func eventlogDarwinToggle(action, channel string) structs.CommandResult {
 
 	return successResult(sb.String())
 }
-

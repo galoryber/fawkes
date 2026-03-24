@@ -113,4 +113,3 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 		Credentials: &creds,
 	}
 }
-

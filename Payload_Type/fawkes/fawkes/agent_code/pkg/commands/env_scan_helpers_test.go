@@ -152,14 +152,14 @@ func TestRedactValue(t *testing.T) {
 		input    string
 		expected string
 	}{
-		{"short", "short"},           // <= 12 chars: no redaction
-		{"exactly12ch", "exactly12ch"}, // exactly 12: no redaction
+		{"short", "short"},                           // <= 12 chars: no redaction
+		{"exactly12ch", "exactly12ch"},               // exactly 12: no redaction
 		{"this-is-a-long-secret-key", "this...-key"}, // > 12: redacted
-		{"AKIAIOSFODNN7EXAMPLE", "AKIA...MPLE"},     // AWS-style key
-		{"a", "a"},                                    // single char
-		{"", ""},                                      // empty
-		{"123456789012", "123456789012"},               // exactly 12
-		{"1234567890123", "1234...0123"},               // 13 chars
+		{"AKIAIOSFODNN7EXAMPLE", "AKIA...MPLE"},      // AWS-style key
+		{"a", "a"},                                   // single char
+		{"", ""},                                     // empty
+		{"123456789012", "123456789012"},             // exactly 12
+		{"1234567890123", "1234...0123"},             // 13 chars
 	}
 
 	for _, tt := range tests {
@@ -426,9 +426,9 @@ func TestParseEnvironBlockLargeInput(t *testing.T) {
 func TestFilterSensitiveVarsMalformedEntry(t *testing.T) {
 	envVars := []string{
 		"GOOD=value",
-		"=empty-key",      // empty key
-		"noequals",        // no equals (shouldn't happen after parseEnvironBlock)
-		"API_KEY=value",   // sensitive
+		"=empty-key",    // empty key
+		"noequals",      // no equals (shouldn't happen after parseEnvironBlock)
+		"API_KEY=value", // sensitive
 	}
 
 	results := filterSensitiveVars(envVars, 1, "test")

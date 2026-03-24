@@ -32,12 +32,12 @@ type emailArgs struct {
 
 // Outlook folder constants (OlDefaultFolders enumeration).
 const (
-	olFolderInbox     = 6
-	olFolderOutbox    = 4
-	olFolderSentMail  = 5
-	olFolderDrafts    = 16
+	olFolderInbox        = 6
+	olFolderOutbox       = 4
+	olFolderSentMail     = 5
+	olFolderDrafts       = 16
 	olFolderDeletedItems = 3
-	olFolderJunk      = 23
+	olFolderJunk         = 23
 )
 
 func (c *EmailCommand) Execute(task structs.Task) structs.CommandResult {

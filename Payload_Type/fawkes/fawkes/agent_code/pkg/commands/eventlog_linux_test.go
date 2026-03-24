@@ -12,9 +12,9 @@ import (
 
 func TestParseTimeWindow(t *testing.T) {
 	tests := []struct {
-		input    string
-		wantDur  time.Duration
-		wantOK   bool
+		input   string
+		wantDur time.Duration
+		wantOK  bool
 	}{
 		{"24h", 24 * time.Hour, true},
 		{"1h", 1 * time.Hour, true},

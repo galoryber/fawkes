@@ -139,7 +139,6 @@ func TestScanProcessMemory_SelfSearch(t *testing.T) {
 	}
 }
 
-
 func TestScanProcessMemory_InvalidPID(t *testing.T) {
 	_, _, _, err := scanProcessMemory(999999999, []byte("test"), 10, 16)
 	if err == nil {

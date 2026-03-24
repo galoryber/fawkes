@@ -9,7 +9,7 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "amcache",
+		Name: "amcache",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "amcache_new.js"),
 			Author:     "@galoryber",
@@ -35,7 +35,7 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						UIModalPosition:     1,
-						GroupName:            "Default",
+						GroupName:           "Default",
 					},
 				},
 			},
@@ -49,7 +49,7 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						UIModalPosition:     2,
-						GroupName:            "Default",
+						GroupName:           "Default",
 					},
 				},
 			},
@@ -63,7 +63,7 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						UIModalPosition:     3,
-						GroupName:            "Default",
+						GroupName:           "Default",
 					},
 				},
 			},

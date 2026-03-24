@@ -622,7 +622,7 @@ func TestFormatRR_SRV(t *testing.T) {
 	msg := make([]byte, rdataOffset)
 	msg = binary.BigEndian.AppendUint16(msg, 10)  // priority
 	msg = binary.BigEndian.AppendUint16(msg, 5)   // weight
-	msg = binary.BigEndian.AppendUint16(msg, 389)  // port
+	msg = binary.BigEndian.AppendUint16(msg, 389) // port
 	msg = append(msg, 4)
 	msg = append(msg, []byte("dc01")...)
 	msg = append(msg, 7)
@@ -901,7 +901,7 @@ func TestParseAXFRResponse_TruncatedRdata(t *testing.T) {
 	msg = binary.BigEndian.AppendUint16(msg, 1)
 	msg = binary.BigEndian.AppendUint32(msg, 300)
 	msg = binary.BigEndian.AppendUint16(msg, 100) // claims 100 bytes
-	msg = append(msg, 1, 2, 3, 4)                // only 4 bytes
+	msg = append(msg, 1, 2, 3, 4)                 // only 4 bytes
 
 	// Should not panic
 	records, _, _ := parseAXFRResponse(msg)

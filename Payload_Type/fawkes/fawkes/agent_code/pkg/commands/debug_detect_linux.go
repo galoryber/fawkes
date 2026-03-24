@@ -263,17 +263,17 @@ func checkEBPF() debugCheck {
 
 	// Check /proc/*/comm for known eBPF-based monitoring tools
 	ebpfTools := map[string]string{
-		"falco":             "Falco (eBPF syscall monitoring)",
-		"tetragon":          "Tetragon (Cilium runtime enforcement)",
-		"tracee":            "Tracee (Aqua eBPF tracing)",
-		"bpftrace":          "bpftrace (dynamic tracing)",
-		"bpftool":           "bpftool (BPF program inspection)",
-		"cilium-agent":      "Cilium (eBPF networking/security)",
-		"hubble":            "Hubble (Cilium network observability)",
-		"inspektor-gadget":  "Inspektor Gadget (eBPF debugging)",
-		"sysdig":            "Sysdig (syscall capture)",
-		"pwru":              "pwru (eBPF packet tracer)",
-		"bcc-tools":         "BCC (BPF Compiler Collection)",
+		"falco":            "Falco (eBPF syscall monitoring)",
+		"tetragon":         "Tetragon (Cilium runtime enforcement)",
+		"tracee":           "Tracee (Aqua eBPF tracing)",
+		"bpftrace":         "bpftrace (dynamic tracing)",
+		"bpftool":          "bpftool (BPF program inspection)",
+		"cilium-agent":     "Cilium (eBPF networking/security)",
+		"hubble":           "Hubble (Cilium network observability)",
+		"inspektor-gadget": "Inspektor Gadget (eBPF debugging)",
+		"sysdig":           "Sysdig (syscall capture)",
+		"pwru":             "pwru (eBPF packet tracer)",
+		"bcc-tools":        "BCC (BPF Compiler Collection)",
 	}
 
 	if entries, err := os.ReadDir("/proc"); err == nil {
@@ -407,4 +407,3 @@ func checkPtraceScope() debugCheck {
 		Details: fmt.Sprintf("ptrace_scope=%s (%s)", scope, desc),
 	}
 }
-

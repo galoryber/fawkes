@@ -12,11 +12,11 @@ func TestFormatHandleResultEmpty(t *testing.T) {
 	}
 
 	var out struct {
-		PID     int              `json:"pid"`
-		Shown   int              `json:"shown"`
-		Total   int              `json:"total"`
+		PID     int               `json:"pid"`
+		Shown   int               `json:"shown"`
+		Total   int               `json:"total"`
 		Summary []handleTypeCount `json:"summary"`
-		Handles []handleInfo     `json:"handles"`
+		Handles []handleInfo      `json:"handles"`
 	}
 	if err := json.Unmarshal([]byte(result.Output), &out); err != nil {
 		t.Fatalf("invalid JSON output: %v", err)
@@ -72,10 +72,10 @@ func TestFormatHandleResultWithHandles(t *testing.T) {
 
 func TestFormatHandleResultSummarySortedByCount(t *testing.T) {
 	typeCounts := map[string]int{
-		"File":    5,
-		"Socket":  10,
-		"Pipe":    1,
-		"Event":   3,
+		"File":   5,
+		"Socket": 10,
+		"Pipe":   1,
+		"Event":  3,
 	}
 
 	result := formatHandleResult(nil, typeCounts, handlesArgs{PID: 1}, 19)

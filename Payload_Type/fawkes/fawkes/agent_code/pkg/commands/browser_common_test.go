@@ -299,8 +299,8 @@ func TestFindFirefoxProfiles(t *testing.T) {
 	// Create Firefox-style profile directories
 	os.MkdirAll(filepath.Join(tmpDir, "a1b2c3d4.default-release"), 0755)
 	os.MkdirAll(filepath.Join(tmpDir, "e5f6g7h8.default"), 0755)
-	os.MkdirAll(filepath.Join(tmpDir, "crash-reports"), 0755)      // non-profile
-	os.MkdirAll(filepath.Join(tmpDir, "pending-pings"), 0755)      // non-profile
+	os.MkdirAll(filepath.Join(tmpDir, "crash-reports"), 0755) // non-profile
+	os.MkdirAll(filepath.Join(tmpDir, "pending-pings"), 0755) // non-profile
 
 	profiles := findFirefoxProfiles(tmpDir)
 	if len(profiles) != 2 {

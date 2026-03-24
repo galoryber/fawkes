@@ -285,7 +285,6 @@ func parseSeccompStatus(statusContent string) string {
 	return ""
 }
 
-
 func containerDetectDarwin() ([]containerEvidence, string) {
 	var evidence []containerEvidence
 	// macOS doesn't typically run in containers, but check for common patterns

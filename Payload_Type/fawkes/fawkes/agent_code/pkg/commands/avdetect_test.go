@@ -257,9 +257,9 @@ func TestAvDetect_DeepScanFieldsValid(t *testing.T) {
 	results := avDeepScan()
 	// Valid source prefixes across all platforms
 	validPrefixes := []string{
-		"kmod:", "systemd:", "config:",       // Linux
-		"kext:", "sysext:", "launchdaemon:",  // macOS
-		"launchagent:", "app:",               // macOS
+		"kmod:", "systemd:", "config:", // Linux
+		"kext:", "sysext:", "launchdaemon:", // macOS
+		"launchagent:", "app:", // macOS
 	}
 	for _, r := range results {
 		if r.Product == "" {

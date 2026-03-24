@@ -101,17 +101,17 @@ func init() {
 			response.DisplayParams = &display
 
 			apiMap := map[string]string{
-				"users":       "NetUserEnum",
-				"localgroups": "NetLocalGroupEnum",
+				"users":        "NetUserEnum",
+				"localgroups":  "NetLocalGroupEnum",
 				"groupmembers": "NetLocalGroupGetMembers",
-				"admins":      "NetLocalGroupGetMembers(Administrators)",
-				"domainusers": "NetUserEnum(DC)",
+				"admins":       "NetLocalGroupGetMembers(Administrators)",
+				"domainusers":  "NetUserEnum(DC)",
 				"domaingroups": "NetGroupEnum(DC)",
-				"domaininfo":  "DsGetDcNameW",
-				"loggedon":    "NetWkstaUserEnum",
-				"sessions":    "NetSessionEnum",
-				"shares":      "NetShareEnum",
-				"mapped":      "WNetEnumResource",
+				"domaininfo":   "DsGetDcNameW",
+				"loggedon":     "NetWkstaUserEnum",
+				"sessions":     "NetSessionEnum",
+				"shares":       "NetShareEnum",
+				"mapped":       "WNetEnumResource",
 			}
 			apiName := apiMap[action]
 			if apiName == "" {

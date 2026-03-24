@@ -19,17 +19,17 @@ func TestDaysToDate_KnownDates(t *testing.T) {
 		days             int64
 		year, month, day int64
 	}{
-		{0, 1970, 1, 1},       // Unix epoch
-		{365, 1971, 1, 1},     // One year
-		{730, 1972, 1, 1},     // Two years
-		{10957, 2000, 1, 1},   // Y2K
-		{18628, 2021, 1, 1},   // 2021
-		{19723, 2024, 1, 1},   // 2024 (leap year)
-		{20454, 2026, 1, 1},   // 2026
-		{20515, 2026, 3, 3},   // Today (roughly)
-		{-1, 1969, 12, 31},    // Day before epoch
-		{-365, 1969, 1, 1},    // One year before epoch
-		{-719468, 0, 3, 1},    // Very early (astronomical year 0 = 1 BC)
+		{0, 1970, 1, 1},     // Unix epoch
+		{365, 1971, 1, 1},   // One year
+		{730, 1972, 1, 1},   // Two years
+		{10957, 2000, 1, 1}, // Y2K
+		{18628, 2021, 1, 1}, // 2021
+		{19723, 2024, 1, 1}, // 2024 (leap year)
+		{20454, 2026, 1, 1}, // 2026
+		{20515, 2026, 3, 3}, // Today (roughly)
+		{-1, 1969, 12, 31},  // Day before epoch
+		{-365, 1969, 1, 1},  // One year before epoch
+		{-719468, 0, 3, 1},  // Very early (astronomical year 0 = 1 BC)
 	}
 	for _, tt := range tests {
 		y, m, d := daysToDate(tt.days)

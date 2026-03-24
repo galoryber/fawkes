@@ -32,7 +32,7 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						UIModalPosition:     1,
-						GroupName:            "Default",
+						GroupName:           "Default",
 					},
 				},
 			},

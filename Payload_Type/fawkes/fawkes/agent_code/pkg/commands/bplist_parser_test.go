@@ -161,8 +161,8 @@ func TestParseBplist_SimpleDict(t *testing.T) {
 	// {"name": "alice"}
 	objects := [][]byte{
 		bplistDict([]int{1}, []int{2}), // obj 0: dict
-		bplistString("name"),            // obj 1: key
-		bplistString("alice"),           // obj 2: value
+		bplistString("name"),           // obj 1: key
+		bplistString("alice"),          // obj 2: value
 	}
 	data := buildBplist(objects, 0)
 
@@ -181,11 +181,11 @@ func TestParseBplist_SimpleDict(t *testing.T) {
 func TestParseBplist_NestedDict(t *testing.T) {
 	// {"outer": {"inner": "value"}}
 	objects := [][]byte{
-		bplistDict([]int{1}, []int{2}),    // obj 0: outer dict
-		bplistString("outer"),              // obj 1: key
-		bplistDict([]int{3}, []int{4}),     // obj 2: inner dict
-		bplistString("inner"),              // obj 3: inner key
-		bplistString("value"),              // obj 4: inner value
+		bplistDict([]int{1}, []int{2}), // obj 0: outer dict
+		bplistString("outer"),          // obj 1: key
+		bplistDict([]int{3}, []int{4}), // obj 2: inner dict
+		bplistString("inner"),          // obj 3: inner key
+		bplistString("value"),          // obj 4: inner value
 	}
 	data := buildBplist(objects, 0)
 
@@ -206,10 +206,10 @@ func TestParseBplist_NestedDict(t *testing.T) {
 func TestParseBplist_Array(t *testing.T) {
 	// ["a", "b", "c"]
 	objects := [][]byte{
-		bplistArray(1, 2, 3),  // obj 0: array
-		bplistString("a"),     // obj 1
-		bplistString("b"),     // obj 2
-		bplistString("c"),     // obj 3
+		bplistArray(1, 2, 3), // obj 0: array
+		bplistString("a"),    // obj 1
+		bplistString("b"),    // obj 2
+		bplistString("c"),    // obj 3
 	}
 	data := buildBplist(objects, 0)
 
@@ -531,15 +531,15 @@ func TestParseShadowHashData(t *testing.T) {
 	}
 
 	objects := [][]byte{
-		bplistDict([]int{1}, []int{2}),                     // obj 0: root dict
-		bplistString("SALTED-SHA512-PBKDF2"),               // obj 1: key
-		bplistDict([]int{3, 4, 5}, []int{6, 7, 8}),        // obj 2: hash dict
-		bplistString("iterations"),                          // obj 3
-		bplistString("salt"),                                // obj 4
-		bplistString("entropy"),                             // obj 5
-		bplistInt(38000),                                    // obj 6
-		bplistData(salt),                                    // obj 7
-		bplistData(entropy),                                 // obj 8
+		bplistDict([]int{1}, []int{2}),             // obj 0: root dict
+		bplistString("SALTED-SHA512-PBKDF2"),       // obj 1: key
+		bplistDict([]int{3, 4, 5}, []int{6, 7, 8}), // obj 2: hash dict
+		bplistString("iterations"),                 // obj 3
+		bplistString("salt"),                       // obj 4
+		bplistString("entropy"),                    // obj 5
+		bplistInt(38000),                           // obj 6
+		bplistData(salt),                           // obj 7
+		bplistData(entropy),                        // obj 8
 	}
 	blob := buildBplist(objects, 0)
 
@@ -617,21 +617,21 @@ func TestParseDarwinUserPlist(t *testing.T) {
 	// Outer plist (user.plist)
 	outerObjects := [][]byte{
 		bplistDict([]int{1, 2, 3, 4, 5}, []int{6, 7, 8, 9, 10}), // obj 0: root
-		bplistString("name"),                                       // obj 1
-		bplistString("uid"),                                        // obj 2
-		bplistString("home"),                                       // obj 3
-		bplistString("shell"),                                      // obj 4
-		bplistString("ShadowHashData"),                             // obj 5
-		bplistArray(11),                                             // obj 6: name array
-		bplistArray(12),                                             // obj 7: uid array
-		bplistArray(13),                                             // obj 8: home array
-		bplistArray(14),                                             // obj 9: shell array
-		bplistArray(15),                                             // obj 10: ShadowHashData array
-		bplistString("gary"),                                       // obj 11
-		bplistString("501"),                                        // obj 12
-		bplistString("/Users/gary"),                                // obj 13
-		bplistString("/bin/zsh"),                                   // obj 14
-		bplistData(innerBlob),                                      // obj 15: inner plist blob
+		bplistString("name"),           // obj 1
+		bplistString("uid"),            // obj 2
+		bplistString("home"),           // obj 3
+		bplistString("shell"),          // obj 4
+		bplistString("ShadowHashData"), // obj 5
+		bplistArray(11),                // obj 6: name array
+		bplistArray(12),                // obj 7: uid array
+		bplistArray(13),                // obj 8: home array
+		bplistArray(14),                // obj 9: shell array
+		bplistArray(15),                // obj 10: ShadowHashData array
+		bplistString("gary"),           // obj 11
+		bplistString("501"),            // obj 12
+		bplistString("/Users/gary"),    // obj 13
+		bplistString("/bin/zsh"),       // obj 14
+		bplistData(innerBlob),          // obj 15: inner plist blob
 	}
 	outerData := buildBplist(outerObjects, 0)
 
@@ -699,7 +699,7 @@ func TestReadBEInt(t *testing.T) {
 		{"4 bytes zero", []byte{0x00, 0x00, 0x00, 0x00}, 0},
 		{"4 bytes one", []byte{0x00, 0x00, 0x00, 0x01}, 1},
 		{"4 bytes max positive", []byte{0x7F, 0xFF, 0xFF, 0xFF}, 2147483647},
-		{"4 bytes negative", []byte{0xFF, 0xFF, 0xFF, 0xFF}, -1},        // int32 -1
+		{"4 bytes negative", []byte{0xFF, 0xFF, 0xFF, 0xFF}, -1},              // int32 -1
 		{"4 bytes min negative", []byte{0x80, 0x00, 0x00, 0x00}, -2147483648}, // int32 min
 		{"8 bytes zero", []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 0},
 		{"8 bytes one", []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01}, 1},
@@ -866,10 +866,10 @@ func TestParseBplist_NonStringDictKey(t *testing.T) {
 	// obj 0: dict with key=1 (int), value=2 (string); key=3 (string), value=4 (string)
 	objects := [][]byte{
 		bplistDict([]int{1, 3}, []int{2, 4}), // obj 0: dict
-		bplistInt(99),                         // obj 1: integer key (not string)
-		bplistString("skipped"),               // obj 2: value for int key
-		bplistString("realkey"),               // obj 3: string key
-		bplistString("realval"),               // obj 4: value for string key
+		bplistInt(99),                        // obj 1: integer key (not string)
+		bplistString("skipped"),              // obj 2: value for int key
+		bplistString("realkey"),              // obj 3: string key
+		bplistString("realval"),              // obj 4: value for string key
 	}
 	data := buildBplist(objects, 0)
 

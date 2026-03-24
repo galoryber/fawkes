@@ -128,7 +128,7 @@ func ticketToCCache(ticketBytes []byte, sessionKey types.EncryptionKey, username
 	// Header tag: deltatime (tag=1, length=8, value=0)
 	buf = binary.BigEndian.AppendUint16(buf, 1) // tag
 	buf = binary.BigEndian.AppendUint16(buf, 8) // length
-	buf = append(buf, 0, 0, 0, 0, 0, 0, 0, 0)  // 8 bytes of zero
+	buf = append(buf, 0, 0, 0, 0, 0, 0, 0, 0)   // 8 bytes of zero
 
 	// Default principal
 	buf = ccacheWritePrincipal(buf, realm, []string{username})

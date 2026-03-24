@@ -26,7 +26,7 @@ func init() {
 				Description:   "Action: show current config or set a value",
 				Choices:       []string{"show", "set"},
 				DefaultValue:  "show",
-					ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
 						GroupName:           "Default",
@@ -40,7 +40,7 @@ func init() {
 				Description:   "Config key to modify",
 				Choices:       []string{"sleep", "jitter", "killdate", "working_hours_start", "working_hours_end", "working_days"},
 				DefaultValue:  "",
-					ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
 						GroupName:           "Default",
@@ -53,7 +53,7 @@ func init() {
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:   "New value for the config key",
 				DefaultValue:  "",
-					ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
 						GroupName:           "Default",
