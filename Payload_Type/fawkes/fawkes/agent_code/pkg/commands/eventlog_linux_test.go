@@ -107,10 +107,8 @@ func TestEventlogListVarLogFilter(t *testing.T) {
 	// Filter for a specific log name
 	eventlogListVarLog(&sb, "auth")
 	output := sb.String()
-	// If auth.log exists, it should be in the output
-	if strings.Contains(output, "auth") || output == "" {
-		// Expected behavior
-	}
+	// If auth.log exists, it should be in the output; empty is also acceptable
+	_ = output // either contains "auth" or is empty — both are valid
 }
 
 func TestEventlogQueryFileBasic(t *testing.T) {

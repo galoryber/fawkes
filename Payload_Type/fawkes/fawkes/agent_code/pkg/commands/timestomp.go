@@ -204,9 +204,7 @@ func timestompMatch(target string) structs.CommandResult {
 	if err := os.Chtimes(target, chosen, chosen); err != nil {
 		return errorf("Error setting timestamps: %v", err)
 	}
-	if err := setCreationTime(target, chosen); err != nil {
-		// Non-fatal
-	}
+	_ = setCreationTime(target, chosen) // non-fatal
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Matched timestamps on %s to blend with directory\n", target))
@@ -240,9 +238,7 @@ func timestompRandom(target, rangeStartStr, rangeEndStr string) structs.CommandR
 	if err := os.Chtimes(target, chosen, chosen); err != nil {
 		return errorf("Error setting timestamps: %v", err)
 	}
-	if err := setCreationTime(target, chosen); err != nil {
-		// Non-fatal
-	}
+	_ = setCreationTime(target, chosen) // non-fatal
 
 	return successf("Set timestamps on %s to random time: %s (range: %s — %s)",
 		target, chosen.Format(time.RFC3339),

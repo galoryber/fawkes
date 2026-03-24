@@ -65,9 +65,9 @@ func TestWhoPlatformAllFlag(t *testing.T) {
 	// With all=true, should include non-USER_PROCESS entries too
 	// Just verify no panic and entries have basic structure
 	for _, e := range entries {
+		// TTY should not be empty — the code sets empty to "-"
 		if e.TTY == "" {
-			// TTY might be "-" but should not be empty after processing
-			// Actually in the code, empty tty gets set to "-"
+			t.Error("expected non-empty TTY (should be '-' at minimum)")
 		}
 	}
 }
