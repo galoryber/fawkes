@@ -186,6 +186,22 @@ func TestParseTCPState(t *testing.T) {
 	}
 }
 
+func TestParseHexAddr_IPv6Normal(t *testing.T) {
+	// Valid 32-char IPv6 hex with port
+	result := parseHexAddr("00000000000000000000000000000000:0050", true)
+	if !strings.Contains(result, "]:80") {
+		t.Errorf("Expected IPv6 with port 80, got: %s", result)
+	}
+}
+
+func TestParseHexAddr_IPv6ShortHex(t *testing.T) {
+	// IPv6 with non-32-char hex should produce fallback format
+	result := parseHexAddr("ABCD1234:0050", true)
+	if !strings.Contains(result, "[ABCD1234]:80") {
+		t.Errorf("Expected fallback IPv6 format, got: %s", result)
+	}
+}
+
 func TestParseIPv6Hex(t *testing.T) {
 	// All zeros
 	result := parseIPv6Hex("00000000000000000000000000000000")

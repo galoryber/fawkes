@@ -130,6 +130,17 @@ func TestParsePortsDedup(t *testing.T) {
 	}
 }
 
+func TestParsePortsEmptyParts(t *testing.T) {
+	// Trailing comma or double comma should be handled
+	ports, err := parsePorts("80,,443,")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ports) != 2 {
+		t.Errorf("expected 2 ports (empty parts skipped), got %d: %v", len(ports), ports)
+	}
+}
+
 func TestPortScanKnownService(t *testing.T) {
 	tests := map[int]string{
 		22:    "SSH",
