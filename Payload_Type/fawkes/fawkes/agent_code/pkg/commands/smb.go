@@ -308,6 +308,7 @@ func smbReadFile(args smbArgs) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("[*] \\\\%s\\%s\\%s (%s)\n", args.Host, args.Share, args.Path, formatFileSize(info.Size())))
 	sb.WriteString(strings.Repeat("-", 60) + "\n")
 	sb.WriteString(string(data))
+	structs.ZeroBytes(data) // opsec: clear SMB file content from memory
 
 	return successResult(sb.String())
 }
