@@ -420,6 +420,21 @@ func TestSplitSSHConfigLine_ValueWithSpaces(t *testing.T) {
 	}
 }
 
+func TestSplitSSHConfigLine_SingleWord(t *testing.T) {
+	// A line with no separator should return empty strings
+	key, val := splitSSHConfigLine("HostName")
+	if key != "" || val != "" {
+		t.Errorf("expected empty key/val for single word, got key=%q val=%q", key, val)
+	}
+}
+
+func TestSplitSSHConfigLine_EmptyLine(t *testing.T) {
+	key, val := splitSSHConfigLine("")
+	if key != "" || val != "" {
+		t.Errorf("expected empty key/val for empty line, got key=%q val=%q", key, val)
+	}
+}
+
 // --- isStandardKeyFile tests ---
 
 func TestIsStandardKeyFile(t *testing.T) {

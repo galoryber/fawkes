@@ -2,6 +2,8 @@ package commands
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"fawkes/pkg/structs"
@@ -219,5 +221,59 @@ func TestFormatSSHResultWithKeyData(t *testing.T) {
 	result := formatSSHResult(args, "192.168.1.1:22", []byte("uid=0(root)\n"), nil)
 	if result.Status != "success" {
 		t.Errorf("expected success, got %s", result.Status)
+	}
+}
+
+func TestFormatSSHResultExitMissingError(t *testing.T) {
+	args := sshExecArgs{
+		Host:     "192.168.1.1",
+		Username: "root",
+		Password: "pass",
+		Command:  "cmd",
+		Port:     22,
+	}
+	// ExitMissingError: session closed without sending exit status
+	result := formatSSHResult(args, "192.168.1.1:22", []byte("partial output"), &ssh.ExitMissingError{})
+	if result.Status != "success" {
+		t.Errorf("expected success for ExitMissingError, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "unknown (session closed") {
+		t.Errorf("expected exit-missing message, got: %s", result.Output)
+	}
+}
+
+func TestFormatSSHResultConnectionError(t *testing.T) {
+	args := sshExecArgs{
+		Host:     "192.168.1.1",
+		Username: "root",
+		Password: "pass",
+		Command:  "cmd",
+		Port:     22,
+	}
+	// A generic error (not ExitError or ExitMissingError) → status = "error"
+	result := formatSSHResult(args, "192.168.1.1:22", nil, fmt.Errorf("connection reset by peer"))
+	if result.Status != "error" {
+		t.Errorf("expected error for connection error, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "connection reset") {
+		t.Errorf("expected error message in output, got: %s", result.Output)
+	}
+}
+
+func TestFormatSSHResultOutputNoTrailingNewline(t *testing.T) {
+	args := sshExecArgs{
+		Host:     "192.168.1.1",
+		Username: "root",
+		Password: "pass",
+		Command:  "echo -n hello",
+		Port:     22,
+	}
+	// Output without trailing newline should have one appended
+	result := formatSSHResult(args, "192.168.1.1:22", []byte("hello"), nil)
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s", result.Status)
+	}
+	if !strings.HasSuffix(result.Output, "hello\n") {
+		t.Errorf("expected trailing newline appended, got: %q", result.Output)
 	}
 }

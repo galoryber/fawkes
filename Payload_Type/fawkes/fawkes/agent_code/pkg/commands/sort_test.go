@@ -155,3 +155,41 @@ func TestUniqueLinesFunc(t *testing.T) {
 		t.Fatalf("expected 3 unique lines, got %d: %v", len(result), result)
 	}
 }
+
+func TestUniqueLinesEmpty(t *testing.T) {
+	result := uniqueLines([]string{})
+	if len(result) != 0 {
+		t.Fatalf("expected 0 lines for empty input, got %d", len(result))
+	}
+}
+
+func TestUniqueLinesAllSame(t *testing.T) {
+	lines := []string{"x", "x", "x", "x"}
+	result := uniqueLines(lines)
+	if len(result) != 1 || result[0] != "x" {
+		t.Fatalf("expected [x], got %v", result)
+	}
+}
+
+func TestUniqueLinesAllDifferent(t *testing.T) {
+	lines := []string{"a", "b", "c", "d"}
+	result := uniqueLines(lines)
+	if len(result) != 4 {
+		t.Fatalf("expected 4 unique lines, got %d: %v", len(result), result)
+	}
+}
+
+func TestExtractNumberUnparseable(t *testing.T) {
+	// A string that starts with number chars but isn't a valid float
+	got := extractNumber("+.")
+	if got != 0 {
+		t.Errorf("extractNumber(\"+.\") = %f, want 0", got)
+	}
+}
+
+func TestExtractNumberLeadingPlus(t *testing.T) {
+	got := extractNumber("+42 things")
+	if got != 42 {
+		t.Errorf("extractNumber(\"+42 things\") = %f, want 42", got)
+	}
+}
