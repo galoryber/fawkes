@@ -576,6 +576,82 @@ func TestFormatDONetworkJSON_InvalidJSON(t *testing.T) {
 	}
 }
 
+func TestFormatDONetworkJSON_NonArrayInterface(t *testing.T) {
+	// When interface value is not an array (string instead of []interface{})
+	jsonStr := `{"interfaces": {"public": "not-an-array"}}`
+	result := formatDONetworkJSON(jsonStr)
+	if result != "" {
+		t.Errorf("expected empty for non-array interface, got %q", result)
+	}
+}
+
+func TestFormatDONetworkJSON_NonMapEntry(t *testing.T) {
+	// When an interface entry is not a map
+	jsonStr := `{"interfaces": {"public": ["not-a-map", 123]}}`
+	result := formatDONetworkJSON(jsonStr)
+	if result != "" {
+		t.Errorf("expected empty for non-map entries, got %q", result)
+	}
+}
+
+func TestFormatAzureNetworkJSON_NonMapInterface(t *testing.T) {
+	// When interface entry is not a map
+	jsonStr := `{"network": {"interface": ["not-a-map", 42]}}`
+	result := formatAzureNetworkJSON(jsonStr)
+	// Should have interface headers but skip non-map entries
+	if result != "" {
+		t.Errorf("expected empty for non-map entries, got %q", result)
+	}
+}
+
+func TestFormatAzureNetworkJSON_NoIPv4(t *testing.T) {
+	// Interface with MAC but no IPv4 data
+	jsonStr := `{"network": {"interface": [{"macAddress": "AA:BB:CC:DD:EE:FF"}]}}`
+	result := formatAzureNetworkJSON(jsonStr)
+	if !strings.Contains(result, "AA:BB:CC:DD:EE:FF") {
+		t.Error("missing MAC address")
+	}
+	if strings.Contains(result, "Private:") {
+		t.Error("should not have Private IP when no ipv4 data")
+	}
+}
+
+func TestFormatAzureNetworkJSON_NoInterfaceKey(t *testing.T) {
+	jsonStr := `{"network": {"other": "data"}}`
+	result := formatAzureNetworkJSON(jsonStr)
+	if result != "" {
+		t.Errorf("expected empty for missing interface key, got %q", result)
+	}
+}
+
+func TestFormatDOMetadataJSON_WithInterfaces(t *testing.T) {
+	jsonStr := `{
+		"droplet_id": 999,
+		"hostname": "test-do",
+		"interfaces": {
+			"public": [{"ipv4": {"ip_address": "1.2.3.4"}, "mac": "AA:BB:CC:DD:EE:FF"}],
+			"private": [{"ipv4": {"ip_address": "10.0.0.1"}, "mac": "11:22:33:44:55:66"}]
+		}
+	}`
+	result := formatDOMetadataJSON(jsonStr)
+	if !strings.Contains(result, "test-do") {
+		t.Error("missing hostname")
+	}
+	if !strings.Contains(result, "AA:BB:CC:DD:EE:FF") || !strings.Contains(result, "11:22:33:44:55:66") {
+		t.Error("missing interface MAC addresses")
+	}
+}
+
+func TestFormatDOMetadataJSON_NonArrayInterfaces(t *testing.T) {
+	// interfaces with non-array values should be silently skipped
+	jsonStr := `{"droplet_id": 1, "interfaces": {"public": "not-array"}}`
+	result := formatDOMetadataJSON(jsonStr)
+	// Should still have droplet_id but skip the bad interface
+	if !strings.Contains(result, "1") {
+		t.Error("missing droplet_id")
+	}
+}
+
 // --- Integration-style tests with mock metadata server ---
 
 func TestMetadataGet_AWSStyleEndpoint(t *testing.T) {

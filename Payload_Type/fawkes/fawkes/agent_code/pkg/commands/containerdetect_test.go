@@ -147,6 +147,8 @@ func TestParseSeccompStatus(t *testing.T) {
 		{"filter", "Seccomp:\t2\n", "filter mode (syscall filtering active)"},
 		{"missing", "Name:\ttest\n", ""},
 		{"with context", "Name:\ttest\nSeccomp:\t2\nCapEff:\t0\n", "filter mode (syscall filtering active)"},
+		{"unknown mode", "Seccomp:\t99\n", "mode 99"},
+		{"empty value", "Seccomp:\t\n", "mode "},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

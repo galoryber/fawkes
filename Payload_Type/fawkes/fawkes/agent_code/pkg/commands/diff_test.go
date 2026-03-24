@@ -168,3 +168,94 @@ func TestDiffLinesFunc(t *testing.T) {
 		t.Fatalf("expected diff content, got: %s", combined)
 	}
 }
+
+func TestDiffLinesDeleteOnly(t *testing.T) {
+	// All lines removed: a has content, b is empty
+	a := []string{"line1", "line2", "line3"}
+	b := []string{}
+	hunks := diffLines(a, b, 1)
+
+	if len(hunks) == 0 {
+		t.Fatal("expected at least one hunk for delete-only diff")
+	}
+	combined := strings.Join(hunks, "")
+	if !strings.Contains(combined, "-line1") || !strings.Contains(combined, "-line3") {
+		t.Errorf("expected all lines removed: %s", combined)
+	}
+}
+
+func TestDiffLinesAddOnly(t *testing.T) {
+	// All lines added: a is empty, b has content
+	a := []string{}
+	b := []string{"new1", "new2", "new3"}
+	hunks := diffLines(a, b, 1)
+
+	if len(hunks) == 0 {
+		t.Fatal("expected at least one hunk for add-only diff")
+	}
+	combined := strings.Join(hunks, "")
+	if !strings.Contains(combined, "+new1") || !strings.Contains(combined, "+new3") {
+		t.Errorf("expected all lines added: %s", combined)
+	}
+}
+
+func TestDiffLinesIdentical(t *testing.T) {
+	a := []string{"same1", "same2", "same3"}
+	b := []string{"same1", "same2", "same3"}
+	hunks := diffLines(a, b, 3)
+
+	if len(hunks) != 0 {
+		t.Errorf("expected no hunks for identical input, got %d", len(hunks))
+	}
+}
+
+func TestDiffLinesMultipleHunks(t *testing.T) {
+	// Changes far apart should produce separate hunks
+	a := make([]string, 20)
+	b := make([]string, 20)
+	for i := range a {
+		a[i] = strings.Repeat("x", i+1) // unique content to avoid confusing LCS
+		b[i] = a[i]
+	}
+	a[2] = "old_near_start"
+	b[2] = "new_near_start"
+	a[17] = "old_near_end"
+	b[17] = "new_near_end"
+
+	hunks := diffLines(a, b, 1)
+	if len(hunks) < 2 {
+		t.Errorf("expected 2+ hunks for widely-separated changes, got %d", len(hunks))
+	}
+}
+
+func TestDiffRemovedLines(t *testing.T) {
+	// File2 has fewer lines than File1
+	dir := t.TempDir()
+	f1 := filepath.Join(dir, "file1.txt")
+	f2 := filepath.Join(dir, "file2.txt")
+	os.WriteFile(f1, []byte("line1\nline2\nline3\nline4\n"), 0644)
+	os.WriteFile(f2, []byte("line1\nline4\n"), 0644)
+
+	params, _ := json.Marshal(diffArgs{File1: f1, File2: f2})
+	cmd := &DiffCommand{}
+	result := cmd.Execute(structs.Task{Params: string(params)})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "-line2") {
+		t.Errorf("expected removed line2: %s", result.Output)
+	}
+}
+
+func TestReadLinesPermissionDenied(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "noperm.txt")
+	os.WriteFile(tmp, []byte("data\n"), 0644)
+	os.Chmod(tmp, 0000)
+	defer os.Chmod(tmp, 0644)
+
+	_, err := readLines(tmp)
+	if err == nil {
+		t.Error("expected error for permission-denied file")
+	}
+}

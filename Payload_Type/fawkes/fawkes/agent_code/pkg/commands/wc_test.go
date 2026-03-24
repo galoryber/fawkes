@@ -167,3 +167,79 @@ func TestWcBytes(t *testing.T) {
 		t.Errorf("expected 6 bytes: %s", result.Output)
 	}
 }
+
+func TestWcRawStringParams(t *testing.T) {
+	// Test that raw (non-JSON) string params are accepted as a path
+	tmp := filepath.Join(t.TempDir(), "raw.txt")
+	os.WriteFile(tmp, []byte("a b c\n"), 0644)
+
+	cmd := &WcCommand{}
+	result := cmd.Execute(structs.Task{Params: tmp})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success with raw path: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Words: 3") {
+		t.Errorf("expected 3 words: %s", result.Output)
+	}
+}
+
+func TestWcDirectorySingleFile(t *testing.T) {
+	// With a single file, the "total" summary line should not appear
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "only.txt"), []byte("hello world\n"), 0644)
+
+	cmd := &WcCommand{}
+	params, _ := json.Marshal(wcArgs{Path: dir})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "1 files") {
+		t.Errorf("expected 1 file: %s", result.Output)
+	}
+	if strings.Contains(result.Output, "total") {
+		t.Errorf("single-file directory should not show total: %s", result.Output)
+	}
+}
+
+func TestWcFilePermissionDenied(t *testing.T) {
+	tmp := filepath.Join(t.TempDir(), "noperm.txt")
+	os.WriteFile(tmp, []byte("secret\n"), 0644)
+	os.Chmod(tmp, 0000)
+	defer os.Chmod(tmp, 0644)
+
+	_, err := wcFile(tmp)
+	if err == nil {
+		t.Error("expected error for permission-denied file")
+	}
+}
+
+func TestCountWordsCarriageReturn(t *testing.T) {
+	// \r is treated as whitespace
+	got := countWords("one\rtwo\rthree")
+	if got != 3 {
+		t.Errorf("countWords with \\r = %d, want 3", got)
+	}
+}
+
+func TestFormatWcResult(t *testing.T) {
+	r := wcResult{path: "/tmp/test.txt", lines: 10, words: 50, chars: 200, bytes: 250}
+	out := formatWcResult(r)
+	if !strings.Contains(out, "/tmp/test.txt") {
+		t.Error("missing path")
+	}
+	if !strings.Contains(out, "Lines: 10") {
+		t.Error("missing lines")
+	}
+	if !strings.Contains(out, "Words: 50") {
+		t.Error("missing words")
+	}
+	if !strings.Contains(out, "Chars: 200") {
+		t.Error("missing chars")
+	}
+	if !strings.Contains(out, "Bytes: 250") {
+		t.Error("missing bytes")
+	}
+}
