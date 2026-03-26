@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -479,6 +480,22 @@ func TestIdeParseJetBrainsRecentXML_UnclosedQuote(t *testing.T) {
 	paths := ideParseJetBrainsRecentXML(content)
 	if len(paths) != 0 {
 		t.Errorf("expected 0 paths for unclosed quote, got %d", len(paths))
+	}
+}
+
+func TestIdeParseJetBrainsDataSources_LongURL(t *testing.T) {
+	// JDBC URL > 150 chars triggers truncation — covers line 664-666
+	longURL := "jdbc:postgresql://very-long-hostname-that-keeps-going-and-going.example.com:5432/database_name_that_is_extremely_long_and_verbose_for_testing_purposes_only?ssl=true&sslmode=verify-full"
+	content := fmt.Sprintf(`<data-source name="MyDB" uuid="123">
+		<jdbc-driver>org.postgresql.Driver</jdbc-driver>
+		<url value="%s"/>
+	</data-source>`, longURL)
+	sources := ideParseJetBrainsDataSources(content)
+	if len(sources) != 1 {
+		t.Fatalf("expected 1 source, got %d", len(sources))
+	}
+	if !strings.HasSuffix(sources[0], "...") {
+		t.Errorf("expected truncated URL ending with '...', got %q", sources[0])
 	}
 }
 
