@@ -363,3 +363,13 @@ func TestCurlNoDefaultUserAgent(t *testing.T) {
 		t.Error("expected Go default user agent, got empty")
 	}
 }
+
+func TestCurlInvalidMethodURL(t *testing.T) {
+	// URL with control characters triggers http.NewRequestWithContext error
+	cmd := &CurlCommand{}
+	params, _ := json.Marshal(curlArgs{URL: "http://host\x7f/path", Method: "GET"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Error("expected error for URL with control characters")
+	}
+}

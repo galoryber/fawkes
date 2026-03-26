@@ -379,6 +379,27 @@ func TestGppCommand_DomainFromNetBIOS(t *testing.T) {
 	}
 }
 
+func TestGppDecrypt_InvalidBase64(t *testing.T) {
+	// Non-base64 input should produce a decode error
+	result := gppDecrypt("!!!not-base64!!!")
+	if !strings.Contains(result, "decode error") {
+		t.Errorf("expected decode error, got %q", result)
+	}
+}
+
+func TestGppDecrypt_NotBlockAligned(t *testing.T) {
+	// Valid base64 but decodes to a non-block-aligned length (not multiple of 16)
+	// 7 bytes base64-encoded
+	result := gppDecrypt("AQIDBAUGB/==")
+	// Should fail because decoded length (7) is not a multiple of aes.BlockSize (16)
+	// We need to be careful: padding may adjust things. Let's use exactly 15 bytes
+	// base64 of 15 bytes: 20 chars
+	result = gppDecrypt("AQIDBAUGB/gJCgsMDQ4=")
+	if !strings.Contains(result, "invalid ciphertext length") {
+		t.Errorf("expected invalid ciphertext length error, got %q", result)
+	}
+}
+
 func TestGppCommand_Registration(t *testing.T) {
 	Initialize()
 	cmd := GetCommand("gpp-password")

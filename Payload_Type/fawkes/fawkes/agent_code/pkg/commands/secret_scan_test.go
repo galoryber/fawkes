@@ -493,6 +493,39 @@ func TestSecretPatternCount(t *testing.T) {
 	}
 }
 
+func TestRedactSecret_ShortGenericPassword(t *testing.T) {
+	// Covers default return for short match (<=16 chars, no special type)
+	result := redactSecret("shortvalue", "Unknown Type")
+	if result != "shortvalue" {
+		t.Errorf("expected short value returned as-is, got %q", result)
+	}
+}
+
+func TestRedactSecret_ShortAWSKey(t *testing.T) {
+	// AWS Access Key shorter than 8 chars — falls through to default
+	result := redactSecret("AKIA1", "AWS Access Key")
+	if result != "AKIA1" {
+		t.Errorf("expected short AWS key returned as-is, got %q", result)
+	}
+}
+
+func TestRedactSecret_StandaloneTokenShort(t *testing.T) {
+	// Token type, no :=, <=12 chars — falls through to default
+	result := redactSecret("tok_abc", "API Token")
+	if result != "tok_abc" {
+		t.Errorf("expected short token returned as-is, got %q", result)
+	}
+}
+
+func TestRedactSecret_ConnectionStringNoAt(t *testing.T) {
+	// Connection string without @ — falls through
+	result := redactSecret("postgresql://localhost:5432/db", "Connection String")
+	// No @ sign, so should hit the long-match default (>16 chars)
+	if !strings.Contains(result, "***") {
+		t.Errorf("expected redacted output for long conn string, got %q", result)
+	}
+}
+
 func TestSecretScanCommand_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	cmd := &SecretScanCommand{}

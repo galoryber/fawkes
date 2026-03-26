@@ -224,3 +224,45 @@ func TestWriteHexDump(t *testing.T) {
 		t.Errorf("expected ASCII sidebar, got: %s", output)
 	}
 }
+
+func TestWriteHexDump_NonPrintableASCII(t *testing.T) {
+	var sb strings.Builder
+	// Mix of printable and non-printable bytes — non-printable should appear as '.'
+	data := []byte{0x00, 0x01, 0x41, 0x42, 0x7f, 0xff, 0x20, 0x7e}
+	writeHexDump(&sb, data, 2, 2, 0x0)
+
+	output := sb.String()
+	// Bytes 0x00, 0x01 and 0x7f, 0xff are non-printable → shown as '.'
+	// 0x41='A', 0x42='B', 0x20=' ', 0x7e='~' are printable
+	if !strings.Contains(output, "|..AB.. ~|") {
+		t.Errorf("expected non-printable as dots in ASCII sidebar, got: %s", output)
+	}
+	// Match bytes A(0x41) and B(0x42) should be in brackets
+	if !strings.Contains(output, "[41]") {
+		t.Errorf("expected highlighted [41] for matched byte A, got: %s", output)
+	}
+}
+
+func TestWriteHexDump_MultiLine(t *testing.T) {
+	var sb strings.Builder
+	// 20 bytes forces a second line (16 bytes per line)
+	data := make([]byte, 20)
+	for i := range data {
+		data[i] = byte(0x30 + i) // '0', '1', '2', ...
+	}
+	writeHexDump(&sb, data, 0, 1, 0x100)
+
+	output := sb.String()
+	// Should have two address lines
+	if !strings.Contains(output, "0x00000100") {
+		t.Error("expected first line address")
+	}
+	if !strings.Contains(output, "0x00000110") {
+		t.Error("expected second line address for partial line")
+	}
+	// Second line should have padding (only 4 bytes)
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	if len(lines) != 2 {
+		t.Errorf("expected 2 lines, got %d", len(lines))
+	}
+}

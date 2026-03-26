@@ -91,6 +91,29 @@ func TestStartTypeString(t *testing.T) {
 	}
 }
 
+func TestExtractExePath_ExeSuffixCheck(t *testing.T) {
+	// When the path doesn't end with .exe and the file exists with .exe appended,
+	// we should find the .exe version. Create a temp file with .exe suffix.
+	dir := t.TempDir()
+	exePath := dir + "/myprogram.exe"
+	os.WriteFile(exePath, []byte("binary"), 0755)
+
+	// Input without .exe suffix and with arguments — should find the .exe version
+	result := extractExePath(dir + "/myprogram some args")
+	if result != exePath {
+		t.Errorf("expected %q, got %q", exePath, result)
+	}
+}
+
+func TestExtractExePath_ExeSuffixSkipWhenAlreadyExe(t *testing.T) {
+	// When path already ends with .exe, should NOT try appending .exe again
+	result := extractExePath("/nonexistent/path.exe arg1 arg2")
+	// Falls back to first space-delimited token
+	if result != "/nonexistent/path.exe" {
+		t.Errorf("expected /nonexistent/path.exe, got %q", result)
+	}
+}
+
 func TestIsFileReadable(t *testing.T) {
 	// /etc/passwd should be readable
 	if !isFileReadable("/etc/passwd") {

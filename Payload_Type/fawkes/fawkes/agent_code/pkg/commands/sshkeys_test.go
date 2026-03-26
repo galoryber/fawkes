@@ -228,6 +228,36 @@ Host myserver
 	}
 }
 
+func TestParseSSHConfig_SingleWordLines(t *testing.T) {
+	// Lines without = or space/tab return key="" from splitSSHConfigLine
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config")
+	os.WriteFile(configPath, []byte("Host myserver\n    HostName 10.0.0.1\ngarbage_no_value\n    User admin\n"), 0600)
+
+	hosts := parseSSHConfig(configPath)
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host, got %d", len(hosts))
+	}
+	if hosts[0].user != "admin" {
+		t.Errorf("user = %q, want admin", hosts[0].user)
+	}
+}
+
+func TestParseSSHConfig_IdentityFileExpansion(t *testing.T) {
+	// Non-standard identity file referenced in config (but file doesn't exist)
+	tmp := t.TempDir()
+	configPath := filepath.Join(tmp, "config")
+	os.WriteFile(configPath, []byte("Host myserver\n    HostName 10.0.0.1\n    IdentityFile /nonexistent/custom_key\n"), 0600)
+
+	hosts := parseSSHConfig(configPath)
+	if len(hosts) != 1 {
+		t.Fatalf("expected 1 host, got %d", len(hosts))
+	}
+	if hosts[0].identityFile != "/nonexistent/custom_key" {
+		t.Errorf("identityFile = %q", hosts[0].identityFile)
+	}
+}
+
 // --- parseKnownHosts tests ---
 
 func TestParseKnownHosts_PlainHosts(t *testing.T) {

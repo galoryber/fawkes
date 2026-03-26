@@ -195,3 +195,22 @@ func TestLnCommand_ExistsWithoutForce(t *testing.T) {
 		t.Error("expected error when link path exists without force")
 	}
 }
+
+func TestLnCommand_ForceDirectoryExists(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test on Unix only")
+	}
+
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.txt")
+	linkDir := filepath.Join(dir, "linkdir")
+
+	os.WriteFile(target, []byte("content"), 0644)
+	os.Mkdir(linkDir, 0755) // link path is a directory, not a file or symlink
+
+	cmd := &LnCommand{}
+	result := cmd.Execute(makeLnTask(lnArgs{Target: target, Link: linkDir, Symbolic: true, Force: true}))
+	if result.Status != "error" {
+		t.Error("expected error when force-replacing a directory")
+	}
+}
