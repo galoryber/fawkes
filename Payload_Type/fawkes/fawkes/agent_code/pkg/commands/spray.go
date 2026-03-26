@@ -316,6 +316,7 @@ func spraySMB(args sprayArgs, users []string) structs.CommandResult {
 			conn.Close()
 			r.Message = classifySMBError(err)
 			if strings.Contains(r.Message, "locked") {
+				structs.ZeroBytes(initiator.Hash)
 				results = append(results, r)
 				results = append(results, sprayResult{
 					Username: "(stopped)",
@@ -328,6 +329,7 @@ func spraySMB(args sprayArgs, users []string) structs.CommandResult {
 			r.Message = "SMB authentication successful"
 			_ = session.Logoff()
 		}
+		structs.ZeroBytes(initiator.Hash)
 		results = append(results, r)
 	}
 
