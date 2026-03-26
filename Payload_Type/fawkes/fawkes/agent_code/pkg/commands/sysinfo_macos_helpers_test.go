@@ -472,3 +472,43 @@ func TestParseSystemVersionPlist_MacOSX(t *testing.T) {
 		t.Errorf("ProductVersion = %q, want '10.15.7'", ver.ProductVersion)
 	}
 }
+
+func TestParseMDMEnrollment_GenericEnrolled(t *testing.T) {
+	// "enrolled: yes" without MDM or DEP prefix — covers line 150-152
+	info := parseMDMEnrollment("Enrolled: Yes")
+	if !info.Enrolled {
+		t.Error("expected Enrolled=true for generic 'Enrolled: Yes'")
+	}
+	if info.MDMEnrolled {
+		t.Error("expected MDMEnrolled=false (no MDM prefix)")
+	}
+	if info.DEPEnrolled {
+		t.Error("expected DEPEnrolled=false (no DEP prefix)")
+	}
+}
+
+func TestParseSecureBootStatus_UnrecognizedOutput(t *testing.T) {
+	// Non-empty output that doesn't match any known pattern — covers line 201 fallback
+	got := parseSecureBootStatus("some unexpected firmware response")
+	if got != "some unexpected firmware response" {
+		t.Errorf("expected raw output returned, got %q", got)
+	}
+}
+
+func TestParseIoregModelID_AlternateFormat(t *testing.T) {
+	// Format: "model" = <Mac14,2> (no inner quotes) — covers lines 217-221
+	output := `    "model" = <Mac14,2>`
+	got := parseIoregModelID(output)
+	if got != "Mac14,2" {
+		t.Errorf("expected 'Mac14,2', got %q", got)
+	}
+}
+
+func TestParseIoregModelID_AlternateFormatWithQuotes(t *testing.T) {
+	// Format with quotes inside angle brackets that need trimming
+	output := `    "model" = <"MacBookPro18,1">`
+	got := parseIoregModelID(output)
+	if got != "MacBookPro18,1" {
+		t.Errorf("expected 'MacBookPro18,1', got %q", got)
+	}
+}

@@ -991,3 +991,82 @@ func TestPrefetchSCCASigConstant(t *testing.T) {
 		t.Errorf("expected 0x41434353, got 0x%08X", prefetchSCCASig)
 	}
 }
+
+func TestParseShimcacheWin10_DataSizeExceedsBounds(t *testing.T) {
+	// Build a valid Win10 header + entry header where dataSize points past end.
+	// Covers parseShimcacheWin10 line 70-71 (nextEntry > len(data) break).
+	// Data must be >64 bytes so loop condition (offset+12 < len(data)) is entered.
+	headerSize := uint32(52)
+	data := make([]byte, 52+13) // header + entry header + 1 extra byte
+	binary.LittleEndian.PutUint32(data[0:4], headerSize)
+	binary.LittleEndian.PutUint32(data[52:56], shimcacheWin10Sig) // "10ts"
+	binary.LittleEndian.PutUint32(data[56:60], 0)                // unknown
+	binary.LittleEndian.PutUint32(data[60:64], 9999)             // dataSize >> remaining data
+
+	entries, err := parseShimcacheWin10(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries (data size exceeds bounds), got %d", len(entries))
+	}
+}
+
+func TestParseShimcacheWin8_ZeroPathLength(t *testing.T) {
+	// Win8 entry with pathLenChars=0 triggers pathLenBytes<=0 break.
+	// Covers parseShimcacheWin8 line 121-122.
+	// Data must be >140 bytes so loop condition (offset < len(data)-12) enters.
+	data := make([]byte, 145)
+	binary.LittleEndian.PutUint32(data[0:4], 0x80) // Win8 header
+	binary.LittleEndian.PutUint32(data[128:132], 0) // pathLenChars = 0
+
+	entries, err := parseShimcacheWin8(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries (zero path length), got %d", len(entries))
+	}
+}
+
+func TestParseShimcacheWin8_OversizedPathLength(t *testing.T) {
+	// pathLenChars > 1024 triggers pathLenBytes > 2048 break.
+	// Covers parseShimcacheWin8 line 130-131.
+	data := make([]byte, 145)
+	binary.LittleEndian.PutUint32(data[0:4], 0x80)
+	binary.LittleEndian.PutUint32(data[128:132], 2000) // pathLenChars=2000, pathLenBytes=4000 > 2048
+
+	entries, err := parseShimcacheWin8(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries (oversized path), got %d", len(entries))
+	}
+}
+
+func TestParseShimcacheWin8_TruncatedBeforeDataSize(t *testing.T) {
+	// Data truncated right after path+filetime, before dataSize field.
+	// Covers parseShimcacheWin8 line 148-149.
+	pathBytes := encodeUTF16LE("C:\\test.exe")
+	pathLenChars := len(pathBytes) / 2
+	entryDataNoDataSize := 4 + len(pathBytes) + 8 // pathLenChars + path + filetime, NO dataSize
+	data := make([]byte, 128+entryDataNoDataSize)
+	binary.LittleEndian.PutUint32(data[0:4], 0x80) // Win8 header
+	offset := 128
+	binary.LittleEndian.PutUint32(data[offset:offset+4], uint32(pathLenChars))
+	offset += 4
+	copy(data[offset:offset+len(pathBytes)], pathBytes)
+	offset += len(pathBytes)
+	binary.LittleEndian.PutUint64(data[offset:offset+8], 133801632000000000) // filetime
+	// No dataSize field — data ends here
+
+	entries, err := parseShimcacheWin8(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Parser should stop gracefully before the missing dataSize field
+	if len(entries) > 1 {
+		t.Errorf("expected 0-1 entries from truncated data, got %d", len(entries))
+	}
+}

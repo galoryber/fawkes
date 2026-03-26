@@ -472,3 +472,34 @@ func TestIdeDiscoverJetBrainsProducts_NonexistentDir(t *testing.T) {
 		t.Errorf("expected 0 products for nonexistent dir, got %d", len(products))
 	}
 }
+
+func TestIdeParseJetBrainsRecentXML_UnclosedQuote(t *testing.T) {
+	// Attribute with opening quote but no closing — covers line 594-595
+	content := `<entry key="/home/user/project` // no closing quote
+	paths := ideParseJetBrainsRecentXML(content)
+	if len(paths) != 0 {
+		t.Errorf("expected 0 paths for unclosed quote, got %d", len(paths))
+	}
+}
+
+func TestIdeExtractInterestingSettings_LongSensitiveValue(t *testing.T) {
+	// Value > 100 chars with sensitive key — covers line 297-298 truncation
+	longVal := strings.Repeat("x", 150)
+	settings := map[string]interface{}{
+		"my.password.store": longVal,
+	}
+	items := ideExtractInterestingSettings(settings)
+	found := false
+	for _, item := range items {
+		if strings.Contains(item, "[SENSITIVE]") && strings.Contains(item, "...") {
+			found = true
+			// Truncated at 100 + "..."
+			if !strings.HasSuffix(item, "...") {
+				t.Errorf("expected truncated value ending with '...', got %q", item)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected [SENSITIVE] item with truncated long value")
+	}
+}

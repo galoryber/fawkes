@@ -473,3 +473,22 @@ func TestRemoveMatchingACEs_ObjectACEWithInheritedType(t *testing.T) {
 		t.Errorf("result length = %d, want 0", len(result))
 	}
 }
+
+func TestRemoveMatchingACEs_ObjectACE_RelaxedMatch(t *testing.T) {
+	// Object ACE with mask 0x200 — try to remove with targetMask 0x100.
+	// Pass 1 (exact) fails due to mask mismatch; Pass 2 (relaxed) succeeds
+	// because SID+GUID still match. Covers removeMatchingACEsPass line 199-201.
+	sid := aclTestSID(1001)
+	sidStr := adcsParseSID(sid)
+	guid := aclGUIDBytes("1131f6aa-9c07-11d1-f79f-00c04fc2dcd2")
+
+	ace := buildACE(0x05, 0x00000200, sid, guid) // mask differs from target
+
+	result, remaining := removeMatchingACEs(ace, 1, sidStr, 0x00000100, guid, 0x05)
+	if remaining != 0 {
+		t.Errorf("remaining = %d, want 0 (relaxed match should remove despite mask mismatch)", remaining)
+	}
+	if len(result) != 0 {
+		t.Errorf("result length = %d, want 0", len(result))
+	}
+}

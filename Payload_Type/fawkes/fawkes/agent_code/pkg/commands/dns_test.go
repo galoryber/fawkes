@@ -1199,3 +1199,21 @@ func BenchmarkParseAXFRResponse(b *testing.B) {
 		parseAXFRResponse(msg)
 	}
 }
+
+func TestDecodeDNSName_LabelExceedsData(t *testing.T) {
+	// Label length byte claims 20 but only 3 bytes follow — covers line 658-659
+	msg := []byte{20, 'a', 'b', 'c'} // labelLen=20 but offset+labelLen > len(msg)
+	name := decodeDNSName(msg, 0)
+	if name != "." {
+		t.Errorf("expected '.' for truncated label, got %q", name)
+	}
+}
+
+func TestSkipDNSName_NoTerminator(t *testing.T) {
+	// Data runs out without null terminator or pointer — covers skipDNSName line 682
+	msg := []byte{3, 'a', 'b', 'c', 4, 'x', 'y', 'z', 'w'} // no null at end
+	got := skipDNSName(msg, 0)
+	if got < len(msg) {
+		t.Errorf("expected offset >= %d (past end), got %d", len(msg), got)
+	}
+}
