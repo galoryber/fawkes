@@ -423,6 +423,7 @@ func enumKerberosUser(cfg *krbconfig.Config, realm, kdc, username string) string
 	if err != nil {
 		return fmt.Sprintf("error: %v", err)
 	}
+	defer structs.ZeroBytes(reqBytes) // opsec: zero Kerberos AS-REQ bytes
 
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:88", kdc), 10*time.Second)
 	if err != nil {
@@ -457,6 +458,7 @@ func enumKerberosUser(cfg *krbconfig.Config, realm, kdc, username string) string
 	if _, err := sprayReadFull(conn, respBytes); err != nil {
 		return fmt.Sprintf("read error: %v", err)
 	}
+	defer structs.ZeroBytes(respBytes) // opsec: zero Kerberos KDC response
 
 	// Try to unmarshal as AS-REP (user exists AND has no pre-auth)
 	var asRep messages.ASRep

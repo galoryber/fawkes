@@ -314,6 +314,7 @@ func credCheckLDAP(host string, args credCheckArgs, timeout time.Duration) credC
 		result.Detail = fmt.Sprintf("LDAP read error: %v", err)
 		return result
 	}
+	defer structs.ZeroBytes(buf) // opsec: zero LDAP response buffer
 
 	// Parse minimal LDAP bind response — look for resultCode
 	resultCode := credCheckParseLDAPBindResponse(buf[:n])
