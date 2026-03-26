@@ -259,3 +259,23 @@ func TestParseWPASupplicant_PSKWithoutQuotes(t *testing.T) {
 		t.Errorf("expected hex PSK, got %q", profiles[0].Key)
 	}
 }
+
+func TestParseWPASupplicant_MalformedBlock(t *testing.T) {
+	// Network block without closing brace — should be skipped
+	content := `network={
+	ssid="Incomplete"
+	psk="pass"
+
+network={
+	ssid="Complete"
+	psk="pass2"
+}
+`
+	profiles := parseWPASupplicant(content, "/path")
+	if len(profiles) != 1 {
+		t.Fatalf("expected 1 profile (skipping malformed block), got %d", len(profiles))
+	}
+	if profiles[0].SSID != "Complete" {
+		t.Errorf("expected 'Complete', got %q", profiles[0].SSID)
+	}
+}

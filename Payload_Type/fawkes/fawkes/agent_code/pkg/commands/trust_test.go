@@ -95,6 +95,24 @@ func TestTrustParseSID(t *testing.T) {
 	}
 }
 
+func TestTrustParseSID_TruncatedSubAuthorities(t *testing.T) {
+	// SID claims 4 sub-authorities but buffer only contains 2
+	// This should trigger the offset+4 > len(b) break
+	input := []byte{
+		0x01,                               // revision 1
+		0x04,                               // claims 4 sub-authorities
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x05, // authority: 5
+		0x15, 0x00, 0x00, 0x00, // sub-auth 1: 21
+		0x39, 0x05, 0x00, 0x00, // sub-auth 2: 1337
+		// Missing sub-auth 3 and 4
+	}
+	result := trustParseSID(input)
+	// Should parse what it can: S-1-5-21-1337 (stops when buffer runs out)
+	if result != "S-1-5-21-1337" {
+		t.Errorf("truncated SID should parse available sub-authorities, got %q", result)
+	}
+}
+
 func TestTrustDNToDomain(t *testing.T) {
 	tests := []struct {
 		input    string
