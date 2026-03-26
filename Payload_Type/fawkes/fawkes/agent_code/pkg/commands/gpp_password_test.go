@@ -388,13 +388,8 @@ func TestGppDecrypt_InvalidBase64(t *testing.T) {
 }
 
 func TestGppDecrypt_NotBlockAligned(t *testing.T) {
-	// Valid base64 but decodes to a non-block-aligned length (not multiple of 16)
-	// 7 bytes base64-encoded
-	result := gppDecrypt("AQIDBAUGB/==")
-	// Should fail because decoded length (7) is not a multiple of aes.BlockSize (16)
-	// We need to be careful: padding may adjust things. Let's use exactly 15 bytes
-	// base64 of 15 bytes: 20 chars
-	result = gppDecrypt("AQIDBAUGB/gJCgsMDQ4=")
+	// Valid base64 that decodes to 15 bytes (not a multiple of aes.BlockSize=16)
+	result := gppDecrypt("AQIDBAUGB/gJCgsMDQ4=")
 	if !strings.Contains(result, "invalid ciphertext length") {
 		t.Errorf("expected invalid ciphertext length error, got %q", result)
 	}
