@@ -105,6 +105,40 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			pid, _ := taskData.Args.GetNumberArg("pid")
+			msg := "OPSEC WARNING: "
+			if action == "inject" {
+				msg += fmt.Sprintf("ptrace injection into PID %d. Uses PTRACE_ATTACH + PTRACE_POKETEXT — detectable by ptrace monitoring, seccomp filters, and Yama LSM.", int(pid))
+			} else {
+				msg += "ptrace capability check — enumerates ptrace scope and candidate processes."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			pid, _ := taskData.Args.GetNumberArg("pid")
+			msg := "OPSEC AUDIT: ptrace "
+			if action == "inject" {
+				msg += fmt.Sprintf("injection queued for PID %d. Artifact registered.", int(pid))
+			} else {
+				msg += "check configured. Process enumeration will occur."
+			}
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
