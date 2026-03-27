@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "firewall",
+		Name: "firewall",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "firewall_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Manage firewall rules — list, add, delete, enable/disable rules, and check firewall status. Windows: HNetCfg.FwPolicy2 COM. macOS: pf/ALF. Linux: iptables/nftables (auto-detected).",
 		HelpString:          "firewall -action <list|add|delete|enable|disable|status> [-name <rule_name>] [-direction <in|out>] [-rule_action <allow|block>] [-protocol <tcp|udp|any>] [-port <port>] [-program <path>]",
 		Version:             3,
