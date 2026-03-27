@@ -691,7 +691,7 @@ func (d *DiscordProfile) sendTextMessage(content string, cfg *sensitiveConfig) e
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Discord API error %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("discord API error %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	return nil
@@ -737,7 +737,7 @@ func (d *DiscordProfile) sendFileMessage(content []byte, filename string, cfg *s
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("Discord file upload error %d: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("discord file upload error %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	return nil
@@ -764,7 +764,7 @@ func (d *DiscordProfile) getMessages(cfg *sensitiveConfig, limit int) ([]discord
 
 	if resp.StatusCode != http.StatusOK {
 		respBody, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Discord API error %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("discord API error %d: %s", resp.StatusCode, string(respBody))
 	}
 
 	body, err := io.ReadAll(resp.Body)
