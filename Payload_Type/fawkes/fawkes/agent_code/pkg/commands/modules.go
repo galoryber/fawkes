@@ -75,4 +75,3 @@ func (c *ModulesCommand) Execute(task structs.Task) structs.CommandResult {
 
 	return successResult(string(out))
 }
-

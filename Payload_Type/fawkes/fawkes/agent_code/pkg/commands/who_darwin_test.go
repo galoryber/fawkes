@@ -13,11 +13,11 @@ import (
 // macOS utmpx: 628 bytes total.
 func buildSyntheticUtmpxRecord(utType int16, user, tty, host string, tvSec uint32) []byte {
 	rec := make([]byte, whoUtmpxRecordSize)
-	copy(rec[0:256], user)                                           // ut_user
-	copy(rec[260:292], tty)                                          // ut_line
-	binary.LittleEndian.PutUint16(rec[296:298], uint16(utType))      // ut_type
-	binary.LittleEndian.PutUint32(rec[300:304], tvSec)               // tv_sec
-	copy(rec[308:564], host)                                         // ut_host
+	copy(rec[0:256], user)                                      // ut_user
+	copy(rec[260:292], tty)                                     // ut_line
+	binary.LittleEndian.PutUint16(rec[296:298], uint16(utType)) // ut_type
+	binary.LittleEndian.PutUint32(rec[300:304], tvSec)          // tv_sec
+	copy(rec[308:564], host)                                    // ut_host
 	return rec
 }
 
@@ -37,7 +37,7 @@ func writeTestUtmpx(t *testing.T, records [][]byte) string {
 
 func TestWhoDarwinNativeBasic(t *testing.T) {
 	path := writeTestUtmpx(t, [][]byte{
-		buildSyntheticUtmpxRecord(10, "utmpx-1.00", "", "", 0),       // header
+		buildSyntheticUtmpxRecord(10, "utmpx-1.00", "", "", 0), // header
 		buildSyntheticUtmpxRecord(7, "gary", "ttys000", "", 1700000000),
 		buildSyntheticUtmpxRecord(7, "root", "ttys001", "", 1700000000),
 		buildSyntheticUtmpxRecord(8, "dead", "ttys002", "", 1700000000), // DEAD_PROCESS
@@ -67,7 +67,7 @@ func TestWhoDarwinNativeBasic(t *testing.T) {
 
 func TestWhoDarwinNativeAllFlag(t *testing.T) {
 	path := writeTestUtmpx(t, [][]byte{
-		buildSyntheticUtmpxRecord(10, "utmpx-1.00", "", "", 0),       // header
+		buildSyntheticUtmpxRecord(10, "utmpx-1.00", "", "", 0), // header
 		buildSyntheticUtmpxRecord(7, "gary", "ttys000", "", 1700000000),
 		buildSyntheticUtmpxRecord(8, "dead", "ttys001", "", 1700000000),
 	})

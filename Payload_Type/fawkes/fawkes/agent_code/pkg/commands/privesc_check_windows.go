@@ -110,17 +110,17 @@ func winPrivescCheckPrivileges() structs.CommandResult {
 
 	// Privileges exploitable for privilege escalation
 	exploitable := map[string]string{
-		"SeImpersonatePrivilege":         "Potato attacks (JuicyPotato, PrintSpoofer, GodPotato) → SYSTEM",
-		"SeAssignPrimaryTokenPrivilege":  "Potato attacks → SYSTEM (alternative to SeImpersonate)",
-		"SeDebugPrivilege":               "Inject into/dump any process including LSASS",
-		"SeBackupPrivilege":              "Read any file (SAM, SYSTEM hives, NTDS.dit)",
-		"SeRestorePrivilege":             "Write any file, modify services, DLL hijack",
-		"SeTakeOwnershipPrivilege":       "Take ownership of any securable object",
-		"SeLoadDriverPrivilege":          "Load vulnerable kernel driver → arbitrary kernel code",
-		"SeCreateTokenPrivilege":         "Forge access tokens",
-		"SeTcbPrivilege":                 "Act as part of the OS — full SYSTEM access",
-		"SeManageVolumePrivilege":        "Read any file on NTFS (USN journal trick)",
-		"SeRelabelPrivilege":             "Modify integrity labels on objects",
+		"SeImpersonatePrivilege":          "Potato attacks (JuicyPotato, PrintSpoofer, GodPotato) → SYSTEM",
+		"SeAssignPrimaryTokenPrivilege":   "Potato attacks → SYSTEM (alternative to SeImpersonate)",
+		"SeDebugPrivilege":                "Inject into/dump any process including LSASS",
+		"SeBackupPrivilege":               "Read any file (SAM, SYSTEM hives, NTDS.dit)",
+		"SeRestorePrivilege":              "Write any file, modify services, DLL hijack",
+		"SeTakeOwnershipPrivilege":        "Take ownership of any securable object",
+		"SeLoadDriverPrivilege":           "Load vulnerable kernel driver → arbitrary kernel code",
+		"SeCreateTokenPrivilege":          "Forge access tokens",
+		"SeTcbPrivilege":                  "Act as part of the OS — full SYSTEM access",
+		"SeManageVolumePrivilege":         "Read any file on NTFS (USN journal trick)",
+		"SeRelabelPrivilege":              "Modify integrity labels on objects",
 		"SeTrustedCredManAccessPrivilege": "Access Credential Manager store",
 	}
 
@@ -424,6 +424,7 @@ func winPrivescCheckUnattend() structs.CommandResult {
 		}
 
 		content := string(data)
+		structs.ZeroBytes(data)
 		hasPassword := strings.Contains(strings.ToLower(content), "<password>") ||
 			strings.Contains(strings.ToLower(content), "cpassword") ||
 			strings.Contains(strings.ToLower(content), "adminpassword")

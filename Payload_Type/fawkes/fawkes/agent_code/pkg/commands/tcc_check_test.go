@@ -494,14 +494,14 @@ func TestReadTCCDatabaseInvalidDB(t *testing.T) {
 func TestTCCServiceNamesCoverage(t *testing.T) {
 	// Ensure we have mappings for all critical security services
 	critical := map[string]string{
-		"kTCCServiceCamera":                   "Camera",
-		"kTCCServiceMicrophone":               "Microphone",
-		"kTCCServiceScreenCapture":            "Screen Recording",
-		"kTCCServiceSystemPolicyAllFiles":     "Full Disk Access",
-		"kTCCServiceAccessibility":            "Accessibility",
-		"kTCCServiceListenEvent":              "Input Monitoring",
-		"kTCCServiceEndpointSecurityClient":   "Endpoint Security",
-		"kTCCServiceDeveloperTool":            "Developer Tools",
+		"kTCCServiceCamera":                 "Camera",
+		"kTCCServiceMicrophone":             "Microphone",
+		"kTCCServiceScreenCapture":          "Screen Recording",
+		"kTCCServiceSystemPolicyAllFiles":   "Full Disk Access",
+		"kTCCServiceAccessibility":          "Accessibility",
+		"kTCCServiceListenEvent":            "Input Monitoring",
+		"kTCCServiceEndpointSecurityClient": "Endpoint Security",
+		"kTCCServiceDeveloperTool":          "Developer Tools",
 	}
 
 	for key, expectedName := range critical {

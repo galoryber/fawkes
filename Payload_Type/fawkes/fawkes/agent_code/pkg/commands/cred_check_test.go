@@ -261,6 +261,151 @@ func TestCredCheckBERDecodeLength(t *testing.T) {
 	}
 }
 
+// buildLDAPBindResponse constructs a valid BER-encoded LDAP BindResponse.
+// LDAP BindResponse: SEQUENCE { messageID(INTEGER), BindResponse[APPLICATION 1] { resultCode(ENUM), matchedDN(""), diagnosticMessage("") } }
+func buildLDAPBindResponse(messageID int, resultCode int) []byte {
+	// Build inner BindResponse content
+	// resultCode: ENUMERATED tag (0x0a) + length + value
+	bindContent := []byte{0x0a, 0x01, byte(resultCode)}
+	// matchedDN: OCTET STRING (0x04) + length 0
+	bindContent = append(bindContent, 0x04, 0x00)
+	// diagnosticMessage: OCTET STRING (0x04) + length 0
+	bindContent = append(bindContent, 0x04, 0x00)
+
+	// BindResponse [APPLICATION 1] tag = 0x61
+	bindResp := []byte{0x61, byte(len(bindContent))}
+	bindResp = append(bindResp, bindContent...)
+
+	// messageID: INTEGER (0x02) + length + value
+	msgID := []byte{0x02, 0x01, byte(messageID)}
+
+	// SEQUENCE contents
+	seqContent := append(msgID, bindResp...)
+
+	// Outer SEQUENCE: tag 0x30 + length
+	result := []byte{0x30, byte(len(seqContent))}
+	result = append(result, seqContent...)
+	return result
+}
+
+func TestCredCheckParseLDAPBindResponseValid(t *testing.T) {
+	tests := []struct {
+		name       string
+		messageID  int
+		resultCode int
+	}{
+		{"success (code 0)", 1, 0},
+		{"invalid credentials (code 49)", 1, 49},
+		{"protocol error (code 2)", 2, 2},
+		{"unwilling to perform (code 53)", 5, 53},
+		{"busy (code 51)", 1, 51},
+		{"admin limit exceeded (code 11)", 3, 11},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := buildLDAPBindResponse(tt.messageID, tt.resultCode)
+			got := credCheckParseLDAPBindResponse(data)
+			if got != tt.resultCode {
+				t.Errorf("credCheckParseLDAPBindResponse() = %d, want %d", got, tt.resultCode)
+			}
+		})
+	}
+}
+
+func TestCredCheckParseLDAPBindResponseEdgeCases(t *testing.T) {
+	// No INTEGER tag after SEQUENCE
+	t.Run("missing messageID tag", func(t *testing.T) {
+		data := []byte{0x30, 0x08, 0x04, 0x01, 0x01, 0x61, 0x03, 0x0a, 0x01, 0x00}
+		got := credCheckParseLDAPBindResponse(data)
+		if got != -1 {
+			t.Errorf("expected -1, got %d", got)
+		}
+	})
+
+	// Wrong APPLICATION tag (not 0x61 for BindResponse)
+	t.Run("wrong application tag", func(t *testing.T) {
+		data := []byte{0x30, 0x09, 0x02, 0x01, 0x01, 0x63, 0x04, 0x0a, 0x01, 0x00, 0x04}
+		got := credCheckParseLDAPBindResponse(data)
+		if got != -1 {
+			t.Errorf("expected -1, got %d", got)
+		}
+	})
+
+	// Wrong ENUMERATED tag (not 0x0a for resultCode)
+	t.Run("wrong resultCode tag", func(t *testing.T) {
+		// BindResponse with INTEGER instead of ENUMERATED for resultCode
+		data := []byte{0x30, 0x09, 0x02, 0x01, 0x01, 0x61, 0x04, 0x02, 0x01, 0x00, 0x04}
+		got := credCheckParseLDAPBindResponse(data)
+		if got != -1 {
+			t.Errorf("expected -1, got %d", got)
+		}
+	})
+
+	// Truncated after BindResponse tag
+	t.Run("truncated after bind tag", func(t *testing.T) {
+		data := []byte{0x30, 0x04, 0x02, 0x01, 0x01, 0x61}
+		got := credCheckParseLDAPBindResponse(data)
+		if got != -1 {
+			t.Errorf("expected -1, got %d", got)
+		}
+	})
+
+	// Zero-length resultCode (rcLen == 0)
+	// Data must be >= 10 bytes (initial length check), with valid structure
+	// up to the ENUMERATED tag but rcLen=0
+	t.Run("zero length resultCode", func(t *testing.T) {
+		// SEQ(len=8) INT(len=1,val=1) APP1(len=2) ENUM(len=0) + padding
+		data := []byte{0x30, 0x08, 0x02, 0x01, 0x01, 0x61, 0x02, 0x0a, 0x00, 0x00}
+		got := credCheckParseLDAPBindResponse(data)
+		if got != -1 {
+			t.Errorf("expected -1 for zero-length resultCode, got %d", got)
+		}
+	})
+
+	// Truncated resultCode value (rcLen > remaining data)
+	t.Run("truncated resultCode value", func(t *testing.T) {
+		// SEQ(len=8) INT(len=1,val=1) APP1(len=3) ENUM(len=5) — only 1 byte left
+		data := []byte{0x30, 0x08, 0x02, 0x01, 0x01, 0x61, 0x03, 0x0a, 0x05, 0x00}
+		got := credCheckParseLDAPBindResponse(data)
+		if got != -1 {
+			t.Errorf("expected -1 for truncated resultCode, got %d", got)
+		}
+	})
+}
+
+func TestCredCheckBERDecodeLengthEdgeCases(t *testing.T) {
+	// Long form with numBytes=0 (indefinite length — handled as 0,1)
+	length, skip := credCheckBERDecodeLength([]byte{0x80})
+	if skip != 1 {
+		t.Errorf("indefinite length: skip=%d, want 1", skip)
+	}
+	if length != 0 {
+		t.Errorf("indefinite length: length=%d, want 0", length)
+	}
+
+	// Long form claiming more bytes than available
+	length, skip = credCheckBERDecodeLength([]byte{0x83, 0x01})
+	if skip != 1 {
+		t.Errorf("truncated long form: skip=%d, want 1", skip)
+	}
+	if length != 0 {
+		t.Errorf("truncated long form: length=%d, want 0", length)
+	}
+
+	// Large 3-byte length: 0x83 0x01 0x00 0x00 = 65536
+	length, skip = credCheckBERDecodeLength([]byte{0x83, 0x01, 0x00, 0x00})
+	if length != 65536 || skip != 4 {
+		t.Errorf("3-byte length: got (%d,%d), want (65536,4)", length, skip)
+	}
+
+	// Boundary: short form max (127)
+	length, skip = credCheckBERDecodeLength([]byte{127})
+	if length != 127 || skip != 1 {
+		t.Errorf("short max: got (%d,%d), want (127,1)", length, skip)
+	}
+}
+
 func TestCredCheckCancellation(t *testing.T) {
 	task := structs.NewTask("cancel-cred", "cred-check", "")
 	task.SetStop()

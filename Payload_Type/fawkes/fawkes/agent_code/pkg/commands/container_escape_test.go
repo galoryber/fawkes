@@ -110,4 +110,3 @@ func TestContainerEscapeNsenterMissingCommand(t *testing.T) {
 		t.Errorf("Expected required command error, got: %s", result.Output)
 	}
 }
-

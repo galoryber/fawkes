@@ -954,7 +954,7 @@ func TestIsSealed_Default(t *testing.T) {
 
 func TestGetConfig_Unsealed(t *testing.T) {
 	profile := &HTTPProfile{
-		BaseURL:  "http://test:80",
+		BaseURL:   "http://test:80",
 		UserAgent: "test-ua",
 	}
 	cfg := profile.getConfig()
@@ -1269,4 +1269,3 @@ func TestSealConfig_PreservesFallbackURLs(t *testing.T) {
 		t.Error("FallbackURLs should be nil after seal")
 	}
 }
-

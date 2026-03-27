@@ -229,6 +229,26 @@ func TestAdcsParseSD(t *testing.T) {
 	}
 }
 
+func TestAdcsParseSD_NoDACL(t *testing.T) {
+	// SD with daclOffset = 0 (no DACL present)
+	sd := make([]byte, 20)
+	sd[0] = 1                                      // Revision
+	binary.LittleEndian.PutUint16(sd[2:4], 0x8004) // Control
+	binary.LittleEndian.PutUint32(sd[16:20], 0)    // DACL offset = 0 (no DACL)
+	if aces := adcsParseSD(sd); len(aces) != 0 {
+		t.Error("SD with no DACL (offset 0) should return no ACEs")
+	}
+
+	// SD with daclOffset beyond buffer
+	sd2 := make([]byte, 20)
+	sd2[0] = 1
+	binary.LittleEndian.PutUint16(sd2[2:4], 0x8004)
+	binary.LittleEndian.PutUint32(sd2[16:20], 500) // Offset far beyond buffer
+	if aces := adcsParseSD(sd2); len(aces) != 0 {
+		t.Error("SD with out-of-range DACL offset should return no ACEs")
+	}
+}
+
 func TestAdcsParseEnrollmentPerms(t *testing.T) {
 	// SD with GenericAll for Everyone
 	sd := buildTestSD([]testACE{
@@ -628,5 +648,103 @@ func TestAdcsEditFlagConstant(t *testing.T) {
 	// Verify the ESC6 flag constant matches the expected value
 	if editfAttributeSubjectAltName2 != 0x00040000 {
 		t.Errorf("editfAttributeSubjectAltName2 = 0x%08x, want 0x00040000", editfAttributeSubjectAltName2)
+	}
+}
+
+func TestAdcsParseSID_TruncatedSubAuthorities(t *testing.T) {
+	// SID claims 5 sub-authorities (byte[1]=5) but buffer only has room for 1
+	// This should trigger the len(b) < 8+subCount*4 check
+	sid := buildTestSID(1, 5, []uint32{100})
+	sid[1] = 5 // Overwrite subCount to claim 5, but only 1 sub-authority in buffer
+	result := adcsParseSID(sid)
+	if result != "" {
+		t.Errorf("truncated SID should return empty, got %q", result)
+	}
+}
+
+func TestAdcsParseACL_TruncatedACLHeader(t *testing.T) {
+	// Buffer too short for ACL header (needs at least 8 bytes from offset)
+	tinyBuf := []byte{0x02, 0x00, 0x08, 0x00}
+	aces := adcsParseACL(tinyBuf, 0)
+	if len(aces) != 0 {
+		t.Error("truncated ACL header should return nil")
+	}
+
+	// Offset beyond buffer
+	buf := make([]byte, 16)
+	aces = adcsParseACL(buf, 20)
+	if len(aces) != 0 {
+		t.Error("offset beyond buffer should return nil")
+	}
+}
+
+func TestAdcsParseACL_MalformedACESize(t *testing.T) {
+	// Build ACL with 1 ACE but set aceSize to 2 (less than minimum 4)
+	acl := make([]byte, 16)
+	acl[0] = 2                                               // ACL revision
+	binary.LittleEndian.PutUint16(acl[2:4], uint16(len(acl))) // AclSize
+	binary.LittleEndian.PutUint16(acl[4:6], 1)                // AceCount = 1
+	// ACE at offset 8: type=0, flags=0, size=2 (too small)
+	acl[8] = 0x00                                      // aceType
+	binary.LittleEndian.PutUint16(acl[10:12], 2)       // aceSize = 2 (< 4)
+
+	aces := adcsParseACL(acl, 0)
+	if len(aces) != 0 {
+		t.Error("malformed ACE size should break parsing")
+	}
+
+	// Also test aceSize that overflows the buffer
+	acl2 := make([]byte, 16)
+	acl2[0] = 2
+	binary.LittleEndian.PutUint16(acl2[2:4], uint16(len(acl2)))
+	binary.LittleEndian.PutUint16(acl2[4:6], 1)
+	acl2[8] = 0x00
+	binary.LittleEndian.PutUint16(acl2[10:12], 200) // aceSize = 200 (> buffer)
+
+	aces = adcsParseACL(acl2, 0)
+	if len(aces) != 0 {
+		t.Error("ACE size overflow should break parsing")
+	}
+}
+
+func TestAdcsParseACL_InheritedObjectType(t *testing.T) {
+	// Build SD with ACCESS_ALLOWED_OBJECT_ACE with both object type and inherited object type
+	authUsersSID := buildTestSID(1, 5, []uint32{11})
+	enrollGUID := guidToBytes("0e10c968-78fb-11d2-90d4-00c04f79dc55")
+	inheritedGUID := guidToBytes("a05b8cc2-17bc-4802-a710-e7c15ab866a2")
+
+	// Manually build the ACE with flags=0x03 (both OBJECT_TYPE and INHERITED_OBJECT_TYPE present)
+	// header(4) + mask(4) + flags(4) + objectGUID(16) + inheritedObjectGUID(16) + SID
+	aceSize := 4 + 4 + 4 + 16 + 16 + len(authUsersSID)
+	aceBytes := make([]byte, aceSize)
+	aceBytes[0] = 0x05 // ACCESS_ALLOWED_OBJECT_ACE_TYPE
+	binary.LittleEndian.PutUint16(aceBytes[2:4], uint16(aceSize))
+	binary.LittleEndian.PutUint32(aceBytes[4:8], adsRightDSControlAccess)
+	binary.LittleEndian.PutUint32(aceBytes[8:12], 0x03) // Both flags set
+	copy(aceBytes[12:28], enrollGUID)
+	copy(aceBytes[28:44], inheritedGUID)
+	copy(aceBytes[44:], authUsersSID)
+
+	// Build ACL around it
+	aclSize := 8 + len(aceBytes)
+	acl := make([]byte, aclSize)
+	acl[0] = 2
+	binary.LittleEndian.PutUint16(acl[2:4], uint16(aclSize))
+	binary.LittleEndian.PutUint16(acl[4:6], 1)
+	copy(acl[8:], aceBytes)
+
+	// Build SD header
+	sd := make([]byte, 20+len(acl))
+	sd[0] = 1
+	binary.LittleEndian.PutUint16(sd[2:4], 0x8004)
+	binary.LittleEndian.PutUint32(sd[16:20], 20)
+	copy(sd[20:], acl)
+
+	aces := adcsParseSD(sd)
+	if len(aces) != 1 {
+		t.Fatalf("expected 1 ACE with inherited object type, got %d", len(aces))
+	}
+	if aces[0].sid != "S-1-5-11" {
+		t.Errorf("expected S-1-5-11, got %s", aces[0].sid)
 	}
 }

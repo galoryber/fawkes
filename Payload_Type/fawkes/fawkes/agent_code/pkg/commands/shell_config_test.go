@@ -224,3 +224,96 @@ func TestShellConfigPlainTextReadFile(t *testing.T) {
 		t.Errorf("should contain file content: %s", result.Output)
 	}
 }
+
+func TestShellClearSpecificFile(t *testing.T) {
+	tmpDir := t.TempDir()
+	histFile := filepath.Join(tmpDir, "test_history")
+	os.WriteFile(histFile, []byte("ls\nwhoami\ncat /etc/shadow\n"), 0644)
+
+	result := shellClear(shellConfigArgs{File: histFile})
+	if result.Status != "success" {
+		t.Fatalf("expected success: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "cleared") {
+		t.Errorf("expected 'cleared' in output: %s", result.Output)
+	}
+
+	// Verify file is empty
+	data, err := os.ReadFile(histFile)
+	if err != nil {
+		t.Fatalf("file should still exist: %v", err)
+	}
+	if len(data) != 0 {
+		t.Errorf("file should be empty after clear, got %d bytes", len(data))
+	}
+}
+
+func TestShellClearAlreadyEmpty(t *testing.T) {
+	tmpDir := t.TempDir()
+	histFile := filepath.Join(tmpDir, "empty_history")
+	os.WriteFile(histFile, []byte(""), 0644)
+
+	result := shellClear(shellConfigArgs{File: histFile})
+	if result.Status != "success" {
+		t.Fatalf("expected success: %s", result.Output)
+	}
+	// File is already empty so should not count as cleared
+	if strings.Contains(result.Output, "1 file(s) cleared") {
+		t.Errorf("already-empty file should not count as cleared: %s", result.Output)
+	}
+}
+
+func TestShellClearNonexistentFile(t *testing.T) {
+	result := shellClear(shellConfigArgs{File: "/tmp/nonexistent_shellclear_test_" + strings.Repeat("x", 20)})
+	if result.Status != "success" {
+		t.Fatalf("expected success: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "No history files found") {
+		t.Errorf("expected no files found message: %s", result.Output)
+	}
+}
+
+func TestShellClearMultipleFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Create mock history files with known names
+	files := []struct {
+		name    string
+		content string
+	}{
+		{".bash_history", "ls\ncd\npwd\n"},
+		{".zsh_history", "echo hi\ngit status\n"},
+		{".python_history", "import os\nos.system('id')\n"},
+	}
+
+	for _, f := range files {
+		os.WriteFile(filepath.Join(tmpDir, f.name), []byte(f.content), 0644)
+	}
+
+	// We can't test the default user path, but we can test specific files
+	for _, f := range files {
+		path := filepath.Join(tmpDir, f.name)
+		result := shellClear(shellConfigArgs{File: path})
+		if result.Status != "success" {
+			t.Errorf("clear %s failed: %s", f.name, result.Output)
+		}
+		data, _ := os.ReadFile(path)
+		if len(data) != 0 {
+			t.Errorf("%s should be empty, got %d bytes", f.name, len(data))
+		}
+	}
+}
+
+func TestShellClearViaExecute(t *testing.T) {
+	tmpDir := t.TempDir()
+	histFile := filepath.Join(tmpDir, "history")
+	os.WriteFile(histFile, []byte("secret command\n"), 0644)
+
+	cmd := &ShellConfigCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"clear","file":"` + histFile + `"}`})
+	if result.Status != "success" {
+		t.Fatalf("expected success: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "cleared") {
+		t.Errorf("expected cleared in output: %s", result.Output)
+	}
+}

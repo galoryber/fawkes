@@ -130,6 +130,17 @@ func TestParsePortsDedup(t *testing.T) {
 	}
 }
 
+func TestParsePortsEmptyParts(t *testing.T) {
+	// Trailing comma or double comma should be handled
+	ports, err := parsePorts("80,,443,")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ports) != 2 {
+		t.Errorf("expected 2 ports (empty parts skipped), got %d: %v", len(ports), ports)
+	}
+}
+
 func TestPortScanKnownService(t *testing.T) {
 	tests := map[int]string{
 		22:    "SSH",
@@ -170,5 +181,77 @@ func TestIncIP(t *testing.T) {
 		if tc.input == "192.168.1.255" && ip[2] != 2 {
 			t.Errorf("expected third octet 2 after overflow, got %d", ip[2])
 		}
+	}
+}
+
+func TestParsePortsInvalidRangeStart(t *testing.T) {
+	// Non-numeric range start — covers parsePorts line 236-237
+	_, err := parsePorts("abc-100")
+	if err == nil {
+		t.Error("expected error for non-numeric range start")
+	}
+}
+
+func TestParsePortsInvalidRangeEnd(t *testing.T) {
+	// Non-numeric range end — covers parsePorts line 240-241
+	_, err := parsePorts("80-xyz")
+	if err == nil {
+		t.Error("expected error for non-numeric range end")
+	}
+}
+
+func TestParseHostsCIDRTooLarge(t *testing.T) {
+	// CIDR with > 1024 hosts — covers parseHosts line 170-172
+	_, err := parseHosts("10.0.0.0/20") // 4096 hosts
+	if err == nil {
+		t.Error("expected error for CIDR range too large")
+	}
+}
+
+func TestParseHostsRangeEndTooHigh(t *testing.T) {
+	// Range end > 255 — covers parseHosts line 197-198
+	_, err := parseHosts("192.168.1.1-300")
+	if err == nil {
+		t.Error("expected error for range end > 255")
+	}
+}
+
+func TestParseHostsIPv6Range(t *testing.T) {
+	// IPv6 address in range format — covers parseHosts line 192-193
+	_, err := parseHosts("::1-5")
+	if err == nil {
+		t.Error("expected error for IPv6 range (IPv4 only)")
+	}
+}
+
+func TestParseHostsInvalidRange(t *testing.T) {
+	// Non-numeric range suffix — covers parseHosts line 182-184
+	_, err := parseHosts("192.168.1.1-abc")
+	if err == nil {
+		t.Error("expected error for non-numeric range end")
+	}
+}
+
+func TestParseHostsRangeTooLarge(t *testing.T) {
+	// Range where endNum < startOctet — covers line 197-198
+	_, err := parseHosts("192.168.1.200-100")
+	if err == nil {
+		t.Error("expected error for endNum < startOctet")
+	}
+}
+
+func TestParseHostsInvalidBaseIP(t *testing.T) {
+	// Numeric range suffix but invalid base IP — covers parseHosts line 188-190
+	_, err := parseHosts("not.valid.ip-5")
+	if err == nil {
+		t.Error("expected error for invalid base IP in range")
+	}
+}
+
+func TestParseHostsRangeCumulativeTooLarge(t *testing.T) {
+	// Multiple ranges that cumulatively exceed 1024 — covers line 203-205
+	_, err := parseHosts("10.0.0.1-255,10.0.1.1-255,10.0.2.1-255,10.0.3.1-255,10.0.4.1-200")
+	if err == nil {
+		t.Error("expected error for cumulative range > 1024 hosts")
 	}
 }

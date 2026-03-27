@@ -56,9 +56,9 @@ func TestHandlesCommand_SelfProcess(t *testing.T) {
 
 	// Parse the JSON output
 	var out struct {
-		PID     int          `json:"pid"`
-		Shown   int          `json:"shown"`
-		Total   int          `json:"total"`
+		PID     int `json:"pid"`
+		Shown   int `json:"shown"`
+		Total   int `json:"total"`
 		Summary []struct {
 			Type  string `json:"type"`
 			Count int    `json:"count"`

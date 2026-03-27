@@ -109,4 +109,3 @@ func statFileType(info os.FileInfo) string {
 		return "unknown"
 	}
 }
-

@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
 )
@@ -18,7 +19,7 @@ type PersistEnumCommand struct{}
 
 func (c *PersistEnumCommand) Name() string { return "persist-enum" }
 func (c *PersistEnumCommand) Description() string {
-	return "Enumerate Linux persistence mechanisms — cron, systemd, shell profiles, SSH keys, init scripts, udev rules, kernel modules, motd, at jobs (T1547/T1546)"
+	return "Enumerate Linux persistence mechanisms — cron, systemd, shell profiles, SSH keys, init scripts, udev rules, kernel modules, motd, at jobs, D-Bus, PAM, package hooks, logrotate, NetworkManager, anacron (T1547/T1546/T1556/T1053)"
 }
 
 func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
@@ -67,6 +68,24 @@ func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	if cat == "all" || cat == "at" {
 		found += persistEnumAtJobs(&sb)
+	}
+	if cat == "all" || cat == "dbus" {
+		found += persistEnumDBus(&sb)
+	}
+	if cat == "all" || cat == "pam" {
+		found += persistEnumPAM(&sb)
+	}
+	if cat == "all" || cat == "packages" {
+		found += persistEnumPackageHooks(&sb)
+	}
+	if cat == "all" || cat == "logrotate" {
+		found += persistEnumLogrotate(&sb)
+	}
+	if cat == "all" || cat == "networkmanager" {
+		found += persistEnumNetworkManager(&sb)
+	}
+	if cat == "all" || cat == "anacron" {
+		found += persistEnumAnacron(&sb)
 	}
 
 	sb.WriteString(fmt.Sprintf("\n=== Total: %d persistence items found ===\n", found))
@@ -331,7 +350,9 @@ func persistEnumSSHKeys(sb *strings.Builder) int {
 	authKeysPath := filepath.Join(homeDir, ".ssh/authorized_keys")
 
 	if content, err := os.ReadFile(authKeysPath); err == nil {
-		for _, line := range strings.Split(string(content), "\n") {
+		lines := strings.Split(string(content), "\n")
+		structs.ZeroBytes(content) // opsec: clear SSH authorized_keys data
+		for _, line := range lines {
 			line = strings.TrimSpace(line)
 			if line == "" || strings.HasPrefix(line, "#") {
 				continue
@@ -353,7 +374,9 @@ func persistEnumSSHKeys(sb *strings.Builder) int {
 	if homeDir != "/root" {
 		rootAuthKeys := "/root/.ssh/authorized_keys"
 		if content, err := os.ReadFile(rootAuthKeys); err == nil {
-			for _, line := range strings.Split(string(content), "\n") {
+			rootLines := strings.Split(string(content), "\n")
+			structs.ZeroBytes(content) // opsec: clear SSH authorized_keys data
+			for _, line := range rootLines {
 				line = strings.TrimSpace(line)
 				if line == "" || strings.HasPrefix(line, "#") {
 					continue
@@ -387,6 +410,7 @@ func persistEnumSSHKeys(sb *strings.Builder) int {
 			if strings.Contains(string(content), "ENCRYPTED") {
 				encrypted = "encrypted"
 			}
+			structs.ZeroBytes(content)
 		}
 		sb.WriteString(fmt.Sprintf("  [private key] %s (%d bytes, %s)\n", name, info.Size(), encrypted))
 		count++
@@ -686,4 +710,383 @@ func currentHomeDir() string {
 		return home
 	}
 	return "/root"
+}
+
+// persistEnumDBus checks for custom D-Bus service files that could activate backdoor processes (T1543).
+func persistEnumDBus(sb *strings.Builder) int {
+	sb.WriteString("--- D-Bus Services ---\n")
+	count := 0
+
+	homeDir := currentHomeDir()
+
+	// D-Bus service directories — system-wide and user session
+	dbusDirs := []struct {
+		path string
+		desc string
+	}{
+		{"/usr/share/dbus-1/system-services", "system"},
+		{"/usr/share/dbus-1/services", "session"},
+		{"/usr/local/share/dbus-1/services", "local session"},
+		{"/usr/local/share/dbus-1/system-services", "local system"},
+		{filepath.Join(homeDir, ".local/share/dbus-1/services"), "user session"},
+	}
+
+	for _, dd := range dbusDirs {
+		entries, err := os.ReadDir(dd.path)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".service") {
+				continue
+			}
+			path := filepath.Join(dd.path, entry.Name())
+			content, err := os.ReadFile(path)
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("  [%s] %s (unreadable)\n", dd.desc, entry.Name()))
+				count++
+				continue
+			}
+
+			// Extract Exec= line to show what runs on activation
+			execLine := ""
+			for _, line := range strings.Split(string(content), "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "Exec=") {
+					execLine = line[5:]
+					break
+				}
+			}
+
+			if execLine != "" {
+				sb.WriteString(fmt.Sprintf("  [%s] %s → %s\n", dd.desc, entry.Name(), execLine))
+			} else {
+				sb.WriteString(fmt.Sprintf("  [%s] %s\n", dd.desc, entry.Name()))
+			}
+			count++
+		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumPAM checks for custom PAM modules that could intercept authentication (T1556.003).
+func persistEnumPAM(sb *strings.Builder) int {
+	sb.WriteString("--- PAM Configuration ---\n")
+	count := 0
+
+	// Check /etc/pam.d/ for custom modules
+	pamDir := "/etc/pam.d"
+	entries, err := os.ReadDir(pamDir)
+	if err != nil {
+		sb.WriteString("  (cannot read /etc/pam.d)\n\n")
+		return 0
+	}
+
+	// Scan each PAM config for non-standard modules
+	standardModules := map[string]bool{
+		"pam_unix.so": true, "pam_deny.so": true, "pam_permit.so": true,
+		"pam_env.so": true, "pam_limits.so": true, "pam_nologin.so": true,
+		"pam_succeed_if.so": true, "pam_pwquality.so": true, "pam_faillock.so": true,
+		"pam_systemd.so": true, "pam_systemd_home.so": true, "pam_keyinit.so": true,
+		"pam_loginuid.so": true, "pam_selinux.so": true, "pam_namespace.so": true,
+		"pam_console.so": true, "pam_tally2.so": true, "pam_securetty.so": true,
+		"pam_access.so": true, "pam_time.so": true, "pam_motd.so": true,
+		"pam_mail.so": true, "pam_lastlog.so": true, "pam_shells.so": true,
+		"pam_cap.so": true, "pam_wheel.so": true, "pam_xauth.so": true,
+		"pam_gnome_keyring.so": true, "pam_kwallet5.so": true, "pam_fprintd.so": true,
+		"pam_sss.so": true, "pam_winbind.so": true, "pam_krb5.so": true,
+		"pam_ldap.so": true, "pam_cracklib.so": true, "pam_ecryptfs.so": true,
+		"pam_google_authenticator.so": true, "pam_umask.so": true,
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		path := filepath.Join(pamDir, entry.Name())
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		for _, line := range strings.Split(string(content), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "@") {
+				continue
+			}
+
+			// PAM line format: type control module-path [module-arguments]
+			fields := strings.Fields(line)
+			if len(fields) < 3 {
+				continue
+			}
+
+			moduleName := filepath.Base(fields[2])
+			if !standardModules[moduleName] && strings.HasSuffix(moduleName, ".so") {
+				sb.WriteString(fmt.Sprintf("  [!] [%s] %s uses non-standard module: %s\n", entry.Name(), fields[0], moduleName))
+				count++
+			}
+		}
+	}
+
+	// Check for custom PAM libraries in non-standard locations
+	pamLibDirs := []string{"/lib/security", "/lib/x86_64-linux-gnu/security", "/lib64/security"}
+	for _, dir := range pamLibDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".so") {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			// Flag recently modified PAM modules (within last 30 days)
+			if info.ModTime().After(time.Now().AddDate(0, 0, -30)) {
+				sb.WriteString(fmt.Sprintf("  [!] [%s] %s recently modified (%s)\n",
+					dir, entry.Name(), info.ModTime().Format("2006-01-02 15:04")))
+				count++
+			}
+		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (all standard modules)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumPackageHooks checks for APT/dpkg hooks that execute commands (T1546).
+func persistEnumPackageHooks(sb *strings.Builder) int {
+	sb.WriteString("--- Package Manager Hooks ---\n")
+	count := 0
+
+	// APT hooks — /etc/apt/apt.conf.d/ files with Invoke directives
+	aptDir := "/etc/apt/apt.conf.d"
+	if entries, err := os.ReadDir(aptDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			path := filepath.Join(aptDir, entry.Name())
+			content, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+
+			// Look for hook directives
+			contentStr := string(content)
+			hasHook := false
+			hookPatterns := []string{
+				"Pre-Invoke", "Post-Invoke", "Pre-Install-Pkgs",
+				"Post-Install-Pkgs", "DPkg::Pre-Invoke", "DPkg::Post-Invoke",
+				"APT::Update::Post-Invoke", "APT::Update::Pre-Invoke",
+			}
+			for _, pattern := range hookPatterns {
+				if strings.Contains(contentStr, pattern) {
+					hasHook = true
+					break
+				}
+			}
+
+			if hasHook {
+				sb.WriteString(fmt.Sprintf("  [!] [apt.conf.d] %s contains hook directives\n", entry.Name()))
+				count++
+			}
+		}
+	}
+
+	// dpkg hooks — /etc/dpkg/dpkg.cfg.d/ and triggers in /var/lib/dpkg/triggers/
+	dpkgDir := "/etc/dpkg/dpkg.cfg.d"
+	if entries, err := os.ReadDir(dpkgDir); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("  [dpkg.cfg.d] %s\n", entry.Name()))
+			count++
+		}
+	}
+
+	// Yum/DNF plugins — /etc/yum/pluginconf.d/ or /etc/dnf/plugins/
+	for _, plugDir := range []string{"/etc/yum/pluginconf.d", "/etc/dnf/plugins"} {
+		entries, err := os.ReadDir(plugDir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("  [%s] %s\n", filepath.Base(plugDir), entry.Name()))
+			count++
+		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumLogrotate checks logrotate configs for postrotate/prerotate scripts (T1053).
+func persistEnumLogrotate(sb *strings.Builder) int {
+	sb.WriteString("--- Logrotate Scripts ---\n")
+	count := 0
+
+	logrotateDir := "/etc/logrotate.d"
+	entries, err := os.ReadDir(logrotateDir)
+	if err != nil {
+		sb.WriteString("  (cannot read /etc/logrotate.d)\n\n")
+		return 0
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		path := filepath.Join(logrotateDir, entry.Name())
+		content, err := os.ReadFile(path)
+		if err != nil {
+			continue
+		}
+
+		// Scan for script blocks
+		contentStr := string(content)
+		hasScript := false
+		for _, directive := range []string{"postrotate", "prerotate", "firstaction", "lastaction"} {
+			if strings.Contains(contentStr, directive) {
+				hasScript = true
+				break
+			}
+		}
+
+		if hasScript {
+			sb.WriteString(fmt.Sprintf("  [!] %s contains script directives\n", entry.Name()))
+			count++
+		}
+	}
+
+	// Also check main /etc/logrotate.conf
+	if content, err := os.ReadFile("/etc/logrotate.conf"); err == nil {
+		for _, directive := range []string{"postrotate", "prerotate", "firstaction", "lastaction"} {
+			if strings.Contains(string(content), directive) {
+				sb.WriteString("  [!] /etc/logrotate.conf contains script directives\n")
+				count++
+				break
+			}
+		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (no script directives found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumNetworkManager checks NetworkManager dispatcher scripts (T1546).
+func persistEnumNetworkManager(sb *strings.Builder) int {
+	sb.WriteString("--- NetworkManager Dispatcher ---\n")
+	count := 0
+
+	// Dispatcher scripts run when network events occur (connect, disconnect, up, down)
+	dispatcherDirs := []string{
+		"/etc/NetworkManager/dispatcher.d",
+		"/etc/NetworkManager/dispatcher.d/pre-up.d",
+		"/etc/NetworkManager/dispatcher.d/pre-down.d",
+		"/etc/NetworkManager/dispatcher.d/no-wait.d",
+		"/usr/lib/NetworkManager/dispatcher.d",
+	}
+
+	for _, dir := range dispatcherDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				sb.WriteString(fmt.Sprintf("  [%s] %s\n", filepath.Base(dir), entry.Name()))
+				count++
+				continue
+			}
+
+			// Check if executable
+			execFlag := ""
+			if info.Mode()&0111 != 0 {
+				execFlag = " [executable]"
+			}
+			sb.WriteString(fmt.Sprintf("  [%s] %s (%s)%s\n",
+				filepath.Base(dir), entry.Name(), info.Mode().String(), execFlag))
+			count++
+		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumAnacron checks anacron configuration for periodic job persistence (T1053).
+func persistEnumAnacron(sb *strings.Builder) int {
+	sb.WriteString("--- Anacron ---\n")
+	count := 0
+
+	// Main anacrontab
+	if content, err := os.ReadFile("/etc/anacrontab"); err == nil {
+		for _, line := range strings.Split(string(content), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			// Skip variable assignments
+			if strings.Contains(line, "=") && !strings.Contains(line, " ") {
+				continue
+			}
+			// Anacron format: period delay job-identifier command
+			fields := strings.Fields(line)
+			if len(fields) >= 4 {
+				sb.WriteString(fmt.Sprintf("  [anacrontab] period=%s delay=%s id=%s cmd=%s\n",
+					fields[0], fields[1], fields[2], strings.Join(fields[3:], " ")))
+				count++
+			}
+		}
+	}
+
+	// Anacron spool — tracks last execution times
+	if entries, err := os.ReadDir("/var/spool/anacron"); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			content, err := os.ReadFile(filepath.Join("/var/spool/anacron", entry.Name()))
+			if err != nil {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("  [spool] %s last ran: %s\n",
+				entry.Name(), strings.TrimSpace(string(content))))
+		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (none found)\n")
+	}
+	sb.WriteString("\n")
+	return count
 }

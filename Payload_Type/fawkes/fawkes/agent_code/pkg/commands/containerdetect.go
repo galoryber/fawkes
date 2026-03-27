@@ -79,6 +79,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 				}
 			}
 		}
+		structs.ZeroBytes(data) // opsec
 		evidence = append(evidence, containerEvidence{"/run/.containerenv", "FOUND", details})
 		if detected == "none" {
 			detected = "Podman"
@@ -90,6 +91,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	// Check cgroup for container indicators
 	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
 		content := string(data)
+		structs.ZeroBytes(data) // opsec: cgroup paths may reveal infrastructure
 		if strings.Contains(content, "docker") {
 			evidence = append(evidence, containerEvidence{"/proc/1/cgroup", "DOCKER", "docker found in cgroup"})
 			if detected == "none" {
@@ -116,6 +118,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	// Check /proc/1/environ for container_* vars
 	if data, err := os.ReadFile("/proc/1/environ"); err == nil {
 		content := string(data)
+		structs.ZeroBytes(data) // opsec: environ may contain secrets/tokens
 		if strings.Contains(content, "KUBERNETES_") {
 			evidence = append(evidence, containerEvidence{"/proc/1/environ", "K8S", "KUBERNETES_* env vars present"})
 			detected = "Kubernetes"
@@ -143,6 +146,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	// Check /proc/1/sched for PID namespace
 	if data, err := os.ReadFile("/proc/1/sched"); err == nil {
 		lines := strings.SplitN(string(data), "\n", 2)
+		structs.ZeroBytes(data) // opsec
 		if len(lines) > 0 {
 			// In containers, PID 1 is usually not systemd/init
 			first := strings.TrimSpace(lines[0])
@@ -157,6 +161,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	// Check for WSL
 	if data, err := os.ReadFile("/proc/version"); err == nil {
 		content := strings.ToLower(string(data))
+		structs.ZeroBytes(data) // opsec
 		if strings.Contains(content, "microsoft") || strings.Contains(content, "wsl") {
 			evidence = append(evidence, containerEvidence{"/proc/version", "WSL", "WSL kernel detected"})
 			detected = "WSL"
@@ -165,7 +170,9 @@ func containerDetectLinux() ([]containerEvidence, string) {
 
 	// Check capabilities (reduced caps = likely container)
 	if data, err := os.ReadFile("/proc/self/status"); err == nil {
-		for _, line := range strings.Split(string(data), "\n") {
+		content := string(data)
+		structs.ZeroBytes(data) // opsec
+		for _, line := range strings.Split(content, "\n") {
 			if strings.HasPrefix(line, "CapEff:") {
 				cap := strings.TrimSpace(strings.TrimPrefix(line, "CapEff:"))
 				if cap == "0000003fffffffff" || cap == "000001ffffffffff" {
@@ -176,9 +183,106 @@ func containerDetectLinux() ([]containerEvidence, string) {
 				break
 			}
 		}
+
+		// Identify dangerous capabilities for escape assessment
+		dangerousCaps := identifyDangerousCaps(content)
+		if len(dangerousCaps) > 0 {
+			evidence = append(evidence, containerEvidence{"Dangerous Capabilities", "ESCAPE", strings.Join(dangerousCaps, ", ")})
+		}
+
+		// Check Seccomp status
+		seccompStatus := parseSeccompStatus(content)
+		if seccompStatus != "" {
+			evidence = append(evidence, containerEvidence{"Seccomp", "info", seccompStatus})
+		}
+	}
+
+	// Check for mounted host paths (escape vectors)
+	if data, err := os.ReadFile("/proc/1/mounts"); err == nil {
+		hostMounts := findHostMounts(string(data))
+		structs.ZeroBytes(data) // opsec: mount info may reveal infrastructure
+		for _, m := range hostMounts {
+			evidence = append(evidence, containerEvidence{"Host Mount", "ESCAPE", fmt.Sprintf("%s at %s", m.Device, m.MountPoint)})
+		}
+	}
+
+	// Check AppArmor profile
+	if data, err := os.ReadFile("/proc/self/attr/current"); err == nil {
+		profile := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data) // opsec
+		if profile == "unconfined" || profile == "" {
+			evidence = append(evidence, containerEvidence{"AppArmor", "unconfined", "no AppArmor restrictions"})
+		} else {
+			evidence = append(evidence, containerEvidence{"AppArmor", "confined", profile})
+		}
 	}
 
 	return evidence, detected
+}
+
+// dangerousCapBits maps bit positions to capability names that enable container escapes.
+var dangerousCapBits = map[int]string{
+	21: "CAP_SYS_ADMIN",
+	16: "CAP_SYS_MODULE",
+	19: "CAP_SYS_PTRACE",
+	2:  "CAP_DAC_READ_SEARCH",
+	12: "CAP_NET_ADMIN",
+	25: "CAP_SYS_TIME",
+}
+
+// identifyDangerousCaps parses /proc/self/status content and returns escape-relevant capabilities.
+func identifyDangerousCaps(statusContent string) []string {
+	for _, line := range strings.Split(statusContent, "\n") {
+		if strings.HasPrefix(line, "CapEff:") {
+			hexStr := strings.TrimSpace(strings.TrimPrefix(line, "CapEff:"))
+			return parseDangerousCaps(hexStr)
+		}
+	}
+	return nil
+}
+
+// parseDangerousCaps takes a hex capability bitmask and returns names of dangerous capabilities.
+func parseDangerousCaps(hexStr string) []string {
+	var val uint64
+	for _, c := range hexStr {
+		val <<= 4
+		switch {
+		case c >= '0' && c <= '9':
+			val |= uint64(c - '0')
+		case c >= 'a' && c <= 'f':
+			val |= uint64(c - 'a' + 10)
+		case c >= 'A' && c <= 'F':
+			val |= uint64(c - 'A' + 10)
+		}
+	}
+
+	var found []string
+	for bit, name := range dangerousCapBits {
+		if val&(1<<uint(bit)) != 0 {
+			found = append(found, name)
+		}
+	}
+	return found
+}
+
+// parseSeccompStatus extracts Seccomp mode from /proc/self/status content.
+func parseSeccompStatus(statusContent string) string {
+	for _, line := range strings.Split(statusContent, "\n") {
+		if strings.HasPrefix(line, "Seccomp:") {
+			val := strings.TrimSpace(strings.TrimPrefix(line, "Seccomp:"))
+			switch val {
+			case "0":
+				return "disabled (no restrictions)"
+			case "1":
+				return "strict mode"
+			case "2":
+				return "filter mode (syscall filtering active)"
+			default:
+				return "mode " + val
+			}
+		}
+	}
+	return ""
 }
 
 func containerDetectDarwin() ([]containerEvidence, string) {

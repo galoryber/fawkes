@@ -14,8 +14,10 @@ import (
 
 type TokenStoreCommand struct{}
 
-func (c *TokenStoreCommand) Name() string        { return "token-store" }
-func (c *TokenStoreCommand) Description() string { return "Save, list, restore, and remove named tokens" }
+func (c *TokenStoreCommand) Name() string { return "token-store" }
+func (c *TokenStoreCommand) Description() string {
+	return "Save, list, restore, and remove named tokens"
+}
 
 type tokenStoreArgs struct {
 	Action string `json:"action"` // save, list, use, remove

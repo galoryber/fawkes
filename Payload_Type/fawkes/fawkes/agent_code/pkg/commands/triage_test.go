@@ -231,6 +231,186 @@ func TestTriageScan(t *testing.T) {
 	}
 }
 
+// --- triageCategorizeFile tests ---
+
+func TestTriageCategorizeFile(t *testing.T) {
+	tests := []struct {
+		name     string
+		expected string
+	}{
+		// Credentials
+		{"id_rsa", "cred"},
+		{"id_ed25519", "cred"},
+		{"server.pem", "cred"},
+		{"cert.pfx", "cred"},
+		{"backup.kdbx", "cred"},
+		{"user.rdp", "cred"},
+		{"client.ovpn", "cred"},
+		{".netrc", "cred"},
+		{"credentials.json", "cred"},
+
+		// Documents
+		{"report.docx", "doc"},
+		{"budget.xlsx", "doc"},
+		{"slides.pptx", "doc"},
+		{"manual.pdf", "doc"},
+		{"data.csv", "doc"},
+
+		// Configs
+		{"app.yaml", "config"},
+		{"settings.json", "config"},
+		{"config.toml", "config"},
+		{"nginx.conf", "config"},
+		{".env", "config"},
+		{"app.ini", "config"},
+
+		// Scripts
+		{"deploy.sh", "script"},
+		{"setup.py", "script"},
+		{"build.ps1", "script"},
+		{"run.bat", "script"},
+
+		// Logs
+		{"auth.log", "log"},
+		{"app.log", "log"},
+		{"syslog", "log"},
+
+		// Databases
+		{"app.db", "database"},
+		{"data.sqlite", "database"},
+		{"history.sqlite3", "database"},
+
+		// Other
+		{"photo.jpg", "other"},
+		{"program.exe", "other"},
+		{"archive.tar.gz", "other"},
+	}
+
+	for _, tc := range tests {
+		got := triageCategorizeFile(tc.name)
+		if got != tc.expected {
+			t.Errorf("triageCategorizeFile(%q) = %q, want %q", tc.name, got, tc.expected)
+		}
+	}
+}
+
+func TestTriageRecent(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a recently modified file
+	os.WriteFile(filepath.Join(tmpDir, "recent.txt"), []byte("recent data"), 0644)
+
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "recent", Hours: 1, Path: tmpDir})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("Expected success for recent, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestTriageRecentDefaultHours(t *testing.T) {
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "recent"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("Expected success for recent (default hours), got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestTriageRecentStringHours(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.WriteFile(filepath.Join(tmpDir, "recent.txt"), []byte("data"), 0644)
+
+	cmd := &TriageCommand{}
+	// Mythic UI or manual JSON may send hours as string
+	result := cmd.Execute(structs.Task{Params: `{"action":"recent","hours":"2","path":"` + tmpDir + `"}`})
+	if result.Status != "success" {
+		t.Errorf("Expected success for string hours, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestFlexIntUnmarshal(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected int
+		wantErr  bool
+	}{
+		{"integer", `42`, 42, false},
+		{"string_int", `"24"`, 24, false},
+		{"zero", `0`, 0, false},
+		{"string_zero", `"0"`, 0, false},
+		{"negative", `-1`, -1, false},
+		{"invalid_string", `"abc"`, 0, true},
+		{"null_value", `null`, 0, false}, // null → zero (Go default)
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var v flexInt
+			err := json.Unmarshal([]byte(tt.input), &v)
+			if tt.wantErr {
+				if err == nil {
+					t.Errorf("expected error for %s", tt.input)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if int(v) != tt.expected {
+				t.Errorf("got %d, want %d", int(v), tt.expected)
+			}
+		})
+	}
+}
+
+func TestTriageDatabase(t *testing.T) {
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "database", MaxFiles: 10})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestTriageScripts(t *testing.T) {
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "scripts", MaxFiles: 10})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestTriageArchives(t *testing.T) {
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "archives", MaxFiles: 10})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestTriageDatabaseFindsFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	os.WriteFile(filepath.Join(tmpDir, "app.db"), []byte("SQLite format"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "data.sqlite3"), []byte("data"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "readme.txt"), []byte("text"), 0644)
+
+	task := structs.NewTask("db-test", "triage", "")
+	args := triageArgs{MaxSize: 10 * 1024 * 1024, MaxFiles: 200}
+	results := triageScan(task, []string{tmpDir}, []string{".db", ".sqlite3"}, "database", args, 3)
+
+	if len(results) != 2 {
+		names := make([]string, len(results))
+		for i, r := range results {
+			names[i] = r.Path
+		}
+		t.Errorf("expected 2 database files, got %d: %v", len(results), names)
+	}
+}
+
 func TestTriageScanPatterns(t *testing.T) {
 	tmpDir := t.TempDir()
 	os.WriteFile(filepath.Join(tmpDir, "id_rsa"), []byte("key"), 0644)
@@ -243,5 +423,58 @@ func TestTriageScanPatterns(t *testing.T) {
 	results := triageScanPatterns(task, []string{tmpDir}, []string{"id_rsa", "*.kdbx"}, "cred", args, 3)
 	if len(results) != 2 {
 		t.Errorf("Expected 2 results (id_rsa+kdbx), got %d", len(results))
+	}
+}
+
+func TestTriageMail(t *testing.T) {
+	cmd := &TriageCommand{}
+	params, _ := json.Marshal(triageArgs{Action: "mail"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("expected success for mail triage, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestTriageMailFindsFiles(t *testing.T) {
+	tmpDir := t.TempDir()
+	// Create mock mail files
+	os.WriteFile(filepath.Join(tmpDir, "inbox.pst"), []byte("PST data"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "message.eml"), []byte("From: test"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "archive.mbox"), []byte("mbox data"), 0644)
+	os.WriteFile(filepath.Join(tmpDir, "not_mail.txt"), []byte("text"), 0644)
+
+	task := structs.NewTask("mail-test", "triage", "")
+	args := triageArgs{MaxSize: 10 * 1024 * 1024, MaxFiles: 200}
+	exts := []string{".pst", ".ost", ".eml", ".msg", ".mbox", ".emlx", ".dbx", ".nsf"}
+	results := triageScan(task, []string{tmpDir}, exts, "mail", args, 3)
+	if len(results) != 3 {
+		t.Errorf("expected 3 mail files, got %d", len(results))
+	}
+	for _, r := range results {
+		if r.Category != "mail" {
+			t.Errorf("expected category 'mail', got %q for %s", r.Category, r.Path)
+		}
+	}
+}
+
+func TestTriageCategorizeFileMail(t *testing.T) {
+	mailTests := []struct {
+		name     string
+		expected string
+	}{
+		{"inbox.pst", "mail"},
+		{"outlook.ost", "mail"},
+		{"message.eml", "mail"},
+		{"report.msg", "mail"},
+		{"archive.mbox", "mail"},
+		{"old.emlx", "mail"},
+		{"legacy.dbx", "mail"},
+		{"notes.nsf", "mail"},
+	}
+	for _, tc := range mailTests {
+		got := triageCategorizeFile(tc.name)
+		if got != tc.expected {
+			t.Errorf("triageCategorizeFile(%q) = %q, want %q", tc.name, got, tc.expected)
+		}
 	}
 }

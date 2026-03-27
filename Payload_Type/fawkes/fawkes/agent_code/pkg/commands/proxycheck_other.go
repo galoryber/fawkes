@@ -7,6 +7,8 @@ import (
 	"os"
 	"runtime"
 	"strings"
+
+	"fawkes/pkg/structs"
 )
 
 func proxyCheckPlatform() string {
@@ -27,6 +29,7 @@ func proxyCheckLinux() string {
 	// Check apt proxy
 	if data, err := os.ReadFile("/etc/apt/apt.conf.d/proxy.conf"); err == nil {
 		sb.WriteString(fmt.Sprintf("    /etc/apt/apt.conf.d/proxy.conf:\n    %s\n", strings.TrimSpace(string(data))))
+		structs.ZeroBytes(data)
 	}
 
 	// Check /etc/environment for proxy
@@ -37,6 +40,7 @@ func proxyCheckLinux() string {
 				sb.WriteString(fmt.Sprintf("    /etc/environment: %s\n", strings.TrimSpace(line)))
 			}
 		}
+		structs.ZeroBytes(data)
 	}
 
 	// Check /etc/profile.d for proxy scripts
@@ -46,6 +50,7 @@ func proxyCheckLinux() string {
 				path := "/etc/profile.d/" + e.Name()
 				if data, err := os.ReadFile(path); err == nil {
 					sb.WriteString(fmt.Sprintf("    %s: %s\n", path, truncate(strings.TrimSpace(string(data)), 200)))
+					structs.ZeroBytes(data)
 				}
 			}
 		}
@@ -65,6 +70,7 @@ func proxyCheckDarwin() string {
 		} else {
 			sb.WriteString("    No proxy in system preferences\n")
 		}
+		structs.ZeroBytes(data)
 	}
 
 	return sb.String()

@@ -24,7 +24,7 @@ const (
 	replySuccess           = 0x00
 	replyConnectionRefused = 0x05
 
-	readBufSize     = 32 * 1024       // 32KB per read
+	readBufSize     = 32 * 1024 // 32KB per read
 	dialTimeout     = 10 * time.Second
 	idleReadTimeout = 5 * time.Minute // close idle connections to prevent goroutine/connection leaks
 )

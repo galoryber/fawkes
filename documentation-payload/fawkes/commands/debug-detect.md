@@ -21,7 +21,7 @@ Detect attached debuggers, analysis tools, and instrumentation. Runs multiple pl
 | PEB.BeingDebugged | Read PEB offset 0x2 | PEB flag set by ntdll!LdrpInitialize |
 | Hardware Breakpoints (DR0-3) | GetThreadContext | Debug registers set by analyst |
 
-### Linux (5 checks)
+### Linux (8 checks)
 | Check | Method | Detects |
 |-------|--------|---------|
 | TracerPid | /proc/self/status | ptrace-attached debugger (GDB, strace, ltrace) |
@@ -29,6 +29,9 @@ Detect attached debuggers, analysis tools, and instrumentation. Runs multiple pl
 | Memory Maps | /proc/self/maps | Frida, Valgrind, sanitizers (ASAN/TSAN/UBSAN), Intel Pin, DynamoRIO |
 | Process Status | /proc/self/status (Seccomp, CapEff) | Sandbox/container restrictions, zero capabilities |
 | VM/Sandbox Detection | /proc/cpuinfo, DMI, /.dockerenv | Hypervisor flag, VirtualBox/VMware/KVM/Xen, Docker/container |
+| eBPF Monitoring | /sys/fs/bpf/, /proc/*/comm | Falco, Tetragon, Tracee, bpftrace, Cilium, Sysdig — modern eBPF-based EDR/detection |
+| Audit Framework | /var/log/audit/, loginuid, audit rules | auditd active session tracking, rule files that increase detection risk |
+| Ptrace Scope | /proc/sys/kernel/yama/ptrace_scope | Yama LSM restriction level (0=unrestricted, 3=blocked) — affects injection capability |
 
 ### macOS (5 checks)
 | Check | Method | Detects |

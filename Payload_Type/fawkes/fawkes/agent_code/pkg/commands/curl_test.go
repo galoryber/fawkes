@@ -305,6 +305,43 @@ func TestCurlDefaultUserAgent(t *testing.T) {
 	}
 }
 
+func TestParseHeaders(t *testing.T) {
+	tests := []struct {
+		name     string
+		raw      json.RawMessage
+		wantNil  bool
+		wantKeys int
+	}{
+		{"nil input", nil, true, 0},
+		{"empty input", json.RawMessage(""), true, 0},
+		{"direct map", json.RawMessage(`{"A":"1","B":"2"}`), false, 2},
+		{"json string wrapping map", json.RawMessage(`"{\"X\":\"val\"}"`), false, 1},
+		{"empty string", json.RawMessage(`""`), true, 0},
+		{"invalid json bytes", json.RawMessage(`not json`), true, 0},
+		{"string with invalid inner", json.RawMessage(`"not json"`), true, 0},
+		{"empty map", json.RawMessage(`{}`), false, 0},
+		{"number (wrong type)", json.RawMessage(`42`), true, 0},
+		{"array (wrong type)", json.RawMessage(`["a","b"]`), true, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := parseHeaders(tc.raw)
+			if tc.wantNil {
+				if got != nil {
+					t.Errorf("expected nil, got %v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("expected non-nil map")
+			}
+			if len(got) != tc.wantKeys {
+				t.Errorf("got %d keys, want %d", len(got), tc.wantKeys)
+			}
+		})
+	}
+}
+
 func TestCurlNoDefaultUserAgent(t *testing.T) {
 	// When DefaultUserAgent is empty, Go's default should be used
 	origUA := DefaultUserAgent
@@ -324,5 +361,15 @@ func TestCurlNoDefaultUserAgent(t *testing.T) {
 
 	if receivedUA == "" {
 		t.Error("expected Go default user agent, got empty")
+	}
+}
+
+func TestCurlInvalidMethodURL(t *testing.T) {
+	// URL with control characters triggers http.NewRequestWithContext error
+	cmd := &CurlCommand{}
+	params, _ := json.Marshal(curlArgs{URL: "http://host\x7f/path", Method: "GET"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Error("expected error for URL with control characters")
 	}
 }

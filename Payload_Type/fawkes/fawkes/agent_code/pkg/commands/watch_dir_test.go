@@ -528,6 +528,28 @@ func TestCompareSnapshotsMultipleEvents(t *testing.T) {
 	}
 }
 
+func TestCompareSnapshotsSortSameAction(t *testing.T) {
+	// Two events with same action type — exercises path comparison in sort
+	now := time.Now()
+	baseline := map[string]fileSnapshot{
+		"b.txt": {Size: 100, ModTime: now},
+		"a.txt": {Size: 200, ModTime: now},
+	}
+	current := map[string]fileSnapshot{
+		"b.txt": {Size: 999, ModTime: now},
+		"a.txt": {Size: 888, ModTime: now},
+	}
+	events := compareSnapshots(baseline, current, false)
+	if len(events) != 2 {
+		t.Fatalf("expected 2 MODIFIED events, got %d", len(events))
+	}
+	// Both are MODIFIED — should be sorted by path: a.txt before b.txt
+	if events[0].Path != "a.txt" || events[1].Path != "b.txt" {
+		t.Errorf("expected events sorted by path [a.txt, b.txt], got [%s, %s]",
+			events[0].Path, events[1].Path)
+	}
+}
+
 func TestHashFile(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "hash-test-*")
 	if err != nil {

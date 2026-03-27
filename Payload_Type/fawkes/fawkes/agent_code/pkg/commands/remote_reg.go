@@ -282,8 +282,8 @@ func remoteRegEnum(args remoteRegArgs) structs.CommandResult {
 
 	// Get key info for buffer sizing
 	infoResp, err := cli.BaseRegQueryInfoKey(ctx, &winreg.BaseRegQueryInfoKeyRequest{
-		Key:      subKey,
-		ClassIn:  &winreg.UnicodeString{Buffer: "", MaximumLength: 256},
+		Key:     subKey,
+		ClassIn: &winreg.UnicodeString{Buffer: "", MaximumLength: 256},
 	})
 	if err != nil {
 		return errorf("Error querying key info: %v", err)

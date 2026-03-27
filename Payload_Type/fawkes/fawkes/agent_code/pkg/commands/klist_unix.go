@@ -463,6 +463,7 @@ func klistDump(args klistArgs) structs.CommandResult {
 		}
 		return errorf("Error reading ccache: %v", err)
 	}
+	defer structs.ZeroBytes(data) // opsec: clear raw ccache credential data
 
 	b64 := base64.StdEncoding.EncodeToString(data)
 

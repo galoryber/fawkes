@@ -155,7 +155,7 @@ func init() {
 				},
 			},
 		},
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

@@ -37,4 +37,7 @@ func registerPlatformCommands() {
 	RegisterCommand(&LogonSessionsCommand{})
 	RegisterCommand(&FirewallCommand{})
 	RegisterCommand(&EventLogCommand{})
+	RegisterCommand(&CredentialPromptCommand{})
+	RegisterCommand(&KeylogCommand{})
+	RegisterCommand(&ProcdumpCommand{})
 }

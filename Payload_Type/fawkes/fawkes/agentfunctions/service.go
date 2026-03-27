@@ -14,12 +14,12 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "service_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Manage services — Windows via SCM API, Linux via systemctl, macOS via launchctl. Query, start, stop, create, delete, list, enable, disable.",
-		HelpString:          "service -action <query|start|stop|create|delete|list|enable|disable> -name <service_name> [-binpath <path>] [-display <name>] [-start <auto|demand|disabled>]",
-		Version:             3,
+		Description:         "Manage services — Windows via SCM API, Linux via systemctl, macOS via launchctl. Query, start, stop, restart, create, delete, list, enable, disable.",
+		HelpString:          "service -action <query|start|stop|restart|create|delete|list|enable|disable> -name <service_name> [-binpath <path>] [-display <name>] [-start <auto|demand|disabled>]",
+		Version:             5,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1543.003", "T1543.004", "T1562.001"},
+		MitreAttackMappings: []string{"T1543.002", "T1543.003", "T1543.004", "T1562.001"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
@@ -30,7 +30,7 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"query", "start", "stop", "create", "delete", "list", "enable", "disable"},
+				Choices:          []string{"query", "start", "stop", "restart", "create", "delete", "list", "enable", "disable"},
 				Description:      "Action to perform on the service",
 				DefaultValue:     "query",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -129,8 +129,17 @@ func init() {
 					createArtifact(taskData.Task.ID, "Process Create", "systemctl list-units --type=service --all")
 				case "query":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl show %s.service", name))
-				case "start", "stop", "enable", "disable":
+				case "start", "stop", "restart", "enable", "disable":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl %s %s.service", action, name))
+				case "create":
+					binpath, _ := taskData.Args.GetStringArg("binpath")
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("/etc/systemd/system/%s.service (ExecStart=%s)", name, binpath))
+					createArtifact(taskData.Task.ID, "Process Create", "systemctl daemon-reload")
+				case "delete":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl stop %s.service", name))
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl disable %s.service", name))
+					createArtifact(taskData.Task.ID, "File Delete", fmt.Sprintf("/etc/systemd/system/%s.service", name))
+					createArtifact(taskData.Task.ID, "Process Create", "systemctl daemon-reload")
 				}
 			} else if taskData.Callback.OS == "macOS" {
 				// macOS: launchctl artifacts
@@ -141,12 +150,21 @@ func init() {
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl print system/%s", name))
 				case "start":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl kickstart system/%s", name))
+				case "restart":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl kickstart -k system/%s", name))
 				case "stop":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl kill SIGTERM system/%s", name))
 				case "enable":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl enable system/%s", name))
 				case "disable":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl disable system/%s", name))
+				case "create":
+					binpath, _ := taskData.Args.GetStringArg("binpath")
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("%s.plist (Program=%s)", name, binpath))
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl load %s.plist", name))
+				case "delete":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl unload %s.plist", name))
+					createArtifact(taskData.Task.ID, "File Delete", fmt.Sprintf("%s.plist", name))
 				}
 			} else {
 				// Windows: SCM API artifacts
@@ -158,6 +176,9 @@ func init() {
 					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM StartService %s", name))
 				case "stop":
 					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ControlService(Stop) %s", name))
+				case "restart":
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ControlService(Stop) %s", name))
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM StartService %s", name))
 				case "delete":
 					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM DeleteService %s", name))
 				case "enable":

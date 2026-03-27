@@ -59,4 +59,3 @@ func (c *TCCCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	return successResult(output)
 }
-

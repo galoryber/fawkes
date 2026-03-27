@@ -679,12 +679,12 @@ func TestParseCcacheV3(t *testing.T) {
 	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Unix()))
 	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(10*time.Hour).Unix()))
 	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(7*24*time.Hour).Unix()))
-	buf = append(buf, 0) // is_skey
+	buf = append(buf, 0)                                 // is_skey
 	buf = binary.BigEndian.AppendUint32(buf, 0x40000000) // forwardable
-	buf = binary.BigEndian.AppendUint32(buf, 0) // addresses
-	buf = binary.BigEndian.AppendUint32(buf, 0) // authdata
-	buf = appendOctetString(buf, []byte{0x61, 0x03}) // ticket
-	buf = appendOctetString(buf, nil) // second ticket
+	buf = binary.BigEndian.AppendUint32(buf, 0)          // addresses
+	buf = binary.BigEndian.AppendUint32(buf, 0)          // authdata
+	buf = appendOctetString(buf, []byte{0x61, 0x03})     // ticket
+	buf = appendOctetString(buf, nil)                    // second ticket
 
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "krb5cc_v3")
@@ -772,12 +772,12 @@ func appendCredential(buf []byte, now time.Time, client, server ccachePrincipal,
 	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Unix()))
 	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(10*time.Hour).Unix()))
 	buf = binary.BigEndian.AppendUint32(buf, uint32(now.Add(7*24*time.Hour).Unix()))
-	buf = append(buf, 0)                            // is_skey
+	buf = append(buf, 0)                             // is_skey
 	buf = binary.BigEndian.AppendUint32(buf, flags)  // ticket_flags
 	buf = binary.BigEndian.AppendUint32(buf, 0)      // addresses
 	buf = binary.BigEndian.AppendUint32(buf, 0)      // authdata
 	buf = appendOctetString(buf, []byte{0x61, 0x03}) // ticket
-	buf = appendOctetString(buf, nil)                 // second ticket
+	buf = appendOctetString(buf, nil)                // second ticket
 	return buf
 }
 
@@ -1053,18 +1053,18 @@ func TestParseCcacheWithAddressesAndAuthdata(t *testing.T) {
 		buf = binary.BigEndian.AppendUint32(buf, uint32(now.Unix()))
 	}
 
-	buf = append(buf, 1)                            // is_skey = true
+	buf = append(buf, 1)                                 // is_skey = true
 	buf = binary.BigEndian.AppendUint32(buf, 0x08000000) // proxy flag
 
 	// 1 address: IPv4 (type 2), 4 bytes
-	buf = binary.BigEndian.AppendUint32(buf, 1)      // num_addresses
-	buf = binary.BigEndian.AppendUint16(buf, 2)      // addr type = IPv4
+	buf = binary.BigEndian.AppendUint32(buf, 1)       // num_addresses
+	buf = binary.BigEndian.AppendUint16(buf, 2)       // addr type = IPv4
 	buf = appendOctetString(buf, []byte{10, 0, 0, 1}) // 10.0.0.1
 
 	// 1 authdata entry: AD-IF-RELEVANT (type 1)
-	buf = binary.BigEndian.AppendUint32(buf, 1)            // num_authdata
-	buf = binary.BigEndian.AppendUint16(buf, 1)            // ad_type
-	buf = appendOctetString(buf, []byte{0x30, 0x00})       // minimal authdata
+	buf = binary.BigEndian.AppendUint32(buf, 1)      // num_authdata
+	buf = binary.BigEndian.AppendUint16(buf, 1)      // ad_type
+	buf = appendOctetString(buf, []byte{0x30, 0x00}) // minimal authdata
 
 	// Ticket + second ticket
 	buf = appendOctetString(buf, []byte{0x61, 0x03, 0x02, 0x01, 0x05})
@@ -1110,8 +1110,8 @@ func TestKlistListExpiredTicket(t *testing.T) {
 	past := time.Now().Add(-24 * time.Hour)
 	buf = binary.BigEndian.AppendUint32(buf, uint32(past.Add(-48*time.Hour).Unix())) // authtime
 	buf = binary.BigEndian.AppendUint32(buf, uint32(past.Add(-48*time.Hour).Unix())) // starttime
-	buf = binary.BigEndian.AppendUint32(buf, uint32(past.Unix()))                     // endtime (past)
-	buf = binary.BigEndian.AppendUint32(buf, uint32(past.Unix()))                     // renew_till
+	buf = binary.BigEndian.AppendUint32(buf, uint32(past.Unix()))                    // endtime (past)
+	buf = binary.BigEndian.AppendUint32(buf, uint32(past.Unix()))                    // renew_till
 	buf = append(buf, 0)
 	buf = binary.BigEndian.AppendUint32(buf, 0x40000000)
 	buf = binary.BigEndian.AppendUint32(buf, 0) // addresses

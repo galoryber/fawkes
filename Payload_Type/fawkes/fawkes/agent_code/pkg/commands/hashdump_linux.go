@@ -54,6 +54,7 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	if err != nil {
 		passwdData = nil // non-fatal, just less context
 	}
+	defer structs.ZeroBytes(passwdData) // opsec: clear passwd data from memory
 
 	passwdMap := parsePasswd(passwdData)
 

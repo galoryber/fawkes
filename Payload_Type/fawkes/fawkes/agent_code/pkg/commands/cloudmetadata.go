@@ -335,7 +335,9 @@ func metadataRequest(method, url string, timeout time.Duration, headers map[stri
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(body))
+	result := strings.TrimSpace(string(body))
+	structs.ZeroBytes(body) // opsec: clear cloud metadata response (may contain IAM tokens)
+	return result
 }
 
 // resolveProviders determines which cloud providers to query

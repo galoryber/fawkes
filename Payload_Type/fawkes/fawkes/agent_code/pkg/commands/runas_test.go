@@ -47,8 +47,8 @@ func TestRunasArgs_Unmarshal(t *testing.T) {
 			},
 		},
 		{
-			name: "empty",
-			json: `{}`,
+			name:     "empty",
+			json:     `{}`,
 			expected: runasArgs{},
 		},
 	}

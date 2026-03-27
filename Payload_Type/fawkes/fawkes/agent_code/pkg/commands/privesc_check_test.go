@@ -277,3 +277,592 @@ func TestPrivescCheck_CapabilitiesNoExecCommand(t *testing.T) {
 		t.Error("Expected 'Current process capabilities' section in output")
 	}
 }
+
+// --- Tests for new privesc-check categories (Session 202) ---
+
+func TestPrivescCheck_CronAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"cron"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Output should mention cron scripts regardless of findings
+	if !strings.Contains(result.Output, "cron") {
+		t.Error("output should mention cron")
+	}
+}
+
+func TestPrivescCheck_NFSAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"nfs"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Output should mention NFS
+	if !strings.Contains(result.Output, "NFS") && !strings.Contains(result.Output, "exports") {
+		t.Error("output should mention NFS or exports")
+	}
+}
+
+func TestPrivescCheck_SystemdAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"systemd"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "systemd") {
+		t.Error("output should mention systemd")
+	}
+}
+
+func TestPrivescCheck_SudoTokenAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"sudo-token"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Should mention either sudo token status or ptrace scope
+	if !strings.Contains(result.Output, "sudo") && !strings.Contains(result.Output, "ptrace") {
+		t.Error("output should mention sudo or ptrace")
+	}
+}
+
+func TestPrivescCheck_AllIncludesNewChecks(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"all"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Verify all new sections appear in "all" output
+	for _, section := range []string{
+		"Cron Script Hijacking", "NFS Shares",
+		"Systemd Unit Hijacking", "Sudo Token Reuse",
+	} {
+		if !strings.Contains(result.Output, section) {
+			t.Errorf("'all' output missing %q section", section)
+		}
+	}
+}
+
+func TestExtractScriptPaths(t *testing.T) {
+	tests := []struct {
+		name  string
+		line  string
+		count int
+	}{
+		{"empty", "", 0},
+		{"comment", "# this is a comment", 0},
+		{"simple cron", "0 * * * * root /usr/local/bin/backup.sh", 1},
+		{"multiple scripts", "0 * * * * root /usr/bin/foo /etc/bar.conf", 2},
+		{"no paths", "0 * * * * root echo hello", 0},
+		{"dev null ignored", "0 * * * * root /usr/bin/foo > /dev/null", 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			paths := extractScriptPaths(tt.line)
+			if len(paths) != tt.count {
+				t.Errorf("extractScriptPaths(%q) returned %d paths, want %d: %v",
+					tt.line, len(paths), tt.count, paths)
+			}
+		})
+	}
+}
+
+func TestIsWritableFile_Nonexistent(t *testing.T) {
+	if isWritableFile("/nonexistent/path/file.txt") {
+		t.Error("nonexistent file should not be writable")
+	}
+}
+
+func TestIsWritableFile_ReadOnly(t *testing.T) {
+	// /etc/hostname should exist and not be writable by non-root
+	if os.Geteuid() != 0 {
+		if isWritableFile("/etc/hostname") {
+			t.Error("/etc/hostname should not be writable by non-root user")
+		}
+	}
+}
+
+func TestPrivescCheckCronScripts_OutputFormat(t *testing.T) {
+	result := privescCheckCronScripts()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Output should either find writable scripts or report none
+	if !strings.Contains(result.Output, "cron") {
+		t.Error("output should mention cron")
+	}
+}
+
+func TestPrivescCheckNFS_OutputFormat(t *testing.T) {
+	result := privescCheckNFS()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "NFS") && !strings.Contains(result.Output, "exports") {
+		t.Error("output should mention NFS or exports")
+	}
+}
+
+func TestPrivescCheckSystemdUnits_OutputFormat(t *testing.T) {
+	result := privescCheckSystemdUnits()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "systemd") {
+		t.Error("output should mention systemd")
+	}
+}
+
+func TestPrivescCheckSudoToken_OutputFormat(t *testing.T) {
+	result := privescCheckSudoToken()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Should report on either timestamps or ptrace scope
+	if result.Output == "" {
+		t.Error("output should not be empty")
+	}
+}
+
+func TestPrivescCheckSudoToken_PtraceScope(t *testing.T) {
+	result := privescCheckSudoToken()
+	// On most Linux systems, ptrace_scope should be reported
+	if strings.Contains(result.Output, "ptrace_scope") {
+		// Verify it includes the scope interpretation
+		if !strings.Contains(result.Output, "classic") &&
+			!strings.Contains(result.Output, "restricted") &&
+			!strings.Contains(result.Output, "admin only") &&
+			!strings.Contains(result.Output, "disabled") {
+			t.Error("ptrace_scope should include interpretation text")
+		}
+	}
+}
+
+// --- PATH Hijacking tests ---
+
+func TestAnalyzePathHijack_NoHijack(t *testing.T) {
+	dirs := []string{"/usr/bin", "/usr/sbin", "/bin"}
+	systemDirs := map[string]bool{"/usr/bin": true, "/usr/sbin": true, "/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 0 {
+		t.Errorf("expected no hijack opportunities in pure system PATH, got %d", len(results))
+	}
+}
+
+func TestAnalyzePathHijack_EmptyEntry(t *testing.T) {
+	dirs := []string{"", "/usr/bin"}
+	systemDirs := map[string]bool{"/usr/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for empty PATH entry, got %d", len(results))
+	}
+	if !results[0].Writable {
+		t.Error("empty PATH entry should be marked writable")
+	}
+}
+
+func TestAnalyzePathHijack_DotEntry(t *testing.T) {
+	dirs := []string{".", "/usr/bin"}
+	systemDirs := map[string]bool{"/usr/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result for dot PATH entry, got %d", len(results))
+	}
+	if !strings.Contains(results[0].Dir, "relative") {
+		t.Errorf("expected 'relative' in dir description, got %q", results[0].Dir)
+	}
+}
+
+func TestAnalyzePathHijack_WritableDirBeforeSystem(t *testing.T) {
+	tmpDir := t.TempDir()
+	dirs := []string{tmpDir, "/usr/bin"}
+	systemDirs := map[string]bool{"/usr/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Dir != tmpDir {
+		t.Errorf("expected dir %q, got %q", tmpDir, results[0].Dir)
+	}
+	if !results[0].Writable {
+		t.Error("temp dir should be writable")
+	}
+	if results[0].BeforeSystem != "/usr/bin" {
+		t.Errorf("expected BeforeSystem='/usr/bin', got %q", results[0].BeforeSystem)
+	}
+}
+
+func TestAnalyzePathHijack_AfterSystemIgnored(t *testing.T) {
+	tmpDir := t.TempDir()
+	dirs := []string{"/usr/bin", tmpDir}
+	systemDirs := map[string]bool{"/usr/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 0 {
+		t.Errorf("dirs after system dirs should be ignored, got %d results", len(results))
+	}
+}
+
+func TestAnalyzePathHijack_NonexistentDir(t *testing.T) {
+	dirs := []string{"/nonexistent/path", "/usr/bin"}
+	systemDirs := map[string]bool{"/usr/bin": true}
+	results := analyzePathHijack(dirs, systemDirs)
+	if len(results) != 0 {
+		t.Errorf("nonexistent dirs should be skipped, got %d results", len(results))
+	}
+}
+
+func TestPrivescCheckPathHijack(t *testing.T) {
+	result := privescCheckPathHijack()
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+}
+
+// --- Docker Group tests ---
+
+func TestParseGroupsFromStatus_Valid(t *testing.T) {
+	content := "Name:\ttest\nGroups:\t1000 4 24 27 30 46 100 114 999\nVMPeak:\t1234 kB\n"
+	groups := parseGroupsFromStatus(content)
+	if len(groups) != 9 {
+		t.Errorf("expected 9 groups, got %d: %v", len(groups), groups)
+	}
+	if groups[0] != "1000" {
+		t.Errorf("expected first group '1000', got %q", groups[0])
+	}
+}
+
+func TestParseGroupsFromStatus_Empty(t *testing.T) {
+	content := "Name:\ttest\nGroups:\t\nVMPeak:\t1234 kB\n"
+	groups := parseGroupsFromStatus(content)
+	if len(groups) != 0 {
+		t.Errorf("expected 0 groups for empty Groups line, got %d", len(groups))
+	}
+}
+
+func TestParseGroupsFromStatus_NoGroupsLine(t *testing.T) {
+	content := "Name:\ttest\nVMPeak:\t1234 kB\n"
+	groups := parseGroupsFromStatus(content)
+	if groups != nil {
+		t.Errorf("expected nil for missing Groups line, got %v", groups)
+	}
+}
+
+func TestResolveGroupNames(t *testing.T) {
+	// This test depends on /etc/group existing, which it should on Linux
+	if _, err := os.Stat("/etc/group"); err != nil {
+		t.Skip("no /etc/group available")
+	}
+
+	// GID 0 should resolve to "root" on any Linux system
+	names := resolveGroupNames([]string{"0"})
+	found := false
+	for _, n := range names {
+		if n == "root" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("GID 0 should resolve to 'root', got %v", names)
+	}
+}
+
+func TestResolveGroupNames_Empty(t *testing.T) {
+	names := resolveGroupNames(nil)
+	if names != nil {
+		t.Errorf("expected nil for empty input, got %v", names)
+	}
+}
+
+func TestPrivescCheckDockerGroup(t *testing.T) {
+	result := privescCheckDockerGroup()
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	// Output should contain some text
+	if result.Output == "" {
+		t.Error("expected non-empty output")
+	}
+}
+
+// --- Dangerous Groups tests (Session 216) ---
+
+func TestPrivescCheck_GroupAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"group"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Current user groups") {
+		t.Error("output should list current user groups")
+	}
+	if !strings.Contains(result.Output, "Dangerous group memberships") {
+		t.Error("output should contain dangerous group memberships heading")
+	}
+}
+
+func TestPrivescCheck_GroupPlainText(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	result := cmd.Execute(structs.Task{Params: "group"})
+	if result.Status != "success" {
+		t.Fatalf("plain text 'group' should succeed, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestPrivescCheckDangerousGroups_OutputFormat(t *testing.T) {
+	result := privescCheckDangerousGroups()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Should always list current groups
+	if !strings.Contains(result.Output, "Current user groups:") {
+		t.Error("output should contain 'Current user groups:' header")
+	}
+	// Should always have the dangerous groups summary
+	if !strings.Contains(result.Output, "Dangerous group memberships") {
+		t.Error("output should contain dangerous group memberships count")
+	}
+}
+
+func TestDangerousGroupsTable(t *testing.T) {
+	// Verify the dangerous groups table is well-formed
+	for i, dg := range dangerousGroups {
+		if dg.Name == "" {
+			t.Errorf("dangerousGroups[%d] has empty name", i)
+		}
+		if dg.Risk == "" {
+			t.Errorf("dangerousGroups[%d] (%s) has empty risk", i, dg.Name)
+		}
+		if dg.Impact == "" {
+			t.Errorf("dangerousGroups[%d] (%s) has empty impact", i, dg.Name)
+		}
+		// Risk should be one of the known levels
+		switch dg.Risk {
+		case "CRITICAL", "HIGH", "MEDIUM", "LOW":
+			// ok
+		default:
+			t.Errorf("dangerousGroups[%d] (%s) has unknown risk level %q", i, dg.Name, dg.Risk)
+		}
+	}
+	// Should have at least 10 groups
+	if len(dangerousGroups) < 10 {
+		t.Errorf("expected at least 10 dangerous groups, got %d", len(dangerousGroups))
+	}
+}
+
+func TestDangerousGroups_NoDuplicates(t *testing.T) {
+	seen := make(map[string]bool)
+	for _, dg := range dangerousGroups {
+		if seen[dg.Name] {
+			t.Errorf("duplicate dangerous group: %s", dg.Name)
+		}
+		seen[dg.Name] = true
+	}
+}
+
+// --- Polkit tests (Session 216) ---
+
+func TestPrivescCheck_PolkitAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"polkit"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestPrivescCheck_PolkitPlainText(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	result := cmd.Execute(structs.Task{Params: "polkit"})
+	if result.Status != "success" {
+		t.Fatalf("plain text 'polkit' should succeed, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestPrivescCheckPolkit_OutputFormat(t *testing.T) {
+	result := privescCheckPolkit()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Output should not be empty
+	if result.Output == "" {
+		t.Error("output should not be empty")
+	}
+}
+
+// --- Modprobe tests (Session 216) ---
+
+func TestPrivescCheck_ModprobeAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"modprobe"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestPrivescCheck_ModprobePlainText(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	result := cmd.Execute(structs.Task{Params: "modprobe"})
+	if result.Status != "success" {
+		t.Fatalf("plain text 'modprobe' should succeed, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestPrivescCheckModprobe_OutputFormat(t *testing.T) {
+	result := privescCheckModprobe()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Output should not be empty — at minimum reports "no writable" or finds hooks
+	if result.Output == "" {
+		t.Error("output should not be empty")
+	}
+}
+
+func TestPrivescCheckModprobe_DetectsInstallHooks(t *testing.T) {
+	// On most Linux systems, modprobe.d has some configs (e.g., blacklists)
+	// This test just ensures the function runs without error
+	result := privescCheckModprobe()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	// Should either find hooks or report none
+	if !strings.Contains(result.Output, "hooks") &&
+		!strings.Contains(result.Output, "modprobe") &&
+		!strings.Contains(result.Output, "WRITABLE") &&
+		!strings.Contains(result.Output, "not an escalation vector") {
+		t.Error("output should mention hooks, modprobe, writable, or 'not an escalation vector'")
+	}
+}
+
+// --- Verify "all" includes new sections ---
+
+func TestPrivescCheck_AllIncludesNewSession216Checks(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"all"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	for _, section := range []string{
+		"Dangerous Groups", "Polkit Rules", "Modprobe Hooks",
+		"ld.so.preload", "Security Modules",
+	} {
+		if !strings.Contains(result.Output, section) {
+			t.Errorf("'all' output missing %q section", section)
+		}
+	}
+}
+
+// --- ld-preload action tests ---
+
+func TestPrivescCheck_LdPreloadAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"ld-preload"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	if !result.Completed {
+		t.Error("expected completed")
+	}
+	// Output should mention ld.so.preload status (exists or not)
+	if !strings.Contains(result.Output, "ld.so.preload") {
+		t.Error("output should mention ld.so.preload")
+	}
+}
+
+func TestPrivescCheck_LdPreloadPlainText(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `ld-preload`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Errorf("expected success for plain-text action, got %q", result.Status)
+	}
+}
+
+func TestPrivescCheckLdPreload_ChecksEnvVars(t *testing.T) {
+	result := privescCheckLdPreload()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q", result.Status)
+	}
+	// On a normal system without LD_PRELOAD set, should report clean
+	if os.Getenv("LD_PRELOAD") == "" {
+		// Should not report LD_PRELOAD findings
+		if strings.Contains(result.Output, "LD_PRELOAD is set") {
+			t.Error("should not report LD_PRELOAD when not set")
+		}
+	}
+}
+
+func TestPrivescCheckLdPreload_OutputFormat(t *testing.T) {
+	result := privescCheckLdPreload()
+	// Output should contain useful information regardless of system state
+	output := result.Output
+	if !strings.Contains(output, "ld.so.preload") &&
+		!strings.Contains(output, "escalation") &&
+		!strings.Contains(output, "CRITICAL") {
+		t.Error("output should contain meaningful ld.so analysis")
+	}
+}
+
+// --- security action tests ---
+
+func TestPrivescCheck_SecurityAction(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `{"action":"security"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Errorf("expected success, got %q", result.Status)
+	}
+	if !result.Completed {
+		t.Error("expected completed")
+	}
+}
+
+func TestPrivescCheck_SecurityPlainText(t *testing.T) {
+	cmd := &PrivescCheckCommand{}
+	task := structs.NewTask("test-1", "privesc-check", `security`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Errorf("expected success for plain-text action, got %q", result.Status)
+	}
+}
+
+func TestPrivescCheckSecurityModules_OutputFormat(t *testing.T) {
+	result := privescCheckSecurityModules()
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q", result.Status)
+	}
+	// Output should always contain AppArmor and SELinux sections
+	if !strings.Contains(result.Output, "AppArmor") {
+		t.Error("output should mention AppArmor")
+	}
+	if !strings.Contains(result.Output, "SELinux") {
+		t.Error("output should mention SELinux")
+	}
+}
+
+func TestPrivescCheckSecurityModules_ReportsStatus(t *testing.T) {
+	result := privescCheckSecurityModules()
+	output := result.Output
+	// Should report one of: ENABLED, DISABLED, Not installed, ENFORCING, PERMISSIVE, not active
+	hasStatus := strings.Contains(output, "ENABLED") ||
+		strings.Contains(output, "DISABLED") ||
+		strings.Contains(output, "Not installed") ||
+		strings.Contains(output, "ENFORCING") ||
+		strings.Contains(output, "PERMISSIVE") ||
+		strings.Contains(output, "not active") ||
+		strings.Contains(output, "No mandatory access control")
+	if !hasStatus {
+		t.Errorf("output should report security module status, got:\n%s", output)
+	}
+}

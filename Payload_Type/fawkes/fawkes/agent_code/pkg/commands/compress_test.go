@@ -457,3 +457,164 @@ func TestCompressExtractReportsErrors(t *testing.T) {
 		t.Errorf("expected 1 file extracted, got: %s", result.Output)
 	}
 }
+
+func TestCompressExtractZipSlip(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a zip with a path traversal entry (../evil.txt)
+	zipPath := filepath.Join(tmpDir, "malicious.zip")
+	zipFile, _ := os.Create(zipPath)
+	w := zip.NewWriter(zipFile)
+
+	// Normal file
+	f1, _ := w.Create("safe.txt")
+	f1.Write([]byte("safe content"))
+
+	// Path traversal attempt
+	f2, _ := w.Create("../evil.txt")
+	f2.Write([]byte("evil content"))
+
+	w.Close()
+	zipFile.Close()
+
+	outputDir := filepath.Join(tmpDir, "output")
+
+	cmd := &CompressCommand{}
+	params := CompressParams{Action: "extract", Path: zipPath, Output: outputDir}
+	data, _ := json.Marshal(params)
+	result := cmd.Execute(structs.Task{Params: string(data)})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got: %s", result.Output)
+	}
+
+	// Safe file should be extracted
+	if _, err := os.Stat(filepath.Join(outputDir, "safe.txt")); err != nil {
+		t.Error("safe.txt should have been extracted")
+	}
+
+	// Evil file should NOT be outside the output directory
+	evilPath := filepath.Join(tmpDir, "evil.txt")
+	if _, err := os.Stat(evilPath); !os.IsNotExist(err) {
+		t.Error("zip slip: evil.txt escaped to parent directory")
+	}
+
+	// Should report path traversal skip in output
+	if !strings.Contains(result.Output, "path traversal") {
+		t.Logf("output: %s", result.Output)
+	}
+}
+
+func TestCompressExtractDirectoryEntry(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a zip with a proper directory entry using CreateHeader
+	zipPath := filepath.Join(tmpDir, "dirs.zip")
+	zipFile, _ := os.Create(zipPath)
+	w := zip.NewWriter(zipFile)
+
+	// Directory entry with proper header
+	dirHeader := &zip.FileHeader{Name: "subdir/"}
+	dirHeader.SetMode(0755 | os.ModeDir)
+	_, _ = w.CreateHeader(dirHeader)
+
+	// File inside directory
+	fileHeader := &zip.FileHeader{Name: "subdir/file.txt"}
+	fileHeader.SetMode(0644)
+	f, _ := w.CreateHeader(fileHeader)
+	f.Write([]byte("inside subdir"))
+
+	w.Close()
+	zipFile.Close()
+
+	outputDir := filepath.Join(tmpDir, "extracted")
+	cmd := &CompressCommand{}
+	params := CompressParams{Action: "extract", Path: zipPath, Output: outputDir}
+	data, _ := json.Marshal(params)
+	result := cmd.Execute(structs.Task{Params: string(data)})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got: %s", result.Output)
+	}
+
+	// Verify directory was created
+	info, err := os.Stat(filepath.Join(outputDir, "subdir"))
+	if err != nil {
+		t.Fatal("subdir should exist")
+	}
+	if !info.IsDir() {
+		t.Error("subdir should be a directory")
+	}
+
+	// Verify file inside directory
+	content, err := os.ReadFile(filepath.Join(outputDir, "subdir", "file.txt"))
+	if err != nil || string(content) != "inside subdir" {
+		t.Errorf("subdir/file.txt not extracted correctly: err=%v content=%q", err, content)
+	}
+}
+
+func TestCompressExtractAutoOutputPath(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a zip
+	zipPath := filepath.Join(tmpDir, "archive.zip")
+	zipFile, _ := os.Create(zipPath)
+	w := zip.NewWriter(zipFile)
+	f, _ := w.Create("auto.txt")
+	f.Write([]byte("auto"))
+	w.Close()
+	zipFile.Close()
+
+	// Extract without specifying output — should use "archive" (zip name minus extension)
+	cmd := &CompressCommand{}
+	params := CompressParams{Action: "extract", Path: zipPath}
+	data, _ := json.Marshal(params)
+	result := cmd.Execute(structs.Task{Params: string(data)})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got: %s", result.Output)
+	}
+
+	expectedOutput := filepath.Join(tmpDir, "archive")
+	content, err := os.ReadFile(filepath.Join(expectedOutput, "auto.txt"))
+	if err != nil || string(content) != "auto" {
+		t.Errorf("auto output path extraction failed: %v", err)
+	}
+}
+
+func TestCompressExtractNonexistentZip(t *testing.T) {
+	cmd := &CompressCommand{}
+	params := CompressParams{Action: "extract", Path: "/nonexistent/file.zip"}
+	data, _ := json.Marshal(params)
+	result := cmd.Execute(structs.Task{Params: string(data)})
+
+	if result.Status != "error" {
+		t.Errorf("expected error for nonexistent zip, got: %s", result.Output)
+	}
+}
+
+func TestCompressListEmptyZip(t *testing.T) {
+	// Create an empty zip (no files) — triggers ratio=0 branch
+	tmpDir := t.TempDir()
+	zipPath := filepath.Join(tmpDir, "empty.zip")
+
+	zipFile, _ := os.Create(zipPath)
+	w := zip.NewWriter(zipFile)
+	w.Close()
+	zipFile.Close()
+
+	cmd := &CompressCommand{}
+	params := CompressParams{Action: "list", Path: zipPath}
+	data, _ := json.Marshal(params)
+	result := cmd.Execute(structs.Task{Params: string(data)})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "0 files") {
+		t.Errorf("expected '0 files' summary, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Ratio: 0.0%") {
+		t.Errorf("expected 'Ratio: 0.0%%' for empty zip, got: %s", result.Output)
+	}
+}

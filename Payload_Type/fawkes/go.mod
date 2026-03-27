@@ -1,6 +1,6 @@
 module fawkes
 
-go 1.25.0
+go 1.25.8
 
 //replace github.com/MythicMeta/MythicContainer => ../../../../MythicMeta/MythicContainer
 

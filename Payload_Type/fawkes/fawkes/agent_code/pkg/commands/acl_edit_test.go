@@ -337,13 +337,27 @@ func TestRemoveMatchingACEsRelaxedPreservesOthers(t *testing.T) {
 }
 
 func TestBuildSDFlagsControl(t *testing.T) {
-	ctrl := buildSDFlagsControl(0x04)
-	if ctrl == nil {
-		t.Fatal("buildSDFlagsControl returned nil")
+	tests := []struct {
+		name  string
+		flags uint32
+	}{
+		{"DACL only (small)", 0x04},
+		{"Owner+Group+DACL (small)", 0x07},
+		{"all flags (small)", 0x0F},
+		{"large flags (BER path)", 0xFF},
+		{"very large flags (BER path)", 0x1FF},
 	}
 
-	ctrlType := ctrl.GetControlType()
-	if ctrlType != "1.2.840.113556.1.4.801" {
-		t.Errorf("control type = %s, want 1.2.840.113556.1.4.801", ctrlType)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctrl := buildSDFlagsControl(tt.flags)
+			if ctrl == nil {
+				t.Fatal("buildSDFlagsControl returned nil")
+			}
+			ctrlType := ctrl.GetControlType()
+			if ctrlType != "1.2.840.113556.1.4.801" {
+				t.Errorf("control type = %s, want 1.2.840.113556.1.4.801", ctrlType)
+			}
+		})
 	}
 }

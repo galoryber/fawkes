@@ -54,12 +54,12 @@ func TestPkgMatchesFilter(t *testing.T) {
 		filter string
 		want   bool
 	}{
-		{"bash", "", true},          // empty filter matches all
-		{"bash", "bash", true},      // exact match
-		{"libbash", "bash", true},   // substring
-		{"BASH", "bash", true},      // case-insensitive
-		{"curl", "bash", false},     // no match
-		{"OpenSSH", "ssh", true},    // partial match
+		{"bash", "", true},        // empty filter matches all
+		{"bash", "bash", true},    // exact match
+		{"libbash", "bash", true}, // substring
+		{"BASH", "bash", true},    // case-insensitive
+		{"curl", "bash", false},   // no match
+		{"OpenSSH", "ssh", true},  // partial match
 	}
 	for _, tt := range tests {
 		got := pkgMatchesFilter(tt.name, tt.filter)
@@ -252,6 +252,61 @@ func TestRpmParseHeaderBlobNoMagic(t *testing.T) {
 	name, ver := rpmParseHeaderBlob(blob)
 	if name != "" || ver != "" {
 		t.Error("expected empty for blob without magic")
+	}
+}
+
+func TestRpmParseHeaderBlobOversizedNindex(t *testing.T) {
+	// nindex > 10000 triggers sanity check — covers line 509-511
+	var blob []byte
+	blob = append(blob, 0x8e, 0xad, 0xe8, 0x01) // magic
+	blob = append(blob, 0, 0, 0, 0)               // reserved
+	blob = appendBE32(blob, 20000)                 // nindex > 10000
+	blob = appendBE32(blob, 100)                   // hsize
+	blob = append(blob, make([]byte, 100)...)      // filler
+	name, ver := rpmParseHeaderBlob(blob)
+	if name != "" || ver != "" {
+		t.Error("expected empty for oversized nindex")
+	}
+}
+
+func TestRpmParseHeaderBlobTruncatedData(t *testing.T) {
+	// indexEnd + hsize > len(blob) — covers line 514-516
+	var blob []byte
+	blob = append(blob, 0x8e, 0xad, 0xe8, 0x01) // magic
+	blob = append(blob, 0, 0, 0, 0)               // reserved
+	blob = appendBE32(blob, 3)                     // nindex = 3 (needs 48 bytes for index)
+	blob = appendBE32(blob, 9999)                  // hsize = 9999 (way more than remaining)
+	blob = append(blob, make([]byte, 48)...)       // index entries only, no data store
+	name, ver := rpmParseHeaderBlob(blob)
+	if name != "" || ver != "" {
+		t.Error("expected empty for truncated data store")
+	}
+}
+
+func TestRpmParseHeaderBlobOutOfBoundsOffset(t *testing.T) {
+	// dataOff >= len(dataStore) — covers line 529-530
+	data := []byte("bash\x005.1\x001.el9\x00") // 16 bytes
+	nindex := 1
+	hsize := len(data)
+
+	var blob []byte
+	blob = append(blob, 0x8e, 0xad, 0xe8, 0x01) // magic
+	blob = append(blob, 0, 0, 0, 0)               // reserved
+	blob = appendBE32(blob, uint32(nindex))
+	blob = appendBE32(blob, uint32(hsize))
+	// Index entry with out-of-bounds offset
+	blob = appendBE32(blob, 1000) // tag = Name
+	blob = appendBE32(blob, 6)    // type = STRING
+	blob = appendBE32(blob, 9999) // offset WAY past data store
+	blob = appendBE32(blob, 1)    // count
+	blob = append(blob, data...)
+
+	name, ver := rpmParseHeaderBlob(blob)
+	if name != "" {
+		t.Errorf("expected empty name for out-of-bounds offset, got %q", name)
+	}
+	if ver != "" {
+		t.Errorf("expected empty version, got %q", ver)
 	}
 }
 

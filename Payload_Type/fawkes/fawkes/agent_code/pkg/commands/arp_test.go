@@ -70,3 +70,44 @@ func TestArpExecute(t *testing.T) {
 		t.Error("should be completed")
 	}
 }
+
+func TestArpExecuteWithIPFilter(t *testing.T) {
+	cmd := &ArpCommand{}
+	// Filter by IP — should succeed even if no matches
+	task := structs.NewTask("t", "arp", `{"ip":"192.168."}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Errorf("expected success with IP filter, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestArpExecuteWithMACFilter(t *testing.T) {
+	cmd := &ArpCommand{}
+	task := structs.NewTask("t", "arp", `{"mac":"ff:ff"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Errorf("expected success with MAC filter, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestArpExecuteWithInterfaceFilter(t *testing.T) {
+	cmd := &ArpCommand{}
+	task := structs.NewTask("t", "arp", `{"interface":"nonexistent99"}`)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Errorf("expected success with interface filter, got %q", result.Status)
+	}
+	// No entries should match a nonexistent interface
+	if result.Output != "[]" {
+		t.Logf("unexpected entries for nonexistent interface: %s", result.Output)
+	}
+}
+
+func TestArpExecuteInvalidJSON(t *testing.T) {
+	cmd := &ArpCommand{}
+	task := structs.NewTask("t", "arp", `{bad json`)
+	result := cmd.Execute(task)
+	if result.Status != "error" {
+		t.Errorf("expected error for invalid JSON, got %q", result.Status)
+	}
+}

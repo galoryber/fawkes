@@ -11,9 +11,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ldap-query",
-		Description:         "Query Active Directory via LDAP. Supports preset queries (users, computers, groups, domain-admins, SPNs, AS-REP roastable) and custom LDAP filters.",
-		HelpString:          "ldap-query -action users -server 192.168.1.1\nldap-query -action query -server dc01 -filter \"(servicePrincipalName=*MSSQLSvc*)\"",
-		Version:             1,
+		Description:         "Query Active Directory via LDAP. Supports preset queries (users, computers, groups, domain-admins, admins, SPNs, AS-REP roastable, disabled, GPOs, OUs, password-never-expires, trusts, unconstrained/constrained delegation) and custom LDAP filters.",
+		HelpString:          "ldap-query -action users -server 192.168.1.1\nldap-query -action trusts -server dc01\nldap-query -action unconstrained -server dc01\nldap-query -action constrained -server dc01\nldap-query -action query -server dc01 -filter \"(servicePrincipalName=*MSSQLSvc*)\"",
+		Version:             3,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1087.002", "T1069.002"},
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -31,7 +31,7 @@ func init() {
 				ModalDisplayName: "Query Type",
 				Description:      "Preset query or custom filter",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "dacl", "query"},
+				Choices:          []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "admins", "disabled", "gpo", "ou", "password-never-expires", "trusts", "unconstrained", "constrained", "dacl", "query"},
 				DefaultValue:     "users",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},

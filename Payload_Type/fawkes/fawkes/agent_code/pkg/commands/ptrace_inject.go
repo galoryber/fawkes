@@ -64,6 +64,7 @@ func ptraceCheck() structs.CommandResult {
 	// Check ptrace_scope (Yama LSM)
 	if scope, err := os.ReadFile("/proc/sys/kernel/yama/ptrace_scope"); err == nil {
 		val := strings.TrimSpace(string(scope))
+		structs.ZeroBytes(scope)
 		sb.WriteString(fmt.Sprintf("ptrace_scope: %s", val))
 		switch val {
 		case "0":
@@ -96,6 +97,7 @@ func ptraceCheck() structs.CommandResult {
 				sb.WriteString(fmt.Sprintf("  %s\n", line))
 			}
 		}
+		structs.ZeroBytes(status)
 	}
 
 	// List candidate processes (same UID)
@@ -129,6 +131,7 @@ func ptraceCheck() structs.CommandResult {
 				_, _ = fmt.Sscanf(strings.TrimPrefix(line, "Uid:"), "%d", &procUID)
 			}
 		}
+		structs.ZeroBytes(data)
 		if procUID == uid || os.Geteuid() == 0 {
 			sb.WriteString(fmt.Sprintf("  PID %-7d %s\n", pid, procName))
 			count++
@@ -387,6 +390,7 @@ func findSyscallGadget(pid int) (uint64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("cannot read %s: %v", mapsPath, err)
 	}
+	defer structs.ZeroBytes(data)
 
 	memPath := fmt.Sprintf("/proc/%d/mem", pid)
 	memFile, err := os.Open(memPath)

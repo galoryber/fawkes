@@ -204,9 +204,9 @@ func TestRightToMaskAndGUID_AllRights(t *testing.T) {
 func aclTestSID(rid uint32) []byte {
 	// S-1-5-21-100-200-300-<rid>
 	sid := make([]byte, 28)
-	sid[0] = 1  // Revision
-	sid[1] = 4  // SubAuthorityCount
-	sid[7] = 5  // IdentifierAuthority = 5 (NT Authority)
+	sid[0] = 1 // Revision
+	sid[1] = 4 // SubAuthorityCount
+	sid[7] = 5 // IdentifierAuthority = 5 (NT Authority)
 	binary.LittleEndian.PutUint32(sid[8:12], 21)
 	binary.LittleEndian.PutUint32(sid[12:16], 100)
 	binary.LittleEndian.PutUint32(sid[16:20], 200)
@@ -418,5 +418,77 @@ func TestRemoveMatchingACEs_TypeMismatch(t *testing.T) {
 		aclGUIDBytes("1131f6aa-9c07-11d1-f79f-00c04fc2dcd2"), 0x05)
 	if remaining != 1 {
 		t.Errorf("remaining = %d, want 1 (type mismatch should not remove)", remaining)
+	}
+}
+
+func TestRemoveMatchingACEs_TruncatedACEData(t *testing.T) {
+	// ACE data with invalid size (claims more bytes than available)
+	// This tests the `aceSize < 4 || pos+aceSize > len(aceData)` guard
+	truncated := []byte{0x00, 0x00, 0xFF, 0x00} // aceType=0, size=255 but only 4 bytes
+	result, remaining := removeMatchingACEs(truncated, 1, "S-1-5-21-1-2-3-4", 0x10000000, nil, 0x00)
+	if remaining != 1 {
+		t.Errorf("remaining = %d, want 1 (truncated data should break early)", remaining)
+	}
+	if len(result) != 0 {
+		t.Errorf("result length = %d, want 0 (nothing processed before break)", len(result))
+	}
+}
+
+func TestRemoveMatchingACEs_ZeroSizeACE(t *testing.T) {
+	// ACE with size < 4 should cause the parser to break
+	zeroSize := []byte{0x00, 0x00, 0x02, 0x00} // aceType=0, size=2 (< 4)
+	result, remaining := removeMatchingACEs(zeroSize, 1, "S-1-5-21-1-2-3-4", 0x10000000, nil, 0x00)
+	if remaining != 1 {
+		t.Errorf("remaining = %d, want 1 (zero-size ACE should break)", remaining)
+	}
+	if len(result) != 0 {
+		t.Errorf("result length = %d, want 0", len(result))
+	}
+}
+
+func TestRemoveMatchingACEs_ObjectACEWithInheritedType(t *testing.T) {
+	// Test object ACE with both ObjectType and InheritedObjectType flags set (flags=0x03)
+	sid := aclTestSID(1001)
+	sidStr := adcsParseSID(sid)
+	guid := aclGUIDBytes("1131f6aa-9c07-11d1-f79f-00c04fc2dcd2")
+	inheritGUID := aclGUIDBytes("00299570-246d-11d0-a768-00aa006e0529")
+
+	// Manually build an object ACE with flags=0x03 (both ObjectType and InheritedObjectType present)
+	aceSize := 4 + 4 + 4 + 16 + 16 + len(sid) // header + mask + flags + objGUID + inheritGUID + SID
+	ace := make([]byte, aceSize)
+	ace[0] = 0x05                                            // ACCESS_ALLOWED_OBJECT_ACE_TYPE
+	ace[1] = 0x00                                            // AceFlags
+	binary.LittleEndian.PutUint16(ace[2:4], uint16(aceSize)) // AceSize
+	binary.LittleEndian.PutUint32(ace[4:8], 0x00000100)      // AccessMask
+	binary.LittleEndian.PutUint32(ace[8:12], 0x03)           // Flags: both ObjectType and InheritedObjectType
+	copy(ace[12:28], guid)                                   // ObjectType GUID
+	copy(ace[28:44], inheritGUID)                            // InheritedObjectType GUID
+	copy(ace[44:], sid)                                      // SID
+
+	result, remaining := removeMatchingACEs(ace, 1, sidStr, 0x00000100, guid, 0x05)
+	if remaining != 0 {
+		t.Errorf("remaining = %d, want 0 (should match with inherited GUID present)", remaining)
+	}
+	if len(result) != 0 {
+		t.Errorf("result length = %d, want 0", len(result))
+	}
+}
+
+func TestRemoveMatchingACEs_ObjectACE_RelaxedMatch(t *testing.T) {
+	// Object ACE with mask 0x200 — try to remove with targetMask 0x100.
+	// Pass 1 (exact) fails due to mask mismatch; Pass 2 (relaxed) succeeds
+	// because SID+GUID still match. Covers removeMatchingACEsPass line 199-201.
+	sid := aclTestSID(1001)
+	sidStr := adcsParseSID(sid)
+	guid := aclGUIDBytes("1131f6aa-9c07-11d1-f79f-00c04fc2dcd2")
+
+	ace := buildACE(0x05, 0x00000200, sid, guid) // mask differs from target
+
+	result, remaining := removeMatchingACEs(ace, 1, sidStr, 0x00000100, guid, 0x05)
+	if remaining != 0 {
+		t.Errorf("remaining = %d, want 0 (relaxed match should remove despite mask mismatch)", remaining)
+	}
+	if len(result) != 0 {
+		t.Errorf("result length = %d, want 0", len(result))
 	}
 }

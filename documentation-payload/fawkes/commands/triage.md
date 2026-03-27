@@ -15,8 +15,9 @@ Cross-platform (Windows, Linux, macOS).
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | all | Triage mode: `all` (docs+creds+configs), `documents`, `credentials`, `configs`, `custom` |
+| action | No | all | Triage mode: `all` (docs+creds+configs), `documents`, `credentials`, `configs`, `database`, `scripts`, `archives`, `mail`, `recent`, `custom` |
 | path | For custom | - | Directory to scan when using `custom` action |
+| hours | No | 24 | Time window in hours for `recent` action |
 | max_size | No | 10485760 | Maximum file size in bytes (default 10MB) |
 | max_files | No | 200 | Maximum number of files to return |
 
@@ -41,6 +42,33 @@ triage -action credentials
 ### Find configuration files
 ```
 triage -action configs
+```
+
+### Find recently modified files
+```
+triage -action recent
+triage -action recent -hours 48
+triage -action recent -hours 1
+```
+
+### Find database files
+```
+triage -action database
+```
+
+### Find scripts
+```
+triage -action scripts
+```
+
+### Find archives/backups
+```
+triage -action archives
+```
+
+### Find email files
+```
+triage -action mail
 ```
 
 ### Scan custom directory
@@ -69,6 +97,31 @@ Key files (.kdbx, .kdb, .key, .pem, .pfx, .p12, .ppk), SSH keys (id_rsa, id_ed25
 Configuration files (.conf, .cfg, .ini, .yaml, .yml, .json, .xml, .properties, .env, .toml).
 
 **Search paths:** /etc, ~/.config, ~/.kube, ~/.docker, ~/.aws, ~/.azure, ProgramData (Windows).
+
+### Database
+Database files (.db, .sqlite, .sqlite3, .mdb, .accdb, .ldf, .mdf, .sdf, .bak).
+
+**Search paths:** Home directory, /var/lib, /opt, /var/www, /srv, /tmp (Linux). Home, Documents, AppData, C:\inetpub, C:\ProgramData (Windows).
+
+### Scripts
+Script files (.py, .sh, .bash, .ps1, .psm1, .bat, .cmd, .vbs, .js, .rb, .pl, .php, .lua, .go, .rs).
+
+**Search paths:** Home directory, /opt, /usr/local/bin, /var/www, /srv (Linux). Documents, Desktop, Downloads, C:\Scripts, C:\Tools (Windows).
+
+### Archives
+Archive files (.zip, .7z, .rar, .tar, .gz, .tgz, .bz2, .xz, .cab, .iso, .dmg).
+
+**Search paths:** Home directory, /tmp, /var/backups, /opt (Linux). Documents, Desktop, Downloads, C:\Backups, C:\Temp (Windows).
+
+### Mail
+Email files (.pst, .ost, .eml, .msg, .mbox, .emlx, .dbx, .nsf).
+
+**Search paths:** Home directory, ~/.thunderbird, ~/.local/share/evolution/mail, /var/mail, /var/spool/mail (Linux). Outlook Files, AppData/Local/Microsoft/Outlook, Thunderbird Profiles, Documents, Desktop (Windows). Library/Mail, Library/Thunderbird/Profiles, Documents (macOS).
+
+### Recent
+Files modified within the specified time window (default: 24 hours). Automatically categorizes files as cred, doc, config, script, log, database, or other based on name/extension. Results sorted by modification time (newest first). Skips noise directories (.cache, node_modules, .git, __pycache__, etc.).
+
+**Search paths:** Home directory, /tmp, /var/log, /opt (Linux), Desktop/Documents/Downloads/AppData (Windows).
 
 ## Output Format
 

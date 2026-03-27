@@ -127,7 +127,7 @@ func buildNativeHook(paramCount int, dsaBufAddr uintptr) (hookAddr uintptr, err 
 	code = append(code, 0x4D, 0x89, 0x4B, 0x18) // mov [r11+24], r9
 	// Save [RSP+0x28] at [r11+32] — 5th param (first stack param)
 	code = append(code, 0x48, 0x8B, 0x44, 0x24, 0x28) // mov rax, [rsp+0x28]
-	code = append(code, 0x49, 0x89, 0x43, 0x20)        // mov [r11+32], rax
+	code = append(code, 0x49, 0x89, 0x43, 0x20)       // mov [r11+32], rax
 
 	// Step 1: Load ppdsaNewBindings into RAX from the correct parameter position.
 	// x64 Windows calling convention: RCX=p0, RDX=p1, R8=p2, R9=p3, stack=p4+
@@ -166,7 +166,7 @@ func buildNativeHook(paramCount int, dsaBufAddr uintptr) (hookAddr uintptr, err 
 	// Step 6: Set hook-called flag at page+hookFlagOffset
 	// mov rax, <flagAddr> — will be patched after VirtualAlloc
 	code = append(code, 0x48, 0xB8) // mov rax, imm64
-	flagAddrSlot := len(code)        // remember where to patch
+	flagAddrSlot := len(code)       // remember where to patch
 	code = append(code, 0, 0, 0, 0, 0, 0, 0, 0)
 
 	// mov byte [rax], 1

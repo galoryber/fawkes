@@ -379,6 +379,22 @@ func TestGppCommand_DomainFromNetBIOS(t *testing.T) {
 	}
 }
 
+func TestGppDecrypt_InvalidBase64(t *testing.T) {
+	// Non-base64 input should produce a decode error
+	result := gppDecrypt("!!!not-base64!!!")
+	if !strings.Contains(result, "decode error") {
+		t.Errorf("expected decode error, got %q", result)
+	}
+}
+
+func TestGppDecrypt_NotBlockAligned(t *testing.T) {
+	// Valid base64 that decodes to 15 bytes (not a multiple of aes.BlockSize=16)
+	result := gppDecrypt("AQIDBAUGB/gJCgsMDQ4=")
+	if !strings.Contains(result, "invalid ciphertext length") {
+		t.Errorf("expected invalid ciphertext length error, got %q", result)
+	}
+}
+
 func TestGppCommand_Registration(t *testing.T) {
 	Initialize()
 	cmd := GetCommand("gpp-password")

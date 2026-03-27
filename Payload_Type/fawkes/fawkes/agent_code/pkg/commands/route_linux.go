@@ -9,6 +9,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"fawkes/pkg/structs"
 )
 
 func enumerateRoutes() ([]RouteEntry, error) {
@@ -17,6 +19,7 @@ func enumerateRoutes() ([]RouteEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to read /proc/net/route: %v", err)
 	}
+	defer structs.ZeroBytes(data)
 
 	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
 	if len(lines) < 2 {
@@ -99,6 +102,7 @@ func enumerateIPv6Routes() []RouteEntry {
 	if err != nil {
 		return nil
 	}
+	defer structs.ZeroBytes(data)
 
 	var routes []RouteEntry
 	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {

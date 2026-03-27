@@ -16,8 +16,10 @@ import (
 // HandlesCommand enumerates open file descriptors for a process via lsof.
 type HandlesCommand struct{}
 
-func (c *HandlesCommand) Name() string        { return "handles" }
-func (c *HandlesCommand) Description() string { return "Enumerate open file descriptors for a process (T1057)" }
+func (c *HandlesCommand) Name() string { return "handles" }
+func (c *HandlesCommand) Description() string {
+	return "Enumerate open file descriptors for a process (T1057)"
+}
 
 func (c *HandlesCommand) Execute(task structs.Task) structs.CommandResult {
 	var args handlesArgs

@@ -26,7 +26,7 @@ func init() {
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:   "Shell binary path (default: auto-detect from $SHELL or /bin/bash)",
 				DefaultValue:  "",
-	
+
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -40,7 +40,7 @@ func init() {
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				Description:   "Initial terminal rows (default: 24)",
 				DefaultValue:  24,
-	
+
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -54,7 +54,7 @@ func init() {
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				Description:   "Initial terminal columns (default: 80)",
 				DefaultValue:  80,
-	
+
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,

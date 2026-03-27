@@ -9,6 +9,7 @@ import (
 	"fawkes/pkg/structs"
 
 	psnet "github.com/shirou/gopsutil/v3/net"
+	"github.com/shirou/gopsutil/v3/process"
 )
 
 type NetstatCommand struct{}
@@ -37,12 +38,15 @@ type netstatEntry struct {
 	RemotePort uint32 `json:"remote_port"`
 	State      string `json:"state"`
 	PID        int32  `json:"pid"`
+	Process    string `json:"process,omitempty"`
 }
 
 func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 	var args netstatArgs
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &args)
+		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+			return errorf("Invalid parameters: %v", err)
+		}
 	}
 
 	// Get all connections (TCP and UDP)
@@ -83,6 +87,9 @@ func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 		return filtered[i].Laddr.Port < filtered[j].Laddr.Port
 	})
 
+	// Build PID-to-process-name cache
+	pidNames := resolveProcessNames(filtered)
+
 	entries := make([]netstatEntry, len(filtered))
 	for i, conn := range filtered {
 		state := conn.Status
@@ -105,6 +112,7 @@ func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
 			RemotePort: conn.Raddr.Port,
 			State:      state,
 			PID:        conn.Pid,
+			Process:    pidNames[conn.Pid],
 		}
 	}
 
@@ -125,6 +133,25 @@ func protoName(connType uint32) string {
 	default:
 		return fmt.Sprintf("%d", connType)
 	}
+}
+
+// resolveProcessNames builds a PID-to-process-name map for the given connections.
+func resolveProcessNames(conns []psnet.ConnectionStat) map[int32]string {
+	names := make(map[int32]string)
+	for _, conn := range conns {
+		if conn.Pid <= 0 {
+			continue
+		}
+		if _, ok := names[conn.Pid]; ok {
+			continue
+		}
+		if p, err := process.NewProcess(conn.Pid); err == nil {
+			if name, err := p.Name(); err == nil {
+				names[conn.Pid] = name
+			}
+		}
+	}
+	return names
 }
 
 func statusPriority(status string) int {

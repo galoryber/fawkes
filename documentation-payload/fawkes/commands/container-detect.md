@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Detect container runtime and environment type. Identifies Docker, Kubernetes, LXC, Podman, WSL, and containerd environments by checking filesystem indicators, cgroup entries, environment variables, and capabilities. Also checks for container escape vectors like mounted Docker sockets and Kubernetes service accounts.
+Detect container runtime and environment type. Identifies Docker, Kubernetes, LXC, Podman, WSL, and containerd environments by checking filesystem indicators, cgroup entries, environment variables, and capabilities. Includes escape opportunity assessment: dangerous capabilities (SYS_ADMIN, SYS_MODULE, SYS_PTRACE), Seccomp/AppArmor profile status, host filesystem mounts, and Docker socket access.
 
 Useful for situational awareness when the execution environment is unknown — understanding if you're in a container affects which techniques are available and which escape paths exist.
 
@@ -33,6 +33,10 @@ container-detect
 - Checks `/proc/1/sched` for PID 1 identity (systemd = host, other = container)
 - Checks `/proc/version` for WSL kernel indicators
 - Reports effective capabilities (`CapEff`) — reduced caps suggest containerization
+- Identifies dangerous capabilities for escape: CAP_SYS_ADMIN, CAP_SYS_MODULE, CAP_SYS_PTRACE, CAP_DAC_READ_SEARCH, CAP_NET_ADMIN
+- Reports Seccomp profile status (disabled/strict/filter)
+- Scans `/proc/1/mounts` for host filesystem mounts (`/host*`, host device mounts)
+- Reports AppArmor profile (confined/unconfined)
 
 ### Windows
 - Checks for WSL availability (`wsl.exe`)

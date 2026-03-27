@@ -175,7 +175,7 @@ func tailReadTail(f *os.File, args tailArgs) structs.CommandResult {
 	}
 
 	return successf("[*] last %d lines of %s%s\n%s",
-			count, args.Path, sizeStr, strings.Join(lines, "\n"))
+		count, args.Path, sizeStr, strings.Join(lines, "\n"))
 }
 
 func tailReadTailLarge(f *os.File, args tailArgs, size int64) structs.CommandResult {

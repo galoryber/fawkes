@@ -10,6 +10,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"unicode/utf16"
+
+	"fawkes/pkg/structs"
 )
 
 // userHash holds a decoded SAM user record.
@@ -51,6 +53,7 @@ func deriveHashedBootKeyRC4(fValue, bootKey []byte) ([]byte, byte, error) {
 	h.Write(bootKey)
 	h.Write(samDIGITS)
 	rc4Key := h.Sum(nil)
+	defer structs.ZeroBytes(rc4Key) // opsec: zero derived RC4 key
 
 	// RC4 decrypt key + checksum
 	c, err := rc4.NewCipher(rc4Key)
@@ -75,11 +78,17 @@ func deriveHashedBootKeyRC4(fValue, bootKey []byte) ([]byte, byte, error) {
 
 	for i := 0; i < 16; i++ {
 		if checksum[i] != expected[i] {
+			structs.ZeroBytes(combined) // opsec: zero on failure
 			return nil, 0, fmt.Errorf("hashed boot key checksum mismatch")
 		}
 	}
 
-	return hashedBootKey, 0x01, nil
+	// Copy out the key before zeroing the combined buffer
+	result := make([]byte, 16)
+	copy(result, hashedBootKey)
+	structs.ZeroBytes(combined) // opsec: zero decrypted boot key + checksum buffer
+
+	return result, 0x01, nil
 }
 
 // deriveHashedBootKeyAES derives the hashed boot key from the SAM F value using AES.
@@ -109,7 +118,12 @@ func deriveHashedBootKeyAES(fValue, bootKey []byte) ([]byte, byte, error) {
 	decrypted := make([]byte, len(encData))
 	mode.CryptBlocks(decrypted, encData)
 
-	return decrypted[:16], 0x02, nil
+	// Copy out the 16-byte key before zeroing the full buffer
+	result := make([]byte, 16)
+	copy(result, decrypted[:16])
+	structs.ZeroBytes(decrypted) // opsec: zero full AES-decrypted boot key buffer
+
+	return result, 0x02, nil
 }
 
 // parseHexUint32 parses a hex string as a uint32.
@@ -148,6 +162,7 @@ func parseUserVValue(v []byte, rid uint32, hashedBootKey []byte, samRevision byt
 		decrypted, err := decryptSAMHash(hashData, rid, hashedBootKey, samNTPASSWD, samRevision)
 		if err == nil {
 			ntHash = hex.EncodeToString(decrypted)
+			structs.ZeroBytes(decrypted) // opsec: zero plaintext NT hash bytes
 		}
 	}
 
@@ -158,6 +173,7 @@ func parseUserVValue(v []byte, rid uint32, hashedBootKey []byte, samRevision byt
 		decrypted, err := decryptSAMHash(hashData, rid, hashedBootKey, samLMPASSWD, samRevision)
 		if err == nil {
 			lmHash = hex.EncodeToString(decrypted)
+			structs.ZeroBytes(decrypted) // opsec: zero plaintext LM hash bytes
 		}
 	}
 
@@ -188,12 +204,14 @@ func decryptSAMHashRC4(hashData []byte, rid uint32, hashedBootKey, hashType []by
 	// Derive RC4 key: MD5(hashedBootKey + RID + hashType)
 	ridBytes := make([]byte, 4)
 	binary.LittleEndian.PutUint32(ridBytes, rid)
+	defer structs.ZeroBytes(ridBytes) // opsec: zero RID bytes
 
 	h := md5.New()
 	h.Write(hashedBootKey)
 	h.Write(ridBytes)
 	h.Write(hashType)
 	rc4Key := h.Sum(nil)
+	defer structs.ZeroBytes(rc4Key) // opsec: zero derived RC4 key
 
 	c, err := rc4.NewCipher(rc4Key)
 	if err != nil {
@@ -201,6 +219,7 @@ func decryptSAMHashRC4(hashData []byte, rid uint32, hashedBootKey, hashType []by
 	}
 	desEncrypted := make([]byte, 16)
 	c.XORKeyStream(desEncrypted, encHash)
+	defer structs.ZeroBytes(desEncrypted) // opsec: zero RC4-decrypted intermediate
 
 	return decryptDESHash(desEncrypted, rid)
 }
@@ -226,6 +245,7 @@ func decryptSAMHashAES(hashData []byte, rid uint32, hashedBootKey []byte) ([]byt
 		aligned := make([]byte, ((dataLen+aes.BlockSize-1)/aes.BlockSize)*aes.BlockSize)
 		copy(aligned, encHash)
 		encHash = aligned
+		defer structs.ZeroBytes(aligned) // opsec: zero block-aligned buffer
 	}
 
 	block, err := aes.NewCipher(hashedBootKey)
@@ -235,6 +255,7 @@ func decryptSAMHashAES(hashData []byte, rid uint32, hashedBootKey []byte) ([]byt
 	mode := cipher.NewCBCDecrypter(block, salt)
 	decrypted := make([]byte, len(encHash))
 	mode.CryptBlocks(decrypted, encHash)
+	defer structs.ZeroBytes(decrypted) // opsec: zero AES-decrypted hash intermediate
 
 	return decryptDESHash(decrypted[:16], rid)
 }
@@ -246,6 +267,8 @@ func decryptDESHash(desEncrypted []byte, rid uint32) ([]byte, error) {
 	}
 
 	key1, key2 := desKeysFromRID(rid)
+	defer structs.ZeroBytes(key1) // opsec: zero DES key material
+	defer structs.ZeroBytes(key2) // opsec: zero DES key material
 
 	block1, err := des.NewCipher(key1)
 	if err != nil {

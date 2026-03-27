@@ -2,13 +2,10 @@ package commands
 
 import (
 	"encoding/json"
-	"runtime"
 	"strconv"
 	"strings"
 
 	"fawkes/pkg/structs"
-
-	"github.com/shirou/gopsutil/v3/process"
 )
 
 // PsCommand implements the ps command
@@ -106,71 +103,6 @@ func (c *PsCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-func getProcessList(args PsArgs) ([]ProcessInfo, error) {
-	// Get all processes
-	procs, err := process.Processes()
-	if err != nil {
-		return nil, err
-	}
-
-	var processes []ProcessInfo
-	filterLower := strings.ToLower(args.Filter)
-	userFilterLower := strings.ToLower(args.User)
-
-	for _, p := range procs {
-		// Apply PID filter if specified
-		if args.PID > 0 && p.Pid != args.PID {
-			continue
-		}
-
-		name, err := p.Name()
-		if err != nil {
-			continue
-		}
-
-		// Apply name filter if specified
-		if args.Filter != "" && !strings.Contains(strings.ToLower(name), filterLower) {
-			continue
-		}
-
-		ppid, _ := p.Ppid()
-
-		// Apply PPID filter if specified
-		if args.PPID > 0 && ppid != args.PPID {
-			continue
-		}
-
-		username, _ := p.Username()
-
-		// Apply user filter if specified
-		if args.User != "" && !strings.Contains(strings.ToLower(username), userFilterLower) {
-			continue
-		}
-
-		cmdline, _ := p.Cmdline()
-		exe, _ := p.Exe()
-
-		// Determine architecture
-		arch := runtime.GOARCH
-		if runtime.GOOS == "windows" {
-			exeLower := strings.ToLower(exe)
-			if strings.Contains(exeLower, "syswow64") {
-				arch = "x86"
-			} else if strings.Contains(exeLower, "system32") {
-				arch = "x64"
-			}
-		}
-
-		processes = append(processes, ProcessInfo{
-			PID:     p.Pid,
-			PPID:    ppid,
-			Name:    name,
-			Arch:    arch,
-			User:    username,
-			BinPath: exe,
-			CmdLine: cmdline,
-		})
-	}
-
-	return processes, nil
-}
+// getProcessList is implemented in platform-specific files:
+// - ps_list.go (Linux/macOS — uses gopsutil)
+// - ps_list_windows.go (Windows — uses direct CreateToolhelp32Snapshot API)

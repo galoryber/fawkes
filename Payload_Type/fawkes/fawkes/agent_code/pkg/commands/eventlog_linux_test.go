@@ -12,9 +12,9 @@ import (
 
 func TestParseTimeWindow(t *testing.T) {
 	tests := []struct {
-		input    string
-		wantDur  time.Duration
-		wantOK   bool
+		input   string
+		wantDur time.Duration
+		wantOK  bool
 	}{
 		{"24h", 24 * time.Hour, true},
 		{"1h", 1 * time.Hour, true},
@@ -107,10 +107,8 @@ func TestEventlogListVarLogFilter(t *testing.T) {
 	// Filter for a specific log name
 	eventlogListVarLog(&sb, "auth")
 	output := sb.String()
-	// If auth.log exists, it should be in the output
-	if strings.Contains(output, "auth") || output == "" {
-		// Expected behavior
-	}
+	// If auth.log exists, it should be in the output; empty is also acceptable
+	_ = output // either contains "auth" or is empty — both are valid
 }
 
 func TestEventlogQueryFileBasic(t *testing.T) {

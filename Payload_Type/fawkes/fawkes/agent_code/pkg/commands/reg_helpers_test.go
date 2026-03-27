@@ -15,9 +15,9 @@ import (
 
 func TestParseHive(t *testing.T) {
 	tests := []struct {
-		input    string
-		wantKey  registry.Key
-		wantErr  bool
+		input   string
+		wantKey registry.Key
+		wantErr bool
 	}{
 		{"HKLM", registry.LOCAL_MACHINE, false},
 		{"hklm", registry.LOCAL_MACHINE, false},

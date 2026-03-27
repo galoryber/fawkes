@@ -13,8 +13,10 @@ import (
 
 type NetUserCommand struct{}
 
-func (c *NetUserCommand) Name() string        { return "net-user" }
-func (c *NetUserCommand) Description() string { return "Manage local user accounts and group membership (T1136.001, T1098)" }
+func (c *NetUserCommand) Name() string { return "net-user" }
+func (c *NetUserCommand) Description() string {
+	return "Manage local user accounts and group membership (T1136.001, T1098)"
+}
 
 func (c *NetUserCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {

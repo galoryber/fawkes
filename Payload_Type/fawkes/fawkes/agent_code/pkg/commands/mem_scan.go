@@ -197,4 +197,3 @@ func writeHexDump(sb *strings.Builder, data []byte, matchStart, matchLen int, ba
 		sb.WriteString("|\n")
 	}
 }
-

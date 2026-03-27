@@ -160,6 +160,7 @@ func TestObfuscateSleepZerosAgentFields(t *testing.T) {
 	vault := obfuscateSleep(agent, c2)
 	if vault == nil {
 		t.Fatal("obfuscateSleep returned nil")
+		return // unreachable but satisfies staticcheck SA5011
 	}
 
 	// Agent sensitive fields should be zeroed
@@ -265,6 +266,7 @@ func TestObfuscateProfileWhenNoTasksRunning(t *testing.T) {
 	vault := obfuscateSleep(agent, c2)
 	if vault == nil {
 		t.Fatal("obfuscateSleep returned nil")
+		return // unreachable but satisfies staticcheck SA5011
 	}
 
 	// Profile should be masked when no tasks are running
@@ -362,6 +364,7 @@ func TestVaultKeyZeroedAfterRestore(t *testing.T) {
 	vault := obfuscateSleep(agent, c2)
 	if vault == nil {
 		t.Fatal("obfuscateSleep returned nil")
+		return // unreachable but satisfies staticcheck SA5011
 	}
 
 	deobfuscateSleep(vault, agent, c2)

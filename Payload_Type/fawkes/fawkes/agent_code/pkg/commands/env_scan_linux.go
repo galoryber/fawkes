@@ -29,7 +29,9 @@ func readProcessEnviron(pid int) ([]string, string, error) {
 		return nil, processName, fmt.Errorf("cannot read environ: %v", err)
 	}
 
-	return parseEnvironBlock(data), processName, nil
+	result := parseEnvironBlock(data)
+	structs.ZeroBytes(data)
+	return result, processName, nil
 }
 
 // envScanAllProcesses scans all accessible processes for sensitive env vars.

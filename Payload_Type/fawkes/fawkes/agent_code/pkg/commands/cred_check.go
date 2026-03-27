@@ -301,6 +301,7 @@ func credCheckLDAP(host string, args credCheckArgs, timeout time.Duration) credC
 	// Build LDAP Simple Bind Request (ASN.1/BER encoded)
 	bindReq := credCheckBuildLDAPBind(1, bindDN, args.Password)
 	_, err = ldapConn.Write(bindReq)
+	structs.ZeroBytes(bindReq) // opsec: clear packet containing password
 	if err != nil {
 		result.Detail = fmt.Sprintf("LDAP write error: %v", err)
 		return result
@@ -313,6 +314,7 @@ func credCheckLDAP(host string, args credCheckArgs, timeout time.Duration) credC
 		result.Detail = fmt.Sprintf("LDAP read error: %v", err)
 		return result
 	}
+	defer structs.ZeroBytes(buf) // opsec: zero LDAP response buffer
 
 	// Parse minimal LDAP bind response — look for resultCode
 	resultCode := credCheckParseLDAPBindResponse(buf[:n])
@@ -349,6 +351,7 @@ func credCheckBuildLDAPBind(messageID int, bindDN, password string) []byte {
 	// BindRequest [APPLICATION 0]
 	bindBody := append(version, dnBytes...)
 	bindBody = append(bindBody, passBytes...)
+	structs.ZeroBytes(passBytes) // opsec: clear intermediate password bytes
 	bindReq := credCheckBERWrap(0x60, bindBody)
 
 	// Message ID (INTEGER)

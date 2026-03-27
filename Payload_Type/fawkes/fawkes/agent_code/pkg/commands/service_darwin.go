@@ -19,7 +19,7 @@ func (c *ServiceCommand) Name() string {
 }
 
 func (c *ServiceCommand) Description() string {
-	return "Manage macOS services via launchctl (list, query, start, stop, enable, disable)"
+	return "Manage macOS services via launchctl (list, query, start, stop, restart, create, delete, enable, disable)"
 }
 
 type serviceArgs struct {
@@ -34,7 +34,7 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 	var args serviceArgs
 
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: list, query, start, stop, enable, disable")
+		return errorResult("Error: parameters required. Actions: list, query, start, stop, create, delete, enable, disable")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -50,12 +50,18 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 		return serviceStartDarwin(args)
 	case "stop":
 		return serviceStopDarwin(args)
+	case "restart":
+		return serviceRestartDarwin(args)
 	case "enable":
 		return serviceEnableDarwin(args)
+	case "create":
+		return serviceCreateDarwin(args)
+	case "delete":
+		return serviceDeleteDarwin(args)
 	case "disable":
 		return serviceDisableDarwin(args)
 	default:
-		return errorf("Unknown action: %s. Use: list, query, start, stop, enable, disable", args.Action)
+		return errorf("Unknown action: %s. Use: list, query, start, stop, restart, create, delete, enable, disable", args.Action)
 	}
 }
 
@@ -171,6 +177,7 @@ func serviceQueryDarwin(args serviceArgs) structs.CommandResult {
 		if readErr == nil && len(content) > 0 {
 			sb.WriteString("\nPlist contents:\n")
 			text := string(content)
+			structs.ZeroBytes(content)
 			if len(text) > 2000 {
 				text = text[:2000] + "\n[TRUNCATED]"
 			}
@@ -263,6 +270,25 @@ func serviceStopDarwin(args serviceArgs) structs.CommandResult {
 	return successf("Stopped service '%s'\n%s", args.Name, strings.TrimSpace(string(out)))
 }
 
+func serviceRestartDarwin(args serviceArgs) structs.CommandResult {
+	if args.Name == "" {
+		return errorResult("Error: name is required to restart a service")
+	}
+
+	// Use kickstart -k which kills the running instance and restarts it
+	out, err := execCmdTimeoutOutput("launchctl", "kickstart", "-k", "system/"+args.Name)
+	if err != nil {
+		// Try gui domain
+		uid := fmt.Sprintf("%d", os.Getuid())
+		out, err = execCmdTimeoutOutput("launchctl", "kickstart", "-k", "gui/"+uid+"/"+args.Name)
+		if err != nil {
+			return errorf("Error restarting service '%s': %v\n%s", args.Name, err, string(out))
+		}
+	}
+
+	return successf("Restarted service '%s'\n%s", args.Name, strings.TrimSpace(string(out)))
+}
+
 func serviceEnableDarwin(args serviceArgs) structs.CommandResult {
 	if args.Name == "" {
 		return errorResult("Error: name is required to enable a service")
@@ -280,6 +306,129 @@ func serviceEnableDarwin(args serviceArgs) structs.CommandResult {
 	}
 
 	return successf("Enabled service '%s'\n%s", args.Name, strings.TrimSpace(string(out)))
+}
+
+// buildLaunchdPlist generates a launchd plist XML for the service.
+func buildLaunchdPlist(label, binPath string, runAtLoad bool) string {
+	var sb strings.Builder
+	sb.WriteString(`<?xml version="1.0" encoding="UTF-8"?>`)
+	sb.WriteString("\n")
+	sb.WriteString(`<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">`)
+	sb.WriteString("\n")
+	sb.WriteString(`<plist version="1.0">`)
+	sb.WriteString("\n<dict>\n")
+	sb.WriteString(fmt.Sprintf("\t<key>Label</key>\n\t<string>%s</string>\n", label))
+	sb.WriteString("\t<key>ProgramArguments</key>\n\t<array>\n")
+	sb.WriteString(fmt.Sprintf("\t\t<string>%s</string>\n", binPath))
+	sb.WriteString("\t</array>\n")
+	if runAtLoad {
+		sb.WriteString("\t<key>RunAtLoad</key>\n\t<true/>\n")
+	}
+	sb.WriteString("\t<key>KeepAlive</key>\n\t<true/>\n")
+	sb.WriteString("</dict>\n</plist>\n")
+	return sb.String()
+}
+
+func serviceCreateDarwin(args serviceArgs) structs.CommandResult {
+	if args.Name == "" {
+		return errorResult("Error: name is required for service creation")
+	}
+	if args.BinPath == "" {
+		return errorResult("Error: binpath is required for service creation")
+	}
+
+	// Determine plist location based on effective UID
+	var plistDir string
+	if os.Geteuid() == 0 {
+		plistDir = "/Library/LaunchDaemons"
+	} else {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return errorf("Error getting home directory: %v", err)
+		}
+		plistDir = filepath.Join(home, "Library", "LaunchAgents")
+	}
+
+	plistPath := filepath.Join(plistDir, args.Name+".plist")
+
+	// Check if plist already exists
+	if _, err := os.Stat(plistPath); err == nil {
+		return errorf("Error: plist already exists at %s. Delete first or choose a different name.", plistPath)
+	}
+
+	// Ensure directory exists
+	if err := os.MkdirAll(plistDir, 0755); err != nil {
+		return errorf("Error creating directory %s: %v", plistDir, err)
+	}
+
+	runAtLoad := strings.ToLower(args.Start) == "auto"
+	plistContent := buildLaunchdPlist(args.Name, args.BinPath, runAtLoad)
+
+	// Write the plist file
+	if err := os.WriteFile(plistPath, []byte(plistContent), 0644); err != nil {
+		return errorf("Error writing plist %s: %v", plistPath, err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[+] Created launchd service '%s'\n", args.Name))
+	sb.WriteString(fmt.Sprintf("    Plist: %s\n", plistPath))
+	sb.WriteString(fmt.Sprintf("    Binary: %s\n", args.BinPath))
+
+	if os.Geteuid() == 0 {
+		sb.WriteString("    Domain: system (LaunchDaemon)\n")
+	} else {
+		sb.WriteString("    Domain: user (LaunchAgent)\n")
+	}
+
+	// Load the service
+	out, err := execCmdTimeoutOutput("launchctl", "load", plistPath)
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("    Warning: load failed: %v\n%s", err, string(out)))
+		sb.WriteString("    [*] Manually load with: launchctl load " + plistPath)
+	} else {
+		sb.WriteString("    Status: Loaded\n")
+	}
+
+	startType := "Manual"
+	if runAtLoad {
+		startType = "Automatic (RunAtLoad)"
+	}
+	if strings.ToLower(args.Start) == "disabled" {
+		startType = "Disabled"
+	}
+	sb.WriteString(fmt.Sprintf("    Start Type: %s\n", startType))
+
+	return successResult(sb.String())
+}
+
+func serviceDeleteDarwin(args serviceArgs) structs.CommandResult {
+	if args.Name == "" {
+		return errorResult("Error: name is required for service deletion")
+	}
+
+	// Find the plist file
+	plistPath := findPlistPath(args.Name)
+	if plistPath == "" {
+		return errorf("Error: plist not found for '%s'. Searched LaunchDaemons and LaunchAgents directories.", args.Name)
+	}
+
+	var sb strings.Builder
+
+	// Unload the service (best-effort)
+	if out, err := execCmdTimeoutOutput("launchctl", "unload", plistPath); err == nil {
+		sb.WriteString(fmt.Sprintf("[+] Unloaded %s\n", args.Name))
+	} else {
+		sb.WriteString(fmt.Sprintf("[*] Unload: %s\n", strings.TrimSpace(string(out))))
+	}
+
+	// Remove the plist file
+	if err := os.Remove(plistPath); err != nil {
+		return errorf("Error removing plist %s: %v", plistPath, err)
+	}
+	sb.WriteString(fmt.Sprintf("[+] Removed %s\n", plistPath))
+	sb.WriteString(fmt.Sprintf("\n[+] Service '%s' deleted successfully", args.Name))
+
+	return successResult(sb.String())
 }
 
 func serviceDisableDarwin(args serviceArgs) structs.CommandResult {

@@ -222,6 +222,76 @@ func TestAvDetect_NoDetectionReturnsEmptyArray(t *testing.T) {
 	}
 }
 
+func TestAvDetect_DeepScanParameter(t *testing.T) {
+	cmd := &AvDetectCommand{}
+	// Deep scan should succeed even on clean systems
+	params, _ := json.Marshal(avDetectArgs{Deep: true})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Errorf("deep scan failed: %s", result.Output)
+	}
+	if !result.Completed {
+		t.Error("expected Completed=true")
+	}
+	// Output should be valid JSON
+	var detected []detectedProduct
+	if err := json.Unmarshal([]byte(result.Output), &detected); err != nil {
+		t.Errorf("deep scan output not valid JSON: %v", err)
+	}
+}
+
+func TestAvDetect_DeepScanDeduplication(t *testing.T) {
+	// Run deep scan and verify no duplicate vendor:product pairs
+	results := avDeepScan()
+	seen := make(map[string]bool)
+	for _, r := range results {
+		key := r.Vendor + ":" + r.Product
+		if seen[key] {
+			t.Errorf("duplicate detection: %s (process=%s)", key, r.ProcessName)
+		}
+		seen[key] = true
+	}
+}
+
+func TestAvDetect_DeepScanFieldsValid(t *testing.T) {
+	results := avDeepScan()
+	// Valid source prefixes across all platforms
+	validPrefixes := []string{
+		"kmod:", "systemd:", "config:", // Linux
+		"kext:", "sysext:", "launchdaemon:", // macOS
+		"launchagent:", "app:", // macOS
+	}
+	for _, r := range results {
+		if r.Product == "" {
+			t.Errorf("empty Product for %s", r.ProcessName)
+		}
+		if r.Vendor == "" {
+			t.Errorf("empty Vendor for %s", r.ProcessName)
+		}
+		if r.Category == "" {
+			t.Errorf("empty Category for %s", r.ProcessName)
+		}
+		if r.ProcessName == "" {
+			t.Error("empty ProcessName in deep scan result")
+		}
+		// Deep scan results should have PID 0
+		if r.PID != 0 {
+			t.Errorf("deep scan PID should be 0, got %d for %s", r.PID, r.ProcessName)
+		}
+		// ProcessName should have a known source prefix
+		hasPrefix := false
+		for _, prefix := range validPrefixes {
+			if strings.HasPrefix(r.ProcessName, prefix) {
+				hasPrefix = true
+				break
+			}
+		}
+		if !hasPrefix {
+			t.Errorf("deep scan ProcessName %q should have a known source prefix", r.ProcessName)
+		}
+	}
+}
+
 func TestAvDetect_NoDuplicateProducts(t *testing.T) {
 	// Different process names can map to the same product, but
 	// within the same vendor+product, the category must be consistent

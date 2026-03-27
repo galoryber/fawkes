@@ -214,48 +214,18 @@ func linuxFirewallAdd(args firewallArgs) structs.CommandResult {
 }
 
 func linuxIptablesAdd(args firewallArgs) structs.CommandResult {
-	// Map direction to chain
-	chain := "INPUT"
-	if strings.EqualFold(args.Direction, "out") {
-		chain = "OUTPUT"
-	}
-
-	// Map rule_action to target
-	target := "ACCEPT"
-	if strings.EqualFold(args.RuleAction, "block") {
-		target = "DROP"
-	}
-
-	// Build iptables command
-	cmdArgs := []string{"-A", chain}
-
-	// Protocol
-	proto := strings.ToLower(args.Protocol)
-	if proto != "" && proto != "any" {
-		cmdArgs = append(cmdArgs, "-p", proto)
-	}
-
-	// Port (requires protocol)
-	if args.Port != "" {
-		if proto == "" || proto == "any" {
-			return errorResult("Error: port requires protocol to be 'tcp' or 'udp'")
-		}
-		cmdArgs = append(cmdArgs, "--dport", args.Port)
-	}
-
-	// Comment with rule name
-	if args.Name != "" {
-		cmdArgs = append(cmdArgs, "-m", "comment", "--comment", args.Name)
-	}
-
-	// Target
-	cmdArgs = append(cmdArgs, "-j", target)
-
-	out, err := execCmdTimeout("iptables", cmdArgs...)
+	cmdArgs, err := buildIptablesArgs(args, "-A")
 	if err != nil {
-		return errorf("iptables add failed: %v\n%s", err, string(out))
+		return errorf("Error: %v", err)
 	}
 
+	out, execErr := execCmdTimeout("iptables", cmdArgs...)
+	if execErr != nil {
+		return errorf("iptables add failed: %v\n%s", execErr, string(out))
+	}
+
+	chain := cmdArgs[1]
+	target := cmdArgs[len(cmdArgs)-1]
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Added iptables rule: %s %s → %s\n", chain, strings.Join(cmdArgs[2:], " "), target))
 	if args.Name != "" {
@@ -265,36 +235,9 @@ func linuxIptablesAdd(args firewallArgs) structs.CommandResult {
 }
 
 func linuxNftAdd(args firewallArgs) structs.CommandResult {
-	// For nftables, we need a table and chain. Use inet filter by default.
-	chain := "input"
-	if strings.EqualFold(args.Direction, "out") {
-		chain = "output"
-	}
+	chain, ruleExpr, action := buildNftRuleExpr(args)
 
-	action := "accept"
-	if strings.EqualFold(args.RuleAction, "block") {
-		action = "drop"
-	}
-
-	// Build nft rule expression
-	var ruleParts []string
-
-	proto := strings.ToLower(args.Protocol)
-	if proto != "" && proto != "any" {
-		ruleParts = append(ruleParts, proto)
-		if args.Port != "" {
-			ruleParts = append(ruleParts, "dport", args.Port)
-		}
-	}
-
-	if args.Name != "" {
-		ruleParts = append(ruleParts, "comment", fmt.Sprintf(`"%s"`, args.Name))
-	}
-	ruleParts = append(ruleParts, action)
-
-	ruleExpr := strings.Join(ruleParts, " ")
 	nftCmd := fmt.Sprintf("add rule inet filter %s %s", chain, ruleExpr)
-
 	_, err := execCmdTimeout("nft", strings.Fields(nftCmd)...)
 	if err != nil {
 		// Try with ip (legacy) table if inet fails
@@ -321,42 +264,17 @@ func linuxFirewallDelete(args firewallArgs) structs.CommandResult {
 }
 
 func linuxIptablesDelete(args firewallArgs) structs.CommandResult {
-	chain := "INPUT"
-	if strings.EqualFold(args.Direction, "out") {
-		chain = "OUTPUT"
-	}
-
-	target := "ACCEPT"
-	if strings.EqualFold(args.RuleAction, "block") {
-		target = "DROP"
-	}
-
-	// Build the same rule spec as add, but with -D
-	cmdArgs := []string{"-D", chain}
-
-	proto := strings.ToLower(args.Protocol)
-	if proto != "" && proto != "any" {
-		cmdArgs = append(cmdArgs, "-p", proto)
-	}
-
-	if args.Port != "" {
-		if proto == "" || proto == "any" {
-			return errorResult("Error: port requires protocol to be 'tcp' or 'udp'")
-		}
-		cmdArgs = append(cmdArgs, "--dport", args.Port)
-	}
-
-	if args.Name != "" {
-		cmdArgs = append(cmdArgs, "-m", "comment", "--comment", args.Name)
-	}
-
-	cmdArgs = append(cmdArgs, "-j", target)
-
-	out, err := execCmdTimeout("iptables", cmdArgs...)
+	cmdArgs, err := buildIptablesArgs(args, "-D")
 	if err != nil {
-		return errorf("iptables delete failed: %v\n%s", err, string(out))
+		return errorf("Error: %v", err)
 	}
 
+	out, execErr := execCmdTimeout("iptables", cmdArgs...)
+	if execErr != nil {
+		return errorf("iptables delete failed: %v\n%s", execErr, string(out))
+	}
+
+	chain := cmdArgs[1]
 	return successf("Deleted iptables rule: %s %s", chain, strings.Join(cmdArgs[2:], " "))
 }
 
@@ -382,23 +300,7 @@ func linuxNftDelete(args firewallArgs) structs.CommandResult {
 	}
 
 	// Find rule with matching comment
-	var handle string
-	var family string
-	for _, line := range strings.Split(string(out), "\n") {
-		if strings.Contains(line, args.Name) && strings.Contains(line, "# handle") {
-			// Extract handle number
-			idx := strings.LastIndex(line, "# handle ")
-			if idx >= 0 {
-				handle = strings.TrimSpace(line[idx+len("# handle "):])
-				if strings.Contains(string(out), "inet") {
-					family = "inet"
-				} else {
-					family = "ip"
-				}
-				break
-			}
-		}
-	}
+	handle, family := parseNftHandle(string(out), args.Name)
 
 	if handle == "" {
 		return errorf("No rule with comment '%s' found in %s chain", args.Name, chain)

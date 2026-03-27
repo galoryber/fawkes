@@ -136,4 +136,3 @@ func TestNamedPipesArgsUnmarshal(t *testing.T) {
 		t.Errorf("Filter = %q, want %q", args.Filter, "test")
 	}
 }
-

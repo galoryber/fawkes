@@ -269,3 +269,213 @@ func TestPersistEnumKernelModules_ChecksModprobeInstall(t *testing.T) {
 		t.Error("missing header")
 	}
 }
+
+// --- Tests for new persistence categories (Session 202) ---
+
+func TestPersistEnumCommand_DBusCategory(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	params, _ := json.Marshal(persistEnumArgs{Category: "dbus"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "D-Bus Services") {
+		t.Error("output missing D-Bus Services section")
+	}
+}
+
+func TestPersistEnumCommand_PAMCategory(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	params, _ := json.Marshal(persistEnumArgs{Category: "pam"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "PAM Configuration") {
+		t.Error("output missing PAM Configuration section")
+	}
+}
+
+func TestPersistEnumCommand_PackagesCategory(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	params, _ := json.Marshal(persistEnumArgs{Category: "packages"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Package Manager Hooks") {
+		t.Error("output missing Package Manager Hooks section")
+	}
+}
+
+func TestPersistEnumCommand_LogrotateCategory(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	params, _ := json.Marshal(persistEnumArgs{Category: "logrotate"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Logrotate Scripts") {
+		t.Error("output missing Logrotate Scripts section")
+	}
+}
+
+func TestPersistEnumCommand_NetworkManagerCategory(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	params, _ := json.Marshal(persistEnumArgs{Category: "networkmanager"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "NetworkManager Dispatcher") {
+		t.Error("output missing NetworkManager Dispatcher section")
+	}
+}
+
+func TestPersistEnumCommand_AnacronCategory(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	params, _ := json.Marshal(persistEnumArgs{Category: "anacron"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Anacron") {
+		t.Error("output missing Anacron section")
+	}
+}
+
+func TestPersistEnumCommand_AllIncludesSession202Categories(t *testing.T) {
+	cmd := &PersistEnumCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"category":"all"}`})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	for _, section := range []string{
+		"D-Bus Services", "PAM Configuration", "Package Manager Hooks",
+		"Logrotate Scripts", "NetworkManager Dispatcher", "Anacron",
+	} {
+		if !strings.Contains(result.Output, section) {
+			t.Errorf("'all' output missing %q section", section)
+		}
+	}
+}
+
+func TestPersistEnumDBus_OutputFormat(t *testing.T) {
+	var sb strings.Builder
+	count := persistEnumDBus(&sb)
+	output := sb.String()
+	if !strings.Contains(output, "D-Bus Services") {
+		t.Error("missing section header")
+	}
+	if count < 0 {
+		t.Error("count should not be negative")
+	}
+	// On a system with D-Bus installed, there should be some service files
+	// but this may vary — just verify no crash and valid output
+}
+
+func TestPersistEnumPAM_OutputFormat(t *testing.T) {
+	var sb strings.Builder
+	count := persistEnumPAM(&sb)
+	output := sb.String()
+	if !strings.Contains(output, "PAM Configuration") {
+		t.Error("missing section header")
+	}
+	if count < 0 {
+		t.Error("count should not be negative")
+	}
+}
+
+func TestPersistEnumPackageHooks_OutputFormat(t *testing.T) {
+	var sb strings.Builder
+	count := persistEnumPackageHooks(&sb)
+	output := sb.String()
+	if !strings.Contains(output, "Package Manager Hooks") {
+		t.Error("missing section header")
+	}
+	if count < 0 {
+		t.Error("count should not be negative")
+	}
+}
+
+func TestPersistEnumLogrotate_OutputFormat(t *testing.T) {
+	var sb strings.Builder
+	count := persistEnumLogrotate(&sb)
+	output := sb.String()
+	if !strings.Contains(output, "Logrotate Scripts") {
+		t.Error("missing section header")
+	}
+	if count < 0 {
+		t.Error("count should not be negative")
+	}
+}
+
+func TestPersistEnumNetworkManager_OutputFormat(t *testing.T) {
+	var sb strings.Builder
+	count := persistEnumNetworkManager(&sb)
+	output := sb.String()
+	if !strings.Contains(output, "NetworkManager Dispatcher") {
+		t.Error("missing section header")
+	}
+	if count < 0 {
+		t.Error("count should not be negative")
+	}
+}
+
+func TestPersistEnumAnacron_OutputFormat(t *testing.T) {
+	var sb strings.Builder
+	count := persistEnumAnacron(&sb)
+	output := sb.String()
+	if !strings.Contains(output, "Anacron") {
+		t.Error("missing section header")
+	}
+	if count < 0 {
+		t.Error("count should not be negative")
+	}
+}
+
+func TestPersistEnumDBus_DetectsServiceFiles(t *testing.T) {
+	// /usr/share/dbus-1/services/ should exist on most Desktop Linux
+	var sb strings.Builder
+	count := persistEnumDBus(&sb)
+	output := sb.String()
+	// On a server, D-Bus session services may be minimal — just verify format
+	if count > 0 && !strings.Contains(output, "[") {
+		t.Error("service entries should have category brackets")
+	}
+}
+
+func TestPersistEnumPAM_DetectsStandardModules(t *testing.T) {
+	// /etc/pam.d/ should exist on all Linux systems
+	var sb strings.Builder
+	persistEnumPAM(&sb)
+	output := sb.String()
+	// Output should either find non-standard modules or report "all standard"
+	if !strings.Contains(output, "PAM Configuration") {
+		t.Error("missing header")
+	}
+}
+
+func TestPersistEnumLogrotate_DetectsScripts(t *testing.T) {
+	// Most Linux systems have logrotate configs with postrotate
+	var sb strings.Builder
+	count := persistEnumLogrotate(&sb)
+	output := sb.String()
+	// On Ubuntu/Debian, rsyslog and others have postrotate blocks
+	if count > 0 && !strings.Contains(output, "script directives") {
+		t.Error("expected 'script directives' in output when count > 0")
+	}
+}
+
+func TestPersistEnumAnacron_ParsesEntries(t *testing.T) {
+	// /etc/anacrontab may or may not exist
+	var sb strings.Builder
+	count := persistEnumAnacron(&sb)
+	output := sb.String()
+	if count > 0 {
+		// Verify entry format includes period/delay/id fields
+		if !strings.Contains(output, "period=") {
+			t.Error("anacron entries should include period= format")
+		}
+	}
+}

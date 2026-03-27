@@ -155,6 +155,7 @@ func linuxLogsRead(args linuxLogsArgs) structs.CommandResult {
 	}
 
 	lines := strings.Split(strings.TrimRight(string(content), "\n"), "\n")
+	structs.ZeroBytes(content)
 
 	// Apply search filter if specified
 	if args.Search != "" {
@@ -208,6 +209,7 @@ func linuxLogsLogins(args linuxLogsArgs) structs.CommandResult {
 		if err != nil {
 			continue
 		}
+		defer structs.ZeroBytes(data)
 
 		sb.WriteString(fmt.Sprintf("=== %s ===\n", path))
 
@@ -234,9 +236,10 @@ func linuxLogsLogins(args linuxLogsArgs) structs.CommandResult {
 			record := data[offset : offset+utmpRecordSize]
 			recType := int16(binary.LittleEndian.Uint16(record[0:2]))
 			pid := int32(binary.LittleEndian.Uint32(record[4:8]))
-			user := strings.TrimRight(string(record[12:44]), "\x00")
-			host := strings.TrimRight(string(record[44:300]), "\x00")
-			line := strings.TrimRight(string(record[8:12]), "\x00")
+			// Correct utmp offsets: line@8(32), user@44(32), host@76(256)
+			line := extractCString(record[8 : 8+utmpLineSize])
+			user := extractCString(record[44 : 44+utmpUserSize])
+			host := extractCString(record[76 : 76+utmpHostSize])
 			tvSec := int64(binary.LittleEndian.Uint32(record[340:344]))
 			ts := time.Unix(tvSec, 0).Format("2006-01-02 15:04:05")
 
@@ -308,6 +311,7 @@ func linuxLogsTruncate(args linuxLogsArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error reading %s: %v", args.File, err)
 	}
+	defer structs.ZeroBytes(content)
 
 	if args.Search == "" {
 		return errorResult("Error: search parameter required (lines matching this string will be removed)")

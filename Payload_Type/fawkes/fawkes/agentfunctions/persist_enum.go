@@ -7,11 +7,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "persist-enum",
-		Description:         "Enumerate persistence mechanisms — Windows: registry, startup, tasks, services. Linux: cron, systemd, shell profiles, SSH keys, udev rules, kernel modules, motd, at jobs. macOS: LaunchAgents, login items, periodic scripts, auth plugins, emond, at jobs, SSH keys.",
-		HelpString:          "persist-enum -category all\n\nCategories by platform:\n  Windows: all, registry, startup, winlogon, ifeo, appinit, tasks, services\n  Linux: all, cron, systemd, shell, startup, ssh, preload, udev, modules, motd, at\n  macOS: all, launchd, cron, shell, login, periodic, authplugins, emond, at, ssh",
-		Version:             5,
+		Description:         "Enumerate persistence mechanisms — Windows: registry, startup, tasks, services. Linux: cron, systemd, shell profiles, SSH keys, udev rules, kernel modules, motd, at jobs, D-Bus services, PAM modules, package hooks, logrotate, NetworkManager, anacron. macOS: LaunchAgents, login items, periodic scripts, auth plugins, emond, at jobs, SSH keys.",
+		HelpString:          "persist-enum -category all\n\nCategories by platform:\n  Windows: all, registry, startup, winlogon, ifeo, appinit, tasks, services\n  Linux: all, cron, systemd, shell, startup, ssh, preload, udev, modules, motd, at, dbus, pam, packages, logrotate, networkmanager, anacron\n  macOS: all, launchd, cron, shell, login, periodic, authplugins, emond, at, ssh",
+		Version:             6,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1547", "T1547.002", "T1547.006", "T1546", "T1546.014", "T1053", "T1543", "T1098.004"}, // Boot/Logon Autostart, Auth Plugins, Kernel Modules, Event Triggered, Emond, Scheduled Task, Create/Modify System Process, SSH Authorized Keys
+		MitreAttackMappings: []string{"T1547", "T1547.002", "T1547.006", "T1546", "T1546.014", "T1053", "T1543", "T1098.004", "T1556.003"}, // Boot/Logon Autostart, Auth Plugins, Kernel Modules, Event Triggered, Emond, Scheduled Task, Create/Modify System Process, SSH Authorized Keys, Modify Authentication Process: PAM
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},

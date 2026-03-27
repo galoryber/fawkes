@@ -160,7 +160,7 @@ func trustDetectBaseDN(conn *ldap.Conn) (string, error) {
 
 // trustTopLevelOutput wraps trust entries with forest topology info.
 type trustTopLevelOutput struct {
-	Forest *trustForestInfo  `json:"forest,omitempty"`
+	Forest *trustForestInfo   `json:"forest,omitempty"`
 	Trusts []trustOutputEntry `json:"trusts"`
 }
 
@@ -429,7 +429,6 @@ func trustBuildConfigDN(baseDN string) string {
 	}
 	return fmt.Sprintf("CN=Configuration,%s", baseDN)
 }
-
 
 func trustTypeStr(t int) string {
 	switch t {

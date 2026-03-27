@@ -223,6 +223,7 @@ func shareHuntHost(task structs.Task, host string, args shareHuntArgs, matchExts
 	d := &smb2.Dialer{Initiator: initiator}
 	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
 	session, err := d.Dial(conn)
+	structs.ZeroBytes(initiator.Hash)
 	if err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("SMB auth: %v", err)

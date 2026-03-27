@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-SMB2 file operations on remote network shares. Connect to Windows shares using NTLM authentication and perform file operations: list shares, browse directories, read files, write files, and delete files. Supports pass-the-hash (PTH) — authenticate with an NT hash instead of a plaintext password.
+SMB2 file operations on remote network shares. Connect to Windows shares using NTLM authentication and perform file operations: list shares, browse directories, read files, write files, delete files, create directories, and rename/move files. Supports pass-the-hash (PTH) — authenticate with an NT hash instead of a plaintext password.
 
 Uses the `go-smb2` library for SMB2 protocol operations (pure Go, CGO_ENABLED=0). Works cross-platform — agent running on any OS can access remote Windows shares.
 
@@ -15,15 +15,16 @@ Uses the `go-smb2` library for SMB2 protocol operations (pure Go, CGO_ENABLED=0)
 
 Argument | Required | Description
 ---------|----------|------------
-action | Yes | Operation: `shares` (list shares), `ls` (list directory), `cat` (read file), `upload` (write file), `rm` (delete file)
+action | Yes | Operation: `shares` (list shares), `ls` (list directory), `cat` (read file), `upload` (write file), `rm` (delete file), `mkdir` (create directory), `mv` (rename/move)
 host | Yes | Target host IP or hostname
 username | Yes | Username for NTLM auth (supports `DOMAIN\user` or `user@domain` format)
 password | No* | Password for NTLM auth (*required unless `-hash` is provided)
 hash | No* | NT hash for pass-the-hash (hex, e.g., `aad3b435...:8846f7ea...` or just the NT hash)
 domain | No | NTLM domain (auto-detected from username if `DOMAIN\user` or `user@domain` format)
-share | Conditional | Share name (e.g., `C$`, `ADMIN$`, `SYSVOL`). Required for ls, cat, upload, rm.
-path | Conditional | Path within the share. Required for cat, upload, rm. Optional for ls.
+share | Conditional | Share name (e.g., `C$`, `ADMIN$`, `SYSVOL`). Required for ls, cat, upload, rm, mkdir, mv.
+path | Conditional | Path within the share. Required for cat, upload, rm, mkdir, mv. Optional for ls. For mv, this is the source path.
 content | Conditional | File content to write (required for upload action)
+destination | Conditional | Target path within the share (required for mv action)
 port | No | SMB port (default: 445)
 
 ## Usage
@@ -51,6 +52,16 @@ smb -action upload -host 192.168.1.1 -share C$ -path Users/Public/payload.txt -c
 Delete a file:
 ```
 smb -action rm -host 192.168.1.1 -share C$ -path Users/Public/payload.txt -username admin -password pass -domain CORP
+```
+
+Create a directory (creates parent directories as needed):
+```
+smb -action mkdir -host 192.168.1.1 -share C$ -path Users/Public/staging/exfil -username admin -password pass -domain CORP
+```
+
+Rename/move a file:
+```
+smb -action mv -host 192.168.1.1 -share C$ -path Users/Public/old.txt -destination Users/Public/new.txt -username admin -password pass -domain CORP
 ```
 
 ### Pass-the-Hash (PTH)
@@ -131,6 +142,8 @@ On Windows, `make-token` creates an impersonation token from credentials. While 
 | Copy file **from** remote host | `smb -action cat` (or `download` for agent's own files) |
 | List files on remote share | `smb -action ls` |
 | Delete file on remote host | `smb -action rm` |
+| Create directory on remote host | `smb -action mkdir` |
+| Rename/move file on remote host | `smb -action mv` |
 | List files locally | `ls` |
 | Copy file locally | `cp` |
 | Read file locally | `cat` |

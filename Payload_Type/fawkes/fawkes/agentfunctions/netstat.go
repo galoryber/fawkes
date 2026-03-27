@@ -12,7 +12,7 @@ func init() {
 		Name:                "net-stat",
 		Description:         "List active network connections and listening ports. Supports filtering by state, protocol, port, or PID.",
 		HelpString:          "net-stat [-state <LISTEN|ESTABLISHED|...>] [-proto <tcp|udp>] [-port <number>] [-pid <number>]",
-		Version:             2,
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1049"},

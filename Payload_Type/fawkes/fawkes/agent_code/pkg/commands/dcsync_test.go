@@ -131,8 +131,8 @@ func TestDcsyncDecodeUTF16LE(t *testing.T) {
 		{"single byte (odd)", []byte{0x41}, ""},
 		{"ASCII hello", []byte{'H', 0, 'e', 0, 'l', 0, 'l', 0, 'o', 0}, "Hello"},
 		{"with null terminator", []byte{'O', 0, 'K', 0, 0, 0}, "OK"},
-		{"unicode", []byte{0xE9, 0x00}, "\u00e9"},                // é
-		{"CJK", []byte{0x2D, 0x4E}, "\u4e2d"},                    // 中
+		{"unicode", []byte{0xE9, 0x00}, "\u00e9"}, // é
+		{"CJK", []byte{0x2D, 0x4E}, "\u4e2d"},     // 中
 		{"multi-word", []byte{'A', 0, ' ', 0, 'B', 0}, "A B"},
 		{"only nulls", []byte{0, 0, 0, 0}, ""},
 	}

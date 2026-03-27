@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -98,10 +99,10 @@ func TestIdeExtractInterestingSettings_Proxy(t *testing.T) {
 
 func TestIdeExtractInterestingSettings_SensitiveKeys(t *testing.T) {
 	settings := map[string]interface{}{
-		"myextension.apiToken":     "ghp_abc123def456",
-		"custom.password":          "secret123",
-		"editor.fontSize":          14,
-		"some.api_key":             "AKIA1234567890123456",
+		"myextension.apiToken":      "ghp_abc123def456",
+		"custom.password":           "secret123",
+		"editor.fontSize":           14,
+		"some.api_key":              "AKIA1234567890123456",
 		"remote.SSH.remotePlatform": map[string]interface{}{"server1": "linux"},
 	}
 	items := ideExtractInterestingSettings(settings)
@@ -411,6 +412,38 @@ func TestIdeExtractXMLAttr_EmptyLine(t *testing.T) {
 	}
 }
 
+func TestIdeExtractXMLAttr_UnclosedQuote(t *testing.T) {
+	line := `<option value="no-closing-quote`
+	val := ideExtractXMLAttr(line, "value")
+	if val != "" {
+		t.Errorf("expected empty for unclosed quote, got %q", val)
+	}
+}
+
+func TestIdeParseJetBrainsServers_ValueAttr(t *testing.T) {
+	xml := `<component>
+  <server name="MyServer" />
+  <option url="http://api.example.com" value="http://api.example.com" />
+</component>`
+	servers := ideParseJetBrainsServers(xml)
+	if len(servers) == 0 {
+		t.Error("expected at least 1 server from value attr")
+	}
+}
+
+func TestIdeParseJetBrainsServers_NoName(t *testing.T) {
+	xml := `<config>
+  <option host="standalone.example.com" />
+</config>`
+	servers := ideParseJetBrainsServers(xml)
+	if len(servers) == 0 {
+		t.Error("expected at least 1 server")
+	}
+	if len(servers) > 0 && servers[0] != "standalone.example.com" {
+		t.Errorf("expected plain hostname, got %q", servers[0])
+	}
+}
+
 // --- ideVSCodeConfigDirs ---
 
 func TestIdeVSCodeConfigDirs_NotEmpty(t *testing.T) {
@@ -438,5 +471,52 @@ func TestIdeDiscoverJetBrainsProducts_NonexistentDir(t *testing.T) {
 	products := ideDiscoverJetBrainsProducts("/nonexistent/path/JetBrains")
 	if len(products) != 0 {
 		t.Errorf("expected 0 products for nonexistent dir, got %d", len(products))
+	}
+}
+
+func TestIdeParseJetBrainsRecentXML_UnclosedQuote(t *testing.T) {
+	// Attribute with opening quote but no closing — covers line 594-595
+	content := `<entry key="/home/user/project` // no closing quote
+	paths := ideParseJetBrainsRecentXML(content)
+	if len(paths) != 0 {
+		t.Errorf("expected 0 paths for unclosed quote, got %d", len(paths))
+	}
+}
+
+func TestIdeParseJetBrainsDataSources_LongURL(t *testing.T) {
+	// JDBC URL > 150 chars triggers truncation — covers line 664-666
+	longURL := "jdbc:postgresql://very-long-hostname-that-keeps-going-and-going.example.com:5432/database_name_that_is_extremely_long_and_verbose_for_testing_purposes_only?ssl=true&sslmode=verify-full"
+	content := fmt.Sprintf(`<data-source name="MyDB" uuid="123">
+		<jdbc-driver>org.postgresql.Driver</jdbc-driver>
+		<url value="%s"/>
+	</data-source>`, longURL)
+	sources := ideParseJetBrainsDataSources(content)
+	if len(sources) != 1 {
+		t.Fatalf("expected 1 source, got %d", len(sources))
+	}
+	if !strings.HasSuffix(sources[0], "...") {
+		t.Errorf("expected truncated URL ending with '...', got %q", sources[0])
+	}
+}
+
+func TestIdeExtractInterestingSettings_LongSensitiveValue(t *testing.T) {
+	// Value > 100 chars with sensitive key — covers line 297-298 truncation
+	longVal := strings.Repeat("x", 150)
+	settings := map[string]interface{}{
+		"my.password.store": longVal,
+	}
+	items := ideExtractInterestingSettings(settings)
+	found := false
+	for _, item := range items {
+		if strings.Contains(item, "[SENSITIVE]") && strings.Contains(item, "...") {
+			found = true
+			// Truncated at 100 + "..."
+			if !strings.HasSuffix(item, "...") {
+				t.Errorf("expected truncated value ending with '...', got %q", item)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected [SENSITIVE] item with truncated long value")
 	}
 }

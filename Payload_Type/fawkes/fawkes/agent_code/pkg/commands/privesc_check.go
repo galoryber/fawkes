@@ -21,7 +21,7 @@ func (c *PrivescCheckCommand) Name() string {
 }
 
 func (c *PrivescCheckCommand) Description() string {
-	return "Linux privilege escalation enumeration: SUID/SGID binaries, capabilities, sudo rules, writable paths, container detection (T1548)"
+	return "Linux privilege escalation enumeration: SUID/SGID binaries, capabilities, sudo rules, writable paths, container detection, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse, PATH hijacking, docker group, ld.so.preload, security modules (T1548)"
 }
 
 type privescCheckArgs struct {
@@ -55,8 +55,30 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return privescCheckWritable()
 	case "container":
 		return privescCheckContainer()
+	case "cron":
+		return privescCheckCronScripts()
+	case "nfs":
+		return privescCheckNFS()
+	case "systemd":
+		return privescCheckSystemdUnits()
+	case "sudo-token":
+		return privescCheckSudoToken()
+	case "path-hijack":
+		return privescCheckPathHijack()
+	case "docker-group":
+		return privescCheckDockerGroup()
+	case "group":
+		return privescCheckDangerousGroups()
+	case "polkit":
+		return privescCheckPolkit()
+	case "modprobe":
+		return privescCheckModprobe()
+	case "ld-preload":
+		return privescCheckLdPreload()
+	case "security":
+		return privescCheckSecurityModules()
 	default:
-		return errorf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container", args.Action)
+		return errorf("Unknown action: %s. Use: all, suid, capabilities, sudo, writable, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security", args.Action)
 	}
 }
 
@@ -94,6 +116,72 @@ func privescCheckAll() structs.CommandResult {
 	sb.WriteString("--- Container Detection ---\n")
 	containerResult := privescCheckContainer()
 	sb.WriteString(containerResult.Output)
+	sb.WriteString("\n\n")
+
+	// Writable cron scripts
+	sb.WriteString("--- Cron Script Hijacking ---\n")
+	cronResult := privescCheckCronScripts()
+	sb.WriteString(cronResult.Output)
+	sb.WriteString("\n\n")
+
+	// NFS no_root_squash
+	sb.WriteString("--- NFS Shares ---\n")
+	nfsResult := privescCheckNFS()
+	sb.WriteString(nfsResult.Output)
+	sb.WriteString("\n\n")
+
+	// Writable systemd units
+	sb.WriteString("--- Systemd Unit Hijacking ---\n")
+	systemdResult := privescCheckSystemdUnits()
+	sb.WriteString(systemdResult.Output)
+	sb.WriteString("\n\n")
+
+	// Sudo token reuse
+	sb.WriteString("--- Sudo Token Reuse ---\n")
+	sudoTokenResult := privescCheckSudoToken()
+	sb.WriteString(sudoTokenResult.Output)
+	sb.WriteString("\n\n")
+
+	// PATH hijacking
+	sb.WriteString("--- PATH Hijacking ---\n")
+	pathResult := privescCheckPathHijack()
+	sb.WriteString(pathResult.Output)
+	sb.WriteString("\n\n")
+
+	// Docker group
+	sb.WriteString("--- Docker Group ---\n")
+	dockerResult := privescCheckDockerGroup()
+	sb.WriteString(dockerResult.Output)
+	sb.WriteString("\n\n")
+
+	// Dangerous group memberships
+	sb.WriteString("--- Dangerous Groups ---\n")
+	groupResult := privescCheckDangerousGroups()
+	sb.WriteString(groupResult.Output)
+	sb.WriteString("\n\n")
+
+	// Polkit rules
+	sb.WriteString("--- Polkit Rules ---\n")
+	polkitResult := privescCheckPolkit()
+	sb.WriteString(polkitResult.Output)
+	sb.WriteString("\n\n")
+
+	// Modprobe hooks
+	sb.WriteString("--- Modprobe Hooks ---\n")
+	modprobeResult := privescCheckModprobe()
+	sb.WriteString(modprobeResult.Output)
+	sb.WriteString("\n\n")
+
+	// ld.so.preload library injection
+	sb.WriteString("--- ld.so.preload ---\n")
+	ldResult := privescCheckLdPreload()
+	sb.WriteString(ldResult.Output)
+	sb.WriteString("\n\n")
+
+	// Security modules (AppArmor / SELinux)
+	sb.WriteString("--- Security Modules ---\n")
+	secResult := privescCheckSecurityModules()
+	sb.WriteString(secResult.Output)
 
 	return successResult(sb.String())
 }
@@ -221,6 +309,7 @@ func privescCheckCapabilities() structs.CommandResult {
 				sb.WriteString("  " + line + "\n")
 			}
 		}
+		structs.ZeroBytes(capData)
 	} else {
 		sb.WriteString(fmt.Sprintf("  (error reading /proc/self/status: %v)", err))
 	}
@@ -369,6 +458,7 @@ func privescCheckSudo() structs.CommandResult {
 
 	// Check if /etc/sudoers is readable
 	if data, err := os.ReadFile("/etc/sudoers"); err == nil {
+		defer structs.ZeroBytes(data) // opsec: clear sudoers rules from memory
 		sb.WriteString("\n\n/etc/sudoers is READABLE (unusual — potential misconfiguration):\n")
 		// Show non-comment, non-empty lines
 		scanner := bufio.NewScanner(strings.NewReader(string(data)))
@@ -396,6 +486,7 @@ func privescCheckSudo() structs.CommandResult {
 			if data, err := os.ReadFile(path); err == nil {
 				readableFiles = append(readableFiles, fmt.Sprintf("  %s:\n    %s",
 					path, strings.ReplaceAll(strings.TrimSpace(string(data)), "\n", "\n    ")))
+				structs.ZeroBytes(data) // opsec: clear sudoers.d file contents
 			}
 		}
 		if len(readableFiles) > 0 {
@@ -492,6 +583,7 @@ func privescCheckWritable() structs.CommandResult {
 				uid0 = append(uid0, "  "+scanner.Text())
 			}
 		}
+		structs.ZeroBytes(data)
 		if len(uid0) > 0 {
 			sb.WriteString(fmt.Sprintf("\n\n[!] NON-ROOT accounts with UID 0 (%d):\n", len(uid0)))
 			sb.WriteString(strings.Join(uid0, "\n"))
@@ -517,6 +609,7 @@ func privescCheckContainer() structs.CommandResult {
 		sb.WriteString("[!] CONTAINER DETECTED — /run/.containerenv exists\n")
 		if data, err := os.ReadFile("/run/.containerenv"); err == nil && len(data) > 0 {
 			sb.WriteString(fmt.Sprintf("  Container env: %s\n", strings.TrimSpace(string(data))))
+			structs.ZeroBytes(data)
 		}
 		containerFound = true
 	}
@@ -524,6 +617,7 @@ func privescCheckContainer() structs.CommandResult {
 	// Check cgroup for container indicators
 	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
 		content := string(data)
+		structs.ZeroBytes(data)
 		if strings.Contains(content, "docker") || strings.Contains(content, "kubepods") ||
 			strings.Contains(content, "lxc") || strings.Contains(content, "containerd") {
 			sb.WriteString("[!] CONTAINER DETECTED via /proc/1/cgroup\n")
@@ -546,6 +640,7 @@ func privescCheckContainer() structs.CommandResult {
 
 		// Read service account token
 		if token, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/token"); err == nil {
+			defer structs.ZeroBytes(token) // opsec: clear raw K8s service account token
 			// Just show first 40 chars for confirmation
 			tokenStr := string(token)
 			if len(tokenStr) > 40 {
@@ -555,6 +650,7 @@ func privescCheckContainer() structs.CommandResult {
 		}
 		if ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
 			sb.WriteString(fmt.Sprintf("  Namespace: %s\n", strings.TrimSpace(string(ns))))
+			structs.ZeroBytes(ns) // opsec: clear K8s namespace info
 		}
 	}
 
@@ -570,6 +666,7 @@ func privescCheckContainer() structs.CommandResult {
 	// Check PID 1 process name
 	if data, err := os.ReadFile("/proc/1/comm"); err == nil {
 		comm := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
 		sb.WriteString(fmt.Sprintf("\nPID 1 process: %s\n", comm))
 		if comm != "systemd" && comm != "init" {
 			sb.WriteString("  [!] Unusual PID 1 — may indicate container (expected systemd/init on host)\n")
@@ -585,6 +682,7 @@ func privescCheckContainer() structs.CommandResult {
 	// Check mount namespace
 	if data, err := os.ReadFile("/proc/1/mountinfo"); err == nil {
 		content := string(data)
+		structs.ZeroBytes(data)
 		if strings.Contains(content, "overlay") || strings.Contains(content, "aufs") {
 			sb.WriteString("[!] Overlay/AUFS filesystem detected — consistent with container\n")
 			containerFound = true
@@ -618,4 +716,1089 @@ func isReadable(path string) bool {
 	}
 	f.Close()
 	return true
+}
+
+// privescCheckCronScripts checks for cron jobs that reference scripts writable by the current user.
+// If a cron job runs as root and calls a script we can write to, we can inject commands.
+func privescCheckCronScripts() structs.CommandResult {
+	var sb strings.Builder
+	var findings []string
+
+	// Parse cron sources for script references
+	cronSources := []struct {
+		path string
+		desc string
+	}{
+		{"/etc/crontab", "/etc/crontab"},
+	}
+
+	// Add /etc/cron.d/ files
+	if entries, err := os.ReadDir("/etc/cron.d"); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") {
+				cronSources = append(cronSources, struct {
+					path string
+					desc string
+				}{filepath.Join("/etc/cron.d", entry.Name()), "cron.d/" + entry.Name()})
+			}
+		}
+	}
+
+	for _, cs := range cronSources {
+		data, err := os.ReadFile(cs.path)
+		if err != nil {
+			continue
+		}
+		defer structs.ZeroBytes(data) // opsec: clear cron config (may contain embedded secrets)
+		for _, line := range strings.Split(string(data), "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			// Extract potential script paths from cron lines
+			scripts := extractScriptPaths(line)
+			for _, script := range scripts {
+				if isWritable(filepath.Dir(script)) || isWritableFile(script) {
+					findings = append(findings, fmt.Sprintf("  [!] %s references writable: %s", cs.desc, script))
+				}
+			}
+		}
+	}
+
+	// Check periodic cron directories for writable scripts
+	periodicDirs := []string{"/etc/cron.hourly", "/etc/cron.daily", "/etc/cron.weekly", "/etc/cron.monthly"}
+	for _, dir := range periodicDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			script := filepath.Join(dir, entry.Name())
+			if isWritableFile(script) {
+				findings = append(findings, fmt.Sprintf("  [!] Writable cron script: %s", script))
+			}
+		}
+	}
+
+	if len(findings) > 0 {
+		sb.WriteString(fmt.Sprintf("[!] Found %d writable cron scripts/targets:\n", len(findings)))
+		sb.WriteString(strings.Join(findings, "\n"))
+		sb.WriteString("\n[!] Modify these to inject commands that run as the cron job owner (often root)")
+	} else {
+		sb.WriteString("No writable cron scripts found — cron is not an escalation vector")
+	}
+
+	return successResult(sb.String())
+}
+
+// extractScriptPaths extracts file paths from a cron line that might be scripts.
+func extractScriptPaths(line string) []string {
+	var paths []string
+	fields := strings.Fields(line)
+	// Skip cron timing fields (first 5-6 fields are schedule + optional user)
+	for _, field := range fields {
+		if strings.HasPrefix(field, "/") && !strings.HasPrefix(field, "/dev/") {
+			// Skip output redirection targets
+			if strings.Contains(field, ">") {
+				continue
+			}
+			paths = append(paths, field)
+		}
+	}
+	return paths
+}
+
+// isWritableFile checks if a specific file can be opened for writing.
+func isWritableFile(path string) bool {
+	f, err := os.OpenFile(path, os.O_WRONLY, 0)
+	if err != nil {
+		return false
+	}
+	f.Close()
+	return true
+}
+
+// privescCheckNFS checks /etc/exports for NFS shares with no_root_squash.
+// no_root_squash allows root on the NFS client to act as root on the server,
+// enabling SUID binary deployment for privilege escalation.
+func privescCheckNFS() structs.CommandResult {
+	var sb strings.Builder
+
+	data, err := os.ReadFile("/etc/exports")
+	if err != nil {
+		return successResult("No /etc/exports found — NFS is not configured")
+	}
+	defer structs.ZeroBytes(data)
+
+	var noSquash []string
+	var allShares []string
+
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		allShares = append(allShares, "  "+line)
+		if strings.Contains(line, "no_root_squash") {
+			noSquash = append(noSquash, "  [!] "+line)
+		}
+	}
+
+	if len(allShares) > 0 {
+		sb.WriteString(fmt.Sprintf("NFS exports (%d shares):\n", len(allShares)))
+		sb.WriteString(strings.Join(allShares, "\n"))
+	}
+
+	if len(noSquash) > 0 {
+		sb.WriteString(fmt.Sprintf("\n\n[!] VULNERABLE — %d shares with no_root_squash:\n", len(noSquash)))
+		sb.WriteString(strings.Join(noSquash, "\n"))
+		sb.WriteString("\n[!] Mount the share, create a SUID binary as root, execute on target for root shell")
+	} else if len(allShares) > 0 {
+		sb.WriteString("\nAll shares use root_squash (default) — no NFS escalation vector")
+	} else {
+		sb.WriteString("No NFS exports configured")
+	}
+
+	return successResult(sb.String())
+}
+
+// privescCheckSystemdUnits checks for systemd service/timer files writable by the current user.
+// Writable service files that run as root allow code injection.
+func privescCheckSystemdUnits() structs.CommandResult {
+	var sb strings.Builder
+	var findings []string
+
+	systemdDirs := []string{
+		"/etc/systemd/system",
+		"/usr/lib/systemd/system",
+		"/lib/systemd/system",
+		"/run/systemd/system",
+	}
+
+	for _, dir := range systemdDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			name := entry.Name()
+			if entry.IsDir() {
+				continue
+			}
+			if !strings.HasSuffix(name, ".service") && !strings.HasSuffix(name, ".timer") {
+				continue
+			}
+			path := filepath.Join(dir, name)
+			if isWritableFile(path) {
+				findings = append(findings, fmt.Sprintf("  [!] Writable: %s", path))
+			}
+		}
+	}
+
+	// Also check user-level systemd directories
+	if home := os.Getenv("HOME"); home != "" {
+		userDir := filepath.Join(home, ".config/systemd/user")
+		if entries, err := os.ReadDir(userDir); err == nil {
+			for _, entry := range entries {
+				if strings.HasSuffix(entry.Name(), ".service") || strings.HasSuffix(entry.Name(), ".timer") {
+					findings = append(findings, fmt.Sprintf("  [user] %s", filepath.Join(userDir, entry.Name())))
+				}
+			}
+		}
+	}
+
+	if len(findings) > 0 {
+		sb.WriteString(fmt.Sprintf("[!] Found %d writable/user systemd units:\n", len(findings)))
+		sb.WriteString(strings.Join(findings, "\n"))
+		sb.WriteString("\n[!] Modify ExecStart= to inject commands that run as the service user")
+	} else {
+		sb.WriteString("No writable systemd units found — systemd is not an escalation vector")
+	}
+
+	return successResult(sb.String())
+}
+
+// privescCheckSudoToken checks for sudo credential caching that could be reused via ptrace.
+// If another process from the same user recently ran sudo, the timestamp file may allow
+// sudo without a password (within timeout, typically 15 minutes).
+func privescCheckSudoToken() structs.CommandResult {
+	var sb strings.Builder
+
+	// Check /var/run/sudo/ts/<username> or /var/db/sudo/ts/<username>
+	tsLocations := []string{"/var/run/sudo/ts", "/var/db/sudo/ts", "/run/sudo/ts"}
+
+	username := ""
+	if u, err := os.UserHomeDir(); err == nil {
+		_ = u
+	}
+	if cu, err := os.Hostname(); err == nil {
+		_ = cu
+	}
+	// Get actual username
+	if uStr := os.Getenv("USER"); uStr != "" {
+		username = uStr
+	}
+
+	found := false
+	for _, tsDir := range tsLocations {
+		if _, err := os.Stat(tsDir); err != nil {
+			continue
+		}
+		sb.WriteString(fmt.Sprintf("Sudo timestamp directory exists: %s\n", tsDir))
+
+		if username != "" {
+			tsFile := filepath.Join(tsDir, username)
+			if info, err := os.Stat(tsFile); err == nil {
+				sb.WriteString(fmt.Sprintf("[!] Sudo timestamp file found: %s\n", tsFile))
+				sb.WriteString(fmt.Sprintf("  Modified: %s\n", info.ModTime().Format("2006-01-02 15:04:05")))
+				sb.WriteString("  [!] If within sudo timeout (default 15min), sudo may work without password\n")
+				sb.WriteString("  [!] Also exploitable via ptrace on processes from the same tty/session\n")
+				found = true
+			}
+		}
+
+		// List all timestamp files
+		entries, err := os.ReadDir(tsDir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+				continue
+			}
+			info, err := entry.Info()
+			if err != nil {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("  Timestamp: %s (modified: %s)\n",
+				entry.Name(), info.ModTime().Format("2006-01-02 15:04:05")))
+		}
+		found = true
+	}
+
+	// Check if ptrace is restricted
+	if data, err := os.ReadFile("/proc/sys/kernel/yama/ptrace_scope"); err == nil {
+		scope := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
+		sb.WriteString(fmt.Sprintf("\nptrace_scope: %s", scope))
+		switch scope {
+		case "0":
+			sb.WriteString(" (classic — any process can ptrace, sudo token reuse possible)")
+		case "1":
+			sb.WriteString(" (restricted — only parent can ptrace, limits sudo token attack)")
+		case "2":
+			sb.WriteString(" (admin only — ptrace requires CAP_SYS_PTRACE)")
+		case "3":
+			sb.WriteString(" (disabled — ptrace completely blocked)")
+		}
+		sb.WriteString("\n")
+	}
+
+	if !found {
+		sb.WriteString("No sudo timestamp files found — sudo token reuse not available")
+	}
+
+	return successResult(sb.String())
+}
+
+// privescCheckPathHijack checks for writable directories in PATH that appear
+// before system directories, enabling command hijacking for privilege escalation.
+func privescCheckPathHijack() structs.CommandResult {
+	var sb strings.Builder
+
+	pathEnv := os.Getenv("PATH")
+	if pathEnv == "" {
+		sb.WriteString("PATH is empty — no hijack analysis possible")
+		return successResult(sb.String())
+	}
+
+	dirs := strings.Split(pathEnv, ":")
+	systemDirs := map[string]bool{
+		"/usr/bin": true, "/usr/sbin": true, "/bin": true, "/sbin": true,
+		"/usr/local/bin": true, "/usr/local/sbin": true,
+	}
+
+	results := analyzePathHijack(dirs, systemDirs)
+
+	if len(results) == 0 {
+		sb.WriteString("No PATH hijacking opportunities found")
+		return successResult(sb.String())
+	}
+
+	sb.WriteString(fmt.Sprintf("Found %d PATH hijacking opportunities:\n\n", len(results)))
+	for _, r := range results {
+		sb.WriteString(fmt.Sprintf("  [!] %s (position %d, before %s)\n", r.Dir, r.Position, r.BeforeSystem))
+		sb.WriteString(fmt.Sprintf("      Writable: %v | Owner: %s | Mode: %s\n", r.Writable, r.Owner, r.Mode))
+		if r.Writable {
+			sb.WriteString("      → Place a malicious binary here to hijack commands\n")
+		}
+	}
+
+	return successResult(sb.String())
+}
+
+// pathHijackResult represents a single PATH hijacking opportunity.
+type pathHijackResult struct {
+	Dir          string
+	Position     int
+	BeforeSystem string
+	Writable     bool
+	Owner        string
+	Mode         string
+}
+
+// analyzePathHijack inspects PATH directories for hijacking opportunities.
+// A directory is a hijack candidate if it's writable and appears before a system directory.
+func analyzePathHijack(dirs []string, systemDirs map[string]bool) []pathHijackResult {
+	var results []pathHijackResult
+
+	// Find first system directory position
+	firstSystem := -1
+	firstSystemDir := ""
+	for i, d := range dirs {
+		if systemDirs[d] {
+			firstSystem = i
+			firstSystemDir = d
+			break
+		}
+	}
+
+	for i, d := range dirs {
+		if d == "" || d == "." {
+			// Current directory or empty entry — always a hijack risk
+			results = append(results, pathHijackResult{
+				Dir:          fmt.Sprintf("%q (relative)", d),
+				Position:     i + 1,
+				BeforeSystem: firstSystemDir,
+				Writable:     true,
+				Owner:        "n/a",
+				Mode:         "n/a",
+			})
+			continue
+		}
+
+		if systemDirs[d] {
+			continue // Skip system dirs themselves
+		}
+
+		// Only report dirs that appear before a system directory
+		if firstSystem >= 0 && i >= firstSystem {
+			continue
+		}
+
+		info, err := os.Stat(d)
+		if err != nil {
+			continue // Dir doesn't exist
+		}
+
+		writable := isDirWritable(d)
+		ownerStr, groupStr := getFileOwner(d)
+		owner := ownerStr + ":" + groupStr
+		mode := info.Mode().Perm().String()
+
+		results = append(results, pathHijackResult{
+			Dir:          d,
+			Position:     i + 1,
+			BeforeSystem: firstSystemDir,
+			Writable:     writable,
+			Owner:        owner,
+			Mode:         mode,
+		})
+	}
+
+	return results
+}
+
+// privescCheckDockerGroup checks if the current user is in the docker group,
+// which allows trivial root escalation via container escape.
+func privescCheckDockerGroup() structs.CommandResult {
+	var sb strings.Builder
+
+	groups := parseDockerGroupMembership()
+
+	if groups.inDocker {
+		sb.WriteString("[!] CRITICAL: Current user is in the 'docker' group\n")
+		sb.WriteString("    → Can escalate to root via: docker run -v /:/mnt --rm -it alpine chroot /mnt sh\n")
+		sb.WriteString("    → Or mount /etc/shadow, /etc/passwd, /root/.ssh, etc.\n")
+	}
+
+	if groups.inLxd {
+		sb.WriteString("[!] CRITICAL: Current user is in the 'lxd' group\n")
+		sb.WriteString("    → Can escalate to root via LXD container with host filesystem mount\n")
+	}
+
+	if groups.inPodman {
+		sb.WriteString("[!] WARNING: Current user has rootless podman access\n")
+		sb.WriteString("    → May be able to escalate via user namespace manipulation\n")
+	}
+
+	if groups.dockerSocket {
+		sb.WriteString("[!] Docker socket is accessible at /var/run/docker.sock\n")
+		sb.WriteString("    → Direct API access enables root escalation even without group membership\n")
+	}
+
+	if !groups.inDocker && !groups.inLxd && !groups.inPodman && !groups.dockerSocket {
+		sb.WriteString("Not in docker/lxd/podman groups, no docker socket access")
+	}
+
+	return successResult(sb.String())
+}
+
+// dockerGroupInfo holds the results of docker/container group membership checks.
+type dockerGroupInfo struct {
+	inDocker     bool
+	inLxd        bool
+	inPodman     bool
+	dockerSocket bool
+}
+
+// parseDockerGroupMembership checks group membership and socket access.
+func parseDockerGroupMembership() dockerGroupInfo {
+	var info dockerGroupInfo
+
+	// Read current user's groups from /proc/self/status
+	data, err := os.ReadFile("/proc/self/status")
+	if err == nil {
+		groups := parseGroupsFromStatus(string(data))
+		structs.ZeroBytes(data)
+		groupNames := resolveGroupNames(groups)
+
+		for _, name := range groupNames {
+			switch name {
+			case "docker":
+				info.inDocker = true
+			case "lxd":
+				info.inLxd = true
+			case "podman":
+				info.inPodman = true
+			}
+		}
+	}
+
+	// Check docker socket accessibility
+	if fi, err := os.Stat("/var/run/docker.sock"); err == nil {
+		// Check if we can actually connect (socket exists and is accessible)
+		if fi.Mode()&os.ModeSocket != 0 {
+			info.dockerSocket = true
+		}
+	}
+
+	return info
+}
+
+// parseGroupsFromStatus extracts group IDs from /proc/self/status content.
+func parseGroupsFromStatus(content string) []string {
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "Groups:") {
+			parts := strings.Fields(strings.TrimPrefix(line, "Groups:"))
+			return parts
+		}
+	}
+	return nil
+}
+
+// resolveGroupNames maps group IDs to names using /etc/group.
+func resolveGroupNames(gids []string) []string {
+	if len(gids) == 0 {
+		return nil
+	}
+
+	gidSet := make(map[string]bool)
+	for _, g := range gids {
+		gidSet[g] = true
+	}
+
+	f, err := os.Open("/etc/group")
+	if err != nil {
+		return nil
+	}
+	defer f.Close()
+
+	var names []string
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		parts := strings.SplitN(line, ":", 4)
+		if len(parts) >= 3 && gidSet[parts[2]] {
+			names = append(names, parts[0])
+		}
+	}
+	return names
+}
+
+// dangerousGroup describes a group that grants elevated privileges.
+type dangerousGroup struct {
+	Name   string
+	Risk   string
+	Impact string
+}
+
+// dangerousGroups lists Linux groups that grant elevated access beyond normal users.
+// docker/lxd/podman are excluded since they're covered by the docker-group action.
+var dangerousGroups = []dangerousGroup{
+	{"disk", "CRITICAL", "Raw disk device access (/dev/sd*) — read entire filesystem including /etc/shadow"},
+	{"shadow", "CRITICAL", "Read /etc/shadow — extract password hashes for offline cracking"},
+	{"sudo", "HIGH", "Sudo access (may require password)"},
+	{"wheel", "HIGH", "Sudo access (may require password, common on RHEL/Fedora)"},
+	{"adm", "MEDIUM", "Read /var/log/* — access system logs, may contain credentials/tokens"},
+	{"staff", "MEDIUM", "Write to /usr/local — binary hijacking in PATH"},
+	{"root", "CRITICAL", "Root group membership — may grant access to root-owned files"},
+	{"video", "LOW", "Framebuffer/video device access — keylogger via /dev/fb0, screen capture"},
+	{"kvm", "MEDIUM", "KVM virtual machine management — VM escape, credential extraction"},
+	{"dialout", "MEDIUM", "Serial port access (/dev/ttyS*) — potential OT/SCADA interaction"},
+	{"tape", "LOW", "Tape device access — read backup media"},
+	{"cdrom", "LOW", "CD/DVD device access"},
+	{"plugdev", "LOW", "USB/removable device access"},
+	{"render", "LOW", "GPU compute access — may enable GPU-based hash cracking"},
+	{"lpadmin", "LOW", "CUPS printer admin — potential lateral movement via printer exploitation"},
+	{"bluetooth", "LOW", "Bluetooth device access"},
+	{"netdev", "MEDIUM", "Network device management — interface manipulation"},
+	{"wireshark", "MEDIUM", "Packet capture — network credential sniffing"},
+}
+
+// privescCheckDangerousGroups checks the current user's group memberships for
+// groups that grant elevated or unusual access. Complements docker-group check.
+func privescCheckDangerousGroups() structs.CommandResult {
+	var sb strings.Builder
+
+	// Get current user's groups
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return errorf("Cannot read /proc/self/status: %v", err)
+	}
+	gids := parseGroupsFromStatus(string(data))
+	structs.ZeroBytes(data)
+	groupNames := resolveGroupNames(gids)
+
+	nameSet := make(map[string]bool)
+	for _, n := range groupNames {
+		nameSet[n] = true
+	}
+
+	var critical, high, medium, low []string
+	for _, dg := range dangerousGroups {
+		if nameSet[dg.Name] {
+			entry := fmt.Sprintf("  [%s] %s — %s", dg.Risk, dg.Name, dg.Impact)
+			switch dg.Risk {
+			case "CRITICAL":
+				critical = append(critical, entry)
+			case "HIGH":
+				high = append(high, entry)
+			case "MEDIUM":
+				medium = append(medium, entry)
+			default:
+				low = append(low, entry)
+			}
+		}
+	}
+
+	total := len(critical) + len(high) + len(medium) + len(low)
+	sb.WriteString(fmt.Sprintf("Current user groups: %s\n", strings.Join(groupNames, ", ")))
+	sb.WriteString(fmt.Sprintf("Dangerous group memberships (%d found):\n", total))
+
+	if total == 0 {
+		sb.WriteString("  (none — user is in standard groups only)")
+		return successResult(sb.String())
+	}
+
+	if len(critical) > 0 {
+		sb.WriteString("\n[!!] CRITICAL:\n")
+		sb.WriteString(strings.Join(critical, "\n"))
+		sb.WriteString("\n")
+	}
+	if len(high) > 0 {
+		sb.WriteString("\n[!] HIGH:\n")
+		sb.WriteString(strings.Join(high, "\n"))
+		sb.WriteString("\n")
+	}
+	if len(medium) > 0 {
+		sb.WriteString("\nMEDIUM:\n")
+		sb.WriteString(strings.Join(medium, "\n"))
+		sb.WriteString("\n")
+	}
+	if len(low) > 0 {
+		sb.WriteString("\nLOW:\n")
+		sb.WriteString(strings.Join(low, "\n"))
+		sb.WriteString("\n")
+	}
+
+	return successResult(sb.String())
+}
+
+// privescCheckPolkit enumerates Polkit rules and policies that may allow
+// unprivileged users to perform privileged operations without authentication.
+func privescCheckPolkit() structs.CommandResult {
+	var sb strings.Builder
+
+	// Check if pkexec has SUID (common privesc vector — CVE-2021-4034)
+	if info, err := os.Stat("/usr/bin/pkexec"); err == nil {
+		if info.Mode()&os.ModeSetuid != 0 {
+			sb.WriteString("[!] /usr/bin/pkexec is SUID — potential CVE-2021-4034 (PwnKit) if unpatched\n")
+		}
+	}
+
+	// Check Polkit version via polkitd
+	if data, err := os.ReadFile("/usr/lib/polkit-1/polkitd"); err == nil {
+		structs.ZeroBytes(data)
+		sb.WriteString("polkitd binary exists at /usr/lib/polkit-1/polkitd\n")
+	} else if data, err := os.ReadFile("/usr/libexec/polkitd"); err == nil {
+		structs.ZeroBytes(data)
+		sb.WriteString("polkitd binary exists at /usr/libexec/polkitd\n")
+	}
+
+	// Scan JavaScript rules in /etc/polkit-1/rules.d/ and /usr/share/polkit-1/rules.d/
+	rulesDirs := []string{
+		"/etc/polkit-1/rules.d",
+		"/usr/share/polkit-1/rules.d",
+	}
+	var jsRules []string
+	for _, dir := range rulesDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".rules") {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			content := string(data)
+			structs.ZeroBytes(data)
+
+			// Flag rules that return YES (allow without password)
+			interesting := strings.Contains(content, "return polkit.Result.YES") ||
+				strings.Contains(content, "YES")
+			writable := isWritableFile(path)
+
+			status := ""
+			if interesting {
+				status = " [!] ALLOWS WITHOUT AUTH"
+			}
+			if writable {
+				status += " [!] WRITABLE"
+			}
+			jsRules = append(jsRules, fmt.Sprintf("  %s%s", path, status))
+		}
+	}
+
+	if len(jsRules) > 0 {
+		sb.WriteString(fmt.Sprintf("\nPolkit JS rules (%d):\n", len(jsRules)))
+		sb.WriteString(strings.Join(jsRules, "\n"))
+		sb.WriteString("\n")
+	}
+
+	// Scan legacy .pkla files in /etc/polkit-1/localauthority/
+	pklaDir := "/etc/polkit-1/localauthority"
+	var pklaFiles []string
+	_ = filepath.WalkDir(pklaDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if !strings.HasSuffix(path, ".pkla") {
+			return nil
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			pklaFiles = append(pklaFiles, fmt.Sprintf("  %s (unreadable)", path))
+			return nil
+		}
+		content := string(data)
+		structs.ZeroBytes(data)
+
+		interesting := strings.Contains(content, "ResultAny=yes") ||
+			strings.Contains(content, "ResultInactive=yes") ||
+			strings.Contains(content, "ResultActive=yes")
+		writable := isWritableFile(path)
+
+		status := ""
+		if interesting {
+			status = " [!] GRANTS ACCESS"
+		}
+		if writable {
+			status += " [!] WRITABLE"
+		}
+		pklaFiles = append(pklaFiles, fmt.Sprintf("  %s%s", path, status))
+		return nil
+	})
+
+	if len(pklaFiles) > 0 {
+		sb.WriteString(fmt.Sprintf("\nPolkit legacy .pkla files (%d):\n", len(pklaFiles)))
+		sb.WriteString(strings.Join(pklaFiles, "\n"))
+		sb.WriteString("\n")
+	}
+
+	// Scan Polkit action definitions for interesting actions
+	actionsDir := "/usr/share/polkit-1/actions"
+	var interestingActions []string
+	if entries, err := os.ReadDir(actionsDir); err == nil {
+		// Only check for writable action files (not parsing XML — too noisy)
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".policy") {
+				continue
+			}
+			path := filepath.Join(actionsDir, entry.Name())
+			if isWritableFile(path) {
+				interestingActions = append(interestingActions,
+					fmt.Sprintf("  [!] WRITABLE policy: %s", path))
+			}
+		}
+	}
+
+	if len(interestingActions) > 0 {
+		sb.WriteString(fmt.Sprintf("\nWritable Polkit action policies (%d):\n", len(interestingActions)))
+		sb.WriteString(strings.Join(interestingActions, "\n"))
+		sb.WriteString("\n")
+	}
+
+	// Check if rules directories are writable (drop a rule → instant privesc)
+	for _, dir := range rulesDirs {
+		if isDirWritable(dir) {
+			sb.WriteString(fmt.Sprintf("\n[!!] CRITICAL: %s is WRITABLE — drop a .rules file for instant root\n", dir))
+		}
+	}
+
+	if len(jsRules) == 0 && len(pklaFiles) == 0 && len(interestingActions) == 0 {
+		sb.WriteString("\nNo custom Polkit rules or writable policies found")
+	}
+
+	return successResult(sb.String())
+}
+
+// privescCheckModprobe checks for writable modprobe configuration files and
+// kernel module loading hooks that could be abused for privilege escalation.
+// install directives in modprobe.d run arbitrary commands when a module is loaded.
+func privescCheckModprobe() structs.CommandResult {
+	var sb strings.Builder
+
+	// Check modprobe.d directories for writable configs and install hooks
+	modprobeDirs := []string{"/etc/modprobe.d", "/lib/modprobe.d", "/usr/lib/modprobe.d", "/run/modprobe.d"}
+	var installHooks []string
+	var writableConfigs []string
+
+	for _, dir := range modprobeDirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+
+			if isWritableFile(path) {
+				writableConfigs = append(writableConfigs, fmt.Sprintf("  [!] WRITABLE: %s", path))
+			}
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			content := string(data)
+			structs.ZeroBytes(data)
+
+			// Look for install/remove directives that run commands
+			for _, line := range strings.Split(content, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				if strings.HasPrefix(line, "install ") || strings.HasPrefix(line, "remove ") {
+					installHooks = append(installHooks, fmt.Sprintf("  %s: %s", path, line))
+				}
+			}
+		}
+	}
+
+	// Check modprobe.d directory writability
+	for _, dir := range modprobeDirs {
+		if isDirWritable(dir) {
+			sb.WriteString(fmt.Sprintf("[!!] CRITICAL: %s is WRITABLE — drop config to run commands on module load\n", dir))
+		}
+	}
+
+	if len(writableConfigs) > 0 {
+		sb.WriteString(fmt.Sprintf("\nWritable modprobe configs (%d):\n", len(writableConfigs)))
+		sb.WriteString(strings.Join(writableConfigs, "\n"))
+		sb.WriteString("\n")
+	}
+
+	if len(installHooks) > 0 {
+		sb.WriteString(fmt.Sprintf("\nInstall/remove hooks (%d) — commands run on module load/unload:\n", len(installHooks)))
+		sb.WriteString(strings.Join(installHooks, "\n"))
+		sb.WriteString("\n")
+	}
+
+	// Check /etc/modules and /etc/modules-load.d/ for writable module lists
+	modulesFiles := []string{"/etc/modules"}
+	if entries, err := os.ReadDir("/etc/modules-load.d"); err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				modulesFiles = append(modulesFiles, filepath.Join("/etc/modules-load.d", entry.Name()))
+			}
+		}
+	}
+
+	var writableModules []string
+	for _, path := range modulesFiles {
+		if isWritableFile(path) {
+			writableModules = append(writableModules,
+				fmt.Sprintf("  [!] WRITABLE: %s — can add modules to auto-load", path))
+		}
+	}
+
+	if len(writableModules) > 0 {
+		sb.WriteString(fmt.Sprintf("\nWritable module lists (%d):\n", len(writableModules)))
+		sb.WriteString(strings.Join(writableModules, "\n"))
+		sb.WriteString("\n")
+	}
+
+	// Check if modprobe binary itself has unusual permissions
+	modprobePaths := []string{"/usr/sbin/modprobe", "/sbin/modprobe"}
+	for _, mp := range modprobePaths {
+		info, err := os.Stat(mp)
+		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSetuid != 0 {
+			sb.WriteString(fmt.Sprintf("\n[!] %s is SUID — unusual, potential escalation\n", mp))
+		}
+		break
+	}
+
+	if len(installHooks) == 0 && len(writableConfigs) == 0 && len(writableModules) == 0 {
+		sb.WriteString("No writable modprobe configs or install hooks found — modprobe is not an escalation vector")
+	}
+
+	return successResult(sb.String())
+}
+
+// privescCheckLdPreload checks for ld.so.preload abuse vectors.
+// /etc/ld.so.preload causes the dynamic linker to load specified libraries into every process,
+// making it a powerful persistence and privilege escalation mechanism.
+func privescCheckLdPreload() structs.CommandResult {
+	var sb strings.Builder
+	var findings int
+
+	// Check /etc/ld.so.preload
+	preloadPath := "/etc/ld.so.preload"
+	if data, err := os.ReadFile(preloadPath); err == nil {
+		content := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
+
+		if content != "" {
+			sb.WriteString("[!] /etc/ld.so.preload EXISTS with content:\n")
+			for _, line := range strings.Split(content, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				sb.WriteString(fmt.Sprintf("  → %s", line))
+				// Check if the preloaded library is writable
+				if isWritableFile(line) {
+					sb.WriteString(" [WRITABLE — can inject code into ALL processes]")
+					findings++
+				}
+				// Check if the library exists
+				if _, err := os.Stat(line); os.IsNotExist(err) {
+					sb.WriteString(" [MISSING — create this file to inject code]")
+					findings++
+				}
+				sb.WriteString("\n")
+			}
+		} else {
+			sb.WriteString("/etc/ld.so.preload exists but is empty\n")
+		}
+
+		// Check if ld.so.preload itself is writable
+		if isWritableFile(preloadPath) {
+			sb.WriteString("[!!] CRITICAL: /etc/ld.so.preload is WRITABLE — add library path to inject into all processes\n")
+			findings++
+		}
+	} else {
+		// File doesn't exist — check if we can create it
+		if isDirWritable("/etc") {
+			sb.WriteString("[!!] CRITICAL: /etc is writable — can create /etc/ld.so.preload for global library injection\n")
+			findings++
+		} else {
+			sb.WriteString("/etc/ld.so.preload does not exist (normal)\n")
+		}
+	}
+
+	// Check LD_PRELOAD environment variable
+	if val := os.Getenv("LD_PRELOAD"); val != "" {
+		sb.WriteString(fmt.Sprintf("[!] LD_PRELOAD is set: %s\n", val))
+		sb.WriteString("  → Libraries are injected into this process's children\n")
+		findings++
+	}
+
+	// Check LD_LIBRARY_PATH for writable directories
+	if val := os.Getenv("LD_LIBRARY_PATH"); val != "" {
+		var writableDirs []string
+		for _, dir := range strings.Split(val, ":") {
+			if dir != "" && isDirWritable(dir) {
+				writableDirs = append(writableDirs, dir)
+			}
+		}
+		if len(writableDirs) > 0 {
+			sb.WriteString(fmt.Sprintf("[!] LD_LIBRARY_PATH has %d writable directories:\n", len(writableDirs)))
+			for _, d := range writableDirs {
+				sb.WriteString(fmt.Sprintf("  → %s — place malicious .so to hijack library loading\n", d))
+			}
+			findings++
+		}
+	}
+
+	// Check /etc/ld.so.conf.d/ for writable configs
+	ldConfDirs := []string{"/etc/ld.so.conf.d"}
+	for _, dir := range ldConfDirs {
+		if isDirWritable(dir) {
+			sb.WriteString(fmt.Sprintf("[!] %s is writable — can add library search paths\n", dir))
+			findings++
+		}
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			if isWritableFile(path) {
+				sb.WriteString(fmt.Sprintf("  [!] Writable ld config: %s\n", path))
+				findings++
+			}
+		}
+	}
+
+	if findings == 0 {
+		sb.WriteString("No ld.so.preload or library path escalation vectors found")
+	}
+
+	return successResult(sb.String())
+}
+
+// privescCheckSecurityModules checks the status of Linux security modules
+// (AppArmor, SELinux). Disabled or permissive security modules indicate
+// reduced system hardening — potential for unmonitored privilege escalation.
+func privescCheckSecurityModules() structs.CommandResult {
+	var sb strings.Builder
+
+	// --- AppArmor ---
+	sb.WriteString("AppArmor:\n")
+	appArmorFound := false
+
+	// Check if AppArmor kernel module is loaded
+	if _, err := os.Stat("/sys/module/apparmor"); err == nil {
+		appArmorFound = true
+		// Read status
+		if data, err := os.ReadFile("/sys/module/apparmor/parameters/enabled"); err == nil {
+			enabled := strings.TrimSpace(string(data))
+			structs.ZeroBytes(data)
+			if enabled == "Y" {
+				sb.WriteString("  Status: ENABLED (kernel module loaded)\n")
+			} else {
+				sb.WriteString("  [!] Status: DISABLED (module loaded but not enforcing)\n")
+			}
+		}
+
+		// Read mode
+		if data, err := os.ReadFile("/sys/module/apparmor/parameters/mode"); err == nil {
+			mode := strings.TrimSpace(string(data))
+			structs.ZeroBytes(data)
+			sb.WriteString(fmt.Sprintf("  Mode: %s\n", mode))
+		}
+
+		// Count loaded profiles
+		if data, err := os.ReadFile("/sys/kernel/security/apparmor/profiles"); err == nil {
+			content := string(data)
+			structs.ZeroBytes(data)
+			var enforce, complain, unconfined int
+			for _, line := range strings.Split(content, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				if strings.Contains(line, "(enforce)") {
+					enforce++
+				} else if strings.Contains(line, "(complain)") {
+					complain++
+				} else {
+					unconfined++
+				}
+			}
+			sb.WriteString(fmt.Sprintf("  Profiles: %d enforce, %d complain, %d other\n", enforce, complain, unconfined))
+			if complain > 0 {
+				sb.WriteString(fmt.Sprintf("  [!] %d profiles in COMPLAIN mode — violations logged but not blocked\n", complain))
+			}
+		}
+	}
+
+	if !appArmorFound {
+		sb.WriteString("  Not installed/loaded\n")
+	}
+
+	// --- SELinux ---
+	sb.WriteString("\nSELinux:\n")
+	selinuxFound := false
+
+	// Check SELinux status via /sys/fs/selinux/enforce
+	if data, err := os.ReadFile("/sys/fs/selinux/enforce"); err == nil {
+		selinuxFound = true
+		enforce := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
+		switch enforce {
+		case "1":
+			sb.WriteString("  Status: ENFORCING\n")
+		case "0":
+			sb.WriteString("  [!] Status: PERMISSIVE — violations logged but not blocked\n")
+		default:
+			sb.WriteString(fmt.Sprintf("  Status: unknown (%s)\n", enforce))
+		}
+	}
+
+	// Check SELinux config file for persistent setting
+	if data, err := os.ReadFile("/etc/selinux/config"); err == nil {
+		content := string(data)
+		structs.ZeroBytes(data)
+		for _, line := range strings.Split(content, "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "SELINUX=") {
+				value := strings.TrimPrefix(line, "SELINUX=")
+				sb.WriteString(fmt.Sprintf("  Config: %s\n", value))
+				switch value {
+				case "disabled":
+					sb.WriteString("  [!] SELinux is DISABLED in config — no mandatory access control\n")
+				case "permissive":
+					sb.WriteString("  [!] SELinux is PERMISSIVE in config — violations logged but not blocked\n")
+				}
+			}
+			if strings.HasPrefix(line, "SELINUXTYPE=") {
+				sb.WriteString(fmt.Sprintf("  Policy: %s\n", strings.TrimPrefix(line, "SELINUXTYPE=")))
+			}
+		}
+	}
+
+	if !selinuxFound {
+		if _, err := os.Stat("/etc/selinux"); os.IsNotExist(err) {
+			sb.WriteString("  Not installed\n")
+		} else {
+			sb.WriteString("  Installed but not active\n")
+		}
+	}
+
+	// --- Summary ---
+	if !appArmorFound && !selinuxFound {
+		sb.WriteString("\n[!] No mandatory access control (MAC) system active — reduced security posture")
+	}
+
+	return successResult(sb.String())
 }

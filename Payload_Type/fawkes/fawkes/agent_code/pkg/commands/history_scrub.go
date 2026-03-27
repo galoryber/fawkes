@@ -160,6 +160,7 @@ func findHistoryFiles(user string) []historyFile {
 		if info.Size() < 10*1024*1024 { // <10MB
 			if data, err := os.ReadFile(t.path); err == nil {
 				hf.Lines = strings.Count(string(data), "\n")
+				structs.ZeroBytes(data)
 			}
 		}
 		found = append(found, hf)

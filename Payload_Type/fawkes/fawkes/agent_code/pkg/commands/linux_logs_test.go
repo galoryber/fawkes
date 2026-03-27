@@ -170,8 +170,11 @@ func TestUtmpTypeName(t *testing.T) {
 	}{
 		{1, "RUN_LVL"},
 		{2, "BOOT"},
+		{5, "INIT"},
+		{6, "LOGIN"},
 		{7, "USER"},
 		{8, "DEAD"},
+		{0, "TYPE_0"},
 		{99, "TYPE_99"},
 	}
 	for _, tc := range tests {

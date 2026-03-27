@@ -15,7 +15,7 @@ import (
 
 type SecretScanCommand struct{}
 
-func (c *SecretScanCommand) Name() string        { return "secret-scan" }
+func (c *SecretScanCommand) Name() string { return "secret-scan" }
 func (c *SecretScanCommand) Description() string {
 	return "Search files for secrets, API keys, private keys, and sensitive patterns (T1552.001, T1005)"
 }
@@ -66,6 +66,31 @@ var secretPatterns = func() []secretPattern {
 		{"SendGrid API Key", `SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}`},
 		{"Stripe Key", `[sr]k_(live|test)_[A-Za-z0-9]{20,}`},
 		{"Heroku API Key", `(?i)heroku[_-]?api[_-]?key\s*[:=]\s*['"]?[0-9a-f-]{36}['"]?`},
+		// Modern SaaS and cloud API tokens
+		{"HashiCorp Vault Token", `hvs\.[A-Za-z0-9_-]{24,}`},
+		{"DigitalOcean Token", `do[op]_v1_[a-f0-9]{64}`},
+		{"PyPI API Token", `pypi-[A-Za-z0-9_-]{100,}`},
+		{"Anthropic API Key", `sk-ant-[A-Za-z0-9_-]{90,}`},
+		{"OpenAI API Key", `sk-[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}`},
+		{"Shopify Token", `shp(at|ca|pa|ss)_[a-fA-F0-9]{32}`},
+		{"Databricks Token", `dapi[a-f0-9]{32}`},
+		// Additional high-value patterns
+		{"Google API Key", `AIza[0-9A-Za-z\-_]{35}`},
+		{"Telegram Bot Token", `[0-9]{8,10}:AA[0-9A-Za-z_-]{33}`},
+		{"Docker Hub PAT", `dckr_pat_[A-Za-z0-9_-]{50,}`},
+		{"Discord Bot Token", `[NM][A-Za-z0-9]{23,}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,}`},
+		{"Cloudflare API Token", `(?i)cloudflare[_-]?api[_-]?(token|key)\s*[:=]\s*['"]?[A-Za-z0-9_-]{37,}['"]?`},
+		{"Mailgun API Key", `key-[0-9a-zA-Z]{32}`},
+		{"Square Access Token", `sq0[a-z]{3}-[0-9A-Za-z\-_]{22,}`},
+		{"Atlassian API Token", `(?i)(jira|confluence|atlassian|bitbucket)[_-]?(api[_-]?)?(token|key|secret)\s*[:=]\s*['"]?[A-Za-z0-9+/=_-]{20,}['"]?`},
+		// SaaS monitoring, identity, and CI/CD tokens
+		{"AWS STS Session Token", `ASIA[0-9A-Z]{16}`},
+		{"New Relic API Key", `NRAK-[A-Z0-9]{27}`},
+		{"PagerDuty API Token", `pd[a-z]_[A-Za-z0-9_-]{20,}`},
+		{"Okta API Token", `(?i)ssws\s+[A-Za-z0-9_-]{40,}`},
+		{"Sentry DSN", `https://[a-f0-9]{32}@[a-z0-9.-]+\.ingest\.sentry\.io/[0-9]+`},
+		{"Datadog API Key", `(?i)dd[_-]?(api[_-]?key|app[_-]?key)\s*[:=]\s*['"]?[a-f0-9]{32,}['"]?`},
+		{"CircleCI Token", `circle-token\s*[:=]\s*['"]?[a-f0-9]{40}['"]?`},
 	}
 
 	compiled := make([]secretPattern, 0, len(patterns))
@@ -98,7 +123,9 @@ const maxFileSize = 10 * 1024 * 1024 // 10MB
 func (c *SecretScanCommand) Execute(task structs.Task) structs.CommandResult {
 	var args secretScanArgs
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &args)
+		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+			return errorf("Invalid parameters: %v", err)
+		}
 	}
 
 	if args.Path == "" {

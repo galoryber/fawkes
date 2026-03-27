@@ -216,4 +216,3 @@ func hashDirectory(task structs.Task, root string, args hashArgs) []hashResult {
 
 	return results
 }
-

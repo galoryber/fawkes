@@ -160,9 +160,9 @@ func TestEnumerateDarwinSessions(t *testing.T) {
 	testEntries := []utmpxEntry{
 		{Type: 10, User: "utmpx-1.00"}, // header — filtered
 		{Type: 7, PID: 100, Line: "ttys000", User: "alice", TimeSec: int32(now.Unix())},
-		{Type: 8, PID: 200, Line: "ttys001", User: "dead"},                              // DEAD — filtered
-		{Type: 7, PID: 300, Line: "ttys002", User: "bob", TimeSec: int32(now.Unix())},    // active
-		{Type: 7, PID: 400, Line: "ttys003", User: "", TimeSec: int32(now.Unix())},        // empty user — filtered
+		{Type: 8, PID: 200, Line: "ttys001", User: "dead"},                            // DEAD — filtered
+		{Type: 7, PID: 300, Line: "ttys002", User: "bob", TimeSec: int32(now.Unix())}, // active
+		{Type: 7, PID: 400, Line: "ttys003", User: "", TimeSec: int32(now.Unix())},    // empty user — filtered
 	}
 
 	data := buildTestUtmpxData(testEntries)

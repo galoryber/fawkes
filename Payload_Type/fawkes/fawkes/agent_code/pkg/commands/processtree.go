@@ -23,7 +23,9 @@ type processTreeArgs struct {
 func (c *ProcessTreeCommand) Execute(task structs.Task) structs.CommandResult {
 	var args processTreeArgs
 	if task.Params != "" {
-		_ = json.Unmarshal([]byte(task.Params), &args)
+		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
+			return errorf("Invalid parameters: %v", err)
+		}
 	}
 
 	processes, err := getProcessList(PsArgs{})
@@ -36,7 +38,11 @@ func (c *ProcessTreeCommand) Execute(task structs.Task) structs.CommandResult {
 	children := make(map[int32][]int32)
 	for _, p := range processes {
 		byPID[p.PID] = p
-		children[p.PPID] = append(children[p.PPID], p.PID)
+		// Skip self-referencing parents (e.g., Windows PID 0 has PPID 0)
+		// to prevent infinite recursion in the tree printer.
+		if p.PID != p.PPID {
+			children[p.PPID] = append(children[p.PPID], p.PID)
+		}
 	}
 
 	// Sort children by PID for stable output

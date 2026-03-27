@@ -6,21 +6,21 @@ hidden = false
 +++
 
 {{% notice info %}}
-Windows and Linux
+Windows, Linux, and macOS
 {{% /notice %}}
 
 ## Summary
 
-Manage system event logs across platforms. **Windows**: Uses the modern Event Log API (`wevtapi.dll`) to list channels, query events, clear logs, and enable/disable channels. **Linux**: Queries journald (systemd journal) for structured log entries and reads syslog files directly.
+Manage system event logs across platforms. **Windows**: Uses the modern Event Log API (`wevtapi.dll`) to list channels, query events, clear logs, and enable/disable channels. **Linux**: Queries journald (systemd journal) for structured log entries and reads syslog files directly. **macOS**: Queries the Unified Logging system (`os_log`) via the `log` CLI for subsystem/process-based log access.
 
 ### Actions
 
-- **list** — Enumerate available log sources (Windows: channels, Linux: journal units + /var/log files)
-- **query** — Query events with filtering (Windows: XPath/EventID, Linux: keyword/priority/time window)
-- **clear** — Clear logs (Windows: EvtClearLog, Linux: journal vacuum or file truncation)
-- **info** — Display metadata: record count, file size, disk usage
-- **enable** — Enable an event log channel (Windows only; Linux returns guidance)
-- **disable** — Disable an event log channel (Windows only; Linux returns guidance)
+- **list** — Enumerate available log sources (Windows: channels, Linux: journal units + /var/log files, macOS: active subsystems + /var/log files)
+- **query** — Query events with filtering (Windows: XPath/EventID, Linux: keyword/priority/time window, macOS: subsystem/process + keyword/time window)
+- **clear** — Clear logs (Windows: EvtClearLog, Linux: journal vacuum or file truncation, macOS: guidance for log store management)
+- **info** — Display metadata: record count, file size, disk usage, log store sizes
+- **enable** — Enable an event log channel (Windows: EvtSetChannelConfig, macOS: log config --mode, Linux: guidance)
+- **disable** — Disable an event log channel (Windows: EvtSetChannelConfig, macOS: log config --mode, Linux: guidance)
 
 ### Requirements
 
@@ -48,6 +48,7 @@ The operation to perform. Default: `list`.
 #### channel
 **Windows:** Event log channel name (e.g., `Security`, `System`, `Microsoft-Windows-PowerShell/Operational`).
 **Linux:** Systemd unit name (e.g., `sshd.service`) or file path (e.g., `/var/log/auth.log`). When a file path is specified, reads the file directly (no subprocess creation — opsec friendly).
+**macOS:** Subsystem name (e.g., `com.apple.xpc`) or process name (e.g., `sshd`). Subsystems are identified by the presence of dots; anything without dots is treated as a process name.
 
 #### event_id
 **Windows:** Filter by specific Event ID (e.g., `4624` for logon events).
@@ -138,6 +139,38 @@ eventlog -action clear
 Truncate a specific log file:
 ```
 eventlog -action clear -channel /var/log/auth.log
+```
+
+### macOS Examples
+
+List active log subsystems and /var/log files:
+```
+eventlog
+```
+
+Query logs for a specific subsystem:
+```
+eventlog -action query -channel com.apple.xpc -count 20
+```
+
+Query logs by process name:
+```
+eventlog -action query -channel sshd -filter 1h
+```
+
+Query system.log directly (no subprocess — opsec friendly):
+```
+eventlog -action query -channel /var/log/system.log -filter "error" -count 50
+```
+
+Get Unified Log statistics and store sizes:
+```
+eventlog -action info
+```
+
+Enable debug logging for a subsystem (requires root):
+```
+eventlog -action enable -channel com.apple.xpc
 ```
 
 ## Example Output

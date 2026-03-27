@@ -322,12 +322,12 @@ func bitsCreate(args bitsArgs) structs.CommandResult {
 		jobGUID.Data4[4], jobGUID.Data4[5], jobGUID.Data4[6], jobGUID.Data4[7])
 
 	return successf("[*] BITS Download Job Created (T1197)\n"+
-			"[+] Job Name: %s\n"+
-			"[+] Job ID:   %s\n"+
-			"[+] URL:      %s\n"+
-			"[+] Path:     %s\n"+
-			"[+] Status:   Downloading\n",
-			args.Name, jobID, args.URL, args.Path)
+		"[+] Job Name: %s\n"+
+		"[+] Job ID:   %s\n"+
+		"[+] URL:      %s\n"+
+		"[+] Path:     %s\n"+
+		"[+] Status:   Downloading\n",
+		args.Name, jobID, args.URL, args.Path)
 }
 
 func bitsPersist(args bitsArgs) structs.CommandResult {

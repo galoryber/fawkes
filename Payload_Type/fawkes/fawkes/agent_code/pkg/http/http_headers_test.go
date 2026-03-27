@@ -497,8 +497,8 @@ func TestMakeRequest_AllChromeHeaders(t *testing.T) {
 		"User-Agent":                ua,
 		"Content-Type":              "application/x-www-form-urlencoded",
 		"Accept-Language":           "en-US,en;q=0.9",
-		"Sec-Ch-Ua-Mobile":         "?0",
-		"Sec-Ch-Ua-Platform":       `"Windows"`,
+		"Sec-Ch-Ua-Mobile":          "?0",
+		"Sec-Ch-Ua-Platform":        `"Windows"`,
 		"Upgrade-Insecure-Requests": "1",
 	}
 	for header, expected := range checks {

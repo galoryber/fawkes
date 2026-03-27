@@ -10,7 +10,7 @@ hidden = false
 Cross-platform privilege escalation enumeration. Scans for common privilege escalation vectors with platform-specific checks for Windows, Linux, and macOS.
 
 - **Windows:** Token privileges (potato attacks, SeDebug, SeBackup), unquoted service paths, modifiable service binaries, AlwaysInstallElevated, auto-logon credentials, UAC configuration, LSA protection, writable PATH directories, unattended install files
-- **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers
+- **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse, PATH hijacking, docker/lxd/podman group, dangerous group memberships, Polkit rules, modprobe hooks, ld.so.preload injection, security module status
 - **macOS:** LaunchDaemons/Agents, TCC database, dylib hijacking, SIP status
 
 ## Arguments
@@ -38,6 +38,17 @@ Cross-platform privilege escalation enumeration. Scans for common privilege esca
 - **sudo** — Check `sudo -l` (non-interactive), read `/etc/sudoers` if accessible
 - **capabilities** — Enumerate file capabilities via `getcap` and current process capabilities
 - **container** — Detect Docker, Kubernetes, LXC, overlay FS, container cgroups
+- **cron** — Find writable cron scripts that run as root (hijackable for command injection)
+- **nfs** — Check /etc/exports for NFS shares with no_root_squash (SUID binary deployment)
+- **systemd** — Find writable systemd service/timer files (ExecStart hijacking)
+- **sudo-token** — Check for sudo timestamp files and ptrace_scope (token reuse via ptrace)
+- **path-hijack** — Check for writable directories in PATH before system directories (command hijacking)
+- **docker-group** — Check docker/lxd/podman group membership and Docker socket access (trivial root escalation)
+- **group** — Check membership in 18 dangerous groups (disk, shadow, adm, sudo, kvm, etc.) with risk levels and exploitation guidance
+- **polkit** — Enumerate Polkit JS rules, legacy .pkla files, and action policies. Detects writable rules directories, SUID pkexec (CVE-2021-4034), and unauthenticated access rules
+- **modprobe** — Scan modprobe.d for writable configs and install/remove hooks that execute commands on module load. Check module auto-load lists and modprobe SUID
+- **ld-preload** — Check /etc/ld.so.preload writability (global library injection), LD_PRELOAD env var, LD_LIBRARY_PATH writable directories, writable /etc/ld.so.conf.d configs
+- **security** — Check AppArmor status (enabled/disabled, enforce/complain profile counts) and SELinux status (enforcing/permissive/disabled, config file, policy type)
 
 ### macOS-Only Actions
 
@@ -55,6 +66,17 @@ privesc-check -action services
 privesc-check -action registry
 privesc-check -action uac
 privesc-check -action suid
+privesc-check -action cron
+privesc-check -action nfs
+privesc-check -action systemd
+privesc-check -action sudo-token
+privesc-check -action path-hijack
+privesc-check -action docker-group
+privesc-check -action group
+privesc-check -action polkit
+privesc-check -action modprobe
+privesc-check -action ld-preload
+privesc-check -action security
 privesc-check -action launchdaemons
 ```
 

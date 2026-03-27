@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"fawkes/pkg/structs"
 )
 
 // Linux utmp record structure
@@ -32,6 +34,7 @@ func lastPlatform(args lastArgs) []lastLoginEntry {
 
 		recSize := detectRecordSize(data)
 		if recSize == 0 {
+			structs.ZeroBytes(data)
 			continue
 		}
 
@@ -77,6 +80,8 @@ func lastPlatform(args lastArgs) []lastLoginEntry {
 			})
 		}
 
+		structs.ZeroBytes(data)
+
 		if len(entries) > 0 {
 			break
 		}
@@ -113,6 +118,174 @@ func extractCString(data []byte) string {
 	return string(data)
 }
 
+// lastFailedPlatform parses /var/log/btmp for failed login attempts (newest first).
+// btmp uses the same utmp binary record format as wtmp.
+func lastFailedPlatform(args lastArgs) []lastLoginEntry {
+	data, err := os.ReadFile("/var/log/btmp")
+	if err != nil {
+		// btmp requires root; fall back to auth.log parsing
+		return lastFailedFromAuthLog(args)
+	}
+	defer structs.ZeroBytes(data)
+
+	recSize := detectRecordSize(data)
+	if recSize == 0 {
+		structs.ZeroBytes(data)
+		return lastFailedFromAuthLog(args)
+	}
+
+	var entries []lastLoginEntry
+	numRecords := len(data) / recSize
+	for i := numRecords - 1; i >= 0 && len(entries) < args.Count; i-- {
+		offset := i * recSize
+		if offset+recSize > len(data) {
+			continue
+		}
+		rec := data[offset : offset+recSize]
+
+		// utmp offsets: user@44(32), line@8(32), host@76(256), tv_sec@340
+		user := extractCString(rec[44 : 44+utmpUserSize])
+		line := extractCString(rec[8 : 8+utmpLineSize])
+		host := extractCString(rec[76 : 76+utmpHostSize])
+
+		var loginTime time.Time
+		if recSize >= 384 {
+			tvSec := int64(binary.LittleEndian.Uint32(rec[340:344]))
+			loginTime = time.Unix(tvSec, 0)
+		}
+
+		if user == "" {
+			continue
+		}
+		if args.User != "" && !strings.EqualFold(user, args.User) {
+			continue
+		}
+		if host == "" {
+			host = "-"
+		}
+		if line == "" {
+			line = "-"
+		}
+
+		entries = append(entries, lastLoginEntry{
+			User:      user,
+			TTY:       line,
+			From:      host,
+			LoginTime: loginTime.Format("2006-01-02 15:04:05"),
+			Duration:  "FAILED",
+		})
+	}
+
+	if len(entries) == 0 {
+		return lastFailedFromAuthLog(args)
+	}
+
+	return entries
+}
+
+// lastFailedFromAuthLog parses auth.log/secure for failed login lines.
+func lastFailedFromAuthLog(args lastArgs) []lastLoginEntry {
+	var entries []lastLoginEntry
+
+	logFiles := []string{"/var/log/auth.log", "/var/log/secure"}
+	for _, logFile := range logFiles {
+		data, err := os.ReadFile(logFile)
+		if err != nil {
+			continue
+		}
+
+		lines := strings.Split(string(data), "\n")
+		structs.ZeroBytes(data)
+		for i := len(lines) - 1; i >= 0 && len(entries) < args.Count; i-- {
+			line := lines[i]
+			if !strings.Contains(line, "Failed password") && !strings.Contains(line, "authentication failure") {
+				continue
+			}
+			if args.User != "" && !strings.Contains(line, args.User) {
+				continue
+			}
+			entries = append(entries, lastLoginEntry{
+				User:      line,
+				LoginTime: "-",
+				Duration:  "FAILED",
+			})
+		}
+		if len(entries) > 0 {
+			break
+		}
+	}
+
+	return entries
+}
+
+// lastRebootPlatform parses /var/log/wtmp for boot/shutdown events (newest first).
+// BOOT_TIME (ut_type=2) records system boot. RUN_LVL (ut_type=1) with "shutdown"
+// in ut_line records clean shutdowns.
+func lastRebootPlatform(args lastArgs) []lastLoginEntry {
+	data, err := os.ReadFile("/var/log/wtmp")
+	if err != nil {
+		return nil
+	}
+	defer structs.ZeroBytes(data)
+
+	recSize := detectRecordSize(data)
+	if recSize == 0 {
+		return nil
+	}
+
+	const (
+		utRunLvl   = 1
+		utBootTime = 2
+	)
+
+	var entries []lastLoginEntry
+	numRecords := len(data) / recSize
+	for i := numRecords - 1; i >= 0 && len(entries) < args.Count; i-- {
+		offset := i * recSize
+		if offset+recSize > len(data) {
+			continue
+		}
+		rec := data[offset : offset+recSize]
+
+		utType := binary.LittleEndian.Uint32(rec[0:4])
+
+		var eventType string
+		switch utType {
+		case utBootTime:
+			eventType = "boot"
+		case utRunLvl:
+			line := extractCString(rec[8:40])
+			if strings.Contains(strings.ToLower(line), "shutdown") {
+				eventType = "shutdown"
+			} else {
+				continue
+			}
+		default:
+			continue
+		}
+
+		var eventTime time.Time
+		if recSize >= 384 {
+			tvSec := int64(binary.LittleEndian.Uint32(rec[340:344]))
+			eventTime = time.Unix(tvSec, 0)
+		}
+
+		user := extractCString(rec[44:76])
+		if user == "" {
+			user = "system"
+		}
+
+		entries = append(entries, lastLoginEntry{
+			User:      user,
+			TTY:       eventType,
+			From:      "-",
+			LoginTime: eventTime.Format("2006-01-02 15:04:05"),
+		})
+	}
+
+	return entries
+}
+
 func lastFromAuthLogEntries(args lastArgs) []lastLoginEntry {
 	var entries []lastLoginEntry
 
@@ -124,6 +297,7 @@ func lastFromAuthLogEntries(args lastArgs) []lastLoginEntry {
 		}
 
 		lines := strings.Split(string(data), "\n")
+		structs.ZeroBytes(data)
 		for i := len(lines) - 1; i >= 0 && len(entries) < args.Count; i-- {
 			line := lines[i]
 			if !strings.Contains(line, "session opened") && !strings.Contains(line, "Accepted") {

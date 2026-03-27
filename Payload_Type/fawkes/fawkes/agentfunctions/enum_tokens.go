@@ -55,7 +55,7 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "enum_tokens_new.js"),
 			Author:     "@galoryber",
 		},
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

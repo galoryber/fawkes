@@ -20,16 +20,16 @@ var (
 )
 
 const (
-	creduiwinGeneric   = 0x1  // Return username/password in plain text
-	errorSuccess       = 0    // ERROR_SUCCESS
-	errorCancelled     = 1223 // ERROR_CANCELLED
-	credMaxStringLen   = 256  // Max length for unpacked credential strings
+	creduiwinGeneric = 0x1  // Return username/password in plain text
+	errorSuccess     = 0    // ERROR_SUCCESS
+	errorCancelled   = 1223 // ERROR_CANCELLED
+	credMaxStringLen = 256  // Max length for unpacked credential strings
 )
 
 // credUIInfoW matches the CREDUI_INFOW struct layout on 64-bit Windows.
 type credUIInfoW struct {
 	cbSize         uint32
-	_              uint32   // padding for 8-byte alignment
+	_              uint32 // padding for 8-byte alignment
 	hwndParent     uintptr
 	pszMessageText *uint16
 	pszCaptionText *uint16

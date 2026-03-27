@@ -391,6 +391,28 @@ func TestChmodParseModeInvalid(t *testing.T) {
 	}
 }
 
+func TestChmodParseModeOctalTooLarge(t *testing.T) {
+	// "1000" is valid octal (512 decimal) but > 0777 (511 decimal)
+	_, err := chmodParseMode("1000", 0644)
+	if err == nil {
+		t.Error("expected error for octal mode > 0777")
+	}
+	if err != nil && !strings.Contains(err.Error(), "too large") {
+		t.Errorf("error should mention 'too large', got: %v", err)
+	}
+}
+
+func TestChmodParseModeOctalBoundary(t *testing.T) {
+	// "777" is exactly at the boundary — should succeed
+	mode, err := chmodParseMode("777", 0)
+	if err != nil {
+		t.Fatalf("unexpected error for mode 777: %v", err)
+	}
+	if mode != 0777 {
+		t.Errorf("expected 0777, got %04o", mode)
+	}
+}
+
 // --- chmodParseSymbolic direct tests ---
 
 func TestChmodParseSymbolic_MultiClause(t *testing.T) {

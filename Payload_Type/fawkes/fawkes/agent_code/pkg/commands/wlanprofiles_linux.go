@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"fawkes/pkg/structs"
 )
 
 func getWlanProfiles() ([]wlanProfile, error) {
@@ -24,6 +26,7 @@ func getWlanProfiles() ([]wlanProfile, error) {
 			}
 
 			content := string(data)
+			structs.ZeroBytes(data)
 			profile := parseNMProfile(content, path)
 			if profile.SSID != "" {
 				profiles = append(profiles, profile)
@@ -42,6 +45,7 @@ func getWlanProfiles() ([]wlanProfile, error) {
 			continue
 		}
 		wpaProfiles := parseWPASupplicant(string(data), conf)
+		structs.ZeroBytes(data)
 		profiles = append(profiles, wpaProfiles...)
 	}
 
@@ -68,6 +72,7 @@ func getWlanProfiles() ([]wlanProfile, error) {
 					psk = strings.TrimPrefix(line, "PreSharedKey=")
 				}
 			}
+			structs.ZeroBytes(data)
 			profiles = append(profiles, wlanProfile{
 				SSID:     ssid,
 				AuthType: "WPA-PSK",

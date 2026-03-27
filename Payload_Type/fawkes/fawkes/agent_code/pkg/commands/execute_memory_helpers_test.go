@@ -11,7 +11,7 @@ func buildMinimalPE() []byte {
 	pe := make([]byte, 128)
 
 	// DOS header
-	binary.LittleEndian.PutUint16(pe[0:2], 0x5A4D)   // e_magic = "MZ"
+	binary.LittleEndian.PutUint16(pe[0:2], 0x5A4D)     // e_magic = "MZ"
 	binary.LittleEndian.PutUint32(pe[0x3C:0x40], 0x40) // e_lfanew = 64
 
 	// PE signature at offset 0x40
@@ -126,8 +126,8 @@ func TestIsValidPE_BadPESignature(t *testing.T) {
 func TestIsValidPE_NTOffsetAtEdge(t *testing.T) {
 	// Create data where NT offset points to exactly the last 4 bytes
 	pe := make([]byte, 68)
-	binary.LittleEndian.PutUint16(pe[0:2], 0x5A4D)    // MZ
-	binary.LittleEndian.PutUint32(pe[0x3C:0x40], 64)   // e_lfanew = 64
+	binary.LittleEndian.PutUint16(pe[0:2], 0x5A4D)       // MZ
+	binary.LittleEndian.PutUint32(pe[0x3C:0x40], 64)     // e_lfanew = 64
 	binary.LittleEndian.PutUint32(pe[64:68], 0x00004550) // PE signature
 	if !isValidPE(pe) {
 		t.Error("expected PE with NT offset at exact edge to be valid")
@@ -137,8 +137,8 @@ func TestIsValidPE_NTOffsetAtEdge(t *testing.T) {
 func TestIsValidPE_LargeNTOffset(t *testing.T) {
 	// Some PE packers use large e_lfanew values
 	pe := make([]byte, 512)
-	binary.LittleEndian.PutUint16(pe[0:2], 0x5A4D)      // MZ
-	binary.LittleEndian.PutUint32(pe[0x3C:0x40], 0x100)  // e_lfanew = 256
+	binary.LittleEndian.PutUint16(pe[0:2], 0x5A4D)             // MZ
+	binary.LittleEndian.PutUint32(pe[0x3C:0x40], 0x100)        // e_lfanew = 256
 	binary.LittleEndian.PutUint32(pe[0x100:0x104], 0x00004550) // PE sig at 256
 	if !isValidPE(pe) {
 		t.Error("expected PE with large NT offset to be valid")

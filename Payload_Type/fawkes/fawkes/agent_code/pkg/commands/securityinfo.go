@@ -438,7 +438,9 @@ func readFileQuiet(path string) string {
 	if err != nil {
 		return ""
 	}
-	return string(data)
+	s := string(data)
+	structs.ZeroBytes(data)
+	return s
 }
 
 // parseSshdConfig extracts Port and PermitRootLogin from sshd_config content.

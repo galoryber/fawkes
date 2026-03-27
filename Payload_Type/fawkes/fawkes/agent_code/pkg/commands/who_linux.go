@@ -1,5 +1,4 @@
 //go:build linux
-// +build linux
 
 package commands
 
@@ -7,13 +6,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
-	"strings"
 	"time"
-)
 
-const (
-	whoUtmpUserProcess = 7
-	whoUtmpRecordSize  = 384 // sizeof(struct utmp) on x86_64 Linux
+	"fawkes/pkg/structs"
 )
 
 func whoPlatform(args whoArgs) []whoSessionEntry {
@@ -24,19 +19,22 @@ func whoPlatform(args whoArgs) []whoSessionEntry {
 			return nil
 		}
 	}
+	defer structs.ZeroBytes(data)
 
 	var entries []whoSessionEntry
-	for i := 0; i+whoUtmpRecordSize <= len(data); i += whoUtmpRecordSize {
-		record := data[i : i+whoUtmpRecordSize]
+	for i := 0; i+utmpRecordSize <= len(data); i += utmpRecordSize {
+		record := data[i : i+utmpRecordSize]
 		utType := int32(binary.LittleEndian.Uint32(record[0:4]))
 
-		if !args.All && utType != whoUtmpUserProcess {
+		if !args.All && utType != utUserProc {
 			continue
 		}
 
-		user := strings.TrimRight(string(record[4:36]), "\x00")
-		tty := strings.TrimRight(string(record[36:68]), "\x00")
-		host := strings.TrimRight(string(record[76:332]), "\x00")
+		// Correct Linux x86_64 utmp offsets:
+		// ut_line at 8 (32 bytes), ut_user at 44 (32 bytes), ut_host at 76 (256 bytes)
+		user := extractCString(record[44 : 44+utmpUserSize])
+		tty := extractCString(record[8 : 8+utmpLineSize])
+		host := extractCString(record[76 : 76+utmpHostSize])
 		tvSec := int64(binary.LittleEndian.Uint32(record[340:344]))
 		loginTime := time.Unix(tvSec, 0).Format("2006-01-02 15:04:05")
 
@@ -45,7 +43,7 @@ func whoPlatform(args whoArgs) []whoSessionEntry {
 		}
 
 		status := "active"
-		if utType != whoUtmpUserProcess {
+		if utType != utUserProc {
 			status = fmt.Sprintf("type=%d", utType)
 		}
 		if host == "" {

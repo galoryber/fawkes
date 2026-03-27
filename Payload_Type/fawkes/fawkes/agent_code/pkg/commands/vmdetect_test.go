@@ -79,3 +79,90 @@ func TestVmDetectOutputFormat(t *testing.T) {
 		t.Error("Output should contain Hypervisor line")
 	}
 }
+
+func TestClassifyHypervisorType(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"xen", "Xen"},
+		{"Xen", "Xen"},
+		{"kvm", "KVM"},
+		{"KVM", "KVM"},
+		{"custom", "custom"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := classifyHypervisorType(tt.input); got != tt.want {
+			t.Errorf("classifyHypervisorType(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestClassifyCloudBoard(t *testing.T) {
+	tests := []struct {
+		name  string
+		board string
+		want  string
+	}{
+		{"GCP", "Google Compute Engine", "GCP"},
+		{"GCP lowercase", "google compute engine", "GCP"},
+		{"AWS EC2", "Amazon EC2", "AWS EC2"},
+		{"Azure VM", "Virtual Machine", ""},
+		{"physical", "ProLiant DL380", ""},
+		{"empty", "", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyCloudBoard(tt.board); got != tt.want {
+				t.Errorf("classifyCloudBoard(%q) = %q, want %q", tt.board, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestClassifyVMProcess(t *testing.T) {
+	tests := []struct {
+		proc string
+		want string
+	}{
+		{"vmtoolsd", "VMware"},
+		{"VBoxService", "VirtualBox"},
+		{"VBoxClient", "VirtualBox"},
+		{"qemu-ga", "QEMU/KVM"},
+		{"spice-vdagent", "QEMU/KVM"},
+		{"hv_kvp_daemon", "Hyper-V"},
+		{"hv_vss_daemon", "Hyper-V"},
+		{"xe-daemon", "Xen"},
+		{"prl_tools_service", "Parallels"},
+		{"sshd", ""},
+		{"bash", ""},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		if got := classifyVMProcess(tt.proc); got != tt.want {
+			t.Errorf("classifyVMProcess(%q) = %q, want %q", tt.proc, got, tt.want)
+		}
+	}
+}
+
+func TestVmGuestProcessesConsistency(t *testing.T) {
+	// Ensure all entries in vmGuestProcesses map to known VM types
+	knownVMs := map[string]bool{
+		"VMware": true, "VirtualBox": true, "QEMU/KVM": true,
+		"Hyper-V": true, "Xen": true, "Parallels": true,
+	}
+	for proc, vm := range vmGuestProcesses {
+		if !knownVMs[vm] {
+			t.Errorf("vmGuestProcesses[%q] = %q, not a known VM type", proc, vm)
+		}
+	}
+}
+
+func TestVmDetectLinuxProcesses(t *testing.T) {
+	evidence, _ := vmDetectLinuxProcesses()
+	// Should return at least one result (either found processes or "clean" message)
+	if len(evidence) == 0 {
+		t.Error("vmDetectLinuxProcesses should return at least one evidence item")
+	}
+}

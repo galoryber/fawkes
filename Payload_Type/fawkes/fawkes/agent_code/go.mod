@@ -1,6 +1,6 @@
 module fawkes
 
-go 1.25.0
+go 1.25.8
 
 require (
 	github.com/Azure/go-ntlmssp v0.1.0
@@ -16,7 +16,7 @@ require (
 	github.com/jcmturner/gofork v1.7.6
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/masterzen/winrm v0.0.0-20250927112105-5f8e6c707321
-	github.com/oiweiwei/go-msrpc v1.2.16
+	github.com/oiweiwei/go-msrpc v1.2.18
 	github.com/refraction-networking/utls v1.8.2
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/stretchr/testify v1.11.1
@@ -41,7 +41,7 @@ require (
 	github.com/jcmturner/dnsutils/v2 v2.0.0 // indirect
 	github.com/jcmturner/goidentity/v6 v6.0.1 // indirect
 	github.com/jcmturner/rpc/v2 v2.0.3 // indirect
-	github.com/klauspost/compress v1.18.4 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260216142805-b3301c5f2a88 // indirect
 	github.com/masterzen/simplexml v0.0.0-20190410153822-31eea3082786 // indirect

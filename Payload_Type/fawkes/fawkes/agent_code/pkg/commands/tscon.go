@@ -166,7 +166,7 @@ func tsconHijack(targetSession int) structs.CommandResult {
 	domain := tsconQueryInfo(uint32(targetSession), tsconInfoDomain)
 
 	return successf("[+] Hijacked session %d (%s\\%s) → connected to session %d",
-			targetSession, domain, username, currentSession)
+		targetSession, domain, username, currentSession)
 }
 
 func tsconDisconnect(sessionID int) structs.CommandResult {

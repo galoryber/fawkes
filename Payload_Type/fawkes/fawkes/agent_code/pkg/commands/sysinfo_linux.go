@@ -7,6 +7,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"fawkes/pkg/structs"
 )
 
 func collectPlatformSysinfo(sb *strings.Builder) {
@@ -15,6 +17,7 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 	// OS release info
 	if data, err := os.ReadFile("/etc/os-release"); err == nil {
 		fields := parseOSRelease(string(data))
+		structs.ZeroBytes(data)
 		if name, ok := fields["PRETTY_NAME"]; ok {
 			sb.WriteString(fmt.Sprintf("Distribution:  %s\n", name))
 		} else if name, ok := fields["NAME"]; ok {
@@ -29,6 +32,7 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 	// Kernel version
 	if data, err := os.ReadFile("/proc/version"); err == nil {
 		line := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
 		// Extract kernel version string
 		parts := strings.Fields(line)
 		if len(parts) >= 3 {
@@ -39,6 +43,7 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 	// Memory info
 	if data, err := os.ReadFile("/proc/meminfo"); err == nil {
 		info := parseMeminfo(string(data))
+		structs.ZeroBytes(data)
 		if total, ok := info["MemTotal"]; ok {
 			sb.WriteString(fmt.Sprintf("Total Memory:  %s\n", total))
 		}
@@ -50,6 +55,7 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 	// Uptime
 	if data, err := os.ReadFile("/proc/uptime"); err == nil {
 		fields := strings.Fields(strings.TrimSpace(string(data)))
+		structs.ZeroBytes(data)
 		if len(fields) >= 1 {
 			var secs float64
 			if _, err := fmt.Sscanf(fields[0], "%f", &secs); err == nil {
@@ -72,6 +78,7 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 	// SELinux status
 	if data, err := os.ReadFile("/sys/fs/selinux/enforce"); err == nil {
 		mode := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
 		if mode == "1" {
 			sb.WriteString("SELinux:       enforcing\n")
 		} else {
@@ -84,12 +91,14 @@ func collectPlatformSysinfo(sb *strings.Builder) {
 	// Virtualization detection
 	if data, err := os.ReadFile("/sys/class/dmi/id/product_name"); err == nil {
 		product := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
 		if product != "" {
 			sb.WriteString(fmt.Sprintf("Hardware:      %s\n", product))
 		}
 	}
 	if data, err := os.ReadFile("/sys/hypervisor/type"); err == nil {
 		hypervisor := strings.TrimSpace(string(data))
+		structs.ZeroBytes(data)
 		if hypervisor != "" {
 			sb.WriteString(fmt.Sprintf("Hypervisor:    %s\n", hypervisor))
 		}

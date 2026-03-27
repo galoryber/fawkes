@@ -15,7 +15,7 @@ Supports authentication via explicit credentials (UPN format) or anonymous bind.
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `action` | Yes | `users` | Query type: `users`, `computers`, `groups`, `domain-admins`, `spns`, `asrep`, `dacl`, or `query` |
+| `action` | Yes | `users` | Query type: `users`, `computers`, `groups`, `domain-admins`, `spns`, `asrep`, `admins`, `disabled`, `gpo`, `ou`, `password-never-expires`, `trusts`, `unconstrained`, `constrained`, `dacl`, or `query` |
 | `server` | Yes | | Domain controller IP or hostname |
 | `filter` | No | | Custom LDAP filter (required when action=`query`). For `dacl`, specify target object name. |
 | `base_dn` | No | auto | LDAP search base (auto-detected from RootDSE) |
@@ -35,6 +35,14 @@ Supports authentication via explicit credentials (UPN format) or anonymous bind.
 | `domain-admins` | Recursive `memberOf` with LDAP_MATCHING_RULE_IN_CHAIN | Domain admin accounts (recursive group membership) |
 | `spns` | Users with `servicePrincipalName` set | Kerberoastable accounts |
 | `asrep` | `DONT_REQUIRE_PREAUTH` flag (4194304) | AS-REP roastable accounts |
+| `admins` | `adminCount=1` | All administrative accounts (flagged by AD — Domain Admins, Enterprise Admins, Schema Admins, Account Operators, etc.) |
+| `disabled` | `ACCOUNTDISABLE` flag (2) | Disabled user accounts |
+| `gpo` | `(objectClass=groupPolicyContainer)` | Group Policy Objects with SYSVOL paths |
+| `ou` | `(objectClass=organizationalUnit)` | Organizational Units (AD structure mapping) |
+| `password-never-expires` | `DONT_EXPIRE_PASSWORD` flag (65536) | Accounts with password never expires policy |
+| `trusts` | `(objectClass=trustedDomain)` | Domain trust relationships (partner, direction, type) |
+| `unconstrained` | `TRUSTED_FOR_DELEGATION` flag (524288), excluding DCs | Computers with unconstrained delegation |
+| `constrained` | `(msDS-AllowedToDelegateTo=*)` | Accounts with constrained delegation |
 | `dacl` | N/A | Parse DACL of a specific AD object (use `-filter` for target name) |
 
 ## Usage
@@ -51,6 +59,30 @@ ldap-query -action spns -server 192.168.1.10 -username user@domain.local -passwo
 
 # Find AS-REP roastable accounts
 ldap-query -action asrep -server 192.168.1.10 -username user@domain.local -password Pass123
+
+# Find all administrative accounts (adminCount=1)
+ldap-query -action admins -server 192.168.1.10 -username user@domain.local -password Pass123
+
+# Find disabled accounts
+ldap-query -action disabled -server 192.168.1.10 -username user@domain.local -password Pass123
+
+# Enumerate Group Policy Objects
+ldap-query -action gpo -server 192.168.1.10 -username user@domain.local -password Pass123
+
+# Map Organizational Units
+ldap-query -action ou -server 192.168.1.10 -username user@domain.local -password Pass123
+
+# Find accounts with password never expires
+ldap-query -action password-never-expires -server 192.168.1.10 -username user@domain.local -password Pass123
+
+# Enumerate domain trust relationships
+ldap-query -action trusts -server 192.168.1.10 -username user@domain.local -password Pass123
+
+# Find computers with unconstrained delegation (TGT forwarding)
+ldap-query -action unconstrained -server 192.168.1.10 -username user@domain.local -password Pass123
+
+# Find accounts with constrained delegation
+ldap-query -action constrained -server 192.168.1.10 -username user@domain.local -password Pass123
 
 # Enumerate DACL permissions on a specific object
 ldap-query -action dacl -server dc01 -filter "arya.stark" -username user@domain.local -password Pass123
@@ -127,3 +159,4 @@ Use this to identify RBCD targets, Shadow Credentials targets, or any object whe
 
 - **T1087.002** — Account Discovery: Domain Account
 - **T1069.002** — Permission Groups Discovery: Domain Groups
+- **T1482** — Domain Trust Discovery

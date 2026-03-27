@@ -20,7 +20,6 @@ func TestWhoReturnsJSON(t *testing.T) {
 	if result.Status != "success" {
 		t.Errorf("expected success, got %s: %s", result.Status, result.Output)
 	}
-	// Output should be valid JSON (array or empty array)
 	var entries []whoSessionEntry
 	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
 		t.Errorf("expected valid JSON output: %v (got: %s)", err, result.Output)

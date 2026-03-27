@@ -228,10 +228,14 @@ func (t *winrmHashTransport) Post(_ *winrm.Client, request *soap.SoapMessage) (s
 	}
 
 	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("http error %d: %s", resp.StatusCode, string(respBody))
+		errMsg := fmt.Errorf("http error %d: %s", resp.StatusCode, string(respBody))
+		structs.ZeroBytes(respBody) // opsec: clear error response (may contain auth info)
+		return "", errMsg
 	}
 
-	return string(respBody), nil
+	result := string(respBody)
+	structs.ZeroBytes(respBody) // opsec: clear WinRM response (may contain command output)
+	return result, nil
 }
 
 // winrmNtlmHashRT is an http.RoundTripper that performs NTLM auth using a hash.
@@ -247,6 +251,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		return nil, err
 	}
+	defer structs.ZeroBytes(bodyBytes)
 
 	req1 := req.Clone(req.Context())
 	req1.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
@@ -272,6 +277,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		return nil, fmt.Errorf("NTLM negotiate: %v", err)
 	}
+	defer structs.ZeroBytes(negotiateMsg) // opsec: clear NTLM negotiate message
 
 	req2 := req.Clone(req.Context())
 	req2.Body = io.NopCloser(strings.NewReader(string(bodyBytes)))
@@ -305,6 +311,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		return nil, fmt.Errorf("decode NTLM challenge: %v", err)
 	}
+	defer structs.ZeroBytes(challengeBytes) // opsec: clear NTLM challenge bytes
 
 	// Step 4: Process challenge with hash (pass-the-hash)
 	authMsg, err := ntlmssp.NewAuthenticateMessage(challengeBytes, rt.username, rt.hash, &ntlmssp.AuthenticateMessageOptions{
@@ -313,6 +320,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 	if err != nil {
 		return nil, fmt.Errorf("NTLM authenticate with hash: %v", err)
 	}
+	defer structs.ZeroBytes(authMsg) // opsec: clear NTLM auth message (contains hash proof)
 
 	// Step 5: Send authenticated request
 	req3 := req.Clone(req.Context())

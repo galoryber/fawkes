@@ -9,12 +9,12 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "shell-config",
-		Description:         "Read shell history, list/read/inject/remove shell config files for persistence. Unix: bashrc/zshrc (T1546.004, T1552.003). Windows: PowerShell profiles (T1546.013).",
-		HelpString:          "shell-config -action <history|list|read|inject|remove> [-file <.bashrc>] [-line <command>] [-user <username>] [-lines <count>]",
-		Version:             2,
+		Description:         "Read shell history, list/read/inject/remove/clear shell config files for persistence and anti-forensics. Unix: bashrc/zshrc (T1546.004, T1552.003, T1070.003). Windows: PowerShell profiles and PSReadLine history (T1546.013, T1552.003, T1070.003).",
+		HelpString:          "shell-config -action <history|list|read|inject|remove|clear> [-file <.bashrc>] [-line <command>] [-user <username>] [-lines <count>]",
+		Version:             4,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1546.004", "T1546.013", "T1552.003"},
+		MitreAttackMappings: []string{"T1546.004", "T1546.013", "T1552.003", "T1070.003"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
@@ -25,8 +25,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"history", "list", "read", "inject", "remove"},
-				Description:      "Action: history (read shell history), list (enumerate config files), read (view file), inject (append line), remove (delete line)",
+				Choices:          []string{"history", "list", "read", "inject", "remove", "clear"},
+				Description:      "Action: history (read shell history), list (enumerate config files), read (view file), inject (append line), remove (delete line), clear (wipe history files)",
 				DefaultValue:     "list",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -127,8 +127,8 @@ func init() {
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
 
-			// Report artifacts for inject/remove actions
-			if action == "inject" || action == "remove" {
+			// Report artifacts for inject/remove/clear actions
+			if action == "inject" || action == "remove" || action == "clear" {
 				artifactFile := file
 				if artifactFile == "" {
 					artifactFile = "(shell config file)"

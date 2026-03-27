@@ -21,7 +21,7 @@ func buildTestPE(isDLL bool, hasClrHeader bool) []byte {
 	pe := make([]byte, totalSize)
 
 	// DOS header
-	binary.LittleEndian.PutUint16(pe[0:2], 0x5A4D)   // MZ magic
+	binary.LittleEndian.PutUint16(pe[0:2], 0x5A4D)     // MZ magic
 	binary.LittleEndian.PutUint32(pe[60:64], ntOffset) // ELfanew
 
 	// PE signature
@@ -29,8 +29,8 @@ func buildTestPE(isDLL bool, hasClrHeader bool) []byte {
 
 	// File header (starts at ntOffset + 4)
 	fhOffset := ntOffset + 4
-	binary.LittleEndian.PutUint16(pe[fhOffset+0:fhOffset+2], 0x8664) // Machine: AMD64
-	binary.LittleEndian.PutUint16(pe[fhOffset+2:fhOffset+4], 1)      // NumberOfSections
+	binary.LittleEndian.PutUint16(pe[fhOffset+0:fhOffset+2], 0x8664)                  // Machine: AMD64
+	binary.LittleEndian.PutUint16(pe[fhOffset+2:fhOffset+4], 1)                       // NumberOfSections
 	binary.LittleEndian.PutUint16(pe[fhOffset+16:fhOffset+18], uint16(optHeaderSize)) // SizeOfOptionalHeader
 
 	chars := uint16(0x0022) // EXECUTABLE_IMAGE | LARGE_ADDRESS_AWARE
@@ -41,7 +41,7 @@ func buildTestPE(isDLL bool, hasClrHeader bool) []byte {
 
 	// Optional header (starts at fhOffset + fileHeaderSize)
 	ohOffset := fhOffset + fileHeaderSize
-	binary.LittleEndian.PutUint16(pe[ohOffset:ohOffset+2], 0x020B) // PE32+ magic
+	binary.LittleEndian.PutUint16(pe[ohOffset:ohOffset+2], 0x020B)   // PE32+ magic
 	binary.LittleEndian.PutUint32(pe[ohOffset+108:ohOffset+112], 16) // NumberOfRvaAndSizes
 
 	if hasClrHeader {

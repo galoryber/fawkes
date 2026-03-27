@@ -252,6 +252,280 @@ func TestSecretScanCommand_MaxResults(t *testing.T) {
 	}
 }
 
+func TestScanFileForSecrets_VaultToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "vault.env")
+	os.WriteFile(f, []byte("VAULT_TOKEN=hvs.CAESIIG1z2Bq4NzHNO6WfPHkIuBBBBBB\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Vault token")
+	}
+	if results[0].Type != "HashiCorp Vault Token" {
+		t.Errorf("type = %q, want 'HashiCorp Vault Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_DigitalOceanToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "do.env")
+	os.WriteFile(f, []byte("DO_TOKEN=dop_v1_"+strings.Repeat("a1b2c3d4", 8)+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find DigitalOcean token")
+	}
+	if results[0].Type != "DigitalOcean Token" {
+		t.Errorf("type = %q, want 'DigitalOcean Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_ShopifyToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "shopify.env")
+	os.WriteFile(f, []byte("SHOPIFY_TOKEN=shpat_"+strings.Repeat("a1b2c3d4", 4)+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Shopify token")
+	}
+	if results[0].Type != "Shopify Token" {
+		t.Errorf("type = %q, want 'Shopify Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_DatabricksToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "databricks.env")
+	os.WriteFile(f, []byte("DB_TOKEN=dapi"+strings.Repeat("ab12cd34", 4)+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Databricks token")
+	}
+	if results[0].Type != "Databricks Token" {
+		t.Errorf("type = %q, want 'Databricks Token'", results[0].Type)
+	}
+}
+
+func TestSecretPatternsCompile(t *testing.T) {
+	// Verify all patterns compiled successfully
+	if len(secretPatterns) < 33 {
+		t.Errorf("expected at least 33 secret patterns, got %d", len(secretPatterns))
+	}
+	for _, p := range secretPatterns {
+		if p.Name == "" {
+			t.Error("pattern has empty name")
+		}
+		if p.Pattern == nil {
+			t.Errorf("pattern %q has nil regex", p.Name)
+		}
+	}
+}
+
+func TestScanFileForSecrets_GoogleAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "gcp.env")
+	// AIza + 35 alphanumeric chars = 39 total
+	os.WriteFile(f, []byte("credential=AIzaSyA01234567890123456789012345678ABC\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	found := false
+	for _, r := range results {
+		if r.Type == "Google API Key" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		types := make([]string, len(results))
+		for i, r := range results {
+			types[i] = r.Type
+		}
+		t.Errorf("expected to find Google API Key in results, got types: %v", types)
+	}
+}
+
+func TestScanFileForSecrets_TelegramBotToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "bot.conf")
+	// Pattern: [0-9]{8,10}:AA[0-9A-Za-z_-]{33}
+	// 1234567890 (10 digits) : AA + 33 alphanumeric chars
+	os.WriteFile(f, []byte("BOT_TOKEN=1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaBx\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	found := false
+	for _, r := range results {
+		if r.Type == "Telegram Bot Token" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		types := make([]string, len(results))
+		for i, r := range results {
+			types[i] = r.Type
+		}
+		t.Errorf("expected to find Telegram Bot Token in results, got types: %v", types)
+	}
+}
+
+func TestScanFileForSecrets_MailgunKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "mail.env")
+	os.WriteFile(f, []byte("MAILGUN_KEY=key-"+strings.Repeat("a1b2c3d4", 4)+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Mailgun API Key")
+	}
+	if results[0].Type != "Mailgun API Key" {
+		t.Errorf("type = %q, want 'Mailgun API Key'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_SquareToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "square.env")
+	os.WriteFile(f, []byte("SQUARE_TOKEN=sq0atp-"+strings.Repeat("AbCd", 6)+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Square Access Token")
+	}
+	if results[0].Type != "Square Access Token" {
+		t.Errorf("type = %q, want 'Square Access Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_AWSStsToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "aws.env")
+	os.WriteFile(f, []byte("AWS_ACCESS_KEY_ID=ASIAQWERTYUIOP123456\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find AWS STS Session Token")
+	}
+	if results[0].Type != "AWS STS Session Token" {
+		t.Errorf("type = %q, want 'AWS STS Session Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_NewRelicKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "nr.env")
+	// Build key dynamically to avoid push protection false positive
+	prefix := "NRAK-"
+	suffix := strings.Repeat("A1B2C3D", 4)[:27] // 27 alphanumeric chars
+	os.WriteFile(f, []byte("KEY="+prefix+suffix+"\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find New Relic API Key")
+	}
+	if results[0].Type != "New Relic API Key" {
+		t.Errorf("type = %q, want 'New Relic API Key'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_PagerDutyToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "pd.env")
+	os.WriteFile(f, []byte(fmt.Sprintf("PD_TOKEN=pdt_%s\n", strings.Repeat("abcDEF12", 4))), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find PagerDuty API Token")
+	}
+	if results[0].Type != "PagerDuty API Token" {
+		t.Errorf("type = %q, want 'PagerDuty API Token'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_SentryDSN(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "sentry.env")
+	os.WriteFile(f, []byte("SENTRY_DSN=https://abcdef0123456789abcdef0123456789@o12345.ingest.sentry.io/6789012\n"), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Sentry DSN")
+	}
+	if results[0].Type != "Sentry DSN" {
+		t.Errorf("type = %q, want 'Sentry DSN'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_DatadogKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "dd.env")
+	// Use dd_app_key format to avoid matching the generic api_key pattern first
+	os.WriteFile(f, []byte(fmt.Sprintf("dd_app_key=%s\n", strings.Repeat("abcdef01", 4))), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find Datadog API Key")
+	}
+	if results[0].Type != "Datadog API Key" {
+		t.Errorf("type = %q, want 'Datadog API Key'", results[0].Type)
+	}
+}
+
+func TestScanFileForSecrets_CircleCIToken(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "ci.env")
+	os.WriteFile(f, []byte(fmt.Sprintf("circle-token=%s\n", strings.Repeat("abcdef01", 5))), 0644)
+
+	results := scanFileForSecrets(f)
+	if len(results) == 0 {
+		t.Fatal("expected to find CircleCI Token")
+	}
+	if results[0].Type != "CircleCI Token" {
+		t.Errorf("type = %q, want 'CircleCI Token'", results[0].Type)
+	}
+}
+
+func TestSecretPatternCount(t *testing.T) {
+	// Verify we have the expected number of patterns (35 + 7 = 42)
+	if len(secretPatterns) != 42 {
+		t.Errorf("expected 42 secret patterns, got %d", len(secretPatterns))
+	}
+}
+
+func TestRedactSecret_ShortGenericPassword(t *testing.T) {
+	// Covers default return for short match (<=16 chars, no special type)
+	result := redactSecret("shortvalue", "Unknown Type")
+	if result != "shortvalue" {
+		t.Errorf("expected short value returned as-is, got %q", result)
+	}
+}
+
+func TestRedactSecret_ShortAWSKey(t *testing.T) {
+	// AWS Access Key shorter than 8 chars — falls through to default
+	result := redactSecret("AKIA1", "AWS Access Key")
+	if result != "AKIA1" {
+		t.Errorf("expected short AWS key returned as-is, got %q", result)
+	}
+}
+
+func TestRedactSecret_StandaloneTokenShort(t *testing.T) {
+	// Token type, no :=, <=12 chars — falls through to default
+	result := redactSecret("tok_abc", "API Token")
+	if result != "tok_abc" {
+		t.Errorf("expected short token returned as-is, got %q", result)
+	}
+}
+
+func TestRedactSecret_ConnectionStringNoAt(t *testing.T) {
+	// Connection string without @ — falls through
+	result := redactSecret("postgresql://localhost:5432/db", "Connection String")
+	// No @ sign, so should hit the long-match default (>16 chars)
+	if !strings.Contains(result, "***") {
+		t.Errorf("expected redacted output for long conn string, got %q", result)
+	}
+}
+
 func TestSecretScanCommand_EmptyDir(t *testing.T) {
 	dir := t.TempDir()
 	cmd := &SecretScanCommand{}

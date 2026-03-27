@@ -358,6 +358,111 @@ func TestTbresValueString(t *testing.T) {
 	}
 }
 
+func TestUtf16LEToUTF8_Empty(t *testing.T) {
+	_, err := utf16LEToUTF8([]byte{})
+	if err == nil {
+		t.Error("expected error for empty input")
+	}
+}
+
+func TestUtf16LEToUTF8_OddLength(t *testing.T) {
+	// "A" in UTF-16LE + 1 trailing byte (odd length — last byte trimmed)
+	data := []byte{0x41, 0x00, 0xFF}
+	got, err := utf16LEToUTF8(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "A" {
+		t.Errorf("got %q, want %q", got, "A")
+	}
+}
+
+func TestUtf16LEToUTF8_BOMOnly(t *testing.T) {
+	got, err := utf16LEToUTF8([]byte{0xFF, 0xFE})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "" {
+		t.Errorf("got %q, want empty string for BOM-only input", got)
+	}
+}
+
+func TestUtf16LEToUTF8_SurrogatePair(t *testing.T) {
+	// U+1F600 (😀) as UTF-16LE surrogate pair: high=0xD83D low=0xDE00
+	data := []byte{0x3D, 0xD8, 0x00, 0xDE}
+	got, err := utf16LEToUTF8(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "😀" {
+		t.Errorf("got %q, want emoji", got)
+	}
+}
+
+func TestParseTokenResponseJSON_FlatCamelCase(t *testing.T) {
+	input := `{"AccessToken":"tok","RefreshToken":"ref","Resource":"res","ClientId":"cid","TokenType":"type1"}`
+	tokens, err := parseTokenResponseJSON([]byte(input))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(tokens) != 1 {
+		t.Fatalf("expected 1 token, got %d", len(tokens))
+	}
+	if tokens[0].token != "tok" {
+		t.Errorf("token = %q, want %q", tokens[0].token, "tok")
+	}
+	if tokens[0].refreshToken != "ref" {
+		t.Errorf("refreshToken = %q, want %q", tokens[0].refreshToken, "ref")
+	}
+}
+
+func TestParseTokenResponseJSON_InvalidJSON(t *testing.T) {
+	tokens, err := parseTokenResponseJSON([]byte(`not json at all`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tokens != nil {
+		t.Errorf("got %d tokens, want nil for invalid JSON without JWT", len(tokens))
+	}
+}
+
+func TestParseTokenResponseJSON_EmptyJSON(t *testing.T) {
+	tokens, err := parseTokenResponseJSON([]byte(`{}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tokens != nil {
+		t.Errorf("got %d tokens, want nil for empty JSON", len(tokens))
+	}
+}
+
+func TestParseTokenResponseJSON_JWTMissingDots(t *testing.T) {
+	// Long base64url starting with "eyJ" but no dots — should not match
+	data := []byte(`eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9abcdefghijklmnopqrstuv`)
+	tokens, err := parseTokenResponseJSON(data)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if tokens != nil {
+		t.Errorf("got %d tokens, want nil for JWT-like string without dots", len(tokens))
+	}
+}
+
+func TestMatchAuthCookie_CaseInsensitive(t *testing.T) {
+	desc := matchAuthCookie("LOGIN.MICROSOFTONLINE.COM", "estsauth")
+	if desc == "" {
+		t.Error("expected match for case-insensitive host+cookie name")
+	}
+}
+
+func TestMatchAuthCookie_SubdomainHost(t *testing.T) {
+	// Pattern ".teams.microsoft.com" should match subdomain hosts
+	desc := matchAuthCookie("teams.microsoft.com", "authtoken")
+	if desc == "" {
+		t.Error("expected match for teams.microsoft.com with authtoken")
+	}
+}
+
 // testUTF8ToUTF16LE converts a UTF-8 string to UTF-16LE bytes for testing
 func testUTF8ToUTF16LE(s string) []byte {
 	runes := []rune(s)

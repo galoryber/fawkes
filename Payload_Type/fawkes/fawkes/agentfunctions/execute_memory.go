@@ -53,11 +53,11 @@ func init() {
 				},
 			},
 			{
-				Name:             "binary_b64",
-				CLIName:          "binary_b64",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Base64-encoded native binary (for API/CLI usage)",
-				DefaultValue:     "",
+				Name:          "binary_b64",
+				CLIName:       "binary_b64",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:   "Base64-encoded native binary (for API/CLI usage)",
+				DefaultValue:  "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

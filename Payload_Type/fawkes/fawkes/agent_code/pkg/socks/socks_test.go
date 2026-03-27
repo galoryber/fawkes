@@ -18,6 +18,7 @@ func TestNewManager(t *testing.T) {
 	m := NewManager()
 	if m == nil {
 		t.Fatal("NewManager() returned nil")
+		return // unreachable but satisfies staticcheck SA5011
 	}
 	if m.connections == nil {
 		t.Error("NewManager() connections map is nil")

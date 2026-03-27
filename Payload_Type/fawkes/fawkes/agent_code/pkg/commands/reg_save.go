@@ -192,4 +192,3 @@ func resolveHive(hive string) (uintptr, error) {
 		return 0, fmt.Errorf("unknown hive: %s (use HKLM, HKCU, HKCR, HKU)", hive)
 	}
 }
-

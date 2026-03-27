@@ -10,9 +10,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "smb",
-		Description:         "SMB file operations on remote shares. List shares, browse directories, read/write/delete files via SMB2 with NTLM authentication. Supports pass-the-hash.",
-		HelpString:          "smb -action shares -host 192.168.1.1 -username user -password pass -domain DOMAIN\nsmb -action ls -host 192.168.1.1 -share C$ -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -domain DOMAIN\nsmb -action cat -host 192.168.1.1 -share C$ -path Users/Public/file.txt -username admin -password pass",
-		Version:             1,
+		Description:         "SMB file operations on remote shares. List shares, browse, read/write/delete files, create directories, rename/move via SMB2 with NTLM auth. Pass-the-hash support.",
+		HelpString:          "smb -action shares -host 192.168.1.1 -username user -password pass -domain DOMAIN\nsmb -action ls -host 192.168.1.1 -share C$ -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -domain DOMAIN\nsmb -action mkdir -host 192.168.1.1 -share C$ -path Users/Public/staging -username admin -password pass\nsmb -action mv -host 192.168.1.1 -share C$ -path old.txt -destination new.txt -username admin -password pass",
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1021.002", "T1550.002"},
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -27,9 +27,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Operation: shares (list shares), ls (list directory), cat (read file), upload (write file), rm (delete file)",
+				Description:      "Operation: shares (list shares), ls (list directory), cat (read file), upload (write file), rm (delete file), mkdir (create directory), mv (rename/move file)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"shares", "ls", "cat", "upload", "rm"},
+				Choices:          []string{"shares", "ls", "cat", "upload", "rm", "mkdir", "mv"},
 				DefaultValue:     "shares",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -94,7 +94,7 @@ func init() {
 				Name:             "share",
 				CLIName:          "share",
 				ModalDisplayName: "Share Name",
-				Description:      "SMB share name (e.g., C$, ADMIN$, ShareName). Required for ls, cat, upload, rm.",
+				Description:      "SMB share name (e.g., C$, ADMIN$, ShareName). Required for ls, cat, upload, rm, mkdir, mv.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -105,7 +105,7 @@ func init() {
 				Name:             "path",
 				CLIName:          "path",
 				ModalDisplayName: "File/Directory Path",
-				Description:      "Path within the share (e.g., Users/Public/file.txt). Required for cat, upload, rm. Optional for ls.",
+				Description:      "Path within the share. Required for cat, upload, rm, mkdir, mv. Optional for ls. For mv, this is the source path.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -117,6 +117,17 @@ func init() {
 				CLIName:          "content",
 				ModalDisplayName: "File Content",
 				Description:      "Content to write (for upload action only)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "destination",
+				CLIName:          "destination",
+				ModalDisplayName: "Destination Path",
+				Description:      "Destination path within the share (for mv action — rename/move target)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{

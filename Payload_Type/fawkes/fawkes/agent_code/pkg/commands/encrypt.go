@@ -83,6 +83,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error reading file: %v", err)
 	}
+	defer structs.ZeroBytes(plaintext) // opsec: clear plaintext from memory
 
 	// Get or generate key
 	var key []byte
@@ -100,6 +101,7 @@ func encryptFile(args encryptArgs) structs.CommandResult {
 			return errorf("Error generating key: %v", err)
 		}
 	}
+	defer structs.ZeroBytes(key) // opsec: clear key material from memory
 
 	// Encrypt with AES-256-GCM
 	block, err := aes.NewCipher(key)
@@ -153,6 +155,7 @@ func decryptFile(args encryptArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error decoding key: %v", err)
 	}
+	defer structs.ZeroBytes(key) // opsec: clear key material from memory
 	if len(key) != aes256KeySize {
 		return errorf("Error: key must be %d bytes (got %d)", aes256KeySize, len(key))
 	}
@@ -162,6 +165,7 @@ func decryptFile(args encryptArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error reading file: %v", err)
 	}
+	defer structs.ZeroBytes(ciphertext) // opsec: clear ciphertext from memory
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -183,6 +187,7 @@ func decryptFile(args encryptArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error decrypting: %v (wrong key or corrupted file)", err)
 	}
+	defer structs.ZeroBytes(plaintext) // opsec: clear decrypted plaintext from memory
 
 	// Determine output path
 	outPath := args.Output

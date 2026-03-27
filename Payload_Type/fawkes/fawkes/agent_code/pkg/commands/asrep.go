@@ -258,6 +258,7 @@ func requestAsrep(cfg *config.Config, realm, kdc, username string) (string, stri
 	if _, err := readFull(conn, respBytes); err != nil {
 		return "", "", fmt.Errorf("read response: %v", err)
 	}
+	defer structs.ZeroBytes(respBytes)
 
 	// Try to unmarshal as AS-REP
 	var asRep messages.ASRep

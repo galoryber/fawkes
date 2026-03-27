@@ -21,8 +21,10 @@ import (
 
 type SSHAgentCommand struct{}
 
-func (c *SSHAgentCommand) Name() string        { return "ssh-agent" }
-func (c *SSHAgentCommand) Description() string { return "Enumerate SSH agent sockets and list loaded keys (T1552.004)" }
+func (c *SSHAgentCommand) Name() string { return "ssh-agent" }
+func (c *SSHAgentCommand) Description() string {
+	return "Enumerate SSH agent sockets and list loaded keys (T1552.004)"
+}
 
 type sshAgentArgs struct {
 	Action string `json:"action"` // "list" (default), "enum"

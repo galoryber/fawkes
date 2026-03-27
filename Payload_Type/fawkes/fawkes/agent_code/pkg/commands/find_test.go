@@ -142,8 +142,8 @@ func TestFindFormatFileSize(t *testing.T) {
 
 func TestFindMinSize(t *testing.T) {
 	tmp := t.TempDir()
-	os.WriteFile(filepath.Join(tmp, "small.txt"), []byte("x"), 0644)           // 1 byte
-	os.WriteFile(filepath.Join(tmp, "big.txt"), make([]byte, 1024), 0644)      // 1 KB
+	os.WriteFile(filepath.Join(tmp, "small.txt"), []byte("x"), 0644)      // 1 byte
+	os.WriteFile(filepath.Join(tmp, "big.txt"), make([]byte, 1024), 0644) // 1 KB
 
 	cmd := &FindCommand{}
 	task := structs.NewTask("t", "find", "")
@@ -162,8 +162,8 @@ func TestFindMinSize(t *testing.T) {
 
 func TestFindMaxSize(t *testing.T) {
 	tmp := t.TempDir()
-	os.WriteFile(filepath.Join(tmp, "small.txt"), []byte("x"), 0644)           // 1 byte
-	os.WriteFile(filepath.Join(tmp, "big.txt"), make([]byte, 2048), 0644)      // 2 KB
+	os.WriteFile(filepath.Join(tmp, "small.txt"), []byte("x"), 0644)      // 1 byte
+	os.WriteFile(filepath.Join(tmp, "big.txt"), make([]byte, 2048), 0644) // 2 KB
 
 	cmd := &FindCommand{}
 	task := structs.NewTask("t", "find", "")
@@ -350,5 +350,276 @@ func TestFindFilterSummaryNoFilters(t *testing.T) {
 	summary := findFilterSummary(params)
 	if summary != "" {
 		t.Errorf("should return empty string when no filters active, got %q", summary)
+	}
+}
+
+// --- Permission filter tests ---
+
+func TestFindParsePerm_Empty(t *testing.T) {
+	f := findParsePerm("")
+	if f.set {
+		t.Error("empty perm should not be set")
+	}
+}
+
+func TestFindParsePerm_Suid(t *testing.T) {
+	f := findParsePerm("suid")
+	if !f.set {
+		t.Fatal("suid should be set")
+	}
+	if f.specialBit != os.ModeSetuid {
+		t.Errorf("specialBit = %v, want ModeSetuid", f.specialBit)
+	}
+}
+
+func TestFindParsePerm_Sgid(t *testing.T) {
+	f := findParsePerm("sgid")
+	if !f.set || f.specialBit != os.ModeSetgid {
+		t.Errorf("expected SGID filter, got set=%v specialBit=%v", f.set, f.specialBit)
+	}
+}
+
+func TestFindParsePerm_Writable(t *testing.T) {
+	f := findParsePerm("writable")
+	if !f.set || f.permBits != 0002 {
+		t.Errorf("expected writable filter (0002), got set=%v permBits=%04o", f.set, f.permBits)
+	}
+}
+
+func TestFindParsePerm_Executable(t *testing.T) {
+	f := findParsePerm("executable")
+	if !f.set || f.permBits != 0111 {
+		t.Errorf("expected executable filter (0111), got set=%v permBits=%04o", f.set, f.permBits)
+	}
+}
+
+func TestFindParsePerm_OctalSuid(t *testing.T) {
+	f := findParsePerm("4000")
+	if !f.set {
+		t.Fatal("4000 should be set")
+	}
+	if f.specialBit&os.ModeSetuid == 0 {
+		t.Error("4000 should set SUID special bit")
+	}
+}
+
+func TestFindParsePerm_OctalSgid(t *testing.T) {
+	f := findParsePerm("2000")
+	if !f.set {
+		t.Fatal("2000 should be set")
+	}
+	if f.specialBit&os.ModeSetgid == 0 {
+		t.Error("2000 should set SGID special bit")
+	}
+}
+
+func TestFindParsePerm_OctalSuidSgid(t *testing.T) {
+	f := findParsePerm("6755")
+	if !f.set {
+		t.Fatal("6755 should be set")
+	}
+	if f.specialBit&os.ModeSetuid == 0 {
+		t.Error("6xxx should set SUID special bit")
+	}
+	if f.specialBit&os.ModeSetgid == 0 {
+		t.Error("x2xx should set SGID special bit")
+	}
+}
+
+func TestFindParsePerm_OctalWorldWritable(t *testing.T) {
+	f := findParsePerm("0002")
+	if !f.set {
+		t.Fatal("0002 should be set")
+	}
+	if f.permBits&0002 == 0 {
+		t.Error("0002 should set world-writable bit")
+	}
+}
+
+func TestFindParsePerm_Invalid(t *testing.T) {
+	f := findParsePerm("invalid")
+	if f.set {
+		t.Error("invalid perm should not be set")
+	}
+}
+
+func TestFindParsePerm_CaseInsensitive(t *testing.T) {
+	f := findParsePerm("SUID")
+	if !f.set {
+		t.Error("SUID (uppercase) should be recognized")
+	}
+}
+
+func TestFindMatchPerm_Executable(t *testing.T) {
+	f := findParsePerm("executable")
+	if !findMatchPerm(0755, f) {
+		t.Error("0755 should match executable filter")
+	}
+	if findMatchPerm(0644, f) {
+		t.Error("0644 should not match executable filter")
+	}
+}
+
+func TestFindMatchPerm_WorldWritable(t *testing.T) {
+	f := findParsePerm("writable")
+	if !findMatchPerm(0666, f) {
+		t.Error("0666 should match writable filter")
+	}
+	if findMatchPerm(0644, f) {
+		t.Error("0644 should not match writable filter")
+	}
+	if !findMatchPerm(0777, f) {
+		t.Error("0777 should match writable filter")
+	}
+}
+
+func TestFindMatchPerm_Suid(t *testing.T) {
+	f := findParsePerm("suid")
+	if !findMatchPerm(os.ModeSetuid|0755, f) {
+		t.Error("SUID|0755 should match suid filter")
+	}
+	if findMatchPerm(0755, f) {
+		t.Error("plain 0755 should not match suid filter")
+	}
+}
+
+func TestFindMatchPerm_NoFilter(t *testing.T) {
+	f := findPermFilter{} // not set
+	if !findMatchPerm(0644, f) {
+		t.Error("no filter should match everything")
+	}
+}
+
+// --- Owner filter tests ---
+
+func TestFindResolveOwner_NumericUID(t *testing.T) {
+	uid := findResolveOwner("0")
+	if uid != 0 {
+		t.Errorf("expected 0 for root UID, got %d", uid)
+	}
+}
+
+func TestFindResolveOwner_Username(t *testing.T) {
+	uid := findResolveOwner("root")
+	if uid != 0 {
+		t.Errorf("expected 0 for root username, got %d", uid)
+	}
+}
+
+func TestFindResolveOwner_Invalid(t *testing.T) {
+	uid := findResolveOwner("nonexistent_user_xyz_12345")
+	if uid != -1 {
+		t.Errorf("expected -1 for nonexistent user, got %d", uid)
+	}
+}
+
+func TestFindResolveOwner_LargeUID(t *testing.T) {
+	uid := findResolveOwner("65534")
+	if uid != 65534 {
+		t.Errorf("expected 65534 for nobody UID, got %d", uid)
+	}
+}
+
+// --- Integration tests with perm and owner filters ---
+
+func TestFindWithPermExecutable(t *testing.T) {
+	tmp := t.TempDir()
+	execFile := filepath.Join(tmp, "run.sh")
+	os.WriteFile(execFile, []byte("#!/bin/sh"), 0755)
+	noExecFile := filepath.Join(tmp, "data.txt")
+	os.WriteFile(noExecFile, []byte("data"), 0644)
+
+	cmd := &FindCommand{}
+	task := structs.NewTask("t", "find", "")
+	task.Params = fmt.Sprintf(`{"path":"%s","perm":"executable"}`, tmp)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "run.sh") {
+		t.Error("executable file should be found")
+	}
+	if strings.Contains(result.Output, "data.txt") {
+		t.Error("non-executable file should be filtered out")
+	}
+}
+
+func TestFindWithPermWritable(t *testing.T) {
+	tmp := t.TempDir()
+	writableFile := filepath.Join(tmp, "public.txt")
+	os.WriteFile(writableFile, []byte("open"), 0644)
+	os.Chmod(writableFile, 0666) // explicitly set after creation to bypass umask
+	privateFile := filepath.Join(tmp, "private.txt")
+	os.WriteFile(privateFile, []byte("closed"), 0600)
+
+	cmd := &FindCommand{}
+	task := structs.NewTask("t", "find", "")
+	task.Params = fmt.Sprintf(`{"path":"%s","perm":"writable"}`, tmp)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "public.txt") {
+		t.Error("world-writable file should be found")
+	}
+	if strings.Contains(result.Output, "private.txt") {
+		t.Error("non-world-writable file should be filtered out")
+	}
+}
+
+func TestFindWithOwnerFilter(t *testing.T) {
+	tmp := t.TempDir()
+	os.WriteFile(filepath.Join(tmp, "myfile.txt"), []byte("x"), 0644)
+
+	// Filter for current user — should find the file
+	currentUID := fmt.Sprintf("%d", os.Getuid())
+	cmd := &FindCommand{}
+	task := structs.NewTask("t", "find", "")
+	task.Params = fmt.Sprintf(`{"path":"%s","pattern":"*.txt","owner":"%s"}`, tmp, currentUID)
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "myfile.txt") {
+		t.Error("file owned by current user should be found")
+	}
+
+	// Filter for root — should NOT find the file (unless running as root)
+	if os.Getuid() != 0 {
+		task2 := structs.NewTask("t", "find", "")
+		task2.Params = fmt.Sprintf(`{"path":"%s","pattern":"*.txt","owner":"root"}`, tmp)
+		result2 := cmd.Execute(task2)
+		if strings.Contains(result2.Output, "myfile.txt") {
+			t.Error("file not owned by root should be filtered out")
+		}
+	}
+}
+
+func TestFindDefaultPatternWithPermFilter(t *testing.T) {
+	tmp := t.TempDir()
+	os.WriteFile(filepath.Join(tmp, "test.sh"), []byte("#!/bin/sh"), 0755)
+
+	cmd := &FindCommand{}
+	task := structs.NewTask("t", "find", "")
+	task.Params = fmt.Sprintf(`{"path":"%s","perm":"executable"}`, tmp)
+	result := cmd.Execute(task)
+	if result.Status == "error" && strings.Contains(result.Output, "pattern is required") {
+		t.Error("perm filter alone should not require explicit pattern")
+	}
+}
+
+func TestFindFilterSummaryWithPerm(t *testing.T) {
+	params := FindParams{MaxDepth: 10, Perm: "suid"}
+	summary := findFilterSummary(params)
+	if !strings.Contains(summary, "perm=suid") {
+		t.Errorf("summary should include perm, got %q", summary)
+	}
+}
+
+func TestFindFilterSummaryWithOwner(t *testing.T) {
+	params := FindParams{MaxDepth: 10, Owner: "root"}
+	summary := findFilterSummary(params)
+	if !strings.Contains(summary, "owner=root") {
+		t.Errorf("summary should include owner, got %q", summary)
 	}
 }

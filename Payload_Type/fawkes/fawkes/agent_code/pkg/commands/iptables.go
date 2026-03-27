@@ -70,6 +70,7 @@ func iptablesStatus() structs.CommandResult {
 			sb.WriteString(" (disabled)")
 		}
 		sb.WriteString("\n")
+		structs.ZeroBytes(v4)
 	}
 	if v6, err := os.ReadFile("/proc/sys/net/ipv6/conf/all/forwarding"); err == nil {
 		sb.WriteString(fmt.Sprintf("  IPv6: %s", strings.TrimSpace(string(v6))))
@@ -79,6 +80,7 @@ func iptablesStatus() structs.CommandResult {
 			sb.WriteString(" (disabled)")
 		}
 		sb.WriteString("\n")
+		structs.ZeroBytes(v6)
 	}
 
 	// iptables tables
@@ -89,6 +91,7 @@ func iptablesStatus() structs.CommandResult {
 				sb.WriteString(fmt.Sprintf("  - %s\n", t))
 			}
 		}
+		structs.ZeroBytes(tables)
 	} else {
 		sb.WriteString("  (not available — iptables may not be loaded)\n")
 	}
@@ -122,9 +125,11 @@ func iptablesStatus() structs.CommandResult {
 	sb.WriteString("\nConnection Tracking:\n")
 	if count, err := os.ReadFile("/proc/sys/net/netfilter/nf_conntrack_count"); err == nil {
 		sb.WriteString(fmt.Sprintf("  Active connections: %s\n", strings.TrimSpace(string(count))))
+		structs.ZeroBytes(count)
 	}
 	if max, err := os.ReadFile("/proc/sys/net/netfilter/nf_conntrack_max"); err == nil {
 		sb.WriteString(fmt.Sprintf("  Max connections:    %s\n", strings.TrimSpace(string(max))))
+		structs.ZeroBytes(max)
 	}
 
 	return successResult(sb.String())
