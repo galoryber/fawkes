@@ -1,9 +1,12 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -91,6 +94,43 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			var output struct {
+				Identity  string `json:"identity"`
+				Integrity string `json:"integrity"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &output); err != nil {
+				return response
+			}
+			update := mythicrpc.MythicRPCCallbackUpdateMessage{
+				AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+			}
+			hasUpdate := false
+			if output.Integrity != "" {
+				level := parseIntegrityLevel(output.Integrity)
+				if level >= 0 {
+					update.IntegrityLevel = &level
+					hasUpdate = true
+				}
+			}
+			if output.Identity != "" {
+				update.User = &output.Identity
+				hasUpdate = true
+			}
+			if hasUpdate {
+				if _, err := mythicrpc.SendMythicRPCCallbackUpdate(update); err != nil {
+					logging.LogError(err, "Failed to update callback metadata from getprivs")
+				}
+			}
+			return response
+		},
 	})
 }

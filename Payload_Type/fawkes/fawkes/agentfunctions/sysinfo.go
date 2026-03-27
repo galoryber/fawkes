@@ -1,7 +1,12 @@
 package agentfunctions
 
 import (
+	"strconv"
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -16,6 +21,58 @@ func init() {
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			update := mythicrpc.MythicRPCCallbackUpdateMessage{
+				AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+			}
+			hasUpdate := false
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if val := extractField(trimmed, "Hostname:"); val != "" {
+					update.Host = &val
+					hasUpdate = true
+				} else if val := extractField(trimmed, "OS:"); val != "" {
+					update.Os = &val
+					hasUpdate = true
+				} else if val := extractField(trimmed, "Architecture:"); val != "" {
+					update.Architecture = &val
+					hasUpdate = true
+				} else if val := extractField(trimmed, "PID:"); val != "" {
+					if pid, err := strconv.Atoi(val); err == nil {
+						update.PID = &pid
+						hasUpdate = true
+					}
+				} else if val := extractField(trimmed, "Domain:"); val != "" {
+					if !strings.Contains(val, "not domain-joined") {
+						update.Domain = &val
+						hasUpdate = true
+					}
+				} else if val := extractField(trimmed, "FQDN:"); val != "" {
+					update.Host = &val
+					hasUpdate = true
+				} else if val := extractField(trimmed, "Elevated:"); val != "" {
+					if strings.EqualFold(val, "true") {
+						level := 3 // High
+						update.IntegrityLevel = &level
+						hasUpdate = true
+					}
+				}
+			}
+			if hasUpdate {
+				if _, err := mythicrpc.SendMythicRPCCallbackUpdate(update); err != nil {
+					logging.LogError(err, "Failed to update callback metadata from sysinfo")
+				}
+			}
+			return response
+		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			return agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -23,4 +80,12 @@ func init() {
 			}
 		},
 	})
+}
+
+// extractField extracts the value after a "Key:" prefix from a trimmed line.
+func extractField(line, prefix string) string {
+	if strings.HasPrefix(line, prefix) {
+		return strings.TrimSpace(strings.TrimPrefix(line, prefix))
+	}
+	return ""
 }
