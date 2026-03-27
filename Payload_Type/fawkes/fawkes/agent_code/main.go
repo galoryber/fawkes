@@ -612,12 +612,13 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 
 	// Send final response
 	response := structs.Response{
-		TaskID:      task.ID,
-		UserOutput:  result.Output,
-		Status:      result.Status,
-		Completed:   result.Completed,
-		Processes:   result.Processes,
-		Credentials: result.Credentials,
+		TaskID:          task.ID,
+		UserOutput:      result.Output,
+		Status:          result.Status,
+		Completed:       result.Completed,
+		Processes:       result.Processes,
+		Credentials:     result.Credentials,
+		ProcessResponse: result.Output,
 	}
 	if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
 		log.Printf("send error: %v", err)
