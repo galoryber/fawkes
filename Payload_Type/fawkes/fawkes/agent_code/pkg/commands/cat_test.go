@@ -371,3 +371,41 @@ func TestCatReadLinesDirectory(t *testing.T) {
 		t.Errorf("expected 'is a directory' message, got: %s", result.Output)
 	}
 }
+
+func TestCatReadLinesTruncation(t *testing.T) {
+	// Create a file large enough to exceed a small maxBytes limit
+	tmpDir := t.TempDir()
+	f := filepath.Join(tmpDir, "big.txt")
+	var content strings.Builder
+	for i := 0; i < 200; i++ {
+		content.WriteString(fmt.Sprintf("line %d: some content that takes up space\n", i))
+	}
+	os.WriteFile(f, []byte(content.String()), 0644)
+
+	// Use a very small maxBytes to trigger truncation
+	result := catReadLines(catParams{Path: f}, 100)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "truncated") {
+		t.Errorf("expected truncation message in output: %s", result.Output)
+	}
+}
+
+func TestCatReadLinesStartFromLine(t *testing.T) {
+	tmpDir := t.TempDir()
+	f := filepath.Join(tmpDir, "lines.txt")
+	os.WriteFile(f, []byte("line1\nline2\nline3\nline4\nline5\n"), 0644)
+
+	// Start from line 3 with no end — header should say "from line 3"
+	result := catReadLines(catParams{Path: f, Start: 3}, maxCatBytes)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "from line 3") {
+		t.Errorf("expected 'from line 3' header, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "3 lines shown") {
+		t.Errorf("expected '3 lines shown' in header, got: %s", result.Output)
+	}
+}

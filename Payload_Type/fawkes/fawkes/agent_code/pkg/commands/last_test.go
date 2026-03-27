@@ -135,6 +135,17 @@ func TestLastUnknownActionErrorMessage(t *testing.T) {
 	}
 }
 
+func TestLastInvalidJSON(t *testing.T) {
+	cmd := &LastCommand{}
+	result := cmd.Execute(structs.Task{Params: "not valid json"})
+	if result.Status != "error" {
+		t.Errorf("expected error for invalid JSON, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "Invalid parameters") {
+		t.Errorf("expected 'Invalid parameters' in output, got: %s", result.Output)
+	}
+}
+
 func TestLastLoginEntryJSON(t *testing.T) {
 	entry := lastLoginEntry{
 		User:      "gary",

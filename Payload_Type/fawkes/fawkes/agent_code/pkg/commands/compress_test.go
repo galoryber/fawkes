@@ -592,3 +592,29 @@ func TestCompressExtractNonexistentZip(t *testing.T) {
 		t.Errorf("expected error for nonexistent zip, got: %s", result.Output)
 	}
 }
+
+func TestCompressListEmptyZip(t *testing.T) {
+	// Create an empty zip (no files) — triggers ratio=0 branch
+	tmpDir := t.TempDir()
+	zipPath := filepath.Join(tmpDir, "empty.zip")
+
+	zipFile, _ := os.Create(zipPath)
+	w := zip.NewWriter(zipFile)
+	w.Close()
+	zipFile.Close()
+
+	cmd := &CompressCommand{}
+	params := CompressParams{Action: "list", Path: zipPath}
+	data, _ := json.Marshal(params)
+	result := cmd.Execute(structs.Task{Params: string(data)})
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "0 files") {
+		t.Errorf("expected '0 files' summary, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Ratio: 0.0%") {
+		t.Errorf("expected 'Ratio: 0.0%%' for empty zip, got: %s", result.Output)
+	}
+}

@@ -311,3 +311,34 @@ func TestServiceDescriptionIncludesCreateDelete(t *testing.T) {
 		t.Error("description should mention delete")
 	}
 }
+
+func TestServiceQueryNotFound(t *testing.T) {
+	// Query a service that doesn't exist — triggers "not-found" LoadState branch
+	result := serviceQueryLinux(serviceArgs{Name: "nonexistent_fawkes_test_service_12345"})
+	if result.Status != "error" {
+		// If systemctl isn't available, query may fail differently
+		return
+	}
+	if !strings.Contains(result.Output, "not found") {
+		t.Errorf("expected 'not found' in output, got: %s", result.Output)
+	}
+}
+
+func TestServiceQueryMissingName(t *testing.T) {
+	result := serviceQueryLinux(serviceArgs{Name: ""})
+	if result.Status != "error" {
+		t.Error("expected error for empty name")
+	}
+}
+
+func TestServiceQueryAppendsSuffix(t *testing.T) {
+	// Query with .service suffix already present — should not double-append
+	result := serviceQueryLinux(serviceArgs{Name: "nonexistent_fawkes_test_12345.service"})
+	if result.Status != "error" {
+		return
+	}
+	// Should still report not found, not a suffix error
+	if !strings.Contains(result.Output, "not found") && !strings.Contains(result.Output, "Error querying") {
+		t.Errorf("unexpected error output: %s", result.Output)
+	}
+}

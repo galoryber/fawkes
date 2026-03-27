@@ -350,6 +350,28 @@ func TestCredCheckParseLDAPBindResponseEdgeCases(t *testing.T) {
 			t.Errorf("expected -1, got %d", got)
 		}
 	})
+
+	// Zero-length resultCode (rcLen == 0)
+	// Data must be >= 10 bytes (initial length check), with valid structure
+	// up to the ENUMERATED tag but rcLen=0
+	t.Run("zero length resultCode", func(t *testing.T) {
+		// SEQ(len=8) INT(len=1,val=1) APP1(len=2) ENUM(len=0) + padding
+		data := []byte{0x30, 0x08, 0x02, 0x01, 0x01, 0x61, 0x02, 0x0a, 0x00, 0x00}
+		got := credCheckParseLDAPBindResponse(data)
+		if got != -1 {
+			t.Errorf("expected -1 for zero-length resultCode, got %d", got)
+		}
+	})
+
+	// Truncated resultCode value (rcLen > remaining data)
+	t.Run("truncated resultCode value", func(t *testing.T) {
+		// SEQ(len=8) INT(len=1,val=1) APP1(len=3) ENUM(len=5) — only 1 byte left
+		data := []byte{0x30, 0x08, 0x02, 0x01, 0x01, 0x61, 0x03, 0x0a, 0x05, 0x00}
+		got := credCheckParseLDAPBindResponse(data)
+		if got != -1 {
+			t.Errorf("expected -1 for truncated resultCode, got %d", got)
+		}
+	})
 }
 
 func TestCredCheckBERDecodeLengthEdgeCases(t *testing.T) {
