@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "container-detect",
+		Name: "container-detect",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "containerdetect_new.js"),
+			Author:     "@GlobeTech",
+		},
 		Description:         "Detect container runtime and environment type (Docker, K8s, LXC, Podman, WSL). Checks for escape vectors like mounted Docker sockets and K8s service accounts.",
 		HelpString:          "container-detect",
 		Version:             1,

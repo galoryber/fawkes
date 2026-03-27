@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "security-info",
+		Name: "security-info",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "securityinfo_new.js"),
+			Author:     "@GlobeTech",
+		},
 		Description:         "Report security posture and active controls. Linux: SELinux, AppArmor, seccomp, ASLR, YAMA, LSM, BPF. macOS: SIP, Gatekeeper, FileVault, MDM, TCC, SSH, JAMF, ARD. Windows: Defender, Credential Guard, UAC, BitLocker, CLM.",
 		HelpString:          "security-info",
 		Version:             2,

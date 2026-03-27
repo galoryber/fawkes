@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "debug-detect",
+		Name: "debug-detect",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "debugdetect_new.js"),
+			Author:     "@GlobeTech",
+		},
 		Description:         "Detect attached debuggers, analysis tools, and instrumentation. Windows: IsDebuggerPresent, NtQueryInformationProcess, PEB, DR registers. Linux: TracerPid, LD_PRELOAD, memory maps (Frida/Valgrind/sanitizers), process status, VM/sandbox detection. macOS: P_TRACED, DYLD_INSERT_LIBRARIES, VM detection (sysctl), security products (EDR/AV LaunchDaemons), sandbox/analysis environment. All: known debugger process scan.",
 		HelpString:          "debug-detect",
 		Version:             3,

@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "vm-detect",
+		Name: "vm-detect",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "vmdetect_new.js"),
+			Author:     "@GlobeTech",
+		},
 		Description:         "Detect virtual machine and hypervisor environment. Checks MAC addresses, DMI info, VM tools, CPUID flags, and known VM file paths.",
 		HelpString:          "vm-detect",
 		Version:             1,
