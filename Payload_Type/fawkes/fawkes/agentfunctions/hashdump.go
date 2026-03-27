@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
@@ -38,6 +40,42 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return nil
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			hostname := processResponse.TaskData.Callback.Host
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			for _, line := range strings.Split(responseText, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" {
+					continue
+				}
+				// Format: username:rid:lm_hash:nt_hash:::
+				parts := strings.SplitN(line, ":", 8)
+				if len(parts) < 4 {
+					continue
+				}
+				username := parts[0]
+				if username == "" {
+					continue
+				}
+				creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+					CredentialType: "hash",
+					Realm:          hostname,
+					Account:        username,
+					Credential:     strings.TrimRight(line, "\n"),
+					Comment:        "hashdump (SAM)",
+				})
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

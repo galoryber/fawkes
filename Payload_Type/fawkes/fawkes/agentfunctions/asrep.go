@@ -1,10 +1,12 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -121,6 +123,41 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			var entries []struct {
+				Account string `json:"account"`
+				Etype   string `json:"etype"`
+				Hash    string `json:"hash"`
+				Status  string `json:"status"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
+				return response
+			}
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			realm := processResponse.TaskData.Callback.Host
+			for _, e := range entries {
+				if e.Status != "roasted" || e.Hash == "" {
+					continue
+				}
+				creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+					CredentialType: "hash",
+					Realm:          realm,
+					Account:        e.Account,
+					Credential:     e.Hash,
+					Comment:        fmt.Sprintf("asrep-roast (%s)", e.Etype),
+				})
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

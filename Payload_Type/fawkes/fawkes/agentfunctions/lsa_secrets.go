@@ -2,8 +2,10 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -43,6 +45,109 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			hostname := processResponse.TaskData.Callback.Host
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+
+			// Detect cached domain credentials (DCC2 format)
+			if strings.Contains(responseText, "Cached Domain Credentials") {
+				lines := strings.Split(responseText, "\n")
+				for i := 0; i < len(lines); i++ {
+					trimmed := strings.TrimSpace(lines[i])
+					// [+] DOMAIN\username
+					if strings.HasPrefix(trimmed, "[+] ") && strings.Contains(trimmed, "\\") {
+						identity := strings.TrimPrefix(trimmed, "[+] ")
+						parts := strings.SplitN(identity, "\\", 2)
+						domain := ""
+						account := identity
+						if len(parts) == 2 {
+							domain = parts[0]
+							account = parts[1]
+						}
+						// Next indented line is the hashcat hash
+						if i+1 < len(lines) {
+							hashLine := strings.TrimSpace(lines[i+1])
+							if hashLine != "" {
+								creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+									CredentialType: "hash",
+									Realm:          domain,
+									Account:        account,
+									Credential:     hashLine,
+									Comment:        "lsa-secrets (DCC2/MSCacheV2)",
+								})
+							}
+						}
+					}
+				}
+			}
+
+			// Detect dump mode secrets
+			if strings.Contains(responseText, "LSA Secrets") {
+				lines := strings.Split(responseText, "\n")
+				for i := 0; i < len(lines); i++ {
+					trimmed := strings.TrimSpace(lines[i])
+					// [+] _SC_servicename: or [+] DefaultPassword: or [+] DPAPI_SYSTEM:
+					if !strings.HasPrefix(trimmed, "[+] ") {
+						continue
+					}
+					nameAndColon := strings.TrimPrefix(trimmed, "[+] ")
+					name := strings.TrimSuffix(nameAndColon, ":")
+					if name == nameAndColon {
+						continue
+					}
+					// Collect the value from subsequent indented lines
+					var valueParts []string
+					for j := i + 1; j < len(lines); j++ {
+						nextLine := lines[j]
+						if strings.HasPrefix(nextLine, "  ") || strings.HasPrefix(nextLine, "\t") {
+							valueParts = append(valueParts, strings.TrimSpace(nextLine))
+						} else {
+							break
+						}
+					}
+					value := strings.Join(valueParts, "\n")
+					if value == "" {
+						continue
+					}
+					if strings.HasPrefix(name, "_SC_") {
+						creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+							CredentialType: "plaintext",
+							Realm:          hostname,
+							Account:        strings.TrimPrefix(name, "_SC_"),
+							Credential:     value,
+							Comment:        "lsa-secrets (service account)",
+						})
+					} else if name == "DefaultPassword" {
+						creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+							CredentialType: "plaintext",
+							Realm:          hostname,
+							Account:        "DefaultPassword",
+							Credential:     value,
+							Comment:        "lsa-secrets (auto-logon)",
+						})
+					} else if name == "DPAPI_SYSTEM" {
+						creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+							CredentialType: "key",
+							Realm:          hostname,
+							Account:        "DPAPI_SYSTEM",
+							Credential:     value,
+							Comment:        "lsa-secrets (DPAPI user:machine keys)",
+						})
+					}
+				}
+			}
+
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

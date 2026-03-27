@@ -1,7 +1,11 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -56,6 +60,56 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			var currentSocket string
+			// Parse: Socket: /path (source) — N key(s)\n  [1] type SHA256:fp (bits) — comment
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "Socket:") {
+					parts := strings.Fields(trimmed)
+					if len(parts) >= 2 {
+						currentSocket = parts[1]
+					}
+					continue
+				}
+				// Key lines: [N] type SHA256:fingerprint (bits) — comment
+				if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "SHA256:") {
+					parts := strings.SplitN(trimmed, "] ", 2)
+					if len(parts) < 2 {
+						continue
+					}
+					keyInfo := parts[1]
+					fields := strings.Fields(keyInfo)
+					if len(fields) < 2 {
+						continue
+					}
+					keyType := fields[0]
+					fingerprint := fields[1]
+					comment := ""
+					if idx := strings.Index(keyInfo, "— "); idx >= 0 {
+						comment = keyInfo[idx+len("— "):]
+					}
+					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+						CredentialType: "key",
+						Realm:          "ssh-agent",
+						Account:        comment,
+						Credential:     fmt.Sprintf("type=%s fingerprint=%s socket=%s", keyType, fingerprint, currentSocket),
+						Comment:        fmt.Sprintf("ssh-agent: %s key from %s", keyType, currentSocket),
+					})
+				}
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -109,6 +110,74 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			domain := processResponse.TaskData.Callback.Host
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			var currentAccount string
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				// Extract account name: [+] username (RID: 500)
+				if strings.HasPrefix(trimmed, "[+] ") && strings.Contains(trimmed, "(RID:") {
+					parts := strings.SplitN(trimmed[4:], " (RID:", 2)
+					if len(parts) >= 1 {
+						currentAccount = strings.TrimSpace(parts[0])
+					}
+					continue
+				}
+				if currentAccount == "" {
+					continue
+				}
+				// Hash:   username:rid:lm:nt:::
+				if strings.HasPrefix(trimmed, "Hash:") {
+					hashPart := strings.TrimSpace(strings.TrimPrefix(trimmed, "Hash:"))
+					if hashPart != "" {
+						creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+							CredentialType: "hash",
+							Realm:          domain,
+							Account:        currentAccount,
+							Credential:     hashPart,
+							Comment:        "dcsync (DRSGetNCChanges)",
+						})
+					}
+				}
+				// AES256: <hex>
+				if strings.HasPrefix(trimmed, "AES256:") {
+					key := strings.TrimSpace(strings.TrimPrefix(trimmed, "AES256:"))
+					if key != "" && !isAllZeros(key) {
+						creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+							CredentialType: "key",
+							Realm:          domain,
+							Account:        currentAccount,
+							Credential:     key,
+							Comment:        "dcsync AES-256 key",
+						})
+					}
+				}
+				// AES128: <hex>
+				if strings.HasPrefix(trimmed, "AES128:") {
+					key := strings.TrimSpace(strings.TrimPrefix(trimmed, "AES128:"))
+					if key != "" && !isAllZeros(key) {
+						creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+							CredentialType: "key",
+							Realm:          domain,
+							Account:        currentAccount,
+							Credential:     key,
+							Comment:        "dcsync AES-128 key",
+						})
+					}
+				}
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

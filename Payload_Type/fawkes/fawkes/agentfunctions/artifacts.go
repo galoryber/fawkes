@@ -18,3 +18,28 @@ func createArtifact(taskID int, baseArtifact string, message string) {
 		logging.LogError(err, "Failed to create artifact", "task_id", taskID, "type", baseArtifact)
 	}
 }
+
+// isAllZeros returns true if the string consists entirely of '0' characters.
+func isAllZeros(s string) bool {
+	for _, c := range s {
+		if c != '0' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+// registerCredentials sends extracted credentials to Mythic's credential vault.
+// Used by ProcessResponse hooks to register credentials discovered during command execution.
+func registerCredentials(taskID int, creds []mythicrpc.MythicRPCCredentialCreateCredentialData) {
+	if len(creds) == 0 {
+		return
+	}
+	_, err := mythicrpc.SendMythicRPCCredentialCreate(mythicrpc.MythicRPCCredentialCreateMessage{
+		TaskID:      taskID,
+		Credentials: creds,
+	})
+	if err != nil {
+		logging.LogError(err, "Failed to register credentials in vault", "task_id", taskID, "count", len(creds))
+	}
+}
