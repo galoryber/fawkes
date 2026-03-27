@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "secret-scan",
+		Name: "secret-scan",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "secret_scan_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Search files for secrets, API keys, private keys, and sensitive patterns (T1552.001, T1005)",
 		HelpString:          "secret-scan [-path /home/user] [-depth 5] [-max_results 100]",
 		Version:             2,

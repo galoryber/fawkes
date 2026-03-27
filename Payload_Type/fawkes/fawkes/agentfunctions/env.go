@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "env",
+		Name: "env",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "env_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "List, get, set, or unset environment variables for the agent process",
 		HelpString:          "env [-action <list|get|set|unset>] [-name <VAR>] [-value <val>] [-filter <pattern>]",
 		Version:             2,

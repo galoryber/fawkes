@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -10,7 +11,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "lsa-secrets",
+		Name: "lsa-secrets",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "lsa_secrets_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Extract LSA secrets (service passwords, DPAPI keys, machine account) and cached domain credentials (DCC2) from the SECURITY hive. Requires SYSTEM privileges.",
 		HelpString:          "lsa-secrets -action <dump|cached>",
 		Version:             1,

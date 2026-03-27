@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "dns",
+		Name: "dns",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "dns_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "DNS enumeration — resolve hosts, query record types (A, MX, NS, SRV, TXT, CNAME), reverse lookups, and discover domain controllers via SRV records.",
 		HelpString:          "dns -action resolve -target example.com\ndns -action dc -target corp.local\ndns -action srv -target _ldap._tcp.corp.local\ndns -action all -target corp.local",
 		Version:             1,
