@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "ping",
+		Name: "ping",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ping_new.js"),
+			Author:     "@GlobeTech",
+		},
 		Description:         "TCP connect host reachability check with subnet sweep. Probes specified port to determine if hosts are alive. Supports CIDR, dash ranges, and comma-separated lists.",
 		HelpString:          "ping -hosts 192.168.1.1\nping -hosts 192.168.1.0/24 -port 445 -timeout 1000 -threads 25\nping -hosts 10.0.0.1-50 -port 22\nping -hosts dc01,dc02,web01 -port 389",
 		Version:             1,
