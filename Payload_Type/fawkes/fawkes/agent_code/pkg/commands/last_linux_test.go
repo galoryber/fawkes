@@ -146,3 +146,59 @@ func TestLastFailedFromAuthLogNoFiles(t *testing.T) {
 		t.Errorf("expected 0 entries for nonexistent user, got %d", len(entries))
 	}
 }
+
+func TestLastRebootPlatformNoError(t *testing.T) {
+	// /var/log/wtmp may or may not exist; verify no panic
+	args := lastArgs{Count: 10}
+	entries := lastRebootPlatform(args)
+	// entries may be nil (no wtmp) or have entries — both are fine
+	_ = entries
+}
+
+func TestLastRebootPlatformCountLimit(t *testing.T) {
+	args := lastArgs{Count: 2}
+	entries := lastRebootPlatform(args)
+	if len(entries) > 2 {
+		t.Errorf("expected at most 2 entries, got %d", len(entries))
+	}
+}
+
+func TestLastRebootPlatformSyntheticWtmp(t *testing.T) {
+	// Build a synthetic wtmp with a BOOT_TIME record (ut_type=2) at offset 0
+	// Record size is 384 bytes for x86_64
+	const recSize = 384
+	const utBootTime = 2
+
+	data := make([]byte, recSize)
+	// ut_type at offset 0 (4 bytes, LE)
+	data[0] = utBootTime
+	data[1] = 0
+	data[2] = 0
+	data[3] = 0
+
+	// ut_line at offset 8 (32 bytes) — "~" for reboot
+	data[8] = '~'
+
+	// ut_user at offset 44 (32 bytes) — "reboot"
+	copy(data[44:], "reboot")
+
+	// ut_tv.tv_sec at offset 340 (4 bytes, LE) — 1700000000 (2023-11-14)
+	data[340] = 0x00
+	data[341] = 0x27
+	data[342] = 0x6b
+	data[343] = 0x65
+
+	// Verify our synthetic record is detected correctly
+	size := detectRecordSize(data)
+	if size != 384 {
+		t.Fatalf("expected record size 384, got %d", size)
+	}
+}
+
+func TestLastFromAuthLogEntries(t *testing.T) {
+	args := lastArgs{Count: 5, User: "nonexistentuser12345"}
+	entries := lastFromAuthLogEntries(args)
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries for nonexistent user, got %d", len(entries))
+	}
+}

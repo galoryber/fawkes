@@ -14,11 +14,11 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "last_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Show login history and failed login attempts. Linux: parses wtmp/btmp/auth.log. Windows: queries Security event log (4624/4625). macOS: uses last command.",
-		HelpString:          "last\nlast -action logins -count 50\nlast -action failed -user admin\nlogins: login history (default)\nfailed: failed login attempts (Linux: btmp, Windows: Event 4625)",
-		Version:             2,
+		Description:         "Show login history, failed login attempts, and system reboot events. Linux: parses wtmp/btmp/auth.log. Windows: queries Security/System event logs. macOS: uses last command + unified log.",
+		HelpString:          "last\nlast -action logins -count 50\nlast -action failed -user admin\nlast -action reboot\nlogins: login history (default)\nfailed: failed login attempts\nreboot: system boot/shutdown/crash events",
+		Version:             3,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1087.001", "T1110"},
+		MitreAttackMappings: []string{"T1087.001", "T1110", "T1082"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -31,9 +31,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "logins: login history (default). failed: failed login attempts (Linux: /var/log/btmp, Windows: Event 4625).",
+				Description:      "logins: login history (default). failed: failed login attempts. reboot: system boot/shutdown/crash events.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"logins", "failed"},
+				Choices:          []string{"logins", "failed", "reboot"},
 				DefaultValue:     "logins",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 0},
@@ -86,9 +86,13 @@ func init() {
 				response.DisplayParams = &dp
 			}
 
-			if action == "failed" {
+			switch action {
+			case "failed":
 				createArtifact(taskData.Task.ID, "File Read", "/var/log/btmp")
-			} else {
+			case "reboot":
+				createArtifact(taskData.Task.ID, "File Read", "/var/log/wtmp")
+				createArtifact(taskData.Task.ID, "Event Log Query", "System:6005,6006,6008,1074")
+			default:
 				createArtifact(taskData.Task.ID, "File Read", "/var/log/wtmp")
 			}
 

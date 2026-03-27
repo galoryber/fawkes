@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"fawkes/pkg/structs"
@@ -79,11 +80,58 @@ func TestLastLoginsAction(t *testing.T) {
 	}
 }
 
+func TestLastRebootAction(t *testing.T) {
+	cmd := &LastCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action": "reboot"}`})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	var entries []lastLoginEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Errorf("expected valid JSON output: %v (got: %s)", err, result.Output)
+	}
+}
+
+func TestLastRebootActionUpperCase(t *testing.T) {
+	cmd := &LastCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action": "REBOOT"}`})
+	if result.Status != "success" {
+		t.Fatalf("expected success for uppercase action, got %s: %s", result.Status, result.Output)
+	}
+}
+
+func TestLastRebootWithCount(t *testing.T) {
+	params, _ := json.Marshal(lastArgs{Action: "reboot", Count: 3})
+	cmd := &LastCommand{}
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %s: %s", result.Status, result.Output)
+	}
+	var entries []lastLoginEntry
+	if err := json.Unmarshal([]byte(result.Output), &entries); err != nil {
+		t.Fatalf("JSON parse error: %v", err)
+	}
+	if len(entries) > 3 {
+		t.Errorf("expected at most 3 entries, got %d", len(entries))
+	}
+}
+
 func TestLastUnknownAction(t *testing.T) {
 	cmd := &LastCommand{}
 	result := cmd.Execute(structs.Task{Params: `{"action": "invalid"}`})
 	if result.Status != "error" {
 		t.Errorf("expected error for unknown action, got %s", result.Status)
+	}
+}
+
+func TestLastUnknownActionErrorMessage(t *testing.T) {
+	cmd := &LastCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action": "bogus"}`})
+	if result.Status != "error" {
+		t.Errorf("expected error for unknown action, got %s", result.Status)
+	}
+	if !strings.Contains(result.Output, "reboot") {
+		t.Errorf("error message should mention reboot action: %s", result.Output)
 	}
 }
 

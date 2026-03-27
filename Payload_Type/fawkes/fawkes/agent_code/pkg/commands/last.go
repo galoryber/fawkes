@@ -11,11 +11,11 @@ type LastCommand struct{}
 
 func (c *LastCommand) Name() string { return "last" }
 func (c *LastCommand) Description() string {
-	return "Show login history and failed login attempts"
+	return "Show login history, failed login attempts, and system reboot events"
 }
 
 type lastArgs struct {
-	Action string `json:"action"` // logins (default), failed
+	Action string `json:"action"` // logins (default), failed, reboot
 	Count  int    `json:"count"`  // Number of entries to show (default: 25)
 	User   string `json:"user"`   // Filter by username
 }
@@ -52,8 +52,10 @@ func (c *LastCommand) Execute(task structs.Task) structs.CommandResult {
 		entries = lastPlatform(args)
 	case "failed":
 		entries = lastFailedPlatform(args)
+	case "reboot":
+		entries = lastRebootPlatform(args)
 	default:
-		return errorf("Unknown action: %s. Use: logins, failed", args.Action)
+		return errorf("Unknown action: %s. Use: logins, failed, reboot", args.Action)
 	}
 
 	if len(entries) == 0 {
