@@ -420,25 +420,36 @@ func (d *DiscordProfile) GetTasking(agent *structs.Agent, outboundSocks []struct
 	// Parse the decrypted response
 	var taskResponse map[string]interface{}
 	if err := json.Unmarshal(decryptedData, &taskResponse); err != nil {
+		fmt.Fprintf(os.Stderr, "[discord] GetTasking: json parse error: %v data=%s\n", err, string(decryptedData[:min(200, len(decryptedData))]))
 		return []structs.Task{}, nil, nil
 	}
 
 	// Extract tasks
 	var tasks []structs.Task
 	if taskList, exists := taskResponse["tasks"]; exists {
+		fmt.Fprintf(os.Stderr, "[discord] GetTasking: found 'tasks' key, type=%T\n", taskList)
 		if taskArray, ok := taskList.([]interface{}); ok {
+			fmt.Fprintf(os.Stderr, "[discord] GetTasking: %d tasks in array\n", len(taskArray))
 			for _, taskData := range taskArray {
 				if taskMap, ok := taskData.(map[string]interface{}); ok {
-					task := structs.NewTask(
-						getString(taskMap, "id"),
-						getString(taskMap, "command"),
-						getString(taskMap, "parameters"),
-					)
+					tid := getString(taskMap, "id")
+					tcmd := getString(taskMap, "command")
+					tparams := getString(taskMap, "parameters")
+					fmt.Fprintf(os.Stderr, "[discord] GetTasking: task id=%s cmd=%s\n", tid, tcmd)
+					task := structs.NewTask(tid, tcmd, tparams)
 					tasks = append(tasks, task)
 				}
 			}
 		}
+	} else {
+		keys := make([]string, 0)
+		for k := range taskResponse {
+			keys = append(keys, k)
+		}
+		fmt.Fprintf(os.Stderr, "[discord] GetTasking: no 'tasks' key, response keys=%v\n", keys)
 	}
+
+	fmt.Fprintf(os.Stderr, "[discord] GetTasking: returning %d tasks\n", len(tasks))
 
 	// Extract SOCKS messages
 	var inboundSocks []structs.SocksMsg
