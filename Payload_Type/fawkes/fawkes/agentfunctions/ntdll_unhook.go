@@ -52,7 +52,17 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:  taskData.Task.ID,
+				Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage: "OPSEC WARNING: Unhooking ntdll.dll by remapping from disk. " +
+					"This removes EDR/AV userland hooks but the act of reading ntdll.dll from disk " +
+					"and remapping the .text section may itself be detected by kernel-level monitoring.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

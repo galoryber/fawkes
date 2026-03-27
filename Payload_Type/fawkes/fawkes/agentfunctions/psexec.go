@@ -93,7 +93,18 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			host, _ := taskData.Args.GetStringArg("host")
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:  taskData.Task.ID,
+				Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: PsExec creates a service on remote host %s. "+
+					"Artifacts: SCM connection (Event 7045), service creation, cmd.exe child process. "+
+					"Heavy footprint — consider WMI or WinRM for stealthier lateral movement.", host),
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

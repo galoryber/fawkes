@@ -46,6 +46,25 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: "
+			switch action {
+			case "cached":
+				msg += "Extracting cached domain credentials (DCC2/MSCacheV2) from SECURITY hive. " +
+					"Requires SYSTEM privileges. Reads HKLM\\SECURITY registry — may trigger EDR alerts."
+			default:
+				msg += "Extracting LSA secrets (service passwords, DPAPI keys, machine account) from SECURITY hive. " +
+					"Requires SYSTEM privileges. Accesses HKLM\\SECURITY and HKLM\\SYSTEM — high detection risk."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
 			response := agentstructs.PTTaskProcessResponseMessageResponse{
 				TaskID:  processResponse.TaskData.Task.ID,

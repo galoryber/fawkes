@@ -115,6 +115,18 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			pid, _ := taskData.Args.GetNumberArg("pid")
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:  taskData.Task.ID,
+				Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: APC injection into PID %d. "+
+					"Queues shellcode via NtQueueApcThread — requires alertable thread in target. "+
+					"Less common than CreateRemoteThread but still monitored by advanced EDR.", int(pid)),
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
