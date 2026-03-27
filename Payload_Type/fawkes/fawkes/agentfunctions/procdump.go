@@ -67,6 +67,25 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC AUDIT: Process dump "
+			if action == "lsass" || action == "" {
+				msg += "(lsass) configured. MiniDumpWriteDump artifacts will be created."
+			} else if action == "dump" {
+				pid, _ := taskData.Args.GetNumberArg("pid")
+				msg += fmt.Sprintf("(PID %d) configured. MiniDumpWriteDump artifacts will be created.", int(pid))
+			} else {
+				msg += "search configured. Process enumeration will occur."
+			}
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
