@@ -98,7 +98,33 @@ func init() {
 				},
 			},
 		},
-		TaskFunctionOPSECPre: nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			name, _ := taskData.Args.GetStringArg("name")
+			msg := fmt.Sprintf("OPSEC WARNING: Service operation (%s", action)
+			if name != "" {
+				msg += fmt.Sprintf(", name: %s", name)
+			}
+			msg += "). "
+			switch action {
+			case "create":
+				msg += "Creates a Windows service — generates Event ID 7045 (System) and 4697 (Security). " +
+					"Service creation is a classic persistence/lateral movement indicator."
+			case "start", "stop":
+				msg += "Starting/stopping a service — generates Event ID 7036. May impact system stability."
+			case "delete":
+				msg += "Deletes a Windows service — cleanup operation."
+			default:
+				msg += "Querying service state — low detection risk."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

@@ -51,7 +51,18 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			technique, _ := taskData.Args.GetStringArg("technique")
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:  taskData.Task.ID,
+				Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: UAC bypass via %s technique. "+
+					"Exploits auto-elevation to gain High integrity from Medium integrity context. "+
+					"May trigger Defender/EDR alerts for suspicious process creation or registry manipulation.", technique),
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

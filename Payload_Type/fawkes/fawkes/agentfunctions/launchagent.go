@@ -121,7 +121,31 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			label, _ := taskData.Args.GetStringArg("label")
+			msg := fmt.Sprintf("OPSEC WARNING: macOS LaunchAgent/LaunchDaemon operation (%s", action)
+			if label != "" {
+				msg += fmt.Sprintf(", label: %s", label)
+			}
+			msg += "). "
+			switch action {
+			case "install":
+				msg += "Creates a plist in ~/Library/LaunchAgents or /Library/LaunchDaemons. " +
+					"Detectable by macOS endpoint agents monitoring plist creation and launchctl events."
+			case "remove":
+				msg += "Removes a LaunchAgent/LaunchDaemon — cleanup operation."
+			default:
+				msg += "Querying launch items — low detection risk."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

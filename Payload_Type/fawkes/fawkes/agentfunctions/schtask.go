@@ -155,7 +155,31 @@ func init() {
 				},
 			},
 		},
-		TaskFunctionOPSECPre: nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			name, _ := taskData.Args.GetStringArg("name")
+			msg := fmt.Sprintf("OPSEC WARNING: Scheduled task operation (%s", action)
+			if name != "" {
+				msg += fmt.Sprintf(", name: %s", name)
+			}
+			msg += "). "
+			switch action {
+			case "create":
+				msg += "Creates a scheduled task — generates Event ID 4698 (Security) and 106 (TaskScheduler). " +
+					"Detectable via autoruns, task scheduler monitoring, and SIEM rules."
+			case "delete":
+				msg += "Deletes a scheduled task — generates Event ID 4699. Cleanup operation."
+			default:
+				msg += "Querying scheduled tasks — low detection risk."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
