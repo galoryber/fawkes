@@ -99,6 +99,46 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			name, _ := taskData.Args.GetStringArg("name")
+			msg := fmt.Sprintf("OPSEC WARNING: systemd persistence operation (%s", action)
+			if name != "" {
+				msg += fmt.Sprintf(", name: %s", name)
+			}
+			msg += "). "
+			switch action {
+			case "install":
+				msg += "Creates a systemd service unit file. Detectable by monitoring systemd unit creation and systemctl events."
+			case "remove":
+				msg += "Removes a systemd service — cleanup operation."
+			default:
+				msg += "Enumerating systemd services — low detection risk."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			name, _ := taskData.Args.GetStringArg("name")
+			msg := fmt.Sprintf("OPSEC AUDIT: systemd-persist %s", action)
+			if name != "" {
+				msg += fmt.Sprintf(" (name: %s)", name)
+			}
+			msg += " configured. Unit file artifacts will be created."
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
