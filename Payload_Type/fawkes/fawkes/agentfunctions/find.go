@@ -247,17 +247,16 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			if !strings.Contains(responseText, "Found") || !strings.Contains(responseText, "match") {
-				return response
-			}
 
 			host := processResponse.TaskData.Callback.Host
 
 			// Each result line format: "%-12s %-16s %s" = "<size>  <date>  <path>"
+			// Parse each line independently (response may be chunked across calls)
 			lines := strings.Split(responseText, "\n")
 			for _, line := range lines {
 				line = strings.TrimSpace(line)
-				if line == "" || strings.HasPrefix(line, "Found ") || strings.HasPrefix(line, "(results") || strings.Contains(line, "inaccessible") {
+				if line == "" || strings.HasPrefix(line, "Found ") || strings.HasPrefix(line, "No files") ||
+					strings.HasPrefix(line, "(results") || strings.Contains(line, "inaccessible") {
 					continue
 				}
 
@@ -266,19 +265,29 @@ func init() {
 					continue
 				}
 
-				// Path is the last field (absolute path with no spaces in the format)
-				filePath := parts[len(parts)-1]
-				isDir := parts[0] == "<DIR>"
-
-				// Parse modification time from YYYY-MM-DD HH:MM pattern
-				var modTime uint64
+				// Find date field (YYYY-MM-DD pattern) to locate the path
+				dateIdx := -1
 				for i := 0; i < len(parts)-1; i++ {
 					if len(parts[i]) == 10 && parts[i][4] == '-' && parts[i][7] == '-' {
-						if t, err := time.Parse("2006-01-02 15:04", parts[i]+" "+parts[i+1]); err == nil {
-							modTime = uint64(t.Unix())
-						}
+						dateIdx = i
 						break
 					}
+				}
+				if dateIdx < 0 || dateIdx+2 > len(parts) {
+					continue
+				}
+
+				// Path is everything after date+time (handles paths with spaces)
+				filePath := strings.Join(parts[dateIdx+2:], " ")
+				if filePath == "" || (!strings.HasPrefix(filePath, "/") && (len(filePath) < 3 || filePath[1] != ':')) {
+					continue // skip non-absolute paths
+				}
+
+				isDir := parts[0] == "<DIR>"
+
+				var modTime uint64
+				if t, err := time.Parse("2006-01-02 15:04", parts[dateIdx]+" "+parts[dateIdx+1]); err == nil {
+					modTime = uint64(t.Unix())
 				}
 
 				parentDir := filepath.Dir(filePath)
