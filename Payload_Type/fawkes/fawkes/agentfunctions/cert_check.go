@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "cert-check",
+		Name: "cert-check",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "certcheck_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Inspect TLS certificates on remote hosts. Identifies certificate authorities, self-signed certs, expiry, SANs, and TLS version. Useful for service discovery and identifying internal PKI.",
 		HelpString:          "cert-check -host example.com\ncert-check -host 192.168.1.1 -port 8443\ncert-check -host intranet.corp.local -port 443 -timeout 5",
 		Version:             1,
