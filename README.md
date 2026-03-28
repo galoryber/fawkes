@@ -475,6 +475,16 @@ This helps operators understand detection risk and choose appropriate opsec opti
 
 The HTTP profile calls back to the Mythic server over the basic, non-dynamic profile. This is the default egress profile — the agent polls Mythic for tasking over HTTP/HTTPS.
 
+**Malleable features:**
+
+- **URI randomization:** `get_uri` and `post_uri` support tokens that are resolved per-request:
+  - `{rand:N}` — N random hex characters (e.g., `/api/{rand:8}` → `/api/a3f82b1c`)
+  - `{int:M-N}` — random integer in range (e.g., `/v{int:1-3}/status` → `/v2/status`)
+- **Content-Type cycling:** Set the `content_types` build parameter to a comma-separated list (e.g., `application/json,text/plain,application/x-www-form-urlencoded`). The agent cycles through them round-robin. Default: `application/x-www-form-urlencoded`.
+- **TLS fingerprinting:** Spoof browser JA3 fingerprints (`chrome`, `firefox`, `safari`, `edge`, `random`).
+- **Domain fronting:** Set `host_header` to override the HTTP Host header.
+- **Automatic failover:** Configure `fallback_hosts` for resilient C2.
+
 ### TCP P2P Profile
 
 The TCP profile enables peer-to-peer (P2P) agent linking for internal pivoting. A TCP child agent listens on a port and waits for a parent agent to connect via the `link` command. All tasking and responses are routed through the parent's egress channel (HTTP), so the child never contacts Mythic directly.
