@@ -5,6 +5,9 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
+	"github.com/mitchellh/mapstructure"
 )
 
 func init() {
@@ -12,18 +15,22 @@ func init() {
 		Name:                "rm",
 		Description:         "Remove a file or directory (recursively removes directories)",
 		HelpString:          "rm <path>",
-		Version:             1,
+		Version:             2,
 		MitreAttackMappings: []string{"T1070.004"}, // Indicator Removal on Host: File Deletion
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"file_browser:remove"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			input = strings.TrimSpace(input)
-			// Try JSON first (e.g., {"path": "/tmp/test"} from API)
+			// Try JSON first (e.g., {"path": "/tmp/test"} or {"full_path": "..."} from file browser)
 			var jsonArgs map[string]interface{}
 			if err := json.Unmarshal([]byte(input), &jsonArgs); err == nil {
+				if fullPath, ok := jsonArgs["full_path"].(string); ok && fullPath != "" {
+					args.SetManualArgs(fullPath)
+					return nil
+				}
 				if path, ok := jsonArgs["path"].(string); ok {
 					args.SetManualArgs(path)
 					return nil
@@ -41,6 +48,12 @@ func init() {
 			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
+			// Check if this is from the file browser (has full_path field)
+			fileBrowserData := agentstructs.FileBrowserTask{}
+			if err := mapstructure.Decode(input, &fileBrowserData); err == nil && fileBrowserData.FullPath != "" {
+				args.SetManualArgs(fileBrowserData.FullPath)
+				return nil
+			}
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
@@ -51,6 +64,45 @@ func init() {
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil {
 				response.DisplayParams = &displayParams
 				createArtifact(task.Task.ID, "File Delete", displayParams)
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Update Mythic's file browser tree to reflect the deletion
+			if strings.Contains(responseText, "Successfully removed") {
+				path := strings.TrimSpace(processResponse.TaskData.Task.Params)
+				if path == "" {
+					return response
+				}
+				// Strip JSON wrapper if params came as JSON
+				var jsonParams map[string]interface{}
+				if err := json.Unmarshal([]byte(path), &jsonParams); err == nil {
+					if fp, ok := jsonParams["full_path"].(string); ok && fp != "" {
+						path = fp
+					} else if p, ok := jsonParams["path"].(string); ok && p != "" {
+						path = p
+					}
+				}
+				host := processResponse.TaskData.Callback.Host
+				if _, err := mythicrpc.SendMythicRPCFileBrowserRemove(mythicrpc.MythicRPCFileBrowserRemoveMessage{
+					TaskID: processResponse.TaskData.Task.ID,
+					RemovedFiles: []mythicrpc.MythicRPCFileBrowserRemoveFileBrowserData{
+						{
+							Host: &host,
+							Path: path,
+						},
+					},
+				}); err != nil {
+					logging.LogError(err, "Failed to update file browser after rm")
+				}
 			}
 			return response
 		},

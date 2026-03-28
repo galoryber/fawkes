@@ -2,9 +2,14 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
+	"time"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
+	"github.com/mitchellh/mapstructure"
 )
 
 func init() {
@@ -12,13 +17,17 @@ func init() {
 		Name:                "find",
 		Description:         "Search for files by name, size, date, permissions, or owner. Find SUID binaries, world-writable files, or files owned by specific users",
 		HelpString:          "find -path <dir> -pattern <glob> [-min_size <bytes>] [-max_size <bytes>] [-newer <minutes>] [-older <minutes>] [-type f|d] [-perm suid|sgid|writable|executable|<octal>] [-owner <user|uid>]",
-		Version:             3,
+		Version:             4,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1083"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
+		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "find.js"),
+			Author:     "@galoryber",
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -173,6 +182,16 @@ func init() {
 			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
+			// Check if this is from the file browser (has full_path field)
+			fileBrowserData := agentstructs.FileBrowserTask{}
+			if err := mapstructure.Decode(input, &fileBrowserData); err == nil && fileBrowserData.FullPath != "" {
+				args.AddArg(agentstructs.CommandParameter{
+					Name:          "path",
+					ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+					DefaultValue:  fileBrowserData.FullPath,
+				})
+				return nil
+			}
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
@@ -217,6 +236,68 @@ func init() {
 				display += " (" + strings.Join(filters, ", ") + ")"
 			}
 			response.DisplayParams = &display
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if !strings.Contains(responseText, "Found") || !strings.Contains(responseText, "match") {
+				return response
+			}
+
+			host := processResponse.TaskData.Callback.Host
+
+			// Each result line format: "%-12s %-16s %s" = "<size>  <date>  <path>"
+			lines := strings.Split(responseText, "\n")
+			for _, line := range lines {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "Found ") || strings.HasPrefix(line, "(results") || strings.Contains(line, "inaccessible") {
+					continue
+				}
+
+				parts := strings.Fields(line)
+				if len(parts) < 3 {
+					continue
+				}
+
+				// Path is the last field (absolute path with no spaces in the format)
+				filePath := parts[len(parts)-1]
+				isDir := parts[0] == "<DIR>"
+
+				// Parse modification time from YYYY-MM-DD HH:MM pattern
+				var modTime uint64
+				for i := 0; i < len(parts)-1; i++ {
+					if len(parts[i]) == 10 && parts[i][4] == '-' && parts[i][7] == '-' {
+						if t, err := time.Parse("2006-01-02 15:04", parts[i]+" "+parts[i+1]); err == nil {
+							modTime = uint64(t.Unix())
+						}
+						break
+					}
+				}
+
+				parentDir := filepath.Dir(filePath)
+				baseName := filepath.Base(filePath)
+
+				if _, err := mythicrpc.SendMythicRPCFileBrowserCreate(mythicrpc.MythicRPCFileBrowserCreateMessage{
+					TaskID: processResponse.TaskData.Task.ID,
+					FileBrowser: mythicrpc.MythicRPCFileBrowserCreateFileBrowserData{
+						Host:       host,
+						IsFile:     !isDir,
+						Name:       baseName,
+						ParentPath: parentDir,
+						Success:    true,
+						ModifyTime: modTime,
+					},
+				}); err != nil {
+					logging.LogError(err, "Failed to create file browser entry", "path", filePath)
+				}
+			}
 			return response
 		},
 	})

@@ -1,9 +1,12 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/mitchellh/mapstructure"
 )
 
 func init() {
@@ -11,7 +14,7 @@ func init() {
 		Name:                "cat",
 		Description:         "Display file contents with optional line range, numbering, and size protection",
 		HelpString:          "cat [path] — read file | cat -path file -start 10 -end 20 — line range | cat -path file -number true — with line numbers",
-		Version:             2,
+		Version:             3,
 		MitreAttackMappings: []string{"T1005"}, // Data from Local System
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -90,13 +93,39 @@ func init() {
 			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			if err := args.LoadArgsFromJSONString(input); err != nil {
-				// Plain text — treat as file path
-				args.SetManualArgs(input)
+			input = strings.TrimSpace(input)
+			// Try JSON first — supports {"path": "..."} and {"full_path": "..."} from file browser
+			var jsonArgs map[string]interface{}
+			if err := json.Unmarshal([]byte(input), &jsonArgs); err == nil {
+				// File browser format
+				if fullPath, ok := jsonArgs["full_path"].(string); ok && fullPath != "" {
+					args.AddArg(agentstructs.CommandParameter{
+						Name:          "path",
+						ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+						DefaultValue:  fullPath,
+					})
+					return nil
+				}
+				// Standard JSON parameters
+				if err := args.LoadArgsFromJSONString(input); err == nil {
+					return nil
+				}
 			}
+			// Plain text — treat as file path
+			args.SetManualArgs(input)
 			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
+			// Check if this is from the file browser (has full_path field)
+			fileBrowserData := agentstructs.FileBrowserTask{}
+			if err := mapstructure.Decode(input, &fileBrowserData); err == nil && fileBrowserData.FullPath != "" {
+				args.AddArg(agentstructs.CommandParameter{
+					Name:          "path",
+					ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+					DefaultValue:  fileBrowserData.FullPath,
+				})
+				return nil
+			}
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {

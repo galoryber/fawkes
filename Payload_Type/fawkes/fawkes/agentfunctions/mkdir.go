@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/mitchellh/mapstructure"
 )
 
 func init() {
@@ -12,7 +13,7 @@ func init() {
 		Name:                "mkdir",
 		Description:         "Create a new directory (creates parent directories if needed)",
 		HelpString:          "mkdir <directory>",
-		Version:             1,
+		Version:             2,
 		MitreAttackMappings: []string{"T1106"}, // Native API
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -21,9 +22,13 @@ func init() {
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			input = strings.TrimSpace(input)
-			// Try JSON first (e.g., {"path": "/tmp/test"} from API)
+			// Try JSON first (e.g., {"path": "/tmp/test"} or {"full_path": "..."} from file browser)
 			var jsonArgs map[string]interface{}
 			if err := json.Unmarshal([]byte(input), &jsonArgs); err == nil {
+				if fullPath, ok := jsonArgs["full_path"].(string); ok && fullPath != "" {
+					args.SetManualArgs(fullPath)
+					return nil
+				}
 				if path, ok := jsonArgs["path"].(string); ok {
 					args.SetManualArgs(path)
 					return nil
@@ -41,6 +46,12 @@ func init() {
 			return nil
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
+			// Check if this is from the file browser (has full_path field)
+			fileBrowserData := agentstructs.FileBrowserTask{}
+			if err := mapstructure.Decode(input, &fileBrowserData); err == nil && fileBrowserData.FullPath != "" {
+				args.SetManualArgs(fileBrowserData.FullPath)
+				return nil
+			}
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
