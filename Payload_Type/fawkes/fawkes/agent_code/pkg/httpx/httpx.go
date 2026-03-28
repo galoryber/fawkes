@@ -96,8 +96,7 @@ type HTTPXProfile struct {
 	// Domain rotation state
 	activeDomainIdx atomic.Int32
 	failCount       atomic.Int32
-	uriGetIdx       atomic.Uint32
-	uriPostIdx      atomic.Uint32
+	uriIdx          atomic.Uint32
 
 	// Config vault
 	vault *configVault
@@ -795,7 +794,7 @@ func (h *HTTPXProfile) selectURI(verbCfg *VerbConfig) string {
 	// Use verb-appropriate counter based on whether this is get or post config.
 	// Since we don't know which verb config this is, use a shared counter per direction.
 	// The caller context (Get vs Post) determines which counter is used.
-	idx := h.uriGetIdx.Add(1) - 1
+	idx := h.uriIdx.Add(1) - 1
 	return uris[int(idx)%len(uris)]
 }
 
