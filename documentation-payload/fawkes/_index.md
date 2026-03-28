@@ -25,4 +25,7 @@ Fawkes is a Golang-based Mythic C2 agent with cross-platform support (Windows, L
 
 ## Table of Contents
 
+- [Commands](/agents/fawkes/commands/) — 210+ agent commands across all platforms
+- [C2 Profiles](/agents/fawkes/c2-profiles/) — HTTP, TCP P2P, and Discord communication profiles
+
 {{% children %}}
