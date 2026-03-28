@@ -267,7 +267,6 @@ func runAgent() {
 			pollChecks,
 			pollDelay,
 			debugBool,
-			userAgent,
 			proxyURL,
 		)
 		c2 = profiles.NewDiscordProfile(discordProfile)

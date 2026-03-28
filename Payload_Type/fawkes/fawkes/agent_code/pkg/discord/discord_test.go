@@ -15,7 +15,7 @@ import (
 )
 
 func TestNewDiscordProfile(t *testing.T) {
-	p := NewDiscordProfile("token", "12345", "enckey", 10, 5, 3, 2, true, "test-ua", "")
+	p := NewDiscordProfile("token", "12345", "enckey", 10, 5, 3, 2, true, "")
 	if p.BotToken != "token" {
 		t.Errorf("BotToken = %q, want %q", p.BotToken, "token")
 	}
@@ -34,7 +34,7 @@ func TestNewDiscordProfile(t *testing.T) {
 }
 
 func TestNewDiscordProfileDefaults(t *testing.T) {
-	p := NewDiscordProfile("token", "12345", "", 10, 5, 0, 0, false, "", "")
+	p := NewDiscordProfile("token", "12345", "", 10, 5, 0, 0, false, "")
 	if p.MaxRetries != defaultPollChecks {
 		t.Errorf("MaxRetries = %d, want %d", p.MaxRetries, defaultPollChecks)
 	}
@@ -44,14 +44,14 @@ func TestNewDiscordProfileDefaults(t *testing.T) {
 }
 
 func TestNewDiscordProfileProxy(t *testing.T) {
-	p := NewDiscordProfile("token", "12345", "", 10, 5, 3, 2, false, "", "http://proxy:8080")
+	p := NewDiscordProfile("token", "12345", "", 10, 5, 3, 2, false, "http://proxy:8080")
 	if p.ProxyURL != "http://proxy:8080" {
 		t.Errorf("ProxyURL = %q, want %q", p.ProxyURL, "http://proxy:8080")
 	}
 }
 
 func TestSealConfigAndGetConfig(t *testing.T) {
-	p := NewDiscordProfile("mytoken", "chan123", "enckey", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("mytoken", "chan123", "enckey", 10, 5, 3, 2, false, "")
 	if err := p.SealConfig(); err != nil {
 		t.Fatalf("SealConfig failed: %v", err)
 	}
@@ -84,7 +84,7 @@ func TestSealConfigAndGetConfig(t *testing.T) {
 }
 
 func TestGetConfigWithoutVault(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "ek", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "ek", 10, 5, 3, 2, false, "")
 	cfg := p.getConfig()
 	if cfg.BotToken != "tok" {
 		t.Errorf("BotToken = %q, want %q", cfg.BotToken, "tok")
@@ -92,7 +92,7 @@ func TestGetConfigWithoutVault(t *testing.T) {
 }
 
 func TestUpdateCallbackUUID(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 
 	// Without vault
 	p.UpdateCallbackUUID("uuid-123")
@@ -101,7 +101,7 @@ func TestUpdateCallbackUUID(t *testing.T) {
 	}
 
 	// With vault
-	p2 := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p2 := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 	if err := p2.SealConfig(); err != nil {
 		t.Fatalf("SealConfig failed: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestUpdateCallbackUUID(t *testing.T) {
 }
 
 func TestGetActiveUUID(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 
 	agent := &structs.Agent{PayloadUUID: "payload-uuid"}
 
@@ -139,7 +139,7 @@ func TestGetActiveUUID(t *testing.T) {
 }
 
 func TestNextClientID(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 	id1 := p.nextClientID()
 	id2 := p.nextClientID()
 	if id1 == id2 {
@@ -248,7 +248,7 @@ func TestPkcs7Pad(t *testing.T) {
 }
 
 func TestBuildMythicMessage(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 	uuid := "01234567-0123-0123-0123-012345678901"
 
 	// No encryption
@@ -271,7 +271,7 @@ func TestBuildMythicMessage(t *testing.T) {
 }
 
 func TestBuildMythicMessageEncrypted(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 	uuid := "01234567-0123-0123-0123-012345678901"
 	key := base64.StdEncoding.EncodeToString(make([]byte, 32))
 
@@ -288,7 +288,7 @@ func TestBuildMythicMessageEncrypted(t *testing.T) {
 }
 
 func TestUnwrapResponseNoEncryption(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 	uuid := "01234567-0123-0123-0123-012345678901"
 	payload := []byte("response-data")
 	b64 := base64.StdEncoding.EncodeToString(append([]byte(uuid), payload...))
@@ -332,7 +332,7 @@ func TestMythicMessageWrapper(t *testing.T) {
 }
 
 func TestParseDiscordMessage(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 
 	wrapper := MythicMessageWrapper{
 		Message:  "test-message",
@@ -364,7 +364,7 @@ func TestParseDiscordMessage(t *testing.T) {
 }
 
 func TestParseDiscordMessageDoubleEscaped(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 
 	wrapper := MythicMessageWrapper{
 		Message:  "test-msg",
@@ -393,7 +393,7 @@ func TestParseDiscordMessageDoubleEscaped(t *testing.T) {
 }
 
 func TestParseDiscordMessageEmpty(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 
 	msg := discordMessage{ID: "789", Content: ""}
 	_, err := p.parseDiscordMessage(msg, &sensitiveConfig{})
@@ -403,7 +403,7 @@ func TestParseDiscordMessageEmpty(t *testing.T) {
 }
 
 func TestParseDiscordMessageInvalidJSON(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 
 	msg := discordMessage{ID: "101", Content: "not json at all"}
 	_, err := p.parseDiscordMessage(msg, &sensitiveConfig{})
@@ -413,7 +413,7 @@ func TestParseDiscordMessageInvalidJSON(t *testing.T) {
 }
 
 func TestParseDiscordMessageWithAttachment(t *testing.T) {
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 
 	wrapper := MythicMessageWrapper{
 		Message:  "attachment-msg",
@@ -457,7 +457,7 @@ func TestSendTextMessageHeaders(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewDiscordProfile("mytoken", "99999", "", 10, 5, 3, 2, false, "test-ua", "")
+	p := NewDiscordProfile("mytoken", "99999", "", 10, 5, 3, 2, false, "")
 	req, _ := http.NewRequest("POST", srv.URL+"/channels/99999/messages", strings.NewReader(`{"content":"test"}`))
 	req.Header.Set("Authorization", "Bot mytoken")
 	req.Header.Set("Content-Type", "application/json")
@@ -492,7 +492,7 @@ func TestDoWithRateLimit(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 
 	req, _ := http.NewRequest("GET", srv.URL, nil)
 	resp, err := p.doWithRateLimit(req)
@@ -516,7 +516,7 @@ func TestDoWithRateLimitExhausted(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 
 	req, _ := http.NewRequest("GET", srv.URL, nil)
 	_, err := p.doWithRateLimit(req)
@@ -615,7 +615,7 @@ func TestGetMessages(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewDiscordProfile("mytoken", "12345", "", 10, 5, 3, 2, false, "test-ua", "")
+	p := NewDiscordProfile("mytoken", "12345", "", 10, 5, 3, 2, false, "")
 	// Override the API base by constructing cfg with the test URL
 	cfg := &sensitiveConfig{BotToken: "mytoken", ChannelID: "12345"}
 
@@ -698,7 +698,7 @@ func TestDownloadAttachment(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "test-ua", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 	content, err := p.downloadAttachment(srv.URL+"/file.bin", &sensitiveConfig{})
 	if err != nil {
 		t.Fatalf("downloadAttachment failed: %v", err)
@@ -714,7 +714,7 @@ func TestDownloadAttachmentError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "", "")
+	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 	_, err := p.downloadAttachment(srv.URL+"/missing.bin", &sensitiveConfig{})
 	if err == nil {
 		t.Error("expected error for 404 response")

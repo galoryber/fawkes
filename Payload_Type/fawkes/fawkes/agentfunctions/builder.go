@@ -405,11 +405,6 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 				return payloadBuildResponse
 			}
 			ldflags += fmt.Sprintf(" -X '%s.postURI=%s'", fawkes_main_package, val)
-		} else if key == "user_agent" {
-			// Discord C2 profile: user agent string (String type, distinct from HTTP "headers" dict)
-			if val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key); err == nil && val != "" {
-				ldflags += fmt.Sprintf(" -X '%s.userAgent=%s'", fawkes_main_package, val)
-			}
 		} else if key == "discord_token" {
 			// Discord C2 profile: bot token
 			val, err := payloadBuildMsg.C2Profiles[0].GetStringArg(key)

