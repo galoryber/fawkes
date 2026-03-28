@@ -844,3 +844,155 @@ func TestNewDiscordProfileMessageFetchLimit(t *testing.T) {
 	// in the code directly since getMessages uses the discordAPIBase constant.
 	_ = cfg
 }
+
+func TestPendingMessageBuffer(t *testing.T) {
+	// Verify that pendingMessages starts empty and can be drained
+	p := NewDiscordProfile("tok", "ch", "", 10, 0, 1, 1, true, "")
+
+	// Initially empty
+	p.pendingMu.Lock()
+	if len(p.pendingMessages) != 0 {
+		t.Errorf("pendingMessages should start empty, got %d", len(p.pendingMessages))
+	}
+	p.pendingMu.Unlock()
+
+	// Add messages
+	p.pendingMu.Lock()
+	p.pendingMessages = append(p.pendingMessages, "msg1", "msg2", "msg3")
+	p.pendingMu.Unlock()
+
+	// Drain
+	p.pendingMu.Lock()
+	buffered := p.pendingMessages
+	p.pendingMessages = nil
+	p.pendingMu.Unlock()
+
+	if len(buffered) != 3 {
+		t.Errorf("expected 3 buffered messages, got %d", len(buffered))
+	}
+
+	// After drain, buffer should be empty
+	p.pendingMu.Lock()
+	if len(p.pendingMessages) != 0 {
+		t.Errorf("pendingMessages should be empty after drain, got %d", len(p.pendingMessages))
+	}
+	p.pendingMu.Unlock()
+}
+
+func TestPendingMessageBufferConcurrency(t *testing.T) {
+	// Verify buffer is safe for concurrent access
+	p := NewDiscordProfile("tok", "ch", "", 10, 0, 1, 1, false, "")
+
+	done := make(chan bool)
+
+	// Writer goroutine
+	go func() {
+		for i := 0; i < 100; i++ {
+			p.pendingMu.Lock()
+			p.pendingMessages = append(p.pendingMessages, fmt.Sprintf("msg%d", i))
+			p.pendingMu.Unlock()
+		}
+		done <- true
+	}()
+
+	// Reader goroutine
+	var totalDrained int
+	go func() {
+		for i := 0; i < 50; i++ {
+			p.pendingMu.Lock()
+			drained := p.pendingMessages
+			p.pendingMessages = nil
+			p.pendingMu.Unlock()
+			totalDrained += len(drained)
+		}
+		done <- true
+	}()
+
+	<-done
+	<-done
+
+	// Drain anything remaining
+	p.pendingMu.Lock()
+	remaining := len(p.pendingMessages)
+	p.pendingMu.Unlock()
+
+	// All 100 messages should be accounted for
+	if totalDrained+remaining != 100 {
+		t.Errorf("expected 100 total messages, got drained=%d remaining=%d", totalDrained, remaining)
+	}
+}
+
+func TestPostResponseIdentifiesPushedTasks(t *testing.T) {
+	// Verify that the PostResponse logic correctly distinguishes pushed tasks
+	// from PostResponse acks by checking for the "tasks" field.
+
+	// A pushed task message (has tasks array)
+	pushedTask := map[string]interface{}{
+		"action": "get_tasking",
+		"tasks": []interface{}{
+			map[string]interface{}{
+				"id":         "task-123",
+				"command":    "pwd",
+				"parameters": "",
+			},
+		},
+	}
+	pushedJSON, _ := json.Marshal(pushedTask)
+
+	// A PostResponse ack (no tasks)
+	postRespAck := map[string]interface{}{
+		"action": "post_response",
+		"responses": []interface{}{
+			map[string]interface{}{
+				"status": "success",
+			},
+		},
+	}
+	ackJSON, _ := json.Marshal(postRespAck)
+
+	// Test pushed task detection
+	var parsed map[string]interface{}
+	json.Unmarshal(pushedJSON, &parsed)
+	taskList, exists := parsed["tasks"]
+	if !exists {
+		t.Fatal("pushed task should have 'tasks' field")
+	}
+	taskArray, ok := taskList.([]interface{})
+	if !ok || len(taskArray) == 0 {
+		t.Fatal("pushed task should have non-empty tasks array")
+	}
+
+	// Test ack detection (no tasks) — fresh variable to avoid residual keys
+	parsed = map[string]interface{}{}
+	json.Unmarshal(ackJSON, &parsed)
+	taskList, exists = parsed["tasks"]
+	if exists {
+		if taskArray, ok := taskList.([]interface{}); ok && len(taskArray) > 0 {
+			t.Fatal("PostResponse ack should NOT have non-empty tasks array")
+		}
+	}
+}
+
+func TestPostResponseEmptyTasksIsNotPushedTask(t *testing.T) {
+	// Empty tasks array (from get_tasking response) should NOT be treated as
+	// a pushed task — only non-empty tasks arrays are pushed tasks.
+	emptyTasking := map[string]interface{}{
+		"action": "get_tasking",
+		"tasks":  []interface{}{},
+	}
+	data, _ := json.Marshal(emptyTasking)
+
+	var parsed map[string]interface{}
+	json.Unmarshal(data, &parsed)
+
+	isPushedTask := false
+	if taskList, exists := parsed["tasks"]; exists {
+		if taskArray, ok := taskList.([]interface{}); ok && len(taskArray) > 0 {
+			isPushedTask = true
+		}
+	}
+
+	if isPushedTask {
+		t.Error("empty tasks array should NOT be classified as pushed task")
+	}
+}
