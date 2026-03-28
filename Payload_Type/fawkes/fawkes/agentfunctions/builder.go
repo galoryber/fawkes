@@ -444,9 +444,23 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			}
 		} else if key == "raw_c2_config" {
 			// httpx C2 profile: agent config JSON file (transforms, URIs, headers, message placement)
-			if val, err := payloadBuildMsg.C2Profiles[0].GetFileArg(key); err == nil && val != "" {
+			// FILE type parameters pass a file UUID — download the content via MythicRPC
+			if fileID, err := payloadBuildMsg.C2Profiles[0].GetFileArg(key); err == nil && fileID != "" {
+				fileResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
+					AgentFileID: fileID,
+				})
+				if err != nil {
+					payloadBuildResponse.Success = false
+					payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to download raw_c2_config: %v", err)
+					return payloadBuildResponse
+				}
+				if !fileResp.Success {
+					payloadBuildResponse.Success = false
+					payloadBuildResponse.BuildStdErr = fmt.Sprintf("Failed to get raw_c2_config content: %s", fileResp.Error)
+					return payloadBuildResponse
+				}
 				// Base64-encode the JSON config for embedding as a linker variable
-				encoded := base64.StdEncoding.EncodeToString([]byte(val))
+				encoded := base64.StdEncoding.EncodeToString(fileResp.Content)
 				ldflags += fmt.Sprintf(" -X '%s.httpxConfig=%s'", fawkes_main_package, encoded)
 			}
 		} else if key == "callback_domains" {
