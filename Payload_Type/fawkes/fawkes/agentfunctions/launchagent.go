@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "launchagent",
+		Name: "launchagent",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "launchagent_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Install, remove, or list macOS LaunchAgent/LaunchDaemon persistence",
 		HelpString:          "launchagent -action <install|remove|list> -label <com.example.name> [-path <exe>] [-daemon true] [-interval <seconds>] [-run_at <HH:MM>]",
 		Version:             1,
@@ -120,7 +125,6 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
 			label, _ := taskData.Args.GetStringArg("label")

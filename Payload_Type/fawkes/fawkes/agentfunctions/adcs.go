@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "adcs",
+		Name: "adcs",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "adcs_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate AD Certificate Services (ADCS), find vulnerable templates (ESC1-ESC4, ESC6 via DCOM), and request certificates via DCOM.",
 		HelpString:          "adcs -action find -server 192.168.1.1 -username user@domain.local -password pass\nadcs -action cas -server dc01\nadcs -action templates -server dc01\nadcs -action request -server ca01 -ca_name CA-NAME -template User -username DOMAIN\\user -password pass [-alt_name admin@domain.local]",
 		Version:             1,
