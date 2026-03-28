@@ -258,6 +258,24 @@ For detailed variant descriptions, see [Injection Technique Details](research/in
 
 ## Build Options
 
+### DLL Export Methods
+
+When building in **shared** (DLL) or **windows-shellcode** mode, the `dll_exports` build parameter controls which DLL exports are included:
+
+| Setting | Exports | Use Case |
+|---------|---------|----------|
+| `standard` (default) | `Run`, `Fire`, `VoidFunc` | sRDI shellcode, rundll32, generic loaders |
+| `full` | Standard + `DllRegisterServer`, `DllUnregisterServer`, `ServiceMain`, `DllGetClassObject`, `DllCanUnloadNow` | regsvr32, svchost service, COM hijack |
+
+**Execution methods with full exports:**
+
+| Export | Execution | MITRE |
+|--------|-----------|-------|
+| `DllRegisterServer` | `regsvr32 /s fawkes.dll` | T1218.010 |
+| `DllUnregisterServer` | `regsvr32 /u /s fawkes.dll` | T1218.010 |
+| `ServiceMain` | svchost.exe DLL service (Windows only) | T1543.003 |
+| `DllGetClassObject` + `DllCanUnloadNow` | COM hijack InprocServer32 | T1546.015 |
+
 ### Binary Inflation
 
 Fawkes supports optional binary inflation at build time. This embeds a block of repeated bytes into the compiled agent, which can be used to increase file size or lower entropy scores.

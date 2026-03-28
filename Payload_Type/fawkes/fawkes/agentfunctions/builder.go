@@ -249,6 +249,14 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
 		{
+			Name:          "dll_exports",
+			Description:   "DLL export set (shared/shellcode mode only). 'standard' = Run, Fire, VoidFunc. 'full' adds DllRegisterServer (regsvr32 T1218.010), DllUnregisterServer, ServiceMain (svchost DLL service), DllGetClassObject + DllCanUnloadNow (COM hijack T1546.015).",
+			Required:      false,
+			DefaultValue:  "standard",
+			Choices:       []string{"standard", "full"},
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
+		},
+		{
 			Name:          "sleep_mask",
 			Description:   "Encrypt sensitive agent and C2 data in memory during sleep cycles. Uses AES-256-GCM with a random per-cycle key. Process memory dumps during sleep only reveal encrypted blobs — not C2 URLs, encryption keys, or UUIDs. C2 profile fields are only masked when no tasks are actively running.",
 			Required:      false,
@@ -723,6 +731,10 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		buildmodeflag = "c-shared"
 		tags += ",shared" // Add shared tag to include exports.go
 		command = strings.Replace(command, "CGO_ENABLED=0", "CGO_ENABLED=1", 1)
+		// Add extended DLL exports (regsvr32, ServiceMain, COM) when requested
+		if dllExports, err := payloadBuildMsg.BuildParameters.GetStringArg("dll_exports"); err == nil && dllExports == "full" {
+			tags += ",dllexports"
+		}
 	}
 	goCmd := fmt.Sprintf("-trimpath -tags %s -buildmode %s -ldflags \"%s\"", tags, buildmodeflag, ldflags)
 	if mode == "shared" || mode == "windows-shellcode" {
