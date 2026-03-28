@@ -237,7 +237,7 @@ func TestMakeRequest_IncludesSecChUa(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil)
+	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil, nil)
 
 	resp, err := profile.makeRequest("GET", "/test", nil, nil)
 	if err != nil {
@@ -268,7 +268,7 @@ func TestMakeRequest_IncludesUpgradeInsecureRequests(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil)
+	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil, nil)
 
 	resp, err := profile.makeRequest("GET", "/test", nil, nil)
 	if err != nil {
@@ -289,7 +289,7 @@ func TestMakeRequest_AcceptEncodingIncludesBrotli(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil)
+	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil, nil)
 
 	resp, err := profile.makeRequest("GET", "/test", nil, nil)
 	if err != nil {
@@ -311,7 +311,7 @@ func TestMakeRequest_AcceptHeaderModern(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil)
+	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil, nil)
 
 	resp, err := profile.makeRequest("GET", "/test", nil, nil)
 	if err != nil {
@@ -334,7 +334,7 @@ func TestMakeRequest_NoSecChUaForFirefox(t *testing.T) {
 	defer ts.Close()
 
 	// Firefox UA — should NOT generate sec-ch-ua headers
-	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil)
+	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 (Windows NT 10.0; rv:109.0) Gecko/20100101 Firefox/115.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil, nil)
 
 	resp, err := profile.makeRequest("GET", "/test", nil, nil)
 	if err != nil {
@@ -355,7 +355,7 @@ func TestMakeRequest_CustomHeadersOverrideNewDefaults(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil)
+	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil, nil)
 	profile.CustomHeaders = map[string]string{
 		"Accept-Encoding": "gzip",
 		"Sec-Ch-Ua":       "custom",
@@ -457,7 +457,7 @@ func TestReadResponseBody_BrotliViaServer(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil)
+	profile := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil, nil)
 	resp, err := profile.makeRequest("GET", "/test", nil, nil)
 	if err != nil {
 		t.Fatalf("makeRequest failed: %v", err)
@@ -485,7 +485,7 @@ func TestMakeRequest_AllChromeHeaders(t *testing.T) {
 	defer ts.Close()
 
 	ua := "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
-	profile := NewHTTPProfile(ts.URL, ua, "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil)
+	profile := NewHTTPProfile(ts.URL, ua, "", 1, 5, 0, false, "/test", "/test", "", "", "none", "", nil, nil)
 
 	resp, err := profile.makeRequest("POST", "/test", []byte("test body"), nil)
 	if err != nil {
