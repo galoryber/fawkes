@@ -263,13 +263,8 @@ var payloadDefinition = agentstructs.PayloadType{
 			DefaultValue:  "",
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
-		{
-			Name:          "body_transforms",
-			Description:   "Comma-separated body transform chain applied to HTTP request/response bodies. Transforms are applied after base64 encoding (outbound) and reversed before decoding (inbound). IMPORTANT: The C2 server must apply matching reverse transforms. Supported: base64 (double-encode), hex, gzip, xor:<hex_key>, prepend:<hex_bytes>, append:<hex_bytes>, mask:<png|gif|jpeg|pdf>, netbios. Example: 'gzip,mask:png' makes traffic look like PNG image downloads.",
-			Required:      false,
-			DefaultValue:  "",
-			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
-		},
+		// body_transforms removed: agent-side transforms without matching C2 server
+		// support silently corrupt traffic. Use httpx C2 profile for malleable transforms.
 		{
 			Name:          "sleep_mask",
 			Description:   "Encrypt sensitive agent and C2 data in memory during sleep cycles. Uses AES-256-GCM with a random per-cycle key. Process memory dumps during sleep only reveal encrypted blobs — not C2 URLs, encryption keys, or UUIDs. C2 profile fields are only masked when no tasks are actively running.",
@@ -463,9 +458,6 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	if ct, err := payloadBuildMsg.BuildParameters.GetStringArg("content_types"); err == nil && ct != "" {
 		ldflags += fmt.Sprintf(" -X '%s.contentTypes=%s'", fawkes_main_package, ct)
 	}
-	if bt, err := payloadBuildMsg.BuildParameters.GetStringArg("body_transforms"); err == nil && bt != "" {
-		ldflags += fmt.Sprintf(" -X '%s.bodyTransforms=%s'", fawkes_main_package, bt)
-	}
 	if tlsVerify, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_verify"); err == nil && tlsVerify != "" {
 		ldflags += fmt.Sprintf(" -X '%s.tlsVerify=%s'", fawkes_main_package, tlsVerify)
 	}
@@ -628,10 +620,6 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		if ct, err := payloadBuildMsg.BuildParameters.GetStringArg("content_types"); err == nil && ct != "" {
 			obfVars = append(obfVars, obfVar{"contentTypes", ct})
 		}
-		if bt, err := payloadBuildMsg.BuildParameters.GetStringArg("body_transforms"); err == nil && bt != "" {
-			obfVars = append(obfVars, obfVar{"bodyTransforms", bt})
-		}
-
 		// Replace plaintext values in ldflags with XOR-encoded versions
 		for _, v := range obfVars {
 			plainPattern := fmt.Sprintf("-X '%s.%s=%s'", fawkes_main_package, v.name, v.value)
