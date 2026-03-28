@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "proxy-check",
+		Name: "proxy-check",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "proxycheck_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Detect system proxy settings from environment variables, OS configuration, and registry (Windows). Optionally test proxy connectivity.",
 		HelpString:          "proxy-check\nproxy-check -test_url http://example.com",
 		Version:             1,

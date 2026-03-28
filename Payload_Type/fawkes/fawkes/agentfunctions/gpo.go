@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "gpo",
+		Name: "gpo",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "gpo_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate Group Policy Objects (GPOs) via LDAP — list all GPOs, map OU links, and identify interesting settings (scripts, scheduled tasks, security configs).",
 		HelpString:          "gpo -action all -server dc01 -username user@corp.local -password Pass123\ngpo -action links -server 192.168.1.1 -username admin@corp.local -password Admin1\ngpo -action find -server dc01 -username user@corp.local -password Pass1 -filter \"Default\"",
 		Version:             1,
