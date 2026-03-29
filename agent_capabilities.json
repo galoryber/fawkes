@@ -38,9 +38,9 @@
   },
   "payload_output": ["exe", "dll", "so", "dylib", "shellcode"],
   "architectures": ["amd64", "386", "arm", "arm64", "mips", "mips64"],
-  "c2": ["http", "tcp"],
+  "c2": ["http", "tcp", "discord"],
   "mythic_version": "3.4.0",
   "agent_version": "2.0.0",
-  "command_count": 211,
+  "command_count": 213,
   "supported_wrappers": []
 }

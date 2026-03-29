@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"fawkes/pkg/structs"
@@ -466,6 +467,7 @@ func TestNewHTTPProfile_BasicConfig(t *testing.T) {
 		"none",
 		"",
 		nil,
+		nil,
 	)
 
 	if p.BaseURL != "http://localhost:80" {
@@ -498,6 +500,7 @@ func TestNewHTTPProfile_WithProxy(t *testing.T) {
 		"none",
 		"",
 		nil,
+		nil,
 	)
 
 	if p.client == nil {
@@ -520,6 +523,7 @@ func TestNewHTTPProfile_WithHostHeader(t *testing.T) {
 		"",
 		"none",
 		"",
+		nil,
 		nil,
 	)
 
@@ -547,6 +551,7 @@ func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
 		"system-ca",
 		"",
 		nil,
+		nil,
 	)
 
 	if p.EncryptionKey != keyB64 {
@@ -573,6 +578,7 @@ func TestNewHTTPProfile_InvalidProxy(t *testing.T) {
 		"://not-a-valid-url",
 		"none",
 		"",
+		nil,
 		nil,
 	)
 
@@ -1126,7 +1132,8 @@ func TestMakeRequest_FailoverToBackup(t *testing.T) {
 		1, 5, 0, false,
 		"/test", "/test",
 		"", "", "none", "",
-		[]string{backup.URL}, // fallback
+		[]string{backup.URL}, // fallback,
+		nil,
 	)
 
 	cfg := &sensitiveConfig{
@@ -1158,6 +1165,7 @@ func TestMakeRequest_AllFail(t *testing.T) {
 		"/test", "/test",
 		"", "", "none", "",
 		[]string{"http://127.0.0.1:2"},
+		nil,
 	)
 
 	cfg := &sensitiveConfig{
@@ -1182,6 +1190,7 @@ func TestNewHTTPProfile_WithFallbackURLs(t *testing.T) {
 		"/get", "/post",
 		"", "", "none", "",
 		fallbacks,
+		nil,
 	)
 
 	if len(p.FallbackURLs) != 2 {
@@ -1208,6 +1217,7 @@ func TestMakeRequest_ConcurrentFailover(t *testing.T) {
 		"/test", "/test",
 		"", "", "none", "",
 		[]string{server.URL + "/fb1", server.URL + "/fb2"},
+		nil,
 	)
 
 	cfg := &sensitiveConfig{
@@ -1245,6 +1255,7 @@ func TestSealConfig_PreservesFallbackURLs(t *testing.T) {
 		"/get", "/post",
 		"", "", "none", "",
 		[]string{"http://backup:80"},
+		nil,
 	)
 
 	if err := p.SealConfig(); err != nil {
@@ -1267,5 +1278,73 @@ func TestSealConfig_PreservesFallbackURLs(t *testing.T) {
 	}
 	if p.FallbackURLs != nil {
 		t.Error("FallbackURLs should be nil after seal")
+	}
+}
+
+// --- URI Token Resolution Tests ---
+
+func TestResolveURITokens_NoTokens(t *testing.T) {
+	// Path without tokens should be returned unchanged
+	path := "/api/v1/status"
+	got := resolveURITokens(path)
+	if got != path {
+		t.Errorf("resolveURITokens(%q) = %q, want unchanged", path, got)
+	}
+}
+
+func TestResolveURITokens_RandToken(t *testing.T) {
+	path := "/api/{rand:8}/check"
+	got := resolveURITokens(path)
+	if got == path {
+		t.Error("resolveURITokens should replace {rand:8} token")
+	}
+	// Should have exactly 8 hex chars in the middle
+	parts := strings.SplitN(got, "/", 4)
+	if len(parts) != 4 {
+		t.Fatalf("expected 4 path segments, got %d: %q", len(parts), got)
+	}
+	if len(parts[2]) != 8 {
+		t.Errorf("random segment length = %d, want 8: %q", len(parts[2]), parts[2])
+	}
+	// Each call should produce different output
+	got2 := resolveURITokens(path)
+	if got == got2 {
+		t.Error("resolveURITokens should produce different output each call")
+	}
+}
+
+func TestResolveURITokens_IntToken(t *testing.T) {
+	path := "/api/v{int:1-3}/data"
+	seen := make(map[string]bool)
+	for i := 0; i < 50; i++ {
+		got := resolveURITokens(path)
+		// Extract the version number
+		parts := strings.SplitN(got, "/", 4)
+		if len(parts) != 4 {
+			t.Fatalf("expected 4 path segments, got %d: %q", len(parts), got)
+		}
+		ver := strings.TrimPrefix(parts[2], "v")
+		seen[ver] = true
+		if ver != "1" && ver != "2" && ver != "3" {
+			t.Errorf("version = %q, want 1, 2, or 3", ver)
+		}
+	}
+	if len(seen) < 2 {
+		t.Errorf("expected variety in random ints, only saw: %v", seen)
+	}
+}
+
+func TestResolveURITokens_MultipleTokens(t *testing.T) {
+	path := "/v{int:1-5}/{rand:4}/status"
+	got := resolveURITokens(path)
+	if strings.Contains(got, "{") {
+		t.Errorf("unresolved tokens remain: %q", got)
+	}
+}
+
+func TestResolveURITokens_Empty(t *testing.T) {
+	got := resolveURITokens("")
+	if got != "" {
+		t.Errorf("resolveURITokens(\"\") = %q, want empty", got)
 	}
 }

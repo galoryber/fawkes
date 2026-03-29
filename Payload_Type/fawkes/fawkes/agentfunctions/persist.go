@@ -123,7 +123,38 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			method, _ := taskData.Args.GetStringArg("method")
+			msg := fmt.Sprintf("OPSEC WARNING: Persistence operation (%s, method: %s). ", action, method)
+			switch action {
+			case "install":
+				msg += "Creates persistent artifacts (registry keys, files, or scheduled tasks). " +
+					"These survive reboots and may be detected by EDR baseline monitoring or autoruns analysis."
+			case "remove":
+				msg += "Removes persistence artifacts — cleanup operation."
+			default:
+				msg += "Querying persistence state — low detection risk."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			method, _ := taskData.Args.GetStringArg("method")
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: Persistence %s (method: %s) configured. Artifacts will be created on execution.", action, method),
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

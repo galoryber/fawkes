@@ -43,6 +43,49 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: "
+			switch action {
+			case "lsass", "":
+				msg += "Dumping lsass.exe process memory. This touches LSASS — heavily monitored by EDR/AV. " +
+					"May trigger Credential Guard, RunAsPPL, or CrowdStrike/Defender alerts. " +
+					"Creates a minidump file on disk (cleaned after upload)."
+			case "dump":
+				pid, _ := taskData.Args.GetNumberArg("pid")
+				msg += fmt.Sprintf("Dumping process memory (PID %d). "+
+					"Creates a minidump file on disk (cleaned after upload). "+
+					"MiniDumpWriteDump API call may be flagged by EDR.", int(pid))
+			default:
+				msg += "Process memory search — enumerates processes for credential-holding targets."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC AUDIT: Process dump "
+			if action == "lsass" || action == "" {
+				msg += "(lsass) configured. MiniDumpWriteDump artifacts will be created."
+			} else if action == "dump" {
+				pid, _ := taskData.Args.GetNumberArg("pid")
+				msg += fmt.Sprintf("(PID %d) configured. MiniDumpWriteDump artifacts will be created.", int(pid))
+			} else {
+				msg += "search configured. Process enumeration will occur."
+			}
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

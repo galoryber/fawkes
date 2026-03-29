@@ -72,6 +72,29 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			pid, _ := taskData.Args.GetNumberArg("pid")
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:  taskData.Task.ID,
+				Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: Classic process injection into PID %d. "+
+					"Uses VirtualAllocEx + WriteProcessMemory + CreateRemoteThread — "+
+					"the most detectable injection pattern. Most EDR products hook these APIs. "+
+					"Consider threadless-inject or module-stomping for lower detection risk.", int(pid)),
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			pid, _ := taskData.Args.GetNumberArg("pid")
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: Classic injection (VirtualAllocEx+WriteProcessMemory+CreateRemoteThread) queued for PID %d. Artifact registered.", int(pid)),
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

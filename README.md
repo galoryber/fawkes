@@ -258,6 +258,24 @@ For detailed variant descriptions, see [Injection Technique Details](research/in
 
 ## Build Options
 
+### DLL Export Methods
+
+When building in **shared** (DLL) or **windows-shellcode** mode, the `dll_exports` build parameter controls which DLL exports are included:
+
+| Setting | Exports | Use Case |
+|---------|---------|----------|
+| `standard` (default) | `Run`, `Fire`, `VoidFunc` | sRDI shellcode, rundll32, generic loaders |
+| `full` | Standard + `DllRegisterServer`, `DllUnregisterServer`, `ServiceMain`, `DllGetClassObject`, `DllCanUnloadNow` | regsvr32, svchost service, COM hijack |
+
+**Execution methods with full exports:**
+
+| Export | Execution | MITRE |
+|--------|-----------|-------|
+| `DllRegisterServer` | `regsvr32 /s fawkes.dll` | T1218.010 |
+| `DllUnregisterServer` | `regsvr32 /u /s fawkes.dll` | T1218.010 |
+| `ServiceMain` | svchost.exe DLL service (Windows only) | T1543.003 |
+| `DllGetClassObject` + `DllCanUnloadNow` | COM hijack InprocServer32 | T1546.015 |
+
 ### Binary Inflation
 
 Fawkes supports optional binary inflation at build time. This embeds a block of repeated bytes into the compiled agent, which can be used to increase file size or lower entropy scores.
@@ -457,6 +475,16 @@ This helps operators understand detection risk and choose appropriate opsec opti
 
 The HTTP profile calls back to the Mythic server over the basic, non-dynamic profile. This is the default egress profile — the agent polls Mythic for tasking over HTTP/HTTPS.
 
+**Malleable features:**
+
+- **URI randomization:** `get_uri` and `post_uri` support tokens that are resolved per-request:
+  - `{rand:N}` — N random hex characters (e.g., `/api/{rand:8}` → `/api/a3f82b1c`)
+  - `{int:M-N}` — random integer in range (e.g., `/v{int:1-3}/status` → `/v2/status`)
+- **Content-Type cycling:** Set the `content_types` build parameter to a comma-separated list (e.g., `application/json,text/plain,application/x-www-form-urlencoded`). The agent cycles through them round-robin. Default: `application/x-www-form-urlencoded`.
+- **TLS fingerprinting:** Spoof browser JA3 fingerprints (`chrome`, `firefox`, `safari`, `edge`, `random`).
+- **Domain fronting:** Set `host_header` to override the HTTP Host header.
+- **Automatic failover:** Configure `fallback_hosts` for resilient C2.
+
 ### TCP P2P Profile
 
 The TCP profile enables peer-to-peer (P2P) agent linking for internal pivoting. A TCP child agent listens on a port and waits for a parent agent to connect via the `link` command. All tasking and responses are routed through the parent's egress channel (HTTP), so the child never contacts Mythic directly.
@@ -491,6 +519,57 @@ When `tcp_bind_address` is set, the agent starts in TCP listener mode instead of
 **Relink support:** If a parent disconnects (e.g., via `unlink` or parent agent dies), the child agent caches its checkin data and waits for a new parent connection. When a new egress agent runs `link`, the child automatically re-registers with Mythic as a new callback. No manual intervention needed.
 
 **Multiple children:** An egress agent can link to multiple TCP children simultaneously. Each child operates independently with its own callback.
+
+### Discord C2 Profile
+
+The Discord profile uses a Discord bot and channel as a covert C2 transport. The agent communicates with Mythic by posting encrypted messages to a Discord channel, where a server-side bot relays them to Mythic via gRPC push C2.
+
+**Architecture:**
+
+```
+Fawkes Agent ──Discord REST API──→ Discord Channel ←──Bot──→ Discord C2 Server ──gRPC──→ Mythic
+```
+
+**How it works:**
+
+1. **Checkin:** Agent posts an encrypted checkin message to the Discord channel. The server-side bot picks it up, forwards to Mythic, and posts the response back to the channel. The agent polls until it finds the response.
+2. **Tasking:** Agent sends a `get_tasking` request via Discord. With push C2, tasks may also be pushed independently to the channel. The agent collects all matching messages per poll cycle.
+3. **Responses:** Agent posts task output to the channel. Large responses (>1950 chars) are sent as file attachments.
+
+**Build parameters:**
+
+| Parameter | Type | Description | Default |
+|-----------|------|-------------|---------|
+| `discord_token` | String | Discord bot token for API authentication | _(required)_ |
+| `bot_channel` | String | Discord channel ID for message exchange | _(required)_ |
+| `callback_interval` | String | Seconds between tasking polls | `10` |
+| `callback_jitter` | String | Jitter percentage (0-100) | `23` |
+| `message_checks` | String | Max polling attempts per exchange | `20` |
+| `time_between_checks` | String | Seconds between poll attempts | `5` |
+| `AESPSK` | String | Pre-shared AES-256 encryption key | _(auto-generated)_ |
+
+**Encryption:** AES-256-CBC with HMAC-SHA256 (same scheme as HTTP profile). Sensitive configuration (bot token, channel ID) is encrypted in memory after initialization using AES-256-GCM vault.
+
+**Push C2 support:** The Discord C2 server uses Mythic's push C2 (persistent gRPC stream). Tasks may arrive asynchronously between poll cycles. The agent implements:
+- Pre-poll sweep to catch pushed tasks from previous cycles
+- Catch-up polling (3 additional polls after first match) for rapid task delivery
+- PostResponse retry on transient failures
+
+**Rate limiting:** Respects Discord API rate limits with automatic retry and exponential backoff (up to 5 retries). The User-Agent is hardcoded to `DiscordBot (https://github.com, 1.0)` as required by the Discord API.
+
+**Setup prerequisites:**
+
+1. Create a Discord bot at [discord.com/developers](https://discord.com/developers/applications)
+2. Enable the bot's Message Content intent
+3. Add the bot to a server with permissions: Send Messages, Read Message History, Attach Files, Manage Messages
+4. Note the bot token and target channel ID
+5. Configure the Discord C2 server container with the same bot token and channel ID in its `config.json`
+
+**Known limitations:**
+- "Last Checkin" in Mythic shows as "Streaming Now" while the push C2 stream is active (inherent to push C2 mode). After ~180s of agent inactivity, Mythic shows the real last activity timestamp.
+- Discord API rate limits may introduce latency during high-frequency tasking
+- Bot token is a critical OPSEC asset — compromise exposes the C2 channel
+- Message size limit: ~1950 chars inline, larger payloads use file attachments
 
 ## Thanks
 Everything I know about Mythic Agents came from Mythic Docs or stealing code and ideas from the [Merlin](https://github.com/MythicAgents/merlin) and [Freyja](https://github.com/MythicAgents/freyja) agents.

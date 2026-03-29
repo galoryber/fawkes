@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "du",
+		Name: "du",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "du_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Report disk usage for files and directories. Shows size breakdown by subdirectory.",
 		HelpString:          "du -path /var/log\ndu -path C:\\Users\\setup -max_depth 2\ndu -path /tmp/artifacts",
 		Version:             1,

@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "net-user",
+		Name: "net-user",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "netuser_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Manage local user accounts and group membership (T1136.001, T1098). Windows: Win32 NetUser API. Linux: useradd/userdel/usermod/chpasswd. macOS: dscl/dseditgroup.",
 		HelpString:          "net-user -action <add|delete|info|password|group-add|group-remove> -username <name> [-password <pass>] [-group <group>]",
 		Version:             3,
@@ -92,8 +97,7 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: nil,
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

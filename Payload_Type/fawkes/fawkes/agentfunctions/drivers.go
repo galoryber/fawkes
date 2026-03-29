@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "drivers",
+		Name: "drivers",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "drivers_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "drivers [-filter name] - Enumerate loaded kernel drivers and modules. Windows: EnumDeviceDrivers API. Linux: /proc/modules. macOS: kext/system extension enumeration.",
 		HelpString:          "drivers [-filter name]",
 		Version:             1,

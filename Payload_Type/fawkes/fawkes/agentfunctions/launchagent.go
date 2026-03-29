@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "launchagent",
+		Name: "launchagent",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "launchagent_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Install, remove, or list macOS LaunchAgent/LaunchDaemon persistence",
 		HelpString:          "launchagent -action <install|remove|list> -label <com.example.name> [-path <exe>] [-daemon true] [-interval <seconds>] [-run_at <HH:MM>]",
 		Version:             1,
@@ -120,8 +125,47 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			label, _ := taskData.Args.GetStringArg("label")
+			msg := fmt.Sprintf("OPSEC WARNING: macOS LaunchAgent/LaunchDaemon operation (%s", action)
+			if label != "" {
+				msg += fmt.Sprintf(", label: %s", label)
+			}
+			msg += "). "
+			switch action {
+			case "install":
+				msg += "Creates a plist in ~/Library/LaunchAgents or /Library/LaunchDaemons. " +
+					"Detectable by macOS endpoint agents monitoring plist creation and launchctl events."
+			case "remove":
+				msg += "Removes a LaunchAgent/LaunchDaemon — cleanup operation."
+			default:
+				msg += "Querying launch items — low detection risk."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			label, _ := taskData.Args.GetStringArg("label")
+			msg := fmt.Sprintf("OPSEC AUDIT: LaunchAgent/Daemon %s", action)
+			if label != "" {
+				msg += fmt.Sprintf(" (label: %s)", label)
+			}
+			msg += " configured. Plist artifacts will be created."
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

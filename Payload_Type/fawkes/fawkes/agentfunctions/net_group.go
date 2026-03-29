@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "net-group",
+		Name: "net-group",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "netgroup_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate AD group memberships via LDAP — list groups, recursive members, user group lookup, and privileged group enumeration.",
 		HelpString:          "net-group -action privileged -server 192.168.1.1 -username user@domain -password pass\nnet-group -action members -server dc01 -group \"Domain Admins\" -username user@domain -password pass\nnet-group -action user -server dc01 -user eddard.stark -username user@domain -password pass",
 		Version:             1,

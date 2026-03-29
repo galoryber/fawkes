@@ -1,7 +1,9 @@
 package profiles
 
 import (
+	"fawkes/pkg/discord"
 	"fawkes/pkg/http"
+	"fawkes/pkg/httpx"
 	"fawkes/pkg/structs"
 	"fawkes/pkg/tcp"
 )
@@ -22,4 +24,14 @@ func NewProfile(httpProfile *http.HTTPProfile) Profile {
 // NewTCPProfile creates a new profile based on the TCP P2P profile
 func NewTCPProfile(tcpProfile *tcp.TCPProfile) Profile {
 	return tcpProfile
+}
+
+// NewDiscordProfile creates a new profile based on the Discord C2 profile
+func NewDiscordProfile(discordProfile *discord.DiscordProfile) Profile {
+	return discordProfile
+}
+
+// NewHTTPXProfile creates a new profile based on the httpx C2 profile
+func NewHTTPXProfile(httpxProfile *httpx.HTTPXProfile) Profile {
+	return httpxProfile
 }

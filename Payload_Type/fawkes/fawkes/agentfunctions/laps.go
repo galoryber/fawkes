@@ -1,10 +1,12 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -87,6 +89,44 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			var entries []struct {
+				Computer string `json:"computer"`
+				Account  string `json:"account"`
+				Password string `json:"password"`
+				Version  string `json:"version"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
+				return response
+			}
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			for _, e := range entries {
+				if e.Password == "" {
+					continue
+				}
+				account := e.Computer
+				if e.Account != "" {
+					account = e.Account
+				}
+				creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+					CredentialType: "plaintext",
+					Realm:          processResponse.TaskData.Callback.Host,
+					Account:        account,
+					Credential:     e.Password,
+					Comment:        fmt.Sprintf("laps (%s) computer: %s", e.Version, e.Computer),
+				})
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

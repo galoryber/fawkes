@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "crontab",
+		Name: "crontab",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "crontab_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "List, add, or remove cron jobs for persistence (T1053.003)",
 		HelpString:          "crontab -action <list|add|remove> [-entry <cron line>] [-program <path>] [-schedule <cron schedule>] [-user <username>]",
 		Version:             1,

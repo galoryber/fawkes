@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "uptime",
+		Name: "uptime",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "uptime_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Show system uptime, boot time, and load averages. Quick situational awareness check.",
 		HelpString:          "uptime",
 		Version:             1,

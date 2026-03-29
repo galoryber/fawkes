@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "dpapi",
+		Name: "dpapi",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "dpapi_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "DPAPI blob decryption, master key enumeration, Wi-Fi password extraction, browser key extraction (T1555.003, T1555.005)",
 		HelpString:          "dpapi -action <decrypt|masterkeys|chrome-key> [-blob <base64>] [-entropy <base64>]",
 		Version:             1,

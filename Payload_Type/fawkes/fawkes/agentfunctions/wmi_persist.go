@@ -100,6 +100,47 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			name, _ := taskData.Args.GetStringArg("name")
+			msg := fmt.Sprintf("OPSEC WARNING: WMI event subscription operation (%s", action)
+			if name != "" {
+				msg += fmt.Sprintf(", name: %s", name)
+			}
+			msg += "). "
+			switch action {
+			case "install":
+				msg += "Creates WMI EventFilter, CommandLineEventConsumer, and FilterToConsumerBinding. " +
+					"Detectable by monitoring WMI repository changes and Sysmon Event ID 19/20/21."
+			case "remove":
+				msg += "Removes WMI event subscription — cleanup operation."
+			default:
+				msg += "Enumerating WMI subscriptions — low detection risk."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			name, _ := taskData.Args.GetStringArg("name")
+			msg := fmt.Sprintf("OPSEC AUDIT: wmi-persist %s", action)
+			if name != "" {
+				msg += fmt.Sprintf(" (name: %s)", name)
+			}
+			msg += " configured. WMI repository artifacts will be created."
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
