@@ -17,8 +17,9 @@ RUN apt-get update && apt-get install -y \
 RUN git clone https://github.com/monoxgas/sRDI /opt/sRDI && \
     pip3 install --break-system-packages pefile
 
-# Install go-winres for PE resource embedding (version info, icon, manifest)
-RUN go install github.com/tc-hib/go-winres@latest
+# Install go-winres for PE resource embedding and rebuild garble for current Go version
+RUN go install github.com/tc-hib/go-winres@latest && \
+    go install mvdan.cc/garble@latest
 
 COPY [".", "."]
 
