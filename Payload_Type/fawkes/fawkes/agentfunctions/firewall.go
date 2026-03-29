@@ -164,6 +164,25 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := fmt.Sprintf("OPSEC WARNING: Firewall modification (action: %s). ", action)
+			switch action {
+			case "add":
+				msg += "Adding firewall rules modifies security policy — generates event logs and may trigger change detection (T1562.004)."
+			case "delete":
+				msg += "Deleting firewall rules weakens security posture — commonly monitored by SIEM as defense evasion (T1562.004)."
+			case "disable":
+				msg += "Disabling firewall rules is a high-visibility security change (T1562.004)."
+			default:
+				msg += "Firewall enumeration is lower risk but may be logged by audit policies."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

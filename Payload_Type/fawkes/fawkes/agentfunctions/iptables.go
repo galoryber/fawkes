@@ -87,6 +87,15 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := fmt.Sprintf("OPSEC WARNING: Linux firewall rule change (action: %s). Modifying iptables/nftables/ufw generates audit logs and may trigger host-based IDS alerts (T1562.004).", action)
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

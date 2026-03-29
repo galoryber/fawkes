@@ -74,6 +74,27 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := fmt.Sprintf("OPSEC WARNING: Windows Defender interaction (action: %s). ", action)
+			switch action {
+			case "disable":
+				msg += "Disabling real-time protection generates Event ID 5001 (Real-Time Protection disabled) and may trigger EDR alerts. Tamper Protection may block this operation."
+			case "exclude":
+				msg += "Adding exclusions generates Event ID 5007 (Defender configuration change). Exclusion paths are visible in the registry and commonly checked by analysts."
+			case "remove":
+				msg += "Threat removal generates defender event logs documenting the action."
+			default:
+				msg += "Read-only enumeration is lower risk but defender logs may record the query."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

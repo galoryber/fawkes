@@ -175,6 +175,15 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			method, _ := taskData.Args.GetStringArg("method")
+			msg := fmt.Sprintf("OPSEC WARNING: NTLM authentication coercion (method: %s). Forces target to authenticate, generating network traffic and authentication logs. MS-EFSR/MS-RPRN/MS-FSRVP are well-known attack vectors commonly monitored by SOC teams (T1187).", method)
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

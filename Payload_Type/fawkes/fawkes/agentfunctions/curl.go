@@ -111,6 +111,15 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			url, _ := taskData.Args.GetStringArg("url")
+			msg := fmt.Sprintf("OPSEC WARNING: Outbound HTTP request from agent to %s. Generates network traffic that may be logged by proxy/firewall. SSRF and cloud metadata access (169.254.169.254) are commonly monitored patterns.", url)
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

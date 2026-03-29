@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -126,6 +127,15 @@ func init() {
 
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			return response
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: Credential harvesting (action: %s). Accesses system files, cloud configs, shell history, and application secrets. File access patterns may trigger EDR behavioral alerts (T1552.001, T1552.003, T1552.004).", action),
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

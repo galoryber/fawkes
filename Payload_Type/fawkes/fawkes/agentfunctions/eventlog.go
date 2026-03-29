@@ -111,6 +111,28 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			channel, _ := taskData.Args.GetStringArg("channel")
+			msg := fmt.Sprintf("OPSEC WARNING: Event log operation (action: %s", action)
+			if channel != "" {
+				msg += fmt.Sprintf(", channel: %s", channel)
+			}
+			msg += "). "
+			switch action {
+			case "clear":
+				msg += "Clearing event logs generates Event ID 1102 (audit log cleared) and is a top-tier forensic indicator (T1070.001)."
+			case "disable":
+				msg += "Disabling event log channels stops telemetry collection — monitored by SIEM and EDR (T1562.002)."
+			default:
+				msg += "Event log enumeration is lower risk but may be logged by audit policies."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
