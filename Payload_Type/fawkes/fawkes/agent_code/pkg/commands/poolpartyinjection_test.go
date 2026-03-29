@@ -6,6 +6,7 @@ package commands
 import (
 	"encoding/base64"
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"fawkes/pkg/structs"
@@ -150,7 +151,7 @@ func TestPoolPartyInjection_AllValidVariants(t *testing.T) {
 		// Verify it's NOT an "Unsupported variant" error
 		if result.Output != "" {
 			for _, line := range []string{"Unsupported variant"} {
-				if contains(result.Output, line) {
+				if strings.Contains(result.Output, line) {
 					t.Errorf("Variant %d should be supported, got: %s", v, result.Output)
 				}
 			}
@@ -158,15 +159,3 @@ func TestPoolPartyInjection_AllValidVariants(t *testing.T) {
 	}
 }
 
-func contains(s, substr string) bool {
-	return len(s) >= len(substr) && searchString(s, substr)
-}
-
-func searchString(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
-}
