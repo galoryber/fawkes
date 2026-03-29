@@ -299,6 +299,30 @@ The byte pattern is repeated `inflate_count` times, so the total added size is `
 
 When inflation is not configured, only 1 byte of overhead is added to the binary.
 
+### PE Resource Embedding (Windows Only)
+
+Windows PE binaries contain metadata resources — version info, icons, and UAC manifests — that are visible in File Properties, Task Manager, and Explorer. Default Go binaries have none of this metadata, which is a strong detection signal for security tools and analysts.
+
+Fawkes supports embedding PE resources at build time to impersonate legitimate Windows binaries:
+
+**Build parameters:**
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `pe_preset` | Choose | Quick impersonation preset (notepad, svchost, cmd, explorer, etc.) |
+| `pe_company` | String | CompanyName (e.g. "Microsoft Corporation") |
+| `pe_description` | String | FileDescription — visible in Task Manager |
+| `pe_product` | String | ProductName |
+| `pe_version` | String | File/Product version (e.g. "10.0.19041.1") |
+| `pe_copyright` | String | LegalCopyright |
+| `pe_original_filename` | String | OriginalFilename — visible to forensic tools |
+| `pe_icon` | File | Custom .ico or .png icon file |
+| `pe_manifest` | Choose | UAC level: asInvoker, highestAvailable, requireAdministrator |
+
+**Presets** (10 common Windows binaries with real version info):
+`notepad`, `svchost`, `cmd`, `explorer`, `msiexec`, `dllhost`, `rundll32`, `conhost`, `taskhostw`, `RuntimeBroker`
+
+Individual fields override preset values. When no PE resource parameters are set, the binary is unchanged from default Go output.
+
 ## Opsec Features
 
 ### Artifact Tracking
