@@ -17,13 +17,16 @@ RUN apt-get update && apt-get install -y \
 RUN git clone https://github.com/monoxgas/sRDI /opt/sRDI && \
     pip3 install --break-system-packages pefile
 
-# Install go-winres for PE resource embedding and rebuild garble for current Go version
-RUN go install github.com/tc-hib/go-winres@latest && \
-    go install mvdan.cc/garble@latest
-
 COPY [".", "."]
 
 ENV GOTOOLCHAIN=auto
+
+# Install go-winres and rebuild garble AFTER GOTOOLCHAIN=auto + COPY so they
+# compile with the same Go version the agent uses (from go.mod's go directive).
+# The base image's garble is built with an older Go and will fail if the
+# toolchain auto-upgrades to a newer version.
+RUN go install github.com/tc-hib/go-winres@latest && \
+    go install mvdan.cc/garble@latest
 
 RUN make build
 
