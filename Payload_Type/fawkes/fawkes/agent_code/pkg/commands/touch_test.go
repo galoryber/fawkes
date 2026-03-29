@@ -12,25 +12,15 @@ import (
 )
 
 func TestTouchName(t *testing.T) {
-	c := &TouchCommand{}
-	if c.Name() != "touch" {
-		t.Errorf("expected 'touch', got '%s'", c.Name())
-	}
+	assertCommandName(t, &TouchCommand{}, "touch")
 }
 
 func TestTouchDescription(t *testing.T) {
-	c := &TouchCommand{}
-	if c.Description() == "" {
-		t.Error("description should not be empty")
-	}
+	assertCommandHasDescription(t, &TouchCommand{})
 }
 
 func TestTouchEmptyParams(t *testing.T) {
-	c := &TouchCommand{}
-	result := c.Execute(structs.Task{Params: ""})
-	if result.Status != "error" {
-		t.Errorf("expected error, got %s", result.Status)
-	}
+	assertEmptyParamsError(t, &TouchCommand{})
 }
 
 func TestTouchPlainText(t *testing.T) {

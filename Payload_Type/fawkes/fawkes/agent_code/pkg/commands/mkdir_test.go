@@ -3,27 +3,15 @@ package commands
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-
-	"fawkes/pkg/structs"
 )
 
 func TestMkdirCommandName(t *testing.T) {
-	cmd := &MkdirCommand{}
-	if cmd.Name() != "mkdir" {
-		t.Errorf("expected 'mkdir', got %q", cmd.Name())
-	}
+	assertCommandName(t, &MkdirCommand{}, "mkdir")
 }
 
 func TestMkdirNoParams(t *testing.T) {
-	cmd := &MkdirCommand{}
-	task := structs.NewTask("t", "mkdir", "")
-	task.Params = ""
-	result := cmd.Execute(task)
-	if result.Status != "error" {
-		t.Errorf("expected error, got %q", result.Status)
-	}
+	assertEmptyParamsError(t, &MkdirCommand{})
 }
 
 func TestMkdirSuccess(t *testing.T) {
@@ -31,12 +19,8 @@ func TestMkdirSuccess(t *testing.T) {
 	path := filepath.Join(tmp, "newdir")
 
 	cmd := &MkdirCommand{}
-	task := structs.NewTask("t", "mkdir", "")
-	task.Params = path
-	result := cmd.Execute(task)
-	if result.Status != "success" {
-		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
-	}
+	result := cmd.Execute(mockTask("mkdir", path))
+	assertSuccess(t, result)
 
 	info, err := os.Stat(path)
 	if err != nil {
@@ -52,12 +36,8 @@ func TestMkdirJSONParams(t *testing.T) {
 	path := filepath.Join(tmp, "jsondir")
 
 	cmd := &MkdirCommand{}
-	task := structs.NewTask("t", "mkdir", "")
-	task.Params = `{"path":"` + path + `"}`
-	result := cmd.Execute(task)
-	if result.Status != "success" {
-		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
-	}
+	result := cmd.Execute(mockTask("mkdir", `{"path":"`+path+`"}`))
+	assertSuccess(t, result)
 
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("directory should exist: %v", err)
@@ -69,13 +49,7 @@ func TestMkdirNestedDirs(t *testing.T) {
 	path := filepath.Join(tmp, "a", "b", "c")
 
 	cmd := &MkdirCommand{}
-	task := structs.NewTask("t", "mkdir", "")
-	task.Params = path
-	result := cmd.Execute(task)
-	if result.Status != "success" {
-		t.Errorf("expected success for nested dirs, got %q: %s", result.Status, result.Output)
-	}
-	if !strings.Contains(result.Output, "Successfully") {
-		t.Error("output should indicate success")
-	}
+	result := cmd.Execute(mockTask("mkdir", path))
+	assertSuccess(t, result)
+	assertOutputContains(t, result, "Successfully")
 }

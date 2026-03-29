@@ -3,31 +3,20 @@ package commands
 import (
 	"os"
 	"testing"
-
-	"fawkes/pkg/structs"
 )
 
 func TestPwdCommandName(t *testing.T) {
-	cmd := &PwdCommand{}
-	if cmd.Name() != "pwd" {
-		t.Errorf("expected 'pwd', got %q", cmd.Name())
-	}
+	assertCommandName(t, &PwdCommand{}, "pwd")
 }
 
 func TestPwdCommandDescription(t *testing.T) {
-	cmd := &PwdCommand{}
-	if cmd.Description() == "" {
-		t.Error("description should not be empty")
-	}
+	assertCommandHasDescription(t, &PwdCommand{})
 }
 
 func TestPwdReturnsCurrentDir(t *testing.T) {
 	cmd := &PwdCommand{}
-	task := structs.NewTask("t", "pwd", "")
-	result := cmd.Execute(task)
-	if result.Status != "success" {
-		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
-	}
+	result := cmd.Execute(mockTask("pwd", ""))
+	assertSuccess(t, result)
 
 	expected, _ := os.Getwd()
 	if result.Output != expected {
