@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -22,6 +23,10 @@ func init() {
 				agentstructs.SUPPORTED_OS_LINUX,
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
+		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "cloud_metadata_new.js"),
+			Author:     "@galoryber",
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
