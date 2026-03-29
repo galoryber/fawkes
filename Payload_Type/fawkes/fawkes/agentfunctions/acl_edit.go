@@ -170,15 +170,19 @@ func init() {
 			case "read", "backup":
 				displayStr := fmt.Sprintf("acl-edit %s on %s", action, target)
 				response.DisplayParams = &displayStr
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("LDAP read DACL on %s", target))
 			case "grant-dcsync", "grant-genericall", "grant-writedacl":
 				displayStr := fmt.Sprintf("acl-edit %s: %s → %s", action, principal, target)
 				response.DisplayParams = &displayStr
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("LDAP modify DACL: %s %s on %s", action, principal, target))
 			case "add", "remove":
 				displayStr := fmt.Sprintf("acl-edit %s %s: %s → %s", action, right, principal, target)
 				response.DisplayParams = &displayStr
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("LDAP %s ACE: %s %s on %s", action, right, principal, target))
 			case "restore":
 				displayStr := fmt.Sprintf("acl-edit restore DACL on %s", target)
 				response.DisplayParams = &displayStr
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("LDAP restore DACL on %s", target))
 			}
 
 			return response

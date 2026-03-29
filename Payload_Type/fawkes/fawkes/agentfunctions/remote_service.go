@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -149,6 +151,16 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			action, _ := taskData.Args.GetStringArg("action")
+			server, _ := taskData.Args.GetStringArg("server")
+			name, _ := taskData.Args.GetStringArg("name")
+			artifactMsg := fmt.Sprintf("SVCCTL RPC %s on %s", action, server)
+			if name != "" {
+				artifactMsg += fmt.Sprintf(": %s", name)
+			}
+			createArtifact(taskData.Task.ID, "Network Connection", artifactMsg)
+			display := fmt.Sprintf("%s %s %s", action, server, name)
+			response.DisplayParams = &display
 			return response
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {

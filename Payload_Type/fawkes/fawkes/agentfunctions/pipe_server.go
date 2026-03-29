@@ -119,6 +119,13 @@ func init() {
 				display += fmt.Sprintf(" %s", name)
 			}
 			response.DisplayParams = &display
+			if action == "impersonate" {
+				pipeName := name
+				if pipeName == "" {
+					pipeName = "fawkes_pipe"
+				}
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("CreateNamedPipe(\\\\.\\pipe\\%s) + ImpersonateNamedPipeClient", pipeName))
+			}
 			return response
 		},
 	})

@@ -84,6 +84,7 @@ func init() {
 			}
 			display := fmt.Sprintf("title: %s", title)
 			response.DisplayParams = &display
+			createArtifact(taskData.Task.ID, "User Interaction", fmt.Sprintf("GUI credential prompt: %s", title))
 			return response
 		},
 	})
