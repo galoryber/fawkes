@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"fmt"
 )
 
 func init() {
@@ -52,6 +53,20 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			cmd, _ := taskData.Args.GetStringArg("command")
+			msg := "OPSEC WARNING: PowerShell execution"
+			if cmd != "" {
+				msg = fmt.Sprintf("OPSEC WARNING: PowerShell execution of command. PowerShell ScriptBlock Logging (Event ID 4104), Module Logging, and Transcription may capture the full command text. AMSI will inspect the script before execution. Consider using execute-assembly or inline-execute for stealthier alternatives.")
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
