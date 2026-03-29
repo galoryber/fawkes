@@ -36,14 +36,6 @@ func assertOutputContains(t *testing.T, result structs.CommandResult, substr str
 	}
 }
 
-// assertOutputNotContains fails the test if the output contains the substring.
-func assertOutputNotContains(t *testing.T, result structs.CommandResult, substr string) {
-	t.Helper()
-	if strings.Contains(result.Output, substr) {
-		t.Errorf("expected output to NOT contain %q, got %q", substr, result.Output)
-	}
-}
-
 // assertCommandName verifies the command's Name() returns the expected value.
 func assertCommandName(t *testing.T, cmd structs.Command, expected string) {
 	t.Helper()
