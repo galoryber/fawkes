@@ -459,6 +459,10 @@ Useful names: `[kworker/0:1]`, `[migration/0]`, `sshd`, `apache2`, `[rcu_preempt
 
 Combined with self-delete, the agent appears as a legitimate kernel thread or service with no file on disk.
 
+### Sleep Memory Guard Pages
+
+Enable `sleep_guard_pages` (requires `sleep_mask=true`) to apply `VirtualProtect(PAGE_NOACCESS)` on encrypted vault memory during sleep cycles. After the sleep mask encrypts sensitive data (AES-256-GCM) and zeros originals, guard pages move the vault to dedicated `VirtualAlloc`'d memory and mark it NO_ACCESS. EDR memory scanners, `ReadProcessMemory`, WinDbg, and Process Hacker get `STATUS_ACCESS_VIOLATION` when trying to read the vault. Pages are restored to `PAGE_READWRITE` on wake before decryption. Windows only.
+
 ### Custom HTTP Headers
 
 All headers defined in the Mythic HTTP C2 profile configuration are applied to every request. Beyond `User-Agent` (always supported), operators can add headers like `Accept-Language`, `Referer`, `Cookie`, or `X-Forwarded-For` to blend C2 traffic with legitimate web traffic patterns.
