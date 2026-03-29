@@ -160,6 +160,15 @@ func init() {
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			return response
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: Kerberoasting requests TGS tickets for service accounts (SPN enumeration + TGS-REQ). Generates Kerberos Event ID 4769 with encryption type 0x17 (RC4). Modern detection tools (e.g., Microsoft ATA, CrowdStrike) specifically alert on RC4 TGS requests from non-service accounts.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

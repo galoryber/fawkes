@@ -159,6 +159,15 @@ func init() {
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			return response
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: AS-REP Roasting queries accounts without Kerberos pre-authentication. Generates LDAP queries for userAccountControl flags and AS-REQ/AS-REP traffic. Event ID 4768 with pre-auth type 0 is detectable. Less commonly monitored than Kerberoasting but increasingly flagged.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
