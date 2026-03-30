@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -21,6 +22,10 @@ func init() {
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1070.001", "T1562.002"}, // T1070.001: Clear Event Logs, T1562.002: Disable Windows Event Logging
 		SupportedUIFeatures: []string{},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "eventlog_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
@@ -105,6 +110,48 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			channel, _ := taskData.Args.GetStringArg("channel")
+			msg := fmt.Sprintf("OPSEC WARNING: Event log operation (action: %s", action)
+			if channel != "" {
+				msg += fmt.Sprintf(", channel: %s", channel)
+			}
+			msg += "). "
+			switch action {
+			case "clear":
+				msg += "Clearing event logs generates Event ID 1102 (audit log cleared) and is a top-tier forensic indicator (T1070.001)."
+			case "disable":
+				msg += "Disabling event log channels stops telemetry collection — monitored by SIEM and EDR (T1562.002)."
+			default:
+				msg += "Event log enumeration is lower risk but may be logged by audit policies."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			channel, _ := taskData.Args.GetStringArg("channel")
+			msg := fmt.Sprintf("OPSEC AUDIT: Event log %s operation completed", action)
+			switch action {
+			case "clear":
+				msg += fmt.Sprintf(". Channel '%s' cleared — Event ID 1102 generated. This is a top forensic indicator (T1070.001).", channel)
+			case "disable":
+				msg += fmt.Sprintf(". Channel '%s' disabled — telemetry gap created (T1562.002).", channel)
+			default:
+				msg += ". Enumeration complete — low risk."
+			}
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

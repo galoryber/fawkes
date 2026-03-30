@@ -1,7 +1,11 @@
 package agentfunctions
 
 import (
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -54,6 +58,68 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// When action=use succeeds, output contains "New: DOMAIN\user"
+			// Register the token with Mythic's callback token tracker
+			if !strings.Contains(responseText, "New:") {
+				return response
+			}
+			user := ""
+			for _, line := range strings.Split(responseText, "\n") {
+				if strings.HasPrefix(strings.TrimSpace(line), "New:") {
+					user = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "New:"))
+					break
+				}
+			}
+			if user == "" {
+				return response
+			}
+			host := processResponse.TaskData.Callback.Host
+			_, err := mythicrpc.SendMythicRPCCallbackTokenCreate(mythicrpc.MythicRPCCallbackTokenCreateMessage{
+				TaskID: processResponse.TaskData.Task.ID,
+				CallbackTokens: []mythicrpc.MythicRPCCallbackTokenData{
+					{
+						Action:  "add",
+						Host:    &host,
+						TokenId: uint64(processResponse.TaskData.Task.ID),
+						TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
+							User: user,
+						},
+					},
+				},
+			})
+			if err != nil {
+				logging.LogError(err, "Failed to register token-store token with Mythic", "user", user)
+			}
+			return response
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Token store operation. "
+			switch action {
+			case "use":
+				msg += "Switching to saved token may trigger process token auditing and Event ID 4624 type 9 logon (T1134.001)."
+			case "save":
+				msg += "Saving current token — low detection risk, in-memory only."
+			default:
+				msg += "Token store management — low detection risk."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

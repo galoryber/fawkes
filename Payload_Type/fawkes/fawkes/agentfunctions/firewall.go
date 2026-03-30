@@ -164,6 +164,47 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := fmt.Sprintf("OPSEC WARNING: Firewall modification (action: %s). ", action)
+			switch action {
+			case "add":
+				msg += "Adding firewall rules modifies security policy — generates event logs and may trigger change detection (T1562.004)."
+			case "delete":
+				msg += "Deleting firewall rules weakens security posture — commonly monitored by SIEM as defense evasion (T1562.004)."
+			case "disable":
+				msg += "Disabling firewall rules is a high-visibility security change (T1562.004)."
+			default:
+				msg += "Firewall enumeration is lower risk but may be logged by audit policies."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			name, _ := taskData.Args.GetStringArg("name")
+			msg := fmt.Sprintf("OPSEC AUDIT: Firewall %s operation completed", action)
+			switch action {
+			case "add":
+				msg += fmt.Sprintf(". Rule '%s' created — verify no alerting triggered (T1562.004).", name)
+			case "delete":
+				msg += fmt.Sprintf(". Rule '%s' removed — security posture modified (T1562.004).", name)
+			case "disable":
+				msg += fmt.Sprintf(". Rule '%s' disabled — defense weakened (T1562.004).", name)
+			default:
+				msg += ". Enumeration complete — low risk."
+			}
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

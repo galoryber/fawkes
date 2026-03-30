@@ -33,22 +33,6 @@ func TestConfigExecuteWithoutAgent(t *testing.T) {
 	}
 }
 
-func newTestAgent() *structs.Agent {
-	return &structs.Agent{
-		PayloadUUID:   "test-uuid-1234",
-		Host:          "testhost",
-		User:          "testuser",
-		OS:            "linux",
-		Architecture:  "amd64",
-		PID:           12345,
-		ProcessName:   "agent",
-		InternalIP:    "192.168.1.100",
-		Integrity:     3,
-		SleepInterval: 30,
-		Jitter:        20,
-	}
-}
-
 func TestConfigShowDefault(t *testing.T) {
 	cmd := &ConfigCommand{}
 	agent := newTestAgent()

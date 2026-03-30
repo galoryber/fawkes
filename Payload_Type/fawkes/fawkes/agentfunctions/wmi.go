@@ -87,6 +87,23 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			host, _ := taskData.Args.GetStringArg("host")
+			msg := fmt.Sprintf("OPSEC WARNING: WMI %s", action)
+			if host != "" && host != "." && host != "localhost" {
+				msg = fmt.Sprintf("OPSEC WARNING: Remote WMI %s on %s. Generates WMI activity events (Event ID 5857-5861) and network traffic on TCP 135/dynamic RPC. Remote WMI execution is a common lateral movement indicator.", action, host)
+			} else {
+				msg = fmt.Sprintf("OPSEC WARNING: Local WMI %s. Generates WMI activity events (Event ID 5857-5861). WMI is commonly monitored for persistence and execution.", action)
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

@@ -67,6 +67,7 @@ func init() {
 			}
 			display := "SeImpersonate → SYSTEM via Print Spooler"
 			response.DisplayParams = &display
+			createArtifact(taskData.Task.ID, "API Call", "Print Spooler named pipe impersonation (SeImpersonate → SYSTEM)")
 			return response
 		},
 	})

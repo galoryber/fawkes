@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -91,6 +93,36 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// On successful SYSTEM escalation, update callback IntegrityLevel
+			if !strings.Contains(responseText, "Successfully elevated to SYSTEM") {
+				return response
+			}
+			systemLevel := 4 // SYSTEM integrity
+			update := mythicrpc.MythicRPCCallbackUpdateMessage{
+				AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+				IntegrityLevel:    &systemLevel,
+			}
+			// Also update user if "New:" line present
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if val := extractField(trimmed, "New:"); val != "" {
+					update.User = &val
+					break
+				}
+			}
+			if _, err := mythicrpc.SendMythicRPCCallbackUpdate(update); err != nil {
+				logging.LogError(err, "Failed to update callback metadata after getsystem")
+			}
+			return response
+		},
 	})
 }

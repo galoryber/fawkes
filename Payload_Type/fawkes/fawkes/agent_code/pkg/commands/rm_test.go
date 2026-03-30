@@ -3,27 +3,15 @@ package commands
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-
-	"fawkes/pkg/structs"
 )
 
 func TestRmCommandName(t *testing.T) {
-	cmd := &RmCommand{}
-	if cmd.Name() != "rm" {
-		t.Errorf("expected 'rm', got %q", cmd.Name())
-	}
+	assertCommandName(t, &RmCommand{}, "rm")
 }
 
 func TestRmNoParams(t *testing.T) {
-	cmd := &RmCommand{}
-	task := structs.NewTask("t", "rm", "")
-	task.Params = ""
-	result := cmd.Execute(task)
-	if result.Status != "error" {
-		t.Errorf("expected error, got %q", result.Status)
-	}
+	assertEmptyParamsError(t, &RmCommand{})
 }
 
 func TestRmFile(t *testing.T) {
@@ -32,15 +20,9 @@ func TestRmFile(t *testing.T) {
 	os.WriteFile(path, []byte("x"), 0644)
 
 	cmd := &RmCommand{}
-	task := structs.NewTask("t", "rm", "")
-	task.Params = path
-	result := cmd.Execute(task)
-	if result.Status != "success" {
-		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
-	}
-	if !strings.Contains(result.Output, "file") {
-		t.Error("output should mention file type")
-	}
+	result := cmd.Execute(mockTask("rm", path))
+	assertSuccess(t, result)
+	assertOutputContains(t, result, "file")
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Error("file should be deleted")
 	}
@@ -53,25 +35,15 @@ func TestRmDirectory(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "sub", "file.txt"), []byte("x"), 0644)
 
 	cmd := &RmCommand{}
-	task := structs.NewTask("t", "rm", "")
-	task.Params = dir
-	result := cmd.Execute(task)
-	if result.Status != "success" {
-		t.Errorf("expected success, got %q: %s", result.Status, result.Output)
-	}
-	if !strings.Contains(result.Output, "directory") {
-		t.Error("output should mention directory type")
-	}
+	result := cmd.Execute(mockTask("rm", dir))
+	assertSuccess(t, result)
+	assertOutputContains(t, result, "directory")
 }
 
 func TestRmNonexistent(t *testing.T) {
 	cmd := &RmCommand{}
-	task := structs.NewTask("t", "rm", "")
-	task.Params = "/nonexistent/path"
-	result := cmd.Execute(task)
-	if result.Status != "error" {
-		t.Errorf("expected error, got %q", result.Status)
-	}
+	result := cmd.Execute(mockTask("rm", "/nonexistent/path"))
+	assertError(t, result)
 }
 
 func TestRmJSONParams(t *testing.T) {
@@ -80,10 +52,6 @@ func TestRmJSONParams(t *testing.T) {
 	os.WriteFile(path, []byte("x"), 0644)
 
 	cmd := &RmCommand{}
-	task := structs.NewTask("t", "rm", "")
-	task.Params = `{"path":"` + path + `"}`
-	result := cmd.Execute(task)
-	if result.Status != "success" {
-		t.Errorf("expected success with JSON params, got %q: %s", result.Status, result.Output)
-	}
+	result := cmd.Execute(mockTask("rm", `{"path":"`+path+`"}`))
+	assertSuccess(t, result)
 }
