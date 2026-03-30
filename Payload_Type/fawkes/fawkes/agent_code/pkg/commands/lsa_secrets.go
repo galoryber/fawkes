@@ -5,7 +5,6 @@ package commands
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"runtime"
