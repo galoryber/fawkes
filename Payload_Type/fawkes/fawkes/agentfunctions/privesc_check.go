@@ -49,6 +49,24 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			msg := "OPSEC WARNING: Privilege escalation enumeration accesses system configuration (services, registry, SUID binaries, sudo, cron, systemd). "
+			switch taskData.Payload.OS {
+			case "Windows":
+				msg += "Queries service configs, registry (AlwaysInstallElevated, auto-logon), UAC status, and token privileges. May trigger alerts for bulk service/registry enumeration."
+			case "Linux":
+				msg += "Scans SUID/SGID binaries, capabilities, sudoers, cron, NFS, systemd units, docker group, ld.so.preload. File system enumeration may be audited."
+			case "macOS":
+				msg += "Checks LaunchDaemons, TCC database, dylib hijacking, SIP status. TCC database access may require Full Disk Access."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

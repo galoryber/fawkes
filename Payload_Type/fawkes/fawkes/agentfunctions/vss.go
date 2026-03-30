@@ -100,6 +100,27 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Volume Shadow Copy operations. "
+			switch action {
+			case "create":
+				msg += "Creating a shadow copy generates Event ID 8224 (VSS) and may trigger alerts for credential access preparation (SAM/NTDS.dit extraction)."
+			case "delete":
+				msg += "Deleting shadow copies is a well-known ransomware indicator (Event ID 524). High-fidelity detection rule in most SIEM/EDR."
+			case "extract":
+				msg += "Extracting files from shadow copies bypasses file locks — commonly used for SAM/SYSTEM/NTDS.dit extraction."
+			default:
+				msg += "Listing shadow copies is low risk but may indicate pre-attack reconnaissance."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

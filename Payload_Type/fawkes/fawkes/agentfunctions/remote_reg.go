@@ -158,6 +158,22 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			server, _ := taskData.Args.GetStringArg("server")
+			msg := fmt.Sprintf("OPSEC WARNING: Remote registry %s via RPC named pipe (winreg) on %s.", action, server)
+			if action == "set" || action == "delete" {
+				msg += " Write/delete operations modify the remote registry — may trigger EDR alerts for remote registry modification."
+			}
+			msg += " Uses SMB named pipe transport (ncacn_np:[winreg]) — generates network logon and SMB events."
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

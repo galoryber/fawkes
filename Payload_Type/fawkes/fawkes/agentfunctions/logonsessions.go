@@ -64,6 +64,22 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			msg := "OPSEC WARNING: Logon session enumeration. "
+			switch taskData.Payload.OS {
+			case "Windows":
+				msg += "Calls LsaEnumerateLogonSessions + LsaGetLogonSessionData + WTSEnumerateSessionsW. Enumerating LSA logon sessions may be monitored by EDR."
+			default:
+				msg += "Reads utmp/utmpx files for active sessions. Low risk on Linux/macOS."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

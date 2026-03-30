@@ -146,6 +146,29 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			server, _ := taskData.Args.GetStringArg("server")
+			msg := fmt.Sprintf("OPSEC WARNING: Remote service %s via SVCCTL RPC on %s.", action, server)
+			switch action {
+			case "create":
+				msg += " Service creation is a high-fidelity indicator of lateral movement (Event ID 7045). EDR products heavily monitor remote service installation."
+			case "delete":
+				msg += " Service deletion may trigger alerts for defense evasion."
+			case "start", "stop":
+				msg += " Service state changes generate Event ID 7036 and may be monitored."
+			default:
+				msg += " Service enumeration generates network logon events."
+			}
+			msg += " Uses SMB named pipe transport (ncacn_np:[svcctl])."
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

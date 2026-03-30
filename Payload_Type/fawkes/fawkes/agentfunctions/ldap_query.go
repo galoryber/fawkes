@@ -135,6 +135,26 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			server, _ := taskData.Args.GetStringArg("server")
+			msg := fmt.Sprintf("OPSEC WARNING: LDAP query (%s) against %s.", action, server)
+			switch action {
+			case "domain-admins", "admins", "spns", "asrep":
+				msg += " Querying privileged/sensitive attributes — may trigger AD honeypot or LDAP monitoring rules for reconnaissance."
+			case "dacl":
+				msg += " DACL enumeration reads security descriptors — some EDR products monitor bulk DACL reads as BloodHound-like behavior."
+			default:
+				msg += " LDAP queries generate directory service access logs (Event ID 4662). High-volume queries may trigger anomaly detection."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

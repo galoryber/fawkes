@@ -83,6 +83,27 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: "
+			switch action {
+			case "dump":
+				msg += "Dumping Kerberos tickets from memory. On Windows, calls LsaCallAuthenticationPackage — may trigger EDR alerts for LSASS interaction. Exported tickets enable pass-the-ticket attacks."
+			case "import":
+				msg += "Injecting Kerberos ticket (pass-the-ticket). On Windows, calls LsaCallAuthenticationPackage with KerbSubmitTicketMessage. On Linux/macOS, writes ccache file. May trigger Kerberos anomaly detection."
+			case "purge":
+				msg += "Purging Kerberos ticket cache. Calls LsaCallAuthenticationPackage with KerbPurgeTicketCacheMessage. May disrupt authenticated sessions."
+			default:
+				msg += "Listing Kerberos tickets. Low risk — read-only enumeration of cached tickets."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

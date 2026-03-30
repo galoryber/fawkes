@@ -60,6 +60,25 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			amsiPatch, _ := taskData.Args.GetStringArg("amsi_patch")
+			etwPatch, _ := taskData.Args.GetStringArg("etw_patch")
+			msg := "OPSEC WARNING: Initializing .NET CLR runtime in-process."
+			if amsiPatch != "None" && amsiPatch != "" {
+				msg += fmt.Sprintf(" AMSI patch (%s) modifies amsi.dll in memory — may trigger tamper detection.", amsiPatch)
+			}
+			if etwPatch != "None" && etwPatch != "" {
+				msg += fmt.Sprintf(" ETW patch (%s) modifies ntdll.dll — may trigger integrity monitoring.", etwPatch)
+			}
+			msg += " CLR loading generates ETW events and may be monitored by .NET-aware EDR."
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

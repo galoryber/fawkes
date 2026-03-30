@@ -44,6 +44,25 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: "
+			switch action {
+			case "enable":
+				msg += "Enabling WDigest writes UseLogonCredential=1 to HKLM\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest. This registry modification is a well-known credential access indicator and is monitored by most EDR/SIEM solutions."
+			case "disable":
+				msg += "Disabling WDigest writes UseLogonCredential=0. Registry modification to WDigest key may trigger endpoint alerts."
+			default:
+				msg += "Querying WDigest registry key status. Low risk — read-only registry access."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
