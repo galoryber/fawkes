@@ -2,8 +2,11 @@ package agentfunctions
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -61,6 +64,38 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse env_scan output: "  [PID N] process: VARIABLE = value"
+			re := regexp.MustCompile(`\[PID \d+\]\s+(\S+):\s+(\S+)\s+=\s+(.+)`)
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			for _, line := range strings.Split(responseText, "\n") {
+				m := re.FindStringSubmatch(strings.TrimSpace(line))
+				if m == nil {
+					continue
+				}
+				process, varName, value := m[1], m[2], strings.TrimSpace(m[3])
+				if value == "" || value == "(empty)" {
+					continue
+				}
+				creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+					CredentialType: "plaintext",
+					Realm:          process,
+					Account:        varName,
+					Credential:     value,
+					Comment:        "env-scan (environment variable)",
+				})
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{

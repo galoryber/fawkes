@@ -1,9 +1,13 @@
 package agentfunctions
 
 import (
+	"encoding/json"
+	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -42,6 +46,46 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			type avProduct struct {
+				Product  string `json:"product"`
+				Vendor   string `json:"vendor"`
+				Category string `json:"category"`
+				Process  string `json:"process"`
+				PID      int32  `json:"pid"`
+			}
+			var products []avProduct
+			if err := json.Unmarshal([]byte(responseText), &products); err != nil {
+				return response
+			}
+			// Register each detected product as an artifact
+			var productNames []string
+			for _, p := range products {
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Security Product",
+					ArtifactMessage:  fmt.Sprintf("%s (%s) - %s [PID %d]", p.Product, p.Vendor, p.Process, p.PID),
+				})
+				productNames = append(productNames, p.Product)
+			}
+			// Update callback description with detected security products
+			if len(productNames) > 0 {
+				desc := "AV/EDR: " + strings.Join(productNames, ", ")
+				mythicrpc.SendMythicRPCCallbackUpdate(mythicrpc.MythicRPCCallbackUpdateMessage{
+					AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+					Description:       &desc,
+				})
+			}
+			return response
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
