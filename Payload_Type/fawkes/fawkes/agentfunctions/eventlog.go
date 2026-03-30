@@ -133,6 +133,26 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			channel, _ := taskData.Args.GetStringArg("channel")
+			msg := fmt.Sprintf("OPSEC AUDIT: Event log %s operation completed", action)
+			switch action {
+			case "clear":
+				msg += fmt.Sprintf(". Channel '%s' cleared — Event ID 1102 generated. This is a top forensic indicator (T1070.001).", channel)
+			case "disable":
+				msg += fmt.Sprintf(". Channel '%s' disabled — telemetry gap created (T1562.002).", channel)
+			default:
+				msg += ". Enumeration complete — low risk."
+			}
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

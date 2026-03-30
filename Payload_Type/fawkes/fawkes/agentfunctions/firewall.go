@@ -183,6 +183,28 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			name, _ := taskData.Args.GetStringArg("name")
+			msg := fmt.Sprintf("OPSEC AUDIT: Firewall %s operation completed", action)
+			switch action {
+			case "add":
+				msg += fmt.Sprintf(". Rule '%s' created — verify no alerting triggered (T1562.004).", name)
+			case "delete":
+				msg += fmt.Sprintf(". Rule '%s' removed — security posture modified (T1562.004).", name)
+			case "disable":
+				msg += fmt.Sprintf(". Rule '%s' disabled — defense weakened (T1562.004).", name)
+			default:
+				msg += ". Enumeration complete — low risk."
+			}
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

@@ -102,6 +102,25 @@ func init() {
 			}
 			return response
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Token store operation. "
+			switch action {
+			case "use":
+				msg += "Switching to saved token may trigger process token auditing and Event ID 4624 type 9 logon (T1134.001)."
+			case "save":
+				msg += "Saving current token — low detection risk, in-memory only."
+			default:
+				msg += "Token store management — low detection risk."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

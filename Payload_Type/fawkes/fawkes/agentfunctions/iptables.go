@@ -96,6 +96,27 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC AUDIT: iptables operation completed. "
+			switch action {
+			case "add":
+				msg += "New firewall rule added — verify rule persistence and logging (T1562.004)."
+			case "delete":
+				msg += "Firewall rule removed — security posture modified (T1562.004)."
+			case "flush":
+				msg += "Firewall rules flushed — ALL rules cleared, security posture significantly weakened (T1562.004)."
+			default:
+				msg += "Enumeration complete — low risk."
+			}
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
