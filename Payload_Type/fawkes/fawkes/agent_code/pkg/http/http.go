@@ -156,6 +156,11 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 	return profile
 }
 
+// SetTimeout configures the HTTP client timeout in seconds.
+func (h *HTTPProfile) SetTimeout(seconds int) {
+	h.client.Timeout = time.Duration(seconds) * time.Second
+}
+
 // SealConfig encrypts all sensitive C2 configuration fields into an AES-256-GCM
 // vault and zeros the plaintext struct fields. After sealing, fields are only
 // decrypted on-demand for the duration of each HTTP operation. This reduces the

@@ -400,6 +400,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 		{
+			Name:          "http_timeout",
+			Description:   "HTTP request timeout in seconds. Controls how long the agent waits for C2 server responses. Default: 30. Increase for high-latency networks, decrease for faster failure detection.",
+			Required:      false,
+			DefaultValue:  "30",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "max_retries",
 			Description:   "Maximum number of consecutive failed checkin attempts before the agent self-terminates. Default: 10. Set to 0 for unlimited retries.",
 			Required:      false,
@@ -762,6 +769,16 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	// User-Agent pool
 	if uaPool, err := payloadBuildMsg.BuildParameters.GetStringArg("user_agent_pool"); err == nil && uaPool != "" {
 		ldflags += fmt.Sprintf(" -X '%s.userAgentPool=%s'", fawkes_main_package, strings.ReplaceAll(uaPool, "'", ""))
+	}
+
+	// HTTP timeout
+	if htStr, err := payloadBuildMsg.BuildParameters.GetStringArg("http_timeout"); err == nil && htStr != "" && htStr != "30" {
+		if _, parseErr := strconv.Atoi(htStr); parseErr != nil {
+			payloadBuildResponse.Success = false
+			payloadBuildResponse.BuildStdErr = fmt.Sprintf("Invalid http_timeout %q — must be a number", htStr)
+			return payloadBuildResponse
+		}
+		ldflags += fmt.Sprintf(" -X '%s.httpTimeout=%s'", fawkes_main_package, htStr)
 	}
 
 	// Max retries

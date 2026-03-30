@@ -44,6 +44,7 @@ var (
 	jitter            string = "10"
 	encryptionKey     string = ""
 	killDate          string = "0"
+	httpTimeout       string = "30"
 	maxRetries        string = "10"
 	debug             string = "false"
 	getURI            string = "/data"
@@ -145,6 +146,10 @@ func runAgent() {
 	if err != nil || maxRetriesInt < 0 {
 		log.Printf("cfg: retries=%q fallback=10", maxRetries)
 		maxRetriesInt = 10
+	}
+	httpTimeoutInt, err := strconv.Atoi(httpTimeout)
+	if err != nil || httpTimeoutInt <= 0 {
+		httpTimeoutInt = 30
 	}
 	debugBool, err := strconv.ParseBool(debug)
 	if err != nil {
@@ -455,6 +460,10 @@ func runAgent() {
 			fallbackURLs,
 			ctList,
 		)
+		// Set configurable HTTP timeout
+		if httpTimeoutInt != 30 {
+			httpProfile.SetTimeout(httpTimeoutInt)
+		}
 		// Parse User-Agent pool for per-request rotation
 		if userAgentPool != "" {
 			for _, ua := range strings.Split(userAgentPool, "\n") {
@@ -1034,6 +1043,7 @@ func clearGlobals() {
 	sleepInterval = ""
 	jitter = ""
 	killDate = ""
+	httpTimeout = ""
 	maxRetries = ""
 	debug = ""
 	workingHoursStart = ""
