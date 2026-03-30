@@ -2,8 +2,10 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -95,6 +97,40 @@ func init() {
 			display := fmt.Sprintf("title: %s", title)
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "User Interaction", fmt.Sprintf("GUI credential prompt: %s", title))
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse output format:
+			//   User:     <username>
+			//   Password: <password>
+			var username, password string
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "User:") {
+					username = strings.TrimSpace(strings.TrimPrefix(trimmed, "User:"))
+				} else if strings.HasPrefix(trimmed, "Password:") {
+					password = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
+				}
+			}
+			if username != "" && password != "" {
+				registerCredentials(processResponse.TaskData.Task.ID, []mythicrpc.MythicRPCCredentialCreateCredentialData{
+					{
+						CredentialType: "plaintext",
+						Realm:          "local",
+						Account:        username,
+						Credential:     password,
+						Comment:        "credential-prompt dialog capture",
+					},
+				})
+			}
 			return response
 		},
 	})
