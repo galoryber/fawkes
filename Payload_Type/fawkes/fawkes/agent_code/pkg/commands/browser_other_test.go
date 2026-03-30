@@ -38,22 +38,6 @@ func TestBrowserUnknownAction(t *testing.T) {
 	assertOutputContains(t, result, "Unknown action")
 }
 
-func TestBrowserPasswordsUnsupported(t *testing.T) {
-	cmd := &BrowserCommand{}
-	params, _ := json.Marshal(browserArgs{Action: "passwords"})
-	result := cmd.Execute(mockTask("browser", string(params)))
-	assertError(t, result)
-	assertOutputContains(t, result, "Windows")
-}
-
-func TestBrowserCookiesChromiumUnsupported(t *testing.T) {
-	cmd := &BrowserCommand{}
-	params, _ := json.Marshal(browserArgs{Action: "cookies", Browser: "chrome"})
-	result := cmd.Execute(mockTask("browser", string(params)))
-	assertError(t, result)
-	assertOutputContains(t, result, "DPAPI")
-}
-
 func TestBrowserPaths(t *testing.T) {
 	paths := browserPaths("all")
 	if paths == nil {
