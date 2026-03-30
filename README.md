@@ -509,6 +509,8 @@ The HTTP profile calls back to the Mythic server over the basic, non-dynamic pro
   - `{rand:N}` — N random hex characters (e.g., `/api/{rand:8}` → `/api/a3f82b1c`)
   - `{int:M-N}` — random integer in range (e.g., `/v{int:1-3}/status` → `/v2/status`)
 - **Content-Type cycling:** Set the `content_types` build parameter to a comma-separated list (e.g., `application/json,text/plain,application/x-www-form-urlencoded`). The agent cycles through them round-robin. Default: `application/x-www-form-urlencoded`.
+- **User-Agent rotation:** Set the `user_agent_pool` build parameter to a newline-separated list of User-Agent strings. The agent rotates through them per-request, eliminating the static UA fingerprint. Default: single Chrome 134 UA.
+- **Exponential backoff:** On consecutive C2 failures, the agent doubles its sleep interval (capped at 5 minutes). Normal interval is restored on successful contact.
 - **TLS fingerprinting:** Spoof browser JA3 fingerprints (`chrome`, `firefox`, `safari`, `edge`, `random`).
 - **Domain fronting:** Set `host_header` to override the HTTP Host header.
 - **Automatic failover:** Configure `fallback_hosts` for resilient C2.
