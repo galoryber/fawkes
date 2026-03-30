@@ -123,11 +123,13 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	}()
 
 	if len(users) == 0 {
+		diagLog("no users found")
 		return errorResult("No user accounts found in SAM database.")
 	}
 
 	// Format output and build credential entries for Mythic's credential vault
 	hostname, _ := os.Hostname()
+	diagLog(fmt.Sprintf("hostname: %s", hostname))
 	var sb strings.Builder
 	var creds []structs.MythicCredential
 	for _, u := range users {
@@ -144,6 +146,7 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 			})
 		}
 	}
+	diagLog(fmt.Sprintf("formatted: %d users, %d creds, output_len=%d", len(users), len(creds), sb.Len()))
 
 	result := structs.CommandResult{
 		Output:    sb.String(),
@@ -153,6 +156,7 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	if len(creds) > 0 {
 		result.Credentials = &creds
 	}
+	diagLog("returning result")
 	return result
 }
 

