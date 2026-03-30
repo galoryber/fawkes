@@ -85,6 +85,21 @@ func init() {
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			return response
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			name, _ := taskData.Args.GetStringArg("name")
+			msg := "OPSEC WARNING: Extracting WiFi profile credentials via netsh wlan show profile. "
+			if name != "" {
+				msg += fmt.Sprintf("Targeting profile '%s'. ", name)
+			}
+			msg += "Retrieves plaintext WiFi passwords stored on the system. Spawns netsh.exe which may be logged by process monitoring."
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

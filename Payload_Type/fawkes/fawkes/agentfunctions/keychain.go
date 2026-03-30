@@ -115,6 +115,27 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Accessing macOS Keychain. "
+			switch action {
+			case "dump":
+				msg += "Dumping all keychain metadata. May trigger macOS security prompts if accessing login keychain items."
+			case "find-password", "find-internet":
+				msg += "Searching for passwords. macOS may display a system authorization prompt asking the user to allow keychain access."
+			case "find-cert":
+				msg += "Searching for certificates. Less likely to trigger prompts but accesses the certificate trust store."
+			default:
+				msg += "Enumerating keychains (low risk)."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
