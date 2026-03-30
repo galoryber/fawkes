@@ -41,7 +41,7 @@ func (c *UnlinkCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Send edge removal notification
 	tcpProfileInstance.EdgeMessages <- structs.P2PConnectionMessage{
-		Source:        tcpProfileInstance.CallbackUUID,
+		Source:        tcpProfileInstance.GetCallbackUUID(),
 		Destination:   args.ConnectionID,
 		Action:        "remove",
 		C2ProfileName: "tcp",

