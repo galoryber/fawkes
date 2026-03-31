@@ -7,15 +7,15 @@ hidden = false
 
 ## Summary
 
-Query and clean Windows Shimcache (AppCompatCache) execution history. Shimcache records program execution metadata in the registry, which is a key forensic artifact used by incident responders to determine what programs have been run on a system.
+Query and clean forensic execution artifacts. Targets platform-specific artifacts that record program execution:
 
-Cleaning the Shimcache removes evidence of tool execution, complementing other anti-forensics commands (prefetch, usn-jrnl, eventlog, history-scrub).
+- **Windows**: Shimcache (AppCompatCache) — registry-based execution history
+- **Linux**: recently-used.xbel (GTK/GNOME), thumbnail cache, GNOME Tracker database
+- **macOS**: Recent items, KnowledgeC database, quarantine events, shared file lists
 
-Uses the `golang.org/x/sys/windows/registry` package for direct registry access — no external process creation.
+Cleaning these artifacts removes evidence of tool execution, complementing other anti-forensics commands (prefetch, usn-jrnl, eventlog, history-scrub).
 
-{{% notice info %}}Windows Only{{% /notice %}}
-
-{{% notice warning %}}Delete/clear actions require administrative privileges (registry write to HKLM){{% /notice %}}
+{{% notice warning %}}Delete/clear actions may require elevated privileges (Windows: HKLM registry write, macOS: some artifacts require root){{% /notice %}}
 
 ## Arguments
 
@@ -27,32 +27,45 @@ Uses the `golang.org/x/sys/windows/registry` package for direct registry access 
 
 ### Actions
 
-- **query** — List Shimcache entries showing program paths and last modification timestamps
-- **search** — Search for specific executable name or path pattern in the Shimcache
-- **delete** — Remove entries matching the specified name pattern from the Shimcache
-- **clear** — Remove all Shimcache entries
+- **query** — List forensic artifact entries (Windows: Shimcache paths/timestamps; Linux: recently-used files + artifact sizes; macOS: artifact inventory)
+- **search** — Search for specific name or path pattern (Windows/Linux: substring match; macOS: matches artifact labels/paths)
+- **delete** — Remove matching entries (Windows: rewrite Shimcache; Linux: filter recently-used.xbel; macOS: remove matching artifact files)
+- **clear** — Remove all forensic artifacts across all tracked locations
 
 ## Usage
 
 ```
-# View recent Shimcache entries
+# View recent forensic artifact entries
 amcache -action query
 
 # View more entries
 amcache -action query -count 200
 
-# Search for specific executable
+# Search for specific executable/file
 amcache -action search -name fawkes
-
-# Search for all PowerShell-related entries
-amcache -action search -name powershell
 
 # Delete entries matching a pattern
 amcache -action delete -name fawkes.exe
 
-# Clear all Shimcache entries
+# Clear all forensic artifacts
 amcache -action clear
 ```
+
+### Platform-Specific Behavior
+
+**Windows:**
+- Queries/modifies Shimcache (AppCompatCache) in the registry
+- Supports all 4 actions with entry-level granularity
+
+**Linux:**
+- `query` shows recently-used.xbel entries + thumbnail/tracker artifact sizes
+- `search`/`delete` operate on recently-used.xbel entries
+- `clear` removes recently-used entries, thumbnail cache, and GNOME Tracker DB
+
+**macOS:**
+- `query` inventories recent items, KnowledgeC, quarantine events, shared file lists
+- `search`/`delete` match against artifact labels/paths (binary format artifacts)
+- `clear` removes all detected forensic artifact files
 
 ## Output Format
 
@@ -71,11 +84,15 @@ The browser script highlights suspicious executables (powershell, cmd, wscript, 
 
 ## Operational Notes
 
-- **Shimcache vs Amcache**: This command targets the Shimcache (AppCompatCache registry value), which is the in-memory execution tracker. The Amcache.hve hive file is a separate artifact.
-- **Shimcache persistence**: The Shimcache is written to the registry on system shutdown. Changes take effect immediately in the registry but the in-memory cache may still contain entries until the next reboot.
-- **Format support**: Automatically detects Windows 10/11 format (signature `10ts`/`0x30747331`) and Windows 8/8.1 format.
-- **Delete operations** rewrite the entire AppCompatCache registry value with matching entries removed.
-- **Combine with other anti-forensics**: Use alongside `prefetch -action clear`, `usn-jrnl -action delete`, `auditpol -action stealth`, and `eventlog -action clear` for comprehensive evidence removal.
+- **Windows — Shimcache vs Amcache**: This command targets the Shimcache (AppCompatCache registry value), which is the in-memory execution tracker. The Amcache.hve hive file is a separate artifact.
+- **Windows — Shimcache persistence**: The Shimcache is written to the registry on system shutdown. Changes take effect immediately in the registry but the in-memory cache may still contain entries until the next reboot.
+- **Windows — Format support**: Automatically detects Windows 10/11 format (signature `10ts`/`0x30747331`) and Windows 8/8.1 format.
+- **Linux — recently-used.xbel**: GTK/GNOME recently used file tracker. Located at `~/.local/share/recently-used.xbel` (XDG) or `~/.recently-used.xbel` (legacy). XML format with entry-level granularity.
+- **Linux — Thumbnail cache**: Located at `~/.cache/thumbnails/`. Contains PNG thumbnails that reveal which files have been viewed.
+- **Linux — GNOME Tracker**: Located at `~/.cache/tracker3/` (Tracker 3.x) or `~/.local/share/tracker/` (Tracker 2.x). Indexes file metadata.
+- **macOS — KnowledgeC**: Application usage tracking database at `~/Library/Application Support/Knowledge/knowledgeC.db`.
+- **macOS — Quarantine events**: Records downloaded files at `~/Library/Preferences/com.apple.LaunchServices.QuarantineEventsV2`.
+- **Combine with other anti-forensics**: Use alongside `prefetch -action clear`, `usn-jrnl -action delete`, `auditpol -action stealth`, `eventlog -action clear`, and `history-scrub -action clear-all` for comprehensive evidence removal.
 
 ## MITRE ATT&CK Mapping
 
