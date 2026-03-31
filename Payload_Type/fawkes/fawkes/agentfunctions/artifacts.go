@@ -29,17 +29,39 @@ func isAllZeros(s string) bool {
 	return len(s) > 0
 }
 
-// registerCredentials sends extracted credentials to Mythic's credential vault.
-// Used by ProcessResponse hooks to register credentials discovered during command execution.
+// registerCredentials sends extracted credentials to Mythic's credential vault,
+// skipping duplicates that already exist. Used by ProcessResponse hooks to register
+// credentials discovered during command execution.
 func registerCredentials(taskID int, creds []mythicrpc.MythicRPCCredentialCreateCredentialData) {
 	if len(creds) == 0 {
 		return
 	}
+	// Filter out credentials that already exist in the vault
+	var newCreds []mythicrpc.MythicRPCCredentialCreateCredentialData
+	for _, c := range creds {
+		account := c.Account
+		realm := c.Realm
+		credType := c.CredentialType
+		searchResp, err := mythicrpc.SendMythicRPCCredentialSearch(mythicrpc.MythicRPCCredentialSearchMessage{
+			TaskID: taskID,
+			SearchCredentials: mythicrpc.MythicRPCCredentialSearchCredentialData{
+				Account: &account,
+				Realm:   &realm,
+				Type:    &credType,
+			},
+		})
+		if err != nil || !searchResp.Success || len(searchResp.Credentials) == 0 {
+			newCreds = append(newCreds, c)
+		}
+	}
+	if len(newCreds) == 0 {
+		return
+	}
 	_, err := mythicrpc.SendMythicRPCCredentialCreate(mythicrpc.MythicRPCCredentialCreateMessage{
 		TaskID:      taskID,
-		Credentials: creds,
+		Credentials: newCreds,
 	})
 	if err != nil {
-		logging.LogError(err, "Failed to register credentials in vault", "task_id", taskID, "count", len(creds))
+		logging.LogError(err, "Failed to register credentials in vault", "task_id", taskID, "count", len(newCreds))
 	}
 }
