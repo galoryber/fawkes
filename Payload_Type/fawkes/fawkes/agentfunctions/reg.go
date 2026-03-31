@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -10,8 +11,12 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "reg",
-		Description:         "Unified Windows Registry operations — read, write, delete, search, and save hives. Single command replaces reg-read, reg-write, reg-delete, reg-search, and reg-save.",
+		Name: "reg",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "reg_new.js"),
+			Author:     "@galoryber",
+		},
+		Description: "Unified Windows Registry operations — read, write, delete, search, and save hives. Single command replaces reg-read, reg-write, reg-delete, reg-search, and reg-save.",
 		HelpString:          "reg -action read -hive HKLM -path \"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\" -name ProgramFilesDir\nreg -action write -hive HKCU -path \"Software\\Test\" -name Val -data hello -type REG_SZ\nreg -action delete -hive HKCU -path \"Software\\Test\" -name Val\nreg -action search -pattern password -hive HKLM -path SOFTWARE\nreg -action save -hive HKLM -path SAM -output C:\\Temp\\sam.hiv",
 		Version:             1,
 		MitreAttackMappings: []string{"T1012", "T1112", "T1003.002"},
