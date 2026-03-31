@@ -2,6 +2,8 @@ package agentfunctions
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -145,6 +147,27 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: "  [+] [CATEGORY] \\host\share\path (size, date)"
+			re := regexp.MustCompile(`\[\+\]\s+\[([^\]]+)\]\s+(\S+)`)
+			for _, line := range strings.Split(responseText, "\n") {
+				m := re.FindStringSubmatch(line)
+				if m == nil {
+					continue
+				}
+				category, path := m[1], m[2]
+				createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+					fmt.Sprintf("[%s] %s", category, path))
+			}
+			return response
+		},
 	})
 }

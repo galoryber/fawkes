@@ -3,6 +3,8 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -69,6 +71,53 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Extract Subject and Self-Signed status from the leaf certificate
+			subjectRe := regexp.MustCompile(`Subject:\s+(.+)`)
+			selfSignedRe := regexp.MustCompile(`Self-Signed:\s+(\S+)`)
+			validityRe := regexp.MustCompile(`Validity:\s+(\S+)`)
+
+			subject := ""
+			selfSigned := ""
+			validity := ""
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if subject == "" {
+					if m := subjectRe.FindStringSubmatch(trimmed); m != nil {
+						subject = m[1]
+					}
+				}
+				if selfSigned == "" {
+					if m := selfSignedRe.FindStringSubmatch(trimmed); m != nil {
+						selfSigned = m[1]
+					}
+				}
+				if validity == "" {
+					if m := validityRe.FindStringSubmatch(trimmed); m != nil {
+						validity = m[1]
+					}
+				}
+			}
+			if subject != "" {
+				msg := fmt.Sprintf("TLS cert: %s", subject)
+				if selfSigned == "YES" {
+					msg += " (self-signed)"
+				}
+				if validity != "" && validity != "OK" {
+					msg += fmt.Sprintf(" [%s]", validity)
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Certificate", msg)
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}

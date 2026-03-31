@@ -3,6 +3,8 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -106,6 +108,26 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: "192.168.1.1          22       SSH" (column-aligned text table)
+			re := regexp.MustCompile(`^(\d+\.\d+\.\d+\.\d+)\s+(\d+)\s+(\S+)`)
+			for _, line := range strings.Split(responseText, "\n") {
+				m := re.FindStringSubmatch(strings.TrimSpace(line))
+				if m == nil {
+					continue
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+					fmt.Sprintf("Port scan: %s:%s (%s)", m[1], m[2], m[3]))
+			}
+			return response
+		},
 	})
 }

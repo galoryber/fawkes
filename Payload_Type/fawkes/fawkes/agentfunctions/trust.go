@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -110,6 +111,38 @@ func init() {
 				ArtifactMessage:  fmt.Sprintf("LDAP trust enumeration query on %s", server),
 			})
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			type trustEntry struct {
+				Partner   string `json:"partner"`
+				Direction string `json:"direction"`
+				Type      string `json:"type"`
+				Category  string `json:"category"`
+				Risk      string `json:"risk"`
+			}
+			type trustOutput struct {
+				Trusts []trustEntry `json:"trusts"`
+			}
+			var output trustOutput
+			if err := json.Unmarshal([]byte(responseText), &output); err != nil {
+				return response
+			}
+			for _, t := range output.Trusts {
+				msg := fmt.Sprintf("Trust: %s — %s (%s, %s)", t.Partner, t.Direction, t.Category, t.Type)
+				if t.Risk != "" {
+					msg += " ⚠ " + t.Risk
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Domain Trust", msg)
+			}
 			return response
 		},
 	})

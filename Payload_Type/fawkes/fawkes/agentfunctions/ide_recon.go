@@ -1,6 +1,12 @@
 package agentfunctions
 
-import agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+import (
+	"fmt"
+	"regexp"
+	"strings"
+
+	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+)
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
@@ -68,6 +74,59 @@ func init() {
 			}
 			response.DisplayParams = &displayParams
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Extract SSH targets: "  hostname (platform)"
+			sshRe := regexp.MustCompile(`^\s{6}(\S+)\s+\(`)
+			// Extract data sources: "  dbname: jdbc:..."
+			dbRe := regexp.MustCompile(`^\s{8}(\S+):\s+(jdbc:\S+)`)
+			// Extract sensitive settings: "  [SENSITIVE] key = value"
+			sensitiveRe := regexp.MustCompile(`\[SENSITIVE\]\s+(\S+)`)
+
+			inSSH := false
+			inDB := false
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "Remote SSH targets:") {
+					inSSH = true
+					inDB = false
+					continue
+				}
+				if strings.HasPrefix(trimmed, "Data sources") {
+					inDB = true
+					inSSH = false
+					continue
+				}
+				if strings.HasPrefix(trimmed, "---") || trimmed == "" {
+					inSSH = false
+					inDB = false
+				}
+				if inSSH {
+					if m := sshRe.FindStringSubmatch(line); m != nil {
+						createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+							fmt.Sprintf("IDE SSH target: %s", m[1]))
+					}
+				}
+				if inDB {
+					if m := dbRe.FindStringSubmatch(line); m != nil {
+						createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+							fmt.Sprintf("IDE data source: %s → %s", m[1], m[2]))
+					}
+				}
+				if m := sensitiveRe.FindStringSubmatch(line); m != nil {
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						fmt.Sprintf("IDE sensitive setting: %s", m[1]))
+				}
+			}
 			return response
 		},
 	})

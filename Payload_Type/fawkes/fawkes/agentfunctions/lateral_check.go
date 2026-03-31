@@ -1,8 +1,10 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -74,6 +76,34 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			type lateralEntry struct {
+				Host      string   `json:"host"`
+				Available []string `json:"available"`
+				TotalOpen int      `json:"total_open"`
+				Suggested []string `json:"suggested"`
+			}
+			var entries []lateralEntry
+			if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
+				return response
+			}
+			for _, e := range entries {
+				if e.TotalOpen == 0 {
+					continue
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+					fmt.Sprintf("Lateral: %s — %s (suggested: %s)",
+						e.Host, strings.Join(e.Available, ", "), strings.Join(e.Suggested, ", ")))
+			}
+			return response
+		},
 	})
 }
