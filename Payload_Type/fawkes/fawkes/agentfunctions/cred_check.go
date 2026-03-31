@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -92,7 +93,15 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			hosts, _ := taskData.Args.GetStringArg("hosts")
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Testing credentials against %s via SMB/WinRM/LDAP (T1110.001). Failed auth attempts generate Event ID 4625 (Logon Failure). Multiple failures may trigger account lockout policies.", hosts),
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -113,6 +122,28 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Track successful authentications as artifacts
+			for _, line := range strings.Split(responseText, "\n") {
+				if strings.Contains(line, "SUCCESS") && strings.Contains(line, "|") {
+					parts := strings.Split(line, "|")
+					if len(parts) >= 3 {
+						host := strings.TrimSpace(parts[0])
+						protocol := strings.TrimSpace(parts[1])
+						createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
+							fmt.Sprintf("Credential check SUCCESS: %s via %s", host, protocol))
+					}
+				}
+			}
+			return response
+		},
 	})
 }

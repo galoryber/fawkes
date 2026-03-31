@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -135,6 +136,32 @@ func init() {
 				OpsecPreBlocked: false, OpsecPreMessage: msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			// Parse JSON array of results, track admin-confirmed hosts
+			var results []struct {
+				Host   string `json:"host"`
+				Method string `json:"method"`
+				Admin  bool   `json:"admin"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &results); err != nil {
+				return response
+			}
+			for _, r := range results {
+				if r.Admin {
+					createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
+						fmt.Sprintf("Admin access confirmed: %s via %s", r.Host, r.Method))
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
