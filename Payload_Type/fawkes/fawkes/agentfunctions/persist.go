@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -199,6 +200,38 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			method, _ := processResponse.TaskData.Args.GetStringArg("method")
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action == "install" && strings.Contains(responseText, "Installed") {
+				desc := fmt.Sprintf("[Persistence Installed] method: %s", method)
+				if name, _ := processResponse.TaskData.Args.GetStringArg("name"); name != "" {
+					desc += ", name: " + name
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism", desc)
+			} else if method == "list" || action == "" {
+				// Track discovered persistence entries from enumeration
+				lines := strings.Split(responseText, "\n")
+				for _, line := range lines {
+					trimmed := strings.TrimSpace(line)
+					if strings.HasPrefix(trimmed, "- ") || (strings.Contains(trimmed, "=") && !strings.HasPrefix(trimmed, "Key:") && !strings.HasPrefix(trimmed, "HKCU") && !strings.HasPrefix(trimmed, "HKLM")) {
+						continue
+					}
+					// Track run key entries and startup folder entries
+					if strings.Contains(trimmed, "Run\\") || strings.Contains(trimmed, "Startup") && strings.Contains(trimmed, ":") {
+						createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism", "[Persist Enum] "+trimmed)
+					}
+				}
+			}
+			return response
+		},
 	})
 }

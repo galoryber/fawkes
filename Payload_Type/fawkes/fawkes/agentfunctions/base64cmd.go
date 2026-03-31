@@ -77,6 +77,25 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			isFile, _ := taskData.Args.GetBooleanArg("file")
+			output, _ := taskData.Args.GetStringArg("output")
+			msg := fmt.Sprintf("OPSEC WARNING: Base64 %s (T1132.001, T1027). ", action)
+			if isFile {
+				msg += "Reading file contents for encoding — file access is logged by EDR. "
+			}
+			if output != "" {
+				msg += "Writing output to file — creates MFT/USN artifacts. "
+			}
+			msg += "Base64 operations are commonly associated with obfuscation and data staging."
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

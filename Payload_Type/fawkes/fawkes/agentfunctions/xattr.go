@@ -81,6 +81,24 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			var msg string
+			switch action {
+			case "set":
+				msg = "OPSEC WARNING: Setting extended attributes (T1564.004). Writing data to xattrs can hide payloads in file metadata. Monitored by auditd and file-integrity tools."
+			case "delete":
+				msg = "OPSEC WARNING: Deleting extended attributes (T1564.004). Removing xattrs may clear security labels (SELinux, macOS quarantine). Monitored by auditd."
+			default:
+				msg = "OPSEC WARNING: Reading extended attributes (T1564.004). Enumerating xattrs is low-risk but may reveal hidden data or security labels."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

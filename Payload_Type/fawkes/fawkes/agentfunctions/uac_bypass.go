@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -97,6 +98,27 @@ func init() {
 			createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: "+technique+".exe")
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			technique, _ := processResponse.TaskData.Args.GetStringArg("technique")
+			if technique == "" {
+				technique = "fodhelper"
+			}
+			if strings.Contains(responseText, "triggered successfully") {
+				createArtifact(processResponse.TaskData.Task.ID, "Privilege Escalation",
+					fmt.Sprintf("[UAC Bypass] Successful elevation via %s — high integrity process spawned", technique))
+			} else if strings.Contains(responseText, "Already running at high integrity") {
+				createArtifact(processResponse.TaskData.Task.ID, "Privilege Escalation",
+					"[UAC Bypass] Already elevated — high integrity context confirmed")
+			}
+			return response
+		},
 	})
 }

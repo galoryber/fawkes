@@ -229,6 +229,30 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			hive, _ := taskData.Args.GetStringArg("hive")
+			path, _ := taskData.Args.GetStringArg("path")
+			var msg string
+			switch action {
+			case "write":
+				msg = fmt.Sprintf("OPSEC WARNING: Registry write to %s\\%s (T1112). Registry modifications are logged by Sysmon Event ID 13/14 and EDR telemetry. Security products monitor Run keys, IFEO, and COM hijack paths.", hive, path)
+			case "delete":
+				msg = fmt.Sprintf("OPSEC WARNING: Registry key/value deletion at %s\\%s (T1112). Deletion events are logged by Sysmon Event ID 12 and may trigger EDR alerts for registry tampering.", hive, path)
+			case "save":
+				msg = fmt.Sprintf("OPSEC WARNING: Registry hive save from %s\\%s (T1003.002). Saving SAM/SECURITY/SYSTEM hives is a well-known credential dumping technique detected by most EDR products.", hive, path)
+			case "creds":
+				msg = "OPSEC WARNING: Registry credential extraction — SAM+SECURITY+SYSTEM (T1003.002). This is a high-detection technique monitored by all major EDR/AV products."
+			default:
+				msg = fmt.Sprintf("OPSEC WARNING: Registry read/search on %s\\%s (T1012). Registry enumeration is low-risk but may be correlated with other suspicious activity.", hive, path)
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

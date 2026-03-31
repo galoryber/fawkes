@@ -1,6 +1,9 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -93,6 +96,40 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "read":
+				if !strings.Contains(responseText, "empty") {
+					charCount := len(responseText)
+					createArtifact(processResponse.TaskData.Task.ID, "Data Collection",
+						fmt.Sprintf("[Clipboard Read] %d chars captured", charCount))
+				}
+			case "dump":
+				if strings.Contains(responseText, "Captures:") {
+					createArtifact(processResponse.TaskData.Task.ID, "Data Collection",
+						"[Clipboard Dump] Monitor captures retrieved")
+				}
+				// Track detected credential patterns
+				for _, tag := range []string{"NTLM Hash", "NT Hash", "Password-like", "API Key", "AWS Key", "Private Key", "Bearer Token"} {
+					if strings.Contains(responseText, tag) {
+						createArtifact(processResponse.TaskData.Task.ID, "Data Collection",
+							fmt.Sprintf("[Clipboard] Credential pattern detected: %s", tag))
+					}
+				}
+			case "monitor":
+				createArtifact(processResponse.TaskData.Task.ID, "Data Collection",
+					"[Clipboard Monitor] Continuous clipboard monitoring started")
+			}
+			return response
+		},
 	})
 }
