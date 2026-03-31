@@ -54,8 +54,7 @@ func (c *SprayCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
-	defer structs.ZeroString(&args.Password)
-	defer structs.ZeroString(&args.Hash)
+	defer zeroCredentials(&args.Password, &args.Hash)
 
 	if args.Action == "" {
 		args.Action = "kerberos"

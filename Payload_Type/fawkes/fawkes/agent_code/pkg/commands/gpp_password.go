@@ -59,7 +59,7 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
-	defer structs.ZeroString(&args.Password)
+	defer zeroCredentials(&args.Password)
 
 	if args.Server == "" {
 		return errorResult("Error: server (domain controller) is required")
@@ -74,13 +74,7 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Parse domain from username
 	if args.Domain == "" {
-		if parts := strings.SplitN(args.Username, "@", 2); len(parts) == 2 {
-			args.Domain = parts[1]
-			args.Username = parts[0]
-		} else if parts := strings.SplitN(args.Username, `\`, 2); len(parts) == 2 {
-			args.Domain = parts[0]
-			args.Username = parts[1]
-		}
+		args.Domain, args.Username = parseDomainUser(args.Username)
 	}
 
 	output, creds, err := searchGPPPasswords(args)

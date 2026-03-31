@@ -49,8 +49,7 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
-	defer structs.ZeroString(&args.Password)
-	defer structs.ZeroString(&args.Hash)
+	defer zeroCredentials(&args.Password, &args.Hash)
 
 	if args.Hosts == "" {
 		return errorResult("Error: hosts parameter is required")
@@ -73,13 +72,7 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Parse domain from username
 	if args.Domain == "" {
-		if parts := strings.SplitN(args.Username, `\`, 2); len(parts) == 2 {
-			args.Domain = parts[0]
-			args.Username = parts[1]
-		} else if parts := strings.SplitN(args.Username, "@", 2); len(parts) == 2 {
-			args.Domain = parts[1]
-			args.Username = parts[0]
-		}
+		args.Domain, args.Username = parseDomainUser(args.Username)
 	}
 
 	// Parse host list (reuses parseHosts from port_scan.go)

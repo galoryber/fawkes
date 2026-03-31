@@ -4,7 +4,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"strings"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -16,11 +15,7 @@ import (
 // - Pure hex: "8846f7eaee8fb117ad06bdd830b7586c" (16 bytes = NT hash)
 // - LM:NT format: "aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c"
 func smbDecodeHash(hashStr string) ([]byte, error) {
-	hashStr = strings.TrimSpace(hashStr)
-	// Strip LM hash prefix if present (LM:NT format)
-	if parts := strings.SplitN(hashStr, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-		hashStr = parts[1] // Use NT hash part
-	}
+	hashStr = stripLMPrefix(hashStr)
 	hashBytes, err := hex.DecodeString(hashStr)
 	if err != nil {
 		return nil, fmt.Errorf("hash must be hex-encoded: %v", err)

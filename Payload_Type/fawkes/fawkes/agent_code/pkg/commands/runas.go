@@ -35,7 +35,7 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
-	defer structs.ZeroString(&args.Password)
+	defer zeroCredentials(&args.Password)
 
 	if args.Command == "" || args.Username == "" || args.Password == "" {
 		return errorResult("Error: -command, -username, and -password are required")
@@ -43,13 +43,8 @@ func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Parse domain from username if DOMAIN\user format
 	if args.Domain == "" {
-		if parts := strings.SplitN(args.Username, `\`, 2); len(parts) == 2 {
-			args.Domain = parts[0]
-			args.Username = parts[1]
-		} else if parts := strings.SplitN(args.Username, "@", 2); len(parts) == 2 {
-			args.Domain = parts[1]
-			args.Username = parts[0]
-		} else {
+		args.Domain, args.Username = parseDomainUser(args.Username)
+		if args.Domain == "" {
 			args.Domain = "."
 		}
 	}

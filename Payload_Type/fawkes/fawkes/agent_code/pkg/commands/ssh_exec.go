@@ -63,8 +63,7 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Zero sensitive parameters after use
-	defer structs.ZeroString(&args.Password)
-	defer structs.ZeroString(&args.KeyData)
+	defer zeroCredentials(&args.Password, &args.KeyData)
 
 	// Build auth methods
 	var authMethods []ssh.AuthMethod

@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/oiweiwei/go-msrpc/ssp"
@@ -21,11 +20,7 @@ func rpcCredential(username, domain, password, hash string) (sspcred.Credential,
 	}
 
 	if hash != "" {
-		h := hash
-		if parts := strings.SplitN(h, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-			h = parts[1]
-		}
-		return sspcred.NewFromNTHash(credUser, h), nil
+		return sspcred.NewFromNTHash(credUser, stripLMPrefix(hash)), nil
 	}
 	if password != "" {
 		return sspcred.NewFromPassword(credUser, password), nil

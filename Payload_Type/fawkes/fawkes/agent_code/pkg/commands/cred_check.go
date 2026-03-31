@@ -42,8 +42,7 @@ func (c *CredCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
-	defer structs.ZeroString(&args.Password)
-	defer structs.ZeroString(&args.Hash)
+	defer zeroCredentials(&args.Password, &args.Hash)
 
 	if args.Hosts == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
 		return errorResult("Error: -hosts, -username, and -password (or -hash) are required")
@@ -56,13 +55,7 @@ func (c *CredCheckCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Parse domain from username
 	if args.Domain == "" {
-		if parts := strings.SplitN(args.Username, `\`, 2); len(parts) == 2 {
-			args.Domain = parts[0]
-			args.Username = parts[1]
-		} else if parts := strings.SplitN(args.Username, "@", 2); len(parts) == 2 {
-			args.Domain = parts[1]
-			args.Username = parts[0]
-		}
+		args.Domain, args.Username = parseDomainUser(args.Username)
 	}
 
 	hosts := lateralParseHosts(args.Hosts)

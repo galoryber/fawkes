@@ -45,7 +45,7 @@ func (c *LapsCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
-	defer structs.ZeroString(&args.Password)
+	defer zeroCredentials(&args.Password)
 
 	if args.Server == "" {
 		return errorResult("Error: server parameter required (domain controller IP or hostname)")

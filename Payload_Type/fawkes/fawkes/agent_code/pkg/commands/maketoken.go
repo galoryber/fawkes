@@ -39,7 +39,7 @@ func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
 		return errorf("Failed to parse parameters: %v", err)
 	}
-	defer structs.ZeroString(&params.Password)
+	defer zeroCredentials(&params.Password)
 
 	// Default to "." for local machine if domain not specified
 	if params.Domain == "" {
