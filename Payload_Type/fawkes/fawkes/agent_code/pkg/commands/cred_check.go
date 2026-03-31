@@ -2,7 +2,6 @@ package commands
 
 import (
 	"crypto/tls"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -12,8 +11,6 @@ import (
 	"time"
 
 	"fawkes/pkg/structs"
-
-	"github.com/hirochachacha/go-smb2"
 )
 
 // CredCheckCommand tests credentials against multiple protocols on target hosts.
@@ -175,38 +172,15 @@ func credCheckHost(task structs.Task, host string, args credCheckArgs, timeout t
 func credCheckSMB(host string, args credCheckArgs, timeout time.Duration) credCheckResult {
 	result := credCheckResult{Host: host, Protocol: "SMB"}
 
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, "445"), timeout)
+	session, conn, err := smbDialSession(host, 445, args.Username, args.Domain, args.Password, args.Hash, timeout)
 	if err != nil {
-		result.Detail = "port closed/unreachable"
-		return result
-	}
-
-	initiator := &smb2.NTLMInitiator{
-		User:   args.Username,
-		Domain: args.Domain,
-	}
-	if args.Hash != "" {
-		hashStr := strings.TrimSpace(args.Hash)
-		if parts := strings.SplitN(hashStr, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-			hashStr = parts[1]
-		}
-		hashBytes, err := hex.DecodeString(hashStr)
-		if err != nil || len(hashBytes) != 16 {
-			_ = conn.Close()
+		if strings.Contains(err.Error(), "TCP connect") {
+			result.Detail = "port closed/unreachable"
+		} else if strings.Contains(err.Error(), "invalid NTLM hash") {
 			result.Detail = "invalid NTLM hash"
-			return result
+		} else {
+			result.Detail = fmt.Sprintf("auth failed: %v", err)
 		}
-		initiator.Hash = hashBytes
-	} else {
-		initiator.Password = args.Password
-	}
-
-	d := &smb2.Dialer{Initiator: initiator}
-	_ = conn.SetDeadline(time.Now().Add(timeout))
-	session, err := d.Dial(conn)
-	if err != nil {
-		_ = conn.Close()
-		result.Detail = fmt.Sprintf("auth failed: %v", err)
 		return result
 	}
 

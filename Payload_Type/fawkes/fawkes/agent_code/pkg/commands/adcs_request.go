@@ -109,24 +109,12 @@ func adcsRequest(args adcsRequestArgs) structs.CommandResult {
 	}
 
 	// Build NTLM credential
-	credUser := args.Username
-	if args.Domain != "" {
-		credUser = args.Domain + `\` + args.Username
-	}
-
-	var cred sspcred.Credential
-	if args.Hash != "" {
-		hash := args.Hash
-		if parts := strings.SplitN(hash, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-			hash = parts[1]
-		}
-		cred = sspcred.NewFromNTHash(credUser, hash)
-		structs.ZeroString(&hash)
-	} else {
-		cred = sspcred.NewFromPassword(credUser, args.Password)
-	}
+	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
 	structs.ZeroString(&args.Password)
 	structs.ZeroString(&args.Hash)
+	if credErr != nil {
+		return errorf("Error: %v", credErr)
+	}
 
 	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background()),
 		time.Duration(args.Timeout)*time.Second)

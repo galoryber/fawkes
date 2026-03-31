@@ -200,35 +200,10 @@ func shareHuntHost(task structs.Task, host string, args shareHuntArgs, matchExts
 	}
 
 	// Connect via SMB
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:445", host), 10*time.Second)
+	session, conn, err := smbDialSession(host, 445, args.Username, args.Domain, args.Password, args.Hash, 30*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("TCP connect: %v", err)
+		return nil, fmt.Errorf("SMB connect: %v", err)
 	}
-
-	initiator := &smb2.NTLMInitiator{
-		User:   args.Username,
-		Domain: args.Domain,
-	}
-	if args.Hash != "" {
-		hashBytes, err := smbDecodeHash(args.Hash)
-		if err != nil {
-			_ = conn.Close()
-			return nil, fmt.Errorf("invalid hash: %v", err)
-		}
-		initiator.Hash = hashBytes
-	} else {
-		initiator.Password = args.Password
-	}
-
-	d := &smb2.Dialer{Initiator: initiator}
-	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
-	session, err := d.Dial(conn)
-	structs.ZeroBytes(initiator.Hash)
-	if err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("SMB auth: %v", err)
-	}
-	_ = conn.SetDeadline(time.Time{})
 	defer func() {
 		_ = session.Logoff()
 		_ = conn.Close()

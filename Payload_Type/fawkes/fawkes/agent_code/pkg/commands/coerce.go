@@ -105,21 +105,16 @@ func (c *CoerceCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Build credential
-	var cred sspcred.Credential
 	authMethod := "password"
 	if args.Hash != "" {
 		authMethod = "PTH"
-		hash := args.Hash
-		if parts := strings.SplitN(hash, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-			hash = parts[1]
-		}
-		cred = sspcred.NewFromNTHash(credUser, hash)
-		structs.ZeroString(&hash)
-	} else {
-		cred = sspcred.NewFromPassword(credUser, args.Password)
 	}
+	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
 	structs.ZeroString(&args.Password)
 	structs.ZeroString(&args.Hash)
+	if credErr != nil {
+		return errorf("Error: %v", credErr)
+	}
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[*] NTLM coercion against %s → %s (%s)\n", args.Server, args.Listener, authMethod))
@@ -185,11 +180,7 @@ func coerceExecuteMethod(method, server, listener string, cred sspcred.Credentia
 
 // coerceNewContext creates a GSSAPI security context with credentials and timeout.
 func coerceNewContext(cred sspcred.Credential, timeout int) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
-		gssapi.WithCredential(cred),
-		gssapi.WithMechanismFactory(ssp.SPNEGO),
-		gssapi.WithMechanismFactory(ssp.NTLM),
-	), time.Duration(timeout)*time.Second)
+	return rpcSecurityContext(cred, time.Duration(timeout)*time.Second)
 }
 
 // coerceIsRPCProcessed checks if an error indicates the RPC call was actually

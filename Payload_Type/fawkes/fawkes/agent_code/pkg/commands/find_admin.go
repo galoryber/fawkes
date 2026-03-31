@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -13,7 +12,6 @@ import (
 
 	"fawkes/pkg/structs"
 
-	"github.com/hirochachacha/go-smb2"
 	"github.com/masterzen/winrm"
 )
 
@@ -153,34 +151,15 @@ func (c *FindAdminCommand) Execute(task structs.Task) structs.CommandResult {
 func findAdminCheckSMB(host string, args findAdminArgs) findAdminResult {
 	timeout := time.Duration(args.Timeout) * time.Second
 
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:445", host), timeout)
+	session, conn, err := smbDialSession(host, 445, args.Username, args.Domain, args.Password, args.Hash, timeout)
 	if err != nil {
-		return findAdminResult{Host: host, Method: "SMB", Admin: false, Message: "unreachable"}
-	}
-
-	initiator := &smb2.NTLMInitiator{
-		User:   args.Username,
-		Domain: args.Domain,
-	}
-
-	if args.Hash != "" {
-		hashBytes, err := findAdminDecodeHash(args.Hash)
-		if err != nil {
-			_ = conn.Close()
+		errStr := err.Error()
+		if strings.Contains(errStr, "TCP connect") {
+			return findAdminResult{Host: host, Method: "SMB", Admin: false, Message: "unreachable"}
+		}
+		if strings.Contains(errStr, "invalid NTLM hash") {
 			return findAdminResult{Host: host, Method: "SMB", Admin: false, Message: "bad hash"}
 		}
-		initiator.Hash = hashBytes
-	} else {
-		initiator.Password = args.Password
-	}
-
-	d := &smb2.Dialer{Initiator: initiator}
-
-	_ = conn.SetDeadline(time.Now().Add(timeout))
-	session, err := d.Dial(conn)
-	if err != nil {
-		_ = conn.Close()
-		errStr := err.Error()
 		if strings.Contains(errStr, "LOGON_FAILURE") || strings.Contains(errStr, "STATUS_LOGON_FAILURE") {
 			return findAdminResult{Host: host, Method: "SMB", Admin: false, Message: "auth failed"}
 		}
@@ -271,17 +250,3 @@ func findAdminCheckWinRM(host string, args findAdminArgs) findAdminResult {
 }
 
 // findAdminDecodeHash decodes an NTLM hash (same logic as smbDecodeHash but avoids cross-file coupling).
-func findAdminDecodeHash(hashStr string) ([]byte, error) {
-	hashStr = strings.TrimSpace(hashStr)
-	if parts := strings.SplitN(hashStr, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-		hashStr = parts[1]
-	}
-	hashBytes, err := hex.DecodeString(hashStr)
-	if err != nil {
-		return nil, fmt.Errorf("hash must be hex-encoded: %v", err)
-	}
-	if len(hashBytes) != 16 {
-		return nil, fmt.Errorf("NT hash must be 16 bytes, got %d", len(hashBytes))
-	}
-	return hashBytes, nil
-}

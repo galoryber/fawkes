@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -20,9 +19,6 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
-	"github.com/oiweiwei/go-msrpc/ssp"
-	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
-	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -108,27 +104,15 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: no valid target accounts specified")
 	}
 
-	// Set up GSSAPI context (per-context to avoid global state conflicts)
-	var cred sspcred.Credential
-	if args.Hash != "" {
-		// Strip LM hash if LM:NT format
-		hash := args.Hash
-		if parts := strings.SplitN(hash, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-			hash = parts[1]
-		}
-		cred = sspcred.NewFromNTHash(credUser, hash)
-		structs.ZeroString(&hash)
-	} else {
-		cred = sspcred.NewFromPassword(credUser, args.Password)
-	}
+	// Set up GSSAPI context
+	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
 	structs.ZeroString(&args.Password)
 	structs.ZeroString(&args.Hash)
+	if credErr != nil {
+		return errorf("Error: %v", credErr)
+	}
 
-	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
-		gssapi.WithCredential(cred),
-		gssapi.WithMechanismFactory(ssp.SPNEGO),
-		gssapi.WithMechanismFactory(ssp.NTLM),
-	), time.Duration(args.Timeout)*time.Second)
+	ctx, cancel := rpcSecurityContext(cred, time.Duration(args.Timeout)*time.Second)
 	defer cancel()
 
 	// Connect via EPM (Endpoint Mapper, port 135)

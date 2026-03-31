@@ -15,8 +15,6 @@ import (
 	"github.com/oiweiwei/go-msrpc/dcerpc"
 	"github.com/oiweiwei/go-msrpc/msrpc/rrp/winreg/v1"
 	"github.com/oiweiwei/go-msrpc/ssp"
-	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
-	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -98,32 +96,14 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 // remoteRegConnect establishes a DCE-RPC connection to the remote winreg service
 // and opens the specified hive. Returns the client, hive key handle, context, and cancel func.
 func remoteRegConnect(args remoteRegArgs) (winreg.WinregClient, *winreg.Key, context.Context, context.CancelFunc, func(), error) {
-	credUser := args.Username
-	if args.Domain != "" {
-		credUser = args.Domain + `\` + args.Username
-	}
-
-	var cred sspcred.Credential
-	if args.Hash != "" {
-		hash := args.Hash
-		if parts := strings.SplitN(hash, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-			hash = parts[1]
-		}
-		cred = sspcred.NewFromNTHash(credUser, hash)
-		structs.ZeroString(&hash)
-	} else if args.Password != "" {
-		cred = sspcred.NewFromPassword(credUser, args.Password)
-	} else {
-		return nil, nil, nil, nil, nil, fmt.Errorf("either -password or -hash is required for remote registry access")
-	}
+	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
 	structs.ZeroString(&args.Password)
 	structs.ZeroString(&args.Hash)
+	if credErr != nil {
+		return nil, nil, nil, nil, nil, fmt.Errorf("%v for remote registry access", credErr)
+	}
 
-	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
-		gssapi.WithCredential(cred),
-		gssapi.WithMechanismFactory(ssp.SPNEGO),
-		gssapi.WithMechanismFactory(ssp.NTLM),
-	), time.Duration(args.Timeout)*time.Second)
+	ctx, cancel := rpcSecurityContext(cred, time.Duration(args.Timeout)*time.Second)
 
 	cc, err := dcerpc.Dial(ctx, args.Server,
 		dcerpc.WithEndpoint("ncacn_np:[winreg]"),

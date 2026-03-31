@@ -8,7 +8,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"net"
 	"strings"
 	"time"
 
@@ -140,24 +139,14 @@ type gppDrives struct {
 
 func searchGPPPasswords(args gppArgs) (string, []structs.MythicCredential, error) {
 	// Connect to DC via SMB
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", args.Server, args.Port), 10*time.Second)
+	session, conn, err := smbDialSession(args.Server, args.Port, args.Username, args.Domain, args.Password, "", 10*time.Second)
 	if err != nil {
-		return "", nil, fmt.Errorf("TCP connect to %s:%d: %v", args.Server, args.Port, err)
+		return "", nil, fmt.Errorf("SMB connect: %v", err)
 	}
-
-	initiator := &smb2.NTLMInitiator{
-		User:     args.Username,
-		Password: args.Password,
-		Domain:   args.Domain,
-	}
-
-	d := &smb2.Dialer{Initiator: initiator}
-	session, err := d.Dial(conn)
-	if err != nil {
+	defer func() {
+		_ = session.Logoff()
 		_ = conn.Close()
-		return "", nil, fmt.Errorf("SMB auth failed: %v", err)
-	}
-	defer func() { _ = session.Logoff() }()
+	}()
 
 	// Mount SYSVOL share
 	share, err := session.Mount(fmt.Sprintf(`\\%s\SYSVOL`, args.Server))

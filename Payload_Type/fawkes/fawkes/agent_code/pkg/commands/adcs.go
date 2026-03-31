@@ -13,7 +13,6 @@ import (
 	"fawkes/pkg/structs"
 
 	"github.com/go-ldap/ldap/v3"
-	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 )
 
@@ -414,24 +413,12 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 				username = parts[0]
 			}
 		}
-		credUser := username
-		if domain != "" {
-			credUser = domain + `\` + username
-		}
-
-		var cred sspcred.Credential
-		if args.Hash != "" {
-			hash := args.Hash
-			if parts := strings.SplitN(hash, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-				hash = parts[1]
-			}
-			cred = sspcred.NewFromNTHash(credUser, hash)
-			structs.ZeroString(&hash)
-		} else {
-			cred = sspcred.NewFromPassword(credUser, args.Password)
-		}
+		cred, credErr := rpcCredential(username, domain, args.Password, args.Hash)
 		structs.ZeroString(&args.Password)
 		structs.ZeroString(&args.Hash)
+		if credErr != nil {
+			return errorf("Error: %v", credErr)
+		}
 
 		timeout := args.Timeout
 		if timeout <= 0 {

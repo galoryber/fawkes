@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -136,59 +135,11 @@ func (sc *smbConn) close() {
 const smbOperationTimeout = 30 * time.Second
 
 func smbConnect(args smbArgs) (*smbConn, error) {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", args.Host, args.Port), 10*time.Second)
+	session, conn, err := smbDialSession(args.Host, args.Port, args.Username, args.Domain, args.Password, args.Hash, smbOperationTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("TCP connect to %s:%d: %v", args.Host, args.Port, err)
-	}
-
-	initiator := &smb2.NTLMInitiator{
-		User:   args.Username,
-		Domain: args.Domain,
-	}
-
-	// Pass-the-hash: use NTLM hash directly instead of password
-	if args.Hash != "" {
-		hashBytes, err := smbDecodeHash(args.Hash)
-		if err != nil {
-			_ = conn.Close()
-			return nil, fmt.Errorf("invalid NTLM hash: %v", err)
-		}
-		initiator.Hash = hashBytes
-	} else {
-		initiator.Password = args.Password
-	}
-
-	d := &smb2.Dialer{Initiator: initiator}
-
-	// Set a deadline for the SMB session setup (auth exchange)
-	_ = conn.SetDeadline(time.Now().Add(smbOperationTimeout))
-	session, err := d.Dial(conn)
-	if err != nil {
-		_ = conn.Close()
 		return nil, fmt.Errorf("SMB auth to %s as %s\\%s: %v", args.Host, args.Domain, args.Username, err)
 	}
-	_ = conn.SetDeadline(time.Time{}) // Clear deadline after auth
-
 	return &smbConn{session: session, conn: conn}, nil
-}
-
-// smbDecodeHash decodes an NTLM hash from various formats:
-// - Pure hex: "8846f7eaee8fb117ad06bdd830b7586c" (16 bytes = NT hash)
-// - LM:NT format: "aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c"
-func smbDecodeHash(hashStr string) ([]byte, error) {
-	hashStr = strings.TrimSpace(hashStr)
-	// Strip LM hash prefix if present (LM:NT format)
-	if parts := strings.SplitN(hashStr, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-		hashStr = parts[1] // Use NT hash part
-	}
-	hashBytes, err := hex.DecodeString(hashStr)
-	if err != nil {
-		return nil, fmt.Errorf("hash must be hex-encoded: %v", err)
-	}
-	if len(hashBytes) != 16 {
-		return nil, fmt.Errorf("NT hash must be 16 bytes (32 hex chars), got %d bytes", len(hashBytes))
-	}
-	return hashBytes, nil
 }
 
 func smbListShares(args smbArgs) structs.CommandResult {
