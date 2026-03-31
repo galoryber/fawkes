@@ -111,16 +111,38 @@ func init() {
 				AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
 				IntegrityLevel:    &systemLevel,
 			}
-			// Also update user if "New:" line present
+			// Parse user from "New:" line
+			user := ""
 			for _, line := range strings.Split(responseText, "\n") {
 				trimmed := strings.TrimSpace(line)
 				if val := extractField(trimmed, "New:"); val != "" {
+					user = val
 					update.User = &val
 					break
 				}
 			}
 			if _, err := mythicrpc.SendMythicRPCCallbackUpdate(update); err != nil {
 				logging.LogError(err, "Failed to update callback metadata after getsystem")
+			}
+			// Register SYSTEM token with Mythic's token tracker
+			if user == "" {
+				user = "NT AUTHORITY\\SYSTEM"
+			}
+			host := processResponse.TaskData.Callback.Host
+			if _, err := mythicrpc.SendMythicRPCCallbackTokenCreate(mythicrpc.MythicRPCCallbackTokenCreateMessage{
+				TaskID: processResponse.TaskData.Task.ID,
+				CallbackTokens: []mythicrpc.MythicRPCCallbackTokenData{
+					{
+						Action:  "add",
+						Host:    &host,
+						TokenId: uint64(processResponse.TaskData.Task.ID),
+						TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
+							User: user,
+						},
+					},
+				},
+			}); err != nil {
+				logging.LogError(err, "Failed to register SYSTEM token with Mythic")
 			}
 			return response
 		},
