@@ -1,7 +1,10 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -55,6 +58,38 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Enumerates persistence mechanisms across registry run keys, scheduled tasks, services, cron jobs, LaunchAgents, and SSH keys (T1547, T1053, T1543, T1098.004). Extensive registry/filesystem access patterns are monitored by EDR.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			sectionRe := regexp.MustCompile(`^---\s+(.+?)\s+---`)
+			currentSection := ""
+			for _, line := range strings.Split(responseText, "\n") {
+				if m := sectionRe.FindStringSubmatch(line); m != nil {
+					currentSection = m[1]
+					continue
+				}
+				if currentSection == "" {
+					continue
+				}
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "===") || strings.HasPrefix(trimmed, "---") {
+					continue
+				}
+				// Skip empty-result indicators like "(none found)", "(all defaults)", etc.
+				if strings.HasPrefix(trimmed, "(") {
+					continue
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism",
+					fmt.Sprintf("[%s] %s", currentSection, trimmed))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

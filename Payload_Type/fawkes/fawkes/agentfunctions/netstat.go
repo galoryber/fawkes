@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -98,6 +99,49 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Listing active network connections and listening ports (T1049). Network enumeration is a standard discovery technique. Lower risk from API calls but process-level connection queries may be logged by EDR.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			type netConn struct {
+				Proto      string `json:"proto"`
+				LocalIP    string `json:"local_ip"`
+				LocalPort  uint32 `json:"local_port"`
+				RemoteIP   string `json:"remote_ip"`
+				RemotePort uint32 `json:"remote_port"`
+				State      string `json:"state"`
+				PID        int32  `json:"pid"`
+				Process    string `json:"process"`
+			}
+			var conns []netConn
+			if err := json.Unmarshal([]byte(responseText), &conns); err != nil {
+				return response
+			}
+			for _, c := range conns {
+				if c.State != "LISTEN" && c.State != "ESTABLISHED" {
+					continue
+				}
+				proc := ""
+				if c.Process != "" {
+					proc = fmt.Sprintf(" (%s/%d)", c.Process, c.PID)
+				} else if c.PID > 0 {
+					proc = fmt.Sprintf(" (PID %d)", c.PID)
+				}
+				var msg string
+				if c.State == "LISTEN" {
+					msg = fmt.Sprintf("%s LISTEN %s:%d%s", c.Proto, c.LocalIP, c.LocalPort, proc)
+				} else {
+					msg = fmt.Sprintf("%s %s:%d → %s:%d%s", c.Proto, c.LocalIP, c.LocalPort, c.RemoteIP, c.RemotePort, proc)
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Network Connection", msg)
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

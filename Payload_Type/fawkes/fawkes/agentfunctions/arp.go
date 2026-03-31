@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -83,6 +84,31 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Reading ARP table for IP-to-MAC address mappings (T1016.001). Low risk — reads cached network data. No network traffic generated.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			type arpEntry struct {
+				IP        string `json:"ip"`
+				MAC       string `json:"mac"`
+				Type      string `json:"type"`
+				Interface string `json:"interface"`
+			}
+			var entries []arpEntry
+			if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
+				return response
+			}
+			for _, e := range entries {
+				createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+					fmt.Sprintf("ARP: %s → %s (%s) on %s", e.IP, e.MAC, e.Type, e.Interface))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

@@ -3,6 +3,8 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -91,6 +93,43 @@ func init() {
 				OpsecPreBlocked: false, OpsecPreMessage: msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// DC discovery: "host:port → IP"
+			dcRe := regexp.MustCompile(`(\S+):(\d+)\s*→\s*(\S+)`)
+			// Standalone IPv4 address lines (resolve action output)
+			ipRe := regexp.MustCompile(`^\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*$`)
+
+			seen := make(map[string]bool)
+			for _, line := range strings.Split(responseText, "\n") {
+				if m := dcRe.FindStringSubmatch(line); m != nil {
+					host, port, ip := m[1], m[2], m[3]
+					key := host + ":" + port
+					if !seen[key] {
+						seen[key] = true
+						createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+							fmt.Sprintf("DNS DC: %s:%s (%s)", host, port, ip))
+					}
+					continue
+				}
+				if m := ipRe.FindStringSubmatch(line); m != nil {
+					ip := m[1]
+					if !seen[ip] {
+						seen[ip] = true
+						createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+							fmt.Sprintf("DNS resolved: %s", ip))
+					}
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
