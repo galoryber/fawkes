@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -17,6 +19,7 @@ func init() {
 		HelpString:          "execute-shellcode",
 		Version:             1,
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "executeshellcode_new.js"), Author: "@galoryber"},
 		MitreAttackMappings: []string{"T1059.006", "T1055.012"}, // Command and Scripting Interpreter, Process Hollowing
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{

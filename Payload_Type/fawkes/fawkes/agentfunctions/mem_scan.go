@@ -5,6 +5,8 @@ import (
 	"regexp"
 	"strings"
 
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -16,6 +18,7 @@ func init() {
 		Version:             1,
 		MitreAttackMappings: []string{"T1005", "T1057"}, // Data from Local System + Process Discovery
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "memscan_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_WINDOWS},
 		},

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
@@ -16,6 +18,7 @@ func init() {
 		HelpString:          "execute-memory -arguments 'arg1 arg2' -timeout 60",
 		Version:             1,
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "executememory_new.js"), Author: "@galoryber"},
 		MitreAttackMappings: []string{"T1620"}, // Reflective Code Loading
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{

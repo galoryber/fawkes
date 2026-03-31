@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -131,6 +133,7 @@ func init() {
 		MitreAttackMappings: []string{"T1620"}, // Reflective Code Loading
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "inlineexecute_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},

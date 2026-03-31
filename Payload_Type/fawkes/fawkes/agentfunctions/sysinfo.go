@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -17,6 +19,7 @@ func init() {
 		Version:             1,
 		MitreAttackMappings: []string{"T1082"}, // System Information Discovery
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sysinfo_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},

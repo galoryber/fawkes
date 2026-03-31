@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -18,6 +20,7 @@ func init() {
 		MitreAttackMappings: []string{"T1055.008"}, // Process Injection: Ptrace System Calls
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ptraceinject_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX},
 		},
