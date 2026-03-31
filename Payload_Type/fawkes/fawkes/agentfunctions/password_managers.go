@@ -1,6 +1,9 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"regexp"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -50,6 +53,26 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Scanning for password manager databases and configuration files (KeePass, 1Password, Bitwarden, LastPass, etc.). Reads filesystem paths associated with known password managers. File access may be logged by EDR or application-level auditing.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: [ManagerName] /path/to/db
+			re := regexp.MustCompile(`\[(.+?)\]\s+(.+)`)
+			matches := re.FindAllStringSubmatch(responseText, -1)
+			for _, m := range matches {
+				if len(m) > 2 {
+					createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+						fmt.Sprintf("Password manager DB: [%s] %s", m[1], m[2]))
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

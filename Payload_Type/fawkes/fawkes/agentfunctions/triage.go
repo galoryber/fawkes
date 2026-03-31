@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -118,6 +119,33 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: System triage performs broad enumeration (processes, services, network, users, installed software, scheduled tasks). Aggregated system interrogation may trigger behavioral analytics for automated reconnaissance.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			var results []struct {
+				Path     string `json:"path"`
+				Category string `json:"category"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &results); err != nil {
+				return response
+			}
+			// Group by category, create summary artifacts
+			categories := map[string]int{}
+			for _, r := range results {
+				categories[r.Category]++
+			}
+			for cat, count := range categories {
+				createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+					fmt.Sprintf("Triage: %d %s files discovered", count, cat))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -143,6 +144,23 @@ func init() {
 				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: WinRM remote command execution on %s. Creates network logon (Event ID 4624 type 3) and WinRM operational logs (Event ID 91, 161). WinRM lateral movement is a high-fidelity detection indicator.", host),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: [*] WinRM user@host:port (shell, auth)
+			re := regexp.MustCompile(`\[\*\]\s+WinRM\s+(\S+)@(\S+?):(\d+)\s+\((\S+),`)
+			if m := re.FindStringSubmatch(responseText); len(m) > 3 {
+				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
+					fmt.Sprintf("WinRM execution: %s@%s:%s (%s)", m[1], m[2], m[3], m[4]))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

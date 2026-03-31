@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"regexp"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -130,6 +131,23 @@ func init() {
 				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: SSH command execution as %s on %s. SSH sessions are logged in auth.log/secure and may generate audit events. Connection metadata (source IP, username, key fingerprint) is recorded by sshd.", username, host),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: [*] SSH user@host:port (auth: method)
+			re := regexp.MustCompile(`\[\*\]\s+SSH\s+(\S+)@(\S+)\s`)
+			if m := re.FindStringSubmatch(responseText); len(m) > 2 {
+				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
+					fmt.Sprintf("SSH execution: %s@%s", m[1], m[2]))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

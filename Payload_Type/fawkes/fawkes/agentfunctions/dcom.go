@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -169,6 +170,23 @@ func init() {
 				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: DCOM lateral movement to %s (action: %s). Creates remote COM object via RPC/TCP 135. Generates network connections, DCOM launch events (Event ID 10016), and process creation on the remote host. Detectable by monitoring RPC traffic and unusual DCOM object instantiation.", host, action),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: DCOM <Object> executed on <host>:
+			re := regexp.MustCompile(`DCOM\s+(\S+)\s+executed on\s+(\S+?):`)
+			if m := re.FindStringSubmatch(responseText); len(m) > 2 {
+				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
+					fmt.Sprintf("DCOM execution: %s on %s", m[1], m[2]))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
