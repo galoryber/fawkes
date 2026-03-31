@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -9,7 +10,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "password-managers",
+		Name: "password-managers",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "passwordmanagers_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Discover password manager databases and configuration files on the target system (T1555, T1083)",
 		HelpString:          "password-managers [-depth <N>]",
 		Version:             1,

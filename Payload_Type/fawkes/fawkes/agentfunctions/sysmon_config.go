@@ -1,12 +1,18 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "sysmon-config",
+		Name: "sysmon-config",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sysmonconfig_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Detect Sysmon installation and extract active configuration, event channels, and rule data (T1518.001)",
 		HelpString:          "sysmon-config [-action check|rules|events]",
 		Version:             1,

@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "container-escape",
+		Name: "container-escape",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "containerescape_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Container escape — enumerate and exploit breakout vectors: Docker socket, cgroup release_agent, nsenter, host device mount (T1611)",
 		HelpString:          "container-escape -action <check|docker-sock|cgroup|nsenter|mount-host> [-command '<cmd>'] [-image alpine] [-path /dev/sda1]",
 		Version:             1,

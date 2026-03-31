@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "etw",
+		Name: "etw",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "etw_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Enumerate, stop, blind, query, or enable ETW trace sessions and providers. Use 'sessions'/'providers' for recon, 'query' for details, 'stop'/'blind' for evasion, 'enable' for cleanup.",
 		HelpString:          "etw -action <sessions|providers|stop|blind|query|enable> [-session_name <name>] [-provider <guid|shorthand>]",
 		Version:             3,

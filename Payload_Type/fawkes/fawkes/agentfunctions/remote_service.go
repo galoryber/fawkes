@@ -2,13 +2,18 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "remote-service",
+		Name: "remote-service",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "remoteservice_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Manage services on remote Windows hosts via SVCCTL RPC over SMB (port 445). List, query, create, start, stop, and delete services. Supports pass-the-hash. Cross-platform — runs from Windows, Linux, or macOS agents.",
 		HelpString:          "remote-service -action list -server 192.168.1.1 -username admin -password pass -domain CORP\nremote-service -action query -server dc01 -name Spooler -username admin -hash aad3b435b51404ee:8846f7eaee8fb117\nremote-service -action create -server 192.168.1.1 -name TestSvc -binpath C:\\payload.exe -username admin -password pass\nremote-service -action start -server 192.168.1.1 -name TestSvc -username admin -password pass\nremote-service -action stop -server dc01 -name TestSvc -username admin -password pass\nremote-service -action delete -server dc01 -name TestSvc -username admin -password pass",
 		Version:             1,
