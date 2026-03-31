@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -248,6 +249,31 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Try to parse as JSON task list (from "list" action)
+			var tasks []struct {
+				Name        string `json:"name"`
+				State       string `json:"state"`
+				NextRunTime string `json:"next_run_time,omitempty"`
+			}
+			if json.Unmarshal([]byte(responseText), &tasks) == nil && len(tasks) > 0 {
+				for _, t := range tasks {
+					desc := fmt.Sprintf("[Scheduled Task] %s: %s", t.Name, t.State)
+					if t.NextRunTime != "" {
+						desc += " (next: " + t.NextRunTime + ")"
+					}
+					createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism", desc)
+				}
+			}
+			return response
+		},
 	})
 }

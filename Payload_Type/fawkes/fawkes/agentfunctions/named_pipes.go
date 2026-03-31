@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -69,6 +70,27 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse named pipe names from output (lines starting with \\.\pipe\ or just pipe names)
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "Named Pipes") || strings.HasPrefix(trimmed, "Filter:") || strings.HasPrefix(trimmed, "---") {
+					continue
+				}
+				if strings.HasPrefix(trimmed, "\\\\.\\pipe\\") || strings.HasPrefix(trimmed, "\\\\") || !strings.ContainsAny(trimmed, " :=") {
+					createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+						fmt.Sprintf("[Named Pipe] %s", trimmed))
+				}
+			}
+			return response
+		},
 	})
 }

@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -114,6 +115,34 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse process mitigation policy results (key: value lines)
+			var enabled []string
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.Contains(trimmed, ": true") || strings.Contains(trimmed, ": Enabled") {
+					parts := strings.SplitN(trimmed, ":", 2)
+					if len(parts) == 2 {
+						enabled = append(enabled, strings.TrimSpace(parts[0]))
+					}
+				}
+			}
+			if len(enabled) > 0 {
+				createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+					fmt.Sprintf("[Process Mitigation] Enabled policies: %s", strings.Join(enabled, ", ")))
+			} else {
+				createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+					"[Process Mitigation] No mitigation policies enabled")
+			}
+			return response
+		},
 	})
 }

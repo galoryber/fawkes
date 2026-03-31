@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -124,6 +125,47 @@ func init() {
 			createArtifact(taskData.Task.ID, "API Call", msg)
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Try to parse as JSON array of entries (users, groups, sessions, shares, etc.)
+			var entries []struct {
+				Name    string `json:"name"`
+				Type    string `json:"type,omitempty"`
+				Comment string `json:"comment,omitempty"`
+				Domain  string `json:"domain,omitempty"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &entries); err == nil && len(entries) > 0 {
+				for _, e := range entries {
+					desc := e.Name
+					if e.Type != "" {
+						desc += " (" + e.Type + ")"
+					}
+					if e.Domain != "" {
+						desc += " [" + e.Domain + "]"
+					}
+					createArtifact(processResponse.TaskData.Task.ID, "Host Discovery", desc)
+				}
+				return response
+			}
+			// Try to parse as domaininfo struct
+			var domInfo struct {
+				DCName    string `json:"dc_name"`
+				DCAddress string `json:"dc_address"`
+				Domain    string `json:"domain"`
+				Forest    string `json:"forest"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &domInfo); err == nil && domInfo.Domain != "" {
+				createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+					fmt.Sprintf("Domain: %s, DC: %s (%s), Forest: %s", domInfo.Domain, domInfo.DCName, domInfo.DCAddress, domInfo.Forest))
+			}
+			return response
+		},
 	})
 }

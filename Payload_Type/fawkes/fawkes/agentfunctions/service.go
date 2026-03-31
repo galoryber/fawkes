@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -231,6 +232,28 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Try to parse as JSON service list (from "list" action)
+			var services []struct {
+				Name        string `json:"name"`
+				State       string `json:"state"`
+				DisplayName string `json:"display_name"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &services); err == nil && len(services) > 0 {
+				for _, s := range services {
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						fmt.Sprintf("[Service] %s: %s (%s)", s.Name, s.State, s.DisplayName))
+				}
+			}
+			return response
+		},
 	})
 }
