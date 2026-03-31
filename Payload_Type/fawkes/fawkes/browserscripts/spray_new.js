@@ -12,79 +12,76 @@ function(task, responses){
             combined += responses[i];
         }
         let data = JSON.parse(combined);
-        if(!Array.isArray(data) || data.length === 0){
+        if(data.length === 0){
             return {"plaintext": "No results"};
         }
-        // Detect format: spray results (have "success" field) vs enumerate results (have "status" field like "exists"/"asrep"/"not_found")
-        if(data[0].status !== undefined && (data[0].status === "exists" || data[0].status === "asrep" || data[0].status === "not_found")){
-            // Enumerate mode
-            let valid = data.filter(e => e.status === "exists" || e.status === "asrep").length;
-            let asrep = data.filter(e => e.status === "asrep").length;
-            let statusColors = {
-                "exists": "rgba(0,200,0,0.15)",
-                "asrep": "rgba(255,165,0,0.2)",
-                "not_found": "rgba(255,255,255,0)",
-            };
+        // Detect format: sprayResult (username/success/message) vs sprayEnumEntry (username/status/message)
+        let isEnum = data[0].hasOwnProperty("status");
+        if(isEnum){
             let headers = [
-                {"plaintext": "username", "type": "string", "fillWidth": true},
-                {"plaintext": "status", "type": "string", "width": 100},
-                {"plaintext": "message", "type": "string", "fillWidth": true},
+                {"plaintext": "Username", "type": "string", "fillWidth": true},
+                {"plaintext": "Status", "type": "string", "width": 130},
+                {"plaintext": "Message", "type": "string", "fillWidth": true},
             ];
             let rows = [];
+            let existsCount = 0;
+            let asrepCount = 0;
             for(let j = 0; j < data.length; j++){
-                let e = data[j];
+                let entry = data[j];
                 let rowStyle = {};
-                if(statusColors[e.status] !== undefined){
-                    rowStyle = {"backgroundColor": statusColors[e.status]};
+                if(entry.status === "exists"){
+                    rowStyle = {"backgroundColor": "rgba(76,175,80,0.1)"};
+                    existsCount++;
+                } else if(entry.status === "asrep"){
+                    rowStyle = {"backgroundColor": "rgba(255,165,0,0.15)"};
+                    asrepCount++;
+                } else if(entry.status === "not_found"){
+                    rowStyle = {"backgroundColor": "rgba(0,0,0,0.03)"};
+                }
+                let statusStyle = {};
+                if(entry.status === "asrep"){
+                    statusStyle = {"fontWeight": "bold", "color": "#ff8c00"};
                 }
                 rows.push({
-                    "username": {"plaintext": e.username, "copyIcon": true},
-                    "status": {"plaintext": e.status},
-                    "message": {"plaintext": e.message || ""},
+                    "Username": {"plaintext": entry.username, "copyIcon": true},
+                    "Status": {"plaintext": entry.status, "cellStyle": statusStyle},
+                    "Message": {"plaintext": entry.message || ""},
                     "rowStyle": rowStyle,
                 });
             }
-            let title = "User Enumeration — " + valid + "/" + data.length + " valid";
-            if(asrep > 0) title += " (" + asrep + " AS-REP roastable)";
+            let title = "User Enumeration (" + data.length + " users";
+            if(existsCount > 0) title += ", " + existsCount + " exist";
+            if(asrepCount > 0) title += ", " + asrepCount + " AS-REP";
+            title += ")";
             return {"table": [{"headers": headers, "rows": rows, "title": title}]};
         } else {
-            // Spray mode
-            let valid = data.filter(e => e.success).length;
-            let locked = data.filter(e => !e.success && (e.message.includes("locked") || e.message.includes("REVOKED"))).length;
             let headers = [
-                {"plaintext": "username", "type": "string", "fillWidth": true},
-                {"plaintext": "result", "type": "string", "width": 80},
-                {"plaintext": "message", "type": "string", "fillWidth": true},
+                {"plaintext": "Username", "type": "string", "fillWidth": true},
+                {"plaintext": "Result", "type": "string", "width": 100},
+                {"plaintext": "Message", "type": "string", "fillWidth": true},
             ];
             let rows = [];
+            let successCount = 0;
             for(let j = 0; j < data.length; j++){
-                let e = data[j];
+                let entry = data[j];
                 let rowStyle = {};
-                let result = "failed";
-                if(e.success){
-                    rowStyle = {"backgroundColor": "rgba(0,200,0,0.2)"};
-                    result = "VALID";
-                } else if(e.message.includes("locked") || e.message.includes("REVOKED")){
-                    rowStyle = {"backgroundColor": "rgba(255,0,0,0.15)"};
-                    result = "LOCKED";
-                } else if(e.message.includes("expired") || e.message.includes("change password")){
-                    rowStyle = {"backgroundColor": "rgba(255,165,0,0.15)"};
-                    result = "EXPIRED";
+                let resultText = "FAIL";
+                let resultStyle = {};
+                if(entry.success){
+                    rowStyle = {"backgroundColor": "rgba(76,175,80,0.15)"};
+                    resultText = "SUCCESS";
+                    resultStyle = {"fontWeight": "bold", "color": "#4caf50"};
+                    successCount++;
                 }
                 rows.push({
-                    "username": {"plaintext": e.username, "copyIcon": true},
-                    "result": {"plaintext": result},
-                    "message": {"plaintext": e.message},
+                    "Username": {"plaintext": entry.username, "copyIcon": true},
+                    "Result": {"plaintext": resultText, "cellStyle": resultStyle},
+                    "Message": {"plaintext": entry.message || ""},
                     "rowStyle": rowStyle,
                 });
             }
-            return {
-                "table": [{
-                    "headers": headers,
-                    "rows": rows,
-                    "title": "Password Spray — " + valid + " valid, " + locked + " locked, " + (data.length - valid - locked) + " failed",
-                }]
-            };
+            let title = "Password Spray (" + data.length + " tested, " + successCount + " success)";
+            return {"table": [{"headers": headers, "rows": rows, "title": title}]};
         }
     } catch(error) {
         let combined = "";

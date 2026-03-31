@@ -1,6 +1,10 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"regexp"
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -103,6 +107,40 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Process memory scanning uses ReadProcessMemory/VirtualQueryEx (Windows) or /proc/pid/mem (Linux). Cross-process memory access is a high-fidelity indicator monitored by EDR products. Scanning LSASS or security tool processes will likely trigger alerts.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse match count and PID from output header
+			matchRe := regexp.MustCompile(`Matches found:\s*(\d+)`)
+			pidRe := regexp.MustCompile(`Memory Scan: PID (\d+)`)
+			patternRe := regexp.MustCompile(`Pattern:\s*(.+?)\s*\(`)
+
+			matchCount := "0"
+			pid := "unknown"
+			pattern := "unknown"
+
+			if m := matchRe.FindStringSubmatch(responseText); len(m) > 1 {
+				matchCount = m[1]
+			}
+			if m := pidRe.FindStringSubmatch(responseText); len(m) > 1 {
+				pid = m[1]
+			}
+			if m := patternRe.FindStringSubmatch(responseText); len(m) > 1 {
+				pattern = strings.TrimSpace(m[1])
+			}
+
+			if matchCount != "0" {
+				createArtifact(processResponse.TaskData.Task.ID, "Process Memory Scan",
+					fmt.Sprintf("Memory scan PID %s: %s matches for pattern '%s'", pid, matchCount, pattern))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
