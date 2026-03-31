@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -97,7 +98,30 @@ func init() {
 				},
 			},
 		},
-		TaskFunctionOPSECPre: nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			username, _ := taskData.Args.GetStringArg("username")
+			var msg string
+			switch action {
+			case "add":
+				msg = fmt.Sprintf("OPSEC WARNING: Creating local user account '%s' (T1136.001). Account creation generates Windows Security Event 4720 and is highly monitored by SIEM/EDR.", username)
+			case "delete":
+				msg = fmt.Sprintf("OPSEC WARNING: Deleting local user account '%s' (T1098). Account deletion generates Windows Security Event 4726 and may trigger incident response.", username)
+			case "password":
+				msg = fmt.Sprintf("OPSEC WARNING: Changing password for '%s' (T1098). Password changes generate Windows Security Event 4724 and are monitored by identity protection systems.", username)
+			case "group-add", "group-remove":
+				group, _ := taskData.Args.GetStringArg("group")
+				msg = fmt.Sprintf("OPSEC WARNING: Modifying group membership for '%s' in '%s' (T1098). Group changes generate Security Events 4732/4733 and are monitored for privilege escalation.", username, group)
+			default:
+				msg = fmt.Sprintf("OPSEC WARNING: User account query for '%s' — low detection risk.", username)
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -168,6 +192,36 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			username, _ := processResponse.TaskData.Args.GetStringArg("username")
+			switch action {
+			case "add":
+				if strings.Contains(responseText, "successfully") || strings.Contains(responseText, "created") {
+					createArtifact(processResponse.TaskData.Task.ID, "Account Management",
+						fmt.Sprintf("[User Created] %s", username))
+				}
+			case "delete":
+				if strings.Contains(responseText, "successfully") || strings.Contains(responseText, "deleted") {
+					createArtifact(processResponse.TaskData.Task.ID, "Account Management",
+						fmt.Sprintf("[User Deleted] %s", username))
+				}
+			case "group-add":
+				group, _ := processResponse.TaskData.Args.GetStringArg("group")
+				if strings.Contains(responseText, "successfully") || strings.Contains(responseText, "added") {
+					createArtifact(processResponse.TaskData.Task.ID, "Account Management",
+						fmt.Sprintf("[Group Membership] %s added to %s", username, group))
+				}
+			}
+			return response
+		},
 	})
 }
