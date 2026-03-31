@@ -11,11 +11,11 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "uac-bypass",
 		Description:         "Bypass User Account Control (UAC) to escalate from medium to high integrity. Registry-based hijack techniques that trigger auto-elevating Windows binaries.",
-		HelpString:          "uac-bypass [-technique fodhelper] [-command C:\\path\\to\\payload.exe]",
+		HelpString:          "uac-bypass [-technique fodhelper|computerdefaults|sdclt|eventvwr|silentcleanup|cmstp] [-command C:\\path\\to\\payload.exe]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1548.002"},
+		MitreAttackMappings: []string{"T1548.002", "T1218.003"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
@@ -26,8 +26,8 @@ func init() {
 				ModalDisplayName: "Bypass Technique",
 				CLIName:          "technique",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"fodhelper", "computerdefaults", "sdclt"},
-				Description:      "UAC bypass technique: fodhelper (Win10+, ms-settings hijack), computerdefaults (Win10+, ms-settings hijack), sdclt (Win10, Folder handler hijack)",
+				Choices:          []string{"fodhelper", "computerdefaults", "sdclt", "eventvwr", "silentcleanup", "cmstp"},
+				Description:      "UAC bypass technique: fodhelper (Win10+, ms-settings hijack), computerdefaults (Win10+, ms-settings hijack), sdclt (Win10, Folder handler hijack), eventvwr (Win10+, mscfile hijack), silentcleanup (Win10+, env var hijack), cmstp (Win10+, INF file abuse)",
 				DefaultValue:     "fodhelper",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -94,8 +94,26 @@ func init() {
 			}
 			display := fmt.Sprintf("method: %s", technique)
 			response.DisplayParams = &display
-			createArtifact(taskData.Task.ID, "Registry Write", "HKCU\\Software\\Classes\\ms-settings\\Shell\\Open\\command (UAC bypass via "+technique+")")
-			createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: "+technique+".exe")
+			switch technique {
+			case "fodhelper", "computerdefaults":
+				createArtifact(taskData.Task.ID, "Registry Write", "HKCU\\Software\\Classes\\ms-settings\\Shell\\Open\\command (UAC bypass via "+technique+")")
+				createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: "+technique+".exe")
+			case "sdclt":
+				createArtifact(taskData.Task.ID, "Registry Write", "HKCU\\Software\\Classes\\Folder\\shell\\open\\command (UAC bypass via sdclt)")
+				createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: sdclt.exe")
+			case "eventvwr":
+				createArtifact(taskData.Task.ID, "Registry Write", "HKCU\\Software\\Classes\\mscfile\\Shell\\Open\\command (UAC bypass via eventvwr)")
+				createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: eventvwr.exe")
+			case "silentcleanup":
+				createArtifact(taskData.Task.ID, "Registry Write", "HKCU\\Environment\\windir (UAC bypass via silentcleanup)")
+				createArtifact(taskData.Task.ID, "Process Create", "Scheduled task trigger: schtasks.exe /run SilentCleanup")
+			case "cmstp":
+				createArtifact(taskData.Task.ID, "File Write", "%TEMP%\\CMSTP_*.inf (UAC bypass via cmstp)")
+				createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: cmstp.exe /au")
+			default:
+				createArtifact(taskData.Task.ID, "Registry Write", "HKCU\\Software\\Classes\\ms-settings\\Shell\\Open\\command (UAC bypass via "+technique+")")
+				createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: "+technique+".exe")
+			}
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {

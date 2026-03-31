@@ -11,13 +11,16 @@ Windows Only
 
 ## Summary
 
-Bypass User Account Control (UAC) to escalate from medium integrity (standard user context) to high integrity (administrator). Uses registry-based protocol handler hijacking to redirect auto-elevating Windows binaries to execute an arbitrary command at elevated privileges.
+Bypass User Account Control (UAC) to escalate from medium integrity (standard user context) to high integrity (administrator). Six techniques available: registry-based protocol handler hijacking, environment variable hijacking, and INF file abuse.
 
 ### Techniques
 
 - **fodhelper** (default) — Hijacks the `ms-settings` protocol handler via `HKCU\Software\Classes\ms-settings\Shell\Open\command`, then launches `fodhelper.exe` which auto-elevates and reads the handler. Works on Windows 10/11.
 - **computerdefaults** — Same `ms-settings` hijack as fodhelper, but triggers via `computerdefaults.exe`. Alternative if fodhelper is monitored.
 - **sdclt** — Hijacks the `Folder` shell handler via `HKCU\Software\Classes\Folder\shell\open\command`, then launches `sdclt.exe`. Works on Windows 10.
+- **eventvwr** — Hijacks the `mscfile` file association via `HKCU\Software\Classes\mscfile\Shell\Open\command`, then launches `eventvwr.exe` which auto-elevates and opens a `.msc` file through the hijacked handler. Works on Windows 10/11.
+- **silentcleanup** — Overrides the `windir` environment variable in `HKCU\Environment`, then triggers the `SilentCleanup` scheduled task which runs with highest privileges and expands `%windir%` from the hijacked value. Works on Windows 10/11.
+- **cmstp** — Writes a malicious INF file and launches `cmstp.exe /au` which auto-elevates and executes commands from the INF's `UnRegisterOCXs` section. Works on Windows 10/11.
 
 ### Requirements
 
@@ -33,6 +36,9 @@ The UAC bypass technique to use. Default: `fodhelper`.
 - `fodhelper` — ms-settings hijack via fodhelper.exe (most reliable, Win10+)
 - `computerdefaults` — ms-settings hijack via computerdefaults.exe (Win10+)
 - `sdclt` — Folder handler hijack via sdclt.exe (Win10)
+- `eventvwr` — mscfile hijack via eventvwr.exe (Win10+)
+- `silentcleanup` — Environment variable hijack via SilentCleanup task (Win10+)
+- `cmstp` — INF file abuse via cmstp.exe (Win10+)
 
 #### command
 The command or executable path to run at elevated privileges. Default: the agent's own executable path (spawns a new elevated callback).
@@ -57,6 +63,21 @@ uac-bypass -command "C:\Windows\System32\cmd.exe /c whoami > C:\temp\elevated.tx
 Use sdclt technique:
 ```
 uac-bypass -technique sdclt
+```
+
+Use eventvwr technique (mscfile hijack):
+```
+uac-bypass -technique eventvwr
+```
+
+Use silentcleanup technique (env var hijack):
+```
+uac-bypass -technique silentcleanup
+```
+
+Use cmstp technique (INF file abuse):
+```
+uac-bypass -technique cmstp -command "C:\path\to\payload.exe"
 ```
 
 ## Example Output
@@ -87,11 +108,24 @@ Use getsystem to escalate to SYSTEM.
 
 ## How It Works
 
+### Registry Hijack Techniques (fodhelper, computerdefaults, sdclt, eventvwr)
 1. **Check elevation**: If the process token is already elevated, skip the bypass
-2. **Set registry key**: Write the command to the protocol handler's `(Default)` value and set an empty `DelegateExecute` value (forces Windows to use the command handler instead of the normal protocol)
-3. **Launch trigger**: Start the auto-elevating binary (fodhelper.exe, computerdefaults.exe, or sdclt.exe)
-4. **Auto-elevation**: Windows auto-elevates the trigger binary (it's in the manifest). The binary reads the hijacked handler and executes the command at high integrity
-5. **Cleanup**: After a brief delay, all hijacked registry keys are removed
+2. **Set registry key**: Write the command to the protocol/file handler's `(Default)` value (and `DelegateExecute` where needed)
+3. **Launch trigger**: Start the auto-elevating binary via ShellExecute
+4. **Auto-elevation**: Windows auto-elevates the trigger binary (manifest flag). The binary reads the hijacked handler and executes the command at high integrity
+5. **Cleanup**: After a jittered delay, all hijacked registry keys are shredded (3-pass overwrite) and removed
+
+### Environment Variable Technique (silentcleanup)
+1. **Check elevation**: If already elevated, skip
+2. **Set env var**: Override `windir` in `HKCU\Environment` with a command string that hijacks the variable expansion
+3. **Trigger task**: Run the `SilentCleanup` scheduled task via `schtasks.exe /run`, which runs with highest privileges and expands `%windir%`
+4. **Cleanup**: Restore the original `windir` environment variable (or delete the override)
+
+### INF File Technique (cmstp)
+1. **Check elevation**: If already elevated, skip
+2. **Write INF**: Create a temporary INF file with a `RunPreSetupCommandsSection` or `UnRegisterOCXs` section containing the target command
+3. **Launch cmstp**: Start `cmstp.exe /au <inf_path>` via ShellExecute, which auto-elevates
+4. **Cleanup**: After a jittered delay, the INF file is shredded (overwritten with random data) and deleted
 
 ## Workflow
 
@@ -107,3 +141,4 @@ Typical escalation path:
 ## MITRE ATT&CK Mapping
 
 - T1548.002 — Abuse Elevation Control Mechanism: Bypass User Account Control
+- T1218.003 — System Binary Proxy Execution: CMSTP (cmstp technique)

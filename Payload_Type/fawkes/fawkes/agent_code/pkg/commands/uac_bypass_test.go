@@ -124,7 +124,7 @@ func TestUACBypassTechniqueNormalization(t *testing.T) {
 
 func TestUACBypassAllTechniqueNames(t *testing.T) {
 	// Verify all documented techniques are recognized (don't trigger "Unknown technique")
-	techniques := []string{"fodhelper", "computerdefaults", "sdclt"}
+	techniques := []string{"fodhelper", "computerdefaults", "sdclt", "eventvwr", "silentcleanup", "cmstp"}
 	cmd := &UACBypassCommand{}
 
 	for _, tech := range techniques {
@@ -196,5 +196,75 @@ func TestRandomShredString_Unique(t *testing.T) {
 			t.Errorf("duplicate shred string on iteration %d", i)
 		}
 		seen[s] = true
+	}
+}
+
+func TestUACBypassCleanupEventvwrKey(t *testing.T) {
+	// Test that cleanup doesn't panic even when keys don't exist
+	cleanupEventvwrKey()
+}
+
+func TestUACBypassEventvwrTechniqueRecognized(t *testing.T) {
+	cmd := &UACBypassCommand{}
+	params, _ := json.Marshal(map[string]string{
+		"technique": "eventvwr",
+		"command":   "notepad.exe",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if strings.Contains(result.Output, "Unknown technique") {
+		t.Error("eventvwr technique should be recognized")
+	}
+	// Should mention the technique name in output
+	if !strings.Contains(result.Output, "eventvwr") {
+		t.Error("Output should mention eventvwr technique")
+	}
+}
+
+func TestUACBypassSilentCleanupTechniqueRecognized(t *testing.T) {
+	cmd := &UACBypassCommand{}
+	params, _ := json.Marshal(map[string]string{
+		"technique": "silentcleanup",
+		"command":   "notepad.exe",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if strings.Contains(result.Output, "Unknown technique") {
+		t.Error("silentcleanup technique should be recognized")
+	}
+	if !strings.Contains(result.Output, "silentcleanup") {
+		t.Error("Output should mention silentcleanup technique")
+	}
+}
+
+func TestUACBypassCmstpTechniqueRecognized(t *testing.T) {
+	cmd := &UACBypassCommand{}
+	params, _ := json.Marshal(map[string]string{
+		"technique": "cmstp",
+		"command":   "notepad.exe",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if strings.Contains(result.Output, "Unknown technique") {
+		t.Error("cmstp technique should be recognized")
+	}
+	if !strings.Contains(result.Output, "cmstp") {
+		t.Error("Output should mention cmstp technique")
+	}
+}
+
+func TestUACBypassNewTechniquesCaseInsensitive(t *testing.T) {
+	cmd := &UACBypassCommand{}
+	techniques := []string{"EVENTVWR", "SilentCleanup", "CMSTP", "Eventvwr"}
+	for _, tech := range techniques {
+		params, _ := json.Marshal(map[string]string{
+			"technique": tech,
+			"command":   "notepad.exe",
+		})
+		task := structs.Task{Params: string(params)}
+		result := cmd.Execute(task)
+		if strings.Contains(result.Output, "Unknown technique") {
+			t.Errorf("Technique '%s' should be case-insensitive but got: %s", tech, result.Output)
+		}
 	}
 }

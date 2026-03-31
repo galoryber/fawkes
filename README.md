@@ -209,7 +209,7 @@ trust | `trust -server <DC> -username <user@domain> -password <pass> [-use_tls]`
 timestomp | `timestomp -action <get\|copy\|set\|match\|random> -target <file> [-source <file>] [-timestamp <time>]` | Modify file timestamps to blend in. Get, copy from another file, set specific time, match directory neighbors (IQR), or random within range. Windows also modifies creation time.
 tscon | `tscon [-action <list\|hijack\|disconnect\|logoff>] [-session_id <id>]` | **(Windows only)** RDP session management — list, hijack, disconnect, or logoff sessions. Session takeover without credentials (T1563.002).
 ts | `ts [-a] [-i PID]` | **(Windows only)** List threads in processes. By default shows only alertable threads (Suspended/DelayExecution). Use -a for all threads, -i to filter by PID (T1057).
-uac-bypass | `uac-bypass [-technique fodhelper\|computerdefaults\|sdclt] [-command <path>]` | **(Windows only)** Bypass UAC to escalate from medium to high integrity. Registry-based hijack + auto-elevating binary. Default spawns elevated callback (T1548.002).
+uac-bypass | `uac-bypass [-technique fodhelper\|computerdefaults\|sdclt\|eventvwr\|silentcleanup\|cmstp] [-command <path>]` | **(Windows only)** Bypass UAC to escalate from medium to high integrity. 6 techniques: registry hijack, env var hijack, INF file abuse. Default spawns elevated callback (T1548.002, T1218.003).
 uniq | `uniq -path <file> [-count true] [-duplicate true] [-unique_only true]` | Filter or count duplicate consecutive lines in a file. Count mode sorts by frequency. Cross-platform (T1083).
 unlink | `unlink -connection_id <uuid>` | Disconnect a linked TCP P2P agent. Cross-platform (T1572).
 uptime | `uptime` | Show system uptime, boot time, and load averages. Cross-platform (T1082).
