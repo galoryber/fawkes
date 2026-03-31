@@ -14,14 +14,14 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "amcache_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Query and clean Windows Shimcache (AppCompatCache) execution history. Shimcache records program execution, which is a key forensic artifact. Cleaning it removes evidence of tool execution.",
+		Description:         "Query and clean forensic execution artifacts. Windows: Shimcache/AppCompatCache. Linux: recently-used.xbel, thumbnails, GNOME Tracker. macOS: recent items, KnowledgeC, quarantine events.",
 		HelpString:          "amcache -action <query|search|delete|clear> [-name <pattern>] [-count <n>]",
-		Version:             1,
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1070.004"}, // Indicator Removal: File Deletion
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -82,7 +82,7 @@ func init() {
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    "OPSEC WARNING: AmCache manipulation modifies the Windows Application Compatibility Cache (C:\\Windows\\appcompat\\Programs\\Amcache.hve). Detectable by registry integrity monitoring and forensic timeline analysis. High-value anti-forensics target for incident responders.",
+				OpsecPreMessage:    "OPSEC WARNING: Forensic artifact manipulation. Windows: modifies AppCompatCache registry key. Linux: modifies recently-used.xbel, thumbnails, tracker DB. macOS: removes recent items, KnowledgeC, quarantine events. Detectable by integrity monitoring and forensic timeline analysis.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},

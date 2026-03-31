@@ -133,6 +133,20 @@ func historyTargets(home string) []struct {
 				f.htype,
 			})
 		}
+
+		// macOS ASL (Apple System Log) files — forensic artifact tracking system events
+		if runtime.GOOS == "darwin" {
+			if entries, err := os.ReadDir("/var/log/asl"); err == nil {
+				for _, e := range entries {
+					if !e.IsDir() {
+						targets = append(targets, struct{ path, htype string }{
+							filepath.Join("/var/log/asl", e.Name()),
+							"asl",
+						})
+					}
+				}
+			}
+		}
 	}
 
 	return targets
