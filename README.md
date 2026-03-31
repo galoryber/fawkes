@@ -232,6 +232,35 @@ write-file | `write-file -path <file> -content <text> [-base64 true] [-append tr
 write-memory | `write-memory <dll_name> <function_name> <start_index> <hex_bytes>` | **(Windows only)** Write bytes to a DLL function address.
 xattr | `xattr -action <list\|get\|set\|delete> -path <file> [-name <attr>] [-value <data>] [-hex true]` | **(Linux/macOS only)** Manage extended file attributes — list, get, set, delete. Unix complement to Windows ADS for data hiding (T1564.004).
 
+## Forge Command Augmentation
+
+Fawkes supports [Mythic Forge](https://github.com/MythicAgents/forge) command augmentation, which dynamically extends the agent's capabilities with external tool collections. When Forge is installed alongside Mythic, additional commands automatically appear in the Mythic UI for Fawkes callbacks — no agent rebuild required.
+
+**Supported tool collections:**
+
+| Collection | Type | Executes Via | Examples |
+|------------|------|-------------|----------|
+| [SharpCollection](https://github.com/Flangvik/SharpCollection) | .NET assemblies | `inline-assembly` | Seatbelt, SharpUp, Rubeus, Certify, SharpHound, SharpDPAPI |
+| [Sliver Armory](https://github.com/MythicAgents/forge) | BOF/COFF files | `inline-execute` | SA-whoami, SA-adcs-enum, SA-ldapsearch, SA-nanodump |
+
+**Quick start:**
+
+```bash
+# Install Forge on your Mythic server
+cd /path/to/Mythic
+sudo ./mythic-cli install github https://github.com/MythicAgents/forge
+sudo ./mythic-cli restart fawkes
+```
+
+Once installed, Forge commands appear alongside Fawkes's base commands in any callback's task interface. Select a tool, fill in the parameters, and execute — Fawkes handles parameter conversion and routing automatically.
+
+**Usage tips:**
+- For .NET tools (SharpCollection), run `start-clr` first to initialize the CLR and optionally patch AMSI
+- For BOF tools (Sliver Armory), ensure BOFs are compiled for x64
+- No special build parameters are needed — Forge support is built in
+
+For detailed setup instructions, parameter format reference, and troubleshooting, see the full documentation under **Installed Services → Fawkes → Forge Command Augmentation** in the Mythic UI.
+
 ## Injection Techniques
 
 ### PoolParty Injection
