@@ -22,6 +22,7 @@ func init() {
 				agentstructs.SUPPORTED_OS_LINUX,
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
+			CommandIsSuggested: true,
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{

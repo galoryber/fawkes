@@ -14,7 +14,7 @@ func init() {
 		HelpString:          "kill -pid 1234",
 		Version:             1,
 		MitreAttackMappings: []string{"T1489"}, // Service Stop (closest mapping)
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:kill"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},

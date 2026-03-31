@@ -18,7 +18,8 @@ func init() {
 		MitreAttackMappings: []string{"T1021.002", "T1569.002"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS:                []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			CommandCanOnlyBeLoadedLater: true,
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{

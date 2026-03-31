@@ -23,6 +23,7 @@ func init() {
 				agentstructs.SUPPORTED_OS_LINUX,
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
+			CommandCanOnlyBeLoadedLater: true,
 		},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "kerberoast_new.js"), Author: "@galoryber"},
 		CommandParameters: []agentstructs.CommandParameter{

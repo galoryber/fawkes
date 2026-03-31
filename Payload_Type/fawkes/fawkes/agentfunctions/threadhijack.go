@@ -16,7 +16,7 @@ func init() {
 		HelpString:          "thread-hijack",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055.003"}, // Process Injection: Thread Execution Hijacking
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},

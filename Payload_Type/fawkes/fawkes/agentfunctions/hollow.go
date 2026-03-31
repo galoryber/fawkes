@@ -16,7 +16,7 @@ func init() {
 		HelpString:          "hollow",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055.012"},
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
