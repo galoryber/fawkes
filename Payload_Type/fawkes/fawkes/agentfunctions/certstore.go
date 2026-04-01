@@ -11,8 +11,8 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "certstore",
 		Description:         "Enumerate Windows certificate stores to find code signing certs, client auth certs, and private keys. Searches CurrentUser and LocalMachine stores.",
-		HelpString:          "certstore -action <list|find> [-store <MY|ROOT|CA|Trust|TrustedPeople|all>] [-filter <substring>]",
-		Version:             1,
+		HelpString:          "certstore -action list [-store MY] [-filter substring]\ncertstore -action find -filter thumbprint_or_subject\ncertstore -action export -filter <thumbprint> [-format pem|pfx] [-password <pfx_pass>]\ncertstore -action delete -filter <thumbprint> -store <store_name>\ncertstore -action import -data <base64_cert> [-format pem|pfx] [-store MY] [-password <pfx_pass>]",
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1552.004", "T1649"},
 		SupportedUIFeatures: []string{},
@@ -24,9 +24,9 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"list", "find"},
+				Choices:       []string{"list", "find", "export", "delete", "import"},
 				DefaultValue:  "list",
-				Description:   "Action: list (enumerate all certs), find (search by subject/issuer/thumbprint — requires filter)",
+				Description:   "Action: list (enumerate all), find (search), export (PEM/PFX), delete (remove by thumbprint), import (add cert)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -60,6 +60,49 @@ func init() {
 						ParameterIsRequired: false,
 						UIModalPosition:     3,
 						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:          "format",
+				CLIName:       "format",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:       []string{"pem", "pfx"},
+				DefaultValue:  "pem",
+				Description:   "Export/import format: pem (certificate only) or pfx (certificate + private key, password-protected)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     4,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "password",
+				CLIName:       "password",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Password for PFX export/import (required for PFX format)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     5,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "data",
+				CLIName:       "data",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Base64-encoded certificate data for import action",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     6,
+						GroupName:            "Default",
 					},
 				},
 			},

