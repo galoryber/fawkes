@@ -58,8 +58,10 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return winPrivescCheckUnattend()
 	case "uac":
 		return winPrivescCheckUAC()
+	case "dll-hijack":
+		return winPrivescCheckDLLHijack()
 	default:
-		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac", args.Action)
+		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac, dll-hijack", args.Action)
 	}
 }
 
@@ -89,6 +91,10 @@ func winPrivescCheckAll() structs.CommandResult {
 
 	sb.WriteString("--- Unattended Install Files ---\n")
 	sb.WriteString(winPrivescCheckUnattend().Output)
+	sb.WriteString("\n\n")
+
+	sb.WriteString("--- DLL Search Order Hijacking ---\n")
+	sb.WriteString(winPrivescCheckDLLHijack().Output)
 
 	return successResult(sb.String())
 }
@@ -550,6 +556,123 @@ func readRegDWORD(root windows.Handle, path, name string) uint32 {
 	}
 
 	return *(*uint32)(unsafe.Pointer(&data[0]))
+}
+
+// winPrivescCheckDLLHijack scans for DLL search order hijacking opportunities
+func winPrivescCheckDLLHijack() structs.CommandResult {
+	var sb strings.Builder
+
+	// Phase 1: Enumerate writable directories in the standard DLL search order
+	sb.WriteString("DLL Search Order (standard, SafeDllSearchMode enabled):\n")
+	sb.WriteString("  1. Application directory\n")
+	sb.WriteString("  2. System directory (C:\\Windows\\System32)\n")
+	sb.WriteString("  3. 16-bit system directory (C:\\Windows\\System)\n")
+	sb.WriteString("  4. Windows directory (C:\\Windows)\n")
+	sb.WriteString("  5. Current directory\n")
+	sb.WriteString("  6. PATH directories\n\n")
+
+	// Check SafeDllSearchMode registry setting
+	safeDLL := readRegDWORD(windows.HKEY_LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Control\Session Manager`, "SafeDllSearchMode")
+	if safeDLL == 0 {
+		sb.WriteString("[!!] SafeDllSearchMode is DISABLED — current directory is searched before system directories!\n")
+		sb.WriteString("     This significantly increases DLL hijacking risk\n\n")
+	} else {
+		sb.WriteString("[*] SafeDllSearchMode is enabled (default)\n\n")
+	}
+
+	// Check CWDIllegalInDllSearch (blocks loading from CWD)
+	cwdBlock := readRegDWORD(windows.HKEY_LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Control\Session Manager`, "CWDIllegalInDllSearch")
+	if cwdBlock != 0 && cwdBlock != 0xFFFFFFFF {
+		sb.WriteString(fmt.Sprintf("[*] CWDIllegalInDllSearch = %d (some CWD DLL loading blocked)\n\n", cwdBlock))
+	}
+
+	// Phase 2: Known phantom DLLs (DLLs commonly searched for but not present)
+	sb.WriteString("--- Known Phantom DLL Targets ---\n")
+	sb.WriteString("These DLLs are commonly loaded by Windows applications but may not exist.\n")
+	sb.WriteString("Placing a malicious DLL with this name in a writable search path hijacks execution.\n\n")
+
+	phantomDLLs := []struct {
+		dll     string
+		loader  string
+		service bool
+	}{
+		{"wlbsctrl.dll", "IKEEXT service (if running)", true},
+		{"wbemcomn.dll", "Various WMI providers", true},
+		{"fveapi.dll", "BitLocker operations", false},
+		{"CRYPTSP.dll", "Crypto service operations", true},
+		{"Tsmsisrv.dll", "Remote Desktop Session Host", true},
+		{"TSVIPSrv.dll", "Remote Desktop IP Virtualization", true},
+		{"profapi.dll", "User profile service", true},
+		{"dhcpcsvc.dll", "DHCP client", true},
+		{"fxsst.dll", "Fax service", true},
+		{"WTSAPI32.dll", "Terminal Services API (some apps)", false},
+		{"ualapi.dll", "User Access Logging service", true},
+		{"msfte.dll", "Search Indexer", true},
+		{"dxgi.dll", "DirectX Graphics (specific app versions)", false},
+		{"version.dll", "Common phantom in app directories", false},
+		{"userenv.dll", "User environment (specific contexts)", false},
+	}
+
+	systemRoot := os.Getenv("SystemRoot")
+	if systemRoot == "" {
+		systemRoot = `C:\Windows`
+	}
+
+	for _, phantom := range phantomDLLs {
+		// Check if the DLL exists in System32 (if not, it's a hijack candidate)
+		sys32Path := filepath.Join(systemRoot, "System32", phantom.dll)
+		exists := true
+		if _, err := os.Stat(sys32Path); err != nil {
+			exists = false
+		}
+
+		if !exists {
+			svcNote := ""
+			if phantom.service {
+				svcNote = " [service context]"
+			}
+			sb.WriteString(fmt.Sprintf("  [!] %s — NOT in System32 — loaded by: %s%s\n", phantom.dll, phantom.loader, svcNote))
+		}
+	}
+
+	// Phase 3: Writable directories in PATH where DLLs could be planted
+	sb.WriteString("\n--- Writable PATH Directories (DLL planting targets) ---\n")
+	pathEnv := os.Getenv("PATH")
+	pathDirs := strings.Split(pathEnv, ";")
+
+	var writableDirs []string
+	for _, dir := range pathDirs {
+		dir = strings.TrimSpace(dir)
+		if dir == "" {
+			continue
+		}
+		if isDirWritable(dir) {
+			writableDirs = append(writableDirs, dir)
+		}
+	}
+
+	if len(writableDirs) > 0 {
+		for _, d := range writableDirs {
+			sb.WriteString(fmt.Sprintf("  [!] %s (WRITABLE)\n", d))
+		}
+		sb.WriteString(fmt.Sprintf("\n[!!] %d writable PATH directories — plant a DLL with a phantom name here\n", len(writableDirs)))
+		sb.WriteString("     When a service or privileged app searches PATH for the DLL, your DLL loads first\n")
+	} else {
+		sb.WriteString("  (no writable directories in PATH)\n")
+	}
+
+	// Phase 4: Check KnownDLLs (DLLs that bypass search order — cannot be hijacked)
+	sb.WriteString("\n--- KnownDLLs (protected from hijacking) ---\n")
+	knownDLLKey, err := windows.OpenKey(windows.HKEY_LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs`, windows.KEY_READ)
+	if err == nil {
+		defer windows.CloseHandle(windows.Handle(knownDLLKey))
+		names, _, _ := knownDLLKey.ReadValueNames(-1)
+		sb.WriteString(fmt.Sprintf("  %d DLLs in KnownDLLs registry (these CANNOT be hijacked)\n", len(names)))
+	} else {
+		sb.WriteString("  (could not read KnownDLLs registry key)\n")
+	}
+
+	return successResult(sb.String())
 }
 
 func readRegString(root windows.Handle, path, name string) string {
