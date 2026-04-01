@@ -18,7 +18,7 @@ func init() {
 		Description:         "Search for files by name, size, date, permissions, or owner. Find SUID binaries, world-writable files, or files owned by specific users",
 		HelpString:          "find -path <dir> -pattern <glob> [-min_size <bytes>] [-max_size <bytes>] [-newer <minutes>] [-older <minutes>] [-type f|d] [-perm suid|sgid|writable|executable|<octal>] [-owner <user|uid>]",
 		Version:             4,
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"file_browser:list"},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1083"},
 		ScriptOnlyCommand:   false,

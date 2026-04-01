@@ -12,7 +12,7 @@ func init() {
 		Description:         "Stop a running task by task ID. Use 'jobs' to list running tasks.",
 		HelpString:          "jobkill -id <task-uuid>",
 		Version:             1,
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:kill"},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{},
 		ScriptOnlyCommand:   false,

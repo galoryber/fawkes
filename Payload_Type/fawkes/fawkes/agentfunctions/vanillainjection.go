@@ -18,7 +18,7 @@ func init() {
 		HelpString:          "vanilla-injection",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055.001", "T1055.002"}, // Process Injection: Dynamic-link Library Injection, Portable Executable Injection
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "vanillainjection_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{

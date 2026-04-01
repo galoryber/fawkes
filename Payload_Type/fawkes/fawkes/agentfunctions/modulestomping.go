@@ -18,7 +18,7 @@ func init() {
 		HelpString:          "module-stomping",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055.001"}, // Process Injection: DLL Injection
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "modulestomping_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{

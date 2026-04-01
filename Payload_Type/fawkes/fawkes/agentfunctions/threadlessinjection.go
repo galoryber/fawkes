@@ -18,7 +18,7 @@ func init() {
 		HelpString:          "threadless-inject",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055"},
-		SupportedUIFeatures: []string{"file_browser:upload"},
+		SupportedUIFeatures: []string{"file_browser:upload", "process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "threadlessinjection_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
