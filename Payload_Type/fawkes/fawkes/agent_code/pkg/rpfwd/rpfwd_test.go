@@ -23,6 +23,7 @@ func TestNewManager(t *testing.T) {
 	m := NewManager()
 	if m == nil {
 		t.Fatal("NewManager returned nil")
+		return
 	}
 	if m.listeners == nil {
 		t.Error("listeners map not initialized")
