@@ -161,7 +161,7 @@ func init() {
 					{
 						Action:  "add",
 						Host:    &host,
-						TokenId: uint64(processResponse.TaskData.Task.ID),
+						TokenID: uint64(processResponse.TaskData.Task.ID),
 						TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
 							User: user,
 						},

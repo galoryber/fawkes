@@ -124,7 +124,7 @@ func init() {
 			for _, p := range processes {
 				if p.ProcessID == callbackPID && p.Name != "" {
 					update := mythicrpc.MythicRPCCallbackUpdateMessage{
-						AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+						AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
 					}
 					hasUpdate := false
 					if p.Name != processResponse.TaskData.Callback.ProcessName {

@@ -51,7 +51,7 @@ func init() {
 			}
 			if len(ips) > 0 {
 				update := mythicrpc.MythicRPCCallbackUpdateMessage{
-					AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+					AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
 					IPs:               &ips,
 				}
 				if len(ips) == 1 {

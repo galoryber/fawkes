@@ -264,7 +264,7 @@ func init() {
 					return response
 				}
 				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: search.Files[0].AgentFileId,
+					AgentFileID: search.Files[0].AgentFileID,
 				})
 				if err != nil || !getResp.Success {
 					response.Success = false

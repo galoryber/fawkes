@@ -108,7 +108,7 @@ func init() {
 			}
 			systemLevel := 4 // SYSTEM integrity
 			update := mythicrpc.MythicRPCCallbackUpdateMessage{
-				AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+				AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
 				IntegrityLevel:    &systemLevel,
 			}
 			// Parse user from "New:" line
@@ -135,7 +135,7 @@ func init() {
 					{
 						Action:  "add",
 						Host:    &host,
-						TokenId: uint64(processResponse.TaskData.Task.ID),
+						TokenID: uint64(processResponse.TaskData.Task.ID),
 						TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
 							User: user,
 						},

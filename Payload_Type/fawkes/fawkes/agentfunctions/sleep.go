@@ -112,7 +112,7 @@ func init() {
 			}
 			sleepString := processResponse.Response.(string)
 			if updateResp, err := mythicrpc.SendMythicRPCCallbackUpdate(mythicrpc.MythicRPCCallbackUpdateMessage{
-				AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+				AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
 				SleepInfo:         &sleepString,
 			}); err != nil {
 				response.Success = false

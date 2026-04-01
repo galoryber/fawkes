@@ -111,7 +111,7 @@ func init() {
 				callbackTokens = append(callbackTokens, mythicrpc.MythicRPCCallbackTokenData{
 					Action:  "add",
 					Host:    &host,
-					TokenId: uint64(processResponse.TaskData.Task.ID) + uint64(len(callbackTokens)),
+					TokenID: uint64(processResponse.TaskData.Task.ID) + uint64(len(callbackTokens)),
 					TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
 						User:      t.User,
 						ProcessID: int(t.PID),

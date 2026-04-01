@@ -34,7 +34,7 @@ func init() {
 				return response
 			}
 			update := mythicrpc.MythicRPCCallbackUpdateMessage{
-				AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+				AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
 			}
 			hasUpdate := false
 			for _, line := range strings.Split(responseText, "\n") {

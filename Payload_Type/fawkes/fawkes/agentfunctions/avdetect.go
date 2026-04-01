@@ -81,7 +81,7 @@ func init() {
 			if len(productNames) > 0 {
 				desc := "AV/EDR: " + strings.Join(productNames, ", ")
 				mythicrpc.SendMythicRPCCallbackUpdate(mythicrpc.MythicRPCCallbackUpdateMessage{
-					AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+					AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
 					Description:       &desc,
 				})
 			}

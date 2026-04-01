@@ -119,7 +119,7 @@ func init() {
 				return response
 			}
 			update := mythicrpc.MythicRPCCallbackUpdateMessage{
-				AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+				AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
 			}
 			hasUpdate := false
 			if output.Integrity != "" {
