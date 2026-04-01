@@ -4,15 +4,20 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
 )
+
+// lolbinTimeout is the maximum time a LOLBin process can run before being killed
+const lolbinTimeout = 60 * time.Second
 
 type LolbinCommand struct{}
 
@@ -83,14 +88,19 @@ func lolbinRundll32(dllPath, export, extraArgs string) structs.CommandResult {
 		cmdArgs += " " + extraArgs
 	}
 
-	cmd := exec.Command("rundll32.exe", cmdArgs)
+	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "rundll32.exe", cmdArgs)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] rundll32.exe %s\n", cmdArgs)
 	if len(output) > 0 {
 		result += string(output)
 	}
-	if err != nil {
+	if ctx.Err() == context.DeadlineExceeded {
+		result += "\n[!] Process killed after timeout"
+	} else if err != nil {
 		// rundll32 often returns non-zero even on success
 		result += fmt.Sprintf("\nProcess exited: %v", err)
 	}
@@ -106,14 +116,19 @@ func lolbinMsiexec(msiPath, extraArgs string) structs.CommandResult {
 		cmdArgs = append(cmdArgs, strings.Fields(extraArgs)...)
 	}
 
-	cmd := exec.Command("msiexec.exe", cmdArgs...)
+	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "msiexec.exe", cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] msiexec.exe %s\n", strings.Join(cmdArgs, " "))
 	if len(output) > 0 {
 		result += string(output)
 	}
-	if err != nil {
+	if ctx.Err() == context.DeadlineExceeded {
+		result += "\n[!] Process killed after timeout"
+	} else if err != nil {
 		result += fmt.Sprintf("\nProcess exited: %v", err)
 	}
 
@@ -127,20 +142,24 @@ func lolbinRegsvcs(dllPath, extraArgs string) structs.CommandResult {
 		cmdArgs = append(cmdArgs, strings.Fields(extraArgs)...)
 	}
 
-	// Look for regsvcs in .NET framework directories
 	regsvcsPath := findDotNetTool("RegSvcs.exe")
 	if regsvcsPath == "" {
 		return errorResult("Error: RegSvcs.exe not found in .NET Framework directories")
 	}
 
-	cmd := exec.Command(regsvcsPath, cmdArgs...)
+	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, regsvcsPath, cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] %s %s\n", regsvcsPath, strings.Join(cmdArgs, " "))
 	if len(output) > 0 {
 		result += string(output)
 	}
-	if err != nil {
+	if ctx.Err() == context.DeadlineExceeded {
+		result += "\n[!] Process killed after timeout"
+	} else if err != nil {
 		result += fmt.Sprintf("\nProcess exited: %v", err)
 	}
 
@@ -159,14 +178,19 @@ func lolbinRegasm(dllPath, extraArgs string) structs.CommandResult {
 		return errorResult("Error: RegAsm.exe not found in .NET Framework directories")
 	}
 
-	cmd := exec.Command(regasmPath, cmdArgs...)
+	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, regasmPath, cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] %s %s\n", regasmPath, strings.Join(cmdArgs, " "))
 	if len(output) > 0 {
 		result += string(output)
 	}
-	if err != nil {
+	if ctx.Err() == context.DeadlineExceeded {
+		result += "\n[!] Process killed after timeout"
+	} else if err != nil {
 		result += fmt.Sprintf("\nProcess exited: %v", err)
 	}
 
@@ -180,14 +204,19 @@ func lolbinMshta(htaPath, extraArgs string) structs.CommandResult {
 		cmdArgs = append(cmdArgs, strings.Fields(extraArgs)...)
 	}
 
-	cmd := exec.Command("mshta.exe", cmdArgs...)
+	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "mshta.exe", cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] mshta.exe %s\n", strings.Join(cmdArgs, " "))
 	if len(output) > 0 {
 		result += string(output)
 	}
-	if err != nil {
+	if ctx.Err() == context.DeadlineExceeded {
+		result += "\n[!] Process killed after timeout"
+	} else if err != nil {
 		result += fmt.Sprintf("\nProcess exited: %v", err)
 	}
 
@@ -196,21 +225,25 @@ func lolbinMshta(htaPath, extraArgs string) structs.CommandResult {
 
 // certutil — T1218 — Decode/download via certutil.exe
 func lolbinCertutil(filePath, extraArgs string) structs.CommandResult {
-	// Default: decode a base64-encoded file
 	outPath := strings.TrimSuffix(filePath, filepath.Ext(filePath)) + ".decoded"
 	cmdArgs := []string{"-decode", filePath, outPath}
 	if extraArgs != "" {
 		cmdArgs = strings.Fields(extraArgs)
 	}
 
-	cmd := exec.Command("certutil.exe", cmdArgs...)
+	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "certutil.exe", cmdArgs...)
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] certutil.exe %s\n", strings.Join(cmdArgs, " "))
 	if len(output) > 0 {
 		result += string(output)
 	}
-	if err != nil {
+	if ctx.Err() == context.DeadlineExceeded {
+		result += "\n[!] Process killed after timeout"
+	} else if err != nil {
 		result += fmt.Sprintf("\nProcess exited: %v", err)
 	}
 
