@@ -71,6 +71,7 @@ func TestTicketParseKeyTypeAES256WrongSize(t *testing.T) {
 	_, _, errResult := ticketParseKeyType("aes256", key)
 	if errResult == nil {
 		t.Fatal("expected error for wrong key size")
+		return
 	}
 	if errResult.Status != "error" {
 		t.Errorf("expected status 'error', got '%s'", errResult.Status)
@@ -136,6 +137,7 @@ func TestTicketParseKeyTypeUnknown(t *testing.T) {
 	_, _, errResult := ticketParseKeyType("des", make([]byte, 8))
 	if errResult == nil {
 		t.Fatal("expected error for unknown key type")
+		return
 	}
 	if !strings.Contains(errResult.Output, "des") {
 		t.Errorf("error should mention the unknown type, got '%s'", errResult.Output)

@@ -73,6 +73,7 @@ func TestRecvTCPFramed_OversizedMessage(t *testing.T) {
 	_, err := recvTCPFramed(client)
 	if err == nil {
 		t.Fatal("expected error for oversized message")
+		return
 	}
 	if !strings.Contains(err.Error(), "too large") {
 		t.Errorf("expected 'too large' error, got: %v", err)
