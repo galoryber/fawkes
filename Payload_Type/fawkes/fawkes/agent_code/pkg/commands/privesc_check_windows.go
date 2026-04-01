@@ -663,28 +663,40 @@ func winPrivescCheckDLLHijack() structs.CommandResult {
 
 	// Phase 4: Check KnownDLLs (DLLs that bypass search order — cannot be hijacked)
 	sb.WriteString("\n--- KnownDLLs (protected from hijacking) ---\n")
-	var knownDLLKey windows.Handle
-	knownDLLPath, _ := windows.UTF16PtrFromString(`SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs`)
-	err := windows.RegOpenKeyEx(windows.HKEY_LOCAL_MACHINE, knownDLLPath, 0, windows.KEY_READ, &knownDLLKey)
-	if err == nil {
-		defer windows.RegCloseKey(knownDLLKey)
-		// Count values by enumerating until error
-		var count int
-		for i := uint32(0); ; i++ {
-			var nameLen uint32 = 256
-			nameBuf := make([]uint16, nameLen)
-			e := windows.RegEnumValue(knownDLLKey, i, &nameBuf[0], &nameLen, nil, nil, nil, nil)
-			if e != nil {
-				break
-			}
-			count++
-		}
-		sb.WriteString(fmt.Sprintf("  %d DLLs in KnownDLLs registry (these CANNOT be hijacked)\n", count))
+	// Count known DLLs by reading the registry key value count
+	knownDLLCount := countRegValues(windows.HKEY_LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs`)
+	if knownDLLCount >= 0 {
+		sb.WriteString(fmt.Sprintf("  %d DLLs in KnownDLLs registry (these CANNOT be hijacked)\n", knownDLLCount))
 	} else {
 		sb.WriteString("  (could not read KnownDLLs registry key)\n")
 	}
 
 	return successResult(sb.String())
+}
+
+// countRegValues returns the number of values under a registry key, or -1 on error
+func countRegValues(root windows.Handle, path string) int {
+	var key windows.Handle
+	pathUTF16, _ := windows.UTF16PtrFromString(path)
+	err := windows.RegOpenKeyEx(root, pathUTF16, 0, windows.KEY_READ, &key)
+	if err != nil {
+		return -1
+	}
+	defer windows.RegCloseKey(key)
+
+	var valueCount uint32
+	// RegQueryInfoKey to get value count
+	procRegQueryInfoKey := windows.NewLazySystemDLL("advapi32.dll").NewProc("RegQueryInfoKeyW")
+	r1, _, _ := procRegQueryInfoKey.Call(
+		uintptr(key),
+		0, 0, 0, 0, 0, 0,
+		uintptr(unsafe.Pointer(&valueCount)),
+		0, 0, 0, 0,
+	)
+	if r1 != 0 {
+		return -1
+	}
+	return int(valueCount)
 }
 
 func readRegString(root windows.Handle, path, name string) string {
