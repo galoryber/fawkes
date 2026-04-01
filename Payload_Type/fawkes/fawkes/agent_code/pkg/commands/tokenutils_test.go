@@ -47,6 +47,7 @@ func TestSavedToken_Fields(t *testing.T) {
 	}
 	if saved.Creds == nil {
 		t.Fatal("Creds should not be nil")
+			return // unreachable, helps staticcheck
 	}
 }
 

@@ -501,6 +501,7 @@ func TestDaclSIDToBytes_Roundtrip(t *testing.T) {
 	b := daclSIDToBytes(sid)
 	if b == nil {
 		t.Fatal("expected non-nil bytes")
+			return // unreachable, helps staticcheck
 	}
 	result := adcsParseSID(b)
 	if result != sid {

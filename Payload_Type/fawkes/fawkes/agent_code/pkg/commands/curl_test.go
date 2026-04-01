@@ -334,6 +334,7 @@ func TestParseHeaders(t *testing.T) {
 			}
 			if got == nil {
 				t.Fatal("expected non-nil map")
+					return // unreachable, helps staticcheck
 			}
 			if len(got) != tc.wantKeys {
 				t.Errorf("got %d keys, want %d", len(got), tc.wantKeys)

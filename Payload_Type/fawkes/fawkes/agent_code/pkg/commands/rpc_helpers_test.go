@@ -11,6 +11,7 @@ func TestRpcCredential_PasswordAuth(t *testing.T) {
 	}
 	if cred == nil {
 		t.Fatal("expected non-nil credential")
+			return // unreachable, helps staticcheck
 	}
 }
 
@@ -21,6 +22,7 @@ func TestRpcCredential_HashAuth(t *testing.T) {
 	}
 	if cred == nil {
 		t.Fatal("expected non-nil credential")
+			return // unreachable, helps staticcheck
 	}
 }
 
@@ -31,6 +33,7 @@ func TestRpcCredential_LMNTHashAuth(t *testing.T) {
 	}
 	if cred == nil {
 		t.Fatal("expected non-nil credential")
+			return // unreachable, helps staticcheck
 	}
 }
 
@@ -41,6 +44,7 @@ func TestRpcCredential_NoDomain(t *testing.T) {
 	}
 	if cred == nil {
 		t.Fatal("expected non-nil credential")
+			return // unreachable, helps staticcheck
 	}
 }
 
@@ -59,5 +63,6 @@ func TestRpcCredential_HashTakesPrecedence(t *testing.T) {
 	}
 	if cred == nil {
 		t.Fatal("expected non-nil credential")
+			return // unreachable, helps staticcheck
 	}
 }

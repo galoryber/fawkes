@@ -390,6 +390,7 @@ func TestLogonSessionsUsersAction(t *testing.T) {
 	}
 	if garyEntry == nil {
 		t.Fatal("gary not found in users output")
+		return // unreachable, helps staticcheck
 	}
 	if garyEntry.Sessions != 2 {
 		t.Errorf("gary.Sessions = %d, want 2", garyEntry.Sessions)

@@ -50,6 +50,7 @@ func TestAclGUIDBytes(t *testing.T) {
 			}
 			if result == nil {
 				t.Fatalf("expected non-nil result")
+					return // unreachable, helps staticcheck
 			}
 			if len(result) != 16 {
 				t.Errorf("expected 16 bytes, got %d", len(result))

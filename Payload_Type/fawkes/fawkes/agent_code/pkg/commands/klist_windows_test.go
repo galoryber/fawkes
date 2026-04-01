@@ -123,6 +123,7 @@ func TestLsaNtStatusToError(t *testing.T) {
 			}
 			if err == nil {
 				t.Fatal("expected error, got nil")
+					return // unreachable, helps staticcheck
 			}
 			if !containsStr(err.Error(), tt.wantMsg) {
 				t.Errorf("expected error containing %q, got %q", tt.wantMsg, err.Error())

@@ -34,6 +34,7 @@ func TestScanForGUID_NotFound(t *testing.T) {
 	_, err := scanForGUID(base, uintptr(len(data)), pattern)
 	if err == nil {
 		t.Fatal("expected error for missing pattern, got nil")
+			return // unreachable, helps staticcheck
 	}
 }
 
@@ -78,6 +79,7 @@ func TestScanForGUID_TooSmall(t *testing.T) {
 	_, err := scanForGUID(base, uintptr(len(data)), pattern)
 	if err == nil {
 		t.Fatal("expected error for buffer too small, got nil")
+			return // unreachable, helps staticcheck
 	}
 }
 

@@ -593,6 +593,7 @@ func TestLsaParseCachedCred_ValidEntry(t *testing.T) {
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
+			return // unreachable, helps staticcheck
 	}
 
 	if result.username != username {
@@ -644,6 +645,7 @@ func TestLsaParseCachedCred_EntryIterCount(t *testing.T) {
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
+			return // unreachable, helps staticcheck
 	}
 	// Should use entry iteration count (5000), not global (10240)
 	if !strings.Contains(result.hashcat, "$DCC2$5000#") {

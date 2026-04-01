@@ -167,6 +167,7 @@ func TestArgueParams_JSONParsing(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected JSON parse error, got nil")
+						return // unreachable, helps staticcheck
 				}
 				return
 			}
