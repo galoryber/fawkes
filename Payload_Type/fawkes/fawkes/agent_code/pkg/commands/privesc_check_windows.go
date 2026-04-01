@@ -663,11 +663,23 @@ func winPrivescCheckDLLHijack() structs.CommandResult {
 
 	// Phase 4: Check KnownDLLs (DLLs that bypass search order — cannot be hijacked)
 	sb.WriteString("\n--- KnownDLLs (protected from hijacking) ---\n")
-	knownDLLKey, err := windows.OpenKey(windows.HKEY_LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs`, windows.KEY_READ)
+	var knownDLLKey windows.Handle
+	knownDLLPath, _ := windows.UTF16PtrFromString(`SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs`)
+	err := windows.RegOpenKeyEx(windows.HKEY_LOCAL_MACHINE, knownDLLPath, 0, windows.KEY_READ, &knownDLLKey)
 	if err == nil {
-		defer windows.CloseHandle(windows.Handle(knownDLLKey))
-		names, _, _ := knownDLLKey.ReadValueNames(-1)
-		sb.WriteString(fmt.Sprintf("  %d DLLs in KnownDLLs registry (these CANNOT be hijacked)\n", len(names)))
+		defer windows.RegCloseKey(knownDLLKey)
+		// Count values by enumerating until error
+		var count int
+		for i := uint32(0); ; i++ {
+			var nameLen uint32 = 256
+			nameBuf := make([]uint16, nameLen)
+			e := windows.RegEnumValue(knownDLLKey, i, &nameBuf[0], &nameLen, nil, nil, nil, nil)
+			if e != nil {
+				break
+			}
+			count++
+		}
+		sb.WriteString(fmt.Sprintf("  %d DLLs in KnownDLLs registry (these CANNOT be hijacked)\n", count))
 	} else {
 		sb.WriteString("  (could not read KnownDLLs registry key)\n")
 	}
