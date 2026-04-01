@@ -121,6 +121,7 @@ link | `link -host <ip> -port <port>` | Link to a TCP P2P agent for internal piv
 ln | `ln -target <existing> -link <new> [-symbolic true] [-force true]` | Create symbolic or hard links. Symlinks can point to non-existent paths. Force mode replaces existing link. Cross-platform (T1036).
 linux-logs | `linux-logs -action <list\|read\|logins\|clear\|truncate\|shred> [-file <path>] [-search <filter>] [-lines <n>]` | **(Linux only)** List, read, clear, or tamper with Linux log files and binary login records (wtmp/btmp/utmp). Supports selective line removal and secure shredding (T1070.002).
 logonsessions | `logonsessions [-action list\|users] [-filter <name>]` | **(Windows, Linux, macOS)** Enumerate active logon sessions — users, session IDs, stations, connection state. Filter by username. Windows: WTS API. Linux: utmp parsing. macOS: utmpx parsing.
+lolbin | `lolbin -action <technique> -path <payload> [-export <func>] [-args <extra>]` | **(Windows only)** Signed binary proxy execution via rundll32, msiexec, regsvcs, regasm, mshta, certutil. T1218.
 ls | `ls [path]` | List files and folders with owner/group and timestamps. File browser integration. Defaults to cwd.
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it.
 masquerade | `masquerade -source <file> -technique <type> [-disguise <value>] [-in_place]` | File masquerading — copy/rename with deceptive names (double ext, RtLO, space, process match). T1036.
