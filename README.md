@@ -123,6 +123,7 @@ linux-logs | `linux-logs -action <list\|read\|logins\|clear\|truncate\|shred> [-
 logonsessions | `logonsessions [-action list\|users] [-filter <name>]` | **(Windows, Linux, macOS)** Enumerate active logon sessions — users, session IDs, stations, connection state. Filter by username. Windows: WTS API. Linux: utmp parsing. macOS: utmpx parsing.
 ls | `ls [path]` | List files and folders with owner/group and timestamps. File browser integration. Defaults to cwd.
 make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it.
+masquerade | `masquerade -source <file> -technique <type> [-disguise <value>] [-in_place]` | File masquerading — copy/rename with deceptive names (double ext, RtLO, space, process match). T1036.
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
 module-stomping | `module-stomping -pid <PID> [-dll_name <DLL>]` | **(Windows only)** Inject shellcode by stomping a legitimate DLL's .text section. Shellcode executes from signed DLL address space, bypassing private-memory detection (T1055.001).
 modules | `modules [-pid <PID>] [-filter <name>]` | List loaded modules/DLLs/libraries in a process with optional name filtering. Cross-platform (T1057).
