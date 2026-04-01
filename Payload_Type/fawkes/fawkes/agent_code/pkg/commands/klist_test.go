@@ -194,6 +194,7 @@ func TestParseCcacheValid(t *testing.T) {
 
 	if principal == nil {
 		t.Fatal("expected non-nil default principal")
+		return // unreachable, helps staticcheck
 	}
 	if principal.String() != "user@EXAMPLE.COM" {
 		t.Errorf("expected user@EXAMPLE.COM, got %s", principal.String())
