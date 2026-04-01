@@ -11,6 +11,7 @@ func init() {
 		HelpString:          "grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100] [-context 2] [-max_depth 10]",
 		Version:             1,
 		MitreAttackMappings: []string{"T1083", "T1552.001"}, // File Discovery + Credentials In Files
+		SupportedUIFeatures: []string{"file_browser:download"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},

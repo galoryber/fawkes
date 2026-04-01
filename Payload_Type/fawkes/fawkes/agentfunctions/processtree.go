@@ -14,6 +14,7 @@ func init() {
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1057"},
+		SupportedUIFeatures: []string{"process_browser:list"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,

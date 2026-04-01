@@ -13,6 +13,7 @@ func init() {
 		HelpString:          "handles -pid <pid> [-type File] [-show_names] [-max_count 500]\n\nWindows: Enumerates NT handles (File, Key, Section, Mutant, etc.) via NtQuerySystemInformation.\nLinux: Reads /proc/<pid>/fd symlinks to enumerate open file descriptors (files, sockets, pipes).\nmacOS: Uses lsof to enumerate open file descriptors.\n\nTypes vary by platform:\n  Windows: File, Key, Section, Mutant, Event, Process, Thread, etc.\n  Linux: file, socket, pipe, device, tty, eventfd, eventpoll, etc.\n  macOS: file, socket, pipe, device, directory, kqueue, etc.",
 		Version:             2,
 		MitreAttackMappings: []string{"T1057", "T1082"}, // Process Discovery + System Information Discovery
+		SupportedUIFeatures: []string{"process_browser:list"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "handles_new.js"),

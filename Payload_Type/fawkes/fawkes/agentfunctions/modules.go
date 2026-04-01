@@ -14,6 +14,7 @@ func init() {
 		HelpString:          "modules [-pid <PID>] [-filter <name>]",
 		Version:             2,
 		MitreAttackMappings: []string{"T1057"},
+		SupportedUIFeatures: []string{"process_browser:list"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
