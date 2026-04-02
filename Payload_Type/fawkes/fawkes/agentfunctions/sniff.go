@@ -58,7 +58,7 @@ func init() {
 				Name:          "ports",
 				CLIName:       "ports",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:   "Comma-separated TCP ports to filter (default: 21,80,110,143,389,445,8080)",
+				Description:   "Comma-separated TCP/UDP ports to filter (default: 21,53,80,88,110,143,389,445,8080). Includes DNS (53) and Kerberos (88).",
 				DefaultValue:  "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

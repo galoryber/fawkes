@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/binary"
+	"strings"
 	"testing"
 )
 
@@ -320,6 +321,109 @@ func TestSniffDecodeUTF16LE(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSniffExtractDNS(t *testing.T) {
+	meta := &packetMeta{SrcIP: "10.0.0.1", SrcPort: 49000, DstIP: "10.0.0.2", DstPort: 53}
+
+	t.Run("valid A query", func(t *testing.T) {
+		// DNS query for example.com type A
+		pkt := buildDNSQuery(0x1234, "example.com", 1) // type A
+		cred := sniffExtractDNS(pkt, meta)
+		if cred == nil {
+			t.Fatal("expected DNS credential")
+		}
+		if cred.Protocol != "dns" {
+			t.Errorf("protocol = %q, want dns", cred.Protocol)
+		}
+		if cred.Username != "example.com" {
+			t.Errorf("username = %q, want example.com", cred.Username)
+		}
+		if cred.Detail != "type=A" {
+			t.Errorf("detail = %q, want type=A", cred.Detail)
+		}
+	})
+
+	t.Run("AAAA query", func(t *testing.T) {
+		pkt := buildDNSQuery(0x5678, "ipv6.example.org", 28) // AAAA
+		cred := sniffExtractDNS(pkt, meta)
+		if cred == nil {
+			t.Fatal("expected DNS credential")
+		}
+		if cred.Detail != "type=AAAA" {
+			t.Errorf("detail = %q, want type=AAAA", cred.Detail)
+		}
+	})
+
+	t.Run("wrong port", func(t *testing.T) {
+		wrongMeta := &packetMeta{SrcIP: "10.0.0.1", SrcPort: 49000, DstIP: "10.0.0.2", DstPort: 80}
+		pkt := buildDNSQuery(0x1234, "example.com", 1)
+		cred := sniffExtractDNS(pkt, wrongMeta)
+		if cred != nil {
+			t.Error("expected nil for non-DNS port")
+		}
+	})
+
+	t.Run("DNS response ignored", func(t *testing.T) {
+		pkt := buildDNSQuery(0x1234, "example.com", 1)
+		pkt[2] |= 0x80 // Set QR bit to 1 (response)
+		cred := sniffExtractDNS(pkt, meta)
+		if cred != nil {
+			t.Error("expected nil for DNS response")
+		}
+	})
+
+	t.Run("too short", func(t *testing.T) {
+		cred := sniffExtractDNS([]byte{0x00, 0x01}, meta)
+		if cred != nil {
+			t.Error("expected nil for too-short packet")
+		}
+	})
+}
+
+func TestSniffParseDNSName(t *testing.T) {
+	t.Run("simple name", func(t *testing.T) {
+		// \x03www\x07example\x03com\x00
+		data := []byte{3, 'w', 'w', 'w', 7, 'e', 'x', 'a', 'm', 'p', 'l', 'e', 3, 'c', 'o', 'm', 0}
+		name, _ := sniffParseDNSName(data, 0)
+		if name != "www.example.com" {
+			t.Errorf("name = %q, want www.example.com", name)
+		}
+	})
+
+	t.Run("root name", func(t *testing.T) {
+		data := []byte{0}
+		name, _ := sniffParseDNSName(data, 0)
+		if name != "" {
+			t.Errorf("name = %q, want empty", name)
+		}
+	})
+}
+
+// buildDNSQuery creates a minimal DNS query packet.
+func buildDNSQuery(txid uint16, domain string, qtype uint16) []byte {
+	var pkt []byte
+	// Header: TxID, Flags(0=standard query), QDCount=1, AN=0, NS=0, AR=0
+	hdr := make([]byte, 12)
+	binary.BigEndian.PutUint16(hdr[0:2], txid)
+	binary.BigEndian.PutUint16(hdr[4:6], 1) // QDCount
+	pkt = append(pkt, hdr...)
+
+	// Question: encode domain name
+	parts := strings.Split(domain, ".")
+	for _, p := range parts {
+		pkt = append(pkt, byte(len(p)))
+		pkt = append(pkt, []byte(p)...)
+	}
+	pkt = append(pkt, 0) // root label
+
+	// QTYPE and QCLASS
+	qt := make([]byte, 4)
+	binary.BigEndian.PutUint16(qt[0:2], qtype)
+	binary.BigEndian.PutUint16(qt[2:4], 1) // IN class
+	pkt = append(pkt, qt...)
+
+	return pkt
 }
 
 func TestSniffPCAPCollector(t *testing.T) {

