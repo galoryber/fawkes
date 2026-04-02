@@ -29,13 +29,69 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "privileges", "services", "registry", "uac", "unattend", "writable", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "path-hijack", "docker-group", "group", "polkit", "modprobe", "ld-preload", "security", "launchdaemons", "tcc", "dylib", "sip"},
-				Description:      "Check to perform. Windows: privileges, services, registry, uac, unattend. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
+				Choices:          []string{"all", "privileges", "services", "registry", "uac", "unattend", "writable", "dll-hijack", "dll-plant", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "path-hijack", "docker-group", "group", "polkit", "modprobe", "ld-preload", "security", "launchdaemons", "tcc", "dylib", "sip"},
+				Description:      "Check to perform. Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
 						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "source",
+				ModalDisplayName: "Source DLL Path",
+				CLIName:          "source",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Path to DLL on target (for dll-plant). Upload the DLL first, then reference its local path.",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:             "target_dir",
+				ModalDisplayName: "Target Directory",
+				CLIName:          "target_dir",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Writable directory to plant the DLL in (for dll-plant). Use dll-hijack to find writable PATH dirs.",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:             "dll_name",
+				ModalDisplayName: "DLL Filename",
+				CLIName:          "dll_name",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Name for planted DLL (for dll-plant, e.g. 'fveapi.dll'). Use dll-hijack to find phantom DLL names.",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:             "timestomp",
+				ModalDisplayName: "Timestomp",
+				CLIName:          "timestomp",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Match planted DLL timestamps to kernel32.dll for stealth (for dll-plant, default: true)",
+				DefaultValue:     true,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:            "Default",
 					},
 				},
 			},

