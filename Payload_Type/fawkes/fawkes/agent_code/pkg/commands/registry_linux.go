@@ -42,4 +42,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&ProcdumpCommand{})
 	RegisterCommand(&AmcacheCommand{})
 	RegisterCommand(&SniffCommand{})
+	RegisterCommand(&AudioCaptureCommand{})
 }

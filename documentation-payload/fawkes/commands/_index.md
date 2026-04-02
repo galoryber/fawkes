@@ -173,6 +173,7 @@ pre = "<b>2. </b>"
 - Account Management
     * [net-user](/agents/fawkes/commands/net-user/)
 - Post-Exploitation
+    * [audio-capture](/agents/fawkes/commands/audio-capture/)
     * [clipboard](/agents/fawkes/commands/clipboard/)
     * [email](/agents/fawkes/commands/email/)
     * [keylog](/agents/fawkes/commands/keylog/)

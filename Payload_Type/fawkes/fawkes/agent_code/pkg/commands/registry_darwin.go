@@ -37,4 +37,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&HashdumpCommand{})
 	RegisterCommand(&AmcacheCommand{})
 	RegisterCommand(&SniffCommand{})
+	RegisterCommand(&AudioCaptureCommand{})
 }

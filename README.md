@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **212 commands** total: 112 cross-platform, 82 Windows-only, 21 Unix-only, 11 Linux-only, and 6 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **213 commands** total: 113 cross-platform, 82 Windows-only, 21 Unix-only, 11 Linux-only, and 6 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -26,6 +26,7 @@ adcs | `adcs -action <cas\|templates\|find\|request> -server <DC> -username <use
 ads | `ads -action <write\|read\|list\|delete> -file <path> [-stream <name>] [-data <content>] [-hex true]` | **(Windows only)** Manage NTFS Alternate Data Streams — write, read, list, or delete hidden data streams. Supports text and hex-encoded binary. MITRE T1564.004.
 amcache | `amcache -action <query\|search\|delete\|clear> [-name <pattern>] [-count <n>]` | Query and clean forensic execution artifacts. Windows: Shimcache. Linux: recently-used.xbel, thumbnails, Tracker. macOS: recent items, KnowledgeC, quarantine (T1070.004).
 apc-injection | `apc-injection` | **(Windows only)** Perform QueueUserAPC injection into an alertable thread. Use `ts` to find alertable threads (T1055.004).
+audio-capture | `audio-capture [-duration 10] [-sample_rate 16000] [-channels 1] [-device default]` | Record audio from microphone and upload WAV file. Windows (waveIn), Linux (arecord/parecord), macOS (rec/ffmpeg). Cross-platform (T1123).
 auditpol | `auditpol -action <query\|disable\|enable\|stealth> [-category <name\|all>]` | **(Windows only)** Query and modify Windows audit policies. Disable security event logging before sensitive operations. Stealth mode disables detection-critical subcategories. Uses AuditQuerySystemPolicy API (T1562.002).
 argue | `argue -command "cmd.exe /c whoami" -spoof "cmd.exe /c echo hello"` | **(Windows only)** Execute a command with spoofed process arguments. Defeats Sysmon Event ID 1 and EDR command-line telemetry (T1564.010).
 arp | `arp [-ip <subnet>] [-mac <prefix>] [-interface <name>]` | Display ARP table with optional IP, MAC, or interface filtering. Cross-platform.

