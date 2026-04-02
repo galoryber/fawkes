@@ -9,8 +9,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "compress",
-		Description:         "compress -action create -path <dir> [-output archive.zip] [-pattern *.txt] - Create, list, or extract zip archives for data staging and exfiltration.",
-		HelpString:          "compress -action create -path <dir_or_file> [-output archive.zip] [-pattern *.txt] [-max_depth 10] [-max_size 104857600]",
+		Description:         "compress -action create -path <dir> [-format zip|tar.gz] [-output archive.zip] [-pattern *.txt] - Create, list, or extract zip/tar.gz archives for data staging.",
+		HelpString:          "compress -action create -path <dir_or_file> [-format zip|tar.gz] [-output archive.zip] [-pattern *.txt] [-max_depth 10] [-max_size 104857600]",
 		Version:             1,
 		MitreAttackMappings: []string{"T1560.001"}, // Archive Collected Data: Archive via Utility
 		Author:              "@galoryber",
@@ -62,6 +62,21 @@ func init() {
 				},
 			},
 			{
+				Name:          "format",
+				CLIName:       "format",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:   "Archive format. Auto-detected from file extension for list/extract.",
+				Choices:       []string{"zip", "tar.gz"},
+				DefaultValue:  "zip",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     4,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
 				Name:          "pattern",
 				CLIName:       "pattern",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
@@ -70,8 +85,8 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
-						UIModalPosition:     4,
-						GroupName:           "Default",
+						UIModalPosition:     5,
+						GroupName:            "Default",
 					},
 				},
 			},
@@ -84,8 +99,8 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
-						UIModalPosition:     5,
-						GroupName:           "Default",
+						UIModalPosition:     6,
+						GroupName:            "Default",
 					},
 				},
 			},
@@ -98,8 +113,8 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
-						UIModalPosition:     6,
-						GroupName:           "Default",
+						UIModalPosition:     7,
+						GroupName:            "Default",
 					},
 				},
 			},

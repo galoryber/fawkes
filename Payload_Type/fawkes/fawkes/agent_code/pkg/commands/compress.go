@@ -13,6 +13,12 @@ import (
 	"fawkes/pkg/structs"
 )
 
+// Supported archive formats
+const (
+	formatZip   = "zip"
+	formatTarGz = "tar.gz"
+)
+
 type CompressCommand struct{}
 
 func (c *CompressCommand) Name() string {
@@ -28,8 +34,22 @@ type CompressParams struct {
 	Path     string `json:"path"`
 	Output   string `json:"output"`
 	Pattern  string `json:"pattern"`
+	Format   string `json:"format"`
 	MaxDepth int    `json:"max_depth"`
 	MaxSize  int64  `json:"max_size"`
+}
+
+// detectFormat determines archive format from params or file extension.
+func detectFormat(params CompressParams) string {
+	if params.Format != "" {
+		return params.Format
+	}
+	// Auto-detect from path extension for list/extract
+	p := strings.ToLower(params.Path)
+	if strings.HasSuffix(p, ".tar.gz") || strings.HasSuffix(p, ".tgz") {
+		return formatTarGz
+	}
+	return formatZip
 }
 
 func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
@@ -45,12 +65,23 @@ func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
 		params.MaxSize = 100 * 1024 * 1024 // 100MB default
 	}
 
+	format := detectFormat(params)
+
 	switch params.Action {
 	case "create":
+		if format == formatTarGz {
+			return tarGzCreate(task, params)
+		}
 		return compressCreate(task, params)
 	case "list":
+		if format == formatTarGz {
+			return tarGzList(params)
+		}
 		return compressList(params)
 	case "extract":
+		if format == formatTarGz {
+			return tarGzExtract(params)
+		}
 		return compressExtract(params)
 	default:
 		return errorf("Unknown action: %s (use 'create', 'list', or 'extract')", params.Action)
