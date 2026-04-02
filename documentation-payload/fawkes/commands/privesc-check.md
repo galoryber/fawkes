@@ -9,7 +9,7 @@ hidden = false
 
 Cross-platform privilege escalation enumeration. Scans for common privilege escalation vectors with platform-specific checks for Windows, Linux, and macOS.
 
-- **Windows:** Token privileges (potato attacks, SeDebug, SeBackup), unquoted service paths, modifiable service binaries, AlwaysInstallElevated, auto-logon credentials, UAC configuration, LSA protection, writable PATH directories, unattended install files
+- **Windows:** Token privileges (potato attacks, SeDebug, SeBackup), unquoted service paths, modifiable service binaries, AlwaysInstallElevated, auto-logon credentials, UAC configuration, LSA protection, writable PATH directories, unattended install files, DLL search order hijacking (phantom DLL scan + DLL planting with timestomping)
 - **Linux:** SUID/SGID binaries, file capabilities, sudo rules, writable paths, containers, cron script hijacking, NFS no_root_squash, systemd unit hijacking, sudo token reuse, PATH hijacking, docker/lxd/podman group, dangerous group memberships, Polkit rules, modprobe hooks, ld.so.preload injection, security module status
 - **macOS:** LaunchDaemons/Agents, TCC database, dylib hijacking, SIP status
 
@@ -18,6 +18,10 @@ Cross-platform privilege escalation enumeration. Scans for common privilege esca
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
 | action | No | all | Check to perform (see platform-specific actions below) |
+| source | No | — | Path to DLL on target (for dll-plant action only) |
+| target_dir | No | — | Writable directory to plant DLL in (for dll-plant action only) |
+| dll_name | No | — | Name for planted DLL, e.g. 'fveapi.dll' (for dll-plant action only) |
+| timestomp | No | true | Match planted DLL timestamps to kernel32.dll (for dll-plant action only) |
 
 ### Shared Actions (All Platforms)
 
@@ -31,6 +35,8 @@ Cross-platform privilege escalation enumeration. Scans for common privilege esca
 - **registry** — Check AlwaysInstallElevated, auto-logon credentials, LSA protection (RunAsPPL), Credential Guard, WSUS configuration
 - **uac** — Report UAC configuration (EnableLUA, ConsentPromptBehavior, Secure Desktop, FilterAdminToken)
 - **unattend** — Search for unattended install files (sysprep/Unattend.xml) and other credential-containing files
+- **dll-hijack** — Scan for DLL search order hijacking opportunities: SafeDllSearchMode, 15 phantom DLLs, writable PATH directories, KnownDLLs protection
+- **dll-plant** — Plant a DLL in a target directory for DLL search order hijacking (T1574.001). Requires source, target_dir, and dll_name parameters. Auto-timestomps to kernel32.dll
 
 ### Linux-Only Actions
 
@@ -78,6 +84,8 @@ privesc-check -action modprobe
 privesc-check -action ld-preload
 privesc-check -action security
 privesc-check -action launchdaemons
+privesc-check -action dll-hijack
+privesc-check -action dll-plant -source C:\Users\target\payload.dll -target_dir C:\Python39\ -dll_name fveapi.dll
 ```
 
 ### Example Output (Windows, all)
@@ -134,6 +142,7 @@ LSA Protection:
 | T1548 | Abuse Elevation Control Mechanism |
 | T1548.001 | Setuid and Setgid |
 | T1548.002 | Bypass User Account Control |
+| T1574.001 | Hijack Execution Flow: DLL Search Order Hijacking |
 | T1574.009 | Path Interception by Unquoted Path |
 | T1552.001 | Unsecured Credentials: Credentials In Files |
 | T1613 | Container and Resource Discovery |
