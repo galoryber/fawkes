@@ -17,7 +17,7 @@ Cross-platform: Windows (SIO_RCVALL raw sockets), Linux (AF_PACKET + BPF kernel 
 |----------|----------|---------|-------------|
 | interface | No | auto-detect | Network interface name or IP address. Windows accepts interface name (e.g. "Ethernet") or IP. Linux/macOS: e.g. eth0, en0 |
 | duration | No | 30 | Capture duration in seconds (max: 300) |
-| ports | No | 21,80,110,143,389,445,8080 | Comma-separated TCP ports to filter |
+| ports | No | 21,53,80,88,110,143,389,445,8080 | Comma-separated TCP/UDP ports to filter. Includes DNS (53) and Kerberos (88) by default |
 | promiscuous | No | false | Enable promiscuous mode to capture traffic not destined for this host |
 | max_bytes | No | 52428800 (50MB) | Stop after capturing this many bytes |
 | save_pcap | No | false | Save raw packet capture as PCAP file (downloadable via Mythic) |
@@ -64,6 +64,7 @@ The sniffer automatically detects and extracts:
 - **NTLM Authentication**: Extracts domain\username from NTLM Type 3 (Authenticate) messages in HTTP, SMB, LDAP
 - **Kerberos AS-REP**: Extracts client principal name and realm from AS-REP messages (port 88). Useful for identifying AS-REP roastable accounts (T1558.004)
 - **Kerberos TGS-REP**: Extracts service principal name and realm from TGS-REP messages
+- **DNS Queries**: Captures queried domain names and record types (A, AAAA, MX, SRV, etc.) from port 53. Useful for identifying target communications and C2 domains
 
 ## Platform Details
 
