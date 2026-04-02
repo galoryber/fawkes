@@ -129,7 +129,7 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 				result.Errors = append(result.Errors, fmt.Sprintf("promiscuous mode failed: %v", promErr))
 			} else {
 				defer func() {
-					unix.SetsockoptPacketMreq(fd, unix.SOL_PACKET, unix.PACKET_DROP_MEMBERSHIP, &unix.PacketMreq{
+					_ = unix.SetsockoptPacketMreq(fd, unix.SOL_PACKET, unix.PACKET_DROP_MEMBERSHIP, &unix.PacketMreq{
 						Ifindex: int32(iface.Index),
 						Type:    unix.PACKET_MR_PROMISC,
 					})
@@ -146,7 +146,7 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Socket read timeout (1s intervals for deadline checking)
 	tv := unix.Timeval{Sec: 1, Usec: 0}
-	unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv)
+	_ = unix.SetsockoptTimeval(fd, unix.SOL_SOCKET, unix.SO_RCVTIMEO, &tv)
 
 	// Capture
 	ftpTracker := &sniffFTPTracker{pending: make(map[string]string)}
