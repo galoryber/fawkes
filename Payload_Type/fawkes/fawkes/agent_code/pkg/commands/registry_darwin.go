@@ -36,4 +36,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&EventLogCommand{})
 	RegisterCommand(&HashdumpCommand{})
 	RegisterCommand(&AmcacheCommand{})
+	RegisterCommand(&SniffCommand{})
 }
