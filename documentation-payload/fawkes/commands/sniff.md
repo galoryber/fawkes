@@ -7,17 +7,17 @@ hidden = false
 
 ## Summary
 
-Passive network sniffing for credential capture. Opens a raw socket (AF_PACKET) to capture network traffic and automatically extracts cleartext credentials from HTTP Basic Auth, FTP USER/PASS, and NTLM authentication messages.
+Passive network sniffing for credential capture. Opens a raw socket to capture network traffic and automatically extracts cleartext credentials from HTTP Basic Auth, FTP USER/PASS, NTLM authentication messages, and Kerberos AS-REP/TGS-REP principals.
 
-{{% notice info %}}Linux and macOS{{% /notice %}}
+Cross-platform: Windows (SIO_RCVALL raw sockets), Linux (AF_PACKET + BPF kernel filtering), macOS (/dev/bpf).
 
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| interface | No | all | Network interface (e.g. eth0, ens33). Empty captures on all interfaces |
+| interface | No | auto-detect | Network interface name or IP address. Windows accepts interface name (e.g. "Ethernet") or IP. Linux/macOS: e.g. eth0, en0 |
 | duration | No | 30 | Capture duration in seconds (max: 300) |
-| ports | No | 21,80,110,143,389,445,8080 | Comma-separated TCP ports to filter via BPF |
+| ports | No | 21,80,110,143,389,445,8080 | Comma-separated TCP ports to filter |
 | promiscuous | No | false | Enable promiscuous mode to capture traffic not destined for this host |
 | max_bytes | No | 52428800 (50MB) | Stop after capturing this many bytes |
 
@@ -33,9 +33,15 @@ sniff
 sniff -interface eth0 -promiscuous true -duration 60
 ```
 
-### Target specific ports
+### Windows: capture on specific adapter
 ```
-sniff -ports 21,80,445 -duration 120
+sniff -interface Ethernet -duration 60
+sniff -interface 192.168.1.50 -duration 60
+```
+
+### Target specific ports (include Kerberos)
+```
+sniff -ports 21,80,88,445 -duration 120
 ```
 
 ### Quick 10-second scan
@@ -50,6 +56,16 @@ The sniffer automatically detects and extracts:
 - **HTTP Basic Auth**: Decodes `Authorization: Basic <base64>` headers from HTTP requests
 - **FTP Credentials**: Correlates `USER` and `PASS` commands across TCP packets
 - **NTLM Authentication**: Extracts domain\username from NTLM Type 3 (Authenticate) messages in HTTP, SMB, LDAP
+- **Kerberos AS-REP**: Extracts client principal name and realm from AS-REP messages (port 88). Useful for identifying AS-REP roastable accounts (T1558.004)
+- **Kerberos TGS-REP**: Extracts service principal name and realm from TGS-REP messages
+
+## Platform Details
+
+| Platform | Mechanism | Notes |
+|----------|-----------|-------|
+| Windows | `SIO_RCVALL` raw socket | Requires Administrator. Binds to specific IP. No ethernet headers. |
+| Linux | `AF_PACKET` raw socket | Requires root or `CAP_NET_RAW`. BPF kernel-level port filtering. |
+| macOS | `/dev/bpf` device | Requires root. Userspace port filtering. |
 
 ## Output Format
 
@@ -79,6 +95,16 @@ JSON output with capture statistics and discovered credentials:
       "username": "DOMAIN\\jsmith",
       "detail": "host=WORKSTATION01",
       "timestamp": 1711900015
+    },
+    {
+      "protocol": "krb-asrep",
+      "src_ip": "192.168.1.10",
+      "src_port": 88,
+      "dst_ip": "192.168.1.50",
+      "dst_port": 49900,
+      "username": "jdoe@CONTOSO.COM",
+      "detail": "realm=CONTOSO.COM",
+      "timestamp": 1711900020
     }
   ]
 }
@@ -86,12 +112,14 @@ JSON output with capture statistics and discovered credentials:
 
 ## OPSEC Considerations
 
-- Requires **root** or **CAP_NET_RAW** capability
+- **Windows**: Requires Administrator. `SIO_RCVALL` may be flagged by EDR/security products
+- **Linux/macOS**: Requires root or `CAP_NET_RAW` capability
 - **Promiscuous mode** changes NIC state and can be detected by tools like `promiscdetect` or `antisniff`
 - Raw socket creation may trigger host-based IDS alerts
 - Captured traffic stays in memory only — no PCAP file written to disk
-- BPF filter reduces kernel-to-userspace traffic volume (OPSEC benefit: less CPU usage)
+- BPF filter (Linux) reduces kernel-to-userspace traffic volume
 
 ## MITRE ATT&CK Mapping
 
 - **T1040** — Network Sniffing
+- **T1558.004** — Steal or Forge Kerberos Tickets: AS-REP Roasting

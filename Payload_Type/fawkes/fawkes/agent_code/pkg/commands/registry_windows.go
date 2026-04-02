@@ -87,4 +87,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&SysmonConfigCommand{})
 	RegisterCommand(&EmailCommand{})
 	RegisterCommand(&LolbinCommand{})
+	RegisterCommand(&SniffCommand{})
 }

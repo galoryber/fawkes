@@ -23,7 +23,7 @@ func init() {
 			Author:     "@galoryber",
 		},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -111,7 +111,8 @@ func init() {
 				TaskID:          taskData.Task.ID,
 				Success:         true,
 				OpsecPreBlocked: false,
-				OpsecPreMessage: "OPSEC WARNING: Network sniffing (T1040) opens a raw socket (AF_PACKET) which requires root or CAP_NET_RAW. " +
+				OpsecPreMessage: "OPSEC WARNING: Network sniffing (T1040) opens a raw socket which requires root/CAP_NET_RAW (Linux/macOS) or Administrator (Windows). " +
+					"Windows uses SIO_RCVALL which may be flagged by security products. " +
 					"Promiscuous mode changes the NIC state and may be detected by network monitoring tools (promiscdetect, antisniff). " +
 					"Raw socket creation may trigger host-based IDS alerts. " +
 					"Captured traffic stays in memory — no PCAP written to disk.",
@@ -158,9 +159,12 @@ func init() {
 				credential := c.Password
 				if c.Protocol == "ntlm" {
 					credType = "hash"
-					credential = c.Detail // Contains host info
+					credential = c.Detail
+				} else if c.Protocol == "krb-asrep" || c.Protocol == "krb-tgsrep" {
+					credType = "ticket"
+					credential = c.Detail
 				}
-				if credential == "" && c.Protocol != "ntlm" {
+				if credential == "" && c.Protocol != "ntlm" && c.Protocol != "krb-asrep" && c.Protocol != "krb-tgsrep" {
 					continue
 				}
 				realm := c.DstIP

@@ -177,6 +177,9 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 		if cred := sniffExtractNTLM(payload, &meta); cred != nil {
 			result.Credentials = append(result.Credentials, cred)
 		}
+		if cred := sniffExtractKerberos(payload, &meta); cred != nil {
+			result.Credentials = append(result.Credentials, cred)
+		}
 	}
 
 	result.Duration = time.Since(startTime).Truncate(time.Second).String()
