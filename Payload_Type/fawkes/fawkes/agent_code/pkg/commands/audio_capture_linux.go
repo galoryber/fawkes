@@ -122,13 +122,13 @@ func audioRunWithTimeout(cmd *exec.Cmd, task structs.Task, timeoutSecs int) ([]b
 			return output, cmdErr
 		case <-deadline:
 			if cmd.Process != nil {
-				cmd.Process.Kill()
+				_ = cmd.Process.Kill()
 			}
 			return output, fmt.Errorf("timeout after %ds", timeoutSecs)
 		case <-time.After(500 * time.Millisecond):
 			if task.DidStop() {
 				if cmd.Process != nil {
-					cmd.Process.Kill()
+					_ = cmd.Process.Kill()
 				}
 				return nil, fmt.Errorf("task cancelled")
 			}
