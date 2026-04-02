@@ -977,7 +977,7 @@ func TestGetFileOwner(t *testing.T) {
 	}
 }
 
-func TestGetFileOwner_NonExistent(t *testing.T) {
+func TestGetFileOwner_NonExistentUnix(t *testing.T) {
 	owner, group := getFileOwner("/nonexistent/path/file.txt")
 	if owner != "unknown" || group != "unknown" {
 		t.Errorf("getFileOwner for nonexistent file should return unknown/unknown, got %s/%s", owner, group)
