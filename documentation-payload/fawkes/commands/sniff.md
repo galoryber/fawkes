@@ -9,7 +9,7 @@ hidden = false
 
 Passive network sniffing for credential capture. Opens a raw socket (AF_PACKET) to capture network traffic and automatically extracts cleartext credentials from HTTP Basic Auth, FTP USER/PASS, and NTLM authentication messages.
 
-{{% notice info %}}Linux Only{{% /notice %}}
+{{% notice info %}}Linux and macOS{{% /notice %}}
 
 ## Arguments
 
