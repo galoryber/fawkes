@@ -322,6 +322,62 @@ func TestSniffDecodeUTF16LE(t *testing.T) {
 	}
 }
 
+func TestSniffPCAPCollector(t *testing.T) {
+	t.Run("basic PCAP generation", func(t *testing.T) {
+		c := newSniffPCAPCollector(1024 * 1024)
+		c.addPacket([]byte{0x01, 0x02, 0x03})
+		c.addPacket([]byte{0x04, 0x05})
+
+		pcap := c.buildPCAP(1) // LINKTYPE_ETHERNET
+
+		// Check global header
+		if len(pcap) < 24 {
+			t.Fatalf("PCAP too short: %d bytes", len(pcap))
+		}
+		magic := binary.LittleEndian.Uint32(pcap[0:4])
+		if magic != 0xA1B2C3D4 {
+			t.Errorf("magic = 0x%08X, want 0xA1B2C3D4", magic)
+		}
+		linkType := binary.LittleEndian.Uint32(pcap[20:24])
+		if linkType != 1 {
+			t.Errorf("link type = %d, want 1", linkType)
+		}
+
+		// Check first packet record (starts at offset 24)
+		if len(pcap) < 24+16+3 {
+			t.Fatalf("PCAP too short for first packet")
+		}
+		inclLen := binary.LittleEndian.Uint32(pcap[24+8 : 24+12])
+		if inclLen != 3 {
+			t.Errorf("first packet incl_len = %d, want 3", inclLen)
+		}
+
+		// Total size: 24 (header) + 16+3 (pkt1) + 16+2 (pkt2) = 61
+		if len(pcap) != 61 {
+			t.Errorf("PCAP length = %d, want 61", len(pcap))
+		}
+	})
+
+	t.Run("respects max size", func(t *testing.T) {
+		c := newSniffPCAPCollector(5) // Only 5 bytes max
+		c.addPacket([]byte{0x01, 0x02, 0x03}) // 3 bytes, OK
+		c.addPacket([]byte{0x04, 0x05, 0x06}) // 3 more, exceeds 5, dropped
+
+		if len(c.packets) != 1 {
+			t.Errorf("packets = %d, want 1 (second should be dropped)", len(c.packets))
+		}
+	})
+
+	t.Run("empty collector", func(t *testing.T) {
+		c := newSniffPCAPCollector(1024)
+		pcap := c.buildPCAP(101) // LINKTYPE_RAW
+
+		if len(pcap) != 24 {
+			t.Errorf("empty PCAP length = %d, want 24 (header only)", len(pcap))
+		}
+	})
+}
+
 // ASN.1 DER helpers for building test data
 
 func asn1Wrap(tag byte, content []byte) []byte {

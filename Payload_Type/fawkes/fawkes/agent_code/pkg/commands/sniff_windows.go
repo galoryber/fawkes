@@ -111,6 +111,10 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 	syscall.SetsockoptInt(fd, solSocket, soRCVTIMEO, int(timeout))
 
 	ftpTracker := &sniffFTPTracker{pending: make(map[string]string)}
+	var pcapCollector *sniffPCAPCollector
+	if params.SavePCAP {
+		pcapCollector = newSniffPCAPCollector(params.MaxBytes)
+	}
 	deadline := time.Now().Add(time.Duration(params.Duration) * time.Second)
 	startTime := time.Now()
 	buf := make([]byte, 65536)
@@ -118,7 +122,6 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 	for !task.DidStop() && time.Now().Before(deadline) && result.BytesCaptured < params.MaxBytes {
 		n, err := syscall.Read(fd, buf)
 		if err != nil {
-			// Timeout is expected
 			if isTimeoutError(err) {
 				continue
 			}
@@ -131,6 +134,10 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 
 		result.PacketCount++
 		result.BytesCaptured += int64(n)
+
+		if pcapCollector != nil {
+			pcapCollector.addPacket(buf[:n])
+		}
 
 		// Windows raw sockets deliver IP packets directly (no ethernet header)
 		ipData := buf[:n]
@@ -197,6 +204,13 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	result.Duration = time.Since(startTime).Truncate(time.Second).String()
+
+	// Upload PCAP if requested (link type 101 = LINKTYPE_RAW for IP-only captures)
+	if pcapCollector != nil && len(pcapCollector.packets) > 0 {
+		pcapData := pcapCollector.buildPCAP(101)
+		sniffUploadPCAP(&task, pcapData, result)
+	}
+
 	output, _ := json.Marshal(result)
 	return successResult(string(output))
 }

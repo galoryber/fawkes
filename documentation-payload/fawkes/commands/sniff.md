@@ -20,6 +20,7 @@ Cross-platform: Windows (SIO_RCVALL raw sockets), Linux (AF_PACKET + BPF kernel 
 | ports | No | 21,80,110,143,389,445,8080 | Comma-separated TCP ports to filter |
 | promiscuous | No | false | Enable promiscuous mode to capture traffic not destined for this host |
 | max_bytes | No | 52428800 (50MB) | Stop after capturing this many bytes |
+| save_pcap | No | false | Save raw packet capture as PCAP file (downloadable via Mythic) |
 
 ## Usage
 
@@ -42,6 +43,11 @@ sniff -interface 192.168.1.50 -duration 60
 ### Target specific ports (include Kerberos)
 ```
 sniff -ports 21,80,88,445 -duration 120
+```
+
+### Capture with PCAP file download
+```
+sniff -duration 30 -save_pcap true
 ```
 
 ### Quick 10-second scan

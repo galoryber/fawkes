@@ -96,6 +96,20 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:          "save_pcap",
+				CLIName:       "save_pcap",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:   "Save raw packet capture as PCAP file (downloadable via Mythic file browser)",
+				DefaultValue:  false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     6,
+						GroupName:            "Default",
+					},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input != "" {
