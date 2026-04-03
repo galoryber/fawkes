@@ -56,7 +56,16 @@ func init() {
 				},
 			},
 		},
-		TaskFunctionOPSECPre: nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				hosts, _ := taskData.Args.GetStringArg("hosts")
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Lateral movement check on %s probes SMB (445), WinRM (5985/5986), RDP (3389), SSH (22), and RPC (135). Generates connection attempts to multiple ports on each target. NDR and host-based firewalls will log these connection attempts.", hosts),
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

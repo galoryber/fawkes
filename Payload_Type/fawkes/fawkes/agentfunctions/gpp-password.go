@@ -94,7 +94,16 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				server, _ := taskData.Args.GetStringArg("server")
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: GPP password extraction from %s. Accesses SYSVOL share to search for Group Policy Preferences XML files containing encrypted credentials (cpassword). Generates SMB share access events (Event ID 5140) to SYSVOL.", server),
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

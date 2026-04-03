@@ -41,7 +41,15 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "named_pipes_new.js"),
 			Author:     "@galoryber",
 		},
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    "OPSEC WARNING: Named pipe enumeration lists all named pipes (Windows), Unix domain sockets, and FIFOs. Can reveal running services, IPC endpoints, and lateral movement opportunities. Pipe names may indicate security tools (e.g., \\pipe\\MicrosoftDefender).",
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

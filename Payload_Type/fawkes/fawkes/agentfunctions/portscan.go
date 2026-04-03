@@ -84,7 +84,17 @@ func init() {
 				},
 			},
 		},
-		TaskFunctionOPSECPre: nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				hosts, _ := taskData.Args.GetStringArg("hosts")
+				ports, _ := taskData.Args.GetStringArg("ports")
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Port scanning %s (ports: %s). TCP connect scans generate SYN packets to each host:port combination. NDR/IDS systems detect port scan patterns. Host firewalls log blocked connection attempts.", hosts, ports),
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

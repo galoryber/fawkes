@@ -110,7 +110,17 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				username, _ := taskData.Args.GetStringArg("username")
+				domain, _ := taskData.Args.GetStringArg("domain")
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Creating token for %s\\%s via LogonUserW. Generates Event ID 4624 (logon type 9 — NewCredentials). The new token will be used for subsequent network operations. Failed attempts generate Event ID 4625.", domain, username),
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

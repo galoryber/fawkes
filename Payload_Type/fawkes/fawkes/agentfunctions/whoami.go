@@ -24,7 +24,15 @@ func init() {
 		},
 		CommandParameters:       []agentstructs.CommandParameter{},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    "OPSEC WARNING: Identity discovery (whoami) reveals current user, groups, and privileges. Updates Mythic callback user metadata.",
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
 			response := agentstructs.PTTaskProcessResponseMessageResponse{
 				TaskID:  processResponse.TaskData.Task.ID,

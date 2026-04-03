@@ -127,7 +127,16 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sharehunt_new.js"),
 			Author:     "@galoryber",
 		},
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				hosts, _ := taskData.Args.GetStringArg("hosts")
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Share hunting on %s crawls SMB shares for sensitive files (credentials, configs, scripts). Generates Event ID 5140/5145 (share access) on each target. High-volume network activity may trigger NDR alerts.", hosts),
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

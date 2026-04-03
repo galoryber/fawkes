@@ -58,7 +58,15 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "enum_tokens_new.js"),
 			Author:     "@galoryber",
 		},
-		TaskFunctionOPSECPre: nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    "OPSEC WARNING: Token enumeration opens all accessible processes with TOKEN_QUERY access to enumerate security tokens. EDR products monitor for cross-process token access patterns. Requires SeDebugPrivilege for elevated processes.",
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

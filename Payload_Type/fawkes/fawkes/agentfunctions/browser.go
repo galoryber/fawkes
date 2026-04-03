@@ -58,7 +58,22 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				action, _ := taskData.Args.GetStringArg("action")
+				browser, _ := taskData.Args.GetStringArg("browser")
+				msg := fmt.Sprintf("OPSEC WARNING: Browser credential extraction (%s", action)
+				if browser != "" {
+					msg += fmt.Sprintf(", target: %s", browser)
+				}
+				msg += "). Accesses browser profile databases (Login Data, Cookies, History). On Windows, uses DPAPI decryption which may trigger CryptUnprotectData monitoring. EDR may flag SQLite database access in browser profile directories."
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    msg,
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
