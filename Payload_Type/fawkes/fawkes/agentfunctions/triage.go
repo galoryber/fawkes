@@ -480,42 +480,45 @@ func reconTriageDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *a
 	return response
 }
 
-// parsePortScanForPort extracts hosts with a specific port open from portscan JSON output.
+// parsePortScanForPort extracts hosts with a specific port open from portscan output.
+// The port-scan agent returns a text table format:
+//
+//	Host                 Port     Service
+//	--------------------------------------------------
+//	192.168.100.51       445      microsoft-ds
+//	192.168.100.53       445      microsoft-ds
+//
+// Lines matching "IP PORT SERVICE" are parsed with the target port filter.
 func parsePortScanForPort(responseText string, targetPort int) []string {
-	var results []struct {
-		Host  string `json:"host"`
-		Ports []struct {
-			Port int  `json:"port"`
-			Open bool `json:"open"`
-		} `json:"ports"`
-	}
-	if err := json.Unmarshal([]byte(responseText), &results); err != nil {
-		// Try line-by-line JSON parsing (portscan may return NDJSON)
-		for _, line := range strings.Split(responseText, "\n") {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			var single struct {
-				Host  string `json:"host"`
-				Ports []struct {
-					Port int  `json:"port"`
-					Open bool `json:"open"`
-				} `json:"ports"`
-			}
-			if err := json.Unmarshal([]byte(line), &single); err == nil {
-				results = append(results, single)
-			}
-		}
-	}
 	hostSet := map[string]bool{}
-	for _, r := range results {
-		for _, p := range r.Ports {
-			if p.Port == targetPort && p.Open {
-				hostSet[r.Host] = true
-			}
+	targetPortStr := fmt.Sprintf("%d", targetPort)
+
+	for _, line := range strings.Split(responseText, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "-") || strings.HasPrefix(line, "Scanned") ||
+			strings.HasPrefix(line, "Found") || strings.HasPrefix(line, "Host") {
+			continue
+		}
+
+		// Parse "IP  PORT  SERVICE" columns (whitespace-separated)
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+
+		host := fields[0]
+		port := fields[1]
+
+		// Validate host looks like an IP or hostname
+		if !strings.Contains(host, ".") && !strings.Contains(host, ":") {
+			continue
+		}
+
+		if port == targetPortStr {
+			hostSet[host] = true
 		}
 	}
+
 	var hosts []string
 	for h := range hostSet {
 		hosts = append(hosts, h)
