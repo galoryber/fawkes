@@ -70,6 +70,33 @@ Columns: Host, Method, Admin, Message.
 - `no admin share` — C$ share not accessible (may indicate restricted admin shares)
 - `unreachable` — Host did not respond on the required port (445 for SMB, 5985 for WinRM)
 
+## Auto-Move Action (Subtask Chain)
+
+The `auto-move` action creates a **Mythic subtask chain** for automated lateral movement:
+
+| Step | What Happens |
+|------|-------------|
+| 1. **Admin Sweep** | Runs `find-admin` scan to identify hosts where credentials have admin access |
+| 2. **Lateral Movement** | Creates a psexec or wmi subtask for each admin host, executing the specified command |
+
+### Usage
+```
+# Find admin hosts then psexec whoami on each
+find-admin -action auto-move -hosts 192.168.1.0/24 -username CORP\admin -password P@ss -lateral_method psexec -lateral_command "whoami /all"
+
+# Find admin hosts then WMI exec on each
+find-admin -action auto-move -hosts dc01,dc02 -username admin@corp.local -hash aad3b435b51404ee:8846f7eaee8fb117 -lateral_method wmi -lateral_command "ipconfig /all"
+```
+
+### Parameters (auto-move only)
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| lateral_method | psexec | `psexec` (service creation) or `wmi` (WMI process create) |
+| lateral_command | whoami /all | Command to execute on each discovered admin host |
+
+{{% notice warning %}}Auto-move chain sweeps hosts AND laterally moves to all discovered admin targets automatically. This generates significant authentication events (4624/4625), service creation events (7045), and process creation events (4688) across multiple hosts. Very high detection risk.{{% /notice %}}
+
 ## OPSEC Considerations
 
 - **SMB (port 445)**: Mounts `\\host\C$` — only local administrators can access admin shares. Generates Windows Security Event 4624 (logon) and potentially 5140 (share access)
