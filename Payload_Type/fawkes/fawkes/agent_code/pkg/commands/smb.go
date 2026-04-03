@@ -175,6 +175,8 @@ func smbListDir(args smbArgs) structs.CommandResult {
 	defer func() { _ = share.Umount() }()
 
 	dirPath := args.Path
+	// Normalize path: strip leading backslashes/slashes (users often try UNC-style \\)
+	dirPath = strings.TrimLeft(dirPath, "\\/")
 	if dirPath == "" {
 		dirPath = "."
 	}
