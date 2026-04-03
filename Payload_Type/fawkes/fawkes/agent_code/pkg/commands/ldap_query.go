@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
 
@@ -26,6 +27,7 @@ type ldapQueryArgs struct {
 	Attributes []string `json:"attributes"`
 	Limit      int      `json:"limit"`
 	UseTLS     bool     `json:"use_tls"`
+	Timeout    int      `json:"timeout"`
 }
 
 // Preset queries for common red team actions
@@ -131,12 +133,30 @@ func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 			args.Port = 389
 		}
 	}
+	if args.Timeout <= 0 {
+		args.Timeout = 120
+	}
 
 	// Validate dacl action requires filter (target object name)
 	if strings.ToLower(args.Action) == "dacl" && args.Filter == "" {
 		return errorResult("Error: -filter parameter required for dacl action — specify the target object (sAMAccountName, CN, or full DN)")
 	}
 
+	// Run with timeout protection to prevent agent hangs on unreachable targets
+	ch := make(chan structs.CommandResult, 1)
+	go func() {
+		ch <- ldapRunQuery(args)
+	}()
+	select {
+	case r := <-ch:
+		return r
+	case <-time.After(time.Duration(args.Timeout) * time.Second):
+		return errorf("LDAP operation timed out after %ds — target %s may be unreachable or query too broad", args.Timeout, args.Server)
+	}
+}
+
+// ldapRunQuery performs the LDAP connect, bind, and search operations.
+func ldapRunQuery(args ldapQueryArgs) structs.CommandResult {
 	// Connect to LDAP
 	conn, err := ldapConnect(args)
 	if err != nil {

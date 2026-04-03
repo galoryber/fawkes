@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 	"unsafe"
 
 	ole "github.com/go-ole/go-ole"
@@ -37,6 +38,7 @@ type dcomArgs struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
 	Domain   string `json:"domain"`
+	Timeout  int    `json:"timeout"`
 }
 
 // DCOM COM object CLSIDs
@@ -113,9 +115,23 @@ func (c *DcomCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	defer structs.ZeroString(&args.Password)
 
+	if args.Timeout <= 0 {
+		args.Timeout = 120
+	}
+
 	switch strings.ToLower(args.Action) {
 	case "exec":
-		return dcomExec(args)
+		// Run with timeout protection to prevent agent hangs on unreachable targets
+		ch := make(chan structs.CommandResult, 1)
+		go func() {
+			ch <- dcomExec(args)
+		}()
+		select {
+		case r := <-ch:
+			return r
+		case <-time.After(time.Duration(args.Timeout) * time.Second):
+			return errorf("DCOM operation timed out after %ds — target %s may be unreachable", args.Timeout, args.Host)
+		}
 	default:
 		return errorf("Unknown action: %s\nAvailable: exec", args.Action)
 	}

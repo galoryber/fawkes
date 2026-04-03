@@ -151,6 +151,21 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "timeout",
+				CLIName:          "timeout",
+				ModalDisplayName: "Timeout (seconds)",
+				Description:      "Operation timeout in seconds (default: 120). Prevents agent hangs on unreachable targets.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     120,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     10,
+						GroupName:           "Default",
+					},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
