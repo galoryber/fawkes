@@ -326,10 +326,8 @@ func reconPortscanDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData 
 	}
 
 	// Get chain context (credentials) from parent task's Stdout
-	var chainCtx map[string]string
-	if err := json.Unmarshal([]byte(taskData.Task.Stdout), &chainCtx); err != nil {
-		chainCtx = map[string]string{}
-	}
+	// Use extractChainContext to handle Mythic appending extra lines to Stdout
+	chainCtx := extractChainContext(taskData.Task.Stdout)
 
 	// Step 2: Enumerate SMB shares on each discovered host
 	// Use share-hunt which handles multiple hosts and credential params

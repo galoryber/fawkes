@@ -1,6 +1,9 @@
 package agentfunctions
 
 import (
+	"encoding/json"
+	"strings"
+
 	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
@@ -17,6 +20,28 @@ func createArtifact(taskID int, baseArtifact string, message string) {
 	if err != nil {
 		logging.LogError(err, "Failed to create artifact", "task_id", taskID, "type", baseArtifact)
 	}
+}
+
+// extractChainContext parses a JSON chain context map from a task's Stdout field.
+// Mythic appends framework messages (e.g., "args aren't being used") to Stdout,
+// so a plain json.Unmarshal on the full string fails. This function tries the full
+// string first, then falls back to line-by-line parsing to find the JSON object.
+func extractChainContext(stdout string) map[string]string {
+	var ctx map[string]string
+	// Fast path: if Stdout is pure JSON (no extra lines appended)
+	if err := json.Unmarshal([]byte(stdout), &ctx); err == nil {
+		return ctx
+	}
+	// Slow path: Mythic appended extra lines — try each line
+	for _, line := range strings.Split(stdout, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "{") {
+			if err := json.Unmarshal([]byte(line), &ctx); err == nil {
+				return ctx
+			}
+		}
+	}
+	return map[string]string{}
 }
 
 // isAllZeros returns true if the string consists entirely of '0' characters.

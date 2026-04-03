@@ -380,10 +380,8 @@ func autoMoveFindDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *
 	}
 
 	// Get chain context from parent task
-	var chainCtx map[string]string
-	if err := json.Unmarshal([]byte(taskData.Task.Stdout), &chainCtx); err != nil {
-		chainCtx = map[string]string{}
-	}
+	// Use extractChainContext to handle Mythic appending extra lines to Stdout
+	chainCtx := extractChainContext(taskData.Task.Stdout)
 
 	lateralMethod := chainCtx["lateral_method"]
 	lateralCmd := chainCtx["lateral_command"]
