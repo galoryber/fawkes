@@ -62,8 +62,16 @@ func registerCredentials(taskID int, creds []mythicrpc.MythicRPCCredentialCreate
 		return
 	}
 	// Filter out credentials that already exist in the vault
+	// Also sanitize: strip null bytes that break GraphQL queries
 	var newCreds []mythicrpc.MythicRPCCredentialCreateCredentialData
 	for _, c := range creds {
+		c.Account = strings.ReplaceAll(c.Account, "\x00", "")
+		c.Credential = strings.ReplaceAll(c.Credential, "\x00", "")
+		c.Realm = strings.ReplaceAll(c.Realm, "\x00", "")
+		c.Comment = strings.ReplaceAll(c.Comment, "\x00", "")
+		if c.Credential == "" {
+			continue // skip empty credentials after sanitization
+		}
 		account := c.Account
 		realm := c.Realm
 		credType := c.CredentialType
