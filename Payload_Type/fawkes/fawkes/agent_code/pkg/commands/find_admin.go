@@ -172,7 +172,7 @@ func findAdminCheckSMB(host string, args findAdminArgs) findAdminResult {
 		if strings.Contains(errStr, "ACCESS_DENIED") || strings.Contains(errStr, "STATUS_ACCESS_DENIED") {
 			return findAdminResult{Host: host, Method: "SMB", Admin: false, Message: "access denied"}
 		}
-		return findAdminResult{Host: host, Method: "SMB", Admin: false, Message: "no admin share"}
+		return findAdminResult{Host: host, Method: "SMB", Admin: false, Message: fmt.Sprintf("C$ mount failed: %s", errStr)}
 	}
 	_ = share.Umount()
 
