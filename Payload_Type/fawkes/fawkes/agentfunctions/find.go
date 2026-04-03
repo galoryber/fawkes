@@ -14,7 +14,11 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "find",
+		Name: "find",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "find_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Search for files by name, size, date, permissions, or owner. Find SUID binaries, world-writable files, or files owned by specific users",
 		HelpString:          "find -path <dir> -pattern <glob> [-min_size <bytes>] [-max_size <bytes>] [-newer <minutes>] [-older <minutes>] [-type f|d] [-perm suid|sgid|writable|executable|<octal>] [-owner <user|uid>]",
 		Version:             4,
@@ -24,10 +28,6 @@ func init() {
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
-		},
-		AssociatedBrowserScript: &agentstructs.BrowserScript{
-			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "find.js"),
-			Author:     "@galoryber",
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
