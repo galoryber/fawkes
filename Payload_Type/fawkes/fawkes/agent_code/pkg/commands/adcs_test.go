@@ -681,12 +681,12 @@ func TestAdcsParseACL_TruncatedACLHeader(t *testing.T) {
 func TestAdcsParseACL_MalformedACESize(t *testing.T) {
 	// Build ACL with 1 ACE but set aceSize to 2 (less than minimum 4)
 	acl := make([]byte, 16)
-	acl[0] = 2                                               // ACL revision
+	acl[0] = 2                                                // ACL revision
 	binary.LittleEndian.PutUint16(acl[2:4], uint16(len(acl))) // AclSize
 	binary.LittleEndian.PutUint16(acl[4:6], 1)                // AceCount = 1
 	// ACE at offset 8: type=0, flags=0, size=2 (too small)
-	acl[8] = 0x00                                      // aceType
-	binary.LittleEndian.PutUint16(acl[10:12], 2)       // aceSize = 2 (< 4)
+	acl[8] = 0x00                                // aceType
+	binary.LittleEndian.PutUint16(acl[10:12], 2) // aceSize = 2 (< 4)
 
 	aces := adcsParseACL(acl, 0)
 	if len(aces) != 0 {

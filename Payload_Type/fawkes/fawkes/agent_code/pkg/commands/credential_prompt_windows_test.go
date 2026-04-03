@@ -102,4 +102,3 @@ func TestCredentialPromptParams_Defaults(t *testing.T) {
 		t.Errorf("title should be empty (default applied in Execute), got %q", args.Title)
 	}
 }
-

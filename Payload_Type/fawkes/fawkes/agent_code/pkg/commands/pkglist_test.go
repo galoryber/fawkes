@@ -259,10 +259,10 @@ func TestRpmParseHeaderBlobOversizedNindex(t *testing.T) {
 	// nindex > 10000 triggers sanity check — covers line 509-511
 	var blob []byte
 	blob = append(blob, 0x8e, 0xad, 0xe8, 0x01) // magic
-	blob = append(blob, 0, 0, 0, 0)               // reserved
-	blob = appendBE32(blob, 20000)                 // nindex > 10000
-	blob = appendBE32(blob, 100)                   // hsize
-	blob = append(blob, make([]byte, 100)...)      // filler
+	blob = append(blob, 0, 0, 0, 0)             // reserved
+	blob = appendBE32(blob, 20000)              // nindex > 10000
+	blob = appendBE32(blob, 100)                // hsize
+	blob = append(blob, make([]byte, 100)...)   // filler
 	name, ver := rpmParseHeaderBlob(blob)
 	if name != "" || ver != "" {
 		t.Error("expected empty for oversized nindex")
@@ -273,10 +273,10 @@ func TestRpmParseHeaderBlobTruncatedData(t *testing.T) {
 	// indexEnd + hsize > len(blob) — covers line 514-516
 	var blob []byte
 	blob = append(blob, 0x8e, 0xad, 0xe8, 0x01) // magic
-	blob = append(blob, 0, 0, 0, 0)               // reserved
-	blob = appendBE32(blob, 3)                     // nindex = 3 (needs 48 bytes for index)
-	blob = appendBE32(blob, 9999)                  // hsize = 9999 (way more than remaining)
-	blob = append(blob, make([]byte, 48)...)       // index entries only, no data store
+	blob = append(blob, 0, 0, 0, 0)             // reserved
+	blob = appendBE32(blob, 3)                  // nindex = 3 (needs 48 bytes for index)
+	blob = appendBE32(blob, 9999)               // hsize = 9999 (way more than remaining)
+	blob = append(blob, make([]byte, 48)...)    // index entries only, no data store
 	name, ver := rpmParseHeaderBlob(blob)
 	if name != "" || ver != "" {
 		t.Error("expected empty for truncated data store")
@@ -291,7 +291,7 @@ func TestRpmParseHeaderBlobOutOfBoundsOffset(t *testing.T) {
 
 	var blob []byte
 	blob = append(blob, 0x8e, 0xad, 0xe8, 0x01) // magic
-	blob = append(blob, 0, 0, 0, 0)               // reserved
+	blob = append(blob, 0, 0, 0, 0)             // reserved
 	blob = appendBE32(blob, uint32(nindex))
 	blob = appendBE32(blob, uint32(hsize))
 	// Index entry with out-of-bounds offset

@@ -23,11 +23,11 @@ func TestInlineExecuteCommandDescription(t *testing.T) {
 
 func TestInlineExecuteParams_JSON(t *testing.T) {
 	tests := []struct {
-		name       string
-		input      string
-		wantBOF    string
-		wantEntry  string
-		wantNArgs  int
+		name      string
+		input     string
+		wantBOF   string
+		wantEntry string
+		wantNArgs int
 	}{
 		{
 			name:      "full params",

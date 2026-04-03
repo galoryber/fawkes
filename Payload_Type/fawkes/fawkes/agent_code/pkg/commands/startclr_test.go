@@ -17,10 +17,10 @@ func TestStartCLRCommandDescription(t *testing.T) {
 
 func TestStartCLRParamsUnmarshal(t *testing.T) {
 	tests := []struct {
-		name       string
-		json       string
-		wantAmsi   string
-		wantEtw    string
+		name     string
+		json     string
+		wantAmsi string
+		wantEtw  string
 	}{
 		{"defaults", `{}`, "", ""},
 		{"autopatch", `{"amsi_patch":"Autopatch","etw_patch":"Autopatch"}`, "Autopatch", "Autopatch"},

@@ -5,8 +5,8 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
-	"os/user"
 	"os"
+	"os/user"
 	"strings"
 
 	"fawkes/pkg/structs"

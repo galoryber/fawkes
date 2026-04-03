@@ -336,4 +336,3 @@ func formatLDAPResults(result *ldap.SearchResult, action, desc, baseDN, filter s
 	}
 	return string(data)
 }
-

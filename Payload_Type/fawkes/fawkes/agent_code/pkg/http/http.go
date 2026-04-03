@@ -40,17 +40,17 @@ type configVault struct {
 // sensitiveConfig holds the C2 configuration fields that should not persist
 // as plaintext in memory. These reveal C2 infrastructure and enable traffic decryption.
 type sensitiveConfig struct {
-	BaseURL        string            `json:"b"`
-	FallbackURLs   []string          `json:"f,omitempty"`
-	UserAgent      string            `json:"a"`
-	UserAgentPool  []string          `json:"ap,omitempty"`
-	EncryptionKey  string            `json:"k"`
-	CallbackUUID   string            `json:"c"`
-	HostHeader     string            `json:"h"`
-	GetEndpoint    string            `json:"g"`
-	PostEndpoint   string            `json:"p"`
-	CustomHeaders  map[string]string `json:"x,omitempty"`
-	ContentTypes   []string          `json:"ct,omitempty"`
+	BaseURL       string            `json:"b"`
+	FallbackURLs  []string          `json:"f,omitempty"`
+	UserAgent     string            `json:"a"`
+	UserAgentPool []string          `json:"ap,omitempty"`
+	EncryptionKey string            `json:"k"`
+	CallbackUUID  string            `json:"c"`
+	HostHeader    string            `json:"h"`
+	GetEndpoint   string            `json:"g"`
+	PostEndpoint  string            `json:"p"`
+	CustomHeaders map[string]string `json:"x,omitempty"`
+	ContentTypes  []string          `json:"ct,omitempty"`
 }
 
 // HTTPProfile handles HTTP communication with Mythic
@@ -69,7 +69,7 @@ type HTTPProfile struct {
 	ContentTypes  []string          // Content-Type rotation pool for request body
 	UserAgentPool []string          // User-Agent rotation pool (if set, overrides single UserAgent)
 	client        *http.Client
-	CallbackUUID  string // Store callback UUID from initial checkin
+	CallbackUUID  string        // Store callback UUID from initial checkin
 	ctIndex       atomic.Uint32 // Round-robin index for Content-Type rotation
 	uaIndex       atomic.Uint32 // Round-robin index for User-Agent rotation
 

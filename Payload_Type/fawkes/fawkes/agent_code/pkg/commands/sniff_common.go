@@ -91,13 +91,13 @@ func (c *sniffPCAPCollector) buildPCAP(linkType uint32) []byte {
 
 	// PCAP Global Header (24 bytes)
 	hdr := make([]byte, 24)
-	binary.LittleEndian.PutUint32(hdr[0:4], 0xA1B2C3D4)   // magic
-	binary.LittleEndian.PutUint16(hdr[4:6], 2)              // version major
-	binary.LittleEndian.PutUint16(hdr[6:8], 4)              // version minor
-	binary.LittleEndian.PutUint32(hdr[8:12], 0)             // thiszone
-	binary.LittleEndian.PutUint32(hdr[12:16], 0)            // sigfigs
-	binary.LittleEndian.PutUint32(hdr[16:20], 65535)        // snaplen
-	binary.LittleEndian.PutUint32(hdr[20:24], linkType)     // link type
+	binary.LittleEndian.PutUint32(hdr[0:4], 0xA1B2C3D4) // magic
+	binary.LittleEndian.PutUint16(hdr[4:6], 2)          // version major
+	binary.LittleEndian.PutUint16(hdr[6:8], 4)          // version minor
+	binary.LittleEndian.PutUint32(hdr[8:12], 0)         // thiszone
+	binary.LittleEndian.PutUint32(hdr[12:16], 0)        // sigfigs
+	binary.LittleEndian.PutUint32(hdr[16:20], 65535)    // snaplen
+	binary.LittleEndian.PutUint32(hdr[20:24], linkType) // link type
 	buf = append(buf, hdr...)
 
 	// Per-packet records

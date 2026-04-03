@@ -46,19 +46,19 @@ func TestHelperFunctionSignatures(t *testing.T) {
 	// We don't call them with real handles — just verify they compile correctly.
 
 	var (
-		_openProcess       func(uint32, uint32) (uintptr, error)           = injectOpenProcess
-		_closeHandle       func(uintptr)                                   = injectCloseHandle
-		_allocMemory       func(uintptr, int, uint32) (uintptr, error)     = injectAllocMemory
-		_writeMemory       func(uintptr, uintptr, []byte) (int, error)     = injectWriteMemory
-		_readMemory        func(uintptr, uintptr, int) ([]byte, error)     = injectReadMemory
+		_openProcess       func(uint32, uint32) (uintptr, error)               = injectOpenProcess
+		_closeHandle       func(uintptr)                                       = injectCloseHandle
+		_allocMemory       func(uintptr, int, uint32) (uintptr, error)         = injectAllocMemory
+		_writeMemory       func(uintptr, uintptr, []byte) (int, error)         = injectWriteMemory
+		_readMemory        func(uintptr, uintptr, int) ([]byte, error)         = injectReadMemory
 		_protectMemory     func(uintptr, uintptr, int, uint32) (uint32, error) = injectProtectMemory
-		_allocWriteProtect func(uintptr, []byte, uint32) (uintptr, error)  = injectAllocWriteProtect
-		_createThread      func(uintptr, uintptr) (uintptr, error)         = injectCreateRemoteThread
-		_openThread        func(uint32, uint32) (uintptr, error)           = injectOpenThread
-		_queueAPC          func(uintptr, uintptr) error                    = injectQueueAPC
-		_resumeThread      func(uintptr) (uint32, error)                   = injectResumeThread
-		_getContext         func(uintptr, *CONTEXT_AMD64) error             = injectGetThreadContext
-		_setContext         func(uintptr, *CONTEXT_AMD64) error             = injectSetThreadContext
+		_allocWriteProtect func(uintptr, []byte, uint32) (uintptr, error)      = injectAllocWriteProtect
+		_createThread      func(uintptr, uintptr) (uintptr, error)             = injectCreateRemoteThread
+		_openThread        func(uint32, uint32) (uintptr, error)               = injectOpenThread
+		_queueAPC          func(uintptr, uintptr) error                        = injectQueueAPC
+		_resumeThread      func(uintptr) (uint32, error)                       = injectResumeThread
+		_getContext        func(uintptr, *CONTEXT_AMD64) error                 = injectGetThreadContext
+		_setContext        func(uintptr, *CONTEXT_AMD64) error                 = injectSetThreadContext
 	)
 
 	// Prevent "unused variable" compiler errors

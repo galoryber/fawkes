@@ -1000,8 +1000,8 @@ func TestParseShimcacheWin10_DataSizeExceedsBounds(t *testing.T) {
 	data := make([]byte, 52+13) // header + entry header + 1 extra byte
 	binary.LittleEndian.PutUint32(data[0:4], headerSize)
 	binary.LittleEndian.PutUint32(data[52:56], shimcacheWin10Sig) // "10ts"
-	binary.LittleEndian.PutUint32(data[56:60], 0)                // unknown
-	binary.LittleEndian.PutUint32(data[60:64], 9999)             // dataSize >> remaining data
+	binary.LittleEndian.PutUint32(data[56:60], 0)                 // unknown
+	binary.LittleEndian.PutUint32(data[60:64], 9999)              // dataSize >> remaining data
 
 	entries, err := parseShimcacheWin10(data)
 	if err != nil {
@@ -1017,7 +1017,7 @@ func TestParseShimcacheWin8_ZeroPathLength(t *testing.T) {
 	// Covers parseShimcacheWin8 line 121-122.
 	// Data must be >140 bytes so loop condition (offset < len(data)-12) enters.
 	data := make([]byte, 145)
-	binary.LittleEndian.PutUint32(data[0:4], 0x80) // Win8 header
+	binary.LittleEndian.PutUint32(data[0:4], 0x80)  // Win8 header
 	binary.LittleEndian.PutUint32(data[128:132], 0) // pathLenChars = 0
 
 	entries, err := parseShimcacheWin8(data)

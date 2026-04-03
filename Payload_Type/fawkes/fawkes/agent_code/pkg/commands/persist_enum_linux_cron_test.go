@@ -174,4 +174,3 @@ SystemdService=dbus-org.freedesktop.systemd1.service
 		t.Errorf("expected no exec line, got %q", execLine)
 	}
 }
-

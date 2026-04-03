@@ -30,10 +30,10 @@ func (c *LolbinCommand) Description() string {
 }
 
 type lolbinArgs struct {
-	Action   string `json:"action"`
-	Path     string `json:"path"`
-	Export   string `json:"export"`
-	Args     string `json:"args"`
+	Action string `json:"action"`
+	Path   string `json:"path"`
+	Export string `json:"export"`
+	Args   string `json:"args"`
 }
 
 func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {

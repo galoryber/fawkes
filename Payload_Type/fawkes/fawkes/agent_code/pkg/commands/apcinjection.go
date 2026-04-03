@@ -43,8 +43,10 @@ var (
 // ApcInjectionCommand implements the apc-injection command
 type ApcInjectionCommand struct{}
 
-func (c *ApcInjectionCommand) Name() string        { return "apc-injection" }
-func (c *ApcInjectionCommand) Description() string  { return "Perform APC injection into an alertable thread" }
+func (c *ApcInjectionCommand) Name() string { return "apc-injection" }
+func (c *ApcInjectionCommand) Description() string {
+	return "Perform APC injection into an alertable thread"
+}
 
 // ApcInjectionParams represents the parameters for apc-injection
 type ApcInjectionParams struct {

@@ -455,4 +455,3 @@ func analyzePathHijack(dirs []string, systemDirs map[string]bool) []pathHijackRe
 
 	return results
 }
-

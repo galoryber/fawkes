@@ -44,4 +44,3 @@ func TestCredHarvestShadowWithFilter(t *testing.T) {
 	result := credHarvestDispatch(credHarvestArgs{Action: "shadow", User: "nonexistentuser12345"})
 	assertSuccess(t, result)
 }
-

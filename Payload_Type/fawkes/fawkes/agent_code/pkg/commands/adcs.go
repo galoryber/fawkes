@@ -464,4 +464,3 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 
 	return successResult(sb.String())
 }
-

@@ -88,7 +88,7 @@ type DiscordProfile struct {
 	Debug         bool
 	MaxRetries    int // message_checks: max polling attempts per exchange
 	PollInterval  int // time_between_checks: seconds between polls
-	ProxyURL string
+	ProxyURL      string
 
 	client   *http.Client
 	vault    *configVault
@@ -149,7 +149,7 @@ func NewDiscordProfile(botToken, channelID, encryptionKey string, sleepInterval,
 		Debug:         debug,
 		MaxRetries:    maxRetries,
 		PollInterval:  pollInterval,
-		ProxyURL: proxyURL,
+		ProxyURL:      proxyURL,
 		client: &http.Client{
 			Timeout:   30 * time.Second,
 			Transport: transport,

@@ -34,7 +34,7 @@ func TestScanForGUID_NotFound(t *testing.T) {
 	_, err := scanForGUID(base, uintptr(len(data)), pattern)
 	if err == nil {
 		t.Fatal("expected error for missing pattern, got nil")
-			return // unreachable, helps staticcheck
+		return // unreachable, helps staticcheck
 	}
 }
 
@@ -58,8 +58,8 @@ func TestScanForGUID_FirstMatchReturned(t *testing.T) {
 	// Two copies of pattern — should return the first match
 	pattern := []byte{0x11, 0x22, 0x33, 0x44}
 	data := make([]byte, 128)
-	copy(data[4:], pattern)   // struct at offset 0
-	copy(data[64:], pattern)  // struct at offset 60
+	copy(data[4:], pattern)  // struct at offset 0
+	copy(data[64:], pattern) // struct at offset 60
 
 	base := uintptr(unsafe.Pointer(&data[0]))
 	addr, err := scanForGUID(base, uintptr(len(data)), pattern)
@@ -79,7 +79,7 @@ func TestScanForGUID_TooSmall(t *testing.T) {
 	_, err := scanForGUID(base, uintptr(len(data)), pattern)
 	if err == nil {
 		t.Fatal("expected error for buffer too small, got nil")
-			return // unreachable, helps staticcheck
+		return // unreachable, helps staticcheck
 	}
 }
 

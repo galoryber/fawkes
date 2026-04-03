@@ -123,18 +123,18 @@ func generateMasqueradeName(source, technique, disguise string) (string, error) 
 			disguise = "svchost"
 		}
 		processNames := map[string]string{
-			"svchost":    "svchost.exe",
-			"explorer":   "explorer.exe",
-			"csrss":      "csrss.exe",
-			"lsass":      "lsass.exe",
-			"services":   "services.exe",
-			"wininit":    "wininit.exe",
-			"smss":       "smss.exe",
-			"taskhostw":  "taskhostw.exe",
-			"conhost":    "conhost.exe",
-			"dllhost":    "dllhost.exe",
-			"spoolsv":    "spoolsv.exe",
-			"msdtc":      "msdtc.exe",
+			"svchost":       "svchost.exe",
+			"explorer":      "explorer.exe",
+			"csrss":         "csrss.exe",
+			"lsass":         "lsass.exe",
+			"services":      "services.exe",
+			"wininit":       "wininit.exe",
+			"smss":          "smss.exe",
+			"taskhostw":     "taskhostw.exe",
+			"conhost":       "conhost.exe",
+			"dllhost":       "dllhost.exe",
+			"spoolsv":       "spoolsv.exe",
+			"msdtc":         "msdtc.exe",
 			"searchindexer": "SearchIndexer.exe",
 		}
 		// Linux/macOS equivalents

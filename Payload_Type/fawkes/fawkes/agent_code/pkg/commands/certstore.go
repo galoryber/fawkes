@@ -379,8 +379,8 @@ func sha1Thumbprint(data []byte) string {
 
 // Additional constants for export/delete/import
 const (
-	certStoreAddReplaceExisting = 3  // CERT_STORE_ADD_REPLACE_EXISTING
-	x509ASNEncoding             = 1  // X509_ASN_ENCODING
+	certStoreAddReplaceExisting = 3     // CERT_STORE_ADD_REPLACE_EXISTING
+	x509ASNEncoding             = 1     // X509_ASN_ENCODING
 	pkcs7ASNEncoding            = 65536 // PKCS_7_ASN_ENCODING
 	certEncodingDefault         = x509ASNEncoding | pkcs7ASNEncoding
 	exportableFlag              = 0x00000001 // CRYPT_EXPORTABLE

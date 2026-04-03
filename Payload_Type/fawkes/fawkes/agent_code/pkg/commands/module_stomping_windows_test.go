@@ -148,8 +148,8 @@ func TestPEMagicConstants(t *testing.T) {
 // TestImageSectionHeader_TextName verifies .text section name matching.
 func TestImageSectionHeader_TextName(t *testing.T) {
 	tests := []struct {
-		name     [8]byte
-		isText   bool
+		name   [8]byte
+		isText bool
 	}{
 		{[8]byte{'.', 't', 'e', 'x', 't', 0, 0, 0}, true},
 		{[8]byte{'.', 't', 'e', 'x', 't', 0, 0, 1}, true}, // extra byte after null

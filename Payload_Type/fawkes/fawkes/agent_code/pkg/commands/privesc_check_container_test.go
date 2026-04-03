@@ -241,8 +241,8 @@ func TestOverlayFilesystemDetection(t *testing.T) {
 func TestPID1ProcessDetection(t *testing.T) {
 	// Test PID 1 process name detection logic
 	tests := []struct {
-		comm     string
-		unusual  bool
+		comm    string
+		unusual bool
 	}{
 		{"systemd", false},
 		{"init", false},

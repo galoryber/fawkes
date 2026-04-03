@@ -9,10 +9,10 @@ import (
 
 func TestSudoOutputPatternDetection(t *testing.T) {
 	tests := []struct {
-		name       string
-		output     string
-		nopasswd   bool
-		allAccess  bool
+		name      string
+		output    string
+		nopasswd  bool
+		allAccess bool
 	}{
 		{
 			"NOPASSWD rule",
@@ -254,4 +254,3 @@ func TestPolkitPKLADetection(t *testing.T) {
 		})
 	}
 }
-

@@ -374,4 +374,3 @@ func resolveProviders(provider string, timeout time.Duration) []string {
 // - cloudmetadata_azure.go
 // - cloudmetadata_gcp.go
 // - cloudmetadata_do.go
-

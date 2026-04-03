@@ -225,4 +225,3 @@ func firefoxDownloadState(state int) string {
 		return fmt.Sprintf("Unknown(%d)", state)
 	}
 }
-

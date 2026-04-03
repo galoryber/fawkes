@@ -310,4 +310,3 @@ func TestLogrotateScriptDetection(t *testing.T) {
 		})
 	}
 }
-

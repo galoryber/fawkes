@@ -55,7 +55,7 @@ type ClientConfig struct {
 // ServerConfig defines headers and transforms for the server's responses.
 type ServerConfig struct {
 	Headers    map[string]string `json:"headers"`
-	Transforms []Transform      `json:"transforms"`
+	Transforms []Transform       `json:"transforms"`
 }
 
 // MessageConfig specifies where the agent places its message in the HTTP request.
@@ -80,18 +80,18 @@ type configVault struct {
 
 // HTTPXProfile implements the Profile interface for the httpx C2 profile.
 type HTTPXProfile struct {
-	Domains            []string
-	DomainRotation     string // "fail-over", "round-robin", "random"
-	FailoverThreshold  int
-	EncryptionKey      string
-	MaxRetries         int
-	SleepInterval      int
-	Jitter             int
-	Debug              bool
-	Config             *AgentConfig
-	CallbackUUID       string
-	ProxyURL           string
-	client             *http.Client
+	Domains           []string
+	DomainRotation    string // "fail-over", "round-robin", "random"
+	FailoverThreshold int
+	EncryptionKey     string
+	MaxRetries        int
+	SleepInterval     int
+	Jitter            int
+	Debug             bool
+	Config            *AgentConfig
+	CallbackUUID      string
+	ProxyURL          string
+	client            *http.Client
 
 	// Domain rotation state
 	activeDomainIdx atomic.Int32

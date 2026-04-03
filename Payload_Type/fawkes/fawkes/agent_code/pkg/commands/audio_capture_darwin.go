@@ -34,13 +34,13 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Try sox/rec first (outputs WAV directly to stdout)
 	recArgs := []string{
-		"-q",           // quiet
-		"-d",           // default device
-		"-t", "wav",    // WAV output
+		"-q",        // quiet
+		"-d",        // default device
+		"-t", "wav", // WAV output
 		"-r", strconv.Itoa(params.SampleRate),
 		"-c", strconv.Itoa(params.Channels),
 		"-b", strconv.Itoa(bitsPerSample),
-		"-",            // stdout
+		"-", // stdout
 		"trim", "0", strconv.Itoa(params.Duration),
 	}
 	cmd := exec.Command("rec", recArgs...)
@@ -59,7 +59,7 @@ func (c *AudioCaptureCommand) Execute(task structs.Task) structs.CommandResult {
 			"-ac", strconv.Itoa(params.Channels),
 			"-sample_fmt", "s16",
 			"-f", "wav",
-			"-y", // overwrite
+			"-y",     // overwrite
 			"pipe:1", // output to stdout
 		}
 		ffCmd := exec.Command("ffmpeg", ffmpegArgs...)

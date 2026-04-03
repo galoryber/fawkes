@@ -164,7 +164,7 @@ func TestLastArgs_JSONParsing(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
-						return // unreachable, helps staticcheck
+					return // unreachable, helps staticcheck
 				}
 				return
 			}
@@ -397,4 +397,3 @@ func TestRebootEventName(t *testing.T) {
 		})
 	}
 }
-

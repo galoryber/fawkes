@@ -18,8 +18,10 @@ import (
 
 type SniffCommand struct{}
 
-func (c *SniffCommand) Name() string        { return "sniff" }
-func (c *SniffCommand) Description() string { return "Passive network sniffing for credential capture (T1040)" }
+func (c *SniffCommand) Name() string { return "sniff" }
+func (c *SniffCommand) Description() string {
+	return "Passive network sniffing for credential capture (T1040)"
+}
 
 func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 	var params sniffParams

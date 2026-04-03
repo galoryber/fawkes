@@ -463,7 +463,7 @@ func TestSniffPCAPCollector(t *testing.T) {
 	})
 
 	t.Run("respects max size", func(t *testing.T) {
-		c := newSniffPCAPCollector(5) // Only 5 bytes max
+		c := newSniffPCAPCollector(5)         // Only 5 bytes max
 		c.addPacket([]byte{0x01, 0x02, 0x03}) // 3 bytes, OK
 		c.addPacket([]byte{0x04, 0x05, 0x06}) // 3 more, exceeds 5, dropped
 

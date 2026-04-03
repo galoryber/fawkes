@@ -216,7 +216,7 @@ func TestXbelRoundTrip(t *testing.T) {
 func TestAmcacheQueryNoArtifacts(t *testing.T) {
 	// When run in a test environment with no GTK artifacts, query should return empty JSON
 	cmd := &AmcacheCommand{}
-	result := cmd.Execute(structs.NewTask("t", "amcache",`{"action":"query"}`))
+	result := cmd.Execute(structs.NewTask("t", "amcache", `{"action":"query"}`))
 	if result.Status != "success" {
 		t.Errorf("Expected success status, got %q", result.Status)
 	}
@@ -224,7 +224,7 @@ func TestAmcacheQueryNoArtifacts(t *testing.T) {
 
 func TestAmcacheSearchNoFile(t *testing.T) {
 	cmd := &AmcacheCommand{}
-	result := cmd.Execute(structs.NewTask("t", "amcache",`{"action":"search","name":"test"}`))
+	result := cmd.Execute(structs.NewTask("t", "amcache", `{"action":"search","name":"test"}`))
 	// Should error when recently-used.xbel doesn't exist
 	if result.Status != "error" {
 		// It's OK if it's error (file not found) — that's expected in test env
@@ -234,7 +234,7 @@ func TestAmcacheSearchNoFile(t *testing.T) {
 
 func TestAmcacheSearchNoName(t *testing.T) {
 	cmd := &AmcacheCommand{}
-	result := cmd.Execute(structs.NewTask("t", "amcache",`{"action":"search"}`))
+	result := cmd.Execute(structs.NewTask("t", "amcache", `{"action":"search"}`))
 	if result.Status != "error" {
 		t.Errorf("Expected error for missing name, got %q", result.Status)
 	}
@@ -242,7 +242,7 @@ func TestAmcacheSearchNoName(t *testing.T) {
 
 func TestAmcacheDeleteNoName(t *testing.T) {
 	cmd := &AmcacheCommand{}
-	result := cmd.Execute(structs.NewTask("t", "amcache",`{"action":"delete"}`))
+	result := cmd.Execute(structs.NewTask("t", "amcache", `{"action":"delete"}`))
 	if result.Status != "error" {
 		t.Errorf("Expected error for missing name, got %q", result.Status)
 	}
@@ -250,7 +250,7 @@ func TestAmcacheDeleteNoName(t *testing.T) {
 
 func TestAmcacheUnknownAction(t *testing.T) {
 	cmd := &AmcacheCommand{}
-	result := cmd.Execute(structs.NewTask("t", "amcache",`{"action":"invalid"}`))
+	result := cmd.Execute(structs.NewTask("t", "amcache", `{"action":"invalid"}`))
 	if result.Status != "error" {
 		t.Errorf("Expected error for unknown action, got %q", result.Status)
 	}
