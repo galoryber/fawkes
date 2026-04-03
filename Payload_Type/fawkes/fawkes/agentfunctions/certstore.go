@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -141,6 +142,47 @@ func init() {
 				display += fmt.Sprintf(", filter: %s", filter)
 			}
 			response.DisplayParams = &display
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "list", "find":
+				// Track discovered certificates with private keys as artifacts
+				for _, line := range strings.Split(responseText, "\n") {
+					trimmed := strings.TrimSpace(line)
+					if strings.Contains(trimmed, "HasPrivateKey: true") || strings.Contains(trimmed, "has_private_key: true") {
+						createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+							fmt.Sprintf("[CertStore] Certificate with private key found"))
+					}
+				}
+			case "export":
+				if strings.Contains(responseText, "exported") || strings.Contains(responseText, "Export") {
+					filter, _ := processResponse.TaskData.Args.GetStringArg("filter")
+					createArtifact(processResponse.TaskData.Task.ID, "File Write",
+						fmt.Sprintf("[CertStore] Certificate exported: %s", filter))
+				}
+			case "delete":
+				if strings.Contains(responseText, "deleted") || strings.Contains(responseText, "Deleted") {
+					filter, _ := processResponse.TaskData.Args.GetStringArg("filter")
+					createArtifact(processResponse.TaskData.Task.ID, "File Write",
+						fmt.Sprintf("[CertStore] Certificate deleted: %s", filter))
+				}
+			case "import":
+				if strings.Contains(responseText, "imported") || strings.Contains(responseText, "Import") {
+					store, _ := processResponse.TaskData.Args.GetStringArg("store")
+					createArtifact(processResponse.TaskData.Task.ID, "File Write",
+						fmt.Sprintf("[CertStore] Certificate imported to store: %s", store))
+				}
+			}
 			return response
 		},
 	})

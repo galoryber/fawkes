@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -110,6 +111,31 @@ func init() {
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "Process Create", "Container escape attempt")
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action == "check" {
+				// Track discovered escape vectors
+				vectors := []string{"Docker socket", "cgroup", "nsenter", "mount-host", "privileged", "cap_sys_admin", "host PID"}
+				for _, v := range vectors {
+					if strings.Contains(strings.ToLower(responseText), strings.ToLower(v)) {
+						createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+							fmt.Sprintf("[Container Escape] Vector available: %s", v))
+					}
+				}
+			} else if strings.Contains(responseText, "Success") || strings.Contains(responseText, "success") {
+				createArtifact(processResponse.TaskData.Task.ID, "Process Create",
+					fmt.Sprintf("[Container Escape] Successful breakout via %s", action))
+			}
 			return response
 		},
 	})

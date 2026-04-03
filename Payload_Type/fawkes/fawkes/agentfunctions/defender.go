@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -122,6 +123,64 @@ func init() {
 				createArtifact(taskData.Task.ID, "Process Create", "powershell.exe Set-MpPreference -DisableRealtimeMonitoring $false")
 			case "disable":
 				createArtifact(taskData.Task.ID, "Process Create", "powershell.exe Set-MpPreference -DisableRealtimeMonitoring $true")
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "status":
+				// Track Defender status for situational awareness
+				if strings.Contains(responseText, "RealTimeProtection") || strings.Contains(responseText, "real_time") {
+					status := "unknown"
+					if strings.Contains(responseText, "Enabled") || strings.Contains(responseText, "true") {
+						status = "enabled"
+					} else if strings.Contains(responseText, "Disabled") || strings.Contains(responseText, "false") {
+						status = "disabled"
+					}
+					createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+						fmt.Sprintf("[Defender] Real-time protection: %s", status))
+				}
+			case "exclusions":
+				// Count exclusions for tracking
+				exCount := 0
+				for _, line := range strings.Split(responseText, "\n") {
+					trimmed := strings.TrimSpace(line)
+					if trimmed != "" && !strings.HasPrefix(trimmed, "=") && !strings.HasPrefix(trimmed, "-") &&
+						(strings.Contains(trimmed, "\\") || strings.Contains(trimmed, "/") || strings.Contains(trimmed, ".")) {
+						exCount++
+					}
+				}
+				if exCount > 0 {
+					createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+						fmt.Sprintf("[Defender] %d exclusions found", exCount))
+				}
+			case "threats":
+				// Track detected threats
+				for _, line := range strings.Split(responseText, "\n") {
+					if strings.Contains(line, "ThreatName") || strings.Contains(line, "threat_name") {
+						createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+							fmt.Sprintf("[Defender] Threat detected: %s", strings.TrimSpace(line)))
+					}
+				}
+			case "disable":
+				if strings.Contains(responseText, "disabled") || strings.Contains(responseText, "Disabled") || strings.Contains(responseText, "Success") {
+					createArtifact(processResponse.TaskData.Task.ID, "API Call",
+						"[Defender] Real-time protection disabled")
+				}
+			case "enable":
+				if strings.Contains(responseText, "enabled") || strings.Contains(responseText, "Enabled") || strings.Contains(responseText, "Success") {
+					createArtifact(processResponse.TaskData.Task.ID, "API Call",
+						"[Defender] Real-time protection enabled")
+				}
 			}
 			return response
 		},

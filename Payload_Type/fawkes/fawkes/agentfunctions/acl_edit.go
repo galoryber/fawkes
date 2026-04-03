@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -201,6 +202,45 @@ func init() {
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("LDAP restore DACL on %s", target))
 			}
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			target, _ := processResponse.TaskData.Args.GetStringArg("target")
+			switch action {
+			case "read":
+				// Track dangerous ACEs discovered during reads
+				dangerousRights := []string{"GenericAll", "WriteDACL", "WriteOwner", "GenericWrite",
+					"DS-Replication-Get-Changes", "ForceChangePassword", "AllExtendedRights"}
+				for _, line := range strings.Split(responseText, "\n") {
+					for _, right := range dangerousRights {
+						if strings.Contains(line, right) {
+							createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+								fmt.Sprintf("[ACL] Dangerous ACE on %s: %s", target, strings.TrimSpace(line)))
+							break
+						}
+					}
+				}
+			case "grant-dcsync", "grant-genericall", "grant-writedacl", "add":
+				if strings.Contains(responseText, "Success") || strings.Contains(responseText, "success") || strings.Contains(responseText, "Added") {
+					principal, _ := processResponse.TaskData.Args.GetStringArg("principal")
+					createArtifact(processResponse.TaskData.Task.ID, "API Call",
+						fmt.Sprintf("[ACL] Permission granted: %s → %s on %s", action, principal, target))
+				}
+			case "restore":
+				if strings.Contains(responseText, "Restored") || strings.Contains(responseText, "restored") {
+					createArtifact(processResponse.TaskData.Task.ID, "API Call",
+						fmt.Sprintf("[ACL] DACL restored on %s", target))
+				}
+			}
 			return response
 		},
 	})
