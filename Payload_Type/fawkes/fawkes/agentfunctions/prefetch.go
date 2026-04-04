@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -93,6 +94,32 @@ func init() {
 				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			type prefetchEntry struct {
+				Executable string `json:"executable"`
+				RunCount   int    `json:"run_count"`
+				LastRun    string `json:"last_run"`
+				FileSize   int64  `json:"file_size"`
+				Hash       string `json:"hash"`
+			}
+			var entries []prefetchEntry
+			if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
+				return response
+			}
+			for _, e := range entries {
+				createArtifact(processResponse.TaskData.Task.ID, "Execution Evidence",
+					fmt.Sprintf("Prefetch: %s (run count: %d, last: %s)", e.Executable, e.RunCount, e.LastRun))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

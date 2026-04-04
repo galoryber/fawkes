@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -70,6 +71,31 @@ func init() {
 				OpsecPreBlocked: false, OpsecPreMessage: msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			type moduleEntry struct {
+				Name     string `json:"name"`
+				Path     string `json:"path"`
+				BaseAddr string `json:"base_addr"`
+				Size     int64  `json:"size"`
+			}
+			var entries []moduleEntry
+			if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
+				return response
+			}
+			for _, e := range entries {
+				createArtifact(processResponse.TaskData.Task.ID, "Discovery",
+					fmt.Sprintf("Module: %s (%s)", e.Name, e.Path))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

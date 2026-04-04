@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"encoding/json"
+	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -54,6 +56,32 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Driver enumeration lists loaded kernel drivers including security products (EDR, AV kernel components). Commonly used for defense evasion reconnaissance — may be flagged by EDR behavioral analytics.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			type driverEntry struct {
+				Name    string `json:"name"`
+				Path    string `json:"path"`
+				Status  string `json:"status"`
+				Size    int64  `json:"size"`
+				Version string `json:"version"`
+			}
+			var entries []driverEntry
+			if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
+				return response
+			}
+			for _, e := range entries {
+				createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+					fmt.Sprintf("Driver: %s (%s) — %s", e.Name, e.Path, e.Status))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -79,6 +80,48 @@ func init() {
 				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			// Try parsing as session list first
+			type sessionEntry struct {
+				SessionID string `json:"session_id"`
+				Username  string `json:"username"`
+				Domain    string `json:"domain"`
+				Station   string `json:"station"`
+				State     string `json:"state"`
+				Client    string `json:"client"`
+			}
+			var sessions []sessionEntry
+			if err := json.Unmarshal([]byte(responseText), &sessions); err == nil && len(sessions) > 0 && sessions[0].SessionID != "" {
+				for _, s := range sessions {
+					createArtifact(processResponse.TaskData.Task.ID, "Account Discovery",
+						fmt.Sprintf("Logon: %s\\%s (session %s, state: %s)", s.Domain, s.Username, s.SessionID, s.State))
+				}
+				return response
+			}
+			// Fall back to user list
+			type userEntry struct {
+				User     string `json:"user"`
+				Domain   string `json:"domain"`
+				Sessions int    `json:"sessions"`
+				Details  string `json:"details"`
+			}
+			var users []userEntry
+			if err := json.Unmarshal([]byte(responseText), &users); err == nil {
+				for _, u := range users {
+					createArtifact(processResponse.TaskData.Task.ID, "Account Discovery",
+						fmt.Sprintf("User: %s\\%s (%d sessions)", u.Domain, u.User, u.Sessions))
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

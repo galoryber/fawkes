@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"encoding/json"
+	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -96,6 +98,42 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Enumerating open handles/file descriptors (T1057, T1082). Handle enumeration targets process tokens and access rights, a technique used for privilege escalation. NtQuerySystemInformation calls may be monitored by EDR.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			type handleEntry struct {
+				Handle   int    `json:"handle"`
+				TypeName string `json:"type_name"`
+				Name     string `json:"name"`
+			}
+			type handlesResponse struct {
+				PID     int           `json:"pid"`
+				Handles []handleEntry `json:"handles"`
+			}
+			var hr handlesResponse
+			if err := json.Unmarshal([]byte(responseText), &hr); err != nil {
+				return response
+			}
+			count := 0
+			for _, h := range hr.Handles {
+				if h.Name == "" {
+					continue
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Discovery",
+					fmt.Sprintf("Handle: %s — %s (PID %d)", h.TypeName, h.Name, hr.PID))
+				count++
+				if count >= 50 {
+					break
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
