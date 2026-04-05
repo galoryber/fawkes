@@ -3,8 +3,10 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
@@ -31,7 +33,7 @@ func init() {
 				ModalDisplayName: "Query Type",
 				Description:      "Preset query or custom filter",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "admins", "disabled", "gpo", "ou", "password-never-expires", "trusts", "unconstrained", "constrained", "dacl", "query"},
+				Choices:          []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "admins", "disabled", "gpo", "ou", "password-never-expires", "trusts", "unconstrained", "constrained", "dacl", "query", "enum-chain"},
 				DefaultValue:     "users",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -166,6 +168,9 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
+			"ldapEnumChainComplete": ldapEnumChainCompleteFunc,
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -175,6 +180,48 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			server, _ := taskData.Args.GetStringArg("server")
 			filter, _ := taskData.Args.GetStringArg("filter")
+
+			// enum-chain: automated AD enumeration (users → groups → trust → kerb-delegation → gpo → adcs)
+			if action == "enum-chain" {
+				display := fmt.Sprintf("AD Enum Chain on %s (users → groups → trust → delegation → gpo → adcs)", server)
+				response.DisplayParams = &display
+				completionFunc := "ldapEnumChainComplete"
+				response.CompletionFunctionName = &completionFunc
+
+				serverParam := fmt.Sprintf(`"server":"%s"`, server)
+				tasks := []mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks{
+					{CommandName: "ldap-query", Params: fmt.Sprintf(`{"action":"users",%s}`, serverParam)},
+					{CommandName: "ldap-query", Params: fmt.Sprintf(`{"action":"groups",%s}`, serverParam)},
+					{CommandName: "trust", Params: fmt.Sprintf(`{"server":"%s"}`, server)},
+					{CommandName: "kerb-delegation", Params: fmt.Sprintf(`{"server":"%s"}`, server)},
+					{CommandName: "gpo", Params: fmt.Sprintf(`{"server":"%s"}`, server)},
+					{CommandName: "adcs", Params: fmt.Sprintf(`{"action":"find","server":"%s"}`, server)},
+				}
+
+				groupResult, err := mythicrpc.SendMythicRPCTaskCreateSubtaskGroup(
+					mythicrpc.MythicRPCTaskCreateSubtaskGroupMessage{
+						TaskID:                taskData.Task.ID,
+						GroupName:             "ad_enum_chain",
+						GroupCallbackFunction: &completionFunc,
+						Tasks:                 tasks,
+					},
+				)
+				if err != nil || !groupResult.Success {
+					errMsg := "Failed to create AD enum subtask group"
+					if err != nil {
+						errMsg = fmt.Sprintf("Failed to create subtask group: %s", err.Error())
+					} else if groupResult != nil {
+						errMsg = fmt.Sprintf("Failed to create subtask group: %s", groupResult.Error)
+					}
+					response.Success = false
+					response.Error = errMsg
+					return response
+				}
+
+				createArtifact(taskData.Task.ID, "Subtask Chain",
+					fmt.Sprintf("AD Enum Chain on %s: ldap-users + ldap-groups + trust + kerb-delegation + gpo + adcs (parallel)", server))
+				return response
+			}
 
 			displayMsg := fmt.Sprintf("LDAP %s on %s", action, server)
 			if action == "query" && filter != "" {
@@ -193,4 +240,72 @@ func init() {
 			return response
 		},
 	})
+}
+
+// ldapEnumChainCompleteFunc handles subtask completion for the AD enum chain.
+var ldapEnumChainCompleteFunc = func(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	parentID := taskData.Task.ID
+	searchResult, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
+		TaskID:             parentID,
+		SearchParentTaskID: &parentID,
+	})
+
+	if err != nil || !searchResult.Success {
+		completed := true
+		response.Completed = &completed
+		summary := "AD Enum Chain completed (could not aggregate results)"
+		response.Stdout = &summary
+		return response
+	}
+
+	var summaryParts []string
+	successCount := 0
+	errorCount := 0
+
+	for _, task := range searchResult.Tasks {
+		status := "unknown"
+		if task.Completed {
+			if task.Status == "error" {
+				status = "ERROR"
+				errorCount++
+			} else {
+				status = "SUCCESS"
+				successCount++
+			}
+		}
+		summaryParts = append(summaryParts, fmt.Sprintf("[%s] %s %s", status, task.CommandName, task.DisplayParams))
+
+		// Count result items from each subtask
+		respSearch, respErr := mythicrpc.SendMythicRPCResponseSearch(mythicrpc.MythicRPCResponseSearchMessage{
+			TaskID: task.ID,
+		})
+		if respErr == nil && respSearch.Success && len(respSearch.Responses) > 0 {
+			for _, resp := range respSearch.Responses {
+				text := string(resp.Response)
+				lineCount := len(strings.Split(text, "\n"))
+				if lineCount > 2 {
+					summaryParts = append(summaryParts, fmt.Sprintf("  → %d lines of output", lineCount))
+				}
+			}
+		}
+	}
+
+	completed := true
+	response.Completed = &completed
+	summary := fmt.Sprintf("=== AD Enumeration Chain Complete ===\nSubtasks: %d success, %d errors\n\n%s",
+		successCount, errorCount, strings.Join(summaryParts, "\n"))
+	response.Stdout = &summary
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   parentID,
+		Response: []byte(summary),
+	})
+
+	logging.LogInfo("AD Enum Chain completed", "success", successCount, "errors", errorCount)
+	return response
 }
