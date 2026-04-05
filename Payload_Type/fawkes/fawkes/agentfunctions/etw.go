@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -93,6 +94,55 @@ func init() {
 				OpsecPreBlocked: false, OpsecPreMessage: msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "sessions":
+				// Parse session names from text table output
+				for _, line := range strings.Split(responseText, "\n") {
+					trimmed := strings.TrimSpace(line)
+					if trimmed == "" || strings.HasPrefix(trimmed, "Active ETW") || strings.HasPrefix(trimmed, "SESSION") || strings.HasPrefix(trimmed, "---") {
+						continue
+					}
+					// Session lines have: NAME (padded) EVENTS SECURITY_RELEVANCE
+					fields := strings.Fields(trimmed)
+					if len(fields) >= 1 && !strings.HasPrefix(trimmed, "No active") {
+						sessionName := fields[0]
+						createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+							fmt.Sprintf("ETW Session: %s", sessionName))
+					}
+				}
+			case "stop":
+				sessionName, _ := processResponse.TaskData.Args.GetStringArg("session_name")
+				if strings.Contains(responseText, "Stopped") || strings.Contains(responseText, "stopped") {
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						fmt.Sprintf("ETW Session Stopped: %s", sessionName))
+				}
+			case "blind":
+				provider, _ := processResponse.TaskData.Args.GetStringArg("provider")
+				sessionName, _ := processResponse.TaskData.Args.GetStringArg("session_name")
+				if strings.Contains(responseText, "Disabled") || strings.Contains(responseText, "disabled") || strings.Contains(responseText, "blinded") {
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						fmt.Sprintf("ETW Provider Blinded: %s (session: %s)", provider, sessionName))
+				}
+			case "enable":
+				provider, _ := processResponse.TaskData.Args.GetStringArg("provider")
+				sessionName, _ := processResponse.TaskData.Args.GetStringArg("session_name")
+				if strings.Contains(responseText, "Enabled") || strings.Contains(responseText, "enabled") {
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						fmt.Sprintf("ETW Provider Enabled: %s (session: %s)", provider, sessionName))
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

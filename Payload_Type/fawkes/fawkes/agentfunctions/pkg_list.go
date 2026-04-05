@@ -2,6 +2,8 @@ package agentfunctions
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -53,6 +55,47 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Listing installed packages/software (T1518). Software enumeration is a standard discovery technique. Low risk from API calls but querying package managers may generate process execution logs.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Extract package count summary and notable security software
+			// Look for count patterns like "(380 installed)" or "45 (3 matching)"
+			countRe := regexp.MustCompile(`(\d+)\s+installed`)
+			matches := countRe.FindStringSubmatch(responseText)
+			total := "unknown"
+			if matches != nil {
+				total = matches[1]
+			}
+			// Determine platform from header
+			platform := "Unknown"
+			if strings.Contains(responseText, "Linux") {
+				platform = "Linux"
+			} else if strings.Contains(responseText, "macOS") {
+				platform = "macOS"
+			} else if strings.Contains(responseText, "Windows") {
+				platform = "Windows"
+			}
+			createArtifact(processResponse.TaskData.Task.ID, "Software Discovery",
+				fmt.Sprintf("Software inventory: %s packages on %s host", total, platform))
+			// Flag notable security tools if present
+			securityTools := []string{"defender", "crowdstrike", "sentinel", "falcon", "symantec",
+				"mcafee", "sophos", "kaspersky", "eset", "malwarebytes", "carbon black", "carbonblack",
+				"cylance", "tanium", "splunk", "osquery", "sysmon", "wireshark", "nmap", "metasploit"}
+			lower := strings.ToLower(responseText)
+			for _, tool := range securityTools {
+				if strings.Contains(lower, tool) {
+					createArtifact(processResponse.TaskData.Task.ID, "Software Discovery",
+						fmt.Sprintf("Security tool detected: %s", tool))
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
