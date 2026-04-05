@@ -15,10 +15,14 @@ func init() {
 		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002", "T1546.012"},
+		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002", "T1546.012", "T1053.003", "T1543.002", "T1546.004", "T1098.004", "T1543.004"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS:                []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{
+				agentstructs.SUPPORTED_OS_WINDOWS,
+				agentstructs.SUPPORTED_OS_LINUX,
+				agentstructs.SUPPORTED_OS_MACOS,
+			},
 			CommandCanOnlyBeLoadedLater: true,
 		},
 		CommandParameters: []agentstructs.CommandParameter{
@@ -27,8 +31,8 @@ func init() {
 				ModalDisplayName: "Persistence Method",
 				CLIName:          "method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "list"},
-				Description:      "Persistence method: registry (Run key), startup-folder (copy to Startup), com-hijack (CLSID override), screensaver (idle trigger), ifeo (debugger hijack), or list (enumerate all)",
+				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "crontab", "systemd", "shell-profile", "ssh-key", "launchagent", "list"},
+				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo. Linux: crontab, systemd, shell-profile, ssh-key. macOS: launchagent. All: list.",
 				DefaultValue:     "registry",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -115,6 +119,34 @@ func init() {
 				CLIName:          "timeout",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "Idle timeout in seconds before screensaver triggers (for screensaver method). Default: 60",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "schedule",
+				ModalDisplayName: "Cron Schedule",
+				CLIName:          "schedule",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Crontab schedule expression (Linux crontab method). Default: */5 * * * * (every 5 minutes)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "user",
+				ModalDisplayName: "Target User",
+				CLIName:          "user",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Target user for persistence (Linux ssh-key method). Default: current user.",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
