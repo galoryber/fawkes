@@ -83,8 +83,14 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 		return cloudUserdata(args.Provider, timeout)
 	case "network":
 		return cloudNetwork(args.Provider, timeout)
+	case "aws-iam":
+		return successResult(awsEnumIAM(timeout))
+	case "azure-graph":
+		return successResult(azureEnumGraph(timeout))
+	case "gcp-iam":
+		return successResult(gcpEnumIAM(timeout))
 	default:
-		return errorResult("Error: unknown action. Available: detect, all, creds, identity, userdata, network")
+		return errorResult("Error: unknown action. Available: detect, all, creds, identity, userdata, network, aws-iam, azure-graph, gcp-iam")
 	}
 }
 

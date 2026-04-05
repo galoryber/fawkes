@@ -13,7 +13,7 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "cloud-metadata",
 		Description:         "Probe cloud instance metadata services (AWS/Azure/GCP/DigitalOcean) for credentials, identity, and configuration. Supports IMDSv2 for AWS.",
-		HelpString:          "cloud-metadata -action detect\ncloud-metadata -action creds\ncloud-metadata -action all -provider aws",
+		HelpString:          "cloud-metadata -action detect\ncloud-metadata -action creds\ncloud-metadata -action all -provider aws\ncloud-metadata -action aws-iam\ncloud-metadata -action azure-graph\ncloud-metadata -action gcp-iam",
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1552.005", "T1580"},
@@ -32,10 +32,10 @@ func init() {
 			{
 				Name:          "action",
 				CLIName:       "action",
-				Description:   "Action to perform: detect, all, creds, identity, userdata, network",
+				Description:   "Action to perform: detect, all, creds, identity, userdata, network, aws-iam, azure-graph, gcp-iam",
 				DefaultValue:  "detect",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"detect", "all", "creds", "identity", "userdata", "network"},
+				Choices:       []string{"detect", "all", "creds", "identity", "userdata", "network", "aws-iam", "azure-graph", "gcp-iam"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -152,10 +152,20 @@ func init() {
 			return response
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Querying cloud metadata service at 169.254.169.254 (T1552.005). HTTP requests to metadata endpoints are a well-known credential theft technique. Cloud security monitoring (GuardDuty, Defender for Cloud) specifically watches for metadata service access from unusual processes."
+			switch action {
+			case "aws-iam":
+				msg += " Additionally, AWS IAM API calls (STS, IAM) are logged in CloudTrail and may trigger GuardDuty alerts for unusual API usage patterns."
+			case "azure-graph":
+				msg += " Additionally, Microsoft Graph API calls are logged in Azure AD audit logs and may trigger Defender for Cloud alerts for suspicious managed identity usage."
+			case "gcp-iam":
+				msg += " Additionally, GCP IAM and Cloud Resource Manager API calls are logged in Cloud Audit Logs and may trigger Security Command Center alerts."
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
 				OpsecPreBlocked: false,
-				OpsecPreMessage:    "OPSEC WARNING: Querying cloud metadata service at 169.254.169.254 (T1552.005). HTTP requests to metadata endpoints are a well-known credential theft technique. Cloud security monitoring (GuardDuty, Defender for Cloud) specifically watches for metadata service access from unusual processes.",
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
