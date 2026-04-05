@@ -104,6 +104,15 @@ func init() {
 					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 				}
 			},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Group Policy Preferences password extracted. SYSVOL access is logged in SMB audit events. The cpassword field uses a known AES key — GPP passwords are trivially decrypted. This is a well-known attack vector that defenders monitor.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

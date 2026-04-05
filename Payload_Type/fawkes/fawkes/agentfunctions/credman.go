@@ -67,6 +67,15 @@ func init() {
 					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 				}
 			},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Credential Manager accessed. Windows logs Credential Manager access in Event ID 5379/5381/5382. Defender Credential Guard (if enabled) may block access to certain credentials. Accessed credentials should be tested promptly and rotated by defenders.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

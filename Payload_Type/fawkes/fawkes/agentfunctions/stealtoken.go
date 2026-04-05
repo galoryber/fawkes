@@ -57,6 +57,16 @@ func init() {
 					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 				}
 			},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			pid, _ := taskData.Args.GetStringArg("pid")
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: Token stolen from PID %s. Cleanup: use 'rev2self' to revert to original token. The stolen token handle remains open until reverted. Check Event ID 4624/4634 for impersonation evidence.", pid),
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
