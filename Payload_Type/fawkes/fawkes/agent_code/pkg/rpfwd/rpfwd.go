@@ -329,9 +329,7 @@ func (m *Manager) relayForward(serverID uint32, client, target net.Conn, port ui
 	target.Close()
 
 	m.mu.Lock()
-	if _, exists := m.connections[serverID]; exists {
-		delete(m.connections, serverID)
-	}
+	delete(m.connections, serverID)
 	m.mu.Unlock()
 }
 
