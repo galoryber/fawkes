@@ -25,10 +25,20 @@ type connTracker struct {
 	writeCh chan structs.SocksMsg
 }
 
+// forwardRelay tracks a forward port forward: agent listens on a local port
+// and relays connections directly to an internal target without C2 involvement.
+type forwardRelay struct {
+	listener   net.Listener
+	targetAddr string // "ip:port"
+	bindAddr   string // "0.0.0.0" or "127.0.0.1"
+	port       uint32
+}
+
 // Manager handles all active reverse port forward listeners and connections
 type Manager struct {
-	listeners       map[uint32]net.Listener // port → listener
-	connections     map[uint32]*connTracker // serverId → connection
+	listeners       map[uint32]net.Listener  // port → listener (reverse mode)
+	connections     map[uint32]*connTracker  // serverId → connection
+	forwardRelays   map[uint32]*forwardRelay // port → forward relay config
 	outbound        []structs.SocksMsg
 	mu              sync.Mutex
 	IdleReadTimeout time.Duration // exported for testing; defaults to idleReadTimeout const
@@ -39,6 +49,7 @@ func NewManager() *Manager {
 	return &Manager{
 		listeners:       make(map[uint32]net.Listener),
 		connections:     make(map[uint32]*connTracker),
+		forwardRelays:   make(map[uint32]*forwardRelay),
 		IdleReadTimeout: idleReadTimeout,
 	}
 }
@@ -69,21 +80,93 @@ func (m *Manager) Start(port uint32) error {
 	return nil
 }
 
-// Stop closes the listener and all connections on the specified port
+// Stop closes the listener (reverse or forward) and all connections on the specified port.
 func (m *Manager) Stop(port uint32) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	listener, ok := m.listeners[port]
-	if !ok {
-		return fmt.Errorf("no rpfwd listener on port %d", port)
+	// Check reverse listeners
+	if listener, ok := m.listeners[port]; ok {
+		listener.Close()
+		delete(m.listeners, port)
+		m.closeConnectionsForPort(port)
+		log.Printf("stop listen :%d", port)
+		return nil
 	}
 
-	listener.Close()
-	delete(m.listeners, port)
+	// Check forward relays
+	if relay, ok := m.forwardRelays[port]; ok {
+		relay.listener.Close()
+		delete(m.forwardRelays, port)
+		m.closeConnectionsForPort(port)
+		log.Printf("stop forward :%d", port)
+		return nil
+	}
+
+	return fmt.Errorf("no port forward on port %d", port)
+}
+
+// StartForward begins a forward port forward: the agent listens on bindAddr:port
+// and relays each accepted connection directly to targetAddr (ip:port) without
+// routing data through C2. This lets the operator access internal services via
+// the agent as a jump host (typically reached through a SOCKS proxy).
+func (m *Manager) StartForward(port uint32, targetAddr string, bindAddr string) error {
+	if bindAddr == "" {
+		bindAddr = "0.0.0.0"
+	}
+
+	m.mu.Lock()
+	// Close existing forward relay or reverse listener on this port
+	if existing, ok := m.forwardRelays[port]; ok {
+		existing.listener.Close()
+		m.closeConnectionsForPort(port)
+		delete(m.forwardRelays, port)
+	}
+	if existing, ok := m.listeners[port]; ok {
+		existing.Close()
+		m.closeConnectionsForPort(port)
+		delete(m.listeners, port)
+	}
+	m.mu.Unlock()
+
+	addr := fmt.Sprintf("%s:%d", bindAddr, port)
+	listener, err := net.Listen("tcp4", addr)
+	if err != nil {
+		return fmt.Errorf("failed to listen on %s: %w", addr, err)
+	}
+
+	relay := &forwardRelay{
+		listener:   listener,
+		targetAddr: targetAddr,
+		bindAddr:   bindAddr,
+		port:       port,
+	}
+
+	m.mu.Lock()
+	m.forwardRelays[port] = relay
+	m.mu.Unlock()
+
+	go m.acceptForwardConnections(relay)
+
+	log.Printf("forward :%d → %s", port, targetAddr)
+	return nil
+}
+
+// StopForward closes a forward port forward listener and all its connections.
+func (m *Manager) StopForward(port uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	relay, ok := m.forwardRelays[port]
+	if !ok {
+		return fmt.Errorf("no forward port forward on port %d", port)
+	}
+
+	relay.listener.Close()
+	delete(m.forwardRelays, port)
 	m.closeConnectionsForPort(port)
 
-	log.Printf("stop listen :%d", port)
+	log.Printf("stop forward :%d", port)
 	return nil
 }
 
@@ -94,6 +177,10 @@ func (m *Manager) Close() {
 	for port, listener := range m.listeners {
 		listener.Close()
 		delete(m.listeners, port)
+	}
+	for port, relay := range m.forwardRelays {
+		relay.listener.Close()
+		delete(m.forwardRelays, port)
 	}
 	for id, tracker := range m.connections {
 		tracker.conn.Close()
@@ -172,6 +259,80 @@ func (m *Manager) acceptConnections(listener net.Listener, port uint32) {
 		go m.readFromConnection(serverID, conn, port)
 		go m.writeToConnection(serverID, conn, writeCh, port)
 	}
+}
+
+// acceptForwardConnections handles incoming TCP connections on a forward relay listener.
+// For each accepted connection, it dials the target and relays data bidirectionally
+// without sending any rpfwd messages through C2.
+func (m *Manager) acceptForwardConnections(relay *forwardRelay) {
+	for {
+		clientConn, err := relay.listener.Accept()
+		if err != nil {
+			return // listener closed
+		}
+
+		serverID := rand.Uint32()
+		log.Printf("forward conn :%d sid=%d from %s → %s", relay.port, serverID, clientConn.RemoteAddr(), relay.targetAddr)
+
+		// Connect to the internal target
+		targetConn, err := net.DialTimeout("tcp", relay.targetAddr, 10*time.Second)
+		if err != nil {
+			log.Printf("forward target dial failed sid=%d: %v", serverID, err)
+			clientConn.Close()
+			continue
+		}
+
+		// Track both connections under the same serverID for cleanup
+		tracker := &connTracker{
+			conn:    clientConn,
+			port:    relay.port,
+			writeCh: make(chan structs.SocksMsg, 1), // unused for forward, but keeps closeConnection safe
+		}
+		m.mu.Lock()
+		m.connections[serverID] = tracker
+		m.mu.Unlock()
+
+		go m.relayForward(serverID, clientConn, targetConn, relay.port)
+	}
+}
+
+// relayForward copies data bidirectionally between client and target connections.
+// When either side closes, both connections are cleaned up.
+func (m *Manager) relayForward(serverID uint32, client, target net.Conn, port uint32) {
+	done := make(chan struct{}, 2)
+
+	copyWithTimeout := func(dst, src net.Conn) {
+		defer func() { done <- struct{}{} }()
+		buf := make([]byte, readBufSize)
+		for {
+			src.SetReadDeadline(time.Now().Add(m.IdleReadTimeout))
+			n, err := src.Read(buf)
+			if n > 0 {
+				if _, werr := dst.Write(buf[:n]); werr != nil {
+					return
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}
+
+	go copyWithTimeout(target, client) // client → target
+	go copyWithTimeout(client, target) // target → client
+
+	// Wait for either direction to finish
+	<-done
+
+	// Clean up
+	client.Close()
+	target.Close()
+
+	m.mu.Lock()
+	if _, exists := m.connections[serverID]; exists {
+		delete(m.connections, serverID)
+	}
+	m.mu.Unlock()
 }
 
 // readFromConnection reads data from a TCP connection and queues it as outbound rpfwd messages.

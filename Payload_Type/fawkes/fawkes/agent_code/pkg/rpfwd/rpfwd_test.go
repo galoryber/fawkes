@@ -473,6 +473,330 @@ func TestReadFromConnection_ExternalCloseBeforeTimeout(t *testing.T) {
 	}
 }
 
+// --- Forward Port Forward Tests ---
+
+func TestStartForwardAndStop(t *testing.T) {
+	m := NewManager()
+
+	// Start a target echo server
+	targetPort := findFreePort(t)
+	targetListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", targetPort))
+	if err != nil {
+		t.Fatalf("failed to start target: %v", err)
+	}
+	defer targetListener.Close()
+	go echoServer(targetListener)
+
+	// Start forward
+	listenPort := findFreePort(t)
+	err = m.StartForward(uint32(listenPort), fmt.Sprintf("127.0.0.1:%d", targetPort), "127.0.0.1")
+	if err != nil {
+		t.Fatalf("StartForward failed: %v", err)
+	}
+
+	// Verify relay exists
+	m.mu.Lock()
+	_, ok := m.forwardRelays[uint32(listenPort)]
+	m.mu.Unlock()
+	if !ok {
+		t.Error("forward relay not in map after StartForward")
+	}
+
+	// Stop
+	err = m.Stop(uint32(listenPort))
+	if err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+
+	m.mu.Lock()
+	_, ok = m.forwardRelays[uint32(listenPort)]
+	m.mu.Unlock()
+	if ok {
+		t.Error("forward relay still in map after Stop")
+	}
+}
+
+func TestForwardDataRelay(t *testing.T) {
+	m := NewManager()
+	m.IdleReadTimeout = 5 * time.Second
+
+	// Start a target echo server
+	targetPort := findFreePort(t)
+	targetListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", targetPort))
+	if err != nil {
+		t.Fatalf("failed to start target: %v", err)
+	}
+	defer targetListener.Close()
+	go echoServer(targetListener)
+
+	// Start forward relay
+	listenPort := findFreePort(t)
+	err = m.StartForward(uint32(listenPort), fmt.Sprintf("127.0.0.1:%d", targetPort), "127.0.0.1")
+	if err != nil {
+		t.Fatalf("StartForward failed: %v", err)
+	}
+	defer m.Stop(uint32(listenPort))
+
+	// Connect through the relay
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", listenPort), 2*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect to relay: %v", err)
+	}
+	defer conn.Close()
+
+	// Send data — should be echoed back through the relay
+	testData := "hello forward relay"
+	_, err = conn.Write([]byte(testData))
+	if err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		t.Fatalf("read failed: %v", err)
+	}
+
+	if string(buf[:n]) != testData {
+		t.Errorf("expected %q, got %q", testData, string(buf[:n]))
+	}
+}
+
+func TestForwardNoRpfwdMessages(t *testing.T) {
+	m := NewManager()
+	m.IdleReadTimeout = 5 * time.Second
+
+	// Start a target echo server
+	targetPort := findFreePort(t)
+	targetListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", targetPort))
+	if err != nil {
+		t.Fatalf("failed to start target: %v", err)
+	}
+	defer targetListener.Close()
+	go echoServer(targetListener)
+
+	// Start forward relay
+	listenPort := findFreePort(t)
+	err = m.StartForward(uint32(listenPort), fmt.Sprintf("127.0.0.1:%d", targetPort), "127.0.0.1")
+	if err != nil {
+		t.Fatalf("StartForward failed: %v", err)
+	}
+	defer m.Stop(uint32(listenPort))
+
+	// Connect and exchange data
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", listenPort), 2*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	_, err = conn.Write([]byte("test"))
+	if err != nil {
+		t.Fatalf("write failed: %v", err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	conn.Close()
+	time.Sleep(100 * time.Millisecond)
+
+	// Forward relay should NOT generate rpfwd outbound messages
+	msgs := m.DrainOutbound()
+	if msgs != nil {
+		t.Errorf("forward relay should not generate rpfwd messages, got %d", len(msgs))
+	}
+}
+
+func TestForwardTargetUnreachable(t *testing.T) {
+	m := NewManager()
+
+	// Start forward to a port nothing is listening on
+	listenPort := findFreePort(t)
+	deadPort := findFreePort(t)
+	err := m.StartForward(uint32(listenPort), fmt.Sprintf("127.0.0.1:%d", deadPort), "127.0.0.1")
+	if err != nil {
+		t.Fatalf("StartForward failed: %v", err)
+	}
+	defer m.Stop(uint32(listenPort))
+
+	// Connect — the relay should accept but fail to connect to target
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", listenPort), 2*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	// The connection should be closed by the relay since target is unreachable
+	time.Sleep(200 * time.Millisecond)
+	conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	buf := make([]byte, 1)
+	_, err = conn.Read(buf)
+	if err == nil {
+		t.Error("expected error reading from closed relay connection")
+	}
+}
+
+func TestForwardBindAddress(t *testing.T) {
+	m := NewManager()
+
+	targetPort := findFreePort(t)
+	targetListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", targetPort))
+	if err != nil {
+		t.Fatalf("failed to start target: %v", err)
+	}
+	defer targetListener.Close()
+	go echoServer(targetListener)
+
+	// Start forward with 127.0.0.1 bind
+	listenPort := findFreePort(t)
+	err = m.StartForward(uint32(listenPort), fmt.Sprintf("127.0.0.1:%d", targetPort), "127.0.0.1")
+	if err != nil {
+		t.Fatalf("StartForward with 127.0.0.1 failed: %v", err)
+	}
+
+	m.mu.Lock()
+	relay := m.forwardRelays[uint32(listenPort)]
+	m.mu.Unlock()
+	if relay.bindAddr != "127.0.0.1" {
+		t.Errorf("expected bindAddr 127.0.0.1, got %s", relay.bindAddr)
+	}
+
+	m.Stop(uint32(listenPort))
+}
+
+func TestForwardDefaultBindAddress(t *testing.T) {
+	m := NewManager()
+
+	targetPort := findFreePort(t)
+	listenPort := findFreePort(t)
+
+	err := m.StartForward(uint32(listenPort), fmt.Sprintf("127.0.0.1:%d", targetPort), "")
+	if err != nil {
+		t.Fatalf("StartForward with empty bind failed: %v", err)
+	}
+	defer m.Stop(uint32(listenPort))
+
+	m.mu.Lock()
+	relay := m.forwardRelays[uint32(listenPort)]
+	m.mu.Unlock()
+	if relay.bindAddr != "0.0.0.0" {
+		t.Errorf("expected default bindAddr 0.0.0.0, got %s", relay.bindAddr)
+	}
+}
+
+func TestForwardDuplicatePort(t *testing.T) {
+	m := NewManager()
+
+	targetPort := findFreePort(t)
+	targetListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", targetPort))
+	if err != nil {
+		t.Fatalf("failed to start target: %v", err)
+	}
+	defer targetListener.Close()
+
+	listenPort := findFreePort(t)
+
+	// Start first forward
+	err = m.StartForward(uint32(listenPort), fmt.Sprintf("127.0.0.1:%d", targetPort), "127.0.0.1")
+	if err != nil {
+		t.Fatalf("first StartForward failed: %v", err)
+	}
+
+	// Start second forward on same port — should replace the first
+	err = m.StartForward(uint32(listenPort), fmt.Sprintf("127.0.0.1:%d", targetPort), "127.0.0.1")
+	if err != nil {
+		t.Fatalf("second StartForward failed: %v", err)
+	}
+
+	m.Stop(uint32(listenPort))
+}
+
+func TestForwardIdleTimeout(t *testing.T) {
+	m := NewManager()
+	m.IdleReadTimeout = 200 * time.Millisecond
+
+	targetPort := findFreePort(t)
+	targetListener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", targetPort))
+	if err != nil {
+		t.Fatalf("failed to start target: %v", err)
+	}
+	defer targetListener.Close()
+	go echoServer(targetListener)
+
+	listenPort := findFreePort(t)
+	err = m.StartForward(uint32(listenPort), fmt.Sprintf("127.0.0.1:%d", targetPort), "127.0.0.1")
+	if err != nil {
+		t.Fatalf("StartForward failed: %v", err)
+	}
+	defer m.Stop(uint32(listenPort))
+
+	// Connect but don't send data
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", listenPort), 2*time.Second)
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	// Wait for idle timeout
+	time.Sleep(500 * time.Millisecond)
+
+	// Connection should be cleaned up
+	m.mu.Lock()
+	connCount := len(m.connections)
+	m.mu.Unlock()
+	if connCount != 0 {
+		t.Errorf("expected 0 connections after idle timeout, got %d", connCount)
+	}
+}
+
+func TestCloseIncludesForwardRelays(t *testing.T) {
+	m := NewManager()
+
+	targetPort := findFreePort(t)
+	listenPort := findFreePort(t)
+
+	err := m.StartForward(uint32(listenPort), fmt.Sprintf("127.0.0.1:%d", targetPort), "127.0.0.1")
+	if err != nil {
+		t.Fatalf("StartForward failed: %v", err)
+	}
+
+	m.Close()
+
+	m.mu.Lock()
+	fwdCount := len(m.forwardRelays)
+	m.mu.Unlock()
+	if fwdCount != 0 {
+		t.Errorf("expected 0 forward relays after Close, got %d", fwdCount)
+	}
+}
+
+func TestNewManagerHasForwardRelays(t *testing.T) {
+	m := NewManager()
+	if m.forwardRelays == nil {
+		t.Error("forwardRelays map not initialized")
+	}
+}
+
+// echoServer accepts connections and echoes data back
+func echoServer(l net.Listener) {
+	for {
+		conn, err := l.Accept()
+		if err != nil {
+			return
+		}
+		go func(c net.Conn) {
+			defer c.Close()
+			buf := make([]byte, 4096)
+			for {
+				n, err := c.Read(buf)
+				if n > 0 {
+					c.Write(buf[:n])
+				}
+				if err != nil {
+					return
+				}
+			}
+		}(conn)
+	}
+}
+
 // findFreePort finds a free TCP port for testing
 func findFreePort(t *testing.T) int {
 	t.Helper()

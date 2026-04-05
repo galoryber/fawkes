@@ -168,7 +168,7 @@ remote-reg | `remote-reg -action <query\|enum\|set\|delete> -server <host> -user
 remote-service | `remote-service -action <list\|query\|create\|start\|stop\|delete> -server <host> -username <user> [-password <pass>\|-hash <NT>] [-name <svc>] [-binpath <path>]` | Manage services on remote Windows hosts via SVCCTL RPC over SMB named pipes. Create/start for lateral movement, list/query for recon. Supports pass-the-hash. Cross-platform (T1569.002, T1543.003, T1007).
 rev2self | `rev2self` | **(Windows only)** Revert to the original security context by dropping any active impersonation token.
 route | `route [-destination <IP>] [-gateway <IP>] [-interface <name>]` | Display the system routing table with optional filtering. Windows: GetIpForwardTable API, Linux: /proc/net/route + IPv6, macOS: netstat -rn. Cross-platform (T1016).
-rpfwd | `rpfwd start <port> <remote_ip> <remote_port>` / `rpfwd stop <port>` | Reverse port forward -- agent listens, Mythic routes to target. Cross-platform (T1090).
+rpfwd | `rpfwd start <port> <remote_ip> <remote_port>` / `rpfwd forward <port> <target_ip> <target_port> [bind_addr]` / `rpfwd stop <port>` | Port forwarding: reverse (Mythic routes to target) or forward (agent relays to internal target). Cross-platform (T1090).
 rm | `rm <path>` | Remove a file or directory (recursively removes directories).
 run | `run <command>` | Execute a shell command and return the output.
 runas | `runas -command <cmd> -username <user> -password <pass> [-domain <domain>] [-netonly true]` | Execute a command as a different user. Windows: CreateProcessWithLogonW (supports /netonly). Linux/macOS: setuid as root, or sudo -S with password. Cross-platform (T1134.002).
