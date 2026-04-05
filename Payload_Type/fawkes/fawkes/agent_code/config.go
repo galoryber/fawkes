@@ -31,6 +31,7 @@ var (
 	workingHoursEnd        string = "" // Working hours end (HH:MM, 24hr local time)
 	workingDays            string = "" // Active days (1-7, Mon=1, Sun=7, comma-separated)
 	tcpBindAddress         string = "" // TCP P2P bind address (e.g., "0.0.0.0:7777"). Empty = HTTP egress mode.
+	namedPipeBindName      string = "" // Named pipe P2P name (e.g., "msrpc-f9a1"). Windows only. Empty = no pipe listener.
 	envKeyHostname         string = "" // Environment key: hostname must match this regex
 	envKeyDomain           string = "" // Environment key: domain must match this regex
 	envKeyUsername         string = "" // Environment key: username must match this regex
@@ -79,6 +80,7 @@ func clearGlobals() {
 	fallbackHosts = ""
 	contentTypes = ""
 	tcpBindAddress = ""
+	namedPipeBindName = ""
 	discordBotToken = ""
 	discordChannelID = ""
 	discordPollDelay = ""

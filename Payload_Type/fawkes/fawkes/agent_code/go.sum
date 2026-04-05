@@ -2,6 +2,8 @@ github.com/Azure/go-ntlmssp v0.1.0 h1:DjFo6YtWzNqNvQdrwEyr/e4nhU3vRiwenz5QX7sFz+
 github.com/Azure/go-ntlmssp v0.1.0/go.mod h1:NYqdhxd/8aAct/s4qSYZEerdPuH1liG2/X9DiVTbhpk=
 github.com/ChrisTrenkamp/goxpath v0.0.0-20210404020558-97928f7e12b6 h1:w0E0fgc1YafGEh5cROhlROMWXiNoZqApk2PDN0M1+Ns=
 github.com/ChrisTrenkamp/goxpath v0.0.0-20210404020558-97928f7e12b6/go.mod h1:nuWgzSkT5PnyOd+272uUmV0dnAnAn42Mk7PiQC5VzN4=
+github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
+github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/Ne0nd0g/go-clr v1.0.3 h1:xt92wwuqY23ZSC7RuHD3mKu3K22Bk5NNbxI803vojK4=
 github.com/Ne0nd0g/go-clr v1.0.3/go.mod h1:TKYSQ/5xT25EvBUttAlUrzpR8yHuI0qTRK495I5xG/I=
 github.com/RIscRIpt/pecoff v0.0.0-20200923152459-a332238caa87 h1:QJKfqX8iCuRT9HZoQGU7cUjnTjKJrypSCghfmAX2vW0=

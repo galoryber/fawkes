@@ -4,6 +4,7 @@ go 1.25.8
 
 require (
 	github.com/Azure/go-ntlmssp v0.1.0
+	github.com/Microsoft/go-winio v0.6.2
 	github.com/Ne0nd0g/go-clr v1.0.3
 	github.com/RIscRIpt/pecoff v0.0.0-20200923152459-a332238caa87
 	github.com/andybalholm/brotli v1.2.1

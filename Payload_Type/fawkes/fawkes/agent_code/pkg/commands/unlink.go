@@ -13,7 +13,7 @@ func (c *UnlinkCommand) Name() string {
 }
 
 func (c *UnlinkCommand) Description() string {
-	return "Disconnect a linked TCP P2P agent"
+	return "Disconnect a linked P2P agent (TCP or named pipe)"
 }
 
 type unlinkArgs struct {

@@ -8,7 +8,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "unlink",
-		Description:         "Disconnect a linked TCP P2P agent. This tears down the peer-to-peer connection and removes the agent from the link chain.",
+		Description:         "Disconnect a linked P2P agent (TCP or named pipe). This tears down the peer-to-peer connection and removes the agent from the link chain.",
 		HelpString:          "unlink -connection_id <uuid>",
 		Version:             1,
 		MitreAttackMappings: []string{"T1572"},
@@ -60,7 +60,7 @@ func init() {
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           taskData.Task.ID,
 				BaseArtifactType: "API Call",
-				ArtifactMessage:  "TCP disconnect P2P linked agent",
+				ArtifactMessage:  "Disconnect P2P linked agent",
 			})
 
 			return response
