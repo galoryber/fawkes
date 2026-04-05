@@ -157,7 +157,7 @@ func persistLaunchAgentRemove(args persistArgs) structs.CommandResult {
 	for _, plistPath := range locations {
 		if _, err := os.Stat(plistPath); err == nil {
 			// Unload first
-			exec.Command("launchctl", "unload", "-w", plistPath).CombinedOutput()
+			_, _ = exec.Command("launchctl", "unload", "-w", plistPath).CombinedOutput()
 
 			if err := os.Remove(plistPath); err != nil {
 				return errorf("Failed to remove %s: %v", plistPath, err)

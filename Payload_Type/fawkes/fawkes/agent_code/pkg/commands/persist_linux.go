@@ -233,7 +233,7 @@ WantedBy=%s
 	} else {
 		enableCmd = exec.Command("systemctl", "--user", "daemon-reload")
 	}
-	enableCmd.CombinedOutput()
+	_, _ = enableCmd.CombinedOutput()
 
 	var enableArgs []string
 	if isRoot {
@@ -269,7 +269,7 @@ func persistSystemdRemove(args persistArgs) structs.CommandResult {
 		stopArgs = []string{"systemctl", "--user", "disable", "--now", serviceName}
 	}
 	stopCmd := exec.Command(stopArgs[0], stopArgs[1:]...)
-	stopCmd.CombinedOutput()
+	_, _ = stopCmd.CombinedOutput()
 
 	// Remove the service file
 	var serviceDir string
@@ -292,7 +292,7 @@ func persistSystemdRemove(args persistArgs) structs.CommandResult {
 	} else {
 		reloadCmd = exec.Command("systemctl", "--user", "daemon-reload")
 	}
-	reloadCmd.CombinedOutput()
+	_, _ = reloadCmd.CombinedOutput()
 
 	return successResult(fmt.Sprintf("Removed systemd persistence: %s (%s)", serviceName, servicePath))
 }
