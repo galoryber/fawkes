@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Disconnect a linked TCP P2P agent. This tears down the peer-to-peer connection and removes the agent from the link chain. The child agent will no longer receive tasking through this egress agent.
+Disconnect a linked P2P agent (TCP or named pipe). This tears down the peer-to-peer connection and removes the agent from the link chain. The child agent will no longer receive tasking through this egress agent.
 
 ## Arguments
 

