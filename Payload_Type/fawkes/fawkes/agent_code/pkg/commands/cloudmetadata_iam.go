@@ -63,7 +63,7 @@ func awsEnumIAM(timeout time.Duration) string {
 		sb.WriteString("[+] STS Caller Identity:\n")
 		// Parse XML response for Account, Arn, UserId
 		for _, field := range []string{"Account", "Arn", "UserId"} {
-			if val := extractXMLValue(stsResp, field); val != "" {
+			if val := cloudExtractXMLValue(stsResp, field); val != "" {
 				sb.WriteString(fmt.Sprintf("    %-12s %s\n", field+":", val))
 			}
 		}
@@ -76,8 +76,8 @@ func awsEnumIAM(timeout time.Duration) string {
 	iamResp := awsSignedGet(awsIAMEndpoint, iamParams, creds.AccessKeyId, creds.SecretAccessKey, creds.Token, "iam", timeout)
 	if iamResp != "" {
 		sb.WriteString("[+] Attached Role Policies:\n")
-		policies := extractXMLValues(iamResp, "PolicyName")
-		arns := extractXMLValues(iamResp, "PolicyArn")
+		policies := cloudExtractXMLValues(iamResp, "PolicyName")
+		arns := cloudExtractXMLValues(iamResp, "PolicyArn")
 		if len(policies) == 0 {
 			sb.WriteString("    (none)\n")
 		}
@@ -99,7 +99,7 @@ func awsEnumIAM(timeout time.Duration) string {
 	inlineResp := awsSignedGet(awsIAMEndpoint, inlineParams, creds.AccessKeyId, creds.SecretAccessKey, creds.Token, "iam", timeout)
 	if inlineResp != "" {
 		sb.WriteString("[+] Inline Role Policies:\n")
-		names := extractXMLValues(inlineResp, "member")
+		names := cloudExtractXMLValues(inlineResp, "member")
 		if len(names) == 0 {
 			sb.WriteString("    (none)\n")
 		}
@@ -369,9 +369,9 @@ func gcpEnumIAM(timeout time.Duration) string {
 
 // --- Helpers ---
 
-// extractXMLValue extracts the value of a simple XML tag from a response string.
+// cloudExtractXMLValue extracts the value of a simple XML tag from a response string.
 // Handles: <Tag>value</Tag>
-func extractXMLValue(xml, tag string) string {
+func cloudExtractXMLValue(xml, tag string) string {
 	start := fmt.Sprintf("<%s>", tag)
 	end := fmt.Sprintf("</%s>", tag)
 	i := strings.Index(xml, start)
@@ -386,8 +386,8 @@ func extractXMLValue(xml, tag string) string {
 	return xml[i : i+j]
 }
 
-// extractXMLValues extracts all values of a simple XML tag from a response string.
-func extractXMLValues(xml, tag string) []string {
+// cloudExtractXMLValues extracts all values of a simple XML tag from a response string.
+func cloudExtractXMLValues(xml, tag string) []string {
 	var values []string
 	start := fmt.Sprintf("<%s>", tag)
 	end := fmt.Sprintf("</%s>", tag)

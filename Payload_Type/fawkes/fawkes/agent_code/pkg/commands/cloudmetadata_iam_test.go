@@ -51,9 +51,9 @@ func TestExtractXMLValue(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractXMLValue(tt.xml, tt.tag)
+			result := cloudExtractXMLValue(tt.xml, tt.tag)
 			if result != tt.expected {
-				t.Errorf("extractXMLValue(%q, %q) = %q, want %q", tt.xml, tt.tag, result, tt.expected)
+				t.Errorf("cloudExtractXMLValue(%q, %q) = %q, want %q", tt.xml, tt.tag, result, tt.expected)
 			}
 		})
 	}
@@ -106,14 +106,14 @@ func TestExtractXMLValues(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := extractXMLValues(tt.xml, tt.tag)
+			result := cloudExtractXMLValues(tt.xml, tt.tag)
 			if len(result) != len(tt.expected) {
-				t.Errorf("extractXMLValues(%q, %q) returned %d values, want %d", tt.xml, tt.tag, len(result), len(tt.expected))
+				t.Errorf("cloudExtractXMLValues(%q, %q) returned %d values, want %d", tt.xml, tt.tag, len(result), len(tt.expected))
 				return
 			}
 			for i, v := range result {
 				if v != tt.expected[i] {
-					t.Errorf("extractXMLValues[%d] = %q, want %q", i, v, tt.expected[i])
+					t.Errorf("cloudExtractXMLValues[%d] = %q, want %q", i, v, tt.expected[i])
 				}
 			}
 		})
