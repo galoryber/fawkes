@@ -5,11 +5,9 @@ weight = 125
 hidden = false
 +++
 
-{{% notice info %}}Windows Only{{% /notice %}}
-
 ## Summary
 
-Install or remove persistence mechanisms on a Windows host. Supports six methods: registry Run key, startup folder, COM hijacking, screensaver hijacking, IFEO debugger injection, and a `list` action to enumerate existing entries across all methods.
+Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO), Linux (crontab, systemd, shell-profile, ssh-key), macOS (launchagent). All methods support install, remove, and list actions.
 
 ### Arguments
 
@@ -140,6 +138,64 @@ persist -method list
   ScreenSaveTimeout = 300 seconds
 ```
 
+## Linux Methods
+
+### Crontab Persistence
+
+Install a cron job (default: every 5 minutes):
+```
+persist -method crontab -action install -path "/tmp/agent" -name "backup"
+persist -method crontab -action install -path "/tmp/agent" -schedule "0 */4 * * *" -name "updater"
+```
+
+Remove by marker name:
+```
+persist -method crontab -action remove -name "backup"
+```
+
+### Systemd Service Persistence
+
+Create a systemd user service (or system service if root):
+```
+persist -method systemd -action install -path "/tmp/agent" -name "user-helper"
+```
+
+Remove:
+```
+persist -method systemd -action remove -name "user-helper"
+```
+
+### Shell Profile Persistence
+
+Append to .bashrc/.zshrc with marker comments:
+```
+persist -method shell-profile -action install -path "/tmp/agent" -name "updater"
+```
+
+Remove (cleans all profile files):
+```
+persist -method shell-profile -action remove -name "updater"
+```
+
+### SSH Key Persistence
+
+Add an SSH public key to authorized_keys:
+```
+persist -method ssh-key -action install -path "ssh-rsa AAAA..." -name "backup-key"
+persist -method ssh-key -action install -path "ssh-rsa AAAA..." -user root -name "admin-key"
+```
+
+Remove:
+```
+persist -method ssh-key -action remove -name "backup-key"
+```
+
+### List All (Linux)
+
+```
+persist -method list
+```
+
 ## MITRE ATT&CK Mapping
 
 - T1547.001 — Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder
@@ -147,3 +203,8 @@ persist -method list
 - T1546.015 — Event Triggered Execution: Component Object Model Hijacking
 - T1546.002 — Event Triggered Execution: Screensaver
 - T1546.012 — Event Triggered Execution: Image File Execution Options Injection
+- T1053.003 — Scheduled Task/Job: Cron
+- T1543.002 — Create or Modify System Process: Systemd Service
+- T1546.004 — Event Triggered Execution: Unix Shell Configuration Modification
+- T1098.004 — Account Manipulation: SSH Authorized Keys
+- T1543.004 — Create or Modify System Process: Launch Agent/Daemon
