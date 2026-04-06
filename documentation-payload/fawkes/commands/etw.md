@@ -7,32 +7,32 @@ hidden = false
 
 ## Summary
 
-Enumerate, stop, or blind ETW (Event Tracing for Windows) trace sessions and providers. Use reconnaissance actions (`sessions`, `providers`) to assess active telemetry, then use evasion actions (`stop`, `blind`) to disable it before performing sensitive operations.
+Audit/telemetry subsystem manipulation for defense evasion. Cross-platform:
 
-The `blind` action is the preferred evasion method — it disables a specific provider within a session without stopping the session itself, making detection harder.
-
-{{% notice info %}}Windows Only{{% /notice %}}
+- **Windows:** Enumerate, stop, or blind ETW trace sessions and providers
+- **Linux:** Manage auditd rules, journald logs, syslog configuration, and detect SIEM agents
+- **macOS:** Query unified logging categories, detect security agents, check audit status
 
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | sessions | Action: `sessions`, `providers`, `stop`, `blind`, `query`, or `enable` |
-| session_name | For stop/blind/query/enable | — | Target trace session name |
-| provider | For blind/enable | — | Provider GUID or shorthand name |
+| action | No | sessions (Win), rules (Linux), categories (macOS) | Operation to perform (see platform sections) |
+| session_name | Varies | — | Windows: ETW session name. Linux: audit rule spec for disable-rule |
+| provider | Varies | — | Windows: provider GUID/shorthand. Linux: vacuum duration for journal-clear. macOS: subsystem filter |
 
-### Actions
+## Windows Actions
 
-- **sessions** — List all active ETW trace sessions with security relevance classification
-- **providers** — Enumerate all registered ETW providers, highlighting security-relevant ones
-- **stop** — Stop an entire ETW trace session (ControlTrace API). Disables all telemetry from that session.
-- **blind** — Surgically disable a specific provider within a trace session (EnableTraceEx2 API). The session remains active but the targeted provider no longer generates events. Stealthier than `stop`.
-- **query** — Get detailed information about a specific trace session: buffer sizes, events lost, log file mode, flush timer, and security relevance.
-- **enable** — Re-enable a previously blinded ETW provider within a session. Restores event generation at TRACE_LEVEL_VERBOSE with all keywords. Use for cleanup after operations.
+| Action | Description |
+|--------|-------------|
+| sessions | List active ETW trace sessions with security relevance |
+| providers | Enumerate registered ETW providers |
+| stop | Stop an entire trace session (ControlTrace API) |
+| blind | Disable a specific provider within a session (EnableTraceEx2) |
+| query | Get detailed session information |
+| enable | Re-enable a previously blinded provider |
 
 ### Provider Shorthands
-
-For the `blind` action, you can use shorthand names instead of raw GUIDs:
 
 | Shorthand | Provider |
 |-----------|----------|
@@ -44,59 +44,85 @@ For the `blind` action, you can use shorthand names instead of raw GUIDs:
 | wmi | Microsoft-Windows-WMI-Activity |
 | security-auditing | Microsoft-Windows-Security-Auditing |
 | kernel-process | Microsoft-Windows-Kernel-Process |
-| kernel-file | Microsoft-Windows-Kernel-File |
-| kernel-network | Microsoft-Windows-Kernel-Network |
-| kernel-registry | Microsoft-Windows-Kernel-Registry |
-| api-calls | Microsoft-Windows-Kernel-Audit-API-Calls |
-| task-scheduler | Microsoft-Windows-TaskScheduler |
-| dns-client | Microsoft-Windows-DNS-Client |
+
+## Linux Actions
+
+| Action | Description |
+|--------|-------------|
+| rules | Enumerate active auditd rules (auditctl -l or config files) |
+| disable-rule | Remove a specific auditd rule (session_name = rule spec) |
+| journal-clear | Rotate and vacuum journald logs (provider = duration, default 1s) |
+| journal-rotate | Rotate journal files without clearing |
+| syslog-config | Enumerate rsyslog/syslog-ng configuration and forwarding targets |
+| agents | Detect installed SIEM/security agents (14 vendors) |
+| audit-status | Show audit subsystem status (auditctl -s or /proc) |
+
+### Detected SIEM Agents (Linux)
+
+Wazuh, osquery, Elastic (filebeat/auditbeat/packetbeat), CrowdStrike Falcon, SentinelOne, Carbon Black, Qualys, Rapid7, Tanium, Lacework, Sysdig Falco, Auditd, Suricata, Snort.
+
+## macOS Actions
+
+| Action | Description |
+|--------|-------------|
+| categories | Query unified logging for security-relevant entries (provider = subsystem filter) |
+| agents | Detect installed security agents (17 products) |
+| audit-status | Show OpenBSM audit config and SIP status |
+
+### Detected Security Agents (macOS)
+
+CrowdStrike, SentinelOne, Carbon Black, Jamf Protect/Connect, osquery, Elastic, Sophos, ESET, Kaspersky, Norton, Malwarebytes, Little Snitch, Lulu, BlockBlock, Oversight, Santa.
 
 ## Usage
 
 ```
-# Enumerate active ETW trace sessions
+# === Windows ===
 etw -action sessions
-
-# List security-relevant ETW providers
-etw -action providers
-
-# Stop an entire trace session (nuclear option)
 etw -action stop -session_name "EventLog-Security"
-
-# Disable Sysmon provider in its session (surgical)
 etw -action blind -session_name "EventLog-Microsoft-Windows-Sysmon/Operational" -provider sysmon
-
-# Disable PowerShell logging provider
-etw -action blind -session_name "EventLog-Microsoft-Windows-PowerShell/Operational" -provider powershell
-
-# Disable AMSI provider using raw GUID
-etw -action blind -session_name "EventLog-Security" -provider "F4E1897A-BB65-5399-F245-102D38640FFE"
-
-# Query detailed session information
-etw -action query -session_name "EventLog-Security"
-
-# Re-enable a previously blinded provider (cleanup)
 etw -action enable -session_name "EventLog-Microsoft-Windows-Sysmon/Operational" -provider sysmon
+
+# === Linux ===
+# Enumerate audit rules
+etw -action rules
+
+# Check audit subsystem status
+etw -action audit-status
+
+# Disable a specific auditd rule
+etw -action disable-rule -session_name "-w /etc/passwd -p wa"
+
+# Clear journal logs (vacuum everything older than 1 second)
+etw -action journal-clear
+
+# Clear journal logs older than 1 hour
+etw -action journal-clear -provider 1h
+
+# Check syslog configuration
+etw -action syslog-config
+
+# Detect SIEM agents
+etw -action agents
+
+# === macOS ===
+etw -action categories
+etw -action categories -provider com.apple.securityd
+etw -action agents
+etw -action audit-status
 ```
 
 ## Operational Notes
 
-- Run `etw -action sessions` first to identify active trace sessions and their security relevance
-- **`blind` is preferred over `stop`** — it removes a single provider while the session continues to run, making detection harder
-- **`stop` is the nuclear option** — it kills the entire session, which may be noticed by monitoring
-- Requires Administrator or SYSTEM privileges for stop/blind actions
-- Common high-value targets for blinding:
-  - **Sysmon** — disable process/network/file monitoring
-  - **PowerShell** — disable script block logging
-  - **Kernel-Process** — disable process creation events
-  - **AMSI** — disable script content inspection (also achievable via `autopatch`)
-- Pair with `auditpol -action stealth` and `autopatch` for comprehensive telemetry evasion
-- Use `enable` for cleanup after operations — restores blinded providers to full verbose logging
-- `query` shows buffer stats and events lost, useful for confirming a blind/stop took effect
-- Note: stopping `EventLog-Security` prevents new Security events but generates no 1102 indicator (unlike `eventlog -action clear`)
+- **Windows:** `blind` is preferred over `stop` — removes a single provider while session continues. Requires admin/SYSTEM.
+- **Linux:** `disable-rule` and `journal-clear` require root privileges. Agent detection runs unprivileged.
+- **macOS:** Most actions require root or appropriate TCC permissions. Agent detection via `ps` works unprivileged.
+- Use `agents` action before operations to understand defensive coverage
+- Pair with `autopatch` (AMSI/ETW patching) and `auditpol` (Windows) for comprehensive evasion
 
 ## MITRE ATT&CK Mapping
 
-- **T1082** — System Information Discovery (sessions/providers enumeration)
-- **T1562.002** — Impair Defenses: Disable Windows Event Logging (stop action)
-- **T1562.006** — Impair Defenses: Indicator Blocking (blind action)
+- **T1082** — System Information Discovery (enumeration actions)
+- **T1562.001** — Disable or Modify Tools (disable-rule, agent detection)
+- **T1562.002** — Disable Windows Event Logging (stop action)
+- **T1562.006** — Indicator Blocking (blind action)
+- **T1070.002** — Clear Linux/Mac System Logs (journal-clear)
