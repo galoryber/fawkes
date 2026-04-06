@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"encoding/json"
+	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -13,9 +15,9 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "securityinfo_new.js"),
 			Author:     "@GlobeTech",
 		},
-		Description:         "Report security posture and active controls. Linux: SELinux, AppArmor, seccomp, ASLR, YAMA, LSM, BPF. macOS: SIP, Gatekeeper, FileVault, MDM, TCC, SSH, JAMF, ARD. Windows: Defender, Credential Guard, UAC, BitLocker, CLM.",
-		HelpString:          "security-info",
-		Version:             2,
+		Description:         "Report security posture and active controls, or detect installed EDR/XDR products. Linux: SELinux, AppArmor, seccomp, ASLR, YAMA, LSM, BPF. macOS: SIP, Gatekeeper, FileVault, MDM, TCC, SSH, JAMF, ARD. Windows: Defender, Credential Guard, UAC, BitLocker, CLM.",
+		HelpString:          "security-info [-action all|edr]",
+		Version:             3,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1082", "T1518.001"},
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -25,7 +27,23 @@ func init() {
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
 		},
-		CommandParameters: []agentstructs.CommandParameter{},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "action",
+				ModalDisplayName: "Action",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "all: report security posture (default). edr: detect installed EDR/XDR/AV products.",
+				Choices:          []string{"all", "edr"},
+				DefaultValue:     "all",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     0,
+					},
+				},
+			},
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -45,7 +63,19 @@ func init() {
 			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			return agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			action, _ := taskData.Args.GetStringArg("action")
+			if action == "" {
+				action = "all"
+			}
+			display := fmt.Sprintf("action: %s", action)
+			response.DisplayParams = &display
+
+			params := map[string]string{"action": action}
+			paramsJSON, _ := json.Marshal(params)
+			taskData.Args.SetManualArgs(string(paramsJSON))
+
+			return response
 		},
 	})
 }

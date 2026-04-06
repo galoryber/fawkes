@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -8,6 +9,10 @@ import (
 
 	"fawkes/pkg/structs"
 )
+
+type secInfoParams struct {
+	Action string `json:"action"`
+}
 
 // SecurityInfoCommand reports security posture and controls.
 type SecurityInfoCommand struct{}
@@ -24,6 +29,18 @@ type secControl struct {
 }
 
 func (c *SecurityInfoCommand) Execute(task structs.Task) structs.CommandResult {
+	var params secInfoParams
+	if task.Params != "" {
+		json.Unmarshal([]byte(task.Params), &params)
+	}
+	if params.Action == "" {
+		params.Action = "all"
+	}
+
+	if params.Action == "edr" {
+		return securityInfoEDR()
+	}
+
 	var controls []secControl
 
 	switch runtime.GOOS {
