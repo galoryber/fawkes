@@ -208,6 +208,10 @@ func init() {
 				}
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			if len(creds) > 0 {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL] dcsync extracted %d hashes from %s", len(creds), processResponse.TaskData.Callback.Host), true)
+			}
 			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {

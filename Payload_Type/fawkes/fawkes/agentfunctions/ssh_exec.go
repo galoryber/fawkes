@@ -179,6 +179,8 @@ func init() {
 
 			createArtifact(taskData.Task.ID, "API Call",
 				fmt.Sprintf("SSH command execution on %s@%s: %s", username, host, command))
+			logOperationEvent(taskData.Task.ID,
+				fmt.Sprintf("[LATERAL] ssh-exec: remote execution as %s@%s from %s", username, host, taskData.Callback.Host), true)
 
 			return response
 		},

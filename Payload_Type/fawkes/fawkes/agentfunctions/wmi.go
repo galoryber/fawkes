@@ -167,6 +167,8 @@ func init() {
 					host = target
 				}
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("WMI Win32_Process.Create(%q) on %s", cmd, host))
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[LATERAL] wmi: remote execution on %s from %s", host, taskData.Callback.Host), true)
 			}
 			return response
 		},

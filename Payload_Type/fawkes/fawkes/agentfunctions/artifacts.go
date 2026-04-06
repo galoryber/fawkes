@@ -8,6 +8,21 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+// logOperationEvent creates an entry in Mythic's Operation Event Log visible in the
+// UI event feed. Used for high-risk operations (credential dumping, lateral movement,
+// persistence, system modification) to provide an audit trail for operators.
+func logOperationEvent(taskID int, message string, warning bool) {
+	_, err := mythicrpc.SendMythicRPCOperationEventLogCreate(mythicrpc.MythicRPCOperationEventLogCreateMessage{
+		TaskID:       &taskID,
+		Message:      message,
+		Warning:      warning,
+		MessageLevel: mythicrpc.MESSAGE_LEVEL_INFO,
+	})
+	if err != nil {
+		logging.LogError(err, "Failed to create operation event log", "task_id", taskID)
+	}
+}
+
 // createArtifact logs an operational artifact to Mythic's artifact tracking system.
 // This provides operators with a clear record of all opsec-relevant actions taken
 // during an engagement. Errors are logged but do not fail the task.

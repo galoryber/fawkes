@@ -185,6 +185,8 @@ func init() {
 			response.DisplayParams = &displayMsg
 
 			createArtifact(taskData.Task.ID, "Network Connection", fmt.Sprintf("WinRM connection to %s (%s: %s)", host, shell, command))
+			logOperationEvent(taskData.Task.ID,
+				fmt.Sprintf("[LATERAL] winrm: remote execution on %s from %s", host, taskData.Callback.Host), true)
 
 			return response
 		},

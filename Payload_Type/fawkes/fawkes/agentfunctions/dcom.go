@@ -224,6 +224,8 @@ func init() {
 			display := fmt.Sprintf("%s via %s", host, object)
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("DCOM CoCreateInstanceEx %s on %s: %s", object, host, command))
+			logOperationEvent(taskData.Task.ID,
+				fmt.Sprintf("[LATERAL] dcom: remote execution via %s on %s from %s", object, host, taskData.Callback.Host), true)
 			return response
 		},
 	})

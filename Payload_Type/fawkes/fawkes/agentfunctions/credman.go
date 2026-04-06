@@ -139,6 +139,10 @@ func init() {
 				}
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			if len(creds) > 0 {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL] credman extracted %d credentials from %s", len(creds), processResponse.TaskData.Callback.Host), true)
+			}
 			return response
 		},
 	})

@@ -230,6 +230,10 @@ func init() {
 					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\%s\\Debugger = %s", name, path))
 				}
 			}
+			if action == "install" || action == "remove" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[PERSIST] persist %s %s (%s) on %s", action, method, name, taskData.Callback.Host), true)
+			}
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {

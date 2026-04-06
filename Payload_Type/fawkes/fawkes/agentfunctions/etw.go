@@ -163,8 +163,12 @@ func init() {
 			switch action {
 			case "stop":
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW ControlTrace(EVENT_TRACE_CONTROL_STOP) session=%s", sessionName))
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[DEFENSE EVASION] etw stop: killing trace session %s on %s", sessionName, taskData.Callback.Host), true)
 			case "blind":
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW EnableTraceEx2(EVENT_CONTROL_CODE_DISABLE_PROVIDER) session=%s provider=%s", sessionName, provider))
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[DEFENSE EVASION] etw blind: disabling provider %s in session %s on %s", provider, sessionName, taskData.Callback.Host), true)
 			case "enable":
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW EnableTraceEx2(EVENT_CONTROL_CODE_ENABLE_PROVIDER) session=%s provider=%s", sessionName, provider))
 			}

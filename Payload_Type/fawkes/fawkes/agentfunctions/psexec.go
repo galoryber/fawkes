@@ -136,6 +136,8 @@ func init() {
 			display := fmt.Sprintf("%s → %s", host, command)
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ConnectRemote(%s) CreateService binpath=cmd.exe /c %s", host, command))
+			logOperationEvent(taskData.Task.ID,
+				fmt.Sprintf("[LATERAL] psexec: remote service execution on %s from %s", host, taskData.Callback.Host), true)
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
