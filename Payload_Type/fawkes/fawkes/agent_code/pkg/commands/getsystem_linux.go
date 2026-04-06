@@ -334,7 +334,7 @@ func getsystemSudo(oldIdentity string) structs.CommandResult {
 
 	newIdentity := strings.TrimSpace(string(output))
 
-	result := fmt.Sprintf("[+] Successfully elevated to root via sudo\n")
+	result := "[+] Successfully elevated to root via sudo\n"
 	result += fmt.Sprintf("Previous: %s\n", oldIdentity)
 	result += fmt.Sprintf("New: %s\n", newIdentity)
 	result += fmt.Sprintf("Agent path: %s\n", selfPath)

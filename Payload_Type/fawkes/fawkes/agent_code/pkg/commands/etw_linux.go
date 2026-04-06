@@ -388,7 +388,7 @@ func auditStatus() structs.CommandResult {
 			return errorf("Error getting audit status: %v\n%s", err, string(output))
 		}
 		enabled := strings.TrimSpace(string(data))
-		result := fmt.Sprintf("[+] Audit Subsystem Status\n")
+		result := "[+] Audit Subsystem Status\n"
 		result += fmt.Sprintf("  kernel/audit_enabled: %s", enabled)
 		switch enabled {
 		case "0":
