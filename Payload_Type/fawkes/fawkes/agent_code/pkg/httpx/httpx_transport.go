@@ -119,7 +119,7 @@ func (h *HTTPXProfile) sendMessage(data []byte, verbCfg *VerbConfig, cfg *sensit
 	if h.tracker != nil {
 		idx := int(h.activeDomainIdx.Load())
 		if len(cfg.Domains) > 0 {
-			idx = idx % len(cfg.Domains)
+			idx %= len(cfg.Domains)
 		}
 		h.tracker.RecordSuccess(idx)
 	}
@@ -191,7 +191,7 @@ func (h *HTTPXProfile) recordFailure(cfg *sensitiveConfig) {
 	if h.tracker != nil && cfg != nil {
 		idx := int(h.activeDomainIdx.Load())
 		if len(cfg.Domains) > 0 {
-			idx = idx % len(cfg.Domains)
+			idx %= len(cfg.Domains)
 		}
 		if h.tracker.RecordFailure(idx) {
 			log.Printf("failover: domain marked unhealthy")
