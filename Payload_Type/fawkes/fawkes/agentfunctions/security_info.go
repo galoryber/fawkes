@@ -105,6 +105,7 @@ func init() {
 				if err := json.Unmarshal([]byte(responseText[jsonStart:]), &detections); err != nil {
 					return response
 				}
+				var activeProducts []string
 				for _, d := range detections {
 					if d.Status == "running" || d.Status == "installed" {
 						detail := fmt.Sprintf("[EDR] %s (%s) — %s", d.Name, d.Vendor, d.Status)
@@ -116,7 +117,14 @@ func init() {
 							detail += ")"
 						}
 						createArtifact(processResponse.TaskData.Task.ID, "Host Discovery", detail)
+						activeProducts = append(activeProducts, d.Name)
 					}
+				}
+				// Cache EDR detection results in AgentStorage for cross-callback reference
+				callbackID := fmt.Sprintf("%d", processResponse.TaskData.Callback.DisplayID)
+				storageKey := "edr-detections-cb" + callbackID
+				if storageData, err := json.Marshal(detections); err == nil {
+					storeAgentData(storageKey, storageData)
 				}
 			}
 			return response

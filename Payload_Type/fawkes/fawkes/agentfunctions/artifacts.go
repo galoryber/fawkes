@@ -69,6 +69,32 @@ func isAllZeros(s string) bool {
 	return len(s) > 0
 }
 
+// storeAgentData saves data to Mythic's AgentStorage table for cross-callback
+// and cross-session reference. Uses UniqueID as a key-value key. If data already
+// exists with the same UniqueID, it is overwritten. Errors are logged but do not
+// fail the task.
+func storeAgentData(uniqueID string, data []byte) {
+	_, err := mythicrpc.SendMythicRPCAgentStorageCreate(mythicrpc.MythicRPCAgentstorageCreateMessage{
+		UniqueID:    uniqueID,
+		DataToStore: data,
+	})
+	if err != nil {
+		logging.LogError(err, "Failed to store agent data", "unique_id", uniqueID)
+	}
+}
+
+// searchAgentData retrieves data from Mythic's AgentStorage by UniqueID.
+// Returns nil if not found or on error.
+func searchAgentData(uniqueID string) []byte {
+	resp, err := mythicrpc.SendMythicRPCAgentStorageSearch(mythicrpc.MythicRPCAgentstorageSearchMessage{
+		SearchUniqueID: uniqueID,
+	})
+	if err != nil || !resp.Success || len(resp.AgentStorageMessages) == 0 {
+		return nil
+	}
+	return resp.AgentStorageMessages[0].Data
+}
+
 // registerCredentials sends extracted credentials to Mythic's credential vault,
 // skipping duplicates that already exist. Used by ProcessResponse hooks to register
 // credentials discovered during command execution.

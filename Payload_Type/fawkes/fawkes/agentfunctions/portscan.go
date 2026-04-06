@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"regexp"
@@ -138,6 +139,12 @@ func init() {
 			}
 			// Parse: "192.168.1.1          22       SSH" (column-aligned text table)
 			re := regexp.MustCompile(`^(\d+\.\d+\.\d+\.\d+)\s+(\d+)\s+(\S+)`)
+			type portResult struct {
+				Host    string `json:"host"`
+				Port    string `json:"port"`
+				Service string `json:"service"`
+			}
+			var results []portResult
 			for _, line := range strings.Split(responseText, "\n") {
 				m := re.FindStringSubmatch(strings.TrimSpace(line))
 				if m == nil {
@@ -145,6 +152,15 @@ func init() {
 				}
 				createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
 					fmt.Sprintf("Port scan: %s:%s (%s)", m[1], m[2], m[3]))
+				results = append(results, portResult{Host: m[1], Port: m[2], Service: m[3]})
+			}
+			// Cache port scan results in AgentStorage for network topology mapping
+			if len(results) > 0 {
+				callbackID := fmt.Sprintf("%d", processResponse.TaskData.Callback.DisplayID)
+				storageKey := "portscan-cb" + callbackID
+				if storageData, err := json.Marshal(results); err == nil {
+					storeAgentData(storageKey, storageData)
+				}
 			}
 			return response
 		},
