@@ -247,6 +247,10 @@ func init() {
 			case "stop":
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("IRegisteredTask.Stop(%q)", name))
 			}
+			if action == "create" || action == "delete" || action == "run" || action == "enable" || action == "disable" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[PERSIST] schtask %s: %s on %s", action, name, taskData.Callback.Host), true)
+			}
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {

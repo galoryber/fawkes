@@ -189,6 +189,10 @@ func init() {
 			createArtifact(taskData.Task.ID, "Network Connection", artifactMsg)
 			display := fmt.Sprintf("%s %s %s", action, server, name)
 			response.DisplayParams = &display
+			if action == "create" || action == "delete" || action == "start" || action == "stop" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[LATERAL] remote-service %s: %s on %s from %s", action, name, server, taskData.Callback.Host), true)
+			}
 			return response
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {

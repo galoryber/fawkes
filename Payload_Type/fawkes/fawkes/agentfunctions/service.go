@@ -230,6 +230,10 @@ func init() {
 					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ChangeServiceConfig(%s, StartType=Disabled)", name))
 				}
 			}
+			if action == "create" || action == "delete" || action == "start" || action == "stop" || action == "enable" || action == "disable" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[SYSTEM MOD] service %s: %s on %s", action, name, taskData.Callback.Host), true)
+			}
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
