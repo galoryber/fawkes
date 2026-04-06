@@ -253,7 +253,7 @@ func adcsEnumerateTemplates(conn *ldap.Conn, configDN string) structs.CommandRes
 			sb.WriteString("  Subject:     CA-provided\n")
 		}
 
-		allEKUs := append(ekus, appPolicies...)
+		allEKUs := append(ekus, appPolicies...) //nolint:gocritic // intentional: merge EKU lists
 		if len(allEKUs) == 0 {
 			sb.WriteString("  EKUs:        <none> (any purpose)\n")
 		} else {
@@ -337,7 +337,7 @@ func adcsFindVulnerable(conn *ldap.Conn, configDN, baseDN string, args adcsArgs)
 
 		nameFlags, _ := strconv.ParseInt(nameFlag, 10, 64)
 		raSigs, _ := strconv.ParseInt(raSig, 10, 64)
-		allEKUs := append(ekus, appPolicies...)
+		allEKUs := append(ekus, appPolicies...) //nolint:gocritic // intentional: merge EKU lists
 
 		// Parse enrollment and write permissions from SD
 		enrollers := adcsParseEnrollmentPerms(sdBytes)

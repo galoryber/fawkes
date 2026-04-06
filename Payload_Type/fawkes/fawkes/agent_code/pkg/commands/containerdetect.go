@@ -92,7 +92,7 @@ func containerDetectLinux() ([]containerEvidence, string) {
 	if data, err := os.ReadFile("/proc/1/cgroup"); err == nil {
 		content := string(data)
 		structs.ZeroBytes(data) // opsec: cgroup paths may reveal infrastructure
-		if strings.Contains(content, "docker") {
+		if strings.Contains(content, "docker") { //nolint:gocritic // ifElseChain: sequential container type checks
 			evidence = append(evidence, containerEvidence{"/proc/1/cgroup", "DOCKER", "docker found in cgroup"})
 			if detected == "none" {
 				detected = "Docker"

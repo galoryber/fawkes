@@ -119,6 +119,7 @@ func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, prin
 			return fmt.Errorf("no matching ACE found to remove for SID %s with mask 0x%08x", principalSIDStr, mask)
 		}
 	} else {
+		//nolint:gocritic // intentional: prepend newACE before existingACEs
 		newACLBody = append(newACE, existingACEs...)
 		newACECount = aceCount + 1
 	}

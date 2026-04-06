@@ -227,11 +227,9 @@ func lateralParseHosts(input string) []string {
 					return hosts
 				}
 			}
-		} else {
-			if !seen[part] {
-				hosts = append(hosts, part)
-				seen[part] = true
-			}
+		} else if !seen[part] {
+			hosts = append(hosts, part)
+			seen[part] = true
 		}
 	}
 	return hosts

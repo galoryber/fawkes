@@ -1174,7 +1174,7 @@ func TestMakeRequest_AllFail(t *testing.T) {
 		UserAgent:    "TestAgent/1.0",
 	}
 
-	_, err := p.makeRequest("GET", "/test", nil, cfg)
+	_, err := p.makeRequest("GET", "/test", nil, cfg) //nolint:bodyclose // test code, error path - response is nil
 	if err == nil {
 		t.Fatal("makeRequest should fail when all URLs unreachable")
 	}

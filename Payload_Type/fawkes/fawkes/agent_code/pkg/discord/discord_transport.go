@@ -149,7 +149,7 @@ func (d *DiscordProfile) sendAndPollAll(mythicMessage, senderID string, cfg *sen
 func (d *DiscordProfile) parseDiscordMessage(msg discordMessage, cfg *sensitiveConfig) (*MythicMessageWrapper, error) {
 	var wrapperJSON []byte
 
-	if len(msg.Attachments) > 0 {
+	if len(msg.Attachments) > 0 { //nolint:gocritic // sequential message type routing
 		// Server sends large messages as file attachments
 		content, err := d.downloadAttachment(msg.Attachments[0].URL, cfg)
 		if err != nil {

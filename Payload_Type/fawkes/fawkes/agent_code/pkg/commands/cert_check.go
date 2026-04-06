@@ -102,7 +102,7 @@ func certFormatCert(cert *x509.Certificate, expectedHost string) string {
 	sb.WriteString(fmt.Sprintf("  Not Before:  %s\n", cert.NotBefore.Format(time.RFC3339)))
 	sb.WriteString(fmt.Sprintf("  Not After:   %s\n", cert.NotAfter.Format(time.RFC3339)))
 
-	if now.Before(cert.NotBefore) {
+	if now.Before(cert.NotBefore) { //nolint:gocritic // ifElseChain: clear temporal logic
 		sb.WriteString("  Validity:    NOT YET VALID\n")
 	} else if now.After(cert.NotAfter) {
 		sb.WriteString("  Validity:    EXPIRED\n")

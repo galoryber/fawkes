@@ -292,7 +292,7 @@ func shellInject(args shellConfigArgs) structs.CommandResult {
 	if len(existing) > 0 && existing[len(existing)-1] != '\n' {
 		line = "\n" + line
 	}
-	line = line + "\n"
+	line += "\n"
 
 	if _, err := f.WriteString(line); err != nil {
 		return errorf("Error writing to %s: %v", path, err)

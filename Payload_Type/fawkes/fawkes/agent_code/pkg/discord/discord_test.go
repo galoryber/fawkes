@@ -519,7 +519,7 @@ func TestDoWithRateLimitExhausted(t *testing.T) {
 	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 
 	req, _ := http.NewRequest("GET", srv.URL, nil)
-	_, err := p.doWithRateLimit(req)
+	_, err := p.doWithRateLimit(req) //nolint:bodyclose // test code, error path - response is nil
 	if err == nil {
 		t.Error("expected error after all retries exhausted")
 	}

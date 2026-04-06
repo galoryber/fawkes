@@ -22,7 +22,7 @@ func ldapAddComputer(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs
 	// Normalize: ensure sAMAccountName ends with $
 	samName := args.Target
 	if !strings.HasSuffix(samName, "$") {
-		samName = samName + "$"
+		samName += "$"
 	}
 
 	// Computer DN goes in the default Computers container

@@ -85,7 +85,7 @@ func (t *TCPProfile) encryptMessage(msg []byte) ([]byte, error) {
 	mode.CryptBlocks(encrypted, padded)
 
 	// Freyja format: IV + Ciphertext + HMAC
-	ivCiphertext := append(iv, encrypted...)
+	ivCiphertext := append(iv, encrypted...) //nolint:gocritic // intentional: construct new slice
 	mac := hmac.New(sha256.New, key)
 	mac.Write(ivCiphertext)
 	hmacBytes := mac.Sum(nil)

@@ -224,7 +224,7 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensiti
 	for i, baseURL := range urls {
 		// Ensure proper URL construction with forward slash
 		var reqURL string
-		if strings.HasSuffix(baseURL, "/") && strings.HasPrefix(path, "/") {
+		if strings.HasSuffix(baseURL, "/") && strings.HasPrefix(path, "/") { //nolint:gocritic // URL path joining logic
 			reqURL = baseURL + path[1:]
 		} else if !strings.HasSuffix(baseURL, "/") && !strings.HasPrefix(path, "/") {
 			reqURL = baseURL + "/" + path
@@ -361,7 +361,7 @@ func (h *HTTPProfile) encryptMessage(msg []byte, encKey string) ([]byte, error) 
 	encrypted := make([]byte, len(padded))
 	mode.CryptBlocks(encrypted, padded)
 
-	ivCiphertext := append(iv, encrypted...)
+	ivCiphertext := append(iv, encrypted...) //nolint:gocritic // intentional: construct new slice
 
 	hmacHash := hmac.New(sha256.New, key)
 	hmacHash.Write(ivCiphertext)

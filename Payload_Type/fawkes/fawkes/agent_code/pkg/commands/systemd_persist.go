@@ -142,11 +142,7 @@ func systemdInstall(args systemdPersistArgs) structs.CommandResult {
 		timerSb.WriteString(fmt.Sprintf("OnCalendar=%s\n", args.Timer))
 		timerSb.WriteString("Persistent=true\n")
 		timerSb.WriteString("\n[Install]\n")
-		if args.System {
-			timerSb.WriteString("WantedBy=timers.target\n")
-		} else {
-			timerSb.WriteString("WantedBy=timers.target\n")
-		}
+		timerSb.WriteString("WantedBy=timers.target\n")
 
 		timerPath := filepath.Join(unitDir, args.Name+".timer")
 		if err := os.WriteFile(timerPath, []byte(timerSb.String()), 0644); err != nil {

@@ -372,7 +372,7 @@ func TestEncryptDecryptMessage(t *testing.T) {
 
 	// Simulate response format: UUID prefix + encrypted data
 	uuidPrefix := []byte("12345678-1234-1234-1234-123456789012")
-	responseData := append(uuidPrefix, encrypted...)
+	responseData := append(uuidPrefix, encrypted...) //nolint:gocritic // intentional: construct new slice
 
 	decrypted, err := profile.decryptResponse(responseData, encKey)
 	if err != nil {

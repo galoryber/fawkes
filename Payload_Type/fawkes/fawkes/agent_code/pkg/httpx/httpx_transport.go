@@ -248,7 +248,7 @@ func (h *HTTPXProfile) encryptMessage(msg []byte, encKey string) ([]byte, error)
 	encrypted := make([]byte, len(padded))
 	mode.CryptBlocks(encrypted, padded)
 
-	ivCiphertext := append(iv, encrypted...)
+	ivCiphertext := append(iv, encrypted...) //nolint:gocritic // intentional: construct new slice
 	hmacHash := hmac.New(sha256.New, key)
 	hmacHash.Write(ivCiphertext)
 

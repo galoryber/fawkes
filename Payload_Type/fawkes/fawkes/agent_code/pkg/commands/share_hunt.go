@@ -318,10 +318,8 @@ func shareHuntBuildExtSet(filter string) map[string]string {
 			p = strings.ToLower(p)
 			if strings.HasPrefix(p, "*.") {
 				result[p[1:]] = category // *.kdbx -> .kdbx
-			} else if strings.HasPrefix(p, ".") {
-				result[p] = category
 			} else {
-				result[p] = category // exact name like id_rsa
+				result[p] = category // .ext or exact name like id_rsa
 			}
 		}
 	}

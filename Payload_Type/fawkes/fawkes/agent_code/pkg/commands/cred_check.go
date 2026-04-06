@@ -167,7 +167,7 @@ func credCheckSMB(host string, args credCheckArgs, timeout time.Duration) credCh
 
 	session, conn, err := smbDialSession(host, 445, args.Username, args.Domain, args.Password, args.Hash, timeout)
 	if err != nil {
-		if strings.Contains(err.Error(), "TCP connect") {
+		if strings.Contains(err.Error(), "TCP connect") { //nolint:gocritic // sequential error classification
 			result.Detail = "port closed/unreachable"
 		} else if strings.Contains(err.Error(), "invalid NTLM hash") {
 			result.Detail = "invalid NTLM hash"
