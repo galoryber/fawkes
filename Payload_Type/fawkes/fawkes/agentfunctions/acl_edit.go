@@ -211,6 +211,11 @@ func init() {
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("LDAP restore DACL on %s", target))
 			}
 
+			if action != "read" && action != "backup" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[SYSTEM MOD] acl-edit %s: %s → %s (principal: %s) from %s", action, right, target, principal, taskData.Callback.Host), true)
+			}
+
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {

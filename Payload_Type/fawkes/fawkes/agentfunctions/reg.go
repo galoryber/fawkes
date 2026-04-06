@@ -313,6 +313,11 @@ func init() {
 			}
 			response.DisplayParams = &display
 
+			if action == "write" || action == "delete" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[SYSTEM MOD] reg %s: %s\\%s on %s", action, hive, path, taskData.Callback.Host), true)
+			}
+
 			return response
 		},
 	})
