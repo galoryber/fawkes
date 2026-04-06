@@ -28,11 +28,14 @@ Mythic Server ←→ [HTTP/HTTPx] Parent Agent ←→ [TCP P2P] Child Agent 1
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `tcp_bind_address` | TCP address and port to listen on (e.g., `0.0.0.0:7777`) | — (required) |
+| `tcp_bind_address` | TCP address and port to listen on (e.g., `0.0.0.0:7777`) | — (required for TCP) |
+| `namedpipe_bind_name` | Windows named pipe name (e.g., `msrpc-f9a1`). Uses SMB port 445. | — (optional, Windows only) |
 | `AESPSK` | Pre-shared AES-256 key (must match parent for linking) | auto-generated |
 | `killdate` | Agent expiration date (YYYY-MM-DD) | — |
 
 {{% notice warning %}}The `AESPSK` must match between parent and child agents for linking to succeed. When building a TCP P2P payload, use the same encryption key as the parent payload.{{% /notice %}}
+
+{{% notice info %}}If `namedpipe_bind_name` is set, the agent listens on a Windows named pipe instead of a TCP socket. This is Windows-only and uses SMB (port 445) under the hood.{{% /notice %}}
 
 ## Linking Workflow
 
@@ -99,14 +102,42 @@ Same AES-256-CBC encryption as other profiles:
 - **Edge messages**: Connection state changes (link/unlink) are reported to Mythic as edge updates
 - **Channel-based routing**: Internal message routing uses Go channels for delegate, edge, and SOCKS messages
 
+## Named Pipe Mode (Windows)
+
+When `namedpipe_bind_name` is set, the agent listens on a Windows named pipe (`\\.\pipe\<name>`) instead of a raw TCP socket. Named pipe traffic travels over SMB (port 445), blending with normal Windows file sharing and inter-process communication.
+
+### Named Pipe Linking
+
+From the parent agent:
+
+```
+link -action add -host <child_ip> -pipe <pipe_name>
+```
+
+The parent connects to `\\<child_ip>\pipe\<pipe_name>` over SMB.
+
+### Named Pipe Advantages
+
+- **Stealthier**: SMB named pipe traffic is harder to detect than raw TCP on arbitrary ports
+- **Port 445**: No additional ports needed — uses existing SMB infrastructure
+- **Blends**: Legitimate Windows services use named pipes extensively (RPC, WMI, etc.)
+- **Same encryption**: AES-256-CBC + HMAC-SHA256 framing is identical to TCP mode
+
+### Named Pipe Limitations
+
+- **Windows only**: Named pipes are a Windows-specific feature
+- **SMB required**: Port 445 must be accessible between parent and child
+- **Firewall rules**: SMB traffic may be filtered between network segments
+
 ## OPSEC Considerations
 
 - TCP P2P traffic uses raw TCP sockets — no HTTP overhead on internal links
+- Named pipe mode blends C2 traffic with legitimate SMB communication
 - All internal traffic is AES-256 encrypted
 - Bind address can be restricted to specific interfaces (e.g., `127.0.0.1:7777` for localhost only)
 - Config vault encrypts C2 parameters in memory (AES-256-GCM)
 - No direct internet access required for internal agents
-- Internal TCP traffic blends with normal application communication
+- Named pipe creation generates ETW events — monitor for detection risk
 
 ## MITRE ATT&CK Mapping
 

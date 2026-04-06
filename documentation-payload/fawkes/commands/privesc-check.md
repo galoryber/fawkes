@@ -26,6 +26,7 @@ Cross-platform privilege escalation enumeration. Scans for common privilege esca
 ### Shared Actions (All Platforms)
 
 - **all** — Run all platform-appropriate checks
+- **auto-escalate** — Automated chain: enumerate all vectors, then attempt the best available privilege escalation. Windows: UAC bypass (medium→high) or token steal (high→SYSTEM). Linux/macOS: sudo NOPASSWD escalation. Results visible as a subtask cascade in the Mythic UI.
 - **writable** — Find writable PATH directories and sensitive files/paths
 
 ### Windows-Only Actions
@@ -86,6 +87,9 @@ privesc-check -action security
 privesc-check -action launchdaemons
 privesc-check -action dll-hijack
 privesc-check -action dll-plant -source C:\Users\target\payload.dll -target_dir C:\Python39\ -dll_name fveapi.dll
+
+# Auto-escalate chain (enumerate → attempt escalation automatically)
+privesc-check -action auto-escalate
 ```
 
 ### Example Output (Windows, all)
