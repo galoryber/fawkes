@@ -131,7 +131,7 @@ func init() {
 		HelpString:          "inline-execute",
 		Version:             1,
 		MitreAttackMappings: []string{"T1620"}, // Reflective Code Loading
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "inlineexecute_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{

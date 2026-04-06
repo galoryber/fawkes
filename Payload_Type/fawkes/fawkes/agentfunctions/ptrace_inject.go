@@ -18,7 +18,7 @@ func init() {
 		HelpString:          "ptrace-inject -action check | ptrace-inject -pid <PID> -filename <shellcode>",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055.008"}, // Process Injection: Ptrace System Calls
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ptraceinject_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{

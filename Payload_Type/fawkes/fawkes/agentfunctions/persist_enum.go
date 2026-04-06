@@ -17,7 +17,7 @@ func init() {
 		Version:             6,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1547", "T1547.002", "T1547.006", "T1546", "T1546.014", "T1053", "T1543", "T1098.004", "T1556.003"}, // Boot/Logon Autostart, Auth Plugins, Kernel Modules, Event Triggered, Emond, Scheduled Task, Create/Modify System Process, SSH Authorized Keys, Modify Authentication Process: PAM
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"file_browser:list"},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "persist_enum_new.js"),
 			Author:     "@galoryber",

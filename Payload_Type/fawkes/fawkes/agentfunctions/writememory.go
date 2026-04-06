@@ -11,7 +11,7 @@ func init() {
 		HelpString:          "write-memory amsi AmsiScanBuffer 0 909090",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055"}, // Process Injection
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},

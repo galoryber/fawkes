@@ -51,7 +51,7 @@ func init() {
 		HelpString:          "inline-assembly",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055.001", "T1620"}, // Process Injection: Dynamic-link Library Injection, Reflective Code Loading
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "inlineassembly_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{

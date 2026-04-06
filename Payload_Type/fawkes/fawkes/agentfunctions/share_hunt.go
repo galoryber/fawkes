@@ -15,7 +15,7 @@ func init() {
 		Description:         "Crawl SMB shares across multiple hosts to find sensitive files (credentials, configs, scripts)",
 		HelpString:          "share-hunt -hosts <IPs/CIDRs> -username <DOMAIN\\user> -password <pass> [-hash <NTLM>] [-depth <n>] [-filter <all|credentials|configs|code>] [-max_files <n>]",
 		Version:             1,
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"file_browser:list"},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1135", "T1039"},
 		ScriptOnlyCommand:   false,

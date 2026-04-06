@@ -20,7 +20,7 @@ func init() {
 		Description:         "Find high-value files for exfiltration — documents, credentials, configs, databases, scripts, archives, or custom path scan (T1083, T1005)",
 		HelpString:          "triage -action <all|documents|credentials|configs|database|scripts|archives|mail|recent|custom> [-path /opt/app] [-hours 24] [-max_size 10485760] [-max_files 200]",
 		Version:             4,
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"file_browser:list"},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1083", "T1005"},
 		ScriptOnlyCommand:   false,

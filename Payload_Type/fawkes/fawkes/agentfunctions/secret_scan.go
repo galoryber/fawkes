@@ -16,7 +16,7 @@ func init() {
 		Description:         "Search files for secrets, API keys, private keys, and sensitive patterns (T1552.001, T1005)",
 		HelpString:          "secret-scan [-path /home/user] [-depth 5] [-max_results 100]",
 		Version:             2,
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"file_browser:list"},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1552.001", "T1005"},
 		ScriptOnlyCommand:   false,
