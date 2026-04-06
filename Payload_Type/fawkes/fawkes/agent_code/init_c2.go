@@ -175,6 +175,7 @@ func initHTTPxC2(cfg parsedConfig) (*c2Setup, error) {
 		cfg.debug,
 		agentCfg,
 		proxyURL,
+		cfg.recoverySeconds,
 	)
 
 	// Seal the httpx config vault
@@ -268,6 +269,7 @@ func initHTTPC2(cfg parsedConfig) (*c2Setup, error) {
 		tlsFingerprint,
 		fallbackURLs,
 		ctList,
+		cfg.recoverySeconds,
 	)
 	// Set configurable HTTP timeout
 	if cfg.httpTimeout != 30 {

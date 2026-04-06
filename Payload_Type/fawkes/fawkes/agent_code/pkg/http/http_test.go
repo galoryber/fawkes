@@ -468,6 +468,7 @@ func TestNewHTTPProfile_BasicConfig(t *testing.T) {
 		"",
 		nil,
 		nil,
+		0,
 	)
 
 	if p.BaseURL != "http://localhost:80" {
@@ -501,6 +502,7 @@ func TestNewHTTPProfile_WithProxy(t *testing.T) {
 		"",
 		nil,
 		nil,
+		0,
 	)
 
 	if p.client == nil {
@@ -525,6 +527,7 @@ func TestNewHTTPProfile_WithHostHeader(t *testing.T) {
 		"",
 		nil,
 		nil,
+		0,
 	)
 
 	if p.HostHeader != "fronted.example.com" {
@@ -552,6 +555,7 @@ func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
 		"",
 		nil,
 		nil,
+		0,
 	)
 
 	if p.EncryptionKey != keyB64 {
@@ -580,6 +584,7 @@ func TestNewHTTPProfile_InvalidProxy(t *testing.T) {
 		"",
 		nil,
 		nil,
+		0,
 	)
 
 	if p.client == nil {
@@ -1134,6 +1139,7 @@ func TestMakeRequest_FailoverToBackup(t *testing.T) {
 		"", "", "none", "",
 		[]string{backup.URL}, // fallback,
 		nil,
+		0,
 	)
 
 	cfg := &sensitiveConfig{
@@ -1166,6 +1172,7 @@ func TestMakeRequest_AllFail(t *testing.T) {
 		"", "", "none", "",
 		[]string{"http://127.0.0.1:2"},
 		nil,
+		0,
 	)
 
 	cfg := &sensitiveConfig{
@@ -1191,6 +1198,7 @@ func TestNewHTTPProfile_WithFallbackURLs(t *testing.T) {
 		"", "", "none", "",
 		fallbacks,
 		nil,
+		0,
 	)
 
 	if len(p.FallbackURLs) != 2 {
@@ -1218,6 +1226,7 @@ func TestMakeRequest_ConcurrentFailover(t *testing.T) {
 		"", "", "none", "",
 		[]string{server.URL + "/fb1", server.URL + "/fb2"},
 		nil,
+		0,
 	)
 
 	cfg := &sensitiveConfig{
@@ -1256,6 +1265,7 @@ func TestSealConfig_PreservesFallbackURLs(t *testing.T) {
 		"", "", "none", "",
 		[]string{"http://backup:80"},
 		nil,
+		0,
 	)
 
 	if err := p.SealConfig(); err != nil {

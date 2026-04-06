@@ -23,6 +23,7 @@ func TestNewProfile_ReturnsHTTPProfile(t *testing.T) {
 		"",
 		nil,
 		nil,
+		0,
 	)
 
 	profile := NewProfile(httpProfile)
@@ -53,6 +54,7 @@ func TestNewProfile_ImplementsInterface(t *testing.T) {
 		"",
 		nil,
 		nil,
+		0,
 	)
 
 	// Compile-time check: NewProfile returns a Profile interface
@@ -77,6 +79,7 @@ func TestProfileInterface_Methods(t *testing.T) {
 		"",
 		nil,
 		nil,
+		0,
 	)
 
 	profile := NewProfile(httpProfile)

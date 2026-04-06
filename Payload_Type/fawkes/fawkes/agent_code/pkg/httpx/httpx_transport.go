@@ -77,7 +77,7 @@ func (h *HTTPXProfile) sendMessage(data []byte, verbCfg *VerbConfig, cfg *sensit
 	}
 
 	if err != nil {
-		h.recordFailure()
+		h.recordFailure(cfg)
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
@@ -110,12 +110,19 @@ func (h *HTTPXProfile) sendMessage(data []byte, verbCfg *VerbConfig, cfg *sensit
 		if resp != nil && resp.Body != nil {
 			resp.Body.Close()
 		}
-		h.recordFailure()
+		h.recordFailure(cfg)
 		return nil, fmt.Errorf("HTTP request failed: %w", err)
 	}
 
-	// Success — reset failure count
+	// Success — reset failure count and mark domain healthy
 	h.failCount.Store(0)
+	if h.tracker != nil {
+		idx := int(h.activeDomainIdx.Load())
+		if len(cfg.Domains) > 0 {
+			idx = idx % len(cfg.Domains)
+		}
+		h.tracker.RecordSuccess(idx)
+	}
 	return resp, nil
 }
 
@@ -131,6 +138,7 @@ func (h *HTTPXProfile) receiveMessage(resp *http.Response, verbCfg *VerbConfig) 
 }
 
 // selectDomain picks the next domain based on the rotation strategy.
+// Unhealthy domains are skipped unless it's time for a recovery attempt.
 func (h *HTTPXProfile) selectDomain(cfg *sensitiveConfig) string {
 	domains := cfg.Domains
 	if len(domains) == 0 {
@@ -142,32 +150,71 @@ func (h *HTTPXProfile) selectDomain(cfg *sensitiveConfig) string {
 
 	switch h.DomainRotation {
 	case "round-robin":
-		idx := h.activeDomainIdx.Add(1) - 1
-		return domains[int(idx)%len(domains)]
+		idx := int(h.activeDomainIdx.Add(1)-1) % len(domains)
+		// Skip unhealthy domains (find next available)
+		if h.tracker != nil && !h.tracker.IsAvailable(idx) {
+			idx = h.tracker.FindNextAvailable(idx, len(domains))
+		}
+		return domains[idx]
 	case "random":
 		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(domains))))
 		if err != nil {
 			return domains[mrand.Intn(len(domains))]
 		}
-		return domains[n.Int64()]
+		idx := int(n.Int64())
+		// Skip unhealthy domains
+		if h.tracker != nil && !h.tracker.IsAvailable(idx) {
+			idx = h.tracker.FindNextAvailable(idx, len(domains))
+		}
+		return domains[idx]
 	default: // "fail-over"
 		idx := int(h.activeDomainIdx.Load())
 		if idx >= len(domains) {
 			idx = 0
+		}
+		// In fail-over mode, skip unhealthy domains
+		if h.tracker != nil && !h.tracker.IsAvailable(idx) {
+			next := h.tracker.FindNextAvailable(idx, len(domains))
+			if next != idx {
+				h.activeDomainIdx.Store(int32(next))
+				idx = next
+			}
 		}
 		return domains[idx]
 	}
 }
 
 // recordFailure increments the failure counter and triggers failover if threshold exceeded.
-func (h *HTTPXProfile) recordFailure() {
+// Also records the failure in the domain health tracker for intelligent recovery.
+func (h *HTTPXProfile) recordFailure(cfg *sensitiveConfig) {
+	// Track failure in health tracker for all rotation modes
+	if h.tracker != nil && cfg != nil {
+		idx := int(h.activeDomainIdx.Load())
+		if len(cfg.Domains) > 0 {
+			idx = idx % len(cfg.Domains)
+		}
+		if h.tracker.RecordFailure(idx) {
+			log.Printf("failover: domain marked unhealthy")
+		}
+	}
+
 	if h.DomainRotation != "fail-over" {
 		return
 	}
 	count := h.failCount.Add(1)
 	if int(count) >= h.FailoverThreshold {
 		h.failCount.Store(0)
-		h.activeDomainIdx.Add(1)
+		newIdx := h.activeDomainIdx.Add(1)
+		// Skip to next healthy domain if available
+		if h.tracker != nil && cfg != nil && len(cfg.Domains) > 1 {
+			idx := int(newIdx) % len(cfg.Domains)
+			if !h.tracker.IsAvailable(idx) {
+				next := h.tracker.FindNextAvailable(idx, len(cfg.Domains))
+				if next != idx {
+					h.activeDomainIdx.Store(int32(next))
+				}
+			}
+		}
 		log.Printf("failover: switched domain")
 	}
 }

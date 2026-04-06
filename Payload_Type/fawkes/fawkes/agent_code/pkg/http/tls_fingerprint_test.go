@@ -117,6 +117,7 @@ func TestNewHTTPProfile_WithTLSFingerprint(t *testing.T) {
 		"chrome",
 		nil,
 		nil,
+		0,
 	)
 	if p == nil {
 		t.Fatal("NewHTTPProfile returned nil")
@@ -144,6 +145,7 @@ func TestNewHTTPProfile_WithoutTLSFingerprint(t *testing.T) {
 		"go",
 		nil,
 		nil,
+		0,
 	)
 	if p == nil {
 		t.Fatal("NewHTTPProfile returned nil")

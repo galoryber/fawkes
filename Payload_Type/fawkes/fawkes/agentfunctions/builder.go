@@ -435,6 +435,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 		{
+			Name:          "recovery_interval",
+			Description:   "Seconds between recovery attempts for unhealthy C2 domains. When a domain fails repeatedly, it is marked unhealthy and skipped. After this interval, the agent retries it. Default: 600 (10 minutes). Only relevant when using multiple domains/fallback hosts.",
+			Required:      false,
+			DefaultValue:  "600",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "pe_preset",
 			Description:   "Windows PE metadata preset — impersonate a legitimate Windows binary's version info (visible in File Properties > Details and Task Manager). Individual pe_* fields override preset values. Windows only — ignored for Linux/macOS.",
 			Required:      false,
@@ -815,6 +822,16 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 			return payloadBuildResponse
 		}
 		ldflags += fmt.Sprintf(" -X '%s.maxRetries=%s'", fawkes_main_package, mrStr)
+	}
+
+	// Recovery interval for unhealthy domains
+	if riStr, err := payloadBuildMsg.BuildParameters.GetStringArg("recovery_interval"); err == nil && riStr != "" && riStr != "600" {
+		if _, parseErr := strconv.Atoi(riStr); parseErr != nil {
+			payloadBuildResponse.Success = false
+			payloadBuildResponse.BuildStdErr = fmt.Sprintf("Invalid recovery_interval %q — must be a number", riStr)
+			return payloadBuildResponse
+		}
+		ldflags += fmt.Sprintf(" -X '%s.recoveryInterval=%s'", fawkes_main_package, riStr)
 	}
 
 	// String obfuscation: XOR-encode C2 config strings with a random key

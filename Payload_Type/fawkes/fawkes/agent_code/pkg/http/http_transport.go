@@ -222,6 +222,14 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensiti
 	var lastErr error
 
 	for i, baseURL := range urls {
+		// Compute the absolute index in the URL list for health tracking
+		urlIdx := (originalIdx + i) % len(urls)
+
+		// Skip unhealthy URLs — unless it's recovery time or all are unhealthy
+		if h.tracker != nil && !h.tracker.IsAvailable(urlIdx) {
+			continue
+		}
+
 		// Ensure proper URL construction with forward slash
 		var reqURL string
 		if strings.HasSuffix(baseURL, "/") && strings.HasPrefix(path, "/") { //nolint:gocritic // URL path joining logic
@@ -280,16 +288,23 @@ func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensiti
 				resp.Body.Close()
 			}
 			lastErr = fmt.Errorf("HTTP request to %s failed: %w", baseURL, err)
+			if h.tracker != nil {
+				if h.tracker.RecordFailure(urlIdx) {
+					log.Printf("failover: endpoint marked unhealthy")
+				}
+			}
 			if len(urls) > 1 {
 				log.Printf("failover: endpoint unavailable")
 			}
 			continue
 		}
 
-		// Success — remember which URL worked for next time
-		newIdx := (originalIdx + i) % len(urls)
-		if newIdx != originalIdx {
-			h.activeURLIdx.Store(int32(newIdx))
+		// Success — remember which URL worked and mark it healthy
+		if h.tracker != nil {
+			h.tracker.RecordSuccess(urlIdx)
+		}
+		if urlIdx != originalIdx {
+			h.activeURLIdx.Store(int32(urlIdx))
 			log.Printf("failover: switched endpoint")
 		}
 		return resp, nil

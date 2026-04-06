@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"fawkes/pkg/resilience"
 	"fawkes/pkg/structs"
 )
 
@@ -84,6 +85,10 @@ type HTTPXProfile struct {
 	failCount       atomic.Int32
 	uriIdx          atomic.Uint32
 
+	// Domain health tracker — tracks per-domain health for intelligent failover
+	// with periodic recovery of unhealthy domains.
+	tracker *resilience.DomainTracker
+
 	// Config vault
 	vault *configVault
 
@@ -113,6 +118,7 @@ func NewHTTPXProfile(
 	debug bool,
 	config *AgentConfig,
 	proxyURL string,
+	recoverySeconds int,
 ) *HTTPXProfile {
 	profile := &HTTPXProfile{
 		Domains:           domains,
@@ -125,6 +131,7 @@ func NewHTTPXProfile(
 		Debug:             debug,
 		Config:            config,
 		ProxyURL:          proxyURL,
+		tracker:           resilience.NewTracker(len(domains), failoverThreshold, recoverySeconds),
 	}
 
 	transport := &http.Transport{
