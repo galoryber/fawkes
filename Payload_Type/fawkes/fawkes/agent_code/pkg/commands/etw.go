@@ -4,11 +4,7 @@
 package commands
 
 import (
-	"encoding/binary"
 	"encoding/json"
-	"fmt"
-	"strings"
-	"unsafe"
 
 	"fawkes/pkg/structs"
 
