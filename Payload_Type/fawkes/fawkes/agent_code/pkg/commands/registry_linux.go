@@ -45,4 +45,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&AudioCaptureCommand{})
 	RegisterCommand(&LolbinCommand{})
 	RegisterCommand(&EtwCommand{})
+	RegisterCommand(&GetSystemCommand{})
 }
