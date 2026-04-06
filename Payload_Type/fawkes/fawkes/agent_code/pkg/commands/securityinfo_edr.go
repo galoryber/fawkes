@@ -183,7 +183,7 @@ func getRunningProcessNames() map[string]int {
 					continue
 				}
 				pid := 0
-				fmt.Sscanf(fields[0], "%d", &pid)
+				_, _ = fmt.Sscanf(fields[0], "%d", &pid)
 				if pid <= 0 {
 					continue
 				}
