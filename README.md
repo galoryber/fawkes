@@ -219,7 +219,7 @@ unlink | `unlink -connection_id <uuid>` | Disconnect a linked P2P agent (TCP or 
 uptime | `uptime` | Show system uptime, boot time, and load averages. Cross-platform (T1082).
 upload | `upload` | Upload a file to the target with chunked file transfer.
 usn-jrnl | `usn-jrnl -action query\|recent\|delete [-volume C:]` | **(Windows only)** Query or delete NTFS USN Change Journal — destroys file operation history for anti-forensics (T1070.004).
-vanilla-injection | `vanilla-injection` | **(Windows only)** Inject shellcode into a remote process using VirtualAllocEx/WriteProcessMemory/CreateRemoteThread.
+vanilla-injection | `vanilla-injection -action <inject\|migrate> -pid <PID>` | **(Windows only)** Inject shellcode into a remote process (inject) or migrate the agent into another process (migrate: inject + exit). Uses VirtualAllocEx/WriteProcessMemory/CreateRemoteThread. T1055.001.
 vm-detect | `vm-detect` | Detect VM/hypervisor environment (VMware, VirtualBox, Hyper-V, QEMU/KVM, Xen, Parallels). Checks MAC OUI, DMI/SMBIOS, VM tools, SCSI, CPU hypervisor flag. Cross-platform (T1497.001).
 vss | `vss -action <list\|create\|delete\|extract> [-volume C:\\] [-id <device_path>] [-source <path>] [-dest <path>]` | **(Windows only)** Manage Volume Shadow Copies — list, create, delete, extract files. Extract locked files (NTDS.dit, SAM) without touching lsass. MITRE T1003.003.
 watch-dir | `watch-dir -path <dir> [-interval 5] [-duration 300] [-depth 3] [-pattern *.docx] [-hash true]` | Monitor a directory for file system changes — detects new, modified, and deleted files via polling. Supports glob filtering and MD5 hash detection. Cross-platform (T1083, T1119).
