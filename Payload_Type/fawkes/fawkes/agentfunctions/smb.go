@@ -60,6 +60,7 @@ func init() {
 				Description:      "Username for NTLM auth (can include DOMAIN\\user or user@domain)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -93,6 +94,7 @@ func init() {
 				Description:      "NTLM domain (auto-detected from username if DOMAIN\\user or user@domain format)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackDomainList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},

@@ -40,12 +40,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "username",
-				ModalDisplayName: "Username",
-				CLIName:          "username",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Target username (DOMAIN\\user or user@domain)",
-				DefaultValue:     "",
+				Name:                 "username",
+				ModalDisplayName:     "Username",
+				CLIName:              "username",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Target username (DOMAIN\\user or user@domain)",
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -68,12 +69,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "domain",
-				ModalDisplayName: "Domain",
-				CLIName:          "domain",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Domain (optional, can be part of username)",
-				DefaultValue:     "",
+				Name:                 "domain",
+				ModalDisplayName:     "Domain",
+				CLIName:              "domain",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Domain (optional, can be part of username)",
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackDomainList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,

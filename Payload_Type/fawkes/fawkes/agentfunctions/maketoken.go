@@ -36,7 +36,7 @@ func init() {
 				ChoicesAreAllCommands:                   false,
 				ChoicesAreLoadedCommands:                false,
 				FilterCommandChoicesByCommandAttributes: map[string]string{},
-				DynamicQueryFunction:                    nil,
+				DynamicQueryFunction:                    getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -57,7 +57,7 @@ func init() {
 				ChoicesAreAllCommands:                   false,
 				ChoicesAreLoadedCommands:                false,
 				FilterCommandChoicesByCommandAttributes: map[string]string{},
-				DynamicQueryFunction:                    nil,
+				DynamicQueryFunction:                    getCallbackDomainList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,

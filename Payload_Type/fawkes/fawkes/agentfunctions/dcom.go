@@ -115,6 +115,7 @@ func init() {
 				CLIName:       "username",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:  "",
+				DynamicQueryFunction: getCallbackUserList,
 				Description:   "Username for DCOM auth (optional — uses make-token credentials if not specified)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -143,6 +144,7 @@ func init() {
 				CLIName:       "domain",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:  "",
+				DynamicQueryFunction: getCallbackDomainList,
 				Description:   "Domain for DCOM auth (optional — uses make-token credentials if not specified)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

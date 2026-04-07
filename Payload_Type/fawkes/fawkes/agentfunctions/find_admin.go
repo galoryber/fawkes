@@ -121,6 +121,7 @@ func init() {
 				Description:      "NTLM domain (auto-detected from username if DOMAIN\\user or user@domain format)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackDomainList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},

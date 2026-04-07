@@ -71,6 +71,7 @@ func init() {
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "Domain name (optional if included in username)",
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackDomainList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,

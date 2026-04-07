@@ -45,6 +45,7 @@ func init() {
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "SMB username (DOMAIN\\user or user@domain)",
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

@@ -38,12 +38,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "username",
-				ModalDisplayName: "Username",
-				CLIName:          "username",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Username (DOMAIN\\user or user@domain)",
-				DefaultValue:     "",
+				Name:                 "username",
+				ModalDisplayName:     "Username",
+				CLIName:              "username",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Username (DOMAIN\\user or user@domain)",
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
