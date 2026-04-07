@@ -11,8 +11,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "dcom",
-		Description:         "Execute commands on remote hosts via DCOM lateral movement. Supports MMC20.Application, ShellWindows, and ShellBrowserWindow objects.",
-		HelpString:          "dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser] [-dir <directory>] [-username <user> -password <pass> -domain <domain>]",
+		Description:         "Execute commands on remote hosts via DCOM lateral movement. Supports MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, and Excel.Application objects.",
+		HelpString:          "dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser|wscript|excel] [-dir <directory>] [-username <user> -password <pass> -domain <domain>]",
 		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1021.003"}, // Remote Services: Distributed Component Object Model
@@ -57,9 +57,9 @@ func init() {
 				Name:          "object",
 				CLIName:       "object",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"mmc20", "shellwindows", "shellbrowser"},
+				Choices:       []string{"mmc20", "shellwindows", "shellbrowser", "wscript", "excel"},
 				DefaultValue:  "mmc20",
-				Description:   "DCOM object: MMC20.Application (most reliable), ShellWindows (requires explorer.exe), ShellBrowserWindow",
+				Description:   "DCOM object: mmc20 (most reliable), shellwindows (requires explorer.exe), shellbrowser, wscript (WScript.Shell.Run), excel (RegisterXLL/DDEInitiate — requires Excel)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -179,12 +179,26 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			host, _ := taskData.Args.GetStringArg("host")
-			action, _ := taskData.Args.GetStringArg("action")
+			object, _ := taskData.Args.GetStringArg("object")
+
+			// Per-object detection signatures
+			objectWarnings := map[string]string{
+				"mmc20":        "MMC20.Application: monitored by CrowdStrike/SentinelOne — creates mmc.exe child process. Most reliable but most detected.",
+				"shellwindows": "ShellWindows: requires explorer.exe on target. Creates child process under explorer.exe — moderate detection.",
+				"shellbrowser": "ShellBrowserWindow: similar to ShellWindows. Creates child process under iexplore.exe — moderate detection.",
+				"wscript":      "WScript.Shell: less commonly monitored than MMC20. Executes via WScript.Shell.Run — no intermediate process. Good fallback when MMC is blocked.",
+				"excel":        "Excel.Application: requires Excel installed on target. RegisterXLL loads DLL into Excel.exe (stealthy — lives in Office process). DDEInitiate creates cmd.exe child.",
+			}
+			warning := objectWarnings[object]
+			if warning == "" {
+				warning = "Unknown object — proceed with caution."
+			}
+
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: DCOM lateral movement to %s (action: %s). Creates remote COM object via RPC/TCP 135. Generates network connections, DCOM launch events (Event ID 10016), and process creation on the remote host. Detectable by monitoring RPC traffic and unusual DCOM object instantiation.", host, action),
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: DCOM lateral movement to %s via %s.\n  %s\n  All DCOM: RPC/TCP 135 connection, Event ID 10016, remote COM activation.", host, object, warning),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},

