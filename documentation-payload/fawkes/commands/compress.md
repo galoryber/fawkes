@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Create, list, or extract zip and tar.gz archives for data staging and exfiltration preparation. Supports recursive directory archiving with pattern filtering, depth limits, and file size caps.
+Create, list, extract, or stage encrypted archives for data staging and exfiltration. The `stage` action collects files into an AES-256-GCM encrypted archive in a temp directory with a randomized name, returning the encryption key for later retrieval. Supports recursive directory archiving with pattern filtering, depth limits, and file size caps.
 
 Cross-platform — works on Windows, Linux, and macOS.
 
@@ -15,7 +15,7 @@ Cross-platform — works on Windows, Linux, and macOS.
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | Yes | create | `create` (archive files), `list` (show contents), `extract` (unarchive) |
+| action | Yes | create | `create` (archive), `list` (show contents), `extract` (unarchive), `stage` (collect + encrypt) |
 | path | Yes | — | Source: file/directory (create), archive file (list/extract) |
 | format | No | zip | Archive format: `zip` or `tar.gz`. Auto-detected from file extension for list/extract |
 | output | No | auto | Output: archive file (create), directory (extract). Auto-generated if omitted |
@@ -60,6 +60,17 @@ compress -action extract -path docs.zip -pattern *.xlsx -output /tmp/spreadsheet
 compress -action create -path C:\Windows\System32\drivers\etc\hosts
 ```
 
+### Stage files with encryption (data staging)
+```
+compress -action stage -path /home/user/Documents -pattern *.pdf
+```
+Collects matching files into an AES-256-GCM encrypted archive in a temp directory. Returns JSON with encryption key, archive path, file count, and SHA-256 hash.
+
+### Stage to a specific directory
+```
+compress -action stage -path C:\Users\target\Desktop -output C:\ProgramData -pattern *.docx
+```
+
 ## Features
 
 - **Dual format**: zip and tar.gz support with auto-detection from file extension
@@ -76,10 +87,14 @@ compress -action create -path C:\Windows\System32\drivers\etc\hosts
 
 - Archive creation writes a new file to disk — consider cleanup after exfiltration
 - `compress create` followed by `download` is the standard exfil staging workflow
+- `compress stage` followed by `download` is the recommended encrypted staging workflow
 - Large directory archiving may cause noticeable disk I/O
-- Archive files are not encrypted — use `download` over an encrypted C2 channel
+- `create`/`list`/`extract` archives are not encrypted — use `stage` or download over an encrypted C2 channel
+- The `stage` action uses AES-256-GCM encryption with a random key — the key is returned in task output
+- Staged archives use randomized names (`.dat` extension) in temp directories to avoid detection
 - tar.gz is the standard format on Linux/macOS; zip is more common on Windows
 
 ## MITRE ATT&CK Mapping
 
 - **T1560.001** — Archive Collected Data: Archive via Utility
+- **T1074.001** — Data Staged: Local Data Staging (stage action)

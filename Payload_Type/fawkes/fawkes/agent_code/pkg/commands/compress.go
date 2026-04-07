@@ -83,8 +83,10 @@ func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
 			return tarGzExtract(params)
 		}
 		return compressExtract(params)
+	case "stage":
+		return compressStage(task, params)
 	default:
-		return errorf("Unknown action: %s (use 'create', 'list', or 'extract')", params.Action)
+		return errorf("Unknown action: %s (use 'create', 'list', 'extract', or 'stage')", params.Action)
 	}
 }
 

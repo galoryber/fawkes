@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -9,10 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "compress",
-		Description:         "compress -action create -path <dir> [-format zip|tar.gz] [-output archive.zip] [-pattern *.txt] - Create, list, or extract zip/tar.gz archives for data staging.",
-		HelpString:          "compress -action create -path <dir_or_file> [-format zip|tar.gz] [-output archive.zip] [-pattern *.txt] [-max_depth 10] [-max_size 104857600]",
-		Version:             1,
-		MitreAttackMappings: []string{"T1560.001"}, // Archive Collected Data: Archive via Utility
+		Description:         "Create, list, extract, or stage encrypted archives. Stage action collects files into AES-256-GCM encrypted archives for exfiltration.",
+		HelpString:          "compress -action create|list|extract|stage -path <dir_or_file> [-format zip|tar.gz] [-output path] [-pattern *.txt] [-max_depth 10] [-max_size 104857600]",
+		Version:             2,
+		MitreAttackMappings: []string{"T1560.001", "T1074.001"}, // Archive via Utility, Local Data Staging
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
@@ -23,7 +24,7 @@ func init() {
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Description:   "Action to perform",
-				Choices:       []string{"create", "list", "extract"},
+				Choices:       []string{"create", "list", "extract", "stage"},
 				DefaultValue:  "create",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -129,12 +130,43 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Compressing files for staging/exfiltration (T1560.001). Bulk file compression into archives is a data staging indicator."
+			if action == "stage" {
+				msg = "OPSEC WARNING: Data staging with AES-256-GCM encryption (T1074.001 + T1560.001). Creates encrypted archive in temp directory. Disk write of encrypted archive may trigger DLP or endpoint monitoring. The encryption key is returned in task output — protect it."
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
 				OpsecPreBlocked: false,
-				OpsecPreMessage:    "OPSEC WARNING: Compressing files for staging/exfiltration (T1560.001). Bulk file compression into archives is a data staging indicator. Large archive creation followed by network egress triggers DLP alerts.",
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Detect stage action output (JSON with encryption_key field)
+			var stageResult struct {
+				ArchivePath string `json:"archive_path"`
+				FileCount   int    `json:"file_count"`
+				ArchiveSize int64  `json:"archive_size"`
+				SourcePath  string `json:"source_path"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &stageResult); err == nil && stageResult.ArchivePath != "" {
+				createArtifact(processResponse.TaskData.Task.ID, "File Write",
+					fmt.Sprintf("Encrypted staging archive: %s (%d files, %d bytes) from %s",
+						stageResult.ArchivePath, stageResult.FileCount, stageResult.ArchiveSize, stageResult.SourcePath))
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DATA STAGING] compress stage: %d files (%d bytes) staged to %s from %s",
+						stageResult.FileCount, stageResult.ArchiveSize, stageResult.ArchivePath, stageResult.SourcePath), true)
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
