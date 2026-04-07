@@ -169,6 +169,8 @@ func init() {
 			if m := re.FindStringSubmatch(responseText); len(m) > 3 {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
 					fmt.Sprintf("WinRM execution: %s@%s:%s (%s)", m[1], m[2], m[3], m[4]))
+				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
+					fmt.Sprintf("WinRM execution on %s as %s", m[2], m[1]))
 			}
 			return response
 		},

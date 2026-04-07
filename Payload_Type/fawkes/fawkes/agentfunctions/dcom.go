@@ -227,6 +227,8 @@ func init() {
 			if m := re.FindStringSubmatch(responseText); len(m) > 2 {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
 					fmt.Sprintf("DCOM execution: %s on %s", m[1], m[2]))
+				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
+					fmt.Sprintf("DCOM %s execution on %s", m[1], m[2]))
 			}
 			return response
 		},

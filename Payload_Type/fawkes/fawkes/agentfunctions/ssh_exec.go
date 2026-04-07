@@ -156,6 +156,8 @@ func init() {
 			if m := re.FindStringSubmatch(responseText); len(m) > 2 {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
 					fmt.Sprintf("SSH execution: %s@%s", m[1], m[2]))
+				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
+					fmt.Sprintf("SSH execution on %s as %s", m[2], m[1]))
 			}
 			return response
 		},

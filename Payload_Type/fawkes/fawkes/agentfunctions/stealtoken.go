@@ -138,6 +138,15 @@ func init() {
 				logging.LogError(err, "Failed to register stolen token with Mythic", "user", user, "pid", int(pid))
 			}
 
+			// Tag elevated access
+			if strings.Contains(strings.ToUpper(user), "SYSTEM") {
+				tagTask(processResponse.TaskData.Task.ID, "SYSTEM",
+					fmt.Sprintf("Stole SYSTEM token from PID %d", int(pid)))
+			} else {
+				tagTask(processResponse.TaskData.Task.ID, "ELEVATED",
+					fmt.Sprintf("Stole token: %s (PID %d)", user, int(pid)))
+			}
+
 			return response
 		},
 	})

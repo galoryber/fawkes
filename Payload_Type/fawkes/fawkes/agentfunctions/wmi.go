@@ -146,6 +146,8 @@ func init() {
 			if m := re.FindStringSubmatch(responseText); len(m) > 1 {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
 					fmt.Sprintf("WMI Process Create on %s", m[1]))
+				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
+					fmt.Sprintf("WMI process creation on %s", m[1]))
 			}
 			return response
 		},

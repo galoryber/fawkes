@@ -165,6 +165,9 @@ func init() {
 				logOperationEvent(processResponse.TaskData.Task.ID,
 					fmt.Sprintf("[DATA STAGING] compress stage: %d files (%d bytes) staged to %s from %s",
 						stageResult.FileCount, stageResult.ArchiveSize, stageResult.ArchivePath, stageResult.SourcePath), true)
+				tagTask(processResponse.TaskData.Task.ID, "DATA_STAGED",
+					fmt.Sprintf("Encrypted staging: %d files (%d bytes) at %s",
+						stageResult.FileCount, stageResult.ArchiveSize, stageResult.ArchivePath))
 			}
 			return response
 		},
