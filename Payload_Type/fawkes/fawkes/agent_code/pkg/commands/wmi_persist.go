@@ -375,7 +375,7 @@ func wmiQuerySubscription(services *ole.IDispatch, wql string) ([]map[string]str
 
 		propsResult, err := oleutil.GetProperty(item, "Properties_")
 		if err != nil {
-			return err
+			return fmt.Errorf("getting WMI subscription properties: %w", err)
 		}
 		defer propsResult.Clear()
 

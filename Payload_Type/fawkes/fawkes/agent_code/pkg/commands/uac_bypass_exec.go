@@ -242,7 +242,7 @@ func uacBypassWusa(command string) structs.CommandResult {
 func createDirectoryW(path string) error {
 	pathPtr, err := windows.UTF16PtrFromString(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("converting directory path to UTF16: %w", err)
 	}
 	return windows.CreateDirectory(pathPtr, nil)
 }
@@ -251,7 +251,7 @@ func createDirectoryW(path string) error {
 func copyFileSimple(src, dst string) error {
 	data, err := os.ReadFile(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading source file %s: %w", src, err)
 	}
 	return os.WriteFile(dst, data, 0755)
 }

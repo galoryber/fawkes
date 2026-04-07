@@ -247,11 +247,13 @@ func readCcacheOctetString(r io.Reader) ([]byte, error) {
 func skipCcacheOctetString(r io.Reader) error {
 	var length uint32
 	if err := binary.Read(r, binary.BigEndian, &length); err != nil {
-		return err
+		return fmt.Errorf("reading octet string length: %w", err)
 	}
 	if length > 1048576 {
 		return fmt.Errorf("octet string too long: %d", length)
 	}
-	_, err := io.CopyN(io.Discard, r, int64(length))
-	return err
+	if _, err := io.CopyN(io.Discard, r, int64(length)); err != nil {
+		return fmt.Errorf("skipping octet string data (%d bytes): %w", length, err)
+	}
+	return nil
 }

@@ -182,18 +182,18 @@ func reverseString(s string) string {
 func masqueradeCopyFile(src, dst string) error {
 	srcFile, err := os.Open(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open source file: %w", err)
 	}
 	defer srcFile.Close()
 
 	dstFile, err := os.Create(dst)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create destination file: %w", err)
 	}
 	defer dstFile.Close()
 
 	if _, err := io.Copy(dstFile, srcFile); err != nil {
-		return err
+		return fmt.Errorf("failed to copy file contents: %w", err)
 	}
 
 	// Preserve permissions

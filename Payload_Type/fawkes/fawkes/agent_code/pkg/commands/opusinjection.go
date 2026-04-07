@@ -259,7 +259,7 @@ func readProcessMemoryPtr(hProcess windows.Handle, addr uintptr, value *uintptr)
 	buf := make([]byte, 8)
 	err := windows.ReadProcessMemory(hProcess, addr, &buf[0], 8, &bytesRead)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading process memory pointer at 0x%x: %w", addr, err)
 	}
 	*value = *(*uintptr)(unsafe.Pointer(&buf[0]))
 	return nil
@@ -271,7 +271,7 @@ func readProcessMemoryDword(hProcess windows.Handle, addr uintptr, value *uint32
 	buf := make([]byte, 4)
 	err := windows.ReadProcessMemory(hProcess, addr, &buf[0], 4, &bytesRead)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading process memory DWORD at 0x%x: %w", addr, err)
 	}
 	*value = *(*uint32)(unsafe.Pointer(&buf[0]))
 	return nil

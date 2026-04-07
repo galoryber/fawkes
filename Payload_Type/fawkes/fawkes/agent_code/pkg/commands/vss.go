@@ -280,7 +280,7 @@ func vssDelete(args vssArgs) structs.CommandResult {
 		_, err := oleutil.CallMethod(item, "Delete_")
 		if err != nil {
 			deleteErr = err
-			return err
+			return fmt.Errorf("deleting shadow copy: %w", err)
 		}
 		deleted = true
 		return nil

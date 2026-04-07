@@ -334,18 +334,18 @@ func enableBackupPrivilege() error {
 	var token windows.Token
 	processHandle, err := windows.GetCurrentProcess()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get current process handle: %w", err)
 	}
 	err = windows.OpenProcessToken(processHandle, windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &token)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open process token: %w", err)
 	}
 	defer token.Close()
 
 	var luid windows.LUID
 	err = windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr("SeBackupPrivilege"), &luid)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to lookup SeBackupPrivilege LUID: %w", err)
 	}
 
 	tp := windows.Tokenprivileges{
@@ -363,14 +363,14 @@ func enableThreadBackupPrivilege() error {
 	var token windows.Token
 	err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, false, &token)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open thread token: %w", err)
 	}
 	defer token.Close()
 
 	var luid windows.LUID
 	err = windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr("SeBackupPrivilege"), &luid)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to lookup SeBackupPrivilege LUID: %w", err)
 	}
 
 	tp := windows.Tokenprivileges{

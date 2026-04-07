@@ -35,7 +35,7 @@ func getAccessTime(path string, info os.FileInfo) time.Time {
 func copyCreationTime(target, source string) error {
 	sourceInfo, err := os.Stat(source)
 	if err != nil {
-		return err
+		return fmt.Errorf("stat source file %s: %w", source, err)
 	}
 	sys, ok := sourceInfo.Sys().(*syscall.Win32FileAttributeData)
 	if !ok || sys == nil {
@@ -49,7 +49,7 @@ func copyCreationTime(target, source string) error {
 func setCreationTime(target string, t time.Time) error {
 	pathp, err := syscall.UTF16PtrFromString(target)
 	if err != nil {
-		return err
+		return fmt.Errorf("converting target path to UTF16: %w", err)
 	}
 
 	h, err := syscall.CreateFile(pathp,

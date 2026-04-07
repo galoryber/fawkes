@@ -147,7 +147,10 @@ func defenderWMIQuery(wql string) (string, error) {
 			}
 			return nil
 		})
-		return err
+		if err != nil {
+			return fmt.Errorf("iterating defender WMI properties: %w", err)
+		}
+		return nil
 	})
 
 	if err != nil {

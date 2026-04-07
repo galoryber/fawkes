@@ -86,7 +86,7 @@ func aclEditRead(conn *ldap.Conn, args aclEditArgs, baseDN string) structs.Comma
 func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, principalSIDStr string, mask uint32, objectGUID []byte, aceType byte, remove bool) error {
 	sd, err := aclEditReadSD(conn, targetDN)
 	if err != nil {
-		return err
+		return fmt.Errorf("reading security descriptor for %s: %w", targetDN, err)
 	}
 
 	// Parse DACL offset and existing ACL
@@ -186,7 +186,10 @@ func aclEditModifySD(conn *ldap.Conn, targetDN string, principalSID []byte, prin
 		err = conn.Modify(modReq)
 	}
 
-	return err
+	if err != nil {
+		return fmt.Errorf("writing modified security descriptor for %s: %w", targetDN, err)
+	}
+	return nil
 }
 
 // aclEditAdd adds an ACE granting the specified right to the principal

@@ -58,7 +58,7 @@ func smbDialSession(host string, port int, username, domain, password, hash stri
 	_ = conn.SetDeadline(time.Time{}) // Clear deadline after auth
 	if err != nil {
 		_ = conn.Close()
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("SMB2 dial/authenticate: %w", err)
 	}
 
 	return session, conn, nil

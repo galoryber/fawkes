@@ -4,6 +4,7 @@
 package commands
 
 import (
+	"fmt"
 	"strings"
 	"syscall"
 	"unsafe"
@@ -99,11 +100,11 @@ func getXattr(path, name string) ([]byte, error) {
 func setXattr(path, name string, data []byte) error {
 	pathBytes, err := syscall.BytePtrFromString(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to convert path to byte pointer: %w", err)
 	}
 	nameBytes, err := syscall.BytePtrFromString(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to convert xattr name to byte pointer: %w", err)
 	}
 
 	var dataPtr uintptr
@@ -129,11 +130,11 @@ func setXattr(path, name string, data []byte) error {
 func removeXattr(path, name string) error {
 	pathBytes, err := syscall.BytePtrFromString(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to convert path to byte pointer: %w", err)
 	}
 	nameBytes, err := syscall.BytePtrFromString(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to convert xattr name to byte pointer: %w", err)
 	}
 
 	_, _, errno := syscall.Syscall(

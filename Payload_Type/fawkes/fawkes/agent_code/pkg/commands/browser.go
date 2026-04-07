@@ -231,7 +231,7 @@ func decryptPassword(encryptedPassword []byte, key []byte) (string, error) {
 func copyFile(src, dst string) error {
 	srcPtr, err := windows.UTF16PtrFromString(src)
 	if err != nil {
-		return err
+		return fmt.Errorf("converting source path to UTF16: %w", err)
 	}
 	h, err := windows.CreateFile(
 		srcPtr,

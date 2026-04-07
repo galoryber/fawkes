@@ -203,7 +203,10 @@ func wmiExecQuery(conn *wmiConnection, wql string) (string, error) {
 			}
 			return nil
 		})
-		return err
+		if err != nil {
+			return fmt.Errorf("iterating WMI properties: %w", err)
+		}
+		return nil
 	})
 
 	if err != nil {

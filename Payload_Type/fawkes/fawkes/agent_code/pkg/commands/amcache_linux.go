@@ -343,7 +343,7 @@ func writeRecentlyUsed(path string, doc *xbelDoc) error {
 	}
 	data, err := xml.MarshalIndent(doc, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("marshaling XBEL document: %w", err)
 	}
 	content := append([]byte(xml.Header), data...)
 	content = append(content, '\n')

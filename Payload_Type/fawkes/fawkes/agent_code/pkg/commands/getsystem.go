@@ -253,19 +253,19 @@ func enableDebugPrivilege() error {
 	var token windows.Token
 	processHandle, err := windows.GetCurrentProcess()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get current process handle: %w", err)
 	}
 
 	err = windows.OpenProcessToken(processHandle, windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &token)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open process token: %w", err)
 	}
 	defer token.Close()
 
 	var luid windows.LUID
 	err = windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr("SeDebugPrivilege"), &luid)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to lookup SeDebugPrivilege LUID: %w", err)
 	}
 
 	tp := windows.Tokenprivileges{
@@ -280,7 +280,7 @@ func enableDebugPrivilege() error {
 
 	err = windows.AdjustTokenPrivileges(token, false, &tp, 0, nil, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to adjust token privileges: %w", err)
 	}
 
 	return nil
