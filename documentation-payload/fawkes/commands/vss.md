@@ -15,7 +15,8 @@ Manage Volume Shadow Copies — list existing snapshots, create new ones, delete
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | Yes | list | Action: `list`, `create`, `delete`, `extract` |
+| action | Yes | list | Action: `list`, `create`, `delete`, `delete-all`, `extract`, `inhibit-recovery` |
+| confirm | For destructive | false | Required for `delete-all` and `inhibit-recovery` (safety check) |
 | volume | For create | C:\ | Volume to create shadow copy of |
 | id | For delete/extract | - | Shadow copy ID (delete) or device path (extract) |
 | source | For extract | - | Path within shadow copy to extract |
@@ -85,6 +86,24 @@ Extracted from shadow copy:
   Size: 65536 bytes
 ```
 
+### Delete All Shadow Copies (T1490 — Ransomware Emulation)
+```
+vss -action delete-all -confirm true
+```
+Deletes ALL shadow copies on the system. This is the primary ransomware emulation action. Requires `-confirm true` as a safety check.
+
+### Inhibit System Recovery (T1490 — Comprehensive)
+```
+vss -action inhibit-recovery -confirm true
+```
+Comprehensive recovery inhibition:
+1. Deletes all shadow copies (WMI)
+2. Disables Windows Recovery Environment (bcdedit)
+3. Disables boot status policy (bcdedit)
+4. Deletes backup catalog (wbadmin)
+
+Requires `-confirm true`. This is a destructive, irreversible action for authorized ransomware emulation only.
+
 ## Typical DC Compromise Workflow
 
 1. Create shadow copy: `vss -action create`
@@ -105,3 +124,4 @@ Extracted from shadow copy:
 ## MITRE ATT&CK Mapping
 
 - **T1003.003** — OS Credential Dumping: NTDS
+- **T1490** — Inhibit System Recovery (delete-all, inhibit-recovery actions)
