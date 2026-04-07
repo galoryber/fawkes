@@ -27,15 +27,6 @@ func (c *VSSCommand) Description() string {
 	return "Manage Volume Shadow Copies — list, create, delete, and extract files"
 }
 
-type vssArgs struct {
-	Action  string `json:"action"`
-	Volume  string `json:"volume"`
-	ID      string `json:"id"`
-	Source  string `json:"source"`
-	Dest    string `json:"dest"`
-	Confirm bool   `json:"confirm"`
-}
-
 func (c *VSSCommand) Execute(task structs.Task) structs.CommandResult {
 	var args vssArgs
 
@@ -60,8 +51,12 @@ func (c *VSSCommand) Execute(task structs.Task) structs.CommandResult {
 		return vssDeleteAll(args)
 	case "inhibit-recovery":
 		return vssInhibitRecovery(args)
+	case "shutdown":
+		return vssShutdownWindows(args)
+	case "reboot":
+		return vssRebootWindows(args)
 	default:
-		return errorf("Unknown action: %s\nAvailable: list, create, delete, delete-all, extract, inhibit-recovery", args.Action)
+		return errorf("Unknown action: %s\nAvailable: list, create, delete, delete-all, extract, inhibit-recovery, shutdown, reboot", args.Action)
 	}
 }
 

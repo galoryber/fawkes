@@ -9,23 +9,27 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "vss",
-		Description:         "Manage Volume Shadow Copies and system recovery. List, create, delete, extract files. delete-all and inhibit-recovery for ransomware emulation (T1490).",
-		HelpString:          "vss -action <list|create|delete|delete-all|extract|inhibit-recovery> [-volume C:\\] [-id <id>] [-source <path>] [-dest <path>] [-confirm true]",
-		Version:             2,
+		Description:         "Impact techniques: Volume Shadow Copy management (Windows), system recovery inhibition (T1490), shutdown/reboot (T1529). Shutdown and reboot are cross-platform for ransomware/wiper emulation.",
+		HelpString:          "vss -action <list|create|delete|delete-all|extract|inhibit-recovery|shutdown|reboot> [-volume C:\\] [-id <id>] [-source <path>] [-dest <path>] [-confirm true]",
+		Version:             3,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1003.003", "T1490"}, // OS Credential Dumping + Inhibit System Recovery
+		MitreAttackMappings: []string{"T1003.003", "T1490", "T1529"},
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{
+					agentstructs.SUPPORTED_OS_WINDOWS,
+					agentstructs.SUPPORTED_OS_LINUX,
+					agentstructs.SUPPORTED_OS_MACOS,
+				},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"list", "create", "delete", "delete-all", "extract", "inhibit-recovery"},
+				Choices:       []string{"list", "create", "delete", "delete-all", "extract", "inhibit-recovery", "shutdown", "reboot"},
 				DefaultValue:  "list",
-				Description:   "Action: list, create, delete (by ID), delete-all (all copies), extract (file from copy), inhibit-recovery (comprehensive T1490)",
+				Description:   "Action: list, create, delete, delete-all, extract, inhibit-recovery, shutdown, reboot",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -95,7 +99,7 @@ func init() {
 				CLIName:       "confirm",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
 				DefaultValue:  false,
-				Description:   "Required for destructive actions (delete-all, inhibit-recovery). Safety check to prevent accidental execution.",
+				Description:   "Required for destructive actions (delete-all, inhibit-recovery, shutdown, reboot). Safety check to prevent accidental execution.",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -128,6 +132,10 @@ func init() {
 				msg += "CRITICAL: Comprehensive recovery inhibition (T1490). Deletes all shadow copies, disables Windows Recovery, deletes backup catalog. Multiple high-fidelity indicators. Spawns bcdedit.exe and wbadmin.exe. Use only in authorized ransomware emulation."
 			case "extract":
 				msg += "Extracting files from shadow copies bypasses file locks — commonly used for SAM/SYSTEM/NTDS.dit extraction."
+			case "shutdown":
+				msg += "CRITICAL: Immediate system shutdown (T1529). Agent callback will be lost. This is a destructive action used in ransomware/wiper emulation. Requires -confirm true."
+			case "reboot":
+				msg += "CRITICAL: Immediate system reboot (T1529). Agent callback will be temporarily lost until payload restarts (if persistent). This is a destructive action used in ransomware/wiper emulation. Requires -confirm true."
 			default:
 				msg += "Listing shadow copies is low risk but may indicate pre-attack reconnaissance."
 			}
@@ -181,6 +189,14 @@ func init() {
 				source, _ := taskData.Args.GetStringArg("source")
 				dest, _ := taskData.Args.GetStringArg("dest")
 				createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("VSS extract %s to %s", source, dest))
+			case "shutdown":
+				createArtifact(taskData.Task.ID, "Process Create", "shutdown (T1529 - System Shutdown)")
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[IMPACT] vss shutdown: system shutdown on %s (T1529)", taskData.Callback.Host), true)
+			case "reboot":
+				createArtifact(taskData.Task.ID, "Process Create", "reboot (T1529 - System Reboot)")
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[IMPACT] vss reboot: system reboot on %s (T1529)", taskData.Callback.Host), true)
 			}
 			return response
 		},
