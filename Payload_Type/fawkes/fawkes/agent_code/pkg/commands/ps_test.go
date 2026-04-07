@@ -86,6 +86,28 @@ func TestPsExecuteFilterByName(t *testing.T) {
 	}
 }
 
+func TestPsStartTimePopulated(t *testing.T) {
+	cmd := &PsCommand{}
+	task := structs.NewTask("t", "ps", "")
+	result := cmd.Execute(task)
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q", result.Status)
+	}
+	if result.Processes == nil {
+		t.Fatal("Processes is nil")
+	}
+	hasStartTime := false
+	for _, p := range *result.Processes {
+		if p.StartTime > 0 {
+			hasStartTime = true
+			break
+		}
+	}
+	if !hasStartTime {
+		t.Error("expected at least one process with StartTime > 0")
+	}
+}
+
 func TestPsExecuteInvalidPID(t *testing.T) {
 	cmd := &PsCommand{}
 	params, _ := json.Marshal(PsArgs{PID: -1})

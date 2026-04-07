@@ -69,17 +69,38 @@ func TestPerProcessTimeoutConstant(t *testing.T) {
 	}
 }
 
-func TestGetProcessUsername(t *testing.T) {
-	// PID 4 (System) should return SYSTEM or NT AUTHORITY\SYSTEM
-	username := getProcessUsername(4)
-	// May fail due to access restrictions, that's OK
-	if username != "" {
-		t.Logf("System process username: %s", username)
-	}
+func TestQueryWinProcessAttrs(t *testing.T) {
+	// PID 4 (System) — test that queryWinProcessAttrs doesn't panic
+	attrs := queryWinProcessAttrs(4)
+	t.Logf("System process: username=%q exePath=%q integrity=%d startTime=%d",
+		attrs.username, attrs.exePath, attrs.integrityLevel, attrs.startTime)
 }
 
-func TestGetProcessExePath(t *testing.T) {
-	// PID 4 (System) usually returns empty (kernel)
-	exePath := getProcessExePath(4)
-	t.Logf("System process exe path: %q", exePath)
+func TestGetProcessIntegrityLevel(t *testing.T) {
+	// Get our own process integrity level — should be at least medium (2)
+	procs, err := getProcessList(PsArgs{Verbose: true})
+	if err != nil {
+		t.Fatalf("getProcessList failed: %v", err)
+	}
+	for _, p := range procs {
+		if p.IntegrityLevel > 0 {
+			t.Logf("Process %s (PID %d) integrity=%d", p.Name, p.PID, p.IntegrityLevel)
+			return
+		}
+	}
+	t.Log("No processes with integrity level data (expected if running without verbose)")
+}
+
+func TestGetProcessStartTime(t *testing.T) {
+	procs, err := getProcessList(PsArgs{Verbose: true})
+	if err != nil {
+		t.Fatalf("getProcessList failed: %v", err)
+	}
+	for _, p := range procs {
+		if p.StartTime > 0 {
+			t.Logf("Process %s (PID %d) startTime=%d", p.Name, p.PID, p.StartTime)
+			return
+		}
+	}
+	t.Log("No processes with start time data")
 }

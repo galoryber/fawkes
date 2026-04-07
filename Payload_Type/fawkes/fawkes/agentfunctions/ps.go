@@ -108,39 +108,72 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Parse JSON process list to find our own process by callback PID
+			// Parse the full process list from agent response
 			var processes []struct {
-				ProcessID    int    `json:"process_id"`
-				Name         string `json:"name"`
-				Architecture string `json:"architecture"`
+				ProcessID       int    `json:"process_id"`
+				ParentProcessID int    `json:"parent_process_id"`
+				Name            string `json:"name"`
+				Architecture    string `json:"architecture"`
+				User            string `json:"user"`
+				BinPath         string `json:"bin_path"`
+				CommandLine     string `json:"command_line"`
+				IntegrityLevel  int    `json:"integrity_level"`
+				StartTime       int64  `json:"start_time"`
 			}
 			if err := json.Unmarshal([]byte(responseText), &processes); err != nil {
 				return response
 			}
-			callbackPID := processResponse.TaskData.Callback.PID
-			if callbackPID <= 0 {
-				return response
+
+			// Populate Mythic process browser via RPC with host enrichment
+			if len(processes) > 0 {
+				host := processResponse.TaskData.Callback.Host
+				rpcProcesses := make([]mythicrpc.MythicRPCProcessCreateProcessData, len(processes))
+				for i, p := range processes {
+					rpcProcesses[i] = mythicrpc.MythicRPCProcessCreateProcessData{
+						Host:            &host,
+						ProcessID:       p.ProcessID,
+						ParentProcessID: p.ParentProcessID,
+						Name:            p.Name,
+						Architecture:    p.Architecture,
+						User:            p.User,
+						BinPath:         p.BinPath,
+						CommandLine:     p.CommandLine,
+						IntegrityLevel:  p.IntegrityLevel,
+						StartTime:       int(p.StartTime),
+					}
+				}
+				if _, err := mythicrpc.SendMythicRPCProcessCreate(mythicrpc.MythicRPCProcessCreateMessage{
+					TaskID:    processResponse.TaskData.Task.ID,
+					Processes: rpcProcesses,
+				}); err != nil {
+					logging.LogError(err, "Failed to populate process browser via RPC")
+				}
 			}
-			for _, p := range processes {
-				if p.ProcessID == callbackPID && p.Name != "" {
-					update := mythicrpc.MythicRPCCallbackUpdateMessage{
-						AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
-					}
-					hasUpdate := false
-					if p.Name != processResponse.TaskData.Callback.ProcessName {
-						update.ProcessName = &p.Name
-						hasUpdate = true
-					}
-					if p.Architecture != "" && p.Architecture != processResponse.TaskData.Callback.Architecture {
-						update.Architecture = &p.Architecture
-						hasUpdate = true
-					}
-					if hasUpdate {
-						if _, err := mythicrpc.SendMythicRPCCallbackUpdate(update); err != nil {
-							logging.LogError(err, "Failed to update callback metadata from ps")
+
+			// Update callback metadata if we find the callback's own process
+			callbackPID := processResponse.TaskData.Callback.PID
+			if callbackPID > 0 {
+				for _, p := range processes {
+					if p.ProcessID == callbackPID && p.Name != "" {
+						update := mythicrpc.MythicRPCCallbackUpdateMessage{
+							AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
 						}
+						hasUpdate := false
+						if p.Name != processResponse.TaskData.Callback.ProcessName {
+							update.ProcessName = &p.Name
+							hasUpdate = true
+						}
+						if p.Architecture != "" && p.Architecture != processResponse.TaskData.Callback.Architecture {
+							update.Architecture = &p.Architecture
+							hasUpdate = true
+						}
+						if hasUpdate {
+							if _, err := mythicrpc.SendMythicRPCCallbackUpdate(update); err != nil {
+								logging.LogError(err, "Failed to update callback metadata from ps")
+							}
+						}
+						break
 					}
-					break
 				}
 			}
 			return response

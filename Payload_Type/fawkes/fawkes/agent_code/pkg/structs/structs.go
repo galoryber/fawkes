@@ -259,6 +259,8 @@ type ProcessEntry struct {
 	User            string `json:"user"`
 	BinPath         string `json:"bin_path"`
 	CommandLine     string `json:"command_line,omitempty"`
+	IntegrityLevel  int    `json:"integrity_level,omitempty"`
+	StartTime       int64  `json:"start_time,omitempty"`
 }
 
 // MythicCredential represents a credential to store in Mythic's credential vault.

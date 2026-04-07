@@ -32,13 +32,15 @@ type PsArgs struct {
 
 // ProcessInfo represents process information collected from the OS
 type ProcessInfo struct {
-	PID     int32  `json:"pid"`
-	PPID    int32  `json:"ppid"`
-	Name    string `json:"name"`
-	Arch    string `json:"arch"`
-	User    string `json:"user"`
-	BinPath string `json:"bin_path"`
-	CmdLine string `json:"cmdline,omitempty"`
+	PID            int32  `json:"pid"`
+	PPID           int32  `json:"ppid"`
+	Name           string `json:"name"`
+	Arch           string `json:"arch"`
+	User           string `json:"user"`
+	BinPath        string `json:"bin_path"`
+	CmdLine        string `json:"cmdline,omitempty"`
+	IntegrityLevel int    `json:"integrity_level,omitempty"` // Windows: 0=untrusted, 1=low, 2=medium, 3=high, 4=system
+	StartTime      int64  `json:"start_time,omitempty"`      // Unix epoch seconds
 }
 
 // Execute executes the ps command
@@ -86,6 +88,8 @@ func (c *PsCommand) Execute(task structs.Task) structs.CommandResult {
 			User:            p.User,
 			BinPath:         p.BinPath,
 			CommandLine:     p.CmdLine,
+			IntegrityLevel:  p.IntegrityLevel,
+			StartTime:       p.StartTime,
 		}
 	}
 

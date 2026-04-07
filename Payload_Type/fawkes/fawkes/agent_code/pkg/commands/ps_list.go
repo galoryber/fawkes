@@ -45,15 +45,20 @@ func getProcessList(args PsArgs) ([]ProcessInfo, error) {
 
 		cmdline, _ := p.Cmdline()
 		exe, _ := p.Exe()
+		var startTime int64
+		if ct, err := p.CreateTime(); err == nil && ct > 0 {
+			startTime = ct / 1000 // gopsutil returns milliseconds, Mythic expects seconds
+		}
 
 		processes = append(processes, ProcessInfo{
-			PID:     p.Pid,
-			PPID:    ppid,
-			Name:    name,
-			Arch:    runtime.GOARCH,
-			User:    username,
-			BinPath: exe,
-			CmdLine: cmdline,
+			PID:       p.Pid,
+			PPID:      ppid,
+			Name:      name,
+			Arch:      runtime.GOARCH,
+			User:      username,
+			BinPath:   exe,
+			CmdLine:   cmdline,
+			StartTime: startTime,
 		})
 	}
 
