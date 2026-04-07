@@ -47,4 +47,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&EtwCommand{})
 	RegisterCommand(&GetSystemCommand{})
 	RegisterCommand(&VSSCommand{})
+	RegisterCommand(&PersistCommand{})
 }
