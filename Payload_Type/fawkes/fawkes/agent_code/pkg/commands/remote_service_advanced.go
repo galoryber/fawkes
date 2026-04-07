@@ -245,8 +245,8 @@ func remoteSvcTrigger(args remoteServiceArgs) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("Display Name : %s\n", displayName))
 	sb.WriteString(fmt.Sprintf("Binary Path  : %s\n", args.BinPath))
 	sb.WriteString(fmt.Sprintf("Trigger      : %s\n", triggerDesc))
-	sb.WriteString(fmt.Sprintf("Start Type   : DEMAND_START (trigger-activated)\n"))
-	sb.WriteString(fmt.Sprintf("\nThe service will start automatically when the trigger fires.\n"))
+	sb.WriteString("Start Type   : DEMAND_START (trigger-activated)\n")
+	sb.WriteString("\nThe service will start automatically when the trigger fires.\n")
 	sb.WriteString(fmt.Sprintf("Cleanup: remote-service -action delete -server %s -name %s\n", args.Server, args.Name))
 
 	return successResult(sb.String())
