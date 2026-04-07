@@ -23,12 +23,13 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "host",
-				ModalDisplayName: "Target Host",
-				CLIName:          "host",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Target hostname or IP address",
-				DefaultValue:     "",
+				Name:                 "host",
+				ModalDisplayName:     "Target Host",
+				CLIName:              "host",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Target hostname or IP address",
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

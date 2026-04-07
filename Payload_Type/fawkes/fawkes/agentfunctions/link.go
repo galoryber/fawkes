@@ -38,12 +38,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "host",
-				CLIName:          "host",
-				ModalDisplayName: "Target Host",
-				Description:      "IP address or hostname of the target P2P agent",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "host",
+				CLIName:              "host",
+				ModalDisplayName:     "Target Host",
+				Description:          "IP address or hostname of the target P2P agent",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

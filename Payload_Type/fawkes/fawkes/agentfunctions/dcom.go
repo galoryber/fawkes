@@ -39,11 +39,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "host",
-				CLIName:       "host",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:  "",
-				Description:   "Target hostname or IP address",
+				Name:                 "host",
+				CLIName:              "host",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				Description:          "Target hostname or IP address",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
