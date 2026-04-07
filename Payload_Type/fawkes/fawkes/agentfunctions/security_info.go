@@ -120,6 +120,10 @@ func init() {
 						activeProducts = append(activeProducts, d.Name)
 					}
 				}
+				if len(activeProducts) > 0 {
+					tagTask(processResponse.TaskData.Task.ID, "EDR",
+						fmt.Sprintf("Detected %d active security products: %s", len(activeProducts), strings.Join(activeProducts, ", ")))
+				}
 				// Cache EDR detection results in AgentStorage for cross-callback reference
 				callbackID := fmt.Sprintf("%d", processResponse.TaskData.Callback.DisplayID)
 				storageKey := "edr-detections-cb" + callbackID

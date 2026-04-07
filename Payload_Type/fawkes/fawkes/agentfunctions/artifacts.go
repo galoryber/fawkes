@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"encoding/json"
+	"fmt"
 	"strings"
 
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -138,4 +139,35 @@ func registerCredentials(taskID int, creds []mythicrpc.MythicRPCCredentialCreate
 	if err != nil {
 		logging.LogError(err, "Failed to register credentials in vault", "task_id", taskID, "count", len(newCreds))
 	}
+
+	// Auto-tag the task based on credential types discovered
+	credTypes := make(map[string]bool)
+	for _, c := range newCreds {
+		credTypes[c.CredentialType] = true
+	}
+	for ct := range credTypes {
+		switch ct {
+		case "plaintext":
+			tagTask(taskID, "PLAINTEXT", fmt.Sprintf("Discovered %d plaintext credential(s)", countCredType(newCreds, ct)))
+		case "hash":
+			tagTask(taskID, "HASH", fmt.Sprintf("Discovered %d hash credential(s)", countCredType(newCreds, ct)))
+		case "ticket":
+			tagTask(taskID, "TICKET", fmt.Sprintf("Discovered %d Kerberos ticket(s)", countCredType(newCreds, ct)))
+		case "key":
+			tagTask(taskID, "KEY", fmt.Sprintf("Discovered %d cryptographic key(s)", countCredType(newCreds, ct)))
+		default:
+			tagTask(taskID, "CREDENTIAL", fmt.Sprintf("Discovered %d %s credential(s)", countCredType(newCreds, ct), ct))
+		}
+	}
+}
+
+// countCredType counts credentials of a specific type.
+func countCredType(creds []mythicrpc.MythicRPCCredentialCreateCredentialData, credType string) int {
+	n := 0
+	for _, c := range creds {
+		if c.CredentialType == credType {
+			n++
+		}
+	}
+	return n
 }

@@ -131,6 +131,8 @@ func init() {
 			if _, err := mythicrpc.SendMythicRPCCallbackUpdate(update); err != nil {
 				logging.LogError(err, "Failed to update callback metadata after getsystem")
 			}
+			tagTask(processResponse.TaskData.Task.ID, "SYSTEM",
+				fmt.Sprintf("SYSTEM-level access obtained on %s", processResponse.TaskData.Callback.Host))
 			// Register SYSTEM token with Mythic's token tracker
 			if user == "" {
 				user = "NT AUTHORITY\\SYSTEM"
