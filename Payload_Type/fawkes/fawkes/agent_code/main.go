@@ -8,6 +8,7 @@ import (
 	"math/rand"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -18,6 +19,20 @@ import (
 	"fawkes/pkg/socks"
 	"fawkes/pkg/structs"
 )
+
+// diagWrite appends a timestamped diagnostic marker to a temp file.
+// Used to trace execution flow during crash investigation — the file
+// persists even if the process is externally terminated.
+// TODO: Remove after hashdump crash investigation is resolved.
+func diagWrite(command, step string) {
+	diagPath := filepath.Join(os.TempDir(), "fawkes_diag.txt")
+	f, err := os.OpenFile(diagPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	fmt.Fprintf(f, "%s [%s] %s\n", time.Now().Format("15:04:05.000"), command, step)
+}
 
 func main() {
 	// Try running as a Windows service first. If started by SCM, this blocks
@@ -355,8 +370,12 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		}
 	}()
 
+	// Diagnostic: trace post-execution steps (hashdump crash investigation)
+	diagWrite(task.Command, fmt.Sprintf("1-execute-done status=%s output_len=%d", result.Status, len(result.Output)))
+
 	// Zero task parameters to reduce forensic exposure of credentials/arguments
 	task.WipeParams()
+	diagWrite(task.Command, "2-wipeparams-done")
 
 	// Send final response
 	response := structs.Response{
@@ -368,13 +387,16 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 		Credentials:     result.Credentials,
 		ProcessResponse: result.Output,
 	}
+	diagWrite(task.Command, "3-response-built")
 	if _, err := c2.PostResponse(response, agent, socksManager.DrainOutbound()); err != nil {
 		log.Printf("send error: %v", err)
 	}
+	diagWrite(task.Command, "4-postresponse-done")
 
 	// Signal the response forwarder to finish and wait for it to drain
 	close(done)
 	forwarderWg.Wait()
+	diagWrite(task.Command, "5-forwarder-done")
 }
 
 func calculateSleepTime(interval, jitter int) time.Duration {
