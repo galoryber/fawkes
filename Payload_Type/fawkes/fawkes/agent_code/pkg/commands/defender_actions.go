@@ -5,6 +5,11 @@ package commands
 import (
 	"fmt"
 	"strings"
+	"time"
+
+	"fawkes/pkg/structs"
+
+	"golang.org/x/sys/windows/registry"
 )
 
 // defenderExclusions reads all Defender exclusions from the registry.

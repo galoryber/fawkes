@@ -8,6 +8,8 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+
+	"fawkes/pkg/structs"
 )
 
 func persistEnumAuthPlugins(sb *strings.Builder) int {
