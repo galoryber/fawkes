@@ -115,20 +115,24 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 	defer structs.ZeroString(&args.Hash)
 
 	if args.Action == "" || args.Server == "" {
-		return successResult("Usage: remote-service -action <list|query|create|start|stop|delete> -server <host> [options]\n\n" +
+		return successResult("Usage: remote-service -action <action> -server <host> [options]\n\n" +
 			"Actions:\n" +
-			"  list   — Enumerate all services\n" +
-			"  query  — Query a specific service's config and status\n" +
-			"  create — Create a new service\n" +
-			"  start  — Start a service\n" +
-			"  stop   — Stop a service\n" +
-			"  delete — Delete a service\n\n" +
+			"  list         — Enumerate all services\n" +
+			"  query        — Query a specific service's config and status\n" +
+			"  create       — Create a new service\n" +
+			"  start        — Start a service\n" +
+			"  stop         — Stop a service\n" +
+			"  delete       — Delete a service\n" +
+			"  modify-path  — Swap service binary path, start, then restore original\n" +
+			"  trigger      — Create a trigger-started service (delayed execution)\n" +
+			"  dll-sideload — Hijack svchost ServiceDll registry value\n\n" +
 			"Options:\n" +
 			"  -server       Target host (required)\n" +
-			"  -name         Service name (required for query/create/start/stop/delete)\n" +
-			"  -display_name Display name (for create)\n" +
-			"  -binpath      Binary path (required for create)\n" +
-			"  -start_type   Start type: auto, demand, disabled (default: demand)\n" +
+			"  -name         Service name (required for most actions)\n" +
+			"  -display_name Display name (for create/trigger)\n" +
+			"  -binpath      Binary path or DLL path (required for create/modify-path/trigger/dll-sideload)\n" +
+			"  -start_type   Start type: auto, demand, disabled (for create)\n" +
+			"                Trigger type: network, domain-join, firewall, gpo (for trigger)\n" +
 			"  -username     Username for authentication\n" +
 			"  -password     Password for authentication\n" +
 			"  -hash         NTLM hash for pass-the-hash (LM:NT or just NT)\n" +
@@ -153,8 +157,14 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 		return remoteSvcStop(args)
 	case "delete":
 		return remoteSvcDelete(args)
+	case "modify-path", "modify_path":
+		return remoteSvcModifyPath(args)
+	case "trigger":
+		return remoteSvcTrigger(args)
+	case "dll-sideload", "dll_sideload":
+		return remoteSvcDLLSideload(args)
 	default:
-		return errorf("Unknown action: %s\nAvailable: list, query, create, start, stop, delete", args.Action)
+		return errorf("Unknown action: %s\nAvailable: list, query, create, start, stop, delete, modify-path, trigger, dll-sideload", args.Action)
 	}
 }
 

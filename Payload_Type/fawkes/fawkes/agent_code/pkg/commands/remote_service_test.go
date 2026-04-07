@@ -2,11 +2,14 @@ package commands
 
 import (
 	"encoding/binary"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf16"
 
 	"fawkes/pkg/structs"
+
+	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
 )
 
 func TestRemoteSvcStateName(t *testing.T) {
@@ -252,5 +255,198 @@ func TestRemoteServiceCommand_ListUnreachable(t *testing.T) {
 	result := cmd.Execute(structs.Task{Params: `{"action":"list","server":"192.0.2.1","username":"user","password":"pass","timeout":1}`})
 	if result.Status != "error" {
 		t.Errorf("list to unreachable host should error, got status=%q", result.Status)
+	}
+}
+
+// Tests for advanced actions (modify-path, trigger, dll-sideload)
+
+func TestParseTriggerType(t *testing.T) {
+	tests := []struct {
+		input       string
+		wantType    uint32
+		wantContain string // substring of description
+	}{
+		{"network", svcTriggerTypeIPAddress, "Network Availability"},
+		{"", svcTriggerTypeIPAddress, "Network Availability"}, // default
+		{"unknown", svcTriggerTypeIPAddress, "Network Availability"}, // default
+		{"domain-join", svcTriggerTypeDomainJoin, "Domain Join"},
+		{"domain_join", svcTriggerTypeDomainJoin, "Domain Join"},
+		{"domainjoin", svcTriggerTypeDomainJoin, "Domain Join"},
+		{"firewall", svcTriggerTypeFirewall, "Firewall"},
+		{"firewall-open", svcTriggerTypeFirewall, "Firewall"},
+		{"firewall_open", svcTriggerTypeFirewall, "Firewall"},
+		{"group-policy", svcTriggerTypeGroupPolicy, "Group Policy"},
+		{"group_policy", svcTriggerTypeGroupPolicy, "Group Policy"},
+		{"grouppolicy", svcTriggerTypeGroupPolicy, "Group Policy"},
+		{"gpo", svcTriggerTypeGroupPolicy, "Group Policy"},
+	}
+
+	for _, tc := range tests {
+		trigType, guid, desc := parseTriggerType(tc.input)
+		if trigType != tc.wantType {
+			t.Errorf("parseTriggerType(%q) type = %d, want %d", tc.input, trigType, tc.wantType)
+		}
+		if guid == nil {
+			t.Errorf("parseTriggerType(%q) returned nil GUID", tc.input)
+		}
+		if !strings.Contains(desc, tc.wantContain) {
+			t.Errorf("parseTriggerType(%q) desc = %q, want to contain %q", tc.input, desc, tc.wantContain)
+		}
+	}
+}
+
+func TestEncodeDecodeRegSZ(t *testing.T) {
+	tests := []string{
+		"C:\\Windows\\System32\\svchost.dll",
+		"%SystemRoot%\\System32\\wuaueng.dll",
+		"",
+		"short",
+		"path with spaces and special chars!@#$%",
+	}
+
+	for _, s := range tests {
+		encoded := encodeRegSZ(s)
+		decoded := decodeRegSZ(encoded)
+		if decoded != s {
+			t.Errorf("round-trip for %q: got %q", s, decoded)
+		}
+	}
+}
+
+func TestDecodeRegSZ_ShortBuffer(t *testing.T) {
+	// Empty buffer
+	if got := decodeRegSZ(nil); got != "" {
+		t.Errorf("decodeRegSZ(nil) = %q, want empty", got)
+	}
+	// Single byte (too short for UTF-16)
+	if got := decodeRegSZ([]byte{0x41}); got != "" {
+		t.Errorf("decodeRegSZ(1 byte) = %q, want empty", got)
+	}
+}
+
+func TestEncodeRegSZ_NullTerminated(t *testing.T) {
+	encoded := encodeRegSZ("AB")
+	// "AB" = 0x41,0x00, 0x42,0x00, 0x00,0x00 (null terminator)
+	if len(encoded) != 6 {
+		t.Errorf("encodeRegSZ(\"AB\") length = %d, want 6", len(encoded))
+	}
+	// Last two bytes should be null terminator
+	if encoded[4] != 0 || encoded[5] != 0 {
+		t.Errorf("encodeRegSZ should be null-terminated, got %v", encoded[4:6])
+	}
+}
+
+func TestRemoteServiceCommand_ModifyPathNoName(t *testing.T) {
+	cmd := &RemoteServiceCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"modify-path","server":"host","username":"user","password":"pass"}`})
+	if result.Status != "error" {
+		t.Errorf("modify-path without name should error, got status=%q", result.Status)
+	}
+	if !strings.Contains(result.Output, "-name") {
+		t.Error("error should mention -name requirement")
+	}
+}
+
+func TestRemoteServiceCommand_ModifyPathNoBinpath(t *testing.T) {
+	cmd := &RemoteServiceCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"modify-path","server":"host","name":"svc","username":"user","password":"pass"}`})
+	if result.Status != "error" {
+		t.Errorf("modify-path without binpath should error, got status=%q", result.Status)
+	}
+	if !strings.Contains(result.Output, "-binpath") {
+		t.Error("error should mention -binpath requirement")
+	}
+}
+
+func TestRemoteServiceCommand_TriggerNoName(t *testing.T) {
+	cmd := &RemoteServiceCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"trigger","server":"host","username":"user","password":"pass"}`})
+	if result.Status != "error" {
+		t.Errorf("trigger without name should error, got status=%q", result.Status)
+	}
+}
+
+func TestRemoteServiceCommand_TriggerNoBinpath(t *testing.T) {
+	cmd := &RemoteServiceCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"trigger","server":"host","name":"svc","username":"user","password":"pass"}`})
+	if result.Status != "error" {
+		t.Errorf("trigger without binpath should error, got status=%q", result.Status)
+	}
+}
+
+func TestRemoteServiceCommand_DLLSideloadNoName(t *testing.T) {
+	cmd := &RemoteServiceCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"dll-sideload","server":"host","username":"user","password":"pass"}`})
+	if result.Status != "error" {
+		t.Errorf("dll-sideload without name should error, got status=%q", result.Status)
+	}
+}
+
+func TestRemoteServiceCommand_DLLSideloadNoBinpath(t *testing.T) {
+	cmd := &RemoteServiceCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"dll-sideload","server":"host","name":"svc","username":"user","password":"pass"}`})
+	if result.Status != "error" {
+		t.Errorf("dll-sideload without binpath should error, got status=%q", result.Status)
+	}
+}
+
+func TestRemoteServiceCommand_ModifyPathUnreachable(t *testing.T) {
+	cmd := &RemoteServiceCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"modify-path","server":"192.0.2.1","name":"svc","binpath":"C:\\test.exe","username":"user","password":"pass","timeout":1}`})
+	if result.Status != "error" {
+		t.Errorf("modify-path to unreachable should error, got status=%q", result.Status)
+	}
+}
+
+func TestRemoteServiceCommand_TriggerUnreachable(t *testing.T) {
+	cmd := &RemoteServiceCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"trigger","server":"192.0.2.1","name":"svc","binpath":"C:\\test.exe","username":"user","password":"pass","timeout":1}`})
+	if result.Status != "error" {
+		t.Errorf("trigger to unreachable should error, got status=%q", result.Status)
+	}
+}
+
+func TestRemoteServiceCommand_DLLSideloadUnreachable(t *testing.T) {
+	cmd := &RemoteServiceCommand{}
+	result := cmd.Execute(structs.Task{Params: `{"action":"dll-sideload","server":"192.0.2.1","name":"svc","binpath":"C:\\test.dll","username":"user","password":"pass","timeout":1}`})
+	if result.Status != "error" {
+		t.Errorf("dll-sideload to unreachable should error, got status=%q", result.Status)
+	}
+}
+
+func TestRemoteServiceCommand_ActionRouting(t *testing.T) {
+	// Verify both hyphen and underscore variants route to the same action
+	cmd := &RemoteServiceCommand{}
+	for _, action := range []string{"modify-path", "modify_path", "dll-sideload", "dll_sideload"} {
+		result := cmd.Execute(structs.Task{Params: fmt.Sprintf(`{"action":"%s","server":"host","username":"user","password":"pass"}`, action)})
+		// Should get parameter validation error, not "unknown action"
+		if strings.Contains(result.Output, "Unknown action") {
+			t.Errorf("action %q should be recognized but got unknown action error", action)
+		}
+	}
+}
+
+func TestTriggerGUIDs(t *testing.T) {
+	// Verify GUIDs are non-nil and have correct Data4 length
+	guids := []*dtyp.GUID{guidNetworkFirstIP, guidDomainJoin, guidFirewallOpen, guidMachinePolicy}
+	names := []string{"guidNetworkFirstIP", "guidDomainJoin", "guidFirewallOpen", "guidMachinePolicy"}
+	for i, g := range guids {
+		if g == nil {
+			t.Errorf("%s is nil", names[i])
+			continue
+		}
+		if len(g.Data4) != 8 {
+			t.Errorf("%s Data4 length = %d, want 8", names[i], len(g.Data4))
+		}
+		if g.Data1 == 0 {
+			t.Errorf("%s Data1 should not be zero", names[i])
+		}
+	}
+}
+
+func TestSvcNoChangeConstant(t *testing.T) {
+	// SERVICE_NO_CHANGE must be 0xFFFFFFFF
+	if svcNoChange != 0xFFFFFFFF {
+		t.Errorf("svcNoChange = 0x%x, want 0xFFFFFFFF", svcNoChange)
 	}
 }

