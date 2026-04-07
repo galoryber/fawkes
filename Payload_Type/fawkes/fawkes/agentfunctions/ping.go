@@ -28,11 +28,12 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:          "hosts",
-				CLIName:       "hosts",
-				Description:   "Target host(s) — single IP, comma-separated, CIDR (192.168.1.0/24), or dash range (192.168.1.1-254)",
-				DefaultValue:  "",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Name:                 "hosts",
+				CLIName:              "hosts",
+				Description:          "Target host(s) — single IP, comma-separated, CIDR (192.168.1.0/24), or dash range (192.168.1.1-254)",
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},

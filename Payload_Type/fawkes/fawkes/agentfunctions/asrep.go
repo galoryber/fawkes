@@ -27,12 +27,13 @@ func init() {
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "asrep_new.js"), Author: "@galoryber"},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Domain Controller",
-				Description:      "KDC / Domain Controller IP or hostname",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                "server",
+				CLIName:             "server",
+				ModalDisplayName:    "Domain Controller",
+				Description:         "KDC / Domain Controller IP or hostname",
+				ParameterType:       agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:        "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
