@@ -71,11 +71,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "user",
-				CLIName:       "user",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:  "",
-				Description:   "Filter by username (case-insensitive substring match)",
+				Name:                 "user",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				Description:          "Filter by username (case-insensitive substring match)",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,

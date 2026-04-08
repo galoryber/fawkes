@@ -23,12 +23,13 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "server",
-				ModalDisplayName: "Domain Controller",
-				CLIName:          "server",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Domain controller hostname or IP",
-				DefaultValue:     "",
+				Name:                 "server",
+				ModalDisplayName:     "Domain Controller",
+				CLIName:              "server",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Domain controller hostname or IP",
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -37,12 +38,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "username",
-				ModalDisplayName: "Username",
-				CLIName:          "username",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Username (user@domain or DOMAIN\\user)",
-				DefaultValue:     "",
+				Name:                 "username",
+				ModalDisplayName:     "Username",
+				CLIName:              "username",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Username (user@domain or DOMAIN\\user)",
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

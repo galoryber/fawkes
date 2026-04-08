@@ -25,12 +25,13 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Target Server",
-				Description:      "Server to coerce (IP or hostname) — this server will authenticate to the listener",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "server",
+				CLIName:              "server",
+				ModalDisplayName:     "Target Server",
+				Description:          "Server to coerce (IP or hostname) — this server will authenticate to the listener",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},

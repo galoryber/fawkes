@@ -43,12 +43,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "target",
-				ModalDisplayName: "Target Host",
-				CLIName:          "target",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Remote hostname or IP (blank = local machine). For groupmembers: also used as group name if -group is not set.",
-				DefaultValue:     "",
+				Name:                 "target",
+				ModalDisplayName:     "Target Host",
+				CLIName:              "target",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Remote hostname or IP (blank = local machine). For groupmembers: also used as group name if -group is not set.",
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,

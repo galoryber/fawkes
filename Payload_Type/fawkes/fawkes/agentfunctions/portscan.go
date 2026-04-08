@@ -29,12 +29,13 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "hosts",
-				ModalDisplayName: "Target Hosts",
-				CLIName:          "hosts",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Comma-separated IPs, CIDR ranges, or hostname-ranges (e.g. 192.168.1.1,192.168.1.0/24,10.0.0.1-10)",
-				DefaultValue:     "",
+				Name:                 "hosts",
+				ModalDisplayName:     "Target Hosts",
+				CLIName:              "hosts",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Comma-separated IPs, CIDR ranges, or hostname-ranges (e.g. 192.168.1.1,192.168.1.0/24,10.0.0.1-10)",
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
