@@ -246,7 +246,7 @@ func azurePersist(timeout time.Duration) string {
 		return sb.String()
 	}
 
-	sb.WriteString(fmt.Sprintf("[+] App Registration created:\n"))
+	sb.WriteString("[+] App Registration created:\n")
 	sb.WriteString(fmt.Sprintf("    Object ID:  %s\n", appData.ID))
 	sb.WriteString(fmt.Sprintf("    App ID:     %s\n\n", appData.AppID))
 
