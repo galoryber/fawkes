@@ -124,7 +124,7 @@ linux-logs | `linux-logs -action <list\|read\|logins\|clear\|truncate\|shred> [-
 logonsessions | `logonsessions [-action list\|users] [-filter <name>]` | **(Windows, Linux, macOS)** Enumerate active logon sessions — users, session IDs, stations, connection state. Filter by username. Windows: WTS API. Linux: utmp parsing. macOS: utmpx parsing.
 lolbin | `lolbin -action <technique> -path <payload/code/URL> [-export <func>] [-args <extra>]` | **(Windows, Linux, macOS)** LOLBin/GTFOBin proxy execution. Windows: rundll32, msiexec, regsvcs, regasm, mshta, certutil. Linux: python, curl, wget, gcc, perl, ruby, node, awk. macOS: osascript, swift, open, python, curl. T1218/T1059.
 ls | `ls [path]` | List files and folders with owner/group and timestamps. File browser integration. Defaults to cwd.
-make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it.
+make-token | `make-token -username <user> -domain <domain> -password <pass> [-action spawn -command <cmd>]` | **(Windows only)** Create a token from credentials: impersonate it, or spawn a process with it (T1134.002).
 masquerade | `masquerade -source <file> -technique <type> [-disguise <value>] [-in_place]` | File masquerading — copy/rename with deceptive names (double ext, RtLO, space, process match). T1036.
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
 module-stomping | `module-stomping -pid <PID> [-dll_name <DLL>]` | **(Windows only)** Inject shellcode by stomping a legitimate DLL's .text section. Shellcode executes from signed DLL address space, bypassing private-memory detection (T1055.001).
@@ -195,7 +195,7 @@ stat | `stat -path <file_or_dir>` | Display file/directory metadata: type, size,
 strings | `strings -path <file> [-min_length <n>] [-pattern <text>] [-offset <bytes>] [-max_size <bytes>]` | Extract printable ASCII strings from files. Find embedded text, URLs, credentials in binaries. Pattern filter, min length control, offset/max_size. Cross-platform (T1005).
 start-clr | `start-clr` | **(Windows only)** Initialize the CLR v4.0.30319 with optional AMSI/ETW patching (Ret Patch, Autopatch, or Hardware Breakpoint).
 systemd-persist | `systemd-persist -action <install\|remove\|list> -name <unit> [-exec_start <cmd>] [-timer <calendar>] [-system true]` | **(Linux only)** Install, remove, or list systemd service/timer persistence. User or system scope. MITRE T1543.002.
-steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a security token from another process.
+steal-token | `steal-token -pid <pid> [-action spawn -command <cmd>]` | **(Windows only)** Steal a token from another process: impersonate it, or spawn a process with it (T1134.002).
 token-store | `token-store -action <save\|list\|use\|remove> -name <label>` | **(Windows only)** Named token vault — save, list, restore, and remove impersonation tokens. Enables quick switching between stolen/created identities without re-stealing (T1134.001).
 suspend | `suspend -action <suspend\|resume> -pid <PID>` | Suspend or resume a process. Tactical EDR/AV pause during sensitive ops. Windows: NtSuspendProcess/NtResumeProcess. Linux/macOS: SIGSTOP/SIGCONT. Cross-platform (T1562.001).
 sysinfo | `sysinfo` | Comprehensive system information: OS version, hardware, memory, uptime, domain, .NET (Windows), SELinux/SIP status. Cross-platform (T1082).
