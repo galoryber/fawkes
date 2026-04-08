@@ -15,7 +15,7 @@ This is a critical reconnaissance command for cloud environments — instance me
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | detect | Action: `detect`, `all`, `creds`, `identity`, `userdata`, `network`, `aws-iam`, `azure-graph`, `gcp-iam` |
+| action | No | detect | Action: `detect`, `all`, `creds`, `identity`, `userdata`, `network`, `aws-iam`, `azure-graph`, `gcp-iam`, `aws-persist`, `azure-persist` |
 | provider | No | auto | Cloud provider: `auto`, `aws`, `azure`, `gcp`, `digitalocean` |
 | timeout | No | 3 | Per-request timeout in seconds |
 
@@ -30,6 +30,8 @@ This is a critical reconnaissance command for cloud environments — instance me
 - **aws-iam** — AWS IAM privilege enumeration: STS caller identity, attached/inline role policies
 - **azure-graph** — Azure AD enumeration via Microsoft Graph: users, groups, app registrations
 - **gcp-iam** — GCP IAM enumeration: project IAM bindings, service accounts, assigned scopes
+- **aws-persist** — AWS IAM persistence: create long-lived IAM access key via CreateAccessKey API (T1098.001)
+- **azure-persist** — Azure AD persistence: create app registration with client secret via Microsoft Graph (T1098.001)
 
 ## Usage
 
