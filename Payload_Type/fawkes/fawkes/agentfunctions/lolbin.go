@@ -127,5 +127,16 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			host := processResponse.TaskData.Callback.Host
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[DEFENSE EVASION] LOLBIN proxy execution (%s) on %s", action, host), true)
+			return response
+		},
 	})
 }
