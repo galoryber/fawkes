@@ -60,6 +60,7 @@ func TestSniffExtractHTTPBasicAuth(t *testing.T) {
 			}
 			if cred == nil {
 				t.Fatal("expected credential, got nil")
+				return
 			}
 			if cred.Username != tt.wantUser {
 				t.Errorf("username = %q, want %q", cred.Username, tt.wantUser)
@@ -88,6 +89,7 @@ func TestSniffFTPTracker(t *testing.T) {
 	cred = ft.process([]byte("PASS ftppass123"), meta)
 	if cred == nil {
 		t.Fatal("PASS after USER should produce a credential")
+		return
 	}
 	if cred.Username != "ftpuser" || cred.Password != "ftppass123" {
 		t.Errorf("got user=%q pass=%q, want ftpuser/ftppass123", cred.Username, cred.Password)
@@ -138,6 +140,7 @@ func TestSniffExtractNTLM(t *testing.T) {
 		cred := sniffExtractNTLM(payload, meta)
 		if cred == nil {
 			t.Fatal("expected credential")
+			return
 		}
 		if cred.Username != "CONTOSO\\jsmith" {
 			t.Errorf("username = %q, want CONTOSO\\jsmith", cred.Username)
