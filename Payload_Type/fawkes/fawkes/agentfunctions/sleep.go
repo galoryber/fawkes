@@ -141,7 +141,7 @@ func init() {
 			// Parse interval (required)
 			if interval, err := strconv.Atoi(stringPieces[0]); err != nil {
 				logging.LogError(err, "Failed to process first argument as integer")
-				return err
+				return fmt.Errorf("invalid sleep interval %q: %w", stringPieces[0], err)
 			} else if interval < 0 {
 				args.SetArgValue("interval", 0)
 			} else {
@@ -150,7 +150,7 @@ func init() {
 			// Parse jitter (optional)
 			if len(stringPieces) >= 2 {
 				if jitter, err := strconv.Atoi(stringPieces[1]); err != nil {
-					return err
+					return fmt.Errorf("invalid jitter value %q: %w", stringPieces[1], err)
 				} else {
 					if jitter < 0 {
 						args.SetArgValue("jitter", 0)

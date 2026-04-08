@@ -44,7 +44,7 @@ func (d *DiscordProfile) Checkin(agent *structs.Agent) error {
 	// Encrypt and format as Freyja-style: UUID + encrypted_body, then base64
 	mythicMessage, err := d.buildMythicMessage(body, agent.PayloadUUID, cfg.EncryptionKey)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to build mythic message for checkin: %w", err)
 	}
 
 	// Send via Discord and poll for response

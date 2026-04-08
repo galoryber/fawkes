@@ -51,7 +51,7 @@ func init() {
 			fileBrowserData := agentstructs.FileBrowserTask{}
 			if err := mapstructure.Decode(input, &fileBrowserData); err != nil {
 				logging.LogError(err, "Failed to decode file browser data")
-				return err
+				return fmt.Errorf("failed to decode file browser data for download: %w", err)
 			} else {
 				// Set the path from file browser selection
 				args.SetManualArgs(fileBrowserData.FullPath)

@@ -186,7 +186,7 @@ func (d *DiscordProfile) sendTextMessage(content string, cfg *sensitiveConfig) e
 
 	req, err := http.NewRequest("POST", endpoint, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create discord text message request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bot "+cfg.BotToken)
 	req.Header.Set("Content-Type", "application/json")
@@ -194,7 +194,7 @@ func (d *DiscordProfile) sendTextMessage(content string, cfg *sensitiveConfig) e
 
 	resp, err := d.doWithRateLimit(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("discord text message send failed: %w", err)
 	}
 	defer resp.Body.Close()
 
@@ -230,7 +230,7 @@ func (d *DiscordProfile) sendFileMessage(content []byte, filename string, cfg *s
 
 	req, err := http.NewRequest("POST", endpoint, &buf)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create discord file upload request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bot "+cfg.BotToken)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -238,7 +238,7 @@ func (d *DiscordProfile) sendFileMessage(content []byte, filename string, cfg *s
 
 	resp, err := d.doWithRateLimit(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("discord file upload send failed: %w", err)
 	}
 	defer resp.Body.Close()
 
