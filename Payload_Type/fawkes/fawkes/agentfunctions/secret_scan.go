@@ -1,9 +1,12 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -84,6 +87,39 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Secret scanning reads and regex-matches file contents across directories. High I/O file access patterns (bulk reads) may trigger endpoint behavioral analytics or file access auditing.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			host := processResponse.TaskData.Callback.Host
+
+			// Count findings by type from the text output format: "[TYPE] file:line"
+			findingCount := 0
+			for _, line := range strings.Split(responseText, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "[") && strings.Contains(line, "]") {
+					findingCount++
+				}
+			}
+
+			if findingCount > 0 {
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Credential Access",
+					ArtifactMessage:  fmt.Sprintf("Secret scan found %d secrets on %s", findingCount, host),
+				})
+				tagTask(processResponse.TaskData.Task.ID, "PLAINTEXT",
+					fmt.Sprintf("%d secrets discovered on %s", findingCount, host))
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL ACCESS] Secret scan found %d secrets on %s", findingCount, host), true)
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

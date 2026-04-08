@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -103,6 +104,52 @@ func init() {
 				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			host := processResponse.TaskData.Callback.Host
+
+			switch action {
+			case "list":
+				// Parse ticket entries from JSON output
+				var tickets []struct {
+					Client     string `json:"client"`
+					Server     string `json:"server"`
+					Encryption string `json:"encryption"`
+					Flags      string `json:"flags"`
+					Status     string `json:"status"`
+				}
+				if err := json.Unmarshal([]byte(responseText), &tickets); err == nil && len(tickets) > 0 {
+					for _, t := range tickets {
+						mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+							TaskID:           processResponse.TaskData.Task.ID,
+							BaseArtifactType: "Credential Access",
+							ArtifactMessage:  fmt.Sprintf("Kerberos ticket: %s → %s (%s, %s)", t.Client, t.Server, t.Encryption, t.Status),
+						})
+					}
+					// Tag with ticket info
+					tagTask(processResponse.TaskData.Task.ID, "TICKET",
+						fmt.Sprintf("%d Kerberos tickets on %s", len(tickets), host))
+				}
+			case "dump":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL ACCESS] Kerberos ticket dump on %s", host), true)
+			case "import":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[LATERAL MOVEMENT] Pass-the-ticket injection on %s", host), true)
+			case "purge":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DEFENSE EVASION] Kerberos cache purged on %s", host), false)
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

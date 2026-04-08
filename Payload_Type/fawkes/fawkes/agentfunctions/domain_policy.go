@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -125,6 +126,39 @@ func init() {
 				OpsecPreBlocked: false, OpsecPreMessage: msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+
+			// Extract lockout threshold for spray safety tracking
+			if strings.Contains(responseText, "Lockout Threshold") || action == "lockout" || action == "all" {
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Configuration",
+					ArtifactMessage:  fmt.Sprintf("Domain password/lockout policy enumerated from %s", server),
+				})
+			}
+
+			// Tag weak policies for operator awareness
+			if strings.Contains(responseText, "Minimum Length: 0") ||
+				strings.Contains(responseText, "Minimum Length: 1") ||
+				strings.Contains(responseText, "Complexity Required: false") {
+				tagTask(processResponse.TaskData.Task.ID, "WEAK_POLICY",
+					fmt.Sprintf("Weak password policy on %s", server))
+			}
+
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[DISCOVERY] Domain %s policy enumerated from %s", action, server), false)
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

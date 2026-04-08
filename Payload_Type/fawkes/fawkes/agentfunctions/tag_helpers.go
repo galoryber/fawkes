@@ -33,7 +33,8 @@ var tagTypes = map[string]tagTypeDef{
 	"ELEVATED":    {"ELEVATED_ACCESS", "Admin-level access obtained", "orange"},
 	"LATERAL":     {"LATERAL_MOVEMENT", "Lateral movement executed", "blue"},
 	"IMPACT":      {"IMPACT_ACTION", "Destructive/impact action performed", "red"},
-	"DATA_STAGED": {"DATA_STAGED", "Data staged for exfiltration", "purple"},
+	"DATA_STAGED":  {"DATA_STAGED", "Data staged for exfiltration", "purple"},
+	"WEAK_POLICY":  {"WEAK_POLICY", "Weak security policy detected", "yellow"},
 }
 
 // getOrCreateTagType looks up or creates a tag type, caching the result.
