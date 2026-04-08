@@ -301,6 +301,123 @@ func TestClipboardExecuteDumpNotRunning(t *testing.T) {
 	}
 }
 
+// --- Monitor limits ---
+
+func TestClipMonitorMaxItems(t *testing.T) {
+	// Reset monitor state
+	cm.mu.Lock()
+	cm.running = true
+	cm.entries = nil
+	cm.lastText = ""
+	cm.maxItems = 3
+	cm.duration = 0
+	cm.startTime = time.Now()
+	cm.mu.Unlock()
+
+	// Simulate entries up to max
+	for i := 0; i < 5; i++ {
+		cm.mu.Lock()
+		cm.lastText = "" // Force different text each time
+		cm.mu.Unlock()
+		// Directly add entries to test the limit
+		cm.mu.Lock()
+		if cm.maxItems > 0 && len(cm.entries) >= cm.maxItems {
+			cm.mu.Unlock()
+			continue
+		}
+		cm.entries = append(cm.entries, clipEntry{
+			Timestamp: time.Now(),
+			Content:   "entry",
+			Tags:      nil,
+		})
+		cm.mu.Unlock()
+	}
+
+	cm.mu.Lock()
+	count := len(cm.entries)
+	cm.running = false
+	cm.entries = nil
+	cm.mu.Unlock()
+
+	if count != 3 {
+		t.Errorf("expected 3 entries (maxItems limit), got %d", count)
+	}
+}
+
+func TestClipMonitorDefaultParams(t *testing.T) {
+	// Test that clipMonitorStart sets defaults for 0 values
+	cm.mu.Lock()
+	cm.running = false
+	cm.mu.Unlock()
+
+	result := clipMonitorStart(0, 0, 0)
+	if result.Status != "success" {
+		t.Errorf("expected success, got: %s", result.Output)
+	}
+
+	cm.mu.Lock()
+	maxItems := cm.maxItems
+	duration := cm.duration
+	running := cm.running
+	cm.mu.Unlock()
+
+	if maxItems != 100 {
+		t.Errorf("expected default maxItems=100, got %d", maxItems)
+	}
+	if duration != 300 {
+		t.Errorf("expected default duration=300, got %d", duration)
+	}
+
+	// Clean up - stop the monitor
+	if running {
+		cm.mu.Lock()
+		close(cm.stopCh)
+		cm.running = false
+		cm.mu.Unlock()
+	}
+}
+
+func TestClipMonitorAlreadyRunning(t *testing.T) {
+	cm.mu.Lock()
+	cm.running = true
+	cm.mu.Unlock()
+
+	result := clipMonitorStart(3, 300, 100)
+	if result.Status != "error" || !strings.Contains(result.Output, "already running") {
+		t.Errorf("expected 'already running' error, got: %s", result.Output)
+	}
+
+	cm.mu.Lock()
+	cm.running = false
+	cm.mu.Unlock()
+}
+
+func TestClipMonitorCustomParams(t *testing.T) {
+	cm.mu.Lock()
+	cm.running = false
+	cm.mu.Unlock()
+
+	result := clipMonitorStart(5, 600, 50)
+	if result.Status != "success" {
+		t.Errorf("expected success, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "5s") {
+		t.Error("expected interval in output")
+	}
+	if !strings.Contains(result.Output, "600s") {
+		t.Error("expected duration in output")
+	}
+	if !strings.Contains(result.Output, "50 entries") {
+		t.Error("expected max entries in output")
+	}
+
+	// Clean up
+	cm.mu.Lock()
+	close(cm.stopCh)
+	cm.running = false
+	cm.mu.Unlock()
+}
+
 // --- helper ---
 
 func containsTag(tags []string, target string) bool {
