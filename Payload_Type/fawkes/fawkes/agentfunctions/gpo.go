@@ -169,5 +169,15 @@ func init() {
 
 			return response
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[DISCOVERY] GPO enumeration from %s", server), false)
+			return response
+		},
 	})
 }

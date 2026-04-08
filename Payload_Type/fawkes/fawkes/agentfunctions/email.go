@@ -153,5 +153,19 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			host := processResponse.TaskData.Callback.Host
+			switch action {
+			case "search", "read":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[COLLECTION] Email %s via Outlook COM on %s", action, host), true)
+			}
+			return response
+		},
 	})
 }

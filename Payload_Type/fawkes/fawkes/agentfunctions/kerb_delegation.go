@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -134,6 +135,28 @@ func init() {
 				ArtifactMessage:  fmt.Sprintf("LDAP delegation query: %s on %s", action, server),
 			})
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+
+			// Detect unconstrained delegation — high-value finding
+			if strings.Contains(responseText, "UNCONSTRAINED") ||
+				strings.Contains(responseText, "TRUSTED_FOR_DELEGATION") {
+				tagTask(processResponse.TaskData.Task.ID, "PRIVESC",
+					fmt.Sprintf("Unconstrained delegation found on %s", server))
+			}
+
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[DISCOVERY] Kerberos delegation enumeration from %s", server), false)
 			return response
 		},
 	})

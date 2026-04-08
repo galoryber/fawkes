@@ -1,9 +1,12 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -45,6 +48,28 @@ func init() {
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			return agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			host := processResponse.TaskData.Callback.Host
+
+			// Detect container environment type
+			if strings.Contains(responseText, "Docker") || strings.Contains(responseText, "Kubernetes") ||
+				strings.Contains(responseText, "LXC") || strings.Contains(responseText, "Podman") {
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Configuration",
+					ArtifactMessage:  fmt.Sprintf("Container environment detected on %s", host),
+				})
+			}
+			return response
 		},
 	})
 }
