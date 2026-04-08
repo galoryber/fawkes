@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -226,6 +227,49 @@ func init() {
 				ArtifactMessage:  artifactMsg,
 			})
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+
+			switch action {
+			case "find":
+				// Track CA discovery and vulnerable templates
+				if strings.Contains(responseText, "Certificate Authority") || strings.Contains(responseText, "CA:") {
+					mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+						TaskID:           processResponse.TaskData.Task.ID,
+						BaseArtifactType: "Configuration",
+						ArtifactMessage:  fmt.Sprintf("ADCS enumeration on %s: CA infrastructure discovered", server),
+					})
+				}
+				// Flag vulnerable templates
+				for _, esc := range []string{"ESC1", "ESC2", "ESC3", "ESC4", "ESC6"} {
+					if strings.Contains(responseText, esc) {
+						mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+							TaskID:           processResponse.TaskData.Task.ID,
+							BaseArtifactType: "Configuration",
+							ArtifactMessage:  fmt.Sprintf("ADCS vulnerable template detected: %s on %s", esc, server),
+						})
+					}
+				}
+			case "request":
+				// Track certificate request as Credential artifact
+				template, _ := processResponse.TaskData.Args.GetStringArg("template")
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Credential",
+					ArtifactMessage:  fmt.Sprintf("Certificate requested: template=%s from %s", template, server),
+				})
+			}
 			return response
 		},
 	})

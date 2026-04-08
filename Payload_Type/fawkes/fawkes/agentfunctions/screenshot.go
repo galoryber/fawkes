@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -41,6 +42,18 @@ func init() {
 			display := fmt.Sprintf("Screen capture")
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "API Call", "Screen capture (platform-specific: GDI BitBlt on Windows, Xlib on Linux, CGDisplayCreateImage on macOS)")
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+				TaskID:           processResponse.TaskData.Task.ID,
+				BaseArtifactType: "File Write",
+				ArtifactMessage:  fmt.Sprintf("Screenshot captured on %s", processResponse.TaskData.Callback.Host),
+			})
 			return response
 		},
 	})

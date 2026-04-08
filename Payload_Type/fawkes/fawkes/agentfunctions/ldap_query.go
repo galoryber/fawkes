@@ -240,6 +240,60 @@ func init() {
 
 			return response
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+
+			// Track LDAP queries as Host Discovery artifacts
+			if server != "" {
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Host Discovery",
+					ArtifactMessage:  fmt.Sprintf("LDAP %s query against %s", action, server),
+				})
+			}
+
+			// Extract host/computer names from output for specific actions
+			switch action {
+			case "computers":
+				for _, line := range strings.Split(responseText, "\n") {
+					trimmed := strings.TrimSpace(line)
+					if strings.Contains(trimmed, "$") && !strings.HasPrefix(trimmed, "=") && !strings.HasPrefix(trimmed, "-") {
+						fields := strings.Fields(trimmed)
+						if len(fields) > 0 {
+							mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+								TaskID:           processResponse.TaskData.Task.ID,
+								BaseArtifactType: "Host Discovery",
+								ArtifactMessage:  fmt.Sprintf("AD Computer: %s", fields[0]),
+							})
+						}
+					}
+				}
+			case "trusts":
+				for _, line := range strings.Split(responseText, "\n") {
+					trimmed := strings.TrimSpace(line)
+					if strings.Contains(trimmed, ".") && !strings.HasPrefix(trimmed, "=") && !strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, "Trust") {
+						fields := strings.Fields(trimmed)
+						if len(fields) > 0 {
+							mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+								TaskID:           processResponse.TaskData.Task.ID,
+								BaseArtifactType: "Host Discovery",
+								ArtifactMessage:  fmt.Sprintf("AD Trust: %s", fields[0]),
+							})
+						}
+					}
+				}
+			}
+			return response
+		},
 	})
 }
 

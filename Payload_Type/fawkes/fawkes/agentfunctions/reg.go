@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -318,6 +319,45 @@ func init() {
 					fmt.Sprintf("[SYSTEM MOD] reg %s: %s\\%s on %s", action, hive, path, taskData.Callback.Host), true)
 			}
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+
+			switch action {
+			case "search":
+				// Track registry search as Configuration artifact
+				pattern, _ := processResponse.TaskData.Args.GetStringArg("pattern")
+				hive, _ := processResponse.TaskData.Args.GetStringArg("hive")
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Configuration",
+					ArtifactMessage:  fmt.Sprintf("Registry search: %s\\* for %q", hive, pattern),
+				})
+			case "creds":
+				// Track SAM/SECURITY/SYSTEM extraction as Credential artifact
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Credential",
+					ArtifactMessage:  "Registry credential extraction: SAM + SECURITY + SYSTEM hives",
+				})
+			case "save":
+				// Track hive save as File Write artifact
+				output, _ := processResponse.TaskData.Args.GetStringArg("output")
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "File Write",
+					ArtifactMessage:  fmt.Sprintf("Registry hive saved to: %s", output),
+				})
+			}
 			return response
 		},
 	})
