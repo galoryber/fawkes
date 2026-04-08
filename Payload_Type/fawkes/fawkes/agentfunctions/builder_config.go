@@ -369,3 +369,31 @@ func applyStringObfuscation(payloadBuildMsg agentstructs.PayloadBuildMessage, fa
 
 	return ldflags, nil
 }
+
+// extractLdflagValue extracts the value of a variable from ldflags string.
+func extractLdflagValue(ldflags, pkg, varName string) string {
+	prefix := fmt.Sprintf("-X '%s.%s=", pkg, varName)
+	idx := strings.Index(ldflags, prefix)
+	if idx < 0 {
+		return ""
+	}
+	start := idx + len(prefix)
+	end := strings.Index(ldflags[start:], "'")
+	if end < 0 {
+		return ""
+	}
+	return ldflags[start : start+end]
+}
+
+// xorEncodeString XOR-encodes a plaintext string with the given key and returns base64.
+func xorEncodeString(plaintext string, key []byte) string {
+	if len(key) == 0 || plaintext == "" {
+		return plaintext
+	}
+	data := []byte(plaintext)
+	result := make([]byte, len(data))
+	for i, b := range data {
+		result[i] = b ^ key[i%len(key)]
+	}
+	return base64.StdEncoding.EncodeToString(result)
+}
