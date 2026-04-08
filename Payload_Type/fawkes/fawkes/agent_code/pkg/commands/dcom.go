@@ -49,6 +49,7 @@ var (
 	clsidShellBrowserWd = ole.NewGUID("{C08AFD90-F2A1-11D1-8455-00A0C91F3880}")
 	clsidWScriptShell   = ole.NewGUID("{72C24DD5-D70A-438B-8A42-98424B88AFB8}")
 	clsidExcelApp       = ole.NewGUID("{00024500-0000-0000-C000-000000000046}")
+	clsidOutlookApp     = ole.NewGUID("{0006F03A-0000-0000-C000-000000000046}")
 )
 
 // ole32.dll for CoCreateInstanceEx and CoSetProxyBlanket
@@ -110,7 +111,7 @@ func (c *DcomCommand) Execute(task structs.Task) structs.CommandResult {
 	var args dcomArgs
 
 	if task.Params == "" {
-		return errorResult("Error: parameters required.\nActions: exec\nObjects: mmc20, shellwindows, shellbrowser, wscript, excel")
+		return errorResult("Error: parameters required.\nActions: exec\nObjects: mmc20, shellwindows, shellbrowser, wscript, excel, outlook")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -246,8 +247,10 @@ func dcomExec(args dcomArgs) structs.CommandResult {
 		return dcomExecWScript(args)
 	case "excel":
 		return dcomExecExcel(args)
+	case "outlook":
+		return dcomExecOutlook(args)
 	default:
-		return errorf("Unknown DCOM object: %s\nAvailable: mmc20, shellwindows, shellbrowser, wscript, excel", args.Object)
+		return errorf("Unknown DCOM object: %s\nAvailable: mmc20, shellwindows, shellbrowser, wscript, excel, outlook", args.Object)
 	}
 }
 

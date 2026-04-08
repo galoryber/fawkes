@@ -11,9 +11,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "dcom",
-		Description:         "Execute commands on remote hosts via DCOM lateral movement. Supports MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, and Excel.Application objects.",
-		HelpString:          "dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser|wscript|excel] [-dir <directory>] [-username <user> -password <pass> -domain <domain>]",
-		Version:             2,
+		Description:         "Execute commands on remote hosts via DCOM lateral movement. Supports MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, Excel.Application, and Outlook.Application objects.",
+		HelpString:          "dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser|wscript|excel|outlook] [-dir <directory>] [-username <user> -password <pass> -domain <domain>]",
+		Version:             3,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1021.003"}, // Remote Services: Distributed Component Object Model
 		SupportedUIFeatures: []string{},
@@ -57,9 +57,9 @@ func init() {
 				Name:          "object",
 				CLIName:       "object",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"mmc20", "shellwindows", "shellbrowser", "wscript", "excel"},
+				Choices:       []string{"mmc20", "shellwindows", "shellbrowser", "wscript", "excel", "outlook"},
 				DefaultValue:  "mmc20",
-				Description:   "DCOM object: mmc20 (most reliable), shellwindows (requires explorer.exe), shellbrowser, wscript (WScript.Shell.Run), excel (RegisterXLL/DDEInitiate — requires Excel)",
+				Description:   "DCOM object: mmc20 (most reliable), shellwindows (requires explorer.exe), shellbrowser, wscript (WScript.Shell.Run), excel (RegisterXLL/DDEInitiate — requires Excel), outlook (CreateObject Shell — requires Outlook, less monitored by EDR)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -190,6 +190,7 @@ func init() {
 				"shellbrowser": "ShellBrowserWindow: similar to ShellWindows. Creates child process under iexplore.exe — moderate detection.",
 				"wscript":      "WScript.Shell: less commonly monitored than MMC20. Executes via WScript.Shell.Run — no intermediate process. Good fallback when MMC is blocked.",
 				"excel":        "Excel.Application: requires Excel installed on target. RegisterXLL loads DLL into Excel.exe (stealthy — lives in Office process). DDEInitiate creates cmd.exe child.",
+				"outlook":      "Outlook.Application: requires Outlook on target. Uses CreateObject(\"Wscript.Shell\") within Outlook's process — command runs inside OUTLOOK.EXE. Unusual vector, often not monitored by EDR. May be blocked by Outlook security settings.",
 			}
 			warning := objectWarnings[object]
 			if warning == "" {

