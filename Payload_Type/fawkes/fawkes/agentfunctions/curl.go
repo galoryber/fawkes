@@ -182,5 +182,23 @@ func init() {
 
 			return response
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			url, _ := processResponse.TaskData.Args.GetStringArg("url")
+			method, _ := processResponse.TaskData.Args.GetStringArg("method")
+			if method == "" {
+				method = "GET"
+			}
+			createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
+				fmt.Sprintf("HTTP %s %s (%d bytes response)", method, url, len(responseText)))
+			return response
+		},
 	})
 }

@@ -1,6 +1,9 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -155,6 +158,22 @@ func init() {
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil && displayParams != "" {
 				response.DisplayParams = &displayParams
 			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			pattern, _ := processResponse.TaskData.Args.GetStringArg("pattern")
+			path, _ := processResponse.TaskData.Args.GetStringArg("path")
+			matches := strings.Count(responseText, "\n")
+			createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+				fmt.Sprintf("grep '%s' in %s (%d matches)", pattern, path, matches))
 			return response
 		},
 	})

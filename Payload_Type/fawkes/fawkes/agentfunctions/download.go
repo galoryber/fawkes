@@ -86,5 +86,18 @@ func init() {
 			args.SetManualArgs(input)
 			return nil
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			path, err := processResponse.TaskData.Args.GetFinalArgs()
+			if err != nil || path == "" {
+				return response
+			}
+			createArtifact(processResponse.TaskData.Task.ID, "File Download",
+				fmt.Sprintf("download %s", path))
+			return response
+		},
 	})
 }

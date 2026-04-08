@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"encoding/json"
+	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -57,6 +58,23 @@ func init() {
 				response.DisplayParams = &displayParams
 				createArtifact(task.Task.ID, "Process Create", displayParams)
 			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			cmd, _ := processResponse.TaskData.Args.GetStringArg("command")
+			if cmd == "" {
+				cmd, _ = processResponse.TaskData.Args.GetFinalArgs()
+			}
+			createArtifact(processResponse.TaskData.Task.ID, "Process Create",
+				fmt.Sprintf("run: %s (%d bytes output)", cmd, len(responseText)))
 			return response
 		},
 	})
