@@ -20,7 +20,7 @@ func init() {
 		HelpString:          "smb -action shares -host 192.168.1.1 -username user -password pass -domain DOMAIN\nsmb -action ls -host 192.168.1.1 -share C$ -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -domain DOMAIN\nsmb -action mkdir -host 192.168.1.1 -share C$ -path Users/Public/staging -username admin -password pass\nsmb -action mv -host 192.168.1.1 -share C$ -path old.txt -destination new.txt -username admin -password pass",
 		Version:             2,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1021.002", "T1550.002"},
+		MitreAttackMappings: []string{"T1021.002", "T1550.002", "T1570"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -33,9 +33,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Operation: shares (list shares), ls (list directory), cat (read file), upload (write file), rm (delete file), mkdir (create directory), mv (rename/move file)",
+				Description:      "Operation: shares, ls, cat, upload, rm, mkdir, mv, push (lateral tool transfer from local file)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"shares", "ls", "cat", "upload", "rm", "mkdir", "mv"},
+				Choices:          []string{"shares", "ls", "cat", "upload", "rm", "mkdir", "mv", "push"},
 				DefaultValue:     "shares",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -144,6 +144,17 @@ func init() {
 				},
 			},
 			{
+				Name:             "source",
+				CLIName:          "source",
+				ModalDisplayName: "Source File (Local)",
+				Description:      "Local file path on the agent to push to the remote share (for push action — lateral tool transfer T1570)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
 				Name:             "port",
 				CLIName:          "port",
 				ModalDisplayName: "SMB Port",
@@ -171,6 +182,10 @@ func init() {
 			msg := fmt.Sprintf("OPSEC WARNING: SMB %s operation on %s.", action, host)
 			if share == "ADMIN$" || share == "C$" || share == "IPC$" {
 				msg += fmt.Sprintf(" Accessing %s share — administrative share access is a high-fidelity lateral movement indicator.", share)
+			}
+			if action == "push" {
+				source, _ := taskData.Args.GetStringArg("source")
+				msg += fmt.Sprintf(" Pushing local file '%s' to remote share — file write to remote system is a lateral tool transfer indicator (T1570).", source)
 			}
 			msg += " SMB connections generate Event ID 5140/5145 (share access) and 4624 (network logon)."
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
@@ -221,6 +236,10 @@ func init() {
 			if path != "" {
 				displayMsg += fmt.Sprintf("\\%s", path)
 			}
+			if action == "push" {
+				source, _ := taskData.Args.GetStringArg("source")
+				displayMsg = fmt.Sprintf("SMB push %s → \\\\%s\\%s\\%s", source, host, share, path)
+			}
 			response.DisplayParams = &displayMsg
 
 			artifactMsg := fmt.Sprintf("SMB2 %s to %s", action, host)
@@ -232,6 +251,13 @@ func init() {
 				BaseArtifactType: "API Call",
 				ArtifactMessage:  artifactMsg,
 			})
+
+			if action == "push" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[LATERAL TOOL TRANSFER] SMB push to \\\\%s\\%s\\%s", host, share, path), false)
+				tagTask(taskData.Task.ID, "LATERAL",
+					fmt.Sprintf("SMB file push to %s", host))
+			}
 
 			return response
 		},

