@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -157,6 +158,28 @@ func init() {
 				displayStr += " ← " + url
 			}
 			response.DisplayParams = &displayStr
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "persist":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+					tagTask(processResponse.TaskData.Task.ID, "PERSIST",
+						"BITS job persistence established (T1197)")
+				}
+			case "list":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] BITS job enumeration (T1197)", false)
+			}
 			return response
 		},
 	})

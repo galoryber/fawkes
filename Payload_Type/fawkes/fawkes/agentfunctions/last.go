@@ -114,5 +114,28 @@ func init() {
 
 			return response
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "failed":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] Failed login history enumeration (T1087.001, T1110)", false)
+			case "reboot":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] System reboot/shutdown history (T1082)", false)
+			default:
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] User login history enumeration (T1087.001)", false)
+			}
+			return response
+		},
 	})
 }

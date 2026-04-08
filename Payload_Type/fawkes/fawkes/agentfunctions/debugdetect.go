@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -41,6 +42,23 @@ func init() {
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "true") || strings.Contains(responseText, "detected") {
+				tagTask(processResponse.TaskData.Task.ID, "OPSEC",
+					"Debugger/analysis tool detected (T1497.001)")
+			}
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				"[RECON] Debug/analysis environment check (T1497.001)", false)
+			return response
 		},
 	})
 }

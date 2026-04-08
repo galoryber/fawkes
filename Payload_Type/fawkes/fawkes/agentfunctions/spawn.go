@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"path/filepath"
 
@@ -168,6 +169,22 @@ func init() {
 
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			mode, _ := processResponse.TaskData.Args.GetStringArg("mode")
+			if strings.Contains(responseText, "pid") || strings.Contains(responseText, "PID") {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[EXECUTION] Process spawned (mode: %s, T1055/T1134.004)", mode), false)
+			}
 			return response
 		},
 	})

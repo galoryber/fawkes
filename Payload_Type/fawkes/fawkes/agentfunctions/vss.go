@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -197,6 +198,38 @@ func init() {
 				createArtifact(taskData.Task.ID, "Process Create", "reboot (T1529 - System Reboot)")
 				logOperationEvent(taskData.Task.ID,
 					fmt.Sprintf("[IMPACT] vss reboot: system reboot on %s (T1529)", taskData.Callback.Host), true)
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "list":
+				// Count shadow copies discovered
+				count := strings.Count(responseText, "shadow_id")
+				if count > 0 {
+					createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+						fmt.Sprintf("VSS enumeration: %d shadow copies found", count))
+				}
+			case "extract":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+					source, _ := processResponse.TaskData.Args.GetStringArg("source")
+					tagTask(processResponse.TaskData.Task.ID, "DATA_STAGED",
+						fmt.Sprintf("VSS file extracted: %s", source))
+				}
+			case "delete", "delete-all", "inhibit-recovery":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "deleted") {
+					tagTask(processResponse.TaskData.Task.ID, "IMPACT",
+						fmt.Sprintf("VSS %s completed (T1490)", action))
+				}
 			}
 			return response
 		},
