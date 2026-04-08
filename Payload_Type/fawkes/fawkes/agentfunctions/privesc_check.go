@@ -190,6 +190,34 @@ func init() {
 			}
 			return response
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			host := processResponse.TaskData.Callback.Host
+
+			// Detect high-value privilege escalation vectors
+			hasVector := strings.Contains(responseText, "VULNERABLE") ||
+				strings.Contains(responseText, "AlwaysInstallElevated") ||
+				strings.Contains(responseText, "Unquoted Service Path") ||
+				strings.Contains(responseText, "NOPASSWD") ||
+				strings.Contains(responseText, "SUID") ||
+				strings.Contains(responseText, "writable")
+
+			if hasVector {
+				tagTask(processResponse.TaskData.Task.ID, "PRIVESC",
+					fmt.Sprintf("Privilege escalation vectors found on %s", host))
+			}
+
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[DISCOVERY] Privilege escalation check on %s", host), false)
+			return response
+		},
 	})
 }
 
