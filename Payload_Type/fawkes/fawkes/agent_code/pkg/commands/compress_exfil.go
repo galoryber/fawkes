@@ -150,7 +150,9 @@ func compressStageExfil(task structs.Task, params CompressParams) structs.Comman
 
 	// Step 4: Build combined metadata
 	var exfil exfilMetadata
-	json.Unmarshal([]byte(exfilResult.Output), &exfil)
+	if err := json.Unmarshal([]byte(exfilResult.Output), &exfil); err != nil {
+		return errorf("Error parsing exfil metadata: %v", err)
+	}
 
 	combined := stageExfilMetadata{
 		StagingDir:    staged.StagingDir,
