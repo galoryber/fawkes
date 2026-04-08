@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -181,6 +182,23 @@ func init() {
 				createArtifact(taskData.Task.ID, "File Delete", fmt.Sprintf("Systemd unit file removal: %s.service", name))
 			}
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action == "install" && (strings.Contains(responseText, "success") || strings.Contains(responseText, "enabled")) {
+				name, _ := processResponse.TaskData.Args.GetStringArg("name")
+				tagTask(processResponse.TaskData.Task.ID, "PERSIST",
+					fmt.Sprintf("Systemd persistence installed: %s.service (T1543.002)", name))
+			}
 			return response
 		},
 	})

@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -133,6 +134,28 @@ func init() {
 				createArtifact(taskData.Task.ID, "File Modify", file)
 			}
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "clear", "truncate", "tamper":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "cleared") {
+					tagTask(processResponse.TaskData.Task.ID, "ANTI_FORENSICS",
+						fmt.Sprintf("Linux log %s completed (T1070.002)", action))
+				}
+			case "list", "read":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] Linux log enumeration (T1070.002)", false)
+			}
 			return response
 		},
 	})

@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -162,6 +163,30 @@ func init() {
 				ArtifactMessage:  fmt.Sprintf("LDAP group query: %s on %s", action, server),
 			})
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+			// Detect high-value group memberships
+			highValueGroups := []string{"Domain Admins", "Enterprise Admins", "Schema Admins", "Administrators", "Account Operators"}
+			for _, g := range highValueGroups {
+				if strings.Contains(responseText, g) {
+					tagTask(processResponse.TaskData.Task.ID, "PRIVESC",
+						fmt.Sprintf("High-value group membership found: %s (T1069.002)", g))
+					break
+				}
+			}
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[DISCOVERY] AD group enumeration: %s on %s (T1069.002)", action, server), false)
 			return response
 		},
 	})

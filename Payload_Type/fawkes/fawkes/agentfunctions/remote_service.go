@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -201,6 +202,29 @@ func init() {
 			if action == "create" || action == "delete" || action == "start" || action == "stop" || action == "modify-path" || action == "trigger" || action == "dll-sideload" {
 				logOperationEvent(taskData.Task.ID,
 					fmt.Sprintf("[LATERAL] remote-service %s: %s on %s from %s", action, name, server, taskData.Callback.Host), true)
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+			switch action {
+			case "create", "modify-path", "trigger", "dll-sideload":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+					tagTask(processResponse.TaskData.Task.ID, "LATERAL",
+						fmt.Sprintf("Remote service %s on %s (T1569.002)", action, server))
+				}
+			case "list":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DISCOVERY] Remote service enumeration on %s (T1007)", server), false)
 			}
 			return response
 		},

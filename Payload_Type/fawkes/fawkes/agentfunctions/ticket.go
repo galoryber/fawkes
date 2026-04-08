@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -221,6 +222,33 @@ func init() {
 
 			createArtifact(taskData.Task.ID, "API Call", artifactMsg)
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "golden", "silver":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
+						fmt.Sprintf("Kerberos %s ticket forged (T1558)", action))
+				}
+			case "overpass":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
+						"Overpass-the-Hash ticket obtained (T1550.002)")
+				}
+			case "list":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] Kerberos ticket cache enumeration", false)
+			}
 			return response
 		},
 	})

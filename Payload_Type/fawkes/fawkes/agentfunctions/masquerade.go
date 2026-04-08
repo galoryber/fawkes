@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -103,6 +104,22 @@ func init() {
 			technique, _ := taskData.Args.GetStringArg("technique")
 			display := fmt.Sprintf("%s → %s", source, technique)
 			response.DisplayParams = &display
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+				technique, _ := processResponse.TaskData.Args.GetStringArg("technique")
+				createArtifact(processResponse.TaskData.Task.ID, "File Modify",
+					fmt.Sprintf("File masquerade applied: %s (T1036)", technique))
+			}
 			return response
 		},
 	})

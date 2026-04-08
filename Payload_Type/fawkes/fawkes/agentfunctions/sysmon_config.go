@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -74,6 +75,23 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			createArtifact(taskData.Task.ID, "Registry Read", "Sysmon service/driver registry keys + event channels")
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "Sysmon") || strings.Contains(responseText, "sysmon") {
+				tagTask(processResponse.TaskData.Task.ID, "OPSEC",
+					"Sysmon detected on target (T1518.001)")
+			}
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				"[RECON] Sysmon configuration enumeration (T1518.001)", false)
 			return response
 		},
 	})

@@ -104,5 +104,18 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[EXECUTION] JXA script executed (%d bytes output, T1059.007)", len(responseText)), false)
+			return response
+		},
 	})
 }

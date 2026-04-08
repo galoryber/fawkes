@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -217,6 +218,31 @@ func init() {
 
 			createArtifact(taskData.Task.ID, "Network Connection", artifactMsg)
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+				switch action {
+				case "add-member", "create-account":
+					tagTask(processResponse.TaskData.Task.ID, "PERSIST",
+						fmt.Sprintf("AD object modified: %s (T1098)", action))
+				case "rbcd", "shadow-cred":
+					tagTask(processResponse.TaskData.Task.ID, "PRIVESC",
+						fmt.Sprintf("AD delegation attack: %s (T1134.001)", action))
+				case "set-spn":
+					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
+						"SPN set for Kerberoasting (T1558.003)")
+				}
+			}
 			return response
 		},
 	})

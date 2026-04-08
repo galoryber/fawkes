@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -152,6 +153,25 @@ func init() {
 					msg += fmt.Sprintf(" user=%s", user)
 				}
 				createArtifact(taskData.Task.ID, "File Write", msg)
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action == "add" && (strings.Contains(responseText, "success") || strings.Contains(responseText, "installed")) {
+				tagTask(processResponse.TaskData.Task.ID, "PERSIST",
+					"Cron job persistence installed (T1053.003)")
+			} else if action == "list" {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] Cron job enumeration (T1053.003)", false)
 			}
 			return response
 		},

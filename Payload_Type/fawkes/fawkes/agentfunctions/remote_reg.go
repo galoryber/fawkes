@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -190,6 +191,29 @@ func init() {
 			createArtifact(taskData.Task.ID, "Network Connection", artifactMsg)
 			display := fmt.Sprintf("%s %s %s\\%s", action, server, hive, path)
 			response.DisplayParams = &display
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+			switch action {
+			case "write", "delete":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[LATERAL] Remote registry %s on %s (T1112)", action, server), true)
+				}
+			case "read", "query":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DISCOVERY] Remote registry %s on %s (T1012)", action, server), false)
+			}
 			return response
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
