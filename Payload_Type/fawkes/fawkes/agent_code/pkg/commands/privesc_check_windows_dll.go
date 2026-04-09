@@ -130,6 +130,121 @@ func winPrivescCheckDLLHijack() structs.CommandResult {
 	return successResult(sb.String())
 }
 
+// winPrivescCheckDLLSideLoad checks for DLL side-loading opportunities (T1574.002).
+// Side-loading exploits the fact that many legitimate applications load DLLs from their
+// own directory without verification. If the application directory is writable, an attacker
+// can plant a malicious DLL that gets loaded when the application starts.
+func winPrivescCheckDLLSideLoad() structs.CommandResult {
+	var sb strings.Builder
+	sb.WriteString("=== DLL Side-Loading Check (T1574.002) ===\n\n")
+
+	// Known side-loading targets: legitimate apps that load specific DLLs from their own directory
+	type sideloadTarget struct {
+		app     string // Application name
+		dll     string // DLL that gets side-loaded
+		paths   []string // Possible installation paths
+		context string // Execution context (user, service, etc.)
+	}
+
+	programFiles := os.Getenv("ProgramFiles")
+	programFilesX86 := os.Getenv("ProgramFiles(x86)")
+	localAppData := os.Getenv("LOCALAPPDATA")
+	appData := os.Getenv("APPDATA")
+
+	targets := []sideloadTarget{
+		{"Microsoft Teams", "CRYPTSP.dll", []string{
+			filepath.Join(localAppData, "Microsoft", "Teams"),
+			filepath.Join(localAppData, "Microsoft", "Teams", "current"),
+		}, "user"},
+		{"Microsoft OneDrive", "version.dll", []string{
+			filepath.Join(localAppData, "Microsoft", "OneDrive"),
+		}, "user/service"},
+		{"Slack", "WINMM.dll", []string{
+			filepath.Join(localAppData, "slack"),
+		}, "user"},
+		{"Discord", "WINMM.dll", []string{
+			filepath.Join(localAppData, "Discord"),
+		}, "user"},
+		{"Visual Studio Code", "WINMM.dll", []string{
+			filepath.Join(localAppData, "Programs", "Microsoft VS Code"),
+		}, "user"},
+		{"Zoom", "version.dll", []string{
+			filepath.Join(appData, "Zoom", "bin"),
+		}, "user"},
+		{"Google Chrome", "chrome_elf.dll", []string{
+			filepath.Join(programFiles, "Google", "Chrome", "Application"),
+			filepath.Join(programFilesX86, "Google", "Chrome", "Application"),
+		}, "user"},
+		{"Microsoft Edge", "msedge_elf.dll", []string{
+			filepath.Join(programFiles, "Microsoft", "Edge", "Application"),
+			filepath.Join(programFilesX86, "Microsoft", "Edge", "Application"),
+		}, "user"},
+		{"Adobe Reader", "Acrobat.dll", []string{
+			filepath.Join(programFiles, "Adobe", "Acrobat DC", "Acrobat"),
+			filepath.Join(programFilesX86, "Adobe", "Acrobat Reader DC", "Reader"),
+		}, "user"},
+		{"7-Zip", "7z.dll", []string{
+			filepath.Join(programFiles, "7-Zip"),
+			filepath.Join(programFilesX86, "7-Zip"),
+		}, "user"},
+		{"Notepad++", "SciLexer.dll", []string{
+			filepath.Join(programFiles, "Notepad++"),
+			filepath.Join(programFilesX86, "Notepad++"),
+		}, "user"},
+		{"WinSCP", "DragExt.dll", []string{
+			filepath.Join(programFiles, "WinSCP"),
+			filepath.Join(programFilesX86, "WinSCP"),
+		}, "user"},
+		{"PuTTY", "WINMM.dll", []string{
+			filepath.Join(programFiles, "PuTTY"),
+			filepath.Join(programFilesX86, "PuTTY"),
+		}, "user"},
+	}
+
+	var vulnerable []string
+	var installed []string
+
+	for _, t := range targets {
+		for _, p := range t.paths {
+			if p == "" {
+				continue
+			}
+			info, err := os.Stat(p)
+			if err != nil || !info.IsDir() {
+				continue
+			}
+			installed = append(installed, fmt.Sprintf("  [*] %s — %s", t.app, p))
+
+			// Check if the directory is writable
+			if isDirWritable(p) {
+				vulnerable = append(vulnerable, fmt.Sprintf("  [!!] %s — %s\n       Side-load: %s (context: %s)\n       Directory is WRITABLE — plant %s here to execute code when %s launches",
+					t.app, p, t.dll, t.context, t.dll, t.app))
+				break // Only report once per app
+			}
+			break // Only check first existing path per app
+		}
+	}
+
+	sb.WriteString(fmt.Sprintf("Scanned %d known side-loading targets\n", len(targets)))
+	sb.WriteString(fmt.Sprintf("Installed: %d, Vulnerable: %d\n\n", len(installed), len(vulnerable)))
+
+	if len(vulnerable) > 0 {
+		sb.WriteString("--- VULNERABLE Side-Loading Targets ---\n")
+		sb.WriteString(strings.Join(vulnerable, "\n\n"))
+		sb.WriteString("\n\n[!!] Plant a DLL with the target name in the writable directory.\n")
+		sb.WriteString("     When the application starts, it loads YOUR DLL from its own directory.\n")
+		sb.WriteString("     Use 'dll-plant' action to copy and timestomp the DLL.\n")
+	} else if len(installed) > 0 {
+		sb.WriteString("--- Installed Applications (directories not writable) ---\n")
+		sb.WriteString(strings.Join(installed, "\n"))
+		sb.WriteString("\n\n[*] No writable application directories found. Side-loading not possible with current permissions.\n")
+	} else {
+		sb.WriteString("[*] No known side-loading target applications found on this system.\n")
+	}
+
+	return successResult(sb.String())
+}
+
 // winDLLPlant places a DLL in a target directory for DLL search order hijacking (T1574.001).
 // The operator uploads a Fawkes DLL payload to the target first, then uses this action
 // to copy it with the correct phantom DLL name into a writable PATH directory.

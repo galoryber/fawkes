@@ -96,6 +96,97 @@ func winPrivescCheckServices() structs.CommandResult {
 	return successResult(sb.String())
 }
 
+// winPrivescCheckServiceRegistryPerms checks service registry key permissions (T1574.011).
+// If a non-admin user can write to a service's registry key, they can modify the ImagePath
+// to point to a malicious binary, achieving privilege escalation when the service restarts.
+func winPrivescCheckServiceRegistryPerms() structs.CommandResult {
+	var sb strings.Builder
+	sb.WriteString("=== Service Registry Permissions Check (T1574.011) ===\n\n")
+
+	servicesKeyPath := `SYSTEM\CurrentControlSet\Services`
+
+	var servicesKey windows.Handle
+	err := windows.RegOpenKeyEx(windows.HKEY_LOCAL_MACHINE, windows.StringToUTF16Ptr(servicesKeyPath), 0, windows.KEY_READ, &servicesKey)
+	if err != nil {
+		return errorf("Failed to open Services registry key: %v", err)
+	}
+	defer windows.RegCloseKey(servicesKey)
+
+	// Enumerate service subkeys
+	var writable []string
+	checked := 0
+	maxNameLen := uint32(256)
+
+	for i := uint32(0); ; i++ {
+		nameBuffer := make([]uint16, maxNameLen)
+		nameLen := maxNameLen
+		err := windows.RegEnumKeyEx(servicesKey, i, &nameBuffer[0], &nameLen, nil, nil, nil, nil)
+		if err != nil {
+			break
+		}
+		serviceName := windows.UTF16ToString(nameBuffer[:nameLen])
+
+		// Try to open the service key with write permissions
+		subKeyPath := servicesKeyPath + `\` + serviceName
+		var subKey windows.Handle
+		err = windows.RegOpenKeyEx(windows.HKEY_LOCAL_MACHINE, windows.StringToUTF16Ptr(subKeyPath), 0, windows.KEY_SET_VALUE, &subKey)
+		if err == nil {
+			// We have write access — this is a privilege escalation vector
+			windows.RegCloseKey(subKey)
+
+			// Read the current ImagePath to show what service this is
+			imagePath := readRegString(windows.HKEY_LOCAL_MACHINE, subKeyPath, "ImagePath")
+			startType := readRegDWORD(windows.HKEY_LOCAL_MACHINE, subKeyPath, "Start")
+			objectName := readRegString(windows.HKEY_LOCAL_MACHINE, subKeyPath, "ObjectName")
+
+			if imagePath != "" {
+				startStr := "unknown"
+				switch startType {
+				case 0:
+					startStr = "Boot"
+				case 1:
+					startStr = "System"
+				case 2:
+					startStr = "Auto"
+				case 3:
+					startStr = "Manual"
+				case 4:
+					startStr = "Disabled"
+				}
+
+				runAs := objectName
+				if runAs == "" {
+					runAs = "LocalSystem"
+				}
+
+				severity := "[!]"
+				if strings.EqualFold(runAs, "LocalSystem") || strings.EqualFold(runAs, "NT AUTHORITY\\SYSTEM") {
+					severity = "[!!]"
+				}
+
+				writable = append(writable, fmt.Sprintf("  %s %s\n       ImagePath: %s\n       Start: %s | RunAs: %s\n       Registry: HKLM\\%s (WRITABLE)",
+					severity, serviceName, imagePath, startStr, runAs, subKeyPath))
+			}
+		}
+		checked++
+	}
+
+	sb.WriteString(fmt.Sprintf("Checked %d service registry keys\n\n", checked))
+
+	if len(writable) > 0 {
+		sb.WriteString(fmt.Sprintf("--- Writable Service Registry Keys (%d) ---\n", len(writable)))
+		sb.WriteString(strings.Join(writable, "\n\n"))
+		sb.WriteString("\n\n[!!] Modify ImagePath to point to your payload, then restart the service.\n")
+		sb.WriteString("     Services running as SYSTEM provide full privilege escalation.\n")
+		sb.WriteString("     Use: reg write -path \"HKLM\\...\\ImagePath\" -value \"C:\\path\\to\\payload.exe\"\n")
+	} else {
+		sb.WriteString("[*] No writable service registry keys found with current permissions.\n")
+		sb.WriteString("    This is expected for standard user accounts.\n")
+	}
+
+	return successResult(sb.String())
+}
+
 // winPrivescCheckWritable checks for writable directories in PATH
 func winPrivescCheckWritable() structs.CommandResult {
 	var sb strings.Builder

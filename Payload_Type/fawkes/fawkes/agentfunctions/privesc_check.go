@@ -18,7 +18,7 @@ func init() {
 		Version:             8,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1548", "T1548.001", "T1548.002", "T1574.001", "T1574.009", "T1552.001", "T1613", "T1082"},
+		MitreAttackMappings: []string{"T1548", "T1548.001", "T1548.002", "T1574.001", "T1574.002", "T1574.009", "T1574.011", "T1552.001", "T1613", "T1082"},
 		ScriptOnlyCommand:   false,
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "privesc_check_new.js"),
@@ -37,8 +37,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "auto-escalate", "privileges", "services", "registry", "uac", "unattend", "writable", "dll-hijack", "dll-plant", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "path-hijack", "docker-group", "group", "polkit", "modprobe", "ld-preload", "security", "launchdaemons", "tcc", "dylib", "sip"},
-				Description:      "Check to perform. auto-escalate: automated chain — enumerate vectors then attempt privilege escalation. Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
+				Choices:          []string{"all", "auto-escalate", "privileges", "services", "registry", "uac", "unattend", "writable", "dll-hijack", "dll-plant", "dll-sideload", "service-registry", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "path-hijack", "docker-group", "group", "polkit", "modprobe", "ld-preload", "security", "launchdaemons", "tcc", "dylib", "sip"},
+				Description:      "Check to perform. auto-escalate: automated chain — enumerate vectors then attempt privilege escalation. Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload (T1574.002), service-registry (T1574.011). Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
