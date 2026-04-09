@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -316,6 +317,20 @@ func init() {
 				response.Success = false
 			}
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "started") || strings.Contains(responseText, "Started") || strings.Contains(responseText, "listening") {
+				createArtifact(processResponse.TaskData.Task.ID, "Network Connection", fmt.Sprintf("[rpfwd] %s", responseText))
+			}
 			return response
 		},
 	})

@@ -1,8 +1,10 @@
 package agentfunctions
 
 import (
-	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"fmt"
+	"strings"
+
+	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
@@ -87,6 +89,25 @@ func init() {
 				} else {
 					createArtifact(task.Task.ID, "Process Create", "powershell.exe -nop -ep bypass -Command "+cmd)
 				}
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "output") || strings.Contains(responseText, "Output") || len(responseText) > 0 {
+				cmd, _ := processResponse.TaskData.Args.GetStringArg("command")
+				l := len(cmd)
+				if l > 200 {
+					l = 200
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Command Execution", fmt.Sprintf("[powershell] %s", cmd[:l]))
 			}
 			return response
 		},

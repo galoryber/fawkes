@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"path/filepath"
 
@@ -209,6 +210,24 @@ func init() {
 			// Set the parameters as a JSON string
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "success") || strings.Contains(responseText, "injected") || strings.Contains(responseText, "Success") || strings.Contains(responseText, "Injected") {
+				l := len(responseText)
+				if l > 200 {
+					l = 200
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Process Injection", fmt.Sprintf("[threadless-injection] %s", responseText[:l]))
+			}
 			return response
 		},
 	})
