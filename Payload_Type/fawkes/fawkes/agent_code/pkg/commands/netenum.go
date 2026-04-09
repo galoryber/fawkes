@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -24,9 +25,10 @@ func (c *NetEnumCommand) Description() string {
 }
 
 type netEnumArgs struct {
-	Action string `json:"action"`
-	Target string `json:"target"` // remote host for loggedon/sessions/shares/localgroups/admins; group name for groupmembers
-	Group  string `json:"group"`  // group name for groupmembers/admins (overrides target for group name)
+	Action  string `json:"action"`
+	Target  string `json:"target"`  // remote host for loggedon/sessions/shares/localgroups/admins; group name for groupmembers
+	Group   string `json:"group"`   // group name for groupmembers/admins (overrides target for group name)
+	Timeout int    `json:"timeout"` // timeout in seconds for remote operations (default: 30)
 }
 
 var (
@@ -272,6 +274,13 @@ func (c *NetEnumCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error parsing parameters: %v", err)
 	}
 
+	// Remote operations (loggedon, sessions, remote shares) can block on unreachable hosts.
+	// Wrap them with a timeout.
+	remoteTimeout := 30 * time.Second
+	if args.Timeout > 0 {
+		remoteTimeout = time.Duration(args.Timeout) * time.Second
+	}
+
 	switch strings.ToLower(args.Action) {
 	case "users":
 		return netEnumLocalUsers()
@@ -292,18 +301,31 @@ func (c *NetEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	case "domaininfo":
 		return netEnumDomainInfo()
 	case "loggedon":
-		return netEnumLoggedOn(args.Target)
+		return netEnumWithTimeout(func() structs.CommandResult { return netEnumLoggedOn(args.Target) }, remoteTimeout)
 	case "sessions":
-		return netEnumSessions(args.Target)
+		return netEnumWithTimeout(func() structs.CommandResult { return netEnumSessions(args.Target) }, remoteTimeout)
 	case "shares":
 		if args.Target != "" {
-			return netEnumRemoteShares(args.Target)
+			return netEnumWithTimeout(func() structs.CommandResult { return netEnumRemoteShares(args.Target) }, remoteTimeout)
 		}
 		return netEnumLocalShares()
 	case "mapped":
 		return netEnumMappedDrives()
 	default:
 		return errorf("Unknown action: %s\nAvailable: %s", args.Action, neAllActions)
+	}
+}
+
+// netEnumWithTimeout wraps a remote enumeration call with a timeout.
+// Windows NetAPI calls don't support cancellation, so we run in a goroutine and abandon on timeout.
+func netEnumWithTimeout(fn func() structs.CommandResult, timeout time.Duration) structs.CommandResult {
+	ch := make(chan structs.CommandResult, 1)
+	go func() { ch <- fn() }()
+	select {
+	case result := <-ch:
+		return result
+	case <-time.After(timeout):
+		return errorf("Error: operation timed out after %s (host may be unreachable)", timeout)
 	}
 }
 

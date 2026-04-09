@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/json"
 	"net"
 	"strings"
@@ -54,7 +55,15 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Timeout <= 0 {
 		args.Timeout = 3
 	}
-	timeout := time.Duration(args.Timeout) * time.Second
+	perCheckTimeout := time.Duration(args.Timeout) * time.Second
+
+	// Overall operation deadline: perCheckTimeout * numHosts (capped at 120s)
+	overallTimeout := perCheckTimeout * 10
+	if overallTimeout > 120*time.Second {
+		overallTimeout = 120 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), overallTimeout)
+	defer cancel()
 
 	// Parse hosts
 	hosts := lateralParseHosts(args.Hosts)
@@ -79,7 +88,7 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 			defer wg.Done()
 			defer func() { <-sem }()
 
-			if task.DidStop() {
+			if task.DidStop() || ctx.Err() != nil {
 				return
 			}
 
@@ -115,7 +124,9 @@ func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
 				portWg.Add(1)
 				go func(p string, ns []string) {
 					defer portWg.Done()
-					conn, err := net.DialTimeout("tcp", net.JoinHostPort(h, p), timeout)
+					dialCtx, dialCancel := context.WithTimeout(ctx, perCheckTimeout)
+					conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", net.JoinHostPort(h, p))
+					dialCancel()
 					available := err == nil
 					detail := "port closed"
 					if available {
