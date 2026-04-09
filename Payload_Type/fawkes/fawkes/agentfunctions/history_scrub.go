@@ -13,7 +13,7 @@ func init() {
 		Description:         "List or clear shell and application command history files",
 		HelpString:          "history-scrub [-action list|clear|clear-all] [-user <username>]",
 		Version:             1,
-		MitreAttackMappings: []string{"T1070.003"}, // Indicator Removal: Clear Command History
+		MitreAttackMappings: []string{"T1070.003", "T1562.003"}, // Indicator Removal: Clear Command History + Impair Command History Logging
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{

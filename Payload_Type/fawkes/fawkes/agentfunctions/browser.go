@@ -16,7 +16,7 @@ func init() {
 		Version:             5,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1555.003", "T1217"},
+		MitreAttackMappings: []string{"T1555.003", "T1217", "T1539"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{

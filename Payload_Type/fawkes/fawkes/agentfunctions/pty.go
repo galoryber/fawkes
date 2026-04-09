@@ -13,7 +13,7 @@ func init() {
 		Description:         "Start an interactive PTY shell session (Linux/macOS only)",
 		HelpString:          "pty",
 		Version:             1,
-		MitreAttackMappings: []string{"T1059"}, // Command and Scripting Interpreter
+		MitreAttackMappings: []string{"T1059", "T1059.004"}, // Command and Scripting Interpreter (Unix Shell)
 		SupportedUIFeatures: []string{"task_response:interactive"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{

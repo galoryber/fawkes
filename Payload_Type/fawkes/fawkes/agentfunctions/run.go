@@ -13,7 +13,7 @@ func init() {
 		Description:         "run [command] - Execute a command in a child process",
 		HelpString:          "run [command]",
 		Version:             1,
-		MitreAttackMappings: []string{"T1059"}, // Command and Scripting Interpreter
+		MitreAttackMappings: []string{"T1059", "T1059.003", "T1059.004"}, // Command and Scripting Interpreter (cmd, bash/sh)
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{

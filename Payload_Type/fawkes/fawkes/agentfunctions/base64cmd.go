@@ -13,7 +13,7 @@ func init() {
 		HelpString:          "base64 -action encode -input 'hello world'\nbase64 -action encode -input /etc/passwd -file true\nbase64 -action decode -input 'SGVsbG8=' -output /tmp/decoded.bin",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1132.001", "T1027"},
+		MitreAttackMappings: []string{"T1132.001", "T1027", "T1140"},
 		SupportedUIFeatures: []string{"file_browser:download"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
