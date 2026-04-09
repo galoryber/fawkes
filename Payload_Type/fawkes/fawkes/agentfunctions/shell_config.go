@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -123,6 +124,38 @@ func init() {
 				OpsecPreBlocked: false, OpsecPreMessage: msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			switch action {
+			case "inject":
+				file, _ := processResponse.TaskData.Args.GetStringArg("file")
+				createArtifact(processResponse.TaskData.Task.ID, "Persistence",
+					fmt.Sprintf("shell-config inject into %s", file))
+			case "remove":
+				file, _ := processResponse.TaskData.Args.GetStringArg("file")
+				createArtifact(processResponse.TaskData.Task.ID, "Indicator Removal",
+					fmt.Sprintf("shell-config remove from %s", file))
+			case "clear":
+				createArtifact(processResponse.TaskData.Task.ID, "Indicator Removal",
+					"shell-config clear — history files wiped")
+			case "history":
+				lines := strings.Count(responseText, "\n")
+				createArtifact(processResponse.TaskData.Task.ID, "Collection",
+					fmt.Sprintf("shell-config history: %d lines collected", lines))
+			case "list":
+				createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+					"shell-config list: shell config files enumerated")
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

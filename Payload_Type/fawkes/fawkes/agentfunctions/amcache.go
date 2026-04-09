@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -85,6 +86,30 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Forensic artifact manipulation. Windows: modifies AppCompatCache registry key. Linux: modifies recently-used.xbel, thumbnails, tracker DB. macOS: removes recent items, KnowledgeC, quarantine events. Detectable by integrity monitoring and forensic timeline analysis.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			switch action {
+			case "delete", "clear":
+				createArtifact(processResponse.TaskData.Task.ID, "Indicator Removal",
+					fmt.Sprintf("amcache %s completed", action))
+			case "query", "search":
+				// Count entries found
+				count := strings.Count(responseText, "\n")
+				if count > 0 {
+					createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+						fmt.Sprintf("amcache %s: %d execution artifacts enumerated", action, count))
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			resp := agentstructs.PTTaskCreateTaskingMessageResponse{

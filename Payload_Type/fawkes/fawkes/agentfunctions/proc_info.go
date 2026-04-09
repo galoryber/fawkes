@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -77,6 +78,37 @@ func init() {
 				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			pid, _ := processResponse.TaskData.Args.GetNumberArg("pid")
+			switch action {
+			case "info":
+				msg := "proc-info inspection"
+				if pid > 0 {
+					msg = fmt.Sprintf("proc-info PID %d inspected", int(pid))
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Process Discovery", msg)
+			case "connections":
+				count := strings.Count(responseText, "\n")
+				createArtifact(processResponse.TaskData.Task.ID, "Network Discovery",
+					fmt.Sprintf("proc-info connections: %d entries enumerated", count))
+			case "mounts":
+				createArtifact(processResponse.TaskData.Task.ID, "System Discovery",
+					"proc-info mounts enumerated")
+			case "modules":
+				createArtifact(processResponse.TaskData.Task.ID, "System Discovery",
+					"proc-info kernel modules enumerated")
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

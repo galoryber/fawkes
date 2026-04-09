@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -64,6 +65,29 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: History scrubbing removes or modifies shell history files (.bash_history, .zsh_history, PSReadLine). Detectable by file integrity monitoring and SIEM correlation of missing audit trails. Anti-forensics technique — consider selective editing over wholesale deletion.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			switch action {
+			case "clear", "clear-all":
+				createArtifact(processResponse.TaskData.Task.ID, "Indicator Removal",
+					fmt.Sprintf("history-scrub %s completed", action))
+			case "list":
+				count := strings.Count(responseText, "\n")
+				if count > 0 {
+					createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+						fmt.Sprintf("history-scrub list: %d history files enumerated", count))
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
