@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,9 +10,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "secure-delete",
-		Description:         "Securely delete files by overwriting with random data before removal. Prevents forensic recovery.",
-		HelpString:          "secure-delete -path /tmp/payload.bin\nsecure-delete -path C:\\Users\\setup\\tool.exe -passes 5\nsecure-delete -path /tmp/artifacts",
-		Version:             1,
+		Description:         "Securely delete files by overwriting with random data before removal. Standard mode or wipe mode (zeros+ones+random pattern, T1485).",
+		HelpString:          "secure-delete -path /tmp/payload.bin\nsecure-delete -path /tmp/artifacts -passes 5\nsecure-delete -action wipe -path /tmp/sensitive -confirm DESTROY",
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1070.004", "T1485"},
 		SupportedUIFeatures: []string{"file_browser:remove"},
@@ -24,10 +25,22 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
+				Name:             "action",
+				CLIName:          "action",
+				ModalDisplayName: "Action",
+				Description:      "delete: standard secure deletion (random overwrite). wipe: aggressive destruction (zeros+ones+random pattern, T1485 Data Destruction).",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"delete", "wipe"},
+				DefaultValue:     "delete",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
 				Name:             "path",
 				CLIName:          "path",
 				ModalDisplayName: "File/Directory Path",
-				Description:      "Path to file or directory to securely delete",
+				Description:      "Path to file or directory to securely delete/wipe",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -38,9 +51,20 @@ func init() {
 				Name:             "passes",
 				CLIName:          "passes",
 				ModalDisplayName: "Overwrite Passes",
-				Description:      "Number of random data overwrite passes (default: 3)",
+				Description:      "Number of random data overwrite passes (default: 3 for delete, 7 for wipe)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				DefaultValue:     3,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "confirm",
+				CLIName:          "confirm",
+				ModalDisplayName: "Safety Confirmation",
+				Description:      "Type DESTROY to confirm wipe action (safety gate for data destruction)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -56,23 +80,54 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			path, _ := taskData.Args.GetStringArg("path")
+			msg := fmt.Sprintf("OPSEC WARNING: Secure deletion of %s. Overwrites file contents with random data before removing. Creates write I/O patterns detectable by HIDS/FIM.", path)
+			if action == "wipe" {
+				msg = fmt.Sprintf("CRITICAL OPSEC WARNING: Data Destruction (T1485) — wiping %s with zeros+ones+random pattern. This is a destructive operation that cannot be reversed. Sustained I/O patterns and file deletion volume will trigger behavioral analytics. Only proceed in authorized purple team exercises.", path)
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    "OPSEC WARNING: Secure deletion overwrites file contents with random data before removing. Creates write I/O patterns detectable by file integrity monitoring (HIDS/FIM). May trigger alerts for suspicious file modification followed by deletion.",
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action == "wipe" && strings.Contains(responseText, "wiped") {
+				tagTask(processResponse.TaskData.Task.ID, "IMPACT",
+					"Data destruction: aggressive wipe (T1485)")
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[IMPACT] Data destruction completed — aggressive wipe pattern (T1485)", true)
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			action, _ := taskData.Args.GetStringArg("action")
 			path, _ := taskData.Args.GetStringArg("path")
-			display := fmt.Sprintf("%s", path)
+			display := fmt.Sprintf("%s %s", action, path)
 			response.DisplayParams = &display
-			createArtifact(taskData.Task.ID, "File Delete", fmt.Sprintf("Secure deletion of %s", path))
+			if action == "wipe" {
+				createArtifact(taskData.Task.ID, "Impact", fmt.Sprintf("Data destruction (T1485): wipe %s", path))
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[IMPACT] Data destruction started: wipe %s", path), true)
+			} else {
+				createArtifact(taskData.Task.ID, "File Delete", fmt.Sprintf("Secure deletion of %s", path))
+			}
 			return response
 		},
 	})

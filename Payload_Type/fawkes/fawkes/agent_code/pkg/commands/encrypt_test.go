@@ -39,7 +39,7 @@ func TestEncryptInvalidAction(t *testing.T) {
 	if result.Status != "error" {
 		t.Fatalf("expected error, got %s", result.Status)
 	}
-	if !strings.Contains(result.Output, "encrypt' or 'decrypt") {
+	if !strings.Contains(result.Output, "encrypt, decrypt") {
 		t.Fatalf("expected action error, got: %s", result.Output)
 	}
 }
@@ -297,6 +297,169 @@ func TestEncryptEmptyFile(t *testing.T) {
 	decData, _ := os.ReadFile(decFile)
 	if len(decData) != 0 {
 		t.Fatalf("expected empty decrypted file, got %d bytes", len(decData))
+	}
+}
+
+// --- Batch encrypt/decrypt tests (T1486 ransomware simulation) ---
+
+func TestEncryptFilesNoConfirm(t *testing.T) {
+	cmd := &EncryptCommand{}
+	params, _ := json.Marshal(encryptArgs{Action: "encrypt-files", Path: "/tmp/*.txt"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" || !strings.Contains(result.Output, "SIMULATE") {
+		t.Errorf("expected SIMULATE safety gate error, got: %s", result.Output)
+	}
+}
+
+func TestEncryptFilesMissingPath(t *testing.T) {
+	cmd := &EncryptCommand{}
+	params, _ := json.Marshal(encryptArgs{Action: "encrypt-files", Confirm: "SIMULATE"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Error("expected error for missing path")
+	}
+}
+
+func TestEncryptFilesDecryptFilesRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	files := map[string]string{
+		"a.txt": "content A",
+		"b.txt": "content B",
+		"c.txt": "content C",
+	}
+	for name, content := range files {
+		os.WriteFile(filepath.Join(dir, name), []byte(content), 0644)
+	}
+
+	cmd := &EncryptCommand{}
+
+	// Encrypt batch
+	params, _ := json.Marshal(encryptArgs{
+		Action: "encrypt-files", Path: filepath.Join(dir, "*.txt"), Confirm: "SIMULATE",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("encrypt-files failed: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Files encrypted: 3/3") {
+		t.Errorf("expected 3/3 encrypted, got: %s", result.Output)
+	}
+
+	// Extract recovery key
+	var key string
+	for _, line := range strings.Split(result.Output, "\n") {
+		if strings.HasPrefix(line, "Recovery Key (base64): ") {
+			key = strings.TrimPrefix(line, "Recovery Key (base64): ")
+			break
+		}
+	}
+	if key == "" {
+		t.Fatal("no recovery key in output")
+	}
+
+	// Verify .fawkes files exist and originals removed
+	for name := range files {
+		if _, err := os.Stat(filepath.Join(dir, name)); !os.IsNotExist(err) {
+			t.Errorf("original %s should be deleted", name)
+		}
+		if _, err := os.Stat(filepath.Join(dir, name+".fawkes")); err != nil {
+			t.Errorf(".fawkes file missing for %s", name)
+		}
+	}
+
+	// Decrypt batch
+	params, _ = json.Marshal(encryptArgs{Action: "decrypt-files", Path: dir, Key: key})
+	result = cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("decrypt-files failed: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Files decrypted: 3/3") {
+		t.Errorf("expected 3/3 decrypted, got: %s", result.Output)
+	}
+
+	// Verify content restored
+	for name, content := range files {
+		data, err := os.ReadFile(filepath.Join(dir, name))
+		if err != nil {
+			t.Errorf("restored %s not found: %v", name, err)
+			continue
+		}
+		if string(data) != content {
+			t.Errorf("restored %s content mismatch: got %q, want %q", name, data, content)
+		}
+	}
+}
+
+func TestEncryptFilesMaxFilesLimit(t *testing.T) {
+	dir := t.TempDir()
+	for i := 0; i < 5; i++ {
+		os.WriteFile(filepath.Join(dir, string(rune('a'+i))+".txt"), []byte("data"), 0644)
+	}
+
+	cmd := &EncryptCommand{}
+	params, _ := json.Marshal(encryptArgs{
+		Action: "encrypt-files", Path: filepath.Join(dir, "*.txt"),
+		Confirm: "SIMULATE", MaxFiles: 3,
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" || !strings.Contains(result.Output, "max_files") {
+		t.Errorf("expected max_files error, got: %s", result.Output)
+	}
+}
+
+func TestEncryptFilesSkipsExisting(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "new.txt"), []byte("new"), 0644)
+	os.WriteFile(filepath.Join(dir, "old.txt.fawkes"), []byte("already encrypted"), 0644)
+
+	cmd := &EncryptCommand{}
+	params, _ := json.Marshal(encryptArgs{
+		Action: "encrypt-files", Path: filepath.Join(dir, "*"), Confirm: "SIMULATE",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("failed: %s", result.Output)
+	}
+	// Should encrypt only new.txt
+	if !strings.Contains(result.Output, "Files encrypted: 1/1") {
+		t.Errorf("expected 1/1 encrypted, got: %s", result.Output)
+	}
+}
+
+func TestDecryptFilesMissingKey(t *testing.T) {
+	cmd := &EncryptCommand{}
+	params, _ := json.Marshal(encryptArgs{Action: "decrypt-files", Path: "/tmp"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" || !strings.Contains(result.Output, "key required") {
+		t.Errorf("expected key error, got: %s", result.Output)
+	}
+}
+
+func TestDecryptFilesWrongKey(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "test.txt"), []byte("content"), 0644)
+
+	cmd := &EncryptCommand{}
+	params, _ := json.Marshal(encryptArgs{
+		Action: "encrypt-files", Path: filepath.Join(dir, "*.txt"), Confirm: "SIMULATE",
+	})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatal("encrypt failed")
+	}
+
+	// Decrypt with wrong key — should report errors but succeed (partial decrypt)
+	wrongKey := make([]byte, 32)
+	params, _ = json.Marshal(encryptArgs{
+		Action: "decrypt-files", Path: dir,
+		Key: base64.StdEncoding.EncodeToString(wrongKey),
+	})
+	result = cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("should succeed with error report: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Errors") {
+		t.Errorf("expected errors for wrong key, got: %s", result.Output)
 	}
 }
 
