@@ -16,7 +16,7 @@ func init() {
 		HelpString:          "cloud-metadata -action detect\ncloud-metadata -action creds\ncloud-metadata -action all -provider aws\ncloud-metadata -action aws-iam\ncloud-metadata -action azure-graph\ncloud-metadata -action gcp-iam",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1552.005", "T1580", "T1098.001"},
+		MitreAttackMappings: []string{"T1552.005", "T1580", "T1526", "T1098.001"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -183,6 +183,36 @@ func init() {
 			}
 
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+
+			// Tag IAM enumeration actions
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "aws-iam":
+				if strings.Contains(responseText, "AdministratorAccess") || strings.Contains(responseText, "PowerUser") {
+					tagTask(processResponse.TaskData.Task.ID, "PRIVESC",
+						"AWS IAM: overprivileged role detected (T1580)")
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"AWS IAM privilege enumeration (STS+IAM)")
+			case "azure-graph":
+				if strings.Contains(responseText, "Global Administrator") || strings.Contains(responseText, "globalAdmin") {
+					tagTask(processResponse.TaskData.Task.ID, "PRIVESC",
+						"Azure AD: Global Administrator detected (T1580)")
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"Azure AD Graph enumeration (users, groups, apps)")
+			case "gcp-iam":
+				if strings.Contains(responseText, "roles/owner") || strings.Contains(responseText, "roles/editor") {
+					tagTask(processResponse.TaskData.Task.ID, "PRIVESC",
+						"GCP IAM: Owner/Editor role detected (T1580)")
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"GCP IAM policy enumeration (T1526)")
+			case "aws-persist", "azure-persist":
+				tagTask(processResponse.TaskData.Task.ID, "PERSIST",
+					fmt.Sprintf("Cloud persistence: %s (T1098.001)", action))
+			}
+
 			return response
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
