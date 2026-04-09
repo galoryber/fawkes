@@ -15,7 +15,7 @@ Includes binary security descriptor parsing to identify which users/groups can e
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `action` | Yes | `find` | `cas`: list CAs, `templates`: list templates, `find`: find vulnerable templates (ESC1-ESC4, ESC6), `request`: request a certificate via DCOM |
+| `action` | Yes | `find` | `cas`: list CAs, `templates`: list templates, `find`: find vulnerable templates (ESC1-ESC4, ESC6), `request`: request a certificate via DCOM, `auto-exploit`: automated find → parse → request chain |
 | `server` | Yes | | Domain controller or CA server IP/hostname |
 | `username` | No | | Username (DOMAIN\user or user@domain format) |
 | `password` | No | | Password for authentication |
@@ -69,9 +69,27 @@ adcs -action request -server ca01 -ca_name ESSOS-CA -template User -username ESS
 adcs -action find -server dc01 -username user@domain.local -password Pass123 -use_tls true
 ```
 
+## Auto-Exploit (Automated Chain)
+
+The `auto-exploit` action combines the full exploitation workflow into a single command:
+
+1. **Find**: Runs `find` to enumerate all vulnerable templates (ESC1-ESC4, ESC6)
+2. **Parse**: Analyzes results to select the best exploitable template and CA
+3. **Request**: Automatically issues a certificate request via DCOM using the selected template
+
+This is useful for fast exploitation when you want to go from enumeration to certificate in one step. It selects the highest-impact vulnerability (preferring ESC1/ESC6 for impersonation) and requests a certificate with the appropriate parameters.
+
+```
+# Auto-exploit: find vulnerable templates and request a certificate automatically
+adcs -action auto-exploit -server dc01 -username user@domain.local -password Pass123
+
+# Auto-exploit with a specific alt_name for impersonation
+adcs -action auto-exploit -server dc01 -username user@domain.local -password Pass123 -alt_name administrator@domain.local
+```
+
 ## Certificate Request Workflow
 
-1. **Enumerate**: Use `adcs -action find` to identify vulnerable templates
+1. **Enumerate**: Use `adcs -action find` to identify vulnerable templates (or use `auto-exploit` for a one-step chain)
 2. **Request**: Use `adcs -action request` with the template name and CA from enumeration
 3. **Use**: The returned PEM certificate + private key can be used for:
    - PKINIT authentication (`getTGT` with certificate)

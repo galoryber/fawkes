@@ -7,24 +7,24 @@ hidden = false
 
 ## Summary
 
-Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium) and Firefox. Cross-platform support for browsing history, autofill form data, and bookmarks. Windows additionally supports Chromium credential and cookie extraction via DPAPI + AES-GCM decryption. Firefox cookies are plaintext and available on all platforms.
+Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium) and Firefox. Cross-platform support for browsing history, autofill form data, bookmarks, passwords, and cookies on all platforms (Windows, macOS, Linux). Windows uses DPAPI + AES-GCM decryption for Chromium credentials and cookies, macOS uses Keychain, and Linux uses GNOME Keyring / KWallet for Chromium decryption. Firefox cookies are plaintext on all platforms.
 
 ### Platform Support
 
-| Action | Windows (Chromium) | Windows (Firefox) | macOS/Linux (Chromium) | macOS/Linux (Firefox) |
-|--------|-------------------|-------------------|----------------------|---------------------|
-| passwords | Yes (DPAPI) | No | No | No |
-| cookies | Yes (DPAPI) | Yes (plaintext) | No | Yes (plaintext) |
-| history | Yes | Yes | Yes | Yes |
-| autofill | Yes | Yes | Yes | Yes |
-| bookmarks | Yes | Yes | Yes | Yes |
-| downloads | Yes | Yes | Yes | Yes |
+| Action | Windows (Chromium) | Windows (Firefox) | macOS (Chromium) | macOS (Firefox) | Linux (Chromium) | Linux (Firefox) |
+|--------|-------------------|-------------------|-----------------|----------------|-----------------|----------------|
+| passwords | Yes (DPAPI) | No | Yes (Keychain) | No | Yes (GNOME Keyring/KWallet) | No |
+| cookies | Yes (DPAPI) | Yes (plaintext) | Yes (Keychain) | Yes (plaintext) | Yes (GNOME Keyring/KWallet) | Yes (plaintext) |
+| history | Yes | Yes | Yes | Yes | Yes | Yes |
+| autofill | Yes | Yes | Yes | Yes | Yes | Yes |
+| bookmarks | Yes | Yes | Yes | Yes | Yes | Yes |
+| downloads | Yes | Yes | Yes | Yes | Yes | Yes |
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| action | choose_one | No | history | `passwords` — saved login credentials (Windows Chromium only); `cookies` — session cookies (Windows Chromium DPAPI; Firefox plaintext on all platforms); `history` — browsing history; `autofill` — form data; `bookmarks` — saved URLs; `downloads` — download history |
+| action | choose_one | No | history | `passwords` — saved login credentials (all platforms: DPAPI on Windows, Keychain on macOS, GNOME Keyring/KWallet on Linux — Chromium only); `cookies` — session cookies (all platforms: Chromium via platform keystore decryption; Firefox plaintext); `history` — browsing history; `autofill` — form data; `bookmarks` — saved URLs; `downloads` — download history |
 | browser | choose_one | No | all | `all`, `chrome`, `edge`, `chromium`, or `firefox` — which browser(s) to target |
 
 ## Usage
@@ -64,7 +64,7 @@ Extract recent download history (file paths, URLs, sizes, states):
 browser -action downloads
 ```
 
-### Harvest Credentials (Windows Chromium Only)
+### Harvest Credentials (All Platforms, Chromium Only)
 
 Extract saved passwords from all installed Chromium-based browsers:
 ```
@@ -73,12 +73,12 @@ browser -action passwords
 
 ### Harvest Cookies
 
-Extract Firefox cookies (all platforms):
+Extract Firefox cookies (all platforms, plaintext):
 ```
 browser -action cookies -browser firefox
 ```
 
-Extract Chromium cookies (Windows only — DPAPI):
+Extract Chromium cookies (all platforms — decrypted via platform keystore):
 ```
 browser -action cookies -browser chrome
 ```
@@ -128,17 +128,17 @@ browser -action cookies -browser chrome
    - Downloads: `downloads.json` (plaintext JSON with source URLs, file paths, sizes)
 5. Firefox timestamps (PRTime) are microseconds since Unix epoch
 
-### Windows Chromium Decryption (passwords, cookies)
+### Chromium Decryption (passwords, cookies — all platforms)
 
-1. Reads `Local State` JSON to extract the base64-encoded encryption key
-2. Strips the "DPAPI" prefix and decrypts the AES key using `CryptUnprotectData`
-3. For encrypted data: decrypts using AES-256-GCM with the recovered key
+- **Windows**: Reads `Local State` JSON, strips the "DPAPI" prefix, decrypts the AES key using `CryptUnprotectData`, then decrypts data using AES-256-GCM
+- **macOS**: Reads `Local State` JSON, retrieves the decryption key from the macOS Keychain (`Chrome Safe Storage`), derives the AES key via PBKDF2, then decrypts data using AES-128-CBC
+- **Linux**: Reads `Local State` JSON, retrieves the decryption key from GNOME Keyring or KWallet (`Chrome Safe Storage`), derives the AES key via PBKDF2, then decrypts data using AES-128-CBC
 
 ## Notes
 
-- **Cross-platform:** History, autofill, bookmarks, and downloads work on Windows, macOS, and Linux for all browsers
+- **Cross-platform:** All actions (history, autofill, bookmarks, downloads, passwords, cookies) work on Windows, macOS, and Linux
 - **Firefox cookies:** Plaintext on all platforms — no decryption needed
-- **Chromium passwords/cookies:** Require DPAPI (Windows only, user-bound key decryption)
+- **Chromium passwords/cookies:** Decrypted via platform-specific keystores (DPAPI on Windows, Keychain on macOS, GNOME Keyring/KWallet on Linux)
 - The browser does not need to be closed — databases are copied to avoid lock conflicts
 - Multi-profile support: Chromium (Default, Profile N), Firefox (*.default*)
 - Supported browsers: Chrome, Edge, Chromium, Firefox
