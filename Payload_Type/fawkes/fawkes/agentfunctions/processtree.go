@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -63,6 +64,23 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Process tree enumeration maps parent-child process relationships. Reveals process hierarchy which is standard reconnaissance — repeated calls may trigger EDR behavioral alerts.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Count processes from tree lines (lines starting with ├, └, or digits)
+			count := strings.Count(responseText, "\n")
+			if count > 0 {
+				createArtifact(processResponse.TaskData.Task.ID, "Process Discovery",
+					fmt.Sprintf("process-tree: %d processes enumerated", count))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

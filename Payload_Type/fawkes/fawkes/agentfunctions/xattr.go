@@ -104,6 +104,32 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			path, _ := processResponse.TaskData.Args.GetStringArg("path")
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || path == "" {
+				return response
+			}
+			switch action {
+			case "set":
+				name, _ := processResponse.TaskData.Args.GetStringArg("name")
+				createArtifact(processResponse.TaskData.Task.ID, "Data Hiding",
+					fmt.Sprintf("xattr set %s on %s", name, path))
+			case "delete":
+				name, _ := processResponse.TaskData.Args.GetStringArg("name")
+				createArtifact(processResponse.TaskData.Task.ID, "Indicator Removal",
+					fmt.Sprintf("xattr delete %s from %s", name, path))
+			case "list", "get":
+				createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+					fmt.Sprintf("xattr %s %s", action, path))
+			}
+			return response
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
