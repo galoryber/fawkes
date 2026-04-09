@@ -16,7 +16,7 @@ require (
 	github.com/hirochachacha/go-smb2 v1.1.0
 	github.com/jcmturner/gofork v1.7.6
 	github.com/jcmturner/gokrb5/v8 v8.4.4
-	github.com/masterzen/winrm v0.0.0-20250927112105-5f8e6c707321
+	github.com/masterzen/winrm v0.0.0-20260407182533-5570be7f80cf
 	github.com/oiweiwei/go-msrpc v1.2.18
 	github.com/refraction-networking/utls v1.8.2
 	github.com/shirou/gopsutil/v3 v3.24.5
