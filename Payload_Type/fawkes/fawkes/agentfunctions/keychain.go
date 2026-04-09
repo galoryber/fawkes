@@ -52,12 +52,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "server",
-				ModalDisplayName: "Server",
-				CLIName:          "server",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Server hostname to search for (find-internet). Example: github.com",
-				DefaultValue:     "",
+				Name:                 "server",
+				ModalDisplayName:     "Server",
+				CLIName:              "server",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Server hostname to search for (find-internet). Example: github.com",
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
