@@ -17,7 +17,7 @@ Manage local user accounts and group membership. Create users, delete users, cha
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `-action` | Yes | Action to perform: `add`, `delete`, `info`, `password`, `group-add`, `group-remove` |
+| `-action` | Yes | Action to perform: `add`, `delete`, `info`, `password`, `group-add`, `group-remove`, `disable`, `enable`, `lockout` |
 | `-username` | Yes | Target username |
 | `-password` | For add/password | Account password |
 | `-group` | For group-add/group-remove | Local group name |
@@ -56,6 +56,23 @@ net-user -action group-add -username backdoor -group admin
 ```
 net-user -action group-remove -username backdoor -group "Remote Desktop Users"
 ```
+
+### Disable a user account (T1531)
+```
+net-user -action disable -username victim
+```
+
+### Re-enable a disabled account
+```
+net-user -action enable -username victim
+```
+
+### Lock out a user account (T1531)
+```
+net-user -action lockout -username victim
+```
+
+{{% notice warning %}}The disable and lockout actions are **destructive operations** used in ransomware simulation (T1531). They prevent the target account from authenticating. Use with caution in engagements.{{% /notice %}}
 
 ### Delete a user
 ```
@@ -104,6 +121,9 @@ All operations use **netapi32.dll Win32 API** — no subprocess creation, no `ne
 | password | `NetUserSetInfo` (level 1003) |
 | group-add | `NetLocalGroupAddMembers` (level 3) |
 | group-remove | `NetLocalGroupDelMembers` (level 3) |
+| disable | `NetUserSetInfo` (level 1008, set UF_ACCOUNTDISABLE) |
+| enable | `NetUserSetInfo` (level 1008, clear UF_ACCOUNTDISABLE) |
+| lockout | `NetUserSetInfo` (level 1008, set UF_LOCKOUT) |
 
 ### Linux
 Operations use standard system administration commands:
@@ -144,3 +164,4 @@ Operations use Directory Service commands:
 
 - **T1136.001** — Create Account: Local Account
 - **T1098** — Account Manipulation
+- **T1531** — Account Access Removal (disable, lockout actions)
