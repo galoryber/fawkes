@@ -10,6 +10,7 @@ import (
 
 	"fawkes/pkg/structs"
 
+	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
