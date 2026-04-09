@@ -346,9 +346,9 @@ func TestClipMonitorMaxItems(t *testing.T) {
 
 func TestClipMonitorDefaultParams(t *testing.T) {
 	// Test that clipMonitorStart sets defaults for 0 values
-	cm.mu.Lock()
-	cm.running = false
-	cm.mu.Unlock()
+	// Ensure no prior monitor is running
+	clipMonitorStop()
+	time.Sleep(50 * time.Millisecond) // let any prior goroutine exit
 
 	result := clipMonitorStart(0, 0, 0)
 	if result.Status != "success" {
@@ -358,7 +358,6 @@ func TestClipMonitorDefaultParams(t *testing.T) {
 	cm.mu.Lock()
 	maxItems := cm.maxItems
 	duration := cm.duration
-	running := cm.running
 	cm.mu.Unlock()
 
 	if maxItems != 100 {
@@ -368,13 +367,8 @@ func TestClipMonitorDefaultParams(t *testing.T) {
 		t.Errorf("expected default duration=300, got %d", duration)
 	}
 
-	// Clean up - stop the monitor
-	if running {
-		cm.mu.Lock()
-		close(cm.stopCh)
-		cm.running = false
-		cm.mu.Unlock()
-	}
+	// Clean up
+	clipMonitorStop()
 }
 
 func TestClipMonitorAlreadyRunning(t *testing.T) {
@@ -393,9 +387,8 @@ func TestClipMonitorAlreadyRunning(t *testing.T) {
 }
 
 func TestClipMonitorCustomParams(t *testing.T) {
-	cm.mu.Lock()
-	cm.running = false
-	cm.mu.Unlock()
+	// Ensure no prior monitor is running
+	clipMonitorStop()
 
 	result := clipMonitorStart(5, 600, 50)
 	if result.Status != "success" {
@@ -412,10 +405,7 @@ func TestClipMonitorCustomParams(t *testing.T) {
 	}
 
 	// Clean up
-	cm.mu.Lock()
-	close(cm.stopCh)
-	cm.running = false
-	cm.mu.Unlock()
+	clipMonitorStop()
 }
 
 // --- helper ---

@@ -66,6 +66,7 @@ type clipMonitorState struct {
 	mu        sync.Mutex
 	running   bool
 	stopCh    chan struct{}
+	doneCh    chan struct{} // closed when the monitor goroutine exits
 	startTime time.Time
 	lastText  string
 	entries   []clipEntry
@@ -116,6 +117,7 @@ func clipMonitorStart(intervalSec, durationSec, maxItems int) structs.CommandRes
 	cm.entries = nil
 	cm.lastText = ""
 	cm.stopCh = make(chan struct{})
+	cm.doneCh = make(chan struct{})
 	cm.maxItems = maxItems
 	cm.duration = durationSec
 	cm.mu.Unlock()
@@ -136,12 +138,18 @@ func clipMonitorStop() structs.CommandResult {
 
 	close(cm.stopCh)
 	cm.running = false
+	doneCh := cm.doneCh
 
 	duration := time.Since(cm.startTime)
 	entries := make([]clipEntry, len(cm.entries))
 	copy(entries, cm.entries)
 	cm.entries = nil
 	cm.mu.Unlock()
+
+	// Wait for the monitor goroutine to fully exit before returning
+	if doneCh != nil {
+		<-doneCh
+	}
 
 	output := formatClipEntries(entries, duration, true)
 	return successResult(output)
@@ -164,6 +172,7 @@ func clipMonitorDump() structs.CommandResult {
 }
 
 func clipMonitorLoop(intervalSec int) {
+	defer close(cm.doneCh) // signal that the goroutine has exited
 	ticker := time.NewTicker(time.Duration(intervalSec) * time.Second)
 	defer ticker.Stop()
 
