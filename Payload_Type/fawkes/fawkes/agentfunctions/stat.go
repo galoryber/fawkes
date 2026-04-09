@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -13,6 +14,10 @@ func init() {
 		HelpString:          "stat -path /etc/passwd\nstat -path C:\\Windows\\System32\\cmd.exe\nstat -path /usr/bin/sudo",
 		Version:             1,
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "stat_new.js"),
+			Author:     "@galoryber",
+		},
 		MitreAttackMappings: []string{"T1083"},
 		SupportedUIFeatures: []string{"file_browser:download"},
 		CommandAttributes: agentstructs.CommandAttribute{
