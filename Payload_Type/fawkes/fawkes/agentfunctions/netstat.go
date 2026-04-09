@@ -65,11 +65,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "pid",
-				CLIName:       "pid",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				DefaultValue:  0,
-				Description:   "Filter by process ID",
+				Name:                 "pid",
+				CLIName:              "pid",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				Description:          "Filter by process ID",
+				DynamicQueryFunction: getProcessList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -151,7 +152,7 @@ func init() {
 			state, _ := taskData.Args.GetStringArg("state")
 			proto, _ := taskData.Args.GetStringArg("proto")
 			port, _ := taskData.Args.GetNumberArg("port")
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := parsePIDFromArg(taskData)
 			display := "Network connections"
 			if state != "" {
 				display += fmt.Sprintf(", state=%s", state)
@@ -163,7 +164,7 @@ func init() {
 				display += fmt.Sprintf(", port=%d", int(port))
 			}
 			if pid != 0 {
-				display += fmt.Sprintf(", pid=%d", int(pid))
+				display += fmt.Sprintf(", pid=%d", pid)
 			}
 			response.DisplayParams = &display
 			return response

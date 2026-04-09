@@ -40,9 +40,10 @@ func init() {
 				Name:             "pid",
 				ModalDisplayName: "PID",
 				CLIName:          "pid",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "Target process ID (default: current process). Only used with 'info' action.",
-				DefaultValue:     0,
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -89,12 +90,12 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			pid, _ := processResponse.TaskData.Args.GetNumberArg("pid")
+			pid, _ := processResponse.TaskData.Args.GetStringArg("pid")
 			switch action {
 			case "info":
 				msg := "proc-info inspection"
-				if pid > 0 {
-					msg = fmt.Sprintf("proc-info PID %d inspected", int(pid))
+				if pid != "" && pid != "0" {
+					msg = fmt.Sprintf("proc-info PID %s inspected", pid)
 				}
 				createArtifact(processResponse.TaskData.Task.ID, "Process Discovery", msg)
 			case "connections":
@@ -117,9 +118,9 @@ func init() {
 			}
 			action, _ := taskData.Args.GetStringArg("action")
 			display := action
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := parsePIDFromArg(taskData)
 			if pid > 0 {
-				display += fmt.Sprintf(" (PID %d)", int(pid))
+				display += fmt.Sprintf(" (PID %d)", pid)
 			}
 			response.DisplayParams = &display
 			return response

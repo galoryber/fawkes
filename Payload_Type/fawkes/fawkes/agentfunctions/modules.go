@@ -28,9 +28,10 @@ func init() {
 			{
 				Name:          "pid",
 				CLIName:       "pid",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:   "Target process ID (default: current process)",
-				DefaultValue:  0,
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:  "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -102,12 +103,12 @@ func init() {
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
-			pid, _ := task.Args.GetNumberArg("pid")
+			pid, _ := parsePIDFromArg(task)
 			filter, _ := task.Args.GetStringArg("filter")
 
 			display := "Modules"
 			if pid != 0 {
-				display += fmt.Sprintf(", pid=%d", int(pid))
+				display += fmt.Sprintf(", pid=%d", pid)
 			}
 			if filter != "" {
 				display += fmt.Sprintf(", filter=%s", filter)

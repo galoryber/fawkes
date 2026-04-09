@@ -24,12 +24,13 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "pid",
-				ModalDisplayName: "PID",
-				CLIName:          "pid",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "Target process ID. If 0 or omitted, scans all accessible processes.",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "PID",
+				CLIName:              "pid",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Target process ID. If 0 or omitted, scans all accessible processes.",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -110,11 +111,11 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := parsePIDFromArg(taskData)
 			filter, _ := taskData.Args.GetStringArg("filter")
 			display := "scan all"
 			if pid > 0 {
-				display = fmt.Sprintf("pid %d", int(pid))
+				display = fmt.Sprintf("pid %d", pid)
 			}
 			if filter != "" {
 				display += fmt.Sprintf(" (filter: %s)", filter)

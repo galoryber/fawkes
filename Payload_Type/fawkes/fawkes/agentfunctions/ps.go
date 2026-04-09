@@ -43,11 +43,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "pid",
-				CLIName:       "pid",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				DefaultValue:  0,
-				Description:   "Filter by specific process ID",
+				Name:                 "pid",
+				CLIName:              "pid",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				Description:          "Filter by specific process ID",
+				DynamicQueryFunction: getProcessList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -207,7 +208,7 @@ func init() {
 				TaskID:  task.Task.ID,
 			}
 			filter, _ := task.Args.GetStringArg("filter")
-			pid, _ := task.Args.GetNumberArg("pid")
+			pid, _ := parsePIDFromArg(task)
 			ppid, _ := task.Args.GetNumberArg("ppid")
 			user, _ := task.Args.GetStringArg("user")
 
@@ -216,7 +217,7 @@ func init() {
 				display += fmt.Sprintf(", filter=%s", filter)
 			}
 			if pid != 0 {
-				display += fmt.Sprintf(", pid=%d", int(pid))
+				display += fmt.Sprintf(", pid=%d", pid)
 			}
 			if ppid != 0 {
 				display += fmt.Sprintf(", ppid=%d", int(ppid))

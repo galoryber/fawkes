@@ -40,11 +40,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "PID",
-				CLIName:          "pid",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "Process ID to suspend or resume",
+				Name:                 "pid",
+				ModalDisplayName:     "PID",
+				CLIName:              "pid",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Process ID to suspend or resume",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -76,8 +78,8 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			action, _ := taskData.Args.GetStringArg("action")
-			pid, _ := taskData.Args.GetNumberArg("pid")
-			display := fmt.Sprintf("%s PID %d", action, int(pid))
+			pid, _ := parsePIDFromArg(taskData)
+			display := fmt.Sprintf("%s PID %d", action, pid)
 			response.DisplayParams = &display
 			return response
 		},

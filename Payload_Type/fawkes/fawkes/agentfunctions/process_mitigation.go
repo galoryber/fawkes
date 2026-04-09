@@ -38,12 +38,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "Target PID",
-				CLIName:          "pid",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "Process ID to query (0 or omit for self). Only used with query action.",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "Target PID",
+				CLIName:              "pid",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Process ID to query (0 or omit for self). Only used with query action.",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -97,10 +98,10 @@ func init() {
 			}
 			switch action {
 			case "query":
-				pid, _ := taskData.Args.GetNumberArg("pid")
+				pid, _ := parsePIDFromArg(taskData)
 				if pid > 0 {
 					createArtifact(taskData.Task.ID, "API Call",
-						fmt.Sprintf("GetProcessMitigationPolicy(PID %d)", int(pid)))
+						fmt.Sprintf("GetProcessMitigationPolicy(PID %d)", pid))
 				} else {
 					createArtifact(taskData.Task.ID, "API Call",
 						"GetProcessMitigationPolicy(self)")

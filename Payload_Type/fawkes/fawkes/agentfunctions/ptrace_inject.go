@@ -72,11 +72,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "Target PID",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "The process ID to inject shellcode into",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "Target PID",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "The process ID to inject shellcode into",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 2},
 					{ParameterIsRequired: true, GroupName: "New File", UIModalPosition: 2},
@@ -133,7 +134,7 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			msg := "OPSEC WARNING: "
 			if action == "ld-install" {
 				libpath, _ := taskData.Args.GetStringArg("libpath")
@@ -142,7 +143,7 @@ func init() {
 			} else if action == "ld-remove" {
 				msg += "Removing LD_PRELOAD entry. File modification may trigger audit alerts."
 			} else if action == "inject" {
-				msg += fmt.Sprintf("ptrace injection into PID %d. Uses PTRACE_ATTACH + PTRACE_POKETEXT — detectable by ptrace monitoring, seccomp filters, and Yama LSM.", int(pid))
+				msg += fmt.Sprintf("ptrace injection into PID %s. Uses PTRACE_ATTACH + PTRACE_POKETEXT — detectable by ptrace monitoring, seccomp filters, and Yama LSM.", pid)
 			} else {
 				msg += "ptrace capability check — enumerates ptrace scope and candidate processes."
 			}
@@ -156,10 +157,10 @@ func init() {
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			msg := "OPSEC AUDIT: ptrace "
 			if action == "inject" {
-				msg += fmt.Sprintf("injection queued for PID %d. Artifact registered.", int(pid))
+				msg += fmt.Sprintf("injection queued for PID %s. Artifact registered.", pid)
 			} else {
 				msg += "check configured. Process enumeration will occur."
 			}
@@ -209,7 +210,7 @@ func init() {
 					return response
 				}
 
-				pid, err := taskData.Args.GetNumberArg("pid")
+				pid, err := parsePIDFromArg(taskData)
 				if err != nil || pid <= 0 {
 					response.Success = false
 					response.Error = "Invalid PID specified (must be greater than 0)"
@@ -226,14 +227,14 @@ func init() {
 				}
 
 				displayParams := fmt.Sprintf("Inject %d bytes → PID %d (restore=%v, timeout=%ds)",
-					len(shellcode), int(pid), restore, timeout)
+					len(shellcode), pid, restore, timeout)
 				response.DisplayParams = &displayParams
 				createArtifact(taskData.Task.ID, "Process Inject",
-					fmt.Sprintf("PTRACE_ATTACH/PTRACE_POKETEXT into PID %d (%d bytes)", int(pid), len(shellcode)))
+					fmt.Sprintf("PTRACE_ATTACH/PTRACE_POKETEXT into PID %d (%d bytes)", pid, len(shellcode)))
 
 				params := map[string]interface{}{
 					"action":        "inject",
-					"pid":           int(pid),
+					"pid":           pid,
 					"shellcode_b64": base64.StdEncoding.EncodeToString(shellcode),
 					"restore":       restore,
 					"timeout":       timeout,
@@ -251,7 +252,7 @@ func init() {
 				return response
 			}
 
-			pid, err := taskData.Args.GetNumberArg("pid")
+			pid, err := parsePIDFromArg(taskData)
 			if err != nil || pid <= 0 {
 				response.Success = false
 				response.Error = "Invalid PID specified (must be greater than 0)"
@@ -269,14 +270,14 @@ func init() {
 			}
 
 			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes) → PID %d (restore=%v, timeout=%ds)",
-				filename, len(fileContents), int(pid), restore, timeout)
+				filename, len(fileContents), pid, restore, timeout)
 			response.DisplayParams = &displayParams
 			createArtifact(taskData.Task.ID, "Process Inject",
-				fmt.Sprintf("PTRACE_ATTACH/PTRACE_POKETEXT into PID %d (%d bytes)", int(pid), len(fileContents)))
+				fmt.Sprintf("PTRACE_ATTACH/PTRACE_POKETEXT into PID %d (%d bytes)", pid, len(fileContents)))
 
 			params := map[string]interface{}{
 				"action":        "inject",
-				"pid":           int(pid),
+				"pid":           pid,
 				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
 				"restore":       restore,
 				"timeout":       timeout,
@@ -315,9 +316,9 @@ func init() {
 				}
 			case "inject":
 				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
-					pid, _ := processResponse.TaskData.Args.GetNumberArg("pid")
+					pid, _ := processResponse.TaskData.Args.GetStringArg("pid")
 					tagTask(processResponse.TaskData.Task.ID, "EXECUTION",
-						fmt.Sprintf("Ptrace injection into PID %d (T1055.008)", int(pid)))
+						fmt.Sprintf("Ptrace injection into PID %s (T1055.008)", pid))
 				}
 			}
 			return response

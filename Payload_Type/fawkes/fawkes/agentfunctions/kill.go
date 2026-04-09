@@ -24,9 +24,10 @@ func init() {
 				Name:             "pid",
 				ModalDisplayName: "Process ID",
 				CLIName:          "pid",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "PID of the process to terminate",
-				DefaultValue:     0,
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -60,7 +61,7 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
-			pid, err := taskData.Args.GetNumberArg("pid")
+			pid, err := parsePIDFromArg(taskData)
 			if err != nil {
 				logging.LogError(err, "Failed to get pid")
 				response.Success = false
@@ -74,9 +75,9 @@ func init() {
 				return response
 			}
 
-			displayParams := fmt.Sprintf("PID: %d", int(pid))
+			displayParams := fmt.Sprintf("PID: %d", pid)
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Kill", fmt.Sprintf("Killed PID %d", int(pid)))
+			createArtifact(taskData.Task.ID, "Process Kill", fmt.Sprintf("Killed PID %d", pid))
 
 			return response
 		},

@@ -57,11 +57,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "Process ID",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "Target process ID to inject into",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "Process ID",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Target process ID to inject into",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -115,24 +116,24 @@ func init() {
 			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:  taskData.Task.ID,
 				Success: true,
 				OpsecPreBlocked: false,
-				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: Threadless injection into PID %d. "+
+				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: Threadless injection into PID %s. "+
 					"Hooks an export function in the target process — lower detection profile than thread-based injection. "+
-					"Execution occurs when target calls the hooked function.", int(pid)),
+					"Execution occurs when target calls the hooked function.", pid),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,
 				Success:             true,
 				OpsecPostBlocked:    false,
-				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: Threadless (function hook) injection queued for PID %d. Artifact registered.", int(pid)),
+				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: Threadless (function hook) injection queued for PID %s. Artifact registered.", pid),
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -160,7 +161,7 @@ func init() {
 			}
 
 			// Get the target PID
-			pid, err := taskData.Args.GetNumberArg("pid")
+			pid, err := parsePIDFromArg(taskData)
 			if err != nil {
 				response.Success = false
 				response.Error = "Failed to get target PID: " + err.Error()
@@ -187,15 +188,15 @@ func init() {
 
 			// Build the display parameters
 			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes)\nTarget PID: %d\nDLL: %s\nFunction: %s",
-				filename, len(fileContents), int(pid), dllName, functionName)
+				filename, len(fileContents), pid, dllName, functionName)
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("Threadless injection into PID %d via %s!%s (%d bytes)", int(pid), dllName, functionName, len(fileContents)))
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("Threadless injection into PID %d via %s!%s (%d bytes)", pid, dllName, functionName, len(fileContents)))
 
 			// Build the actual parameters JSON that will be sent to the agent
 			// Encode shellcode contents as base64 to embed in JSON
 			params := map[string]interface{}{
 				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
-				"pid":           int(pid),
+				"pid":           pid,
 				"dll_name":      dllName,
 				"function_name": functionName,
 			}

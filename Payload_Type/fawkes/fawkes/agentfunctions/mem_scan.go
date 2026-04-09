@@ -24,11 +24,12 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:          "pid",
-				CLIName:       "pid",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:   "Target process ID to scan (0 = current process)",
-				DefaultValue:  0,
+				Name:                 "pid",
+				CLIName:              "pid",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Target process ID to scan (0 = current process)",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

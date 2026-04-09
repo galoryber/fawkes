@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -56,15 +57,15 @@ func init() {
 				Name:                                    "pid",
 				ModalDisplayName:                        "Process ID",
 				CLIName:                                 "pid",
-				ParameterType:                           agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				ParameterType:                           agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:                             "Process ID to steal token from (e.g., lsass.exe, winlogon.exe)",
 				Choices:                                 []string{},
-				DefaultValue:                            0,
+				DefaultValue:                            "",
+				DynamicQueryFunction:                    getProcessList,
 				SupportedAgents:                         []string{},
 				ChoicesAreAllCommands:                   false,
 				ChoicesAreLoadedCommands:                false,
 				FilterCommandChoicesByCommandAttributes: map[string]string{},
-				DynamicQueryFunction:                    nil,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -151,7 +152,7 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			action, _ := taskData.Args.GetStringArg("action")
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := parsePIDFromArg(taskData)
 
 			if action == "auto-escalate" {
 				display := "auto-escalate: enum-tokens → steal → whoami → getprivs"
@@ -178,15 +179,15 @@ func init() {
 
 			if action == "spawn" {
 				command, _ := taskData.Args.GetStringArg("command")
-				display := fmt.Sprintf("spawn PID:%d → %s", int(pid), command)
+				display := fmt.Sprintf("spawn PID:%d → %s", pid, command)
 				response.DisplayParams = &display
 				createArtifact(taskData.Task.ID, "Token Spawn",
-					fmt.Sprintf("OpenProcess + OpenProcessToken + DuplicateTokenEx on PID %d, CreateProcessWithTokenW: %s", int(pid), command))
+					fmt.Sprintf("OpenProcess + OpenProcessToken + DuplicateTokenEx on PID %d, CreateProcessWithTokenW: %s", pid, command))
 			} else {
-				display := fmt.Sprintf("PID: %d", int(pid))
+				display := fmt.Sprintf("PID: %d", pid)
 				response.DisplayParams = &display
 				createArtifact(taskData.Task.ID, "Token Steal",
-					fmt.Sprintf("OpenProcess + OpenProcessToken + DuplicateTokenEx on PID %d", int(pid)))
+					fmt.Sprintf("OpenProcess + OpenProcessToken + DuplicateTokenEx on PID %d", pid))
 			}
 
 			return response
@@ -203,7 +204,9 @@ func init() {
 			}
 
 			action, _ := processResponse.TaskData.Args.GetStringArg("action")
-			pid, _ := processResponse.TaskData.Args.GetNumberArg("pid")
+			pidStr, _ := processResponse.TaskData.Args.GetStringArg("pid")
+			pid := pidStr
+			pidInt, _ := strconv.Atoi(strings.TrimSpace(strings.Split(pidStr, " - ")[0]))
 
 			if action == "spawn" {
 				// Track spawn as process creation + operation event
@@ -220,10 +223,10 @@ func init() {
 					}
 
 					logOperationEvent(processResponse.TaskData.Task.ID,
-						fmt.Sprintf("[TOKEN SPAWN] Created process with stolen token from PID %d as %s", int(pid), user), false)
+						fmt.Sprintf("[TOKEN SPAWN] Created process with stolen token from PID %s as %s", pid, user), false)
 
 					createArtifact(processResponse.TaskData.Task.ID, "Process Created",
-						fmt.Sprintf("CreateProcessWithTokenW with token from PID %d (user: %s)", int(pid), user))
+						fmt.Sprintf("CreateProcessWithTokenW with token from PID %s (user: %s)", pid, user))
 				}
 				return response
 			}
@@ -255,22 +258,22 @@ func init() {
 						TokenID: uint64(processResponse.TaskData.Task.ID),
 						TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
 							User:      user,
-							ProcessID: int(pid),
+							ProcessID: pidInt,
 						},
 					},
 				},
 			})
 			if err != nil {
-				logging.LogError(err, "Failed to register stolen token with Mythic", "user", user, "pid", int(pid))
+				logging.LogError(err, "Failed to register stolen token with Mythic", "user", user, "pid", pid)
 			}
 
 			// Tag elevated access
 			if strings.Contains(strings.ToUpper(user), "SYSTEM") {
 				tagTask(processResponse.TaskData.Task.ID, "SYSTEM",
-					fmt.Sprintf("Stole SYSTEM token from PID %d", int(pid)))
+					fmt.Sprintf("Stole SYSTEM token from PID %s", pid))
 			} else {
 				tagTask(processResponse.TaskData.Task.ID, "ELEVATED",
-					fmt.Sprintf("Stole token: %s (PID %d)", user, int(pid)))
+					fmt.Sprintf("Stole token: %s (PID %s)", user, pid))
 			}
 
 			return response

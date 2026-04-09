@@ -29,8 +29,9 @@ func init() {
 				CLIName:          "pid",
 				ModalDisplayName: "Root PID",
 				Description:      "Show tree starting from this PID (default: all roots)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				DefaultValue:     0,
+				DynamicQueryFunction: getProcessList,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -87,11 +88,11 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := parsePIDFromArg(taskData)
 			filter, _ := taskData.Args.GetStringArg("filter")
 			dp := ""
 			if pid > 0 {
-				dp = fmt.Sprintf("pid: %d", int(pid))
+				dp = fmt.Sprintf("pid: %d", pid)
 			}
 			if filter != "" {
 				if dp != "" {

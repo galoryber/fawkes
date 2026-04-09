@@ -3,6 +3,8 @@ package agentfunctions
 import (
 	"fmt"
 	"sort"
+	"strconv"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -180,4 +182,123 @@ func getTokenUserList(msg agentstructs.PTRPCDynamicQueryFunctionMessage) []strin
 	}
 
 	return choices
+}
+
+// getProcessList queries the Mythic process browser for processes on the callback's host.
+// Returns "PID - Name (User)" formatted strings for PID parameter autocomplete.
+// Requires the operator to have run "ps" at least once to populate the process browser.
+func getProcessList(msg agentstructs.PTRPCDynamicQueryFunctionMessage) []string {
+	var choices []string
+
+	// Get the callback's host from callback search
+	cbResp, err := mythicrpc.SendMythicRPCCallbackSearch(mythicrpc.MythicRPCCallbackSearchMessage{
+		AgentCallbackID: msg.AgentCallbackID,
+	})
+	if err != nil || !cbResp.Success || len(cbResp.Results) == 0 {
+		return choices
+	}
+
+	// Find the current callback's host
+	var host string
+	for _, cb := range cbResp.Results {
+		if cb.AgentCallbackID == msg.AgentCallbackID {
+			host = cb.Host
+			break
+		}
+	}
+
+	// Find any task on this callback to use as context for process search
+	callbackID := msg.Callback
+	taskResp, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
+		SearchCallbackID: &callbackID,
+	})
+	if err != nil || !taskResp.Success || len(taskResp.Tasks) == 0 {
+		return choices
+	}
+
+	// Use the first task's ID for process search context
+	processResp, err := mythicrpc.SendMythicRPCProcessSearch(mythicrpc.MythicRPCProcessSearchMessage{
+		TaskID: taskResp.Tasks[0].ID,
+		SearchProcess: mythicrpc.MythicRPCProcessSearchProcessData{
+			Host: &host,
+		},
+	})
+	if err != nil || !processResp.Success {
+		return choices
+	}
+
+	// Format: "PID - Name (User)" — sorted by PID
+	type procEntry struct {
+		pid   int
+		label string
+	}
+	var entries []procEntry
+	seen := make(map[int]bool)
+	for _, p := range processResp.Processes {
+		pid := 0
+		if p.ProcessID != nil {
+			pid = *p.ProcessID
+		}
+		if pid <= 0 || seen[pid] {
+			continue
+		}
+		seen[pid] = true
+
+		name := "<unknown>"
+		if p.Name != nil && *p.Name != "" {
+			name = *p.Name
+		}
+		user := ""
+		if p.User != nil && *p.User != "" {
+			user = *p.User
+		}
+
+		var label string
+		if user != "" {
+			label = fmt.Sprintf("%d - %s (%s)", pid, name, user)
+		} else {
+			label = fmt.Sprintf("%d - %s", pid, name)
+		}
+		entries = append(entries, procEntry{pid: pid, label: label})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].pid < entries[j].pid
+	})
+
+	for _, e := range entries {
+		choices = append(choices, e.label)
+	}
+	return choices
+}
+
+// parsePIDFromArg extracts a PID from a task's "pid" argument, handling both numeric
+// values (direct input) and DQF-formatted strings like "1234 - notepad.exe (SYSTEM)".
+// After parsing, it sets the arg back to an int so the agent receives a numeric value.
+func parsePIDFromArg(taskData *agentstructs.PTTaskMessageAllData) (int, error) {
+	// Try as number first (backward compat, CLI, numeric input)
+	if pid, err := taskData.Args.GetNumberArg("pid"); err == nil {
+		return int(pid), nil
+	}
+
+	// Try as string (DQF dropdown selection or typed string)
+	pidStr, err := taskData.Args.GetStringArg("pid")
+	if err != nil || pidStr == "" {
+		return 0, fmt.Errorf("pid parameter not found")
+	}
+
+	// Extract number before " - " if DQF format ("1234 - notepad.exe (SYSTEM)")
+	if idx := strings.Index(pidStr, " - "); idx > 0 {
+		pidStr = pidStr[:idx]
+	}
+	pidStr = strings.TrimSpace(pidStr)
+
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil {
+		return 0, fmt.Errorf("invalid PID value: %s", pidStr)
+	}
+
+	// Set back as int so the agent receives a numeric value in JSON
+	_ = taskData.Args.SetArgValue("pid", pid)
+	return pid, nil
 }
