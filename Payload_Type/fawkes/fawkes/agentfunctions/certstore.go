@@ -11,14 +11,14 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "certstore",
-		Description:         "Enumerate Windows certificate stores to find code signing certs, client auth certs, and private keys. Searches CurrentUser and LocalMachine stores.",
+		Description:         "Enumerate certificate stores to find code signing certs, client auth certs, and private keys. Windows: CurrentUser/LocalMachine CAPI stores. macOS: Keychain. Linux: /etc/ssl/certs, /etc/pki/tls/certs.",
 		HelpString:          "certstore -action list [-store MY] [-filter substring]\ncertstore -action find -filter thumbprint_or_subject\ncertstore -action export -filter <thumbprint> [-format pem|pfx] [-password <pfx_pass>]\ncertstore -action delete -filter <thumbprint> -store <store_name>\ncertstore -action import -data <base64_cert> [-format pem|pfx] [-store MY] [-password <pfx_pass>]",
 		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1552.004", "T1649"},
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
