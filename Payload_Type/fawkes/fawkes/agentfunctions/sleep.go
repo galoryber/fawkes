@@ -91,6 +91,15 @@ func init() {
 				Description: "Comma-separated ISO weekday numbers (Mon=1, Sun=7). E.g. '1,2,3,4,5' for weekdays. Leave empty for no change, '0' to disable (all days).",
 			},
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Sleep interval modified. C2 beacon interval changes alter network traffic patterns. Shorter intervals increase detection risk. Longer intervals reduce responsiveness.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
