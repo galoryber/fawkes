@@ -31,6 +31,7 @@ Cross-platform: Windows uses Microsoft-signed LOLBins, Linux uses GTFOBins (stan
 | mshta | mshta.exe | T1218.005 | Execute HTA/JavaScript/VBScript |
 | certutil | certutil.exe | T1218 | Decode base64-encoded payloads |
 | vbs | cscript.exe | T1059.005 | Execute VBScript via cscript/wscript |
+| python | python3/python | T1059.006 | Execute Python code inline (`path` = code) or from file (`args` = script path) |
 
 ### Linux Techniques (GTFOBins)
 
@@ -75,6 +76,9 @@ lolbin -action certutil -path C:\encoded.b64
 
 # Execute VBScript
 lolbin -action vbs -path C:\script.vbs
+
+# Execute Python inline (Windows)
+lolbin -action python -path "import os; print(os.environ['USERNAME'])"
 
 # === Linux (GTFOBins) ===
 # Run Python code inline

@@ -102,8 +102,10 @@ func init() {
 			switch action {
 			case "rundll32", "msiexec", "regsvcs", "regasm", "mshta", "certutil":
 				msg = fmt.Sprintf("OPSEC WARNING: Signed binary proxy execution via %s (T1218). Executing '%s' through a LOLBin. EDR products monitor child processes of signed binaries. Command-line arguments will be visible in process creation logs (Sysmon Event ID 1).", action, path)
-			case "python", "perl", "ruby", "node":
+			case "python", "perl", "ruby", "node", "lua":
 				msg = fmt.Sprintf("OPSEC WARNING: Script interpreter execution via %s (T1059). Inline code execution spawns a child process. Command-line arguments (including code) are visible in /proc and process listing. Consider using a script file instead for stealth.", action)
+			case "vbs":
+				msg = fmt.Sprintf("OPSEC WARNING: VBScript execution via cscript/wscript (T1059.005). Script execution spawns a child process and may trigger Windows Script Host monitoring. Content of .vbs files may be scanned by AMSI.")
 			case "curl", "wget":
 				msg = fmt.Sprintf("OPSEC WARNING: File download via %s (T1105). URL '%s' will be visible in process arguments and potentially in proxy logs. Network connections to external hosts may trigger IDS/IPS alerts.", action, path)
 			case "gcc":
