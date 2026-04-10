@@ -74,6 +74,15 @@ func init() {
 					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 				}
 			},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Browser credential extraction completed. DPAPI decryption, Keychain access, and SQLite reads of browser databases generate file access audit events. Harvested credentials registered in Mythic vault — rotate after engagement.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

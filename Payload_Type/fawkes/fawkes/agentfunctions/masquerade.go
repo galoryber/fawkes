@@ -85,6 +85,15 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: File masquerading completed. Renamed files with deceptive extensions or RTLO characters leave filesystem artifacts. File integrity monitoring and EDR behavioral analytics may detect unusual file naming patterns.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			return args.LoadArgsFromJSONString(input)
 		},

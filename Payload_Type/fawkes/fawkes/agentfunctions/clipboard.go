@@ -98,6 +98,15 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Clipboard operation completed. Clipboard monitoring hooks (GetClipboardData/pbpaste) generate API access events. Monitor mode runs continuously until stopped — ensure timely cleanup.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input != "" {
 				return args.LoadArgsFromJSONString(input)
