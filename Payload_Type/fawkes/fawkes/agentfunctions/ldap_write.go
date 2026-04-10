@@ -148,6 +148,17 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			target, _ := taskData.Args.GetStringArg("target")
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: LDAP modification (%s on %s) completed. Event ID 5136/5137 generated in directory service audit log on the DC. Sensitive attribute changes (msDS-KeyCredentialLink, msDS-AllowedToActOnBehalfOfOtherIdentity, servicePrincipalName) are high-priority SOC alerts. Ensure cleanup of any shadow credentials or RBCD delegations after use.", action, target),
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

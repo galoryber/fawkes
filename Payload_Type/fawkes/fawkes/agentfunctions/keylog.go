@@ -55,6 +55,25 @@ func init() {
 					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 				}
 			},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC AUDIT: Keylogger operation completed. "
+			switch action {
+			case "start":
+				msg += "Keyboard hook installed — hook remains active until 'keylog -action stop'. EDR products continuously monitor for active keyboard hooks. Ensure timely cleanup."
+			case "stop":
+				msg += "Keyboard hook removed. Captured keystrokes delivered. Hook installation/removal events may have been logged by EDR."
+			default:
+				msg += "Keystroke buffer accessed. Active keylogger hooks visible to EDR inspection."
+			}
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

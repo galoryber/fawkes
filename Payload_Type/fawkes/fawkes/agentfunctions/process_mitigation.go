@@ -75,6 +75,21 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC AUDIT: Process mitigation policy query completed. Policy enumeration via GetProcessMitigationPolicy API generates process access events."
+			if strings.EqualFold(action, "set") {
+				policy, _ := taskData.Args.GetStringArg("policy")
+				msg = fmt.Sprintf("OPSEC AUDIT: Process mitigation policy '%s' modification completed. SetProcessMitigationPolicy calls are monitored by EDR — policy changes to ACG, CIG, or child-process restrictions are defense evasion indicators.", policy)
+			}
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
