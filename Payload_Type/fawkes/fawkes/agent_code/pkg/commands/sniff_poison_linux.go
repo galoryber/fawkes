@@ -120,7 +120,7 @@ func poisonLLMNR(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result 
 			return nil
 		default:
 		}
-		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 		n, remoteAddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -151,7 +151,7 @@ func poisonLLMNR(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result 
 		// Send response back to the querier
 		respConn, err := net.DialUDP("udp4", nil, remoteAddr)
 		if err == nil {
-			respConn.Write(resp)
+			_, _ = respConn.Write(resp)
 			respConn.Close()
 		}
 
@@ -186,7 +186,7 @@ func poisonNBTNS(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result 
 			return nil
 		default:
 		}
-		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 		n, remoteAddr, err := conn.ReadFrom(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -214,7 +214,7 @@ func poisonNBTNS(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result 
 			continue
 		}
 
-		conn.WriteTo(resp, remoteAddr)
+		_, _ = conn.WriteTo(resp, remoteAddr)
 
 		mu.Lock()
 		result.QueriesAnswered++
@@ -248,7 +248,7 @@ func poisonMDNS(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result *
 			return nil
 		default:
 		}
-		conn.SetReadDeadline(time.Now().Add(1 * time.Second))
+		_ = conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 		n, remoteAddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -280,7 +280,7 @@ func poisonMDNS(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result *
 		mcastAddr := &net.UDPAddr{IP: net.ParseIP(mdnsMulti), Port: mdnsPort}
 		respConn, err := net.DialUDP("udp4", nil, mcastAddr)
 		if err == nil {
-			respConn.Write(resp)
+			_, _ = respConn.Write(resp)
 			respConn.Close()
 		}
 
