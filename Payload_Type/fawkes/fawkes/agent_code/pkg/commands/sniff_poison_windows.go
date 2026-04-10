@@ -7,7 +7,9 @@ import (
 	"fawkes/pkg/structs"
 )
 
-// executePoison is a stub — Windows poison implementation in a future session.
+// executePoison runs the LLMNR/NBT-NS/mDNS poisoner with HTTP NTLM capture on Windows.
+// Note: Port 137 (NBT-NS) may conflict with the Windows NetBIOS service.
+// Port 80 may conflict with IIS or other web servers.
 func (c *SniffCommand) executePoison(task structs.Task) structs.CommandResult {
-	return errorResult("Poison mode not yet implemented on Windows. Use Linux for LLMNR/NBT-NS poisoning.")
+	return executePoisonCore(task)
 }

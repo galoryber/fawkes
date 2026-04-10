@@ -237,6 +237,9 @@ func init() {
 				if c.Protocol == "ntlm" {
 					credType = "hash"
 					credential = c.Detail
+				} else if c.Protocol == "ntlmv2" {
+					credType = "hash"
+					credential = c.Password // hashcat mode 5600 format
 				} else if c.Protocol == "krb-asrep" || c.Protocol == "krb-tgsrep" {
 					credType = "ticket"
 					credential = c.Detail

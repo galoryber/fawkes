@@ -12,7 +12,9 @@ Network sniffing and LLMNR/NBT-NS/mDNS poisoning for credential interception. Tw
 - **capture** (default): Passive network sniffing — captures traffic and extracts cleartext credentials from HTTP Basic Auth, FTP, NTLM, and Kerberos.
 - **poison**: Active LLMNR/NBT-NS/mDNS responder — answers multicast name resolution queries with the attacker IP to intercept authentication attempts (T1557.001).
 
-Cross-platform capture: Windows (SIO_RCVALL), Linux (AF_PACKET + BPF), macOS (/dev/bpf). Poison mode: Linux only (currently).
+Cross-platform capture: Windows (SIO_RCVALL), Linux (AF_PACKET + BPF), macOS (/dev/bpf). Poison mode: cross-platform (all platforms).
+
+In poison mode, an HTTP NTLM capture server runs alongside the name resolution poisoners. When a victim resolves a name to the attacker IP, subsequent HTTP/WPAD requests trigger NTLM authentication — captured NTLMv2 hashes are output in **hashcat mode 5600** format for offline cracking.
 
 ## Arguments
 
@@ -70,6 +72,47 @@ sniff -duration 30 -save_pcap true
 ### Quick 10-second scan
 ```
 sniff -duration 10
+```
+
+## Poison Mode: NTLMv2 Hash Capture
+
+When running in poison mode, the agent:
+
+1. **Listens** for LLMNR (UDP 5355), NBT-NS (UDP 137), and/or mDNS (UDP 5353) queries
+2. **Responds** with the attacker's IP address, causing victims to connect to us
+3. **Serves HTTP NTLM challenges** (TCP port 80) to capture authentication attempts
+4. **Extracts NTLMv2 hashes** in hashcat-compatible format (mode 5600)
+
+Captured hashes are automatically registered in the Mythic credential vault and can be cracked offline:
+
+```bash
+hashcat -m 5600 captured_hashes.txt wordlist.txt
+```
+
+### Poison Output Example
+
+```json
+{
+  "duration": "120s",
+  "queries_answered": 5,
+  "protocols": ["llmnr", "nbtns"],
+  "response_ip": "10.0.0.5",
+  "credentials": [
+    {
+      "protocol": "LLMNR",
+      "src_ip": "192.168.1.50",
+      "username": "WPAD",
+      "detail": "Poisoned LLMNR query for 'WPAD' → 10.0.0.5"
+    },
+    {
+      "protocol": "ntlmv2",
+      "src_ip": "192.168.1.50",
+      "username": "CONTOSO\\jsmith",
+      "password": "jsmith::CONTOSO:1122334455667788:aabbccdd...:0101000000000000...",
+      "detail": "NTLMv2 HTTP capture | hashcat -m 5600 | domain=CONTOSO"
+    }
+  ]
+}
 ```
 
 ## Credential Extraction
@@ -136,6 +179,7 @@ JSON output with capture statistics and discovered credentials:
 
 ## OPSEC Considerations
 
+### Capture Mode
 - **Windows**: Requires Administrator. `SIO_RCVALL` may be flagged by EDR/security products
 - **Linux/macOS**: Requires root or `CAP_NET_RAW` capability
 - **Promiscuous mode** changes NIC state and can be detected by tools like `promiscdetect` or `antisniff`
@@ -143,7 +187,17 @@ JSON output with capture statistics and discovered credentials:
 - Captured traffic stays in memory only — no PCAP file written to disk
 - BPF filter (Linux) reduces kernel-to-userspace traffic volume
 
+### Poison Mode
+{{% notice warning %}}CRITICAL: Active network poisoning generates detectable traffic{{% /notice %}}
+
+- LLMNR/NBT-NS/mDNS poisoning actively responds to multicast/broadcast queries — **IDS/IPS will detect this** (Responder-like behavior)
+- Binding to ports 137 (NBT-NS) and 80 (HTTP) may conflict with existing services
+- On Windows, the NetBIOS service uses port 137 — poisoner may fail to bind
+- Multiple hosts may authenticate to the attacker IP — **monitor for account lockouts**
+- HTTP NTLM capture server listens on TCP 80 for the poison duration
+
 ## MITRE ATT&CK Mapping
 
 - **T1040** — Network Sniffing
+- **T1557.001** — LLMNR/NBT-NS Poisoning and SMB Relay
 - **T1558.004** — Steal or Forge Kerberos Tickets: AS-REP Roasting

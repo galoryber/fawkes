@@ -1,8 +1,11 @@
 package commands
 
 import (
+	"encoding/binary"
+	"encoding/hex"
 	"net"
 	"testing"
+	"unicode/utf16"
 )
 
 func TestParsePoisonProtocols(t *testing.T) {
@@ -219,4 +222,218 @@ func buildTestNBTNSQuery(name string) []byte {
 	packet = append(packet, 0x00, 0x20) // QTYPE NB
 	packet = append(packet, 0x00, 0x01) // QCLASS IN
 	return packet
+}
+
+// === NTLM Type 2 / Type 3 Tests ===
+
+func TestBuildNTLMType2(t *testing.T) {
+	challenge := [8]byte{0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF}
+	type2 := buildNTLMType2(challenge)
+
+	// Verify NTLMSSP signature
+	if string(type2[0:7]) != "NTLMSSP" || type2[7] != 0x00 {
+		t.Error("Invalid NTLMSSP signature")
+	}
+
+	// Verify message type = 2
+	msgType := binary.LittleEndian.Uint32(type2[8:12])
+	if msgType != 2 {
+		t.Errorf("Expected message type 2, got %d", msgType)
+	}
+
+	// Verify challenge bytes
+	for i := 0; i < 8; i++ {
+		if type2[24+i] != challenge[i] {
+			t.Errorf("Challenge byte %d mismatch: got 0x%02X, expected 0x%02X",
+				i, type2[24+i], challenge[i])
+		}
+	}
+
+	// Verify minimum length
+	if len(type2) < 56 {
+		t.Errorf("Type 2 too short: %d bytes", len(type2))
+	}
+}
+
+func TestExtractNTLMv2Hash(t *testing.T) {
+	challenge := [8]byte{0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88}
+
+	// Build a realistic NTLM Type 3 message
+	type3 := buildTestNTLMType3("TESTDOMAIN", "testuser", "WORKSTATION",
+		[]byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00, 0x11,
+			0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99}, // NTProofStr (16 bytes)
+		[]byte{0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, // client blob
+	)
+
+	hash := extractNTLMv2Hash(type3, challenge)
+	if hash == nil {
+		t.Fatal("extractNTLMv2Hash returned nil")
+	}
+
+	if hash.Username != "testuser" {
+		t.Errorf("Username = %q, expected 'testuser'", hash.Username)
+	}
+	if hash.Domain != "TESTDOMAIN" {
+		t.Errorf("Domain = %q, expected 'TESTDOMAIN'", hash.Domain)
+	}
+	if hash.ServerChallenge != hex.EncodeToString(challenge[:]) {
+		t.Errorf("ServerChallenge = %q, expected %q",
+			hash.ServerChallenge, hex.EncodeToString(challenge[:]))
+	}
+	if hash.NTProofStr != "aabbccddeeff00112233445566778899" {
+		t.Errorf("NTProofStr = %q", hash.NTProofStr)
+	}
+	if hash.NTLMv2Blob != "0101000000000000" {
+		t.Errorf("NTLMv2Blob = %q", hash.NTLMv2Blob)
+	}
+
+	// Verify hashcat format: user::domain:challenge:ntproofstr:blob
+	expectedHashcat := "testuser::TESTDOMAIN:1122334455667788:aabbccddeeff00112233445566778899:0101000000000000"
+	if hash.HashcatFormat != expectedHashcat {
+		t.Errorf("HashcatFormat = %q\nexpected       %q", hash.HashcatFormat, expectedHashcat)
+	}
+}
+
+func TestExtractNTLMv2HashEdgeCases(t *testing.T) {
+	challenge := [8]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
+
+	// Too short
+	if extractNTLMv2Hash(make([]byte, 20), challenge) != nil {
+		t.Error("Should return nil for short data")
+	}
+
+	// Wrong signature
+	bad := make([]byte, 100)
+	copy(bad[0:8], []byte("WRONGSIG"))
+	if extractNTLMv2Hash(bad, challenge) != nil {
+		t.Error("Should return nil for wrong signature")
+	}
+
+	// Type 1 instead of Type 3
+	type1 := make([]byte, 100)
+	copy(type1[0:8], []byte("NTLMSSP\x00"))
+	binary.LittleEndian.PutUint32(type1[8:12], 1)
+	if extractNTLMv2Hash(type1, challenge) != nil {
+		t.Error("Should return nil for Type 1 message")
+	}
+
+	// Type 3 with empty username
+	type3empty := buildTestNTLMType3("DOMAIN", "", "HOST",
+		make([]byte, 16), make([]byte, 8))
+	if extractNTLMv2Hash(type3empty, challenge) != nil {
+		t.Error("Should return nil for empty username")
+	}
+}
+
+func TestExtractHTTPNTLMAuth(t *testing.T) {
+	tests := []struct {
+		name    string
+		request string
+		wantNil bool
+	}{
+		{"no auth header", "GET / HTTP/1.1\r\nHost: test\r\n\r\n", true},
+		{"basic auth", "GET / HTTP/1.1\r\nAuthorization: Basic dGVzdA==\r\n\r\n", true},
+		{"valid NTLM", "GET / HTTP/1.1\r\nAuthorization: NTLM TlRMTVNTUAABAAAAB4IIogAAAAAAAAAAAAAAAAAAAAAGAbEdAAAADw==\r\n\r\n", false},
+		{"empty NTLM", "GET / HTTP/1.1\r\nAuthorization: NTLM \r\n\r\n", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := extractHTTPNTLMAuth(tc.request)
+			if tc.wantNil && result != nil {
+				t.Errorf("Expected nil, got %d bytes", len(result))
+			}
+			if !tc.wantNil && result == nil {
+				t.Error("Expected non-nil result")
+			}
+		})
+	}
+}
+
+func TestNTLMType2RoundTrip(t *testing.T) {
+	// Build a Type 2 and verify it can be parsed back
+	challenge := [8]byte{0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE}
+	type2 := buildNTLMType2(challenge)
+
+	// Verify it starts with NTLMSSP
+	if string(type2[0:7]) != "NTLMSSP" {
+		t.Fatal("Not an NTLMSSP message")
+	}
+
+	// Verify negotiate flags include NTLM
+	flags := binary.LittleEndian.Uint32(type2[20:24])
+	if flags&0x200 == 0 {
+		t.Error("NEGOTIATE_NTLM flag not set")
+	}
+	if flags&0x01 == 0 {
+		t.Error("NEGOTIATE_UNICODE flag not set")
+	}
+}
+
+// buildTestNTLMType3 constructs a minimal NTLM Type 3 message for testing.
+func buildTestNTLMType3(domain, user, workstation string, ntProofStr, clientBlob []byte) []byte {
+	encodeUTF16LE := func(s string) []byte {
+		runes := []rune(s)
+		u16 := utf16.Encode(runes)
+		b := make([]byte, len(u16)*2)
+		for i, v := range u16 {
+			binary.LittleEndian.PutUint16(b[i*2:], v)
+		}
+		return b
+	}
+
+	domainBytes := encodeUTF16LE(domain)
+	userBytes := encodeUTF16LE(user)
+	wsBytes := encodeUTF16LE(workstation)
+
+	// NtChallengeResponse = NTProofStr + client blob
+	ntResponse := append(ntProofStr, clientBlob...)
+
+	// LmChallengeResponse (24 bytes of zeros for NTLMv2)
+	lmResponse := make([]byte, 24)
+
+	// Build the Type 3 structure
+	// Header: 72 bytes (NTLMSSP sig + type + 6 security buffers + flags + os version)
+	headerLen := 72
+	dataOffset := headerLen
+
+	// Security buffer layout (offset, len):
+	// LM Response:     offset 12
+	// NT Response:     offset 20
+	// Domain:          offset 28
+	// User:            offset 36
+	// Workstation:     offset 44
+	// Encrypted RS:    offset 52 (empty)
+	// Negotiate Flags: offset 60
+
+	type3 := make([]byte, headerLen+len(lmResponse)+len(ntResponse)+len(domainBytes)+len(userBytes)+len(wsBytes))
+
+	// NTLMSSP signature + Type 3
+	copy(type3[0:8], []byte("NTLMSSP\x00"))
+	binary.LittleEndian.PutUint32(type3[8:12], 3)
+
+	writeSecBuf := func(offset, fieldOffset int, data []byte) {
+		binary.LittleEndian.PutUint16(type3[offset:], uint16(len(data)))
+		binary.LittleEndian.PutUint16(type3[offset+2:], uint16(len(data)))
+		binary.LittleEndian.PutUint32(type3[offset+4:], uint32(fieldOffset))
+		copy(type3[fieldOffset:], data)
+	}
+
+	// Pack data fields after header
+	lmOff := dataOffset
+	ntOff := lmOff + len(lmResponse)
+	domOff := ntOff + len(ntResponse)
+	userOff := domOff + len(domainBytes)
+	wsOff := userOff + len(userBytes)
+
+	writeSecBuf(12, lmOff, lmResponse)
+	writeSecBuf(20, ntOff, ntResponse)
+	writeSecBuf(28, domOff, domainBytes)
+	writeSecBuf(36, userOff, userBytes)
+	writeSecBuf(44, wsOff, wsBytes)
+
+	// Negotiate Flags
+	binary.LittleEndian.PutUint32(type3[60:64], 0x00028233)
+
+	return type3
 }
