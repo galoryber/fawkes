@@ -17,11 +17,9 @@ const (
 	ntlmTypeAuthenticate = 3
 )
 
-// SPNEGO OID constants.
-var (
-	spnegoOID  = []byte{0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x02} // 1.3.6.1.5.5.2
-	ntlmsspOID = []byte{0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x02, 0x0a} // 1.3.6.1.4.1.311.2.2.10
-)
+// ntlmsspOID is the NTLMSSP security mechanism OID (1.3.6.1.4.1.311.2.2.10)
+// used in SPNEGO negTokenInit to advertise NTLM authentication.
+var ntlmsspOID = []byte{0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x02, 0x0a}
 
 // relayNTLMSecBuf represents an NTLM security buffer (length, maxLength, offset).
 type relayNTLMSecBuf struct {
