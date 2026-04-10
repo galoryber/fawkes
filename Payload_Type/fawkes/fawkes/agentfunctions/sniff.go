@@ -12,10 +12,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "sniff",
-		Description:         "sniff [-interface eth0] [-duration 30] [-ports 21,80,445] [-promiscuous true] - Passive network sniffing for credential capture.",
-		HelpString:          "sniff [-interface eth0] [-duration 30] [-ports 21,80,445] [-promiscuous true] [-max_bytes 52428800]",
-		Version:             1,
-		MitreAttackMappings: []string{"T1040"}, // Network Sniffing
+		Description:         "Network sniffing and poisoning. capture: passive credential sniffing. poison: LLMNR/NBT-NS/mDNS responder for credential interception.",
+		HelpString:          "sniff [-action capture] [-interface eth0] [-duration 30] [-ports 21,80,445]\nsniff -action poison [-response_ip 10.0.0.5] [-protocols llmnr,nbtns] [-duration 120]",
+		Version:             2,
+		MitreAttackMappings: []string{"T1040", "T1557.001"}, // Network Sniffing + LLMNR/NBT-NS Poisoning
 		Author:              "@galoryber",
 		ScriptOnlyCommand:   false,
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
@@ -27,6 +27,49 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
+				Name:          "action",
+				CLIName:       "action",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:       []string{"capture", "poison"},
+				Description:   "capture: passive network sniffing (default). poison: LLMNR/NBT-NS/mDNS responder for credential interception (T1557.001).",
+				DefaultValue:  "capture",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     1,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "response_ip",
+				CLIName:       "response_ip",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:   "IP to respond with for poison mode (default: auto-detect local IP). Victims will attempt authentication to this IP.",
+				DefaultValue:  "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     2,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:          "protocols",
+				CLIName:       "protocols",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:   "Poison protocols: comma-separated from llmnr,nbtns,mdns (default: llmnr,nbtns). Only used in poison mode.",
+				DefaultValue:  "llmnr,nbtns",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     3,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
 				Name:          "interface",
 				CLIName:       "interface",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
@@ -35,7 +78,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
-						UIModalPosition:     1,
+						UIModalPosition:     4,
 						GroupName:            "Default",
 					},
 				},
@@ -121,15 +164,26 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
-			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
-				TaskID:          taskData.Task.ID,
-				Success:         true,
-				OpsecPreBlocked: false,
-				OpsecPreMessage: "OPSEC WARNING: Network sniffing (T1040) opens a raw socket which requires root/CAP_NET_RAW (Linux/macOS) or Administrator (Windows). " +
+			action, _ := taskData.Args.GetStringArg("action")
+			var msg string
+			if action == "poison" {
+				msg = "OPSEC CRITICAL: LLMNR/NBT-NS/mDNS poisoning (T1557.001) actively responds to multicast/broadcast name resolution queries. " +
+					"This generates network traffic that IDS/IPS signatures specifically detect (Responder-like behavior). " +
+					"Multiple hosts may authenticate to the attacker IP — monitor for account lockouts. " +
+					"Requires root/CAP_NET_RAW for raw socket + UDP multicast listeners. " +
+					"Poisoning is ACTIVE — it sends packets, not just captures."
+			} else {
+				msg = "OPSEC WARNING: Network sniffing (T1040) opens a raw socket which requires root/CAP_NET_RAW (Linux/macOS) or Administrator (Windows). " +
 					"Windows uses SIO_RCVALL which may be flagged by security products. " +
 					"Promiscuous mode changes the NIC state and may be detected by network monitoring tools (promiscdetect, antisniff). " +
 					"Raw socket creation may trigger host-based IDS alerts. " +
-					"Captured traffic stays in memory — no PCAP written to disk.",
+					"Captured traffic stays in memory — no PCAP written to disk."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},

@@ -33,6 +33,10 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error parsing parameters: %v", err)
 	}
 
+	if params.Action == "poison" {
+		return c.executePoison(task)
+	}
+
 	if params.Duration <= 0 {
 		params.Duration = 30
 	}

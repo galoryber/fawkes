@@ -10,12 +10,16 @@ import (
 )
 
 type sniffParams struct {
+	Action      string `json:"action"`
 	Interface   string `json:"interface"`
 	Duration    int    `json:"duration"`
 	MaxBytes    int64  `json:"max_bytes"`
 	Ports       string `json:"ports"`
 	Promiscuous bool   `json:"promiscuous"`
 	SavePCAP    bool   `json:"save_pcap"`
+	// Poison-mode fields
+	ResponseIP string `json:"response_ip"`
+	Protocols  string `json:"protocols"`
 }
 
 type sniffCredential struct {

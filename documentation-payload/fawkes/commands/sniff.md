@@ -7,26 +7,43 @@ hidden = false
 
 ## Summary
 
-Passive network sniffing for credential capture. Opens a raw socket to capture network traffic and automatically extracts cleartext credentials from HTTP Basic Auth, FTP USER/PASS, NTLM authentication messages, and Kerberos AS-REP/TGS-REP principals.
+Network sniffing and LLMNR/NBT-NS/mDNS poisoning for credential interception. Two modes:
 
-Cross-platform: Windows (SIO_RCVALL raw sockets), Linux (AF_PACKET + BPF kernel filtering), macOS (/dev/bpf).
+- **capture** (default): Passive network sniffing — captures traffic and extracts cleartext credentials from HTTP Basic Auth, FTP, NTLM, and Kerberos.
+- **poison**: Active LLMNR/NBT-NS/mDNS responder — answers multicast name resolution queries with the attacker IP to intercept authentication attempts (T1557.001).
+
+Cross-platform capture: Windows (SIO_RCVALL), Linux (AF_PACKET + BPF), macOS (/dev/bpf). Poison mode: Linux only (currently).
 
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| interface | No | auto-detect | Network interface name or IP address. Windows accepts interface name (e.g. "Ethernet") or IP. Linux/macOS: e.g. eth0, en0 |
-| duration | No | 30 | Capture duration in seconds (max: 300) |
-| ports | No | 21,53,80,88,110,143,389,445,8080 | Comma-separated TCP/UDP ports to filter. Includes DNS (53) and Kerberos (88) by default |
-| promiscuous | No | false | Enable promiscuous mode to capture traffic not destined for this host |
-| max_bytes | No | 52428800 (50MB) | Stop after capturing this many bytes |
-| save_pcap | No | false | Save raw packet capture as PCAP file (downloadable via Mythic) |
+| action | No | capture | `capture`: passive sniffing. `poison`: LLMNR/NBT-NS/mDNS responder |
+| response_ip | No | auto-detect | IP to respond with in poison mode (victims authenticate to this IP) |
+| protocols | No | llmnr,nbtns | Poison protocols: llmnr, nbtns, mdns (comma-separated) |
+| interface | No | auto-detect | Network interface name or IP address |
+| duration | No | 30 (capture) / 120 (poison) | Duration in seconds. Max: 300 (capture), 600 (poison) |
+| ports | No | 21,53,80,88,110,143,389,445,8080 | Port filter for capture mode |
+| promiscuous | No | false | Enable promiscuous mode (capture only) |
+| max_bytes | No | 52428800 (50MB) | Stop after N bytes (capture only) |
+| save_pcap | No | false | Save raw PCAP file (capture only) |
 
 ## Usage
 
 ### Basic capture (30 seconds, default ports)
 ```
 sniff
+sniff -action capture
+```
+
+### LLMNR/NBT-NS Poisoning (2 minutes)
+```
+sniff -action poison -duration 120
+```
+
+### Poison with specific response IP and protocols
+```
+sniff -action poison -response_ip 10.0.0.5 -protocols llmnr,nbtns,mdns -duration 300
 ```
 
 ### Capture on specific interface with promiscuous mode
