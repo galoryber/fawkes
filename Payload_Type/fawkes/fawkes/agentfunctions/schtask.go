@@ -114,11 +114,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "user",
-				ModalDisplayName: "Run As User",
-				CLIName:          "user",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "User account to run the task as (e.g., SYSTEM, NT AUTHORITY\\SYSTEM)",
+				Name:                 "user",
+				ModalDisplayName:     "Run As User",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "User account to run the task as (e.g., SYSTEM, NT AUTHORITY\\SYSTEM)",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

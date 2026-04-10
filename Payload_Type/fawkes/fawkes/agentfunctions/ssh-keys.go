@@ -57,11 +57,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "user",
-				ModalDisplayName: "Target User",
-				CLIName:          "user",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Target user (default: current user). Reads their ~/.ssh/ directory.",
+				Name:                 "user",
+				ModalDisplayName:     "Target User",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Target user (default: current user). Reads their ~/.ssh/ directory.",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

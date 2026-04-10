@@ -40,11 +40,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "user",
-				ModalDisplayName: "User Filter",
-				CLIName:          "user",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Filter results to tokens matching this user (case-insensitive substring match)",
+				Name:                 "user",
+				ModalDisplayName:     "User Filter",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Filter results to tokens matching this user (case-insensitive substring match)",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

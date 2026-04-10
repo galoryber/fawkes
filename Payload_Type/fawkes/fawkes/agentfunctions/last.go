@@ -50,11 +50,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "user",
-				CLIName:       "user",
-				Description:   "Filter by username",
-				DefaultValue:  "",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Name:                 "user",
+				CLIName:              "user",
+				Description:          "Filter by username",
+				DefaultValue:         "",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 2},
 				},

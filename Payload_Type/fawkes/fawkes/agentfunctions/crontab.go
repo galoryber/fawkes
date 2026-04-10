@@ -98,11 +98,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "user",
-				ModalDisplayName: "User",
-				CLIName:          "user",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Target user for crontab operations (requires privileges). Default: current user.",
+				Name:                 "user",
+				ModalDisplayName:     "User",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Target user for crontab operations (requires privileges). Default: current user.",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

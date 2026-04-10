@@ -84,11 +84,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "user",
-				ModalDisplayName: "User",
-				CLIName:          "user",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Filter login records by username",
+				Name:                 "user",
+				ModalDisplayName:     "User",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Filter login records by username",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

@@ -42,10 +42,11 @@ func init() {
 				},
 			},
 			{
-				Name:             "user",
-				ModalDisplayName: "User Filter",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Filter results by username (optional)",
+				Name:                 "user",
+				ModalDisplayName:     "User Filter",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Filter results by username (optional)",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 1},

@@ -35,10 +35,11 @@ func init() {
 				},
 			},
 			{
-				Name:          "user",
-				CLIName:       "user",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:   "Target username (default: current user)",
+				Name:                 "user",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Target username (default: current user)",
 				DefaultValue:  "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
