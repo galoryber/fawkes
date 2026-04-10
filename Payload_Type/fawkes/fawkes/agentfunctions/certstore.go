@@ -112,6 +112,15 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "certstore_new.js"),
 			Author:     "@galoryber",
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Certificate store operation completed. Certificate import/export/delete operations generate Event ID 1007 in CertificateServicesClient-Lifecycle-System log. Imported certificates persist until removed.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
