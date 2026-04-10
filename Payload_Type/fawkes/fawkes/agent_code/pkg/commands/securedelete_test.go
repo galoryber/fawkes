@@ -241,6 +241,76 @@ func TestWipeDefaultPasses(t *testing.T) {
 	}
 }
 
+// --- Wipe-MBR action tests (T1561 disk wipe) ---
+
+func TestWipeMBRNoConfirm(t *testing.T) {
+	cmd := &SecureDeleteCommand{}
+	params, _ := json.Marshal(secureDeleteArgs{Action: "wipe-mbr", Path: "/dev/sda"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" || !strings.Contains(result.Output, "DESTROY") {
+		t.Errorf("expected DESTROY safety gate error, got: %s", result.Output)
+	}
+}
+
+func TestWipeMBRWrongConfirm(t *testing.T) {
+	cmd := &SecureDeleteCommand{}
+	params, _ := json.Marshal(secureDeleteArgs{Action: "wipe-mbr", Path: "/dev/sda", Confirm: "yes"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" || !strings.Contains(result.Output, "DESTROY") {
+		t.Errorf("expected DESTROY safety gate error for wrong confirm, got: %s", result.Output)
+	}
+}
+
+func TestWipeMBREmptyPath(t *testing.T) {
+	cmd := &SecureDeleteCommand{}
+	params, _ := json.Marshal(secureDeleteArgs{Action: "wipe-mbr", Confirm: "DESTROY"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" || !strings.Contains(result.Output, "path") {
+		t.Errorf("expected path required error, got: %s", result.Output)
+	}
+}
+
+func TestWipeMBRNonexistentDevice(t *testing.T) {
+	cmd := &SecureDeleteCommand{}
+	params, _ := json.Marshal(secureDeleteArgs{Action: "wipe-mbr", Path: "/dev/nonexistent_disk_xyz", Confirm: "DESTROY"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" {
+		t.Errorf("expected error for nonexistent device, got: %s", result.Output)
+	}
+}
+
+func TestWipeMBROnRegularFile(t *testing.T) {
+	// wipe-mbr should work on regular files too (for testing)
+	tmp := filepath.Join(t.TempDir(), "fake_mbr.bin")
+	// Create a 2KB file simulating a disk device
+	data := make([]byte, 2048)
+	for i := range data {
+		data[i] = 0xFF
+	}
+	os.WriteFile(tmp, data, 0644)
+
+	cmd := &SecureDeleteCommand{}
+	params, _ := json.Marshal(secureDeleteArgs{Action: "wipe-mbr", Path: tmp, Confirm: "DESTROY"})
+	result := cmd.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("wipe-mbr failed on regular file: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "MBR/GPT wiped") {
+		t.Errorf("expected MBR/GPT wiped in output: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "1024 bytes") {
+		t.Errorf("expected 1024 bytes in output: %s", result.Output)
+	}
+	// Verify first 1024 bytes are zeros
+	content, _ := os.ReadFile(tmp)
+	for i := 0; i < 1024 && i < len(content); i++ {
+		if content[i] != 0 {
+			t.Errorf("byte %d should be 0, got %d", i, content[i])
+			break
+		}
+	}
+}
+
 func TestSecureDeleteFileFunction(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "func_test.txt")
 	original := []byte("original content that should be overwritten")

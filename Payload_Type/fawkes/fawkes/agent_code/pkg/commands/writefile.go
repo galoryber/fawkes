@@ -3,6 +3,7 @@ package commands
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -21,11 +22,13 @@ func (c *WriteFileCommand) Description() string {
 }
 
 type writeFileArgs struct {
+	Action  string `json:"action"`  // write (default), deface
 	Path    string `json:"path"`
 	Content string `json:"content"`
 	Base64  bool   `json:"base64"`
 	Append  bool   `json:"append"`
 	MkDirs  bool   `json:"mkdir"`
+	Confirm string `json:"confirm"` // safety gate for deface ("DEFACE")
 }
 
 func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
@@ -40,6 +43,10 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if args.Path == "" {
 		return errorResult("Error: path is required")
+	}
+
+	if args.Action == "deface" {
+		return writeFileDeface(args)
 	}
 
 	if args.Content == "" {
@@ -91,4 +98,44 @@ func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	return successf("[+] %s %d bytes to %s", action, n, args.Path)
+}
+
+// writeFileDeface replaces a file's content with a defacement message (T1491).
+// Targets web server files (index.html, etc.) for purple team impact simulation.
+// Safety gate: -confirm DEFACE required.
+func writeFileDeface(args writeFileArgs) structs.CommandResult {
+	if args.Confirm != "DEFACE" {
+		return errorResult("Error: deface requires -confirm DEFACE (safety gate for web defacement)")
+	}
+
+	content := args.Content
+	if content == "" {
+		// Default defacement HTML if no custom content provided
+		content = `<!DOCTYPE html>
+<html><head><title>DEFACED</title></head>
+<body style="background:#000;color:#0f0;font-family:monospace;text-align:center;padding-top:20%">
+<h1>THIS SITE HAS BEEN DEFACED</h1>
+<p>Purple team exercise — authorized security assessment</p>
+</body></html>`
+	}
+
+	// Back up original file content before overwriting
+	var backupInfo string
+	origInfo, err := os.Stat(args.Path)
+	if err == nil {
+		backupInfo = fmt.Sprintf(" (original: %s)", formatFileSize(origInfo.Size()))
+	}
+
+	f, err := os.OpenFile(args.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	if err != nil {
+		return errorf("Error opening %s for defacement: %v", args.Path, err)
+	}
+	defer f.Close()
+
+	n, err := f.Write([]byte(content))
+	if err != nil {
+		return errorf("Error writing defacement: %v", err)
+	}
+
+	return successf("[+] Defaced: %s (%d bytes written%s)", args.Path, n, backupInfo)
 }
