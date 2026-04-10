@@ -70,8 +70,12 @@ func (c *EncryptCommand) Execute(task structs.Task) structs.CommandResult {
 		return encryptFiles(args)
 	case "decrypt-files":
 		return decryptFiles(args)
+	case "corrupt":
+		return corruptFile(args)
+	case "corrupt-files":
+		return corruptFiles(args)
 	default:
-		return errorResult("Error: action must be encrypt, decrypt, encrypt-files, or decrypt-files")
+		return errorResult("Error: action must be encrypt, decrypt, encrypt-files, decrypt-files, corrupt, or corrupt-files")
 	}
 }
 

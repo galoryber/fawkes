@@ -7,7 +7,15 @@ hidden = false
 
 ## Summary
 
-Encrypt or decrypt files using AES-256-GCM (Galois/Counter Mode). Supports single file operations and batch operations for ransomware simulation (T1486) and recovery. Batch encryption adds `.fawkes` extension and outputs a recovery key. Safety gates prevent accidental destructive operations.
+Encrypt or decrypt files using AES-256-GCM (Galois/Counter Mode), and targeted file corruption for data manipulation simulation (T1565). Supports single file operations, batch operations for ransomware simulation (T1486), and file corruption with safety gates.
+
+### Actions
+- `encrypt` / `decrypt` — Single file AES-256-GCM encryption/decryption
+- `encrypt-files` / `decrypt-files` — Batch encryption by glob pattern (ransomware sim T1486)
+- `corrupt` — Single file targeted corruption (overwrite first 4KB+ with random data)
+- `corrupt-files` — Batch file corruption by glob pattern (T1565 Data Manipulation)
+
+{{% notice warning %}}Corrupt actions DESTROY DATA irreversibly. Require `-confirm CORRUPT` safety parameter.{{% /notice %}}
 
 ## Arguments
 

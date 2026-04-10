@@ -26,10 +26,10 @@ func init() {
 			{
 				Name:          "action",
 				CLIName:       "action",
-				Description:   "encrypt: single file. decrypt: single file. encrypt-files: batch by glob (ransomware sim T1486). decrypt-files: reverse batch in directory.",
+				Description:   "encrypt/decrypt: single file. encrypt-files/decrypt-files: batch by glob (T1486). corrupt/corrupt-files: targeted file corruption for impact simulation (T1565).",
 				DefaultValue:  "encrypt",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"encrypt", "decrypt", "encrypt-files", "decrypt-files"},
+				Choices:       []string{"encrypt", "decrypt", "encrypt-files", "decrypt-files", "corrupt", "corrupt-files"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -111,6 +111,11 @@ func init() {
 			msg := fmt.Sprintf("OPSEC WARNING: File encryption (%s) on %s (T1560.001).", action, path)
 			if action == "encrypt-files" {
 				msg = fmt.Sprintf("CRITICAL OPSEC WARNING: Batch file encryption (T1486 Data Encrypted for Impact). Pattern: %s. This IS a ransomware simulation — EDR behavioral engines specifically detect rapid bulk file encryption+rename. Anti-ransomware canary files, volume shadow copy monitors, and MFT change rate alerts will fire. Only proceed if this is an authorized purple team exercise.", path)
+			} else if action == "corrupt" || action == "corrupt-files" {
+				msg = fmt.Sprintf("CRITICAL OPSEC WARNING: Targeted file corruption (T1565 Data Manipulation). Path: %s. "+
+					"This DESTROYS DATA — file headers are overwritten with random bytes, making files unrecoverable. "+
+					"Requires -confirm CORRUPT safety parameter. "+
+					"EDR may detect rapid file modification patterns. Only proceed in authorized purple team exercises.", path)
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
