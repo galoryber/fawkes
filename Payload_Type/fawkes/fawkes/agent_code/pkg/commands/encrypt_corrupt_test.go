@@ -5,8 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"fawkes/pkg/structs"
 )
 
 func TestCorruptFileRequiresConfirm(t *testing.T) {
@@ -140,8 +138,3 @@ func TestCorruptFilesBatchMode(t *testing.T) {
 	}
 }
 
-// Helper to create a CommandResult for testing
-func makeTaskParams(args interface{}) structs.Task {
-	params, _ := json.Marshal(args)
-	return structs.Task{Params: string(params)}
-}
