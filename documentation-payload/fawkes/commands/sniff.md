@@ -7,25 +7,28 @@ hidden = false
 
 ## Summary
 
-Network sniffing and LLMNR/NBT-NS/mDNS poisoning for credential interception. Two modes:
+Network sniffing, LLMNR/NBT-NS/mDNS poisoning, and NTLM relay for credential interception. Three modes:
 
 - **capture** (default): Passive network sniffing — captures traffic and extracts cleartext credentials from HTTP Basic Auth, FTP, NTLM, and Kerberos.
 - **poison**: Active LLMNR/NBT-NS/mDNS responder — answers multicast name resolution queries with the attacker IP to intercept authentication attempts (T1557.001).
+- **relay**: NTLM relay — intercepts victim NTLM authentication via HTTP and relays it to a target SMB server for authenticated access without cracking hashes (T1557.001).
 
-Cross-platform capture: Windows (SIO_RCVALL), Linux (AF_PACKET + BPF), macOS (/dev/bpf). Poison mode: cross-platform (all platforms).
+Cross-platform capture: Windows (SIO_RCVALL), Linux (AF_PACKET + BPF), macOS (/dev/bpf). Poison and relay: cross-platform.
 
 In poison mode, an HTTP NTLM capture server runs alongside the name resolution poisoners. When a victim resolves a name to the attacker IP, subsequent HTTP/WPAD requests trigger NTLM authentication — captured NTLMv2 hashes are output in **hashcat mode 5600** format for offline cracking.
+
+In relay mode, the agent acts as a man-in-the-middle: it presents an HTTP 401 challenge to victims, forwards their NTLM Type 1 message to the target SMB server, relays the server's Type 2 challenge back, and forwards the victim's final Type 3 authentication to complete the SMB session as the victim user.
 
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | capture | `capture`: passive sniffing. `poison`: LLMNR/NBT-NS/mDNS responder |
-| response_ip | No | auto-detect | IP to respond with in poison mode (victims authenticate to this IP) |
+| action | No | capture | `capture`: passive sniffing. `poison`: LLMNR/NBT-NS/mDNS responder. `relay`: NTLM relay to target SMB |
+| response_ip | No | auto-detect | Poison: IP to respond with. Relay: target SMB host (required) |
 | protocols | No | llmnr,nbtns | Poison protocols: llmnr, nbtns, mdns (comma-separated) |
 | interface | No | auto-detect | Network interface name or IP address |
-| duration | No | 30 (capture) / 120 (poison) | Duration in seconds. Max: 300 (capture), 600 (poison) |
-| ports | No | 21,53,80,88,110,143,389,445,8080 | Port filter for capture mode |
+| duration | No | 30 (capture) / 120 (poison/relay) | Duration in seconds. Max: 300 (capture), 600 (poison/relay) |
+| ports | No | 21,53,80,88,110,143,389,445,8080 | Capture: port filter. Relay: `listen_port:target_port` (default: 80:445) |
 | promiscuous | No | false | Enable promiscuous mode (capture only) |
 | max_bytes | No | 52428800 (50MB) | Stop after N bytes (capture only) |
 | save_pcap | No | false | Save raw PCAP file (capture only) |
@@ -72,6 +75,63 @@ sniff -duration 30 -save_pcap true
 ### Quick 10-second scan
 ```
 sniff -duration 10
+```
+
+### NTLM Relay to target SMB server
+```
+sniff -action relay -response_ip 192.168.1.10 -duration 120
+```
+
+### Relay with custom listen/target ports
+```
+sniff -action relay -response_ip 192.168.1.10 -ports 8080:445 -duration 300
+```
+
+## Relay Mode: NTLM Authentication Forwarding
+
+{{% notice warning %}}Requires SMB signing DISABLED on the target (default for non-domain controllers){{% /notice %}}
+
+When running in relay mode, the agent performs a man-in-the-middle attack:
+
+1. **Listens** on an HTTP port (default: TCP 80) for victim connections
+2. **Challenges** victims with HTTP 401 + NTLM to trigger authentication
+3. **Forwards** the victim's NTLM Type 1 (Negotiate) to the target SMB server
+4. **Relays** the server's Type 2 (Challenge) back to the victim
+5. **Forwards** the victim's Type 3 (Authenticate) to complete SMB authentication as the victim
+6. **Reports** success/failure, captured NTLMv2 hash (hashcat mode 5600), and relay status
+
+This is the equivalent of `ntlmrelayx` — combined with LLMNR/NBT-NS poisoning (`poison` action), it enables authentication relay attacks without cracking passwords.
+
+### Relay Output Example
+
+```json
+{
+  "duration": "120.0s",
+  "listen_port": 80,
+  "target": "192.168.1.10",
+  "target_port": 445,
+  "relays": [
+    {
+      "victim_ip": "192.168.1.50",
+      "username": "jsmith",
+      "domain": "CONTOSO",
+      "target": "192.168.1.10",
+      "success": true,
+      "hashcat": "jsmith::CONTOSO:1122334455667788:aabbccdd...:0101...",
+      "status": "authenticated",
+      "detail": "Successfully relayed CONTOSO\\jsmith to 192.168.1.10:445"
+    }
+  ],
+  "credentials": [
+    {
+      "protocol": "ntlmv2-relay",
+      "src_ip": "192.168.1.50",
+      "dst_ip": "192.168.1.10",
+      "username": "CONTOSO\\jsmith",
+      "password": "jsmith::CONTOSO:1122334455667788:aabbccdd...:0101..."
+    }
+  ]
+}
 ```
 
 ## Poison Mode: NTLMv2 Hash Capture
@@ -195,6 +255,16 @@ JSON output with capture statistics and discovered credentials:
 - On Windows, the NetBIOS service uses port 137 — poisoner may fail to bind
 - Multiple hosts may authenticate to the attacker IP — **monitor for account lockouts**
 - HTTP NTLM capture server listens on TCP 80 for the poison duration
+
+### Relay Mode
+{{% notice warning %}}CRITICAL: Active network relay generates detectable SMB traffic{{% /notice %}}
+
+- Opens an HTTP TCP listener — may conflict with existing web servers on port 80
+- Generates SMB2 traffic to the target host — visible in network logs and SIEM
+- Successful relay creates an authenticated SMB session from an unexpected source IP
+- **Requires SMB signing disabled on target** — domain controllers enforce signing by default; workstations and member servers typically do not
+- Captured NTLMv2 hashes are also recorded for offline cracking (hashcat -m 5600)
+- Combined with `poison` mode for full relay chain: poison name resolution → capture NTLM auth → relay to target
 
 ## MITRE ATT&CK Mapping
 

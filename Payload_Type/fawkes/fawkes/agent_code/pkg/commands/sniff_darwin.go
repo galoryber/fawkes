@@ -32,6 +32,9 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 	if params.Action == "poison" {
 		return c.executePoison(task)
 	}
+	if params.Action == "relay" {
+		return c.executeRelay(task)
+	}
 
 	if params.Duration <= 0 {
 		params.Duration = 30
