@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -111,6 +112,23 @@ func init() {
 			}
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Ownership change on %s", path))
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			path, _ := processResponse.TaskData.Args.GetStringArg("path")
+			owner, _ := processResponse.TaskData.Args.GetStringArg("owner")
+			if strings.Contains(responseText, "success") || strings.Contains(responseText, "changed") || strings.Contains(responseText, "→") {
+				createArtifact(processResponse.TaskData.Task.ID, "File Modification",
+					fmt.Sprintf("chown %s %s on %s", owner, path, processResponse.TaskData.Callback.Host))
+			}
 			return response
 		},
 	})

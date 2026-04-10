@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -93,6 +94,23 @@ func init() {
 			display := fmt.Sprintf("%s %s", mode, path)
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Permission change on %s", path))
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			path, _ := processResponse.TaskData.Args.GetStringArg("path")
+			mode, _ := processResponse.TaskData.Args.GetStringArg("mode")
+			if strings.Contains(responseText, "success") || strings.Contains(responseText, "changed") || strings.Contains(responseText, "→") {
+				createArtifact(processResponse.TaskData.Task.ID, "File Modification",
+					fmt.Sprintf("chmod %s %s on %s", mode, path, processResponse.TaskData.Callback.Host))
+			}
 			return response
 		},
 	})

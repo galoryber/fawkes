@@ -132,5 +132,26 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			name, _ := processResponse.TaskData.Args.GetStringArg("name")
+			switch action {
+			case "set":
+				createArtifact(processResponse.TaskData.Task.ID, "Configuration Modification",
+					fmt.Sprintf("env set %s on %s", name, processResponse.TaskData.Callback.Host))
+			case "unset":
+				createArtifact(processResponse.TaskData.Task.ID, "Configuration Modification",
+					fmt.Sprintf("env unset %s on %s", name, processResponse.TaskData.Callback.Host))
+			}
+			return response
+		},
 	})
 }
