@@ -59,7 +59,7 @@ func smbExfilFile(args smbArgs) structs.CommandResult {
 	if err != nil {
 		return errorf("Error mounting share %s: %v", args.Share, err)
 	}
-	defer share.Umount()
+	defer func() { _ = share.Umount() }()
 
 	// Write file
 	sc.setDeadline(smbOperationTimeout)

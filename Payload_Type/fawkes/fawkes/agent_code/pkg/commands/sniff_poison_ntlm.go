@@ -87,7 +87,7 @@ func extractNTLMv2Hash(type3 []byte, serverChallenge [8]byte) *ntlmCapturedHash 
 
 	// NtChallengeResponse at offset 20
 	ntResponse := readSecBuf(20)
-	if ntResponse == nil || len(ntResponse) < 24 {
+	if len(ntResponse) < 24 {
 		return nil
 	}
 
