@@ -135,3 +135,113 @@ func TestIsDirWritable(t *testing.T) {
 		t.Error("Expected non-existent dir to not be writable")
 	}
 }
+
+func TestIsUnquotedServicePath_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		binPath  string
+		expected bool
+	}{
+		{"double-quoted empty", `""`, false},
+		{"single char", "a", false},
+		{"just a quote", `"`, false},
+		{"svchost mixed case", `C:\Windows\SYSTEM32\SVCHOST.EXE -k netsvcs`, false},
+		{"system32 lowercase", `c:\windows\system32\svc.exe`, false},
+		{"path with backslashes no spaces", `C:\MyApp\service.exe -run`, false},
+		{"multiple args", `C:\service.exe arg1 arg2 arg3`, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := isUnquotedServicePath(tt.binPath)
+			if result != tt.expected {
+				t.Errorf("isUnquotedServicePath(%q) = %v, want %v", tt.binPath, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestExtractExePath_EdgeCases(t *testing.T) {
+	tests := []struct {
+		name     string
+		binPath  string
+		expected string
+	}{
+		{"tab prefix", "\tC:\\svc.exe", `C:\svc.exe`},
+		{"newline in path", "C:\\svc.exe\n", `C:\svc.exe`},
+		{"quoted with trailing space", `"C:\path\svc.exe"  `, `C:\path\svc.exe`},
+		{"backslash only", `\`, `\`},
+		{"forward slashes", "/usr/bin/service -d", "/usr/bin/service"},
+		{"multiple spaces between args", `C:\svc.exe  arg1  arg2`, `C:\svc.exe`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := extractExePath(tt.binPath)
+			if result != tt.expected {
+				t.Errorf("extractExePath(%q) = %q, want %q", tt.binPath, result, tt.expected)
+			}
+		})
+	}
+}
+
+func TestStartTypeString_AllValues(t *testing.T) {
+	// Verify exhaustive coverage of all Windows service start types
+	expected := map[uint32]string{
+		0:  "Boot",
+		1:  "System",
+		2:  "Auto",
+		3:  "Manual",
+		4:  "Disabled",
+		5:  "Unknown(5)",
+		10: "Unknown(10)",
+	}
+	for st, exp := range expected {
+		result := startTypeString(st)
+		if result != exp {
+			t.Errorf("startTypeString(%d) = %q, want %q", st, result, exp)
+		}
+	}
+}
+
+func TestIsFileReadable_TempFile(t *testing.T) {
+	// Create a temp file and verify it's readable
+	dir := t.TempDir()
+	f, err := os.CreateTemp(dir, "readable-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Close()
+
+	if !isFileReadable(f.Name()) {
+		t.Errorf("expected temp file %s to be readable", f.Name())
+	}
+
+	// Remove the file and check again
+	os.Remove(f.Name())
+	if isFileReadable(f.Name()) {
+		t.Error("expected deleted file to not be readable")
+	}
+}
+
+func TestIsDirWritable_TempDir(t *testing.T) {
+	dir := t.TempDir()
+	if !isDirWritable(dir) {
+		t.Errorf("expected temp dir %s to be writable", dir)
+	}
+}
+
+func TestExtractExePath_ExistingFileWithSpaces(t *testing.T) {
+	// Create a file with spaces in the path
+	dir := t.TempDir()
+	spacedDir := dir + "/my app"
+	os.MkdirAll(spacedDir, 0755)
+	exePath := spacedDir + "/service.exe"
+	os.WriteFile(exePath, []byte("binary"), 0755)
+
+	// Test that extractExePath finds the file with spaces when it exists
+	result := extractExePath(spacedDir + "/service.exe --flag")
+	if result != exePath {
+		t.Errorf("expected %q, got %q", exePath, result)
+	}
+}
