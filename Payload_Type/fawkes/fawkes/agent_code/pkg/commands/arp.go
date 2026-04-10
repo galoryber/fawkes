@@ -22,9 +22,15 @@ func (c *ArpCommand) Description() string {
 }
 
 type arpArgs struct {
+	Action    string `json:"action"`    // "" (list, default) or "spoof"
 	IP        string `json:"ip"`        // filter by IP (substring match)
 	MAC       string `json:"mac"`       // filter by MAC address (substring match)
 	Interface string `json:"interface"` // filter by interface name (case-insensitive)
+	// Spoof-mode fields
+	Target   string `json:"target"`   // Victim IP to poison
+	Gateway  string `json:"gateway"`  // Gateway IP to impersonate
+	Duration int    `json:"duration"` // Spoofing duration in seconds (default: 120)
+	Interval int    `json:"interval"` // ARP reply interval in seconds (default: 2)
 }
 
 // Execute executes the arp command using platform-specific implementation
@@ -34,6 +40,10 @@ func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 			return errorf("Invalid parameters: %v", err)
 		}
+	}
+
+	if args.Action == "spoof" {
+		return executeArpSpoof(task)
 	}
 
 	entries, err := getArpTable()
