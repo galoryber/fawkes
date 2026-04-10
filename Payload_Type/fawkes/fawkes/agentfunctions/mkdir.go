@@ -62,6 +62,15 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Directory created. New directory entry in filesystem with current timestamps — visible in USN journal, $MFT, and EDR file monitoring. Consider using existing directories or timestomping to blend in.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

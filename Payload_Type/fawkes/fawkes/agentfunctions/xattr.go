@@ -130,6 +130,15 @@ func init() {
 			}
 			return response
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Extended attribute operation completed. xattr modifications alter file metadata without changing content — useful for hiding data but also detectable. On macOS, modifying com.apple.quarantine bypasses Gatekeeper. EDR may monitor xattr changes on sensitive files.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

@@ -139,6 +139,15 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: File read completed. File access timestamps updated (last access time). EDR may log file reads of sensitive paths (SAM, shadow, config files). File contents are now in Mythic — ensure sensitive data is handled appropriately in the operation.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
