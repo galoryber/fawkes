@@ -173,6 +173,15 @@ func init() {
 		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
 			"ldapEnumChainComplete": ldapEnumChainCompleteFunc,
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: LDAP query executed. LDAP queries logged by domain controllers (Event ID 1644). Bulk enumeration patterns detectable by SIEM correlation rules.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
