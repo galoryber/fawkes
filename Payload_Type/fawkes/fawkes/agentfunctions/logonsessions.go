@@ -42,12 +42,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "filter",
-				ModalDisplayName: "Username Filter",
-				CLIName:          "filter",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Optional: filter results by username or domain substring",
-				DefaultValue:     "",
+				Name:                 "filter",
+				ModalDisplayName:     "Username Filter",
+				CLIName:              "filter",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Optional: filter results by username or domain substring",
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
