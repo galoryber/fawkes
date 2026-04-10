@@ -18,8 +18,9 @@ Completes the lateral movement recon workflow:
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| hosts | Yes | - | Target hosts: single IP, comma-separated IPs, or CIDR notation |
-| username | Yes | - | Username (DOMAIN\user or user@domain) |
+| action | No | check | `check`: test specific credentials. `verify-all`: test all vault credentials against discovered hosts. |
+| hosts | Yes* | - | Target hosts: single IP, comma-separated IPs, or CIDR notation (*not required for verify-all) |
+| username | Yes* | - | Username (DOMAIN\user or user@domain) (*not required for verify-all) |
 | password | No* | - | Password (*required if hash not provided) |
 | hash | No* | - | NTLM hash for pass-the-hash on SMB (hex-encoded) |
 | timeout | No | 5 | Per-check timeout in seconds |
@@ -35,6 +36,12 @@ Test across a subnet with pass-the-hash:
 ```
 cred-check -hosts 10.0.0.0/24 -username administrator -hash aad3b435b51404ee:8846f7eaee8fb117
 ```
+
+### Verify all vault credentials (subtask chain)
+```
+cred-check -action verify-all
+```
+Queries the Mythic credential vault for all stored plaintext passwords and NTLM hashes, discovers active callback hosts, and tests each credential against all hosts in parallel. Results are aggregated showing valid/invalid/error per credential. Max 10 credentials tested per run.
 
 ## Protocols Tested
 

