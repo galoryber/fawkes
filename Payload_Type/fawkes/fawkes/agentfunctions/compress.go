@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -133,6 +134,10 @@ func init() {
 					},
 				},
 			},
+		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "compress_new.js"),
+			Author:     "@galoryber",
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input != "" {

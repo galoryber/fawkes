@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -95,6 +96,10 @@ func init() {
 				OpsecPostMessage:    "OPSEC AUDIT: Encryption/decryption operation completed. File encryption creates modified files and may trigger ransomware behavioral detection in EDR. Ensure decryption keys are preserved for recovery.",
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "encrypt_new.js"),
+			Author:     "@galoryber",
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {

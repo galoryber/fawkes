@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -81,6 +82,10 @@ func init() {
 				OpsecPostMessage:    "OPSEC AUDIT: AMSI/ETW patching completed. Memory patches to amsi.dll/ntdll.dll modify process memory. EDR products monitoring for in-memory patches may detect the modification pattern. Patches persist until process restart.",
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "autopatch_new.js"),
+			Author:     "@galoryber",
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
