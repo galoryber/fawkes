@@ -15,12 +15,12 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "containerescape_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Container escape — enumerate and exploit breakout vectors: Docker socket, cgroup release_agent, nsenter, host device mount (T1611)",
-		HelpString:          "container-escape -action <check|docker-sock|cgroup|nsenter|mount-host> [-command '<cmd>'] [-image alpine] [-path /dev/sda1]",
-		Version:             1,
+		Description:         "Container escape and K8s operations — enumerate breakout vectors, exploit Docker/cgroup/nsenter, and interact with Kubernetes API (T1611, T1610, T1613, T1552.007)",
+		HelpString:          "container-escape -action <check|docker-sock|cgroup|nsenter|mount-host|k8s-enum|k8s-secrets|k8s-deploy|k8s-exec> [-command '<cmd>'] [-image alpine] [-path /dev/sda1]",
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1611"},
+		MitreAttackMappings: []string{"T1611", "T1610", "T1613", "T1552.007"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX},
@@ -31,8 +31,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"check", "docker-sock", "cgroup", "nsenter", "mount-host"},
-				Description:      "Escape technique: check (enumerate vectors), docker-sock (Docker API), cgroup (release_agent), nsenter (PID namespace), mount-host (block device)",
+				Choices:          []string{"check", "docker-sock", "cgroup", "nsenter", "mount-host", "k8s-enum", "k8s-secrets", "k8s-deploy", "k8s-exec"},
+				Description:      "Escape technique or K8s operation: check (enumerate vectors), docker-sock, cgroup, nsenter, mount-host, k8s-enum (discover pods/services), k8s-secrets (read secrets), k8s-deploy (create pod), k8s-exec (run in pod)",
 				DefaultValue:     "check",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -46,7 +46,7 @@ func init() {
 				ModalDisplayName: "Host Command",
 				CLIName:          "command",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Command to execute on the host (for docker-sock, cgroup, nsenter actions)",
+				Description:      "Command to execute on host (docker-sock/cgroup/nsenter), secret name (k8s-secrets), command to run (k8s-deploy), or 'podname command' (k8s-exec)",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -60,7 +60,7 @@ func init() {
 				ModalDisplayName: "Docker Image",
 				CLIName:          "image",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Docker image for docker-sock escape (default: alpine)",
+				Description:      "Container image for docker-sock/k8s-deploy/k8s-exec (default: alpine)",
 				DefaultValue:     "alpine",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -74,7 +74,7 @@ func init() {
 				ModalDisplayName: "Device Path",
 				CLIName:          "path",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Block device path for mount-host (e.g., /dev/sda1). Auto-detected if empty.",
+				Description:      "Block device path for mount-host, or K8s namespace override for k8s-* actions",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -140,6 +140,13 @@ func init() {
 						createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
 							fmt.Sprintf("[Container Escape] Vector available: %s", v))
 					}
+				}
+			} else if strings.HasPrefix(action, "k8s-") {
+				createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+					fmt.Sprintf("[K8s] %s operation on %s", action, processResponse.TaskData.Callback.Host))
+				if action == "k8s-secrets" && strings.Contains(responseText, "secret(s)") {
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[CREDENTIAL ACCESS] K8s secrets enumerated on %s", processResponse.TaskData.Callback.Host), true)
 				}
 			} else if strings.Contains(responseText, "Success") || strings.Contains(responseText, "success") {
 				createArtifact(processResponse.TaskData.Task.ID, "Process Create",
