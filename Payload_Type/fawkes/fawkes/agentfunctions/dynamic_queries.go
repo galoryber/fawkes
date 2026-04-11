@@ -284,6 +284,8 @@ func parsePIDFromArg(taskData *agentstructs.PTTaskMessageAllData) (int, error) {
 	// Try as string (DQF dropdown selection or typed string)
 	pidStr, err := taskData.Args.GetStringArg("pid")
 	if err != nil || pidStr == "" {
+		// Set as int so agent receives numeric 0, not empty string
+		_ = taskData.Args.SetArgValue("pid", 0)
 		return 0, fmt.Errorf("pid parameter not found")
 	}
 
@@ -295,6 +297,7 @@ func parsePIDFromArg(taskData *agentstructs.PTTaskMessageAllData) (int, error) {
 
 	pid, err := strconv.Atoi(pidStr)
 	if err != nil {
+		_ = taskData.Args.SetArgValue("pid", 0)
 		return 0, fmt.Errorf("invalid PID value: %s", pidStr)
 	}
 
