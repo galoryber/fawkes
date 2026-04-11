@@ -23,17 +23,23 @@ func (c *SshExecCommand) Description() string {
 }
 
 type sshExecArgs struct {
-	Host        string `json:"host"`        // target host IP or hostname
-	Username    string `json:"username"`    // username for auth
-	Password    string `json:"password"`    // password for auth (optional if key provided)
-	KeyPath     string `json:"key_path"`    // path to SSH private key on agent's filesystem
-	KeyData     string `json:"key_data"`    // inline SSH private key (PEM format)
-	Command     string `json:"command"`     // command to execute
-	Port        int    `json:"port"`        // SSH port (default: 22)
-	Timeout     int    `json:"timeout"`     // connection+command timeout in seconds (default: 60)
-	Action      string `json:"action"`      // "exec" (default) or "push"
-	Source      string `json:"source"`      // local file path for push action
-	Destination string `json:"destination"` // remote destination path for push action
+	Host        string `json:"host"`         // target host IP or hostname
+	Username    string `json:"username"`     // username for auth
+	Password    string `json:"password"`     // password for auth (optional if key provided)
+	KeyPath     string `json:"key_path"`     // path to SSH private key on agent's filesystem
+	KeyData     string `json:"key_data"`     // inline SSH private key (PEM format)
+	Command     string `json:"command"`      // command to execute
+	Port        int    `json:"port"`         // SSH port (default: 22)
+	Timeout     int    `json:"timeout"`      // connection+command timeout in seconds (default: 60)
+	Action      string `json:"action"`       // exec, push, tunnel-local, tunnel-remote, tunnel-dynamic, tunnel-list, tunnel-stop
+	Source      string `json:"source"`       // local file path for push action
+	Destination string `json:"destination"`  // remote destination path for push action
+	LocalPort   int    `json:"local_port"`   // local port for tunnel (local/dynamic: listen port; remote: forward target)
+	RemoteHost  string `json:"remote_host"`  // remote host for local tunnel forwarding target
+	RemotePort  int    `json:"remote_port"`  // remote port for tunnel (local: target port; remote: listen port)
+	LocalHost   string `json:"local_host"`   // local host for remote tunnel target (default: 127.0.0.1)
+	BindAddress string `json:"bind_address"` // bind address for listeners (default: 127.0.0.1)
+	TunnelID    string `json:"tunnel_id"`    // tunnel ID for stop action
 }
 
 func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
@@ -56,6 +62,17 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 		action = "exec"
 	}
 
+	// Handle tunnel-list and tunnel-stop without SSH connection
+	if action == "tunnel-list" {
+		return sshTunnelList()
+	}
+	if action == "tunnel-stop" {
+		if args.TunnelID == "" {
+			return errorResult("Error: tunnel_id required for tunnel-stop")
+		}
+		return sshTunnelStop(args.TunnelID)
+	}
+
 	if action == "exec" && args.Command == "" {
 		return errorResult("Error: command is required for exec action")
 	}
@@ -66,8 +83,38 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	if action != "exec" && action != "push" {
-		return errorf("Error: unknown action %q. Valid: exec, push", action)
+	if action == "tunnel-local" {
+		if args.LocalPort <= 0 || args.RemoteHost == "" || args.RemotePort <= 0 {
+			return errorResult("Error: local_port, remote_host, and remote_port required for tunnel-local")
+		}
+	}
+
+	if action == "tunnel-remote" {
+		if args.RemotePort <= 0 || args.LocalPort <= 0 {
+			return errorResult("Error: remote_port and local_port required for tunnel-remote")
+		}
+	}
+
+	if action == "tunnel-dynamic" {
+		if args.LocalPort <= 0 {
+			return errorResult("Error: local_port required for tunnel-dynamic")
+		}
+	}
+
+	validActions := map[string]bool{
+		"exec": true, "push": true,
+		"tunnel-local": true, "tunnel-remote": true, "tunnel-dynamic": true,
+	}
+	if !validActions[action] {
+		return errorf("Error: unknown action %q. Valid: exec, push, tunnel-local, tunnel-remote, tunnel-dynamic, tunnel-list, tunnel-stop", action)
+	}
+
+	// Set defaults for tunnel params
+	if args.BindAddress == "" {
+		args.BindAddress = "127.0.0.1"
+	}
+	if args.LocalHost == "" {
+		args.LocalHost = "127.0.0.1"
 	}
 
 	if args.Password == "" && args.KeyPath == "" && args.KeyData == "" {
@@ -141,6 +188,18 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	if err != nil {
 		return errorf("Error connecting to %s: %v", addr, err)
 	}
+
+	// Tunnel actions take ownership of the client (long-running background job)
+	switch action {
+	case "tunnel-local":
+		return sshTunnelLocal(client, args, addr)
+	case "tunnel-remote":
+		return sshTunnelRemote(client, args, addr)
+	case "tunnel-dynamic":
+		return sshTunnelDynamic(client, args, addr)
+	}
+
+	// Non-tunnel actions close client when done
 	defer client.Close()
 
 	if action == "push" {

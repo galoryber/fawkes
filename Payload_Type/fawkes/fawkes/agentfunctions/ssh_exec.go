@@ -10,11 +10,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ssh",
-		Description:         "Execute commands or push files to remote hosts via SSH. Cross-platform lateral movement and tool transfer.",
-		HelpString:          "ssh -host 192.168.1.1 -username root -password pass -command \"whoami\"\nssh -host 192.168.1.1 -username root -key_path /home/user/.ssh/id_rsa -command \"id\"\nssh -action push -host 192.168.1.1 -username root -password pass -source /tmp/payload -destination /tmp/payload",
-		Version:             2,
+		Description:         "Execute commands, push files, or create SSH tunnels to remote hosts. Cross-platform lateral movement, tool transfer, and pivoting.",
+		HelpString:          "ssh -host 192.168.1.1 -username root -password pass -command \"whoami\"\nssh -action push -host 10.0.0.1 -username root -key_path /root/.ssh/id_rsa -source /tmp/payload -destination /tmp/payload\nssh -action tunnel-local -host 10.0.0.1 -username root -password pass -local_port 8080 -remote_host 172.16.0.5 -remote_port 80\nssh -action tunnel-remote -host 10.0.0.1 -username root -password pass -remote_port 9090 -local_port 3389\nssh -action tunnel-dynamic -host 10.0.0.1 -username root -password pass -local_port 1080\nssh -action tunnel-list\nssh -action tunnel-stop -tunnel_id ssh-local-10.0.0.1-8080",
+		Version:             3,
+		MitreAttackMappings: []string{"T1021.004", "T1570", "T1572"}, // SSH + Lateral Tool Transfer + Protocol Tunneling
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1021.004", "T1570"}, // Remote Services: SSH + Lateral Tool Transfer
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -27,9 +27,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "exec: execute command (default). push: transfer a local file to the remote host.",
+				Description:      "exec: execute command (default). push: transfer file. tunnel-local: local port forward (-L). tunnel-remote: remote port forward (-R). tunnel-dynamic: SOCKS proxy (-D). tunnel-list: show active tunnels. tunnel-stop: stop a tunnel.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"exec", "push"},
+				Choices:          []string{"exec", "push", "tunnel-local", "tunnel-remote", "tunnel-dynamic", "tunnel-list", "tunnel-stop"},
 				DefaultValue:     "exec",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
@@ -147,6 +147,61 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
+			{
+				Name:             "local_port",
+				CLIName:          "local_port",
+				ModalDisplayName: "Local Port",
+				Description:      "Local port to listen on (tunnel-local/dynamic) or forward to (tunnel-remote)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "remote_host",
+				CLIName:          "remote_host",
+				ModalDisplayName: "Remote Host (Tunnel Target)",
+				Description:      "Target host to forward to through the SSH tunnel (tunnel-local only)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "remote_port",
+				CLIName:          "remote_port",
+				ModalDisplayName: "Remote Port",
+				Description:      "Remote port (tunnel-local: target port; tunnel-remote: listen port on SSH host)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "bind_address",
+				CLIName:          "bind_address",
+				ModalDisplayName: "Bind Address",
+				Description:      "Address to bind tunnel listener (default: 127.0.0.1, use 0.0.0.0 for all interfaces)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "127.0.0.1",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "tunnel_id",
+				CLIName:          "tunnel_id",
+				ModalDisplayName: "Tunnel ID",
+				Description:      "ID of the tunnel to stop (shown by tunnel-list)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -163,9 +218,17 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 
 			msg := fmt.Sprintf("OPSEC WARNING: SSH %s as %s on %s.", action, username, host)
-			if action == "push" {
+			switch {
+			case action == "push":
 				source, _ := taskData.Args.GetStringArg("source")
 				msg += fmt.Sprintf(" Pushing local file '%s' to remote host — file write is a lateral tool transfer indicator (T1570).", source)
+			case action == "tunnel-local" || action == "tunnel-remote" || action == "tunnel-dynamic":
+				msg += " Creating SSH tunnel (T1572 Protocol Tunneling). Tunnel creates persistent TCP connections that may be detected by EDR/NTA."
+				if action == "tunnel-local" {
+					msg += " Local port forward opens a listening socket on the agent host."
+				} else if action == "tunnel-dynamic" {
+					msg += " SOCKS proxy opens a listening socket on the agent host."
+				}
 			}
 			msg += " SSH sessions are logged in auth.log/secure. Connection metadata (source IP, username, key fingerprint) is recorded by sshd."
 
