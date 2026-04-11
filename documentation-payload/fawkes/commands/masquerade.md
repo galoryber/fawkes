@@ -27,6 +27,8 @@ File masquerading — copy or rename files with deceptive names to evade detecti
 | space | Trailing spaces hide the real extension | `payload.txt                              .exe` |
 | process | Match legitimate OS process names | `payload.exe` → `svchost.exe` |
 | match_ext | Change file extension to benign type | `payload.exe` → `payload.txt` |
+| hide | Hide file/directory from standard enumeration | Windows: +H/+S attrs. Linux: dot-prefix. macOS: UF_HIDDEN + dot-prefix |
+| unhide | Reverse hiding operations | Restores visibility (clears attrs, removes dot-prefix) |
 
 ## Usage
 
@@ -48,6 +50,15 @@ masquerade -source /tmp/payload -technique process -disguise sshd
 
 # Rename in-place instead of copying
 masquerade -source C:\payload.exe -technique match_ext -disguise txt -in_place true
+
+# Hide a file from standard enumeration
+masquerade -source /tmp/implant -technique hide
+
+# Unhide a previously hidden file
+masquerade -source /tmp/.implant -technique unhide
+
+# Hide a directory (Windows: +Hidden +System attributes)
+masquerade -source C:\Tools\payload_dir -technique hide
 ```
 
 ## MITRE ATT&CK Mapping
@@ -55,3 +66,4 @@ masquerade -source C:\payload.exe -technique match_ext -disguise txt -in_place t
 - **T1036** — Masquerading
 - **T1036.005** — Match Legitimate Name or Location
 - **T1036.007** — Double File Extension
+- **T1564.001** — Hidden Files and Directories (hide/unhide techniques)

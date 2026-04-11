@@ -11,11 +11,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "masquerade",
-		Description:         "File masquerading — copy or rename files with deceptive names to evade detection. Supports double extensions, RtL override, trailing spaces, and process name matching.",
-		HelpString:          "masquerade -source payload.exe -technique double_ext -disguise document.pdf\nmasquerade -source payload.exe -technique rtlo -disguise txt\nmasquerade -source payload.exe -technique space -disguise txt\nmasquerade -source payload.exe -technique process -disguise svchost\nmasquerade -source payload.exe -technique match_ext -disguise txt -in_place true",
-		Version:             1,
+		Description:         "File masquerading and hiding — disguise files with deceptive names or hide from standard enumeration. Supports double extensions, RtL override, trailing spaces, process name matching, and file/directory hiding.",
+		HelpString:          "masquerade -source payload.exe -technique double_ext -disguise document.pdf\nmasquerade -source /tmp/implant -technique hide\nmasquerade -source /tmp/.implant -technique unhide\nmasquerade -source payload.exe -technique rtlo -disguise txt\nmasquerade -source payload.exe -technique process -disguise svchost",
+		Version:             2,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1036", "T1036.007", "T1036.005"},
+		MitreAttackMappings: []string{"T1036", "T1036.007", "T1036.005", "T1564.001"},
 		SupportedUIFeatures: []string{},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "masquerade_new.js"),
@@ -46,7 +46,7 @@ func init() {
 				Name:          "technique",
 				CLIName:       "technique",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"double_ext", "rtlo", "space", "process", "match_ext"},
+				Choices:       []string{"double_ext", "rtlo", "space", "process", "match_ext", "hide", "unhide"},
 				Description:   "Masquerade technique: double_ext (doc.pdf.exe), rtlo (Unicode reverse), space (trailing spaces), process (match OS process names), match_ext (change extension)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
