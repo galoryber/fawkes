@@ -13,7 +13,7 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ssh-keys",
 		Description:         "Read or inject SSH authorized_keys for persistence/lateral movement (T1098.004)",
-		HelpString:          "ssh-keys -action <list|add|remove|read-private|enumerate> [-key <ssh_public_key>] [-user <username>] [-path <file_path>]",
+		HelpString:          "ssh-keys -action <list|add|remove|read-private|enumerate|generate> [-key <ssh_public_key>] [-user <username>] [-path <file_path>]",
 		Version:             1,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -24,7 +24,7 @@ func init() {
 			Author:     "@galoryber",
 		},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -32,8 +32,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"list", "add", "remove", "read-private", "enumerate"},
-				Description:      "Action: list authorized_keys, add a key, remove a key, read private keys, or enumerate SSH config/known_hosts for lateral movement targets",
+				Choices:          []string{"list", "add", "remove", "read-private", "enumerate", "generate"},
+				Description:      "Action: list authorized_keys, add a key, remove a key, read private keys, enumerate SSH config/known_hosts, or generate a new key pair for persistence",
 				DefaultValue:     "list",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -114,7 +114,7 @@ func init() {
 				return response
 			}
 			action, _ := processResponse.TaskData.Args.GetStringArg("action")
-			if action != "read-private" {
+			if action != "read-private" && action != "generate" {
 				return response
 			}
 			// Extract SSH private keys from read-private output

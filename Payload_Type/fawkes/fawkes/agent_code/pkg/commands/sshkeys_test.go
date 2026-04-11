@@ -1,5 +1,3 @@
-//go:build !windows
-
 package commands
 
 import (
@@ -602,5 +600,164 @@ func TestSshKeysPlainTextList(t *testing.T) {
 	// Verify the action dispatched correctly (not "Unknown action" error).
 	if strings.Contains(result.Output, "Unknown action") {
 		t.Errorf("plain text 'list' should dispatch to list action, got: %s", result.Output)
+	}
+}
+
+// --- sshKeysGenerate tests ---
+
+func TestSshKeysGenerate_Basic(t *testing.T) {
+	tmp := t.TempDir()
+	sshDir := filepath.Join(tmp, ".ssh")
+
+	cmd := &SSHKeysCommand{}
+	params, _ := json.Marshal(sshKeysArgs{
+		Action: "generate",
+		Path:   filepath.Join(sshDir, "id_ed25519"),
+	})
+	task := structs.NewTask("t", "ssh-keys", "")
+	task.Params = string(params)
+	result := cmd.Execute(task)
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Generated ed25519 key pair") {
+		t.Errorf("output should mention key generation, got: %s", result.Output)
+	}
+
+	// Verify private key file was created
+	privKeyPath := filepath.Join(sshDir, "id_ed25519")
+	privContent, err := os.ReadFile(privKeyPath)
+	if err != nil {
+		t.Fatalf("private key file not created: %v", err)
+	}
+	if !strings.Contains(string(privContent), "PRIVATE KEY") {
+		t.Error("private key file should contain PEM-encoded key")
+	}
+
+	// Verify public key file was created
+	pubContent, err := os.ReadFile(privKeyPath + ".pub")
+	if err != nil {
+		t.Fatalf("public key file not created: %v", err)
+	}
+	if !strings.Contains(string(pubContent), "ssh-ed25519") {
+		t.Error("public key should be in ssh-ed25519 format")
+	}
+
+	// Verify authorized_keys was created with the public key
+	authContent, err := os.ReadFile(filepath.Join(sshDir, "authorized_keys"))
+	if err != nil {
+		t.Fatalf("authorized_keys not created: %v", err)
+	}
+	if !strings.Contains(string(authContent), "ssh-ed25519") {
+		t.Error("authorized_keys should contain the generated public key")
+	}
+}
+
+func TestSshKeysGenerate_NoInstall(t *testing.T) {
+	tmp := t.TempDir()
+	sshDir := filepath.Join(tmp, ".ssh")
+
+	cmd := &SSHKeysCommand{}
+	params, _ := json.Marshal(sshKeysArgs{
+		Action: "generate",
+		Key:    "noinstall",
+		Path:   filepath.Join(sshDir, "id_ed25519"),
+	})
+	task := structs.NewTask("t", "ssh-keys", "")
+	task.Params = string(params)
+	result := cmd.Execute(task)
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "Skipped authorized_keys") {
+		t.Errorf("output should say skipped install, got: %s", result.Output)
+	}
+
+	// Verify authorized_keys was NOT created
+	_, err := os.ReadFile(filepath.Join(sshDir, "authorized_keys"))
+	if err == nil {
+		t.Error("authorized_keys should not exist when key=noinstall")
+	}
+}
+
+func TestSshKeysGenerate_CustomKeyName(t *testing.T) {
+	tmp := t.TempDir()
+	sshDir := filepath.Join(tmp, ".ssh")
+
+	cmd := &SSHKeysCommand{}
+	params, _ := json.Marshal(sshKeysArgs{
+		Action: "generate",
+		Path:   filepath.Join(sshDir, "id_backdoor"),
+	})
+	task := structs.NewTask("t", "ssh-keys", "")
+	task.Params = string(params)
+	result := cmd.Execute(task)
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+
+	// Verify custom-named key files exist
+	if _, err := os.Stat(filepath.Join(sshDir, "id_backdoor")); os.IsNotExist(err) {
+		t.Error("custom-named private key should exist")
+	}
+	if _, err := os.Stat(filepath.Join(sshDir, "id_backdoor.pub")); os.IsNotExist(err) {
+		t.Error("custom-named public key should exist")
+	}
+}
+
+func TestSshKeysGenerate_ReturnsPrivateKey(t *testing.T) {
+	tmp := t.TempDir()
+	sshDir := filepath.Join(tmp, ".ssh")
+
+	cmd := &SSHKeysCommand{}
+	params, _ := json.Marshal(sshKeysArgs{
+		Action: "generate",
+		Path:   filepath.Join(sshDir, "id_ed25519"),
+	})
+	task := structs.NewTask("t", "ssh-keys", "")
+	task.Params = string(params)
+	result := cmd.Execute(task)
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+
+	// Output should contain the private key for the operator
+	if !strings.Contains(result.Output, "PRIVATE KEY") {
+		t.Error("output should contain the private key for operator use")
+	}
+	// Output should contain the public key
+	if !strings.Contains(result.Output, "ssh-ed25519") {
+		t.Error("output should contain the public key")
+	}
+}
+
+func TestSshKeysGenerate_DirPermissions(t *testing.T) {
+	tmp := t.TempDir()
+	sshDir := filepath.Join(tmp, "newuser", ".ssh")
+
+	cmd := &SSHKeysCommand{}
+	params, _ := json.Marshal(sshKeysArgs{
+		Action: "generate",
+		Path:   filepath.Join(sshDir, "id_ed25519"),
+	})
+	task := structs.NewTask("t", "ssh-keys", "")
+	task.Params = string(params)
+	result := cmd.Execute(task)
+
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+
+	// Verify .ssh directory was auto-created
+	info, err := os.Stat(sshDir)
+	if err != nil {
+		t.Fatalf(".ssh dir should be created: %v", err)
+	}
+	if !info.IsDir() {
+		t.Error(".ssh should be a directory")
 	}
 }
