@@ -117,5 +117,20 @@ func init() {
 			createArtifact(task.Task.ID, "File Write", "Move "+source+" to "+destination)
 			return response
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "Moved") || strings.Contains(responseText, "moved") {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[FILE] mv on %s: %s", processResponse.TaskData.Callback.Host, responseText), false)
+			}
+			return response
+		},
 	})
 }

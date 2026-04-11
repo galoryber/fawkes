@@ -1,6 +1,9 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
@@ -72,6 +75,22 @@ func init() {
 				ArtifactMessage:  "Disconnect P2P linked agent",
 			})
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "unlinked") || strings.Contains(responseText, "Disconnected") || strings.Contains(responseText, "disconnected") {
+				connID, _ := processResponse.TaskData.Args.GetStringArg("connection_id")
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[P2P] Unlinked agent %s from %s", connID, processResponse.TaskData.Callback.Host), false)
+			}
 			return response
 		},
 	})

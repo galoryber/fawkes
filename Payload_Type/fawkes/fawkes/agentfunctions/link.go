@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -159,6 +160,22 @@ func init() {
 				ArtifactMessage:  artifact,
 			})
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "linked") || strings.Contains(responseText, "Connected") || strings.Contains(responseText, "connected") {
+				host, _ := processResponse.TaskData.Args.GetStringArg("host")
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[P2P] Link established to %s from %s", host, processResponse.TaskData.Callback.Host), false)
+			}
 			return response
 		},
 	})
