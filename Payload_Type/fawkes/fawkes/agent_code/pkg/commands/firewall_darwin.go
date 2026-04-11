@@ -40,8 +40,14 @@ func (c *FirewallCommand) Execute(task structs.Task) structs.CommandResult {
 		return darwinFirewallEnable(true)
 	case "disable":
 		return darwinFirewallEnable(false)
+	case "pf-add":
+		return darwinPfAdd(args)
+	case "pf-delete":
+		return darwinPfDelete(args)
+	case "pf-list":
+		return darwinPfList(args)
 	default:
-		return errorf("Unknown action: %s\nAvailable: list, add, delete, enable, disable, status", args.Action)
+		return errorf("Unknown action: %s\nAvailable: list, add, delete, enable, disable, status, pf-add, pf-delete, pf-list", args.Action)
 	}
 }
 
@@ -155,6 +161,97 @@ func darwinFirewallDelete(args firewallArgs) structs.CommandResult {
 	}
 
 	return successf("Removed: %s", strings.TrimSpace(string(out)))
+}
+
+// buildPfRule constructs a pf rule string from firewall args.
+func buildPfRule(args firewallArgs) string {
+	action := "pass"
+	if strings.EqualFold(args.RuleAction, "block") {
+		action = "block"
+	}
+
+	direction := "in"
+	if strings.EqualFold(args.Direction, "out") {
+		direction = "out"
+	}
+
+	rule := fmt.Sprintf("%s %s", action, direction)
+
+	proto := strings.ToLower(args.Protocol)
+	if proto != "" && proto != "any" {
+		rule += fmt.Sprintf(" proto %s", proto)
+	}
+
+	rule += " from any to any"
+	if args.Port != "" {
+		rule += fmt.Sprintf(" port %s", args.Port)
+	}
+
+	return rule
+}
+
+// darwinPfAdd adds a pf rule to a named anchor.
+func darwinPfAdd(args firewallArgs) structs.CommandResult {
+	anchor := args.Name
+	if anchor == "" {
+		anchor = "fawkes"
+	}
+
+	rule := buildPfRule(args)
+
+	// Read existing rules in the anchor (may fail if anchor doesn't exist yet)
+	existing, _ := execCmdTimeout("pfctl", "-a", anchor, "-s", "rules")
+	allRules := strings.TrimSpace(string(existing))
+	if allRules != "" {
+		allRules += "\n"
+	}
+	allRules += rule + "\n"
+
+	// Load rules into anchor via stdin
+	cmd, cancel := execCmdCtx("pfctl", "-a", anchor, "-f", "/dev/stdin")
+	defer cancel()
+	cmd.Stdin = strings.NewReader(allRules)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return errorf("pfctl add rule failed: %v\n%s\nRule: %s", err, string(out), rule)
+	}
+
+	return successf("Added pf rule to anchor '%s': %s", anchor, rule)
+}
+
+// darwinPfDelete flushes all rules from a named pf anchor (clean removal).
+func darwinPfDelete(args firewallArgs) structs.CommandResult {
+	anchor := args.Name
+	if anchor == "" {
+		anchor = "fawkes"
+	}
+
+	out, err := execCmdTimeout("pfctl", "-a", anchor, "-F", "rules")
+	if err != nil {
+		return errorf("pfctl flush anchor failed: %v\n%s", err, string(out))
+	}
+
+	return successf("Flushed all rules from pf anchor '%s'\n%s", anchor, strings.TrimSpace(string(out)))
+}
+
+// darwinPfList lists rules in a named pf anchor.
+func darwinPfList(args firewallArgs) structs.CommandResult {
+	anchor := args.Name
+	if anchor == "" {
+		anchor = "fawkes"
+	}
+
+	out, err := execCmdTimeout("pfctl", "-a", anchor, "-s", "rules")
+	if err != nil {
+		return errorf("pfctl list anchor rules failed: %v\n%s", err, string(out))
+	}
+
+	output := strings.TrimSpace(string(out))
+	if output == "" {
+		return successf("No rules in pf anchor '%s'", anchor)
+	}
+
+	return successf("PF anchor '%s' rules:\n%s", anchor, output)
 }
 
 func darwinFirewallList() structs.CommandResult {

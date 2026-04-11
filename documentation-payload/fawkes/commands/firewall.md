@@ -15,7 +15,7 @@ Manage firewall rules and check firewall status. Windows uses `HNetCfg.FwPolicy2
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | Yes | list | Action: `list`, `add`, `delete`, `enable`, `disable`, `status` |
+| action | Yes | list | Action: `list`, `add`, `delete`, `enable`, `disable`, `status`, `pf-add`, `pf-delete`, `pf-list` |
 | name | For add/delete/enable/disable | - | Rule name |
 | direction | No | in | Rule direction: `in` (inbound) or `out` (outbound) |
 | rule_action | No | allow | Rule action: `allow` or `block` |
@@ -118,6 +118,26 @@ firewall -action disable
 ```
 
 Root access is required for enable/disable/add/delete and full pf rule listing. ALF status is available at any privilege level.
+
+### macOS PF Anchor Rules
+
+For port/protocol-level packet filtering (beyond ALF's application-level control), use the `pf-add`, `pf-delete`, and `pf-list` actions. These manage rules in named pf anchors for clean isolation and reversibility.
+
+```
+# Add a rule to allow inbound TCP port 4444 in the "fawkes" anchor
+firewall -action pf-add -protocol tcp -port 4444 -rule_action allow -direction in
+
+# Add a rule to block outbound DNS to prevent EDR callbacks
+firewall -action pf-add -protocol udp -port 53 -rule_action block -direction out -name myanchor
+
+# List rules in the pf anchor
+firewall -action pf-list -name fawkes
+
+# Clean removal — flush all rules from the anchor
+firewall -action pf-delete -name fawkes
+```
+
+The `-name` parameter specifies the pf anchor name (default: "fawkes"). Flushing the anchor removes all rules cleanly, making operations fully reversible.
 
 ## Operational Notes
 
