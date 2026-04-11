@@ -29,23 +29,28 @@ type TicketCommand struct{}
 
 func (c *TicketCommand) Name() string { return "ticket" }
 func (c *TicketCommand) Description() string {
-	return "Forge Kerberos tickets (Golden/Silver) from extracted keys (T1558.001)"
+	return "Forge, request, renew, and manipulate Kerberos tickets (T1558.001, T1550.003)"
 }
 
 type ticketArgs struct {
-	Action      string `json:"action"`      // forge, request, s4u
-	Realm       string `json:"realm"`       // domain (e.g., CORP.LOCAL)
-	Username    string `json:"username"`    // target identity (e.g., Administrator)
-	UserRID     int    `json:"user_rid"`    // RID (default: 500 for Administrator)
-	DomainSID   string `json:"domain_sid"`  // domain SID (e.g., S-1-5-21-...)
-	Key         string `json:"key"`         // hex AES256 or NT hash key
-	KeyType     string `json:"key_type"`    // aes256, aes128, rc4 (default: aes256)
-	KVNO        int    `json:"kvno"`        // key version number (default: 2)
-	Lifetime    int    `json:"lifetime"`    // ticket lifetime in hours (default: 24)
-	Format      string `json:"format"`      // kirbi, ccache (default: kirbi)
-	SPN         string `json:"spn"`         // Silver Ticket: service/host, or S4U2Proxy: target SPN
-	Server      string `json:"server"`      // KDC address for request/s4u action
-	Impersonate string `json:"impersonate"` // S4U: user to impersonate (e.g., Administrator)
+	Action        string `json:"action"`          // forge, request, s4u, diamond, renew
+	Realm         string `json:"realm"`           // domain (e.g., CORP.LOCAL)
+	Username      string `json:"username"`        // target identity (e.g., Administrator)
+	UserRID       int    `json:"user_rid"`        // RID (default: 500 for Administrator)
+	DomainSID     string `json:"domain_sid"`      // domain SID (e.g., S-1-5-21-...)
+	Key           string `json:"key"`             // hex AES256 or NT hash key
+	KeyType       string `json:"key_type"`        // aes256, aes128, rc4 (default: aes256)
+	KVNO          int    `json:"kvno"`            // key version number (default: 2)
+	Lifetime      int    `json:"lifetime"`        // ticket lifetime in hours (default: 24)
+	Format        string `json:"format"`          // kirbi, ccache (default: kirbi)
+	SPN           string `json:"spn"`             // Silver Ticket: service/host, or S4U2Proxy: target SPN
+	Server        string `json:"server"`          // KDC address for request/s4u/diamond/renew action
+	Impersonate   string `json:"impersonate"`     // S4U: user to impersonate (e.g., Administrator)
+	KrbtgtKey     string `json:"krbtgt_key"`      // Diamond: hex krbtgt key for ticket decryption
+	KrbtgtKeyType string `json:"krbtgt_key_type"` // Diamond: krbtgt key type (aes256/aes128/rc4)
+	TargetUser    string `json:"target_user"`     // Diamond: identity to impersonate in modified ticket
+	TargetRID     int    `json:"target_rid"`      // Diamond: RID of target user (default: 500)
+	Ticket        string `json:"ticket"`          // Renew: base64 kirbi ticket to renew
 }
 
 func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
@@ -65,8 +70,12 @@ func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
 		return ticketRequest(args)
 	case "s4u":
 		return ticketS4U(args)
+	case "diamond":
+		return ticketDiamond(args)
+	case "renew":
+		return ticketRenew(args)
 	default:
-		return errorf("Unknown action: %s. Use: forge, request, s4u", args.Action)
+		return errorf("Unknown action: %s. Use: forge, request, s4u, diamond, renew", args.Action)
 	}
 }
 

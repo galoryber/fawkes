@@ -7,13 +7,17 @@ hidden = false
 
 ## Summary
 
-Forge, request, or delegate Kerberos tickets using extracted encryption keys.
+Forge, request, renew, or delegate Kerberos tickets using extracted encryption keys.
 
 **Forge — Golden Ticket** (T1558.001): Forges a TGT using the `krbtgt` account's encryption key. Pure offline cryptographic operation — no network traffic.
 
 **Forge — Silver Ticket** (T1558.002): Forges a TGS for a specific service using the service account's encryption key. Also offline.
 
 **Request — Overpass-the-Hash** (T1550.002): Performs an AS-REQ exchange with a KDC using a stolen key (AES256, AES128, or RC4/NTLM hash) to obtain a legitimate TGT. This is an online operation that contacts the Domain Controller on port 88.
+
+**Diamond Ticket** (T1558.001): Authenticates as a valid user to the KDC (real AS exchange), then decrypts and modifies the TGT using the krbtgt key. This creates a ticket with real KDC timestamps and a corresponding AS exchange in logs, making it significantly harder to detect than a Golden Ticket. Requires both a user key and the krbtgt key.
+
+**Renew**: Extends an existing TGT's lifetime by sending a TGS-REQ with the RENEW flag. Accepts a base64 kirbi ticket. Useful for maintaining persistent Kerberos access without re-authenticating.
 
 **S4U — Constrained Delegation** (T1134.001): Performs S4U2Self + S4U2Proxy to obtain a service ticket for an impersonated user via constrained delegation. Requires a service account with `msDS-AllowedToDelegateTo` and `TrustedToAuthForDelegation` (protocol transition). Online operation against the KDC.
 
@@ -23,19 +27,24 @@ Outputs tickets in kirbi format (for Rubeus/Mimikatz on Windows) or ccache forma
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| `-action` | Yes | Action: `forge` (offline), `request` (Overpass-the-Hash), or `s4u` (constrained delegation) |
+| `-action` | Yes | Action: `forge`, `request`, `diamond`, `renew`, or `s4u` |
 | `-realm` | Yes | Kerberos realm / AD domain (e.g., `CORP.LOCAL`) |
-| `-username` | Yes | Username for the ticket (forge/request) or service account with delegation (s4u) |
-| `-key` | Yes | Encryption key in hex (from DCSync, hashdump, etc.) |
+| `-username` | Yes | Username for the ticket (forge/request/diamond) or service account (s4u) |
+| `-key` | Yes* | Encryption key in hex (from DCSync, hashdump, etc.). *Not needed for renew.* |
 | `-key_type` | No | Key type: `aes256` (default), `aes128`, `rc4`/`ntlm` |
 | `-format` | No | Output format: `kirbi` (default) or `ccache` |
-| `-server` | No* | KDC address (e.g., `dc01.corp.local`). *Required for request and s4u.* |
+| `-server` | No* | KDC address (e.g., `dc01.corp.local`). *Required for request, diamond, renew, s4u.* |
 | `-impersonate` | No* | User to impersonate (e.g., `Administrator`). *Required for s4u.* |
 | `-spn` | No* | Target SPN. Silver Ticket: `cifs/dc01.corp.local`. S4U: FQDN SPN to delegate to. *Required for s4u.* |
 | `-domain_sid` | No* | Domain SID (e.g., `S-1-5-21-...`). *Required for forge.* |
 | `-user_rid` | No | User RID for forge (default: 500) |
 | `-kvno` | No | Key Version Number for forge (default: 2) |
 | `-lifetime` | No | Ticket lifetime in hours for forge (default: 24) |
+| `-krbtgt_key` | No* | Hex krbtgt key for decrypting/re-encrypting TGT. *Required for diamond.* |
+| `-krbtgt_key_type` | No | Krbtgt key type: `aes256` (default), `aes128`, `rc4` |
+| `-target_user` | No | Diamond: user identity to embed in modified ticket (defaults to username) |
+| `-target_rid` | No | Diamond: RID for the target user (default: 500) |
+| `-ticket` | No* | Base64 kirbi ticket for renewal. *Required for renew.* |
 
 ## Usage
 
@@ -102,6 +111,28 @@ ticket -action s4u -realm CORP.LOCAL -username svc_sql -key <aes256_key> -server
 {{% notice info %}}
 **Important:** Use FQDN-style SPNs (e.g., `CIFS/dc01.corp.local` not `CIFS/dc01`). The KDC may return empty responses for short SPNs.
 {{% /notice %}}
+
+### Diamond Ticket (Evasion)
+
+Authenticate as a low-privilege user, then modify the TGT to impersonate a privileged user. This creates a real AS exchange in KDC logs, making the ticket harder to detect:
+
+```
+ticket -action diamond -realm CORP.LOCAL -username jsmith -key <user_aes256_key> -krbtgt_key <krbtgt_aes256_key> -server dc01.corp.local -target_user Administrator
+```
+
+With RC4 keys:
+
+```
+ticket -action diamond -realm CORP.LOCAL -username jsmith -key <user_ntlm_hash> -key_type rc4 -krbtgt_key <krbtgt_ntlm_hash> -krbtgt_key_type rc4 -server dc01.corp.local -target_user Administrator -format ccache
+```
+
+### Renew TGT
+
+Extend an existing TGT's lifetime without re-authenticating:
+
+```
+ticket -action renew -realm CORP.LOCAL -server dc01.corp.local -ticket <base64_kirbi_from_previous_request>
+```
 
 ### DCSync + OPtH Workflow
 
@@ -181,6 +212,10 @@ impacket-psexec -k -no-pass corp.local/Administrator@dc01
 
 **Request** (Overpass-the-Hash) generates a real AS-REQ to the KDC on port 88. This produces a legitimate 4768 (TGT Request) event — blends with normal authentication traffic.
 
+**Diamond** generates a real AS-REQ to the KDC (like Request), then modifies the ticket offline. The KDC logs show a legitimate authentication for the auth user — the identity switch to the target user is invisible to the KDC. PAC is stripped, so services with strict PAC validation may reject the ticket.
+
+**Renew** generates a TGS-REQ with the RENEW flag — produces event ID 4769. Normal renewal traffic blends well with legitimate Kerberos operations.
+
 **S4U** generates TGS-REQ traffic to the KDC (3 requests: AS-REQ for TGT, S4U2Self TGS-REQ, S4U2Proxy TGS-REQ). Produces event ID 4769 for the S4U2Proxy service ticket. The service account must have constrained delegation configured with protocol transition (`TrustedToAuthForDelegation`).
 {{% /notice %}}
 
@@ -192,7 +227,8 @@ impacket-psexec -k -no-pass corp.local/Administrator@dc01
 
 ## MITRE ATT&CK Mapping
 
-- **T1558.001** — Steal or Forge Kerberos Tickets: Golden Ticket
-- **T1558.002** — Steal or Forge Kerberos Tickets: Silver Ticket
-- **T1550.002** — Use Alternate Authentication Material: Pass the Hash (Overpass-the-Hash)
+- **T1558.001** — Steal or Forge Kerberos Tickets: Golden Ticket (forge, diamond)
+- **T1558.002** — Steal or Forge Kerberos Tickets: Silver Ticket (forge with SPN)
+- **T1550.002** — Use Alternate Authentication Material: Pass the Hash (Overpass-the-Hash / request)
+- **T1550.001** — Use Alternate Authentication Material: Application Access Token (renew)
 - **T1134.001** — Access Token Manipulation: Token Impersonation/Theft (S4U Constrained Delegation)
