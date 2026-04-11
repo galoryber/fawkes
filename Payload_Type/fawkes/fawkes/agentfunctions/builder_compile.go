@@ -151,7 +151,7 @@ func executeCompilation(command, payloadUUID string, garble bool) (compileResult
 
 // collectPayloadOutput reads the built binary, applies shellcode conversion if needed,
 // and populates the build response with the final payload and filename.
-func collectPayloadOutput(resp *agentstructs.PayloadBuildResponse, payloadName, mode, targetOs string) {
+func collectPayloadOutput(resp *agentstructs.PayloadBuildResponse, payloadName, mode, targetOs, payloadUUID string) {
 	payloadBytes, err := os.ReadFile(fmt.Sprintf("/build/%s", payloadName))
 	if err != nil {
 		resp.Success = false
@@ -175,6 +175,13 @@ func collectPayloadOutput(resp *agentstructs.PayloadBuildResponse, payloadName, 
 		extension := "bin"
 		filename := fmt.Sprintf("fawkes.%s", extension)
 		resp.UpdatedFilename = &filename
+		// Track shellcode artifact in Mythic file vault
+		mythicrpc.SendMythicRPCFileCreate(mythicrpc.MythicRPCFileCreateMessage{
+			PayloadUUID:  payloadUUID,
+			FileContents: shellcode,
+			Filename:     filename,
+			Comment:      fmt.Sprintf("sRDI shellcode — OS: %s, Mode: %s, DLL size: %d, Shellcode size: %d", targetOs, mode, len(payloadBytes), len(shellcode)),
+		})
 		return
 	}
 
@@ -184,6 +191,13 @@ func collectPayloadOutput(resp *agentstructs.PayloadBuildResponse, payloadName, 
 	extension := payloadFileExtension(mode, targetOs)
 	filename := fmt.Sprintf("fawkes.%s", extension)
 	resp.UpdatedFilename = &filename
+	// Track payload artifact in Mythic file vault
+	mythicrpc.SendMythicRPCFileCreate(mythicrpc.MythicRPCFileCreateMessage{
+		PayloadUUID:  payloadUUID,
+		FileContents: payloadBytes,
+		Filename:     filename,
+		Comment:      fmt.Sprintf("Payload — OS: %s, Mode: %s, Size: %d bytes", targetOs, mode, len(payloadBytes)),
+	})
 }
 
 // payloadFileExtension returns the file extension for the given build mode and OS.

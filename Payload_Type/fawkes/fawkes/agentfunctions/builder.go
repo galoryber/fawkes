@@ -253,7 +253,7 @@ func build(payloadBuildMsg agentstructs.PayloadBuildMessage) agentstructs.Payloa
 	})
 
 	// Collect built payload (read binary, convert shellcode if needed, set filename)
-	collectPayloadOutput(&payloadBuildResponse, payloadName, mode, targetOs)
+	collectPayloadOutput(&payloadBuildResponse, payloadName, mode, targetOs, payloadBuildMsg.PayloadUUID)
 
 	return payloadBuildResponse
 }
