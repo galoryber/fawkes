@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -16,6 +17,10 @@ func init() {
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1187"},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "coerce_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,

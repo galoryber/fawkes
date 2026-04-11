@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -16,6 +17,10 @@ func init() {
 		Version:             1,
 		MitreAttackMappings: []string{"T1134.001"}, // Access Token Manipulation: Token Impersonation/Theft
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "tokenstore_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},

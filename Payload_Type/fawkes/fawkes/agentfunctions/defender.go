@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -16,6 +17,10 @@ func init() {
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1562.001"}, // Impair Defenses: Disable or Modify Tools
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "defender_new.js"),
+			Author:     "@galoryber",
+		},
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
