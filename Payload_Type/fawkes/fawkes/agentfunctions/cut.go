@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "cut",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "cut_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Extract fields or character ranges from file lines. Like Unix cut — supports field and character modes with custom delimiters.",
 		HelpString:          "cut -path /etc/passwd -delimiter : -fields 1,7\ncut -path data.csv -delimiter , -fields 2-4\ncut -path file.txt -chars 1-10",
 		Version:             1,

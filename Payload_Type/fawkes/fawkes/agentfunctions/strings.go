@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "strings",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "strings_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Extract printable strings from files. Find embedded text, URLs, credentials in binaries.",
 		HelpString:          "strings -path /tmp/payload.bin\nstrings -path C:\\Windows\\System32\\cmd.exe -min_length 8\nstrings -path /usr/bin/ssh -pattern http\nstrings -path malware.exe -min_length 6 -pattern password",
 		Version:             1,

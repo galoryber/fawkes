@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "sort",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sort_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Sort lines of a file. Supports alphabetic, numeric, reverse, and unique modes.",
 		HelpString:          "sort -path /tmp/data.txt\nsort -path /var/log/auth.log -reverse true\nsort -path results.txt -numeric true -unique true",
 		Version:             1,

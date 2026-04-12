@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "tr",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "tr_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Translate, squeeze, or delete characters in file content. Like Unix tr — supports character classes and ranges.",
 		HelpString:          "tr -path /tmp/data.txt -from [:lower:] -to [:upper:]\ntr -path file.txt -delete [:digit:]\ntr -path file.txt -from a-z -to A-Z\ntr -path file.txt -squeeze true",
 		Version:             1,

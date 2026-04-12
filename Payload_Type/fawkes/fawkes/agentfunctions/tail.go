@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "tail",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "tail_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Read the first or last N lines (or bytes) of a file without transferring the entire contents.",
 		HelpString:          "tail -path /var/log/auth.log\ntail -path /var/log/syslog -lines 50\ntail -path /etc/passwd -head true\ntail -path /tmp/data.bin -bytes 256",
 		Version:             1,

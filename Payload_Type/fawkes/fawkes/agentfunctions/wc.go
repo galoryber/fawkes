@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "wc",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "wc_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Count lines, words, characters, and bytes in files. Directory mode with glob pattern support.",
 		HelpString:          "wc -path /etc/passwd\nwc -path C:\\Users\\setup\\data.csv\nwc -path /var/log -pattern *.log",
 		Version:             1,
