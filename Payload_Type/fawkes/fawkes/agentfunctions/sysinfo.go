@@ -30,6 +30,7 @@ func init() {
 			"hostProfileSecurityDone":   hostProfileSecurityDone,
 			"hostProfilePrivescDone":    hostProfilePrivescDone,
 			"hostProfilePersistDone":    hostProfilePersistDone,
+			"reconFullDone":             reconFullDone,
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -37,8 +38,8 @@ func init() {
 				CLIName:          "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"info", "full-profile"},
-				Description:      "info: collect system information (default). full-profile: automated 5-step host profiling chain (sysinfo → ps → security-info → privesc-check → persist-enum).",
+				Choices:          []string{"info", "full-profile", "recon-full"},
+				Description:      "info: collect system information (default). full-profile: 5-step profiling chain. recon-full: 9-command parallel batch (sysinfo + ps + arp + net-stat + drives + env + security-info + persist-enum + privesc-check).",
 				DefaultValue:     "info",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
@@ -151,6 +152,33 @@ func init() {
 				}
 				createArtifact(taskData.Task.ID, "Subtask Chain",
 					"Host Profile chain: sysinfo → ps → security-info → privesc-check → persist-enum")
+				return response
+			}
+			if action == "recon-full" {
+				display := "recon-full: 9 parallel commands (sysinfo + ps + arp + net-stat + drives + env + security-info + persist-enum + privesc-check)"
+				response.DisplayParams = &display
+				// Change agent action to info so agent still returns sysinfo
+				taskData.Args.SetArgValue("action", "info")
+				cb := "reconFullDone"
+				reconTasks := []struct{ cmd, params string }{
+					{"ps", `{}`},
+					{"arp", `{}`},
+					{"net-stat", `{}`},
+					{"drives", `{}`},
+					{"env", `{}`},
+					{"security-info", `{}`},
+					{"persist-enum", `{}`},
+					{"privesc-check", `{}`},
+				}
+				for _, t := range reconTasks {
+					if _, err := mythicrpc.SendMythicRPCTaskCreateSubtask(mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+						TaskID: taskData.Task.ID, SubtaskCallbackFunction: &cb,
+						CommandName: t.cmd, Params: t.params,
+					}); err != nil {
+						logging.LogError(err, "recon-full: failed to create subtask", "command", t.cmd)
+					}
+				}
+				createArtifact(taskData.Task.ID, "Subtask Chain", "recon-full: 9 parallel discovery commands")
 				return response
 			}
 			return response
@@ -337,6 +365,24 @@ func hostProfilePersistDone(
 		fmt.Sprintf("[RECON] Host profile completed on %s: %d/%d steps successful",
 			taskData.Callback.Host, successCount, successCount+errorCount), false)
 
+	return response
+}
+
+// reconFullDone tracks recon-full parallel subtask completion.
+func reconFullDone(
+	taskData *agentstructs.PTTaskMessageAllData,
+	subtaskData *agentstructs.PTTaskMessageAllData,
+	_ *agentstructs.SubtaskGroupName,
+) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{TaskID: taskData.Task.ID, Success: true}
+	status := "✅"
+	if subtaskData.Task.Status == "error" {
+		status = "❌"
+	}
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte(fmt.Sprintf("[recon-full] %s %s (%s)", status, subtaskData.Task.CommandName, subtaskData.Task.Status)),
+	})
 	return response
 }
 
