@@ -13,9 +13,10 @@ RUN apt-get update && apt-get install -y \
     ent \
     && rm -rf /var/lib/apt/lists/*
 
-# Install sRDI for DLL to shellcode conversion
+# Install sRDI for DLL to shellcode conversion (pinned to stable commit)
 RUN git clone https://github.com/monoxgas/sRDI /opt/sRDI && \
-    pip3 install --break-system-packages pefile
+    cd /opt/sRDI && git checkout 9fdd5c44383039519accd1e6bac4acd5a046a92c && cd / && \
+    pip3 install --no-cache-dir --break-system-packages pefile
 
 COPY [".", "."]
 
