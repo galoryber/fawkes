@@ -540,3 +540,37 @@ func shareSweepTriageDone(taskData *agentstructs.PTTaskMessageAllData, subtaskDa
 
 	return response
 }
+
+// smbExfilInfo holds parsed SMB exfiltration result data.
+type smbExfilInfo struct {
+	Host       string `json:"host"`
+	Share      string `json:"share"`
+	RemotePath string `json:"remote_path"`
+	FileName   string `json:"filename"`
+	TotalSize  int    `json:"total_size"`
+	Success    bool   `json:"success"`
+}
+
+// parseSMBExfilResult attempts to parse an SMB exfiltration result from JSON text.
+// Returns nil if the text is not a valid SMB exfil result.
+func parseSMBExfilResult(text string) *smbExfilInfo {
+	var result smbExfilInfo
+	if err := json.Unmarshal([]byte(text), &result); err != nil || result.Host == "" {
+		return nil
+	}
+	return &result
+}
+
+// parseSMBShareLines extracts "Shares on" lines from SMB output.
+func parseSMBShareLines(text string) []string {
+	var shares []string
+	if !strings.Contains(text, "Shares on") && !strings.Contains(text, "SMB") {
+		return shares
+	}
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "Shares on") {
+			shares = append(shares, strings.TrimSpace(line))
+		}
+	}
+	return shares
+}

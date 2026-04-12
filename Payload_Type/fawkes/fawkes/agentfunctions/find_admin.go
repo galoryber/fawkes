@@ -503,3 +503,29 @@ func autoMoveLateralDone(taskData *agentstructs.PTTaskMessageAllData, subtaskDat
 
 	return response
 }
+
+// findAdminResult represents a parsed host admin check result.
+type findAdminResult struct {
+	Host   string `json:"host"`
+	Method string `json:"method"`
+	Admin  bool   `json:"admin"`
+}
+
+// parseFindAdminResults parses a JSON array of find-admin results.
+// Returns only hosts where admin access was confirmed.
+func parseFindAdminResults(text string) []findAdminResult {
+	if text == "" || text == "[]" {
+		return nil
+	}
+	var results []findAdminResult
+	if err := json.Unmarshal([]byte(text), &results); err != nil {
+		return nil
+	}
+	var admins []findAdminResult
+	for _, r := range results {
+		if r.Admin {
+			admins = append(admins, r)
+		}
+	}
+	return admins
+}

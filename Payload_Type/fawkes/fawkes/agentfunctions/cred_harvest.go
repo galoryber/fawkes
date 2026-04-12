@@ -414,3 +414,68 @@ func getSubtaskResponses(taskID int) string {
 	return strings.Join(parts, "\n")
 }
 
+// harvestedCredential represents a credential parsed from cred-harvest output.
+type harvestedCredential struct {
+	Account string
+	Type    string // "hash" or "plaintext"
+	Value   string
+	Source  string // "shadow" or "env"
+}
+
+// parseShadowHashes extracts user:hash credentials from shadow-format output.
+// Looks for lines containing ":$" (shadow hash indicator) and splits on ":".
+func parseShadowHashes(text string) []harvestedCredential {
+	var creds []harvestedCredential
+	if !strings.Contains(text, "/etc/shadow") && !strings.Contains(text, "Password Hashes") {
+		return creds
+	}
+	for _, line := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.Contains(trimmed, ":$") {
+			continue
+		}
+		parts := strings.SplitN(trimmed, ":", 3)
+		if len(parts) < 2 || parts[0] == "" {
+			continue
+		}
+		creds = append(creds, harvestedCredential{
+			Account: parts[0], Type: "hash",
+			Value: parts[1], Source: "shadow",
+		})
+	}
+	return creds
+}
+
+// parseEnvVarCredentials extracts sensitive environment variable credentials.
+// Parses lines in the "Sensitive Environment Variables" section as KEY=VALUE.
+func parseEnvVarCredentials(text string) []harvestedCredential {
+	var creds []harvestedCredential
+	if !strings.Contains(text, "Sensitive Environment Variables") {
+		return creds
+	}
+	inEnvSection := false
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, "Sensitive Environment Variables") {
+			inEnvSection = true
+			continue
+		}
+		if inEnvSection && strings.HasPrefix(line, "===") {
+			break
+		}
+		if !inEnvSection {
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if idx := strings.Index(trimmed, "="); idx > 0 {
+			varName := trimmed[:idx]
+			varValue := trimmed[idx+1:]
+			if varValue != "" {
+				creds = append(creds, harvestedCredential{
+					Account: varName, Type: "plaintext",
+					Value: varValue, Source: "env",
+				})
+			}
+		}
+	}
+	return creds
+}

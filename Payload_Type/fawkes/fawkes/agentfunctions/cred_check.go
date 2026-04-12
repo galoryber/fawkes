@@ -413,3 +413,28 @@ func credVerifyAllDone(
 
 	return response
 }
+
+// credCheckSuccessResult represents a parsed success line from cred-check output.
+type credCheckSuccessResult struct {
+	Host     string
+	Protocol string
+}
+
+// parseCredCheckSuccesses extracts successful credential check results from output text.
+// Looks for lines containing "SUCCESS" and "|" delimiter, parsing host|protocol|status.
+func parseCredCheckSuccesses(text string) []credCheckSuccessResult {
+	var results []credCheckSuccessResult
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.Contains(line, "SUCCESS") || !strings.Contains(line, "|") {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) >= 3 {
+			results = append(results, credCheckSuccessResult{
+				Host:     strings.TrimSpace(parts[0]),
+				Protocol: strings.TrimSpace(parts[1]),
+			})
+		}
+	}
+	return results
+}

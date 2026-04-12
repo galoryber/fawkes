@@ -411,3 +411,60 @@ func domainTakeoverDone(
 
 	return response
 }
+
+// dcsyncCredential represents a credential parsed from dcsync output.
+type dcsyncCredential struct {
+	Account string
+	Type    string // "hash" or "key"
+	Value   string
+	Comment string
+}
+
+// parseDcsyncOutput extracts credentials from dcsync response text.
+// Parses account names from "[+] username (RID: N)" lines, then extracts
+// Hash:, AES256:, and AES128: values for each account.
+func parseDcsyncOutput(responseText string) []dcsyncCredential {
+	var creds []dcsyncCredential
+	var currentAccount string
+	for _, line := range strings.Split(responseText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[+] ") && strings.Contains(trimmed, "(RID:") {
+			parts := strings.SplitN(trimmed[4:], " (RID:", 2)
+			if len(parts) >= 1 {
+				currentAccount = strings.TrimSpace(parts[0])
+			}
+			continue
+		}
+		if currentAccount == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "Hash:") {
+			hashPart := strings.TrimSpace(strings.TrimPrefix(trimmed, "Hash:"))
+			if hashPart != "" {
+				creds = append(creds, dcsyncCredential{
+					Account: currentAccount, Type: "hash",
+					Value: hashPart, Comment: "dcsync (DRSGetNCChanges)",
+				})
+			}
+		}
+		if strings.HasPrefix(trimmed, "AES256:") {
+			key := strings.TrimSpace(strings.TrimPrefix(trimmed, "AES256:"))
+			if key != "" && !isAllZeros(key) {
+				creds = append(creds, dcsyncCredential{
+					Account: currentAccount, Type: "key",
+					Value: key, Comment: "dcsync AES-256 key",
+				})
+			}
+		}
+		if strings.HasPrefix(trimmed, "AES128:") {
+			key := strings.TrimSpace(strings.TrimPrefix(trimmed, "AES128:"))
+			if key != "" && !isAllZeros(key) {
+				creds = append(creds, dcsyncCredential{
+					Account: currentAccount, Type: "key",
+					Value: key, Comment: "dcsync AES-128 key",
+				})
+			}
+		}
+	}
+	return creds
+}
