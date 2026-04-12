@@ -95,3 +95,42 @@ func TestExtractChainContext_WhitespaceAroundJSON(t *testing.T) {
 		t.Errorf("key = %q, want value", ctx["key"])
 	}
 }
+
+// --- isAllZeros Tests ---
+
+func TestIsAllZeros_True(t *testing.T) {
+	if !isAllZeros("0000000000000000") {
+		t.Error("all zeros should return true")
+	}
+}
+
+func TestIsAllZeros_SingleZero(t *testing.T) {
+	if !isAllZeros("0") {
+		t.Error("single zero should return true")
+	}
+}
+
+func TestIsAllZeros_HasNonZero(t *testing.T) {
+	if isAllZeros("00000100000") {
+		t.Error("string with non-zero should return false")
+	}
+}
+
+func TestIsAllZeros_Empty(t *testing.T) {
+	if isAllZeros("") {
+		t.Error("empty string should return false")
+	}
+}
+
+func TestIsAllZeros_HexLike(t *testing.T) {
+	if isAllZeros("aabbccdd") {
+		t.Error("hex chars should return false")
+	}
+}
+
+func TestIsAllZeros_NTLMHash(t *testing.T) {
+	// Typical empty/disabled NTLM hash is all zeros
+	if !isAllZeros("00000000000000000000000000000000") {
+		t.Error("32-char all-zeros (empty NTLM hash) should return true")
+	}
+}
