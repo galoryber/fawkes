@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 
@@ -14,11 +15,11 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "vmdetect_new.js"),
 			Author:     "@GlobeTech",
 		},
-		Description:         "Detect virtual machine and hypervisor environment. Checks MAC addresses, DMI info, VM tools, CPUID flags, and known VM file paths.",
-		HelpString:          "vm-detect",
-		Version:             1,
+		Description:         "Detect virtual machine/hypervisor environment, or perform sandbox evasion analysis with scored checks (CPU, RAM, disk, uptime, sleep timing, hostname, process count, username).",
+		HelpString:          "vm-detect\nvm-detect -action sandbox",
+		Version:             2,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1497.001"},
+		MitreAttackMappings: []string{"T1497", "T1497.001"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -26,7 +27,20 @@ func init() {
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
 		},
-		CommandParameters: []agentstructs.CommandParameter{},
+		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "action",
+				CLIName:          "action",
+				ModalDisplayName: "Action",
+				Description:      "detect (VM/hypervisor detection) or sandbox (sandbox evasion analysis with scoring)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				DefaultValue:     "detect",
+				Choices:          []string{"detect", "sandbox"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -54,7 +68,13 @@ func init() {
 			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
-			return agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			response := agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
+			action, _ := taskData.Args.GetStringArg("action")
+			if action != "" && action != "detect" {
+				display := fmt.Sprintf("-action %s", action)
+				response.DisplayParams = &display
+			}
+			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
 			response := agentstructs.PTTaskProcessResponseMessageResponse{

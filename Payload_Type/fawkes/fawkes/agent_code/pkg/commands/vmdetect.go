@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -38,7 +39,29 @@ var vmMACPrefixes = map[string]string{
 	"fa:16:3e": "OpenStack",
 }
 
+type vmdetectArgs struct {
+	Action string `json:"action"` // detect (default), sandbox
+}
+
 func (c *VmDetectCommand) Execute(task structs.Task) structs.CommandResult {
+	var args vmdetectArgs
+	if task.Params != "" {
+		_ = json.Unmarshal([]byte(task.Params), &args)
+	}
+	if args.Action == "" {
+		args.Action = "detect"
+	}
+
+	switch args.Action {
+	case "sandbox":
+		result := vmSandboxDetect()
+		return successResult(formatSandboxResult(result))
+	case "detect":
+		// Fall through to existing VM detection logic
+	default:
+		return errorf("Error: unknown action '%s' (use detect or sandbox)", args.Action)
+	}
+
 	var evidence []vmEvidence
 	detected := "none"
 
