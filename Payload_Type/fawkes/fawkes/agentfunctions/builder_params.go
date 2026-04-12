@@ -69,6 +69,20 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 		{
+			Name:          "proxy_user",
+			Description:   "Optional: Proxy authentication username (Basic auth). Used when the proxy requires credentials. Can also embed creds in proxy_url (http://user:pass@proxy:8080).",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "proxy_pass",
+			Description:   "Optional: Proxy authentication password (Basic auth). Used with proxy_user when the proxy requires credentials.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "fallback_hosts",
 			Description:   "Optional: Comma-separated fallback C2 callback hosts for automatic failover. If the primary callback_host is unreachable, the agent cycles through these. Same port and encryption as primary. E.g. 'http://backup1.example.com,https://backup2.example.com'.",
 			Required:      false,

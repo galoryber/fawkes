@@ -1367,3 +1367,274 @@ func TestResolveURITokens_Empty(t *testing.T) {
 		t.Errorf("resolveURITokens(\"\") = %q, want empty", got)
 	}
 }
+
+// --- Proxy Authentication Tests ---
+
+func TestNewHTTPProfile_WithProxyAuth(t *testing.T) {
+	p := NewHTTPProfile(
+		"http://localhost:80",
+		"TestAgent/1.0",
+		"",
+		10, 5, 10, false,
+		"/get", "/post", "",
+		"http://proxy:8080",
+		"proxyuser",
+		"proxypass",
+		"none", "",
+		nil, nil, 0)
+
+	if p.client == nil {
+		t.Fatal("client should not be nil with proxy auth")
+	}
+	// Transport should have proxy configured (can't inspect function directly,
+	// but verify transport is *http.Transport with Proxy set)
+	transport, ok := p.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("transport should be *http.Transport")
+	}
+	if transport.Proxy == nil {
+		t.Error("Proxy function should be set when proxyURL is provided")
+	}
+}
+
+func TestNewHTTPProfile_WithProxyEmbeddedCreds(t *testing.T) {
+	// Credentials embedded in the URL take precedence
+	p := NewHTTPProfile(
+		"http://localhost:80",
+		"TestAgent/1.0",
+		"",
+		10, 5, 10, false,
+		"/get", "/post", "",
+		"http://embeduser:embedpass@proxy:8080",
+		"separate-user",
+		"separate-pass",
+		"none", "",
+		nil, nil, 0)
+
+	if p.client == nil {
+		t.Fatal("client should not be nil")
+	}
+	transport := p.client.Transport.(*http.Transport)
+	if transport.Proxy == nil {
+		t.Error("Proxy should be set")
+	}
+}
+
+func TestNewHTTPProfile_ProxyUserOnly(t *testing.T) {
+	// proxyUser without proxyPass
+	p := NewHTTPProfile(
+		"http://localhost:80",
+		"TestAgent/1.0",
+		"",
+		10, 5, 10, false,
+		"/get", "/post", "",
+		"http://proxy:8080",
+		"onlyuser",
+		"",
+		"none", "",
+		nil, nil, 0)
+
+	if p.client == nil {
+		t.Fatal("client should not be nil")
+	}
+}
+
+func TestNewHTTPProfile_SystemProxy(t *testing.T) {
+	// No explicit proxy — should use systemProxyFunc()
+	p := NewHTTPProfile(
+		"http://localhost:80",
+		"TestAgent/1.0",
+		"",
+		10, 5, 10, false,
+		"/get", "/post", "",
+		"", "", "",
+		"none", "",
+		nil, nil, 0)
+
+	transport := p.client.Transport.(*http.Transport)
+	if transport.Proxy == nil {
+		t.Error("Proxy should be set to systemProxyFunc even without explicit proxy")
+	}
+}
+
+// --- Proxy Request Verification Tests ---
+
+func TestMakeRequest_ProxyAuthInTransport(t *testing.T) {
+	// Set up a test server that acts as a proxy
+	var proxyAuthHeader string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyAuthHeader = r.Header.Get("Proxy-Authorization")
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	// Create profile pointing directly at test server (simulating proxy)
+	p := NewHTTPProfile(
+		ts.URL,
+		"Mozilla/5.0 Chrome/134.0.0.0",
+		"",
+		1, 5, 0, false,
+		"/test", "/test", "",
+		"", "", "",
+		"none", "",
+		nil, nil, 0)
+
+	resp, err := p.makeRequest("GET", "/test", nil, nil)
+	if err != nil {
+		t.Fatalf("makeRequest failed: %v", err)
+	}
+	resp.Body.Close()
+
+	// Direct connection (no proxy) — Proxy-Authorization should NOT be present
+	if proxyAuthHeader != "" {
+		t.Errorf("Proxy-Authorization should not be present on direct connection: %q", proxyAuthHeader)
+	}
+}
+
+// --- Custom Headers Integration Tests ---
+
+func TestMakeRequest_MultipleCustomHeaders(t *testing.T) {
+	var capturedHeaders http.Header
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
+		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", nil, nil, 0)
+
+	p.CustomHeaders = map[string]string{
+		"X-Forwarded-For": "10.0.0.1",
+		"X-Request-ID":    "abc-123",
+		"Authorization":   "Bearer token123",
+	}
+
+	resp, err := p.makeRequest("GET", "/test", nil, nil)
+	if err != nil {
+		t.Fatalf("makeRequest failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if capturedHeaders.Get("X-Forwarded-For") != "10.0.0.1" {
+		t.Errorf("X-Forwarded-For = %q, want 10.0.0.1", capturedHeaders.Get("X-Forwarded-For"))
+	}
+	if capturedHeaders.Get("X-Request-ID") != "abc-123" {
+		t.Errorf("X-Request-ID = %q, want abc-123", capturedHeaders.Get("X-Request-ID"))
+	}
+	if capturedHeaders.Get("Authorization") != "Bearer token123" {
+		t.Errorf("Authorization = %q, want Bearer token123", capturedHeaders.Get("Authorization"))
+	}
+}
+
+func TestMakeRequest_CustomHeadersEmptyMap(t *testing.T) {
+	var capturedHeaders http.Header
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
+		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", nil, nil, 0)
+	p.CustomHeaders = map[string]string{}
+
+	resp, err := p.makeRequest("GET", "/test", nil, nil)
+	if err != nil {
+		t.Fatalf("makeRequest failed: %v", err)
+	}
+	resp.Body.Close()
+
+	// Should still have default headers
+	if capturedHeaders.Get("User-Agent") == "" {
+		t.Error("User-Agent should be present even with empty custom headers")
+	}
+}
+
+func TestMakeRequest_CustomHeadersFromSealed(t *testing.T) {
+	var capturedHeaders http.Header
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturedHeaders = r.Header.Clone()
+		w.WriteHeader(200)
+	}))
+	defer ts.Close()
+
+	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
+		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", nil, nil, 0)
+
+	p.CustomHeaders = map[string]string{
+		"X-Custom-Sealed": "vault-value",
+	}
+
+	// Seal the config — custom headers should be in the vault
+	if err := p.SealConfig(); err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	// Verify struct field is zeroed
+	if p.CustomHeaders != nil {
+		t.Error("CustomHeaders should be nil after sealing")
+	}
+
+	// Get config from vault to pass to makeRequest (simulates real usage)
+	cfg := p.getConfig()
+	if cfg == nil {
+		t.Fatal("getConfig returned nil after seal")
+	}
+
+	resp, err := p.makeRequest("GET", "/test", nil, cfg)
+	if err != nil {
+		t.Fatalf("makeRequest failed: %v", err)
+	}
+	resp.Body.Close()
+
+	// Custom header should still be applied from vault
+	if capturedHeaders.Get("X-Custom-Sealed") != "vault-value" {
+		t.Errorf("X-Custom-Sealed = %q, want vault-value (should come from sealed vault)", capturedHeaders.Get("X-Custom-Sealed"))
+	}
+}
+
+func TestSealConfig_CustomHeadersPreserved(t *testing.T) {
+	p := &HTTPProfile{
+		BaseURL:   "http://test:80",
+		UserAgent: "test",
+		CustomHeaders: map[string]string{
+			"X-One": "1",
+			"X-Two": "2",
+		},
+	}
+
+	if err := p.SealConfig(); err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	cfg := p.getConfig()
+	if cfg == nil {
+		t.Fatal("getConfig returned nil")
+	}
+	if len(cfg.CustomHeaders) != 2 {
+		t.Fatalf("CustomHeaders has %d entries, want 2", len(cfg.CustomHeaders))
+	}
+	if cfg.CustomHeaders["X-One"] != "1" || cfg.CustomHeaders["X-Two"] != "2" {
+		t.Errorf("CustomHeaders = %v", cfg.CustomHeaders)
+	}
+}
+
+func TestSealConfig_ContentTypesPreserved(t *testing.T) {
+	p := &HTTPProfile{
+		BaseURL:      "http://test:80",
+		ContentTypes: []string{"application/json", "text/html", "text/plain"},
+	}
+
+	if err := p.SealConfig(); err != nil {
+		t.Fatalf("SealConfig failed: %v", err)
+	}
+
+	cfg := p.getConfig()
+	if len(cfg.ContentTypes) != 3 {
+		t.Fatalf("ContentTypes has %d entries, want 3", len(cfg.ContentTypes))
+	}
+	if cfg.ContentTypes[0] != "application/json" {
+		t.Errorf("ContentTypes[0] = %q", cfg.ContentTypes[0])
+	}
+}
