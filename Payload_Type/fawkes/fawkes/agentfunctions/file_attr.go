@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -13,6 +14,10 @@ func init() {
 		HelpString:          "file-attr -path C:\\temp\\payload.exe\nfile-attr -path C:\\temp\\file.exe -attrs \"+hidden,+system\"\nfile-attr -path /etc/cron.d/job -attrs \"+immutable\"\nfile-attr -path /tmp/file -attrs \"-nodump,+noatime\"",
 		Version:             1,
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "fileattr_new.js"),
+			Author:     "@galoryber",
+		},
 		MitreAttackMappings: []string{"T1564.001", "T1222"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{

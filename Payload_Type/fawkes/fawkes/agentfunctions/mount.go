@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -14,6 +15,10 @@ func init() {
 		HelpString:          "mount [-filter <substring>] [-fstype <type>]",
 		Version:             2,
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "mount_new.js"),
+			Author:     "@galoryber",
+		},
 		MitreAttackMappings: []string{"T1082"},
 		SupportedUIFeatures: []string{"file_browser:list"},
 		CommandAttributes: agentstructs.CommandAttribute{
