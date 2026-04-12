@@ -395,3 +395,34 @@ func init() {
 		},
 	})
 }
+
+// persistMethodsForOS returns the appropriate persistence methods for a given OS string.
+func persistMethodsForOS(osName string, hostname string) []string {
+	os := strings.ToLower(osName)
+	switch {
+	case strings.Contains(strings.ToLower(hostname), "win") || os == "windows" || os == "":
+		return []string{"registry", "startup-folder", "screensaver"}
+	case os == "linux":
+		return []string{"crontab", "shell-profile", "systemd"}
+	case os == "macos" || os == "darwin":
+		return []string{"launchagent"}
+	default:
+		return []string{"registry", "startup-folder"}
+	}
+}
+
+// parsePersistListOutput filters persistence listing output to extract meaningful entries.
+func parsePersistListOutput(responseText string) []string {
+	var entries []string
+	for _, line := range strings.Split(responseText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "- ") || (strings.Contains(trimmed, "=") && !strings.HasPrefix(trimmed, "Key:") && !strings.HasPrefix(trimmed, "Name:") && !strings.HasPrefix(trimmed, "Value:")) {
+			continue
+		}
+		entries = append(entries, trimmed)
+	}
+	return entries
+}

@@ -372,3 +372,36 @@ func init() {
 		},
 	})
 }
+
+// classifyTicketType determines the ticket type based on action and SPN.
+func classifyTicketType(action, spn string) string {
+	switch action {
+	case "forge":
+		if spn == "" {
+			return "Golden Ticket (TGT)"
+		}
+		return "Silver Ticket (TGS)"
+	case "request":
+		return "Overpass-the-Hash (AS-REQ)"
+	case "diamond":
+		return "Diamond Ticket"
+	case "renew":
+		return "TGT Renewal"
+	case "s4u":
+		return "S4U Delegation"
+	default:
+		return "Kerberos Ticket"
+	}
+}
+
+// ticketForgeDisplayParams builds a display string for ticket forge operations.
+func ticketForgeDisplayParams(action, username, realm, spn string) string {
+	ticketType := classifyTicketType(action, spn)
+	if action == "forge" {
+		return fmt.Sprintf("Forge %s for %s@%s", ticketType, username, realm)
+	}
+	if action == "s4u" {
+		return fmt.Sprintf("S4U delegation as %s@%s → %s", username, realm, spn)
+	}
+	return fmt.Sprintf("%s for %s@%s", ticketType, username, realm)
+}

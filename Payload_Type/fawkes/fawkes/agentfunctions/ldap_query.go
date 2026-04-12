@@ -307,6 +307,36 @@ func init() {
 	})
 }
 
+// parseComputerNames extracts AD computer account names from LDAP query output.
+func parseComputerNames(responseText string) []string {
+	var computers []string
+	for _, line := range strings.Split(responseText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "$") && !strings.HasPrefix(trimmed, "=") && !strings.HasPrefix(trimmed, "-") {
+			fields := strings.Fields(trimmed)
+			if len(fields) > 0 {
+				computers = append(computers, fields[0])
+			}
+		}
+	}
+	return computers
+}
+
+// parseTrustDomains extracts AD trust domain names from LDAP query output.
+func parseTrustDomains(responseText string) []string {
+	var domains []string
+	for _, line := range strings.Split(responseText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, ".") && !strings.HasPrefix(trimmed, "=") && !strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, "Trust") {
+			fields := strings.Fields(trimmed)
+			if len(fields) > 0 {
+				domains = append(domains, fields[0])
+			}
+		}
+	}
+	return domains
+}
+
 // ldapEnumChainCompleteFunc handles subtask completion for the AD enum chain.
 var ldapEnumChainCompleteFunc = func(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
 	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
