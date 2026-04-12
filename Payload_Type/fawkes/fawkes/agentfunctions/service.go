@@ -31,7 +31,7 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"query", "start", "stop", "restart", "create", "delete", "list", "enable", "disable"},
+				Choices:          []string{"query", "start", "stop", "restart", "create", "delete", "list", "enable", "disable", "edr-enum", "edr-kill"},
 				Description:      "Action to perform on the service",
 				DefaultValue:     "query",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -91,6 +91,20 @@ func init() {
 				Choices:          []string{"demand", "auto", "disabled"},
 				Description:      "Service start type: demand (manual), auto (automatic), disabled",
 				DefaultValue:     "demand",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "confirm",
+				ModalDisplayName: "Confirm",
+				CLIName:          "confirm",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Safety gate: pass 'EDR-KILL' to confirm edr-kill action",
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,

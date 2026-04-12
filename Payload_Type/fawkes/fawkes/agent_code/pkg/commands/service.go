@@ -31,6 +31,7 @@ type serviceArgs struct {
 	BinPath string `json:"binpath"`
 	Display string `json:"display"`
 	Start   string `json:"start"`
+	Confirm string `json:"confirm"`
 }
 
 func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
@@ -63,8 +64,12 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 		return serviceSetStartType(args, mgr.StartAutomatic)
 	case "disable":
 		return serviceSetStartType(args, mgr.StartDisabled)
+	case "edr-enum":
+		return serviceEdrEnumWindows()
+	case "edr-kill":
+		return serviceEdrKillWindows(args)
 	default:
-		return errorf("Unknown action: %s. Use: query, start, stop, restart, create, delete, list, enable, disable", args.Action)
+		return errorf("Unknown action: %s. Use: query, start, stop, restart, create, delete, list, enable, disable, edr-enum, edr-kill", args.Action)
 	}
 }
 

