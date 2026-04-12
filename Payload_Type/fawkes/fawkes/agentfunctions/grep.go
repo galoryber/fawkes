@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -10,6 +11,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "grep",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "grep_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] - Search file contents for patterns. Cross-platform recursive file search with regex support.",
 		HelpString:          "grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100] [-context 2] [-max_depth 10]",
 		Version:             1,

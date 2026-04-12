@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
@@ -13,6 +14,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "download",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "download_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Download a file or directory from the target system (directories auto-zipped)",
 		HelpString:          "download [path] — download a file or directory (directories are auto-zipped)",
 		Version:             2,

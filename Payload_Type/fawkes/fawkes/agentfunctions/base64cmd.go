@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,6 +10,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "base64",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "base64_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Data encoding toolkit — base64, XOR, hex, ROT13, URL encode, Caesar cipher. Supports string and file I/O.",
 		HelpString:          "base64 -action encode -input 'hello world'\nbase64 -action xor -input 'secret data' -key 'mykey'\nbase64 -action xor -input 'secret data' -key 0x41424344\nbase64 -action hex -input /etc/passwd -file true\nbase64 -action hex-decode -input '48656c6c6f'\nbase64 -action rot13 -input 'Hello World'\nbase64 -action url -input 'param=value&foo=bar baz'\nbase64 -action url-decode -input 'hello%20world'\nbase64 -action caesar -input 'Attack at dawn' -shift 3\nbase64 -action caesar -input 'Dwwdfn dw gdzq' -shift -3",
 		Version:             2,
