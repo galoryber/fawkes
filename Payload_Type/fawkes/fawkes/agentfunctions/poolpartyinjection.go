@@ -89,19 +89,39 @@ func init() {
 				Name:                 "pid",
 				ModalDisplayName:     "Target PID",
 				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:          "The process ID to inject shellcode into",
+				Description:          "Process ID to inject into. Leave empty when using target auto-selection.",
 				DynamicQueryFunction: getProcessList,
 				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "Default",
 						UIModalPosition:     2,
 					},
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "New File",
 						UIModalPosition:     2,
+					},
+				},
+			},
+			{
+				Name:             "target",
+				ModalDisplayName: "Target Selection",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Auto-select injection target (EDR-aware scoring). Overrides PID when set.",
+				DefaultValue:     "",
+				Choices:          []string{"", "auto", "auto-elevated", "auto-user"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     4,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "New File",
+						UIModalPosition:     4,
 					},
 				},
 			},

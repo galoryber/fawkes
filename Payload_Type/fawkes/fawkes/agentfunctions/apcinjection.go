@@ -119,6 +119,21 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "target",
+				ModalDisplayName: "Target Selection",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Auto-select injection target (EDR-aware scoring). PID still required for thread selection.",
+				DefaultValue:     "",
+				Choices:          []string{"", "auto", "auto-elevated", "auto-user"},
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     5,
+					},
+				},
+			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")

