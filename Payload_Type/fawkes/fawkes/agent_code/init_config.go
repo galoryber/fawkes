@@ -50,6 +50,8 @@ func deobfuscateConfig() {
 	postURI = xorDecodeString(postURI, keyBytes)
 	hostHeader = xorDecodeString(hostHeader, keyBytes)
 	proxyURL = xorDecodeString(proxyURL, keyBytes)
+	proxyUser = xorDecodeString(proxyUser, keyBytes)
+	proxyPass = xorDecodeString(proxyPass, keyBytes)
 	customHeaders = xorDecodeString(customHeaders, keyBytes)
 	fallbackHosts = xorDecodeString(fallbackHosts, keyBytes)
 	contentTypes = xorDecodeString(contentTypes, keyBytes)

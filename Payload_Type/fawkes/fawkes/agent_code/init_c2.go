@@ -265,6 +265,8 @@ func initHTTPC2(cfg parsedConfig) (*c2Setup, error) {
 		postURI,
 		hostHeader,
 		proxyURL,
+		proxyUser,
+		proxyPass,
 		tlsVerify,
 		tlsFingerprint,
 		fallbackURLs,

@@ -141,6 +141,12 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 	if proxyURL, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_url"); err == nil && proxyURL != "" {
 		ldflags += fmt.Sprintf(" -X '%s.proxyURL=%s'", fawkesMainPackage, proxyURL)
 	}
+	if proxyUser, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_user"); err == nil && proxyUser != "" {
+		ldflags += fmt.Sprintf(" -X '%s.proxyUser=%s'", fawkesMainPackage, proxyUser)
+	}
+	if proxyPass, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_pass"); err == nil && proxyPass != "" {
+		ldflags += fmt.Sprintf(" -X '%s.proxyPass=%s'", fawkesMainPackage, proxyPass)
+	}
 	if fbHosts, err := payloadBuildMsg.BuildParameters.GetStringArg("fallback_hosts"); err == nil && fbHosts != "" {
 		ldflags += fmt.Sprintf(" -X '%s.fallbackHosts=%s'", fawkesMainPackage, fbHosts)
 	}
@@ -333,6 +339,12 @@ func applyStringObfuscation(payloadBuildMsg agentstructs.PayloadBuildMessage, fa
 	}
 	if proxyURL, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_url"); err == nil && proxyURL != "" {
 		obfVars = append(obfVars, obfVar{"proxyURL", proxyURL})
+	}
+	if proxyUser, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_user"); err == nil && proxyUser != "" {
+		obfVars = append(obfVars, obfVar{"proxyUser", proxyUser})
+	}
+	if proxyPass, err := payloadBuildMsg.BuildParameters.GetStringArg("proxy_pass"); err == nil && proxyPass != "" {
+		obfVars = append(obfVars, obfVar{"proxyPass", proxyPass})
 	}
 	if fbHosts, err := payloadBuildMsg.BuildParameters.GetStringArg("fallback_hosts"); err == nil && fbHosts != "" {
 		obfVars = append(obfVars, obfVar{"fallbackHosts", fbHosts})

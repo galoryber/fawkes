@@ -19,12 +19,13 @@ func TestNewProfile_ReturnsHTTPProfile(t *testing.T) {
 		"/post",
 		"",
 		"",
+		"",
+		"",
 		"none",
 		"",
 		nil,
 		nil,
-		0,
-	)
+		0)
 
 	profile := NewProfile(httpProfile)
 	if profile == nil {
@@ -50,12 +51,13 @@ func TestNewProfile_ImplementsInterface(t *testing.T) {
 		"/post",
 		"",
 		"",
+		"",
+		"",
 		"none",
 		"",
 		nil,
 		nil,
-		0,
-	)
+		0)
 
 	// Compile-time check: NewProfile returns a Profile interface
 	var _ Profile = NewProfile(httpProfile)
@@ -75,12 +77,13 @@ func TestProfileInterface_Methods(t *testing.T) {
 		"/post",
 		"",
 		"",
+		"",
+		"",
 		"none",
 		"",
 		nil,
 		nil,
-		0,
-	)
+		0)
 
 	profile := NewProfile(httpProfile)
 

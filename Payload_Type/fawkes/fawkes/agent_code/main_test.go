@@ -500,6 +500,8 @@ func TestClearGlobals_ClearsAllFields(t *testing.T) {
 	postURI = "/post"
 	hostHeader = "test.com"
 	proxyURL = "http://proxy:8080"
+	proxyUser = "testuser"
+	proxyPass = "testpass"
 	customHeaders = "eyJ0ZXN0IjogInZhbHVlIn0="
 	xorKey = "dGVzdA=="
 
@@ -531,6 +533,12 @@ func TestClearGlobals_ClearsAllFields(t *testing.T) {
 	}
 	if proxyURL != "" {
 		t.Error("clearGlobals did not clear proxyURL")
+	}
+	if proxyUser != "" {
+		t.Error("clearGlobals did not clear proxyUser")
+	}
+	if proxyPass != "" {
+		t.Error("clearGlobals did not clear proxyPass")
 	}
 	if customHeaders != "" {
 		t.Error("clearGlobals did not clear customHeaders")

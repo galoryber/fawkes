@@ -464,12 +464,13 @@ func TestNewHTTPProfile_BasicConfig(t *testing.T) {
 		"/post",
 		"",
 		"",
+		"",
+		"",
 		"none",
 		"",
 		nil,
 		nil,
-		0,
-	)
+		0)
 
 	if p.BaseURL != "http://localhost:80" {
 		t.Errorf("BaseURL = %q, want %q", p.BaseURL, "http://localhost:80")
@@ -498,12 +499,13 @@ func TestNewHTTPProfile_WithProxy(t *testing.T) {
 		"/post",
 		"",
 		"http://proxy:8080",
+		"",
+		"",
 		"none",
 		"",
 		nil,
 		nil,
-		0,
-	)
+		0)
 
 	if p.client == nil {
 		t.Error("client should not be nil even with proxy")
@@ -523,12 +525,13 @@ func TestNewHTTPProfile_WithHostHeader(t *testing.T) {
 		"/post",
 		"fronted.example.com",
 		"",
+		"",
+		"",
 		"none",
 		"",
 		nil,
 		nil,
-		0,
-	)
+		0)
 
 	if p.HostHeader != "fronted.example.com" {
 		t.Errorf("HostHeader = %q, want %q", p.HostHeader, "fronted.example.com")
@@ -551,12 +554,13 @@ func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
 		"/post",
 		"",
 		"",
+		"",
+		"",
 		"system-ca",
 		"",
 		nil,
 		nil,
-		0,
-	)
+		0)
 
 	if p.EncryptionKey != keyB64 {
 		t.Errorf("EncryptionKey not set correctly")
@@ -580,12 +584,13 @@ func TestNewHTTPProfile_InvalidProxy(t *testing.T) {
 		"/post",
 		"",
 		"://not-a-valid-url",
+		"",
+		"",
 		"none",
 		"",
 		nil,
 		nil,
-		0,
-	)
+		0)
 
 	if p.client == nil {
 		t.Error("client should not be nil even with invalid proxy")
@@ -1136,7 +1141,7 @@ func TestMakeRequest_FailoverToBackup(t *testing.T) {
 		"",
 		1, 5, 0, false,
 		"/test", "/test",
-		"", "", "none", "",
+		"", "", "", "", "none", "",
 		[]string{backup.URL}, // fallback,
 		nil,
 		0,
@@ -1169,11 +1174,12 @@ func TestMakeRequest_AllFail(t *testing.T) {
 		"",
 		1, 5, 0, false,
 		"/test", "/test",
-		"", "", "none", "",
+		"", "",
+ "",
+ "", "none", "",
 		[]string{"http://127.0.0.1:2"},
 		nil,
-		0,
-	)
+		0)
 
 	cfg := &sensitiveConfig{
 		BaseURL:      "http://127.0.0.1:1",
@@ -1195,11 +1201,12 @@ func TestNewHTTPProfile_WithFallbackURLs(t *testing.T) {
 		"",
 		10, 5, 10, false,
 		"/get", "/post",
-		"", "", "none", "",
+		"", "",
+ "",
+ "", "none", "",
 		fallbacks,
 		nil,
-		0,
-	)
+		0)
 
 	if len(p.FallbackURLs) != 2 {
 		t.Fatalf("FallbackURLs = %v, want 2 entries", p.FallbackURLs)
@@ -1223,11 +1230,12 @@ func TestMakeRequest_ConcurrentFailover(t *testing.T) {
 		"",
 		1, 5, 0, false,
 		"/test", "/test",
-		"", "", "none", "",
+		"", "",
+ "",
+ "", "none", "",
 		[]string{server.URL + "/fb1", server.URL + "/fb2"},
 		nil,
-		0,
-	)
+		0)
 
 	cfg := &sensitiveConfig{
 		BaseURL:      server.URL,
@@ -1262,11 +1270,12 @@ func TestSealConfig_PreservesFallbackURLs(t *testing.T) {
 		"",
 		10, 5, 10, false,
 		"/get", "/post",
-		"", "", "none", "",
+		"", "",
+ "",
+ "", "none", "",
 		[]string{"http://backup:80"},
 		nil,
-		0,
-	)
+		0)
 
 	if err := p.SealConfig(); err != nil {
 		t.Fatalf("SealConfig failed: %v", err)
