@@ -505,3 +505,349 @@ func asn1String(tag byte, s string) []byte {
 func asn1Integer(v int) []byte {
 	return []byte{0x02, 0x01, byte(v)}
 }
+
+// --- LDAP Simple Bind Tests ---
+
+func buildLDAPBindRequest(dn, password string) []byte {
+	// Build innermost fields
+	version := asn1Integer(3)                  // LDAPv3
+	name := asn1Wrap(0x04, []byte(dn))         // OCTET STRING (DN)
+	auth := asn1Wrap(0x80, []byte(password))    // CONTEXT 0 (simple bind password)
+
+	// BindRequest (APPLICATION 0 = tag 0x60)
+	bindBody := append(version, name...)
+	bindBody = append(bindBody, auth...)
+	bindReq := asn1Wrap(0x60, bindBody)
+
+	// messageID (INTEGER)
+	msgID := asn1Integer(1)
+
+	// SEQUENCE wrapper
+	seqBody := append(msgID, bindReq...)
+	return asn1Wrap(0x30, seqBody)
+}
+
+func TestSniffExtractLDAP(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  []byte
+		port     uint16
+		wantUser string
+		wantPass string
+		wantNil  bool
+	}{
+		{
+			name:     "valid simple bind",
+			payload:  buildLDAPBindRequest("cn=admin,dc=example,dc=com", "secret123"),
+			port:     389,
+			wantUser: "cn=admin,dc=example,dc=com",
+			wantPass: "secret123",
+		},
+		{
+			name:     "LDAPS port",
+			payload:  buildLDAPBindRequest("uid=jdoe,ou=users,dc=corp", "P@ssw0rd"),
+			port:     636,
+			wantUser: "uid=jdoe,ou=users,dc=corp",
+			wantPass: "P@ssw0rd",
+		},
+		{
+			name:    "wrong port",
+			payload: buildLDAPBindRequest("cn=admin", "secret"),
+			port:    8080,
+			wantNil: true,
+		},
+		{
+			name:    "empty DN (anonymous bind)",
+			payload: buildLDAPBindRequest("", "pass"),
+			port:    389,
+			wantNil: true,
+		},
+		{
+			name:    "empty password",
+			payload: buildLDAPBindRequest("cn=admin", ""),
+			port:    389,
+			wantNil: true,
+		},
+		{
+			name:    "too short",
+			payload: []byte{0x30, 0x03, 0x02, 0x01, 0x01},
+			port:    389,
+			wantNil: true,
+		},
+		{
+			name:    "not LDAP (wrong tag)",
+			payload: []byte{0x31, 0x10, 0x02, 0x01, 0x01},
+			port:    389,
+			wantNil: true,
+		},
+		{
+			name:    "not bind request (search request tag)",
+			payload: func() []byte {
+				// Build a search request instead of bind
+				msgID := asn1Integer(1)
+				searchReq := asn1Wrap(0x63, []byte("search body")) // APPLICATION 3
+				seqBody := append(msgID, searchReq...)
+				return asn1Wrap(0x30, seqBody)
+			}(),
+			port:    389,
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := &packetMeta{SrcIP: "10.0.0.1", DstIP: "10.0.0.2", SrcPort: 49000, DstPort: tt.port}
+			cred := sniffExtractLDAP(tt.payload, meta)
+			if tt.wantNil {
+				if cred != nil {
+					t.Errorf("expected nil, got credential: %+v", cred)
+				}
+				return
+			}
+			if cred == nil {
+				t.Fatal("expected credential, got nil")
+			}
+			if cred.Username != tt.wantUser {
+				t.Errorf("username: want %q, got %q", tt.wantUser, cred.Username)
+			}
+			if cred.Password != tt.wantPass {
+				t.Errorf("password: want %q, got %q", tt.wantPass, cred.Password)
+			}
+			if cred.Protocol != "ldap" {
+				t.Errorf("protocol: want 'ldap', got %q", cred.Protocol)
+			}
+		})
+	}
+}
+
+// --- SMTP AUTH Tests ---
+
+func TestSniffExtractSMTPAuth(t *testing.T) {
+	tests := []struct {
+		name     string
+		payload  string
+		port     uint16
+		wantUser string
+		wantPass string
+		wantNil  bool
+	}{
+		{
+			name:     "AUTH PLAIN inline",
+			payload:  "AUTH PLAIN AGFkbWluAHNlY3JldA==", // \x00admin\x00secret
+			port:     587,
+			wantUser: "admin",
+			wantPass: "secret",
+		},
+		{
+			name:     "AUTH PLAIN port 25",
+			payload:  "AUTH PLAIN AHVzZXJAZXhhbXBsZS5jb20AUEBzc3cwcmQ=", // \x00user@example.com\x00P@ssw0rd
+			port:     25,
+			wantUser: "user@example.com",
+			wantPass: "P@ssw0rd",
+		},
+		{
+			name:     "AUTH PLAIN port 465",
+			payload:  "AUTH PLAIN AGpvaG4AcGFzcw==", // \x00john\x00pass
+			port:     465,
+			wantUser: "john",
+			wantPass: "pass",
+		},
+		{
+			name:    "wrong port",
+			payload: "AUTH PLAIN AGFkbWluAHNlY3JldA==",
+			port:    8080,
+			wantNil: true,
+		},
+		{
+			name:    "EHLO command (not AUTH)",
+			payload: "EHLO example.com",
+			port:    587,
+			wantNil: true,
+		},
+		{
+			name:    "AUTH LOGIN (not PLAIN - currently unsupported)",
+			payload: "AUTH LOGIN",
+			port:    587,
+			wantNil: true,
+		},
+		{
+			name:    "empty payload",
+			payload: "",
+			port:    587,
+			wantNil: true,
+		},
+		{
+			name:    "AUTH PLAIN invalid base64",
+			payload: "AUTH PLAIN !!!invalidbase64!!!",
+			port:    587,
+			wantNil: true,
+		},
+		{
+			name:    "AUTH PLAIN missing password",
+			payload: "AUTH PLAIN AGFkbWlu", // \x00admin (no second null + password)
+			port:    587,
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			meta := &packetMeta{SrcIP: "10.0.0.1", DstIP: "10.0.0.2", SrcPort: 49000, DstPort: tt.port}
+			cred := sniffExtractSMTPAuth([]byte(tt.payload), meta)
+			if tt.wantNil {
+				if cred != nil {
+					t.Errorf("expected nil, got credential: %+v", cred)
+				}
+				return
+			}
+			if cred == nil {
+				t.Fatal("expected credential, got nil")
+			}
+			if cred.Username != tt.wantUser {
+				t.Errorf("username: want %q, got %q", tt.wantUser, cred.Username)
+			}
+			if cred.Password != tt.wantPass {
+				t.Errorf("password: want %q, got %q", tt.wantPass, cred.Password)
+			}
+			if cred.Protocol != "smtp" {
+				t.Errorf("protocol: want 'smtp', got %q", cred.Protocol)
+			}
+		})
+	}
+}
+
+// --- Telnet Credential Tracker Tests ---
+
+func TestSniffTelnetTracker(t *testing.T) {
+	tracker := &sniffTelnetTracker{pending: make(map[string]string)}
+
+	// First client packet: username
+	meta := &packetMeta{SrcIP: "10.0.0.1", DstIP: "10.0.0.2", SrcPort: 49000, DstPort: 23}
+	cred := tracker.process([]byte("admin"), meta)
+	if cred != nil {
+		t.Error("username alone should not return credential")
+	}
+
+	// Second client packet: password → should return credential
+	cred = tracker.process([]byte("secret123"), meta)
+	if cred == nil {
+		t.Fatal("expected credential after password")
+	}
+	if cred.Username != "admin" {
+		t.Errorf("username: want 'admin', got %q", cred.Username)
+	}
+	if cred.Password != "secret123" {
+		t.Errorf("password: want 'secret123', got %q", cred.Password)
+	}
+	if cred.Protocol != "telnet" {
+		t.Errorf("protocol: want 'telnet', got %q", cred.Protocol)
+	}
+}
+
+func TestSniffTelnetTrackerWrongPort(t *testing.T) {
+	tracker := &sniffTelnetTracker{pending: make(map[string]string)}
+	meta := &packetMeta{SrcIP: "10.0.0.1", DstIP: "10.0.0.2", SrcPort: 49000, DstPort: 80}
+	cred := tracker.process([]byte("admin"), meta)
+	if cred != nil {
+		t.Error("wrong port should return nil")
+	}
+}
+
+func TestSniffTelnetTrackerServerPacketIgnored(t *testing.T) {
+	tracker := &sniffTelnetTracker{pending: make(map[string]string)}
+	// Packet from server (port 23 as source)
+	meta := &packetMeta{SrcIP: "10.0.0.2", DstIP: "10.0.0.1", SrcPort: 23, DstPort: 49000}
+	cred := tracker.process([]byte("login: "), meta)
+	if cred != nil {
+		t.Error("server prompt should return nil")
+	}
+}
+
+func TestSniffTelnetTrackerIACStripping(t *testing.T) {
+	tracker := &sniffTelnetTracker{pending: make(map[string]string)}
+	meta := &packetMeta{SrcIP: "10.0.0.1", DstIP: "10.0.0.2", SrcPort: 49000, DstPort: 23}
+
+	// Username with IAC WILL (FF FB xx) sequences interspersed
+	payload := append([]byte{0xFF, 0xFB, 0x01}, []byte("root")...)
+	cred := tracker.process(payload, meta)
+	if cred != nil {
+		t.Error("username alone should not return credential")
+	}
+
+	// Password
+	cred = tracker.process([]byte("toor"), meta)
+	if cred == nil {
+		t.Fatal("expected credential")
+	}
+	if cred.Username != "root" {
+		t.Errorf("username: want 'root', got %q", cred.Username)
+	}
+	if cred.Password != "toor" {
+		t.Errorf("password: want 'toor', got %q", cred.Password)
+	}
+}
+
+func TestSniffTelnetTrackerEmptyPayload(t *testing.T) {
+	tracker := &sniffTelnetTracker{pending: make(map[string]string)}
+	meta := &packetMeta{SrcIP: "10.0.0.1", DstIP: "10.0.0.2", SrcPort: 49000, DstPort: 23}
+	cred := tracker.process([]byte(""), meta)
+	if cred != nil {
+		t.Error("empty payload should return nil")
+	}
+}
+
+// --- stripTelnetIAC Tests ---
+
+func TestStripTelnetIAC(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  []byte
+		expect string
+	}{
+		{"no IAC", []byte("hello"), "hello"},
+		{"WILL option", []byte{0xFF, 0xFB, 0x01, 'h', 'i'}, "hi"},
+		{"WONT option", []byte{0xFF, 0xFC, 0x03, 'O', 'K'}, "OK"},
+		{"DO option", []byte{0xFF, 0xFD, 0x18, 't', 'e', 's', 't'}, "test"},
+		{"DONT option", []byte{0xFF, 0xFE, 0x01, 'x'}, "x"},
+		{"escaped FF", []byte{0xFF, 0xFF, 'a'}, "\xffa"},
+		{"subnegotiation", []byte{0xFF, 0xFA, 0x18, 0x00, 'x', 't', 'e', 'r', 'm', 0xFF, 0xF0, 'z'}, "z"},
+		{"empty", []byte{}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := stripTelnetIAC(tt.input)
+			if string(result) != tt.expect {
+				t.Errorf("want %q, got %q", tt.expect, string(result))
+			}
+		})
+	}
+}
+
+// --- DER Helper Tests ---
+
+func TestDerSkipTLV(t *testing.T) {
+	// INTEGER(3): 02 01 03
+	data := []byte{0x02, 0x01, 0x03, 0x04, 0x05}
+	rest, ok := derSkipTLV(data)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if len(rest) != 2 || rest[0] != 0x04 {
+		t.Errorf("expected rest to start with 0x04, got %v", rest)
+	}
+}
+
+func TestDerReadOctetString(t *testing.T) {
+	// OCTET STRING "hello": 04 05 68 65 6c 6c 6f
+	data := []byte{0x04, 0x05, 'h', 'e', 'l', 'l', 'o', 0x80, 0x03}
+	val, rest, ok := derReadOctetString(data)
+	if !ok {
+		t.Fatal("expected ok")
+	}
+	if string(val) != "hello" {
+		t.Errorf("value: want 'hello', got %q", string(val))
+	}
+	if len(rest) != 2 || rest[0] != 0x80 {
+		t.Errorf("rest should start with 0x80, got %v", rest)
+	}
+}

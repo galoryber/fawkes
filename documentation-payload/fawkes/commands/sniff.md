@@ -9,7 +9,7 @@ hidden = false
 
 Network sniffing, LLMNR/NBT-NS/mDNS poisoning, and NTLM relay for credential interception. Three modes:
 
-- **capture** (default): Passive network sniffing — captures traffic and extracts cleartext credentials from HTTP Basic Auth, FTP, NTLM, and Kerberos.
+- **capture** (default): Passive network sniffing — captures traffic and extracts cleartext credentials from HTTP Basic Auth, FTP, NTLM, Kerberos, LDAP simple bind, SMTP AUTH PLAIN, and Telnet.
 - **poison**: Active LLMNR/NBT-NS/mDNS responder — answers multicast name resolution queries with the attacker IP to intercept authentication attempts (T1557.001).
 - **relay**: NTLM relay — intercepts victim NTLM authentication via HTTP and relays it to a target SMB server for authenticated access without cracking hashes (T1557.001).
 
