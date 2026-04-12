@@ -121,6 +121,7 @@ type SpawnParams struct {
 
 // Execute executes the spawn command
 func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
+	ensureInjectionAPIs()
 	if runtime.GOOS != "windows" {
 		return errorResult("Error: This command is only supported on Windows")
 	}

