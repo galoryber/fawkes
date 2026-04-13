@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -22,11 +21,9 @@ type syscallsParams struct {
 }
 
 func (c *SyscallsCommand) Execute(task structs.Task) structs.CommandResult {
-	var params syscallsParams
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	params, parseErr := unmarshalParams[syscallsParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if params.Action == "" {
 		params.Action = "status"

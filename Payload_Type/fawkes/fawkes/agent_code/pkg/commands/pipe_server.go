@@ -6,7 +6,6 @@ package commands
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -52,11 +51,9 @@ const (
 )
 
 func (c *PipeServerCommand) Execute(task structs.Task) structs.CommandResult {
-	var args pipeServerArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[pipeServerArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

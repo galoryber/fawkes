@@ -6,7 +6,6 @@ package commands
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -40,11 +39,9 @@ var (
 )
 
 func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
-	var args printSpooferArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[printSpooferArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if args.Timeout == 0 {
 		args.Timeout = 30

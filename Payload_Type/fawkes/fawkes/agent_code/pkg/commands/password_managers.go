@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,11 +31,9 @@ type pmResult struct {
 }
 
 func (c *PasswordManagersCommand) Execute(task structs.Task) structs.CommandResult {
-	var args pmArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[pmArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if args.Depth <= 0 {
 		args.Depth = 4

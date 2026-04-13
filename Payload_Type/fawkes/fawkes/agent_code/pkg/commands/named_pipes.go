@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -48,11 +47,9 @@ type win32FindDataW struct {
 }
 
 func (c *NamedPipesCommand) Execute(task structs.Task) structs.CommandResult {
-	var args namedPipesArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[namedPipesArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	pipes, err := enumerateNamedPipes()

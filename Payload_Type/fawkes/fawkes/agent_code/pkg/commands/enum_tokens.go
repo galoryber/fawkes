@@ -39,11 +39,9 @@ type tokenEntry struct {
 }
 
 func (c *EnumTokensCommand) Execute(task structs.Task) structs.CommandResult {
-	var args enumTokensArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[enumTokensArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {
