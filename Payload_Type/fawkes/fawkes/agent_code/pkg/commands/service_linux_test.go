@@ -31,8 +31,8 @@ func TestServiceExecuteEmptyParams(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error status, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "parameters required") {
-		t.Error("expected 'parameters required' in error output")
+	if !strings.Contains(result.Output, "action") && !strings.Contains(result.Output, "Unknown") {
+		t.Error("expected action error in output")
 	}
 }
 

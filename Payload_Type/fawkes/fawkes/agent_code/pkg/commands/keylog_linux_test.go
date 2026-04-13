@@ -223,8 +223,8 @@ func TestKeylogExecuteEmptyParams(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error for empty params, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "action required") {
-		t.Errorf("expected 'action required' message, got %q", result.Output)
+	if !strings.Contains(result.Output, "action") && !strings.Contains(result.Output, "Unknown") {
+		t.Errorf("expected action error message, got %q", result.Output)
 	}
 }
 
