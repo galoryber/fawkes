@@ -4,7 +4,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -30,11 +29,9 @@ type ptyParams struct {
 }
 
 func (c *PtyCommand) Execute(task structs.Task) structs.CommandResult {
-	var params ptyParams
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	params, parseErr := unmarshalParams[ptyParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Auto-detect shell if not specified

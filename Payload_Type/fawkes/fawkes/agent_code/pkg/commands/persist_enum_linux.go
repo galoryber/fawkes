@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/user"
@@ -21,11 +20,9 @@ func (c *PersistEnumCommand) Description() string {
 }
 
 func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
-	var args persistEnumArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[persistEnumArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if args.Category == "" {
 		args.Category = "all"

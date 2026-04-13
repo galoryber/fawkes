@@ -42,11 +42,9 @@ type netstatEntry struct {
 }
 
 func (c *NetstatCommand) Execute(task structs.Task) structs.CommandResult {
-	var args netstatArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[netstatArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Get all connections (TCP and UDP)

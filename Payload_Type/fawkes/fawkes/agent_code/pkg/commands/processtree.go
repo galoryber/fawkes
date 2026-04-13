@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -21,11 +20,9 @@ type processTreeArgs struct {
 }
 
 func (c *ProcessTreeCommand) Execute(task structs.Task) structs.CommandResult {
-	var args processTreeArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[processTreeArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	processes, err := getProcessList(PsArgs{})

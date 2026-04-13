@@ -134,11 +134,9 @@ func logonSessionsAddrString(addr [4]uint32) string {
 }
 
 func (c *LogonSessionsCommand) Execute(task structs.Task) structs.CommandResult {
-	var args logonSessionsArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[logonSessionsArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	action := strings.ToLower(args.Action)

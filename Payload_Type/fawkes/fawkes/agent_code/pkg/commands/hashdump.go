@@ -63,7 +63,7 @@ func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult 
 	// SeBackupPrivilege on all threads, and LockOSThread was causing process
 	// crashes during response delivery after hashdump completed.
 
-	args, parseErr := unmarshalParams[hashdumpArgs](task)
+	_, parseErr := unmarshalParams[hashdumpArgs](task)
 	if parseErr != nil {
 		return *parseErr
 	}
