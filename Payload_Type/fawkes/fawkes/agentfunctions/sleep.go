@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -91,6 +92,7 @@ func init() {
 				Description: "Comma-separated ISO weekday numbers (Mon=1, Sun=7). E.g. '1,2,3,4,5' for weekdays. Leave empty for no change, '0' to disable (all days).",
 			},
 		},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sleep_new.js"), Author: "@galoryber"},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,
