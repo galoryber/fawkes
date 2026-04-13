@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"syscall"
 	"unsafe"
@@ -29,9 +28,9 @@ var (
 )
 
 func (c *SuspendCommand) Execute(task structs.Task) structs.CommandResult {
-	var params SuspendParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[SuspendParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.PID <= 0 {

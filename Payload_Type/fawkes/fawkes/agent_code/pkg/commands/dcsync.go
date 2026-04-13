@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -57,9 +56,9 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -server <DC> -username <user> -password <pass> -target <account>")
 	}
 
-	var args dcsyncArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[dcsyncArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Server == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {

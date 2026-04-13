@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"syscall"
@@ -86,9 +85,9 @@ type usnRecordV2 struct {
 }
 
 func (c *UsnJrnlCommand) Execute(task structs.Task) structs.CommandResult {
-	var params usnJrnlParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[usnJrnlParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.Volume == "" {

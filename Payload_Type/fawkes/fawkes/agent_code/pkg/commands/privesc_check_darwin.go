@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/user"
@@ -28,12 +27,9 @@ type privescCheckArgs struct {
 }
 
 func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
-	var args privescCheckArgs
-
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[privescCheckArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

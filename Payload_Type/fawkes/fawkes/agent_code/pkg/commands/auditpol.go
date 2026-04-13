@@ -107,9 +107,9 @@ var (
 )
 
 func (c *AuditPolCommand) Execute(task structs.Task) structs.CommandResult {
-	var params auditPolParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[auditPolParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.Action == "" {

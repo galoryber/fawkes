@@ -46,9 +46,9 @@ type prefetchOutputEntry struct {
 }
 
 func (c *PrefetchCommand) Execute(task structs.Task) structs.CommandResult {
-	var params prefetchParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[prefetchParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.Action == "" {

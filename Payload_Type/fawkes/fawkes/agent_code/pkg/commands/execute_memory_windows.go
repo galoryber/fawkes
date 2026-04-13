@@ -6,7 +6,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -45,9 +44,9 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 		return errorResult("Error: binary_b64 parameter required (base64-encoded PE binary)")
 	}
 
-	var args executeMemoryArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[executeMemoryArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.BinaryB64 == "" {

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -76,9 +75,9 @@ func (c *CutCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: no parameters provided")
 	}
 
-	var args cutArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[cutArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if args.Path == "" {
 		return errorResult("Error: path is required")

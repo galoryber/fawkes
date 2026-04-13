@@ -4,7 +4,6 @@ package commands
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unsafe"
@@ -45,9 +44,9 @@ var (
 )
 
 func (c *ArgueCommand) Execute(task structs.Task) structs.CommandResult {
-	var params argueParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[argueParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.Command == "" {

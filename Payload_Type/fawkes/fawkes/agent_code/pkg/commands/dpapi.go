@@ -6,7 +6,6 @@ package commands
 import (
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,9 +32,9 @@ type dpapiArgs struct {
 }
 
 func (c *DpapiCommand) Execute(task structs.Task) structs.CommandResult {
-	var args dpapiArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[dpapiArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

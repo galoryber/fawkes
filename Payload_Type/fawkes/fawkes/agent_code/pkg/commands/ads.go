@@ -5,7 +5,6 @@ package commands
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,9 +35,9 @@ func (c *ADSCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -action <write|read|list|delete> -file <path> [-stream <name>] [-data <content>]")
 	}
 
-	var args adsArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[adsArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.File == "" {

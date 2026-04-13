@@ -39,9 +39,9 @@ type amcacheOutputEntry struct {
 }
 
 func (c *AmcacheCommand) Execute(task structs.Task) structs.CommandResult {
-	var params amcacheParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[amcacheParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.Action == "" {

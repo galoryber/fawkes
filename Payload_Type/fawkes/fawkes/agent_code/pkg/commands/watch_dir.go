@@ -2,7 +2,6 @@ package commands
 
 import (
 	"crypto/md5"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -46,9 +45,9 @@ type watchEvent struct {
 }
 
 func (c *WatchDirCommand) Execute(task structs.Task) structs.CommandResult {
-	var params watchDirParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[watchDirParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.Path == "" {

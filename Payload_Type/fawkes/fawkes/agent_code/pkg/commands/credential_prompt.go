@@ -4,7 +4,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os/exec"
 	"os/user"
@@ -38,12 +37,9 @@ type credentialPromptArgs struct {
 const credPromptTimeout = 5 * time.Minute
 
 func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResult {
-	var args credentialPromptArgs
-
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[credentialPromptArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Set defaults

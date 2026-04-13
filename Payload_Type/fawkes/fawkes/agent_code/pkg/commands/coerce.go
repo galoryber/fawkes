@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -66,9 +65,9 @@ func (c *CoerceCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -server <target> -listener <attacker-ip> [-method petitpotam|printerbug|shadowcoerce|all]")
 	}
 
-	var args coerceArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[coerceArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Server == "" || args.Listener == "" {

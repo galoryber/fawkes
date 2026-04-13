@@ -4,7 +4,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -60,12 +59,9 @@ func buildDialogArgs(tool, title, message string) []string {
 }
 
 func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResult {
-	var args credentialPromptLinuxArgs
-
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[credentialPromptLinuxArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	title := args.Title

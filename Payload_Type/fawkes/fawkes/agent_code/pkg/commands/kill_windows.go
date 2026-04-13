@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"os"
 	"syscall"
 	"unsafe"
@@ -32,9 +31,9 @@ func (c *KillCommand) Description() string {
 }
 
 func (c *KillCommand) Execute(task structs.Task) structs.CommandResult {
-	var params KillParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[KillParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	pid := params.PID

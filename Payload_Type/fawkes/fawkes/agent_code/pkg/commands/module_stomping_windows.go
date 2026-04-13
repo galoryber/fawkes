@@ -10,7 +10,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"runtime"
@@ -50,9 +49,9 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	var params moduleStompingParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[moduleStompingParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)

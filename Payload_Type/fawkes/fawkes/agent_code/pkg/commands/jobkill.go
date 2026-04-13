@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 
 	"fawkes/pkg/structs"
 )
@@ -17,9 +16,9 @@ type jobkillArgs struct {
 }
 
 func (c *JobkillCommand) Execute(task structs.Task) structs.CommandResult {
-	var args jobkillArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Failed to parse arguments: %v", err)
+	args, parseErr := unmarshalParams[jobkillArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.ID == "" {
