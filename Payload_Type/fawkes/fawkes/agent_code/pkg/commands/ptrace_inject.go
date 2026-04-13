@@ -4,7 +4,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -35,9 +34,9 @@ func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Actions: check, inject")
 	}
 
-	var args ptraceInjectArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[ptraceInjectArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	action := strings.ToLower(args.Action)
@@ -53,15 +52,15 @@ func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 	case "ld-preload":
 		return ldPreloadList()
 	case "ld-install":
-		var ldArgs ldPreloadArgs
-		if err := json.Unmarshal([]byte(task.Params), &ldArgs); err != nil {
-			return errorf("Error parsing ld-preload parameters: %v", err)
+		ldArgs, ldParseErr := unmarshalParams[ldPreloadArgs](task)
+		if ldParseErr != nil {
+			return *ldParseErr
 		}
 		return ldPreloadInstall(ldArgs)
 	case "ld-remove":
-		var ldArgs ldPreloadArgs
-		if err := json.Unmarshal([]byte(task.Params), &ldArgs); err != nil {
-			return errorf("Error parsing ld-preload parameters: %v", err)
+		ldArgs, ldParseErr := unmarshalParams[ldPreloadArgs](task)
+		if ldParseErr != nil {
+			return *ldParseErr
 		}
 		return ldPreloadRemove(ldArgs)
 	default:

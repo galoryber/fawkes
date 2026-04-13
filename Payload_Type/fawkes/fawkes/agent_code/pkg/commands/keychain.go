@@ -4,7 +4,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"os/exec"
 	"strings"
 	"time"
@@ -43,14 +42,13 @@ type keychainArgs struct {
 }
 
 func (c *KeychainCommand) Execute(task structs.Task) structs.CommandResult {
-	var args keychainArgs
-
 	if task.Params == "" {
 		return errorResult("Error: parameters required. Actions: list, dump, find-password, find-internet, find-cert")
 	}
 
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[keychainArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch strings.ToLower(args.Action) {

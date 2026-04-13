@@ -11,7 +11,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -126,10 +125,9 @@ func (c *SpawnCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	var params SpawnParams
-	err := json.Unmarshal([]byte(task.Params), &params)
-	if err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[SpawnParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	params.Mode = strings.ToLower(params.Mode)

@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -31,14 +30,13 @@ type regDeleteArgs struct {
 }
 
 func (c *RegDeleteCommand) Execute(task structs.Task) structs.CommandResult {
-	var args regDeleteArgs
-
 	if task.Params == "" {
 		return errorResult("Error: parameters required (hive, path)")
 	}
 
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[regDeleteArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Path == "" {

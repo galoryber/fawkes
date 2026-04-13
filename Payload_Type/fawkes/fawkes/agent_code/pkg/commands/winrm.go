@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -43,9 +42,9 @@ func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -host <target> -username <user> -password <pass> -command <cmd>")
 	}
 
-	var args winrmArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[winrmArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 	defer structs.ZeroString(&args.Hash)

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -47,21 +46,8 @@ func buildWQLTrigger(trigger string, intervalSec int, processName string) (strin
 // parseWmiPersistArgs handles common parameter parsing and validation
 func parseWmiPersistArgs(task structs.Task) (wmiPersistArgs, *structs.CommandResult) {
 	if task.Params == "" {
-		r := structs.CommandResult{
-			Output: "Error: parameters required. Actions: install, remove, list",
-			Status: "error", Completed: true,
-		}
+		r := errorResult("Error: parameters required. Actions: install, remove, list")
 		return wmiPersistArgs{}, &r
 	}
-
-	var args wmiPersistArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		r := structs.CommandResult{
-			Output: fmt.Sprintf("Error parsing parameters: %v", err),
-			Status: "error", Completed: true,
-		}
-		return wmiPersistArgs{}, &r
-	}
-
-	return args, nil
+	return unmarshalParams[wmiPersistArgs](task)
 }

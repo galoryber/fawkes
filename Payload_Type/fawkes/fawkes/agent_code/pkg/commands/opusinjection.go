@@ -18,7 +18,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"unsafe"
@@ -118,10 +117,9 @@ func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult 
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	var params OpusInjectionParams
-	err := json.Unmarshal([]byte(task.Params), &params)
-	if err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[OpusInjectionParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.ShellcodeB64 == "" {

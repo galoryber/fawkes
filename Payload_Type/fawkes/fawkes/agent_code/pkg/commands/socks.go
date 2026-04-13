@@ -1,13 +1,16 @@
 package commands
 
 import (
-	"encoding/json"
-
 	"fawkes/pkg/structs"
 )
 
 // SocksCommand implements the socks command
 type SocksCommand struct{}
+
+type socksArgs struct {
+	Action string `json:"action"`
+	Port   int    `json:"port"`
+}
 
 func (c *SocksCommand) Name() string {
 	return "socks"
@@ -18,13 +21,9 @@ func (c *SocksCommand) Description() string {
 }
 
 func (c *SocksCommand) Execute(task structs.Task) structs.CommandResult {
-	var params struct {
-		Action string `json:"action"`
-		Port   int    `json:"port"`
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Failed to parse parameters: %v", err)
+	params, parseErr := unmarshalParams[socksArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch params.Action {

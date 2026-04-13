@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,11 +30,9 @@ type UploadArgs struct {
 
 // Execute executes the upload command
 func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
-	args := UploadArgs{}
-
-	err := json.Unmarshal([]byte(task.Params), &args)
-	if err != nil {
-		return errorf("Failed to parse arguments: %v", err)
+	args, parseErr := unmarshalParams[UploadArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Handle tilde expansion

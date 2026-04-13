@@ -4,7 +4,6 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"encoding/base64"
-	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -55,9 +54,9 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Use -server <DC> -username <user@domain> -password <pass>")
 	}
 
-	var args gppArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[gppArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&args.Password)
 

@@ -2,7 +2,6 @@ package commands
 
 import (
 	"crypto/tls"
-	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -38,9 +37,9 @@ type credCheckResult struct {
 }
 
 func (c *CredCheckCommand) Execute(task structs.Task) structs.CommandResult {
-	var args credCheckArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[credCheckArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&args.Password, &args.Hash)
 

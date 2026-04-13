@@ -20,7 +20,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -59,10 +58,9 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	var params PoolPartyInjectionParams
-	err := json.Unmarshal([]byte(task.Params), &params)
-	if err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[PoolPartyInjectionParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.ShellcodeB64 == "" {

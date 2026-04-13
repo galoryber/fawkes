@@ -30,7 +30,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -168,10 +167,9 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	}
 
 	// Parse parameters
-	var params InlineAssemblyParams
-	err := json.Unmarshal([]byte(task.Params), &params)
-	if err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[InlineAssemblyParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Validate assembly_b64

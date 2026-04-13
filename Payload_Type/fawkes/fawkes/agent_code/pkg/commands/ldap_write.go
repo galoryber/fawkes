@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -38,9 +37,9 @@ func (c *LdapWriteCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error: parameters required. Use -action <%s> -server <DC>", allActions)
 	}
 
-	var args ldapWriteArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[ldapWriteArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 

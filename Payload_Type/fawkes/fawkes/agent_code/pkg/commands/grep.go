@@ -2,7 +2,6 @@ package commands
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,13 +38,13 @@ type grepMatch struct {
 }
 
 func (c *GrepCommand) Execute(task structs.Task) structs.CommandResult {
-	var args grepArgs
 	if task.Params == "" {
 		return errorResult("Error: parameters required. Usage: grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100]")
 	}
 
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[grepArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Pattern == "" {

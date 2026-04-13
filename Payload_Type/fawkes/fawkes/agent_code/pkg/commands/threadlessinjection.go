@@ -10,7 +10,6 @@ package commands
 import (
 	"encoding/base64"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -202,15 +201,16 @@ func (c *ThreadlessInjectCommand) Description() string {
 
 func (c *ThreadlessInjectCommand) Execute(task structs.Task) structs.CommandResult {
 	// Parse parameters
-	var params struct {
+	type threadlessInjectArgs struct {
 		ShellcodeB64 string `json:"shellcode_b64"`
 		PID          int    `json:"pid"`
 		DLLName      string `json:"dll_name"`
 		FunctionName string `json:"function_name"`
 	}
 
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Failed to parse parameters: %v", err)
+	params, parseErr := unmarshalParams[threadlessInjectArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Validate parameters

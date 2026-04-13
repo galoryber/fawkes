@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -23,9 +22,9 @@ func (c *NetUserCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: parameters required. Actions: add, delete, info, password, group-add, group-remove")
 	}
 
-	var args netUserArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[netUserArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 

@@ -40,9 +40,9 @@ func (c *KerbDelegationCommand) Execute(task structs.Task) structs.CommandResult
 		return errorResult("Error: parameters required. Use -action <unconstrained|constrained|rbcd|all> -server <DC>")
 	}
 
-	var args kerbDelegArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[kerbDelegArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&args.Password)
 

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -36,9 +35,9 @@ func (c *AclEditCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error: parameters required. Use -action <%s> -server <DC> -target <object>", allActions)
 	}
 
-	var args aclEditArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[aclEditArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 

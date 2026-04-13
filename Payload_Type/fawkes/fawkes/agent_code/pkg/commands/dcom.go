@@ -7,7 +7,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -108,14 +107,13 @@ type multiQI struct {
 }
 
 func (c *DcomCommand) Execute(task structs.Task) structs.CommandResult {
-	var args dcomArgs
-
 	if task.Params == "" {
 		return errorResult("Error: parameters required.\nActions: exec\nObjects: mmc20, shellwindows, shellbrowser, wscript, excel, outlook")
 	}
 
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[dcomArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 

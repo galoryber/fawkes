@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -84,14 +83,13 @@ type keylogArgs struct {
 }
 
 func (c *KeylogCommand) Execute(task structs.Task) structs.CommandResult {
-	var args keylogArgs
-
 	if task.Params == "" {
 		return errorResult("Error: action required. Use: start, stop, dump, status, clear")
 	}
 
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[keylogArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch strings.ToLower(args.Action) {

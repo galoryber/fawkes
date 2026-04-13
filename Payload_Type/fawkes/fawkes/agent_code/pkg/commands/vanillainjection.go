@@ -16,7 +16,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -100,10 +99,9 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	var params VanillaInjectionParams
-	err := json.Unmarshal([]byte(task.Params), &params)
-	if err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[VanillaInjectionParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.ShellcodeB64 == "" {

@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"unsafe"
@@ -56,9 +55,9 @@ type tsconArgs struct {
 }
 
 func (c *TsconCommand) Execute(task structs.Task) structs.CommandResult {
-	var args tsconArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[tsconArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

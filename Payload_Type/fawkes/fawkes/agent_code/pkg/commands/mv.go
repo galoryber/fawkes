@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"os"
 
 	"fawkes/pkg/structs"
@@ -20,22 +19,21 @@ func (c *MvCommand) Description() string {
 	return "Move file - moves a file from source to destination"
 }
 
+type mvArgs struct {
+	Source      string `json:"source"`
+	Destination string `json:"destination"`
+}
+
 // Execute executes the mv command
 func (c *MvCommand) Execute(task structs.Task) structs.CommandResult {
-	// Parse parameters
-	var args struct {
-		Source      string `json:"source"`
-		Destination string `json:"destination"`
-	}
-
 	// Check if parameters are provided
 	if task.Params == "" {
 		return errorResult("Error: No parameters specified. Usage: mv <source> <destination>")
 	}
 
-	// Try to parse as JSON
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v. Usage: mv <source> <destination>", err)
+	args, parseErr := unmarshalParams[mvArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Strip surrounding quotes in case the user wrapped paths (e.g. "C:\Program Data\file.txt")

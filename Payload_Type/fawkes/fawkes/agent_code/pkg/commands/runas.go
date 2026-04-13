@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"syscall"
 	"unsafe"
 
@@ -30,9 +29,9 @@ func (c *RunasCommand) Name() string        { return "runas" }
 func (c *RunasCommand) Description() string { return "Execute a command as a different user" }
 
 func (c *RunasCommand) Execute(task structs.Task) structs.CommandResult {
-	var args runasArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[runasArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer zeroCredentials(&args.Password)
 

