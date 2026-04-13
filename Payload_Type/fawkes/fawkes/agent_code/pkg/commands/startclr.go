@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -48,11 +47,9 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Parse parameters (default to "None" if empty/missing for backward compat)
-	var params StartCLRParams
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	params, parseErr := unmarshalParams[StartCLRParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if params.AmsiPatch == "" {
 		params.AmsiPatch = "None"

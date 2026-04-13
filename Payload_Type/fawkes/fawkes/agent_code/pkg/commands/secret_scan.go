@@ -2,7 +2,6 @@ package commands
 
 import (
 	"bufio"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -121,11 +120,9 @@ var defaultScanExtensions = map[string]bool{
 const maxFileSize = 10 * 1024 * 1024 // 10MB
 
 func (c *SecretScanCommand) Execute(task structs.Task) structs.CommandResult {
-	var args secretScanArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[secretScanArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Path == "" {

@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -25,11 +24,9 @@ type tokenStoreArgs struct {
 }
 
 func (c *TokenStoreCommand) Execute(task structs.Task) structs.CommandResult {
-	var args tokenStoreArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[tokenStoreArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

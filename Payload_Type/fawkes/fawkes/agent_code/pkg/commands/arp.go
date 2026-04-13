@@ -35,11 +35,9 @@ type arpArgs struct {
 
 // Execute executes the arp command using platform-specific implementation
 func (c *ArpCommand) Execute(task structs.Task) structs.CommandResult {
-	var args arpArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Invalid parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[arpArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "spoof" {

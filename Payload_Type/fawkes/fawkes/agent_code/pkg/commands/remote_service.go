@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -105,11 +104,9 @@ type parsedService struct {
 }
 
 func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult {
-	var args remoteServiceArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[remoteServiceArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 	defer structs.ZeroString(&args.Hash)

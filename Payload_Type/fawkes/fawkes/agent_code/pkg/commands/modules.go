@@ -31,11 +31,9 @@ type ModuleInfo struct {
 }
 
 func (c *ModulesCommand) Execute(task structs.Task) structs.CommandResult {
-	var args modulesArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Error parsing parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[modulesArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.PID <= 0 {
