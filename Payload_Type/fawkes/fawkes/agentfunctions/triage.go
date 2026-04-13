@@ -11,7 +11,45 @@ import (
 )
 
 func init() {
-	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
+	agentstructs.AllPayloadData.Get("fawkes").AddCommand(triageCommand())
+}
+
+// triageResult represents a single file discovery result from triage output.
+type triageResult struct {
+	Path     string `json:"path"`
+	Category string `json:"category"`
+}
+
+// parseTriageResults parses triage JSON output into a list of file results.
+func parseTriageResults(responseText string) []triageResult {
+	if responseText == "" || responseText == "[]" {
+		return nil
+	}
+	var results []triageResult
+	if err := json.Unmarshal([]byte(responseText), &results); err != nil {
+		return nil
+	}
+	return results
+}
+
+// triageOPSECMessage generates the OPSEC warning message for triage actions.
+func triageOPSECMessage(action, target string) string {
+	if action == "recon-chain" {
+		return fmt.Sprintf("OPSEC WARNING: Recon Chain will execute a multi-step automated reconnaissance sequence against %s: (1) port scan, (2) SMB share enumeration, (3) share file hunting, (4) local credential triage. This generates significant network traffic and multiple authentication events. Each step creates visible artifacts (SYN scans, SMB sessions, file access logs). The combined footprint is substantially higher than any single command.", target)
+	}
+	return "OPSEC WARNING: System triage performs broad enumeration (processes, services, network, users, installed software, scheduled tasks). Aggregated system interrogation may trigger behavioral analytics for automated reconnaissance."
+}
+
+// validateReconChainParams checks if recon-chain parameters are valid.
+func validateReconChainParams(target, ports string) string {
+	if target == "" {
+		return "recon-chain requires -target parameter (e.g., 192.168.1.0/24)"
+	}
+	return ""
+}
+
+func triageCommand() agentstructs.Command {
+	return agentstructs.Command{
 		Name: "triage",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "triage_new.js"),
@@ -178,11 +216,8 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
-			msg := "OPSEC WARNING: System triage performs broad enumeration (processes, services, network, users, installed software, scheduled tasks). Aggregated system interrogation may trigger behavioral analytics for automated reconnaissance."
-			if action == "recon-chain" {
-				target, _ := taskData.Args.GetStringArg("target")
-				msg = fmt.Sprintf("OPSEC WARNING: Recon Chain will execute a multi-step automated reconnaissance sequence against %s: (1) port scan, (2) SMB share enumeration, (3) share file hunting, (4) local credential triage. This generates significant network traffic and multiple authentication events. Each step creates visible artifacts (SYN scans, SMB sessions, file access logs). The combined footprint is substantially higher than any single command.", target)
-			}
+			target, _ := taskData.Args.GetStringArg("target")
+			msg := triageOPSECMessage(action, target)
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
@@ -197,17 +232,13 @@ func init() {
 				Success: true,
 			}
 			responseText, ok := processResponse.Response.(string)
-			if !ok || responseText == "" || responseText == "[]" {
+			if !ok {
 				return response
 			}
-			var results []struct {
-				Path     string `json:"path"`
-				Category string `json:"category"`
-			}
-			if err := json.Unmarshal([]byte(responseText), &results); err != nil {
+			results := parseTriageResults(responseText)
+			if len(results) == 0 {
 				return response
 			}
-			// Group by category, create summary artifacts
 			categories := map[string]int{}
 			for _, r := range results {
 				categories[r.Category]++
@@ -237,9 +268,9 @@ func init() {
 			// recon-chain: sequential chain portscan → smb shares → share_hunt → triage
 			if action == "recon-chain" {
 				target, _ := taskData.Args.GetStringArg("target")
-				if target == "" {
+				if errMsg := validateReconChainParams(target, ""); errMsg != "" {
 					response.Success = false
-					response.Error = "recon-chain requires -target parameter (e.g., 192.168.1.0/24)"
+					response.Error = errMsg
 					return response
 				}
 
@@ -294,7 +325,7 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
-	})
+	}
 }
 
 // reconPortscanDone handles portscan completion, creates smb share enum subtask for hosts with port 445 open.

@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"sort"
+	"strings"
 	"testing"
 )
 
@@ -101,7 +102,6 @@ fe80::1   22       ssh`
 }
 
 func TestParsePortScanForPort_PortAsString(t *testing.T) {
-	// Port 22 — different from default 445
 	input := `192.168.100.51       22       ssh
 192.168.100.52       22       ssh
 192.168.100.53       80       http`
@@ -123,12 +123,110 @@ func TestParsePortScanForPort_TrimWhitespace(t *testing.T) {
 }
 
 func TestParsePortScanForPort_SingleField(t *testing.T) {
-	// Lines with only one field should be skipped
 	input := `onlyhost
 192.168.100.51       445      microsoft-ds`
 
 	hosts := parsePortScanForPort(input, 445)
 	if len(hosts) != 1 {
 		t.Errorf("expected 1 host (single-field line skipped), got %d: %v", len(hosts), hosts)
+	}
+}
+
+// --- parseTriageResults Tests ---
+
+func TestParseTriageResults_Valid(t *testing.T) {
+	jsonData := `[
+		{"path": "/home/user/doc.pdf", "category": "documents"},
+		{"path": "/home/user/resume.docx", "category": "documents"},
+		{"path": "/home/user/.ssh/id_rsa", "category": "credentials"},
+		{"path": "/etc/shadow", "category": "credentials"},
+		{"path": "/opt/app/config.yml", "category": "configs"}
+	]`
+
+	results := parseTriageResults(jsonData)
+	if len(results) != 5 {
+		t.Fatalf("expected 5 results, got %d", len(results))
+	}
+
+	categories := map[string]int{}
+	for _, r := range results {
+		categories[r.Category]++
+	}
+	if categories["documents"] != 2 {
+		t.Errorf("documents = %d, want 2", categories["documents"])
+	}
+	if categories["credentials"] != 2 {
+		t.Errorf("credentials = %d, want 2", categories["credentials"])
+	}
+	if categories["configs"] != 1 {
+		t.Errorf("configs = %d, want 1", categories["configs"])
+	}
+}
+
+func TestParseTriageResults_EmptyInputs(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"empty string", ""},
+		{"empty array", "[]"},
+		{"invalid json", "not-json"},
+		{"wrong type", `{"key": "value"}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			results := parseTriageResults(tt.input)
+			if len(results) != 0 {
+				t.Errorf("expected 0 results for %q, got %d", tt.input, len(results))
+			}
+		})
+	}
+}
+
+// --- triageOPSECMessage Tests ---
+
+func TestTriageOPSECMessage_ReconChain(t *testing.T) {
+	msg := triageOPSECMessage("recon-chain", "192.168.1.0/24")
+	if !strings.Contains(msg, "192.168.1.0/24") {
+		t.Error("recon-chain OPSEC message should include target")
+	}
+	if !strings.Contains(msg, "Recon Chain") {
+		t.Error("recon-chain OPSEC message should mention Recon Chain")
+	}
+	if !strings.Contains(msg, "port scan") {
+		t.Error("recon-chain should mention port scan step")
+	}
+}
+
+func TestTriageOPSECMessage_Regular(t *testing.T) {
+	msg := triageOPSECMessage("all", "")
+	if strings.Contains(msg, "Recon Chain") {
+		t.Error("regular triage should not mention Recon Chain")
+	}
+	if !strings.Contains(msg, "triage") {
+		t.Error("regular message should mention triage")
+	}
+}
+
+// --- validateReconChainParams Tests ---
+
+func TestValidateReconChainParams(t *testing.T) {
+	// Empty target should fail
+	err := validateReconChainParams("", "445")
+	if err == "" {
+		t.Error("expected error for empty target")
+	}
+
+	// Valid target
+	err = validateReconChainParams("192.168.1.0/24", "445")
+	if err != "" {
+		t.Errorf("unexpected error: %s", err)
+	}
+
+	// Valid target, empty ports (should still succeed — ports are optional)
+	err = validateReconChainParams("10.0.0.1-10", "")
+	if err != "" {
+		t.Errorf("unexpected error with empty ports: %s", err)
 	}
 }
