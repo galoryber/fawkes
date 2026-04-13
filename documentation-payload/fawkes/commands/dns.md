@@ -15,10 +15,11 @@ Supports custom DNS server targeting for querying internal domain DNS (e.g., Act
 
 Argument | Required | Description
 ---------|----------|------------
-action | Yes | Query type: `resolve` (A/AAAA), `reverse` (PTR), `srv`, `mx`, `ns`, `txt`, `cname`, `all` (comprehensive), `dc` (domain controller discovery), `zone-transfer` (AXFR), `wildcard` (detect wildcard DNS)
+action | Yes | Query type: `resolve` (A/AAAA), `reverse` (PTR), `srv`, `mx`, `ns`, `txt`, `cname`, `all` (comprehensive), `dc` (domain controller discovery), `zone-transfer` (AXFR), `wildcard` (detect wildcard DNS), `exfil` (DNS exfiltration), `doh` (DNS-over-HTTPS)
 target | Yes | Hostname, IP address, or domain name to query
-server | No | Custom DNS server IP (default: system resolver). **Required** for `zone-transfer` action.
+server | No | Custom DNS server IP (default: system resolver). **Required** for `zone-transfer`. For `doh`: provider name (`cloudflare`, `google`, `quad9`) or custom HTTPS URL.
 timeout | No | Query timeout in seconds (default: 5)
+data | No | For `exfil`: file path or raw string. For `doh`: record type (`A`, `AAAA`, `MX`, `TXT`, `NS`, `CNAME`, `SRV`, `SOA`, `PTR`, `ANY`).
 
 ## Usage
 
@@ -55,6 +56,13 @@ dns -action zone-transfer -target sevenkingdoms.local -server 192.168.100.51
 Detect wildcard DNS (useful before subdomain enumeration):
 ```
 dns -action wildcard -target example.com
+```
+
+DNS-over-HTTPS (stealthy resolution that bypasses DNS monitoring):
+```
+dns -action doh -target internal.corp.local -server cloudflare
+dns -action doh -target mail.target.com -data MX -server google
+dns -action doh -target target.com -data TXT -server https://custom-doh.example.com/dns-query
 ```
 
 ## Example Output
@@ -121,9 +129,12 @@ When zone transfer is refused (common in production):
 - **Zone transfer** uses raw DNS wire protocol over TCP (no external dependencies). The `-server` parameter is required because AXFR bypasses the system resolver.
 - Parses A, AAAA, NS, CNAME, SOA, MX, TXT, and SRV record types. Handles DNS compression pointers.
 - Zone transfers are often restricted in production environments. Getting a REFUSED response is expected for properly configured DNS servers.
+- **DNS-over-HTTPS** sends queries over HTTPS using the JSON wire format (RFC 8484). This bypasses traditional DNS monitoring since queries appear as normal HTTPS traffic. Built-in providers: Cloudflare (`cloudflare`), Google (`google`), Quad9 (`quad9`). Custom DOH endpoints are also supported.
 
 ## MITRE ATT&CK Mapping
 
 - **T1018** - Remote System Discovery
+- **T1071.004** - Application Layer Protocol: DNS (DOH bypasses traditional DNS monitoring)
+- **T1048.001** - Exfiltration Over Alternative Protocol: DNS (exfil action)
 
 {{% notice info %}}Cross-Platform — works on Windows, Linux, and macOS{{% /notice %}}

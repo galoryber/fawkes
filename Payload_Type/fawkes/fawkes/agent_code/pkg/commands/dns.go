@@ -18,7 +18,7 @@ func (c *DnsCommand) Description() string {
 }
 
 type dnsArgs struct {
-	Action  string `json:"action"`  // resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, exfil
+	Action  string `json:"action"`  // resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, exfil, doh
 	Target  string `json:"target"`  // hostname, IP, or domain
 	Server  string `json:"server"`  // DNS server (optional, required for zone-transfer)
 	Timeout int    `json:"timeout"` // timeout in seconds (default: 5)
@@ -38,7 +38,7 @@ func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action required. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil")
+		return errorResult("Error: action required. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil, doh")
 	}
 
 	if args.Timeout <= 0 {
@@ -88,8 +88,10 @@ func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
 		return dnsWildcard(ctx, resolver, args)
 	case "exfil":
 		return dnsExfil(args)
+	case "doh":
+		return dnsDoH(ctx, args)
 	default:
-		return errorf("Error: unknown action %q. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil", args.Action)
+		return errorf("Error: unknown action %q. Valid: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil, doh", args.Action)
 	}
 }
 

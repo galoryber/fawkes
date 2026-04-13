@@ -18,7 +18,7 @@ func init() {
 			Author:     "@galoryber",
 		},
 		Description:         "DNS enumeration — resolve hosts, query record types (A, MX, NS, SRV, TXT, CNAME), reverse lookups, and discover domain controllers via SRV records.",
-		HelpString:          "dns -action resolve -target example.com\ndns -action dc -target corp.local\ndns -action srv -target _ldap._tcp.corp.local\ndns -action all -target corp.local",
+		HelpString:          "dns -action resolve -target example.com\ndns -action dc -target corp.local\ndns -action srv -target _ldap._tcp.corp.local\ndns -action doh -target example.com -data AAAA -server google",
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1018", "T1048.001"},
@@ -34,9 +34,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "DNS query type: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil (T1048.001)",
+				Description:      "DNS query type: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil (T1048.001), doh (DNS-over-HTTPS)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"resolve", "reverse", "srv", "mx", "ns", "txt", "cname", "all", "dc", "zone-transfer", "wildcard", "exfil"},
+				Choices:          []string{"resolve", "reverse", "srv", "mx", "ns", "txt", "cname", "all", "dc", "zone-transfer", "wildcard", "exfil", "doh"},
 				DefaultValue:     "resolve",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -57,7 +57,7 @@ func init() {
 				Name:                "server",
 				CLIName:             "server",
 				ModalDisplayName:    "DNS Server",
-				Description:         "Custom DNS server to query (default: system resolver)",
+				Description:         "Custom DNS server (default: system resolver). For DOH: cloudflare, google, quad9, or custom URL",
 				ParameterType:       agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:        "",
 				DynamicQueryFunction: getActiveHostList,
@@ -80,7 +80,7 @@ func init() {
 				Name:             "data",
 				CLIName:          "data",
 				ModalDisplayName: "Exfil Data",
-				Description:      "Data to exfiltrate: file path or raw string (exfil action only)",
+				Description:      "Data to exfiltrate (exfil action) or record type for DOH (doh action: A, AAAA, MX, TXT, NS, CNAME, SRV, SOA, PTR, ANY)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -122,9 +122,12 @@ func init() {
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
 			var msg string
-			if action == "exfil" {
+			switch action {
+			case "exfil":
 				msg = "OPSEC WARNING: DNS exfiltration encodes data in subdomain labels. Generates many DNS queries with high-entropy hex subdomains. DNS monitoring, DLP, and threat intelligence feeds WILL detect this pattern. Use low delay and consider DNS-over-HTTPS for stealth (T1048.001)."
-			} else {
+			case "doh":
+				msg = "OPSEC NOTE: DNS-over-HTTPS queries bypass traditional DNS monitoring. Queries are sent as HTTPS to public DOH providers (cloudflare, google, quad9). TLS inspection or DOH provider blocking may still detect this. Lower risk than plain DNS queries."
+			default:
 				msg = fmt.Sprintf("OPSEC WARNING: DNS queries from agent (action: %s). Bulk DNS enumeration may trigger DNS monitoring alerts. Zone transfers and SRV queries for domain controllers are suspicious patterns (T1018, T1046).", action)
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
