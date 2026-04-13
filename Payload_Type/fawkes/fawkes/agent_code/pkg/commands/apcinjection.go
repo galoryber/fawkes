@@ -13,7 +13,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -62,9 +61,9 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	var params ApcInjectionParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := requireParams[ApcInjectionParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.ShellcodeB64 == "" {

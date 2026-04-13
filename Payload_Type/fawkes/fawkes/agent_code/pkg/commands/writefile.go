@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,13 +31,9 @@ type writeFileArgs struct {
 }
 
 func (c *WriteFileCommand) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
-	}
-
-	var args writeFileArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[writeFileArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Path == "" {

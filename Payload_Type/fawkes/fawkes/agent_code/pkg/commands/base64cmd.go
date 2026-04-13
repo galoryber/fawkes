@@ -3,7 +3,6 @@ package commands
 import (
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
@@ -33,13 +32,9 @@ type base64Args struct {
 }
 
 func (c *Base64Command) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: no parameters provided")
-	}
-
-	var args base64Args
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[base64Args](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Input == "" {

@@ -33,9 +33,9 @@ type containerEscapeArgs struct {
 }
 
 func (c *ContainerEscapeCommand) Execute(task structs.Task) structs.CommandResult {
-	var args containerEscapeArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Failed to parse arguments: %v", err)
+	args, parseErr := requireParams[containerEscapeArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

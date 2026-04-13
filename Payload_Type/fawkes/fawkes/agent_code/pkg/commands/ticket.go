@@ -8,7 +8,6 @@ package commands
 import (
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -54,13 +53,9 @@ type ticketArgs struct {
 }
 
 func (c *TicketCommand) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action forge -realm DOMAIN -username user -key <hex_key> -domain_sid <SID>")
-	}
-
-	var args ticketArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[ticketArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch strings.ToLower(args.Action) {

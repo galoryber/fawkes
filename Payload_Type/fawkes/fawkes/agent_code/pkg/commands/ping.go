@@ -50,9 +50,9 @@ func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	var args pingArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[pingArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Hosts == "" {

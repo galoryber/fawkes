@@ -32,14 +32,9 @@ type serviceArgs struct {
 }
 
 func (c *ServiceCommand) Execute(task structs.Task) structs.CommandResult {
-	var args serviceArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: list, query, start, stop, create, delete, enable, disable")
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[serviceArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch strings.ToLower(args.Action) {

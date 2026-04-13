@@ -38,13 +38,9 @@ type asrepArgs struct {
 }
 
 func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -server <DC> -realm <DOMAIN> -username <user@domain> -password <pass>")
-	}
-
-	var args asrepArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[asrepArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 

@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"math/rand"
 	"strings"
@@ -36,14 +35,9 @@ type psexecArgs struct {
 }
 
 func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
-	var args psexecArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required (host, command)")
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[psexecArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Host == "" {

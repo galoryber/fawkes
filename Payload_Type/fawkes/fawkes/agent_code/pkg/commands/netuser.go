@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"strings"
 
 	"fawkes/pkg/structs"
@@ -102,13 +101,9 @@ type lgMemberInfo3 struct {
 }
 
 func (c *NetUserCommand) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: add, delete, info, password, group-add, group-remove, disable, enable, lockout")
-	}
-
-	var args netUserArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[netUserArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	defer structs.ZeroString(&args.Password)
 

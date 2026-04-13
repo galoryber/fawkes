@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -264,14 +263,9 @@ const neAllActions = "users, localgroups, groupmembers, admins, domainusers, dom
 // --- Execute dispatcher ---
 
 func (c *NetEnumCommand) Execute(task structs.Task) structs.CommandResult {
-	var args netEnumArgs
-
-	if task.Params == "" {
-		return errorResult("Error: action parameter required.\nAvailable: " + neAllActions)
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[netEnumArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Remote operations (loggedon, sessions, remote shares) can block on unreachable hosts.

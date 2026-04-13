@@ -3,7 +3,6 @@ package commands
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"os"
@@ -43,13 +42,9 @@ type sshExecArgs struct {
 }
 
 func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -host <target> -username <user> [-password <pass> | -key_path <path>] -command <cmd>")
-	}
-
-	var args sshExecArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[sshExecArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Host == "" || args.Username == "" {

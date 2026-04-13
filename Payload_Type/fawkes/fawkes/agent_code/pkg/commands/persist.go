@@ -8,7 +8,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -41,14 +40,9 @@ type persistArgs struct {
 }
 
 func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
-	var args persistArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required (method, action, name, path)")
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[persistArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

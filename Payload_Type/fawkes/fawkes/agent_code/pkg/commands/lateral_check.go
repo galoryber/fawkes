@@ -43,9 +43,9 @@ type lateralOutputEntry struct {
 }
 
 func (c *LateralCheckCommand) Execute(task structs.Task) structs.CommandResult {
-	var args lateralCheckArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := requireParams[lateralCheckArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Hosts == "" {

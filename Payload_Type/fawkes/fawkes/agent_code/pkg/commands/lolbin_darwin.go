@@ -5,7 +5,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -33,9 +32,9 @@ type lolbinArgs struct {
 }
 
 func (c *LolbinCommand) Execute(task structs.Task) structs.CommandResult {
-	var args lolbinArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := requireParams[lolbinArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

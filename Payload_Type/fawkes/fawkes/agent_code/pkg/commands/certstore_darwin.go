@@ -23,9 +23,9 @@ func (c *CertstoreCommand) Description() string {
 }
 
 func (c *CertstoreCommand) Execute(task structs.Task) structs.CommandResult {
-	var params certstoreParamsDarwin
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := requireParams[certstoreParamsDarwin](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 	if params.Action == "" {
 		params.Action = "list"
