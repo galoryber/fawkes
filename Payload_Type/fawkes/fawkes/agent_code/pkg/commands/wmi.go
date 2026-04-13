@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -35,14 +34,9 @@ type wmiArgs struct {
 }
 
 func (c *WmiCommand) Execute(task structs.Task) structs.CommandResult {
-	var args wmiArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: execute, query, process-list, os-info")
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[wmiArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Timeout <= 0 {

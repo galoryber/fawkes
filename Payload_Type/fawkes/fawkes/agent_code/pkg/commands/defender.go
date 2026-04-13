@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -35,14 +34,9 @@ type defenderArgs struct {
 }
 
 func (c *DefenderCommand) Execute(task structs.Task) structs.CommandResult {
-	var args defenderArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Actions: status, exclusions, add-exclusion, remove-exclusion, threats, enable, disable")
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[defenderArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch strings.ToLower(args.Action) {

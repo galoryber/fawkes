@@ -14,9 +14,9 @@ import (
 // executePoisonCore runs the LLMNR/NBT-NS/mDNS poisoner with HTTP NTLM capture.
 // This is the cross-platform core logic called by platform-specific executePoison.
 func executePoisonCore(task structs.Task) structs.CommandResult {
-	var params sniffParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := requireParams[sniffParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	duration := params.Duration

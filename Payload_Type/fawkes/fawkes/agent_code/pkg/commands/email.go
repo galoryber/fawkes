@@ -3,7 +3,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"strings"
@@ -40,9 +39,9 @@ const (
 )
 
 func (c *EmailCommand) Execute(task structs.Task) structs.CommandResult {
-	var args emailArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := requireParams[emailArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Count <= 0 {

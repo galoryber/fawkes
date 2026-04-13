@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -29,13 +28,9 @@ type dnsArgs struct {
 }
 
 func (c *DnsCommand) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <resolve|reverse|srv|mx|ns|txt|cname|all|dc|wildcard> -target <host>")
-	}
-
-	var args dnsArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[dnsArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Target == "" && args.Action != "exfil" {

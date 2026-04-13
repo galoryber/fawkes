@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -28,14 +27,9 @@ func (c *VSSCommand) Description() string {
 }
 
 func (c *VSSCommand) Execute(task structs.Task) structs.CommandResult {
-	var args vssArgs
-
-	if task.Params == "" {
-		return errorResult("Error: parameters required.\nActions: list, create, delete, extract")
-	}
-
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[vssArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch strings.ToLower(args.Action) {

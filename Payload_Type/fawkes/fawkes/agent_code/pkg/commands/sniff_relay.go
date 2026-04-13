@@ -50,9 +50,9 @@ type relayEntry struct {
 
 // executeRelayCore runs the NTLM relay server. Cross-platform core logic.
 func executeRelayCore(task structs.Task) structs.CommandResult {
-	var params sniffParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := requireParams[sniffParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Parse relay-specific params from the generic fields

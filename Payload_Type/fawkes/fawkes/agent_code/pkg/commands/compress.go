@@ -2,7 +2,6 @@ package commands
 
 import (
 	"archive/zip"
-	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -54,9 +53,9 @@ func detectFormat(params CompressParams) string {
 }
 
 func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
-	var params CompressParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := requireParams[CompressParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.MaxDepth == 0 {

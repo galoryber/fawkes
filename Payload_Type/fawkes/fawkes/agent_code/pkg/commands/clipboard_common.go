@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -30,9 +29,9 @@ type ClipboardParams struct {
 }
 
 func (c *ClipboardCommand) Execute(task structs.Task) structs.CommandResult {
-	var params ClipboardParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := requireParams[ClipboardParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	switch params.Action {

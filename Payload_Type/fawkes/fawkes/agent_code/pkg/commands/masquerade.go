@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -30,9 +29,9 @@ type masqueradeArgs struct {
 }
 
 func (c *MasqueradeCommand) Execute(task structs.Task) structs.CommandResult {
-	var args masqueradeArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := requireParams[masqueradeArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Source == "" {
