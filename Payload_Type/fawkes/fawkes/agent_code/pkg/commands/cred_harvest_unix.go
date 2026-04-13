@@ -20,10 +20,12 @@ func credHarvestDispatch(args credHarvestArgs) structs.CommandResult {
 		return credConfigs(args)
 	case "history":
 		return credHistory(args)
+	case "browser-live":
+		return credBrowserLive(args)
 	case "all":
 		return credAll(args)
 	default:
-		return errorf("Unknown action: %s\nAvailable: shadow, cloud, configs, history, all", args.Action)
+		return errorf("Unknown action: %s\nAvailable: shadow, cloud, configs, history, browser-live, all", args.Action)
 	}
 }
 

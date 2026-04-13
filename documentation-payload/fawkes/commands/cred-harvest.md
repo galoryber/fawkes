@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Cross-platform credential harvesting across system files, cloud infrastructure, application configurations, shell history, Windows-specific sources, and Microsoft 365 OAuth tokens. On Unix: extracts password hashes from `/etc/shadow`, discovers cloud provider credentials, finds application secrets, and scans shell history for leaked credentials. On Windows: harvests PowerShell history, sensitive environment variables, RDP connections, WiFi profiles, Windows Vault locations, M365 OAuth/JWT tokens, and scans shell history.
+Cross-platform credential harvesting across system files, cloud infrastructure, application configurations, shell history, Windows-specific sources, Microsoft 365 OAuth tokens, and live browser sessions. On Unix: extracts password hashes from `/etc/shadow`, discovers cloud provider credentials, finds application secrets, and scans shell history for leaked credentials. On Windows: harvests PowerShell history, sensitive environment variables, RDP connections, WiFi profiles, Windows Vault locations, M365 OAuth/JWT tokens, and scans shell history. The `browser-live` action steals live cookies, localStorage, and sessionStorage from running Chrome/Edge instances via the Chrome DevTools Protocol (CDP).
 
 {{% notice info %}}Cross-Platform — works on Windows, Linux, and macOS. Actions vary by platform.{{% /notice %}}
 
@@ -15,7 +15,7 @@ Cross-platform credential harvesting across system files, cloud infrastructure, 
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | `shadow` (Unix): system password hashes. `cloud`: cloud/infrastructure credentials. `configs`: application secrets. `history`: scan shell history for leaked passwords, tokens, and API keys. `windows` (Windows): PowerShell history, env vars, RDP, WiFi. `m365-tokens` (Windows): OAuth/JWT tokens from TokenBroker, Teams, Outlook. `all`: run all platform-appropriate actions. `dump-all` (Windows): automated subtask chain — runs hashdump + lsa-secrets + cred-harvest all in parallel. |
+| action | Yes | `shadow` (Unix): system password hashes. `cloud`: cloud/infrastructure credentials. `configs`: application secrets. `history`: scan shell history for leaked passwords, tokens, and API keys. `windows` (Windows): PowerShell history, env vars, RDP, WiFi. `m365-tokens` (Windows): OAuth/JWT tokens from TokenBroker, Teams, Outlook. `browser-live`: steal live cookies, localStorage, sessionStorage from Chrome/Edge via CDP. `all`: run all platform-appropriate actions. `dump-all` (Windows): automated subtask chain — runs hashdump + lsa-secrets + cred-harvest all in parallel. |
 | user | No | Filter results by username (case-insensitive substring match) |
 
 ## Usage
@@ -167,6 +167,32 @@ Recognizes 17 specific M365 auth cookie patterns plus generic token name detecti
 
 EBWebView cookie decryption uses the same Chromium pattern as the `browser` command: reads `Local State` → DPAPI decrypts the AES key → AES-256-GCM decrypts cookie values.
 
+## Browser-Live Action (Cross-Platform — CDP)
+
+Connects to running Chrome/Edge instances via the **Chrome DevTools Protocol (CDP)** to extract live session data. Unlike the static `browser` command (which reads SQLite databases), `browser-live` captures data from the running browser process — including **HttpOnly cookies** that are inaccessible to JavaScript and client-side tools.
+
+### How It Works
+
+1. **Discovery**: Checks for `DevToolsActivePort` files in browser user data directories (Chrome, Edge, Chromium). Falls back to probing common debug ports (9222-9229).
+2. **Connection**: Opens a WebSocket connection to the browser's CDP endpoint.
+3. **Cookie Extraction**: Sends `Network.getAllCookies` — retrieves ALL cookies from ALL domains, including HttpOnly/Secure cookies.
+4. **Storage Extraction**: Evaluates JavaScript via `Runtime.evaluate` in each open tab to read `localStorage` and `sessionStorage`.
+5. **Filtering**: Auth-related items (cookies/keys containing "session", "token", "auth", "jwt", "csrf", "oauth", etc.) are highlighted and registered as credentials.
+
+### Requirements
+
+The target browser must have been started with `--remote-debugging-port` for CDP to be accessible. Chrome writes the assigned port to a `DevToolsActivePort` file in its user data directory.
+
+### Usage
+```
+# Steal live browser sessions
+cred-harvest -action browser-live
+```
+
+### Output
+
+Reports total cookies, auth-related cookies with domain/name/value/flags, localStorage/sessionStorage entries with auth-related keys, and a list of open tabs. Auth cookies and storage entries are automatically registered in the Mythic Credential Vault.
+
 ## Credential Vault Integration
 
 Harvested credentials are automatically reported to Mythic's Credentials store:
@@ -178,6 +204,9 @@ Harvested credentials are automatically reported to Mythic's Credentials store:
 | Windows sensitive env vars | plaintext | Environment variable name + value (e.g., `PASSWORD`, `SECRET`, `API_KEY` patterns) |
 | TokenBroker tokens | token | Client ID + access/refresh token, resource URL |
 | EBWebView auth cookies | token | Cookie name + decrypted value, host domain |
+| CDP live cookies | plaintext | Auth cookie name + value, domain |
+| CDP localStorage | plaintext | Auth-related key + value, origin |
+| CDP sessionStorage | plaintext | Auth-related key + value, origin |
 
 Credentials are searchable in the Mythic UI under the Credentials tab.
 
@@ -215,6 +244,9 @@ cred-harvest -action dump-all
 - History action reads history files from disk — file read only, no subprocess execution
 - Shell history credential values are partially redacted in output (first 4 + last 4 characters)
 - History findings are deduplicated to reduce output volume
+- `browser-live` reads `DevToolsActivePort` files and connects to localhost debug ports — EDR may flag debug port probing
+- CDP WebSocket connections use unencrypted `ws://` on localhost — no network-level exposure
+- `Network.getAllCookies` extracts ALL cookies including HttpOnly — more comprehensive than JavaScript-based theft
 
 ## MITRE ATT&CK Mapping
 
@@ -223,3 +255,5 @@ cred-harvest -action dump-all
 - **T1552.004** — Unsecured Credentials: Private Keys
 - **T1003.008** — OS Credential Dumping: /etc/passwd and /etc/shadow
 - **T1528** — Steal Application Access Token
+- **T1539** — Steal Web Session Cookie
+- **T1555.003** — Credentials from Web Browsers
