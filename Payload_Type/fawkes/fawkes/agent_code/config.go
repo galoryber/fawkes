@@ -57,6 +57,8 @@ var (
 	httpxRotation          string = "" // httpx domain rotation: fail-over, round-robin, random
 	httpxFailoverThreshold string = "" // httpx failover threshold (consecutive failures before switching)
 	recoveryInterval       string = "" // Seconds between recovery attempts for unhealthy C2 domains (default: 600)
+	mtlsCertPEM            string = "" // Base64-encoded PEM client certificate for mutual TLS authentication
+	mtlsKeyPEM             string = "" // Base64-encoded PEM client private key for mutual TLS authentication
 )
 
 // clearGlobals zeros out ALL build-time global variables after they have been
@@ -112,6 +114,10 @@ func clearGlobals() {
 	envKeyDomain = ""
 	envKeyUsername = ""
 	envKeyProcess = ""
+
+	// mTLS client certificates (reveal identity)
+	mtlsCertPEM = ""
+	mtlsKeyPEM = ""
 
 	// OPSEC feature flags (reveal agent capabilities)
 	selfDelete = ""

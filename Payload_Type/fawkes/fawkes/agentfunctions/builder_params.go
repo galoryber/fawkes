@@ -105,6 +105,20 @@ var payloadDefinition = agentstructs.PayloadType{
 			Choices:       []string{"chrome", "firefox", "safari", "edge", "random", "go"},
 		},
 		{
+			Name:          "mtls_cert",
+			Description:   "Optional: PEM-encoded client certificate for mutual TLS (mTLS) authentication. When set with mtls_key, the agent presents this certificate to the C2 server during TLS handshake, enabling both sides to verify identity. Prevents passive HTTPS interception and proxy MITM.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "mtls_key",
+			Description:   "Optional: PEM-encoded client private key for mutual TLS (mTLS) authentication. Must match the certificate in mtls_cert. The key is XOR-encrypted in the binary and only decrypted during TLS handshakes.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "working_hours_start",
 			Description:   "Optional: Working hours start time in HH:MM 24-hour format (e.g. '09:00'). Agent only calls back during working hours. Leave empty for always-active.",
 			Required:      false,

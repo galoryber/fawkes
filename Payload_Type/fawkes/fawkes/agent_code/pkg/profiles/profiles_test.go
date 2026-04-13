@@ -23,6 +23,7 @@ func TestNewProfile_ReturnsHTTPProfile(t *testing.T) {
 		"",
 		"none",
 		"",
+		"", "",
 		nil,
 		nil,
 		0)
@@ -55,6 +56,7 @@ func TestNewProfile_ImplementsInterface(t *testing.T) {
 		"",
 		"none",
 		"",
+		"", "",
 		nil,
 		nil,
 		0)
@@ -81,6 +83,7 @@ func TestProfileInterface_Methods(t *testing.T) {
 		"",
 		"none",
 		"",
+		"", "",
 		nil,
 		nil,
 		0)

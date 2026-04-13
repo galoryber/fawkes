@@ -117,6 +117,7 @@ func TestNewHTTPProfile_WithTLSFingerprint(t *testing.T) {
 		"",
 		"none",
 		"chrome",
+		"", "",
 		nil,
 		nil,
 		0)
@@ -146,6 +147,7 @@ func TestNewHTTPProfile_WithoutTLSFingerprint(t *testing.T) {
 		"",
 		"none",
 		"go",
+		"", "",
 		nil,
 		nil,
 		0)

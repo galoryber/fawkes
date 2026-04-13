@@ -3,17 +3,60 @@ package http
 import (
 	"bytes"
 	"crypto/aes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/pem"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"fawkes/pkg/structs"
 )
+
+// generateTestCertPEM creates a self-signed certificate and key pair for testing.
+func generateTestCertPEM(t *testing.T) (certPEM, keyPEM string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{Organization: []string{"Test"}},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("create certificate: %v", err)
+	}
+
+	certBuf := &bytes.Buffer{}
+	pem.Encode(certBuf, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		t.Fatalf("marshal key: %v", err)
+	}
+	keyBuf := &bytes.Buffer{}
+	pem.Encode(keyBuf, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	return certBuf.String(), keyBuf.String()
+}
 
 // --- pkcs7Pad Tests ---
 
@@ -468,6 +511,7 @@ func TestNewHTTPProfile_BasicConfig(t *testing.T) {
 		"",
 		"none",
 		"",
+		"", "",
 		nil,
 		nil,
 		0)
@@ -503,6 +547,7 @@ func TestNewHTTPProfile_WithProxy(t *testing.T) {
 		"",
 		"none",
 		"",
+		"", "",
 		nil,
 		nil,
 		0)
@@ -529,6 +574,7 @@ func TestNewHTTPProfile_WithHostHeader(t *testing.T) {
 		"",
 		"none",
 		"",
+		"", "",
 		nil,
 		nil,
 		0)
@@ -558,6 +604,7 @@ func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
 		"",
 		"system-ca",
 		"",
+		"", "",
 		nil,
 		nil,
 		0)
@@ -588,12 +635,104 @@ func TestNewHTTPProfile_InvalidProxy(t *testing.T) {
 		"",
 		"none",
 		"",
+		"", "",
 		nil,
 		nil,
 		0)
 
 	if p.client == nil {
 		t.Error("client should not be nil even with invalid proxy")
+	}
+}
+
+func TestNewHTTPProfile_WithMTLS(t *testing.T) {
+	// Generate a self-signed cert/key pair for testing
+	certPEM, keyPEM := generateTestCertPEM(t)
+
+	// mTLS with valid cert — should not crash, client should be configured
+	p := NewHTTPProfile(
+		"https://localhost:443",
+		"TestAgent/1.0",
+		"",
+		10, 5, 10, false,
+		"/get", "/post",
+		"", "", "", "",
+		"none", "",
+		certPEM, keyPEM,
+		nil, nil, 0)
+
+	if p == nil {
+		t.Fatal("NewHTTPProfile with mTLS returned nil")
+	}
+	if p.client == nil {
+		t.Fatal("client should not be nil with mTLS")
+	}
+	transport, ok := p.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("transport is not *http.Transport")
+	}
+	if transport.TLSClientConfig == nil {
+		t.Fatal("TLSClientConfig should not be nil")
+	}
+	if len(transport.TLSClientConfig.Certificates) != 1 {
+		t.Errorf("expected 1 client certificate, got %d", len(transport.TLSClientConfig.Certificates))
+	}
+}
+
+func TestNewHTTPProfile_WithInvalidMTLS(t *testing.T) {
+	// Invalid cert/key — should not crash, just skip mTLS
+	p := NewHTTPProfile(
+		"https://localhost:443",
+		"TestAgent/1.0",
+		"",
+		10, 5, 10, false,
+		"/get", "/post",
+		"", "", "", "",
+		"none", "",
+		"invalid-cert", "invalid-key",
+		nil, nil, 0)
+
+	if p == nil {
+		t.Fatal("NewHTTPProfile with invalid mTLS returned nil")
+	}
+	if p.client == nil {
+		t.Fatal("client should not be nil")
+	}
+	transport, ok := p.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("transport is not *http.Transport")
+	}
+	if transport.TLSClientConfig == nil {
+		t.Fatal("TLSClientConfig should not be nil")
+	}
+	// Invalid cert should result in no client certificates
+	if len(transport.TLSClientConfig.Certificates) != 0 {
+		t.Errorf("expected 0 client certificates with invalid PEM, got %d", len(transport.TLSClientConfig.Certificates))
+	}
+}
+
+func TestNewHTTPProfile_WithEmptyMTLS(t *testing.T) {
+	// Empty cert/key — no mTLS configured
+	p := NewHTTPProfile(
+		"https://localhost:443",
+		"TestAgent/1.0",
+		"",
+		10, 5, 10, false,
+		"/get", "/post",
+		"", "", "", "",
+		"none", "",
+		"", "",
+		nil, nil, 0)
+
+	if p == nil {
+		t.Fatal("NewHTTPProfile returned nil")
+	}
+	transport, ok := p.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatal("transport is not *http.Transport")
+	}
+	if len(transport.TLSClientConfig.Certificates) != 0 {
+		t.Errorf("expected 0 client certificates, got %d", len(transport.TLSClientConfig.Certificates))
 	}
 }
 
@@ -1142,6 +1281,7 @@ func TestMakeRequest_FailoverToBackup(t *testing.T) {
 		1, 5, 0, false,
 		"/test", "/test",
 		"", "", "", "", "none", "",
+		"", "",
 		[]string{backup.URL}, // fallback,
 		nil,
 		0,
@@ -1177,6 +1317,7 @@ func TestMakeRequest_AllFail(t *testing.T) {
 		"", "",
  "",
  "", "none", "",
+		"", "",
 		[]string{"http://127.0.0.1:2"},
 		nil,
 		0)
@@ -1204,6 +1345,7 @@ func TestNewHTTPProfile_WithFallbackURLs(t *testing.T) {
 		"", "",
  "",
  "", "none", "",
+		"", "",
 		fallbacks,
 		nil,
 		0)
@@ -1233,6 +1375,7 @@ func TestMakeRequest_ConcurrentFailover(t *testing.T) {
 		"", "",
  "",
  "", "none", "",
+		"", "",
 		[]string{server.URL + "/fb1", server.URL + "/fb2"},
 		nil,
 		0)
@@ -1273,6 +1416,7 @@ func TestSealConfig_PreservesFallbackURLs(t *testing.T) {
 		"", "",
  "",
  "", "none", "",
+		"", "",
 		[]string{"http://backup:80"},
 		nil,
 		0)
@@ -1381,6 +1525,7 @@ func TestNewHTTPProfile_WithProxyAuth(t *testing.T) {
 		"proxyuser",
 		"proxypass",
 		"none", "",
+		"", "",
 		nil, nil, 0)
 
 	if p.client == nil {
@@ -1409,6 +1554,7 @@ func TestNewHTTPProfile_WithProxyEmbeddedCreds(t *testing.T) {
 		"separate-user",
 		"separate-pass",
 		"none", "",
+		"", "",
 		nil, nil, 0)
 
 	if p.client == nil {
@@ -1432,6 +1578,7 @@ func TestNewHTTPProfile_ProxyUserOnly(t *testing.T) {
 		"onlyuser",
 		"",
 		"none", "",
+		"", "",
 		nil, nil, 0)
 
 	if p.client == nil {
@@ -1449,6 +1596,7 @@ func TestNewHTTPProfile_SystemProxy(t *testing.T) {
 		"/get", "/post", "",
 		"", "", "",
 		"none", "",
+		"", "",
 		nil, nil, 0)
 
 	transport := p.client.Transport.(*http.Transport)
@@ -1477,6 +1625,7 @@ func TestMakeRequest_ProxyAuthInTransport(t *testing.T) {
 		"/test", "/test", "",
 		"", "", "",
 		"none", "",
+		"", "",
 		nil, nil, 0)
 
 	resp, err := p.makeRequest("GET", "/test", nil, nil)
@@ -1502,7 +1651,7 @@ func TestMakeRequest_MultipleCustomHeaders(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
-		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", nil, nil, 0)
+		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", "", "", nil, nil, 0)
 
 	p.CustomHeaders = map[string]string{
 		"X-Forwarded-For": "10.0.0.1",
@@ -1536,7 +1685,7 @@ func TestMakeRequest_CustomHeadersEmptyMap(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
-		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", nil, nil, 0)
+		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", "", "", nil, nil, 0)
 	p.CustomHeaders = map[string]string{}
 
 	resp, err := p.makeRequest("GET", "/test", nil, nil)
@@ -1560,7 +1709,7 @@ func TestMakeRequest_CustomHeadersFromSealed(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
-		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", nil, nil, 0)
+		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", "", "", nil, nil, 0)
 
 	p.CustomHeaders = map[string]string{
 		"X-Custom-Sealed": "vault-value",

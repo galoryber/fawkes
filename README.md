@@ -436,6 +436,17 @@ Go's standard TLS stack produces a distinctive JA3 hash that network security to
 | `random` | Randomized fingerprint per connection |
 | `go` | No spoofing — use Go's default TLS stack |
 
+### Mutual TLS (mTLS) Client Certificate Authentication
+
+Add client certificate authentication to the HTTP C2 profile. When configured, the agent presents a client certificate during TLS handshake, enabling the C2 server to verify agent identity. This prevents passive HTTPS interception and proxy MITM attacks.
+
+| Parameter | Description |
+|-----------|-------------|
+| `mtls_cert` | PEM-encoded client certificate |
+| `mtls_key` | PEM-encoded client private key |
+
+The cert/key are base64-encoded at build time, XOR-encrypted if string obfuscation is enabled, and stored in the AES-256-GCM config vault at runtime. Combines with existing TLS verification modes and JA3 fingerprint spoofing.
+
 ### Fallback C2 URLs
 
 Multiple C2 callback URLs with automatic failover. If the primary callback host is unreachable, the agent transparently cycles through fallback URLs before applying backoff.
@@ -545,6 +556,7 @@ The HTTP profile calls back to the Mythic server over the basic, non-dynamic pro
 - **User-Agent rotation:** Set the `user_agent_pool` build parameter to a newline-separated list of User-Agent strings. The agent rotates through them per-request, eliminating the static UA fingerprint. Default: single Chrome 134 UA.
 - **Exponential backoff:** On consecutive C2 failures, the agent doubles its sleep interval (capped at 5 minutes). Normal interval is restored on successful contact.
 - **TLS fingerprinting:** Spoof browser JA3 fingerprints (`chrome`, `firefox`, `safari`, `edge`, `random`).
+- **Mutual TLS (mTLS):** Client certificate authentication prevents passive interception and proxy MITM (T1573.002).
 - **Domain fronting:** Set `host_header` to override the HTTP Host header.
 - **Automatic failover:** Configure `fallback_hosts` for resilient C2.
 
