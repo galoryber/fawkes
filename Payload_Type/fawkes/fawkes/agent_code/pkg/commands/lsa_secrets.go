@@ -5,7 +5,6 @@ package commands
 
 import (
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -30,11 +29,9 @@ type lsaSecretsArgs struct {
 func (c *LsaSecretsCommand) Execute(task structs.Task) structs.CommandResult {
 	// Note: no LockOSThread needed — SYSTEM process token grants access
 
-	var args lsaSecretsArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[lsaSecretsArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

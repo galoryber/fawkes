@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
-
 	"fawkes/pkg/structs"
 )
 
@@ -21,11 +19,9 @@ type unlinkArgs struct {
 }
 
 func (c *UnlinkCommand) Execute(task structs.Task) structs.CommandResult {
-	var args unlinkArgs
-	if task.Params != "" {
-		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-			return errorf("Failed to parse parameters: %v", err)
-		}
+	args, parseErr := unmarshalParams[unlinkArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.ConnectionID == "" {
