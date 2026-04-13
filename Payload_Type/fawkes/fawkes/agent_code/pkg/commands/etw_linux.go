@@ -33,9 +33,9 @@ type etwParams struct {
 }
 
 func (c *EtwCommand) Execute(task structs.Task) structs.CommandResult {
-	var params etwParams
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	params, parseErr := unmarshalParams[etwParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if params.Action == "" {

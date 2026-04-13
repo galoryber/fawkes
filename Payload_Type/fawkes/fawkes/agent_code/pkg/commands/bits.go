@@ -7,7 +7,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 	"runtime"
 	"syscall"
@@ -105,9 +104,9 @@ type bgJobProgress struct {
 }
 
 func (c *BitsCommand) Execute(task structs.Task) structs.CommandResult {
-	var args bitsArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := unmarshalParams[bitsArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Action == "" {

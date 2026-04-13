@@ -4,7 +4,6 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
 	"fmt"
 	"net"
 	"strings"
@@ -28,13 +27,9 @@ type certCheckArgs struct {
 }
 
 func (c *CertCheckCommand) Execute(task structs.Task) structs.CommandResult {
-	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -host <hostname> [-port 443] [-timeout 10]")
-	}
-
-	var args certCheckArgs
-	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
-		return errorf("Error parsing parameters: %v", err)
+	args, parseErr := requireParams[certCheckArgs](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if args.Host == "" {

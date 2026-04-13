@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"fawkes/pkg/rpfwd"
@@ -32,17 +31,18 @@ func (c *RpfwdCommand) Description() string {
 	return "Start or stop a reverse port forward through this agent"
 }
 
-func (c *RpfwdCommand) Execute(task structs.Task) structs.CommandResult {
-	var params struct {
-		Action      string `json:"action"`
-		Port        int    `json:"port"`
-		TargetIP    string `json:"target_ip"`
-		TargetPort  int    `json:"target_port"`
-		BindAddress string `json:"bind_address"`
-	}
+type rpfwdParams struct {
+	Action      string `json:"action"`
+	Port        int    `json:"port"`
+	TargetIP    string `json:"target_ip"`
+	TargetPort  int    `json:"target_port"`
+	BindAddress string `json:"bind_address"`
+}
 
-	if err := json.Unmarshal([]byte(task.Params), &params); err != nil {
-		return errorf("Failed to parse parameters: %v", err)
+func (c *RpfwdCommand) Execute(task structs.Task) structs.CommandResult {
+	params, parseErr := unmarshalParams[rpfwdParams](task)
+	if parseErr != nil {
+		return *parseErr
 	}
 
 	if rpfwdManagerInstance == nil {
