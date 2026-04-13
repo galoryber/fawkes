@@ -46,6 +46,28 @@ function(task, responses){
                 "Value": {"plaintext": data.file_id, "copyIcon": true, "cellStyle": {"fontFamily": "monospace"}},
             });
         }
+        // Handle recording results
+        if(data.action === "record"){
+            let recHeaders = [
+                {"plaintext": "Property", "type": "string", "width": 150},
+                {"plaintext": "Value", "type": "string", "fillWidth": true},
+            ];
+            let recRows = [];
+            let stopColor = data.stopped_by === "jobkill" ? "#ff9800" : "#4caf50";
+            recRows.push({
+                "Property": {"plaintext": "Frames Captured", "cellStyle": {"fontWeight": "bold"}},
+                "Value": {"plaintext": String(data.frames_captured || 0), "cellStyle": {"fontFamily": "monospace", "fontWeight": "bold", "fontSize": "1.1em"}},
+            });
+            recRows.push({
+                "Property": {"plaintext": "Duration", "cellStyle": {"fontWeight": "bold"}},
+                "Value": {"plaintext": data.actual_duration || "unknown"},
+            });
+            recRows.push({
+                "Property": {"plaintext": "Stopped By", "cellStyle": {"fontWeight": "bold"}},
+                "Value": {"plaintext": data.stopped_by || "unknown", "cellStyle": {"color": stopColor}},
+            });
+            return {"table": [{"headers": recHeaders, "rows": recRows, "title": "\ud83c\udfa5 Screen Recording Complete"}]};
+        }
         if(rows.length === 0){
             return {"plaintext": combined};
         }

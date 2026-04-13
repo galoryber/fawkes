@@ -85,7 +85,13 @@ func (c *ScreenshotCommand) Description() string {
 
 // Execute executes the screenshot command
 func (c *ScreenshotCommand) Execute(task structs.Task) structs.CommandResult {
-	// Capture screenshot
+	params := parseScreenshotParams(task)
+
+	if params.Action == "record" {
+		return screenshotRecordLoop(task, captureScreen, params)
+	}
+
+	// Single screenshot capture
 	imgData, err := captureScreen()
 	if err != nil {
 		return errorf("Error capturing screenshot: %v", err)

