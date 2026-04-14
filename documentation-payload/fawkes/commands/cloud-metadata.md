@@ -15,7 +15,7 @@ This is a critical reconnaissance command for cloud environments — instance me
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | detect | Action: `detect`, `all`, `creds`, `identity`, `userdata`, `network`, `aws-iam`, `azure-graph`, `gcp-iam`, `aws-persist`, `azure-persist` |
+| action | No | detect | Action: `detect`, `all`, `creds`, `identity`, `userdata`, `network`, `aws-iam`, `azure-graph`, `gcp-iam`, `aws-persist`, `azure-persist`, `aws-ssm`, `azure-keyvault`, `gcp-secrets` |
 | provider | No | auto | Cloud provider: `auto`, `aws`, `azure`, `gcp`, `digitalocean` |
 | timeout | No | 3 | Per-request timeout in seconds |
 
@@ -32,6 +32,9 @@ This is a critical reconnaissance command for cloud environments — instance me
 - **gcp-iam** — GCP IAM enumeration: project IAM bindings, service accounts, assigned scopes
 - **aws-persist** — AWS IAM persistence: create long-lived IAM access key via CreateAccessKey API (T1098.001)
 - **azure-persist** — Azure AD persistence: create app registration with client secret via Microsoft Graph (T1098.001)
+- **aws-ssm** — AWS SSM Parameter Store: enumerate and read stored secrets (T1602)
+- **azure-keyvault** — Azure Key Vault: enumerate and read vault secrets via managed identity (T1602)
+- **gcp-secrets** — GCP Secret Manager: enumerate and read project secrets via service account (T1602)
 
 ## Usage
 
@@ -71,6 +74,21 @@ Enumerate GCP IAM bindings and service accounts:
 cloud-metadata -action gcp-iam
 ```
 
+Read AWS SSM Parameter Store secrets:
+```
+cloud-metadata -action aws-ssm
+```
+
+Read Azure Key Vault secrets:
+```
+cloud-metadata -action azure-keyvault
+```
+
+Read GCP Secret Manager secrets:
+```
+cloud-metadata -action gcp-secrets
+```
+
 ## Supported Providers
 
 | Provider | Endpoint | Auth Header |
@@ -84,3 +102,4 @@ cloud-metadata -action gcp-iam
 
 - **T1552.005** — Unsecured Credentials: Cloud Instance Metadata API
 - **T1580** — Cloud Infrastructure Discovery
+- **T1602** — Data from Configuration Repository (SSM/Key Vault/Secret Manager)

@@ -16,7 +16,7 @@ func init() {
 		HelpString:          "cloud-metadata -action detect\ncloud-metadata -action creds\ncloud-metadata -action all -provider aws\ncloud-metadata -action aws-iam\ncloud-metadata -action azure-graph\ncloud-metadata -action gcp-iam",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1552.005", "T1580", "T1526", "T1098.001"},
+		MitreAttackMappings: []string{"T1552.005", "T1580", "T1526", "T1098.001", "T1602"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -32,10 +32,10 @@ func init() {
 			{
 				Name:          "action",
 				CLIName:       "action",
-				Description:   "Action: detect, all, creds, identity, userdata, network, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist",
+				Description:   "Action: detect, all, creds, identity, userdata, network, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist, aws-ssm, azure-keyvault, gcp-secrets",
 				DefaultValue:  "detect",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"detect", "all", "creds", "identity", "userdata", "network", "aws-iam", "azure-graph", "gcp-iam", "aws-persist", "azure-persist"},
+				Choices:       []string{"detect", "all", "creds", "identity", "userdata", "network", "aws-iam", "azure-graph", "gcp-iam", "aws-persist", "azure-persist", "aws-ssm", "azure-keyvault", "gcp-secrets"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
