@@ -211,6 +211,44 @@ func init() {
 			case "aws-persist", "azure-persist":
 				tagTask(processResponse.TaskData.Task.ID, "PERSIST",
 					fmt.Sprintf("Cloud persistence: %s (T1098.001)", action))
+			case "aws-ssm":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"AWS SSM Parameter Store enumeration (T1602)")
+				// Extract SSM parameter values as credentials
+				if strings.Contains(responseText, "Value:") {
+					lines := strings.Split(responseText, "\n")
+					for _, line := range lines {
+						line = strings.TrimSpace(line)
+						if strings.HasPrefix(line, "Name:") {
+							paramName := strings.TrimSpace(strings.TrimPrefix(line, "Name:"))
+							// Look for the next Value: line
+							for _, vline := range lines {
+								vline = strings.TrimSpace(vline)
+								if strings.HasPrefix(vline, "Value:") {
+									paramValue := strings.TrimSpace(strings.TrimPrefix(vline, "Value:"))
+									if len(paramValue) > 0 {
+										creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+											CredentialType: "key",
+											Realm:          hostname,
+											Account:        fmt.Sprintf("AWS SSM: %s", paramName),
+											Credential:     paramValue,
+											Comment:        "cloud-metadata aws-ssm (T1602)",
+										})
+									}
+									break
+								}
+							}
+						}
+					}
+				}
+			case "azure-keyvault":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"Azure Key Vault secret enumeration (T1602)")
+				tagTask(processResponse.TaskData.Task.ID, "CRED", "Azure Key Vault secrets accessed")
+			case "gcp-secrets":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"GCP Secret Manager enumeration (T1602)")
+				tagTask(processResponse.TaskData.Task.ID, "CRED", "GCP secrets accessed")
 			}
 
 			return response
@@ -229,6 +267,12 @@ func init() {
 				msg += " HIGH RISK: Creating IAM access keys generates CloudTrail events (CreateAccessKey). This is a high-fidelity indicator of credential persistence (T1098.001). GuardDuty and CSPM tools actively alert on unusual CreateAccessKey calls."
 			case "azure-persist":
 				msg += " HIGH RISK: Creating Azure AD app registrations and client secrets generates audit events (Add application, Update application). This is a persistence indicator (T1098.001). Defender for Cloud may alert on managed identity creating app registrations."
+			case "aws-ssm":
+				msg += " AWS SSM Parameter Store access is logged in CloudTrail (GetParameter, DescribeParameters). SecureString parameters with WithDecryption=true generate KMS Decrypt events. GuardDuty watches for unusual SSM access patterns."
+			case "azure-keyvault":
+				msg += " Azure Key Vault access is logged in Key Vault diagnostic logs and Azure Activity Log. GetSecret operations generate AuditEvent entries. Defender for Key Vault alerts on suspicious access patterns from managed identities."
+			case "gcp-secrets":
+				msg += " GCP Secret Manager access is logged in Cloud Audit Logs (AccessSecretVersion). IAM conditions and VPC Service Controls may restrict access. Security Command Center alerts on unusual service account activity."
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
