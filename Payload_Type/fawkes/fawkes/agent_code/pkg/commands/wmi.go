@@ -100,7 +100,7 @@ func wmiConnect(target string) (*wmiConnection, func(), error) {
 		// S_FALSE means already initialized on this thread — not an error
 		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
 			runtime.UnlockOSThread()
-			return nil, nil, fmt.Errorf("CoInitializeEx failed: %v", err)
+			return nil, nil, fmt.Errorf("CoInitializeEx failed: %w", err)
 		}
 	}
 
@@ -108,7 +108,7 @@ func wmiConnect(target string) (*wmiConnection, func(), error) {
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("failed to create WbemScripting.SWbemLocator: %v", err)
+		return nil, nil, fmt.Errorf("failed to create WbemScripting.SWbemLocator: %w", err)
 	}
 
 	locator, err := unknown.QueryInterface(ole.IID_IDispatch)
@@ -116,7 +116,7 @@ func wmiConnect(target string) (*wmiConnection, func(), error) {
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("failed to query IDispatch on SWbemLocator: %v", err)
+		return nil, nil, fmt.Errorf("failed to query IDispatch on SWbemLocator: %w", err)
 	}
 
 	// ConnectServer args: server, namespace, user, password, locale, authority, securityFlags, namedValueSet
@@ -130,7 +130,7 @@ func wmiConnect(target string) (*wmiConnection, func(), error) {
 		locator.Release()
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("ConnectServer failed: %v", err)
+		return nil, nil, fmt.Errorf("ConnectServer failed: %w", err)
 	}
 	services := serviceResult.ToIDispatch()
 
@@ -153,7 +153,7 @@ func wmiConnect(target string) (*wmiConnection, func(), error) {
 func wmiExecQuery(conn *wmiConnection, wql string) (string, error) {
 	resultSet, err := oleutil.CallMethod(conn.services, "ExecQuery", wql)
 	if err != nil {
-		return "", fmt.Errorf("ExecQuery failed: %v", err)
+		return "", fmt.Errorf("ExecQuery failed: %w", err)
 	}
 	defer resultSet.Clear()
 
@@ -174,7 +174,7 @@ func wmiExecQuery(conn *wmiConnection, wql string) (string, error) {
 		// Get properties collection
 		propsResult, err := oleutil.GetProperty(item, "Properties_")
 		if err != nil {
-			return fmt.Errorf("failed to get Properties_: %v", err)
+			return fmt.Errorf("failed to get Properties_: %w", err)
 		}
 		defer propsResult.Clear()
 

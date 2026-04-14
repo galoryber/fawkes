@@ -267,7 +267,7 @@ func dcomExec(args dcomArgs) structs.CommandResult {
 func createRemoteCOM(host string, clsid *ole.GUID, domain, username, password string) (*ole.IDispatch, *dcomAuthState, error) {
 	hostUTF16, err := windows.UTF16PtrFromString(host)
 	if err != nil {
-		return nil, nil, fmt.Errorf("invalid host: %v", err)
+		return nil, nil, fmt.Errorf("invalid host: %w", err)
 	}
 
 	serverInfo := &coServerInfo{
@@ -317,7 +317,7 @@ func createRemoteCOM(host string, clsid *ole.GUID, domain, username, password st
 	if authState != nil {
 		if err := authState.setProxyBlanket(disp); err != nil {
 			disp.Release()
-			return nil, nil, fmt.Errorf("failed to set proxy blanket: %v", err)
+			return nil, nil, fmt.Errorf("failed to set proxy blanket: %w", err)
 		}
 	}
 

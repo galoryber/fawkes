@@ -252,16 +252,16 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 		regs.R8 = arg5
 		regs.R9 = arg6
 		if err := syscall.PtraceSetRegs(args.PID, &regs); err != nil {
-			return 0, fmt.Errorf("set regs: %v", err)
+			return 0, fmt.Errorf("set regs: %w", err)
 		}
 		if err := syscall.PtraceSingleStep(args.PID); err != nil {
-			return 0, fmt.Errorf("single step: %v", err)
+			return 0, fmt.Errorf("single step: %w", err)
 		}
 		if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
-			return 0, fmt.Errorf("wait4: %v", err)
+			return 0, fmt.Errorf("wait4: %w", err)
 		}
 		if err := syscall.PtraceGetRegs(args.PID, &regs); err != nil {
-			return 0, fmt.Errorf("get regs: %v", err)
+			return 0, fmt.Errorf("get regs: %w", err)
 		}
 		return regs.Rax, nil
 	}
@@ -401,14 +401,14 @@ func findSyscallGadget(pid int) (uint64, error) {
 	mapsPath := fmt.Sprintf("/proc/%d/maps", pid)
 	data, err := os.ReadFile(mapsPath)
 	if err != nil {
-		return 0, fmt.Errorf("cannot read %s: %v", mapsPath, err)
+		return 0, fmt.Errorf("cannot read %s: %w", mapsPath, err)
 	}
 	defer structs.ZeroBytes(data)
 
 	memPath := fmt.Sprintf("/proc/%d/mem", pid)
 	memFile, err := os.Open(memPath)
 	if err != nil {
-		return 0, fmt.Errorf("cannot open %s: %v", memPath, err)
+		return 0, fmt.Errorf("cannot open %s: %w", memPath, err)
 	}
 	defer memFile.Close()
 

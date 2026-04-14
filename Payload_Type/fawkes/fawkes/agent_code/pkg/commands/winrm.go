@@ -274,7 +274,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 	// Step 2: Send Negotiate message
 	negotiateMsg, err := ntlmssp.NewNegotiateMessage("", "")
 	if err != nil {
-		return nil, fmt.Errorf("NTLM negotiate: %v", err)
+		return nil, fmt.Errorf("NTLM negotiate: %w", err)
 	}
 	defer structs.ZeroBytes(negotiateMsg) // opsec: clear NTLM negotiate message
 
@@ -308,7 +308,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 
 	challengeBytes, err := base64.StdEncoding.DecodeString(challengeStr)
 	if err != nil {
-		return nil, fmt.Errorf("decode NTLM challenge: %v", err)
+		return nil, fmt.Errorf("decode NTLM challenge: %w", err)
 	}
 	defer structs.ZeroBytes(challengeBytes) // opsec: clear NTLM challenge bytes
 
@@ -317,7 +317,7 @@ func (rt *winrmNtlmHashRT) RoundTrip(req *http.Request) (*http.Response, error) 
 		PasswordHashed: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("NTLM authenticate with hash: %v", err)
+		return nil, fmt.Errorf("NTLM authenticate with hash: %w", err)
 	}
 	defer structs.ZeroBytes(authMsg) // opsec: clear NTLM auth message (contains hash proof)
 

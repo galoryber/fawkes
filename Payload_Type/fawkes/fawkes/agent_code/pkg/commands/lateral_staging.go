@@ -49,7 +49,7 @@ const maxPSBase64 = 200000 // ~150KB decoded
 func planStaging(localPath, remotePath string, method stagingMethod) (*stagingPlan, error) {
 	data, err := os.ReadFile(localPath)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read local file: %v", err)
+		return nil, fmt.Errorf("cannot read local file: %w", err)
 	}
 
 	if len(data) == 0 {
