@@ -11,16 +11,18 @@ Windows Only
 
 ## Summary
 
-Create a token from plaintext credentials. Two actions are available:
+Create a token from plaintext credentials. Three actions are available:
 
 - **impersonate** (default): Create the token and impersonate it on the current thread. The default logon type is 9 (`NEW_CREDENTIALS`), which only affects network identity (similar to `runas /netonly`).
 - **spawn**: Create the token and launch a new process running under that token's security context via `CreateProcessWithTokenW`. The current thread is not affected.
+- **auto-verify**: Create and impersonate the token, then automatically chain `whoami` and `getprivs` to verify the new identity and privileges.
 
 ### Arguments
 
 #### action (optional)
 - `impersonate` (default): Create token and impersonate.
 - `spawn`: Create token and spawn a process with it.
+- `auto-verify`: Impersonate then auto-run whoami + getprivs verification chain.
 
 #### username
 Username to create the token for.
@@ -48,6 +50,7 @@ Command line to execute when action=spawn.
 ```
 make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]
 make-token -username <user> -domain <domain> -password <pass> -action spawn -command <cmd>
+make-token -username <user> -domain <domain> -password <pass> -action auto-verify
 ```
 
 Examples
@@ -56,11 +59,11 @@ Examples
 make-token -username admin -domain CORP -password P@ssw0rd!
 make-token -username localadmin -domain . -password Password1 -logon_type 2
 
+# Auto-verify: impersonate then confirm identity + privileges
+make-token -username admin -domain CORP -password P@ssw0rd! -action auto-verify
+
 # Spawn a process as the target user
 make-token -username admin -domain CORP -password P@ssw0rd! -action spawn -command "cmd.exe /c dir \\\\fileserver\\share"
-
-# Spawn a Fawkes payload as a different user
-make-token -username svc_backup -domain CORP -password svcPass123 -action spawn -command "C:\temp\payload.exe"
 ```
 
 ## Notes
