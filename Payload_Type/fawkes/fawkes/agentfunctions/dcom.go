@@ -11,11 +11,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "dcom",
-		Description:         "Execute commands on remote hosts via DCOM lateral movement. Supports MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, Excel.Application, and Outlook.Application objects.",
-		HelpString:          "dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser|wscript|excel|outlook] [-dir <directory>] [-username <user> -password <pass> -domain <domain>]",
-		Version:             3,
+		Description:         "Execute commands on remote hosts via DCOM lateral movement with staged file transfer. Supports MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, Excel.Application, and Outlook.Application objects.",
+		HelpString:          "dcom -action <exec|upload|exec-staged> -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser|wscript|excel|outlook] [-local_path <path>] [-remote_path <path>] [-method <certutil|powershell>] [-cleanup <true|false>]",
+		Version:             4,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1021.003"}, // Remote Services: Distributed Component Object Model
+		MitreAttackMappings: []string{"T1021.003", "T1570"}, // Remote Services: DCOM + Lateral Tool Transfer
 		SupportedUIFeatures: []string{},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "dcom_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -27,9 +27,9 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"exec"},
+				Choices:       []string{"exec", "upload", "exec-staged"},
 				DefaultValue:  "exec",
-				Description:   "Action to perform",
+				Description:   "exec: execute command, upload: stage file on remote host, exec-staged: upload + execute + optional cleanup",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -165,6 +165,63 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						UIModalPosition:     10,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:          "local_path",
+				CLIName:       "local_path",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Path to file on agent filesystem to stage on remote host (for upload/exec-staged actions)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     11,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:          "remote_path",
+				CLIName:       "remote_path",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:  "",
+				Description:   "Destination path on remote host (default: C:\\Windows\\Temp\\<random>.exe)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     12,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:          "method",
+				CLIName:       "method",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:       []string{"certutil", "powershell"},
+				DefaultValue:  "certutil",
+				Description:   "Staging method: certutil (base64 chunks + decode) or powershell (single command, <150KB files)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     13,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:          "cleanup",
+				CLIName:       "cleanup",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				DefaultValue:  false,
+				Description:   "Remove staged file after execution (exec-staged only, default: false)",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     14,
 						GroupName:           "Default",
 					},
 				},
