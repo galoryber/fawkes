@@ -184,6 +184,24 @@ Remove:
 persist -method active-setup -action remove -name "{A9E1B7F2-3D4C-5E6F-7A8B-9C0D1E2F3A4B}"
 ```
 
+### Time Provider Persistence
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Register a DLL as a Windows Time Provider. Loaded by the w32time service (svchost.exe) at boot. Very stealthy — time providers are rarely audited. Requires admin.
+
+Install:
+```
+persist -method time-provider -action install -path "C:\Windows\Temp\payload.dll" -name "NtpClientExt"
+```
+
+Remove:
+```
+persist -method time-provider -action remove -name "NtpClientExt"
+```
+
+{{% notice tip %}}Restart w32time to load immediately: `net stop w32time && net start w32time`. The DLL must export `TimeProvGetTimeSysInfo`.{{% /notice %}}
+
 ### XDG Autostart Persistence
 
 {{% notice info %}}Linux Only{{% /notice %}}
@@ -306,3 +324,4 @@ persist -method list
 - T1546.008 — Event Triggered Execution: Accessibility Features
 - T1547.014 — Boot or Logon Autostart Execution: Active Setup
 - T1547.013 — Boot or Logon Autostart Execution: XDG Autostart Entries
+- T1547.003 — Boot or Logon Autostart Execution: Time Providers

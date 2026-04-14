@@ -54,11 +54,11 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "persist",
 		Description:         "Install or remove persistence mechanisms (registry, startup folder, COM hijack, screensaver, IFEO, winlogon helper, print processor, accessibility features, active setup, XDG autostart)",
-		HelpString:          "persist -method <registry|startup-folder|com-hijack|screensaver|ifeo|winlogon|print-processor|accessibility|active-setup|xdg-autostart|list> -action <install|remove> [-name <name>] [-path <exe_path>] [-hive <HKCU|HKLM>] [-clsid <CLSID>] [-timeout <seconds>]",
+		HelpString:          "persist -method <registry|startup-folder|com-hijack|screensaver|ifeo|winlogon|print-processor|accessibility|active-setup|time-provider|xdg-autostart|list> -action <install|remove> [-name <name>] [-path <exe_path>] [-hive <HKCU|HKLM>] [-clsid <CLSID>] [-timeout <seconds>]",
 		Version:             5,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002", "T1546.012", "T1053.003", "T1543.002", "T1546.004", "T1098.004", "T1543.004", "T1070.009", "T1547.004", "T1547.012", "T1546.008", "T1547.014", "T1547.013"},
+		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002", "T1546.012", "T1053.003", "T1543.002", "T1546.004", "T1098.004", "T1543.004", "T1070.009", "T1547.004", "T1547.012", "T1546.008", "T1547.014", "T1547.013", "T1547.003"},
 		ScriptOnlyCommand: false,
 		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
 			"persistFullInstallDone": persistFullInstallDone,
@@ -77,8 +77,8 @@ func init() {
 				ModalDisplayName: "Persistence Method",
 				CLIName:          "method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "accessibility", "active-setup", "crontab", "systemd", "shell-profile", "ssh-key", "xdg-autostart", "launchagent", "list"},
-				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, active-setup. Linux: crontab, systemd, shell-profile, ssh-key, xdg-autostart. macOS: launchagent. All: list.",
+				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "accessibility", "active-setup", "time-provider", "crontab", "systemd", "shell-profile", "ssh-key", "xdg-autostart", "launchagent", "list"},
+				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, active-setup, time-provider. Linux: crontab, systemd, shell-profile, ssh-key, xdg-autostart. macOS: launchagent. All: list.",
 				DefaultValue:     "registry",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
