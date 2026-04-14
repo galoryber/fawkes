@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -30,8 +31,8 @@ func init() {
 				ModalDisplayName:                        "Action",
 				CLIName:                                 "action",
 				ParameterType:                           agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:                             "impersonate: create token and impersonate (default). spawn: create token and launch a process with it.",
-				Choices:                                 []string{"impersonate", "spawn"},
+				Description:                             "impersonate: create token and impersonate (default). spawn: create token and launch a process with it. auto-verify: impersonate then auto-run whoami + getprivs to verify.",
+				Choices:                                 []string{"impersonate", "spawn", "auto-verify"},
 				DefaultValue:                            "impersonate",
 				SupportedAgents:                         []string{},
 				ChoicesAreAllCommands:                   false,
@@ -153,6 +154,11 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
+			TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
+				"maketokenAutoVerifyDone":   maketokenAutoVerifyDone,
+				"maketokenAutoWhoamiDone":   maketokenAutoWhoamiDone,
+				"maketokenAutoGetprivsDone": maketokenAutoGetprivsDone,
+			},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
 			username, _ := taskData.Args.GetStringArg("username")
@@ -212,6 +218,37 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			username, _ := taskData.Args.GetStringArg("username")
 			domain, _ := taskData.Args.GetStringArg("domain")
+
+			if action == "auto-verify" {
+				display := fmt.Sprintf("auto-verify: make-token %s\\%s \u2192 whoami \u2192 getprivs", domain, username)
+				response.DisplayParams = &display
+
+				// Build impersonate params from current args
+				password, _ := taskData.Args.GetStringArg("password")
+				logonType, _ := taskData.Args.GetNumberArg("logon_type")
+				subtaskParams, _ := json.Marshal(map[string]interface{}{
+					"action": "impersonate", "username": username,
+					"domain": domain, "password": password, "logon_type": logonType,
+				})
+
+				callbackFunc := "maketokenAutoVerifyDone"
+				_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+					TaskID:                  taskData.Task.ID,
+					SubtaskCallbackFunction: &callbackFunc,
+					CommandName:             "make-token",
+					Params:                  string(subtaskParams),
+				})
+				if err != nil {
+					response.Success = false
+					response.Error = fmt.Sprintf("Failed to start auto-verify chain: %v", err)
+					return response
+				}
+				createArtifact(taskData.Task.ID, "Subtask Chain",
+					fmt.Sprintf("Token auto-verify: make-token %s\\%s \u2192 whoami \u2192 getprivs", domain, username))
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[TOKEN] Auto-verify chain started for %s\\%s", domain, username), false)
+				return response
+			}
 
 			if action == "spawn" {
 				command, _ := taskData.Args.GetStringArg("command")
@@ -287,4 +324,121 @@ func init() {
 			return response
 		},
 	})
+}
+
+// --- make-token auto-verify subtask chain ---
+
+// Step 1: make-token done → run whoami to verify identity
+func maketokenAutoVerifyDone(
+	taskData *agentstructs.PTTaskMessageAllData,
+	subtaskData *agentstructs.PTTaskMessageAllData,
+	_ *agentstructs.SubtaskGroupName,
+) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	responseText := getSubtaskResponses(subtaskData.Task.ID)
+	if subtaskData.Task.Status == "error" {
+		completed := true
+		response.Completed = &completed
+		msg := fmt.Sprintf("Auto-verify: make-token failed: %s", responseText)
+		response.Stderr = &msg
+		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+			TaskID: taskData.Task.ID, Response: []byte(msg),
+		})
+		return response
+	}
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte(fmt.Sprintf("[Step 1/3] Token created. %s Verifying identity...", strings.TrimSpace(responseText))),
+	})
+
+	callbackFunc := "maketokenAutoWhoamiDone"
+	if _, err := mythicrpc.SendMythicRPCTaskCreateSubtask(mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+		TaskID: taskData.Task.ID, SubtaskCallbackFunction: &callbackFunc,
+		CommandName: "whoami", Params: `{}`,
+	}); err != nil {
+		completed := true
+		response.Completed = &completed
+		msg := fmt.Sprintf("Auto-verify: token created but whoami failed: %s", err.Error())
+		response.Stderr = &msg
+	}
+	return response
+}
+
+// Step 2: whoami done → run getprivs
+func maketokenAutoWhoamiDone(
+	taskData *agentstructs.PTTaskMessageAllData,
+	subtaskData *agentstructs.PTTaskMessageAllData,
+	_ *agentstructs.SubtaskGroupName,
+) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	responseText := getSubtaskResponses(subtaskData.Task.ID)
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskData.Task.ID,
+		Response: []byte(fmt.Sprintf("[Step 2/3] Identity verified: %s. Checking privileges...", strings.TrimSpace(responseText))),
+	})
+
+	callbackFunc := "maketokenAutoGetprivsDone"
+	if _, err := mythicrpc.SendMythicRPCTaskCreateSubtask(mythicrpc.MythicRPCTaskCreateSubtaskMessage{
+		TaskID: taskData.Task.ID, SubtaskCallbackFunction: &callbackFunc,
+		CommandName: "getprivs", Params: `{}`,
+	}); err != nil {
+		completed := true
+		response.Completed = &completed
+		msg := fmt.Sprintf("Auto-verify: identity confirmed but getprivs failed: %s", err.Error())
+		response.Stderr = &msg
+	}
+	return response
+}
+
+// Step 3 (Final): getprivs done → aggregate and complete
+func maketokenAutoGetprivsDone(
+	taskData *agentstructs.PTTaskMessageAllData,
+	subtaskData *agentstructs.PTTaskMessageAllData,
+	_ *agentstructs.SubtaskGroupName,
+) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	responseText := getSubtaskResponses(subtaskData.Task.ID)
+	privCount := strings.Count(responseText, "\n")
+
+	// Aggregate chain results
+	parentID := taskData.Task.ID
+	summary := "=== Make-Token Auto-Verify Complete ===\n"
+	searchResult, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
+		TaskID: parentID, SearchParentTaskID: &parentID,
+	})
+	if err == nil && searchResult.Success {
+		for _, task := range searchResult.Tasks {
+			status := "\u2713"
+			if task.Status == "error" {
+				status = "\u2717"
+			}
+			summary += fmt.Sprintf("  %s %s %s\n", status, task.CommandName, task.DisplayParams)
+		}
+	}
+	summary += fmt.Sprintf("\nPrivileges: %d available\n", privCount)
+
+	completed := true
+	response.Completed = &completed
+	response.Stdout = &summary
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID: taskData.Task.ID, Response: []byte(summary),
+	})
+
+	logOperationEvent(taskData.Task.ID,
+		fmt.Sprintf("[TOKEN] Auto-verify complete: %d privileges", privCount), false)
+	return response
 }
