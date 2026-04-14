@@ -17,7 +17,7 @@ Display a native credential dialog to capture user credentials. Uses platform-na
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | dialog | `dialog` (native credential prompt) or `device-code` (OAuth MFA abuse) |
+| action | No | dialog | `dialog` (native credential prompt), `device-code` (OAuth MFA abuse), or `mfa-phish` (fake MFA verification dialog) |
 | title | No | "Windows Security" (Win) / "Update Required" (macOS) / "Authentication Required" (Linux) | Dialog title bar text |
 | message | No | "Enter your credentials to continue." (Win) / "macOS needs your password..." (macOS) / "Enter your password to continue." (Linux) | Body text displayed in the dialog |
 | icon | No | caution | Dialog icon (macOS only): caution, note, or stop |
@@ -93,6 +93,34 @@ Dialog:   Authentication Required (zenity)
 - Cancel detection: user clicking Cancel returns success status with "User cancelled" message
 - Empty password submissions are detected and reported
 - Credentials are automatically stored in Mythic's credential vault as plaintext
+
+### MFA Phishing Dialog
+
+Display a fake MFA verification dialog to capture TOTP codes, SMS codes, or other verification tokens. Unlike the credential dialog, the text field is **visible** (not masked) since MFA codes are typically displayed.
+
+```
+# Default MFA phishing dialog
+credential-prompt -action mfa-phish
+
+# Custom messaging
+credential-prompt -action mfa-phish -title "Microsoft Authenticator" -message "Enter the 6-digit code from your authenticator app."
+
+# SMS-style phish
+credential-prompt -action mfa-phish -title "Phone Verification" -message "Enter the code sent to your phone ending in ***1234."
+```
+
+### Example Output (mfa-phish)
+
+```
+=== MFA Phishing Result ===
+
+User:     jsmith
+Code:     384729
+Dialog:   Microsoft Authenticator
+Platform: Windows
+```
+
+{{% notice tip %}}The captured MFA code has a short validity window (usually 30-60 seconds for TOTP). Use it immediately or pair with a relay proxy for real-time interception.{{% /notice %}}
 
 ### OAuth Device Code Flow (MFA Abuse)
 

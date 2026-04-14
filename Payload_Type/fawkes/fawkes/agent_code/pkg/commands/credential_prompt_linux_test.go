@@ -102,3 +102,48 @@ func TestBuildDialogArgsSpecialChars(t *testing.T) {
 		t.Errorf("double quotes should pass through: %s", args[2])
 	}
 }
+
+func TestBuildMFADialogArgsZenity(t *testing.T) {
+	args := buildMFADialogArgs("zenity", "Verify Identity", "Enter your code")
+	if len(args) != 3 {
+		t.Fatalf("expected 3 args (no --hide-text), got %d: %v", len(args), args)
+	}
+	if args[0] != "--entry" {
+		t.Errorf("expected --entry, got %s", args[0])
+	}
+	// MFA dialog should NOT have --hide-text (codes are visible)
+	for _, arg := range args {
+		if arg == "--hide-text" {
+			t.Error("MFA dialog should not hide text — codes are visible")
+		}
+	}
+}
+
+func TestBuildMFADialogArgsKdialog(t *testing.T) {
+	args := buildMFADialogArgs("kdialog", "MFA Check", "Enter code")
+	if len(args) != 5 {
+		t.Fatalf("expected 5 args, got %d: %v", len(args), args)
+	}
+	if args[0] != "--inputbox" {
+		t.Errorf("expected --inputbox (not --password), got %s", args[0])
+	}
+}
+
+func TestBuildMFADialogArgsYad(t *testing.T) {
+	args := buildMFADialogArgs("yad", "Verify", "Code please")
+	if len(args) != 3 {
+		t.Fatalf("expected 3 args (no --hide-text), got %d: %v", len(args), args)
+	}
+	for _, arg := range args {
+		if arg == "--hide-text" {
+			t.Error("MFA dialog should not hide text")
+		}
+	}
+}
+
+func TestBuildMFADialogArgsUnknown(t *testing.T) {
+	args := buildMFADialogArgs("unknown", "Title", "Message")
+	if args != nil {
+		t.Errorf("expected nil for unknown tool, got %v", args)
+	}
+}

