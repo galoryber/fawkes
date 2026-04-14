@@ -23,6 +23,7 @@ func init() {
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ptraceinject_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Linux"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{

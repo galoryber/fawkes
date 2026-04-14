@@ -25,6 +25,7 @@ func init() {
 		ScriptOnlyCommand: false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_MACOS},
+			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "macOS"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
