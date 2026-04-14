@@ -43,4 +43,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&GetSystemCommand{})
 	RegisterCommand(&VSSCommand{})
 	RegisterCommand(&PersistCommand{})
+	RegisterCommand(&NetEnumCommand{})
 }

