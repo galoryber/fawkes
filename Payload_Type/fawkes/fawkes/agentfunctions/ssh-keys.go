@@ -17,7 +17,7 @@ func init() {
 		Version:             1,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1098.004", "T1552.004"},
+		MitreAttackMappings: []string{"T1098.004", "T1552.004", "T1552.002"},
 		ScriptOnlyCommand:   false,
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sshkeys_new.js"),
@@ -147,10 +147,15 @@ func init() {
 			return response
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Reading SSH keys and authorized_keys files (T1098.004, T1552.004). SSH key file access is monitored by file integrity monitoring and EDR. Modifying authorized_keys is a persistence indicator."
+			if action == "enumerate" {
+				msg += " On Windows: enumerate also accesses PuTTY registry keys (HKCU\\Software\\SimonTatham\\PuTTY), WSL distribution registry, and cross-subsystem filesystem paths (\\\\wsl$\\). Registry access may trigger EDR alerts."
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
-				OpsecPreBlocked: false,
-				OpsecPreMessage:    "OPSEC WARNING: Reading SSH keys and authorized_keys files (T1098.004, T1552.004). SSH key file access is monitored by file integrity monitoring and EDR. Modifying authorized_keys is a persistence indicator.",
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},

@@ -9,6 +9,13 @@ hidden = false
 
 Read or manipulate SSH authorized_keys files for persistence and lateral movement. Can also extract private keys for credential harvesting, generate new key pairs, and enumerate SSH configuration for lateral movement. Supports targeting other users' `.ssh` directories. Cross-platform: Linux, macOS, and Windows (OpenSSH).
 
+On Windows, the `enumerate` action additionally discovers:
+- **PuTTY sessions** — saved connections from the registry (`HKCU\Software\SimonTatham\PuTTY\Sessions`)
+- **PuTTY .ppk keys** — private key files in common locations (`%USERPROFILE%\.ssh\`, `%APPDATA%\PuTTY\`, Desktop, Documents)
+- **WSL distributions** — installed Linux distributions and their SSH keys via `\\wsl$\<distro>\home\*\.ssh\`
+- **OpenSSH for Windows** — system-wide host keys and sshd_config at `%ProgramData%\ssh\`
+- **Git SSH config** — `core.sshCommand` and signing key references from `.gitconfig`
+
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
@@ -125,6 +132,40 @@ ssh-keys -action enumerate -user admin
   id_rsa (1766 bytes, encrypted)
 ```
 
+### Example Output (enumerate on Windows)
+
+```
+=== SSH Enumeration: C:\Users\admin\.ssh ===
+
+[SSH Config] 1 host(s):
+  ...
+
+[PuTTY Sessions] 2 session(s):
+  Session: Production Server
+    HostName: 10.10.10.50
+    UserName: admin
+    Port: 2222
+    Protocol: SSH
+    PrivateKey: C:\Users\admin\.ssh\prod.ppk
+  Session: Dev DB
+    HostName: db1.internal.corp
+    Protocol: SSH
+
+[PuTTY Keys (.ppk)] 1 file(s):
+  C:\Users\admin\.ssh\prod.ppk
+    Type: ssh-rsa, Encryption: aes256-cbc
+    Comment: rsa-key-20240101
+
+[WSL Distributions] 1 distro(s):
+  Ubuntu
+    user1/.ssh: id_ed25519, id_ed25519.pub, authorized_keys
+
+[OpenSSH for Windows] System-wide config:
+  Host keys: id_rsa, id_ed25519
+  sshd_config: PubkeyAuthentication yes
+  sshd_config: PasswordAuthentication no
+```
+
 ### Generate Key Pair (Persistence)
 
 Generate a new ed25519 key pair on the target, install the public key to authorized_keys, and return the private key to the operator:
@@ -168,4 +209,5 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...
 
 - T1098.004 — Account Manipulation: SSH Authorized Keys
 - T1552.004 — Unsecured Credentials: Private Keys
+- T1552.002 — Unsecured Credentials: Credentials in Registry (PuTTY sessions)
 - T1016 — System Network Configuration Discovery (enumerate)
