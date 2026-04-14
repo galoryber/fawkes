@@ -11,10 +11,10 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "compress",
-		Description:         "Create, list, extract, stage, or exfil encrypted archives. Stage collects files into AES-256-GCM encrypted archives. Exfil transfers staged archives to Mythic with integrity verification. Stage-exfil combines both in one step.",
-		HelpString:          "compress -action create|list|extract|stage|exfil|stage-exfil -path <dir_or_file> [-format zip|tar.gz] [-output path] [-pattern *.txt] [-cleanup true]",
-		Version:             3,
-		MitreAttackMappings: []string{"T1560.001", "T1074.001", "T1041", "T1048"}, // Archive, Data Staging, Exfil Over C2, Exfil Over Alt Protocol
+		Description:         "Create, list, extract, stage, or exfil encrypted archives. Supports C2 channel, HTTPS endpoints (S3/Azure/GCS pre-signed URLs), and GitHub repo exfiltration.",
+		HelpString:          "compress -action create|list|extract|stage|exfil|stage-exfil|exfil-https|exfil-github -path <file> [-output <json_params>] [-cleanup true]",
+		Version:             4,
+		MitreAttackMappings: []string{"T1560.001", "T1074.001", "T1041", "T1048", "T1567", "T1567.001"}, // Archive, Data Staging, Exfil C2, Exfil Alt, Web Service, Code Repo
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
@@ -25,7 +25,7 @@ func init() {
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Description:   "Action to perform",
-				Choices:       []string{"create", "list", "extract", "stage", "exfil", "stage-exfil"},
+				Choices:       []string{"create", "list", "extract", "stage", "exfil", "stage-exfil", "exfil-https", "exfil-github"},
 				DefaultValue:  "create",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -158,6 +158,10 @@ func init() {
 				msg = "OPSEC WARNING: Exfiltrating staged archive over C2 channel (T1041). Large file transfers create detectable network egress patterns. File is transferred in 512KB chunks. Consider transfer timing and volume."
 			case "stage-exfil":
 				msg = "OPSEC WARNING: Combined data staging + exfiltration (T1074.001 + T1041). Collects files into AES-256-GCM encrypted archive, then transfers to Mythic. Creates both disk and network artifacts. Archive is auto-deleted after transfer."
+			case "exfil-https":
+				msg = "OPSEC WARNING: Exfiltration over HTTPS web service (T1567). Uploads data to external HTTPS endpoint. Generates outbound HTTPS traffic to non-C2 destination. May trigger DLP, proxy inspection, or TLS inspection alerts. Inspect the target URL carefully."
+			case "exfil-github":
+				msg = "OPSEC WARNING: Exfiltration to code repository (T1567.001). Pushes data as file commits to GitHub via API. Generates HTTPS traffic to api.github.com. GitHub PAT is used — ensure it has minimal scope (repo only). Commit history is permanent."
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
