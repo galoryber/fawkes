@@ -11,11 +11,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ldap-write",
-		Description:         "Modify Active Directory objects via LDAP. Add/remove group members, set attributes, manage SPNs, enable/disable accounts, set passwords, create machine accounts, RBCD delegation, shadow credentials, delete objects.",
-		HelpString:          "ldap-write -action add-member -server dc01 -target jsmith -group \"Domain Admins\"\nldap-write -action shadow-cred -server dc01 -target victim -username user@domain -password pass\nldap-write -action set-rbcd -server dc01 -target victim -value FAKEPC01$",
-		Version:             1,
+		Description:         "Modify Active Directory objects via LDAP. Group membership, attributes, SPNs, accounts, machine accounts, RBCD, shadow credentials, GPO abuse, ADCS template manipulation.",
+		HelpString:          "ldap-write -action add-member -server dc01 -target jsmith -group \"Domain Admins\"\nldap-write -action gpo-task -server dc01 -target \"Default Domain Policy\" -value cmd.exe\nldap-write -action template-esc1 -server dc01 -target WebServer",
+		Version:             2,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1098", "T1098.005", "T1134.001", "T1136.002", "T1556.006"},
+		MitreAttackMappings: []string{"T1098", "T1098.005", "T1134.001", "T1136.002", "T1556.006", "T1484.001", "T1649"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -28,9 +28,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Operation: add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd, shadow-cred, clear-shadow-cred",
+				Description:      "Operation: add-member, remove-member, set-attr, add-attr, remove-attr, set-spn, disable, enable, set-password, add-computer, delete-object, set-rbcd, clear-rbcd, shadow-cred, clear-shadow-cred, gpo-task, gpo-script, template-esc1, template-esc4",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"add-member", "remove-member", "set-attr", "add-attr", "remove-attr", "set-spn", "disable", "enable", "set-password", "add-computer", "delete-object", "set-rbcd", "clear-rbcd", "shadow-cred", "clear-shadow-cred"},
+				Choices:          []string{"add-member", "remove-member", "set-attr", "add-attr", "remove-attr", "set-spn", "disable", "enable", "set-password", "add-computer", "delete-object", "set-rbcd", "clear-rbcd", "shadow-cred", "clear-shadow-cred", "gpo-task", "gpo-script", "template-esc1", "template-esc4"},
 				DefaultValue:     "add-member",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
