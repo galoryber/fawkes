@@ -183,7 +183,11 @@ func neDarwinAdmins() structs.CommandResult {
 		}
 	}
 
-	return successResult(unique)
+	out, err := json.Marshal(unique)
+	if err != nil {
+		return errorf("JSON marshal failed: %v", err)
+	}
+	return successResult(string(out))
 }
 
 // neDarwinSessions uses the who command for session enumeration.

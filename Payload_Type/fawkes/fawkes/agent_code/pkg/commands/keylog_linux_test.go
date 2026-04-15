@@ -214,6 +214,8 @@ func resetKeylogState() {
 	kl.buffer.Reset()
 	kl.keyCount = 0
 	kl.shiftDown = false
+	kl.ctrlDown = false
+	kl.lastWindow = ""
 	kl.stopCh = nil
 }
 

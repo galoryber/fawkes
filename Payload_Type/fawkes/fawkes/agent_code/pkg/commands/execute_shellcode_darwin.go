@@ -78,7 +78,7 @@ func allocShellcodeARM64(shellcode []byte, allocSize int) (uintptr, string, erro
 		0,
 		uintptr(allocSize),
 		syscall.PROT_READ|syscall.PROT_WRITE|syscall.PROT_EXEC,
-		syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS|mapJIT,
+		syscall.MAP_PRIVATE|syscall.MAP_ANON|mapJIT,
 		^uintptr(0),
 		0,
 	)
@@ -95,7 +95,7 @@ func allocShellcodeARM64(shellcode []byte, allocSize int) (uintptr, string, erro
 func allocShellcodeX86(shellcode []byte, allocSize int) (uintptr, string, error) {
 	data, err := syscall.Mmap(-1, 0, allocSize,
 		syscall.PROT_READ|syscall.PROT_WRITE,
-		syscall.MAP_PRIVATE|syscall.MAP_ANONYMOUS)
+		syscall.MAP_PRIVATE|syscall.MAP_ANON)
 	if err != nil {
 		return 0, "", fmt.Errorf("mmap failed: %v", err)
 	}
