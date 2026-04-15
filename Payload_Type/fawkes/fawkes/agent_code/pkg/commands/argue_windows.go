@@ -21,11 +21,6 @@ func (c *ArgueCommand) Description() string {
 	return "Execute a command with spoofed process arguments"
 }
 
-type argueParams struct {
-	Command string `json:"command"`
-	Spoof   string `json:"spoof"`
-}
-
 // PEB offsets (x64)
 const (
 	pebProcessParametersOffset = 0x20 // PEB.ProcessParameters (RTL_USER_PROCESS_PARAMETERS*)
