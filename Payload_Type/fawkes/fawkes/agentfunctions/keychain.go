@@ -9,6 +9,47 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+type keychainCredential struct {
+	Account string
+	Service string
+	Pass    string
+}
+
+func parseKeychainCredentials(responseText string) []keychainCredential {
+	var creds []keychainCredential
+	var account, service string
+	for _, line := range strings.Split(responseText, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.Contains(line, `"acct"`) && strings.Contains(line, "=") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				account = strings.Trim(strings.TrimSpace(parts[1]), `"`)
+			}
+		} else if strings.Contains(line, `"svce"`) && strings.Contains(line, "=") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				service = strings.Trim(strings.TrimSpace(parts[1]), `"`)
+			}
+		} else if strings.Contains(line, `"srvr"`) && strings.Contains(line, "=") {
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				service = strings.Trim(strings.TrimSpace(parts[1]), `"`)
+			}
+		} else if strings.HasPrefix(line, "password:") {
+			pass := strings.TrimSpace(strings.TrimPrefix(line, "password:"))
+			pass = strings.Trim(pass, `"`)
+			if pass != "" && !strings.HasPrefix(pass, "0x") && account != "" {
+				creds = append(creds, keychainCredential{
+					Account: account,
+					Service: service,
+					Pass:    pass,
+				})
+			}
+		}
+	}
+	return creds
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "keychain",
@@ -137,45 +178,20 @@ func init() {
 			if action != "find-password" && action != "find-internet" {
 				return response
 			}
-			// Parse macOS security command output for password entries
-			// Format: "password: \"value\"" or "password: 0x..." lines
 			hostname := processResponse.TaskData.Callback.Host
 			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
-			var account, service string
-			for _, line := range strings.Split(responseText, "\n") {
-				line = strings.TrimSpace(line)
-				if strings.Contains(line, `"acct"`) && strings.Contains(line, "=") {
-					parts := strings.SplitN(line, "=", 2)
-					if len(parts) == 2 {
-						account = strings.Trim(strings.TrimSpace(parts[1]), `"`)
-					}
-				} else if strings.Contains(line, `"svce"`) && strings.Contains(line, "=") {
-					parts := strings.SplitN(line, "=", 2)
-					if len(parts) == 2 {
-						service = strings.Trim(strings.TrimSpace(parts[1]), `"`)
-					}
-				} else if strings.Contains(line, `"srvr"`) && strings.Contains(line, "=") {
-					parts := strings.SplitN(line, "=", 2)
-					if len(parts) == 2 {
-						service = strings.Trim(strings.TrimSpace(parts[1]), `"`)
-					}
-				} else if strings.HasPrefix(line, "password:") {
-					pass := strings.TrimSpace(strings.TrimPrefix(line, "password:"))
-					pass = strings.Trim(pass, `"`)
-					if pass != "" && !strings.HasPrefix(pass, "0x") && account != "" {
-						realm := hostname
-						if service != "" {
-							realm = service
-						}
-						creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
-							CredentialType: "plaintext",
-							Realm:          realm,
-							Account:        account,
-							Credential:     pass,
-							Comment:        fmt.Sprintf("keychain (%s)", action),
-						})
-					}
+			for _, kc := range parseKeychainCredentials(responseText) {
+				realm := hostname
+				if kc.Service != "" {
+					realm = kc.Service
 				}
+				creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+					CredentialType: "plaintext",
+					Realm:          realm,
+					Account:        kc.Account,
+					Credential:     kc.Pass,
+					Comment:        fmt.Sprintf("keychain (%s)", action),
+				})
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			return response

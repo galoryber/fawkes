@@ -8,6 +8,24 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+var dangerousACERights = []string{
+	"GenericAll", "WriteDACL", "WriteOwner", "GenericWrite",
+	"DS-Replication-Get-Changes", "ForceChangePassword", "AllExtendedRights",
+}
+
+func findDangerousACEs(responseText string) []string {
+	var found []string
+	for _, line := range strings.Split(responseText, "\n") {
+		for _, right := range dangerousACERights {
+			if strings.Contains(line, right) {
+				found = append(found, strings.TrimSpace(line))
+				break
+			}
+		}
+	}
+	return found
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name: "acl-edit",
@@ -233,17 +251,9 @@ func init() {
 			target, _ := processResponse.TaskData.Args.GetStringArg("target")
 			switch action {
 			case "read":
-				// Track dangerous ACEs discovered during reads
-				dangerousRights := []string{"GenericAll", "WriteDACL", "WriteOwner", "GenericWrite",
-					"DS-Replication-Get-Changes", "ForceChangePassword", "AllExtendedRights"}
-				for _, line := range strings.Split(responseText, "\n") {
-					for _, right := range dangerousRights {
-						if strings.Contains(line, right) {
-							createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
-								fmt.Sprintf("[ACL] Dangerous ACE on %s: %s", target, strings.TrimSpace(line)))
-							break
-						}
-					}
+				for _, ace := range findDangerousACEs(responseText) {
+					createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+						fmt.Sprintf("[ACL] Dangerous ACE on %s: %s", target, ace))
 				}
 			case "grant-dcsync", "grant-genericall", "grant-writedacl", "add":
 				if strings.Contains(responseText, "Success") || strings.Contains(responseText, "success") || strings.Contains(responseText, "Added") {

@@ -9,6 +9,23 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+var coercionMethods = []string{"petitpotam", "printerbug", "shadowcoerce", "MS-EFSR", "MS-RPRN", "MS-FSRVP"}
+
+func detectCoercionSuccess(responseText string) (method string, success bool) {
+	for _, line := range strings.Split(responseText, "\n") {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "success") || strings.Contains(lower, "triggered") {
+			for _, m := range coercionMethods {
+				if strings.Contains(strings.ToLower(responseText), strings.ToLower(m)) {
+					return m, true
+				}
+			}
+			return "unknown", true
+		}
+	}
+	return "", false
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "coerce",
@@ -229,21 +246,9 @@ func init() {
 			}
 			server, _ := processResponse.TaskData.Args.GetStringArg("server")
 			listener, _ := processResponse.TaskData.Args.GetStringArg("listener")
-			// Track successful coercion attempts
-			for _, line := range strings.Split(responseText, "\n") {
-				lower := strings.ToLower(line)
-				if strings.Contains(lower, "success") || strings.Contains(lower, "triggered") {
-					method := "unknown"
-					for _, m := range []string{"petitpotam", "printerbug", "shadowcoerce", "MS-EFSR", "MS-RPRN", "MS-FSRVP"} {
-						if strings.Contains(strings.ToLower(responseText), strings.ToLower(m)) {
-							method = m
-							break
-						}
-					}
-					createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
-						fmt.Sprintf("[Coerce] Successful: %s authenticated to %s via %s", server, listener, method))
-					break
-				}
+			if method, ok := detectCoercionSuccess(responseText); ok {
+				createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
+					fmt.Sprintf("[Coerce] Successful: %s authenticated to %s via %s", server, listener, method))
 			}
 			return response
 		},

@@ -8,6 +8,23 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+var sshExecutionRegex = regexp.MustCompile(`\[\*\]\s+SSH\s+(\S+)@(\S+)\s`)
+
+func extractSSHExecutionInfo(responseText string) (user, host string, ok bool) {
+	m := sshExecutionRegex.FindStringSubmatch(responseText)
+	if len(m) > 2 {
+		return m[1], m[2], true
+	}
+	return "", "", false
+}
+
+func sshAuthMethod(keyPath string) string {
+	if keyPath != "" {
+		return "key:" + keyPath
+	}
+	return "password"
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "ssh",
@@ -283,13 +300,11 @@ func init() {
 				return response
 			}
 
-			// Parse: [*] SSH user@host:port (auth: method)
-			re := regexp.MustCompile(`\[\*\]\s+SSH\s+(\S+)@(\S+)\s`)
-			if m := re.FindStringSubmatch(responseText); len(m) > 2 {
+			if user, host, ok := extractSSHExecutionInfo(responseText); ok {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
-					fmt.Sprintf("SSH execution: %s@%s", m[1], m[2]))
+					fmt.Sprintf("SSH execution: %s@%s", user, host))
 				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
-					fmt.Sprintf("SSH execution on %s as %s", m[2], m[1]))
+					fmt.Sprintf("SSH execution on %s as %s", host, user))
 			}
 			return response
 		},
@@ -304,10 +319,7 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			keyPath, _ := taskData.Args.GetStringArg("key_path")
 
-			authMethod := "password"
-			if keyPath != "" {
-				authMethod = "key:" + keyPath
-			}
+			authMethod := sshAuthMethod(keyPath)
 
 			if action == "push" {
 				source, _ := taskData.Args.GetStringArg("source")

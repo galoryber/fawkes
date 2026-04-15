@@ -8,6 +8,21 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+var psexecHostRegex = regexp.MustCompile(`PSExec on (\S+?):`)
+var psexecServiceRegex = regexp.MustCompile(`Service:\s+(\S+)`)
+
+func extractPsExecInfo(responseText string) (host, service string) {
+	host = "unknown"
+	service = "unknown"
+	if m := psexecHostRegex.FindStringSubmatch(responseText); len(m) > 1 {
+		host = m[1]
+	}
+	if m := psexecServiceRegex.FindStringSubmatch(responseText); len(m) > 1 {
+		service = m[1]
+	}
+	return
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "psexec",
@@ -154,17 +169,7 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Parse: PSExec on <host>: and Service: <name>
-			hostRe := regexp.MustCompile(`PSExec on (\S+?):`)
-			svcRe := regexp.MustCompile(`Service:\s+(\S+)`)
-			host := "unknown"
-			service := "unknown"
-			if m := hostRe.FindStringSubmatch(responseText); len(m) > 1 {
-				host = m[1]
-			}
-			if m := svcRe.FindStringSubmatch(responseText); len(m) > 1 {
-				service = m[1]
-			}
+			host, service := extractPsExecInfo(responseText)
 			if host != "unknown" {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
 					fmt.Sprintf("PSExec on %s (service: %s)", host, service))

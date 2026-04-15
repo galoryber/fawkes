@@ -8,6 +8,28 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+func formatRemoteServiceOPSEC(action, server string) string {
+	msg := fmt.Sprintf("OPSEC WARNING: Remote service %s via SVCCTL RPC on %s.", action, server)
+	switch action {
+	case "create":
+		msg += " Service creation is a high-fidelity indicator of lateral movement (Event ID 7045). EDR products heavily monitor remote service installation."
+	case "delete":
+		msg += " Service deletion may trigger alerts for defense evasion."
+	case "start", "stop":
+		msg += " Service state changes generate Event ID 7036 and may be monitored."
+	case "modify-path":
+		msg += " CRITICAL: Modifies existing service binary path (ChangeServiceConfig). Generates Event ID 7040 (service config change). EDR products monitor SCM config changes. Original path is restored after execution."
+	case "trigger":
+		msg += " Creates trigger-started service (demand start + SERVICE_TRIGGER_INFO). Less monitored than auto-start but still generates Event ID 7045. Trigger fires on next qualifying event."
+	case "dll-sideload":
+		msg += " CRITICAL: Modifies ServiceDll registry value via WinReg RPC. Opens two SMB pipes (svcctl + winreg). Sysmon Event ID 13 + 7 will fire. Original DLL path is restored after restart."
+	default:
+		msg += " Service enumeration generates network logon events."
+	}
+	msg += " Uses SMB named pipe transport (ncacn_np:[svcctl])."
+	return msg
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name: "remote-service",
@@ -158,24 +180,7 @@ func init() {
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
 			server, _ := taskData.Args.GetStringArg("server")
-			msg := fmt.Sprintf("OPSEC WARNING: Remote service %s via SVCCTL RPC on %s.", action, server)
-			switch action {
-			case "create":
-				msg += " Service creation is a high-fidelity indicator of lateral movement (Event ID 7045). EDR products heavily monitor remote service installation."
-			case "delete":
-				msg += " Service deletion may trigger alerts for defense evasion."
-			case "start", "stop":
-				msg += " Service state changes generate Event ID 7036 and may be monitored."
-			case "modify-path":
-				msg += " CRITICAL: Modifies existing service binary path (ChangeServiceConfig). Generates Event ID 7040 (service config change). EDR products monitor SCM config changes. Original path is restored after execution."
-			case "trigger":
-				msg += " Creates trigger-started service (demand start + SERVICE_TRIGGER_INFO). Less monitored than auto-start but still generates Event ID 7045. Trigger fires on next qualifying event."
-			case "dll-sideload":
-				msg += " CRITICAL: Modifies ServiceDll registry value via WinReg RPC. Opens two SMB pipes (svcctl + winreg). Sysmon Event ID 13 + 7 will fire. Original DLL path is restored after restart."
-			default:
-				msg += " Service enumeration generates network logon events."
-			}
-			msg += " Uses SMB named pipe transport (ncacn_np:[svcctl])."
+			msg := formatRemoteServiceOPSEC(action, server)
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,

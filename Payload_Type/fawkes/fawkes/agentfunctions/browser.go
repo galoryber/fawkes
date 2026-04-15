@@ -9,6 +9,43 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+type browserCredential struct {
+	Browser  string
+	URL      string
+	Username string
+	Password string
+}
+
+func parseBrowserCredentials(responseText string) []browserCredential {
+	var creds []browserCredential
+	lines := strings.Split(responseText, "\n")
+	var url, username, password, browser string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "Browser:") {
+			if username != "" && password != "" {
+				creds = append(creds, browserCredential{
+					Browser: browser, URL: url, Username: username, Password: password,
+				})
+			}
+			browser = strings.TrimSpace(strings.TrimPrefix(trimmed, "Browser:"))
+			url, username, password = "", "", ""
+		} else if strings.HasPrefix(trimmed, "URL:") {
+			url = strings.TrimSpace(strings.TrimPrefix(trimmed, "URL:"))
+		} else if strings.HasPrefix(trimmed, "Username:") {
+			username = strings.TrimSpace(strings.TrimPrefix(trimmed, "Username:"))
+		} else if strings.HasPrefix(trimmed, "Password:") {
+			password = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
+		}
+	}
+	if username != "" && password != "" {
+		creds = append(creds, browserCredential{
+			Browser: browser, URL: url, Username: username, Password: password,
+		})
+	}
+	return creds
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "browser",
@@ -125,40 +162,13 @@ func init() {
 				return response
 			}
 			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
-			// Parse blocks: Browser: ...\nURL: ...\nUsername: ...\nPassword: ...
-			lines := strings.Split(responseText, "\n")
-			var url, username, password, browser string
-			for _, line := range lines {
-				trimmed := strings.TrimSpace(line)
-				if strings.HasPrefix(trimmed, "Browser:") {
-					// Start of new credential block — flush previous
-					if username != "" && password != "" {
-						creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
-							CredentialType: "plaintext",
-							Realm:          url,
-							Account:        username,
-							Credential:     password,
-							Comment:        fmt.Sprintf("browser passwords (%s)", browser),
-						})
-					}
-					browser = strings.TrimSpace(strings.TrimPrefix(trimmed, "Browser:"))
-					url, username, password = "", "", ""
-				} else if strings.HasPrefix(trimmed, "URL:") {
-					url = strings.TrimSpace(strings.TrimPrefix(trimmed, "URL:"))
-				} else if strings.HasPrefix(trimmed, "Username:") {
-					username = strings.TrimSpace(strings.TrimPrefix(trimmed, "Username:"))
-				} else if strings.HasPrefix(trimmed, "Password:") {
-					password = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
-				}
-			}
-			// Flush final block
-			if username != "" && password != "" {
+			for _, bc := range parseBrowserCredentials(responseText) {
 				creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
 					CredentialType: "plaintext",
-					Realm:          url,
-					Account:        username,
-					Credential:     password,
-					Comment:        fmt.Sprintf("browser passwords (%s)", browser),
+					Realm:          bc.URL,
+					Account:        bc.Username,
+					Credential:     bc.Password,
+					Comment:        fmt.Sprintf("browser passwords (%s)", bc.Browser),
 				})
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
