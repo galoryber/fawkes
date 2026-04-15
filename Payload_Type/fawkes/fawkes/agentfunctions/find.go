@@ -14,20 +14,20 @@ import (
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "find",
+		Name: "find",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "find_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Search for files by name, size, date, permissions, or owner. Find SUID binaries, world-writable files, or files owned by specific users",
 		HelpString:          "find -path <dir> -pattern <glob> [-min_size <bytes>] [-max_size <bytes>] [-newer <minutes>] [-older <minutes>] [-type f|d] [-perm suid|sgid|writable|executable|<octal>] [-owner <user|uid>]",
 		Version:             4,
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"file_browser:list"},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1083"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
-		},
-		AssociatedBrowserScript: &agentstructs.BrowserScript{
-			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "find.js"),
-			Author:     "@galoryber",
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -193,6 +193,24 @@ func init() {
 				return nil
 			}
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			path, _ := taskData.Args.GetStringArg("path")
+			msg := fmt.Sprintf("OPSEC WARNING: Searching for files starting at: %s (T1083). Recursive directory enumeration creates file I/O patterns monitored by EDR. Searches for SUID binaries, credential files, or sensitive extensions are suspicious discovery behavior.", path)
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Filesystem search completed. Directory traversal generates significant file I/O — access timestamps updated on traversed directories. Large recursive searches create detectable I/O patterns. EDR file monitoring may flag rapid directory enumeration.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

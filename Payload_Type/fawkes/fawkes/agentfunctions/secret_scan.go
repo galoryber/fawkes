@@ -1,9 +1,12 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -16,7 +19,7 @@ func init() {
 		Description:         "Search files for secrets, API keys, private keys, and sensitive patterns (T1552.001, T1005)",
 		HelpString:          "secret-scan [-path /home/user] [-depth 5] [-max_results 100]",
 		Version:             2,
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"file_browser:list"},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1552.001", "T1005"},
 		ScriptOnlyCommand:   false,
@@ -75,6 +78,57 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: Secret scanning reads and regex-matches file contents across directories. High I/O file access patterns (bulk reads) may trigger endpoint behavioral analytics or file access auditing.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			host := processResponse.TaskData.Callback.Host
+
+			// Count findings by type from the text output format: "[TYPE] file:line"
+			findingCount := 0
+			for _, line := range strings.Split(responseText, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.HasPrefix(line, "[") && strings.Contains(line, "]") {
+					findingCount++
+				}
+			}
+
+			if findingCount > 0 {
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Credential Access",
+					ArtifactMessage:  fmt.Sprintf("Secret scan found %d secrets on %s", findingCount, host),
+				})
+				tagTask(processResponse.TaskData.Task.ID, "PLAINTEXT",
+					fmt.Sprintf("%d secrets discovered on %s", findingCount, host))
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL ACCESS] Secret scan found %d secrets on %s", findingCount, host), true)
+			}
+			return response
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Secret scanning completed. File content scanning for credentials generates extensive I/O. Results may contain actual credentials. Handle output with appropriate security.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

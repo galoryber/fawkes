@@ -3,6 +3,8 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -19,7 +21,7 @@ func init() {
 		HelpString:          "dns -action resolve -target example.com\ndns -action dc -target corp.local\ndns -action srv -target _ldap._tcp.corp.local\ndns -action all -target corp.local",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1018"},
+		MitreAttackMappings: []string{"T1018", "T1048.001"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -32,9 +34,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "DNS query type: resolve (A/AAAA), reverse (PTR), srv, mx, ns, txt, cname, all, dc (domain controller discovery), zone-transfer (AXFR), wildcard (detect wildcard DNS)",
+				Description:      "DNS query type: resolve, reverse, srv, mx, ns, txt, cname, all, dc, zone-transfer, wildcard, exfil (T1048.001)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"resolve", "reverse", "srv", "mx", "ns", "txt", "cname", "all", "dc", "zone-transfer", "wildcard"},
+				Choices:          []string{"resolve", "reverse", "srv", "mx", "ns", "txt", "cname", "all", "dc", "zone-transfer", "wildcard", "exfil"},
 				DefaultValue:     "resolve",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -52,12 +54,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "DNS Server",
-				Description:      "Custom DNS server to query (default: system resolver)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                "server",
+				CLIName:             "server",
+				ModalDisplayName:    "DNS Server",
+				Description:         "Custom DNS server to query (default: system resolver)",
+				ParameterType:       agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:        "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -69,6 +72,39 @@ func init() {
 				Description:      "Query timeout in seconds (default: 5)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
 				DefaultValue:     5,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "data",
+				CLIName:          "data",
+				ModalDisplayName: "Exfil Data",
+				Description:      "Data to exfiltrate: file path or raw string (exfil action only)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "delay",
+				CLIName:          "delay",
+				ModalDisplayName: "Delay (ms)",
+				Description:      "Delay between DNS queries in milliseconds (exfil, default: 100)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     100,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "jitter",
+				CLIName:          "jitter",
+				ModalDisplayName: "Jitter (ms)",
+				Description:      "Random jitter 0-N ms added to delay (exfil, default: 50)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     50,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -85,12 +121,74 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
-			msg := fmt.Sprintf("OPSEC WARNING: DNS queries from agent (action: %s). Bulk DNS enumeration may trigger DNS monitoring alerts. Zone transfers and SRV queries for domain controllers are suspicious patterns (T1018, T1046).", action)
+			var msg string
+			if action == "exfil" {
+				msg = "OPSEC WARNING: DNS exfiltration encodes data in subdomain labels. Generates many DNS queries with high-entropy hex subdomains. DNS monitoring, DLP, and threat intelligence feeds WILL detect this pattern. Use low delay and consider DNS-over-HTTPS for stealth (T1048.001)."
+			} else {
+				msg = fmt.Sprintf("OPSEC WARNING: DNS queries from agent (action: %s). Bulk DNS enumeration may trigger DNS monitoring alerts. Zone transfers and SRV queries for domain controllers are suspicious patterns (T1018, T1046).", action)
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
 				OpsecPreBlocked: false, OpsecPreMessage: msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: DNS operations completed. DNS queries are logged in DNS server logs and may be captured by DNS monitoring tools. Zone transfer (AXFR) attempts are particularly noisy and often alerting. Passive DNS collectors may record query patterns.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// DC discovery: "host:port → IP"
+			dcRe := regexp.MustCompile(`(\S+):(\d+)\s*→\s*(\S+)`)
+			// Standalone IPv4 address lines (resolve action output)
+			ipRe := regexp.MustCompile(`^\s+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\s*$`)
+
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action == "exfil" {
+				if strings.Contains(responseText, "Exfiltration Complete") {
+					tagTask(processResponse.TaskData.Task.ID, "EXFIL",
+						"DNS exfiltration completed (T1048.001)")
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						"[EXFIL] Data exfiltrated via DNS subdomain encoding (T1048.001)", true)
+				}
+				return response
+			}
+
+			seen := make(map[string]bool)
+			for _, line := range strings.Split(responseText, "\n") {
+				if m := dcRe.FindStringSubmatch(line); m != nil {
+					host, port, ip := m[1], m[2], m[3]
+					key := host + ":" + port
+					if !seen[key] {
+						seen[key] = true
+						createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+							fmt.Sprintf("DNS DC: %s:%s (%s)", host, port, ip))
+					}
+					continue
+				}
+				if m := ipRe.FindStringSubmatch(line); m != nil {
+					ip := m[1]
+					if !seen[ip] {
+						seen[ip] = true
+						createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+							fmt.Sprintf("DNS resolved: %s", ip))
+					}
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

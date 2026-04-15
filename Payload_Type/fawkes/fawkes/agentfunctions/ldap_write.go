@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -35,12 +36,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Domain Controller",
-				Description:      "DC IP address or hostname",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                "server",
+				CLIName:             "server",
+				ModalDisplayName:    "Domain Controller",
+				Description:         "DC IP address or hostname",
+				ParameterType:       agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:        "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -96,6 +98,7 @@ func init() {
 				Description:      "LDAP bind username (e.g., DOMAIN\\user or user@domain.local)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -144,6 +147,17 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			target, _ := taskData.Args.GetStringArg("target")
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: LDAP modification (%s on %s) completed. Event ID 5136/5137 generated in directory service audit log on the DC. Sensitive attribute changes (msDS-KeyCredentialLink, msDS-AllowedToActOnBehalfOfOtherIdentity, servicePrincipalName) are high-priority SOC alerts. Ensure cleanup of any shadow credentials or RBCD delegations after use.", action, target),
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -215,6 +229,31 @@ func init() {
 
 			createArtifact(taskData.Task.ID, "Network Connection", artifactMsg)
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+				switch action {
+				case "add-member", "create-account":
+					tagTask(processResponse.TaskData.Task.ID, "PERSIST",
+						fmt.Sprintf("AD object modified: %s (T1098)", action))
+				case "rbcd", "shadow-cred":
+					tagTask(processResponse.TaskData.Task.ID, "PRIVESC",
+						fmt.Sprintf("AD delegation attack: %s (T1134.001)", action))
+				case "set-spn":
+					tagTask(processResponse.TaskData.Task.ID, "CREDENTIAL",
+						"SPN set for Kerberoasting (T1558.003)")
+				}
+			}
 			return response
 		},
 	})

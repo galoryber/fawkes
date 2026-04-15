@@ -1697,7 +1697,7 @@ func TestSendFile_FileIDNotString(t *testing.T) {
 	// The chunk is sent, then file_id.(string) assertion should fail
 	select {
 	case resp := <-task.Job.SendResponses:
-		if resp.Download != nil {
+		if resp.Download != nil { //nolint:gocritic // test code
 			// This is the chunk data — ack it, then the type assertion will be attempted
 			// after the chunk send, during the loop iteration
 			// Actually, looking at the code more carefully: file_id type assertion happens

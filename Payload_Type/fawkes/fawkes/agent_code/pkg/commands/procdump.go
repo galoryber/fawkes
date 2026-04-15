@@ -244,14 +244,14 @@ func enableThreadDebugPrivilege() error {
 	err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, false, &token)
 	if err != nil {
 		// No impersonation token — process token is used (enableDebugPrivilege handles that)
-		return err
+		return fmt.Errorf("opening thread token for SeDebugPrivilege: %w", err)
 	}
 	defer token.Close()
 
 	var luid windows.LUID
 	err = windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr("SeDebugPrivilege"), &luid)
 	if err != nil {
-		return err
+		return fmt.Errorf("looking up SeDebugPrivilege LUID: %w", err)
 	}
 
 	tp := windows.Tokenprivileges{

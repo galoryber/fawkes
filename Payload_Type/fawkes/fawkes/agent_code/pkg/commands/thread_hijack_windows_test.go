@@ -110,8 +110,8 @@ func TestThreadHijackParams_TIDZeroIsAutoSelect(t *testing.T) {
 	}
 }
 
-// TestCONTEXT_AMD64_Size verifies the thread context struct is correct size.
-func TestCONTEXT_AMD64_Size(t *testing.T) {
+// TestCONTEXT_AMD64_Size_ThreadHijack verifies the thread context struct is correct size.
+func TestCONTEXT_AMD64_Size_ThreadHijack(t *testing.T) {
 	ctx := CONTEXT_AMD64{}
 	size := unsafe.Sizeof(ctx)
 	// CONTEXT_AMD64 should be 1232 bytes (Windows x64 CONTEXT)

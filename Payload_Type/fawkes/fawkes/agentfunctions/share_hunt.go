@@ -2,6 +2,9 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
+	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -12,7 +15,7 @@ func init() {
 		Description:         "Crawl SMB shares across multiple hosts to find sensitive files (credentials, configs, scripts)",
 		HelpString:          "share-hunt -hosts <IPs/CIDRs> -username <DOMAIN\\user> -password <pass> [-hash <NTLM>] [-depth <n>] [-filter <all|credentials|configs|code>] [-max_files <n>]",
 		Version:             1,
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"file_browser:list"},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1135", "T1039"},
 		ScriptOnlyCommand:   false,
@@ -21,12 +24,13 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "hosts",
-				ModalDisplayName: "Target Hosts",
-				CLIName:          "hosts",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Single IP, comma-separated IPs, or CIDR range. Max 256 hosts.",
-				DefaultValue:     "",
+				Name:                 "hosts",
+				ModalDisplayName:     "Target Hosts",
+				CLIName:              "hosts",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Single IP, comma-separated IPs, or CIDR range. Max 256 hosts.",
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -41,6 +45,7 @@ func init() {
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "SMB username (DOMAIN\\user or user@domain)",
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -120,8 +125,29 @@ func init() {
 				},
 			},
 		},
-		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sharehunt_new.js"),
+			Author:     "@galoryber",
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				hosts, _ := taskData.Args.GetStringArg("hosts")
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Share hunting on %s crawls SMB shares for sensitive files (credentials, configs, scripts). Generates Event ID 5140/5145 (share access) on each target. High-volume network activity may trigger NDR alerts.", hosts),
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Share hunting completed. SMB connections to enumerate shares and access files generate Event ID 5140/5145 on target hosts. File access patterns across multiple hosts may trigger lateral movement alerts.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -145,6 +171,27 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: "  [+] [CATEGORY] \\host\share\path (size, date)"
+			re := regexp.MustCompile(`\[\+\]\s+\[([^\]]+)\]\s+(\S+)`)
+			for _, line := range strings.Split(responseText, "\n") {
+				m := re.FindStringSubmatch(line)
+				if m == nil {
+					continue
+				}
+				category, path := m[1], m[2]
+				createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+					fmt.Sprintf("[%s] %s", category, path))
+			}
+			return response
+		},
 	})
 }

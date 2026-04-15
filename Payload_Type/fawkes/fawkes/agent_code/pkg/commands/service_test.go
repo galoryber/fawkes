@@ -271,3 +271,45 @@ func TestDescribeServiceType(t *testing.T) {
 		}
 	}
 }
+
+func TestDescribeAcceptedControls(t *testing.T) {
+	tests := []struct {
+		name     string
+		accepts  svc.Accepted
+		expected string
+	}{
+		{"none", 0, "none"},
+		{"stop only", svc.AcceptStop, "Stop"},
+		{"pause/continue only", svc.AcceptPauseAndContinue, "Pause/Continue"},
+		{"shutdown only", svc.AcceptShutdown, "Shutdown"},
+		{"stop and shutdown", svc.AcceptStop | svc.AcceptShutdown, "Stop, Shutdown"},
+		{"all three", svc.AcceptStop | svc.AcceptPauseAndContinue | svc.AcceptShutdown, "Stop, Pause/Continue, Shutdown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := describeAcceptedControls(tt.accepts)
+			if got != tt.expected {
+				t.Errorf("describeAcceptedControls(%d) = %q, want %q", tt.accepts, got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestServiceListEntryJSON(t *testing.T) {
+	entry := serviceListEntry{
+		Name:        "Spooler",
+		State:       "Running",
+		DisplayName: "Print Spooler",
+	}
+	data, err := json.Marshal(entry)
+	if err != nil {
+		t.Fatalf("failed to marshal: %v", err)
+	}
+	var decoded serviceListEntry
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("failed to unmarshal: %v", err)
+	}
+	if decoded.Name != "Spooler" || decoded.State != "Running" || decoded.DisplayName != "Print Spooler" {
+		t.Errorf("JSON round-trip failed: %+v", decoded)
+	}
+}

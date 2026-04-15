@@ -8,7 +8,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "unlink",
-		Description:         "Disconnect a linked TCP P2P agent. This tears down the peer-to-peer connection and removes the agent from the link chain.",
+		Description:         "Disconnect a linked P2P agent (TCP or named pipe). This tears down the peer-to-peer connection and removes the agent from the link chain.",
 		HelpString:          "unlink -connection_id <uuid>",
 		Version:             1,
 		MitreAttackMappings: []string{"T1572"},
@@ -44,6 +44,15 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: P2P link removed. Agent unlinking terminates network connections. Connection teardown may be logged by network monitoring.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -60,7 +69,7 @@ func init() {
 			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 				TaskID:           taskData.Task.ID,
 				BaseArtifactType: "API Call",
-				ArtifactMessage:  "TCP disconnect P2P linked agent",
+				ArtifactMessage:  "Disconnect P2P linked agent",
 			})
 
 			return response

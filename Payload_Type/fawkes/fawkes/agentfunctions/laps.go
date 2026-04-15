@@ -26,23 +26,25 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Domain Controller",
-				Description:      "Domain controller IP or hostname",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "server",
+				CLIName:              "server",
+				ModalDisplayName:     "Domain Controller",
+				Description:          "Domain controller IP or hostname",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
 			},
 			{
-				Name:             "username",
-				CLIName:          "username",
-				ModalDisplayName: "Username",
-				Description:      "LDAP username (e.g., user@domain.local)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "username",
+				CLIName:              "username",
+				ModalDisplayName:     "Username",
+				Description:          "LDAP username (e.g., user@domain.local)",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -127,6 +129,25 @@ func init() {
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			return response
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			server, _ := taskData.Args.GetStringArg("server")
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: LAPS password recovery queries ms-Mcs-AdmPwd/ms-LAPS-Password LDAP attributes on %s. LDAP queries for LAPS attributes are logged by domain controllers and may trigger SIEM rules for credential access.", server),
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: LAPS password retrieved. LDAP query for ms-Mcs-AdmPwd/ms-LAPS-Password logged on domain controller (Event ID 4662 with LAPS attribute GUID). The retrieved local admin password should be used promptly — LAPS rotates passwords on schedule. Defenders can audit LAPS access via AD audit logs.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

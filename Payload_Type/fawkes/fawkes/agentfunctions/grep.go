@@ -1,6 +1,9 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -11,6 +14,7 @@ func init() {
 		HelpString:          "grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100] [-context 2] [-max_depth 10]",
 		Version:             1,
 		MitreAttackMappings: []string{"T1083", "T1552.001"}, // File Discovery + Credentials In Files
+		SupportedUIFeatures: []string{"file_browser:download"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
@@ -137,6 +141,24 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: Recursive file content search may access many files and trigger EDR file-scan alerts. Searching for credentials/secrets patterns in files may generate high-fidelity detection signals.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Content search completed. File read operations update access timestamps. Searching for sensitive patterns (passwords, keys, tokens) across many files generates detectable I/O. Results may contain credentials — ensure Mythic access is properly secured.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -145,6 +167,22 @@ func init() {
 			if displayParams, err := task.Args.GetFinalArgs(); err == nil && displayParams != "" {
 				response.DisplayParams = &displayParams
 			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			pattern, _ := processResponse.TaskData.Args.GetStringArg("pattern")
+			path, _ := processResponse.TaskData.Args.GetStringArg("path")
+			matches := strings.Count(responseText, "\n")
+			createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+				fmt.Sprintf("grep '%s' in %s (%d matches)", pattern, path, matches))
 			return response
 		},
 	})

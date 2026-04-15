@@ -7,17 +7,61 @@ hidden = false
 
 ## Summary
 
-Report security posture and active security controls. Provides a consolidated view of what security mechanisms are enabled on the target, helping operators understand defensive capabilities and plan evasion strategies.
+Report security posture and active security controls, or detect installed EDR/XDR/AV products. Provides a consolidated view of defensive capabilities on the target, helping operators understand what they're up against.
 
-## Arguments
+## Actions
 
-No arguments required.
+| Action | Description |
+|--------|-------------|
+| `all` | Report security posture and active controls (default) |
+| `edr` | Detect installed EDR/XDR/AV products from 20+ vendors via process enumeration and filesystem path checks |
+
+### Arguments
+
+#### Action
+Choose `all` (default) to report full security posture, or `edr` to detect installed endpoint security products.
 
 ## Usage
 
 ```
 security-info
+security-info -action all
+security-info -action edr
 ```
+
+## EDR Detection
+
+The `edr` action checks for 20+ endpoint security products:
+
+| Vendor | Product |
+|--------|---------|
+| CrowdStrike | Falcon |
+| SentinelOne | SentinelOne Agent |
+| VMware | Carbon Black |
+| Microsoft | Defender/ATP |
+| Palo Alto | Cortex XDR |
+| BlackBerry | Cylance |
+| Sophos | Sophos AV/Intercept X |
+| ESET | ESET Endpoint |
+| Kaspersky | KESL/KAV |
+| Trend Micro | Deep Security Agent |
+| Broadcom | Symantec Endpoint |
+| Trellix | McAfee ENS |
+| Elastic | Elastic Agent/Endpoint |
+| Wazuh | Wazuh OSSEC |
+| osquery | osqueryd |
+| Tanium | Tanium Client |
+| Qualys | Cloud Agent |
+| Rapid7 | InsightAgent |
+| Fortinet | Lacework |
+| Huntress | Huntress Agent |
+
+Detection methods:
+- **Process scan**: Matches running processes against known EDR process names
+- **Path check**: Checks common install directories when processes aren't running
+- **Windows WMI**: Queries SecurityCenter2 for registered AV products
+
+Output includes JSON with product name, vendor, status (running/installed), PID, and path.
 
 ## Platform Details
 
@@ -67,9 +111,10 @@ security-info
 
 ## OPSEC Considerations
 
-- Linux: Most checks use native sysfs/procfs reads (zero subprocess overhead). Falls back to `getenforce`, `aa-status` when native files are unavailable. `iptables`/`nft` require subprocess for firewall rules — some require root for full results
-- macOS: `csrutil`, `spctl`, `fdesetup` require subprocess; 7 new checks use native file reads (zero subprocess overhead): XProtect, Configuration Profiles, MDM, SSH config, TCC DB, JAMF, ARD
+- Linux: Most checks use native sysfs/procfs reads (zero subprocess overhead). `iptables`/`nft` require subprocess
+- macOS: `csrutil`, `spctl`, `fdesetup` require subprocess; other checks use native file reads
 - Windows: Spawns `powershell.exe` for WMI/registry queries — may trigger command-line logging
+- EDR action: Process enumeration and path checks are passive — no subprocess spawned on Linux/macOS
 - Passive reconnaissance — does not modify any security settings
 
 ## MITRE ATT&CK Mapping

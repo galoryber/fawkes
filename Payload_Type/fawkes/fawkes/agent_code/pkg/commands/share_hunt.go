@@ -75,8 +75,7 @@ func (c *ShareHuntCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
-	defer structs.ZeroString(&args.Password)
-	defer structs.ZeroString(&args.Hash)
+	defer zeroCredentials(&args.Password, &args.Hash)
 
 	if args.Hosts == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
 		return errorResult("Error: -hosts, -username, and -password (or -hash) are required")
@@ -94,13 +93,7 @@ func (c *ShareHuntCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Parse domain from username
 	if args.Domain == "" {
-		if parts := strings.SplitN(args.Username, `\`, 2); len(parts) == 2 {
-			args.Domain = parts[0]
-			args.Username = parts[1]
-		} else if parts := strings.SplitN(args.Username, "@", 2); len(parts) == 2 {
-			args.Domain = parts[1]
-			args.Username = parts[0]
-		}
+		args.Domain, args.Username = parseDomainUser(args.Username)
 	}
 
 	// Parse hosts
@@ -200,35 +193,10 @@ func shareHuntHost(task structs.Task, host string, args shareHuntArgs, matchExts
 	}
 
 	// Connect via SMB
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:445", host), 10*time.Second)
+	session, conn, err := smbDialSession(host, 445, args.Username, args.Domain, args.Password, args.Hash, 30*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("TCP connect: %v", err)
+		return nil, fmt.Errorf("SMB connect: %v", err)
 	}
-
-	initiator := &smb2.NTLMInitiator{
-		User:   args.Username,
-		Domain: args.Domain,
-	}
-	if args.Hash != "" {
-		hashBytes, err := smbDecodeHash(args.Hash)
-		if err != nil {
-			_ = conn.Close()
-			return nil, fmt.Errorf("invalid hash: %v", err)
-		}
-		initiator.Hash = hashBytes
-	} else {
-		initiator.Password = args.Password
-	}
-
-	d := &smb2.Dialer{Initiator: initiator}
-	_ = conn.SetDeadline(time.Now().Add(30 * time.Second))
-	session, err := d.Dial(conn)
-	structs.ZeroBytes(initiator.Hash)
-	if err != nil {
-		_ = conn.Close()
-		return nil, fmt.Errorf("SMB auth: %v", err)
-	}
-	_ = conn.SetDeadline(time.Time{})
 	defer func() {
 		_ = session.Logoff()
 		_ = conn.Close()
@@ -350,10 +318,8 @@ func shareHuntBuildExtSet(filter string) map[string]string {
 			p = strings.ToLower(p)
 			if strings.HasPrefix(p, "*.") {
 				result[p[1:]] = category // *.kdbx -> .kdbx
-			} else if strings.HasPrefix(p, ".") {
-				result[p] = category
 			} else {
-				result[p] = category // exact name like id_rsa
+				result[p] = category // .ext or exact name like id_rsa
 			}
 		}
 	}

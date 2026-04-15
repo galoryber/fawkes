@@ -176,10 +176,8 @@ func TestGpoLinkRegex(t *testing.T) {
 			if matches[0][2] != tc.expectFlags {
 				t.Errorf("flags mismatch for %q: got %s, want %s", tc.input, matches[0][2], tc.expectFlags)
 			}
-		} else {
-			if len(matches) > 0 {
-				t.Errorf("expected no match for %q, got %v", tc.input, matches)
-			}
+		} else if len(matches) > 0 {
+			t.Errorf("expected no match for %q, got %v", tc.input, matches)
 		}
 	}
 

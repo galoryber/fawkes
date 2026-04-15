@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -99,6 +100,35 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "No hooks detected") {
+				createArtifact(processResponse.TaskData.Task.ID, "Security Product",
+					"[NTDLL] No hooks detected — ntdll.dll .text section clean")
+			} else if strings.Contains(responseText, "hooked region") || strings.Contains(responseText, "Bytes restored") {
+				// Count hooked regions or bytes restored
+				hookCount := 0
+				for _, line := range strings.Split(responseText, "\n") {
+					if strings.Contains(line, "hooked region") || strings.Contains(strings.TrimSpace(line), "0x") {
+						hookCount++
+					}
+				}
+				if strings.Contains(responseText, "Bytes restored") {
+					createArtifact(processResponse.TaskData.Task.ID, "Security Product",
+						fmt.Sprintf("[NTDLL Unhook] Restored .text section — %d hooked regions patched", hookCount))
+				} else {
+					createArtifact(processResponse.TaskData.Task.ID, "Security Product",
+						fmt.Sprintf("[NTDLL Check] %d hooked regions detected in ntdll.dll", hookCount))
+				}
+			}
+			return response
+		},
 	})
 }

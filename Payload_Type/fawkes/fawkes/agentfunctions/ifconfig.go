@@ -24,7 +24,15 @@ func init() {
 		},
 		CommandParameters:       []agentstructs.CommandParameter{},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    "OPSEC WARNING: Network interface enumeration reveals IP addresses, MAC addresses, and network topology. Updates Mythic callback IP metadata.",
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
 			response := agentstructs.PTTaskProcessResponseMessageResponse{
 				TaskID:  processResponse.TaskData.Task.ID,
@@ -51,7 +59,7 @@ func init() {
 			}
 			if len(ips) > 0 {
 				update := mythicrpc.MythicRPCCallbackUpdateMessage{
-					AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+					AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
 					IPs:               &ips,
 				}
 				if len(ips) == 1 {
@@ -62,6 +70,15 @@ func init() {
 				}
 			}
 			return response
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Network interface enumeration completed. Interface details (IPs, MACs, MTU) reveal network topology and multi-homed hosts. This is standard reconnaissance but results may inform pivot planning. No persistent artifacts created.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

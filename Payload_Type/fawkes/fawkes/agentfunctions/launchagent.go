@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -193,6 +194,29 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse LaunchAgent/LaunchDaemon plist paths from list output
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasSuffix(trimmed, ".plist") || strings.Contains(trimmed, ".plist ") {
+					// Extract plist path (may have size suffix)
+					path := trimmed
+					if idx := strings.LastIndex(trimmed, ".plist"); idx >= 0 {
+						path = trimmed[:idx+6]
+					}
+					createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism",
+						fmt.Sprintf("[LaunchAgent] %s", path))
+				}
+			}
+			return response
+		},
 	})
 }

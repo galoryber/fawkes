@@ -13,7 +13,8 @@ func init() {
 		HelpString:          "base64 -action encode -input 'hello world'\nbase64 -action encode -input /etc/passwd -file true\nbase64 -action decode -input 'SGVsbG8=' -output /tmp/decoded.bin",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1132.001", "T1027"},
+		MitreAttackMappings: []string{"T1132.001", "T1027", "T1140"},
+		SupportedUIFeatures: []string{"file_browser:download"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -76,6 +77,34 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			isFile, _ := taskData.Args.GetBooleanArg("file")
+			output, _ := taskData.Args.GetStringArg("output")
+			msg := fmt.Sprintf("OPSEC WARNING: Base64 %s (T1132.001, T1027). ", action)
+			if isFile {
+				msg += "Reading file contents for encoding — file access is logged by EDR. "
+			}
+			if output != "" {
+				msg += "Writing output to file — creates MFT/USN artifacts. "
+			}
+			msg += "Base64 operations are commonly associated with obfuscation and data staging."
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Base64 encode/decode operation completed. Encoding is commonly used for data obfuscation. No persistent artifacts created.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

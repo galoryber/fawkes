@@ -1,6 +1,13 @@
 package agentfunctions
 
-import agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+import (
+	"fmt"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+)
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
@@ -12,6 +19,10 @@ func init() {
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1005", "T1083"},
 		ScriptOnlyCommand:   false,
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ide_recon_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -33,11 +44,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "user",
-				ModalDisplayName: "User Filter",
-				CLIName:          "user",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Target specific user's home directory (optional, defaults to current user)",
+				Name:                 "user",
+				ModalDisplayName:     "User Filter",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Target specific user's home directory (optional, defaults to current user)",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 1},
@@ -52,6 +64,24 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: IDE/developer environment reconnaissance enumerates installed tools, project files, Git configs, Docker environments, and cloud CLI credentials. Accesses many config files across the filesystem — may generate file-access telemetry.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: IDE reconnaissance completed. Scanning developer environments reveals source code repos, SSH keys, cloud configs, and API tokens. Extensive directory traversal generates I/O patterns.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
@@ -68,6 +98,59 @@ func init() {
 			}
 			response.DisplayParams = &displayParams
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Extract SSH targets: "  hostname (platform)"
+			sshRe := regexp.MustCompile(`^\s{6}(\S+)\s+\(`)
+			// Extract data sources: "  dbname: jdbc:..."
+			dbRe := regexp.MustCompile(`^\s{8}(\S+):\s+(jdbc:\S+)`)
+			// Extract sensitive settings: "  [SENSITIVE] key = value"
+			sensitiveRe := regexp.MustCompile(`\[SENSITIVE\]\s+(\S+)`)
+
+			inSSH := false
+			inDB := false
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if strings.HasPrefix(trimmed, "Remote SSH targets:") {
+					inSSH = true
+					inDB = false
+					continue
+				}
+				if strings.HasPrefix(trimmed, "Data sources") {
+					inDB = true
+					inSSH = false
+					continue
+				}
+				if strings.HasPrefix(trimmed, "---") || trimmed == "" {
+					inSSH = false
+					inDB = false
+				}
+				if inSSH {
+					if m := sshRe.FindStringSubmatch(line); m != nil {
+						createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+							fmt.Sprintf("IDE SSH target: %s", m[1]))
+					}
+				}
+				if inDB {
+					if m := dbRe.FindStringSubmatch(line); m != nil {
+						createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+							fmt.Sprintf("IDE data source: %s → %s", m[1], m[2]))
+					}
+				}
+				if m := sensitiveRe.FindStringSubmatch(line); m != nil {
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						fmt.Sprintf("IDE sensitive setting: %s", m[1]))
+				}
+			}
 			return response
 		},
 	})

@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -28,11 +29,45 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return nil
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage:    "OPSEC WARNING: Detects attached debuggers and analysis tools (T1497.001). Anti-debug checks (IsDebuggerPresent, TracerPid, timing) are a well-known malware indicator that sandboxes and EDR specifically watch for.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Debugger detection completed. Anti-debug checks (IsDebuggerPresent, NtQueryInformationProcess, timing checks) are well-known malware behaviors. Sandboxes and EDR may flag these API calls. If a debugger was detected, consider terminating or altering behavior.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			return agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "true") || strings.Contains(responseText, "detected") {
+				tagTask(processResponse.TaskData.Task.ID, "OPSEC",
+					"Debugger/analysis tool detected (T1497.001)")
+			}
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				"[RECON] Debug/analysis environment check (T1497.001)", false)
+			return response
 		},
 	})
 }

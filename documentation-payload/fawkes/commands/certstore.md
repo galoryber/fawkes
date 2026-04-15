@@ -15,9 +15,12 @@ Enumerate Windows certificate stores to find code signing certificates, client a
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | list | Action: `list` (enumerate all) or `find` (search with filter) |
-| store | No | all | Certificate store to enumerate: `MY`, `ROOT`, `CA`, `Trust`, `TrustedPeople`, or blank for all |
-| filter | For find | — | Case-insensitive substring match against subject, issuer, thumbprint, or serial number |
+| action | No | list | Action: `list`, `find`, `export`, `delete`, or `import` |
+| store | No | all | Certificate store: `MY`, `ROOT`, `CA`, `Trust`, `TrustedPeople`, or blank for all |
+| filter | For find/export/delete | — | Substring match (find) or thumbprint (export/delete) |
+| format | For export/import | pem | Export/import format: `pem` (cert only) or `pfx` (cert + private key) |
+| password | For pfx | — | Password for PFX export/import |
+| data | For import | — | Base64-encoded certificate data for import |
 
 ### Stores
 
@@ -46,6 +49,21 @@ certstore -action find -filter "8F:43:28:8A"
 
 # Search for code signing certs
 certstore -action find -filter "Code Signing"
+
+# Export certificate as PEM (certificate only)
+certstore -action export -filter "8F:43:28:8A" -format pem
+
+# Export as PFX with private key (password-protected)
+certstore -action export -filter "8F:43:28:8A" -format pfx -password "P@ssw0rd"
+
+# Delete certificate by thumbprint
+certstore -action delete -filter "8F:43:28:8A" -store MY
+
+# Import PEM certificate
+certstore -action import -data "<base64_cert>" -format pem -store MY
+
+# Import PFX with password
+certstore -action import -data "<base64_pfx>" -format pfx -password "P@ssw0rd" -store MY
 ```
 
 ### Browser Script

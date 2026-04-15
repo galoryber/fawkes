@@ -123,6 +123,7 @@ func TestParseWmiPersistArgs_EmptyParams(t *testing.T) {
 	_, errResult := parseWmiPersistArgs(task)
 	if errResult == nil {
 		t.Fatal("expected error for empty params")
+		return
 	}
 	if errResult.Status != "error" {
 		t.Errorf("expected error status, got %s", errResult.Status)
@@ -137,6 +138,7 @@ func TestParseWmiPersistArgs_InvalidJSON(t *testing.T) {
 	_, errResult := parseWmiPersistArgs(task)
 	if errResult == nil {
 		t.Fatal("expected error for invalid JSON")
+		return
 	}
 	if errResult.Status != "error" {
 		t.Errorf("expected error status, got %s", errResult.Status)

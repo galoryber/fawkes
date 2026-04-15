@@ -130,7 +130,7 @@ func TestCStringToGo_Nil(t *testing.T) {
 // and have the expected parameter types.
 func TestSyscallFunctionSignatures(t *testing.T) {
 	var (
-		_alloc      func(uintptr, *uintptr, *uintptr, uint32, uint32) uint32 = IndirectNtAllocateVirtualMemory
+		_alloc      func(uintptr, *uintptr, *uintptr, uint32, uint32) uint32  = IndirectNtAllocateVirtualMemory
 		_write      func(uintptr, uintptr, uintptr, uintptr, *uintptr) uint32 = IndirectNtWriteVirtualMemory
 		_protect    func(uintptr, *uintptr, *uintptr, uint32, *uint32) uint32 = IndirectNtProtectVirtualMemory
 		_createTh   func(*uintptr, uintptr, uintptr) uint32                   = IndirectNtCreateThreadEx
@@ -141,7 +141,7 @@ func TestSyscallFunctionSignatures(t *testing.T) {
 		_getCtx     func(uintptr, uintptr) uint32                             = IndirectNtGetContextThread
 		_setCtx     func(uintptr, uintptr) uint32                             = IndirectNtSetContextThread
 		_openThread func(*uintptr, uint32, uintptr) uint32                    = IndirectNtOpenThread
-		_queueApc   func(uintptr, uintptr, uintptr, uintptr, uintptr) uint32 = IndirectNtQueueApcThread
+		_queueApc   func(uintptr, uintptr, uintptr, uintptr, uintptr) uint32  = IndirectNtQueueApcThread
 		_read       func(uintptr, uintptr, uintptr, uintptr, *uintptr) uint32 = IndirectNtReadVirtualMemory
 		_close      func(uintptr) uint32                                      = IndirectNtClose
 	)

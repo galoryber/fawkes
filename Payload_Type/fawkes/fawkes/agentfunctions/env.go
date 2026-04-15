@@ -91,6 +91,24 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: Environment variable enumeration may reveal API keys, credentials, paths, and configuration. Sensitive values (tokens, secrets) in env vars will be visible in task output.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Environment variables enumerated. Environment may contain credentials, API keys, tokens, and connection strings. Handle output carefully as it may expose sensitive configuration.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -112,6 +130,27 @@ func init() {
 				display += fmt.Sprintf(", filter=%s", filter)
 			}
 			response.DisplayParams = &display
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			name, _ := processResponse.TaskData.Args.GetStringArg("name")
+			switch action {
+			case "set":
+				createArtifact(processResponse.TaskData.Task.ID, "Configuration Modification",
+					fmt.Sprintf("env set %s on %s", name, processResponse.TaskData.Callback.Host))
+			case "unset":
+				createArtifact(processResponse.TaskData.Task.ID, "Configuration Modification",
+					fmt.Sprintf("env unset %s on %s", name, processResponse.TaskData.Callback.Host))
+			}
 			return response
 		},
 	})

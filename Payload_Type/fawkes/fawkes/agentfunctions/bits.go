@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -110,6 +111,15 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: BITS job operation completed. BITS transfers generate Event ID 16403/16404 in Microsoft-Windows-Bits-Client/Operational log. BITS jobs persist across reboots — ensure cleanup of jobs after use.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -118,6 +128,15 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			actionVal, _ := taskData.Args.GetStringArg("action")
+			msg := fmt.Sprintf("OPSEC WARNING: BITS job operation, action: %s (T1197). BITS jobs are used for persistent file transfers and execution. BITS abuse is a well-known persistence/execution technique monitored by EDR.", actionVal)
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
@@ -148,6 +167,28 @@ func init() {
 				displayStr += " ← " + url
 			}
 			response.DisplayParams = &displayStr
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "persist":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+					tagTask(processResponse.TaskData.Task.ID, "PERSIST",
+						"BITS job persistence established (T1197)")
+				}
+			case "list":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] BITS job enumeration (T1197)", false)
+			}
 			return response
 		},
 	})

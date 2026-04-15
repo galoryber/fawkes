@@ -2,13 +2,19 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "acl-edit",
+		Name: "acl-edit",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "acledit_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Read and modify Active Directory object DACLs (access control lists). Add/remove ACEs, grant DCSync rights, GenericAll, WriteDACL. Backup and restore DACLs for clean operations.",
 		HelpString:          "acl-edit -action read -server dc01 -target jsmith\nacl-edit -action grant-dcsync -server dc01 -principal attacker -username user@domain -password pass\nacl-edit -action add -server dc01 -target victim -principal attacker -right genericall\nacl-edit -action backup -server dc01 -target jsmith",
 		Version:             1,
@@ -35,12 +41,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Domain Controller",
-				Description:      "DC IP address or hostname",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                "server",
+				CLIName:             "server",
+				ModalDisplayName:    "Domain Controller",
+				Description:         "DC IP address or hostname",
+				ParameterType:       agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:        "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -91,12 +98,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "username",
-				CLIName:          "username",
-				ModalDisplayName: "Username",
-				Description:      "LDAP bind username (e.g., DOMAIN\\user or user@domain.local)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "username",
+				CLIName:              "username",
+				ModalDisplayName:     "Username",
+				Description:          "LDAP bind username (e.g., DOMAIN\\user or user@domain.local)",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -166,6 +174,15 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: ACL modification completed. SACL changes generate Event ID 4715. DACL changes may be detected by AD monitoring tools (BloodHound, PingCastle). Object access auditing captures ACL modifications in Event ID 4670.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -196,6 +213,50 @@ func init() {
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("LDAP restore DACL on %s", target))
 			}
 
+			if action != "read" && action != "backup" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[SYSTEM MOD] acl-edit %s: %s → %s (principal: %s) from %s", action, right, target, principal, taskData.Callback.Host), true)
+			}
+
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			target, _ := processResponse.TaskData.Args.GetStringArg("target")
+			switch action {
+			case "read":
+				// Track dangerous ACEs discovered during reads
+				dangerousRights := []string{"GenericAll", "WriteDACL", "WriteOwner", "GenericWrite",
+					"DS-Replication-Get-Changes", "ForceChangePassword", "AllExtendedRights"}
+				for _, line := range strings.Split(responseText, "\n") {
+					for _, right := range dangerousRights {
+						if strings.Contains(line, right) {
+							createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+								fmt.Sprintf("[ACL] Dangerous ACE on %s: %s", target, strings.TrimSpace(line)))
+							break
+						}
+					}
+				}
+			case "grant-dcsync", "grant-genericall", "grant-writedacl", "add":
+				if strings.Contains(responseText, "Success") || strings.Contains(responseText, "success") || strings.Contains(responseText, "Added") {
+					principal, _ := processResponse.TaskData.Args.GetStringArg("principal")
+					createArtifact(processResponse.TaskData.Task.ID, "API Call",
+						fmt.Sprintf("[ACL] Permission granted: %s → %s on %s", action, principal, target))
+				}
+			case "restore":
+				if strings.Contains(responseText, "Restored") || strings.Contains(responseText, "restored") {
+					createArtifact(processResponse.TaskData.Task.ID, "API Call",
+						fmt.Sprintf("[ACL] DACL restored on %s", target))
+				}
+			}
 			return response
 		},
 	})

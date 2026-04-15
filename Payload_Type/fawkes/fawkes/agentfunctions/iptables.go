@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -16,6 +17,10 @@ func init() {
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1562.004"},
 		ScriptOnlyCommand:   false,
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "iptables_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX},
 		},
@@ -140,6 +145,26 @@ func init() {
 				createArtifact(taskData.Task.ID, "Process Create", "iptables -L")
 			}
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "add", "delete", "flush":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DEFENSE EVASION] iptables %s — firewall modification (T1562.004)", action), true)
+			case "rules", "nat", "status":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] iptables enumeration (T1562.004)", false)
+			}
 			return response
 		},
 	})

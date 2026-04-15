@@ -3,6 +3,7 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -40,7 +41,15 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "named_pipes_new.js"),
 			Author:     "@galoryber",
 		},
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    "OPSEC WARNING: Named pipe enumeration lists all named pipes (Windows), Unix domain sockets, and FIFOs. Can reveal running services, IPC endpoints, and lateral movement opportunities. Pipe names may indicate security tools (e.g., \\pipe\\MicrosoftDefender).",
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -49,6 +58,15 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Named pipe enumeration completed. Pipe names reveal active services, C2 channels, and IPC mechanisms. Suspicious pipe names (e.g., cobaltstrike, meterpreter patterns) may indicate other red team tools. Pipe enumeration itself is low-noise but informs follow-up pipe impersonation or injection.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
@@ -69,6 +87,27 @@ func init() {
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse named pipe names from output (lines starting with \\.\pipe\ or just pipe names)
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "Named Pipes") || strings.HasPrefix(trimmed, "Filter:") || strings.HasPrefix(trimmed, "---") {
+					continue
+				}
+				if strings.HasPrefix(trimmed, "\\\\.\\pipe\\") || strings.HasPrefix(trimmed, "\\\\") || !strings.ContainsAny(trimmed, " :=") {
+					createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+						fmt.Sprintf("[Named Pipe] %s", trimmed))
+				}
+			}
+			return response
+		},
 	})
 }

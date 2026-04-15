@@ -170,6 +170,7 @@ func TestResolveProviders(t *testing.T) {
 	providers = resolveProviders("invalid", 1e9)
 	if providers != nil {
 		t.Fatalf("expected nil for invalid, got %v", providers)
+		return // unreachable, helps staticcheck
 	}
 }
 

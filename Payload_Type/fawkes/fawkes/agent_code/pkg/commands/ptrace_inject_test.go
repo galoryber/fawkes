@@ -163,6 +163,7 @@ func TestFindSyscallGadgetNonexistent(t *testing.T) {
 	_, err := findSyscallGadget(999999)
 	if err == nil {
 		t.Fatal("expected error for nonexistent process")
+		return
 	}
 	if !strings.Contains(err.Error(), "cannot read") {
 		t.Errorf("expected 'cannot read' error, got: %v", err)

@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -16,8 +19,9 @@ func init() {
 		HelpString:          "apc-injection",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055.004"}, // Process Injection: Asynchronous Procedure Call
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "apcinjection_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},
@@ -67,11 +71,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "Target PID",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "The process ID containing the target thread",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "Target PID",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "The process ID containing the target thread",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -116,25 +121,25 @@ func init() {
 			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:  taskData.Task.ID,
 				Success: true,
 				OpsecPreBlocked: false,
-				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: APC injection into PID %d. "+
+				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: APC injection into PID %s. "+
 					"Queues shellcode via NtQueueApcThread — requires alertable thread in target. "+
-					"Less common than CreateRemoteThread but still monitored by advanced EDR.", int(pid)),
+					"Less common than CreateRemoteThread but still monitored by advanced EDR.", pid),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			tid, _ := taskData.Args.GetNumberArg("tid")
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,
 				Success:             true,
 				OpsecPostBlocked:    false,
-				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: APC injection queued for PID %d TID %d. Artifact registered.", int(pid), int(tid)),
+				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: APC injection queued for PID %s TID %d. Artifact registered.", pid, int(tid)),
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -173,7 +178,7 @@ func init() {
 				shellcodeB64 = base64.StdEncoding.EncodeToString(fileContents)
 			}
 
-			pid, err := taskData.Args.GetNumberArg("pid")
+			pid, err := parsePIDFromArg(taskData)
 			if err != nil {
 				logging.LogError(err, "Failed to get PID")
 				response.Success = false
@@ -199,13 +204,13 @@ func init() {
 				return response
 			}
 
-			displayParams := fmt.Sprintf("Shellcode: %s\nTarget PID: %d\nTarget TID: %d", filename, int(pid), int(tid))
+			displayParams := fmt.Sprintf("Shellcode: %s\nTarget PID: %d\nTarget TID: %d", filename, pid, int(tid))
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("APC injection into PID %d TID %d", int(pid), int(tid)))
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("APC injection into PID %d TID %d", pid, int(tid)))
 
 			params := map[string]interface{}{
 				"shellcode_b64": shellcodeB64,
-				"pid":           int(pid),
+				"pid":           pid,
 				"tid":           int(tid),
 			}
 			paramsJSON, err := json.Marshal(params)
@@ -215,6 +220,21 @@ func init() {
 				return response
 			}
 			taskData.Args.SetManualArgs(string(paramsJSON))
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			host := processResponse.TaskData.Callback.Host
+			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+				TaskID:           processResponse.TaskData.Task.ID,
+				BaseArtifactType: "Process Injection",
+				ArtifactMessage:  fmt.Sprintf("APC injection on %s", host),
+			})
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[EXECUTION] APC queue injection on %s", host), true)
 			return response
 		},
 	})

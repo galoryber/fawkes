@@ -1,6 +1,12 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"regexp"
+	"strings"
+
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -12,16 +18,18 @@ func init() {
 		Version:             1,
 		MitreAttackMappings: []string{"T1005", "T1057"}, // Data from Local System + Process Discovery
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "memscan_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:          "pid",
-				CLIName:       "pid",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:   "Target process ID to scan (0 = current process)",
-				DefaultValue:  0,
+				Name:                 "pid",
+				CLIName:              "pid",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Target process ID to scan (0 = current process)",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -94,6 +102,58 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             task.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: Process memory scanning uses ReadProcessMemory/VirtualQueryEx (Windows) or /proc/pid/mem (Linux). Cross-process memory access is a high-fidelity indicator monitored by EDR products. Scanning LSASS or security tool processes will likely trigger alerts.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Memory scan completed. Process enumeration and memory region queries generate process access events. Scanning patterns (sequential process/region enumeration) may trigger behavioral detection.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse match count and PID from output header
+			matchRe := regexp.MustCompile(`Matches found:\s*(\d+)`)
+			pidRe := regexp.MustCompile(`Memory Scan: PID (\d+)`)
+			patternRe := regexp.MustCompile(`Pattern:\s*(.+?)\s*\(`)
+
+			matchCount := "0"
+			pid := "unknown"
+			pattern := "unknown"
+
+			if m := matchRe.FindStringSubmatch(responseText); len(m) > 1 {
+				matchCount = m[1]
+			}
+			if m := pidRe.FindStringSubmatch(responseText); len(m) > 1 {
+				pid = m[1]
+			}
+			if m := patternRe.FindStringSubmatch(responseText); len(m) > 1 {
+				pattern = strings.TrimSpace(m[1])
+			}
+
+			if matchCount != "0" {
+				createArtifact(processResponse.TaskData.Task.ID, "Process Memory Scan",
+					fmt.Sprintf("Memory scan PID %s: %s matches for pattern '%s'", pid, matchCount, pattern))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

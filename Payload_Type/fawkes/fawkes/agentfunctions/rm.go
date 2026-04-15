@@ -56,6 +56,23 @@ func init() {
 			}
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: File deletion (T1070.004). Deleting files leaves MFT entries, USN journal records, and may trigger EDR file-deletion telemetry. Consider secure-delete for anti-forensics or timestomp before removal.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: File deletion completed. Deleted files remain recoverable from USN journal, $MFT residual entries, and volume shadow copies until overwritten. Standard deletion does NOT securely erase data — use securedelete for sensitive artifacts. Recycle Bin bypass (direct delete) is itself a forensic indicator.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,

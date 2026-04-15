@@ -60,6 +60,7 @@ func TestExecCmdCtxCancel(t *testing.T) {
 	err := cmd.Run()
 	if err == nil {
 		t.Fatal("expected error after cancellation")
+		return
 	}
 	if !strings.Contains(err.Error(), context.Canceled.Error()) &&
 		!strings.Contains(err.Error(), "signal: killed") &&

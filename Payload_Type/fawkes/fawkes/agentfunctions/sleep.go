@@ -91,6 +91,15 @@ func init() {
 				Description: "Comma-separated ISO weekday numbers (Mon=1, Sun=7). E.g. '1,2,3,4,5' for weekdays. Leave empty for no change, '0' to disable (all days).",
 			},
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Sleep interval modified. C2 beacon interval changes alter network traffic patterns. Shorter intervals increase detection risk. Longer intervals reduce responsiveness.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -112,7 +121,7 @@ func init() {
 			}
 			sleepString := processResponse.Response.(string)
 			if updateResp, err := mythicrpc.SendMythicRPCCallbackUpdate(mythicrpc.MythicRPCCallbackUpdateMessage{
-				AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+				AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
 				SleepInfo:         &sleepString,
 			}); err != nil {
 				response.Success = false
@@ -141,7 +150,7 @@ func init() {
 			// Parse interval (required)
 			if interval, err := strconv.Atoi(stringPieces[0]); err != nil {
 				logging.LogError(err, "Failed to process first argument as integer")
-				return err
+				return fmt.Errorf("invalid sleep interval %q: %w", stringPieces[0], err)
 			} else if interval < 0 {
 				args.SetArgValue("interval", 0)
 			} else {
@@ -150,7 +159,7 @@ func init() {
 			// Parse jitter (optional)
 			if len(stringPieces) >= 2 {
 				if jitter, err := strconv.Atoi(stringPieces[1]); err != nil {
-					return err
+					return fmt.Errorf("invalid jitter value %q: %w", stringPieces[1], err)
 				} else {
 					if jitter < 0 {
 						args.SetArgValue("jitter", 0)

@@ -2,6 +2,8 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
+	"regexp"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -16,8 +18,10 @@ func init() {
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1047"},
 		ScriptOnlyCommand:   false,
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "wmi_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS:                []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			CommandCanOnlyBeLoadedLater: true,
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -36,12 +40,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "target",
-				ModalDisplayName: "Target Host",
-				CLIName:          "target",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Remote hostname or IP (leave empty for local)",
-				DefaultValue:     "",
+				Name:                 "target",
+				ModalDisplayName:     "Target Host",
+				CLIName:              "target",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Remote hostname or IP (leave empty for local)",
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -77,6 +82,20 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "timeout",
+				CLIName:          "timeout",
+				ModalDisplayName: "Timeout (seconds)",
+				Description:      "Operation timeout in seconds (default: 120). Prevents agent hangs on unreachable targets.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     120,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -104,6 +123,34 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: WMI operation completed. Remote WMI generates Event ID 4624 (logon type 3) on the target. WMI activity is logged in Microsoft-Windows-WMI-Activity/Operational. Process creation via WMI generates Event ID 4688 with creator process wmiprvse.exe.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: WMI Process Create on <host>:
+			re := regexp.MustCompile(`WMI Process Create on (\S+?):`)
+			if m := re.FindStringSubmatch(responseText); len(m) > 1 {
+				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
+					fmt.Sprintf("WMI Process Create on %s", m[1]))
+				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
+					fmt.Sprintf("WMI process creation on %s", m[1]))
+			}
+			return response
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -123,6 +170,8 @@ func init() {
 					host = target
 				}
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("WMI Win32_Process.Create(%q) on %s", cmd, host))
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[LATERAL] wmi: remote execution on %s from %s", host, taskData.Callback.Host), true)
 			}
 			return response
 		},

@@ -13,14 +13,30 @@ Cross-platform — works on Windows, Linux, and macOS.
 
 ## Arguments
 
-No arguments required.
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| action   | No       | info    | `info`: collect system information. `full-profile`: run automated 5-step host profiling chain. |
 
 ## Usage
 
 ### Collect system information
 ```
 sysinfo
+sysinfo -action info
 ```
+
+### Full host profile (subtask chain)
+```
+sysinfo -action full-profile
+```
+Runs an automated 5-step host profiling chain:
+1. **sysinfo** — OS, hardware, domain membership
+2. **ps** — Running processes (populates process browser)
+3. **security-info** — EDR, AV, firewall, security configuration
+4. **privesc-check** — Privilege escalation vectors
+5. **persist-enum** — Existing persistence mechanisms
+
+Each step runs as a subtask with progress updates. Results are aggregated in the parent task summary.
 
 ## Output
 

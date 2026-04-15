@@ -2,6 +2,8 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -14,6 +16,10 @@ func init() {
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1012", "T1112", "T1021.002"},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "remote_reg_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -35,12 +41,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Target Server",
-				Description:      "Remote Windows host IP or hostname",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                "server",
+				CLIName:             "server",
+				ModalDisplayName:    "Target Server",
+				Description:         "Remote Windows host IP or hostname",
+				ParameterType:       agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:        "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -109,6 +116,7 @@ func init() {
 				Description:      "Account for authentication (DOMAIN\\user or user@domain)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -142,6 +150,7 @@ func init() {
 				Description:      "Domain name (auto-detected from username if DOMAIN\\user format)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackDomainList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -158,6 +167,31 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			server, _ := taskData.Args.GetStringArg("server")
+			msg := fmt.Sprintf("OPSEC WARNING: Remote registry %s via RPC named pipe (winreg) on %s.", action, server)
+			if action == "set" || action == "delete" {
+				msg += " Write/delete operations modify the remote registry — may trigger EDR alerts for remote registry modification."
+			}
+			msg += " Uses SMB named pipe transport (ncacn_np:[winreg]) — generates network logon and SMB events."
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Remote registry operation completed. Remote registry access generates Event ID 4663 on target. winreg pipe connections are logged. Security key reads are high-priority detections.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -171,6 +205,29 @@ func init() {
 			createArtifact(taskData.Task.ID, "Network Connection", artifactMsg)
 			display := fmt.Sprintf("%s %s %s\\%s", action, server, hive, path)
 			response.DisplayParams = &display
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+			switch action {
+			case "write", "delete":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[LATERAL] Remote registry %s on %s (T1112)", action, server), true)
+				}
+			case "read", "query":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DISCOVERY] Remote registry %s on %s (T1012)", action, server), false)
+			}
 			return response
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {

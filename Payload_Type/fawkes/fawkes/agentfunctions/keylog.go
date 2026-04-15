@@ -45,7 +45,35 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				action, _ := taskData.Args.GetStringArg("action")
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Keylogger %s. Captures keystrokes via low-level input hooks (SetWindowsHookEx/WH_KEYBOARD_LL on Windows, /dev/input on Linux). EDR products actively monitor for keyboard hook installation. On Linux, requires read access to /dev/input devices.", action),
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC AUDIT: Keylogger operation completed. "
+			switch action {
+			case "start":
+				msg += "Keyboard hook installed — hook remains active until 'keylog -action stop'. EDR products continuously monitor for active keyboard hooks. Ensure timely cleanup."
+			case "stop":
+				msg += "Keyboard hook removed. Captured keystrokes delivered. Hook installation/removal events may have been logged by EDR."
+			default:
+				msg += "Keystroke buffer accessed. Active keylogger hooks visible to EDR inspection."
+			}
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    msg,
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil

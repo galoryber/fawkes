@@ -15,13 +15,15 @@ Linux process injection via the ptrace syscall. Attaches to a target process, wr
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | `check`: report ptrace config and candidate processes. `inject`: perform shellcode injection. |
+| action | Yes | `check`: report ptrace config. `inject`: shellcode injection. `ld-preload`: list LD_PRELOAD settings. `ld-install`: install LD_PRELOAD persistence. `ld-remove`: remove LD_PRELOAD entry. |
 | pid | Inject | Target process ID to inject into |
 | filename | Inject (UI) | Select shellcode file from Mythic's file storage |
 | file | Inject (UI) | Upload a new shellcode file |
 | shellcode_b64 | Inject (CLI) | Base64-encoded shellcode (for API/CLI usage) |
 | restore | No | Restore original code and registers after execution (default: true) |
 | timeout | No | Timeout in seconds waiting for shellcode completion (default: 30) |
+| libpath | ld-install/ld-remove | Path to shared library for LD_PRELOAD |
+| target | ld-install/ld-remove | Target file: auto, ld.so.preload, bashrc, profile, zshrc, etc. |
 
 ## Usage
 
@@ -80,6 +82,29 @@ The `check` action reports:
 - On failure at any step, cleanup is attempted (restore code + registers + detach)
 - x86_64 architecture only (uses `PTRACE_GETREGS`/`PTRACE_SETREGS` with `PtraceRegs`)
 
+## LD_PRELOAD Hijacking
+
+The `ld-preload`, `ld-install`, and `ld-remove` actions implement T1574.006 (Dynamic Linker Hijacking):
+
+```
+# List current LD_PRELOAD settings from all sources
+ptrace-inject -action ld-preload
+
+# Install LD_PRELOAD persistence (auto-selects based on privilege)
+ptrace-inject -action ld-install -libpath /tmp/evil.so
+
+# Install to a specific target
+ptrace-inject -action ld-install -libpath /tmp/evil.so -target ld.so.preload
+
+# Remove LD_PRELOAD entry
+ptrace-inject -action ld-remove -libpath /tmp/evil.so
+```
+
+- **Root**: Writes to `/etc/ld.so.preload` — affects all dynamically linked binaries system-wide
+- **User**: Adds `export LD_PRELOAD=` to shell profile (`.bashrc`, `.zshrc`, etc.) — affects new shells
+- Auto mode selects based on current UID
+
 ## MITRE ATT&CK Mapping
 
 - **T1055.008** — Process Injection: Ptrace System Calls
+- **T1574.006** — Hijack Execution Flow: Dynamic Linker Hijacking

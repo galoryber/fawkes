@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -36,8 +37,9 @@ func init() {
 				CLIName:          "pid",
 				ModalDisplayName: "Target PID",
 				Description:      "Process ID to dump (required for dump action, ignored for lsass)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				DefaultValue:     0,
+				DynamicQueryFunction: getProcessList,
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -52,10 +54,10 @@ func init() {
 					"May trigger Credential Guard, RunAsPPL, or CrowdStrike/Defender alerts. " +
 					"Creates a minidump file on disk (cleaned after upload)."
 			case "dump":
-				pid, _ := taskData.Args.GetNumberArg("pid")
-				msg += fmt.Sprintf("Dumping process memory (PID %d). "+
+				pid, _ := taskData.Args.GetStringArg("pid")
+				msg += fmt.Sprintf("Dumping process memory (PID %s). "+
 					"Creates a minidump file on disk (cleaned after upload). "+
-					"MiniDumpWriteDump API call may be flagged by EDR.", int(pid))
+					"MiniDumpWriteDump API call may be flagged by EDR.", pid)
 			default:
 				msg += "Process memory search — enumerates processes for credential-holding targets."
 			}
@@ -73,8 +75,8 @@ func init() {
 			if action == "lsass" || action == "" {
 				msg += "(lsass) configured. MiniDumpWriteDump artifacts will be created."
 			} else if action == "dump" {
-				pid, _ := taskData.Args.GetNumberArg("pid")
-				msg += fmt.Sprintf("(PID %d) configured. MiniDumpWriteDump artifacts will be created.", int(pid))
+				pid, _ := taskData.Args.GetStringArg("pid")
+				msg += fmt.Sprintf("(PID %s) configured. MiniDumpWriteDump artifacts will be created.", pid)
 			} else {
 				msg += "search configured. Process enumeration will occur."
 			}
@@ -102,13 +104,13 @@ func init() {
 			}
 
 			action, _ := taskData.Args.GetStringArg("action")
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := parsePIDFromArg(taskData)
 
 			var displayMsg string
 			switch action {
 			case "dump":
 				if pid > 0 {
-					displayMsg = fmt.Sprintf("Dump PID %d", int(pid))
+					displayMsg = fmt.Sprintf("Dump PID %d", pid)
 				} else {
 					displayMsg = "Dump (PID required)"
 				}
@@ -123,6 +125,25 @@ func init() {
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Process memory dump — %s", displayMsg))
 			}
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			host := processResponse.TaskData.Callback.Host
+
+			if action != "search" {
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Credential Access",
+					ArtifactMessage:  fmt.Sprintf("Process memory dump on %s", host),
+				})
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL ACCESS] Process memory dump on %s", host), true)
+			}
 			return response
 		},
 	})

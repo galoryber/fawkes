@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -41,12 +42,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Server Filter",
-				Description:      "Filter by server name (list) or target SPN for dump (e.g., krbtgt/DOMAIN.LOCAL)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "server",
+				CLIName:              "server",
+				ModalDisplayName:     "Server Filter",
+				Description:          "Filter by server name (list) or target SPN for dump (e.g., krbtgt/DOMAIN.LOCAL)",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -82,6 +84,82 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: "
+			switch action {
+			case "dump":
+				msg += "Dumping Kerberos tickets from memory. On Windows, calls LsaCallAuthenticationPackage — may trigger EDR alerts for LSASS interaction. Exported tickets enable pass-the-ticket attacks."
+			case "import":
+				msg += "Injecting Kerberos ticket (pass-the-ticket). On Windows, calls LsaCallAuthenticationPackage with KerbSubmitTicketMessage. On Linux/macOS, writes ccache file. May trigger Kerberos anomaly detection."
+			case "purge":
+				msg += "Purging Kerberos ticket cache. Calls LsaCallAuthenticationPackage with KerbPurgeTicketCacheMessage. May disrupt authenticated sessions."
+			default:
+				msg += "Listing Kerberos tickets. Low risk — read-only enumeration of cached tickets."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			host := processResponse.TaskData.Callback.Host
+
+			switch action {
+			case "list":
+				// Parse ticket entries from JSON output
+				var tickets []struct {
+					Client     string `json:"client"`
+					Server     string `json:"server"`
+					Encryption string `json:"encryption"`
+					Flags      string `json:"flags"`
+					Status     string `json:"status"`
+				}
+				if err := json.Unmarshal([]byte(responseText), &tickets); err == nil && len(tickets) > 0 {
+					for _, t := range tickets {
+						mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+							TaskID:           processResponse.TaskData.Task.ID,
+							BaseArtifactType: "Credential Access",
+							ArtifactMessage:  fmt.Sprintf("Kerberos ticket: %s → %s (%s, %s)", t.Client, t.Server, t.Encryption, t.Status),
+						})
+					}
+					// Tag with ticket info
+					tagTask(processResponse.TaskData.Task.ID, "TICKET",
+						fmt.Sprintf("%d Kerberos tickets on %s", len(tickets), host))
+				}
+			case "dump":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL ACCESS] Kerberos ticket dump on %s", host), true)
+			case "import":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[LATERAL MOVEMENT] Pass-the-ticket injection on %s", host), true)
+			case "purge":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DEFENSE EVASION] Kerberos cache purged on %s", host), false)
+			}
+			return response
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Kerberos ticket cache accessed. Ticket listing reveals active TGT/TGS tickets and their expiration. Purge action clears the ticket cache (Event ID 4672 context). Defenders monitoring Kerberos activity may correlate ticket usage with lateral movement.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

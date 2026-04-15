@@ -16,10 +16,11 @@ func init() {
 		HelpString:          "cat [path] — read file | cat -path file -start 10 -end 20 — line range | cat -path file -number true — with line numbers",
 		Version:             3,
 		MitreAttackMappings: []string{"T1005"}, // Data from Local System
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"file_browser:download"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS:        []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
+			CommandIsSuggested: true,
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -128,6 +129,25 @@ func init() {
 			}
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			path, _ := taskData.Args.GetStringArg("path")
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Reading file contents of %s. File access may be logged by EDR/audit frameworks (Sysmon EventID 11, auditd). Sensitive files (credentials, config) may trigger high-fidelity alerts.", path),
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: File read completed. File access timestamps updated (last access time). EDR may log file reads of sensitive paths (SAM, shadow, config files). File contents are now in Mythic — ensure sensitive data is handled appropriately in the operation.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -150,6 +170,21 @@ func init() {
 				display += " (numbered)"
 			}
 			response.DisplayParams = &display
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			path, _ := processResponse.TaskData.Args.GetStringArg("path")
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || path == "" {
+				return response
+			}
+			size := len(responseText)
+			createArtifact(processResponse.TaskData.Task.ID, "File Read",
+				fmt.Sprintf("cat %s (%d bytes)", path, size))
 			return response
 		},
 	})

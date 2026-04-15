@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -14,6 +15,7 @@ func init() {
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1222"},
+		SupportedUIFeatures: []string{"file_browser:upload"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_LINUX,
@@ -33,12 +35,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "owner",
-				CLIName:          "owner",
-				ModalDisplayName: "Owner",
-				Description:      "New owner (username or numeric UID)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "owner",
+				CLIName:              "owner",
+				ModalDisplayName:     "Owner",
+				Description:          "New owner (username or numeric UID)",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -75,6 +78,23 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: Ownership change (T1222). Changing file ownership may trigger auditd alerts (AUDIT_CHOWN) or file-integrity monitoring. Changing ownership to root is especially suspicious.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: File ownership changed. Ownership changes generate audit log entries. Changing ownership of system files is a high-confidence indicator of tampering.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -92,6 +112,23 @@ func init() {
 			}
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Ownership change on %s", path))
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			path, _ := processResponse.TaskData.Args.GetStringArg("path")
+			owner, _ := processResponse.TaskData.Args.GetStringArg("owner")
+			if strings.Contains(responseText, "success") || strings.Contains(responseText, "changed") || strings.Contains(responseText, "→") {
+				createArtifact(processResponse.TaskData.Task.ID, "File Modification",
+					fmt.Sprintf("chown %s %s on %s", owner, path, processResponse.TaskData.Callback.Host))
+			}
 			return response
 		},
 	})

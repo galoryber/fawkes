@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -39,12 +40,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "username",
-				ModalDisplayName: "Username",
-				CLIName:          "username",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Target username (DOMAIN\\user or user@domain)",
-				DefaultValue:     "",
+				Name:                 "username",
+				ModalDisplayName:     "Username",
+				CLIName:              "username",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Target username (DOMAIN\\user or user@domain)",
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -67,12 +69,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "domain",
-				ModalDisplayName: "Domain",
-				CLIName:          "domain",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Domain (optional, can be part of username)",
-				DefaultValue:     "",
+				Name:                 "domain",
+				ModalDisplayName:     "Domain",
+				CLIName:              "domain",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Domain (optional, can be part of username)",
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackDomainList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -96,7 +99,24 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			username, _ := taskData.Args.GetStringArg("username")
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Executing command as user '%s' (T1134.002). Process creation under alternate credentials generates Windows Security Event 4648 (explicit credential logon) and EDR process-tree anomalies.", username),
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Process spawned with alternate credentials. Generates Event ID 4624 (logon type 2/9) and Event ID 4688 (process creation). The spawned process inherits the new token context. Use 'rev2self' if operating under the spawned context.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -125,6 +145,21 @@ func init() {
 			createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("Process execution as %s", user))
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			username, _ := processResponse.TaskData.Args.GetStringArg("username")
+			if !strings.Contains(strings.ToLower(responseText), "error") && !strings.Contains(strings.ToLower(responseText), "failed") {
+				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
+					fmt.Sprintf("[RunAs] Executed as %s", username))
+			}
+			return response
+		},
 	})
 }

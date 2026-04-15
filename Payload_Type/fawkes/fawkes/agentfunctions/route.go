@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -74,6 +75,53 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage:    "OPSEC WARNING: Reading routing table (T1016). Low risk — reads cached kernel data. No network traffic generated.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			type routeEntry struct {
+				Destination string `json:"destination"`
+				Gateway     string `json:"gateway"`
+				Netmask     string `json:"netmask"`
+				Interface   string `json:"interface"`
+				Metric      uint32 `json:"metric"`
+				Flags       string `json:"flags"`
+			}
+			var routes []routeEntry
+			if err := json.Unmarshal([]byte(responseText), &routes); err != nil {
+				return response
+			}
+			for _, r := range routes {
+				if r.Gateway == "0.0.0.0" || r.Gateway == "::" || r.Gateway == "*" || r.Gateway == "" {
+					continue
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Network Route",
+					fmt.Sprintf("%s/%s via %s on %s (metric %d)", r.Destination, r.Netmask, r.Gateway, r.Interface, r.Metric))
+			}
+			return response
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Routing table enumeration completed. Routes reveal network segments, gateways, and VPN tunnels. GetIpForwardTable API call is low-noise but results inform network pivoting and lateral movement planning.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

@@ -1,6 +1,8 @@
 package agentfunctions
 
 import (
+	"fmt"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
@@ -92,6 +94,32 @@ func init() {
 				OpsecPreMessage:    "OPSEC WARNING: Timestomping modifies file MAC times to evade forensic analysis. Alters NTFS $STANDARD_INFORMATION timestamps. Detectable by comparing $SI vs $FILE_NAME timestamps (Sysmon, MFT analysis). Anti-forensics technique — use only when operationally justified.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: File timestamps modified. The $MFT and $UsnJrnl still contain original timestamps. $STANDARD_INFORMATION and $FILE_NAME timestamps may diverge (detectable by forensic tools like Plaso/MFTECmd). $UsnJrnl records the modification event.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			target, _ := processResponse.TaskData.Args.GetStringArg("target")
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if action != "get" && target != "" {
+				createArtifact(processResponse.TaskData.Task.ID, "Indicator Removal",
+					fmt.Sprintf("timestomp %s %s", action, target))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

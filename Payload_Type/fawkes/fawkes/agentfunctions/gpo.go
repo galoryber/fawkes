@@ -41,12 +41,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Target Server",
-				Description:      "Domain Controller IP/hostname",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                "server",
+				CLIName:             "server",
+				ModalDisplayName:    "Target Server",
+				Description:         "Domain Controller IP/hostname",
+				ParameterType:       agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:        "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -58,6 +59,7 @@ func init() {
 				Description:      "LDAP bind username (UPN format: user@domain.local)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -166,6 +168,16 @@ func init() {
 				ArtifactMessage:  fmt.Sprintf("LDAP query for GPO %s on %s", action, server),
 			})
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			server, _ := processResponse.TaskData.Args.GetStringArg("server")
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[DISCOVERY] GPO enumeration from %s", server), false)
 			return response
 		},
 	})

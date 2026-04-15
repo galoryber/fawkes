@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -14,6 +15,7 @@ func init() {
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1083"},
+		SupportedUIFeatures: []string{"file_browser:download"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -87,6 +89,40 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			path, _ := processResponse.TaskData.Args.GetStringArg("path")
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || path == "" {
+				return response
+			}
+			algorithm, _ := processResponse.TaskData.Args.GetStringArg("algorithm")
+			// Count hashed files from summary line
+			var fileCount int
+			for _, line := range strings.Split(responseText, "\n") {
+				if strings.HasPrefix(line, "[*]") && strings.Contains(line, "files hashed") {
+					fmt.Sscanf(line, "[*] %d files hashed", &fileCount)
+					break
+				}
+			}
+			if fileCount > 0 {
+				createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+					fmt.Sprintf("hash %s: %d files hashed (%s)", path, fileCount, algorithm))
+			}
+			return response
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: File hashing completed. File read operations update access timestamps. Hash values can be cross-referenced with threat intel feeds. No persistent artifacts created.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

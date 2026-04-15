@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -94,7 +95,24 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			var msg string
+			switch action {
+			case "write":
+				msg = "OPSEC WARNING: Writing NTFS Alternate Data Stream (T1564.004). ADS writes are logged by Sysmon Event ID 15 (FileCreateStreamHash) and EDR file-write telemetry. Hidden data in ADS is discoverable by forensic tools."
+			case "delete":
+				msg = "OPSEC WARNING: Deleting NTFS Alternate Data Stream (T1564.004). ADS deletion may trigger Sysmon Event ID 23 (FileDelete) and indicate artifact cleanup."
+			default:
+				msg = "OPSEC WARNING: NTFS Alternate Data Stream enumeration (T1564.004). ADS listing/reading is low-risk but may be correlated with other suspicious file operations."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -103,6 +121,15 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Alternate Data Stream operation completed. ADS manipulation modifies NTFS metadata visible in MFT entries and EDR file monitoring. Hidden ADS content is a known persistence technique. Sysmon Event ID 15 tracks ADS creation.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
@@ -137,6 +164,27 @@ func init() {
 			})
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action == "list" && strings.Contains(responseText, ":") {
+				// Track discovered ADS entries
+				for _, line := range strings.Split(responseText, "\n") {
+					trimmed := strings.TrimSpace(line)
+					if trimmed != "" && strings.Contains(trimmed, ":") {
+						createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+							fmt.Sprintf("[ADS] %s", trimmed))
+					}
+				}
+			}
+			return response
+		},
 	})
 }

@@ -3,6 +3,8 @@ package agentfunctions
 import (
 	"fmt"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -28,11 +30,12 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:          "host",
-				CLIName:       "host",
-				Description:   "Target hostname or IP address",
-				DefaultValue:  "",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Name:                 "host",
+				CLIName:              "host",
+				Description:          "Target hostname or IP address",
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -69,6 +72,71 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Extract Subject and Self-Signed status from the leaf certificate
+			subjectRe := regexp.MustCompile(`Subject:\s+(.+)`)
+			selfSignedRe := regexp.MustCompile(`Self-Signed:\s+(\S+)`)
+			validityRe := regexp.MustCompile(`Validity:\s+(\S+)`)
+
+			subject := ""
+			selfSigned := ""
+			validity := ""
+			for _, line := range strings.Split(responseText, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if subject == "" {
+					if m := subjectRe.FindStringSubmatch(trimmed); m != nil {
+						subject = m[1]
+					}
+				}
+				if selfSigned == "" {
+					if m := selfSignedRe.FindStringSubmatch(trimmed); m != nil {
+						selfSigned = m[1]
+					}
+				}
+				if validity == "" {
+					if m := validityRe.FindStringSubmatch(trimmed); m != nil {
+						validity = m[1]
+					}
+				}
+			}
+			if subject != "" {
+				msg := fmt.Sprintf("TLS cert: %s", subject)
+				if selfSigned == "YES" {
+					msg += " (self-signed)"
+				}
+				if validity != "" && validity != "OK" {
+					msg += fmt.Sprintf(" [%s]", validity)
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Certificate", msg)
+			}
+			return response
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: Certificate enumeration connects to remote hosts to read TLS certificates. Network monitoring may log outbound TLS connections to non-standard ports or unexpected destinations.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: TLS certificate verification completed. Outbound connection logged in network monitoring and proxy logs. Certificate details may reveal internal PKI infrastructure.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}

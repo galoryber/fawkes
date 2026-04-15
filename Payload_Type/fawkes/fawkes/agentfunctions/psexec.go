@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"regexp"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -17,16 +18,18 @@ func init() {
 		MitreAttackMappings: []string{"T1021.002", "T1569.002"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS:                []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			CommandCanOnlyBeLoadedLater: true,
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "host",
-				ModalDisplayName: "Target Host",
-				CLIName:          "host",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Target hostname or IP address",
-				DefaultValue:     "",
+				Name:                 "host",
+				ModalDisplayName:     "Target Host",
+				CLIName:              "host",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Target hostname or IP address",
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -134,8 +137,39 @@ func init() {
 			display := fmt.Sprintf("%s → %s", host, command)
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ConnectRemote(%s) CreateService binpath=cmd.exe /c %s", host, command))
+			logOperationEvent(taskData.Task.ID,
+				fmt.Sprintf("[LATERAL] psexec: remote service execution on %s from %s", host, taskData.Callback.Host), true)
+			tagTask(taskData.Task.ID, "LATERAL",
+				fmt.Sprintf("psexec to %s", host))
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: PSExec on <host>: and Service: <name>
+			hostRe := regexp.MustCompile(`PSExec on (\S+?):`)
+			svcRe := regexp.MustCompile(`Service:\s+(\S+)`)
+			host := "unknown"
+			service := "unknown"
+			if m := hostRe.FindStringSubmatch(responseText); len(m) > 1 {
+				host = m[1]
+			}
+			if m := svcRe.FindStringSubmatch(responseText); len(m) > 1 {
+				service = m[1]
+			}
+			if host != "unknown" {
+				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
+					fmt.Sprintf("PSExec on %s (service: %s)", host, service))
+				createArtifact(processResponse.TaskData.Task.ID, "Remote Service",
+					fmt.Sprintf("SCM service '%s' on %s", service, host))
+			}
+			return response
+		},
 	})
 }

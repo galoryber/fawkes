@@ -274,7 +274,7 @@ func TestSearchFile(t *testing.T) {
 	testFile := filepath.Join(dir, "test.txt")
 	os.WriteFile(testFile, []byte("alpha\nbeta\ngamma\ndelta\n"), 0644)
 
-	re, _ := regexp.Compile("beta|delta")
+	re := regexp.MustCompile("beta|delta")
 	matches := searchFile(testFile, re, 0, 100)
 	if len(matches) != 2 {
 		t.Fatalf("expected 2 matches, got %d", len(matches))

@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -76,6 +77,58 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Prefetch forensic operations. "
+			switch action {
+			case "delete", "clear":
+				msg += "Deleting prefetch files is an anti-forensics indicator — may trigger EDR alerts for evidence destruction."
+			default:
+				msg += "Reading prefetch files from C:\\Windows\\Prefetch reveals program execution history. File access may be audited."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			type prefetchEntry struct {
+				Executable string `json:"executable"`
+				RunCount   int    `json:"run_count"`
+				LastRun    string `json:"last_run"`
+				FileSize   int64  `json:"file_size"`
+				Hash       string `json:"hash"`
+			}
+			var entries []prefetchEntry
+			if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
+				return response
+			}
+			for _, e := range entries {
+				createArtifact(processResponse.TaskData.Task.ID, "Execution Evidence",
+					fmt.Sprintf("Prefetch: %s (run count: %d, last: %s)", e.Executable, e.RunCount, e.LastRun))
+			}
+			return response
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Prefetch analysis completed. Accessed C:\\Windows\\Prefetch directory — file access timestamps on .pf files updated. Prefetch data reveals execution history including timestamps and run counts. Note: your own agent's prefetch entry may now exist if not running from memory.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

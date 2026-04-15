@@ -13,7 +13,7 @@ func init() {
 		Description:         "Start an interactive PTY shell session (Linux/macOS only)",
 		HelpString:          "pty",
 		Version:             1,
-		MitreAttackMappings: []string{"T1059"}, // Command and Scripting Interpreter
+		MitreAttackMappings: []string{"T1059", "T1059.004"}, // Command and Scripting Interpreter (Unix Shell)
 		SupportedUIFeatures: []string{"task_response:interactive"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -79,6 +79,24 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: PTY allocation spawns a new shell process (cmd.exe/powershell/bash). Shell process creation is a high-fidelity EDR detection signal. Interactive sessions generate ongoing process and command-line telemetry.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: PTY session active. Interactive terminal sessions generate process creation events. Shell commands are logged by auditd/sysmon. Session cleanup recommended after use.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

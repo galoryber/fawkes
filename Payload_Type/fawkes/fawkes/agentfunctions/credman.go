@@ -57,7 +57,25 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "credman_new.js"),
 			Author:     "@galoryber",
 		},
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				action, _ := taskData.Args.GetStringArg("action")
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Credential Manager %s. Accesses Windows Credential Manager via CredEnumerate API to read stored credentials (web logins, RDP creds, network passwords). EDR may monitor Credential Manager access patterns.", action),
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Credential Manager accessed. Windows logs Credential Manager access in Event ID 5379/5381/5382. Defender Credential Guard (if enabled) may block access to certain credentials. Accessed credentials should be tested promptly and rotated by defenders.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -121,6 +139,10 @@ func init() {
 				}
 			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			if len(creds) > 0 {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[CREDENTIAL] credman extracted %d credentials from %s", len(creds), processResponse.TaskData.Callback.Host), true)
+			}
 			return response
 		},
 	})

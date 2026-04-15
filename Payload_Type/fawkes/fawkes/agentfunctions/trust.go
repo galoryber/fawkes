@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -29,23 +30,25 @@ func init() {
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Domain Controller",
-				Description:      "DC IP address or hostname",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                "server",
+				CLIName:             "server",
+				ModalDisplayName:    "Domain Controller",
+				Description:         "DC IP address or hostname",
+				ParameterType:       agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:        "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
 			},
 			{
-				Name:             "username",
-				CLIName:          "username",
-				ModalDisplayName: "Username",
-				Description:      "LDAP bind username (user@domain.local format)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "username",
+				CLIName:              "username",
+				ModalDisplayName:     "Username",
+				Description:          "LDAP bind username (user@domain.local format)",
+				DynamicQueryFunction: getCallbackUserList,
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -93,6 +96,24 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: Certificate/trust store enumeration accesses system certificate stores and validates trust chains. May be logged by certificate-aware EDR or Windows CAPI2 event logs.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Domain trust enumeration completed. LDAP queries for trust objects logged by domain controllers. Trust relationships reveal attack paths to other domains.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -110,6 +131,38 @@ func init() {
 				ArtifactMessage:  fmt.Sprintf("LDAP trust enumeration query on %s", server),
 			})
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			type trustEntry struct {
+				Partner   string `json:"partner"`
+				Direction string `json:"direction"`
+				Type      string `json:"type"`
+				Category  string `json:"category"`
+				Risk      string `json:"risk"`
+			}
+			type trustOutput struct {
+				Trusts []trustEntry `json:"trusts"`
+			}
+			var output trustOutput
+			if err := json.Unmarshal([]byte(responseText), &output); err != nil {
+				return response
+			}
+			for _, t := range output.Trusts {
+				msg := fmt.Sprintf("Trust: %s — %s (%s, %s)", t.Partner, t.Direction, t.Category, t.Type)
+				if t.Risk != "" {
+					msg += " ⚠ " + t.Risk
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Domain Trust", msg)
+			}
 			return response
 		},
 	})

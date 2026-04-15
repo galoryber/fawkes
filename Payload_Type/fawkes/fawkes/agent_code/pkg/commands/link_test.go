@@ -73,6 +73,7 @@ func TestRecvTCPFramed_OversizedMessage(t *testing.T) {
 	_, err := recvTCPFramed(client)
 	if err == nil {
 		t.Fatal("expected error for oversized message")
+		return
 	}
 	if !strings.Contains(err.Error(), "too large") {
 		t.Errorf("expected 'too large' error, got: %v", err)
@@ -154,6 +155,12 @@ func TestLinkCommand_InvalidJSON(t *testing.T) {
 }
 
 func TestLinkCommand_EmptyParams(t *testing.T) {
+	// With no params, connection_type defaults to "tcp", host is empty, port is 0
+	// Should get the TCP-specific error about host and port
+	oldProfile := tcpProfileInstance
+	tcpProfileInstance = tcp.NewTCPProfile("", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", false)
+	defer func() { tcpProfileInstance = oldProfile }()
+
 	cmd := &LinkCommand{}
 	task := structs.Task{Params: ""}
 	result := cmd.Execute(task)
@@ -166,6 +173,10 @@ func TestLinkCommand_EmptyParams(t *testing.T) {
 }
 
 func TestLinkCommand_MissingHost(t *testing.T) {
+	oldProfile := tcpProfileInstance
+	tcpProfileInstance = tcp.NewTCPProfile("", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", false)
+	defer func() { tcpProfileInstance = oldProfile }()
+
 	cmd := &LinkCommand{}
 	task := structs.Task{Params: `{"port": 7777}`}
 	result := cmd.Execute(task)
@@ -178,6 +189,10 @@ func TestLinkCommand_MissingHost(t *testing.T) {
 }
 
 func TestLinkCommand_MissingPort(t *testing.T) {
+	oldProfile := tcpProfileInstance
+	tcpProfileInstance = tcp.NewTCPProfile("", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", false)
+	defer func() { tcpProfileInstance = oldProfile }()
+
 	cmd := &LinkCommand{}
 	task := structs.Task{Params: `{"host": "10.0.0.1"}`}
 	result := cmd.Execute(task)
@@ -201,8 +216,56 @@ func TestLinkCommand_NoTCPProfile(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error status, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "TCP P2P not available") {
-		t.Errorf("expected TCP not available error, got: %s", result.Output)
+	if !strings.Contains(result.Output, "P2P not available") {
+		t.Errorf("expected P2P not available error, got: %s", result.Output)
+	}
+}
+
+func TestLinkCommand_NamedPipeMissingPipeName(t *testing.T) {
+	oldProfile := tcpProfileInstance
+	tcpProfileInstance = tcp.NewTCPProfile("", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", false)
+	defer func() { tcpProfileInstance = oldProfile }()
+
+	cmd := &LinkCommand{}
+	task := structs.Task{Params: `{"connection_type": "namedpipe", "host": "10.0.0.1"}`}
+	result := cmd.Execute(task)
+	if result.Status != "error" {
+		t.Errorf("expected error status, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "host and pipe_name are required") {
+		t.Errorf("expected pipe_name required error, got: %s", result.Output)
+	}
+}
+
+func TestLinkCommand_NamedPipeMissingHost(t *testing.T) {
+	oldProfile := tcpProfileInstance
+	tcpProfileInstance = tcp.NewTCPProfile("", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", false)
+	defer func() { tcpProfileInstance = oldProfile }()
+
+	cmd := &LinkCommand{}
+	task := structs.Task{Params: `{"connection_type": "namedpipe", "pipe_name": "test"}`}
+	result := cmd.Execute(task)
+	if result.Status != "error" {
+		t.Errorf("expected error status, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "host and pipe_name are required") {
+		t.Errorf("expected host/pipe required error, got: %s", result.Output)
+	}
+}
+
+func TestLinkCommand_InvalidConnectionType(t *testing.T) {
+	oldProfile := tcpProfileInstance
+	tcpProfileInstance = tcp.NewTCPProfile("", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", false)
+	defer func() { tcpProfileInstance = oldProfile }()
+
+	cmd := &LinkCommand{}
+	task := structs.Task{Params: `{"connection_type": "invalid", "host": "10.0.0.1"}`}
+	result := cmd.Execute(task)
+	if result.Status != "error" {
+		t.Errorf("expected error status, got %q", result.Status)
+	}
+	if !strings.Contains(result.Output, "Unknown connection_type") {
+		t.Errorf("expected unknown connection_type error, got: %s", result.Output)
 	}
 }
 
@@ -496,8 +559,8 @@ func TestUnlinkCommand_NoTCPProfile(t *testing.T) {
 	if result.Status != "error" {
 		t.Errorf("expected error status, got %q", result.Status)
 	}
-	if !strings.Contains(result.Output, "TCP P2P not available") {
-		t.Errorf("expected TCP not available error, got: %s", result.Output)
+	if !strings.Contains(result.Output, "P2P not available") {
+		t.Errorf("expected P2P not available error, got: %s", result.Output)
 	}
 }
 

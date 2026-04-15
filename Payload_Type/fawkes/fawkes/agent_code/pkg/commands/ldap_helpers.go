@@ -9,10 +9,15 @@ import (
 	"github.com/go-ldap/ldap/v3"
 )
 
-// ldapDial connects to an LDAP server with a 10-second timeout.
+// ldapDial connects to an LDAP server with a configurable timeout.
 // Uses LDAPS (port 636) when useTLS is true, LDAP (port 389) otherwise.
-func ldapDial(server string, port int, useTLS bool) (*ldap.Conn, error) {
-	dialer := &net.Dialer{Timeout: 10 * time.Second}
+// Pass 0 for timeout to use the default 10-second timeout.
+func ldapDial(server string, port int, useTLS bool, timeouts ...time.Duration) (*ldap.Conn, error) {
+	t := 10 * time.Second
+	if len(timeouts) > 0 && timeouts[0] > 0 {
+		t = timeouts[0]
+	}
+	dialer := &net.Dialer{Timeout: t}
 	if useTLS {
 		return ldap.DialURL(fmt.Sprintf("ldaps://%s:%d", server, port),
 			ldap.DialWithDialer(dialer),

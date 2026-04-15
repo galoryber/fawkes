@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"fawkes/pkg/structs"
@@ -211,5 +212,81 @@ func TestWriteFileOutputMessage(t *testing.T) {
 	}
 	if result.Output != "[+] Appended 5 bytes to "+path {
 		t.Errorf("unexpected output: %s", result.Output)
+	}
+}
+
+// --- Deface action tests (T1491 web defacement) ---
+
+func TestDefaceNoConfirm(t *testing.T) {
+	c := &WriteFileCommand{}
+	params, _ := json.Marshal(writeFileArgs{Action: "deface", Path: "/var/www/html/index.html"})
+	result := c.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" || !strings.Contains(result.Output, "DEFACE") {
+		t.Errorf("expected DEFACE safety gate error, got: %s", result.Output)
+	}
+}
+
+func TestDefaceWrongConfirm(t *testing.T) {
+	c := &WriteFileCommand{}
+	params, _ := json.Marshal(writeFileArgs{Action: "deface", Path: "/tmp/test.html", Confirm: "yes"})
+	result := c.Execute(structs.Task{Params: string(params)})
+	if result.Status != "error" || !strings.Contains(result.Output, "DEFACE") {
+		t.Errorf("expected DEFACE safety gate error for wrong confirm, got: %s", result.Output)
+	}
+}
+
+func TestDefaceDefaultContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "index.html")
+	os.WriteFile(path, []byte("<html>original</html>"), 0644)
+
+	c := &WriteFileCommand{}
+	params, _ := json.Marshal(writeFileArgs{Action: "deface", Path: path, Confirm: "DEFACE"})
+	result := c.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("deface failed: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "Defaced") {
+		t.Errorf("expected Defaced in output: %s", result.Output)
+	}
+	content, _ := os.ReadFile(path)
+	if !strings.Contains(string(content), "DEFACED") {
+		t.Error("file should contain default defacement message")
+	}
+	if !strings.Contains(string(content), "Purple team") {
+		t.Error("file should contain purple team disclaimer")
+	}
+}
+
+func TestDefaceCustomContent(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "index.html")
+	os.WriteFile(path, []byte("<html>original</html>"), 0644)
+
+	customHTML := "<h1>Custom defacement message</h1>"
+	c := &WriteFileCommand{}
+	params, _ := json.Marshal(writeFileArgs{Action: "deface", Path: path, Content: customHTML, Confirm: "DEFACE"})
+	result := c.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("deface failed: %s", result.Output)
+	}
+	content, _ := os.ReadFile(path)
+	if string(content) != customHTML {
+		t.Errorf("expected custom content, got: %s", string(content))
+	}
+}
+
+func TestDefaceNewFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "new_index.html")
+
+	c := &WriteFileCommand{}
+	params, _ := json.Marshal(writeFileArgs{Action: "deface", Path: path, Confirm: "DEFACE"})
+	result := c.Execute(structs.Task{Params: string(params)})
+	if result.Status != "success" {
+		t.Fatalf("deface on new file failed: %s", result.Output)
+	}
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		t.Error("defaced file should exist")
 	}
 }

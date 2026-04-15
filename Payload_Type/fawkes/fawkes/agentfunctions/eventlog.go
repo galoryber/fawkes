@@ -210,5 +210,48 @@ func init() {
 			}
 			return response
 		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			channel, _ := processResponse.TaskData.Args.GetStringArg("channel")
+			switch action {
+			case "clear":
+				if strings.Contains(responseText, "cleared") || strings.Contains(responseText, "Cleared") {
+					createArtifact(processResponse.TaskData.Task.ID, "API Call",
+						fmt.Sprintf("[EventLog] Channel cleared: %s", channel))
+				}
+			case "disable":
+				if strings.Contains(responseText, "disabled") || strings.Contains(responseText, "Disabled") {
+					createArtifact(processResponse.TaskData.Task.ID, "API Call",
+						fmt.Sprintf("[EventLog] Channel disabled: %s", channel))
+				}
+			case "enable":
+				if strings.Contains(responseText, "enabled") || strings.Contains(responseText, "Enabled") {
+					createArtifact(processResponse.TaskData.Task.ID, "API Call",
+						fmt.Sprintf("[EventLog] Channel enabled: %s", channel))
+				}
+			case "query":
+				// Count events returned for tracking
+				eventCount := 0
+				for _, line := range strings.Split(responseText, "\n") {
+					trimmed := strings.TrimSpace(line)
+					if strings.HasPrefix(trimmed, "Event ID:") || strings.HasPrefix(trimmed, "event_id:") || strings.Contains(trimmed, "\"EventID\"") {
+						eventCount++
+					}
+				}
+				if eventCount > 0 {
+					createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+						fmt.Sprintf("[EventLog] Queried %s: %d events returned", channel, eventCount))
+				}
+			}
+			return response
+		},
 	})
 }

@@ -164,6 +164,7 @@ func TestLastArgs_JSONParsing(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected error, got nil")
+					return // unreachable, helps staticcheck
 				}
 				return
 			}
@@ -183,7 +184,7 @@ func TestLastArgs_JSONParsing(t *testing.T) {
 	}
 }
 
-func TestExtractXMLField(t *testing.T) {
+func TestExtractXMLField_LastWindows(t *testing.T) {
 	tests := []struct {
 		name  string
 		xml   string
@@ -268,7 +269,7 @@ func TestExtractXMLField(t *testing.T) {
 	}
 }
 
-func TestExtractXMLAttr(t *testing.T) {
+func TestExtractXMLAttr_LastWindows(t *testing.T) {
 	tests := []struct {
 		name    string
 		xml     string
@@ -395,14 +396,4 @@ func TestRebootEventName(t *testing.T) {
 			}
 		})
 	}
-}
-
-// contains is a small helper to check substring presence without importing strings.
-func contains(s, substr string) bool {
-	for i := 0; i <= len(s)-len(substr); i++ {
-		if s[i:i+len(substr)] == substr {
-			return true
-		}
-	}
-	return false
 }

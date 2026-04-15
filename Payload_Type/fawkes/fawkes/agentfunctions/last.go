@@ -50,11 +50,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "user",
-				CLIName:       "user",
-				Description:   "Filter by username",
-				DefaultValue:  "",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Name:                 "user",
+				CLIName:              "user",
+				Description:          "Filter by username",
+				DefaultValue:         "",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 2},
 				},
@@ -68,6 +69,31 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Login history enumeration. "
+			if action == "failed" {
+				msg += "Reading btmp (failed logins) enumerates attempted credentials and source IPs — may indicate reconnaissance to security monitoring."
+			} else {
+				msg += "Reading utmp/wtmp reveals active and historical user sessions. Account discovery activity may be flagged by EDR behavioral analytics."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Login history enumerated. utmp/wtmp/btmp access reveals login patterns and active sessions. File access timestamps updated on auth log files.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{Success: true, TaskID: taskData.Task.ID}
@@ -96,6 +122,29 @@ func init() {
 				createArtifact(taskData.Task.ID, "File Read", "/var/log/wtmp")
 			}
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "failed":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] Failed login history enumeration (T1087.001, T1110)", false)
+			case "reboot":
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] System reboot/shutdown history (T1082)", false)
+			default:
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					"[DISCOVERY] User login history enumeration (T1087.001)", false)
+			}
 			return response
 		},
 	})

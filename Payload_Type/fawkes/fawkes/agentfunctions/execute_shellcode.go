@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -17,8 +19,9 @@ func init() {
 		HelpString:          "execute-shellcode",
 		Version:             1,
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "executeshellcode_new.js"), Author: "@galoryber"},
 		MitreAttackMappings: []string{"T1059.006", "T1055.012"}, // Command and Scripting Interpreter, Process Hollowing
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},
@@ -84,6 +87,15 @@ func init() {
 				OpsecPreBlocked:    false,
 				OpsecPreMessage:    "OPSEC WARNING: Shellcode execution in the current process. Allocates RWX→RX memory and creates a new thread. Memory scanners may detect unbacked executable regions. If the shellcode crashes, the agent process will terminate.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Shellcode executed in current process. RWX memory region was allocated and may be detectable by memory scanners. The shellcode thread remains until completion.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
@@ -163,7 +175,7 @@ func init() {
 					return response
 				}
 				getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-					AgentFileID: search.Files[0].AgentFileId,
+					AgentFileID: search.Files[0].AgentFileID,
 				})
 				if err != nil || !getResp.Success {
 					response.Success = false
@@ -188,6 +200,21 @@ func init() {
 			}
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			host := processResponse.TaskData.Callback.Host
+			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+				TaskID:           processResponse.TaskData.Task.ID,
+				BaseArtifactType: "Process Injection",
+				ArtifactMessage:  fmt.Sprintf("Shellcode execution (self-inject) on %s", host),
+			})
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[EXECUTION] Shellcode executed in-process on %s", host), true)
 			return response
 		},
 	})

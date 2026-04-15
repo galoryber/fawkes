@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -129,8 +131,9 @@ func init() {
 		HelpString:          "inline-execute",
 		Version:             1,
 		MitreAttackMappings: []string{"T1620"}, // Reflective Code Loading
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "inlineexecute_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},
@@ -265,6 +268,15 @@ func init() {
 				OpsecPreBlocked:    false,
 				OpsecPreMessage:    "OPSEC WARNING: Inline execution loads and runs code directly in the agent process. BOF/COFF execution creates unbacked memory regions. If the payload crashes or is detected, the agent process will terminate. Consider using execute-assembly with a sacrificial process for untested payloads.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: BOF/COFF executed in-process. Beacon API functions were called. Output was captured via stdout/stderr hooks. Memory from the COFF loader remains allocated.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
@@ -405,6 +417,21 @@ func init() {
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
 			createArtifact(taskData.Task.ID, "API Call", "COFF/BOF in-memory execution")
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			host := processResponse.TaskData.Callback.Host
+			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+				TaskID:           processResponse.TaskData.Task.ID,
+				BaseArtifactType: "Process Injection",
+				ArtifactMessage:  fmt.Sprintf("BOF/COFF in-memory execution on %s", host),
+			})
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[EXECUTION] BOF/COFF inline execution on %s", host), true)
 			return response
 		},
 	})

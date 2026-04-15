@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"runtime"
 	"strings"
+	"time"
 
 	ole "github.com/go-ole/go-ole"
 	"github.com/go-ole/go-ole/oleutil"
@@ -30,6 +31,7 @@ type wmiArgs struct {
 	Target  string `json:"target"`
 	Command string `json:"command"`
 	Query   string `json:"query"`
+	Timeout int    `json:"timeout"`
 }
 
 func (c *WmiCommand) Execute(task structs.Task) structs.CommandResult {
@@ -43,17 +45,39 @@ func (c *WmiCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error parsing parameters: %v", err)
 	}
 
+	if args.Timeout <= 0 {
+		args.Timeout = 120
+	}
+	timeout := time.Duration(args.Timeout) * time.Second
+
+	var fn func() structs.CommandResult
 	switch strings.ToLower(args.Action) {
 	case "execute":
-		return wmiExecute(args.Target, args.Command)
+		fn = func() structs.CommandResult { return wmiExecute(args.Target, args.Command) }
 	case "query":
-		return wmiQuery(args.Target, args.Query)
+		fn = func() structs.CommandResult { return wmiQuery(args.Target, args.Query) }
 	case "process-list":
-		return wmiProcessList(args.Target)
+		fn = func() structs.CommandResult { return wmiProcessList(args.Target) }
 	case "os-info":
-		return wmiOsInfo(args.Target)
+		fn = func() structs.CommandResult { return wmiOsInfo(args.Target) }
 	default:
 		return errorf("Unknown action: %s\nAvailable: execute, query, process-list, os-info", args.Action)
+	}
+
+	// Run with timeout protection to prevent agent hangs on unreachable targets
+	ch := make(chan structs.CommandResult, 1)
+	go func() {
+		ch <- fn()
+	}()
+	select {
+	case r := <-ch:
+		return r
+	case <-time.After(timeout):
+		host := args.Target
+		if host == "" {
+			host = "localhost"
+		}
+		return errorf("WMI operation timed out after %ds — target %s may be unreachable", args.Timeout, host)
 	}
 }
 
@@ -179,7 +203,10 @@ func wmiExecQuery(conn *wmiConnection, wql string) (string, error) {
 			}
 			return nil
 		})
-		return err
+		if err != nil {
+			return fmt.Errorf("iterating WMI properties: %w", err)
+		}
+		return nil
 	})
 
 	if err != nil {

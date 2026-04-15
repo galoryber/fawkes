@@ -240,10 +240,10 @@ func getPSHistoryFiles() []string {
 
 	// Known history file names for different PowerShell hosts
 	hostFiles := []string{
-		"ConsoleHost_history.txt",                   // PowerShell console (pwsh / powershell.exe)
-		"Visual Studio Code Host_history.txt",       // VS Code integrated terminal
-		"Windows PowerShell ISE Host_history.txt",   // ISE
-		"ServerRemoteHost_history.txt",              // PSRemoting / Enter-PSSession
+		"ConsoleHost_history.txt",                 // PowerShell console (pwsh / powershell.exe)
+		"Visual Studio Code Host_history.txt",     // VS Code integrated terminal
+		"Windows PowerShell ISE Host_history.txt", // ISE
+		"ServerRemoteHost_history.txt",            // PSRemoting / Enter-PSSession
 	}
 
 	var paths []string

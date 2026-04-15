@@ -173,6 +173,7 @@ pre = "<b>2. </b>"
 - Account Management
     * [net-user](/agents/fawkes/commands/net-user/)
 - Post-Exploitation
+    * [audio-capture](/agents/fawkes/commands/audio-capture/)
     * [clipboard](/agents/fawkes/commands/clipboard/)
     * [email](/agents/fawkes/commands/email/)
     * [keylog](/agents/fawkes/commands/keylog/)
@@ -188,6 +189,7 @@ pre = "<b>2. </b>"
     * [port-scan](/agents/fawkes/commands/port-scan/)
     * [route](/agents/fawkes/commands/route/)
     * [rpfwd](/agents/fawkes/commands/rpfwd/)
+    * [sniff](/agents/fawkes/commands/sniff/)
     * [socks](/agents/fawkes/commands/socks/)
     * [unlink](/agents/fawkes/commands/unlink/)
 - Lateral Movement

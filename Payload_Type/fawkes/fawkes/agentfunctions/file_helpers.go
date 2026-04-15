@@ -45,7 +45,7 @@ func resolveFileContents(taskData *agentstructs.PTTaskMessageAllData) (string, [
 		return "", nil, fmt.Errorf("file not found: %s", filename)
 	}
 	getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
-		AgentFileID: search.Files[0].AgentFileId,
+		AgentFileID: search.Files[0].AgentFileID,
 	})
 	if err != nil || !getResp.Success {
 		return "", nil, fmt.Errorf("failed to get file contents")

@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -20,9 +19,6 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
-	"github.com/oiweiwei/go-msrpc/ssp"
-	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
-	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -80,13 +76,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Parse domain from username
 	if args.Domain == "" {
-		if parts := strings.SplitN(args.Username, `\`, 2); len(parts) == 2 {
-			args.Domain = parts[0]
-			args.Username = parts[1]
-		} else if parts := strings.SplitN(args.Username, "@", 2); len(parts) == 2 {
-			args.Domain = parts[1]
-			args.Username = parts[0]
-		}
+		args.Domain, args.Username = parseDomainUser(args.Username)
 	}
 
 	// Format credential as DOMAIN\user for go-msrpc
@@ -108,27 +98,14 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: no valid target accounts specified")
 	}
 
-	// Set up GSSAPI context (per-context to avoid global state conflicts)
-	var cred sspcred.Credential
-	if args.Hash != "" {
-		// Strip LM hash if LM:NT format
-		hash := args.Hash
-		if parts := strings.SplitN(hash, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-			hash = parts[1]
-		}
-		cred = sspcred.NewFromNTHash(credUser, hash)
-		structs.ZeroString(&hash)
-	} else {
-		cred = sspcred.NewFromPassword(credUser, args.Password)
+	// Set up GSSAPI context
+	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
+	zeroCredentials(&args.Password, &args.Hash)
+	if credErr != nil {
+		return errorf("Error: %v", credErr)
 	}
-	structs.ZeroString(&args.Password)
-	structs.ZeroString(&args.Hash)
 
-	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
-		gssapi.WithCredential(cred),
-		gssapi.WithMechanismFactory(ssp.SPNEGO),
-		gssapi.WithMechanismFactory(ssp.NTLM),
-	), time.Duration(args.Timeout)*time.Second)
+	ctx, cancel := rpcSecurityContext(cred, time.Duration(args.Timeout)*time.Second)
 	defer cancel()
 
 	// Connect via EPM (Endpoint Mapper, port 135)

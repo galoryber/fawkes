@@ -268,7 +268,7 @@ func TestMakeRequest_ServerDown(t *testing.T) {
 		client:    &http.Client{},
 	}
 
-	_, err := profile.makeRequest("POST", "/test", []byte("data"), nil)
+	_, err := profile.makeRequest("POST", "/test", []byte("data"), nil) //nolint:bodyclose // test code, error path - response is nil
 	if err == nil {
 		t.Error("makeRequest should fail when server is down")
 	}
@@ -486,7 +486,7 @@ func TestCheckin_WithEncryption(t *testing.T) {
 
 		// Prepend a 36-byte UUID (the callback UUID padded/truncated)
 		fakeUUID := []byte("12345678-1234-1234-1234-123456789012")
-		withUUID := append(fakeUUID, encrypted...)
+		withUUID := append(fakeUUID, encrypted...) //nolint:gocritic // intentional: construct new slice
 
 		// Base64 encode the whole thing
 		encoded := base64.StdEncoding.EncodeToString(withUUID)

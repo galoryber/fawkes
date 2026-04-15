@@ -307,6 +307,7 @@ func TestPsCommand_JSONOutput(t *testing.T) {
 	// Processes field should be populated for Mythic process browser
 	if result.Processes == nil {
 		t.Fatal("Processes field should be non-nil")
+		return // unreachable, helps staticcheck
 	}
 	if len(*result.Processes) != len(procs) {
 		t.Errorf("Processes length %d != output length %d", len(*result.Processes), len(procs))
@@ -976,7 +977,7 @@ func TestGetFileOwner(t *testing.T) {
 	}
 }
 
-func TestGetFileOwner_NonExistent(t *testing.T) {
+func TestGetFileOwner_NonExistentUnix(t *testing.T) {
 	owner, group := getFileOwner("/nonexistent/path/file.txt")
 	if owner != "unknown" || group != "unknown" {
 		t.Errorf("getFileOwner for nonexistent file should return unknown/unknown, got %s/%s", owner, group)

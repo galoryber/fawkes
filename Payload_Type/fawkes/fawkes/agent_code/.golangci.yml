@@ -7,6 +7,9 @@ linters:
     - staticcheck
     - ineffassign
     - unused
+    - gocritic
+    - bodyclose
+    - copyloopvar
   settings:
     errcheck:
       exclude-functions:
@@ -50,6 +53,7 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
+          - bodyclose
       # Ignore unchecked Close() on various types in defer statements
       - text: "Error return value of `.+\\.Close`"
         linters:
@@ -58,3 +62,11 @@ linters:
       - text: "hostport.*IPv6"
         linters:
           - govet
+      # appendAssign: intentional slice construction patterns (iv+cipher, uuid+data)
+      - text: "appendAssign"
+        linters:
+          - gocritic
+      # ifElseChain: sequential condition checks are clearer than switch in many contexts
+      - text: "ifElseChain"
+        linters:
+          - gocritic

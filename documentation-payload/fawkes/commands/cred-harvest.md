@@ -15,7 +15,7 @@ Cross-platform credential harvesting across system files, cloud infrastructure, 
 
 | Argument | Required | Description |
 |----------|----------|-------------|
-| action | Yes | `shadow` (Unix): system password hashes. `cloud`: cloud/infrastructure credentials. `configs`: application secrets. `history`: scan shell history for leaked passwords, tokens, and API keys. `windows` (Windows): PowerShell history, env vars, RDP, WiFi. `m365-tokens` (Windows): OAuth/JWT tokens from TokenBroker, Teams, Outlook. `all`: run all platform-appropriate actions. |
+| action | Yes | `shadow` (Unix): system password hashes. `cloud`: cloud/infrastructure credentials. `configs`: application secrets. `history`: scan shell history for leaked passwords, tokens, and API keys. `windows` (Windows): PowerShell history, env vars, RDP, WiFi. `m365-tokens` (Windows): OAuth/JWT tokens from TokenBroker, Teams, Outlook. `all`: run all platform-appropriate actions. `dump-all` (Windows): automated subtask chain — runs hashdump + lsa-secrets + cred-harvest all in parallel. |
 | user | No | Filter results by username (case-insensitive substring match) |
 
 ## Usage
@@ -180,6 +180,25 @@ Harvested credentials are automatically reported to Mythic's Credentials store:
 | EBWebView auth cookies | token | Cookie name + decrypted value, host domain |
 
 Credentials are searchable in the Mythic UI under the Credentials tab.
+
+## Dump-All Action (Windows — Subtask Chain)
+
+The `dump-all` action creates a **Mythic subtask chain** that runs three credential extraction commands simultaneously:
+
+| Subtask | What It Does | Requirements |
+|---------|-------------|--------------|
+| `hashdump` | Dump SAM database (local NTLM hashes) | SYSTEM privileges |
+| `lsa-secrets` -action dump | Dump LSA secrets (DPAPI keys, cached domain creds, auto-logon) | SYSTEM privileges |
+| `cred-harvest` -action all | Harvest all file-based credentials (shadow, cloud, configs, history, windows, m365-tokens) | User-level |
+
+All three subtasks execute in parallel. When all complete, a group completion function aggregates results and summarizes findings in the parent task output. Credentials from all sources are registered in Mythic's Credential Vault.
+
+```
+# Run full credential harvest chain (requires SYSTEM/admin)
+cred-harvest -action dump-all
+```
+
+{{% notice warning %}}The dump-all chain accesses SAM, LSA, and LSASS memory simultaneously. This creates a high detection footprint — multiple credential access techniques (T1003.002, T1003.004, T1003.005) in rapid succession. Use only when stealth is not a priority.{{% /notice %}}
 
 ## OPSEC Considerations
 

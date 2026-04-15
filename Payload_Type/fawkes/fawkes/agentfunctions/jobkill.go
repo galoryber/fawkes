@@ -12,7 +12,7 @@ func init() {
 		Description:         "Stop a running task by task ID. Use 'jobs' to list running tasks.",
 		HelpString:          "jobkill -id <task-uuid>",
 		Version:             1,
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:kill"},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{},
 		ScriptOnlyCommand:   false,
@@ -22,6 +22,7 @@ func init() {
 				agentstructs.SUPPORTED_OS_LINUX,
 				agentstructs.SUPPORTED_OS_MACOS,
 			},
+			CommandIsSuggested: true,
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -46,6 +47,24 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: Killing a background job terminates the associated goroutine/process. If the job holds external resources (PTY sessions, SOCKS proxies), abrupt termination may leave orphaned connections detectable by network monitoring.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Background job terminated. Internal agent job cleanup. No external artifacts generated.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

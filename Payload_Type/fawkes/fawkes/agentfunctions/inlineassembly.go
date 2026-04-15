@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"path/filepath"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -49,8 +51,9 @@ func init() {
 		HelpString:          "inline-assembly",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055.001", "T1620"}, // Process Injection: Dynamic-link Library Injection, Reflective Code Loading
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "inlineassembly_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},
@@ -150,6 +153,15 @@ func init() {
 				OpsecPreBlocked:    false,
 				OpsecPreMessage:    "OPSEC WARNING: Inline assembly execution loads and runs .NET assemblies in-process via the CLR. Creates CLR loading artifacts (clrjit.dll, mscorlib.ni.dll). Detectable by ETW .NET tracing, AMSI scanning, and memory scanners looking for .NET metadata in non-.NET processes.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: .NET assembly executed via CLR. The CLR remains loaded in the process (cannot be unloaded). Assembly metadata may be visible to ETW .NET runtime providers. Use 'etw -action blind' to suppress .NET ETW if needed.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
@@ -256,6 +268,21 @@ func init() {
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
 			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf(".NET assembly in-memory execution (Assembly.Load) — %s", filename))
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			host := processResponse.TaskData.Callback.Host
+			mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+				TaskID:           processResponse.TaskData.Task.ID,
+				BaseArtifactType: "Process Injection",
+				ArtifactMessage:  fmt.Sprintf(".NET assembly in-memory execution on %s", host),
+			})
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				fmt.Sprintf("[EXECUTION] .NET inline-assembly execution on %s", host), true)
 			return response
 		},
 	})

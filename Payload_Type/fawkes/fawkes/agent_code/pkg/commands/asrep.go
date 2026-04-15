@@ -34,6 +34,7 @@ type asrepArgs struct {
 	Account  string `json:"account"` // optional: specific account to roast
 	BaseDN   string `json:"base_dn"` // optional: LDAP base DN
 	UseTLS   bool   `json:"use_tls"` // optional: LDAPS for enumeration
+	Timeout  int    `json:"timeout"` // overall timeout in seconds (default: 120)
 }
 
 func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
@@ -66,6 +67,11 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Port = 389
 	}
 
+	if args.Timeout <= 0 {
+		args.Timeout = 120
+	}
+	opTimeout := time.Duration(args.Timeout) * time.Second
+
 	// Step 1: Find AS-REP roastable accounts via LDAP (unless specific account given)
 	var targets []asrepTarget
 	var err error
@@ -73,7 +79,7 @@ func (c *AsrepCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.Account != "" {
 		targets = []asrepTarget{{Username: args.Account}}
 	} else {
-		targets, err = enumerateAsrepTargets(args)
+		targets, err = enumerateAsrepTargets(args, opTimeout)
 		if err != nil {
 			return errorf("Error enumerating AS-REP targets via LDAP: %v", err)
 		}
@@ -148,7 +154,7 @@ type asrepOutputEntry struct {
 	Error   string `json:"error,omitempty"`
 }
 
-func enumerateAsrepTargets(args asrepArgs) ([]asrepTarget, error) {
+func enumerateAsrepTargets(args asrepArgs, timeout time.Duration) ([]asrepTarget, error) {
 	if args.Port <= 0 {
 		if args.UseTLS {
 			args.Port = 636
@@ -156,11 +162,13 @@ func enumerateAsrepTargets(args asrepArgs) ([]asrepTarget, error) {
 			args.Port = 389
 		}
 	}
-	conn, err := ldapDial(args.Server, args.Port, args.UseTLS)
+	conn, err := ldapDial(args.Server, args.Port, args.UseTLS, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("LDAP connect: %v", err)
 	}
 	defer conn.Close()
+
+	conn.SetTimeout(timeout)
 
 	if err := conn.Bind(args.Username, args.Password); err != nil {
 		return nil, fmt.Errorf("LDAP bind: %v", err)
@@ -224,13 +232,14 @@ func requestAsrep(cfg *config.Config, realm, kdc, username string) (string, stri
 	}
 
 	// Send via TCP to KDC port 88 (RFC 4120 7.2.2: 4-byte length prefix)
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:88", kdc), 10*time.Second)
+	perReqTimeout := 10 * time.Second
+	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:88", kdc), perReqTimeout)
 	if err != nil {
 		return "", "", fmt.Errorf("KDC connect: %v", err)
 	}
 	defer conn.Close()
 
-	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+	if err := conn.SetDeadline(time.Now().Add(perReqTimeout)); err != nil {
 		return "", "", fmt.Errorf("set deadline: %v", err)
 	}
 

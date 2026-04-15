@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -12,7 +13,7 @@ func init() {
 		Description:         "List or clear shell and application command history files",
 		HelpString:          "history-scrub [-action list|clear|clear-all] [-user <username>]",
 		Version:             1,
-		MitreAttackMappings: []string{"T1070.003"}, // Indicator Removal: Clear Command History
+		MitreAttackMappings: []string{"T1070.003", "T1562.003"}, // Indicator Removal: Clear Command History + Impair Command History Logging
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
@@ -34,10 +35,11 @@ func init() {
 				},
 			},
 			{
-				Name:          "user",
-				CLIName:       "user",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:   "Target username (default: current user)",
+				Name:                 "user",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Target username (default: current user)",
 				DefaultValue:  "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -63,6 +65,38 @@ func init() {
 				OpsecPreBlocked:    false,
 				OpsecPreMessage:    "OPSEC WARNING: History scrubbing removes or modifies shell history files (.bash_history, .zsh_history, PSReadLine). Detectable by file integrity monitoring and SIEM correlation of missing audit trails. Anti-forensics technique — consider selective editing over wholesale deletion.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			switch action {
+			case "clear", "clear-all":
+				createArtifact(processResponse.TaskData.Task.ID, "Indicator Removal",
+					fmt.Sprintf("history-scrub %s completed", action))
+			case "list":
+				count := strings.Count(responseText, "\n")
+				if count > 0 {
+					createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+						fmt.Sprintf("history-scrub list: %d history files enumerated", count))
+				}
+			}
+			return response
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: History scrub completed. Shell history files modified/truncated — file modification timestamps updated. Defenders may notice missing history entries or timestamp gaps. Some logging systems (auditd, syslog) may have captured commands before scrub. Consider clearing audit logs too.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {

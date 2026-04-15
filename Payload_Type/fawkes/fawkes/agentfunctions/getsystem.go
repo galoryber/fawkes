@@ -12,15 +12,19 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "getsystem",
-		Description:         "Elevate to SYSTEM via token steal (SeDebugPrivilege) or DCOM potato (SeImpersonatePrivilege)",
-		HelpString:          "getsystem [-technique steal|potato]",
-		Version:             3,
+		Description:         "Privilege escalation. Windows: SYSTEM via token steal or DCOM potato. Linux: root via sudo, SUID, capabilities check. macOS: root via sudo or osascript elevation prompt.",
+		HelpString:          "# Windows\ngetsystem -technique steal\ngetsystem -technique potato\n# Linux\ngetsystem -technique check\ngetsystem -technique sudo\n# macOS\ngetsystem -technique check\ngetsystem -technique sudo\ngetsystem -technique osascript",
+		Version:             4,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1134.001"},
+		MitreAttackMappings: []string{"T1134.001", "T1548.001", "T1548.003", "T1059.002"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{
+				agentstructs.SUPPORTED_OS_WINDOWS,
+				agentstructs.SUPPORTED_OS_LINUX,
+				agentstructs.SUPPORTED_OS_MACOS,
+			},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -28,9 +32,9 @@ func init() {
 				ModalDisplayName: "Technique",
 				CLIName:          "technique",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"steal", "potato"},
-				Description:      "steal = token theft from SYSTEM process (needs SeDebugPrivilege/admin). potato = DCOM OXID resolution hook (needs SeImpersonatePrivilege/service account).",
-				DefaultValue:     "steal",
+				Choices:          []string{"steal", "potato", "check", "sudo", "osascript"},
+				Description:      "Windows: steal (token theft, needs admin) or potato (DCOM OXID, needs service). Linux: check (enumerate vectors) or sudo (attempt elevation). macOS: check, sudo, or osascript (admin prompt).",
+				DefaultValue:     "check",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -41,13 +45,25 @@ func init() {
 		},
 		AssociatedBrowserScript: nil,
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			technique, _ := taskData.Args.GetStringArg("technique")
+			var msg string
+			switch technique {
+			case "steal":
+				msg = "OPSEC WARNING: Token theft from SYSTEM process via OpenProcessToken + DuplicateTokenEx. Requires SeDebugPrivilege. Token manipulation is a high-fidelity EDR detection."
+			case "potato":
+				msg = "OPSEC WARNING: DCOM potato privilege escalation via OXID resolution hook + named pipe impersonation. Creates artifacts in RPC dispatch table."
+			case "sudo":
+				msg = "OPSEC WARNING: Privilege escalation via sudo. Command execution visible in process tree and auth.log/secure. Failed attempts logged."
+			case "osascript":
+				msg = "OPSEC WARNING: Privilege escalation via AppleScript admin prompt. Triggers a visible UI dialog. User may deny or report. Auth attempt logged in unified logging."
+			case "check":
+				msg = "OPSEC NOTE: Enumerating privilege escalation vectors. Low risk — reads filesystem and checks permissions. sudo -l may generate an auth log entry."
+			default:
+				msg = "OPSEC WARNING: Privilege escalation attempt. May trigger alerts."
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
-				TaskID:  taskData.Task.ID,
-				Success: true,
-				OpsecPreBlocked: false,
-				OpsecPreMessage: "OPSEC WARNING: Attempting SYSTEM privilege escalation via named pipe impersonation. " +
-					"Creates a named pipe and waits for a privileged connection. " +
-					"May trigger alerts for token manipulation or privilege escalation.",
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -56,7 +72,7 @@ func init() {
 				TaskID:              taskData.Task.ID,
 				Success:             true,
 				OpsecPostBlocked:    false,
-				OpsecPostMessage:    "OPSEC AUDIT: SYSTEM privilege escalation configured. Named pipe impersonation artifacts will be created.",
+				OpsecPostMessage:    "OPSEC AUDIT: Privilege escalation completed. Token theft from winlogon/lsass and DCOM operations generate process access events (Event ID 4688, 4656). Callback metadata updated to SYSTEM. Integrity level change is visible in Mythic UI.",
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -108,19 +124,43 @@ func init() {
 			}
 			systemLevel := 4 // SYSTEM integrity
 			update := mythicrpc.MythicRPCCallbackUpdateMessage{
-				AgentCallbackUUID: &processResponse.TaskData.Callback.AgentCallbackID,
+				AgentCallbackID: &processResponse.TaskData.Callback.AgentCallbackID,
 				IntegrityLevel:    &systemLevel,
 			}
-			// Also update user if "New:" line present
+			// Parse user from "New:" line
+			user := ""
 			for _, line := range strings.Split(responseText, "\n") {
 				trimmed := strings.TrimSpace(line)
 				if val := extractField(trimmed, "New:"); val != "" {
+					user = val
 					update.User = &val
 					break
 				}
 			}
 			if _, err := mythicrpc.SendMythicRPCCallbackUpdate(update); err != nil {
 				logging.LogError(err, "Failed to update callback metadata after getsystem")
+			}
+			tagTask(processResponse.TaskData.Task.ID, "SYSTEM",
+				fmt.Sprintf("SYSTEM-level access obtained on %s", processResponse.TaskData.Callback.Host))
+			// Register SYSTEM token with Mythic's token tracker
+			if user == "" {
+				user = "NT AUTHORITY\\SYSTEM"
+			}
+			host := processResponse.TaskData.Callback.Host
+			if _, err := mythicrpc.SendMythicRPCCallbackTokenCreate(mythicrpc.MythicRPCCallbackTokenCreateMessage{
+				TaskID: processResponse.TaskData.Task.ID,
+				CallbackTokens: []mythicrpc.MythicRPCCallbackTokenData{
+					{
+						Action:  "add",
+						Host:    &host,
+						TokenID: uint64(processResponse.TaskData.Task.ID),
+						TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
+							User: user,
+						},
+					},
+				},
+			}); err != nil {
+				logging.LogError(err, "Failed to register SYSTEM token with Mythic")
 			}
 			return response
 		},

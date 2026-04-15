@@ -15,11 +15,16 @@ Cross-platform (Windows, Linux, macOS).
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | all | Triage mode: `all` (docs+creds+configs), `documents`, `credentials`, `configs`, `database`, `scripts`, `archives`, `mail`, `recent`, `custom` |
+| action | No | all | Triage mode: `all` (docs+creds+configs), `documents`, `credentials`, `configs`, `database`, `scripts`, `archives`, `mail`, `recent`, `custom`, `recon-chain` |
 | path | For custom | - | Directory to scan when using `custom` action |
 | hours | No | 24 | Time window in hours for `recent` action |
 | max_size | No | 10485760 | Maximum file size in bytes (default 10MB) |
 | max_files | No | 200 | Maximum number of files to return |
+| target | For recon-chain | - | Target hosts/subnet for recon-chain (e.g., 192.168.1.0/24) |
+| username | For recon-chain | - | Username for SMB authentication in recon-chain |
+| password | For recon-chain | - | Password for SMB authentication |
+| hash | For recon-chain | - | NTLM hash for pass-the-hash (LM:NT format) |
+| ports | For recon-chain | 445,139,80,443,22,3389,5985 | Ports to scan in recon-chain |
 
 ## Usage
 
@@ -146,6 +151,32 @@ The browser script renders results as a color-coded sortable table with human-re
 Columns: Path, Size (human-readable), Modified, Category.
 
 Use `download` to exfiltrate individual files identified by triage.
+
+## Recon Chain (Subtask Chain)
+
+The `recon-chain` action creates a **Mythic subtask chain** that automates multi-step network reconnaissance:
+
+| Step | Command | Description |
+|------|---------|-------------|
+| 1 | `port-scan` | Scan target hosts/subnet for open ports |
+| 2 | `share-hunt` | Enumerate and hunt through SMB shares on hosts with port 445 open |
+| 3 | `triage` (credentials) | Local credential file triage on the current host |
+
+Each step feeds results to the next. The chain stops early if no SMB hosts are found or if credentials are not provided.
+
+### Usage
+```
+# Full recon chain with credentials
+triage -action recon-chain -target 192.168.1.0/24 -username DOMAIN\admin -password Pass123
+
+# With pass-the-hash
+triage -action recon-chain -target 10.0.0.1-10 -username admin -hash aad3b435b51404ee:8846f7eaee8fb117
+
+# Custom port list
+triage -action recon-chain -target 192.168.1.0/24 -username user -password pass -ports 445,22,80,8080
+```
+
+{{% notice warning %}}Recon chain generates significant network traffic: port scanning, SMB authentication, and file enumeration across multiple hosts. Each step creates visible artifacts (SYN scans, logon events 4624/4625, file access). Use only when stealth is not a priority.{{% /notice %}}
 
 ## MITRE ATT&CK Mapping
 

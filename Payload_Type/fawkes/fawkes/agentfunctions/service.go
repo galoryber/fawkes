@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -229,8 +230,34 @@ func init() {
 					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM ChangeServiceConfig(%s, StartType=Disabled)", name))
 				}
 			}
+			if action == "create" || action == "delete" || action == "start" || action == "stop" || action == "enable" || action == "disable" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[SYSTEM MOD] service %s: %s on %s", action, name, taskData.Callback.Host), true)
+			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Try to parse as JSON service list (from "list" action)
+			var services []struct {
+				Name        string `json:"name"`
+				State       string `json:"state"`
+				DisplayName string `json:"display_name"`
+			}
+			if err := json.Unmarshal([]byte(responseText), &services); err == nil && len(services) > 0 {
+				for _, s := range services {
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						fmt.Sprintf("[Service] %s: %s (%s)", s.Name, s.State, s.DisplayName))
+				}
+			}
+			return response
+		},
 	})
 }

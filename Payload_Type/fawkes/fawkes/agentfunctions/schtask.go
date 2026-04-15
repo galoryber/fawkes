@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -113,11 +114,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "user",
-				ModalDisplayName: "Run As User",
-				CLIName:          "user",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "User account to run the task as (e.g., SYSTEM, NT AUTHORITY\\SYSTEM)",
+				Name:                 "user",
+				ModalDisplayName:     "Run As User",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "User account to run the task as (e.g., SYSTEM, NT AUTHORITY\\SYSTEM)",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -246,8 +248,37 @@ func init() {
 			case "stop":
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("IRegisteredTask.Stop(%q)", name))
 			}
+			if action == "create" || action == "delete" || action == "run" || action == "enable" || action == "disable" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[PERSIST] schtask %s: %s on %s", action, name, taskData.Callback.Host), true)
+			}
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Try to parse as JSON task list (from "list" action)
+			var tasks []struct {
+				Name        string `json:"name"`
+				State       string `json:"state"`
+				NextRunTime string `json:"next_run_time,omitempty"`
+			}
+			if json.Unmarshal([]byte(responseText), &tasks) == nil && len(tasks) > 0 {
+				for _, t := range tasks {
+					desc := fmt.Sprintf("[Scheduled Task] %s: %s", t.Name, t.State)
+					if t.NextRunTime != "" {
+						desc += " (next: " + t.NextRunTime + ")"
+					}
+					createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism", desc)
+				}
+			}
+			return response
+		},
 	})
 }

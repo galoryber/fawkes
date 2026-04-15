@@ -2,6 +2,8 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
+	"regexp"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -9,14 +11,16 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "dcom",
-		Description:         "Execute commands on remote hosts via DCOM lateral movement. Supports MMC20.Application, ShellWindows, and ShellBrowserWindow objects.",
-		HelpString:          "dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser] [-dir <directory>] [-username <user> -password <pass> -domain <domain>]",
-		Version:             2,
+		Description:         "Execute commands on remote hosts via DCOM lateral movement. Supports MMC20.Application, ShellWindows, ShellBrowserWindow, WScript.Shell, Excel.Application, and Outlook.Application objects.",
+		HelpString:          "dcom -action exec -host <target> -command <cmd> [-args <arguments>] [-object mmc20|shellwindows|shellbrowser|wscript|excel|outlook] [-dir <directory>] [-username <user> -password <pass> -domain <domain>]",
+		Version:             3,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1021.003"}, // Remote Services: Distributed Component Object Model
 		SupportedUIFeatures: []string{},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "dcom_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS:                []string{agentstructs.SUPPORTED_OS_WINDOWS},
+			CommandCanOnlyBeLoadedLater: true,
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -35,11 +39,12 @@ func init() {
 				},
 			},
 			{
-				Name:          "host",
-				CLIName:       "host",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:  "",
-				Description:   "Target hostname or IP address",
+				Name:                 "host",
+				CLIName:              "host",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				Description:          "Target hostname or IP address",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -52,9 +57,9 @@ func init() {
 				Name:          "object",
 				CLIName:       "object",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"mmc20", "shellwindows", "shellbrowser"},
+				Choices:       []string{"mmc20", "shellwindows", "shellbrowser", "wscript", "excel", "outlook"},
 				DefaultValue:  "mmc20",
-				Description:   "DCOM object: MMC20.Application (most reliable), ShellWindows (requires explorer.exe), ShellBrowserWindow",
+				Description:   "DCOM object: mmc20 (most reliable), shellwindows (requires explorer.exe), shellbrowser, wscript (WScript.Shell.Run), excel (RegisterXLL/DDEInitiate — requires Excel), outlook (CreateObject Shell — requires Outlook, less monitored by EDR)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -110,6 +115,7 @@ func init() {
 				CLIName:       "username",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:  "",
+				DynamicQueryFunction: getCallbackUserList,
 				Description:   "Username for DCOM auth (optional — uses make-token credentials if not specified)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -138,11 +144,27 @@ func init() {
 				CLIName:       "domain",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:  "",
+				DynamicQueryFunction: getCallbackDomainList,
 				Description:   "Domain for DCOM auth (optional — uses make-token credentials if not specified)",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
 						UIModalPosition:     9,
+						GroupName:           "Default",
+					},
+				},
+			},
+			{
+				Name:             "timeout",
+				CLIName:          "timeout",
+				ModalDisplayName: "Timeout (seconds)",
+				Description:      "Operation timeout in seconds (default: 120). Prevents agent hangs on unreachable targets.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     120,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     10,
 						GroupName:           "Default",
 					},
 				},
@@ -159,14 +181,57 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			host, _ := taskData.Args.GetStringArg("host")
-			action, _ := taskData.Args.GetStringArg("action")
+			object, _ := taskData.Args.GetStringArg("object")
+
+			// Per-object detection signatures
+			objectWarnings := map[string]string{
+				"mmc20":        "MMC20.Application: monitored by CrowdStrike/SentinelOne — creates mmc.exe child process. Most reliable but most detected.",
+				"shellwindows": "ShellWindows: requires explorer.exe on target. Creates child process under explorer.exe — moderate detection.",
+				"shellbrowser": "ShellBrowserWindow: similar to ShellWindows. Creates child process under iexplore.exe — moderate detection.",
+				"wscript":      "WScript.Shell: less commonly monitored than MMC20. Executes via WScript.Shell.Run — no intermediate process. Good fallback when MMC is blocked.",
+				"excel":        "Excel.Application: requires Excel installed on target. RegisterXLL loads DLL into Excel.exe (stealthy — lives in Office process). DDEInitiate creates cmd.exe child.",
+				"outlook":      "Outlook.Application: requires Outlook on target. Uses CreateObject(\"Wscript.Shell\") within Outlook's process — command runs inside OUTLOOK.EXE. Unusual vector, often not monitored by EDR. May be blocked by Outlook security settings.",
+			}
+			warning := objectWarnings[object]
+			if warning == "" {
+				warning = "Unknown object — proceed with caution."
+			}
+
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: DCOM lateral movement to %s (action: %s). Creates remote COM object via RPC/TCP 135. Generates network connections, DCOM launch events (Event ID 10016), and process creation on the remote host. Detectable by monitoring RPC traffic and unusual DCOM object instantiation.", host, action),
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: DCOM lateral movement to %s via %s.\n  %s\n  All DCOM: RPC/TCP 135 connection, Event ID 10016, remote COM activation.", host, object, warning),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: DCOM lateral movement completed. Generates Event ID 4624 (logon type 3) on remote host. DCOM traffic uses dynamic RPC ports (TCP 49152+). The COM object used (MMC20/ShellWindows/ShellBrowserWindow) may be logged by process creation monitoring.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: DCOM <Object> executed on <host>:
+			re := regexp.MustCompile(`DCOM\s+(\S+)\s+executed on\s+(\S+?):`)
+			if m := re.FindStringSubmatch(responseText); len(m) > 2 {
+				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
+					fmt.Sprintf("DCOM execution: %s on %s", m[1], m[2]))
+				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
+					fmt.Sprintf("DCOM %s execution on %s", m[1], m[2]))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
@@ -179,6 +244,8 @@ func init() {
 			display := fmt.Sprintf("%s via %s", host, object)
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("DCOM CoCreateInstanceEx %s on %s: %s", object, host, command))
+			logOperationEvent(taskData.Task.ID,
+				fmt.Sprintf("[LATERAL] dcom: remote execution via %s on %s from %s", object, host, taskData.Callback.Host), true)
 			return response
 		},
 	})

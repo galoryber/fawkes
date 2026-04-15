@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -253,6 +254,33 @@ func init() {
 				if osName == "Linux" {
 					createArtifact(taskData.Task.ID, "Process Create", "iptables/nft — list rules")
 				}
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+
+			switch action {
+			case "add", "delete", "enable", "disable":
+				// Track firewall modifications as defense evasion artifacts
+				name, _ := processResponse.TaskData.Args.GetStringArg("name")
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Configuration",
+					ArtifactMessage:  fmt.Sprintf("Firewall rule %s: %s on %s", action, name, processResponse.TaskData.Callback.Host),
+				})
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DEFENSE EVASION] Firewall rule %s: %s on %s", action, name, processResponse.TaskData.Callback.Host), true)
+			case "list", "status":
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Configuration",
+					ArtifactMessage:  fmt.Sprintf("Firewall %s enumerated on %s", action, processResponse.TaskData.Callback.Host),
+				})
 			}
 			return response
 		},

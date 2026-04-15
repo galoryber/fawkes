@@ -1,12 +1,19 @@
 package agentfunctions
 
 import (
+	"path/filepath"
+	"strings"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "sysmon-config",
+		Name: "sysmon-config",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sysmonconfig_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Detect Sysmon installation and extract active configuration, event channels, and rule data (T1518.001)",
 		HelpString:          "sysmon-config [-action check|rules|events]",
 		Version:             1,
@@ -62,12 +69,38 @@ func init() {
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Sysmon configuration enumerated. Sysmon config reveals exactly what events are being monitored. This intelligence directly informs evasion strategy.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
 			createArtifact(taskData.Task.ID, "Registry Read", "Sysmon service/driver registry keys + event channels")
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "Sysmon") || strings.Contains(responseText, "sysmon") {
+				tagTask(processResponse.TaskData.Task.ID, "OPSEC",
+					"Sysmon detected on target (T1518.001)")
+			}
+			logOperationEvent(processResponse.TaskData.Task.ID,
+				"[RECON] Sysmon configuration enumeration (T1518.001)", false)
 			return response
 		},
 	})

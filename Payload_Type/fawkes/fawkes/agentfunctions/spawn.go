@@ -3,6 +3,9 @@ package agentfunctions
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -17,6 +20,7 @@ func init() {
 		MitreAttackMappings: []string{"T1055", "T1134.004"}, // Process Injection, Parent PID Spoofing
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "spawn_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},
@@ -36,11 +40,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "Target PID (Thread Mode)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "Process ID to create suspended thread in. If set (>0), thread mode is used instead of process mode.",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "Target PID (Thread Mode)",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Process ID to create suspended thread in. If set (>0), thread mode is used instead of process mode.",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -99,6 +104,23 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage:    "OPSEC WARNING: Spawning sacrificial process with injection (T1055, T1134.004). Process creation with PPID spoofing is a known evasion technique. EDR monitors parent-child process relationships and flags unusual process chains.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Process spawned. New process creation generates Event ID 4688. Parent-child process relationships are tracked by EDR. Consider PPID spoofing for stealth.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -109,12 +131,12 @@ func init() {
 			params := make(map[string]interface{})
 
 			// Determine mode: if pid > 0, use thread mode; otherwise process mode
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := parsePIDFromArg(taskData)
 			if pid > 0 {
 				// Thread mode
 				params["mode"] = "thread"
-				params["pid"] = int(pid)
-				displayParams = fmt.Sprintf("Suspended thread in PID: %d", int(pid))
+				params["pid"] = pid
+				displayParams = fmt.Sprintf("Suspended thread in PID: %d", pid)
 			} else {
 				// Process mode
 				params["mode"] = "process"
@@ -157,6 +179,22 @@ func init() {
 
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			mode, _ := processResponse.TaskData.Args.GetStringArg("mode")
+			if strings.Contains(responseText, "pid") || strings.Contains(responseText, "PID") {
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[EXECUTION] Process spawned (mode: %s, T1055/T1134.004)", mode), false)
+			}
 			return response
 		},
 	})

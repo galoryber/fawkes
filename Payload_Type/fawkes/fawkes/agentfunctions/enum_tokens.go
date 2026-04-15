@@ -1,10 +1,13 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -37,11 +40,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "user",
-				ModalDisplayName: "User Filter",
-				CLIName:          "user",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Filter results to tokens matching this user (case-insensitive substring match)",
+				Name:                 "user",
+				ModalDisplayName:     "User Filter",
+				CLIName:              "user",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DynamicQueryFunction: getCallbackUserList,
+				Description:          "Filter results to tokens matching this user (case-insensitive substring match)",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -55,7 +59,24 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "enum_tokens_new.js"),
 			Author:     "@galoryber",
 		},
-		TaskFunctionOPSECPre: nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+					TaskID:             taskData.Task.ID,
+					Success:            true,
+					OpsecPreBlocked:    false,
+					OpsecPreMessage:    "OPSEC WARNING: Token enumeration opens all accessible processes with TOKEN_QUERY access to enumerate security tokens. EDR products monitor for cross-process token access patterns. Requires SeDebugPrivilege for elevated processes.",
+					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+				}
+			},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Token enumeration completed. OpenProcess + OpenProcessToken calls were made across accessible processes. EDR products log cross-process handle requests — these access patterns may trigger alerts. Token information registered in Mythic callback tokens.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -75,6 +96,56 @@ func init() {
 			createArtifact(taskData.Task.ID, "API Call", "CreateToolhelp32Snapshot + OpenProcessToken across all processes")
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			// Parse token entries from JSON output (both "list" and "unique" actions)
+			type tokenInfo struct {
+				PID       uint32 `json:"pid"`
+				Process   string `json:"process"`
+				User      string `json:"user"`
+				Integrity string `json:"integrity"`
+				Session   uint32 `json:"session"`
+			}
+			var tokens []tokenInfo
+			if err := json.Unmarshal([]byte(responseText), &tokens); err != nil {
+				return response
+			}
+			// Register unique users as tokens with Mythic
+			host := processResponse.TaskData.Callback.Host
+			seen := make(map[string]bool)
+			var callbackTokens []mythicrpc.MythicRPCCallbackTokenData
+			for _, t := range tokens {
+				if t.User == "" || seen[t.User] {
+					continue
+				}
+				seen[t.User] = true
+				callbackTokens = append(callbackTokens, mythicrpc.MythicRPCCallbackTokenData{
+					Action:  "add",
+					Host:    &host,
+					TokenID: uint64(processResponse.TaskData.Task.ID) + uint64(len(callbackTokens)),
+					TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
+						User:      t.User,
+						ProcessID: int(t.PID),
+						SessionID: int(t.Session),
+					},
+				})
+			}
+			if len(callbackTokens) > 0 {
+				if _, err := mythicrpc.SendMythicRPCCallbackTokenCreate(mythicrpc.MythicRPCCallbackTokenCreateMessage{
+					TaskID:         processResponse.TaskData.Task.ID,
+					CallbackTokens: callbackTokens,
+				}); err != nil {
+					logging.LogError(err, "Failed to register enumerated tokens", "count", len(callbackTokens))
+				}
+			}
+			return response
+		},
 	})
 }

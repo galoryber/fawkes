@@ -225,10 +225,10 @@ func TestPkcs7Pad(t *testing.T) {
 		blockSize int
 		wantLen   int
 	}{
-		{[]byte("hello"), 16, 16},      // 5 bytes → 16 (11 padding)
-		{make([]byte, 16), 16, 32},     // exactly 16 → 32 (full block padding)
-		{[]byte("x"), 16, 16},          // 1 byte → 16
-		{make([]byte, 15), 16, 16},     // 15 → 16 (1 padding)
+		{[]byte("hello"), 16, 16},  // 5 bytes → 16 (11 padding)
+		{make([]byte, 16), 16, 32}, // exactly 16 → 32 (full block padding)
+		{[]byte("x"), 16, 16},      // 1 byte → 16
+		{make([]byte, 15), 16, 16}, // 15 → 16 (1 padding)
 	}
 
 	for _, tt := range tests {
@@ -519,7 +519,7 @@ func TestDoWithRateLimitExhausted(t *testing.T) {
 	p := NewDiscordProfile("tok", "ch", "", 10, 5, 3, 2, false, "")
 
 	req, _ := http.NewRequest("GET", srv.URL, nil)
-	_, err := p.doWithRateLimit(req)
+	_, err := p.doWithRateLimit(req) //nolint:bodyclose // test code, error path - response is nil
 	if err == nil {
 		t.Error("expected error after all retries exhausted")
 	}

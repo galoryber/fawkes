@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"fawkes/pkg/structs"
 
@@ -29,6 +30,7 @@ type kerberoastArgs struct {
 	SPN      string `json:"spn"`     // optional: specific SPN to roast
 	BaseDN   string `json:"base_dn"` // optional: LDAP base DN
 	UseTLS   bool   `json:"use_tls"` // optional: LDAPS for SPN enumeration
+	Timeout  int    `json:"timeout"` // overall timeout in seconds (default: 120)
 }
 
 func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
@@ -40,7 +42,7 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
-	defer structs.ZeroString(&args.Password)
+	defer zeroCredentials(&args.Password)
 
 	if args.Server == "" || args.Username == "" || args.Password == "" {
 		return errorResult("Error: server, username, and password are required. Username should be in UPN format (user@domain.local)")
@@ -61,6 +63,11 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Port = 389
 	}
 
+	if args.Timeout <= 0 {
+		args.Timeout = 120
+	}
+	opTimeout := time.Duration(args.Timeout) * time.Second
+
 	// Step 1: Find kerberoastable SPNs via LDAP (unless specific SPN given)
 	var spns []spnEntry
 	var err error
@@ -70,7 +77,7 @@ func (c *KerberoastCommand) Execute(task structs.Task) structs.CommandResult {
 		spns = []spnEntry{{SPN: args.SPN, Account: "(specified)"}}
 	} else {
 		// Enumerate SPNs via LDAP
-		spns, err = enumerateSPNs(args)
+		spns, err = enumerateSPNs(args, opTimeout)
 		if err != nil {
 			return errorf("Error enumerating SPNs via LDAP: %v", err)
 		}
@@ -168,7 +175,7 @@ type kerberoastOutputEntry struct {
 	Error   string `json:"error,omitempty"`
 }
 
-func enumerateSPNs(args kerberoastArgs) ([]spnEntry, error) {
+func enumerateSPNs(args kerberoastArgs, timeout time.Duration) ([]spnEntry, error) {
 	// Connect to LDAP to find SPN accounts
 	ldapArgs := ldapQueryArgs{
 		Server:   args.Server,
@@ -185,11 +192,14 @@ func enumerateSPNs(args kerberoastArgs) ([]spnEntry, error) {
 			ldapArgs.Port = 389
 		}
 	}
-	conn, err := ldapDial(ldapArgs.Server, ldapArgs.Port, ldapArgs.UseTLS)
+	conn, err := ldapDial(ldapArgs.Server, ldapArgs.Port, ldapArgs.UseTLS, timeout)
 	if err != nil {
 		return nil, fmt.Errorf("LDAP connect: %v", err)
 	}
 	defer conn.Close()
+
+	// Set LDAP-level timeout for subsequent operations
+	conn.SetTimeout(timeout)
 
 	if err := conn.Bind(args.Username, args.Password); err != nil {
 		return nil, fmt.Errorf("LDAP bind: %v", err)

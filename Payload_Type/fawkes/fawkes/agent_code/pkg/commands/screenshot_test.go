@@ -3,9 +3,9 @@
 package commands
 
 import (
+	"bytes"
 	"image"
 	"image/png"
-	"bytes"
 	"testing"
 )
 

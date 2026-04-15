@@ -4,6 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	"path/filepath"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -16,8 +19,9 @@ func init() {
 		HelpString:          "thread-hijack",
 		Version:             1,
 		MitreAttackMappings: []string{"T1055.003"}, // Process Injection: Thread Execution Hijacking
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "threadhijack_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},
@@ -67,11 +71,12 @@ func init() {
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "Target PID",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "The process ID to inject shellcode into",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "Target PID",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "The process ID to inject shellcode into",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
@@ -116,24 +121,24 @@ func init() {
 			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			tid, _ := taskData.Args.GetNumberArg("tid")
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Thread hijack injection into PID %d TID %d. Suspends thread, overwrites RIP/RCX, and resumes — avoids CreateRemoteThread but SuspendThread/SetThreadContext may be monitored.", int(pid), int(tid)),
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Thread hijack injection into PID %s TID %d. Suspends thread, overwrites RIP/RCX, and resumes — avoids CreateRemoteThread but SuspendThread/SetThreadContext may be monitored.", pid, int(tid)),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
 			tid, _ := taskData.Args.GetNumberArg("tid")
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,
 				Success:             true,
 				OpsecPostBlocked:    false,
-				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: Thread hijack injection queued for PID %d TID %d. Artifact registered.", int(pid), int(tid)),
+				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: Thread hijack injection queued for PID %s TID %d. Artifact registered.", pid, int(tid)),
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -153,7 +158,7 @@ func init() {
 			}
 
 			// Get PID
-			pid, err := taskData.Args.GetNumberArg("pid")
+			pid, err := parsePIDFromArg(taskData)
 			if err != nil {
 				logging.LogError(err, "Failed to get PID")
 				response.Success = false
@@ -195,15 +200,15 @@ func init() {
 				tidDisplay = fmt.Sprintf("%d", int(tid))
 			}
 			displayParams := fmt.Sprintf("Shellcode: %s\nTarget PID: %d\nTarget TID: %s",
-				filename, int(pid), tidDisplay)
+				filename, pid, tidDisplay)
 			response.DisplayParams = &displayParams
 			createArtifact(taskData.Task.ID, "Process Inject",
-				fmt.Sprintf("Thread hijack injection into PID %d (TID: %s)", int(pid), tidDisplay))
+				fmt.Sprintf("Thread hijack injection into PID %d (TID: %s)", pid, tidDisplay))
 
 			// Build agent parameters
 			params := map[string]interface{}{
 				"shellcode_b64": shellcodeB64,
-				"pid":           int(pid),
+				"pid":           pid,
 				"tid":           int(tid),
 			}
 
@@ -216,6 +221,24 @@ func init() {
 			}
 
 			taskData.Args.SetManualArgs(string(paramsJSON))
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			if strings.Contains(responseText, "success") || strings.Contains(responseText, "injected") || strings.Contains(responseText, "Success") || strings.Contains(responseText, "Injected") {
+				l := len(responseText)
+				if l > 200 {
+					l = 200
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Process Injection", fmt.Sprintf("[thread-hijack] %s", responseText[:l]))
+			}
 			return response
 		},
 	})

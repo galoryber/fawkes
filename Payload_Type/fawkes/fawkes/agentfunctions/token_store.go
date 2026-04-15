@@ -90,7 +90,7 @@ func init() {
 					{
 						Action:  "add",
 						Host:    &host,
-						TokenId: uint64(processResponse.TaskData.Task.ID),
+						TokenID: uint64(processResponse.TaskData.Task.ID),
 						TokenInfo: &mythicrpc.MythicRPCTokenCreateTokenData{
 							User: user,
 						},
@@ -119,6 +119,15 @@ func init() {
 				OpsecPreBlocked:    false,
 				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Token store operation completed. Token manipulation generates Event ID 4624 type 9 logon. Stored tokens are forensic evidence. Consider cleanup when tokens are no longer needed.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {

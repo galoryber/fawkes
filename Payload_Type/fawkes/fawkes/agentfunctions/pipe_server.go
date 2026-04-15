@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -18,6 +19,10 @@ func init() {
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1134.001"},
 		ScriptOnlyCommand:   false,
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "pipeserver_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
 		},
@@ -107,6 +112,31 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Named pipe server operation. "
+			if action == "impersonate" {
+				msg += "Token impersonation via named pipe is a well-known privilege escalation technique (T1134.001). EDR may alert on ImpersonateNamedPipeClient API calls and token manipulation."
+			} else {
+				msg += "Creating a named pipe listener may be detected by pipe enumeration or Sysmon EventID 17/18 (Pipe Created/Connected)."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Named pipe server operation completed. Pipe creation generates Sysmon Event ID 17. Pipe impersonation for privilege escalation is monitored by EDR.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -125,6 +155,22 @@ func init() {
 					pipeName = "fawkes_pipe"
 				}
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("CreateNamedPipe(\\\\.\\pipe\\%s) + ImpersonateNamedPipeClient", pipeName))
+			}
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action == "impersonate" && (strings.Contains(responseText, "impersonat") || strings.Contains(responseText, "SYSTEM") || strings.Contains(responseText, "success")) {
+				tagTask(processResponse.TaskData.Task.ID, "ELEVATED",
+					"Named pipe impersonation successful (T1134.001)")
 			}
 			return response
 		},

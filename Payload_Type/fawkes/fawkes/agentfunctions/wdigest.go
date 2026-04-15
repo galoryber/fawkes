@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -43,6 +44,59 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: "
+			switch action {
+			case "enable":
+				msg += "Enabling WDigest writes UseLogonCredential=1 to HKLM\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest. This registry modification is a well-known credential access indicator and is monitored by most EDR/SIEM solutions."
+			case "disable":
+				msg += "Disabling WDigest writes UseLogonCredential=0. Registry modification to WDigest key may trigger endpoint alerts."
+			default:
+				msg += "Querying WDigest registry key status. Low risk — read-only registry access."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: WDigest credentials extracted from LSASS memory. This requires LSASS process access which is heavily monitored by EDR (Sysmon Event ID 10). The UseLogonCredential registry value may have been modified to enable WDigest caching.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			switch action {
+			case "enable":
+				createArtifact(processResponse.TaskData.Task.ID, "Configuration Change",
+					"WDigest plaintext credential caching enabled — credentials captured at next interactive logon")
+			case "disable":
+				createArtifact(processResponse.TaskData.Task.ID, "Configuration Change",
+					"WDigest plaintext credential caching disabled")
+			case "status":
+				if strings.Contains(responseText, "ENABLED") {
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration Discovery",
+						"WDigest UseLogonCredential is ENABLED — plaintext credentials may be in LSASS")
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

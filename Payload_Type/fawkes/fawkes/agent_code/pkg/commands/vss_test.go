@@ -109,3 +109,69 @@ func TestVSSActionNormalization(t *testing.T) {
 		t.Error("Action should be case-insensitive")
 	}
 }
+
+func TestVSSDeleteAllRequiresConfirm(t *testing.T) {
+	cmd := &VSSCommand{}
+	// Without confirm
+	params, _ := json.Marshal(map[string]interface{}{"action": "delete-all"})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if result.Status != "error" {
+		t.Error("Expected error for delete-all without confirm")
+	}
+	if !strings.Contains(result.Output, "SAFETY") {
+		t.Errorf("Expected safety message, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "confirm") {
+		t.Errorf("Expected confirm instruction, got: %s", result.Output)
+	}
+}
+
+func TestVSSDeleteAllWithConfirmFalse(t *testing.T) {
+	cmd := &VSSCommand{}
+	params, _ := json.Marshal(map[string]interface{}{"action": "delete-all", "confirm": false})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if result.Status != "error" {
+		t.Error("Expected error for delete-all with confirm=false")
+	}
+}
+
+func TestVSSInhibitRecoveryRequiresConfirm(t *testing.T) {
+	cmd := &VSSCommand{}
+	params, _ := json.Marshal(map[string]interface{}{"action": "inhibit-recovery"})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if result.Status != "error" {
+		t.Error("Expected error for inhibit-recovery without confirm")
+	}
+	if !strings.Contains(result.Output, "SAFETY") {
+		t.Errorf("Expected safety message, got: %s", result.Output)
+	}
+	if !strings.Contains(result.Output, "T1490") {
+		t.Errorf("Expected T1490 reference, got: %s", result.Output)
+	}
+}
+
+func TestVSSInhibitRecoveryWithConfirmFalse(t *testing.T) {
+	cmd := &VSSCommand{}
+	params, _ := json.Marshal(map[string]interface{}{"action": "inhibit-recovery", "confirm": false})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if result.Status != "error" {
+		t.Error("Expected error for inhibit-recovery with confirm=false")
+	}
+}
+
+func TestVSSUnknownActionListsAll(t *testing.T) {
+	cmd := &VSSCommand{}
+	params, _ := json.Marshal(map[string]string{"action": "nonexistent"})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	// Verify all actions are listed in the error
+	for _, action := range []string{"list", "create", "delete", "delete-all", "extract", "inhibit-recovery"} {
+		if !strings.Contains(result.Output, action) {
+			t.Errorf("Error message should list %q as available action", action)
+		}
+	}
+}

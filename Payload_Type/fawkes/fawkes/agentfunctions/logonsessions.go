@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -41,12 +42,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "filter",
-				ModalDisplayName: "Username Filter",
-				CLIName:          "filter",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Optional: filter results by username or domain substring",
-				DefaultValue:     "",
+				Name:                 "filter",
+				ModalDisplayName:     "Username Filter",
+				CLIName:              "filter",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Optional: filter results by username or domain substring",
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackUserList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -63,6 +65,73 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			msg := "OPSEC WARNING: Logon session enumeration. "
+			switch taskData.Payload.OS {
+			case "Windows":
+				msg += "Calls LsaEnumerateLogonSessions + LsaGetLogonSessionData + WTSEnumerateSessionsW. Enumerating LSA logon sessions may be monitored by EDR."
+			default:
+				msg += "Reads utmp/utmpx files for active sessions. Low risk on Linux/macOS."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			// Try parsing as session list first
+			type sessionEntry struct {
+				SessionID string `json:"session_id"`
+				Username  string `json:"username"`
+				Domain    string `json:"domain"`
+				Station   string `json:"station"`
+				State     string `json:"state"`
+				Client    string `json:"client"`
+			}
+			var sessions []sessionEntry
+			if err := json.Unmarshal([]byte(responseText), &sessions); err == nil && len(sessions) > 0 && sessions[0].SessionID != "" {
+				for _, s := range sessions {
+					createArtifact(processResponse.TaskData.Task.ID, "Account Discovery",
+						fmt.Sprintf("Logon: %s\\%s (session %s, state: %s)", s.Domain, s.Username, s.SessionID, s.State))
+				}
+				return response
+			}
+			// Fall back to user list
+			type userEntry struct {
+				User     string `json:"user"`
+				Domain   string `json:"domain"`
+				Sessions int    `json:"sessions"`
+				Details  string `json:"details"`
+			}
+			var users []userEntry
+			if err := json.Unmarshal([]byte(responseText), &users); err == nil {
+				for _, u := range users {
+					createArtifact(processResponse.TaskData.Task.ID, "Account Discovery",
+						fmt.Sprintf("User: %s\\%s (%d sessions)", u.Domain, u.User, u.Sessions))
+				}
+			}
+			return response
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Logon session enumeration completed. LsaEnumerateLogonSessions API call may be logged by EDR. Session data reveals active users, authentication types, and logon times — useful for lateral movement planning but also a detection indicator for credential access activity.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

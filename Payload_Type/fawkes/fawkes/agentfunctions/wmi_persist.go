@@ -2,6 +2,8 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -14,6 +16,10 @@ func init() {
 		Version:             1,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1546.003"},
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "wmipersist_new.js"),
+			Author:     "@galoryber",
+		},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -95,6 +101,7 @@ func init() {
 				Description:      "Remote host for WMI connection (leave empty for localhost)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				DefaultValue:     "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
@@ -140,6 +147,47 @@ func init() {
 				OpsecPostMessage:    msg,
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			switch action {
+			case "list":
+				// Parse WMI subscriptions from text output — look for [N] prefixed entries
+				for _, line := range strings.Split(responseText, "\n") {
+					trimmed := strings.TrimSpace(line)
+					if len(trimmed) > 3 && trimmed[0] == '[' {
+						// Lines like: [1] MyFilter_Filter
+						closeBracket := strings.Index(trimmed, "]")
+						if closeBracket > 0 && closeBracket+2 < len(trimmed) {
+							entryName := strings.TrimSpace(trimmed[closeBracket+1:])
+							createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism",
+								fmt.Sprintf("WMI Subscription: %s", entryName))
+						}
+					}
+				}
+			case "install":
+				name, _ := processResponse.TaskData.Args.GetStringArg("name")
+				trigger, _ := processResponse.TaskData.Args.GetStringArg("trigger")
+				if strings.Contains(responseText, "Created") || strings.Contains(responseText, "installed") || strings.Contains(responseText, "Success") {
+					createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism",
+						fmt.Sprintf("[Persistence Installed] WMI event subscription: %s (trigger: %s)", name, trigger))
+				}
+			case "remove":
+				name, _ := processResponse.TaskData.Args.GetStringArg("name")
+				if strings.Contains(responseText, "Removed") || strings.Contains(responseText, "removed") || strings.Contains(responseText, "Deleted") {
+					createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism",
+						fmt.Sprintf("[Persistence Removed] WMI event subscription: %s", name))
+				}
+			}
+			return response
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {

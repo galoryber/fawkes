@@ -7,15 +7,16 @@ hidden = false
 
 ## Summary
 
-Manage Volume Shadow Copies — list existing snapshots, create new ones, delete, and extract files from shadow copy device paths. Enables extraction of locked files like NTDS.dit or SAM without touching lsass.exe. Uses WMI `Win32_ShadowCopy` class for management and standard file I/O for extraction.
+Impact techniques and Volume Shadow Copy management. VSS operations (list, create, delete, extract, delete-all, inhibit-recovery) are Windows-only. Shutdown and reboot actions are cross-platform for ransomware/wiper emulation.
 
-{{% notice info %}}Windows Only{{% /notice %}}
+{{% notice info %}}VSS operations are Windows only. Shutdown and reboot work on all platforms.{{% /notice %}}
 
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | Yes | list | Action: `list`, `create`, `delete`, `extract` |
+| action | Yes | list | Action: `list`, `create`, `delete`, `delete-all`, `extract`, `inhibit-recovery`, `shutdown`, `reboot` |
+| confirm | For destructive | false | Required for `delete-all`, `inhibit-recovery`, `shutdown`, `reboot` (safety check) |
 | volume | For create | C:\ | Volume to create shadow copy of |
 | id | For delete/extract | - | Shadow copy ID (delete) or device path (extract) |
 | source | For extract | - | Path within shadow copy to extract |
@@ -85,6 +86,24 @@ Extracted from shadow copy:
   Size: 65536 bytes
 ```
 
+### Delete All Shadow Copies (T1490 — Ransomware Emulation)
+```
+vss -action delete-all -confirm true
+```
+Deletes ALL shadow copies on the system. This is the primary ransomware emulation action. Requires `-confirm true` as a safety check.
+
+### Inhibit System Recovery (T1490 — Comprehensive)
+```
+vss -action inhibit-recovery -confirm true
+```
+Comprehensive recovery inhibition:
+1. Deletes all shadow copies (WMI)
+2. Disables Windows Recovery Environment (bcdedit)
+3. Disables boot status policy (bcdedit)
+4. Deletes backup catalog (wbadmin)
+
+Requires `-confirm true`. This is a destructive, irreversible action for authorized ransomware emulation only.
+
 ## Typical DC Compromise Workflow
 
 1. Create shadow copy: `vss -action create`
@@ -102,6 +121,22 @@ Extracted from shadow copy:
 - **NTDS.dit on DCs**: The Active Directory database is always locked by the NTDS service. Shadow copies provide a consistent, unlocked snapshot.
 - **Opsec**: Shadow copy creation generates Event ID 8224 (VSS) in the Application log. Consider deleting the shadow copy after extraction.
 
+### System Shutdown (T1529 — Cross-Platform)
+```
+vss -action shutdown -confirm true
+```
+Immediately powers off the system. Requires `-confirm true`. The agent callback will be lost.
+
+{{% notice warning %}}This is a destructive action. Agent callback will be permanently lost unless the payload has persistence.{{% /notice %}}
+
+### System Reboot (T1529 — Cross-Platform)
+```
+vss -action reboot -confirm true
+```
+Immediately reboots the system. Requires `-confirm true`. Agent callback will be temporarily lost.
+
 ## MITRE ATT&CK Mapping
 
 - **T1003.003** — OS Credential Dumping: NTDS
+- **T1490** — Inhibit System Recovery (delete-all, inhibit-recovery actions)
+- **T1529** — System Shutdown/Reboot (shutdown, reboot actions)

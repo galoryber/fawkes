@@ -32,6 +32,7 @@ type psexecArgs struct {
 	Name    string `json:"name"`
 	Display string `json:"display"`
 	Cleanup string `json:"cleanup"`
+	Timeout int    `json:"timeout"` // overall timeout in seconds (default: 30)
 }
 
 func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
@@ -84,12 +85,35 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("  Command:  %s\n", binPath))
 	sb.WriteString(fmt.Sprintf("  Cleanup:  %v\n\n", cleanup))
 
-	// Step 1: Connect to remote SCM
-	sb.WriteString("[1] Connecting to remote SCM...\n")
-	m, err := mgr.ConnectRemote(args.Host)
-	if err != nil {
-		sb.WriteString(fmt.Sprintf("  Error: %v\n", err))
-		sb.WriteString("\nHint: Ensure you have admin credentials on the target. Use make-token first.")
+	// Step 1: Connect to remote SCM (with timeout — ConnectRemote can block indefinitely)
+	connectTimeout := 30 * time.Second
+	if args.Timeout > 0 {
+		connectTimeout = time.Duration(args.Timeout) * time.Second
+	}
+	sb.WriteString(fmt.Sprintf("[1] Connecting to remote SCM (timeout: %s)...\n", connectTimeout))
+
+	type scmResult struct {
+		mgr *mgr.Mgr
+		err error
+	}
+	ch := make(chan scmResult, 1)
+	go func() {
+		m, err := mgr.ConnectRemote(args.Host)
+		ch <- scmResult{m, err}
+	}()
+
+	var m *mgr.Mgr
+	select {
+	case res := <-ch:
+		if res.err != nil {
+			sb.WriteString(fmt.Sprintf("  Error: %v\n", res.err))
+			sb.WriteString("\nHint: Ensure you have admin credentials on the target. Use make-token first.")
+			return errorResult(sb.String())
+		}
+		m = res.mgr
+	case <-time.After(connectTimeout):
+		sb.WriteString(fmt.Sprintf("  Error: connection timed out after %s\n", connectTimeout))
+		sb.WriteString("\nHint: Host may be unreachable. Verify with lateral-check first.")
 		return errorResult(sb.String())
 	}
 	defer m.Disconnect()

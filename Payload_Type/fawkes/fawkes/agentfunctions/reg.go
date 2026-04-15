@@ -2,16 +2,22 @@ package agentfunctions
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "reg",
-		Description:         "Unified Windows Registry operations — read, write, delete, search, and save hives. Single command replaces reg-read, reg-write, reg-delete, reg-search, and reg-save.",
+		Name: "reg",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "reg_new.js"),
+			Author:     "@galoryber",
+		},
+		Description: "Unified Windows Registry operations — read, write, delete, search, and save hives. Single command replaces reg-read, reg-write, reg-delete, reg-search, and reg-save.",
 		HelpString:          "reg -action read -hive HKLM -path \"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\" -name ProgramFilesDir\nreg -action write -hive HKCU -path \"Software\\Test\" -name Val -data hello -type REG_SZ\nreg -action delete -hive HKCU -path \"Software\\Test\" -name Val\nreg -action search -pattern password -hive HKLM -path SOFTWARE\nreg -action save -hive HKLM -path SAM -output C:\\Temp\\sam.hiv",
 		Version:             1,
 		MitreAttackMappings: []string{"T1012", "T1112", "T1003.002"},
@@ -224,6 +230,39 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			hive, _ := taskData.Args.GetStringArg("hive")
+			path, _ := taskData.Args.GetStringArg("path")
+			var msg string
+			switch action {
+			case "write":
+				msg = fmt.Sprintf("OPSEC WARNING: Registry write to %s\\%s (T1112). Registry modifications are logged by Sysmon Event ID 13/14 and EDR telemetry. Security products monitor Run keys, IFEO, and COM hijack paths.", hive, path)
+			case "delete":
+				msg = fmt.Sprintf("OPSEC WARNING: Registry key/value deletion at %s\\%s (T1112). Deletion events are logged by Sysmon Event ID 12 and may trigger EDR alerts for registry tampering.", hive, path)
+			case "save":
+				msg = fmt.Sprintf("OPSEC WARNING: Registry hive save from %s\\%s (T1003.002). Saving SAM/SECURITY/SYSTEM hives is a well-known credential dumping technique detected by most EDR products.", hive, path)
+			case "creds":
+				msg = "OPSEC WARNING: Registry credential extraction — SAM+SECURITY+SYSTEM (T1003.002). This is a high-detection technique monitored by all major EDR/AV products."
+			default:
+				msg = fmt.Sprintf("OPSEC WARNING: Registry read/search on %s\\%s (T1012). Registry enumeration is low-risk but may be correlated with other suspicious activity.", hive, path)
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Registry operation completed. Changes are logged in the Security event log (Event ID 4657) if auditing is enabled. Registry transaction logs (.TM.blf, .regtrans-ms) may contain evidence. Use 'eventlog -action clear' to clean if needed.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
@@ -275,6 +314,50 @@ func init() {
 			}
 			response.DisplayParams = &display
 
+			if action == "write" || action == "delete" {
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[SYSTEM MOD] reg %s: %s\\%s on %s", action, hive, path, taskData.Callback.Host), true)
+			}
+
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+
+			switch action {
+			case "search":
+				// Track registry search as Configuration artifact
+				pattern, _ := processResponse.TaskData.Args.GetStringArg("pattern")
+				hive, _ := processResponse.TaskData.Args.GetStringArg("hive")
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Configuration",
+					ArtifactMessage:  fmt.Sprintf("Registry search: %s\\* for %q", hive, pattern),
+				})
+			case "creds":
+				// Track SAM/SECURITY/SYSTEM extraction as Credential artifact
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "Credential",
+					ArtifactMessage:  "Registry credential extraction: SAM + SECURITY + SYSTEM hives",
+				})
+			case "save":
+				// Track hive save as File Write artifact
+				output, _ := processResponse.TaskData.Args.GetStringArg("output")
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           processResponse.TaskData.Task.ID,
+					BaseArtifactType: "File Write",
+					ArtifactMessage:  fmt.Sprintf("Registry hive saved to: %s", output),
+				})
+			}
 			return response
 		},
 	})

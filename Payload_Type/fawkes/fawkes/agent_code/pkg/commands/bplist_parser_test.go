@@ -550,6 +550,7 @@ func TestParseShadowHashData(t *testing.T) {
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return // unreachable, helps staticcheck
 	}
 	if result.HashType != "SALTED-SHA512-PBKDF2" {
 		t.Errorf("HashType = %q, want SALTED-SHA512-PBKDF2", result.HashType)
@@ -641,6 +642,7 @@ func TestParseDarwinUserPlist(t *testing.T) {
 	}
 	if result == nil {
 		t.Fatal("expected non-nil result")
+		return // unreachable, helps staticcheck
 	}
 	if result.Username != "gary" {
 		t.Errorf("Username = %q", result.Username)

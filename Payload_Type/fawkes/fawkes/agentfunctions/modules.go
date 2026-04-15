@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -14,6 +15,7 @@ func init() {
 		HelpString:          "modules [-pid <PID>] [-filter <name>]",
 		Version:             2,
 		MitreAttackMappings: []string{"T1057"},
+		SupportedUIFeatures: []string{"process_browser:list"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
@@ -26,9 +28,10 @@ func init() {
 			{
 				Name:          "pid",
 				CLIName:       "pid",
-				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:   "Target process ID (default: current process)",
-				DefaultValue:  0,
+				DynamicQueryFunction: getProcessList,
+				DefaultValue:  "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -61,17 +64,60 @@ func init() {
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
 		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			pid, _ := taskData.Args.GetStringArg("pid")
+			msg := fmt.Sprintf("OPSEC WARNING: Listing loaded modules/DLLs for PID %s (T1057). Module enumeration is used to find DLL injection targets and identify security hooks (AMSI, ETW). Querying other process modules may trigger EDR alerts.", pid)
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false, OpsecPreMessage: msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" || responseText == "[]" {
+				return response
+			}
+			type moduleEntry struct {
+				Name     string `json:"name"`
+				Path     string `json:"path"`
+				BaseAddr string `json:"base_addr"`
+				Size     int64  `json:"size"`
+			}
+			var entries []moduleEntry
+			if err := json.Unmarshal([]byte(responseText), &entries); err != nil {
+				return response
+			}
+			for _, e := range entries {
+				createArtifact(processResponse.TaskData.Task.ID, "Discovery",
+					fmt.Sprintf("Module: %s (%s)", e.Name, e.Path))
+			}
+			return response
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Loaded module enumeration completed. Module list reveals DLLs loaded in target process — useful for identifying security hooks (ntdll, amsi, ETW). EnumProcessModules API may be logged. Results inform unhooking and injection strategies.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionCreateTasking: func(task *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
 				Success: true,
 				TaskID:  task.Task.ID,
 			}
-			pid, _ := task.Args.GetNumberArg("pid")
+			pid, _ := parsePIDFromArg(task)
 			filter, _ := task.Args.GetStringArg("filter")
 
 			display := "Modules"
 			if pid != 0 {
-				display += fmt.Sprintf(", pid=%d", int(pid))
+				display += fmt.Sprintf(", pid=%d", pid)
 			}
 			if filter != "" {
 				display += fmt.Sprintf(", filter=%s", filter)

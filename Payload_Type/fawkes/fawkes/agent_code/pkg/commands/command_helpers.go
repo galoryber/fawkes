@@ -5,9 +5,7 @@ package commands
 
 import (
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
-	"strconv"
 	"strings"
 	"unicode/utf16"
 )
@@ -41,20 +39,6 @@ func isGUID(s string) bool {
 		}
 	}
 	return true
-}
-
-// extractXMLTag extracts the text content of a simple XML tag
-func extractXMLTag(xml, tag string) string {
-	start := strings.Index(xml, "<"+tag+">")
-	if start == -1 {
-		return ""
-	}
-	start += len(tag) + 2
-	end := strings.Index(xml[start:], "</"+tag+">")
-	if end == -1 {
-		return ""
-	}
-	return xml[start : start+end]
 }
 
 // --- ETW helpers (from etw.go) ---
@@ -163,11 +147,6 @@ func resolveProviderGUID(provider string) (string, string) {
 	return "", ""
 }
 
-// --- BITS helpers (from bits.go) ---
-
-// bitsFormatBytes and bitsEllipsis consolidated into formatBytes and truncStr
-// in format_helpers.go
-
 // --- Credential Manager helpers (from credman.go) ---
 
 // Credential type constants
@@ -236,189 +215,6 @@ func decodeUTF16LEShim(b []byte) string {
 	return string(utf16.Decode(u16))
 }
 
-// --- Event Log helpers (from eventlog.go) ---
-
-// extractXMLField extracts a simple element value like <EventID>4624</EventID>
-// Also handles attributes: <EventID Qualifiers='0'>4624</EventID>
-func extractXMLField(xml, field string) string {
-	start := fmt.Sprintf("<%s>", field)
-	startAlt := fmt.Sprintf("<%s ", field)
-	end := fmt.Sprintf("</%s>", field)
-
-	idx := strings.Index(xml, start)
-	if idx == -1 {
-		idx = strings.Index(xml, startAlt)
-		if idx == -1 {
-			return ""
-		}
-		closeIdx := strings.Index(xml[idx:], ">")
-		if closeIdx == -1 {
-			return ""
-		}
-		idx = idx + closeIdx + 1
-	} else {
-		idx += len(start)
-	}
-
-	endIdx := strings.Index(xml[idx:], end)
-	if endIdx == -1 {
-		return ""
-	}
-	return xml[idx : idx+endIdx]
-}
-
-// extractXMLAttr extracts an attribute value like <TimeCreated SystemTime='2025-01-01'/>
-func extractXMLAttr(xml, element, attr string) string {
-	elemIdx := strings.Index(xml, "<"+element)
-	if elemIdx == -1 {
-		return ""
-	}
-	rest := xml[elemIdx:]
-	attrKey := attr + "='"
-	attrIdx := strings.Index(rest, attrKey)
-	if attrIdx == -1 {
-		attrKey = attr + `="`
-		attrIdx = strings.Index(rest, attrKey)
-		if attrIdx == -1 {
-			return ""
-		}
-	}
-	valStart := attrIdx + len(attrKey)
-	quote := attrKey[len(attrKey)-1]
-	valEnd := strings.IndexByte(rest[valStart:], quote)
-	if valEnd == -1 {
-		return ""
-	}
-	return rest[valStart : valStart+valEnd]
-}
-
-// summarizeEventXML extracts key fields from event XML for compact display
-func summarizeEventXML(xml string) string {
-	eventID := extractXMLField(xml, "EventID")
-	timeCreated := extractXMLAttr(xml, "TimeCreated", "SystemTime")
-	provider := extractXMLAttr(xml, "Provider", "Name")
-	level := extractXMLField(xml, "Level")
-
-	levelName := "Info"
-	switch level {
-	case "1":
-		levelName = "Critical"
-	case "2":
-		levelName = "Error"
-	case "3":
-		levelName = "Warning"
-	case "4":
-		levelName = "Info"
-	case "5":
-		levelName = "Verbose"
-	}
-
-	if len(timeCreated) > 19 {
-		timeCreated = timeCreated[:19]
-	}
-
-	return fmt.Sprintf("%s | EventID: %s | %s | %s", timeCreated, eventID, levelName, provider)
-}
-
-// buildEventXPath builds an XPath filter for Windows event log queries
-func buildEventXPath(filter string, eventID int) string {
-	if filter != "" && (strings.HasPrefix(filter, "*[") || strings.HasPrefix(filter, "<QueryList")) {
-		return filter
-	}
-
-	var parts []string
-	if eventID > 0 {
-		parts = append(parts, fmt.Sprintf("EventID=%d", eventID))
-	}
-	if filter != "" {
-		if strings.HasSuffix(filter, "h") {
-			var hours int
-			if _, err := fmt.Sscanf(filter, "%dh", &hours); err == nil && hours > 0 {
-				ms := hours * 3600 * 1000
-				parts = append(parts, fmt.Sprintf("TimeCreated[timediff(@SystemTime) <= %d]", ms))
-			}
-		}
-	}
-
-	if len(parts) == 0 {
-		return "*"
-	}
-	return fmt.Sprintf("*[System[%s]]", strings.Join(parts, " and "))
-}
-
-// --- Scheduled Task helpers (from schtask.go) ---
-
-// Task trigger type constants
-const (
-	TASK_TRIGGER_LOGON  = 9
-	TASK_TRIGGER_BOOT   = 8
-	TASK_TRIGGER_DAILY  = 2
-	TASK_TRIGGER_WEEKLY = 3
-	TASK_TRIGGER_IDLE   = 6
-	TASK_TRIGGER_TIME   = 1
-)
-
-// triggerTypeFromString maps trigger name to Task Scheduler 2.0 trigger type constant
-func triggerTypeFromString(trigger string) int {
-	switch strings.ToUpper(trigger) {
-	case "ONLOGON":
-		return TASK_TRIGGER_LOGON
-	case "ONSTART":
-		return TASK_TRIGGER_BOOT
-	case "DAILY":
-		return TASK_TRIGGER_DAILY
-	case "WEEKLY":
-		return TASK_TRIGGER_WEEKLY
-	case "ONIDLE":
-		return TASK_TRIGGER_IDLE
-	case "ONCE":
-		return TASK_TRIGGER_TIME
-	default:
-		return TASK_TRIGGER_LOGON
-	}
-}
-
-// escapeXML escapes special characters for XML content
-func escapeXML(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	s = strings.ReplaceAll(s, ">", "&gt;")
-	s = strings.ReplaceAll(s, "\"", "&quot;")
-	return s
-}
-
-// buildTriggerXML generates the trigger section of Task Scheduler XML
-func buildTriggerXML(trigger, startTime string) string {
-	switch strings.ToUpper(trigger) {
-	case "ONLOGON":
-		return "    <LogonTrigger>\n      <Enabled>true</Enabled>\n    </LogonTrigger>"
-	case "ONSTART":
-		return "    <BootTrigger>\n      <Enabled>true</Enabled>\n    </BootTrigger>"
-	case "ONIDLE":
-		return "    <IdleTrigger>\n      <Enabled>true</Enabled>\n    </IdleTrigger>"
-	case "DAILY":
-		boundary := "2026-01-01T09:00:00"
-		if startTime != "" {
-			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
-		}
-		return fmt.Sprintf("    <CalendarTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n      <ScheduleByDay>\n        <DaysInterval>1</DaysInterval>\n      </ScheduleByDay>\n    </CalendarTrigger>", boundary)
-	case "WEEKLY":
-		boundary := "2026-01-01T09:00:00"
-		if startTime != "" {
-			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
-		}
-		return fmt.Sprintf("    <CalendarTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n      <ScheduleByWeek>\n        <WeeksInterval>1</WeeksInterval>\n        <DaysOfWeek><Monday /></DaysOfWeek>\n      </ScheduleByWeek>\n    </CalendarTrigger>", boundary)
-	case "ONCE":
-		boundary := "2026-12-31T23:59:00"
-		if startTime != "" {
-			boundary = fmt.Sprintf("2026-01-01T%s:00", startTime)
-		}
-		return fmt.Sprintf("    <TimeTrigger>\n      <StartBoundary>%s</StartBoundary>\n      <Enabled>true</Enabled>\n    </TimeTrigger>", boundary)
-	default:
-		return "    <LogonTrigger>\n      <Enabled>true</Enabled>\n    </LogonTrigger>"
-	}
-}
-
 // --- Firewall helpers (from firewall.go) ---
 
 // Firewall protocol, direction, and action constants
@@ -474,116 +270,6 @@ func fwProtocolToString(proto int) string {
 	default:
 		return fmt.Sprintf("%d", proto)
 	}
-}
-
-// --- BOF Argument Packing helpers (from beacon_api.go) ---
-
-// bofPackArgs packs BOF arguments in Cobalt Strike format.
-// Each arg is a type-prefixed string: b=binary(hex), i=int32, s=short, z=ansi, Z=wide.
-// Returns the packed bytes with a 4-byte total size prefix.
-func bofPackArgs(data []string) ([]byte, error) {
-	if len(data) == 0 {
-		return nil, nil
-	}
-
-	var buff []byte
-	for _, arg := range data {
-		if len(arg) < 1 {
-			return nil, fmt.Errorf("empty argument")
-		}
-		switch arg[0] {
-		case 'b':
-			packed, err := bofPackBinary(arg[1:])
-			if err != nil {
-				return nil, fmt.Errorf("binary packing error: %v", err)
-			}
-			buff = append(buff, packed...)
-		case 'i':
-			packed, err := bofPackInt(arg[1:])
-			if err != nil {
-				return nil, fmt.Errorf("int packing error: %v", err)
-			}
-			buff = append(buff, packed...)
-		case 's':
-			packed, err := bofPackShort(arg[1:])
-			if err != nil {
-				return nil, fmt.Errorf("short packing error: %v", err)
-			}
-			buff = append(buff, packed...)
-		case 'z':
-			packed := bofPackString(arg[1:])
-			buff = append(buff, packed...)
-		case 'Z':
-			packed := bofPackWideString(arg[1:])
-			buff = append(buff, packed...)
-		default:
-			return nil, fmt.Errorf("unknown type prefix '%c'", arg[0])
-		}
-	}
-
-	// Prefix with total size
-	result := make([]byte, 4)
-	binary.LittleEndian.PutUint32(result, uint32(len(buff)))
-	result = append(result, buff...)
-	return result, nil
-}
-
-// bofPackBinary hex-decodes data and wraps with 4-byte length prefix
-func bofPackBinary(data string) ([]byte, error) {
-	decoded, err := hex.DecodeString(data)
-	if err != nil {
-		return nil, err
-	}
-	buff := make([]byte, 4)
-	binary.LittleEndian.PutUint32(buff, uint32(len(decoded)))
-	buff = append(buff, decoded...)
-	return buff, nil
-}
-
-// bofPackInt converts decimal string to 4-byte little-endian integer
-func bofPackInt(s string) ([]byte, error) {
-	val, err := strconv.ParseUint(s, 10, 32)
-	if err != nil {
-		return nil, err
-	}
-	buff := make([]byte, 4)
-	binary.LittleEndian.PutUint32(buff, uint32(val))
-	return buff, nil
-}
-
-// bofPackShort converts decimal string to 2-byte little-endian integer
-func bofPackShort(s string) ([]byte, error) {
-	val, err := strconv.ParseUint(s, 10, 16)
-	if err != nil {
-		return nil, err
-	}
-	buff := make([]byte, 2)
-	binary.LittleEndian.PutUint16(buff, uint16(val))
-	return buff, nil
-}
-
-// bofPackString wraps ANSI string with null terminator and 4-byte length prefix
-func bofPackString(s string) []byte {
-	data := append([]byte(s), 0)
-	buff := make([]byte, 4)
-	binary.LittleEndian.PutUint32(buff, uint32(len(data)))
-	buff = append(buff, data...)
-	return buff
-}
-
-// bofPackWideString encodes UTF-16LE string with null terminator and 4-byte length prefix
-func bofPackWideString(s string) []byte {
-	runes := []rune(s)
-	data := make([]byte, 0, (len(runes)+1)*2)
-	for _, r := range runes {
-		data = append(data, byte(r), byte(r>>8))
-	}
-	data = append(data, 0, 0)
-
-	buff := make([]byte, 4)
-	binary.LittleEndian.PutUint32(buff, uint32(len(data)))
-	buff = append(buff, data...)
-	return buff
 }
 
 // --- Thread Scan helpers (from ts.go) ---

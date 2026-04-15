@@ -148,9 +148,9 @@ func TestArgueParams_JSONParsing(t *testing.T) {
 			wantSpoof:   "net help",
 		},
 		{
-			name:    "invalid JSON",
+			name:      "invalid JSON",
 			jsonInput: `not json`,
-			wantErr: true,
+			wantErr:   true,
 		},
 		{
 			name:        "unicode in values",
@@ -167,6 +167,7 @@ func TestArgueParams_JSONParsing(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected JSON parse error, got nil")
+					return // unreachable, helps staticcheck
 				}
 				return
 			}

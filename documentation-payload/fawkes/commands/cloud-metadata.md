@@ -15,7 +15,7 @@ This is a critical reconnaissance command for cloud environments — instance me
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | detect | Action: `detect`, `all`, `creds`, `identity`, `userdata`, `network` |
+| action | No | detect | Action: `detect`, `all`, `creds`, `identity`, `userdata`, `network`, `aws-iam`, `azure-graph`, `gcp-iam`, `aws-persist`, `azure-persist` |
 | provider | No | auto | Cloud provider: `auto`, `aws`, `azure`, `gcp`, `digitalocean` |
 | timeout | No | 3 | Per-request timeout in seconds |
 
@@ -27,6 +27,11 @@ This is a critical reconnaissance command for cloud environments — instance me
 - **identity** — Instance identity information (instance ID, region, account, VM name)
 - **userdata** — User-data/startup scripts (may contain passwords, API keys, config secrets)
 - **network** — Network configuration (IPs, VPCs, subnets, MACs, security groups)
+- **aws-iam** — AWS IAM privilege enumeration: STS caller identity, attached/inline role policies
+- **azure-graph** — Azure AD enumeration via Microsoft Graph: users, groups, app registrations
+- **gcp-iam** — GCP IAM enumeration: project IAM bindings, service accounts, assigned scopes
+- **aws-persist** — AWS IAM persistence: create long-lived IAM access key via CreateAccessKey API (T1098.001)
+- **azure-persist** — Azure AD persistence: create app registration with client secret via Microsoft Graph (T1098.001)
 
 ## Usage
 
@@ -49,6 +54,21 @@ cloud-metadata -action all -provider aws
 Get user-data scripts (check for secrets):
 ```
 cloud-metadata -action userdata
+```
+
+Enumerate AWS IAM privileges (uses IMDS credentials):
+```
+cloud-metadata -action aws-iam
+```
+
+Enumerate Azure AD via Microsoft Graph (uses managed identity):
+```
+cloud-metadata -action azure-graph
+```
+
+Enumerate GCP IAM bindings and service accounts:
+```
+cloud-metadata -action gcp-iam
 ```
 
 ## Supported Providers

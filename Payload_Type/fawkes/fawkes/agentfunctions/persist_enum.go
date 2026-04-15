@@ -1,7 +1,10 @@
 package agentfunctions
 
 import (
+	"fmt"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -14,7 +17,7 @@ func init() {
 		Version:             6,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1547", "T1547.002", "T1547.006", "T1546", "T1546.014", "T1053", "T1543", "T1098.004", "T1556.003"}, // Boot/Logon Autostart, Auth Plugins, Kernel Modules, Event Triggered, Emond, Scheduled Task, Create/Modify System Process, SSH Authorized Keys, Modify Authentication Process: PAM
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"file_browser:list"},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "persist_enum_new.js"),
 			Author:     "@galoryber",
@@ -39,6 +42,15 @@ func init() {
 				},
 			},
 		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Persistence enumeration completed. Extensive registry reads (run keys, services, scheduled tasks), filesystem scans (cron, systemd, LaunchAgents), and SSH key enumeration generate file-access and registry-access audit logs. EDR behavioral analytics may flag the enumeration pattern.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				input = "{}"
@@ -47,6 +59,46 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage:    "OPSEC WARNING: Enumerates persistence mechanisms across registry run keys, scheduled tasks, services, cron jobs, LaunchAgents, and SSH keys (T1547, T1053, T1543, T1098.004). Extensive registry/filesystem access patterns are monitored by EDR.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			sectionRe := regexp.MustCompile(`^---\s+(.+?)\s+---`)
+			currentSection := ""
+			for _, line := range strings.Split(responseText, "\n") {
+				if m := sectionRe.FindStringSubmatch(line); m != nil {
+					currentSection = m[1]
+					continue
+				}
+				if currentSection == "" {
+					continue
+				}
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "===") || strings.HasPrefix(trimmed, "---") {
+					continue
+				}
+				// Skip empty-result indicators like "(none found)", "(all defaults)", etc.
+				if strings.HasPrefix(trimmed, "(") {
+					continue
+				}
+				createArtifact(processResponse.TaskData.Task.ID, "Persistence Mechanism",
+					fmt.Sprintf("[%s] %s", currentSection, trimmed))
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

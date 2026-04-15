@@ -1,12 +1,20 @@
 package agentfunctions
 
 import (
+	"fmt"
+	"path/filepath"
+	"regexp"
+
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
-		Name:                "password-managers",
+		Name: "password-managers",
+		AssociatedBrowserScript: &agentstructs.BrowserScript{
+			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "passwordmanagers_new.js"),
+			Author:     "@galoryber",
+		},
 		Description:         "Discover password manager databases and configuration files on the target system (T1555, T1083)",
 		HelpString:          "password-managers [-depth <N>]",
 		Version:             1,
@@ -41,6 +49,44 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    "OPSEC WARNING: Scanning for password manager databases and configuration files (KeePass, 1Password, Bitwarden, LastPass, etc.). Reads filesystem paths associated with known password managers. File access may be logged by EDR or application-level auditing.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Password manager data accessed. File reads on password manager databases/configs may trigger file integrity monitoring. Browser extension data access may be logged by endpoint protection. Extracted credentials should be used promptly.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			// Parse: [ManagerName] /path/to/db
+			re := regexp.MustCompile(`\[(.+?)\]\s+(.+)`)
+			matches := re.FindAllStringSubmatch(responseText, -1)
+			for _, m := range matches {
+				if len(m) > 2 {
+					createArtifact(processResponse.TaskData.Task.ID, "File Discovery",
+						fmt.Sprintf("Password manager DB: [%s] %s", m[1], m[2]))
+				}
+			}
+			return response
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{

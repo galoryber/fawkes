@@ -20,7 +20,16 @@ func init() {
 		SupportedUIFeatures: []string{"file_browser:download"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS:        []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
+			CommandIsSuggested: true,
+		},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked: false,
+				OpsecPreMessage:    "OPSEC WARNING: Downloading file from target (T1041). File reads are logged by EDR and DLP systems. Large file transfers create detectable network egress patterns. Consider file size and sensitivity before exfiltrating.",
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
@@ -42,11 +51,20 @@ func init() {
 			fileBrowserData := agentstructs.FileBrowserTask{}
 			if err := mapstructure.Decode(input, &fileBrowserData); err != nil {
 				logging.LogError(err, "Failed to decode file browser data")
-				return err
+				return fmt.Errorf("failed to decode file browser data for download: %w", err)
 			} else {
 				// Set the path from file browser selection
 				args.SetManualArgs(fileBrowserData.FullPath)
 				return nil
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: File download completed. File transfer to C2 generates network traffic. Downloaded file registered in Mythic file browser. Large downloads increase C2 traffic volume — monitor for bandwidth anomalies.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
@@ -76,6 +94,19 @@ func init() {
 			}
 			args.SetManualArgs(input)
 			return nil
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			path, err := processResponse.TaskData.Args.GetFinalArgs()
+			if err != nil || path == "" {
+				return response
+			}
+			createArtifact(processResponse.TaskData.Task.ID, "File Download",
+				fmt.Sprintf("download %s", path))
+			return response
 		},
 	})
 }

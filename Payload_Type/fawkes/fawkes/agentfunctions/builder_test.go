@@ -463,3 +463,224 @@ func TestGeneratePaddingData_ZeroCount(t *testing.T) {
 		t.Errorf("got %d bytes, want 0", len(data))
 	}
 }
+
+// --- payloadFileExtension tests ---
+
+func TestPayloadFileExtension_SharedWindows(t *testing.T) {
+	if ext := payloadFileExtension("shared", "windows"); ext != "dll" {
+		t.Errorf("shared+windows: got %q, want dll", ext)
+	}
+}
+
+func TestPayloadFileExtension_SharedDarwin(t *testing.T) {
+	if ext := payloadFileExtension("shared", "darwin"); ext != "dylib" {
+		t.Errorf("shared+darwin: got %q, want dylib", ext)
+	}
+}
+
+func TestPayloadFileExtension_SharedLinux(t *testing.T) {
+	if ext := payloadFileExtension("shared", "linux"); ext != "so" {
+		t.Errorf("shared+linux: got %q, want so", ext)
+	}
+}
+
+func TestPayloadFileExtension_DefaultWindows(t *testing.T) {
+	if ext := payloadFileExtension("default-executable", "windows"); ext != "exe" {
+		t.Errorf("default+windows: got %q, want exe", ext)
+	}
+}
+
+func TestPayloadFileExtension_DefaultLinux(t *testing.T) {
+	if ext := payloadFileExtension("default-executable", "linux"); ext != "bin" {
+		t.Errorf("default+linux: got %q, want bin", ext)
+	}
+}
+
+func TestPayloadFileExtension_DefaultDarwin(t *testing.T) {
+	if ext := payloadFileExtension("default-executable", "darwin"); ext != "bin" {
+		t.Errorf("default+darwin: got %q, want bin", ext)
+	}
+}
+
+// --- constructBuildCommand tests ---
+
+func TestConstructBuildCommand_DefaultLinux(t *testing.T) {
+	result := constructBuildCommand(buildCommandConfig{
+		targetOs:      "linux",
+		goarch:        "amd64",
+		mode:          "default-executable",
+		garble:        false,
+		c2ProfileName: "http",
+		payloadUUID:   "test-uuid",
+		macOSVersion:  "10.12",
+		ldflags:       "-s -w",
+	})
+	if !strings.Contains(result.command, "GOOS=linux") {
+		t.Error("expected GOOS=linux in command")
+	}
+	if !strings.Contains(result.command, "GOARCH=amd64") {
+		t.Error("expected GOARCH=amd64 in command")
+	}
+	if !strings.Contains(result.command, "go build") {
+		t.Error("expected 'go build' (not garble) in command")
+	}
+	if !strings.Contains(result.command, "-tags http") {
+		t.Error("expected -tags http in command")
+	}
+	if result.payloadName != "test-uuid-linux-amd64" {
+		t.Errorf("payloadName: got %q, want test-uuid-linux-amd64", result.payloadName)
+	}
+}
+
+func TestConstructBuildCommand_DefaultWindows(t *testing.T) {
+	result := constructBuildCommand(buildCommandConfig{
+		targetOs:      "windows",
+		goarch:        "amd64",
+		mode:          "default-executable",
+		garble:        false,
+		c2ProfileName: "http",
+		payloadUUID:   "test-uuid",
+		ldflags:       "-s -w",
+	})
+	// Windows default mode should enable CGO for go-coff BOF
+	if !strings.Contains(result.command, "CGO_ENABLED=1") {
+		t.Error("expected CGO_ENABLED=1 for Windows default mode")
+	}
+	if !strings.Contains(result.command, "CC=x86_64-w64-mingw32-gcc") {
+		t.Error("expected mingw cross-compiler for Windows amd64")
+	}
+}
+
+func TestConstructBuildCommand_SharedWindows(t *testing.T) {
+	result := constructBuildCommand(buildCommandConfig{
+		targetOs:      "windows",
+		goarch:        "amd64",
+		mode:          "shared",
+		garble:        false,
+		c2ProfileName: "http",
+		payloadUUID:   "test-uuid",
+		ldflags:       "-s -w",
+	})
+	if !strings.Contains(result.command, "c-shared") {
+		t.Error("expected -buildmode c-shared for shared mode")
+	}
+	if !strings.Contains(result.command, "-tags http,shared") {
+		t.Error("expected shared tag appended")
+	}
+	if !strings.HasSuffix(result.payloadName, ".dll") {
+		t.Errorf("shared+windows payloadName should end in .dll, got %q", result.payloadName)
+	}
+}
+
+func TestConstructBuildCommand_SharedDarwin(t *testing.T) {
+	result := constructBuildCommand(buildCommandConfig{
+		targetOs:      "darwin",
+		goarch:        "arm64",
+		mode:          "shared",
+		garble:        false,
+		c2ProfileName: "http",
+		payloadUUID:   "test-uuid",
+		macOSVersion:  "10.12",
+		ldflags:       "-s -w",
+	})
+	if !strings.Contains(result.command, "CC=o64-clang") {
+		t.Error("expected o64-clang cross-compiler for Darwin shared")
+	}
+	if !strings.HasSuffix(result.payloadName, ".dylib") {
+		t.Errorf("shared+darwin payloadName should end in .dylib, got %q", result.payloadName)
+	}
+	if !strings.Contains(result.payloadName, "10.12") {
+		t.Error("expected macOSVersion in Darwin payload name")
+	}
+}
+
+func TestConstructBuildCommand_Shellcode(t *testing.T) {
+	result := constructBuildCommand(buildCommandConfig{
+		targetOs:      "windows",
+		goarch:        "amd64",
+		mode:          "windows-shellcode",
+		garble:        false,
+		c2ProfileName: "http",
+		payloadUUID:   "test-uuid",
+		ldflags:       "-s -w",
+	})
+	// Shellcode builds as DLL first
+	if !strings.Contains(result.command, "c-shared") {
+		t.Error("expected -buildmode c-shared for shellcode mode")
+	}
+	if !strings.HasSuffix(result.payloadName, ".dll") {
+		t.Errorf("shellcode payloadName should end in .dll, got %q", result.payloadName)
+	}
+}
+
+func TestConstructBuildCommand_Garble(t *testing.T) {
+	result := constructBuildCommand(buildCommandConfig{
+		targetOs:      "linux",
+		goarch:        "amd64",
+		mode:          "default-executable",
+		garble:        true,
+		c2ProfileName: "http",
+		payloadUUID:   "test-uuid",
+		ldflags:       "-s -w",
+	})
+	if !strings.Contains(result.command, "/go/bin/garble") {
+		t.Error("expected garble command when garble=true")
+	}
+	if !strings.Contains(result.command, "-tiny -literals -seed random") {
+		t.Error("expected garble flags")
+	}
+	if strings.Contains(result.command, "go build") && !strings.Contains(result.command, "garble") {
+		t.Error("should use garble, not plain go build")
+	}
+}
+
+func TestConstructBuildCommand_LinuxARM64Shared(t *testing.T) {
+	result := constructBuildCommand(buildCommandConfig{
+		targetOs:      "linux",
+		goarch:        "arm64",
+		mode:          "shared",
+		garble:        false,
+		c2ProfileName: "tcp",
+		payloadUUID:   "test-uuid",
+		ldflags:       "-s -w",
+	})
+	if !strings.Contains(result.command, "CC=aarch64-linux-gnu-gcc") {
+		t.Error("expected aarch64 cross-compiler for Linux arm64 shared")
+	}
+	if !strings.HasSuffix(result.payloadName, ".so") {
+		t.Errorf("shared+linux payloadName should end in .so, got %q", result.payloadName)
+	}
+}
+
+func TestConstructBuildCommand_GOGARBLEScope(t *testing.T) {
+	result := constructBuildCommand(buildCommandConfig{
+		targetOs:      "linux",
+		goarch:        "amd64",
+		mode:          "default-executable",
+		garble:        false,
+		c2ProfileName: "http",
+		payloadUUID:   "test-uuid",
+		ldflags:       "-s -w",
+	})
+	if !strings.Contains(result.command, "GOGARBLE=fawkes") {
+		t.Error("expected GOGARBLE=fawkes scope restriction")
+	}
+}
+
+func TestConstructBuildCommand_CacheClearing(t *testing.T) {
+	result := constructBuildCommand(buildCommandConfig{
+		targetOs:      "linux",
+		goarch:        "amd64",
+		mode:          "default-executable",
+		garble:        false,
+		c2ProfileName: "http",
+		payloadUUID:   "test-uuid",
+		ldflags:       "-s -w",
+	})
+	if !strings.Contains(result.command, "go clean -cache") {
+		t.Error("expected go clean -cache for cache clearing")
+	}
+	if !strings.Contains(result.command, "rm -rf") {
+		t.Error("expected garble cache cleanup")
+	}
+}

@@ -158,4 +158,3 @@ func TestPoolPartyInjection_AllValidVariants(t *testing.T) {
 		}
 	}
 }
-

@@ -40,23 +40,25 @@ func init() {
 				},
 			},
 			{
-				Name:             "server",
-				CLIName:          "server",
-				ModalDisplayName: "Target Server",
-				Description:      "Domain Controller or target server IP/hostname",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "server",
+				CLIName:              "server",
+				ModalDisplayName:     "Target Server",
+				Description:          "Domain Controller or target server IP/hostname",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getActiveHostList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
 			},
 			{
-				Name:             "domain",
-				CLIName:          "domain",
-				ModalDisplayName: "Domain",
-				Description:      "Domain name (e.g., CORP.LOCAL)",
-				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				DefaultValue:     "",
+				Name:                 "domain",
+				CLIName:              "domain",
+				ModalDisplayName:     "Domain",
+				Description:          "Domain name (e.g., CORP.LOCAL)",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:         "",
+				DynamicQueryFunction: getCallbackDomainList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
 				},
@@ -138,6 +140,16 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    fmt.Sprintf("OPSEC AUDIT: Password spray (%s) completed. Failed authentication attempts generate Event ID 4625 on DCs. Successful auths generate Event ID 4624/4768. Multiple rapid auth failures may have triggered account lockout policies or SIEM correlation rules. Successful credentials registered in Mythic vault.", action),
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {

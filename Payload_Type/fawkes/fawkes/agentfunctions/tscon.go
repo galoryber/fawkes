@@ -2,6 +2,7 @@ package agentfunctions
 
 import (
 	"fmt"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
@@ -51,7 +52,24 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: nil,
-		TaskFunctionOPSECPre:    nil,
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			action, _ := taskData.Args.GetStringArg("action")
+			var msg string
+			switch action {
+			case "hijack":
+				msg = "OPSEC WARNING: RDP session hijacking (T1563.002). Session hijacking requires SYSTEM privileges and is detected by Windows Security Event 4778/4779. EDR products monitor for tscon.exe and WTSConnectSession API calls."
+			case "disconnect", "logoff":
+				msg = fmt.Sprintf("OPSEC WARNING: RDP session %s (T1563.002). Session manipulation generates Windows Security Events and may alert the target user.", action)
+			default:
+				msg = "OPSEC WARNING: RDP session enumeration (T1563.002). Session listing is low-risk but indicates reconnaissance of active users."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID: taskData.Task.ID, Success: true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
 				return nil
@@ -60,6 +78,15 @@ func init() {
 		},
 		TaskFunctionParseArgDictionary: func(args *agentstructs.PTTaskMessageArgsData, input map[string]interface{}) error {
 			return args.LoadArgsFromDictionary(input)
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: Terminal session operation completed. RDP session manipulation generates Event ID 4778/4779. Session hijacking is a high-priority detection rule.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
 			response := agentstructs.PTTaskCreateTaskingMessageResponse{
@@ -72,6 +99,34 @@ func init() {
 			response.DisplayParams = &display
 			return response
 		},
-		TaskFunctionProcessResponse: nil,
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			action, _ := processResponse.TaskData.Args.GetStringArg("action")
+			if action == "hijack" && strings.Contains(responseText, "success") {
+				sessionID, _ := processResponse.TaskData.Args.GetNumberArg("session_id")
+				createArtifact(processResponse.TaskData.Task.ID, "Lateral Movement",
+					fmt.Sprintf("[RDP Hijack] Session %d hijacked", int(sessionID)))
+			} else if action == "list" {
+				// Count sessions in output
+				lineCount := 0
+				for _, line := range strings.Split(responseText, "\n") {
+					if strings.TrimSpace(line) != "" {
+						lineCount++
+					}
+				}
+				if lineCount > 1 {
+					createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+						fmt.Sprintf("[RDP Sessions] %d sessions enumerated", lineCount-1))
+				}
+			}
+			return response
+		},
 	})
 }

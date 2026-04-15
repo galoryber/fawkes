@@ -4,6 +4,7 @@
 package commands
 
 import (
+	"fmt"
 	"syscall"
 	"unsafe"
 
@@ -47,7 +48,7 @@ func virtualProtectRX(addr uintptr, size uint32) error {
 	var oldProtect uint32
 	ret, _, err := bofProcVirtualProtect.Call(addr, uintptr(size), windows.PAGE_EXECUTE_READ, uintptr(unsafe.Pointer(&oldProtect)))
 	if ret == 0 {
-		return err
+		return fmt.Errorf("VirtualProtect to PAGE_EXECUTE_READ failed: %w", err)
 	}
 	return nil
 }

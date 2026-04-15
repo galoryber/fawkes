@@ -13,7 +13,7 @@ func (c *UnlinkCommand) Name() string {
 }
 
 func (c *UnlinkCommand) Description() string {
-	return "Disconnect a linked TCP P2P agent"
+	return "Disconnect a linked P2P agent (TCP or named pipe)"
 }
 
 type unlinkArgs struct {
@@ -41,7 +41,7 @@ func (c *UnlinkCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Send edge removal notification
 	tcpProfileInstance.EdgeMessages <- structs.P2PConnectionMessage{
-		Source:        tcpProfileInstance.CallbackUUID,
+		Source:        tcpProfileInstance.GetCallbackUUID(),
 		Destination:   args.ConnectionID,
 		Action:        "remove",
 		C2ProfileName: "tcp",
