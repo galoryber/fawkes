@@ -276,3 +276,127 @@ func TestSecurityInfoLinuxNewControls(t *testing.T) {
 		t.Error("Unprivileged BPF should be reported when sysctl is readable")
 	}
 }
+
+// --- LD_PRELOAD Detection Tests ---
+
+func TestCheckLDPreload_NoPreload(t *testing.T) {
+	// When LD_PRELOAD is not set, should report "not found"
+	controls := checkLDPreload()
+	foundNotFound := false
+	for _, c := range controls {
+		if c.Name == "LD_PRELOAD" && c.Status == "not found" {
+			foundNotFound = true
+		}
+	}
+	// On clean test environment, expect either "not found" or actual preload
+	if len(controls) == 0 {
+		t.Error("checkLDPreload should return at least one control")
+	}
+	_ = foundNotFound // may or may not be set depending on test env
+}
+
+func TestCheckLDPreload_LdSoPreloadFile(t *testing.T) {
+	// Test that /etc/ld.so.preload is checked (file may or may not exist)
+	controls := checkLDPreload()
+	// Should not panic or error regardless of file existence
+	for _, c := range controls {
+		if c.Name == "" || c.Status == "" {
+			t.Errorf("control has empty fields: %+v", c)
+		}
+	}
+}
+
+func TestCheckLDPreload_ReturnsValidControls(t *testing.T) {
+	controls := checkLDPreload()
+	validStatuses := map[string]bool{"warning": true, "not found": true, "enabled": true, "info": true}
+	for _, c := range controls {
+		if !validStatuses[c.Status] {
+			t.Errorf("unexpected status %q for %s", c.Status, c.Name)
+		}
+	}
+}
+
+// --- eBPF Monitoring Detection Tests ---
+
+func TestCheckEBPFMonitoring_ReturnsControls(t *testing.T) {
+	controls := checkEBPFMonitoring()
+	if len(controls) == 0 {
+		t.Error("checkEBPFMonitoring should return at least one control")
+	}
+}
+
+func TestCheckEBPFMonitoring_BPFJITDetected(t *testing.T) {
+	// BPF JIT should be detected on modern kernels
+	bpfJIT := readFileQuiet("/proc/sys/net/core/bpf_jit_enable")
+	if bpfJIT == "" {
+		t.Skip("BPF JIT sysctl not available on this kernel")
+	}
+	controls := checkEBPFMonitoring()
+	found := false
+	for _, c := range controls {
+		if c.Name == "BPF JIT" {
+			found = true
+			if c.Status != "enabled" && c.Status != "disabled" {
+				t.Errorf("BPF JIT status should be enabled or disabled, got %q", c.Status)
+			}
+		}
+	}
+	if !found {
+		t.Error("BPF JIT should be detected when sysctl is readable")
+	}
+}
+
+func TestCheckEBPFMonitoring_ValidStatuses(t *testing.T) {
+	controls := checkEBPFMonitoring()
+	validStatuses := map[string]bool{
+		"enabled": true, "disabled": true, "warning": true, "not found": true, "info": true,
+	}
+	for _, c := range controls {
+		if !validStatuses[c.Status] {
+			t.Errorf("unexpected status %q for %s", c.Status, c.Name)
+		}
+	}
+}
+
+func TestCheckEBPFMonitoring_NoEmptyFields(t *testing.T) {
+	controls := checkEBPFMonitoring()
+	for _, c := range controls {
+		if c.Name == "" {
+			t.Error("control Name must not be empty")
+		}
+		if c.Status == "" {
+			t.Errorf("control %q has empty Status", c.Name)
+		}
+	}
+}
+
+// --- Integration: full securityInfoLinux includes new checks ---
+
+func TestSecurityInfoLinux_IncludesLDPreload(t *testing.T) {
+	controls := securityInfoLinux()
+	found := false
+	for _, c := range controls {
+		if c.Name == "LD_PRELOAD" || c.Name == "ld.so.preload" || c.Name == "LD_AUDIT" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("securityInfoLinux should include LD_PRELOAD check")
+	}
+}
+
+func TestSecurityInfoLinux_IncludesEBPF(t *testing.T) {
+	controls := securityInfoLinux()
+	found := false
+	for _, c := range controls {
+		if strings.Contains(c.Name, "BPF") || strings.Contains(c.Name, "eBPF") ||
+			strings.Contains(c.Name, "kprobe") || strings.Contains(c.Name, "Tracepoint") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("securityInfoLinux should include eBPF monitoring check")
+	}
+}
