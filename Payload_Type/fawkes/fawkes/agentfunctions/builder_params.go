@@ -239,6 +239,14 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
 		},
 		{
+			Name:          "traffic_profile",
+			Description:   "Traffic blending profile. Pre-configures headers, content types, and user agents to mimic legitimate application traffic. 'generic' uses default C2 behavior. Application profiles override content_types and user_agent_pool unless manually set.",
+			Required:      false,
+			DefaultValue:  "generic",
+			Choices:       []string{"generic", "teams", "slack", "onedrive"},
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
+		},
+		{
 			Name:          "content_types",
 			Description:   "Comma-separated Content-Type values to cycle through for HTTP POST requests. The agent rotates through the list round-robin. Empty uses default (application/x-www-form-urlencoded). Example: 'application/json,text/plain,application/x-www-form-urlencoded'. URI paths support randomization tokens: {rand:N} for N hex chars, {int:M-N} for random integer in range.",
 			Required:      false,

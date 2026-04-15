@@ -311,6 +311,10 @@ func initHTTPC2(cfg parsedConfig) (*c2Setup, error) {
 		}
 	}
 
+	if trafficProfile != "" {
+		http.ApplyTrafficProfile(httpProfile, trafficProfile)
+	}
+
 	// Seal the C2 config vault — encrypts sensitive fields with AES-256-GCM.
 	if err := httpProfile.SealConfig(); err != nil {
 		log.Printf("seal failed: %v", err)

