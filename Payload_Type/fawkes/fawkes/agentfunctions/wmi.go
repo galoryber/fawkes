@@ -8,6 +8,23 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+func formatWMIOPSEC(action, host string) string {
+	if host != "" && host != "." && host != "localhost" {
+		return fmt.Sprintf("OPSEC WARNING: Remote WMI %s on %s. Generates WMI activity events (Event ID 5857-5861) and network traffic on TCP 135/dynamic RPC. Remote WMI execution is a common lateral movement indicator.", action, host)
+	}
+	return fmt.Sprintf("OPSEC WARNING: Local WMI %s. Generates WMI activity events (Event ID 5857-5861). WMI is commonly monitored for persistence and execution.", action)
+}
+
+var wmiProcessCreateRegex = regexp.MustCompile(`WMI Process Create on (\S+?):`)
+
+func extractWMIHost(responseText string) (string, bool) {
+	m := wmiProcessCreateRegex.FindStringSubmatch(responseText)
+	if len(m) > 1 {
+		return m[1], true
+	}
+	return "", false
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "wmi",
@@ -167,12 +184,7 @@ func init() {
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
 			host, _ := taskData.Args.GetStringArg("host")
-			msg := fmt.Sprintf("OPSEC WARNING: WMI %s", action)
-			if host != "" && host != "." && host != "localhost" {
-				msg = fmt.Sprintf("OPSEC WARNING: Remote WMI %s on %s. Generates WMI activity events (Event ID 5857-5861) and network traffic on TCP 135/dynamic RPC. Remote WMI execution is a common lateral movement indicator.", action, host)
-			} else {
-				msg = fmt.Sprintf("OPSEC WARNING: Local WMI %s. Generates WMI activity events (Event ID 5857-5861). WMI is commonly monitored for persistence and execution.", action)
-			}
+			msg := formatWMIOPSEC(action, host)
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
@@ -199,13 +211,11 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Parse: WMI Process Create on <host>:
-			re := regexp.MustCompile(`WMI Process Create on (\S+?):`)
-			if m := re.FindStringSubmatch(responseText); len(m) > 1 {
+			if host, ok := extractWMIHost(responseText); ok {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
-					fmt.Sprintf("WMI Process Create on %s", m[1]))
+					fmt.Sprintf("WMI Process Create on %s", host))
 				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
-					fmt.Sprintf("WMI process creation on %s", m[1]))
+					fmt.Sprintf("WMI process creation on %s", host))
 			}
 			return response
 		},

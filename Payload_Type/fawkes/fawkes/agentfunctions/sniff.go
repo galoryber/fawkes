@@ -9,6 +9,26 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+func classifySniffCredentialType(protocol string) string {
+	switch protocol {
+	case "ntlm":
+		return "hash"
+	case "ntlmv2", "ntlmv2-relay":
+		return "hash"
+	case "krb-asrep", "krb-tgsrep":
+		return "ticket"
+	default:
+		return "plaintext"
+	}
+}
+
+func formatSniffRealm(dstIP string, dstPort uint16) string {
+	if dstPort != 0 {
+		return fmt.Sprintf("%s:%d", dstIP, dstPort)
+	}
+	return dstIP
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "sniff",
@@ -246,28 +266,17 @@ func init() {
 
 			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
 			for _, c := range result.Credentials {
-				credType := "plaintext"
+				credType := classifySniffCredentialType(c.Protocol)
 				credential := c.Password
-				if c.Protocol == "ntlm" {
-					credType = "hash"
-					credential = c.Detail
-				} else if c.Protocol == "ntlmv2" || c.Protocol == "ntlmv2-relay" {
-					credType = "hash"
-					credential = c.Password // hashcat mode 5600 format
-				} else if c.Protocol == "krb-asrep" || c.Protocol == "krb-tgsrep" {
-					credType = "ticket"
+				if c.Protocol == "ntlm" || c.Protocol == "krb-asrep" || c.Protocol == "krb-tgsrep" {
 					credential = c.Detail
 				}
 				if credential == "" && c.Protocol != "ntlm" && c.Protocol != "krb-asrep" && c.Protocol != "krb-tgsrep" {
 					continue
 				}
-				realm := c.DstIP
-				if c.DstPort != 0 {
-					realm = fmt.Sprintf("%s:%d", c.DstIP, c.DstPort)
-				}
 				creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
 					CredentialType: credType,
-					Realm:          realm,
+					Realm:          formatSniffRealm(c.DstIP, c.DstPort),
 					Account:        c.Username,
 					Credential:     credential,
 					Comment:        fmt.Sprintf("sniff: %s capture from %s", c.Protocol, c.SrcIP),

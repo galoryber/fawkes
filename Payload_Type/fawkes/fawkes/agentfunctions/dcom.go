@@ -8,6 +8,32 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+var dcomObjectWarnings = map[string]string{
+	"mmc20":        "MMC20.Application: monitored by CrowdStrike/SentinelOne — creates mmc.exe child process. Most reliable but most detected.",
+	"shellwindows": "ShellWindows: requires explorer.exe on target. Creates child process under explorer.exe — moderate detection.",
+	"shellbrowser": "ShellBrowserWindow: similar to ShellWindows. Creates child process under iexplore.exe — moderate detection.",
+	"wscript":      "WScript.Shell: less commonly monitored than MMC20. Executes via WScript.Shell.Run — no intermediate process. Good fallback when MMC is blocked.",
+	"excel":        "Excel.Application: requires Excel installed on target. RegisterXLL loads DLL into Excel.exe (stealthy — lives in Office process). DDEInitiate creates cmd.exe child.",
+	"outlook":      "Outlook.Application: requires Outlook on target. Uses CreateObject(\"Wscript.Shell\") within Outlook's process — command runs inside OUTLOOK.EXE. Unusual vector, often not monitored by EDR. May be blocked by Outlook security settings.",
+}
+
+func getDCOMObjectWarning(object string) string {
+	if w, ok := dcomObjectWarnings[object]; ok {
+		return w
+	}
+	return "Unknown object — proceed with caution."
+}
+
+var dcomExecutionRegex = regexp.MustCompile(`DCOM\s+(\S+)\s+executed on\s+(\S+?):`)
+
+func extractDCOMExecutionInfo(responseText string) (object, host string, ok bool) {
+	m := dcomExecutionRegex.FindStringSubmatch(responseText)
+	if len(m) > 2 {
+		return m[1], m[2], true
+	}
+	return "", "", false
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "dcom",
@@ -240,20 +266,7 @@ func init() {
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			host, _ := taskData.Args.GetStringArg("host")
 			object, _ := taskData.Args.GetStringArg("object")
-
-			// Per-object detection signatures
-			objectWarnings := map[string]string{
-				"mmc20":        "MMC20.Application: monitored by CrowdStrike/SentinelOne — creates mmc.exe child process. Most reliable but most detected.",
-				"shellwindows": "ShellWindows: requires explorer.exe on target. Creates child process under explorer.exe — moderate detection.",
-				"shellbrowser": "ShellBrowserWindow: similar to ShellWindows. Creates child process under iexplore.exe — moderate detection.",
-				"wscript":      "WScript.Shell: less commonly monitored than MMC20. Executes via WScript.Shell.Run — no intermediate process. Good fallback when MMC is blocked.",
-				"excel":        "Excel.Application: requires Excel installed on target. RegisterXLL loads DLL into Excel.exe (stealthy — lives in Office process). DDEInitiate creates cmd.exe child.",
-				"outlook":      "Outlook.Application: requires Outlook on target. Uses CreateObject(\"Wscript.Shell\") within Outlook's process — command runs inside OUTLOOK.EXE. Unusual vector, often not monitored by EDR. May be blocked by Outlook security settings.",
-			}
-			warning := objectWarnings[object]
-			if warning == "" {
-				warning = "Unknown object — proceed with caution."
-			}
+			warning := getDCOMObjectWarning(object)
 
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
@@ -281,13 +294,11 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Parse: DCOM <Object> executed on <host>:
-			re := regexp.MustCompile(`DCOM\s+(\S+)\s+executed on\s+(\S+?):`)
-			if m := re.FindStringSubmatch(responseText); len(m) > 2 {
+			if object, host, ok := extractDCOMExecutionInfo(responseText); ok {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
-					fmt.Sprintf("DCOM execution: %s on %s", m[1], m[2]))
+					fmt.Sprintf("DCOM execution: %s on %s", object, host))
 				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
-					fmt.Sprintf("DCOM %s execution on %s", m[1], m[2]))
+					fmt.Sprintf("DCOM %s execution on %s", object, host))
 			}
 			return response
 		},

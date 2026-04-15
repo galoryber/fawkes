@@ -10,6 +10,20 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+var winrmExecutionRegex = regexp.MustCompile(`\[\*\]\s+WinRM\s+(\S+)@(\S+?):(\d+)\s+\((\S+),`)
+
+func extractWinRMExecutionInfo(responseText string) (user, host, port, shell string, ok bool) {
+	m := winrmExecutionRegex.FindStringSubmatch(responseText)
+	if len(m) > 4 {
+		return m[1], m[2], m[3], m[4], true
+	}
+	return "", "", "", "", false
+}
+
+func countPrivilegeLines(text string) int {
+	return strings.Count(text, "\n")
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "winrm",
@@ -182,13 +196,11 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Parse: [*] WinRM user@host:port (shell, auth)
-			re := regexp.MustCompile(`\[\*\]\s+WinRM\s+(\S+)@(\S+?):(\d+)\s+\((\S+),`)
-			if m := re.FindStringSubmatch(responseText); len(m) > 3 {
+			if user, host, port, shell, ok := extractWinRMExecutionInfo(responseText); ok {
 				createArtifact(processResponse.TaskData.Task.ID, "Remote Command",
-					fmt.Sprintf("WinRM execution: %s@%s:%s (%s)", m[1], m[2], m[3], m[4]))
+					fmt.Sprintf("WinRM execution: %s@%s:%s (%s)", user, host, port, shell))
 				tagTask(processResponse.TaskData.Task.ID, "LATERAL",
-					fmt.Sprintf("WinRM execution on %s as %s", m[2], m[1]))
+					fmt.Sprintf("WinRM execution on %s as %s", host, user))
 			}
 			return response
 		},
@@ -275,7 +287,7 @@ func winrmAutoVerifyGetprivsDone(
 	}
 
 	responseText := getSubtaskResponses(subtaskData.Task.ID)
-	privCount := strings.Count(responseText, "\n")
+	privCount := countPrivilegeLines(responseText)
 
 	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
 		TaskID:   taskData.Task.ID,
