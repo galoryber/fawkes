@@ -189,6 +189,12 @@ func resolveURITokens(path string) string {
 // The cfg parameter provides sensitive fields (BaseURL, UserAgent, etc.)
 // from the decrypted vault rather than reading from zeroed struct fields.
 func (h *HTTPProfile) makeRequest(method, path string, body []byte, cfg *sensitiveConfig) (*http.Response, error) {
+	// Apply traffic profile request jitter before sending
+	h.ApplyRequestJitter(cfg)
+
+	// URI rotation: replace path with a profile-specific path if available
+	path = h.RotatePath(method, path, cfg)
+
 	// Resolve sensitive fields from config (vault) or struct (unsealed fallback)
 	userAgent := h.UserAgent
 	hostHeader := h.HostHeader

