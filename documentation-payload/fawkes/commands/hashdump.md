@@ -69,6 +69,8 @@ Reports extracted credentials to the Mythic credential vault automatically.
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
+| action | No | dump | `dump`: extract hashes. `auto-spray`: dump hashes then spray them via cred-check against target hosts. |
+| targets | No | (auto) | Target hosts for auto-spray (IPs, comma-separated, or CIDR). If empty, uses active callback hosts. |
 | format | No | text | Output format: `text` or `json` (Linux/macOS only) |
 
 ## Usage
@@ -76,7 +78,17 @@ Reports extracted credentials to the Mythic credential vault automatically.
 ```
 hashdump
 hashdump -format json
+hashdump -action auto-spray
+hashdump -action auto-spray -targets 192.168.1.0/24,10.0.0.5
 ```
+
+### Auto-Spray Chain
+
+The `auto-spray` action creates an automated subtask chain:
+1. Runs `hashdump` to extract local hashes
+2. Parses the output for sprayable credentials (skips machine accounts and empty hashes)
+3. Creates parallel `cred-check` subtasks for each credential against target hosts
+4. Aggregates results and reports valid/invalid credentials
 
 ## Example Output
 
