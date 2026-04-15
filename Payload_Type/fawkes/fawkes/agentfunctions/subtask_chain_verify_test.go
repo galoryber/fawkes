@@ -308,6 +308,65 @@ func TestPrivescCheckAutoEscalateRegistered(t *testing.T) {
 	}
 }
 
+// TestNtdllUnhookExtendedParams verifies ntdll-unhook has user32.dll, source param,
+// and all expected choices registered.
+func TestNtdllUnhookExtendedParams(t *testing.T) {
+	commands := agentstructs.AllPayloadData.Get("fawkes").GetCommands()
+
+	var cmd *agentstructs.Command
+	for i := range commands {
+		if commands[i].Name == "ntdll-unhook" {
+			cmd = &commands[i]
+			break
+		}
+	}
+	if cmd == nil {
+		t.Fatal("ntdll-unhook command not found")
+	}
+
+	// Check dll parameter includes user32.dll
+	foundUser32 := false
+	for _, p := range cmd.CommandParameters {
+		if p.Name == "dll" {
+			for _, c := range p.Choices {
+				if c == "user32.dll" {
+					foundUser32 = true
+				}
+			}
+		}
+	}
+	if !foundUser32 {
+		t.Error("ntdll-unhook dll parameter missing 'user32.dll' choice")
+	}
+
+	// Check source parameter exists with disk and knowndlls choices
+	foundSource := false
+	foundDisk := false
+	foundKnownDlls := false
+	for _, p := range cmd.CommandParameters {
+		if p.Name == "source" {
+			foundSource = true
+			for _, c := range p.Choices {
+				if c == "disk" {
+					foundDisk = true
+				}
+				if c == "knowndlls" {
+					foundKnownDlls = true
+				}
+			}
+		}
+	}
+	if !foundSource {
+		t.Error("ntdll-unhook missing 'source' parameter")
+	}
+	if !foundDisk {
+		t.Error("ntdll-unhook source parameter missing 'disk' choice")
+	}
+	if !foundKnownDlls {
+		t.Error("ntdll-unhook source parameter missing 'knowndlls' choice")
+	}
+}
+
 // TestFindAdminAutoMoveRegistered verifies find-admin has the auto-move action
 // and completion functions registered.
 func TestFindAdminAutoMoveRegistered(t *testing.T) {
