@@ -8,6 +8,19 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+var containerEscapeVectors = []string{"Docker socket", "cgroup", "nsenter", "mount-host", "privileged", "cap_sys_admin", "host PID"}
+
+func detectEscapeVectors(responseText string) []string {
+	var found []string
+	lower := strings.ToLower(responseText)
+	for _, v := range containerEscapeVectors {
+		if strings.Contains(lower, strings.ToLower(v)) {
+			found = append(found, v)
+		}
+	}
+	return found
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name: "container-escape",
@@ -134,13 +147,9 @@ func init() {
 			}
 			action, _ := processResponse.TaskData.Args.GetStringArg("action")
 			if action == "check" {
-				// Track discovered escape vectors
-				vectors := []string{"Docker socket", "cgroup", "nsenter", "mount-host", "privileged", "cap_sys_admin", "host PID"}
-				for _, v := range vectors {
-					if strings.Contains(strings.ToLower(responseText), strings.ToLower(v)) {
-						createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
-							fmt.Sprintf("[Container Escape] Vector available: %s", v))
-					}
+				for _, v := range detectEscapeVectors(responseText) {
+					createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",
+						fmt.Sprintf("[Container Escape] Vector available: %s", v))
 				}
 			} else if strings.HasPrefix(action, "k8s-") {
 				createArtifact(processResponse.TaskData.Task.ID, "Host Discovery",

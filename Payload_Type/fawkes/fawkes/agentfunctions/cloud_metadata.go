@@ -9,6 +9,102 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+type cloudCredential struct {
+	CredType   string
+	Account    string
+	Credential string
+	Comment    string
+}
+
+func parseAWSAccessKeys(responseText string) *cloudCredential {
+	lines := strings.Split(responseText, "\n")
+	var accessKey, secretKey, roleName string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "AccessKeyId:") {
+			accessKey = strings.TrimSpace(strings.TrimPrefix(line, "AccessKeyId:"))
+		} else if strings.HasPrefix(line, "SecretAccessKey:") {
+			secretKey = strings.TrimSpace(strings.TrimPrefix(line, "SecretAccessKey:"))
+		} else if strings.HasPrefix(line, "[+] AWS IAM Role:") {
+			roleName = strings.TrimSpace(strings.TrimPrefix(line, "[+] AWS IAM Role:"))
+		}
+	}
+	if accessKey == "" || secretKey == "" {
+		return nil
+	}
+	account := "AWS IAM"
+	if roleName != "" {
+		account = fmt.Sprintf("AWS IAM (%s)", roleName)
+	}
+	return &cloudCredential{
+		CredType:   "key",
+		Account:    account,
+		Credential: fmt.Sprintf("AccessKeyId=%s SecretAccessKey=%s", accessKey, secretKey),
+		Comment:    "cloud-metadata (AWS IAM)",
+	}
+}
+
+func detectCloudProvider(responseText string) string {
+	if strings.Contains(responseText, "Azure") {
+		return "Azure"
+	} else if strings.Contains(responseText, "GCP") || strings.Contains(responseText, "google") {
+		return "GCP"
+	}
+	return "Cloud"
+}
+
+func parseCloudToken(responseText string) *cloudCredential {
+	lines := strings.Split(responseText, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "access_token:") || strings.HasPrefix(line, "Token:") {
+			token := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+			if len(token) > 10 {
+				provider := detectCloudProvider(responseText)
+				return &cloudCredential{
+					CredType:   "token",
+					Account:    fmt.Sprintf("%s Managed Identity", provider),
+					Credential: token,
+					Comment:    fmt.Sprintf("cloud-metadata (%s token)", provider),
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func parsePersistCredential(responseText string) *cloudCredential {
+	lines := strings.Split(responseText, "\n")
+	var accessKey, secretKey, account string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "AccessKey:") {
+			accessKey = strings.TrimSpace(strings.TrimPrefix(line, "AccessKey:"))
+		} else if strings.HasPrefix(line, "SecretKey:") {
+			secretKey = strings.TrimSpace(strings.TrimPrefix(line, "SecretKey:"))
+		} else if strings.HasPrefix(line, "Account:") {
+			account = strings.TrimSpace(strings.TrimPrefix(line, "Account:"))
+		} else if strings.HasPrefix(line, "App ID:") && !strings.Contains(line, "Object") {
+			accessKey = strings.TrimSpace(strings.TrimPrefix(line, "App ID:"))
+		} else if strings.HasPrefix(line, "Secret:") {
+			secretKey = strings.TrimSpace(strings.TrimPrefix(line, "Secret:"))
+		}
+	}
+	if accessKey == "" || secretKey == "" {
+		return nil
+	}
+	provider := "AWS"
+	if strings.Contains(responseText, "Azure") {
+		provider = "Azure"
+	}
+	return &cloudCredential{
+		CredType:   "key",
+		Account:    fmt.Sprintf("%s Persist (%s)", provider, account),
+		Credential: fmt.Sprintf("ID=%s Secret=%s", accessKey, secretKey),
+		Comment:    fmt.Sprintf("cloud-metadata %s-persist (long-lived)", strings.ToLower(provider)),
+	}
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "cloud-metadata",
@@ -92,92 +188,29 @@ func init() {
 			hostname := processResponse.TaskData.Callback.Host
 			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
 
-			// Extract AWS access keys if present
 			if strings.Contains(responseText, "AccessKeyId") {
-				lines := strings.Split(responseText, "\n")
-				var accessKey, secretKey, roleName string
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if strings.HasPrefix(line, "AccessKeyId:") {
-						accessKey = strings.TrimSpace(strings.TrimPrefix(line, "AccessKeyId:"))
-					} else if strings.HasPrefix(line, "SecretAccessKey:") {
-						secretKey = strings.TrimSpace(strings.TrimPrefix(line, "SecretAccessKey:"))
-					} else if strings.HasPrefix(line, "[+] AWS IAM Role:") {
-						roleName = strings.TrimSpace(strings.TrimPrefix(line, "[+] AWS IAM Role:"))
-					}
-				}
-				if accessKey != "" && secretKey != "" {
-					account := "AWS IAM"
-					if roleName != "" {
-						account = fmt.Sprintf("AWS IAM (%s)", roleName)
-					}
+				if c := parseAWSAccessKeys(responseText); c != nil {
 					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
-						CredentialType: "key",
-						Realm:          hostname,
-						Account:        account,
-						Credential:     fmt.Sprintf("AccessKeyId=%s SecretAccessKey=%s", accessKey, secretKey),
-						Comment:        "cloud-metadata (AWS IAM)",
+						CredentialType: c.CredType, Realm: hostname, Account: c.Account,
+						Credential: c.Credential, Comment: c.Comment,
 					})
 				}
 			}
 
-			// Extract Azure/GCP tokens if present
 			if strings.Contains(responseText, "access_token") {
-				lines := strings.Split(responseText, "\n")
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if strings.HasPrefix(line, "access_token:") || strings.HasPrefix(line, "Token:") {
-						token := strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
-						if len(token) > 10 {
-							provider := "Cloud"
-							if strings.Contains(responseText, "Azure") {
-								provider = "Azure"
-							} else if strings.Contains(responseText, "GCP") || strings.Contains(responseText, "google") {
-								provider = "GCP"
-							}
-							creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
-								CredentialType: "token",
-								Realm:          hostname,
-								Account:        fmt.Sprintf("%s Managed Identity", provider),
-								Credential:     token,
-								Comment:        fmt.Sprintf("cloud-metadata (%s token)", provider),
-							})
-							break // Only capture first token
-						}
-					}
+				if c := parseCloudToken(responseText); c != nil {
+					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+						CredentialType: c.CredType, Realm: hostname, Account: c.Account,
+						Credential: c.Credential, Comment: c.Comment,
+					})
 				}
 			}
 
-			// Extract persist-created credentials (AccessKey + SecretKey from aws-persist output)
 			if strings.Contains(responseText, "SUCCESS: Created") {
-				lines := strings.Split(responseText, "\n")
-				var accessKey, secretKey, account string
-				for _, line := range lines {
-					line = strings.TrimSpace(line)
-					if strings.HasPrefix(line, "AccessKey:") {
-						accessKey = strings.TrimSpace(strings.TrimPrefix(line, "AccessKey:"))
-					} else if strings.HasPrefix(line, "SecretKey:") {
-						secretKey = strings.TrimSpace(strings.TrimPrefix(line, "SecretKey:"))
-					} else if strings.HasPrefix(line, "Account:") {
-						account = strings.TrimSpace(strings.TrimPrefix(line, "Account:"))
-					} else if strings.HasPrefix(line, "App ID:") && !strings.Contains(line, "Object") {
-						// Azure app ID
-						accessKey = strings.TrimSpace(strings.TrimPrefix(line, "App ID:"))
-					} else if strings.HasPrefix(line, "Secret:") {
-						secretKey = strings.TrimSpace(strings.TrimPrefix(line, "Secret:"))
-					}
-				}
-				if accessKey != "" && secretKey != "" {
-					provider := "AWS"
-					if strings.Contains(responseText, "Azure") {
-						provider = "Azure"
-					}
+				if c := parsePersistCredential(responseText); c != nil {
 					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
-						CredentialType: "key",
-						Realm:          hostname,
-						Account:        fmt.Sprintf("%s Persist (%s)", provider, account),
-						Credential:     fmt.Sprintf("ID=%s Secret=%s", accessKey, secretKey),
-						Comment:        fmt.Sprintf("cloud-metadata %s-persist (long-lived)", strings.ToLower(provider)),
+						CredentialType: c.CredType, Realm: hostname, Account: c.Account,
+						Credential: c.Credential, Comment: c.Comment,
 					})
 				}
 			}
