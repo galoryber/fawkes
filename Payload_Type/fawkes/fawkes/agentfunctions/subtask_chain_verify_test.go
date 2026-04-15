@@ -145,7 +145,7 @@ func TestSysinfoChainActionsRegistered(t *testing.T) {
 	}
 }
 
-// TestStealthTokenAutoEscalateRegistered verifies steal-token chains.
+// TestStealTokenAutoEscalateRegistered verifies steal-token chains.
 func TestStealTokenAutoEscalateRegistered(t *testing.T) {
 	commands := agentstructs.AllPayloadData.Get("fawkes").GetCommands()
 
@@ -169,6 +169,184 @@ func TestStealTokenAutoEscalateRegistered(t *testing.T) {
 	for _, name := range expectedFuncs {
 		if _, ok := cmd.TaskCompletionFunctions[name]; !ok {
 			t.Errorf("steal-token missing TaskCompletionFunction %q", name)
+		}
+	}
+}
+
+// TestHashdumpAutoSprayRegistered verifies hashdump has the auto-spray action
+// and completion functions registered.
+func TestHashdumpAutoSprayRegistered(t *testing.T) {
+	commands := agentstructs.AllPayloadData.Get("fawkes").GetCommands()
+
+	var cmd *agentstructs.Command
+	for i := range commands {
+		if commands[i].Name == "hashdump" {
+			cmd = &commands[i]
+			break
+		}
+	}
+	if cmd == nil {
+		t.Fatal("hashdump command not found")
+	}
+
+	// Check action parameter has auto-spray choice
+	foundAutoSpray := false
+	foundDump := false
+	for _, p := range cmd.CommandParameters {
+		if p.Name == "action" {
+			for _, c := range p.Choices {
+				if c == "auto-spray" {
+					foundAutoSpray = true
+				}
+				if c == "dump" {
+					foundDump = true
+				}
+			}
+		}
+	}
+	if !foundAutoSpray {
+		t.Error("hashdump action parameter missing 'auto-spray' choice")
+	}
+	if !foundDump {
+		t.Error("hashdump action parameter missing 'dump' choice")
+	}
+
+	// Check targets parameter exists
+	foundTargets := false
+	for _, p := range cmd.CommandParameters {
+		if p.Name == "targets" {
+			foundTargets = true
+		}
+	}
+	if !foundTargets {
+		t.Error("hashdump missing 'targets' parameter")
+	}
+
+	// Check completion functions
+	expectedFuncs := []string{
+		"hashdumpDumpDone",
+		"hashdumpSprayGroupDone",
+	}
+	for _, name := range expectedFuncs {
+		if _, ok := cmd.TaskCompletionFunctions[name]; !ok {
+			t.Errorf("hashdump missing TaskCompletionFunction %q", name)
+		}
+	}
+}
+
+// TestDcsyncDomainTakeoverRegistered verifies dcsync has the domain-takeover action
+// and completion functions registered.
+func TestDcsyncDomainTakeoverRegistered(t *testing.T) {
+	commands := agentstructs.AllPayloadData.Get("fawkes").GetCommands()
+
+	var cmd *agentstructs.Command
+	for i := range commands {
+		if commands[i].Name == "dcsync" {
+			cmd = &commands[i]
+			break
+		}
+	}
+	if cmd == nil {
+		t.Fatal("dcsync command not found")
+	}
+
+	// Check action parameter has domain-takeover choice
+	foundAction := false
+	for _, p := range cmd.CommandParameters {
+		if p.Name == "action" {
+			for _, c := range p.Choices {
+				if c == "domain-takeover" {
+					foundAction = true
+				}
+			}
+		}
+	}
+	if !foundAction {
+		t.Error("dcsync action parameter missing 'domain-takeover' choice")
+	}
+
+	// Check completion functions
+	if _, ok := cmd.TaskCompletionFunctions["domainTakeoverDone"]; !ok {
+		t.Error("dcsync missing TaskCompletionFunction 'domainTakeoverDone'")
+	}
+}
+
+// TestPrivescCheckAutoEscalateRegistered verifies privesc-check has the auto-escalate
+// action and completion functions registered.
+func TestPrivescCheckAutoEscalateRegistered(t *testing.T) {
+	commands := agentstructs.AllPayloadData.Get("fawkes").GetCommands()
+
+	var cmd *agentstructs.Command
+	for i := range commands {
+		if commands[i].Name == "privesc-check" {
+			cmd = &commands[i]
+			break
+		}
+	}
+	if cmd == nil {
+		t.Fatal("privesc-check command not found")
+	}
+
+	// Check action parameter has auto-escalate choice
+	foundAction := false
+	for _, p := range cmd.CommandParameters {
+		if p.Name == "action" {
+			for _, c := range p.Choices {
+				if c == "auto-escalate" {
+					foundAction = true
+				}
+			}
+		}
+	}
+	if !foundAction {
+		t.Error("privesc-check action parameter missing 'auto-escalate' choice")
+	}
+
+	// Check has completion functions registered
+	if len(cmd.TaskCompletionFunctions) == 0 {
+		t.Error("privesc-check has no TaskCompletionFunctions registered")
+	}
+}
+
+// TestFindAdminAutoMoveRegistered verifies find-admin has the auto-move action
+// and completion functions registered.
+func TestFindAdminAutoMoveRegistered(t *testing.T) {
+	commands := agentstructs.AllPayloadData.Get("fawkes").GetCommands()
+
+	var cmd *agentstructs.Command
+	for i := range commands {
+		if commands[i].Name == "find-admin" {
+			cmd = &commands[i]
+			break
+		}
+	}
+	if cmd == nil {
+		t.Fatal("find-admin command not found")
+	}
+
+	// Check action parameter has auto-move choice
+	foundAction := false
+	for _, p := range cmd.CommandParameters {
+		if p.Name == "action" {
+			for _, c := range p.Choices {
+				if c == "auto-move" {
+					foundAction = true
+				}
+			}
+		}
+	}
+	if !foundAction {
+		t.Error("find-admin action parameter missing 'auto-move' choice")
+	}
+
+	// Check completion functions
+	expectedFuncs := []string{
+		"autoMoveFindDone",
+		"autoMoveLateralDone",
+	}
+	for _, name := range expectedFuncs {
+		if _, ok := cmd.TaskCompletionFunctions[name]; !ok {
+			t.Errorf("find-admin missing TaskCompletionFunction %q", name)
 		}
 	}
 }
