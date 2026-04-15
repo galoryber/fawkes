@@ -15,7 +15,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "execute-shellcode",
-		Description:         "Execute shellcode in the current process via VirtualAlloc + CreateThread. Shellcode runs in a new thread without cross-process injection.",
+		Description:         "Execute shellcode in the current process. Windows: VirtualAlloc + CreateThread. Linux: mmap + mprotect. macOS: MAP_JIT (ARM64) or mmap (x86_64). Shellcode runs in a new thread.",
 		HelpString:          "execute-shellcode",
 		Version:             1,
 		Author:              "@galoryber",
@@ -23,8 +23,7 @@ func init() {
 		MitreAttackMappings: []string{"T1059.006", "T1055.012"}, // Command and Scripting Interpreter, Process Hollowing
 		SupportedUIFeatures: []string{"process_browser:inject"},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
-			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{

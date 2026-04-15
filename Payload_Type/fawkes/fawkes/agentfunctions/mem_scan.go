@@ -13,14 +13,14 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "mem-scan",
-		Description:         "mem-scan -pid <pid> -pattern <string> [-hex] [-max_results 50] [-context_bytes 32] - Search process memory for strings or byte patterns. Cross-platform using ReadProcessMemory (Windows) or /proc/pid/mem (Linux).",
+		Description:         "mem-scan -pid <pid> -pattern <string> [-hex] [-max_results 50] [-context_bytes 32] - Search process memory for strings or byte patterns. Cross-platform: ReadProcessMemory (Windows), /proc/pid/mem (Linux), mach_vm (macOS self-scan).",
 		HelpString:          "mem-scan -pid <pid> -pattern <string> [-hex] [-max_results 50] [-context_bytes 32]",
 		Version:             1,
 		MitreAttackMappings: []string{"T1005", "T1057"}, // Data from Local System + Process Discovery
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "memscan_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_WINDOWS},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{

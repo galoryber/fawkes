@@ -20,10 +20,6 @@ func (c *ExecuteShellcodeCommand) Description() string {
 	return "Execute shellcode in the current process"
 }
 
-type executeShellcodeArgs struct {
-	ShellcodeB64 string `json:"shellcode_b64"`
-}
-
 var (
 	procCreateThread     = kernel32.NewProc("CreateThread")
 	procWaitSingleObject = kernel32.NewProc("WaitForSingleObject")
