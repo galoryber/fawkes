@@ -62,7 +62,7 @@ func rlResolveImports(baseAddr uintptr, importRVA uintptr) (int, error) {
 		dllNameBytes := append([]byte(dllName), 0)
 		hModule, _, err := procLoadLibraryARL.Call(uintptr(unsafe.Pointer(&dllNameBytes[0])))
 		if hModule == 0 {
-			return dllCount, fmt.Errorf("failed to load module %s: %v", dllName, err)
+			return dllCount, fmt.Errorf("failed to load module %s: %w", dllName, err)
 		}
 		dllCount++
 
@@ -96,7 +96,7 @@ func rlResolveImports(baseAddr uintptr, importRVA uintptr) (int, error) {
 			}
 
 			if funcAddr == 0 {
-				return dllCount, fmt.Errorf("failed to resolve import in %s: %v", dllName, err)
+				return dllCount, fmt.Errorf("failed to resolve import in %s: %w", dllName, err)
 			}
 
 			// Write resolved address into IAT

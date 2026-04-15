@@ -57,7 +57,7 @@ func peLoaderExec(peData []byte, cmdLine string, timeout int, exportName string)
 		rlPageReadWrite,
 	)
 	if allocBase == 0 {
-		return "", fmt.Errorf("VirtualAlloc failed: %v", err)
+		return "", fmt.Errorf("VirtualAlloc failed: %w", err)
 	}
 
 	// Ensure cleanup on failure
@@ -103,7 +103,7 @@ func peLoaderExec(peData []byte, cmdLine string, timeout int, exportName string)
 		if relocDir.VirtualAddress > 0 && relocDir.Size > 0 {
 			_, relocErr := rlProcessRelocations(allocBase, uintptr(relocDir.VirtualAddress), uintptr(relocDir.Size), delta)
 			if relocErr != nil {
-				return "", fmt.Errorf("relocation error: %v", relocErr)
+				return "", fmt.Errorf("relocation error: %w", relocErr)
 			}
 		}
 	}
@@ -114,12 +114,12 @@ func peLoaderExec(peData []byte, cmdLine string, timeout int, exportName string)
 		if isDLL {
 			_, importErr := rlResolveImports(allocBase, uintptr(importDir.VirtualAddress))
 			if importErr != nil {
-				return "", fmt.Errorf("import error: %v", importErr)
+				return "", fmt.Errorf("import error: %w", importErr)
 			}
 		} else {
 			importErr := peLoaderResolveImportsHooked(allocBase, uintptr(importDir.VirtualAddress))
 			if importErr != nil {
-				return "", fmt.Errorf("import error: %v", importErr)
+				return "", fmt.Errorf("import error: %w", importErr)
 			}
 		}
 	}
@@ -179,7 +179,7 @@ func peLoaderCallDllMain(allocBase uintptr, optHeader *rlOptionalHeader64, expor
 	if exportName != "" {
 		exportAddr, err := peLoaderResolveExport(allocBase, optHeader, exportName)
 		if err != nil {
-			return sb.String(), fmt.Errorf("export resolution failed: %v", err)
+			return sb.String(), fmt.Errorf("export resolution failed: %w", err)
 		}
 		sb.WriteString(fmt.Sprintf("[*] Calling export '%s' at 0x%X\n", exportName, exportAddr))
 		syscall.SyscallN(exportAddr)

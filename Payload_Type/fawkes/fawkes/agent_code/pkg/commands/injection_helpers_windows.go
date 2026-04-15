@@ -46,7 +46,7 @@ func injectOpenProcess(desiredAccess uint32, pid uint32) (uintptr, error) {
 	}
 	h, err := windows.OpenProcess(desiredAccess, false, pid)
 	if err != nil {
-		return 0, fmt.Errorf("OpenProcess failed: %v", err)
+		return 0, fmt.Errorf("OpenProcess failed: %w", err)
 	}
 	return uintptr(h), nil
 }
@@ -75,7 +75,7 @@ func injectAllocMemory(hProcess uintptr, size int, protect uint32) (uintptr, err
 	addr, _, err := procVirtualAllocEx.Call(hProcess, 0, uintptr(size),
 		uintptr(MEM_COMMIT|MEM_RESERVE), uintptr(protect))
 	if addr == 0 {
-		return 0, fmt.Errorf("memory allocation failed: %v", err)
+		return 0, fmt.Errorf("memory allocation failed: %w", err)
 	}
 	return addr, nil
 }
@@ -99,7 +99,7 @@ func injectWriteMemory(hProcess, addr uintptr, data []byte) (int, error) {
 		uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)),
 		uintptr(unsafe.Pointer(&bytesWritten)))
 	if ret == 0 {
-		return 0, fmt.Errorf("memory write failed: %v", err)
+		return 0, fmt.Errorf("memory write failed: %w", err)
 	}
 	return int(bytesWritten), nil
 }
@@ -121,7 +121,7 @@ func injectReadMemory(hProcess, addr uintptr, size int) ([]byte, error) {
 		uintptr(unsafe.Pointer(&buf[0])), uintptr(size),
 		uintptr(unsafe.Pointer(&bytesRead)))
 	if ret == 0 {
-		return nil, fmt.Errorf("memory read failed: %v", err)
+		return nil, fmt.Errorf("memory read failed: %w", err)
 	}
 	return buf[:bytesRead], nil
 }
@@ -142,7 +142,7 @@ func injectReadMemoryInto(hProcess, addr uintptr, buf unsafe.Pointer, size int) 
 		uintptr(buf), uintptr(size),
 		uintptr(unsafe.Pointer(&bytesRead)))
 	if ret == 0 {
-		return fmt.Errorf("memory read failed: %v", err)
+		return fmt.Errorf("memory read failed: %w", err)
 	}
 	return nil
 }
@@ -164,7 +164,7 @@ func injectProtectMemory(hProcess, addr uintptr, size int, protect uint32) (uint
 	ret, _, err := procVirtualProtectX.Call(hProcess, addr, uintptr(size),
 		uintptr(protect), uintptr(unsafe.Pointer(&oldProtect)))
 	if ret == 0 {
-		return 0, fmt.Errorf("VirtualProtectEx failed: %v", err)
+		return 0, fmt.Errorf("VirtualProtectEx failed: %w", err)
 	}
 	return oldProtect, nil
 }
@@ -200,7 +200,7 @@ func injectCreateRemoteThread(hProcess, startAddr uintptr) (uintptr, error) {
 	}
 	hThread, _, err := procCreateRemoteThread.Call(hProcess, 0, 0, startAddr, 0, 0, 0)
 	if hThread == 0 {
-		return 0, fmt.Errorf("remote thread creation failed: %v", err)
+		return 0, fmt.Errorf("remote thread creation failed: %w", err)
 	}
 	return hThread, nil
 }
@@ -217,7 +217,7 @@ func injectOpenThread(desiredAccess uint32, tid uint32) (uintptr, error) {
 	}
 	h, _, err := procOpenThread.Call(uintptr(desiredAccess), 0, uintptr(tid))
 	if h == 0 {
-		return 0, fmt.Errorf("OpenThread failed: %v", err)
+		return 0, fmt.Errorf("OpenThread failed: %w", err)
 	}
 	return h, nil
 }
@@ -233,7 +233,7 @@ func injectQueueAPC(hThread, funcAddr uintptr) error {
 	}
 	ret, _, err := procQueueUserAPC.Call(funcAddr, hThread, 0)
 	if ret == 0 {
-		return fmt.Errorf("APC queue failed: %v", err)
+		return fmt.Errorf("APC queue failed: %w", err)
 	}
 	return nil
 }
@@ -266,7 +266,7 @@ func injectGetThreadContext(hThread uintptr, ctx *CONTEXT_AMD64) error {
 	}
 	ret, _, err := procGetThreadContext.Call(hThread, uintptr(unsafe.Pointer(ctx)))
 	if ret == 0 {
-		return fmt.Errorf("GetThreadContext failed: %v", err)
+		return fmt.Errorf("GetThreadContext failed: %w", err)
 	}
 	return nil
 }
@@ -282,7 +282,7 @@ func injectSetThreadContext(hThread uintptr, ctx *CONTEXT_AMD64) error {
 	}
 	ret, _, err := procSetThreadContext.Call(hThread, uintptr(unsafe.Pointer(ctx)))
 	if ret == 0 {
-		return fmt.Errorf("SetThreadContext failed: %v", err)
+		return fmt.Errorf("SetThreadContext failed: %w", err)
 	}
 	return nil
 }

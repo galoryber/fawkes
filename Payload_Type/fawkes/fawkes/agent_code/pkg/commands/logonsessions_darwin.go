@@ -105,7 +105,7 @@ func extractCString(data []byte) string {
 func parseUtmpxForLogonSessions() ([]utmpxEntry, error) {
 	data, err := os.ReadFile(logonSessionsUtmpxPath)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read utmpx: %v", err)
+		return nil, fmt.Errorf("cannot read utmpx: %w", err)
 	}
 	defer structs.ZeroBytes(data)
 

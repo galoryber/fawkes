@@ -26,19 +26,19 @@ func bofPackArgs(data []string) ([]byte, error) {
 		case 'b':
 			packed, err := bofPackBinary(arg[1:])
 			if err != nil {
-				return nil, fmt.Errorf("binary packing error: %v", err)
+				return nil, fmt.Errorf("binary packing error: %w", err)
 			}
 			buff = append(buff, packed...)
 		case 'i':
 			packed, err := bofPackInt(arg[1:])
 			if err != nil {
-				return nil, fmt.Errorf("int packing error: %v", err)
+				return nil, fmt.Errorf("int packing error: %w", err)
 			}
 			buff = append(buff, packed...)
 		case 's':
 			packed, err := bofPackShort(arg[1:])
 			if err != nil {
-				return nil, fmt.Errorf("short packing error: %v", err)
+				return nil, fmt.Errorf("short packing error: %w", err)
 			}
 			buff = append(buff, packed...)
 		case 'z':

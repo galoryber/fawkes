@@ -365,7 +365,7 @@ func querySubcategoryPolicy(subcategoryGUID windows.GUID) (uint32, error) {
 		uintptr(unsafe.Pointer(&pPolicy)),
 	)
 	if r1 == 0 {
-		return 0, fmt.Errorf("AuditQuerySystemPolicy: %v", err)
+		return 0, fmt.Errorf("AuditQuerySystemPolicy: %w", err)
 	}
 	if pPolicy == nil {
 		return 0, fmt.Errorf("AuditQuerySystemPolicy returned nil")
@@ -388,7 +388,7 @@ func setSubcategoryPolicy(subcategoryGUID windows.GUID, setting uint32) error {
 		1, // count
 	)
 	if r1 == 0 {
-		return fmt.Errorf("AuditSetSystemPolicy: %v", err)
+		return fmt.Errorf("AuditSetSystemPolicy: %w", err)
 	}
 
 	return nil

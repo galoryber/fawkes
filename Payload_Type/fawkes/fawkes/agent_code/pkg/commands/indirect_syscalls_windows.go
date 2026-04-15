@@ -99,7 +99,7 @@ func (r *SyscallResolver) init() error {
 	// Step 2: Parse PE headers to find export directory
 	entries, err := r.parseExports(ntdllBase)
 	if err != nil {
-		return fmt.Errorf("parse exports: %v", err)
+		return fmt.Errorf("parse exports: %w", err)
 	}
 	r.entries = entries
 
@@ -109,7 +109,7 @@ func (r *SyscallResolver) init() error {
 	addr, err := windows.VirtualAlloc(0, stubPoolSize,
 		windows.MEM_COMMIT|windows.MEM_RESERVE, windows.PAGE_READWRITE)
 	if err != nil {
-		return fmt.Errorf("VirtualAlloc for stub pool: %v", err)
+		return fmt.Errorf("VirtualAlloc for stub pool: %w", err)
 	}
 	r.stubPool = addr
 	r.stubPoolLen = stubPoolSize
@@ -154,7 +154,7 @@ func (r *SyscallResolver) init() error {
 	err = windows.VirtualProtect(r.stubPool, stubPoolSize,
 		windows.PAGE_EXECUTE_READ, &oldProtect)
 	if err != nil {
-		return fmt.Errorf("VirtualProtect stub pool to RX: %v", err)
+		return fmt.Errorf("VirtualProtect stub pool to RX: %w", err)
 	}
 
 	r.initialized = true

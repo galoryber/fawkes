@@ -305,7 +305,7 @@ func resolveGPODN(conn *ldap.Conn, nameOrDN, baseDN string) (string, error) {
 	)
 	sr, err := conn.Search(searchReq)
 	if err != nil {
-		return "", fmt.Errorf("LDAP search error: %v", err)
+		return "", fmt.Errorf("LDAP search error: %w", err)
 	}
 	if len(sr.Entries) == 0 {
 		return "", fmt.Errorf("GPO '%s' not found", nameOrDN)
@@ -329,7 +329,7 @@ func resolveToSID(conn *ldap.Conn, nameOrSID, baseDN string) ([]byte, error) {
 	)
 	sr, err := conn.Search(searchReq)
 	if err != nil {
-		return nil, fmt.Errorf("search error: %v", err)
+		return nil, fmt.Errorf("search error: %w", err)
 	}
 	if len(sr.Entries) == 0 {
 		return nil, fmt.Errorf("'%s' not found", nameOrSID)

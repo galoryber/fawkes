@@ -61,7 +61,7 @@ func vssWMIConnect() (*ole.IDispatch, *ole.IDispatch, func(), error) {
 		oleErr, ok := err.(*ole.OleError)
 		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
 			runtime.UnlockOSThread()
-			return nil, nil, nil, fmt.Errorf("CoInitializeEx failed: %v", err)
+			return nil, nil, nil, fmt.Errorf("CoInitializeEx failed: %w", err)
 		}
 	}
 
@@ -69,14 +69,14 @@ func vssWMIConnect() (*ole.IDispatch, *ole.IDispatch, func(), error) {
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, nil, fmt.Errorf("failed to create SWbemLocator: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to create SWbemLocator: %w", err)
 	}
 	locator, err := unknown.QueryInterface(ole.IID_IDispatch)
 	unknown.Release()
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, nil, fmt.Errorf("failed to query IDispatch: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to query IDispatch: %w", err)
 	}
 
 	serviceResult, err := oleutil.CallMethod(locator, "ConnectServer", "", `root\CIMV2`)
@@ -84,7 +84,7 @@ func vssWMIConnect() (*ole.IDispatch, *ole.IDispatch, func(), error) {
 		locator.Release()
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, nil, fmt.Errorf("ConnectServer failed: %v", err)
+		return nil, nil, nil, fmt.Errorf("ConnectServer failed: %w", err)
 	}
 	services := serviceResult.ToIDispatch()
 

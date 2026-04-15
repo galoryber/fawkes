@@ -41,7 +41,7 @@ func wmiSubscriptionConnect(target string) (*ole.IDispatch, *ole.IDispatch, func
 		oleErr, ok := err.(*ole.OleError)
 		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
 			runtime.UnlockOSThread()
-			return nil, nil, nil, fmt.Errorf("CoInitializeEx failed: %v", err)
+			return nil, nil, nil, fmt.Errorf("CoInitializeEx failed: %w", err)
 		}
 	}
 
@@ -49,7 +49,7 @@ func wmiSubscriptionConnect(target string) (*ole.IDispatch, *ole.IDispatch, func
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, nil, fmt.Errorf("failed to create SWbemLocator: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to create SWbemLocator: %w", err)
 	}
 
 	locator, err := unknown.QueryInterface(ole.IID_IDispatch)
@@ -57,7 +57,7 @@ func wmiSubscriptionConnect(target string) (*ole.IDispatch, *ole.IDispatch, func
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, nil, fmt.Errorf("failed to query IDispatch: %v", err)
+		return nil, nil, nil, fmt.Errorf("failed to query IDispatch: %w", err)
 	}
 
 	server := ""
@@ -70,7 +70,7 @@ func wmiSubscriptionConnect(target string) (*ole.IDispatch, *ole.IDispatch, func
 		locator.Release()
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, nil, fmt.Errorf("ConnectServer failed (root\\subscription): %v", err)
+		return nil, nil, nil, fmt.Errorf("ConnectServer failed (root\\subscription): %w", err)
 	}
 	services := serviceResult.ToIDispatch()
 
@@ -362,7 +362,7 @@ func wmiPersistList(args wmiPersistArgs) structs.CommandResult {
 func wmiQuerySubscription(services *ole.IDispatch, wql string) ([]map[string]string, error) {
 	resultSet, err := oleutil.CallMethod(services, "ExecQuery", wql)
 	if err != nil {
-		return nil, fmt.Errorf("ExecQuery failed: %v", err)
+		return nil, fmt.Errorf("ExecQuery failed: %w", err)
 	}
 	defer resultSet.Clear()
 
@@ -426,7 +426,7 @@ func deleteWMIObjectByPath(services *ole.IDispatch, path string) error {
 	objDisp := objResult.ToIDispatch()
 	_, err = oleutil.CallMethod(objDisp, "Delete_")
 	if err != nil {
-		return fmt.Errorf("delete failed: %v", err)
+		return fmt.Errorf("delete failed: %w", err)
 	}
 	return nil
 }

@@ -138,13 +138,13 @@ func PerformAutoPatch(dllName, functionName string, numBytes int) (string, error
 	// Load DLL
 	dll, err := syscall.LoadDLL(dllName)
 	if err != nil {
-		return "", fmt.Errorf("error loading DLL %s: %v", dllName, err)
+		return "", fmt.Errorf("error loading DLL %s: %w", dllName, err)
 	}
 
 	// Get function address
 	proc, err := dll.FindProc(functionName)
 	if err != nil {
-		return "", fmt.Errorf("error finding function %s: %v", functionName, err)
+		return "", fmt.Errorf("error finding function %s: %w", functionName, err)
 	}
 
 	functionAddress := proc.Addr()
@@ -176,7 +176,7 @@ func PerformAutoPatch(dllName, functionName string, numBytes int) (string, error
 	)
 
 	if ret == 0 {
-		return "", fmt.Errorf("error reading memory: %v", err)
+		return "", fmt.Errorf("error reading memory: %w", err)
 	}
 
 	// Find nearest C3 (return) instruction
@@ -230,7 +230,7 @@ func PerformAutoPatch(dllName, functionName string, numBytes int) (string, error
 	)
 
 	if ret == 0 {
-		return "", fmt.Errorf("error writing jump instruction: %v", err)
+		return "", fmt.Errorf("error writing jump instruction: %w", err)
 	}
 
 	c3Address := targetAddress + uintptr(c3Index)

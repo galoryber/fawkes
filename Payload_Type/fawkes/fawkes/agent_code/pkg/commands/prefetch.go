@@ -314,7 +314,7 @@ func parsePrefetchFile(path string) (*prefetchEntry, error) {
 	if len(data) >= 8 && data[0] == 0x4D && data[1] == 0x41 && data[2] == 0x4D {
 		decompressed, err := decompressMAM(data)
 		if err != nil {
-			return nil, fmt.Errorf("MAM decompress: %v", err)
+			return nil, fmt.Errorf("MAM decompress: %w", err)
 		}
 		data = decompressed
 	}

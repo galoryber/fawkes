@@ -114,7 +114,7 @@ func ngDetectBaseDN(conn *ldap.Conn) (string, error) {
 		0, 10, false, "(objectClass=*)", []string{"defaultNamingContext"}, nil)
 	result, err := conn.Search(req)
 	if err != nil {
-		return "", fmt.Errorf("RootDSE query failed: %v", err)
+		return "", fmt.Errorf("RootDSE query failed: %w", err)
 	}
 	if len(result.Entries) == 0 {
 		return "", fmt.Errorf("no RootDSE entries returned")

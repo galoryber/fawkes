@@ -67,14 +67,14 @@ func getSSHDir(targetUser string) (string, error) {
 	if targetUser != "" {
 		u, err := user.Lookup(targetUser)
 		if err != nil {
-			return "", fmt.Errorf("user '%s' not found: %v", targetUser, err)
+			return "", fmt.Errorf("user '%s' not found: %w", targetUser, err)
 		}
 		return filepath.Join(u.HomeDir, ".ssh"), nil
 	}
 	// Current user
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("cannot determine home directory: %v", err)
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
 	}
 	return filepath.Join(home, ".ssh"), nil
 }

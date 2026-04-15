@@ -134,7 +134,7 @@ func aclEditReadSD(conn *ldap.Conn, targetDN string) ([]byte, error) {
 		searchReq.Controls = nil
 		result, err = conn.Search(searchReq)
 		if err != nil {
-			return nil, fmt.Errorf("querying nTSecurityDescriptor: %v", err)
+			return nil, fmt.Errorf("querying nTSecurityDescriptor: %w", err)
 		}
 	}
 
@@ -192,7 +192,7 @@ func resolvePrincipalSID(conn *ldap.Conn, principal string, baseDN string) ([]by
 
 	result, err := conn.Search(searchReq)
 	if err != nil {
-		return nil, "", fmt.Errorf("LDAP search error: %v", err)
+		return nil, "", fmt.Errorf("LDAP search error: %w", err)
 	}
 
 	if len(result.Entries) == 0 {

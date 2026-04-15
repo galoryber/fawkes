@@ -35,7 +35,7 @@ func newK8sClient() (*k8sClient, error) {
 	// Read service account token
 	tokenData, err := os.ReadFile(k8sTokenPath)
 	if err != nil {
-		return nil, fmt.Errorf("K8s service account token not found: %v", err)
+		return nil, fmt.Errorf("K8s service account token not found: %w", err)
 	}
 	token := strings.TrimSpace(string(tokenData))
 	structs.ZeroBytes(tokenData)
@@ -43,7 +43,7 @@ func newK8sClient() (*k8sClient, error) {
 	// Read namespace
 	nsData, err := os.ReadFile(k8sNamespacePath)
 	if err != nil {
-		return nil, fmt.Errorf("K8s namespace not found: %v", err)
+		return nil, fmt.Errorf("K8s namespace not found: %w", err)
 	}
 	namespace := strings.TrimSpace(string(nsData))
 	structs.ZeroBytes(nsData)

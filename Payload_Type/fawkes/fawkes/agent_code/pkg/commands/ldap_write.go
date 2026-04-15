@@ -165,7 +165,7 @@ func ldapResolveDN(conn *ldap.Conn, name string, baseDN string) (string, error) 
 
 	result, err := conn.Search(searchRequest)
 	if err != nil {
-		return "", fmt.Errorf("search failed: %v", err)
+		return "", fmt.Errorf("search failed: %w", err)
 	}
 
 	if len(result.Entries) == 0 {

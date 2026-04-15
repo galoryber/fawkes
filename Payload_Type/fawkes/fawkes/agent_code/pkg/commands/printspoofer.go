@@ -357,7 +357,7 @@ func triggerSpooler(printerName string) error {
 	//   53   = ERROR_BAD_NETPATH (path resolution failed)
 	// In all cases the spooler may still have connected to our pipe.
 	if ret == 0 && callErr != nil {
-		return fmt.Errorf("OpenPrinterW(%s): %v", printerName, callErr)
+		return fmt.Errorf("OpenPrinterW(%s): %w", printerName, callErr)
 	}
 
 	return nil

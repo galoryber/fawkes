@@ -115,7 +115,7 @@ func RevertCurrentToken() error {
 	// Call RevertToSelf to drop any thread impersonation
 	ret, _, err := procRevertToSelf.Call()
 	if ret == 0 {
-		return fmt.Errorf("RevertToSelf failed: %v", err)
+		return fmt.Errorf("RevertToSelf failed: %w", err)
 	}
 
 	// Release OS thread lock since we're no longer impersonating
@@ -142,7 +142,7 @@ func SetIdentityToken(token windows.Token) error {
 	// Impersonate the new token
 	ret, _, err := procImpersonateLoggedOnUser.Call(uintptr(token))
 	if ret == 0 {
-		return fmt.Errorf("ImpersonateLoggedOnUser failed: %v", err)
+		return fmt.Errorf("ImpersonateLoggedOnUser failed: %w", err)
 	}
 
 	// Store the token for later use
@@ -155,12 +155,12 @@ func SetIdentityToken(token windows.Token) error {
 func GetTokenUserInfo(token windows.Token) (string, error) {
 	tokenUser, err := token.GetTokenUser()
 	if err != nil {
-		return "", fmt.Errorf("GetTokenUser failed: %v", err)
+		return "", fmt.Errorf("GetTokenUser failed: %w", err)
 	}
 
 	account, domain, _, err := tokenUser.User.Sid.LookupAccount("")
 	if err != nil {
-		return "", fmt.Errorf("LookupAccount failed: %v", err)
+		return "", fmt.Errorf("LookupAccount failed: %w", err)
 	}
 
 	return fmt.Sprintf("%s\\%s", domain, account), nil
@@ -179,13 +179,13 @@ func GetCurrentIdentity() (string, error) {
 	// Fall back to process token
 	processHandle, err := windows.GetCurrentProcess()
 	if err != nil {
-		return "", fmt.Errorf("GetCurrentProcess failed: %v", err)
+		return "", fmt.Errorf("GetCurrentProcess failed: %w", err)
 	}
 
 	var processToken windows.Token
 	err = windows.OpenProcessToken(processHandle, windows.TOKEN_QUERY, &processToken)
 	if err != nil {
-		return "", fmt.Errorf("OpenProcessToken failed: %v", err)
+		return "", fmt.Errorf("OpenProcessToken failed: %w", err)
 	}
 	defer processToken.Close()
 
@@ -253,7 +253,7 @@ func SaveTokenToStore(name, source string) error {
 		&dupToken,
 	)
 	if err != nil {
-		return fmt.Errorf("DuplicateTokenEx failed: %v", err)
+		return fmt.Errorf("DuplicateTokenEx failed: %w", err)
 	}
 
 	identity, _ := GetTokenUserInfo(dupToken)
@@ -303,7 +303,7 @@ func UseTokenFromStore(name string) (string, error) {
 		&dupToken,
 	)
 	if err != nil {
-		return "", fmt.Errorf("DuplicateTokenEx failed: %v", err)
+		return "", fmt.Errorf("DuplicateTokenEx failed: %w", err)
 	}
 
 	// Clear current impersonation
@@ -317,7 +317,7 @@ func UseTokenFromStore(name string) (string, error) {
 	ret, _, sysErr := procImpersonateLoggedOnUser.Call(uintptr(dupToken))
 	if ret == 0 {
 		windows.CloseHandle(windows.Handle(dupToken))
-		return "", fmt.Errorf("ImpersonateLoggedOnUser failed: %v", sysErr)
+		return "", fmt.Errorf("ImpersonateLoggedOnUser failed: %w", sysErr)
 	}
 
 	gIdentityToken = dupToken

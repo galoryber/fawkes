@@ -96,7 +96,7 @@ func ticketOPtH(username, realm string, etypeID int32, etypeCfgName string, user
 		realm, etypeCfgName, etypeCfgName, realm, kdcAddr)
 	cfg, err := config.NewFromString(cfgStr)
 	if err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("config: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("config: %w", err)
 	}
 
 	cname := types.PrincipalName{
@@ -105,7 +105,7 @@ func ticketOPtH(username, realm string, etypeID int32, etypeCfgName string, user
 	}
 	asReq, err := messages.NewASReqForTGT(realm, cfg, cname)
 	if err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REQ: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REQ: %w", err)
 	}
 	asReq.ReqBody.EType = []int32{etypeID}
 
@@ -113,15 +113,15 @@ func ticketOPtH(username, realm string, etypeID int32, etypeCfgName string, user
 	paTS := types.PAEncTSEnc{PATimestamp: time.Now().UTC()}
 	paTSBytes, err := asn1.Marshal(paTS)
 	if err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-ENC-TIMESTAMP marshal: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-ENC-TIMESTAMP marshal: %w", err)
 	}
 	encTS, err := crypto.GetEncryptedData(paTSBytes, userKey, keyusage.AS_REQ_PA_ENC_TIMESTAMP, 0)
 	if err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-ENC-TIMESTAMP encrypt: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-ENC-TIMESTAMP encrypt: %w", err)
 	}
 	encTSBytes, err := asn1.Marshal(encTS)
 	if err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-ENC-TIMESTAMP bytes: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("PA-ENC-TIMESTAMP bytes: %w", err)
 	}
 	asReq.PAData = types.PADataSequence{
 		{PADataType: 2, PADataValue: encTSBytes},
@@ -141,16 +141,16 @@ func ticketOPtH(username, realm string, etypeID int32, etypeCfgName string, user
 	// Parse AS-REP
 	var asRep messages.ASRep
 	if err := asRep.Unmarshal(respBuf); err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REP parse: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REP parse: %w", err)
 	}
 
 	plainBytes, err := crypto.DecryptEncPart(asRep.EncPart, userKey, 3)
 	if err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REP decrypt: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REP decrypt: %w", err)
 	}
 	var decPart messages.EncKDCRepPart
 	if err := decPart.Unmarshal(plainBytes); err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REP EncPart parse: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, fmt.Errorf("AS-REP EncPart parse: %w", err)
 	}
 
 	return asRep.Ticket, decPart.Key, nil
@@ -161,7 +161,7 @@ func ticketOPtH(username, realm string, etypeID int32, etypeCfgName string, user
 func ticketKDCSend(marshalFn func() ([]byte, error), kdcAddr string) ([]byte, error) {
 	reqBytes, err := marshalFn()
 	if err != nil {
-		return nil, fmt.Errorf("marshal: %v", err)
+		return nil, fmt.Errorf("marshal: %w", err)
 	}
 
 	var lastErr error
@@ -186,7 +186,7 @@ func ticketKDCSend(marshalFn func() ([]byte, error), kdcAddr string) ([]byte, er
 func ticketKDCSendRaw(reqBytes []byte, kdcAddr string) ([]byte, error) {
 	conn, err := net.DialTimeout("tcp", kdcAddr, 10*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("connect to KDC %s: %v", kdcAddr, err)
+		return nil, fmt.Errorf("connect to KDC %s: %w", kdcAddr, err)
 	}
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
@@ -195,14 +195,14 @@ func ticketKDCSendRaw(reqBytes []byte, kdcAddr string) ([]byte, error) {
 	lenBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lenBuf, uint32(len(reqBytes)))
 	if _, err := conn.Write(lenBuf); err != nil {
-		return nil, fmt.Errorf("send length: %v", err)
+		return nil, fmt.Errorf("send length: %w", err)
 	}
 	if _, err := conn.Write(reqBytes); err != nil {
-		return nil, fmt.Errorf("send data: %v", err)
+		return nil, fmt.Errorf("send data: %w", err)
 	}
 
 	if _, err := io.ReadFull(conn, lenBuf); err != nil {
-		return nil, fmt.Errorf("read response length: %v", err)
+		return nil, fmt.Errorf("read response length: %w", err)
 	}
 	respLen := binary.BigEndian.Uint32(lenBuf)
 	if respLen > 1048576 {
@@ -210,7 +210,7 @@ func ticketKDCSendRaw(reqBytes []byte, kdcAddr string) ([]byte, error) {
 	}
 	respBuf := make([]byte, respLen)
 	if _, err := io.ReadFull(conn, respBuf); err != nil {
-		return nil, fmt.Errorf("read response: %v", err)
+		return nil, fmt.Errorf("read response: %w", err)
 	}
 
 	return respBuf, nil

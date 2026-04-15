@@ -185,7 +185,7 @@ func captureScreen() ([]byte, error) {
 	// Encode as PNG
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
-		return nil, fmt.Errorf("failed to encode PNG: %v", err)
+		return nil, fmt.Errorf("failed to encode PNG: %w", err)
 	}
 
 	return buf.Bytes(), nil

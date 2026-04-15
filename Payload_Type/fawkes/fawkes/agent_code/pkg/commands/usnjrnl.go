@@ -133,7 +133,7 @@ func openVolume(volume string, write bool) (windows.Handle, error) {
 		0,
 	)
 	if err != nil {
-		return 0, fmt.Errorf("open volume %s: %v", path, err)
+		return 0, fmt.Errorf("open volume %s: %w", path, err)
 	}
 	return windows.Handle(handle), nil
 }
@@ -152,7 +152,7 @@ func queryJournal(handle windows.Handle) (*usnJournalData, error) {
 		nil,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("FSCTL_QUERY_USN_JOURNAL: %v", err)
+		return nil, fmt.Errorf("FSCTL_QUERY_USN_JOURNAL: %w", err)
 	}
 	return &journal, nil
 }

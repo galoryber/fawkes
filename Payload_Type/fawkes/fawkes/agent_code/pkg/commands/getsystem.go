@@ -154,7 +154,7 @@ func findSystemProcess() (uint32, string, error) {
 	// Take a snapshot of all processes
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPPROCESS, 0)
 	if err != nil {
-		return 0, "", fmt.Errorf("CreateToolhelp32Snapshot: %v", err)
+		return 0, "", fmt.Errorf("CreateToolhelp32Snapshot: %w", err)
 	}
 	defer windows.CloseHandle(snapshot)
 
@@ -182,7 +182,7 @@ func findSystemProcess() (uint32, string, error) {
 
 	err = windows.Process32First(snapshot, &entry)
 	if err != nil {
-		return 0, "", fmt.Errorf("Process32First: %v", err)
+		return 0, "", fmt.Errorf("Process32First: %w", err)
 	}
 
 	for {

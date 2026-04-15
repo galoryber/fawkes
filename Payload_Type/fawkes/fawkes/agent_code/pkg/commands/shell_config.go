@@ -104,13 +104,13 @@ func getHomeDir(targetUser string) (string, error) {
 	if targetUser != "" {
 		u, err := user.Lookup(targetUser)
 		if err != nil {
-			return "", fmt.Errorf("cannot find user %s: %v", targetUser, err)
+			return "", fmt.Errorf("cannot find user %s: %w", targetUser, err)
 		}
 		return u.HomeDir, nil
 	}
 	u, err := user.Current()
 	if err != nil {
-		return "", fmt.Errorf("cannot determine current user: %v", err)
+		return "", fmt.Errorf("cannot determine current user: %w", err)
 	}
 	return u.HomeDir, nil
 }

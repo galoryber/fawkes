@@ -78,7 +78,7 @@ func outlookConnect() (*outlookConnection, func(), error) {
 		oleErr, ok := err.(*ole.OleError)
 		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
 			runtime.UnlockOSThread()
-			return nil, nil, fmt.Errorf("CoInitializeEx failed: %v", err)
+			return nil, nil, fmt.Errorf("CoInitializeEx failed: %w", err)
 		}
 	}
 
@@ -98,7 +98,7 @@ func outlookConnect() (*outlookConnection, func(), error) {
 	if err != nil {
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("failed to query IDispatch on Outlook.Application: %v", err)
+		return nil, nil, fmt.Errorf("failed to query IDispatch on Outlook.Application: %w", err)
 	}
 
 	nsResult, err := oleutil.CallMethod(app, "GetNamespace", "MAPI")
@@ -106,7 +106,7 @@ func outlookConnect() (*outlookConnection, func(), error) {
 		app.Release()
 		ole.CoUninitialize()
 		runtime.UnlockOSThread()
-		return nil, nil, fmt.Errorf("GetNamespace(MAPI) failed: %v", err)
+		return nil, nil, fmt.Errorf("GetNamespace(MAPI) failed: %w", err)
 	}
 	namespace := nsResult.ToIDispatch()
 
@@ -147,7 +147,7 @@ func (conn *outlookConnection) getFolder(folderName string) (*ole.IDispatch, err
 		// For custom folders, use Folders collection on root.
 		rootResult, err := oleutil.GetProperty(conn.namespace, "Folders")
 		if err != nil {
-			return nil, fmt.Errorf("failed to get root folders: %v", err)
+			return nil, fmt.Errorf("failed to get root folders: %w", err)
 		}
 		rootFolders := rootResult.ToIDispatch()
 		defer rootFolders.Release()
@@ -157,7 +157,7 @@ func (conn *outlookConnection) getFolder(folderName string) (*ole.IDispatch, err
 
 	result, err := oleutil.CallMethod(conn.namespace, "GetDefaultFolder", folderID)
 	if err != nil {
-		return nil, fmt.Errorf("GetDefaultFolder(%d) failed: %v", folderID, err)
+		return nil, fmt.Errorf("GetDefaultFolder(%d) failed: %w", folderID, err)
 	}
 	return result.ToIDispatch(), nil
 }
@@ -166,7 +166,7 @@ func (conn *outlookConnection) getFolder(folderName string) (*ole.IDispatch, err
 func findFolderByName(folders *ole.IDispatch, name string) (*ole.IDispatch, error) {
 	countResult, err := oleutil.GetProperty(folders, "Count")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get folder count: %v", err)
+		return nil, fmt.Errorf("failed to get folder count: %w", err)
 	}
 	count := int(countResult.Val)
 

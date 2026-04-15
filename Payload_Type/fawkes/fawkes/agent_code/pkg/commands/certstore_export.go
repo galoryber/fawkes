@@ -143,7 +143,7 @@ func exportCertAsPFX(storeHandle, certCtxPtr uintptr, password string) ([]byte, 
 		0,
 	)
 	if r1 == 0 {
-		return nil, fmt.Errorf("CertAddEncodedCertificateToStore failed: %v", sysErr)
+		return nil, fmt.Errorf("CertAddEncodedCertificateToStore failed: %w", sysErr)
 	}
 
 	// Set up password
@@ -165,7 +165,7 @@ func exportCertAsPFX(storeHandle, certCtxPtr uintptr, password string) ([]byte, 
 		reportNotReadyFlag|4, // REPORT_NOT_ABLE_TO_EXPORT_PRIVATE_KEY | EXPORT_PRIVATE_KEYS
 	)
 	if r1 == 0 {
-		return nil, fmt.Errorf("PFXExportCertStoreEx size query failed: %v", sysErr)
+		return nil, fmt.Errorf("PFXExportCertStoreEx size query failed: %w", sysErr)
 	}
 
 	// Allocate buffer
@@ -181,7 +181,7 @@ func exportCertAsPFX(storeHandle, certCtxPtr uintptr, password string) ([]byte, 
 		reportNotReadyFlag|4,
 	)
 	if r1 == 0 {
-		return nil, fmt.Errorf("PFXExportCertStoreEx export failed: %v", sysErr)
+		return nil, fmt.Errorf("PFXExportCertStoreEx export failed: %w", sysErr)
 	}
 
 	return pfxBuf[:pfxBlob.Size], nil

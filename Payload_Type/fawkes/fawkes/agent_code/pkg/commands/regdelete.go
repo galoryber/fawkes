@@ -113,13 +113,13 @@ func deleteSubKeysRecursive(hiveKey registry.Key, path string, sb *strings.Build
 	// Open the key to enumerate subkeys
 	key, err := registry.OpenKey(hiveKey, path, registry.READ)
 	if err != nil {
-		return 0, fmt.Errorf("cannot open %s: %v", path, err)
+		return 0, fmt.Errorf("cannot open %s: %w", path, err)
 	}
 
 	subkeys, err := key.ReadSubKeyNames(-1)
 	key.Close()
 	if err != nil {
-		return 0, fmt.Errorf("cannot enumerate subkeys of %s: %v", path, err)
+		return 0, fmt.Errorf("cannot enumerate subkeys of %s: %w", path, err)
 	}
 
 	// Delete children first (deepest first)
@@ -135,7 +135,7 @@ func deleteSubKeysRecursive(hiveKey registry.Key, path string, sb *strings.Build
 	// Now delete this leaf key
 	err = registry.DeleteKey(hiveKey, path)
 	if err != nil {
-		return count, fmt.Errorf("cannot delete %s: %v", path, err)
+		return count, fmt.Errorf("cannot delete %s: %w", path, err)
 	}
 	count++
 	sb.WriteString(fmt.Sprintf("  Deleted: %s\n", path))

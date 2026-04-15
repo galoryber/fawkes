@@ -210,7 +210,7 @@ func unhookDLL(dllName string) (string, error) {
 	)
 	invalidHandle := ^uintptr(0)
 	if hFile == invalidHandle {
-		return output, fmt.Errorf("CreateFileW failed: %v", err)
+		return output, fmt.Errorf("CreateFileW failed: %w", err)
 	}
 	defer procCloseHandle.Call(hFile)
 
@@ -224,7 +224,7 @@ func unhookDLL(dllName string) (string, error) {
 		0,
 	)
 	if hMapping == 0 {
-		return output, fmt.Errorf("CreateFileMappingW failed: %v", err)
+		return output, fmt.Errorf("CreateFileMappingW failed: %w", err)
 	}
 	defer procCloseHandle.Call(hMapping)
 
@@ -235,7 +235,7 @@ func unhookDLL(dllName string) (string, error) {
 		0, 0, 0,
 	)
 	if mappedBase == 0 {
-		return output, fmt.Errorf("MapViewOfFile failed: %v", err)
+		return output, fmt.Errorf("MapViewOfFile failed: %w", err)
 	}
 	defer procUnmapViewOfFile.Call(mappedBase)
 	output += fmt.Sprintf("[*] Clean copy mapped at: 0x%X\n", mappedBase)
@@ -243,7 +243,7 @@ func unhookDLL(dllName string) (string, error) {
 	// Step 5: Parse PE headers to find .text section
 	textSection, err := findTextSection(mappedBase)
 	if err != nil {
-		return output, fmt.Errorf("PE parsing failed: %v", err)
+		return output, fmt.Errorf("PE parsing failed: %w", err)
 	}
 
 	textVA := uintptr(textSection.VirtualAddress)
@@ -262,7 +262,7 @@ func unhookDLL(dllName string) (string, error) {
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return output, fmt.Errorf("memory protection change (RWX) failed: %v", err)
+		return output, fmt.Errorf("memory protection change (RWX) failed: %w", err)
 	}
 
 	// Step 7: Copy clean .text over hooked .text
@@ -345,19 +345,19 @@ func checkDLLHooks(dllName string) (string, error) {
 	)
 	invalidHandle := ^uintptr(0)
 	if hFile == invalidHandle {
-		return output, fmt.Errorf("CreateFileW failed: %v", err)
+		return output, fmt.Errorf("CreateFileW failed: %w", err)
 	}
 	defer procCloseHandle.Call(hFile)
 
 	hMapping, _, err := procCreateFileMappingW.Call(hFile, 0, uintptr(pageReadonly|secImage), 0, 0, 0)
 	if hMapping == 0 {
-		return output, fmt.Errorf("CreateFileMappingW failed: %v", err)
+		return output, fmt.Errorf("CreateFileMappingW failed: %w", err)
 	}
 	defer procCloseHandle.Call(hMapping)
 
 	mappedBase, _, err := procMapViewOfFile.Call(hMapping, uintptr(fileMapRead), 0, 0, 0)
 	if mappedBase == 0 {
-		return output, fmt.Errorf("MapViewOfFile failed: %v", err)
+		return output, fmt.Errorf("MapViewOfFile failed: %w", err)
 	}
 	defer procUnmapViewOfFile.Call(mappedBase)
 
@@ -491,7 +491,7 @@ func unhookDLLFromKnownDlls(dllName string) (string, error) {
 	// Step 4: Parse PE headers to find .text section
 	textSection, err := findTextSection(mappedBase)
 	if err != nil {
-		return output, fmt.Errorf("PE parsing failed: %v", err)
+		return output, fmt.Errorf("PE parsing failed: %w", err)
 	}
 
 	textVA := uintptr(textSection.VirtualAddress)
@@ -510,7 +510,7 @@ func unhookDLLFromKnownDlls(dllName string) (string, error) {
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return output, fmt.Errorf("memory protection change (RWX) failed: %v", err2)
+		return output, fmt.Errorf("memory protection change (RWX) failed: %w", err2)
 	}
 
 	// Step 6: Copy clean .text over hooked .text

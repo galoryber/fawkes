@@ -134,7 +134,7 @@ func searchGPPPasswords(args gppArgs) (string, []structs.MythicCredential, error
 	// Connect to DC via SMB
 	session, conn, err := smbDialSession(args.Server, args.Port, args.Username, args.Domain, args.Password, "", 10*time.Second)
 	if err != nil {
-		return "", nil, fmt.Errorf("SMB connect: %v", err)
+		return "", nil, fmt.Errorf("SMB connect: %w", err)
 	}
 	defer func() {
 		_ = session.Logoff()
@@ -144,7 +144,7 @@ func searchGPPPasswords(args gppArgs) (string, []structs.MythicCredential, error
 	// Mount SYSVOL share
 	share, err := session.Mount(fmt.Sprintf(`\\%s\SYSVOL`, args.Server))
 	if err != nil {
-		return "", nil, fmt.Errorf("mount SYSVOL: %v", err)
+		return "", nil, fmt.Errorf("mount SYSVOL: %w", err)
 	}
 	defer func() { _ = share.Umount() }()
 
@@ -156,7 +156,7 @@ func searchGPPPasswords(args gppArgs) (string, []structs.MythicCredential, error
 	// Walk the entire SYSVOL looking for XML files
 	err = gppWalkDir(share, ".", &results, &filesSearched)
 	if err != nil {
-		return "", nil, fmt.Errorf("walking SYSVOL: %v", err)
+		return "", nil, fmt.Errorf("walking SYSVOL: %w", err)
 	}
 
 	var sb strings.Builder

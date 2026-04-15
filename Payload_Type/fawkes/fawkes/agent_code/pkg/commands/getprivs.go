@@ -110,14 +110,14 @@ func getTokenForAdjust() (windows.Token, error) {
 	// Fall back to process token
 	processHandle, err := windows.GetCurrentProcess()
 	if err != nil {
-		return 0, fmt.Errorf("GetCurrentProcess: %v", err)
+		return 0, fmt.Errorf("GetCurrentProcess: %w", err)
 	}
 
 	var processToken windows.Token
 	err = windows.OpenProcessToken(processHandle,
 		windows.TOKEN_ADJUST_PRIVILEGES|windows.TOKEN_QUERY, &processToken)
 	if err != nil {
-		return 0, fmt.Errorf("OpenProcessToken: %v", err)
+		return 0, fmt.Errorf("OpenProcessToken: %w", err)
 	}
 	return processToken, nil
 }

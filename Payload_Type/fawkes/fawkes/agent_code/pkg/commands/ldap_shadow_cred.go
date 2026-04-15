@@ -115,7 +115,7 @@ func buildKeyCredential(pub *rsa.PublicKey) ([]byte, []byte, error) {
 	// Generate random device ID
 	deviceID, err := randomGUID()
 	if err != nil {
-		return nil, nil, fmt.Errorf("generating device ID: %v", err)
+		return nil, nil, fmt.Errorf("generating device ID: %w", err)
 	}
 
 	now := time.Now().UTC()

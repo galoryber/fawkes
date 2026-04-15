@@ -200,7 +200,7 @@ func readCookieData(dbPath string, key []byte, browserName, profileName string) 
 		})
 	}
 	if err := rows.Err(); err != nil {
-		return cookies, fmt.Errorf("row iteration error: %v", err)
+		return cookies, fmt.Errorf("row iteration error: %w", err)
 	}
 
 	if decryptFails > 0 && len(cookies) == 0 {

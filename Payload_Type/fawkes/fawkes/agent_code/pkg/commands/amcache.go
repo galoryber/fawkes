@@ -71,13 +71,13 @@ func readShimcacheRaw() ([]byte, error) {
 		`SYSTEM\CurrentControlSet\Control\Session Manager\AppCompatCache`,
 		registry.QUERY_VALUE)
 	if err != nil {
-		return nil, fmt.Errorf("open registry key: %v", err)
+		return nil, fmt.Errorf("open registry key: %w", err)
 	}
 	defer key.Close()
 
 	val, _, err := key.GetBinaryValue("AppCompatCache")
 	if err != nil {
-		return nil, fmt.Errorf("read AppCompatCache value: %v", err)
+		return nil, fmt.Errorf("read AppCompatCache value: %w", err)
 	}
 	return val, nil
 }
@@ -261,12 +261,12 @@ func writeShimcache(data []byte) error {
 		`SYSTEM\CurrentControlSet\Control\Session Manager\AppCompatCache`,
 		registry.SET_VALUE)
 	if err != nil {
-		return fmt.Errorf("open key for write: %v", err)
+		return fmt.Errorf("open key for write: %w", err)
 	}
 	defer key.Close()
 
 	if err := key.SetBinaryValue("AppCompatCache", data); err != nil {
-		return fmt.Errorf("write value: %v", err)
+		return fmt.Errorf("write value: %w", err)
 	}
 	return nil
 }

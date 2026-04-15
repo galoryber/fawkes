@@ -123,7 +123,7 @@ func enumerateValues(key registry.Key, hive, path string) (string, error) {
 
 	subkeys, err := key.ReadSubKeyNames(-1)
 	if err != nil {
-		return "", fmt.Errorf("failed to read subkeys: %v", err)
+		return "", fmt.Errorf("failed to read subkeys: %w", err)
 	}
 	if len(subkeys) > 0 {
 		output.WriteString(fmt.Sprintf("Subkeys (%d):\n", len(subkeys)))
@@ -135,7 +135,7 @@ func enumerateValues(key registry.Key, hive, path string) (string, error) {
 
 	valueNames, err := key.ReadValueNames(-1)
 	if err != nil {
-		return "", fmt.Errorf("failed to read value names: %v", err)
+		return "", fmt.Errorf("failed to read value names: %w", err)
 	}
 
 	if len(valueNames) > 0 {
@@ -228,7 +228,7 @@ func parseRegWriteValue(key registry.Key, name, data, regType string) error {
 	case "REG_BINARY":
 		binData, err := hex.DecodeString(strings.TrimPrefix(data, "0x"))
 		if err != nil {
-			return fmt.Errorf("invalid binary hex data '%s': %v", data, err)
+			return fmt.Errorf("invalid binary hex data '%s': %w", data, err)
 		}
 		return key.SetBinaryValue(name, binData)
 	default:

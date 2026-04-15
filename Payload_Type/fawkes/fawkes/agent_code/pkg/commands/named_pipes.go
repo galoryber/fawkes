@@ -99,7 +99,7 @@ func enumerateNamedPipes() ([]string, error) {
 	)
 
 	if handle == uintptr(windows.InvalidHandle) {
-		return nil, fmt.Errorf("FindFirstFile: %v", callErr)
+		return nil, fmt.Errorf("FindFirstFile: %w", callErr)
 	}
 	defer procFindClose.Call(handle)
 

@@ -140,7 +140,7 @@ func readInputData(args base64Args) ([]byte, error) {
 	if args.File {
 		data, err := os.ReadFile(args.Input)
 		if err != nil {
-			return nil, fmt.Errorf("reading file: %v", err)
+			return nil, fmt.Errorf("reading file: %w", err)
 		}
 		return data, nil
 	}
@@ -168,7 +168,7 @@ func parseXORKey(key string) ([]byte, error) {
 		hexStr := strings.TrimPrefix(strings.TrimPrefix(key, "0x"), "0X")
 		decoded, err := hex.DecodeString(hexStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid hex key: %v", err)
+			return nil, fmt.Errorf("invalid hex key: %w", err)
 		}
 		return decoded, nil
 	}

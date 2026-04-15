@@ -107,14 +107,14 @@ func remoteRegConnect(args remoteRegArgs) (winreg.WinregClient, *winreg.Key, con
 	)
 	if err != nil {
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %v", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %w", err)
 	}
 
 	cli, err := winreg.NewWinregClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
 	if err != nil {
 		cc.Close(ctx)
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create WinReg client: %v", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create WinReg client: %w", err)
 	}
 
 	cleanup := func() {
@@ -125,7 +125,7 @@ func remoteRegConnect(args remoteRegArgs) (winreg.WinregClient, *winreg.Key, con
 	if err != nil {
 		cleanup()
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to open hive %s: %v", args.Hive, err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to open hive %s: %w", args.Hive, err)
 	}
 
 	return cli, hiveKey, ctx, cancel, cleanup, nil

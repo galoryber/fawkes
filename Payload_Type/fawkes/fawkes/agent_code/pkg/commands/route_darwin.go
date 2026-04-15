@@ -13,7 +13,7 @@ func enumerateRoutes() ([]RouteEntry, error) {
 	// This is a common approach since macOS doesn't expose /proc/net/route
 	out, err := execCmdTimeoutOutput("netstat", "-rn")
 	if err != nil {
-		return nil, fmt.Errorf("netstat -rn failed: %v", err)
+		return nil, fmt.Errorf("netstat -rn failed: %w", err)
 	}
 
 	return parseNetstatRoutes(string(out))

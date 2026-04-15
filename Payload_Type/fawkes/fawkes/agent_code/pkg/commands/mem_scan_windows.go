@@ -42,7 +42,7 @@ func scanProcessMemory(pid int, searchBytes []byte, maxResults int, contextBytes
 	access := uint32(msProcessVMRead | msProcessQueryInfo)
 	handle, err := windows.OpenProcess(access, false, uint32(pid))
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("OpenProcess(%d): %v", pid, err)
+		return nil, 0, 0, fmt.Errorf("OpenProcess(%d): %w", pid, err)
 	}
 	defer func() { _ = windows.CloseHandle(handle) }()
 

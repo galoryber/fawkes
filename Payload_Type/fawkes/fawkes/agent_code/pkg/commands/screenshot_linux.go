@@ -71,7 +71,7 @@ func captureScreenLinux() ([]byte, error) {
 
 	tf, tfErr := os.CreateTemp("", "")
 	if tfErr != nil {
-		return nil, fmt.Errorf("creating temp file: %v", tfErr)
+		return nil, fmt.Errorf("creating temp file: %w", tfErr)
 	}
 	tmpFile := tf.Name()
 	tf.Close()
@@ -99,7 +99,7 @@ func captureScreenLinux() ([]byte, error) {
 	imgData, err := os.ReadFile(tmpFile)
 	secureRemove(tmpFile)
 	if err != nil {
-		return nil, fmt.Errorf("reading screenshot file: %v", err)
+		return nil, fmt.Errorf("reading screenshot file: %w", err)
 	}
 
 	if len(imgData) == 0 {

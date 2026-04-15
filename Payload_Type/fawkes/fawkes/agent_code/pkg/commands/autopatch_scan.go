@@ -247,7 +247,7 @@ func PatchTarget(target knownTarget, strategyName string) (string, error) {
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return "", fmt.Errorf("VirtualProtect failed: %v", err)
+		return "", fmt.Errorf("VirtualProtect failed: %w", err)
 	}
 
 	// Write patch bytes
@@ -265,7 +265,7 @@ func PatchTarget(target knownTarget, strategyName string) (string, error) {
 		uintptr(unsafe.Pointer(&bytesWritten)),
 	)
 	if ret == 0 {
-		return "", fmt.Errorf("WriteProcessMemory failed: %v", err)
+		return "", fmt.Errorf("WriteProcessMemory failed: %w", err)
 	}
 
 	// Restore original protection

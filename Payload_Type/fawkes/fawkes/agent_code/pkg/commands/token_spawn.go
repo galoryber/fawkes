@@ -39,7 +39,7 @@ func spawnWithToken(token windows.Token, cmdLine string) (*SpawnResult, error) {
 
 	cmdUTF16, err := syscall.UTF16PtrFromString(cmdLine)
 	if err != nil {
-		return nil, fmt.Errorf("invalid command line: %v", err)
+		return nil, fmt.Errorf("invalid command line: %w", err)
 	}
 
 	var si syscall.StartupInfo
@@ -64,7 +64,7 @@ func spawnWithToken(token windows.Token, cmdLine string) (*SpawnResult, error) {
 	)
 
 	if ret == 0 {
-		return nil, fmt.Errorf("CreateProcessWithTokenW failed: %v", callErr)
+		return nil, fmt.Errorf("CreateProcessWithTokenW failed: %w", callErr)
 	}
 
 	pid := pi.ProcessId

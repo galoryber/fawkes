@@ -87,7 +87,7 @@ func parseMemoryMaps(pid int) ([]memRegion, error) {
 	mapsPath := fmt.Sprintf("/proc/%d/maps", pid)
 	f, err := os.Open(mapsPath)
 	if err != nil {
-		return nil, fmt.Errorf("open %s: %v", mapsPath, err)
+		return nil, fmt.Errorf("open %s: %w", mapsPath, err)
 	}
 	defer func() { _ = f.Close() }()
 

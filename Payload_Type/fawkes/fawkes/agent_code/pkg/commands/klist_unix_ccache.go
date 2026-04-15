@@ -39,7 +39,7 @@ func parseCcache(path string) (*ccachePrincipal, []ccacheCredential, error) {
 	// Read version (2 bytes)
 	var version uint16
 	if err := binary.Read(f, binary.BigEndian, &version); err != nil {
-		return nil, nil, fmt.Errorf("reading version: %v", err)
+		return nil, nil, fmt.Errorf("reading version: %w", err)
 	}
 
 	if version != 0x0504 && version != 0x0503 {
@@ -50,11 +50,11 @@ func parseCcache(path string) (*ccachePrincipal, []ccacheCredential, error) {
 	if version == 0x0504 {
 		var headerLen uint16
 		if err := binary.Read(f, binary.BigEndian, &headerLen); err != nil {
-			return nil, nil, fmt.Errorf("reading header length: %v", err)
+			return nil, nil, fmt.Errorf("reading header length: %w", err)
 		}
 		if headerLen > 0 {
 			if _, err := io.CopyN(io.Discard, f, int64(headerLen)); err != nil {
-				return nil, nil, fmt.Errorf("skipping header: %v", err)
+				return nil, nil, fmt.Errorf("skipping header: %w", err)
 			}
 		}
 	}
@@ -62,7 +62,7 @@ func parseCcache(path string) (*ccachePrincipal, []ccacheCredential, error) {
 	// Read default principal
 	defPrincipal, err := readCcachePrincipal(f)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading default principal: %v", err)
+		return nil, nil, fmt.Errorf("reading default principal: %w", err)
 	}
 
 	// Read credentials until EOF
@@ -157,7 +157,7 @@ func readCcacheCredential(r io.Reader) (*ccacheCredential, error) {
 
 	// Skip key data
 	if err := skipCcacheOctetString(r); err != nil {
-		return nil, fmt.Errorf("skipping keyblock: %v", err)
+		return nil, fmt.Errorf("skipping keyblock: %w", err)
 	}
 
 	// Times: authtime, starttime, endtime, renew_till (each 4 bytes BE, unix seconds)

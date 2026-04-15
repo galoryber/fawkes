@@ -144,7 +144,7 @@ cleanup:
 func getDefaultInterface() (string, error) {
 	conn, err := net.Dial("udp", "8.8.8.8:53")
 	if err != nil {
-		return "", fmt.Errorf("auto-detect interface: %v", err)
+		return "", fmt.Errorf("auto-detect interface: %w", err)
 	}
 	defer conn.Close()
 
@@ -171,10 +171,10 @@ func getDefaultInterface() (string, error) {
 func enableIPForwarding() (string, error) {
 	prev, err := os.ReadFile("/proc/sys/net/ipv4/ip_forward")
 	if err != nil {
-		return "", fmt.Errorf("read ip_forward: %v", err)
+		return "", fmt.Errorf("read ip_forward: %w", err)
 	}
 	if err := os.WriteFile("/proc/sys/net/ipv4/ip_forward", []byte("1"), 0644); err != nil {
-		return string(prev), fmt.Errorf("enable ip_forward: %v", err)
+		return string(prev), fmt.Errorf("enable ip_forward: %w", err)
 	}
 	return string(prev), nil
 }

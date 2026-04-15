@@ -25,7 +25,7 @@ func enumerateDrivers() ([]DriverInfo, error) {
 		uintptr(unsafe.Pointer(&needed)),
 	)
 	if ret == 0 {
-		return nil, fmt.Errorf("EnumDeviceDrivers size query failed: %v", err)
+		return nil, fmt.Errorf("EnumDeviceDrivers size query failed: %w", err)
 	}
 
 	count := needed / uint32(unsafe.Sizeof(uintptr(0)))
@@ -41,7 +41,7 @@ func enumerateDrivers() ([]DriverInfo, error) {
 		uintptr(unsafe.Pointer(&needed)),
 	)
 	if ret == 0 {
-		return nil, fmt.Errorf("EnumDeviceDrivers failed: %v", err)
+		return nil, fmt.Errorf("EnumDeviceDrivers failed: %w", err)
 	}
 
 	// Update count based on actual returned data

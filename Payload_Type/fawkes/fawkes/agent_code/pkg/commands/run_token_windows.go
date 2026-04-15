@@ -44,7 +44,7 @@ func runWithExtendedAttrs(cmdLine string, ppid int, blockDLLs bool) (string, err
 	sa.InheritHandle = 1
 
 	if err := windows.CreatePipe(&stdoutRead, &stdoutWrite, &sa, 0); err != nil {
-		return "", fmt.Errorf("CreatePipe: %v", err)
+		return "", fmt.Errorf("CreatePipe: %w", err)
 	}
 	defer windows.CloseHandle(stdoutRead)
 
@@ -76,7 +76,7 @@ func runWithExtendedAttrs(cmdLine string, ppid int, blockDLLs bool) (string, err
 	)
 	if ret == 0 {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("InitializeProcThreadAttributeList: %v", err)
+		return "", fmt.Errorf("InitializeProcThreadAttributeList: %w", err)
 	}
 	defer procDeleteProcThreadAttributeList.Call(uintptr(unsafe.Pointer(attrList)))
 
@@ -106,7 +106,7 @@ func runWithExtendedAttrs(cmdLine string, ppid int, blockDLLs bool) (string, err
 		)
 		if ret == 0 {
 			windows.CloseHandle(stdoutWrite)
-			return "", fmt.Errorf("UpdateProcThreadAttribute (PPID): %v", err)
+			return "", fmt.Errorf("UpdateProcThreadAttribute (PPID): %w", err)
 		}
 	}
 
@@ -121,7 +121,7 @@ func runWithExtendedAttrs(cmdLine string, ppid int, blockDLLs bool) (string, err
 		)
 		if ret == 0 {
 			windows.CloseHandle(stdoutWrite)
-			return "", fmt.Errorf("UpdateProcThreadAttribute (BlockDLLs): %v", err)
+			return "", fmt.Errorf("UpdateProcThreadAttribute (BlockDLLs): %w", err)
 		}
 	}
 
@@ -138,7 +138,7 @@ func runWithExtendedAttrs(cmdLine string, ppid int, blockDLLs bool) (string, err
 	cmdUTF16, cmdErr := syscall.UTF16PtrFromString(cmdLine)
 	if cmdErr != nil {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("invalid command: %v", cmdErr)
+		return "", fmt.Errorf("invalid command: %w", cmdErr)
 	}
 
 	creationFlags := uint32(CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT)
@@ -157,7 +157,7 @@ func runWithExtendedAttrs(cmdLine string, ppid int, blockDLLs bool) (string, err
 	windows.CloseHandle(stdoutWrite)
 
 	if ret == 0 {
-		return "", fmt.Errorf("CreateProcessW: %v", err)
+		return "", fmt.Errorf("CreateProcessW: %w", err)
 	}
 
 	defer windows.CloseHandle(pi.Process)
@@ -206,7 +206,7 @@ func runWithToken(token windows.Token, cmdLine string) (string, error) {
 	sa.InheritHandle = 1
 
 	if err := windows.CreatePipe(&stdoutRead, &stdoutWrite, &sa, 0); err != nil {
-		return "", fmt.Errorf("CreatePipe: %v", err)
+		return "", fmt.Errorf("CreatePipe: %w", err)
 	}
 	defer windows.CloseHandle(stdoutRead)
 
@@ -225,7 +225,7 @@ func runWithToken(token windows.Token, cmdLine string) (string, error) {
 	cmdUTF16, err := syscall.UTF16PtrFromString(cmdLine)
 	if err != nil {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("invalid command: %v", err)
+		return "", fmt.Errorf("invalid command: %w", err)
 	}
 
 	ret, _, callErr := procCreateProcessWithTokenW.Call(
@@ -244,7 +244,7 @@ func runWithToken(token windows.Token, cmdLine string) (string, error) {
 	windows.CloseHandle(stdoutWrite)
 
 	if ret == 0 {
-		return "", fmt.Errorf("CreateProcessWithTokenW: %v", callErr)
+		return "", fmt.Errorf("CreateProcessWithTokenW: %w", callErr)
 	}
 
 	defer syscall.CloseHandle(pi.Process)

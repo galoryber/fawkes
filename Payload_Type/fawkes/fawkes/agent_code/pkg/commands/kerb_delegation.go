@@ -101,7 +101,7 @@ func kdDetectBaseDN(conn *ldap.Conn) (string, error) {
 
 	result, err := conn.Search(req)
 	if err != nil {
-		return "", fmt.Errorf("RootDSE query failed: %v", err)
+		return "", fmt.Errorf("RootDSE query failed: %w", err)
 	}
 	if len(result.Entries) == 0 {
 		return "", fmt.Errorf("no RootDSE entries returned")

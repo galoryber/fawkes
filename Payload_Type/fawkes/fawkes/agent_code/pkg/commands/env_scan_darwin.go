@@ -23,7 +23,7 @@ func readProcessEnviron(pid int) ([]string, string, error) {
 	// Layout: argc(int32) | exec_path\0 | args...\0 | \0-padding | env_vars\0
 	buf, err := unix.SysctlRaw("kern.procargs2", pid)
 	if err != nil {
-		return nil, processName, fmt.Errorf("sysctl kern.procargs2: %v", err)
+		return nil, processName, fmt.Errorf("sysctl kern.procargs2: %w", err)
 	}
 
 	if len(buf) < 4 {
@@ -88,7 +88,7 @@ func readProcessEnviron(pid int) ([]string, string, error) {
 func listAllPIDs() ([]int, error) {
 	procs, err := unix.SysctlKinfoProcSlice("kern.proc.all")
 	if err != nil {
-		return nil, fmt.Errorf("sysctl kern.proc.all: %v", err)
+		return nil, fmt.Errorf("sysctl kern.proc.all: %w", err)
 	}
 	pids := make([]int, 0, len(procs))
 	for _, p := range procs {

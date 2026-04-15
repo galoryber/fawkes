@@ -123,7 +123,7 @@ func extractNTLMv2Hash(type3 []byte, serverChallenge [8]byte) *ntlmCapturedHash 
 func captureHTTPNTLM(ctx context.Context, listenAddr string, mu *sync.Mutex, result *poisonResult) error {
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		return fmt.Errorf("bind HTTP %s: %v", listenAddr, err)
+		return fmt.Errorf("bind HTTP %s: %w", listenAddr, err)
 	}
 	defer listener.Close()
 

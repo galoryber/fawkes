@@ -73,26 +73,26 @@ func parseMapsLine(line string) (memoryRegion, error) {
 
 	start, err := strconv.ParseUint(addrParts[0], 16, 64)
 	if err != nil {
-		return memoryRegion{}, fmt.Errorf("invalid start address: %v", err)
+		return memoryRegion{}, fmt.Errorf("invalid start address: %w", err)
 	}
 
 	end, err := strconv.ParseUint(addrParts[1], 16, 64)
 	if err != nil {
-		return memoryRegion{}, fmt.Errorf("invalid end address: %v", err)
+		return memoryRegion{}, fmt.Errorf("invalid end address: %w", err)
 	}
 
 	perms := fields[1]
 
 	offset, err := strconv.ParseUint(fields[2], 16, 64)
 	if err != nil {
-		return memoryRegion{}, fmt.Errorf("invalid offset: %v", err)
+		return memoryRegion{}, fmt.Errorf("invalid offset: %w", err)
 	}
 
 	dev := fields[3]
 
 	inode, err := strconv.ParseUint(fields[4], 10, 64)
 	if err != nil {
-		return memoryRegion{}, fmt.Errorf("invalid inode: %v", err)
+		return memoryRegion{}, fmt.Errorf("invalid inode: %w", err)
 	}
 
 	pathname := ""

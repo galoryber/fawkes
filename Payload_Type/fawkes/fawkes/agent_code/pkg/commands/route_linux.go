@@ -17,7 +17,7 @@ func enumerateRoutes() ([]RouteEntry, error) {
 	// Parse /proc/net/route
 	data, err := os.ReadFile("/proc/net/route")
 	if err != nil {
-		return nil, fmt.Errorf("failed to read /proc/net/route: %v", err)
+		return nil, fmt.Errorf("failed to read /proc/net/route: %w", err)
 	}
 	defer structs.ZeroBytes(data)
 

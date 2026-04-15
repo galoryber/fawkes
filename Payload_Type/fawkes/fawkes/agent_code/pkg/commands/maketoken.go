@@ -172,17 +172,17 @@ func makeTokenSpawn(params MakeTokenParams) structs.CommandResult {
 func logonUser(username, domain, password string, logonType int) (windows.Token, error) {
 	usernamePtr, err := syscall.UTF16PtrFromString(username)
 	if err != nil {
-		return 0, fmt.Errorf("failed to convert username: %v", err)
+		return 0, fmt.Errorf("failed to convert username: %w", err)
 	}
 
 	domainPtr, err := syscall.UTF16PtrFromString(domain)
 	if err != nil {
-		return 0, fmt.Errorf("failed to convert domain: %v", err)
+		return 0, fmt.Errorf("failed to convert domain: %w", err)
 	}
 
 	passwordPtr, err := syscall.UTF16PtrFromString(password)
 	if err != nil {
-		return 0, fmt.Errorf("failed to convert password: %v", err)
+		return 0, fmt.Errorf("failed to convert password: %w", err)
 	}
 
 	// Select provider based on logon type

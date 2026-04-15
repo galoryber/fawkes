@@ -230,7 +230,7 @@ func loadAMSI() error {
 	defer obfuscate.Zero(name)
 	dll, err := syscall.LoadDLL(name)
 	if err != nil {
-		return fmt.Errorf("failed to load target DLL: %v", err)
+		return fmt.Errorf("failed to load target DLL: %w", err)
 	}
 	// We keep the handle - don't release it since we want it loaded in memory
 	_ = dll

@@ -146,7 +146,7 @@ const smbOperationTimeout = 30 * time.Second
 func smbConnect(args smbArgs) (*smbConn, error) {
 	session, conn, err := smbDialSession(args.Host, args.Port, args.Username, args.Domain, args.Password, args.Hash, smbOperationTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("SMB auth to %s as %s\\%s: %v", args.Host, args.Domain, args.Username, err)
+		return nil, fmt.Errorf("SMB auth to %s as %s\\%s: %w", args.Host, args.Domain, args.Username, err)
 	}
 	return &smbConn{session: session, conn: conn}, nil
 }

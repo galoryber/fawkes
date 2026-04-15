@@ -109,7 +109,7 @@ func enumerateWTSSessions() ([]sessionEntry, error) {
 		uintptr(unsafe.Pointer(&sessionCount)),
 	)
 	if ret == 0 {
-		return nil, fmt.Errorf("WTSEnumerateSessionsW failed: %v", err)
+		return nil, fmt.Errorf("WTSEnumerateSessionsW failed: %w", err)
 	}
 	defer procWTSFreeMemory.Call(sessionInfoPtr)
 

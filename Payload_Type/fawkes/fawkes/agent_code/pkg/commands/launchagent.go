@@ -63,7 +63,7 @@ func getPlistDir(daemon bool) (string, error) {
 	// User-level LaunchAgent
 	u, err := user.Current()
 	if err != nil {
-		return "", fmt.Errorf("cannot determine current user: %v", err)
+		return "", fmt.Errorf("cannot determine current user: %w", err)
 	}
 	return filepath.Join(u.HomeDir, "Library", "LaunchAgents"), nil
 }

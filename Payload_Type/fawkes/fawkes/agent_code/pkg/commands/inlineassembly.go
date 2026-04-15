@@ -75,7 +75,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 		}
 		if loadErr != nil {
 			assemblyMutex.Unlock()
-			return "", fmt.Errorf("CLR initialization failed: %v", loadErr)
+			return "", fmt.Errorf("CLR initialization failed: %w", loadErr)
 		}
 		clrStarted = true
 		sb.WriteString("[+] CLR started\n")
@@ -90,7 +90,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
+				loadErr = fmt.Errorf("PANIC during LoadAssembly: %w", r)
 			}
 		}()
 		methodInfo, loadErr = clr.LoadAssembly(runtimeHost, assemblyBytes)
@@ -112,7 +112,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
+				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %w", r)
 			}
 		}()
 		stdout, stderr = clr.InvokeAssembly(methodInfo, args)
@@ -120,7 +120,7 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 	assemblyMutex.Unlock()
 
 	if invokeErr != nil {
-		return sb.String(), fmt.Errorf("Invoke error: %v", invokeErr)
+		return sb.String(), fmt.Errorf("Invoke error: %w", invokeErr)
 	}
 
 	if stdout != "" {
@@ -252,7 +252,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				loadErr = fmt.Errorf("PANIC during LoadAssembly: %v", r)
+				loadErr = fmt.Errorf("PANIC during LoadAssembly: %w", r)
 			}
 		}()
 
@@ -303,7 +303,7 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
-				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %v", r)
+				invokeErr = fmt.Errorf("PANIC during InvokeAssembly: %w", r)
 			}
 		}()
 

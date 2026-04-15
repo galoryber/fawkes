@@ -28,14 +28,14 @@ func peLoaderExecThread(entryPoint uintptr, cmdLine string, timeout int) (string
 	sa.InheritHandle = 1
 
 	if err := windows.CreatePipe(&stdoutRead, &stdoutWrite, &sa, 0); err != nil {
-		return "", fmt.Errorf("CreatePipe: %v", err)
+		return "", fmt.Errorf("CreatePipe: %w", err)
 	}
 	defer windows.CloseHandle(stdoutRead)
 
 	// Don't inherit the read end
 	if err := windows.SetHandleInformation(stdoutRead, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("SetHandleInformation: %v", err)
+		return "", fmt.Errorf("SetHandleInformation: %w", err)
 	}
 
 	// Save original handles
@@ -89,7 +89,7 @@ func peLoaderExecThread(entryPoint uintptr, cmdLine string, timeout int) (string
 	)
 	if hThread == 0 {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("CreateThread failed: %v", lastErr)
+		return "", fmt.Errorf("CreateThread failed: %w", lastErr)
 	}
 	defer syscall.CloseHandle(syscall.Handle(hThread))
 
@@ -143,7 +143,7 @@ func peLoaderResolveImportsHooked(baseAddr uintptr, importRVA uintptr) error {
 		dllNameBytes := append([]byte(dllName), 0)
 		hModule, _, loadErr := procLoadLibraryARL.Call(uintptr(unsafe.Pointer(&dllNameBytes[0])))
 		if hModule == 0 {
-			return fmt.Errorf("LoadLibrary(%s) failed: %v", dllName, loadErr)
+			return fmt.Errorf("LoadLibrary(%s) failed: %w", dllName, loadErr)
 		}
 
 		// Walk IAT
@@ -186,7 +186,7 @@ func peLoaderResolveImportsHooked(baseAddr uintptr, importRVA uintptr) error {
 			}
 
 			if funcAddr == 0 {
-				return fmt.Errorf("failed to resolve import in %s: %v", dllName, lastErr)
+				return fmt.Errorf("failed to resolve import in %s: %w", dllName, lastErr)
 			}
 
 			if isExitProcess {

@@ -156,7 +156,7 @@ func ticketParseKirbi(kirbiBytes []byte) (messages.Ticket, types.EncryptionKey, 
 	// Strip APPLICATION 22 wrapper
 	var outer asn1.RawValue
 	if _, err := asn1.Unmarshal(kirbiBytes, &outer); err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, "", fmt.Errorf("unmarshal KRB-CRED outer: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, "", fmt.Errorf("unmarshal KRB-CRED outer: %w", err)
 	}
 
 	// Parse the inner SEQUENCE fields using marshalKRBCred-compatible struct
@@ -169,7 +169,7 @@ func ticketParseKirbi(kirbiBytes []byte) (messages.Ticket, types.EncryptionKey, 
 
 	var parsed krbCredParsed
 	if _, err := asn1.Unmarshal(outer.Bytes, &parsed); err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, "", fmt.Errorf("unmarshal KRB-CRED body: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, "", fmt.Errorf("unmarshal KRB-CRED body: %w", err)
 	}
 
 	// Parse the first ticket from the SEQUENCE OF Ticket
@@ -186,14 +186,14 @@ func ticketParseKirbi(kirbiBytes []byte) (messages.Ticket, types.EncryptionKey, 
 			return messages.Ticket{}, types.EncryptionKey{}, "", fmt.Errorf("unmarshal ticket: %v (raw: %v)", err, err2)
 		}
 		if err := ticket.Unmarshal(ticketRaw.FullBytes); err != nil {
-			return messages.Ticket{}, types.EncryptionKey{}, "", fmt.Errorf("unmarshal ticket from raw: %v", err)
+			return messages.Ticket{}, types.EncryptionKey{}, "", fmt.Errorf("unmarshal ticket from raw: %w", err)
 		}
 	}
 
 	// Parse EncKrbCredPart from the cipher (etype 0 = no encryption)
 	var credPart messages.EncKrbCredPart
 	if err := credPart.Unmarshal(parsed.EncPart.Cipher); err != nil {
-		return messages.Ticket{}, types.EncryptionKey{}, "", fmt.Errorf("unmarshal EncKrbCredPart: %v", err)
+		return messages.Ticket{}, types.EncryptionKey{}, "", fmt.Errorf("unmarshal EncKrbCredPart: %w", err)
 	}
 
 	if len(credPart.TicketInfo) == 0 {

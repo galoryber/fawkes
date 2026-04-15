@@ -83,7 +83,7 @@ func allocShellcodeARM64(shellcode []byte, allocSize int) (uintptr, string, erro
 		0,
 	)
 	if errno != 0 {
-		return 0, "", fmt.Errorf("mmap MAP_JIT failed: %v", errno)
+		return 0, "", fmt.Errorf("mmap MAP_JIT failed: %w", errno)
 	}
 
 	//nolint:govet // mmap'd address from syscall is stable
@@ -97,7 +97,7 @@ func allocShellcodeX86(shellcode []byte, allocSize int) (uintptr, string, error)
 		syscall.PROT_READ|syscall.PROT_WRITE,
 		syscall.MAP_PRIVATE|syscall.MAP_ANON)
 	if err != nil {
-		return 0, "", fmt.Errorf("mmap failed: %v", err)
+		return 0, "", fmt.Errorf("mmap failed: %w", err)
 	}
 
 	copy(data, shellcode)
@@ -105,7 +105,7 @@ func allocShellcodeX86(shellcode []byte, allocSize int) (uintptr, string, error)
 	err = syscall.Mprotect(data, syscall.PROT_READ|syscall.PROT_EXEC)
 	if err != nil {
 		_ = syscall.Munmap(data)
-		return 0, "", fmt.Errorf("mprotect RX failed: %v", err)
+		return 0, "", fmt.Errorf("mprotect RX failed: %w", err)
 	}
 
 	addr := uintptr(unsafe.Pointer(&data[0]))

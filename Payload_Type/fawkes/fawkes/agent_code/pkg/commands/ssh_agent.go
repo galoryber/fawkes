@@ -196,7 +196,7 @@ func discoverAgentSockets() []agentSocket {
 func listAgentKeys(socketPath string) ([]agentKeyInfo, error) {
 	conn, err := net.DialTimeout("unix", socketPath, 5*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("connect failed: %v", err)
+		return nil, fmt.Errorf("connect failed: %w", err)
 	}
 	defer conn.Close()
 
@@ -206,7 +206,7 @@ func listAgentKeys(socketPath string) ([]agentKeyInfo, error) {
 	client := agent.NewClient(conn)
 	keys, err := client.List()
 	if err != nil {
-		return nil, fmt.Errorf("list keys failed: %v", err)
+		return nil, fmt.Errorf("list keys failed: %w", err)
 	}
 
 	var result []agentKeyInfo

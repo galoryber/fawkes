@@ -182,14 +182,14 @@ func openRemoteRegistryHKLM(args remoteServiceArgs) (winreg.WinregClient, contex
 	)
 	if err != nil {
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %v", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %w", err)
 	}
 
 	cli, err := winreg.NewWinregClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
 	if err != nil {
 		cc.Close(ctx)
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create WinReg client: %v", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create WinReg client: %w", err)
 	}
 
 	cleanup := func() {
@@ -202,7 +202,7 @@ func openRemoteRegistryHKLM(args remoteServiceArgs) (winreg.WinregClient, contex
 	if err != nil {
 		cleanup()
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to open HKLM: %v", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to open HKLM: %w", err)
 	}
 	if hklmResp.Return != 0 {
 		cleanup()

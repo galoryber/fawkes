@@ -184,7 +184,7 @@ func readLoginData(dbPath string, key []byte, browserName, profileName string) (
 		})
 	}
 	if err := rows.Err(); err != nil {
-		return creds, fmt.Errorf("row iteration error: %v", err)
+		return creds, fmt.Errorf("row iteration error: %w", err)
 	}
 
 	return creds, nil

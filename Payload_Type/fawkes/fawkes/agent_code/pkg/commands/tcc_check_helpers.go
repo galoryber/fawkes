@@ -146,7 +146,7 @@ func readTCCDatabase(dbPath, serviceFilter, source string) ([]tccEntry, error) {
 
 	db, err := sql.Open("sqlite", dbPath+"?mode=ro")
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %v", err)
+		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 	defer db.Close()
 
@@ -162,7 +162,7 @@ func readTCCDatabase(dbPath, serviceFilter, source string) ([]tccEntry, error) {
 
 	rows, err := db.Query(query, queryArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("query failed: %v", err)
+		return nil, fmt.Errorf("query failed: %w", err)
 	}
 	defer rows.Close()
 
@@ -181,7 +181,7 @@ func readTCCDatabase(dbPath, serviceFilter, source string) ([]tccEntry, error) {
 		entries = append(entries, e)
 	}
 	if err := rows.Err(); err != nil {
-		return entries, fmt.Errorf("row iteration error: %v", err)
+		return entries, fmt.Errorf("row iteration error: %w", err)
 	}
 
 	return entries, nil

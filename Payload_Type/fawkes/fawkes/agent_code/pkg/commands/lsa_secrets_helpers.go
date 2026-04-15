@@ -247,7 +247,7 @@ func lsaParseCachedCred(data, nlkm []byte, globalIterCount uint32) (*lsaCachedCr
 
 	block, err := aes.NewCipher(cacheKey)
 	if err != nil {
-		return nil, fmt.Errorf("AES init: %v", err)
+		return nil, fmt.Errorf("AES init: %w", err)
 	}
 
 	mode := cipher.NewCBCDecrypter(block, iv)

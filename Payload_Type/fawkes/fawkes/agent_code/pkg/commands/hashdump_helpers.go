@@ -58,7 +58,7 @@ func deriveHashedBootKeyRC4(fValue, bootKey []byte) ([]byte, byte, error) {
 	// RC4 decrypt key + checksum
 	c, err := rc4.NewCipher(rc4Key)
 	if err != nil {
-		return nil, 0, fmt.Errorf("RC4 init: %v", err)
+		return nil, 0, fmt.Errorf("RC4 init: %w", err)
 	}
 	combined := make([]byte, 32)
 	copy(combined[:16], encKey)
@@ -112,7 +112,7 @@ func deriveHashedBootKeyAES(fValue, bootKey []byte) ([]byte, byte, error) {
 	// AES-128-CBC decrypt
 	block, err := aes.NewCipher(bootKey)
 	if err != nil {
-		return nil, 0, fmt.Errorf("AES init: %v", err)
+		return nil, 0, fmt.Errorf("AES init: %w", err)
 	}
 	mode := cipher.NewCBCDecrypter(block, salt)
 	decrypted := make([]byte, len(encData))

@@ -185,7 +185,7 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 	)
 	if err != nil {
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %v", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %w", err)
 	}
 
 	// Use WithInsecure() for DCE-RPC binding — SMB named pipes already provide
@@ -195,7 +195,7 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 	if err != nil {
 		cc.Close(ctx)
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create SVCCTL client: %v", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create SVCCTL client: %w", err)
 	}
 
 	cleanup := func() {
@@ -209,7 +209,7 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 	if err != nil {
 		cleanup()
 		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to open SCM: %v", err)
+		return nil, nil, nil, nil, nil, fmt.Errorf("failed to open SCM: %w", err)
 	}
 	if scmResp.Return != 0 {
 		cleanup()

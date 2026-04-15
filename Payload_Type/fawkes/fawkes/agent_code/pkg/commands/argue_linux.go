@@ -169,7 +169,7 @@ func findArgvInStack(pid int, spoofParts []string, stackAddr, stackSize uint64) 
 	buf := make([]byte, stackSize)
 	n, err := memFile.ReadAt(buf, int64(stackAddr))
 	if err != nil && n == 0 {
-		return 0, fmt.Errorf("could not read stack: %v", err)
+		return 0, fmt.Errorf("could not read stack: %w", err)
 	}
 
 	for i := 0; i <= n-len(target); i++ {

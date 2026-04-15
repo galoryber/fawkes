@@ -149,7 +149,7 @@ func renderEventXML(eventHandle uintptr) (string, error) {
 		uintptr(unsafe.Pointer(&propCount)),
 	)
 	if ret == 0 {
-		return "", fmt.Errorf("EvtRender failed: %v", err)
+		return "", fmt.Errorf("EvtRender failed: %w", err)
 	}
 
 	// Convert UTF-16LE to string

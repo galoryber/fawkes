@@ -118,7 +118,7 @@ func encodeRemoteRegValue(data, regType string) (uint32, []byte, error) {
 	case "REG_BINARY":
 		binData, err := hex.DecodeString(strings.TrimPrefix(data, "0x"))
 		if err != nil {
-			return 0, nil, fmt.Errorf("invalid hex data: %v", err)
+			return 0, nil, fmt.Errorf("invalid hex data: %w", err)
 		}
 		return winreg.RegBinary, binData, nil
 	default:

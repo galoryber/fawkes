@@ -116,7 +116,7 @@ func poisonLLMNR(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result 
 	addr := &net.UDPAddr{IP: net.ParseIP(llmnrMulti), Port: llmnrPort}
 	conn, err := net.ListenMulticastUDP("udp4", nil, addr)
 	if err != nil {
-		return fmt.Errorf("bind LLMNR %s:%d: %v", llmnrMulti, llmnrPort, err)
+		return fmt.Errorf("bind LLMNR %s:%d: %w", llmnrMulti, llmnrPort, err)
 	}
 	defer conn.Close()
 
@@ -180,7 +180,7 @@ func poisonLLMNR(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result 
 func poisonNBTNS(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result *poisonResult) error {
 	conn, err := net.ListenPacket("udp4", fmt.Sprintf("0.0.0.0:%d", nbtnsPort))
 	if err != nil {
-		return fmt.Errorf("bind NBT-NS :%d: %v", nbtnsPort, err)
+		return fmt.Errorf("bind NBT-NS :%d: %w", nbtnsPort, err)
 	}
 	defer conn.Close()
 
@@ -241,7 +241,7 @@ func poisonMDNS(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result *
 	addr := &net.UDPAddr{IP: net.ParseIP(mdnsMulti), Port: mdnsPort}
 	conn, err := net.ListenMulticastUDP("udp4", nil, addr)
 	if err != nil {
-		return fmt.Errorf("bind mDNS %s:%d: %v", mdnsMulti, mdnsPort, err)
+		return fmt.Errorf("bind mDNS %s:%d: %w", mdnsMulti, mdnsPort, err)
 	}
 	defer conn.Close()
 

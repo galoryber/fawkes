@@ -25,13 +25,13 @@ func PerformRetPatch(dllName, functionName string) (string, error) {
 	// Load the target DLL
 	dll, err := syscall.LoadDLL(dllName)
 	if err != nil {
-		return "", fmt.Errorf("failed to load %s: %v", dllName, err)
+		return "", fmt.Errorf("failed to load %s: %w", dllName, err)
 	}
 
 	// Resolve the function address
 	proc, err := dll.FindProc(functionName)
 	if err != nil {
-		return "", fmt.Errorf("failed to find %s in %s: %v", functionName, dllName, err)
+		return "", fmt.Errorf("failed to find %s in %s: %w", functionName, dllName, err)
 	}
 
 	funcAddr := proc.Addr()
@@ -49,7 +49,7 @@ func PerformRetPatch(dllName, functionName string) (string, error) {
 		uintptr(unsafe.Pointer(&oldProtect)),
 	)
 	if ret == 0 {
-		return "", fmt.Errorf("memory protection change failed: %v", err)
+		return "", fmt.Errorf("memory protection change failed: %w", err)
 	}
 
 	// Write 0xC3 (ret) at the function entry point

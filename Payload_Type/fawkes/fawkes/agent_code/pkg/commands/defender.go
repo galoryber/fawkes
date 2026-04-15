@@ -68,19 +68,19 @@ func defenderWMIQuery(wql string) (string, error) {
 	if err != nil {
 		oleErr, ok := err.(*ole.OleError)
 		if !ok || (oleErr.Code() != ole.S_OK && oleErr.Code() != 0x00000001) {
-			return "", fmt.Errorf("CoInitializeEx failed: %v", err)
+			return "", fmt.Errorf("CoInitializeEx failed: %w", err)
 		}
 	}
 	defer ole.CoUninitialize()
 
 	unknown, err := oleutil.CreateObject("WbemScripting.SWbemLocator")
 	if err != nil {
-		return "", fmt.Errorf("failed to create SWbemLocator: %v", err)
+		return "", fmt.Errorf("failed to create SWbemLocator: %w", err)
 	}
 	locator, err := unknown.QueryInterface(ole.IID_IDispatch)
 	unknown.Release()
 	if err != nil {
-		return "", fmt.Errorf("failed to query IDispatch: %v", err)
+		return "", fmt.Errorf("failed to query IDispatch: %w", err)
 	}
 	defer locator.Release()
 
@@ -93,7 +93,7 @@ func defenderWMIQuery(wql string) (string, error) {
 
 	resultSet, err := oleutil.CallMethod(services, "ExecQuery", wql)
 	if err != nil {
-		return "", fmt.Errorf("ExecQuery failed: %v", err)
+		return "", fmt.Errorf("ExecQuery failed: %w", err)
 	}
 	defer resultSet.Clear()
 
@@ -112,7 +112,7 @@ func defenderWMIQuery(wql string) (string, error) {
 
 		propsResult, err := oleutil.GetProperty(item, "Properties_")
 		if err != nil {
-			return fmt.Errorf("failed to get Properties_: %v", err)
+			return fmt.Errorf("failed to get Properties_: %w", err)
 		}
 		defer propsResult.Clear()
 		propsDisp := propsResult.ToIDispatch()
@@ -190,7 +190,7 @@ func defenderWMIQueryWithTimeout(wql string, timeout time.Duration) (string, err
 	case r := <-ch:
 		return r.output, r.err
 	case <-time.After(timeout):
-		return "", fmt.Errorf("WMI query timed out after %v", timeout)
+		return "", fmt.Errorf("WMI query timed out after %w", timeout)
 	}
 }
 

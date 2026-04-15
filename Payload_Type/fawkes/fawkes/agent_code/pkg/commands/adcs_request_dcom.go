@@ -36,25 +36,25 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	// Step 1: Connect to EPM well-known endpoint (port 135) on the CA server
 	cc, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"))
 	if err != nil {
-		return nil, fmt.Errorf("dial EPM on %s:135: %v", server, err)
+		return nil, fmt.Errorf("dial EPM on %s:135: %w", server, err)
 	}
 	defer cc.Close(ctx)
 
 	// Step 2: ObjectExporter — ServerAlive2 to get COM version and bindings
 	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt)
 	if err != nil {
-		return nil, fmt.Errorf("object exporter client: %v", err)
+		return nil, fmt.Errorf("object exporter client: %w", err)
 	}
 
 	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
 	if err != nil {
-		return nil, fmt.Errorf("ServerAlive2: %v", err)
+		return nil, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
 	// Step 3: RemoteActivation — activate ICertRequestD via DCOM
 	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt)
 	if err != nil {
-		return nil, fmt.Errorf("activation client: %v", err)
+		return nil, fmt.Errorf("activation client: %w", err)
 	}
 
 	// ClassID for the certificate request COM class (CertRequestD).
@@ -67,7 +67,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		RequestedProtocolSequences: []uint16{7, 15}, // ncacn_ip_tcp, ncacn_np
 	})
 	if err != nil {
-		return nil, fmt.Errorf("RemoteActivation: %v", err)
+		return nil, fmt.Errorf("RemoteActivation: %w", err)
 	}
 	if act.HResult != 0 {
 		return nil, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
@@ -77,7 +77,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	conn, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"),
 		act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp")...)
 	if err != nil {
-		return nil, fmt.Errorf("dial OXID endpoint: %v", err)
+		return nil, fmt.Errorf("dial OXID endpoint: %w", err)
 	}
 	defer conn.Close(ctx)
 
@@ -85,7 +85,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	ctx = gssapi.NewSecurityContext(ctx)
 	wcceCli, err := wcce_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt)
 	if err != nil {
-		return nil, fmt.Errorf("WCCE client: %v", err)
+		return nil, fmt.Errorf("WCCE client: %w", err)
 	}
 	wcceCli = wcceCli.IPID(ctx, act.InterfaceData[0].IPID())
 
@@ -108,7 +108,7 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 		},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("ICertRequestD::Request: %v", err)
+		return nil, fmt.Errorf("ICertRequestD::Request: %w", err)
 	}
 
 	return resp, nil
@@ -128,24 +128,24 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 	// Connect to EPM on port 135
 	cc, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"))
 	if err != nil {
-		return 0, fmt.Errorf("dial EPM on %s:135: %v", server, err)
+		return 0, fmt.Errorf("dial EPM on %s:135: %w", server, err)
 	}
 	defer cc.Close(ctx)
 
 	// ObjectExporter — ServerAlive2
 	cli, err := iobjectexporter.NewObjectExporterClient(ctx, cc, dcerpc.WithSign(), credOpt)
 	if err != nil {
-		return 0, fmt.Errorf("object exporter client: %v", err)
+		return 0, fmt.Errorf("object exporter client: %w", err)
 	}
 	srv, err := cli.ServerAlive2(ctx, &iobjectexporter.ServerAlive2Request{})
 	if err != nil {
-		return 0, fmt.Errorf("ServerAlive2: %v", err)
+		return 0, fmt.Errorf("ServerAlive2: %w", err)
 	}
 
 	// RemoteActivation — activate CertAdminD class (d99e6e73) with ICertAdminD2 IID
 	iact, err := iactivation.NewActivationClient(ctx, cc, dcerpc.WithSign(), credOpt)
 	if err != nil {
-		return 0, fmt.Errorf("activation client: %v", err)
+		return 0, fmt.Errorf("activation client: %w", err)
 	}
 
 	certAdminClassID := dtyp.GUIDFromUUID(uuid.MustParse("d99e6e73-fc88-11d0-b498-00a0c90312f3"))
@@ -156,7 +156,7 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 		RequestedProtocolSequences: []uint16{7, 15},
 	})
 	if err != nil {
-		return 0, fmt.Errorf("RemoteActivation: %v", err)
+		return 0, fmt.Errorf("RemoteActivation: %w", err)
 	}
 	if act.HResult != 0 {
 		return 0, fmt.Errorf("RemoteActivation HRESULT: 0x%08x", uint32(act.HResult))
@@ -166,7 +166,7 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 	conn, err := dcerpc.Dial(ctx, net.JoinHostPort(server, "135"),
 		act.OXIDBindings.EndpointsByProtocol("ncacn_ip_tcp")...)
 	if err != nil {
-		return 0, fmt.Errorf("dial OXID endpoint: %v", err)
+		return 0, fmt.Errorf("dial OXID endpoint: %w", err)
 	}
 	defer conn.Close(ctx)
 
@@ -174,7 +174,7 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 	ctx = gssapi.NewSecurityContext(ctx)
 	csraCli, err := csra_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt)
 	if err != nil {
-		return 0, fmt.Errorf("CSRA client: %v", err)
+		return 0, fmt.Errorf("CSRA client: %w", err)
 	}
 	csraCli = csraCli.IPID(ctx, act.InterfaceData[0].IPID())
 
@@ -186,7 +186,7 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 		Entry:     "EditFlags",
 	})
 	if err != nil {
-		return 0, fmt.Errorf("GetConfigEntry(EditFlags): %v", err)
+		return 0, fmt.Errorf("GetConfigEntry(EditFlags): %w", err)
 	}
 
 	// EditFlags is REG_DWORD → VT_I4 → VarUnion.Long

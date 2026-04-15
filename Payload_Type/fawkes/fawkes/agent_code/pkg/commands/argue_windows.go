@@ -94,14 +94,14 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	sa.InheritHandle = 1
 
 	if err := windows.CreatePipe(&stdoutRead, &stdoutWrite, &sa, 0); err != nil {
-		return "", fmt.Errorf("CreatePipe: %v", err)
+		return "", fmt.Errorf("CreatePipe: %w", err)
 	}
 	defer windows.CloseHandle(stdoutRead)
 
 	// Prevent read handle from being inherited
 	if err := windows.SetHandleInformation(stdoutRead, windows.HANDLE_FLAG_INHERIT, 0); err != nil {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("SetHandleInformation: %v", err)
+		return "", fmt.Errorf("SetHandleInformation: %w", err)
 	}
 
 	// Step 1: Create process SUSPENDED with SPOOFED command line
@@ -118,7 +118,7 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	spoofUTF16, err := windows.UTF16PtrFromString(spoofCmd)
 	if err != nil {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("invalid spoof command: %v", err)
+		return "", fmt.Errorf("invalid spoof command: %w", err)
 	}
 
 	// CREATE_SUSPENDED (0x4) | CREATE_NO_WINDOW (0x08000000)
@@ -133,7 +133,7 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	)
 	if err != nil {
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("CreateProcess (suspended): %v", err)
+		return "", fmt.Errorf("CreateProcess (suspended): %w", err)
 	}
 
 	defer windows.CloseHandle(pi.Process)
@@ -161,7 +161,7 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	if err != nil {
 		windows.TerminateProcess(pi.Process, 1)
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("read PEB.ProcessParameters: %v", err)
+		return "", fmt.Errorf("read PEB.ProcessParameters: %w", err)
 	}
 
 	// Step 4: Read CommandLine UNICODE_STRING from ProcessParameters+0x70
@@ -173,7 +173,7 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	if err != nil {
 		windows.TerminateProcess(pi.Process, 1)
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("read CommandLine UNICODE_STRING: %v", err)
+		return "", fmt.Errorf("read CommandLine UNICODE_STRING: %w", err)
 	}
 
 	origBuffer := *(*uintptr)(unsafe.Pointer(&cmdLineUS[8]))
@@ -183,7 +183,7 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	if err != nil {
 		windows.TerminateProcess(pi.Process, 1)
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("encode real command: %v", err)
+		return "", fmt.Errorf("encode real command: %w", err)
 	}
 	// Don't include null terminator in Length, but include it in MaximumLength
 	realLenBytes := uint16((len(realUTF16) - 1) * 2)
@@ -203,7 +203,7 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	if err != nil {
 		windows.TerminateProcess(pi.Process, 1)
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("write real command: %v", err)
+		return "", fmt.Errorf("write real command: %w", err)
 	}
 
 	// Step 7: Update CommandLine.Length in ProcessParameters
@@ -214,7 +214,7 @@ func executeSpoofedProcess(realCmd, spoofCmd string) (string, error) {
 	if err != nil {
 		windows.TerminateProcess(pi.Process, 1)
 		windows.CloseHandle(stdoutWrite)
-		return "", fmt.Errorf("update CommandLine.Length: %v", err)
+		return "", fmt.Errorf("update CommandLine.Length: %w", err)
 	}
 
 	// Step 8: Resume the process
