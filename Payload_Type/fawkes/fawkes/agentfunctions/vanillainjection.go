@@ -17,13 +17,12 @@ func init() {
 		Description:         "Perform vanilla remote process injection (inject shellcode or migrate agent into another process)",
 		HelpString:          "vanilla-injection -action inject -pid 1234 -filename shellcode.bin\nvanilla-injection -action migrate -pid 1234 -filename fawkes-shellcode.bin",
 		Version:             2,
-		MitreAttackMappings: []string{"T1055.001", "T1055.002"}, // Process Injection: Dynamic-link Library Injection, Portable Executable Injection
+		MitreAttackMappings: []string{"T1055.001", "T1055.002", "T1055.009"}, // DLL Injection, PE Injection, Proc Memory
 		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "vanillainjection_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
-			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -120,15 +119,22 @@ func init() {
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")
 			action, _ := taskData.Args.GetStringArg("action")
-			msg := fmt.Sprintf("OPSEC WARNING: Classic process injection into PID %s. "+
-				"Uses VirtualAllocEx + WriteProcessMemory + CreateRemoteThread — "+
-				"the most detectable injection pattern. Most EDR products hook these APIs. "+
-				"Consider threadless-inject or module-stomping for lower detection risk.", pid)
+			os := taskData.Callback.OS
+			var msg string
+			if strings.EqualFold(os, "linux") {
+				msg = fmt.Sprintf("OPSEC WARNING: /proc/PID/mem injection into PID %s. "+
+					"Uses ptrace attach + /proc/mem direct write — avoids PTRACE_POKETEXT "+
+					"but still requires ptrace capability. Yama LSM and seccomp may block.", pid)
+			} else {
+				msg = fmt.Sprintf("OPSEC WARNING: Classic process injection into PID %s. "+
+					"Uses VirtualAllocEx + WriteProcessMemory + CreateRemoteThread — "+
+					"the most detectable injection pattern. Most EDR products hook these APIs. "+
+					"Consider threadless-inject or module-stomping for lower detection risk.", pid)
+			}
 			if action == "migrate" {
 				msg += fmt.Sprintf("\n\nMIGRATION WARNING: This will inject a new agent instance into PID %s "+
 					"and terminate the current agent process. The current callback will go offline. "+
-					"A new callback will appear from the target process. Ensure the target process "+
-					"is stable and long-lived (e.g., explorer.exe, svchost.exe).", pid)
+					"A new callback will appear from the target process.", pid)
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
@@ -141,7 +147,13 @@ func init() {
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")
 			action, _ := taskData.Args.GetStringArg("action")
-			msg := fmt.Sprintf("OPSEC AUDIT: Classic injection (VirtualAllocEx+WriteProcessMemory+CreateRemoteThread) queued for PID %s. Artifact registered.", pid)
+			os := taskData.Callback.OS
+			var msg string
+			if strings.EqualFold(os, "linux") {
+				msg = fmt.Sprintf("OPSEC AUDIT: /proc/mem injection queued for PID %s. Artifact registered.", pid)
+			} else {
+				msg = fmt.Sprintf("OPSEC AUDIT: Classic injection (VirtualAllocEx+WriteProcessMemory+CreateRemoteThread) queued for PID %s. Artifact registered.", pid)
+			}
 			if action == "migrate" {
 				msg += " MIGRATION: Current agent will self-terminate after injection. Monitor for new callback from target process."
 			}

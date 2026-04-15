@@ -76,50 +76,6 @@ func TestVanillaInjection_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestIsMigrateAction(t *testing.T) {
-	tests := []struct {
-		action string
-		want   bool
-	}{
-		{"migrate", true},
-		{"Migrate", true},
-		{"MIGRATE", true},
-		{"inject", false},
-		{"", false},
-		{"migration", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.action, func(t *testing.T) {
-			if got := isMigrateAction(tt.action); got != tt.want {
-				t.Errorf("isMigrateAction(%q) = %v, want %v", tt.action, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestVanillaInjection_ActionFieldParsing(t *testing.T) {
-	tests := []struct {
-		name       string
-		input      string
-		wantAction string
-	}{
-		{"inject action", `{"shellcode_b64":"AQID","pid":1234,"action":"inject"}`, "inject"},
-		{"migrate action", `{"shellcode_b64":"AQID","pid":1234,"action":"migrate"}`, "migrate"},
-		{"missing action defaults to empty", `{"shellcode_b64":"AQID","pid":1234}`, ""},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var params VanillaInjectionParams
-			if err := json.Unmarshal([]byte(tt.input), &params); err != nil {
-				t.Fatalf("JSON unmarshal failed: %v", err)
-			}
-			if params.Action != tt.wantAction {
-				t.Errorf("Action = %q, want %q", params.Action, tt.wantAction)
-			}
-		})
-	}
-}
-
 func TestVanillaInjection_MigrateEmptyShellcode(t *testing.T) {
 	cmd := &VanillaInjectionCommand{}
 	result := cmd.Execute(structs.Task{Params: `{"shellcode_b64":"","pid":1234,"action":"migrate"}`})

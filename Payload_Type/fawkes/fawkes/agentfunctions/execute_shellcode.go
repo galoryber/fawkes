@@ -70,6 +70,20 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "technique",
+				ModalDisplayName: "Technique",
+				CLIName:          "technique",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Execution technique. mmap: anonymous RW+mprotect RX (default). memfd: memfd_create fd-backed mapping (Linux only, evades anonymous RX detection).",
+				Choices:          []string{"mmap", "memfd"},
+				DefaultValue:     "mmap",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 3},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 3},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 3},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -107,6 +121,11 @@ func init() {
 			// Check for direct base64 shellcode first (CLI/API usage).
 			// We check the actual arg value rather than ParameterGroupName to be
 			// robust against Mythic parameter group resolution edge cases.
+			technique, _ := taskData.Args.GetStringArg("technique")
+			if technique == "" {
+				technique = "mmap"
+			}
+
 			sc, _ := taskData.Args.GetStringArg("shellcode_b64")
 			if sc != "" {
 				// Validate it's actual base64
@@ -116,10 +135,10 @@ func init() {
 					response.Error = "shellcode_b64 is not valid base64: " + err.Error()
 					return response
 				}
-				params := map[string]interface{}{"shellcode_b64": sc}
+				params := map[string]interface{}{"shellcode_b64": sc, "technique": technique}
 				paramsJSON, _ := json.Marshal(params)
 				taskData.Args.SetManualArgs(string(paramsJSON))
-				displayParams := fmt.Sprintf("Shellcode: base64 (%d bytes)", len(decoded))
+				displayParams := fmt.Sprintf("Shellcode: base64 (%d bytes), Technique: %s", len(decoded), technique)
 				response.DisplayParams = &displayParams
 				createArtifact(taskData.Task.ID, "API Call", "VirtualAlloc/CreateThread (self-injection)")
 				return response
@@ -185,12 +204,13 @@ func init() {
 				fileContents = getResp.Content
 			}
 
-			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes)", filename, len(fileContents))
+			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes), Technique: %s", filename, len(fileContents), technique)
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("VirtualAlloc/CreateThread self-injection (%d bytes)", len(fileContents)))
+			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Shellcode self-injection via %s (%d bytes)", technique, len(fileContents)))
 
 			params := map[string]interface{}{
 				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
+				"technique":     technique,
 			}
 			paramsJSON, err := json.Marshal(params)
 			if err != nil {

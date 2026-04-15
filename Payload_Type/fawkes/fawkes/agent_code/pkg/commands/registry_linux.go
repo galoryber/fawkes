@@ -14,6 +14,8 @@ func registerPlatformCommands() {
 	RegisterCommand(&IptablesCommand{})
 	RegisterCommand(&LinuxLogsCommand{})
 	RegisterCommand(&PtraceInjectCommand{})
+	RegisterCommand(&VanillaInjectionCommand{})
+	RegisterCommand(&HollowingCommand{})
 	RegisterCommand(&SpawnCommand{})
 	RegisterCommand(&ArgueCommand{})
 	RegisterCommand(&CredHarvestCommand{})

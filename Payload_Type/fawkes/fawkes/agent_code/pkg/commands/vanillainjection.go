@@ -79,19 +79,6 @@ func (c *VanillaInjectionCommand) Description() string {
 	return "Perform vanilla remote process injection using VirtualAllocEx, WriteProcessMemory, and CreateRemoteThread"
 }
 
-// VanillaInjectionParams represents the parameters for vanilla-injection
-type VanillaInjectionParams struct {
-	ShellcodeB64 string `json:"shellcode_b64"` // Base64-encoded shellcode bytes
-	PID          int    `json:"pid"`           // Target process ID (0 if using target mode)
-	Action       string `json:"action"`        // "inject" (default) or "migrate"
-	Target       string `json:"target"`        // "auto", "auto-elevated", "auto-user" (overrides PID)
-}
-
-// isMigrateAction returns true if the action is a process migration.
-func isMigrateAction(action string) bool {
-	return strings.EqualFold(action, "migrate")
-}
-
 // Execute executes the vanilla-injection command
 func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	ensureInjectionAPIs()

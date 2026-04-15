@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"path/filepath"
 
@@ -18,13 +19,12 @@ func init() {
 		Description:         "Process hollowing — create a suspended process and redirect its main thread to execute shellcode via SetThreadContext (T1055.012)",
 		HelpString:          "hollow",
 		Version:             1,
-		MitreAttackMappings: []string{"T1055.012"},
+		MitreAttackMappings: []string{"T1055.012", "T1055.009"},
 		SupportedUIFeatures: []string{"process_browser:inject"},
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "hollow_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
-			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -123,14 +123,24 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			target, _ := taskData.Args.GetStringArg("target")
-			if target == "" {
-				target = "svchost.exe"
+			payloadOS := taskData.Callback.OS
+			var msg string
+			if strings.EqualFold(payloadOS, "linux") {
+				if target == "" {
+					target = "/usr/bin/sleep"
+				}
+				msg = fmt.Sprintf("OPSEC WARNING: Linux process hollowing creates a PTRACE_TRACEME %s process, writes shellcode via /proc/PID/mem, and redirects execution. Detectable by ptrace monitoring, Yama LSM, and /proc/mem access audit rules.", target)
+			} else {
+				if target == "" {
+					target = "svchost.exe"
+				}
+				msg = fmt.Sprintf("OPSEC WARNING: Process hollowing creates a suspended %s process, allocates RWX memory, overwrites thread context, and resumes execution. Generates process creation events (Sysmon 1), memory allocation (Sysmon 8), and thread context modification artifacts. Highly signatured by EDR.", target)
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Process hollowing creates a suspended %s process, allocates RWX memory, overwrites thread context, and resumes execution. Generates process creation events (Sysmon 1), memory allocation (Sysmon 8), and thread context modification artifacts. Highly signatured by EDR.", target),
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -139,7 +149,7 @@ func init() {
 				TaskID:              taskData.Task.ID,
 				Success:             true,
 				OpsecPostBlocked:    false,
-				OpsecPostMessage:    "OPSEC AUDIT: Process hollowing completed. Target process memory has been replaced with injected code. The hollowed process appears legitimate to tasklist/Process Explorer but contains attacker code. Cleanup: kill the target PID when no longer needed.",
+				OpsecPostMessage:    "OPSEC AUDIT: Process hollowing completed. Target process memory has been replaced with injected code. Cleanup: kill the target PID when no longer needed.",
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},

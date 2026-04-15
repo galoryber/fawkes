@@ -5,13 +5,13 @@ weight = 202
 hidden = false
 +++
 
-{{% notice info %}}Windows Only{{% /notice %}}
-
 ## Summary
 
-Process hollowing — create a suspended process and redirect its main thread to execute shellcode. Creates a new process in a suspended state, allocates memory, writes shellcode, updates the thread context (RCX register) to point to the shellcode, then resumes the thread.
+Process hollowing — create a suspended process and redirect execution to shellcode.
 
-Supports PPID spoofing to make the hollowed process appear as a child of a specified parent, and DLL blocking to prevent non-Microsoft DLLs from loading in the target process (useful for evading userland hooks).
+**Windows:** Creates a new process with CREATE_SUSPENDED, allocates memory, writes shellcode, updates thread context (RCX), resumes. Supports PPID spoofing and non-Microsoft DLL blocking.
+
+**Linux:** Spawns a process with PTRACE_TRACEME (stopped at exec), finds a syscall gadget, allocates memory via remote mmap, writes shellcode through /proc/PID/mem, redirects RIP, and detaches. Default target: `/usr/bin/sleep`.
 
 ## Arguments
 
@@ -20,33 +20,39 @@ Supports PPID spoofing to make the hollowed process appear as a child of a speci
 | filename | Yes (Default group) | Select shellcode from files registered in Mythic |
 | file | Yes (New File group) | Upload a new shellcode file |
 | shellcode_b64 | Yes (CLI group) | Base64-encoded raw shellcode bytes |
-| target | No | Process to create and hollow (default: `C:\Windows\System32\svchost.exe`) |
-| ppid | No | Parent PID to spoof (0 = no spoofing) |
-| block_dlls | No | Block non-Microsoft DLLs from loading (default: false) |
+| target | No | Process to create and hollow. Windows default: `svchost.exe`. Linux default: `/usr/bin/sleep` |
+| ppid | No | Parent PID to spoof (Windows only, 0 = no spoofing) |
+| block_dlls | No | Block non-Microsoft DLLs (Windows only, default: false) |
 
 ## Usage
 
 ```
-# From Mythic UI: select shellcode and configure target process
+# Windows: from Mythic UI
 hollow -filename beacon.bin -target C:\Windows\System32\RuntimeBroker.exe
 
-# With PPID spoofing and DLL blocking
+# Windows: with PPID spoofing
 hollow -filename beacon.bin -ppid 1234 -block_dlls true
 
-# From API: provide base64-encoded shellcode
-hollow -shellcode_b64 "kJBQ..." -target C:\Windows\System32\svchost.exe
+# Linux: from CLI
+hollow -shellcode_b64 "kJBQ..." -target /usr/bin/cat
+
+# Linux: default target (sleep 86400)
+hollow -shellcode_b64 "kJBQ..."
 ```
 
 ## OPSEC Considerations
 
-- Creates a new suspended process (CreateProcessW with CREATE_SUSPENDED)
-- Uses extended startup info for PPID spoofing and DLL blocking attributes
-- VirtualAllocEx with PAGE_READWRITE followed by VirtualProtect to PAGE_EXECUTE_READ
-- SetThreadContext modifies the RCX register to redirect execution
-- Cross-process memory write (WriteProcessMemory) may trigger EDR alerts
-- If hollowing fails, the suspended process is terminated (TerminateProcess)
-- Default target (svchost.exe) may require appropriate permissions
+### Windows
+- Creates suspended process, allocates/writes cross-process memory, modifies thread context
+- PPID spoofing and DLL blocking via extended startup attributes
+- Highly signatured by EDR (Sysmon Event IDs 1, 8, 10)
+
+### Linux
+- Requires ptrace capability (Yama ptrace_scope 0 or CAP_SYS_PTRACE)
+- /proc/PID/mem write avoids PTRACE_POKETEXT monitoring
+- Process creation + ptrace attach sequence may trigger audit rules
 
 ## MITRE ATT&CK Mapping
 
 - **T1055.012** — Process Injection: Process Hollowing
+- **T1055.009** — Process Injection: Proc Memory (Linux)

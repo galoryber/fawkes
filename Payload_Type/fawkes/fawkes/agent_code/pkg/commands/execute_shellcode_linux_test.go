@@ -89,3 +89,81 @@ func TestExecuteShellcodeLinux_InvalidJSON(t *testing.T) {
 		t.Errorf("Invalid JSON should error, got status=%q", result.Status)
 	}
 }
+
+func TestExecuteShellcodeLinux_TechniqueDefault(t *testing.T) {
+	cmd := &ExecuteShellcodeCommand{}
+	nopRet := base64.StdEncoding.EncodeToString([]byte{0x90, 0xC3})
+	result := cmd.Execute(structs.Task{Params: `{"shellcode_b64":"` + nopRet + `"}`})
+	if result.Status != "success" {
+		t.Fatalf("Default technique should succeed, got status=%q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "mmap RW") {
+		t.Errorf("Default technique should be mmap, got %q", result.Output)
+	}
+}
+
+func TestExecuteShellcodeLinux_TechniqueMmap(t *testing.T) {
+	cmd := &ExecuteShellcodeCommand{}
+	nopRet := base64.StdEncoding.EncodeToString([]byte{0x90, 0xC3})
+	result := cmd.Execute(structs.Task{Params: `{"shellcode_b64":"` + nopRet + `","technique":"mmap"}`})
+	if result.Status != "success" {
+		t.Fatalf("mmap technique should succeed, got status=%q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "mmap RW") {
+		t.Errorf("mmap output should mention mmap RW, got %q", result.Output)
+	}
+}
+
+func TestExecuteShellcodeLinux_TechniqueMemfd(t *testing.T) {
+	cmd := &ExecuteShellcodeCommand{}
+	nopRet := base64.StdEncoding.EncodeToString([]byte{0x90, 0xC3})
+	result := cmd.Execute(structs.Task{Params: `{"shellcode_b64":"` + nopRet + `","technique":"memfd"}`})
+	if result.Status != "success" {
+		t.Fatalf("memfd technique should succeed, got status=%q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "memfd") {
+		t.Errorf("memfd output should mention memfd, got %q", result.Output)
+	}
+	if !strings.Contains(result.Output, "fd-backed") {
+		t.Errorf("memfd output should mention fd-backed, got %q", result.Output)
+	}
+}
+
+func TestExecuteShellcodeLinux_TechniqueInvalid(t *testing.T) {
+	cmd := &ExecuteShellcodeCommand{}
+	nopRet := base64.StdEncoding.EncodeToString([]byte{0x90, 0xC3})
+	result := cmd.Execute(structs.Task{Params: `{"shellcode_b64":"` + nopRet + `","technique":"bogus"}`})
+	if result.Status != "error" {
+		t.Errorf("Invalid technique should error, got status=%q", result.Status)
+	}
+	if !strings.Contains(result.Output, "Unknown technique") {
+		t.Errorf("Output should mention unknown technique, got %q", result.Output)
+	}
+}
+
+func TestExecuteShellcodeLinux_TechniqueParsing(t *testing.T) {
+	input := `{"shellcode_b64":"AQID","technique":"memfd"}`
+	var args executeShellcodeArgs
+	if err := json.Unmarshal([]byte(input), &args); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if args.Technique != "memfd" {
+		t.Errorf("Technique = %q, want memfd", args.Technique)
+	}
+}
+
+func TestExecuteShellcodeLinux_MemfdEmptyShellcode(t *testing.T) {
+	cmd := &ExecuteShellcodeCommand{}
+	empty := base64.StdEncoding.EncodeToString([]byte{})
+	result := cmd.Execute(structs.Task{Params: `{"shellcode_b64":"` + empty + `","technique":"memfd"}`})
+	if result.Status != "error" {
+		t.Errorf("Empty shellcode with memfd should error, got status=%q", result.Status)
+	}
+}
+
+func TestShellcodeTechniqueHelp(t *testing.T) {
+	help := ShellcodeTechniqueHelp()
+	if !strings.Contains(help, "mmap") || !strings.Contains(help, "memfd") {
+		t.Errorf("Help should list both techniques, got %q", help)
+	}
+}
