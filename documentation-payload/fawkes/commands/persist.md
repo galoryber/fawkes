@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart), macOS (launchagent). All methods support install, remove, and list actions.
+Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart), macOS (launchagent, periodic, folder-action). All methods support install, remove, and list actions.
 
 ### Arguments
 
@@ -307,6 +307,35 @@ persist -method ssh-key -action remove -name "backup-key"
 persist -method list
 ```
 
+### macOS Periodic Script (requires root)
+
+Install a script to `/etc/periodic/daily/`:
+```
+persist -method periodic -action install -path "/tmp/agent" -schedule daily -name 500.update
+```
+
+Remove periodic script:
+```
+persist -method periodic -action remove -name 500.update -schedule daily
+```
+
+### macOS Folder Action
+
+Attach an AppleScript Folder Action that executes when files are added to Downloads:
+```
+persist -method folder-action -action install -path "/tmp/agent" -name updater
+```
+
+Use a custom target folder (pass folder path via `-schedule` parameter):
+```
+persist -method folder-action -action install -path "/tmp/agent" -name updater -schedule /Users/target/Desktop
+```
+
+Remove folder action:
+```
+persist -method folder-action -action remove -name updater
+```
+
 ## MITRE ATT&CK Mapping
 
 - T1547.001 — Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder
@@ -325,3 +354,5 @@ persist -method list
 - T1547.014 — Boot or Logon Autostart Execution: Active Setup
 - T1547.013 — Boot or Logon Autostart Execution: XDG Autostart Entries
 - T1547.003 — Boot or Logon Autostart Execution: Time Providers
+- T1546 — Event Triggered Execution: Folder Actions (macOS)
+- T1053.003 — Scheduled Task/Job: Periodic Scripts (macOS)

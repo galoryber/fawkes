@@ -266,5 +266,43 @@ func persistDarwinList() structs.CommandResult {
 		sb.WriteString("  (no authorized_keys)\n")
 	}
 
+	// Periodic scripts
+	sb.WriteString("\n[Periodic Scripts]\n")
+	periodicFound := false
+	for _, freq := range []string{"daily", "weekly", "monthly"} {
+		dir := filepath.Join("/etc/periodic", freq)
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			if !strings.HasPrefix(e.Name(), ".") {
+				sb.WriteString(fmt.Sprintf("  %s/%s\n", freq, e.Name()))
+				periodicFound = true
+			}
+		}
+	}
+	if !periodicFound {
+		sb.WriteString("  (no custom periodic scripts)\n")
+	}
+
+	// Folder Action Scripts
+	sb.WriteString("\n[Folder Action Scripts]\n")
+	faDir := filepath.Join(home, "Library", "Scripts", "Folder Action Scripts")
+	if entries, err := os.ReadDir(faDir); err == nil {
+		faFound := false
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".scpt") {
+				sb.WriteString(fmt.Sprintf("  %s\n", e.Name()))
+				faFound = true
+			}
+		}
+		if !faFound {
+			sb.WriteString("  (none found)\n")
+		}
+	} else {
+		sb.WriteString("  (directory not found)\n")
+	}
+
 	return successResult(sb.String())
 }

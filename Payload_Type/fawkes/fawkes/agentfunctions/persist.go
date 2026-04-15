@@ -77,8 +77,8 @@ func init() {
 				ModalDisplayName: "Persistence Method",
 				CLIName:          "method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "port-monitor", "accessibility", "active-setup", "time-provider", "crontab", "systemd", "shell-profile", "ssh-key", "xdg-autostart", "launchagent", "list"},
-				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, port-monitor, accessibility, active-setup, time-provider. Linux: crontab, systemd, shell-profile, ssh-key, xdg-autostart. macOS: launchagent. All: list.",
+				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "port-monitor", "accessibility", "active-setup", "time-provider", "crontab", "systemd", "shell-profile", "ssh-key", "xdg-autostart", "launchagent", "periodic", "folder-action", "list"},
+				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, port-monitor, accessibility, active-setup, time-provider. Linux: crontab, systemd, shell-profile, ssh-key, xdg-autostart. macOS: launchagent, periodic (root), folder-action. All: list.",
 				DefaultValue:     "registry",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -272,7 +272,7 @@ func init() {
 				case os == "linux":
 					methods = []string{"crontab", "shell-profile", "systemd"}
 				case os == "macos" || os == "darwin":
-					methods = []string{"launchagent"}
+					methods = []string{"launchagent", "folder-action"}
 				default:
 					methods = []string{"registry", "startup-folder"}
 				}
@@ -413,7 +413,7 @@ func persistMethodsForOS(osName string, hostname string) []string {
 	case os == "linux":
 		return []string{"crontab", "shell-profile", "systemd"}
 	case os == "macos" || os == "darwin":
-		return []string{"launchagent"}
+		return []string{"launchagent", "folder-action"}
 	default:
 		return []string{"registry", "startup-folder"}
 	}

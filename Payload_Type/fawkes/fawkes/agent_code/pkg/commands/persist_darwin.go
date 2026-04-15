@@ -54,10 +54,14 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistSSHKey(args)
 	case "crontab", "cron":
 		return persistCrontab(args)
+	case "periodic", "periodic-script":
+		return persistPeriodic(args)
+	case "folder-action", "folder-actions":
+		return persistFolderAction(args)
 	case "list":
 		return persistDarwinList()
 	default:
-		return errorf("Unknown method: %s. Use: launchagent, shell-profile, ssh-key, crontab, or list", args.Method)
+		return errorf("Unknown method: %s. Use: launchagent, shell-profile, ssh-key, crontab, periodic, folder-action, or list", args.Method)
 	}
 }
 
