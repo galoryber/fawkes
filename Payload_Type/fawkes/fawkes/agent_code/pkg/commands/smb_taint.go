@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
 
@@ -269,17 +268,4 @@ func isPermissionError(err error) bool {
 		strings.Contains(errStr, "permission") ||
 		strings.Contains(errStr, "STATUS_ACCESS_DENIED") ||
 		strings.Contains(errStr, "status_access_denied")
-}
-
-// smbCheckWriteAccess is a helper used by tests. It tries to create+delete a temp file.
-func smbCheckWriteAccess(share *smb2.Share, dir string) bool {
-	testPath := filepath.Join(dir, fmt.Sprintf(".fawkes_test_%d", time.Now().UnixNano()))
-	testPath = strings.ReplaceAll(testPath, "\\", "/")
-	f, err := share.OpenFile(testPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0644)
-	if err != nil {
-		return false
-	}
-	_ = f.Close()
-	_ = share.Remove(testPath)
-	return true
 }

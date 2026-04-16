@@ -57,6 +57,7 @@ func TestScoreProcessCommonBonus(t *testing.T) {
 	result := scoreProcess(explorer, 1000, "x64", "testuser", 2, TargetAuto)
 	if result == nil {
 		t.Fatal("explorer.exe should be scored")
+		return
 	}
 	if result.Score < 80 {
 		t.Errorf("explorer.exe should score high (same user + common + arch match), got %d", result.Score)
@@ -67,6 +68,7 @@ func TestScoreProcessCommonBonus(t *testing.T) {
 	uncommonResult := scoreProcess(uncommon, 1000, "x64", "testuser", 2, TargetAuto)
 	if uncommonResult == nil {
 		t.Fatal("random.exe should be scored")
+		return
 	}
 	if uncommonResult.Score >= result.Score {
 		t.Errorf("explorer.exe (%d) should score higher than random.exe (%d)", result.Score, uncommonResult.Score)
@@ -82,6 +84,7 @@ func TestScoreProcessSameUserBonus(t *testing.T) {
 
 	if same == nil || diff == nil {
 		t.Fatal("both should be scored")
+		return
 	}
 	if same.Score <= diff.Score {
 		t.Errorf("same user (%d) should score higher than diff user (%d) in auto-user mode", same.Score, diff.Score)

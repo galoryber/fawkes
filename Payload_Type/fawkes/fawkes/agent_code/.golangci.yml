@@ -54,6 +54,12 @@ linters:
         linters:
           - errcheck
           - bodyclose
+      # SA5011: staticcheck doesn't model t.Fatal as a terminator, so nil-deref
+      # warnings after t.Fatal are false positives in test code.
+      - path: _test\.go
+        text: "SA5011"
+        linters:
+          - staticcheck
       # Ignore unchecked Close() on various types in defer statements
       - text: "Error return value of `.+\\.Close`"
         linters:

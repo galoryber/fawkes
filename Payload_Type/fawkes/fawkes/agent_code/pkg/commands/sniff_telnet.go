@@ -66,7 +66,7 @@ func (tt *sniffTelnetTracker) process(payload []byte, meta *packetMeta) *sniffCr
 
 	// No pending username — this is the username (first client input)
 	// Store it and wait for the password in the next client packet
-	if len(s) > 0 && len(s) <= 128 && !strings.ContainsAny(s, "\x00\xff") {
+	if len(s) > 0 && len(s) <= 128 && strings.IndexByte(s, 0x00) < 0 && strings.IndexByte(s, 0xff) < 0 {
 		tt.pending[key] = s
 	}
 

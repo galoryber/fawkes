@@ -21,11 +21,6 @@ func (c *ArgueCommand) Description() string {
 	return "Execute a command with spoofed process arguments"
 }
 
-// PEB offsets (x64)
-const (
-	pebProcessParametersOffset = 0x20 // PEB.ProcessParameters (RTL_USER_PROCESS_PARAMETERS*)
-)
-
 // RTL_USER_PROCESS_PARAMETERS offsets (x64)
 const (
 	ruppCommandLineOffset = 0x70 // CommandLine UNICODE_STRING

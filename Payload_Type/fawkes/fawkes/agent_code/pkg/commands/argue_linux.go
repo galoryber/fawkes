@@ -146,8 +146,8 @@ func findStackRegion(pid int) (uint64, uint64, error) {
 				continue
 			}
 			var start, end uint64
-			fmt.Sscanf(addrParts[0], "%x", &start)
-			fmt.Sscanf(addrParts[1], "%x", &end)
+			_, _ = fmt.Sscanf(addrParts[0], "%x", &start)
+			_, _ = fmt.Sscanf(addrParts[1], "%x", &end)
 			return start, end - start, nil
 		}
 	}

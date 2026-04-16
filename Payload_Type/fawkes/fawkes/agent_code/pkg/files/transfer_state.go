@@ -61,9 +61,8 @@ func ClearTransferState(fullPath string) {
 
 // StreamingHasher wraps sha256 computation for chunk-by-chunk hashing
 type StreamingHasher struct {
-	hash     [sha256.Size]byte
-	hasher   interface{ Write([]byte) (int, error); Sum([]byte) []byte; Reset() }
-	total    int64
+	hasher interface{ Write([]byte) (int, error); Sum([]byte) []byte; Reset() }
+	total  int64
 }
 
 // NewStreamingHasher creates a new streaming SHA256 hasher
@@ -75,7 +74,7 @@ func NewStreamingHasher() *StreamingHasher {
 
 // Write adds data to the running hash
 func (h *StreamingHasher) Write(data []byte) {
-	h.hasher.Write(data)
+	_, _ = h.hasher.Write(data)
 	h.total += int64(len(data))
 }
 

@@ -83,7 +83,7 @@ func wsDial(wsURL string) (*wsConn, error) {
 		}
 	}
 
-	conn.SetDeadline(time.Time{}) // clear deadlines
+	_ = conn.SetDeadline(time.Time{}) // clear deadlines
 	return &wsConn{conn: conn, reader: reader}, nil
 }
 
@@ -188,6 +188,6 @@ func (w *wsConn) close() {
 	// Send close frame (opcode 8)
 	w.conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
 	closeFrame := []byte{0x88, 0x80, 0, 0, 0, 0} // FIN+close, masked, zero mask
-	w.conn.Write(closeFrame)
+	_, _ = w.conn.Write(closeFrame)
 	w.conn.Close()
 }

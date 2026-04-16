@@ -115,7 +115,7 @@ func winrmCheck(args winrmArgs) structs.CommandResult {
 	}
 	ch := make(chan shellResult, 1)
 	go func() {
-		stdout, _, _, err := client.RunWithString("hostname", "")
+		stdout, _, _, err := client.RunWithContextWithString(context.Background(), "hostname", "")
 		ch <- shellResult{stdout, err}
 	}()
 

@@ -102,7 +102,7 @@ func ldapQueryGMSA(conn *ldap.Conn, args ldapQueryArgs, baseDN string) structs.C
 		uacStr := entry.GetAttributeValue("userAccountControl")
 		if uacStr != "" {
 			var uac int
-			fmt.Sscanf(uacStr, "%d", &uac)
+			_, _ = fmt.Sscanf(uacStr, "%d", &uac)
 			account.Enabled = (uac & 0x2) == 0
 		}
 
@@ -363,9 +363,9 @@ func ldapEncodeSID(sid string) string {
 
 	// Parse revision and authority
 	var revision uint8
-	fmt.Sscanf(parts[1], "%d", &revision)
+	_, _ = fmt.Sscanf(parts[1], "%d", &revision)
 	var authority uint64
-	fmt.Sscanf(parts[2], "%d", &authority)
+	_, _ = fmt.Sscanf(parts[2], "%d", &authority)
 	subAuthCount := len(parts) - 3
 
 	// Build binary SID
@@ -380,7 +380,7 @@ func ldapEncodeSID(sid string) string {
 	// Sub-authorities: little-endian uint32
 	for j := 0; j < subAuthCount; j++ {
 		var subAuth uint32
-		fmt.Sscanf(parts[3+j], "%d", &subAuth)
+		_, _ = fmt.Sscanf(parts[3+j], "%d", &subAuth)
 		binary.LittleEndian.PutUint32(data[8+4*j:], subAuth)
 	}
 

@@ -70,7 +70,7 @@ func sshKeysGenerate(args sshKeysArgs) structs.CommandResult {
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Generated ed25519 key pair:\n"))
+	sb.WriteString("Generated ed25519 key pair:\n")
 	sb.WriteString(fmt.Sprintf("  Private: %s\n", privKeyPath))
 	sb.WriteString(fmt.Sprintf("  Public:  %s\n", pubKeyPath))
 

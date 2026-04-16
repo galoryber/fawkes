@@ -2,7 +2,6 @@ package commands
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"fawkes/pkg/structs"
 )
@@ -37,7 +36,7 @@ func unmarshalParams[T any](task structs.Task) (T, *structs.CommandResult) {
 func requireParams[T any](task structs.Task) (T, *structs.CommandResult) {
 	var args T
 	if task.Params == "" {
-		result := errorResult(fmt.Sprintf("Error: parameters required"))
+		result := errorResult("Error: parameters required")
 		return args, &result
 	}
 	if err := json.Unmarshal([]byte(task.Params), &args); err != nil {

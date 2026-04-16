@@ -4,7 +4,6 @@ package commands
 
 import (
 	"encoding/base64"
-	"fmt"
 	"os"
 	"runtime"
 	"strings"
@@ -143,5 +142,5 @@ func executeShellcodeMemfd(shellcode []byte) structs.CommandResult {
 
 // ShellcodeTechniqueHelp returns available technique descriptions for this platform.
 func ShellcodeTechniqueHelp() string {
-	return fmt.Sprintf("Available techniques:\n  mmap  — anonymous mmap RW + mprotect RX (default)\n  memfd — memfd_create fd-backed mapping, evades anonymous RX detection")
+	return "Available techniques:\n  mmap  — anonymous mmap RW + mprotect RX (default)\n  memfd — memfd_create fd-backed mapping, evades anonymous RX detection"
 }

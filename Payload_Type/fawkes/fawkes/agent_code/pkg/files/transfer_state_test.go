@@ -24,6 +24,7 @@ func TestSaveAndGetTransferState(t *testing.T) {
 	got := GetTransferState("/test/file.txt", TransferDownload)
 	if got == nil {
 		t.Fatal("Expected state, got nil")
+		return
 	}
 	if got.FileID != "abc123" {
 		t.Errorf("FileID = %s, want abc123", got.FileID)
@@ -107,6 +108,7 @@ func TestSaveTransferState_Overwrite(t *testing.T) {
 	got := GetTransferState(path, TransferDownload)
 	if got == nil {
 		t.Fatal("Expected state")
+		return
 	}
 	if got.FileID != "second" {
 		t.Errorf("FileID = %s, want second (latest)", got.FileID)

@@ -42,7 +42,7 @@ func sandboxCheckUptime() sandboxCheck {
 		Category:   "timing",
 		Suspicious: suspicious,
 		Score:      score,
-		Details:    fmt.Sprintf("%s", uptime.Truncate(time.Second)),
+		Details:    uptime.Truncate(time.Second).String(),
 	}
 }
 

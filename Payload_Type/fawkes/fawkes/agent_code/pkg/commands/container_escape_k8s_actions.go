@@ -100,7 +100,7 @@ func escapeK8sDeploy(args containerEscapeArgs) (string, string) {
 				Phase string `json:"phase"`
 			} `json:"status"`
 		}
-		json.Unmarshal(statusData, &podStatus)
+		_ = json.Unmarshal(statusData, &podStatus)
 		structs.ZeroBytes(statusData)
 
 		if podStatus.Status.Phase == "Succeeded" || podStatus.Status.Phase == "Failed" {
@@ -121,7 +121,7 @@ func escapeK8sDeploy(args containerEscapeArgs) (string, string) {
 		sb.WriteString("[!] Failed to retrieve pod logs\n")
 	}
 
-	kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
+	_, _, _ = kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
 	sb.WriteString("\n[+] Pod deleted\n")
 
 	return sb.String(), "success"
@@ -164,7 +164,7 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 			ServiceAccountName string `json:"serviceAccountName"`
 		} `json:"spec"`
 	}
-	json.Unmarshal(podData, &targetSpec)
+	_ = json.Unmarshal(podData, &targetSpec)
 	structs.ZeroBytes(podData)
 
 	image := "alpine"
@@ -217,7 +217,7 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 				Phase string `json:"phase"`
 			} `json:"status"`
 		}
-		json.Unmarshal(statusData, &podStatus)
+		_ = json.Unmarshal(statusData, &podStatus)
 		structs.ZeroBytes(statusData)
 		if podStatus.Status.Phase == "Succeeded" || podStatus.Status.Phase == "Failed" {
 			sb.WriteString(fmt.Sprintf("[*] Pod phase: %s\n", podStatus.Status.Phase))
@@ -232,7 +232,7 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 		structs.ZeroBytes(logData)
 	}
 
-	kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
+	_, _, _ = kc.k8sDelete(fmt.Sprintf("/api/v1/namespaces/%s/pods/%s", ns, podName))
 	sb.WriteString("\n[+] Exec pod deleted\n")
 
 	return sb.String(), "success"

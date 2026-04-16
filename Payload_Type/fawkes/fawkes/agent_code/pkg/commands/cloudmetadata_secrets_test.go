@@ -162,10 +162,8 @@ func TestSSMSecretValueTruncation(t *testing.T) {
 				if len(val) != 203 { // 200 + "..."
 					t.Errorf("truncated length = %d, want 203", len(val))
 				}
-			} else {
-				if strings.HasSuffix(val, "...") {
-					t.Error("should not be truncated")
-				}
+			} else if strings.HasSuffix(val, "...") {
+				t.Error("should not be truncated")
 			}
 		})
 	}

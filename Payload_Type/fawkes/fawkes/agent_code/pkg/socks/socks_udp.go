@@ -180,7 +180,7 @@ func (m *Manager) forwardUDP(serverId uint32, b64Data string) {
 	}
 
 	// Send the payload to the target
-	relay.conn.SetWriteDeadline(time.Now().Add(udpWriteTimeout))
+	_ = relay.conn.SetWriteDeadline(time.Now().Add(udpWriteTimeout))
 	n, err := relay.conn.WriteToUDP(payload, udpTarget)
 	if err != nil {
 		log.Printf("udp write error sid=%d target=%s: %v", serverId, target, err)
@@ -200,7 +200,7 @@ func (r *udpRelay) readResponses() {
 		default:
 		}
 
-		r.conn.SetReadDeadline(time.Now().Add(udpIdleTimeout))
+		_ = r.conn.SetReadDeadline(time.Now().Add(udpIdleTimeout))
 		n, remoteAddr, err := r.conn.ReadFromUDP(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {

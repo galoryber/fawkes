@@ -104,17 +104,6 @@ func TestProcessBasicInformation_Size(t *testing.T) {
 	//                        BasePriority(4) + padding(4) + UniqueProcessId(8) +
 	//                        InheritedFromUniqueProcessId(8) = 48 bytes
 	expectedSize := 48
-	// We can't use unsafe.Sizeof in a cross-platform test since the struct is Windows-only,
-	// but we verify the field count matches the expected layout
-	type pbiLayout struct {
-		f1 uintptr // ExitStatus
-		f2 uintptr // PebBaseAddress
-		f3 uintptr // AffinityMask
-		f4 int32   // BasePriority
-		_  [4]byte
-		f5 uintptr // UniqueProcessId
-		f6 uintptr // InheritedFromUniqueProcessId
-	}
 	// On 64-bit, uintptr is 8 bytes
 	calculatedSize := 8 + 8 + 8 + 4 + 4 + 8 + 8
 	if calculatedSize != expectedSize {

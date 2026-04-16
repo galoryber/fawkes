@@ -236,7 +236,7 @@ func handleDNSPipe(ctx context.Context, conn net.Conn, endpoint string) {
 
 		// Build DNS wire response
 		resp := buildDNSResponse(txID, name, qtype, results)
-		conn.Write(resp)
+		_, _ = conn.Write(resp)
 	}
 }
 

@@ -85,7 +85,7 @@ func S(encrypted []byte, key []byte) string {
 	return Decrypt(encrypted, key)
 }
 
-// EncryptWithRandomKey encrypts a string with a random-looking key derived from a seed.
+// EncryptWithSeed encrypts a string with a random-looking key derived from a seed.
 // The seed is used to generate a deterministic key for reproducible builds.
 func EncryptWithSeed(plaintext string, seed uint32) (encrypted []byte, key []byte) {
 	// LCG-based key generation for deterministic but varied keys
