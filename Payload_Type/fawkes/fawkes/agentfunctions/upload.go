@@ -17,9 +17,9 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "upload_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Upload a file to the target system",
-		HelpString:          "upload",
-		Version:             1,
+		Description:         "Upload a file to the target system (optional auto-decompression for gzip files)",
+		HelpString:          "upload — supports auto-decompression of gzip files with decompress parameter",
+		Version:             2,
 		MitreAttackMappings: []string{"T1020", "T1030", "T1041", "T1105"},
 		SupportedUIFeatures: []string{"file_browser:upload"},
 		Author:              "@galoryber",
@@ -63,6 +63,19 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						UIModalPosition:     3,
+					},
+				},
+			},
+			{
+				Name:             "decompress",
+				ModalDisplayName: "Auto-Decompress (gzip)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Automatically decompress gzip-compressed files after transfer. Use with compressed downloads for bandwidth-efficient round-trip.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						UIModalPosition:     4,
 					},
 				},
 			},

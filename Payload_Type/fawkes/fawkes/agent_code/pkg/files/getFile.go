@@ -83,6 +83,9 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 		getFileFromMythic.Task.Job.SendResponses <- response
 	}
 
+	// Initialize streaming hash for integrity verification
+	hasher := NewStreamingHasher()
+
 	// Decode and send the first chunk
 	decoded, err := base64.StdEncoding.DecodeString(fileUploadMsgResponse.ChunkData)
 	if err != nil {
@@ -94,12 +97,15 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 		getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
 		return
 	}
+	hasher.Write(decoded)
 	getFileFromMythic.ReceivedChunkChannel <- decoded
+
+	totalChunks := fileUploadMsgResponse.TotalChunks
 
 	// Track percentage completion
 	lastPercentCompleteNotified := 0
-	if fileUploadMsgResponse.TotalChunks > 1 {
-		for index := 2; index <= fileUploadMsgResponse.TotalChunks; index++ {
+	if totalChunks > 1 {
+		for index := 2; index <= totalChunks; index++ {
 			if getFileFromMythic.Task.ShouldStop() {
 				getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
 				return
@@ -115,7 +121,7 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 				errResponse := structs.Response{}
 				errResponse.Completed = true
 				errResponse.TaskID = getFileFromMythic.Task.ID
-				errResponse.UserOutput = fmt.Sprintf("File transfer timed out waiting for chunk %d/%d from server", index, fileUploadMsgResponse.TotalChunks)
+				errResponse.UserOutput = fmt.Sprintf("File transfer timed out waiting for chunk %d/%d from server", index, totalChunks)
 				getFileFromMythic.Task.Job.SendResponses <- errResponse
 				getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
 				return
@@ -144,9 +150,10 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 				getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
 				return
 			}
+			hasher.Write(decoded)
 			getFileFromMythic.ReceivedChunkChannel <- decoded
 
-			newPercentComplete := ((index * 100) / fileUploadMsgResponse.TotalChunks)
+			newPercentComplete := ((index * 100) / totalChunks)
 			if newPercentComplete/10 > lastPercentCompleteNotified && getFileFromMythic.SendUserStatusUpdates {
 				response := structs.Response{}
 				response.Completed = false
@@ -157,6 +164,17 @@ func sendUploadFileMessagesToMythic(getFileFromMythic structs.GetFileFromMythicS
 			}
 		}
 	}
+
+	// Store transfer result if requested
+	if getFileFromMythic.TransferResult != nil {
+		*getFileFromMythic.TransferResult = structs.FileTransferResult{
+			FileID:    getFileFromMythic.FileID,
+			SHA256:    hasher.Sum(),
+			BytesSent: hasher.BytesHashed(),
+			Chunks:    totalChunks,
+		}
+	}
+
 	// Signal that we're done
 	getFileFromMythic.ReceivedChunkChannel <- make([]byte, 0)
 }

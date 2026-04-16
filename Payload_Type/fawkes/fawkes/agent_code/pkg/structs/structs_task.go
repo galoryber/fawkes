@@ -109,6 +109,14 @@ func (j *Job) BroadcastFileTransfer(data json.RawMessage) {
 	}
 }
 
+// FileTransferResult holds the result of a completed file transfer
+type FileTransferResult struct {
+	FileID    string // Mythic file_id
+	SHA256    string // SHA256 hash of all transferred data
+	BytesSent int64  // Total bytes transferred
+	Chunks    int    // Total chunks transferred
+}
+
 // SendFileToMythicStruct for downloading files from the agent to Mythic
 type SendFileToMythicStruct struct {
 	Task                  *Task
@@ -121,6 +129,7 @@ type SendFileToMythicStruct struct {
 	FinishedTransfer      chan int
 	TrackingUUID          string
 	FileTransferResponse  chan json.RawMessage
+	TransferResult        *FileTransferResult // Optional: populated on successful completion
 }
 
 // GetFileFromMythicStruct for uploading files from Mythic to the agent
@@ -132,6 +141,7 @@ type GetFileFromMythicStruct struct {
 	ReceivedChunkChannel  chan []byte
 	TrackingUUID          string
 	FileTransferResponse  chan json.RawMessage
+	TransferResult        *FileTransferResult // Optional: populated on successful completion
 }
 
 // FileUploadMessage for requesting file from Mythic

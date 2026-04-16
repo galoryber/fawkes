@@ -1,10 +1,12 @@
 package commands
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"fawkes/pkg/files"
 	"fawkes/pkg/structs"
 )
 
@@ -26,6 +28,7 @@ type UploadArgs struct {
 	FileID     string `json:"file_id"`
 	RemotePath string `json:"remote_path"`
 	Overwrite  bool   `json:"overwrite"`
+	Decompress bool   `json:"decompress"` // Auto-decompress gzip files after transfer
 }
 
 // Execute executes the upload command
@@ -49,12 +52,21 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Failed to resolve absolute path for %s: %v", fixedFilePath, err)
 	}
 
+	// For decompress mode, write to a temp path first, then decompress to final path
+	writePath := fullPath
+	if args.Decompress {
+		writePath = fullPath + ".gz.tmp"
+		defer os.Remove(writePath) // Clean up temp file
+	}
+
 	// Set up the file transfer request
+	tfResult := &structs.FileTransferResult{}
 	r := structs.GetFileFromMythicStruct{}
 	r.FileID = args.FileID
 	r.FullPath = fullPath
 	r.Task = &task
 	r.SendUserStatusUpdates = true
+	r.TransferResult = tfResult
 	totalBytesWritten := 0
 
 	// Check if file exists
@@ -67,9 +79,9 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Open file for writing — truncate if overwriting, create if new
 	// Use 0700 permissions: owner rwx only (opsec — prevent other users from reading/executing)
-	fp, err := os.OpenFile(fullPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0700)
+	fp, err := os.OpenFile(writePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0700)
 	if err != nil {
-		return errorf("Failed to open %s for writing: %v", fullPath, err)
+		return errorf("Failed to open %s for writing: %v", writePath, err)
 	}
 	defer fp.Close() // Safety net: ensure fd is closed even if transfer goroutine panics
 	r.ReceivedChunkChannel = make(chan []byte)
@@ -94,12 +106,30 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if writeErr != nil {
-		return errorf("Error writing to %s after %d bytes: %v", fullPath, totalBytesWritten, writeErr)
+		return errorf("Error writing to %s after %d bytes: %v", writePath, totalBytesWritten, writeErr)
 	}
 
 	if task.DidStop() {
 		return errorResult("Task stopped early")
 	}
 
-	return successf("Uploaded %d bytes to %s", totalBytesWritten, fullPath)
+	// Handle decompression if requested
+	if args.Decompress {
+		hash, decompBytes, decompErr := files.DecompressFileGzip(writePath, fullPath)
+		if decompErr != nil {
+			return errorf("Error decompressing file: %v", decompErr)
+		}
+		return successf("Uploaded and decompressed to %s\nCompressed: %s → Decompressed: %s\nDecompressed SHA256: %s",
+			fullPath,
+			formatFileSize(int64(totalBytesWritten)),
+			formatFileSize(decompBytes),
+			hash)
+	}
+
+	// Build output with hash info
+	output := fmt.Sprintf("Uploaded %d bytes to %s", totalBytesWritten, fullPath)
+	if tfResult.SHA256 != "" {
+		output += fmt.Sprintf("\nSHA256: %s", tfResult.SHA256)
+	}
+	return successResult(output)
 }
