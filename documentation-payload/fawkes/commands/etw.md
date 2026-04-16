@@ -31,6 +31,8 @@ Audit/telemetry subsystem manipulation for defense evasion. Cross-platform:
 | blind | Disable a specific provider within a session (EnableTraceEx2) |
 | query | Get detailed session information |
 | enable | Re-enable a previously blinded provider |
+| patch | In-memory ret patch on EtwEventWrite/EtwEventRegister — stealthier than API blind |
+| restore | Undo in-memory patches by restoring original function bytes |
 
 ### Provider Shorthands
 

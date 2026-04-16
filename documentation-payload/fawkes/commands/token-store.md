@@ -15,7 +15,7 @@ Manage a named token vault for quick identity switching. Save stolen or created 
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `-action` | Yes | `list` | Action: `save`, `list`, `use`, `remove` |
+| `-action` | Yes | `list` | Action: `save`, `list`, `use`, `remove`, `history` |
 | `-name` | For save/use/remove | | Label for the token |
 
 ## Usage
@@ -43,6 +43,12 @@ Replaces the current impersonation with the stored token. The stored copy remain
 ```
 token-store -action remove -name "admin"
 ```
+
+### View identity transition history
+```
+token-store -action history
+```
+Shows a timeline of all identity changes: steal-token, make-token, rev2self, getsystem, and token-store use operations. Rendered as a color-coded table in the Mythic UI (SYSTEM=red, admin=orange, user=blue).
 
 ### Typical workflow
 ```
