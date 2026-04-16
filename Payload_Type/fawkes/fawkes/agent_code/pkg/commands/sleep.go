@@ -32,11 +32,12 @@ func (c *SleepCommand) Execute(task structs.Task) structs.CommandResult {
 func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent) structs.CommandResult {
 	// Parse parameters
 	var args struct {
-		Interval     int    `json:"interval"`
-		Jitter       int    `json:"jitter"`
-		WorkingStart string `json:"working_start"` // HH:MM format, empty = no change, "00:00" with end "00:00" = disable
-		WorkingEnd   string `json:"working_end"`   // HH:MM format
-		WorkingDays  string `json:"working_days"`  // "1,2,3,4,5" format, empty = no change, "0" = disable
+		Interval      int    `json:"interval"`
+		Jitter        int    `json:"jitter"`
+		JitterProfile string `json:"jitter_profile"` // uniform (default), normal, exponential
+		WorkingStart  string `json:"working_start"`  // HH:MM format, empty = no change, "00:00" with end "00:00" = disable
+		WorkingEnd    string `json:"working_end"`    // HH:MM format
+		WorkingDays   string `json:"working_days"`   // "1,2,3,4,5" format, empty = no change, "0" = disable
 	}
 
 	// Try to parse as JSON first
@@ -77,15 +78,30 @@ func (c *SleepCommand) ExecuteWithAgent(task structs.Task, agent *structs.Agent)
 		return errorResult("Jitter must be between 0 and 100")
 	}
 
+	// Validate jitter profile
+	if args.JitterProfile != "" && !ValidJitterProfile(args.JitterProfile) {
+		return errorf("Invalid jitter_profile: %s. Use: uniform, normal, exponential", args.JitterProfile)
+	}
+
 	// Update sleep parameters in the actual agent
 	oldInterval := agent.SleepInterval
 	oldJitter := agent.Jitter
+	oldProfile := agent.JitterProfile
 
 	agent.UpdateSleepParams(args.Interval, args.Jitter)
+	if args.JitterProfile != "" {
+		agent.JitterProfile = args.JitterProfile
+	}
 
 	// Build output message
 	output := fmt.Sprintf("Updated sleep parameters: interval=%ds, jitter=%d%% (was: %ds, %d%%)",
 		args.Interval, args.Jitter, oldInterval, oldJitter)
+
+	if args.JitterProfile != "" {
+		output += fmt.Sprintf("\nJitter profile: %s (was: %s)",
+			JitterProfileDescription(args.JitterProfile),
+			JitterProfileDescription(oldProfile))
+	}
 
 	// Handle working hours update
 	if args.WorkingStart != "" || args.WorkingEnd != "" {

