@@ -106,39 +106,7 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
-			// Parse credman output blocks: --- target ---\n  Type: ...\n  Username: ...\n  Password: ...
-			blocks := strings.Split(responseText, "--- ")
-			for _, block := range blocks {
-				if block == "" || strings.HasPrefix(block, "Summary:") {
-					continue
-				}
-				lines := strings.Split(block, "\n")
-				if len(lines) < 2 {
-					continue
-				}
-				target := strings.TrimSuffix(strings.TrimSpace(lines[0]), " ---")
-				var username, password, typeName string
-				for _, line := range lines[1:] {
-					trimmed := strings.TrimSpace(line)
-					if strings.HasPrefix(trimmed, "Username:") {
-						username = strings.TrimSpace(strings.TrimPrefix(trimmed, "Username:"))
-					} else if strings.HasPrefix(trimmed, "Password:") {
-						password = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
-					} else if strings.HasPrefix(trimmed, "Type:") {
-						typeName = strings.TrimSpace(strings.TrimPrefix(trimmed, "Type:"))
-					}
-				}
-				if username != "" && password != "" {
-					creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
-						CredentialType: "plaintext",
-						Realm:          target,
-						Account:        username,
-						Credential:     password,
-						Comment:        fmt.Sprintf("credman dump (%s)", typeName),
-					})
-				}
-			}
+			creds := parseCredmanBlocks(responseText)
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			if len(creds) > 0 {
 				logOperationEvent(processResponse.TaskData.Task.ID,
@@ -147,4 +115,53 @@ func init() {
 			return response
 		},
 	})
+}
+
+// parseCredmanBlocks parses credman output blocks and extracts credential entries.
+// Format: --- target ---\n  Type: ...\n  Username: ...\n  Password: ...
+func parseCredmanBlocks(responseText string) []mythicrpc.MythicRPCCredentialCreateCredentialData {
+	var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+	blocks := strings.Split(responseText, "--- ")
+	for _, block := range blocks {
+		if block == "" || strings.HasPrefix(block, "Summary:") {
+			continue
+		}
+		lines := strings.Split(block, "\n")
+		if len(lines) < 2 {
+			continue
+		}
+		target := strings.TrimSuffix(strings.TrimSpace(lines[0]), " ---")
+		var username, password, typeName string
+		for _, line := range lines[1:] {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, "Username:") {
+				username = strings.TrimSpace(strings.TrimPrefix(trimmed, "Username:"))
+			} else if strings.HasPrefix(trimmed, "Password:") {
+				password = strings.TrimSpace(strings.TrimPrefix(trimmed, "Password:"))
+			} else if strings.HasPrefix(trimmed, "Type:") {
+				typeName = strings.TrimSpace(strings.TrimPrefix(trimmed, "Type:"))
+			}
+		}
+		if username != "" && password != "" {
+			creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+				CredentialType: "plaintext",
+				Realm:          target,
+				Account:        username,
+				Credential:     password,
+				Comment:        fmt.Sprintf("credman dump (%s)", typeName),
+			})
+		}
+	}
+	return creds
+}
+
+// detectClipboardCredentialPatterns returns credential pattern tags found in clipboard data.
+func detectClipboardCredentialPatterns(text string) []string {
+	var found []string
+	for _, tag := range []string{"NTLM Hash", "NT Hash", "Password-like", "API Key", "AWS Key", "Private Key", "Bearer Token"} {
+		if strings.Contains(text, tag) {
+			found = append(found, tag)
+		}
+	}
+	return found
 }
