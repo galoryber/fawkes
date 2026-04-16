@@ -46,8 +46,10 @@ This automatically:
 1. Initializes CLR v4 (if not already running)
 2. Patches AMSI (ret patch on AmsiScanBuffer)
 3. Patches ETW (ret patch on EtwEventWrite)
-4. Loads and executes the assembly
-5. Captures and returns stdout/stderr
+4. Creates an isolated AppDomain (prevents assembly metadata leakage)
+5. Loads and executes the assembly
+6. Captures and returns stdout/stderr
+7. Unloads the AppDomain (cleanup — .NET reflection won't show the assembly)
 
 ### Manual Workflow (CLR Init + Inline Assembly)
 For more control over patch methods:

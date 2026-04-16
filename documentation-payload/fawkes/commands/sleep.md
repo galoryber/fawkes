@@ -55,7 +55,7 @@ JSON format:
 {"interval": 10, "jitter": 10, "working_start": "09:00", "working_end": "17:00", "working_days": "1,2,3,4,5"}
 ```
 
-Working hours can also be set at build time via payload build parameters (`working_hours_start`, `working_hours_end`, `working_days`).
+Working hours and jitter profile can also be set at build time via payload build parameters (`working_hours_start`, `working_hours_end`, `working_days`, `jitter_profile`).
 
 ## MITRE ATT&CK Mapping
 
