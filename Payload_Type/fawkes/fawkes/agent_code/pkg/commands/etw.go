@@ -81,7 +81,11 @@ func (c *EtwCommand) Execute(task structs.Task) structs.CommandResult {
 		return etwQuery(params.SessionName)
 	case "enable":
 		return etwEnable(params.SessionName, params.Provider)
+	case "patch":
+		return etwPatch(params.Provider)
+	case "restore":
+		return etwRestore(params.Provider)
 	default:
-		return errorf("Unknown action: %s (use sessions, providers, stop, blind, query, enable)", params.Action)
+		return errorf("Unknown action: %s (use sessions, providers, stop, blind, query, enable, patch, restore)", params.Action)
 	}
 }

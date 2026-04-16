@@ -17,7 +17,7 @@ func init() {
 		},
 		Description:         "Audit/telemetry subsystem manipulation. Windows: ETW trace sessions and providers. Linux: auditd rules, journald, syslog, SIEM agent detection. macOS: unified logging, security agent detection.",
 		HelpString:          "# Windows\netw -action sessions\netw -action stop -session_name EventLog-Security\n# Linux\netw -action rules\netw -action agents\netw -action journal-clear -provider 1s\netw -action syslog-config\n# macOS\netw -action categories\netw -action agents",
-		Version:             4,
+		Version:             5,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1082", "T1562.001", "T1562.002", "T1562.006", "T1070.002"},
 		SupportedUIFeatures: []string{},
@@ -33,9 +33,9 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"sessions", "providers", "stop", "blind", "query", "enable", "rules", "disable-rule", "journal-clear", "journal-rotate", "syslog-config", "agents", "audit-status", "categories"},
+				Choices:       []string{"sessions", "providers", "stop", "blind", "query", "enable", "patch", "restore", "rules", "disable-rule", "journal-clear", "journal-rotate", "syslog-config", "agents", "audit-status", "categories"},
 				DefaultValue:  "sessions",
-				Description:   "Windows: sessions/providers/stop/blind/query/enable. Linux: rules/disable-rule/journal-clear/journal-rotate/syslog-config/agents/audit-status. macOS: categories/agents/audit-status.",
+				Description:   "Windows: sessions/providers/stop/blind/query/enable/patch/restore. Linux: rules/disable-rule/journal-clear/journal-rotate/syslog-config/agents/audit-status. macOS: categories/agents/audit-status.",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -105,6 +105,10 @@ func init() {
 				msg += "Clearing journal logs destroys forensic evidence (T1070.002). Journald vacuum operations are logged by systemd."
 			case "journal-rotate":
 				msg += "Rotating journal files is lower risk but may trigger log management alerts."
+			case "patch":
+				msg += "In-memory patching of EtwEventWrite via VirtualProtect + byte write. Stealthier than API-based blind but triggers VirtualProtect on ntdll — a high-fidelity EDR detection (T1562.001)."
+			case "restore":
+				msg += "Restoring original ETW function bytes. VirtualProtect call on ntdll may trigger EDR alerts."
 			default:
 				msg += "Audit enumeration is lower risk but unusual behavior may be logged."
 			}
