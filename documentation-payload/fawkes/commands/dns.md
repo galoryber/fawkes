@@ -130,6 +130,7 @@ When zone transfer is refused (common in production):
 - Parses A, AAAA, NS, CNAME, SOA, MX, TXT, and SRV record types. Handles DNS compression pointers.
 - Zone transfers are often restricted in production environments. Getting a REFUSED response is expected for properly configured DNS servers.
 - **DNS-over-HTTPS** sends queries over HTTPS using the JSON wire format (RFC 8484). This bypasses traditional DNS monitoring since queries appear as normal HTTPS traffic. Built-in providers: Cloudflare (`cloudflare`), Google (`google`), Quad9 (`quad9`). Custom DOH endpoints are also supported.
+- **Agent-wide DoH:** Set the `doh_resolver` build parameter to route ALL agent DNS (including C2 hostname resolution) through DoH. This makes the entire agent's DNS footprint invisible to network monitors.
 
 ## MITRE ATT&CK Mapping
 
