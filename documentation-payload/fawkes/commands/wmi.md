@@ -15,7 +15,7 @@ Execute WMI queries, remote process creation, file upload, and staged execution 
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| action | choose_one | Yes | - | `execute`, `query`, `process-list`, `os-info`, `upload`, or `exec-staged` |
+| action | choose_one | Yes | - | `execute`, `query`, `process-list`, `os-info`, `upload`, `exec-staged`, or `check` |
 | target | string | No | - | Remote host to target. If omitted, runs against the local system. |
 | command | string | No | - | Command to execute. Required when action is `execute`. |
 | query | string | No | - | WMI query string. Required when action is `query`. |
@@ -91,6 +91,13 @@ Uploads the file, executes it, and removes it from the target. Auto-generates a 
 wmi -action exec-staged -target 192.168.1.50 -local_path "C:\Users\Public\small.exe" -method powershell
 ```
 Uses PowerShell `[IO.File]::WriteAllBytes` for files under 150KB. Single command — faster but limited by command line length.
+
+### Pre-Flight Check
+Validate WMI prerequisites before executing:
+```
+wmi -action check -target 192.168.1.50
+```
+Returns JSON with pass/fail for: RPC port 135, WMI connectivity, WQL query access, and Win32_Process accessibility.
 
 ## Operational Notes
 
