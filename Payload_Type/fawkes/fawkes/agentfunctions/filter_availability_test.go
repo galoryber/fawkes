@@ -130,7 +130,7 @@ func TestFilterCommandAvailability_SpecificCommands(t *testing.T) {
 	}{
 		// Windows-only
 		{"apc-injection", "Windows"},
-		{"hollow", "Windows"},
+		{"hollow", ""}, // hollow supports Windows + Linux (hollowing_linux.go)
 		{"reg", "Windows"},
 		{"uac-bypass", "Windows"},
 		{"hashdump", ""}, // hashdump is cross-platform, no filter
