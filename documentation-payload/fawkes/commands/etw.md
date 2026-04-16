@@ -26,13 +26,31 @@ Audit/telemetry subsystem manipulation for defense evasion. Cross-platform:
 | Action | Description |
 |--------|-------------|
 | sessions | List active ETW trace sessions with security relevance |
-| providers | Enumerate registered ETW providers |
+| providers | Enumerate registered ETW providers (basic) |
+| provider-list | Enhanced provider enumeration with session associations, categories, and keywords |
 | stop | Stop an entire trace session (ControlTrace API) |
 | blind | Disable a specific provider within a session (EnableTraceEx2) |
 | query | Get detailed session information |
 | enable | Re-enable a previously blinded provider |
+| provider-disable | Remove kernel trace flags from a session (ControlTrace UPDATE) |
+| provider-enable | Re-enable kernel trace flags on a session |
 | patch | In-memory ret patch on EtwEventWrite/EtwEventRegister — stealthier than API blind |
 | restore | Undo in-memory patches by restoring original function bytes |
+
+### Kernel Trace Flags (for provider-disable/enable)
+
+| Flag | Description |
+|------|-------------|
+| process | Process creation/exit events |
+| thread | Thread creation/exit events |
+| image-load | DLL/image load events |
+| network | TCP/IP network events |
+| registry | Registry access events |
+| file-io | File I/O events |
+| disk-io | Disk I/O events |
+| handle | Handle open/close events |
+| alpc | ALPC (Advanced Local Procedure Call) events |
+| driver | Driver load events |
 
 ### Provider Shorthands
 
@@ -80,9 +98,15 @@ CrowdStrike, SentinelOne, Carbon Black, Jamf Protect/Connect, osquery, Elastic, 
 ```
 # === Windows ===
 etw -action sessions
+etw -action provider-list
 etw -action stop -session_name "EventLog-Security"
 etw -action blind -session_name "EventLog-Microsoft-Windows-Sysmon/Operational" -provider sysmon
 etw -action enable -session_name "EventLog-Microsoft-Windows-Sysmon/Operational" -provider sysmon
+etw -action provider-disable -session_name "NT Kernel Logger" -provider process
+etw -action provider-enable -session_name "NT Kernel Logger" -provider process
+etw -action patch -provider etw
+etw -action patch -provider all
+etw -action restore
 
 # === Linux ===
 # Enumerate audit rules
@@ -116,6 +140,8 @@ etw -action audit-status
 ## Operational Notes
 
 - **Windows:** `blind` is preferred over `stop` — removes a single provider while session continues. Requires admin/SYSTEM.
+- **Windows:** `provider-disable` targets kernel trace EnableFlags (process, thread, network, registry, etc.) — only works on kernel trace sessions. For user-mode providers, use `blind`.
+- **Windows:** `patch` is stealthier than `blind` — patches function bytes directly instead of calling ETW APIs. But triggers VirtualProtect on ntdll which EDR products detect.
 - **Linux:** `disable-rule` and `journal-clear` require root privileges. Agent detection runs unprivileged.
 - **macOS:** Most actions require root or appropriate TCC permissions. Agent detection via `ps` works unprivileged.
 - Use `agents` action before operations to understand defensive coverage

