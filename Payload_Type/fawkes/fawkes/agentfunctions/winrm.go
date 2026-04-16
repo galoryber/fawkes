@@ -28,8 +28,8 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "winrm",
 		Description:         "Execute commands on remote Windows hosts via WinRM with NTLM authentication. Supports cmd.exe and PowerShell shells. Supports pass-the-hash.",
-		HelpString:          "winrm -host 192.168.1.1 -username admin -password pass -command \"whoami\"\nwinrm -host 192.168.1.1 -username DOMAIN\\admin -password pass -command \"Get-Process\" -shell powershell\nwinrm -host 192.168.1.1 -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -command \"whoami\" -domain DOMAIN\nwinrm -host 192.168.1.1 -username admin -password pass -command \"ipconfig /all\" -port 5986 -use_tls true",
-		Version:             1,
+		HelpString:          "winrm -host <target> -username <user> -password <pass> -command <cmd> OR winrm -action check -host <target> [-username <user> -password <pass>]",
+		Version:             2,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1021.006", "T1550.002"},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "winrm_new.js"), Author: "@galoryber"},
@@ -45,6 +45,18 @@ func init() {
 			"winrmAutoVerifyGetprivsDone": winrmAutoVerifyGetprivsDone,
 		},
 		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "action",
+				CLIName:          "action",
+				ModalDisplayName: "Action",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"execute", "check"},
+				Description:      "execute: run command on remote host. check: validate WinRM prerequisites.",
+				DefaultValue:     "execute",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
 			{
 				Name:                 "host",
 				CLIName:              "host",

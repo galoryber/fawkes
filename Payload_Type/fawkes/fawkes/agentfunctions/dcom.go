@@ -54,9 +54,9 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"exec", "upload", "exec-staged"},
+				Choices:       []string{"exec", "upload", "exec-staged", "check"},
 				DefaultValue:  "exec",
-				Description:   "exec: execute command, upload: stage file on remote host, exec-staged: upload + execute + optional cleanup",
+				Description:   "exec: execute command, upload: stage file on remote host, exec-staged: upload + execute + optional cleanup, check: validate DCOM prerequisites",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,

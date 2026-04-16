@@ -45,9 +45,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "exec: execute command (default). push: transfer file. tunnel-local: local port forward (-L). tunnel-remote: remote port forward (-R). tunnel-dynamic: SOCKS proxy (-D). tunnel-list: show active tunnels. tunnel-stop: stop a tunnel.",
+				Description:      "exec: execute command (default). push: transfer file. check: validate SSH prerequisites. tunnel-local: local port forward (-L). tunnel-remote: remote port forward (-R). tunnel-dynamic: SOCKS proxy (-D). tunnel-list: show active tunnels. tunnel-stop: stop a tunnel.",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"exec", "push", "tunnel-local", "tunnel-remote", "tunnel-dynamic", "tunnel-list", "tunnel-stop"},
+				Choices:          []string{"exec", "push", "check", "tunnel-local", "tunnel-remote", "tunnel-dynamic", "tunnel-list", "tunnel-stop"},
 				DefaultValue:     "exec",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},

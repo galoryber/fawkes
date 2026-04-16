@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
@@ -112,21 +111,6 @@ func psexecCheck(host string, timeout int) structs.CommandResult {
 
 	data, _ := json.MarshalIndent(result, "", "  ")
 	return successResult(string(data))
-}
-
-// checkTCPPort tests if a TCP port is reachable.
-func checkTCPPort(ctx context.Context, host, port string, timeout time.Duration) string {
-	dialCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", net.JoinHostPort(host, port))
-	if err != nil {
-		if isTimeout(err) {
-			return "timeout"
-		}
-		return fmt.Sprintf("closed: %v", err)
-	}
-	conn.Close()
-	return "open"
 }
 
 // checkSMBShare reports admin share accessibility based on SCM access.

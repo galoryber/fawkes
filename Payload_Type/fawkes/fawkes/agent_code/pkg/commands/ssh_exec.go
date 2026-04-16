@@ -57,6 +57,11 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 		action = "exec"
 	}
 
+	// Handle check action
+	if action == "check" {
+		return sshExecCheck(args)
+	}
+
 	// Handle tunnel-list and tunnel-stop without SSH connection
 	if action == "tunnel-list" {
 		return sshTunnelList()
@@ -97,11 +102,11 @@ func (c *SshExecCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	validActions := map[string]bool{
-		"exec": true, "push": true,
+		"exec": true, "push": true, "check": true,
 		"tunnel-local": true, "tunnel-remote": true, "tunnel-dynamic": true,
 	}
 	if !validActions[action] {
-		return errorf("Error: unknown action %q. Valid: exec, push, tunnel-local, tunnel-remote, tunnel-dynamic, tunnel-list, tunnel-stop", action)
+		return errorf("Error: unknown action %q. Valid: exec, push, check, tunnel-local, tunnel-remote, tunnel-dynamic, tunnel-list, tunnel-stop", action)
 	}
 
 	// Set defaults for tunnel params

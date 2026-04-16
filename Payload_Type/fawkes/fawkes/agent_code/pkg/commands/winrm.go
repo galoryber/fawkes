@@ -26,6 +26,7 @@ func (c *WinrmCommand) Description() string {
 }
 
 type winrmArgs struct {
+	Action   string `json:"action"`   // execute (default) or check
 	Host     string `json:"host"`     // target host IP or hostname
 	Username string `json:"username"` // username for auth (DOMAIN\user or user)
 	Password string `json:"password"` // password for auth
@@ -48,6 +49,10 @@ func (c *WinrmCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	defer structs.ZeroString(&args.Password)
 	defer structs.ZeroString(&args.Hash)
+
+	if strings.ToLower(args.Action) == "check" {
+		return winrmCheck(args)
+	}
 
 	if args.Host == "" || args.Username == "" || (args.Password == "" && args.Hash == "") {
 		return errorResult("Error: host, username, and password (or hash) are required")

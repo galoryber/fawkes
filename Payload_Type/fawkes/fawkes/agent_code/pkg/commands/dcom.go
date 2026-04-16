@@ -133,8 +133,10 @@ func (c *DcomCommand) Execute(task structs.Task) structs.CommandResult {
 		fn = func() structs.CommandResult { return dcomUpload(args) }
 	case "exec-staged":
 		fn = func() structs.CommandResult { return dcomExecStaged(args) }
+	case "check":
+		fn = func() structs.CommandResult { return dcomCheck(args.Host, args.Timeout) }
 	default:
-		return errorf("Unknown action: %s\nAvailable: exec, upload, exec-staged", args.Action)
+		return errorf("Unknown action: %s\nAvailable: exec, upload, exec-staged, check", args.Action)
 	}
 
 	// Run with timeout protection to prevent agent hangs on unreachable targets
