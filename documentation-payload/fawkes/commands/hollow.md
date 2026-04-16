@@ -44,6 +44,7 @@ hollow -shellcode_b64 "kJBQ..."
 
 ### Windows
 - Creates suspended process, allocates/writes cross-process memory, modifies thread context
+- **PEB decoration:** Automatically overwrites ImagePathName, CommandLine, and WindowTitle in the hollowed process's PEB to match the legitimate target executable. Makes the process indistinguishable from a real instance in Task Manager and PEB inspection tools.
 - PPID spoofing and DLL blocking via extended startup attributes
 - Highly signatured by EDR (Sysmon Event IDs 1, 8, 10)
 
@@ -56,3 +57,4 @@ hollow -shellcode_b64 "kJBQ..."
 
 - **T1055.012** — Process Injection: Process Hollowing
 - **T1055.009** — Process Injection: Proc Memory (Linux)
+- **T1036** — Masquerading (PEB decoration)
