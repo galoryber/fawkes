@@ -270,6 +270,14 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
 		{
+			Name:          "jitter_profile",
+			Description:   "Adaptive jitter distribution profile. Uniform: classic random jitter. Normal: bell curve around the interval (most checks near interval). Exponential: biased toward shorter sleeps with occasional longer ones. Default: uniform.",
+			Required:      false,
+			DefaultValue:  "uniform",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
+			Choices:       []string{"uniform", "normal", "exponential"},
+		},
+		{
 			Name:          "user_agent_pool",
 			Description:   "Optional: Newline-separated list of User-Agent strings. When set, the agent rotates through the pool per-request instead of using a single static User-Agent. Reduces network fingerprinting. Leave empty to use the default Chrome UA.",
 			Required:      false,

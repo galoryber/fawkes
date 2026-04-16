@@ -230,6 +230,9 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 	if slpGuard, err := payloadBuildMsg.BuildParameters.GetBooleanArg("sleep_guard_pages"); err == nil && slpGuard {
 		ldflags += fmt.Sprintf(" -X '%s.sleepGuardPages=true'", fawkesMainPackage)
 	}
+	if jpStr, err := payloadBuildMsg.BuildParameters.GetStringArg("jitter_profile"); err == nil && jpStr != "" && jpStr != "uniform" {
+		ldflags += fmt.Sprintf(" -X '%s.jitterProfile=%s'", fawkesMainPackage, jpStr)
+	}
 
 	// Kill date: parse date string to Unix timestamp
 	if kdStr, err := payloadBuildMsg.BuildParameters.GetStringArg("kill_date"); err == nil && kdStr != "" {

