@@ -321,6 +321,10 @@ func init() {
 				logging.LogError(err, "Failed to register token with Mythic", "user", user)
 			}
 
+			// Update callback description with current identity
+			updateCallbackIdentity(processResponse.TaskData.Task.ID,
+				processResponse.TaskData.Callback.AgentCallbackID, "maketoken", user)
+
 			return response
 		},
 	})

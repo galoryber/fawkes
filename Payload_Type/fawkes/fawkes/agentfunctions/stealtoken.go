@@ -280,6 +280,10 @@ func init() {
 					fmt.Sprintf("Stole token: %s (PID %s)", user, pid))
 			}
 
+			// Update callback description with current identity
+			updateCallbackIdentity(processResponse.TaskData.Task.ID,
+				processResponse.TaskData.Callback.AgentCallbackID, "stealtoken", user)
+
 			return response
 		},
 	})
