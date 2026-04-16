@@ -26,6 +26,7 @@ func (c *PsExecCommand) Description() string {
 }
 
 type psexecArgs struct {
+	Action  string `json:"action"`
 	Host    string `json:"host"`
 	Command string `json:"command"`
 	Name    string `json:"name"`
@@ -38,6 +39,10 @@ func (c *PsExecCommand) Execute(task structs.Task) structs.CommandResult {
 	args, parseErr := unmarshalParams[psexecArgs](task)
 	if parseErr != nil {
 		return *parseErr
+	}
+
+	if args.Action == "check" {
+		return psexecCheck(args.Host, args.Timeout)
 	}
 
 	if args.Host == "" {

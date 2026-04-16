@@ -9,6 +9,9 @@ import (
 )
 
 func formatWMIOPSEC(action, host string) string {
+	if action == "check" {
+		return fmt.Sprintf("OPSEC INFO: WMI check on %s. Validates port 135 and WMI connectivity. Generates TCP connection + COM call — low footprint, no process creation.", host)
+	}
 	if host != "" && host != "." && host != "localhost" {
 		return fmt.Sprintf("OPSEC WARNING: Remote WMI %s on %s. Generates WMI activity events (Event ID 5857-5861) and network traffic on TCP 135/dynamic RPC. Remote WMI execution is a common lateral movement indicator.", action, host)
 	}
@@ -29,8 +32,8 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "wmi",
 		Description:         "Execute WMI queries, process creation, and staged file transfer via COM API (T1047, T1570)",
-		HelpString:          "wmi -action <execute|query|process-list|os-info|upload|exec-staged> [-target <host>] [-command <cmd>] [-query <wmic_query>] [-local_path <path>] [-remote_path <path>] [-method <certutil|powershell>] [-cleanup <true|false>]",
-		Version:             2,
+		HelpString:          "wmi -action <execute|query|process-list|os-info|upload|exec-staged|check> [-target <host>] [-command <cmd>] [-query <wmic_query>] [-local_path <path>] [-remote_path <path>] [-method <certutil|powershell>] [-cleanup <true|false>]",
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1047", "T1570"},
@@ -47,8 +50,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"execute", "query", "process-list", "os-info", "upload", "exec-staged"},
-				Description:      "execute: create a process, query: run wmic query, process-list: list processes, os-info: OS details, upload: stage file on remote host, exec-staged: upload + execute + optional cleanup",
+				Choices:          []string{"execute", "query", "process-list", "os-info", "upload", "exec-staged", "check"},
+				Description:      "execute: create a process, query: run wmic query, process-list: list processes, os-info: OS details, upload: stage file on remote host, exec-staged: upload + execute + optional cleanup, check: validate WMI prerequisites",
 				DefaultValue:     "os-info",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

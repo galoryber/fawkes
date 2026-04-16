@@ -27,8 +27,8 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "psexec",
 		Description:         "Execute commands on remote hosts via SCM service creation — PSExec-style lateral movement (T1021.002, T1569.002)",
-		HelpString:          "psexec -host <target> -command <cmd> [-name <svcname>] [-display <displayname>] [-cleanup <true|false>]",
-		Version:             1,
+		HelpString:          "psexec -host <target> -command <cmd> [-name <svcname>] [-display <displayname>] [-cleanup <true|false>] OR psexec -action check -host <target>",
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1021.002", "T1569.002"},
@@ -39,6 +39,21 @@ func init() {
 			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:             "action",
+				ModalDisplayName: "Action",
+				CLIName:          "action",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"execute", "check"},
+				Description:      "execute: run command via service creation. check: validate prerequisites without executing.",
+				DefaultValue:     "execute",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
 			{
 				Name:                 "host",
 				ModalDisplayName:     "Target Host",
@@ -115,13 +130,22 @@ func init() {
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "psexec_new.js"), Author: "@galoryber"},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			host, _ := taskData.Args.GetStringArg("host")
-			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
-				TaskID:  taskData.Task.ID,
-				Success: true,
-				OpsecPreBlocked: false,
-				OpsecPreMessage: fmt.Sprintf("OPSEC WARNING: PsExec creates a service on remote host %s. "+
+			action, _ := taskData.Args.GetStringArg("action")
+			msg := ""
+			if action == "check" {
+				msg = fmt.Sprintf("OPSEC INFO: PsExec check on %s. "+
+					"Validates port 445 and SCM access. "+
+					"Generates TCP connection + SCM query — low footprint, no service creation.", host)
+			} else {
+				msg = fmt.Sprintf("OPSEC WARNING: PsExec creates a service on remote host %s. "+
 					"Artifacts: SCM connection (Event 7045), service creation, cmd.exe child process. "+
-					"Heavy footprint — consider WMI or WinRM for stealthier lateral movement.", host),
+					"Heavy footprint — consider WMI or WinRM for stealthier lateral movement.", host)
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -150,6 +174,15 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			host, _ := taskData.Args.GetStringArg("host")
+			action, _ := taskData.Args.GetStringArg("action")
+			if action == "check" {
+				display := fmt.Sprintf("check %s", host)
+				response.DisplayParams = &display
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("SCM check: TCP 445 + ConnectRemote(%s)", host))
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[LATERAL] psexec check: validating prerequisites on %s from %s", host, taskData.Callback.Host), true)
+				return response
+			}
 			command, _ := taskData.Args.GetStringArg("command")
 			display := fmt.Sprintf("%s → %s", host, command)
 			response.DisplayParams = &display

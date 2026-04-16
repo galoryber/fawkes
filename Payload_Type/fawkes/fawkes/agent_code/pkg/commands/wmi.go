@@ -62,8 +62,10 @@ func (c *WmiCommand) Execute(task structs.Task) structs.CommandResult {
 		fn = func() structs.CommandResult { return wmiUpload(args) }
 	case "exec-staged":
 		fn = func() structs.CommandResult { return wmiExecStaged(args) }
+	case "check":
+		fn = func() structs.CommandResult { return wmiCheck(args.Target, args.Timeout) }
 	default:
-		return errorf("Unknown action: %s\nAvailable: execute, query, process-list, os-info, upload, exec-staged", args.Action)
+		return errorf("Unknown action: %s\nAvailable: execute, query, process-list, os-info, upload, exec-staged, check", args.Action)
 	}
 
 	// Run with timeout protection to prevent agent hangs on unreachable targets
