@@ -15,9 +15,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "socks",
-		Description:         "Start or stop a SOCKS5 proxy through this callback",
-		HelpString:          "socks start [port]  /  socks stop [port]",
-		Version:             1,
+		Description:         "Start, stop, or view stats for the SOCKS5 proxy through this callback",
+		HelpString:          "socks start [port]  /  socks stop [port]  /  socks stats",
+		Version:             2,
 		MitreAttackMappings: []string{"T1090"}, // Proxy
 		SupportedUIFeatures: []string{},
 		Author:              "@xorrior",
@@ -29,7 +29,7 @@ func init() {
 				Name:          "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Description:   "Start or stop the SOCKS proxy",
-				Choices:       []string{"start", "stop"},
+				Choices:       []string{"start", "stop", "stats"},
 				DefaultValue:  "start",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

