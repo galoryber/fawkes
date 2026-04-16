@@ -183,10 +183,15 @@ func ldapRunQuery(args ldapQueryArgs) structs.CommandResult {
 		return ldapQueryDACL(conn, args, baseDN)
 	}
 
+	// Handle gmsa action (requires binary msDS-ManagedPassword parsing)
+	if strings.ToLower(args.Action) == "gmsa" {
+		return ldapQueryGMSA(conn, args, baseDN)
+	}
+
 	// Resolve filter and attributes
 	filter, attributes, desc := resolveQuery(args, baseDN)
 	if filter == "" {
-		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, admins, disabled, gpo, ou, password-never-expires, trusts, unconstrained, constrained, dacl, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
+		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, admins, disabled, gpo, ou, password-never-expires, trusts, unconstrained, constrained, dacl, gmsa, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
 	}
 
 	// Execute search — use SizeLimit=0 with paging to avoid "Size Limit Exceeded"

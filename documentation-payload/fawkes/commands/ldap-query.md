@@ -15,7 +15,7 @@ Supports authentication via explicit credentials (UPN format) or anonymous bind.
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `action` | Yes | `users` | Query type: `users`, `computers`, `groups`, `domain-admins`, `spns`, `asrep`, `admins`, `disabled`, `gpo`, `ou`, `password-never-expires`, `trusts`, `unconstrained`, `constrained`, `dacl`, or `query` |
+| `action` | Yes | `users` | Query type: `users`, `computers`, `groups`, `domain-admins`, `spns`, `asrep`, `admins`, `disabled`, `gpo`, `ou`, `password-never-expires`, `trusts`, `unconstrained`, `constrained`, `dacl`, `gmsa`, or `query` |
 | `server` | Yes | | Domain controller IP or hostname |
 | `filter` | No | | Custom LDAP filter (required when action=`query`). For `dacl`, specify target object name. |
 | `base_dn` | No | auto | LDAP search base (auto-detected from RootDSE) |
@@ -44,6 +44,7 @@ Supports authentication via explicit credentials (UPN format) or anonymous bind.
 | `unconstrained` | `TRUSTED_FOR_DELEGATION` flag (524288), excluding DCs | Computers with unconstrained delegation |
 | `constrained` | `(msDS-AllowedToDelegateTo=*)` | Accounts with constrained delegation |
 | `dacl` | N/A | Parse DACL of a specific AD object (use `-filter` for target name) |
+| `gmsa` | `(objectClass=msDS-GroupManagedServiceAccount)` | Enumerate Group Managed Service Accounts. Extracts NTLM hash from msDS-ManagedPassword if readable. Identifies who can read the password. |
 
 ## Usage
 
@@ -89,6 +90,9 @@ ldap-query -action dacl -server dc01 -filter "arya.stark" -username user@domain.
 
 # DACL on a group (find who can modify membership)
 ldap-query -action dacl -server dc01 -filter "Domain Admins" -username user@domain.local -password Pass123
+
+# Enumerate gMSA accounts and extract NTLM hashes (if readable)
+ldap-query -action gmsa -server dc01 -username user@domain.local -password Pass123
 
 # Custom LDAP filter
 ldap-query -action query -server 192.168.1.10 -username user@domain.local -password Pass123 -filter "(servicePrincipalName=*MSSQLSvc*)"
@@ -148,6 +152,19 @@ The `dacl` action parses the `nTSecurityDescriptor` binary attribute and:
 
 Use this to identify RBCD targets, Shadow Credentials targets, or any object where non-privileged accounts have excessive permissions.
 
+## gMSA Action Details
+
+The `gmsa` action enumerates Group Managed Service Accounts and attempts to extract their NTLM password hashes:
+
+- **Enumerates all gMSA accounts** in the domain
+- **Reads msDS-ManagedPassword** binary blob (requires appropriate ACL permissions)
+- **Parses MSDS-MANAGEDPASSWORD_BLOB** (MS-ADTS Section 2.2.17) to extract the current password
+- **Computes NTLM hash** (MD4 of UTF-16LE password) for pass-the-hash use
+- **Identifies allowed principals** by parsing msDS-GroupMSAMembership security descriptor
+- **Registers extracted hashes** in the Mythic credential vault automatically
+
+This is a common AD privilege escalation path: any principal allowed to read `msDS-ManagedPassword` can extract the NTLM hash and use it for authentication via pass-the-hash.
+
 ## Notes
 
 - **Authentication**: Most AD environments require authenticated bind. Use UPN format (`user@domain.local`) for the username. The `DOMAIN\user` format is not supported for LDAP simple bind.
@@ -160,3 +177,5 @@ Use this to identify RBCD targets, Shadow Credentials targets, or any object whe
 - **T1087.002** — Account Discovery: Domain Account
 - **T1069.002** — Permission Groups Discovery: Domain Groups
 - **T1482** — Domain Trust Discovery
+- **T1555** — Credentials from Password Stores (gMSA)
+- **T1003** — OS Credential Dumping (gMSA)

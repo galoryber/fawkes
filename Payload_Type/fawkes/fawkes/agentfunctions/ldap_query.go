@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -33,7 +34,7 @@ func init() {
 				ModalDisplayName: "Query Type",
 				Description:      "Preset query or custom filter",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "admins", "disabled", "gpo", "ou", "password-never-expires", "trusts", "unconstrained", "constrained", "dacl", "query", "enum-chain"},
+				Choices:          []string{"users", "computers", "groups", "domain-admins", "spns", "asrep", "admins", "disabled", "gpo", "ou", "password-never-expires", "trusts", "unconstrained", "constrained", "dacl", "gmsa", "query", "enum-chain"},
 				DefaultValue:     "users",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -301,6 +302,9 @@ func init() {
 						}
 					}
 				}
+			case "gmsa":
+				// Register extracted gMSA NTLM hashes in the credential vault
+				processGMSACredentials(processResponse.TaskData.Task.ID, responseText, server)
 			}
 			return response
 		},
@@ -403,4 +407,38 @@ var ldapEnumChainCompleteFunc = func(taskData *agentstructs.PTTaskMessageAllData
 
 	logging.LogInfo("AD Enum Chain completed", "success", successCount, "errors", errorCount)
 	return response
+}
+
+// processGMSACredentials parses gMSA output JSON and registers extracted NTLM hashes
+// in the Mythic credential vault.
+func processGMSACredentials(taskID int, responseText string, server string) {
+	var output struct {
+		Accounts []struct {
+			SAMAccountName string `json:"sAMAccountName"`
+			NTLMHash       string `json:"ntlm_hash"`
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal([]byte(responseText), &output); err != nil {
+		return
+	}
+
+	var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+	for _, acct := range output.Accounts {
+		if acct.NTLMHash == "" {
+			continue
+		}
+		creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+			CredentialType: "hash",
+			Account:        acct.SAMAccountName,
+			Credential:     acct.NTLMHash,
+			Realm:          server,
+			Comment:        "gMSA NTLM hash extracted via ldap-query gmsa",
+		})
+		mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+			TaskID:           taskID,
+			BaseArtifactType: "Credential Access",
+			ArtifactMessage:  fmt.Sprintf("gMSA password extracted: %s", acct.SAMAccountName),
+		})
+	}
+	registerCredentials(taskID, creds)
 }
