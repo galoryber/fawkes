@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart), macOS (launchagent, periodic, folder-action). All methods support install, remove, and list actions.
+Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart), macOS (launchagent, periodic, folder-action, login-item, auth-plugin). All methods support install, remove, and list actions.
 
 ### Arguments
 
@@ -336,6 +336,36 @@ Remove folder action:
 persist -method folder-action -action remove -name updater
 ```
 
+### macOS Login Item
+
+Add a Login Item via System Events (launches on user login, user-level):
+```
+persist -method login-item -action install -path "/tmp/agent" -name "MyHelper"
+```
+
+Remove login item:
+```
+persist -method login-item -action remove -name "MyHelper"
+```
+
+{{% notice tip %}}Login Items are visible in System Preferences > General > Login Items on macOS 13+. May require Accessibility permissions.{{% /notice %}}
+
+### macOS Authorization Plugin (requires root)
+
+Install an authorization plugin bundle in `/Library/Security/SecurityAgentPlugins/` and register it in the authorization database. Executes via SecurityAgent during the login process (T1547.002).
+
+Install:
+```
+persist -method auth-plugin -action install -path "/tmp/agent" -name "FawkesAuth"
+```
+
+Remove (deregisters mechanism and deletes bundle):
+```
+persist -method auth-plugin -action remove -name "FawkesAuth"
+```
+
+{{% notice warning %}}Authorization plugins execute as root during the login flow. Malformed plugins may prevent login. Always test in a lab environment first.{{% /notice %}}
+
 ## MITRE ATT&CK Mapping
 
 - T1547.001 — Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder
@@ -356,3 +386,5 @@ persist -method folder-action -action remove -name updater
 - T1547.003 — Boot or Logon Autostart Execution: Time Providers
 - T1546 — Event Triggered Execution: Folder Actions (macOS)
 - T1053.003 — Scheduled Task/Job: Periodic Scripts (macOS)
+- T1547.015 — Boot or Logon Autostart Execution: Login Items (macOS)
+- T1547.002 — Boot or Logon Autostart Execution: Authentication Process (macOS Authorization Plugin)
