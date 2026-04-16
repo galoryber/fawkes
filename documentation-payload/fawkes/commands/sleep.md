@@ -26,6 +26,12 @@ Working hours end time in HH:MM 24-hour format (e.g., `17:00`). Supports overnig
 #### working_days (optional)
 Comma-separated ISO weekday numbers (Mon=1 through Sun=7). E.g., `1,2,3,4,5` for weekdays only. Leave empty for no change. Set to `0` to disable day restrictions (all days active).
 
+#### jitter_profile (optional)
+Jitter distribution profile. Controls how the random variation is distributed around the interval:
+- **uniform** (default): Flat random — equal chance of any value within the jitter range. Legacy behavior.
+- **normal**: Gaussian bell curve — most sleeps cluster near the interval with rare outliers. Harder to fingerprint statistically.
+- **exponential**: Bursty pattern — biased toward shorter sleeps with occasional long pauses. Mimics human interaction patterns.
+
 ## Usage
 ```
 sleep [seconds] [jitter%] [working_start] [working_end] [working_days]
@@ -37,6 +43,11 @@ sleep 30
 sleep 60 20
 sleep 10 10 09:00 17:00 1,2,3,4,5
 sleep 10 10 00:00 00:00
+```
+
+Adaptive jitter profile:
+```json
+{"interval": 60, "jitter": 30, "jitter_profile": "normal"}
 ```
 
 JSON format:
