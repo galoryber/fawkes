@@ -35,6 +35,7 @@ type Manager struct {
 	outbound        []structs.SocksMsg
 	mu              sync.Mutex
 	IdleReadTimeout time.Duration // exported for testing; defaults to idleReadTimeout const
+	Stats           *ConnStats   // connection statistics tracker
 }
 
 // NewManager creates a new SOCKS connection manager
@@ -42,6 +43,7 @@ func NewManager() *Manager {
 	return &Manager{
 		connections:     make(map[uint32]net.Conn),
 		IdleReadTimeout: idleReadTimeout,
+		Stats:           NewConnStats(100),
 	}
 }
 
@@ -171,6 +173,9 @@ func (m *Manager) handleNewConnection(serverId uint32, b64Data string) {
 	m.connections[serverId] = conn
 	m.mu.Unlock()
 
+	// Track connection stats
+	m.Stats.RecordConnect(serverId, target)
+
 	// Send success reply
 	m.sendReply(serverId, replySuccess)
 
@@ -188,10 +193,13 @@ func (m *Manager) forwardData(serverId uint32, conn net.Conn, b64Data string) {
 		log.Printf("decode error sid=%d: %v", serverId, err)
 		return
 	}
-	if _, err := conn.Write(data); err != nil {
+	n, err := conn.Write(data)
+	if err != nil {
 		log.Printf("write error sid=%d: %v", serverId, err)
 		m.closeConnection(serverId)
+		return
 	}
+	m.Stats.RecordSend(serverId, n)
 }
 
 // readFromConnection reads data from a TCP connection and queues it as outbound SOCKS messages.
@@ -204,6 +212,7 @@ func (m *Manager) readFromConnection(serverId uint32, conn net.Conn) {
 		conn.SetReadDeadline(time.Now().Add(m.IdleReadTimeout))
 		n, err := conn.Read(buf)
 		if n > 0 {
+			m.Stats.RecordRecv(serverId, n)
 			encoded := base64.StdEncoding.EncodeToString(buf[:n])
 			m.mu.Lock()
 			m.outbound = append(m.outbound, structs.SocksMsg{
@@ -225,8 +234,12 @@ func (m *Manager) readFromConnection(serverId uint32, conn net.Conn) {
 				}
 				// Connection still active but idle for too long — close it
 				log.Printf("idle timeout sid=%d", serverId)
+				m.Stats.RecordClose(serverId, "timeout")
 			} else if err != io.EOF {
 				log.Printf("read error sid=%d: %v", serverId, err)
+				m.Stats.RecordClose(serverId, "error")
+			} else {
+				m.Stats.RecordClose(serverId, "closed")
 			}
 			// Connection closed, timed out, or errored — send exit and clean up
 			m.mu.Lock()
