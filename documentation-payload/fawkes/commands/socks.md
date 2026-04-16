@@ -14,7 +14,7 @@ SOCKS data piggybacks on the agent's normal polling cycle (get_tasking / post_re
 ### Arguments
 
 #### action
-`start` or `stop` the SOCKS proxy.
+`start`, `stop`, or `stats` for the SOCKS proxy.
 
 #### port
 Port for Mythic to listen on. Default: `7000`. Mythic's Docker configuration forwards port 7000 by default for proxy services.
@@ -23,6 +23,7 @@ Port for Mythic to listen on. Default: `7000`. Mythic's Docker configuration for
 ```
 socks start [port]
 socks stop [port]
+socks stats
 ```
 
 Example
@@ -30,6 +31,7 @@ Example
 socks start
 socks start 7000
 socks stop 7000
+socks stats        # view active connections, bytes TX/RX, recent history
 ```
 
 Once started, configure your tools to use the proxy:
