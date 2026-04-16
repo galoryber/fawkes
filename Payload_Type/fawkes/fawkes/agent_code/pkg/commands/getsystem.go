@@ -136,6 +136,10 @@ func getSystemViaSteal(oldIdentity string) structs.CommandResult {
 		return errorf("Token stolen but failed to verify identity: %v", err)
 	}
 
+	// Record identity transition for history
+	RecordIdentityTransition("getsystem", oldIdentity, newIdentity,
+		fmt.Sprintf("steal from %s (PID %d)", processName, systemPID))
+
 	var sb strings.Builder
 	sb.WriteString("Successfully elevated to SYSTEM\n")
 	sb.WriteString(fmt.Sprintf("Technique: Token steal from %s (PID %d)\n", processName, systemPID))

@@ -141,6 +141,9 @@ func init() {
 					"Artifacts: SCM connection (Event 7045), service creation, cmd.exe child process. "+
 					"Heavy footprint — consider WMI or WinRM for stealthier lateral movement.", host)
 			}
+			if ctx := identityContextForOPSEC(taskData.Callback.Description); ctx != "" {
+				msg += " [Identity: " + ctx + "]"
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,

@@ -52,6 +52,9 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("SeImpersonatePrivilege not available. This technique requires a service account (NETWORK SERVICE, LOCAL SERVICE, IIS, MSSQL, etc.).")
 	}
 
+	// Capture current identity for transition history
+	oldIdentity, _ := GetCurrentIdentity()
+
 	// Get computer name for the printer path.
 	var compNameBuf [windows.MAX_COMPUTERNAME_LENGTH + 1]uint16
 	compNameSize := uint32(len(compNameBuf))
@@ -289,6 +292,10 @@ func (c *PrintSpooferCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 
 		osThreadLocked = true
+
+		// Record identity transition for history
+		RecordIdentityTransition("printspoofer", oldIdentity, clientIdentity,
+			fmt.Sprintf("pipe=%s", pipePath))
 
 		var sb strings.Builder
 		sb.WriteString("=== PRINTSPOOFER SUCCESS ===\n\n")

@@ -151,6 +151,10 @@ func stealTokenImpersonate(pid int) structs.CommandResult {
 		return errorf("Token stolen but failed to verify identity: %v", err)
 	}
 
+	// Record identity transition for history
+	RecordIdentityTransition("stealtoken", oldIdentity, newIdentity,
+		fmt.Sprintf("PID %d", pid))
+
 	var output string
 	if targetIdentity != "" {
 		output = fmt.Sprintf("Stole token from PID %d (%s)\n", pid, targetIdentity)

@@ -267,12 +267,15 @@ func init() {
 			host, _ := taskData.Args.GetStringArg("host")
 			object, _ := taskData.Args.GetStringArg("object")
 			warning := getDCOMObjectWarning(object)
-
+			msg := fmt.Sprintf("OPSEC WARNING: DCOM lateral movement to %s via %s.\n  %s\n  All DCOM: RPC/TCP 135 connection, Event ID 10016, remote COM activation.", host, object, warning)
+			if ctx := identityContextForOPSEC(taskData.Callback.Description); ctx != "" {
+				msg += " [Identity: " + ctx + "]"
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: DCOM lateral movement to %s via %s.\n  %s\n  All DCOM: RPC/TCP 135 connection, Event ID 10016, remote COM activation.", host, object, warning),
+				OpsecPreMessage:    msg,
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},

@@ -316,6 +316,11 @@ func pipeServerImpersonate(task structs.Task, args pipeServerArgs) structs.Comma
 	// Mark as thread-locked so PrepareExecution doesn't double-lock
 	osThreadLocked = true
 
+	// Record identity transition for history
+	oldIdentity, _ := GetCurrentIdentity()
+	RecordIdentityTransition("pipe-server", oldIdentity, clientIdentity,
+		fmt.Sprintf("pipe=%s", pipePath))
+
 	var sb strings.Builder
 	sb.WriteString("=== PIPE IMPERSONATION SUCCESS ===\n\n")
 	sb.WriteString(fmt.Sprintf("Pipe: %s\n", pipePath))

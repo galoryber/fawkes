@@ -250,6 +250,9 @@ func init() {
 				}
 			}
 			msg += " SSH sessions are logged in auth.log/secure. Connection metadata (source IP, username, key fingerprint) is recorded by sshd."
+			if ctx := identityContextForOPSEC(taskData.Callback.Description); ctx != "" {
+				msg += " [Identity: " + ctx + "]"
+			}
 
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,

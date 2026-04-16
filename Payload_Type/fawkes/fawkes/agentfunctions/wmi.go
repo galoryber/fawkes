@@ -188,6 +188,9 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			host, _ := taskData.Args.GetStringArg("host")
 			msg := formatWMIOPSEC(action, host)
+			if ctx := identityContextForOPSEC(taskData.Callback.Description); ctx != "" {
+				msg += " [Identity: " + ctx + "]"
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,

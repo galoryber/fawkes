@@ -73,3 +73,45 @@ func TestIdentityContextForOPSEC_NotImpersonating(t *testing.T) {
 		t.Errorf("Expected empty for non-impersonation desc, got %q", ctx)
 	}
 }
+
+func TestFormatIdentityDescription_Getsystem(t *testing.T) {
+	desc := formatIdentityDescription("getsystem", "NT AUTHORITY\\SYSTEM")
+	if !strings.Contains(desc, "Elevated") {
+		t.Errorf("Expected 'Elevated' in getsystem description, got %q", desc)
+	}
+	if !strings.Contains(desc, "SYSTEM") {
+		t.Errorf("Expected 'SYSTEM' in getsystem description, got %q", desc)
+	}
+}
+
+func TestFormatIdentityDescription_Unknown(t *testing.T) {
+	desc := formatIdentityDescription("custom-op", "some-user")
+	if !strings.Contains(desc, "some-user") {
+		t.Errorf("Expected user in default description, got %q", desc)
+	}
+	if !strings.Contains(desc, "custom-op") {
+		t.Errorf("Expected operation in default description, got %q", desc)
+	}
+}
+
+func TestIdentityContextForOPSEC_Reverted(t *testing.T) {
+	// "Reverted to:" should NOT trigger context (user is back to original identity)
+	ctx := identityContextForOPSEC("Reverted to: DESKTOP\\setup")
+	if ctx != "" {
+		t.Errorf("Expected empty for reverted desc, got %q", ctx)
+	}
+}
+
+func TestClassifyIdentityLevel_EnterpriseAdmin(t *testing.T) {
+	level := classifyIdentityLevel("CORP\\Enterprise Admins")
+	if level != "admin" {
+		t.Errorf("Expected admin for Enterprise Admin, got %q", level)
+	}
+}
+
+func TestClassifyIdentityLevel_EmptyUser(t *testing.T) {
+	level := classifyIdentityLevel("")
+	if level != "user" {
+		t.Errorf("Expected user for empty string, got %q", level)
+	}
+}

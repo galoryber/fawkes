@@ -100,6 +100,10 @@ func makeTokenImpersonate(params MakeTokenParams) structs.CommandResult {
 		return errorf("Token created but failed to verify identity: %v", err)
 	}
 
+	// Record identity transition for history
+	RecordIdentityTransition("maketoken", oldIdentity, newIdentity,
+		fmt.Sprintf("%s\\%s", params.Domain, params.Username))
+
 	// Format output
 	output := fmt.Sprintf("Successfully impersonated %s", newIdentity)
 	if oldIdentity != "" {

@@ -395,6 +395,10 @@ func doPotatoExploit(oldIdentity string, phase *int32) structs.CommandResult {
 
 	newIdentity, _ := GetCurrentIdentity()
 
+	// Record identity transition for history
+	RecordIdentityTransition("getsystem", oldIdentity, newIdentity,
+		fmt.Sprintf("DCOM/Potato pipe=%s", pipeName))
+
 	var sb strings.Builder
 	sb.WriteString("=== GETSYSTEM SUCCESS (DCOM/Potato) ===\n\n")
 	sb.WriteString(fmt.Sprintf("Technique: DCOM OXID resolution hook (GodPotato)\n"))

@@ -42,6 +42,11 @@ func (c *Rev2SelfCommand) Execute(task structs.Task) structs.CommandResult {
 		return successResult("Reverted but failed to get current identity")
 	}
 
+	// Record identity transition for history
+	if wasImpersonating {
+		RecordIdentityTransition("rev2self", oldIdentity, newIdentity, "")
+	}
+
 	// Format output
 	var output string
 	if wasImpersonating {

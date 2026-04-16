@@ -42,8 +42,10 @@ func (c *TokenStoreCommand) Execute(task structs.Task) structs.CommandResult {
 		return tokenStoreUse(args.Name)
 	case "remove":
 		return tokenStoreRemove(args.Name)
+	case "history":
+		return tokenStoreHistory()
 	default:
-		return errorf("Unknown action: %s (use save, list, use, remove)", args.Action)
+		return errorf("Unknown action: %s (use save, list, use, remove, history)", args.Action)
 	}
 }
 
@@ -132,7 +134,21 @@ func tokenStoreUse(name string) structs.CommandResult {
 		return errorf("Error restoring token %q: %v", name, err)
 	}
 
+	// Record identity transition for history
+	RecordIdentityTransition("token-store-use", oldIdentity, identity,
+		fmt.Sprintf("token=%q", name))
+
 	return successf("Switched to token %q\nOld: %s\nNew: %s", name, oldIdentity, identity)
+}
+
+func tokenStoreHistory() structs.CommandResult {
+	history := GetIdentityHistory()
+	if len(history) == 0 {
+		return successResult("No identity transitions recorded. Use steal-token, make-token, rev2self, or getsystem to start tracking.")
+	}
+
+	// Return JSON for browser script rendering
+	return successResult(GetIdentityHistoryJSON())
 }
 
 func tokenStoreRemove(name string) structs.CommandResult {
