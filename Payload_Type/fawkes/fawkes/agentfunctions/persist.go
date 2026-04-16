@@ -55,10 +55,10 @@ func init() {
 		Name:                "persist",
 		Description:         "Install or remove persistence mechanisms (registry, startup folder, COM hijack, screensaver, IFEO, winlogon helper, print processor, port monitor, accessibility features, active setup, XDG autostart)",
 		HelpString:          "persist -method <registry|startup-folder|com-hijack|screensaver|ifeo|winlogon|print-processor|port-monitor|accessibility|active-setup|time-provider|xdg-autostart|list> -action <install|remove> [-name <name>] [-path <exe_path>] [-hive <HKCU|HKLM>] [-clsid <CLSID>] [-timeout <seconds>]",
-		Version:             6,
+		Version:             7,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1547.001", "T1547.009", "T1546.015", "T1546.002", "T1546.012", "T1053.003", "T1543.002", "T1546.004", "T1098.004", "T1543.004", "T1070.009", "T1547.004", "T1547.012", "T1546.008", "T1547.014", "T1547.013", "T1547.003", "T1547.010"},
+		MitreAttackMappings: []string{"T1547.001", "T1547.002", "T1547.009", "T1547.015", "T1546.015", "T1546.002", "T1546.012", "T1053.003", "T1543.002", "T1546.004", "T1098.004", "T1543.004", "T1070.009", "T1547.004", "T1547.012", "T1546.008", "T1547.014", "T1547.013", "T1547.003", "T1547.010"},
 		ScriptOnlyCommand: false,
 		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
 			"persistFullInstallDone": persistFullInstallDone,
@@ -77,8 +77,8 @@ func init() {
 				ModalDisplayName: "Persistence Method",
 				CLIName:          "method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "port-monitor", "accessibility", "active-setup", "time-provider", "crontab", "systemd", "shell-profile", "ssh-key", "xdg-autostart", "launchagent", "periodic", "folder-action", "list"},
-				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, port-monitor, accessibility, active-setup, time-provider. Linux: crontab, systemd, shell-profile, ssh-key, xdg-autostart. macOS: launchagent, periodic (root), folder-action. All: list.",
+				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "port-monitor", "accessibility", "active-setup", "time-provider", "crontab", "systemd", "shell-profile", "ssh-key", "xdg-autostart", "launchagent", "periodic", "folder-action", "login-item", "auth-plugin", "list"},
+				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, port-monitor, accessibility, active-setup, time-provider. Linux: crontab, systemd, shell-profile, ssh-key, xdg-autostart. macOS: launchagent, periodic (root), folder-action, login-item, auth-plugin (root). All: list.",
 				DefaultValue:     "registry",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -272,7 +272,7 @@ func init() {
 				case os == "linux":
 					methods = []string{"crontab", "shell-profile", "systemd"}
 				case os == "macos" || os == "darwin":
-					methods = []string{"launchagent", "folder-action"}
+					methods = []string{"launchagent", "folder-action", "login-item"}
 				default:
 					methods = []string{"registry", "startup-folder"}
 				}
@@ -360,6 +360,21 @@ func init() {
 						target = "sethc.exe"
 					}
 					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Replaced C:\\Windows\\System32\\%s with %s", target, path))
+				case "login-item":
+					path, _ := taskData.Args.GetStringArg("path")
+					itemName := name
+					if itemName == "" {
+						itemName = "FawkesHelper"
+					}
+					createArtifact(taskData.Task.ID, "Login Item", fmt.Sprintf("macOS Login Item: %s -> %s", itemName, path))
+				case "auth-plugin":
+					path, _ := taskData.Args.GetStringArg("path")
+					pluginName := name
+					if pluginName == "" {
+						pluginName = "FawkesAuth"
+					}
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Authorization Plugin: /Library/Security/SecurityAgentPlugins/%s.bundle -> %s", pluginName, path))
+					createArtifact(taskData.Task.ID, "Authorization DB", fmt.Sprintf("Mechanism: %s:auth,privileged in system.login.console", pluginName))
 				}
 			}
 			if action == "install" || action == "remove" {
@@ -413,7 +428,7 @@ func persistMethodsForOS(osName string, hostname string) []string {
 	case os == "linux":
 		return []string{"crontab", "shell-profile", "systemd"}
 	case os == "macos" || os == "darwin":
-		return []string{"launchagent", "folder-action"}
+		return []string{"launchagent", "folder-action", "login-item"}
 	default:
 		return []string{"registry", "startup-folder"}
 	}

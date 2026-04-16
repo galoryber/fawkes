@@ -304,5 +304,37 @@ func persistDarwinList() structs.CommandResult {
 		sb.WriteString("  (directory not found)\n")
 	}
 
+	// Login Items
+	sb.WriteString("\n[Login Items]\n")
+	listScript := `tell application "System Events" to get {name, path} of every login item`
+	if out, err := exec.Command("osascript", "-e", listScript).CombinedOutput(); err == nil {
+		result := strings.TrimSpace(string(out))
+		if result != "" && result != ", " {
+			sb.WriteString(fmt.Sprintf("  %s\n", result))
+		} else {
+			sb.WriteString("  (none found)\n")
+		}
+	} else {
+		sb.WriteString("  (System Events not accessible)\n")
+	}
+
+	// Authorization Plugins
+	sb.WriteString("\n[Authorization Plugins]\n")
+	authPluginDir := "/Library/Security/SecurityAgentPlugins"
+	if entries, err := os.ReadDir(authPluginDir); err == nil {
+		apFound := false
+		for _, e := range entries {
+			if strings.HasSuffix(e.Name(), ".bundle") && !strings.HasPrefix(e.Name(), ".") {
+				sb.WriteString(fmt.Sprintf("  %s\n", e.Name()))
+				apFound = true
+			}
+		}
+		if !apFound {
+			sb.WriteString("  (none found)\n")
+		}
+	} else {
+		sb.WriteString("  (directory not readable)\n")
+	}
+
 	return successResult(sb.String())
 }

@@ -40,15 +40,27 @@ func TestPersistMethodsForOS_Linux(t *testing.T) {
 
 func TestPersistMethodsForOS_MacOS(t *testing.T) {
 	methods := persistMethodsForOS("macos", "macbook")
-	if len(methods) != 1 || methods[0] != "launchagent" {
-		t.Errorf("expected [launchagent], got %v", methods)
+	expected := []string{"launchagent", "folder-action", "login-item"}
+	if len(methods) != len(expected) {
+		t.Fatalf("expected %d methods, got %d: %v", len(expected), len(methods), methods)
+	}
+	for i, m := range expected {
+		if methods[i] != m {
+			t.Errorf("methods[%d] = %q, want %q", i, methods[i], m)
+		}
 	}
 }
 
 func TestPersistMethodsForOS_Darwin(t *testing.T) {
 	methods := persistMethodsForOS("darwin", "macmini")
-	if len(methods) != 1 || methods[0] != "launchagent" {
-		t.Errorf("expected [launchagent], got %v", methods)
+	expected := []string{"launchagent", "folder-action", "login-item"}
+	if len(methods) != len(expected) {
+		t.Fatalf("expected %d methods, got %d: %v", len(expected), len(methods), methods)
+	}
+	for i, m := range expected {
+		if methods[i] != m {
+			t.Errorf("methods[%d] = %q, want %q", i, methods[i], m)
+		}
 	}
 }
 
