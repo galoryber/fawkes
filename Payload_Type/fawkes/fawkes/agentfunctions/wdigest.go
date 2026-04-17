@@ -8,6 +8,23 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+func wdigestOPSECMessage(action string) string {
+	msg := "OPSEC WARNING: "
+	switch action {
+	case "enable":
+		msg += "Enabling WDigest writes UseLogonCredential=1 to HKLM\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest. This registry modification is a well-known credential access indicator and is monitored by most EDR/SIEM solutions."
+	case "disable":
+		msg += "Disabling WDigest writes UseLogonCredential=0. Registry modification to WDigest key may trigger endpoint alerts."
+	default:
+		msg += "Querying WDigest registry key status. Low risk — read-only registry access."
+	}
+	return msg
+}
+
+func wdigestStatusEnabled(responseText string) bool {
+	return strings.Contains(responseText, "ENABLED")
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "wdigest",
@@ -50,15 +67,7 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
-			msg := "OPSEC WARNING: "
-			switch action {
-			case "enable":
-				msg += "Enabling WDigest writes UseLogonCredential=1 to HKLM\\SYSTEM\\CurrentControlSet\\Control\\SecurityProviders\\WDigest. This registry modification is a well-known credential access indicator and is monitored by most EDR/SIEM solutions."
-			case "disable":
-				msg += "Disabling WDigest writes UseLogonCredential=0. Registry modification to WDigest key may trigger endpoint alerts."
-			default:
-				msg += "Querying WDigest registry key status. Low risk — read-only registry access."
-			}
+			msg := wdigestOPSECMessage(action)
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
@@ -94,7 +103,7 @@ func init() {
 				createArtifact(processResponse.TaskData.Task.ID, "Configuration Change",
 					"WDigest plaintext credential caching disabled")
 			case "status":
-				if strings.Contains(responseText, "ENABLED") {
+				if wdigestStatusEnabled(responseText) {
 					createArtifact(processResponse.TaskData.Task.ID, "Configuration Discovery",
 						"WDigest UseLogonCredential is ENABLED — plaintext credentials may be in LSASS")
 				}

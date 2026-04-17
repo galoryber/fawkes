@@ -10,6 +10,32 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+func screenshotOPSECMessage(action string, interval, duration int) string {
+	if action == "record" {
+		return fmt.Sprintf("OPSEC WARNING: Continuous screen recording for %ds at %ds intervals (T1113). "+
+			"Sustained screen capture API calls significantly increase detection risk. "+
+			"EDR may detect repeated GDI/screencapture invocations. "+
+			"Each frame is uploaded to Mythic — sustained C2 traffic is a network indicator. "+
+			"Stop with jobkill.", duration, interval)
+	}
+	return "OPSEC WARNING: Capturing screen contents (T1113). Screen capture API calls may be monitored by EDR. Generates an image artifact in agent memory for exfiltration."
+}
+
+type screenshotRecordResult struct {
+	Action    string `json:"action"`
+	Frames    int    `json:"frames_captured"`
+	Duration  string `json:"actual_duration"`
+	StoppedBy string `json:"stopped_by"`
+}
+
+func parseScreenshotRecordResult(responseText string) (screenshotRecordResult, bool) {
+	var result screenshotRecordResult
+	if err := json.Unmarshal([]byte(responseText), &result); err != nil || result.Action != "record" {
+		return result, false
+	}
+	return result, true
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name: "screenshot",
@@ -84,16 +110,9 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
-			msg := "OPSEC WARNING: Capturing screen contents (T1113). Screen capture API calls may be monitored by EDR. Generates an image artifact in agent memory for exfiltration."
-			if action == "record" {
-				interval, _ := taskData.Args.GetNumberArg("interval")
-				duration, _ := taskData.Args.GetNumberArg("duration")
-				msg = fmt.Sprintf("OPSEC WARNING: Continuous screen recording for %ds at %ds intervals (T1113). "+
-					"Sustained screen capture API calls significantly increase detection risk. "+
-					"EDR may detect repeated GDI/screencapture invocations. "+
-					"Each frame is uploaded to Mythic — sustained C2 traffic is a network indicator. "+
-					"Stop with jobkill.", int(duration), int(interval))
-			}
+			interval, _ := taskData.Args.GetNumberArg("interval")
+			duration, _ := taskData.Args.GetNumberArg("duration")
+			msg := screenshotOPSECMessage(action, int(interval), int(duration))
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
 				OpsecPreBlocked:    false,
@@ -147,14 +166,7 @@ func init() {
 				})
 				return response
 			}
-			// Parse recording result
-			var recordResult struct {
-				Action     string `json:"action"`
-				Frames     int    `json:"frames_captured"`
-				Duration   string `json:"actual_duration"`
-				StoppedBy  string `json:"stopped_by"`
-			}
-			if err := json.Unmarshal([]byte(responseText), &recordResult); err == nil && recordResult.Action == "record" {
+			if recordResult, ok := parseScreenshotRecordResult(responseText); ok {
 				createArtifact(processResponse.TaskData.Task.ID, "File Write",
 					fmt.Sprintf("Screen recording: %d frames over %s (stopped: %s)",
 						recordResult.Frames, recordResult.Duration, recordResult.StoppedBy))

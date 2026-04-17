@@ -8,6 +8,23 @@ import (
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
+func dpapiOPSECMessage(action string) string {
+	msg := fmt.Sprintf("OPSEC WARNING: DPAPI credential access (action: %s). ", action)
+	switch action {
+	case "decrypt":
+		msg += "CryptUnprotectData calls are logged by EDR and may trigger credential access alerts (T1555.003)."
+	case "masterkeys":
+		msg += "Enumerating DPAPI master keys accesses %APPDATA%\\Microsoft\\Protect — a known credential theft indicator."
+	case "wifi":
+		msg += "Wi-Fi password extraction reads profile XML files and decrypts with DPAPI (T1555.005)."
+	case "browser":
+		msg += "Browser key extraction targets Chrome/Edge local state files — commonly monitored by EDR (T1555.003)."
+	default:
+		msg += "DPAPI operations access protected data and may trigger credential theft alerts."
+	}
+	return msg
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name: "dpapi",
@@ -96,19 +113,7 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
-			msg := fmt.Sprintf("OPSEC WARNING: DPAPI credential access (action: %s). ", action)
-			switch action {
-			case "decrypt":
-				msg += "CryptUnprotectData calls are logged by EDR and may trigger credential access alerts (T1555.003)."
-			case "masterkeys":
-				msg += "Enumerating DPAPI master keys accesses %APPDATA%\\Microsoft\\Protect — a known credential theft indicator."
-			case "wifi":
-				msg += "Wi-Fi password extraction reads profile XML files and decrypts with DPAPI (T1555.005)."
-			case "browser":
-				msg += "Browser key extraction targets Chrome/Edge local state files — commonly monitored by EDR (T1555.003)."
-			default:
-				msg += "DPAPI operations access protected data and may trigger credential theft alerts."
-			}
+			msg := dpapiOPSECMessage(action)
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
 				OpsecPreBlocked: false, OpsecPreMessage: msg,

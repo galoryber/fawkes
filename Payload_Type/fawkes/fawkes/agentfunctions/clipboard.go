@@ -8,6 +8,20 @@ import (
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 )
 
+var clipboardCredentialTags = []string{
+	"NTLM Hash", "NT Hash", "Password-like", "API Key", "AWS Key", "Private Key", "Bearer Token",
+}
+
+func clipboardDetectedCredentialPatterns(responseText string) []string {
+	var detected []string
+	for _, tag := range clipboardCredentialTags {
+		if strings.Contains(responseText, tag) {
+			detected = append(detected, tag)
+		}
+	}
+	return detected
+}
+
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "clipboard",
@@ -163,11 +177,9 @@ func init() {
 						"[Clipboard Dump] Monitor captures retrieved")
 				}
 				// Track detected credential patterns
-				for _, tag := range []string{"NTLM Hash", "NT Hash", "Password-like", "API Key", "AWS Key", "Private Key", "Bearer Token"} {
-					if strings.Contains(responseText, tag) {
-						createArtifact(processResponse.TaskData.Task.ID, "Data Collection",
-							fmt.Sprintf("[Clipboard] Credential pattern detected: %s", tag))
-					}
+				for _, tag := range clipboardDetectedCredentialPatterns(responseText) {
+					createArtifact(processResponse.TaskData.Task.ID, "Data Collection",
+						fmt.Sprintf("[Clipboard] Credential pattern detected: %s", tag))
 				}
 			case "monitor":
 				createArtifact(processResponse.TaskData.Task.ID, "Data Collection",
