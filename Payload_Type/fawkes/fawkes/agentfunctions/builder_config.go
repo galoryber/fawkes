@@ -278,6 +278,23 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 		ldflags += fmt.Sprintf(" -X '%s.recoveryInterval=%s'", fawkesMainPackage, riStr)
 	}
 
+	// Multi-protocol failover chain
+	if fcStr, err := payloadBuildMsg.BuildParameters.GetStringArg("failover_chain"); err == nil && fcStr != "" {
+		ldflags += fmt.Sprintf(" -X '%s.failoverChain=%s'", fawkesMainPackage, fcStr)
+	}
+	if ftStr, err := payloadBuildMsg.BuildParameters.GetStringArg("failover_threshold"); err == nil && ftStr != "" && ftStr != "5" {
+		if _, parseErr := strconv.Atoi(ftStr); parseErr != nil {
+			return "", fmt.Errorf("invalid failover_threshold %q — must be a number", ftStr)
+		}
+		ldflags += fmt.Sprintf(" -X '%s.failoverThreshold=%s'", fawkesMainPackage, ftStr)
+	}
+	if frStr, err := payloadBuildMsg.BuildParameters.GetStringArg("failover_recovery"); err == nil && frStr != "" && frStr != "300" {
+		if _, parseErr := strconv.Atoi(frStr); parseErr != nil {
+			return "", fmt.Errorf("invalid failover_recovery %q — must be a number", frStr)
+		}
+		ldflags += fmt.Sprintf(" -X '%s.failoverRecovery=%s'", fawkesMainPackage, frStr)
+	}
+
 	// String obfuscation: XOR-encode C2 config strings with a random key
 	if obfStrings, err := payloadBuildMsg.BuildParameters.GetBooleanArg("obfuscate_strings"); err == nil && obfStrings {
 		var obfErr error

