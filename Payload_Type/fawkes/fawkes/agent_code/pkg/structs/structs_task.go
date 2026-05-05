@@ -142,6 +142,7 @@ type GetFileFromMythicStruct struct {
 	TrackingUUID          string
 	FileTransferResponse  chan json.RawMessage
 	TransferResult        *FileTransferResult // Optional: populated on successful completion
+	StartChunk            int                 // For resume: 1-indexed chunk to start from (0 or 1 = start from beginning)
 }
 
 // FileUploadMessage for requesting file from Mythic
