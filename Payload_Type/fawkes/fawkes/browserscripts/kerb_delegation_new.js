@@ -12,6 +12,53 @@ function(task, responses){
             combined += responses[i];
         }
         let data = JSON.parse(combined);
+
+        // Monitor action returns an object with a .captured array
+        if(data && typeof data === "object" && !Array.isArray(data) && data.captured !== undefined){
+            let result = [];
+            // Summary header
+            let summary = data.message || ("Captured " + data.total + " TGT(s)");
+            let summaryColor = data.total > 0 ? "rgba(0,200,0,0.12)" : "rgba(255,165,0,0.1)";
+            result.push({
+                "plaintext": "Monitor Summary: " + summary,
+                "backgroundColor": summaryColor,
+            });
+            if(!data.captured || data.captured.length === 0){
+                return {
+                    "plaintext": summary + "\n\nNo TGTs captured during the monitoring window.",
+                };
+            }
+            let headers = [
+                {"plaintext": "captured_at", "type": "string", "width": 160},
+                {"plaintext": "client", "type": "string", "width": 220, "fillWidth": false},
+                {"plaintext": "server", "type": "string", "width": 220},
+                {"plaintext": "luid", "type": "string", "width": 140},
+                {"plaintext": "valid_until", "type": "string", "width": 140},
+                {"plaintext": "kirbi_b64", "type": "string", "fillWidth": true},
+            ];
+            let rows = [];
+            for(let j = 0; j < data.captured.length; j++){
+                let t = data.captured[j];
+                rows.push({
+                    "captured_at": {"plaintext": t.captured_at || "-"},
+                    "client": {"plaintext": t.client || "-", "copyIcon": true},
+                    "server": {"plaintext": t.server || "-"},
+                    "luid": {"plaintext": t.luid || "-"},
+                    "valid_until": {"plaintext": t.end_time || "-"},
+                    "kirbi_b64": {"plaintext": t.kirbi_b64 || "-", "copyIcon": true},
+                    "rowStyle": {"backgroundColor": "rgba(0,200,0,0.1)"},
+                });
+            }
+            return {
+                "table": [{
+                    "headers": headers,
+                    "rows": rows,
+                    "title": "Captured TGTs (" + data.captured.length + ") — " + summary,
+                }]
+            };
+        }
+
+        // LDAP enumeration actions return an array of delegation entries
         if(!Array.isArray(data) || data.length === 0){
             return {"plaintext": "No delegation configurations found"};
         }
