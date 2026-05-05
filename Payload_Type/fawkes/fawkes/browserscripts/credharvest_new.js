@@ -85,6 +85,7 @@ function(task, responses){
             return {"plaintext": combined};
         }
         let headers = [
+            {"plaintext": "actions", "type": "button", "width": 80, "disableSort": true},
             {"plaintext": "Source", "type": "string", "width": 150},
             {"plaintext": "Type", "type": "string", "width": 90},
             {"plaintext": "Path / Name", "type": "string", "width": 300},
@@ -104,7 +105,29 @@ function(task, responses){
                 typeStyle = {"color": "#ff8c00"};
                 credCount++;
             }
+            // For file-backed findings, add a cat button to read the file
+            let actionButton = null;
+            if((e.type === "File" || e.type === "Token" || e.type === "Legacy") && e.path.startsWith("/")){
+                actionButton = {
+                    "name": "cat",
+                    "type": "task",
+                    "ui_feature": "cat",
+                    "startIcon": "visibility",
+                    "hoverText": "Read file: " + e.path,
+                    "parameters": e.path,
+                };
+            } else if(e.type === "Dir" && e.path.startsWith("/")){
+                actionButton = {
+                    "name": "ls",
+                    "type": "task",
+                    "ui_feature": "file_browser:list",
+                    "startIcon": "list",
+                    "hoverText": "List directory: " + e.path,
+                    "parameters": {"full_path": e.path},
+                };
+            }
             rows.push({
+                "actions": actionButton ? {"button": actionButton} : {"plaintext": ""},
                 "Source": {"plaintext": e.source},
                 "Type": {"plaintext": e.type, "cellStyle": typeStyle},
                 "Path / Name": {"plaintext": e.path, "copyIcon": e.path.length > 0, "cellStyle": {"fontFamily": "monospace", "fontSize": "0.9em"}},
@@ -112,7 +135,7 @@ function(task, responses){
                 "rowStyle": rowStyle
             });
         }
-        let title = "Credential Harvest \u2014 " + entries.length + " findings";
+        let title = "Credential Harvest — " + entries.length + " findings";
         if(credCount > 0) title += " (" + credCount + " credentials)";
         return {"table": [{"headers": headers, "rows": rows, "title": title}]};
     } catch(error){
