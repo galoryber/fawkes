@@ -47,6 +47,7 @@ function(task, responses){
             {"plaintext": "Host", "type": "string", "width": 180},
             {"plaintext": "Port", "type": "number", "width": 80},
             {"plaintext": "Service", "type": "string", "width": 120},
+            {"plaintext": "actions", "type": "button", "width": 90, "disableSort": true},
         ];
         let rows = [];
         for(let j = 0; j < results.length; j++){
@@ -58,14 +59,27 @@ function(task, responses){
             } else if(webPorts.has(portNum)){
                 rowStyle = {"backgroundColor": "rgba(0,150,255,0.1)"};
             }
+            // Local listen port: offset to avoid well-known port restrictions
+            let localPort = portNum < 1024 ? portNum + 10000 : portNum + 1000;
+            if(localPort > 65535){ localPort = 7000; }
             rows.push({
                 "Host": {"plaintext": r.host, "copyIcon": true},
                 "Port": {"plaintext": String(r.port)},
-                "Service": {"plaintext": r.service || "\u2014"},
+                "Service": {"plaintext": r.service || "—"},
                 "rowStyle": rowStyle,
+                "actions": {
+                    "button": {
+                        "name": "rpfwd",
+                        "type": "task",
+                        "ui_feature": "port_browser:forward",
+                        "startIcon": "link",
+                        "hoverText": "Forward port " + r.port + " from " + r.host + " via agent",
+                        "parameters": "forward " + localPort + " " + r.host + " " + String(r.port),
+                    }
+                },
             });
         }
-        let title = "Port Scan \u2014 " + results.length + " open ports";
+        let title = "Port Scan — " + results.length + " open ports";
         if(summaryLine) title += " (" + summaryLine + ")";
         return {
             "table": [{

@@ -18,6 +18,7 @@ function(task, responses){
             {"plaintext": "arch", "type": "string", "width": 80},
             {"plaintext": "name", "type": "string", "fillWidth": true},
             {"plaintext": "user", "type": "string", "fillWidth": true},
+            {"plaintext": "actions", "type": "button", "width": 110, "disableSort": true},
             {"plaintext": "details", "type": "button", "width": 100, "disableSort": true},
         ];
         let rows = [];
@@ -33,6 +34,30 @@ function(task, responses){
                 "name": {"plaintext": proc["name"]},
                 "user": {"plaintext": user},
                 "rowStyle": rowStyle,
+                "actions": {
+                    "button": {
+                        "name": "Actions",
+                        "type": "menu",
+                        "startIcon": "settings",
+                        "value": [
+                            {
+                                "name": "Kill Process",
+                                "type": "task",
+                                "ui_feature": "process_browser:kill",
+                                "startIcon": "kill",
+                                "getConfirmation": true,
+                                "parameters": {"pid": String(proc["process_id"])},
+                            },
+                            {
+                                "name": "Inject Shellcode",
+                                "type": "task",
+                                "ui_feature": "process_browser:inject",
+                                "startIcon": "syringe",
+                                "parameters": {"pid": proc["process_id"]},
+                            },
+                        ]
+                    }
+                },
                 "details": {
                     "button": {
                         "name": "",

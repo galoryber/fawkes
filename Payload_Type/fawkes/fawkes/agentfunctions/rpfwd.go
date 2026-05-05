@@ -19,7 +19,7 @@ func init() {
 		HelpString:          "rpfwd start <port> <remote_ip> <remote_port>  /  rpfwd forward <port> <target_ip> <target_port>  /  rpfwd stop <port>",
 		Version:             2,
 		MitreAttackMappings: []string{"T1090"}, // Proxy
-		SupportedUIFeatures: []string{},
+		SupportedUIFeatures: []string{"port_browser:forward"},
 		Author:              "@GlobeTechLLC",
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
