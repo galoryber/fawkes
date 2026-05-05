@@ -99,7 +99,6 @@ func TestSniffExtractDNSEdgeCases(t *testing.T) {
 	}
 
 	for _, tt := range qtypeTests {
-		tt := tt
 		t.Run("qtype "+tt.wantType, func(t *testing.T) {
 			pkt := buildDNSQuery(0x0001, "corp.local", tt.qtype)
 			cred := sniffExtractDNS(pkt, meta)

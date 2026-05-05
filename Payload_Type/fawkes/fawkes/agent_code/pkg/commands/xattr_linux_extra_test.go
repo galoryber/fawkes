@@ -4,6 +4,7 @@ package commands
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -29,6 +30,49 @@ func TestGetXattrEmptyValue(t *testing.T) {
 	}
 	if len(val) != 0 {
 		t.Errorf("expected empty value, got %d bytes", len(val))
+	}
+}
+
+// TestXattrGetHex covers the args.Hex==true branch in xattrGet (hex.Dump output).
+func TestXattrGetHex(t *testing.T) {
+	f, err := os.CreateTemp("", "xattr_gethex_test")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	if err := setXattr(f.Name(), "user.hexdata", []byte{0xDE, 0xAD, 0xBE, 0xEF}); err != nil {
+		t.Skipf("setXattr not supported: %v", err)
+	}
+	defer removeXattr(f.Name(), "user.hexdata") //nolint:errcheck
+
+	result := xattrGet(xattrArgs{Path: f.Name(), Name: "user.hexdata", Hex: true})
+	if result.Status != "success" {
+		t.Fatalf("expected success, got %q: %s", result.Status, result.Output)
+	}
+	if !strings.Contains(result.Output, "de ad be ef") {
+		t.Errorf("expected hex dump with 'de ad be ef', got: %s", result.Output)
+	}
+}
+
+// TestXattrSetError covers the setXattr error path in xattrSet — triggered by a
+// NUL byte in the attribute name, which causes syscall.BytePtrFromString to fail.
+func TestXattrSetError(t *testing.T) {
+	f, err := os.CreateTemp("", "xattr_seterr_test")
+	if err != nil {
+		t.Fatalf("failed to create temp file: %v", err)
+	}
+	defer os.Remove(f.Name())
+	f.Close()
+
+	result := xattrSet(xattrArgs{
+		Path:  f.Name(),
+		Name:  "user.test\x00bad",
+		Value: "value",
+	})
+	if result.Status != "error" {
+		t.Errorf("expected error for NUL byte in xattr name, got %q: %s", result.Status, result.Output)
 	}
 }
 

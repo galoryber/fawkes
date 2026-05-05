@@ -46,7 +46,6 @@ func TestDaclWellKnownRIDExtra(t *testing.T) {
 		{"S-1-5-21-1-2-3-572", "Denied RODC Password Replication Group"},
 	}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.want, func(t *testing.T) {
 			got := daclWellKnownRID(tc.sid)
 			if got != tc.want {
