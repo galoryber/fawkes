@@ -256,6 +256,51 @@ func TestParseObjectEdgeCases(t *testing.T) {
 	})
 }
 
+// TestParseObjectDictErrors covers the dict key and value parse-error paths (lines 204-206, 211-213).
+func TestParseObjectDictErrors(t *testing.T) {
+	t.Run("dict key parse error (line 204)", func(t *testing.T) {
+		// obj 0: dict 1 entry (key_ref=1, val_ref=2)
+		// obj 1: INTEGER marker 0x12 claims 4 bytes but only 2 content bytes → parseObject error
+		// obj 2: bool false (valid, never reached)
+		data := []byte{
+			0xD1, 0x01, 0x02, // dict marker + key_ref=1 + val_ref=2
+			0x12, 0xAB, 0xCD, // obj 1: 4-byte INTEGER, only 2 bytes present → truncated
+			0x08,             // obj 2: false
+		}
+		ctx := &bplistContext{
+			data:          data,
+			offsets:       []int{0, 3, 6},
+			objectRefSize: 1,
+			numObjects:    3,
+		}
+		_, err := ctx.parseObject(0)
+		if err == nil {
+			t.Error("expected error when dict key parse fails")
+		}
+	})
+
+	t.Run("dict value parse error (line 211)", func(t *testing.T) {
+		// obj 0: dict 1 entry (key_ref=1, val_ref=2)
+		// obj 1: valid string "k"
+		// obj 2: INTEGER marker 0x12 claims 4 bytes but only 2 content bytes → parseObject error
+		data := []byte{
+			0xD1, 0x01, 0x02, // dict marker + key_ref=1 + val_ref=2
+			0x51, 'k',        // obj 1: ASCII string "k" (valid)
+			0x12, 0xAB, 0xCD, // obj 2: 4-byte INTEGER, only 2 bytes present → truncated
+		}
+		ctx := &bplistContext{
+			data:          data,
+			offsets:       []int{0, 3, 5},
+			objectRefSize: 1,
+			numObjects:    3,
+		}
+		_, err := ctx.parseObject(0)
+		if err == nil {
+			t.Error("expected error when dict value parse fails")
+		}
+	})
+}
+
 // TestReadSizeAndStartDataTruncated covers the "extended size data truncated" path (line 240).
 // The size marker is valid but not enough bytes follow for the integer value.
 func TestReadSizeAndStartDataTruncated(t *testing.T) {
