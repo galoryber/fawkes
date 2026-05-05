@@ -185,17 +185,6 @@ func TestSkipDNSName_EmptyName(t *testing.T) {
 
 // --- parseAXFRResponse tests ---
 
-func buildDNSResponse(qdCount, anCount uint16, questions, answers []byte) []byte {
-	buf := make([]byte, 12)
-	// ID = 0, Flags: response (0x8400)
-	binary.BigEndian.PutUint16(buf[2:], 0x8400)
-	binary.BigEndian.PutUint16(buf[4:], qdCount)
-	binary.BigEndian.PutUint16(buf[6:], anCount)
-	buf = append(buf, questions...)
-	buf = append(buf, answers...)
-	return buf
-}
-
 func TestParseAXFRResponse_NonZeroRcode(t *testing.T) {
 	buf := make([]byte, 12)
 	binary.BigEndian.PutUint16(buf[2:], 0x0003) // rcode = 3 (NXDOMAIN)

@@ -15,13 +15,6 @@ func buildNTLMHeader(msgType uint32) []byte {
 	return h
 }
 
-// buildSecBuf writes a security buffer at the given offset in buf.
-func buildSecBuf(buf []byte, off int, length uint16, dataOffset uint32) {
-	binary.LittleEndian.PutUint16(buf[off:], length)
-	binary.LittleEndian.PutUint16(buf[off+2:], length) // maxLength = length
-	binary.LittleEndian.PutUint32(buf[off+4:], dataOffset)
-}
-
 // --- asn1WrapLength tests ---
 
 func TestAsn1WrapLength_Short(t *testing.T) {
