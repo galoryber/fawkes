@@ -21,6 +21,7 @@ function(task, responses){
             "Queued": "rgba(255,165,0,0.12)",
         };
         let headers = [
+            {"plaintext": "actions", "type": "button", "width": 90, "disableSort": true},
             {"plaintext": "name", "type": "string", "fillWidth": true},
             {"plaintext": "state", "type": "string", "width": 90},
             {"plaintext": "enabled", "type": "string", "width": 70},
@@ -34,6 +35,37 @@ function(task, responses){
                 rowStyle = {"backgroundColor": stateColors[e.state]};
             }
             rows.push({
+                "actions": {
+                    "button": {
+                        "name": "Actions",
+                        "type": "menu",
+                        "startIcon": "settings",
+                        "value": [
+                            {
+                                "name": "Delete Task",
+                                "type": "task",
+                                "ui_feature": "schtask",
+                                "startIcon": "delete",
+                                "getConfirmation": true,
+                                "parameters": {"action": "delete", "name": e.name},
+                            },
+                            {
+                                "name": "Run Now",
+                                "type": "task",
+                                "ui_feature": "schtask",
+                                "startIcon": "play",
+                                "parameters": {"action": "run", "name": e.name},
+                            },
+                            {
+                                "name": e.enabled === "true" ? "Disable" : "Enable",
+                                "type": "task",
+                                "ui_feature": "schtask",
+                                "startIcon": e.enabled === "true" ? "stop" : "play",
+                                "parameters": {"action": e.enabled === "true" ? "disable" : "enable", "name": e.name},
+                            },
+                        ]
+                    }
+                },
                 "name": {"plaintext": e.name, "copyIcon": true},
                 "state": {"plaintext": e.state},
                 "enabled": {"plaintext": e.enabled},

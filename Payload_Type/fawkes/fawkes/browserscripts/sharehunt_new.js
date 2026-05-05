@@ -60,6 +60,7 @@ function(task, responses){
             "error": "rgba(128,128,128,0.10)",
         };
         let headers = [
+            {"plaintext": "actions", "type": "button", "width": 80, "disableSort": true},
             {"plaintext": "Host", "type": "string", "width": 140},
             {"plaintext": "Category", "type": "string", "width": 80},
             {"plaintext": "Path", "type": "string", "fillWidth": true},
@@ -74,7 +75,24 @@ function(task, responses){
             if(r.category === "cred") catStyle = {"color": "#d32f2f", "fontWeight": "bold"};
             else if(r.category === "config") catStyle = {"color": "#ff8c00", "fontWeight": "bold"};
             else if(r.category === "error") catStyle = {"color": "#888", "fontStyle": "italic"};
+            // Cat button for non-error file results
+            let actionCell;
+            if(r.category !== "error" && r.path.length > 0){
+                actionCell = {
+                    "button": {
+                        "name": "cat",
+                        "type": "task",
+                        "ui_feature": "cat",
+                        "startIcon": "visibility",
+                        "hoverText": "Read file contents",
+                        "parameters": r.path,
+                    }
+                };
+            } else {
+                actionCell = {"plaintext": ""};
+            }
             rows.push({
+                "actions": actionCell,
                 "Host": {"plaintext": r.host},
                 "Category": {"plaintext": r.category, "cellStyle": catStyle},
                 "Path": {"plaintext": r.path, "copyIcon": true, "cellStyle": {"fontFamily": "monospace", "fontSize": "0.9em"}},
