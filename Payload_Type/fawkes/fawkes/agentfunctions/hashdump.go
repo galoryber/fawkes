@@ -13,8 +13,8 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "hashdump",
-		Description:         "Extract local account password hashes. Windows: NTLM hashes from SAM registry (requires SYSTEM). Linux: hashes from /etc/shadow (requires root). macOS: hashes from Directory Services (requires root). Use 'auto-spray' action to dump hashes and automatically spray them against discovered hosts via cred-check.",
-		HelpString:          "hashdump [-format json]\nhashdump -action auto-spray [-targets 192.168.1.0/24,10.0.0.5]",
+		Description:         "Extract local account password hashes. Windows: NTLM hashes from SAM registry (requires SYSTEM) or live logon session enumeration via LSASS (insitu, requires admin). Linux: hashes from /etc/shadow (requires root). macOS: hashes from Directory Services (requires root). Use 'auto-spray' action to dump hashes and automatically spray them against discovered hosts via cred-check.",
+		HelpString:          "hashdump [-format json]\nhashdump -action insitu\nhashdump -action auto-spray [-targets 192.168.1.0/24,10.0.0.5]",
 		Version:             3,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1003.002", "T1003.008"}, // SAM + /etc/passwd + macOS DS
@@ -37,8 +37,8 @@ func init() {
 				CLIName:          "action",
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"dump", "auto-spray"},
-				Description:      "dump: extract hashes (default). auto-spray: dump hashes then spray them against target hosts via cred-check.",
+				Choices:          []string{"dump", "insitu", "auto-spray"},
+				Description:      "dump: extract local hashes from SAM (requires SYSTEM, Windows only). insitu: enumerate active logon sessions from live LSASS memory (requires admin, Windows only). auto-spray: dump hashes then spray them against target hosts via cred-check.",
 				DefaultValue:     "dump",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
@@ -78,14 +78,20 @@ func init() {
 			return args.LoadArgsFromDictionary(input)
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
-			msg := "OPSEC WARNING: hashdump reads SAM registry hive (Windows) or /etc/shadow (Linux). "
-			switch taskData.Payload.OS {
-			case "Windows":
-				msg += "Requires SYSTEM privileges. Accesses HKLM\\SAM and HKLM\\SYSTEM — may trigger EDR alerts for sensitive registry access."
-			case "Linux":
-				msg += "Requires root. Reads /etc/shadow — may be audited by auditd/SELinux."
-			default:
-				msg += "Requires root. Reads local credential stores — may trigger endpoint detection."
+			action, _ := taskData.Args.GetStringArg("action")
+			var msg string
+			if action == "insitu" {
+				msg = "OPSEC WARNING: hashdump -action insitu opens a handle to lsass.exe with PROCESS_QUERY_INFORMATION and calls LsaEnumerateLogonSessions/LsaGetLogonSessionData. Handle open to LSASS is a high-fidelity EDR signal. Requires administrator privileges."
+			} else {
+				msg = "OPSEC WARNING: hashdump reads SAM registry hive (Windows) or /etc/shadow (Linux). "
+				switch taskData.Payload.OS {
+				case "Windows":
+					msg += "Requires SYSTEM privileges. Accesses HKLM\\SAM and HKLM\\SYSTEM — may trigger EDR alerts for sensitive registry access."
+				case "Linux":
+					msg += "Requires root. Reads /etc/shadow — may be audited by auditd/SELinux."
+				default:
+					msg += "Requires root. Reads local credential stores — may trigger endpoint detection."
+				}
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
@@ -153,6 +159,17 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			if action == "auto-spray" {
 				return hashdumpAutoSpray(taskData)
+			}
+
+			if action == "insitu" {
+				display := "LSASS in-situ session enumeration"
+				response.DisplayParams = &display
+				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
+					TaskID:           taskData.Task.ID,
+					BaseArtifactType: "API Call",
+					ArtifactMessage:  "LsaEnumerateLogonSessions + LsaGetLogonSessionData (active logon session metadata from live LSASS)",
+				})
+				return response
 			}
 
 			switch taskData.Payload.OS {

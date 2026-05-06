@@ -39,6 +39,7 @@ func (c *HashdumpCommand) Description() string {
 }
 
 type hashdumpArgs struct {
+	Action string `json:"action"`
 	Format string `json:"format"`
 }
 
@@ -63,9 +64,13 @@ func (c *HashdumpCommand) executeInner(task structs.Task) structs.CommandResult 
 	// SeBackupPrivilege on all threads, and LockOSThread was causing process
 	// crashes during response delivery after hashdump completed.
 
-	_, parseErr := unmarshalParams[hashdumpArgs](task)
+	args, parseErr := unmarshalParams[hashdumpArgs](task)
 	if parseErr != nil {
 		return *parseErr
+	}
+
+	if args.Action == "insitu" {
+		return executeInsitu()
 	}
 
 	// Enable SeBackupPrivilege on both process and thread tokens

@@ -9,7 +9,7 @@ hidden = false
 
 Extract local account password hashes from the system. Supports Windows (SAM database), Linux (/etc/shadow), and macOS (Directory Services).
 
-### Windows — SAM Hash Extraction
+### Windows — SAM Hash Extraction (`-action dump`)
 
 {{% notice info %}}Windows Only{{% /notice %}}
 
@@ -30,6 +30,36 @@ username:RID:LM_hash:NT_hash:::
 **Requirements:**
 - Administrator privileges (High integrity for SeBackupPrivilege)
 - SYSTEM token recommended — run `getsystem` first
+
+### Windows — In-Situ Logon Session Enumeration (`-action insitu`)
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Enumerates active logon sessions from the live LSASS process without writing to disk. Uses `LsaEnumerateLogonSessions` and `LsaGetLogonSessionData` to retrieve session metadata for all currently authenticated users.
+
+Reports username, domain, UPN, logon type, authentication package, session ID, logon time, and DNS domain for each active session. Useful for identifying domain users logged on to a system when SAM dump would only reveal local accounts.
+
+**Output (JSON array):**
+```json
+[
+  {
+    "logon_id": "0:1234567",
+    "username": "jdoe",
+    "domain": "CORP",
+    "upn": "jdoe@corp.example.com",
+    "logon_type": "Interactive",
+    "auth_package": "Kerberos",
+    "session": 1,
+    "logon_time": "2026-05-05 09:00:00 UTC",
+    "dns_domain": "corp.example.com"
+  }
+]
+```
+
+**Phase 2 (planned):** NT hash and WDigest cleartext extraction from MSV1_0 credential cache via direct LSASS memory read.
+
+**Requirements:**
+- Administrator privileges
 
 ### Linux — /etc/shadow Extraction
 
@@ -69,7 +99,7 @@ Reports extracted credentials to the Mythic credential vault automatically.
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | dump | `dump`: extract hashes. `auto-spray`: dump hashes then spray them via cred-check against target hosts. |
+| action | No | dump | `dump`: extract local NTLM hashes from SAM (Windows SYSTEM required). `insitu`: enumerate active logon sessions from live LSASS (Windows admin required). `auto-spray`: dump hashes then spray them via cred-check against target hosts. |
 | targets | No | (auto) | Target hosts for auto-spray (IPs, comma-separated, or CIDR). If empty, uses active callback hosts. |
 | format | No | text | Output format: `text` or `json` (Linux/macOS only) |
 
@@ -78,6 +108,7 @@ Reports extracted credentials to the Mythic credential vault automatically.
 ```
 hashdump
 hashdump -format json
+hashdump -action insitu
 hashdump -action auto-spray
 hashdump -action auto-spray -targets 192.168.1.0/24,10.0.0.5
 ```
@@ -140,5 +171,6 @@ admin:$ml$38000$aabbccdd...salt...$deadbeef...entropy...
 
 ## MITRE ATT&CK Mapping
 
-- T1003.002 — OS Credential Dumping: Security Account Manager
-- T1003.008 — OS Credential Dumping: /etc/passwd and /etc/shadow
+- T1003.001 — OS Credential Dumping: LSASS Memory (`insitu` action)
+- T1003.002 — OS Credential Dumping: Security Account Manager (`dump` action, Windows)
+- T1003.008 — OS Credential Dumping: /etc/passwd and /etc/shadow (Linux/macOS)

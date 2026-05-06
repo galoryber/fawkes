@@ -19,6 +19,7 @@ var (
 	procLsaCallAuthenticationPkg   = secur32KL.NewProc("LsaCallAuthenticationPackage")
 	procLsaDeregisterLogonProcess  = secur32KL.NewProc("LsaDeregisterLogonProcess")
 	procLsaFreeReturnBuffer        = secur32KL.NewProc("LsaFreeReturnBuffer")
+	procLsaGetLogonSessionData     = secur32KL.NewProc("LsaGetLogonSessionData")
 )
 
 const (
