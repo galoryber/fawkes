@@ -30,6 +30,7 @@ Audit/telemetry subsystem manipulation for defense evasion. Cross-platform:
 | provider-list | Enhanced provider enumeration with session associations, categories, and keywords |
 | stop | Stop an entire trace session (ControlTrace API) |
 | blind | Disable a specific provider within a session (EnableTraceEx2) |
+| blind-all | Disable a provider across **every** session that has it enabled (one-shot multi-session blind) |
 | query | Get detailed session information |
 | enable | Re-enable a previously blinded provider |
 | provider-disable | Remove kernel trace flags from a session (ControlTrace UPDATE) |
@@ -101,6 +102,7 @@ etw -action sessions
 etw -action provider-list
 etw -action stop -session_name "EventLog-Security"
 etw -action blind -session_name "EventLog-Microsoft-Windows-Sysmon/Operational" -provider sysmon
+etw -action blind-all -provider sysmon
 etw -action enable -session_name "EventLog-Microsoft-Windows-Sysmon/Operational" -provider sysmon
 etw -action provider-disable -session_name "NT Kernel Logger" -provider process
 etw -action provider-enable -session_name "NT Kernel Logger" -provider process
@@ -140,6 +142,7 @@ etw -action audit-status
 ## Operational Notes
 
 - **Windows:** `blind` is preferred over `stop` — removes a single provider while session continues. Requires admin/SYSTEM.
+- **Windows:** `blind-all` is preferred over hunting per-session: it queries `EnumerateTraceGuidsEx(TraceGuidQueryInfo)` to find every session consuming the provider, then issues `EnableTraceEx2(DISABLE_PROVIDER)` against each. Useful when a provider (e.g. AMSI, Sysmon) is wired into multiple autologger sessions and EDR. Requires admin/SYSTEM.
 - **Windows:** `provider-disable` targets kernel trace EnableFlags (process, thread, network, registry, etc.) — only works on kernel trace sessions. For user-mode providers, use `blind`.
 - **Windows:** `patch` is stealthier than `blind` — patches function bytes directly instead of calling ETW APIs. But triggers VirtualProtect on ntdll which EDR products detect.
 - **Linux:** `disable-rule` and `journal-clear` require root privileges. Agent detection runs unprivileged.

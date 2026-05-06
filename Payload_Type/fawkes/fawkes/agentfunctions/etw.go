@@ -16,8 +16,8 @@ func init() {
 			Author:     "@galoryber",
 		},
 		Description:         "Audit/telemetry subsystem manipulation. Windows: ETW trace sessions and providers. Linux: auditd rules, journald, syslog, SIEM agent detection. macOS: unified logging, security agent detection.",
-		HelpString:          "# Windows\netw -action sessions\netw -action provider-list\netw -action stop -session_name EventLog-Security\netw -action blind -session_name Sysmon -provider sysmon\netw -action provider-disable -session_name \"NT Kernel Logger\" -provider process\netw -action patch -provider etw\netw -action restore\n# Linux\netw -action rules\netw -action agents\netw -action journal-clear -provider 1s\netw -action syslog-config\n# macOS\netw -action categories\netw -action agents",
-		Version:             6,
+		HelpString:          "# Windows\netw -action sessions\netw -action provider-list\netw -action stop -session_name EventLog-Security\netw -action blind -session_name Sysmon -provider sysmon\netw -action blind-all -provider sysmon\netw -action provider-disable -session_name \"NT Kernel Logger\" -provider process\netw -action patch -provider etw\netw -action restore\n# Linux\netw -action rules\netw -action agents\netw -action journal-clear -provider 1s\netw -action syslog-config\n# macOS\netw -action categories\netw -action agents",
+		Version:             7,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1082", "T1562.001", "T1562.002", "T1562.006", "T1070.002"},
 		SupportedUIFeatures: []string{},
@@ -33,7 +33,7 @@ func init() {
 				Name:          "action",
 				CLIName:       "action",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"sessions", "providers", "provider-list", "stop", "blind", "query", "enable", "provider-disable", "provider-enable", "patch", "restore", "rules", "disable-rule", "journal-clear", "journal-rotate", "syslog-config", "agents", "audit-status", "categories"},
+				Choices:       []string{"sessions", "providers", "provider-list", "stop", "blind", "blind-all", "query", "enable", "provider-disable", "provider-enable", "patch", "restore", "rules", "disable-rule", "journal-clear", "journal-rotate", "syslog-config", "agents", "audit-status", "categories"},
 				DefaultValue:  "sessions",
 				Description:   "Windows: sessions/providers/provider-list/stop/blind/query/enable/provider-disable/provider-enable/patch/restore. Linux: rules/disable-rule/journal-clear/journal-rotate/syslog-config/agents/audit-status. macOS: categories/agents/audit-status.",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
@@ -99,6 +99,8 @@ func init() {
 				msg += "Stopping ETW sessions disables telemetry. EDR products monitor for ETW tampering (T1562.006)."
 			case "blind":
 				msg += "Blinding ETW providers removes telemetry sources — a well-known evasion technique that EDR vendors specifically detect (T1562.006)."
+			case "blind-all":
+				msg += "Disabling provider in EVERY consuming session amplifies the blind technique. EnumerateTraceGuidsEx + multi-session EnableTraceEx2 calls are highly anomalous and a high-fidelity tampering indicator (T1562.006)."
 			case "disable-rule":
 				msg += "Disabling auditd rules removes syscall monitoring. Security teams monitor auditd configuration changes. Requires root."
 			case "journal-clear":
@@ -160,6 +162,21 @@ func init() {
 				if strings.Contains(responseText, "Disabled") || strings.Contains(responseText, "disabled") || strings.Contains(responseText, "blinded") {
 					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
 						fmt.Sprintf("ETW Provider Blinded: %s (session: %s)", provider, sessionName))
+				}
+			case "blind-all":
+				provider, _ := processResponse.TaskData.Args.GetStringArg("provider")
+				// Walk the result table — every "DISABLED" line is one session that was blinded.
+				for _, line := range strings.Split(responseText, "\n") {
+					if !strings.Contains(line, "DISABLED") {
+						continue
+					}
+					fields := strings.Fields(line)
+					if len(fields) < 3 {
+						continue
+					}
+					sessionName := fields[1]
+					createArtifact(processResponse.TaskData.Task.ID, "Configuration",
+						fmt.Sprintf("ETW Provider Blinded (all-sessions): %s (session: %s)", provider, sessionName))
 				}
 			case "enable":
 				provider, _ := processResponse.TaskData.Args.GetStringArg("provider")
@@ -225,6 +242,11 @@ func init() {
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW EnableTraceEx2(EVENT_CONTROL_CODE_DISABLE_PROVIDER) session=%s provider=%s", sessionName, provider))
 				logOperationEvent(taskData.Task.ID,
 					fmt.Sprintf("[DEFENSE EVASION] etw blind: disabling provider %s in session %s on %s", provider, sessionName, taskData.Callback.Host), true)
+			case "blind-all":
+				createArtifact(taskData.Task.ID, "API Call",
+					fmt.Sprintf("ETW EnumerateTraceGuidsEx(TraceGuidQueryInfo) + EnableTraceEx2(DISABLE) provider=%s for every consuming session", provider))
+				logOperationEvent(taskData.Task.ID,
+					fmt.Sprintf("[DEFENSE EVASION] etw blind-all: disabling provider %s across every consuming session on %s", provider, taskData.Callback.Host), true)
 			case "enable":
 				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ETW EnableTraceEx2(EVENT_CONTROL_CODE_ENABLE_PROVIDER) session=%s provider=%s", sessionName, provider))
 			case "provider-disable":

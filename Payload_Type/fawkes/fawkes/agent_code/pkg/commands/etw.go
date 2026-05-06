@@ -79,6 +79,8 @@ func (c *EtwCommand) Execute(task structs.Task) structs.CommandResult {
 		return etwStop(params.SessionName)
 	case "blind":
 		return etwBlind(params.SessionName, params.Provider)
+	case "blind-all":
+		return etwBlindAll(params.Provider)
 	case "query":
 		return etwQuery(params.SessionName)
 	case "enable":
@@ -92,6 +94,6 @@ func (c *EtwCommand) Execute(task structs.Task) structs.CommandResult {
 	case "restore":
 		return etwRestore(params.Provider)
 	default:
-		return errorf("Unknown action: %s (use sessions, providers, provider-list, stop, blind, query, enable, provider-disable, provider-enable, patch, restore)", params.Action)
+		return errorf("Unknown action: %s (use sessions, providers, provider-list, stop, blind, blind-all, query, enable, provider-disable, provider-enable, patch, restore)", params.Action)
 	}
 }
