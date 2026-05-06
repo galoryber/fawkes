@@ -133,3 +133,79 @@ func TestDetectClipboardCredentialPatterns_Empty(t *testing.T) {
 		t.Errorf("expected 0 for empty, got %v", patterns)
 	}
 }
+
+func TestParseCredmanVaultBlocks_TwoItemsMixedAuth(t *testing.T) {
+	input := `=== Windows Vault Enumeration (1 vault(s)) ===
+
+--- Vault: Web Credentials {4BF4C442-9B8A-41A0-B380-DD4A704DDB28} ---
+  [#1] Schema:        Web Password Credential
+       Friendly:      example login
+       Resource:      https://example.com
+       Identity:      alice@example.com
+       Authenticator: hunter2
+       LastModified:  2025-01-01 12:00:00 UTC
+
+  [#2] Schema:        Web Password Credential
+       Resource:      https://locked.example
+       Identity:      bob@example.com
+       Authenticator: [protected, decryption requires interactive user context]
+
+Summary: 1 vault(s), 2 item(s) total, 1 credential(s) registered to Mythic vault`
+
+	creds := parseCredmanVaultBlocks(input)
+	if len(creds) != 1 {
+		t.Fatalf("expected 1 cred (protected item skipped), got %d: %+v", len(creds), creds)
+	}
+	c := creds[0]
+	if c.Account != "alice@example.com" {
+		t.Errorf("Account = %q, want alice@example.com", c.Account)
+	}
+	if c.Credential != "hunter2" {
+		t.Errorf("Credential = %q, want hunter2", c.Credential)
+	}
+	if c.Realm != "https://example.com" {
+		t.Errorf("Realm = %q, want resource URL", c.Realm)
+	}
+	if c.CredentialType != "plaintext" {
+		t.Errorf("CredentialType = %q, want plaintext", c.CredentialType)
+	}
+	if c.Comment != "vault Web Credentials (Web Password Credential)" {
+		t.Errorf("Comment = %q", c.Comment)
+	}
+}
+
+func TestParseCredmanVaultBlocks_NoResourceFallsBackToVaultName(t *testing.T) {
+	input := `=== Windows Vault Enumeration (1 vault(s)) ===
+
+--- Vault: Windows Credentials {77BC582B-F0A6-4E15-4E80-61736B6F3B29} ---
+  [#1] Schema:        Domain User Credentials
+       Identity:      DOMAIN\alice
+       Authenticator: P@ssw0rd!`
+
+	creds := parseCredmanVaultBlocks(input)
+	if len(creds) != 1 {
+		t.Fatalf("expected 1 cred, got %d", len(creds))
+	}
+	if creds[0].Realm != "Windows Credentials" {
+		t.Errorf("Realm = %q, want vault-name fallback", creds[0].Realm)
+	}
+}
+
+func TestParseCredmanVaultBlocks_EmptyInput(t *testing.T) {
+	if creds := parseCredmanVaultBlocks(""); len(creds) != 0 {
+		t.Errorf("expected 0 creds for empty input, got %d", len(creds))
+	}
+}
+
+func TestParseCredmanVaultBlocks_NoIdentityNoAuth(t *testing.T) {
+	// Items missing either field should not produce a credential.
+	input := `=== Windows Vault Enumeration (1 vault(s)) ===
+
+--- Vault: Web Credentials {4BF4C442-9B8A-41A0-B380-DD4A704DDB28} ---
+  [#1] Schema:        Web Password Credential
+       Resource:      https://no-creds.example`
+
+	if creds := parseCredmanVaultBlocks(input); len(creds) != 0 {
+		t.Errorf("expected 0 creds when Identity/Auth missing, got %d", len(creds))
+	}
+}

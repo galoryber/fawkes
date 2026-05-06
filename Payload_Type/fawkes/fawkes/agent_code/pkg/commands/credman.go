@@ -72,8 +72,10 @@ func (c *CredmanCommand) Execute(task structs.Task) structs.CommandResult {
 		return credmanList(args, false)
 	case "dump":
 		return credmanList(args, true)
+	case "vault":
+		return credmanVaultEnumerate(args.Filter)
 	default:
-		return errorf("Unknown action: %s. Use: list or dump", args.Action)
+		return errorf("Unknown action: %s. Use: list, dump, or vault", args.Action)
 	}
 }
 
