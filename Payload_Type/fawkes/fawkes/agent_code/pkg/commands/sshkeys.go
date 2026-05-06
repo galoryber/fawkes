@@ -22,10 +22,16 @@ func (c *SSHKeysCommand) Description() string {
 }
 
 type sshKeysArgs struct {
-	Action string `json:"action"`
-	Key    string `json:"key"`
-	User   string `json:"user"`
-	Path   string `json:"path"`
+	Action   string `json:"action"`
+	Key      string `json:"key"`
+	User     string `json:"user"`
+	Path     string `json:"path"`
+	Targets  string `json:"targets"`   // host list / CIDR for find-reachable / auto-move
+	Host     string `json:"host"`      // single target for try-keys
+	Username string `json:"username"`  // SSH username (default: root)
+	Command  string `json:"command"`   // command to run in auto-move (default: id)
+	Port     int    `json:"port"`      // SSH port (default: 22)
+	DelayMs  int    `json:"delay_ms"`  // ms between auth attempts (default: 500)
 }
 
 func (c *SSHKeysCommand) Execute(task structs.Task) structs.CommandResult {
@@ -57,8 +63,14 @@ func (c *SSHKeysCommand) Execute(task structs.Task) structs.CommandResult {
 		return sshKeysEnumerate(args)
 	case "generate":
 		return sshKeysGenerate(args)
+	case "find-reachable":
+		return sshKeysFindReachable(args)
+	case "try-keys":
+		return sshKeysTryKeys(args)
+	case "auto-move":
+		return sshKeysAutoMove(args)
 	default:
-		return errorf("Unknown action: %s. Use: list, add, remove, read-private, enumerate, generate", args.Action)
+		return errorf("Unknown action: %s. Use: list, add, remove, read-private, enumerate, generate, find-reachable, try-keys, auto-move", args.Action)
 	}
 }
 
