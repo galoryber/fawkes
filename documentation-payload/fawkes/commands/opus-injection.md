@@ -27,6 +27,9 @@ Select a shellcode file already registered in Mythic, or upload a new shellcode 
 #### Target PID
 The process ID to inject into. Must match the variant type (console process for Variant 1, GUI process for Variant 4).
 
+#### CFG Bypass (default: enabled)
+When enabled, calls `SetProcessValidCallTargets` on the shellcode allocation to mark it as a valid Control Flow Guard call target before the callback executes. Required on Windows 10/11 targets with CFG-enabled processes (most system processes). Disable only if the API call itself triggers EDR detection.
+
 ## Usage
 
 Use the Mythic UI popup to select the variant, shellcode, and target PID.

