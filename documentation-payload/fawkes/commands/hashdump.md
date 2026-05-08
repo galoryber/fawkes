@@ -61,6 +61,25 @@ Reports username, domain, UPN, logon type, authentication package, session ID, l
 **Requirements:**
 - Administrator privileges
 
+### Windows — In-Situ LSASS Memory Walk (`-action insitu-full`)
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Phase 2B in-situ analysis: opens `lsass.exe` with `PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION`, locates `lsasrv.dll` in the loader list, pattern-scans the mapped image for the mimikatz `LogonSessionList` signature, decodes the RIP-relative `MOV r8,[mem]` displacement, and walks the doubly-linked `LogonSessionList` head sentinel via repeated `ReadProcessMemory` calls. Each walked node is cross-referenced against Phase 1 LUIDs as a sanity check.
+
+**OPSEC profile:**
+A process handle to `lsass.exe` plus repeated `ReadProcessMemory` calls is the highest-fidelity EDR signal in the credential-dumping stack — equivalent to mimikatz/dumpit. Use only when the engagement permits visible LSASS interaction. Phase 1 (`-action insitu`) is the quieter alternative when only session metadata is required.
+
+**Output:**
+Header summary plus structured JSON containing the LSASS PID, lsasrv.dll base/size, resolved anchor address, walked-node count, cross-reference results, and the first 32 bytes of each node for downstream analysis. Phase 2C will replace the byte-level cross-reference with structured username/domain/AuthPkg parsing and add NT-hash decryption.
+
+**Signature calibration:**
+The `LogonSessionList` signature is calibrated for Windows 10 21H2 — Windows 11 23H2. Older or newer builds may emit `signature not found in lsasrv.dll`; future revisions will add a build-aware signature table.
+
+**Requirements:**
+- Administrator privileges (SYSTEM may be required when LSA Protection or Credential Guard is enabled)
+- Windows 10 21H2 — Windows 11 23H2 (signature drift on other builds)
+
 ### Linux — /etc/shadow Extraction
 
 {{% notice info %}}Linux Only{{% /notice %}}
@@ -99,7 +118,7 @@ Reports extracted credentials to the Mythic credential vault automatically.
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| action | No | dump | `dump`: extract local NTLM hashes from SAM (Windows SYSTEM required). `insitu`: enumerate active logon sessions from live LSASS (Windows admin required). `auto-spray`: dump hashes then spray them via cred-check against target hosts. |
+| action | No | dump | `dump`: extract local NTLM hashes from SAM (Windows SYSTEM required). `insitu`: enumerate active logon sessions via in-process LSA APIs (Windows admin required). `insitu-full`: open lsass.exe with PROCESS_VM_READ, sigscan lsasrv.dll for LogonSessionList, walk the linked list, and cross-reference each node against Phase 1 LUIDs (Windows admin required). `auto-spray`: dump hashes then spray them via cred-check against target hosts. |
 | targets | No | (auto) | Target hosts for auto-spray (IPs, comma-separated, or CIDR). If empty, uses active callback hosts. |
 | format | No | text | Output format: `text` or `json` (Linux/macOS only) |
 
@@ -109,6 +128,7 @@ Reports extracted credentials to the Mythic credential vault automatically.
 hashdump
 hashdump -format json
 hashdump -action insitu
+hashdump -action insitu-full
 hashdump -action auto-spray
 hashdump -action auto-spray -targets 192.168.1.0/24,10.0.0.5
 ```

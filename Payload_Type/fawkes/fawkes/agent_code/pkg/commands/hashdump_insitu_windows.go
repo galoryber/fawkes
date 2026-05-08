@@ -81,6 +81,29 @@ type insituSession struct {
 // structured session metadata. Does not write to disk. Requires administrative
 // privileges for complete session enumeration across all users.
 func executeInsitu() structs.CommandResult {
+	sessions, err := enumerateInsituSessions()
+	if err != nil {
+		return errorf("%v", err)
+	}
+	if len(sessions) == 0 {
+		return successResult("[]\n[*] No user logon sessions found (non-user sessions skipped)")
+	}
+
+	jsonBytes, err := json.MarshalIndent(sessions, "", "  ")
+	if err != nil {
+		return errorf("marshal: %v", err)
+	}
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[+] %d active logon session(s) found\n\n", len(sessions)))
+	sb.WriteString(string(jsonBytes))
+	return successResult(sb.String())
+}
+
+// enumerateInsituSessions returns the Phase 1 LSA-API session list. Used by
+// both executeInsitu (text output) and executeInsituFull (cross-reference
+// for Phase 2B walk validation). Sorted by logon type then username.
+func enumerateInsituSessions() ([]insituSession, error) {
 	// SeDebugPrivilege is not strictly required for LsaEnumerateLogonSessions
 	// but improves completeness of results when running as admin.
 	_ = insituEnableDebugPriv()
@@ -93,13 +116,13 @@ func executeInsitu() structs.CommandResult {
 		uintptr(unsafe.Pointer(&luidPtr)),
 	)
 	if ret != 0 {
-		return errorf("LsaEnumerateLogonSessions: NTSTATUS=0x%x (%v)", ret, lsaNtStatusToError(ret))
+		return nil, fmt.Errorf("LsaEnumerateLogonSessions: NTSTATUS=0x%x (%v)", ret, lsaNtStatusToError(ret))
 	}
 	if luidPtr != 0 {
 		defer procLsaFreeReturnBuffer.Call(luidPtr)
 	}
 	if count == 0 || luidPtr == 0 {
-		return successResult("[]\n[*] No active logon sessions found")
+		return nil, nil
 	}
 
 	// Copy LUIDs out of the LSA buffer before iterating (LsaGetLogonSessionData
@@ -147,10 +170,6 @@ func executeInsitu() structs.CommandResult {
 		sessions = append(sessions, s)
 	}
 
-	if len(sessions) == 0 {
-		return successResult("[]\n[*] No user logon sessions found (non-user sessions skipped)")
-	}
-
 	// Sort: interactive first, then by logon type name, then username
 	sort.Slice(sessions, func(i, j int) bool {
 		if sessions[i].LogonType != sessions[j].LogonType {
@@ -158,16 +177,20 @@ func executeInsitu() structs.CommandResult {
 		}
 		return strings.ToLower(sessions[i].Username) < strings.ToLower(sessions[j].Username)
 	})
+	return sessions, nil
+}
 
-	jsonBytes, err := json.MarshalIndent(sessions, "", "  ")
-	if err != nil {
-		return errorf("marshal: %v", err)
+// insituLUIDValue returns an insituSession's LogonID as a 64-bit value matching
+// the in-memory LUID layout (LowPart in low 32 bits, HighPart in high 32 bits).
+// LogonID was formatted as "%d:%d" → "<HighPart>:<LowPart>"; reconstructing the
+// raw 8-byte LUID lets executeInsituFull search walked node buffers for it.
+func insituLUIDValue(s insituSession) (uint64, bool) {
+	var hi int32
+	var lo uint32
+	if _, err := fmt.Sscanf(s.LogonID, "%d:%d", &hi, &lo); err != nil {
+		return 0, false
 	}
-
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("[+] %d active logon session(s) found\n\n", len(sessions)))
-	sb.WriteString(string(jsonBytes))
-	return successResult(sb.String())
+	return (uint64(uint32(hi)) << 32) | uint64(lo), true
 }
 
 // insituReadStr reads a unicodeStringKL (LSA_UNICODE_STRING) whose Buffer
