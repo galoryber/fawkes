@@ -65,20 +65,20 @@ Reports username, domain, UPN, logon type, authentication package, session ID, l
 
 {{% notice info %}}Windows Only{{% /notice %}}
 
-Phase 2B in-situ analysis: opens `lsass.exe` with `PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION`, locates `lsasrv.dll` in the loader list, pattern-scans the mapped image for the mimikatz `LogonSessionList` signature, decodes the RIP-relative `MOV r8,[mem]` displacement, and walks the doubly-linked `LogonSessionList` head sentinel via repeated `ReadProcessMemory` calls. Each walked node is cross-referenced against Phase 1 LUIDs as a sanity check.
+In-situ LSASS analysis: opens `lsass.exe` with `PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION`, locates `lsasrv.dll` in the loader list, pattern-scans the mapped image for the mimikatz `LogonSessionList` signature, decodes the RIP-relative `MOV r8,[mem]` displacement, walks the doubly-linked `LogonSessionList`, and overlays the `KIWI_MSV1_0_LIST_63` struct layout on each walked node to extract the LUID, UserName, Domain, AuthPackage, LogonType, LogonServer, and Credentials list pointer. The structured LUID is the primary cross-reference oracle against Phase 1; a byte-scan fallback flags nodes whose structured LUID is zero so layout drift is visible rather than silent.
 
 **OPSEC profile:**
-A process handle to `lsass.exe` plus repeated `ReadProcessMemory` calls is the highest-fidelity EDR signal in the credential-dumping stack — equivalent to mimikatz/dumpit. Use only when the engagement permits visible LSASS interaction. Phase 1 (`-action insitu`) is the quieter alternative when only session metadata is required.
+A process handle to `lsass.exe` plus repeated `ReadProcessMemory` calls (the lsasrv.dll image read, every walked node, and every `LSA_UNICODE_STRING.Buffer` dereference for username/domain/auth-package strings) is the highest-fidelity EDR signal in the credential-dumping stack — equivalent to mimikatz/dumpit. Use only when the engagement permits visible LSASS interaction. Phase 1 (`-action insitu`) is the quieter alternative when only session metadata is required.
 
 **Output:**
-Header summary plus structured JSON containing the LSASS PID, lsasrv.dll base/size, resolved anchor address, walked-node count, cross-reference results, and the first 32 bytes of each node for downstream analysis. Phase 2C will replace the byte-level cross-reference with structured username/domain/AuthPkg parsing and add NT-hash decryption.
+Header summary plus structured JSON containing the LSASS PID, lsasrv.dll base/size, resolved anchor address, struct-layout label, walked-node count, structured-parse count, cross-reference results, and per-node fields: parsed LUID, username, domain, auth package, logon type, logon server, credentials-list pointer, and a 32-byte raw preview. Phase 2C-ii will dereference the captured `Credentials` pointer, locate `h3DesKey`/`hAesKey` via lsasrv.dll exports, and `BCryptDecrypt` MSV1_0 credential blobs to surface NT hashes (and WDigest cleartext where available).
 
-**Signature calibration:**
-The `LogonSessionList` signature is calibrated for Windows 10 21H2 — Windows 11 23H2. Older or newer builds may emit `signature not found in lsasrv.dll`; future revisions will add a build-aware signature table.
+**Signature & layout calibration:**
+The `LogonSessionList` signature and `KIWI_MSV1_0_LIST_63` field offsets are calibrated for Windows 10 21H2 — Windows 11 23H2 (mimikatz `signature_x64_w8`). Older or newer builds may emit `signature not found in lsasrv.dll` (signature miss) or report many walked nodes with empty `parsed_username`/`parsed_domain` and zero `parsed_luid` (layout drift). When that happens, the byte-scan fallback still flags nodes whose raw bytes contain a Phase 1 LUID, so the walk-soundness check is preserved even if the field overlay is wrong.
 
 **Requirements:**
 - Administrator privileges (SYSTEM may be required when LSA Protection or Credential Guard is enabled)
-- Windows 10 21H2 — Windows 11 23H2 (signature drift on other builds)
+- Windows 10 21H2 — Windows 11 23H2 (signature/layout drift on other builds)
 
 ### Linux — /etc/shadow Extraction
 
