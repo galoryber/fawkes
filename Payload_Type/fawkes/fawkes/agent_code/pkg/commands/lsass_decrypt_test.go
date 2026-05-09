@@ -24,7 +24,10 @@ func encryptAES_CFB(t *testing.T, plaintext, key, iv []byte) []byte {
 	ivCopy := make([]byte, lsaAESIVLen)
 	copy(ivCopy, iv[:lsaAESIVLen])
 	out := make([]byte, len(plaintext))
-	stream := cipher.NewCFBEncrypter(block, ivCopy)
+	// CFB is required to match lsasrv!LsaProtectMemory (BCRYPT_CHAIN_MODE_CFB);
+	// the SA1019 deprecation warning is suppressed at the call site. Test code
+	// only — production decryption lives in lsass_decrypt.go.
+	stream := cipher.NewCFBEncrypter(block, ivCopy) //nolint:staticcheck // CFB required by lsasrv!LsaProtectMemory
 	stream.XORKeyStream(out, plaintext)
 	return out
 }

@@ -88,7 +88,10 @@ func decryptLsaProtectedMemory(ciphertext, aesKey, desKey, iv []byte) ([]byte, L
 		ivCopy := make([]byte, lsaAESIVLen)
 		copy(ivCopy, iv[:lsaAESIVLen])
 		out := make([]byte, len(ciphertext))
-		stream := cipher.NewCFBDecrypter(block, ivCopy)
+		// CFB is required by lsasrv!LsaProtectMemory (BCRYPT_CHAIN_MODE_CFB) —
+		// we have no choice in the chaining mode here, so the SA1019 deprecation
+		// warning is suppressed at the call site.
+		stream := cipher.NewCFBDecrypter(block, ivCopy) //nolint:staticcheck // CFB required by lsasrv!LsaProtectMemory
 		stream.XORKeyStream(out, ciphertext)
 		return out, LsaAlgAES256CFB, nil
 	}
