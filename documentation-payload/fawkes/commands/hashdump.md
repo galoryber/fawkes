@@ -86,6 +86,9 @@ The `LogonSessionList` signature, `KIWI_MSV1_0_LIST_63` field offsets, `KIWI_MSV
 - Administrator privileges (SYSTEM may be required when LSA Protection or Credential Guard is enabled)
 - Windows 10 21H2 — Windows 11 23H2 (signature/layout drift on other builds)
 
+**LSA protection pre-flight:**
+Before opening LSASS the agent reads `HKLM\SYSTEM\CurrentControlSet\Control\Lsa\RunAsPPL` and `…\LsaCfgFlags` and emits the result in the `lsass_protection` JSON block (and as a `[+] LSASS protection: …` line in the human-readable header). On Win11 22H2+ the default is `RunAsPPL=2` (PPL with UEFI variable lock) which causes `OpenProcess(lsass.exe, PROCESS_VM_READ)` to return `Access is denied` even from SYSTEM with `SeDebugPrivilege` — the kernel rejects the read on the protected-process check. When the OpenProcess call fails, the error message includes the detected protection state plus a tactical hint distinguishing PPL block / Credential Guard isolation / insufficient privileges so PPL blocks are not mistaken for layout drift. PPL bypass requires a kernel-level component (e.g. a signed driver that clears the `EPROCESS.Protection` flag); the agent does not ship one.
+
 ### Linux — /etc/shadow Extraction
 
 {{% notice info %}}Linux Only{{% /notice %}}

