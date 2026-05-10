@@ -136,6 +136,7 @@ func armThreadsWithBreakpoint(tids []uint32, apiAddr uintptr) (int, []string) {
 	const dr7Enable = uint64(0x1) // local-enable Dr0, condition=execution, length=1 byte
 	patched := 0
 	var diags []string
+	verifySamples := 0
 	for _, tid := range tids {
 		hThread, err := injectOpenThread(THREAD_SET_CONTEXT|THREAD_GET_CONTEXT|THREAD_SUSPEND_RESUME, tid)
 		if err != nil {
@@ -146,6 +147,19 @@ func armThreadsWithBreakpoint(tids []uint32, apiAddr uintptr) (int, []string) {
 			diags = append(diags, fmt.Sprintf("setThreadDebugRegisters(tid=%d) failed: %v", tid, err))
 			injectCloseHandle(hThread)
 			continue
+		}
+		// Diagnostic: read back DR0/DR7 on the first 3 threads to verify the SetContext stuck.
+		if verifySamples < 3 {
+			var verifyCtx CONTEXT_AMD64
+			verifyCtx.ContextFlags = CONTEXT_DEBUG_REGISTERS
+			ret, _, _ := procGetThreadContext.Call(hThread, uintptr(unsafe.Pointer(&verifyCtx)))
+			if ret != 0 {
+				diags = append(diags, fmt.Sprintf("verify tid=%d: DR0=0x%X DR7=0x%X (want DR0=0x%X DR7=0x%X)",
+					tid, verifyCtx.Dr0, verifyCtx.Dr7, uint64(apiAddr), dr7Enable))
+			} else {
+				diags = append(diags, fmt.Sprintf("verify tid=%d: GetThreadContext readback failed", tid))
+			}
+			verifySamples++
 		}
 		injectCloseHandle(hThread)
 		patched++
