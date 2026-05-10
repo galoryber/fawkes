@@ -146,6 +146,18 @@ func init() {
 				},
 			},
 			{
+				Name:             "hwbp_debug",
+				ModalDisplayName: "HWBP Verbose Trace",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Enable verbose per-event tracing and DR0/DR7 readback verification (HWBP method only). Output can be substantial — first 60 events full detail + per-exception-code summary. Use to diagnose why a breakpoint never fires.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 7},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 7},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 7},
+				},
+			},
+			{
 				Name:             "target",
 				ModalDisplayName: "Target Selection",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
@@ -283,10 +295,16 @@ func init() {
 				if timeoutMs <= 0 {
 					timeoutMs = 30000
 				}
+				hwbpDebug, _ := taskData.Args.GetBooleanArg("hwbp_debug")
 				params["target_api"] = targetAPI
 				params["timeout_ms"] = int(timeoutMs)
-				displayParams = fmt.Sprintf("Shellcode: %s\nTarget PID: %d\nMethod: hwbp\nBreakpoint API: %s\nTimeout: %dms",
-					filename, pid, targetAPI, int(timeoutMs))
+				params["hwbp_debug"] = hwbpDebug
+				debugSuffix := ""
+				if hwbpDebug {
+					debugSuffix = "\nVerbose Trace: enabled"
+				}
+				displayParams = fmt.Sprintf("Shellcode: %s\nTarget PID: %d\nMethod: hwbp\nBreakpoint API: %s\nTimeout: %dms%s",
+					filename, pid, targetAPI, int(timeoutMs), debugSuffix)
 				createArtifact(taskData.Task.ID, "Process Inject",
 					fmt.Sprintf("HWBP injection into PID %d (DR0 = %s, %dms timeout)", pid, targetAPI, int(timeoutMs)))
 			case "apc":
