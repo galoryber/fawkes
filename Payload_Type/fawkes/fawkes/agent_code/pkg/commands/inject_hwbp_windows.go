@@ -262,6 +262,11 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 		otherEvents     int
 		redirectedTID   uint32
 	)
+	// Diagnostic trace: full event log capped to first 60 events, per-code counts always tracked.
+	const maxTraceEvents = 60
+	tracedEvents := 0
+	codeCounts := map[uint32]int{}
+	addrSamples := map[uint32]uintptr{} // first observed address per exception code
 	deadline := time.Now().Add(time.Duration(params.TimeoutMs) * time.Millisecond)
 
 	for time.Now().Before(deadline) {
@@ -278,6 +283,17 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 		switch event.DwDebugEventCode {
 		case EXCEPTION_DEBUG_EVENT_CODE:
 			er := event.Exception.ExceptionRecord
+			codeCounts[er.ExceptionCode]++
+			if _, ok := addrSamples[er.ExceptionCode]; !ok {
+				addrSamples[er.ExceptionCode] = uintptr(er.ExceptionAddress)
+			}
+			if tracedEvents < maxTraceEvents {
+				delta := int64(uintptr(er.ExceptionAddress)) - int64(apiAddr)
+				sb.WriteString(fmt.Sprintf("[debug] event#%d: code=0x%X addr=0x%X (apiAddr=0x%X, delta=%+d) firstChance=%d tid=%d\n",
+					tracedEvents, er.ExceptionCode, uintptr(er.ExceptionAddress), apiAddr, delta,
+					event.Exception.DwFirstChance, event.DwThreadId))
+				tracedEvents++
+			}
 			if er.ExceptionCode == STATUS_SINGLE_STEP && uintptr(er.ExceptionAddress) == apiAddr {
 				breakpointHits++
 				if redirectedTID == 0 {
@@ -311,6 +327,11 @@ func hwbpInjectShellcode(params HwbpInjectionParams) (string, error) {
 			return sb.String(), fmt.Errorf("target process exited before breakpoint hit")
 		default:
 			otherEvents++
+			if tracedEvents < maxTraceEvents {
+				sb.WriteString(fmt.Sprintf("[debug] event#%d: non-exception code=%d tid=%d\n",
+					tracedEvents, event.DwDebugEventCode, event.DwThreadId))
+				tracedEvents++
+			}
 			procContinueDebugEvent.Call(uintptr(event.DwProcessId),
 				uintptr(event.DwThreadId), uintptr(DBG_CONTINUE))
 		}
@@ -328,6 +349,12 @@ done:
 	elapsedMs := time.Since(start).Milliseconds()
 	sb.WriteString(fmt.Sprintf("[*] Breakpoint hits: %d, other debug events: %d, elapsed: %dms\n",
 		breakpointHits, otherEvents, elapsedMs))
+	if len(codeCounts) > 0 {
+		sb.WriteString("[*] Exception code distribution:\n")
+		for code, n := range codeCounts {
+			sb.WriteString(fmt.Sprintf("    code=0x%08X count=%d firstAddr=0x%X\n", code, n, addrSamples[code]))
+		}
+	}
 
 	if redirectedTID == 0 {
 		// Best-effort cleanup: clear DR0/DR7 on threads even though we never hit.
