@@ -249,7 +249,7 @@ func TestParseLogonSessionFields_ShortNodeBuffer(t *testing.T) {
 	}
 }
 
-func TestLogonTypeName(t *testing.T) {
+func TestLogonSessionTypeName(t *testing.T) {
 	cases := map[uint32]string{
 		0:    "",
 		2:    "Interactive",
