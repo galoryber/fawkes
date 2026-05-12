@@ -53,3 +53,83 @@ func TestDetectEscapeVectors_Empty(t *testing.T) {
 		t.Errorf("expected 0 vectors, got %d", len(found))
 	}
 }
+
+// --- countRBACFindings ---
+
+func TestCountRBACFindings_MixedSeverities(t *testing.T) {
+	out := `--- Privilege Escalation Findings (3) ---
+  [CRIT] ServiceAccount/robot@kube-system
+        via ClusterRoleBinding/ca-bind → ClusterRole/cluster-admin
+        binds subject to cluster-admin (root-equivalent)
+  [WARN] User/alice
+        via RoleBinding/ns-binding@prod → Role/secret-reader
+        read every secret in scope (service-account tokens, registry creds, app secrets)
+  [INFO] User/bob
+        via ClusterRoleBinding/role-x → ClusterRole/role-x
+        info path here`
+	crit, warn := countRBACFindings(out)
+	if crit != 1 {
+		t.Errorf("crit = %d, want 1", crit)
+	}
+	if warn != 1 {
+		t.Errorf("warn = %d, want 1", warn)
+	}
+}
+
+func TestCountRBACFindings_NoFindings(t *testing.T) {
+	out := `--- Privilege Escalation Findings (0) ---
+  None detected. RBAC posture looks reasonable for the scoped namespaces.`
+	crit, warn := countRBACFindings(out)
+	if crit != 0 || warn != 0 {
+		t.Errorf("got crit=%d warn=%d, want 0/0", crit, warn)
+	}
+}
+
+func TestCountRBACFindings_MultipleCrit(t *testing.T) {
+	out := `  [CRIT] a
+  [CRIT] b
+  [CRIT] c
+  [WARN] d
+  [WARN] e`
+	crit, warn := countRBACFindings(out)
+	if crit != 3 {
+		t.Errorf("crit = %d, want 3", crit)
+	}
+	if warn != 2 {
+		t.Errorf("warn = %d, want 2", warn)
+	}
+}
+
+// --- countK8sNodes ---
+
+func TestCountK8sNodes_FromHeader(t *testing.T) {
+	out := `=== KUBERNETES NODE ENUMERATION ===
+
+API Server: https://10.0.0.1:6443
+Nodes:      4
+
+[*] node-01
+    Roles: control-plane`
+	if got := countK8sNodes(out); got != 4 {
+		t.Errorf("got %d, want 4", got)
+	}
+}
+
+func TestCountK8sNodes_FromBulletFallback(t *testing.T) {
+	// No "Nodes:" header — fall back to counting "[*] " lines.
+	out := `[*] node-01
+    Ready: True
+[*] node-02
+    Ready: True
+[*] node-03
+    Ready: False`
+	if got := countK8sNodes(out); got != 3 {
+		t.Errorf("got %d, want 3", got)
+	}
+}
+
+func TestCountK8sNodes_Empty(t *testing.T) {
+	if got := countK8sNodes(""); got != 0 {
+		t.Errorf("got %d, want 0", got)
+	}
+}
