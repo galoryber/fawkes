@@ -110,7 +110,7 @@ func (w *wsConn) wsWriteText(data []byte) error {
 
 	// 4-byte mask key
 	mask := make([]byte, 4)
-	rand.Read(mask)
+	_, _ = rand.Read(mask)
 	header = append(header, mask...)
 
 	// Mask payload

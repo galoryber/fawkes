@@ -25,7 +25,7 @@ func selfDeleteBinary() {
 				if n > remaining {
 					n = remaining
 				}
-				rand.Read(buf[:n])
+				_, _ = rand.Read(buf[:n])
 				written, err := f.Write(buf[:n])
 				if err != nil {
 					break

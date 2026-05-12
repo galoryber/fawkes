@@ -73,7 +73,7 @@ func escapeK8sRBAC(args containerEscapeArgs) (string, string) {
 		sb.WriteString(fmt.Sprintf("[!] clusterrolebindings: %s\n", clusterBindErrs))
 	}
 
-	sb.WriteString(fmt.Sprintf("\n--- Counts ---\n"))
+	sb.WriteString("\n--- Counts ---\n")
 	sb.WriteString(fmt.Sprintf("  ClusterRoles loaded:        %d\n", countKeysWithPrefix(roleRules, "cluster/")))
 	sb.WriteString(fmt.Sprintf("  Namespaced Roles loaded:    %d\n", len(roleRules)-countKeysWithPrefix(roleRules, "cluster/")))
 	sb.WriteString(fmt.Sprintf("  Bindings analysed:          %d\n", len(bindings)))

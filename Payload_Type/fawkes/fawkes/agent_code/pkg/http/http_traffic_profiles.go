@@ -227,7 +227,7 @@ func (h *HTTPProfile) ApplyRequestJitter(cfg *sensitiveConfig) {
 	}
 
 	var buf [4]byte
-	rand.Read(buf[:])
+	_, _ = rand.Read(buf[:])
 	n := int(binary.LittleEndian.Uint32(buf[:])) % jitterRange
 	time.Sleep(time.Duration(minMs+n) * time.Millisecond)
 }

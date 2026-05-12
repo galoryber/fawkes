@@ -154,7 +154,7 @@ func resolveURITokens(path string) string {
 			n = 64
 		}
 		b := make([]byte, (n+1)/2)
-		rand.Read(b)
+		_, _ = rand.Read(b)
 		result = result[:start] + hex.EncodeToString(b)[:n] + result[end+1:]
 	}
 
@@ -176,7 +176,7 @@ func resolveURITokens(path string) string {
 			continue
 		}
 		b := make([]byte, 4)
-		rand.Read(b)
+		_, _ = rand.Read(b)
 		val := lo + int(uint32(b[0])<<24|uint32(b[1])<<16|uint32(b[2])<<8|uint32(b[3]))%(hi-lo+1)
 		result = result[:start] + fmt.Sprintf("%d", val) + result[end+1:]
 	}

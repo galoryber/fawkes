@@ -57,12 +57,6 @@ type k8sRBACFinding struct {
 	Reason   string // human-readable description of why this is risky
 }
 
-// dangerousVerbWildcards lists verbs that, when present in a wildcard form,
-// mark a rule as catastrophic.
-var dangerousVerbWildcards = map[string]bool{
-	"*": true,
-}
-
 // dangerousResourceVerbs maps (resource → set of verbs) to a human reason
 // explaining the escalation path. Resource match is case-insensitive and
 // applies when the rule explicitly names the resource (not just `*`).
