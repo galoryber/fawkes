@@ -141,11 +141,12 @@ func performLs(path string) structs.FileListing {
 }
 
 func formatLsOutput(result structs.FileListing) string {
+	displayPath := filepath.Join(result.ParentPath, result.Name)
 	if !result.Success {
-		return fmt.Sprintf("Failed to list directory: %s", result.ParentPath)
+		return fmt.Sprintf("Failed to list directory: %s", displayPath)
 	}
 
-	output := fmt.Sprintf("Contents of directory: %s\n", result.ParentPath)
+	output := fmt.Sprintf("Contents of directory: %s\n", displayPath)
 	output += fmt.Sprintf("%-30s %-5s %12s  %-25s  %-20s  %s\n", "Name", "Type", "Size", "Owner", "Modified", "Permissions")
 	output += "--------------------------------------------------------------------------------------------------------------\n"
 
