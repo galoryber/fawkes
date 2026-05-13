@@ -1,6 +1,7 @@
 package agentfunctions
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -193,5 +194,207 @@ func TestCountEtcdUnauth_Empty(t *testing.T) {
 	unauth, total := countEtcdUnauth("")
 	if unauth != 0 || total != 0 {
 		t.Errorf("got unauth=%d total=%d, want 0/0", unauth, total)
+	}
+}
+
+// --- extractK8sSecretCreds ---
+
+func TestExtractK8sSecretCreds_Password(t *testing.T) {
+	out := `=== Secret: db-creds (type: Opaque) ===
+
+[password]
+super-secret-pw
+
+[username]
+dbadmin
+`
+	got := extractK8sSecretCreds(out)
+	// password is a credential key, username is not.
+	if len(got) != 1 {
+		t.Fatalf("got %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Key != "password" || got[0].Value != "super-secret-pw" {
+		t.Errorf("got %+v", got[0])
+	}
+	if got[0].SecretName != "db-creds" || got[0].SecretType != "Opaque" {
+		t.Errorf("header parse failed: %+v", got[0])
+	}
+}
+
+func TestExtractK8sSecretCreds_SubstringMatch(t *testing.T) {
+	out := `=== Secret: app-creds (type: Opaque) ===
+
+[mysql_password]
+hunter2
+
+[db-password]
+hunter3
+
+[notes]
+this is just text
+`
+	got := extractK8sSecretCreds(out)
+	if len(got) != 2 {
+		t.Fatalf("got %d, want 2: %+v", len(got), got)
+	}
+}
+
+func TestExtractK8sSecretCreds_JWT(t *testing.T) {
+	jwt := "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.aBcDeF1234567890XYZ"
+	out := `=== Secret: sa-token (type: kubernetes.io/service-account-token) ===
+
+[auth-token]
+` + jwt + `
+
+[notes]
+just text
+`
+	got := extractK8sSecretCreds(out)
+	if len(got) != 1 {
+		t.Fatalf("got %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Key != "auth-token" || got[0].Value != jwt {
+		t.Errorf("got %+v", got[0])
+	}
+}
+
+func TestExtractK8sSecretCreds_DockerConfig(t *testing.T) {
+	out := `=== Secret: registry-creds (type: kubernetes.io/dockerconfigjson) ===
+
+[.dockerconfigjson]
+{"auths":{"registry.example.com":{"auth":"YWRtaW46cGFzcw=="}}}
+`
+	got := extractK8sSecretCreds(out)
+	if len(got) != 1 {
+		t.Fatalf("got %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Key != ".dockerconfigjson" {
+		t.Errorf("got key %q", got[0].Key)
+	}
+}
+
+func TestExtractK8sSecretCreds_SkipsPlainCert(t *testing.T) {
+	out := `=== Secret: tls-secret (type: kubernetes.io/tls) ===
+
+[tls.crt]
+-----BEGIN CERTIFICATE-----
+MIIBkTCCATegAwIBAgIIB3l8E9d...
+-----END CERTIFICATE-----
+
+[tls.key]
+-----BEGIN PRIVATE KEY-----
+MIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAg...
+-----END PRIVATE KEY-----
+`
+	got := extractK8sSecretCreds(out)
+	// tls.crt is not a credential key, tls.key is.
+	if len(got) != 1 {
+		t.Fatalf("got %d, want 1 (tls.key only): %+v", len(got), got)
+	}
+	if got[0].Key != "tls.key" {
+		t.Errorf("got %+v", got[0])
+	}
+}
+
+func TestExtractK8sSecretCreds_SkipsLargeValue(t *testing.T) {
+	bigVal := strings.Repeat("a", 5000)
+	out := `=== Secret: huge (type: Opaque) ===
+
+[token]
+` + bigVal + `
+
+[password]
+small-one
+`
+	got := extractK8sSecretCreds(out)
+	// token (>4KiB) skipped; password kept.
+	if len(got) != 1 {
+		t.Fatalf("got %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Key != "password" {
+		t.Errorf("got %+v", got[0])
+	}
+}
+
+func TestExtractK8sSecretCreds_NoSecretBanner(t *testing.T) {
+	// Listing output (no "=== Secret:" header) → no extraction.
+	out := `=== KUBERNETES SECRETS (namespace: default) ===
+
+  db-creds   Opaque   keys:[password,username]
+  Total: 1 secret(s)
+`
+	got := extractK8sSecretCreds(out)
+	if len(got) != 0 {
+		t.Errorf("listing output should produce no creds, got %d", len(got))
+	}
+}
+
+func TestExtractK8sSecretCreds_Empty(t *testing.T) {
+	if got := extractK8sSecretCreds(""); len(got) != 0 {
+		t.Errorf("empty input should produce no creds, got %d", len(got))
+	}
+}
+
+func TestParseK8sSecretHeader_WithType(t *testing.T) {
+	name, typ := parseK8sSecretHeader("=== Secret: db-creds (type: Opaque) ===\n")
+	if name != "db-creds" || typ != "Opaque" {
+		t.Errorf("got name=%q type=%q", name, typ)
+	}
+}
+
+func TestParseK8sSecretHeader_WithoutType(t *testing.T) {
+	name, typ := parseK8sSecretHeader("=== Secret: my-secret ===\n")
+	if name != "my-secret" || typ != "" {
+		t.Errorf("got name=%q type=%q", name, typ)
+	}
+}
+
+func TestParseK8sSecretHeader_Missing(t *testing.T) {
+	name, typ := parseK8sSecretHeader("no banner here\n")
+	if name != "" || typ != "" {
+		t.Errorf("got name=%q type=%q", name, typ)
+	}
+}
+
+func TestLooksLikeJWT_Valid(t *testing.T) {
+	if !looksLikeJWT("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.aBcDeF1234567890XYZ") {
+		t.Errorf("valid JWT shape not detected")
+	}
+}
+
+func TestLooksLikeJWT_TwoSegments(t *testing.T) {
+	if looksLikeJWT("eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9") {
+		t.Errorf("2-segment string should NOT match")
+	}
+}
+
+func TestLooksLikeJWT_WithSpaces(t *testing.T) {
+	if looksLikeJWT("eyJhbGciOiJIUzI1NiJ9 eyJzdWIiOiIxMjM0NSJ9 sig") {
+		t.Errorf("whitespace should disqualify")
+	}
+}
+
+func TestLooksLikeJWT_NonBase64(t *testing.T) {
+	if looksLikeJWT("hello.world.foo!") {
+		t.Errorf("non-base64 chars should disqualify")
+	}
+}
+
+func TestCredTypeForK8sSecretKey(t *testing.T) {
+	cases := map[string]string{
+		"password":             "plaintext",
+		"token":                "plaintext",
+		"tls.key":              "key",
+		"ssh-privatekey":       "key",
+		"id_rsa":               "key",
+		".dockerconfigjson":    "service_account",
+		"service-account.json": "service_account",
+		"kubeconfig":           "service_account",
+		"random-key":           "plaintext",
+	}
+	for k, want := range cases {
+		if got := credTypeForK8sSecretKey(k); got != want {
+			t.Errorf("credTypeForK8sSecretKey(%q) = %q, want %q", k, got, want)
+		}
 	}
 }

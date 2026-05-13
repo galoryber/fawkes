@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
 var containerEscapeVectors = []string{"Docker socket", "cgroup", "nsenter", "mount-host", "privileged", "cap_sys_admin", "host PID"}
@@ -57,6 +58,200 @@ func countK8sNodes(responseText string) int {
 		}
 	}
 	return n
+}
+
+// k8sSecretCred is a structured record extracted from a k8s-secrets read.
+// One entry per (secret, key) pair worth registering in the Mythic vault.
+type k8sSecretCred struct {
+	SecretName string // top-level k8s secret name (from the "=== Secret: X ===" header)
+	SecretType string // k8s Secret.Type (Opaque, kubernetes.io/service-account-token, etc.)
+	Key        string // key within the secret (token, password, .dockerconfigjson, …)
+	Value      string // decoded value (escapeK8sSecrets already base64-decodes Secret.Data)
+}
+
+// extractK8sSecretCreds parses the output of `k8s-secrets -command <name>`
+// (a single-secret read; the listing-only form has no values) and returns
+// the credentials worth piping into the Mythic vault.
+//
+// Recognized key shapes:
+//
+//	password / pass / pwd                  → high-confidence credential
+//	token / api[_-]?key / secret / pin     → high-confidence credential
+//	JWT-shaped value                       → high-confidence credential
+//	.dockerconfigjson / .dockercfg         → high-confidence (registry auth)
+//	kubeconfig / config (when YAML-shaped) → high-confidence
+//	service-account.json                   → high-confidence (cloud SA)
+//	ca.crt / tls.crt                       → SKIPPED (PEM cert, not a secret)
+//	tls.key                                → registered as type=key with comment
+//
+// Values >4 KiB are skipped — these are almost always certs/keys/large
+// JSON service-account configs which clutter the vault more than they
+// help. The full body is still in the task output for the operator.
+func extractK8sSecretCreds(responseText string) []k8sSecretCred {
+	if !strings.Contains(responseText, "=== Secret:") {
+		return nil
+	}
+
+	secretName, secretType := parseK8sSecretHeader(responseText)
+	if secretName == "" {
+		return nil
+	}
+
+	var out []k8sSecretCred
+	lines := strings.Split(responseText, "\n")
+	var currentKey string
+	var currentVal strings.Builder
+	flush := func() {
+		if currentKey == "" {
+			return
+		}
+		val := strings.TrimRight(currentVal.String(), "\n")
+		if val != "" {
+			out = append(out, k8sSecretCred{
+				SecretName: secretName,
+				SecretType: secretType,
+				Key:        currentKey,
+				Value:      val,
+			})
+		}
+		currentKey = ""
+		currentVal.Reset()
+	}
+	inBody := false
+	for _, line := range lines {
+		if !inBody {
+			if strings.HasPrefix(strings.TrimSpace(line), "=== Secret:") {
+				inBody = true
+			}
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		// Key headers look like "[name]" on a line by themselves.
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") && len(trimmed) >= 3 && !strings.Contains(trimmed, " ") {
+			flush()
+			currentKey = trimmed[1 : len(trimmed)-1]
+			continue
+		}
+		if currentKey != "" {
+			currentVal.WriteString(line)
+			currentVal.WriteString("\n")
+		}
+	}
+	flush()
+
+	// Filter on credential heuristics + size.
+	var filtered []k8sSecretCred
+	for _, c := range out {
+		if !isK8sCredentialKey(c.Key, c.Value) {
+			continue
+		}
+		if len(c.Value) > 4096 {
+			continue
+		}
+		filtered = append(filtered, c)
+	}
+	return filtered
+}
+
+// parseK8sSecretHeader pulls the secret name + type out of the
+// "=== Secret: <name> (type: <type>) ===" banner emitted by k8sReadSecret.
+func parseK8sSecretHeader(text string) (name, secretType string) {
+	for _, line := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(line)
+		if !strings.HasPrefix(t, "=== Secret:") {
+			continue
+		}
+		// "=== Secret: my-secret (type: Opaque) ==="
+		rest := strings.TrimPrefix(t, "=== Secret:")
+		rest = strings.TrimSuffix(rest, "===")
+		rest = strings.TrimSpace(rest)
+		if open := strings.Index(rest, "(type:"); open != -1 {
+			name = strings.TrimSpace(rest[:open])
+			tail := rest[open+len("(type:"):]
+			if close := strings.Index(tail, ")"); close != -1 {
+				secretType = strings.TrimSpace(tail[:close])
+			}
+		} else {
+			name = rest
+		}
+		return
+	}
+	return
+}
+
+// isK8sCredentialKey returns true when the (key, value) pair is worth
+// registering as a credential. Keys are matched case-insensitively
+// against a curated allowlist; values matching the JWT shape are
+// promoted regardless of key name.
+func isK8sCredentialKey(key, value string) bool {
+	lower := strings.ToLower(key)
+	// Exact-match keys.
+	switch lower {
+	case "password", "pass", "pwd", "passphrase",
+		"token", "auth-token", "auth_token", "access-token", "access_token",
+		"secret", "client-secret", "client_secret",
+		"apikey", "api-key", "api_key",
+		"pin",
+		".dockerconfigjson", ".dockercfg",
+		"kubeconfig",
+		"service-account.json", "service_account.json", "sa.json",
+		"tls.key", "ssh-privatekey", "id_rsa", "id_ed25519":
+		return true
+	}
+	// Substring tokens for the long tail (mysql_password, db-password, etc.).
+	for _, frag := range []string{"password", "passwd", "secret", "token", "apikey", "api_key", "api-key"} {
+		if strings.Contains(lower, frag) {
+			return true
+		}
+	}
+	// JWT shape: three base64url segments separated by '.' — value-driven
+	// detection catches secrets like "auth" or "data" that hold JWTs.
+	if looksLikeJWT(value) {
+		return true
+	}
+	return false
+}
+
+// looksLikeJWT returns true when value is a single-line three-segment
+// base64url string. Cheap structural check — not a full JWT validation.
+func looksLikeJWT(value string) bool {
+	v := strings.TrimSpace(value)
+	if strings.ContainsAny(v, " \t\n") {
+		return false
+	}
+	parts := strings.Split(v, ".")
+	if len(parts) != 3 {
+		return false
+	}
+	if len(parts[0]) < 8 || len(parts[1]) < 8 {
+		return false
+	}
+	for _, p := range parts {
+		for _, r := range p {
+			if !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '=') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// credTypeForK8sSecretKey returns the Mythic credential-type tag suitable
+// for the given secret key. Most map to "plaintext"; ssh/tls keys get
+// "key"; service-account JSON gets "service_account".
+func credTypeForK8sSecretKey(key string) string {
+	lower := strings.ToLower(key)
+	switch {
+	case lower == "tls.key", lower == "ssh-privatekey", lower == "id_rsa", lower == "id_ed25519":
+		return "key"
+	case lower == "service-account.json", lower == "service_account.json", lower == "sa.json":
+		return "service_account"
+	case lower == "kubeconfig":
+		return "service_account"
+	case lower == ".dockerconfigjson", lower == ".dockercfg":
+		return "service_account"
+	}
+	return "plaintext"
 }
 
 // countEtcdUnauth parses the k8s-etcd action's per-endpoint status lines
@@ -242,6 +437,28 @@ func init() {
 				if action == "k8s-secrets" && strings.Contains(responseText, "secret(s)") {
 					logOperationEvent(processResponse.TaskData.Task.ID,
 						fmt.Sprintf("[CREDENTIAL ACCESS] K8s secrets enumerated on %s", processResponse.TaskData.Callback.Host), true)
+				}
+				if action == "k8s-secrets" {
+					if extracted := extractK8sSecretCreds(responseText); len(extracted) > 0 {
+						realm := processResponse.TaskData.Callback.Host
+						if realm == "" {
+							realm = "k8s"
+						}
+						creds := make([]mythicrpc.MythicRPCCredentialCreateCredentialData, 0, len(extracted))
+						for _, c := range extracted {
+							creds = append(creds, mythicrpc.MythicRPCCredentialCreateCredentialData{
+								CredentialType: credTypeForK8sSecretKey(c.Key),
+								Realm:          realm,
+								Account:        fmt.Sprintf("%s/%s", c.SecretName, c.Key),
+								Credential:     c.Value,
+								Comment:        fmt.Sprintf("k8s-secret %s (type=%s)", c.SecretName, c.SecretType),
+							})
+						}
+						registerCredentials(processResponse.TaskData.Task.ID, creds)
+						secretName, _ := parseK8sSecretHeader(responseText)
+						logOperationEvent(processResponse.TaskData.Task.ID,
+							fmt.Sprintf("[CREDENTIAL ACCESS] K8s secret %s: registered %d credential(s) to vault", secretName, len(creds)), true)
+					}
 				}
 				if action == "k8s-rbac" {
 					critCount, warnCount := countRBACFindings(responseText)
