@@ -4,7 +4,6 @@
 package commands
 
 import (
-	"os"
 	"syscall"
 	"unsafe"
 
@@ -44,13 +43,22 @@ func (c *KillCommand) Execute(task structs.Task) structs.CommandResult {
 	// Get process name before killing (best effort)
 	procName := killGetProcessName(uint32(pid))
 
-	proc, err := os.FindProcess(pid)
+	// Open the target process directly with PROCESS_TERMINATE rights and
+	// call TerminateProcess. Going through os.FindProcess + proc.Kill()
+	// opened the handle with limited rights (PROCESS_QUERY_INFORMATION +
+	// SYNCHRONIZE) and then tried to DuplicateHandle to upgrade to
+	// PROCESS_TERMINATE — which fails with ACCESS_DENIED on processes the
+	// caller can normally terminate, including its own-user processes when
+	// the original limited handle's ACL doesn't permit the upgrade. Caught
+	// by the Wave 1 reliability sweep where a high-integrity admin agent
+	// (with SeDebugPrivilege) couldn't kill a SYSTEM-owned ping process.
+	handle, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid))
 	if err != nil {
-		return errorf("Error finding process %d: %v", pid, err)
+		return errorf("Error opening process %d: %v", pid, err)
 	}
+	defer windows.CloseHandle(handle)
 
-	err = proc.Kill()
-	if err != nil {
+	if err := windows.TerminateProcess(handle, 1); err != nil {
 		return errorf("Error killing process %d: %v", pid, err)
 	}
 
