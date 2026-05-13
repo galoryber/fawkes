@@ -34,6 +34,7 @@ Container escape and Kubernetes operations — enumerate and exploit breakout ve
 - **k8s-secrets** — List and read Kubernetes secrets (T1552.007). Use `-command <name>` to read a specific secret
 - **k8s-rbac** — Enumerate ClusterRoles, ClusterRoleBindings, Roles, and RoleBindings; cross-reference subjects against rules to surface privilege-escalation paths (T1069.003). Findings are scored crit/warn/info — `cluster-admin` bindings, `system:masters` membership, wildcard verbs, `escalate`/`bind` on (cluster)roles, `impersonate` on serviceaccounts, and `mint tokens for any service account` are crit. Use `-path <ns>` for a single namespace, `<ns1,ns2,...>` for a list, or `*` for every namespace
 - **k8s-nodes** — Enumerate cluster nodes via `/api/v1/nodes`. Surfaces kubelet version, OS image, kernel version (CVE/LPE hunt), pod CIDRs, taints, labels (control-plane vs worker roles), internal/external IPs, container runtime, and allocatable CPU/memory/pods (T1087.004)
+- **k8s-etcd** — Discover etcd client endpoints by inspecting `kube-system` control-plane pod specs (extracts `--etcd-servers` from kube-apiserver, `--listen-client-urls` / `--advertise-client-urls` from the etcd pod). Augments the list with the usual loopback + apiserver-host fallbacks, then issues an unauthenticated `GET /version` against each endpoint and classifies the result as `unauth` (anonymous read accepted — full cluster compromise), `auth-required`, `tls-required`, `unreachable`, or `error`. Use `-path <namespace>` to override the default `kube-system` lookup
 - **k8s-deploy** — Create a pod with host filesystem mount and execute commands
 - **k8s-exec** — Run a command in an existing pod's context via ephemeral pod with same service account
 
@@ -95,6 +96,12 @@ container-escape -action k8s-rbac -path "*"
 
 # Cluster node attack-surface enumeration
 container-escape -action k8s-nodes
+
+# Discover etcd endpoints and probe for unauthenticated access
+container-escape -action k8s-etcd
+
+# Probe etcd in a non-standard namespace
+container-escape -action k8s-etcd -path my-etcd-ns
 
 # Deploy a pod with host filesystem mount
 container-escape -action k8s-deploy -command "cat /hostfs/etc/shadow" -image alpine
@@ -163,6 +170,38 @@ Nodes:      3
     Arch:         amd64
     Allocatable:  cpu=8 mem=16097600Ki pods=110
 ```
+
+### Example Output (k8s-etcd)
+
+```
+=== KUBERNETES ETCD ENUMERATION ===
+
+API Server:        https://10.0.0.1:6443
+Inspected NS:      kube-system
+Endpoints to probe: 4
+
+--- Discovered Endpoints ---
+  https://10.0.0.11:2379           (source: etcd-pod/etcd-cp01)
+  https://127.0.0.1:2379           (source: kube-apiserver/kube-apiserver-cp01/--etcd-servers)
+  http://127.0.0.1:2379            (source: default/loopback-http)
+  https://10.0.0.1:2379            (source: default/apiserver-host)
+
+--- Probe Results ---
+  [UNAUTH] http://127.0.0.1:2379
+        etcdserver=3.5.10 cluster=3.5.0
+  [TLS-REQUIRED] https://10.0.0.11:2379
+        remote error: tls: bad certificate
+  [TLS-REQUIRED] https://127.0.0.1:2379
+        remote error: tls: bad certificate
+  [UNREACHABLE] https://10.0.0.1:2379
+        dial tcp 10.0.0.1:2379: connect: connection refused
+
+--- Summary ---
+  Unauthenticated reads: 1 / 4 endpoint(s)
+  [!] Unauthenticated etcd access enables full cluster compromise — every secret, every config, every account token is readable. Suggested follow-up: etcdctl --endpoints=<url> get / --prefix --keys-only
+```
+
+The probe never sends any authentication material to etcd. Endpoint TLS validation is disabled (we want to surface auth posture, not certificate-issuer chain problems), so a self-signed control-plane cert is not a barrier — but the etcd server's own `--client-cert-auth=true` flag (the kubeadm default) makes the handshake fail without a client cert, which the probe reports as `tls-required`. A `unauth` result means the operator's etcd has client-cert auth disabled, and the keyspace is open to anyone who can reach :2379.
 
 ## MITRE ATT&CK Mapping
 

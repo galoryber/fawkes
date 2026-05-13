@@ -503,3 +503,276 @@ func TestRBACSeverityFor_Warn(t *testing.T) {
 		}
 	}
 }
+
+// --- k8s-etcd helpers ---
+
+func TestContainerIsEtcd_ExactName(t *testing.T) {
+	if !containerIsEtcd("etcd", nil, nil) {
+		t.Errorf("container named etcd should match")
+	}
+	if !containerIsEtcd("ETCD", nil, nil) {
+		t.Errorf("container name match should be case-insensitive")
+	}
+}
+
+func TestContainerIsEtcd_ListenClientUrlsFlag(t *testing.T) {
+	// kubeadm hosts etcd as a static pod with the listen-client-urls flag.
+	if !containerIsEtcd("kube-system-etcd", []string{"etcd"}, []string{"--listen-client-urls=https://127.0.0.1:2379"}) {
+		t.Errorf("--listen-client-urls should mark container as etcd")
+	}
+}
+
+func TestContainerIsEtcd_AdvertiseClientUrlsFlag(t *testing.T) {
+	if !containerIsEtcd("etcd-master", []string{"etcd"}, []string{"--advertise-client-urls", "https://10.0.0.1:2379"}) {
+		t.Errorf("--advertise-client-urls should mark container as etcd")
+	}
+}
+
+func TestContainerIsEtcd_NonEtcd(t *testing.T) {
+	if containerIsEtcd("kube-apiserver", []string{"kube-apiserver"}, []string{"--secure-port=6443"}) {
+		t.Errorf("kube-apiserver should NOT match etcd")
+	}
+}
+
+func TestParseEtcdEndpointsFromArgs_EqualsForm(t *testing.T) {
+	got := parseEtcdEndpointsFromArgs([]string{
+		"kube-apiserver",
+		"--etcd-servers=https://127.0.0.1:2379,https://10.0.0.5:2379",
+		"--secure-port=6443",
+	})
+	want := []string{"https://127.0.0.1:2379", "https://10.0.0.5:2379"}
+	if !equalSlice(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestParseEtcdEndpointsFromArgs_TwoTokenForm(t *testing.T) {
+	got := parseEtcdEndpointsFromArgs([]string{
+		"--listen-client-urls", "https://10.0.0.5:2379,https://127.0.0.1:2379",
+	})
+	want := []string{"https://10.0.0.5:2379", "https://127.0.0.1:2379"}
+	if !equalSlice(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestParseEtcdEndpointsFromArgs_CaseInsensitive(t *testing.T) {
+	got := parseEtcdEndpointsFromArgs([]string{
+		"--ETCD-SERVERS=https://10.0.0.5:2379",
+	})
+	want := []string{"https://10.0.0.5:2379"}
+	if !equalSlice(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+func TestParseEtcdEndpointsFromArgs_IgnoresPeerUrls(t *testing.T) {
+	got := parseEtcdEndpointsFromArgs([]string{
+		"--listen-peer-urls=https://10.0.0.5:2380",
+		"--initial-advertise-peer-urls=https://10.0.0.5:2380",
+		"--listen-client-urls=https://10.0.0.5:2379",
+	})
+	want := []string{"https://10.0.0.5:2379"}
+	if !equalSlice(got, want) {
+		t.Errorf("peer URLs must be excluded; got %v, want %v", got, want)
+	}
+}
+
+func TestParseEtcdEndpointsFromArgs_NoMatch(t *testing.T) {
+	got := parseEtcdEndpointsFromArgs([]string{"--secure-port=6443", "--allow-privileged=true"})
+	if len(got) != 0 {
+		t.Errorf("got %v, want empty", got)
+	}
+}
+
+func TestNormalizeEtcdURL_FullURL(t *testing.T) {
+	if got := normalizeEtcdURL("https://10.0.0.5:2379", "https"); got != "https://10.0.0.5:2379" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestNormalizeEtcdURL_StripsTrailingPath(t *testing.T) {
+	if got := normalizeEtcdURL("https://10.0.0.5:2379/version", "https"); got != "https://10.0.0.5:2379" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestNormalizeEtcdURL_AssumesDefaultScheme(t *testing.T) {
+	if got := normalizeEtcdURL("10.0.0.5:2379", "https"); got != "https://10.0.0.5:2379" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestNormalizeEtcdURL_AppendsDefaultPort(t *testing.T) {
+	if got := normalizeEtcdURL("https://10.0.0.5", "https"); got != "https://10.0.0.5:2379" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestNormalizeEtcdURL_HTTPDefault(t *testing.T) {
+	// Bare host w/ no scheme: default scheme applies.
+	if got := normalizeEtcdURL("10.0.0.5", "http"); got != "http://10.0.0.5:2379" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestNormalizeEtcdURL_IPv6WithoutPort(t *testing.T) {
+	if got := normalizeEtcdURL("https://[::1]", "https"); got != "https://[::1]:2379" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestNormalizeEtcdURL_IPv6WithPort(t *testing.T) {
+	if got := normalizeEtcdURL("https://[::1]:2379", "https"); got != "https://[::1]:2379" {
+		t.Errorf("got %q", got)
+	}
+}
+
+func TestNormalizeEtcdURL_Empty(t *testing.T) {
+	if got := normalizeEtcdURL("  ", "https"); got != "" {
+		t.Errorf("got %q, want empty", got)
+	}
+}
+
+func TestDedupeEndpoints(t *testing.T) {
+	in := []k8sEtcdEndpoint{
+		{URL: "https://10.0.0.5:2379", Source: "etcd-pod/etcd-cp01"},
+		{URL: "", Source: "ignored"},
+		{URL: "https://10.0.0.5:2379", Source: "kube-apiserver/--etcd-servers"},
+		{URL: "https://10.0.0.6:2379", Source: "kube-apiserver/--etcd-servers"},
+	}
+	got := dedupeEndpoints(in)
+	if len(got) != 2 {
+		t.Fatalf("got %d entries, want 2", len(got))
+	}
+	if got[0].URL != "https://10.0.0.5:2379" || got[0].Source != "etcd-pod/etcd-cp01" {
+		t.Errorf("first entry should preserve original source; got %+v", got[0])
+	}
+	if got[1].URL != "https://10.0.0.6:2379" {
+		t.Errorf("second entry = %+v", got[1])
+	}
+}
+
+func TestParseEtcdVersionResponse_Valid(t *testing.T) {
+	v, err := parseEtcdVersionResponse([]byte(`{"etcdserver":"3.5.10","etcdcluster":"3.5.0"}`))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.Server != "3.5.10" || v.Cluster != "3.5.0" {
+		t.Errorf("got %+v", v)
+	}
+}
+
+func TestParseEtcdVersionResponse_MissingServer(t *testing.T) {
+	if _, err := parseEtcdVersionResponse([]byte(`{"etcdcluster":"3.5.0"}`)); err == nil {
+		t.Errorf("missing etcdserver should error")
+	}
+}
+
+func TestParseEtcdVersionResponse_Garbage(t *testing.T) {
+	if _, err := parseEtcdVersionResponse([]byte(`not-json`)); err == nil {
+		t.Errorf("invalid JSON should error")
+	}
+}
+
+func TestParseEtcdVersionResponse_Empty(t *testing.T) {
+	if _, err := parseEtcdVersionResponse(nil); err == nil {
+		t.Errorf("empty body should error")
+	}
+}
+
+func TestClassifyEtcdProbe_Unauth(t *testing.T) {
+	r := classifyEtcdProbe("https://10.0.0.5:2379", 200,
+		[]byte(`{"etcdserver":"3.5.10","etcdcluster":"3.5.0"}`), nil)
+	if r.Status != "unauth" {
+		t.Errorf("got status %q, want unauth", r.Status)
+	}
+	if !r.UnauthAccess {
+		t.Errorf("UnauthAccess should be true")
+	}
+	if r.EtcdServer != "3.5.10" {
+		t.Errorf("EtcdServer = %q", r.EtcdServer)
+	}
+}
+
+func TestClassifyEtcdProbe_AuthRequired(t *testing.T) {
+	for _, code := range []int{401, 403} {
+		r := classifyEtcdProbe("https://10.0.0.5:2379", code, nil, nil)
+		if r.Status != "auth-required" {
+			t.Errorf("code=%d got status %q", code, r.Status)
+		}
+		if r.UnauthAccess {
+			t.Errorf("UnauthAccess should be false on %d", code)
+		}
+	}
+}
+
+func TestClassifyEtcdProbe_TLSRequired_From400(t *testing.T) {
+	r := classifyEtcdProbe("https://10.0.0.5:2379", 400,
+		[]byte("400 Bad Request: tls handshake failure: client cert required"), nil)
+	if r.Status != "tls-required" {
+		t.Errorf("got %q", r.Status)
+	}
+}
+
+func TestClassifyEtcdProbe_TLSRequired_FromError(t *testing.T) {
+	r := classifyEtcdProbe("https://10.0.0.5:2379", 0, nil,
+		&fakeNetErr{msg: "remote error: tls: bad certificate"})
+	if r.Status != "tls-required" {
+		t.Errorf("got %q", r.Status)
+	}
+}
+
+func TestClassifyEtcdProbe_Unreachable_ConnRefused(t *testing.T) {
+	r := classifyEtcdProbe("https://10.0.0.5:2379", 0, nil,
+		&fakeNetErr{msg: "dial tcp 10.0.0.5:2379: connect: connection refused"})
+	if r.Status != "unreachable" {
+		t.Errorf("got %q", r.Status)
+	}
+}
+
+func TestClassifyEtcdProbe_Unreachable_Timeout(t *testing.T) {
+	r := classifyEtcdProbe("https://10.0.0.5:2379", 0, nil,
+		&fakeNetErr{msg: "dial tcp 10.0.0.5:2379: i/o timeout"})
+	if r.Status != "unreachable" {
+		t.Errorf("got %q", r.Status)
+	}
+}
+
+func TestClassifyEtcdProbe_GenericError(t *testing.T) {
+	r := classifyEtcdProbe("https://10.0.0.5:2379", 0, nil,
+		&fakeNetErr{msg: "some unrecognized failure"})
+	if r.Status != "error" {
+		t.Errorf("got %q", r.Status)
+	}
+}
+
+func TestClassifyEtcdProbe_NonVersion200(t *testing.T) {
+	r := classifyEtcdProbe("http://10.0.0.5:2379/v2/keys/", 200,
+		[]byte(`{"action":"get","node":{"dir":true}}`), nil)
+	if r.Status != "unauth" {
+		t.Errorf("got %q", r.Status)
+	}
+	if !r.UnauthAccess {
+		t.Errorf("UnauthAccess should be true even without version field")
+	}
+}
+
+// equalSlice compares two string slices element-by-element.
+func equalSlice(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// fakeNetErr is a stand-in for net/url/tls errors used to drive
+// classifyEtcdProbe without spinning up real network failures.
+type fakeNetErr struct{ msg string }
+
+func (e *fakeNetErr) Error() string { return e.msg }

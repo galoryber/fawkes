@@ -9,6 +9,7 @@ package commands
 // (Linux-only) but the parsing/scoring logic lives here.
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -376,4 +377,257 @@ func lowerSet(xs []string) map[string]bool {
 		out[strings.ToLower(x)] = true
 	}
 	return out
+}
+
+// --- k8s-etcd discovery / probe helpers ---
+
+// k8sEtcdEndpoint records one discovered etcd client URL plus the in-cluster
+// source it was discovered from.
+type k8sEtcdEndpoint struct {
+	URL    string // canonical "scheme://host:port" — no trailing slash, no path
+	Source string // human-readable provenance ("kube-apiserver/--etcd-servers", "etcd-pod/<name>", "default")
+}
+
+// k8sEtcdProbeResult captures the outcome of one etcd reachability probe.
+type k8sEtcdProbeResult struct {
+	URL          string // probed URL
+	Status       string // "unauth", "tls-required", "auth-required", "unreachable", "error"
+	Detail       string // free-text supplement (version string, error message, HTTP code)
+	EtcdServer   string // etcd version from /version when reachable
+	EtcdCluster  string // cluster version from /version
+	HTTPStatus   int    // last HTTP status code observed (0 if no HTTP response)
+	UnauthAccess bool   // true ONLY when an unauthenticated read succeeded
+}
+
+// containerIsEtcd returns true when a pod-container name+args pair looks like
+// an etcd server. Matches on common naming patterns used by kubeadm and most
+// distros: container name == "etcd" OR command/args includes "etcd" with one
+// of the etcd-specific listen flags. Case-insensitive.
+func containerIsEtcd(name string, command []string, args []string) bool {
+	if strings.EqualFold(name, "etcd") {
+		return true
+	}
+	all := append([]string{}, command...)
+	all = append(all, args...)
+	for _, a := range all {
+		la := strings.ToLower(a)
+		if strings.Contains(la, "--listen-client-urls") ||
+			strings.Contains(la, "--advertise-client-urls") {
+			return true
+		}
+	}
+	return false
+}
+
+// parseEtcdEndpointsFromArgs scans a command/args slice and returns every
+// URL extracted from etcd-related flags. Handles three shapes:
+//   - "--flag=value1,value2"           (single token, equals form)
+//   - "--flag", "value1,value2"        (two tokens)
+//   - "value1,value2" embedded in either of the above
+//
+// Flags inspected (case-insensitive):
+//
+//	--etcd-servers           (kube-apiserver)
+//	--listen-client-urls     (etcd)
+//	--advertise-client-urls  (etcd)
+//	--initial-advertise-peer-urls and --listen-peer-urls are intentionally
+//	excluded — these are the peer/quorum channel, not the client API.
+func parseEtcdEndpointsFromArgs(tokens []string) []string {
+	wanted := map[string]bool{
+		"--etcd-servers":          true,
+		"--listen-client-urls":    true,
+		"--advertise-client-urls": true,
+	}
+	var out []string
+	for i := 0; i < len(tokens); i++ {
+		t := tokens[i]
+		lower := strings.ToLower(t)
+		// Equals form: --flag=v1,v2
+		if eq := strings.IndexByte(t, '='); eq != -1 {
+			if wanted[strings.ToLower(t[:eq])] {
+				out = append(out, splitCSV(t[eq+1:])...)
+				continue
+			}
+		}
+		// Two-token form: --flag v1,v2
+		if wanted[lower] && i+1 < len(tokens) {
+			out = append(out, splitCSV(tokens[i+1])...)
+			i++
+		}
+	}
+	return out
+}
+
+// splitCSV splits a comma-separated string and trims whitespace; empty
+// fields are dropped.
+func splitCSV(s string) []string {
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// normalizeEtcdURL canonicalises a discovered URL into "scheme://host:port"
+// form. If the input has no scheme, defaultScheme is assumed. If the host
+// part lacks a port, ":2379" is appended (etcd's well-known client port).
+// Returns "" if the input can't be parsed into a usable form.
+func normalizeEtcdURL(raw, defaultScheme string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	scheme := defaultScheme
+	if scheme == "" {
+		scheme = "https"
+	}
+	// Strip any trailing path/slashes — etcd endpoints are bare host:port.
+	if idx := strings.Index(s, "://"); idx != -1 {
+		scheme = strings.ToLower(s[:idx])
+		s = s[idx+3:]
+	}
+	// Cut after the first '/'.
+	if slash := strings.IndexByte(s, '/'); slash != -1 {
+		s = s[:slash]
+	}
+	if s == "" {
+		return ""
+	}
+	if !strings.ContainsRune(s, ':') || isBracketedIPv6WithoutPort(s) {
+		s += ":2379"
+	}
+	return scheme + "://" + s
+}
+
+// isBracketedIPv6WithoutPort returns true when s is "[…]" with no trailing
+// ":port". "[::1]" → true; "[::1]:2379" → false; "10.0.0.1:2379" → false.
+func isBracketedIPv6WithoutPort(s string) bool {
+	if !strings.HasPrefix(s, "[") {
+		return false
+	}
+	end := strings.LastIndexByte(s, ']')
+	return end == len(s)-1
+}
+
+// dedupeEndpoints removes URL duplicates from in while preserving the first
+// occurrence's order and source attribution.
+func dedupeEndpoints(in []k8sEtcdEndpoint) []k8sEtcdEndpoint {
+	seen := make(map[string]bool, len(in))
+	var out []k8sEtcdEndpoint
+	for _, e := range in {
+		if e.URL == "" || seen[e.URL] {
+			continue
+		}
+		seen[e.URL] = true
+		out = append(out, e)
+	}
+	return out
+}
+
+// classifyEtcdProbe converts the raw HTTP outcome of an etcd probe into a
+// structured result. The classification keys off:
+//   - HTTP 200 with a parseable {"etcdserver":...} body → unauthenticated read
+//   - HTTP 401/403                                       → auth required
+//   - HTTP 400 with body mentioning client-cert/TLS      → TLS client cert needed
+//   - TLS handshake error                                → tls-required
+//   - dial / connect error                               → unreachable
+//   - anything else                                      → error
+//
+// httpErr is the network/TLS error returned by the HTTP client (nil on success).
+// httpStatus is the response code (0 if httpErr non-nil). body is the response
+// body (already read; may be empty).
+func classifyEtcdProbe(url string, httpStatus int, body []byte, httpErr error) k8sEtcdProbeResult {
+	r := k8sEtcdProbeResult{URL: url, HTTPStatus: httpStatus}
+	if httpErr != nil {
+		msg := httpErr.Error()
+		lower := strings.ToLower(msg)
+		switch {
+		case strings.Contains(lower, "tls"),
+			strings.Contains(lower, "x509"),
+			strings.Contains(lower, "certificate"),
+			strings.Contains(lower, "handshake"):
+			r.Status = "tls-required"
+			r.Detail = msg
+		case strings.Contains(lower, "connection refused"),
+			strings.Contains(lower, "no route to host"),
+			strings.Contains(lower, "i/o timeout"),
+			strings.Contains(lower, "timeout"),
+			strings.Contains(lower, "deadline exceeded"):
+			r.Status = "unreachable"
+			r.Detail = msg
+		default:
+			r.Status = "error"
+			r.Detail = msg
+		}
+		return r
+	}
+	switch {
+	case httpStatus == 200:
+		if v, err := parseEtcdVersionResponse(body); err == nil && v.Server != "" {
+			r.Status = "unauth"
+			r.EtcdServer = v.Server
+			r.EtcdCluster = v.Cluster
+			r.UnauthAccess = true
+			r.Detail = fmt.Sprintf("etcdserver=%s cluster=%s", v.Server, v.Cluster)
+			return r
+		}
+		// 200 with a non-version body (e.g. /v2/keys/ root listing) is
+		// still unauthenticated read access.
+		r.Status = "unauth"
+		r.UnauthAccess = true
+		r.Detail = truncateBody(body, 80)
+	case httpStatus == 401 || httpStatus == 403:
+		r.Status = "auth-required"
+		r.Detail = fmt.Sprintf("HTTP %d", httpStatus)
+	case httpStatus == 400:
+		bodyLower := strings.ToLower(string(body))
+		if strings.Contains(bodyLower, "client certificate") || strings.Contains(bodyLower, "client cert") || strings.Contains(bodyLower, "tls handshake") {
+			r.Status = "tls-required"
+			r.Detail = "HTTP 400 client-cert required"
+		} else {
+			r.Status = "error"
+			r.Detail = "HTTP 400"
+		}
+	default:
+		r.Status = "error"
+		r.Detail = fmt.Sprintf("HTTP %d", httpStatus)
+	}
+	return r
+}
+
+// k8sEtcdVersion is the JSON shape returned by GET /version on etcd v3.
+type k8sEtcdVersion struct {
+	Server  string `json:"etcdserver"`
+	Cluster string `json:"etcdcluster"`
+}
+
+// parseEtcdVersionResponse decodes a /version response body. Returns an
+// error if body is empty or not valid JSON with at least an etcdserver field.
+func parseEtcdVersionResponse(body []byte) (k8sEtcdVersion, error) {
+	var v k8sEtcdVersion
+	if len(body) == 0 {
+		return v, fmt.Errorf("empty body")
+	}
+	if err := json.Unmarshal(body, &v); err != nil {
+		return v, err
+	}
+	if v.Server == "" {
+		return v, fmt.Errorf("missing etcdserver field")
+	}
+	return v, nil
+}
+
+// truncateBody returns at most n bytes of body as a single-line string,
+// with newlines collapsed to spaces. Used in result details to avoid
+// blowing out the operator console with HTML error pages.
+func truncateBody(body []byte, n int) string {
+	s := strings.TrimSpace(string(body))
+	s = strings.ReplaceAll(s, "\n", " ")
+	s = strings.ReplaceAll(s, "\r", " ")
+	if len(s) > n {
+		return s[:n] + "…"
+	}
+	return s
 }

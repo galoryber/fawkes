@@ -133,3 +133,65 @@ func TestCountK8sNodes_Empty(t *testing.T) {
 		t.Errorf("got %d, want 0", got)
 	}
 }
+
+// --- countEtcdUnauth ---
+
+func TestCountEtcdUnauth_AllUnauth(t *testing.T) {
+	out := `Endpoints to probe: 3
+
+--- Probe Results ---
+  [UNAUTH] https://10.0.0.5:2379
+        etcdserver=3.5.10 cluster=3.5.0
+  [UNAUTH] https://10.0.0.6:2379
+        etcdserver=3.5.10 cluster=3.5.0
+  [UNAUTH] http://127.0.0.1:2379
+        etcdserver=3.5.10 cluster=3.5.0`
+	unauth, total := countEtcdUnauth(out)
+	if unauth != 3 {
+		t.Errorf("unauth = %d, want 3", unauth)
+	}
+	if total != 3 {
+		t.Errorf("total = %d, want 3", total)
+	}
+}
+
+func TestCountEtcdUnauth_MixedResults(t *testing.T) {
+	out := `Endpoints to probe: 4
+
+--- Probe Results ---
+  [UNAUTH] http://127.0.0.1:2379
+        etcdserver=3.5.10 cluster=3.5.0
+  [AUTH-REQUIRED] https://10.0.0.5:2379
+        HTTP 401
+  [TLS-REQUIRED] https://10.0.0.6:2379
+        remote error: tls: bad certificate
+  [UNREACHABLE] https://10.0.0.7:2379
+        dial tcp 10.0.0.7:2379: i/o timeout`
+	unauth, total := countEtcdUnauth(out)
+	if unauth != 1 {
+		t.Errorf("unauth = %d, want 1", unauth)
+	}
+	if total != 4 {
+		t.Errorf("total = %d, want 4", total)
+	}
+}
+
+func TestCountEtcdUnauth_NoUnauth(t *testing.T) {
+	out := `Endpoints to probe: 2
+  [AUTH-REQUIRED] https://10.0.0.5:2379
+  [UNREACHABLE] https://10.0.0.6:2379`
+	unauth, total := countEtcdUnauth(out)
+	if unauth != 0 {
+		t.Errorf("unauth = %d, want 0", unauth)
+	}
+	if total != 2 {
+		t.Errorf("total = %d, want 2", total)
+	}
+}
+
+func TestCountEtcdUnauth_Empty(t *testing.T) {
+	unauth, total := countEtcdUnauth("")
+	if unauth != 0 || total != 0 {
+		t.Errorf("got unauth=%d total=%d, want 0/0", unauth, total)
+	}
+}
