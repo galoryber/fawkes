@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,7 +77,7 @@ func sshKeysTryKeys(args sshKeysArgs) structs.CommandResult {
 		return errorResult("No SSH private keys found. Specify -path or ensure ~/.ssh/ contains id_rsa, id_ed25519, etc.")
 	}
 
-	addr := fmt.Sprintf("%s:%d", args.Host, port)
+	addr := net.JoinHostPort(args.Host, strconv.Itoa(port))
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("[*] Testing %d key(s) against %s@%s\n\n", len(keyPaths), username, addr))
 
@@ -175,7 +176,7 @@ func sshKeysAutoMove(args sshKeysArgs) structs.CommandResult {
 	// Phase 3: For each reachable host, try each key, run command if auth succeeds
 	successCount := 0
 	for _, host := range reachable {
-		addr := fmt.Sprintf("%s:%d", host, port)
+		addr := net.JoinHostPort(host, strconv.Itoa(port))
 		accessed := false
 		for _, keyPath := range keyPaths {
 			keyBytes, err := os.ReadFile(keyPath)
@@ -256,7 +257,7 @@ func sshScanReachable(hosts []string, port int, timeout time.Duration) []string 
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			addr := fmt.Sprintf("%s:%d", host, port)
+			addr := net.JoinHostPort(host, strconv.Itoa(port))
 			conn, err := net.DialTimeout("tcp", addr, timeout)
 			if err == nil {
 				conn.Close()
