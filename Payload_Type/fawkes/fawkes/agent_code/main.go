@@ -208,8 +208,6 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			// so long-running commands (SOCKS, keylog, port-scan) don't block new tasks.
 			// Semaphore limits concurrency to prevent memory exhaustion.
 			for _, task := range tasks {
-				task := task // capture per-iteration address (defensive across Go versions)
-
 				// Initialize StartTime and Job on the tracked task itself so
 				// `jobs` reports a real duration and `jobkill -id` flips the
 				// same Stop counter the running goroutine is polling. Setting
