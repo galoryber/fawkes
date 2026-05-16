@@ -134,6 +134,7 @@ func Initialize() {
 	RegisterCommand(&WatchDirCommand{})
 	RegisterCommand(&IdeReconCommand{})
 	RegisterCommand(&CertCheckCommand{})
+	RegisterCommand(&CertstoreCommand{})
 	RegisterCommand(&PasswordManagersCommand{})
 	RegisterCommand(&MasqueradeCommand{})
 	RegisterCommand(&SecretScanCommand{})
