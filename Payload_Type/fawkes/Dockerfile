@@ -26,13 +26,8 @@ ENV GOTOOLCHAIN=auto
 # compile with the same Go version the agent uses (from go.mod's go directive).
 # The base image's garble is built with an older Go and will fail if the
 # toolchain auto-upgrades to a newer version.
-#
-# Garble is pinned to v0.15.0 because v0.16.0 (released 2026-04-12) dropped
-# Go 1.25 support and now requires Go 1.26. Our agent's go.mod still targets
-# Go 1.25.x, so garble@latest would fail with a Go-version mismatch. Bump
-# both the go directive AND this pin together when moving to Go 1.26+.
 RUN go install github.com/tc-hib/go-winres@latest && \
-    go install mvdan.cc/garble@v0.15.0
+    go install mvdan.cc/garble@v0.16.0
 
 RUN make build
 
