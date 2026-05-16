@@ -77,10 +77,13 @@ func init() {
 			}
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
-			// Support: socks start 1080  /  socks stop 1080  /  socks stats  /  socks bandwidth 500
 			if input == "" {
 				return nil
 			}
+			if strings.HasPrefix(strings.TrimSpace(input), "{") {
+				return args.LoadArgsFromJSONString(input)
+			}
+			// Support: socks start 1080  /  socks stop 1080  /  socks stats  /  socks bandwidth 500
 			parts := splitArgs(input)
 			if len(parts) >= 1 {
 				args.SetArgValue("action", parts[0])

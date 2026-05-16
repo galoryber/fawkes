@@ -123,6 +123,9 @@ func init() {
 			if input == "" {
 				return nil
 			}
+			if strings.HasPrefix(strings.TrimSpace(input), "{") {
+				return args.LoadArgsFromJSONString(input)
+			}
 			// Support:
 			//   rpfwd start 8080 10.0.0.1 80
 			//   rpfwd forward 8080 10.0.0.1 80
