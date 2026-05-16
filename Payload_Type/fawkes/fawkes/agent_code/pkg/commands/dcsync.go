@@ -18,6 +18,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
+	"github.com/oiweiwei/go-msrpc/ssp"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -118,9 +119,16 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	defer cc.Close(ctx)
 
-	// Create DRSUAPI client with encryption
-	targetName := args.Server
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(targetName))
+	// Create DRSUAPI client with encryption — credentials must be passed explicitly
+	// for TCP transport (named pipe transport gets auth from the SMB session, but
+	// TCP needs credentials at bind time for the SPNEGO/NTLM exchange).
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc,
+		dcerpc.WithSeal(),
+		dcerpc.WithTargetName(args.Server),
+		dcerpc.WithCredentials(cred),
+		dcerpc.WithMechanism(ssp.SPNEGO),
+		dcerpc.WithMechanism(ssp.NTLM),
+	)
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
