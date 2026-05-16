@@ -13,6 +13,17 @@ RUN apt-get update && apt-get install -y \
     ent \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Go 1.26.3 directly so the toolchain source lives in GOROOT (not
+# GOMODCACHE). Garble creates overlays targeting Go linker sources; Go rejects
+# overlays under GOMODCACHE. By installing Go directly, GOROOT=/usr/local/go
+# and garble's overlays work without hitting the module cache restriction.
+RUN rm -rf /usr/local/go && \
+    curl -fsSL https://go.dev/dl/go1.26.3.linux-amd64.tar.gz | tar -C /usr/local -xz
+
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOROOT=/usr/local/go
+ENV GOTOOLCHAIN=local
+
 # Install sRDI for DLL to shellcode conversion (pinned to stable commit)
 RUN git clone https://github.com/monoxgas/sRDI /opt/sRDI && \
     cd /opt/sRDI && git checkout 9fdd5c44383039519accd1e6bac4acd5a046a92c && cd / && \
@@ -20,12 +31,8 @@ RUN git clone https://github.com/monoxgas/sRDI /opt/sRDI && \
 
 COPY [".", "."]
 
-ENV GOTOOLCHAIN=auto
-
-# Install go-winres and rebuild garble AFTER GOTOOLCHAIN=auto + COPY so they
-# compile with the same Go version the agent uses (from go.mod's go directive).
-# The base image's garble is built with an older Go and will fail if the
-# toolchain auto-upgrades to a newer version.
+# Install go-winres and garble using the locally-installed Go 1.26.3.
+# GOTOOLCHAIN=local ensures no toolchain download into GOMODCACHE.
 RUN go install github.com/tc-hib/go-winres@latest && \
     go install mvdan.cc/garble@v0.16.0
 
