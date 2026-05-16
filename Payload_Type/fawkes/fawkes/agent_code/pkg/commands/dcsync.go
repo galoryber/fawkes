@@ -19,6 +19,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
+	"github.com/oiweiwei/go-msrpc/ssp"
 	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
@@ -106,13 +107,13 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error: %v", credErr)
 	}
 
-	// Add credential to the global store — mechanisms (SPNEGO, NTLM) are already
-	// registered globally by coerce.go init(). This matches the official go-msrpc
-	// DRSUAPI example where auth uses global stores.
-	gssapi.AddCredential(cred)
-
+	// Create context with NTLM only (no SPNEGO) — bypasses SPNEGO negotiation
+	// which may be causing the auth failure. Direct NTLM (AuthType 10) is simpler.
 	ctx, cancel := context.WithTimeout(
-		gssapi.NewSecurityContext(context.Background()),
+		gssapi.NewSecurityContext(context.Background(),
+			gssapi.WithCredential(cred),
+			gssapi.WithMechanismFactory(ssp.NTLM),
+		),
 		time.Duration(args.Timeout)*time.Second,
 	)
 	defer cancel()
@@ -128,9 +129,9 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	defer cc.Close(ctx)
 
-	// Create DRSUAPI client — matches official example: WithSeal + WithTargetName.
-	// Credentials and mechanisms come from the global store.
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
+	// Create DRSUAPI client — WithSeal only; credentials and NTLM mechanism
+	// are on the ctx. No SecurityContextOptions means NewSecurity uses ctx directly.
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal())
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
