@@ -119,14 +119,13 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	defer cc.Close(ctx)
 
-	// Create DRSUAPI client with encryption — credentials must be passed explicitly
-	// for TCP transport (named pipe transport gets auth from the SMB session, but
-	// TCP needs credentials at bind time for the SPNEGO/NTLM exchange).
+	// Create DRSUAPI client with encryption — use raw NTLM (not SPNEGO wrapper)
+	// for TCP transport. DRSUAPI on Windows DCs expects RPC_C_AUTHN_WINNT (type 10)
+	// with packet privacy. Credentials must be passed explicitly (TCP has no
+	// transport-level auth like SMB named pipes).
 	cli, err := drsuapi.NewDrsuapiClient(ctx, cc,
 		dcerpc.WithSeal(),
-		dcerpc.WithTargetName(args.Server),
 		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.SPNEGO),
 		dcerpc.WithMechanism(ssp.NTLM),
 	)
 	if err != nil {
