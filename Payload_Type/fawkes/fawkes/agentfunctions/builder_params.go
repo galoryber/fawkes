@@ -41,6 +41,14 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
 		{
+			Name:          "garble_mode",
+			Description:   "Garble obfuscation level (only applies when garble=true).\n- lite: symbol obfuscation only (~19MB, fast, low memory)\n- full: symbols + string literals (~33MB, slow, requires 16GB+ RAM)",
+			Required:      false,
+			DefaultValue:  "lite",
+			Choices:       []string{"lite", "full"},
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
+		},
+		{
 			Name:          "inflate_bytes",
 			Description:   "Optional: Hex bytes to inflate binary with (e.g. 0x90 or 0x41,0x42). Used with inflate_count to lower entropy or increase file size.",
 			Required:      false,

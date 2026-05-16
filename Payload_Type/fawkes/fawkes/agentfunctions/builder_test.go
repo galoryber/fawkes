@@ -619,6 +619,7 @@ func TestConstructBuildCommand_Garble(t *testing.T) {
 		goarch:        "amd64",
 		mode:          "default-executable",
 		garble:        true,
+		garbleMode:    "full",
 		c2ProfileName: "http",
 		payloadUUID:   "test-uuid",
 		ldflags:       "-s -w",
@@ -627,10 +628,31 @@ func TestConstructBuildCommand_Garble(t *testing.T) {
 		t.Error("expected garble command when garble=true")
 	}
 	if !strings.Contains(result.command, "-tiny -literals -seed random") {
-		t.Error("expected garble flags")
+		t.Error("expected garble flags with -literals in full mode")
 	}
 	if strings.Contains(result.command, "go build") && !strings.Contains(result.command, "garble") {
 		t.Error("should use garble, not plain go build")
+	}
+
+	// Test lite mode (default) — no -literals
+	resultLite := constructBuildCommand(buildCommandConfig{
+		targetOs:      "windows",
+		goarch:        "amd64",
+		mode:          "default-executable",
+		garble:        true,
+		garbleMode:    "lite",
+		c2ProfileName: "http",
+		payloadUUID:   "test-uuid",
+		ldflags:       "-s -w",
+	})
+	if !strings.Contains(resultLite.command, "/go/bin/garble") {
+		t.Error("expected garble command in lite mode")
+	}
+	if strings.Contains(resultLite.command, "-literals") {
+		t.Error("lite mode should NOT include -literals")
+	}
+	if !strings.Contains(resultLite.command, "-tiny -seed random") {
+		t.Error("lite mode should include -tiny -seed random")
 	}
 }
 

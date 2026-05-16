@@ -17,6 +17,7 @@ type buildCommandConfig struct {
 	goarch        string
 	mode          string
 	garble        bool
+	garbleMode    string
 	c2ProfileName string
 	payloadUUID   string
 	macOSVersion  string
@@ -76,7 +77,11 @@ func constructBuildCommand(cfg buildCommandConfig) buildCommandResult {
 	// when -literals tries to obfuscate them all with GOGARBLE=*).
 	command += "GOGARBLE=fawkes "
 	if cfg.garble {
-		command += "/go/bin/garble -tiny -literals -seed random build "
+		if cfg.garbleMode == "full" {
+			command += "/go/bin/garble -tiny -literals -seed random build "
+		} else {
+			command += "/go/bin/garble -tiny -seed random build "
+		}
 	} else {
 		command += "go build "
 	}
