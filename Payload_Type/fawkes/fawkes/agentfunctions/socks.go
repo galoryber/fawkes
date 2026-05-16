@@ -17,7 +17,7 @@ func init() {
 		Name:                "socks",
 		Description:         "Start, stop, or view stats for the SOCKS5 proxy through this callback. Supports TCP and UDP relay with optional bandwidth limiting.",
 		HelpString:          "socks start [port]  /  socks stop [port]  /  socks stats  /  socks bandwidth [kb/s]",
-		Version:             3,
+		Version:             4,
 		MitreAttackMappings: []string{"T1090"}, // Proxy
 		SupportedUIFeatures: []string{},
 		Author:              "@xorrior",
@@ -35,6 +35,7 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						UIModalPosition:     1,
+						GroupName:           "Default",
 					},
 				},
 			},
@@ -47,6 +48,7 @@ func init() {
 					{
 						ParameterIsRequired: true,
 						UIModalPosition:     2,
+						GroupName:           "Default",
 					},
 				},
 			},
@@ -59,6 +61,7 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						UIModalPosition:     3,
+						GroupName:           "Default",
 					},
 				},
 			},

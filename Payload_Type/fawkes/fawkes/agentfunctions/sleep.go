@@ -18,7 +18,7 @@ func init() {
 		Name:                "sleep",
 		Description:         "Update the sleep interval, jitter, and working hours of the agent.",
 		HelpString:          "sleep {interval} [jitter%] [working_start] [working_end] [working_days] OR sleep -interval 60 -jitter 30 -jitter_profile normal",
-		Version:             2,
+		Version:             3,
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{},
 		SupportedUIFeatures: []string{},
@@ -34,6 +34,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
+						GroupName:           "Default",
 						UIModalPosition:     1,
 					},
 				},
@@ -47,6 +48,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     2,
 					},
 				},
@@ -60,6 +62,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     3,
 					},
 				},
@@ -73,6 +76,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     4,
 					},
 				},
@@ -86,6 +90,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     5,
 					},
 				},
@@ -101,6 +106,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     6,
 					},
 				},

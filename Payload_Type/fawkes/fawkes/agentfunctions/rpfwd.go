@@ -17,7 +17,7 @@ func init() {
 		Name:                "rpfwd",
 		Description:         "Start, stop, or forward port forwarding through this agent. 'start' creates a reverse port forward (agent listens, Mythic connects to remote). 'forward' creates a local relay (agent listens, agent connects to internal target).",
 		HelpString:          "rpfwd start <port> <remote_ip> <remote_port>  /  rpfwd forward <port> <target_ip> <target_port>  /  rpfwd stop <port>",
-		Version:             2,
+		Version:             3,
 		MitreAttackMappings: []string{"T1090"}, // Proxy
 		SupportedUIFeatures: []string{"port_browser:forward"},
 		Author:              "@GlobeTechLLC",
@@ -34,6 +34,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
+						GroupName:           "Default",
 						UIModalPosition:     1,
 					},
 				},
@@ -46,6 +47,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
+						GroupName:           "Default",
 						UIModalPosition:     2,
 					},
 				},
@@ -58,6 +60,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     3,
 					},
 				},
@@ -70,6 +73,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     4,
 					},
 				},
@@ -82,6 +86,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     5,
 					},
 				},
@@ -94,6 +99,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     6,
 					},
 				},
@@ -106,6 +112,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     7,
 					},
 				},

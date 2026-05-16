@@ -19,7 +19,7 @@ func init() {
 		},
 		Description:         "Display file contents with optional line range, numbering, and size protection",
 		HelpString:          "cat [path] — read file | cat -path file -start 10 -end 20 — line range | cat -path file -number true — with line numbers",
-		Version:             3,
+		Version:             4,
 		MitreAttackMappings: []string{"T1005"}, // Data from Local System
 		SupportedUIFeatures: []string{"file_browser:download"},
 		Author:              "@galoryber",
@@ -37,6 +37,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
+						GroupName:           "Default",
 						UIModalPosition:     1,
 					},
 				},
@@ -51,6 +52,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     2,
 					},
 				},
@@ -65,6 +67,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     3,
 					},
 				},
@@ -79,6 +82,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     4,
 					},
 				},
@@ -93,6 +97,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     5,
 					},
 				},

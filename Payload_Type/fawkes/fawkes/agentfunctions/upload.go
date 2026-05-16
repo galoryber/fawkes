@@ -19,7 +19,7 @@ func init() {
 		},
 		Description:         "Upload a file to the target system (optional auto-decompression for gzip files)",
 		HelpString:          "upload — supports auto-decompression of gzip files with decompress parameter",
-		Version:             2,
+		Version:             3,
 		MitreAttackMappings: []string{"T1020", "T1030", "T1041", "T1105"},
 		SupportedUIFeatures: []string{"file_browser:upload"},
 		Author:              "@galoryber",
@@ -36,6 +36,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: true,
+						GroupName:           "Default",
 						UIModalPosition:     1,
 					},
 				},
@@ -49,6 +50,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     2,
 					},
 				},
@@ -62,6 +64,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     3,
 					},
 				},
@@ -75,6 +78,7 @@ func init() {
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
+						GroupName:           "Default",
 						UIModalPosition:     4,
 					},
 				},
