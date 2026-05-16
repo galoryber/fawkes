@@ -19,6 +19,7 @@ import (
 	wcce_client "github.com/oiweiwei/go-msrpc/msrpc/dcom/wcce/client"
 	"github.com/oiweiwei/go-msrpc/msrpc/dcom/wcce/icertrequestd/v0"
 	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
+	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
@@ -81,9 +82,11 @@ func adcsSubmitCSR(ctx context.Context, server, caName, template, altName string
 	}
 	defer conn.Close(ctx)
 
-	// Step 5: Create WCCE client — fresh security context, credentials via option
+	// Step 5: Create WCCE client — fresh security context, credentials + mechanisms via options
 	ctx = gssapi.NewSecurityContext(ctx)
-	wcceCli, err := wcce_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt)
+	mechSPNEGO := dcerpc.WithMechanism(ssp.SPNEGO)
+	mechNTLM := dcerpc.WithMechanism(ssp.NTLM)
+	wcceCli, err := wcce_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt, mechSPNEGO, mechNTLM)
 	if err != nil {
 		return nil, fmt.Errorf("WCCE client: %w", err)
 	}
@@ -170,9 +173,9 @@ func adcsQueryEditFlags(ctx context.Context, server, caName string, cred sspcred
 	}
 	defer conn.Close(ctx)
 
-	// Create CSRA client (CertAdminD + CertAdminD2)
+	// Create CSRA client (CertAdminD + CertAdminD2) — mechanisms required for TCP bind
 	ctx = gssapi.NewSecurityContext(ctx)
-	csraCli, err := csra_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt)
+	csraCli, err := csra_client.NewClient(ctx, conn, dcerpc.WithSeal(), credOpt, dcerpc.WithMechanism(ssp.SPNEGO), dcerpc.WithMechanism(ssp.NTLM))
 	if err != nil {
 		return 0, fmt.Errorf("CSRA client: %w", err)
 	}
