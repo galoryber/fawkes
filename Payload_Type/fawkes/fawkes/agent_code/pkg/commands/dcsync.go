@@ -18,7 +18,6 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
-	"github.com/oiweiwei/go-msrpc/ssp"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -119,15 +118,10 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	defer cc.Close(ctx)
 
-	// Create DRSUAPI client with encryption — use raw NTLM (not SPNEGO wrapper)
-	// for TCP transport. DRSUAPI on Windows DCs expects RPC_C_AUTHN_WINNT (type 10)
-	// with packet privacy. Credentials must be passed explicitly (TCP has no
-	// transport-level auth like SMB named pipes).
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc,
-		dcerpc.WithSeal(),
-		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.NTLM),
-	)
+	// Create DRSUAPI client — WithSeal only; credentials and mechanisms are
+	// carried on ctx (via rpcSecurityContext). Not passing WithCredentials/WithMechanism
+	// here prevents NewSecurity from creating a duplicate SecurityContext.
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal())
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
