@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"fawkes/pkg/structs"
@@ -20,7 +19,6 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
-	"github.com/oiweiwei/go-msrpc/ssp"
 	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
@@ -108,10 +106,9 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error: %v", credErr)
 	}
 
-	// Register credentials and mechanisms globally — this matches the official
-	// go-msrpc DRSUAPI example pattern where mechanisms must be in the global
-	// store for TCP transport auth to work correctly.
-	dcsyncRegisterMechanisms()
+	// Add credential to the global store — mechanisms (SPNEGO, NTLM) are already
+	// registered globally by coerce.go init(). This matches the official go-msrpc
+	// DRSUAPI example where auth uses global stores.
 	gssapi.AddCredential(cred)
 
 	ctx, cancel := context.WithTimeout(
@@ -411,15 +408,6 @@ func dcsyncExtractKerberosKeys(prop *samr.UserProperty, result *dcsyncResult) {
 			}
 		}
 	}
-}
-
-var dcsyncMechOnce sync.Once
-
-func dcsyncRegisterMechanisms() {
-	dcsyncMechOnce.Do(func() {
-		gssapi.AddMechanism(ssp.SPNEGO)
-		gssapi.AddMechanism(ssp.NTLM)
-	})
 }
 
 func dcsyncDecodeUTF16LE(b []byte) string {
