@@ -19,7 +19,6 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
-	"github.com/oiweiwei/go-msrpc/ssp"
 	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
@@ -108,9 +107,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	timeout := time.Duration(args.Timeout) * time.Second
 
-	// Manual EPM lookup on separate insecure connection, then direct dial
-	// to the discovered port with auth. This eliminates epm.EndpointMapper
-	// as a Dial option, which may modify connection state.
+	// Manual EPM lookup on separate insecure connection
 	epmCtx, epmCancel := context.WithTimeout(context.Background(), 15*time.Second)
 	epmConn, err := dcerpc.Dial(epmCtx, fmt.Sprintf("ncacn_ip_tcp:%s[135]", args.Server), dcerpc.WithInsecure())
 	if err != nil {
@@ -124,8 +121,8 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error creating EPM client on %s: %v", args.Server, err)
 	}
 	lookupResp, err := epmCli.Lookup(epmCtx, &epm.LookupRequest{
-		InquiryType: 0x00000001, // RPC_C_EP_MATCH_BY_IF
-		VersOption:  0x00000003, // RPC_C_VERS_EXACT
+		InquiryType: 0x00000001,
+		VersOption:  0x00000003,
 		InterfaceID: &dcetypes.InterfaceID{
 			UUID:      dtyp.GUIDFromUUID(drsuapi.DrsuapiSyntaxV4_0.IfUUID),
 			VersMajor: drsuapi.DrsuapiSyntaxV4_0.IfVersionMajor,
@@ -151,11 +148,10 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: DRSUAPI TCP endpoint not found via EPM")
 	}
 
-	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
-		gssapi.WithCredential(cred),
-		gssapi.WithMechanismFactory(ssp.SPNEGO),
-		gssapi.WithMechanismFactory(ssp.NTLM),
-	), timeout)
+	// Use global credential approach (matching official example exactly)
+	gssapi.AddCredential(gssapi.NewCredential("", nil, gssapi.InitiateAndAccept, cred))
+
+	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background()), timeout)
 	defer cancel()
 
 	cc, err := dcerpc.Dial(ctx, fmt.Sprintf("ncacn_ip_tcp:%s[%s]", args.Server, drsuapiPort))
