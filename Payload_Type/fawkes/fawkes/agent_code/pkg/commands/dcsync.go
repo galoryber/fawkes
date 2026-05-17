@@ -19,7 +19,6 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
-	"github.com/oiweiwei/go-msrpc/ssp"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -107,9 +106,9 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	timeout := time.Duration(args.Timeout) * time.Second
 
-	// Plain context — NO gssapi.NewSecurityContext. Auth is handled entirely via
-	// dcerpc options (WithCredentials/WithMechanism). This prevents EPM's internal
-	// Dial from corrupting a mutable SecurityContext stored in context.Value.
+	// Plain context with no gssapi.NewSecurityContext — avoids mutable SecurityContext
+	// state that EPM's internal Dial corrupts. Mechanisms are globally registered by
+	// coerce.go init(); credentials passed via dcerpc.WithCredentials option only.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
@@ -120,8 +119,6 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		),
 		dcerpc.WithSeal(),
 		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.SPNEGO),
-		dcerpc.WithMechanism(ssp.NTLM),
 	)
 	if err != nil {
 		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
@@ -131,8 +128,6 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	cli, err := drsuapi.NewDrsuapiClient(ctx, cc,
 		dcerpc.WithSeal(),
 		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.SPNEGO),
-		dcerpc.WithMechanism(ssp.NTLM),
 	)
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
