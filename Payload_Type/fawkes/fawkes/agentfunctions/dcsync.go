@@ -116,6 +116,29 @@ func init() {
 				},
 			},
 			{
+				Name:             "auth",
+				CLIName:          "auth",
+				ModalDisplayName: "Auth Method",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Choices:          []string{"ntlm", "kerberos"},
+				Description:      "Authentication method: ntlm (default) or kerberos. Kerberos requires dc_host parameter.",
+				DefaultValue:     "ntlm",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "dc_host",
+				CLIName:          "dc_host",
+				ModalDisplayName: "DC Hostname (FQDN)",
+				Description:      "Domain Controller FQDN for Kerberos SPN (e.g. dc01.domain.local). Required when auth=kerberos.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
 				Name:             "timeout",
 				CLIName:          "timeout",
 				ModalDisplayName: "Timeout (seconds)",

