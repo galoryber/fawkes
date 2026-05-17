@@ -140,10 +140,11 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	var err error
 	var ctx context.Context
 	var cancel context.CancelFunc
+	var krbCfg *krb5.Config
 
 	if useKerberos {
 		ensureKRB5Mechanism()
-		krbCfg := rpcKerberosConfig(cred, args.Domain, args.Server)
+		krbCfg = rpcKerberosConfig(cred, args.Domain, args.Server)
 		ctx, cancel = context.WithTimeout(context.Background(), timeout)
 		defer cancel()
 		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
@@ -151,11 +152,6 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 				net.JoinHostPort(args.Server, "135"),
 				dcerpc.WithInsecure(),
 			),
-			dcerpc.WithCredentials(cred),
-			dcerpc.WithMechanism(ssp.SPNEGO),
-			dcerpc.WithMechanism(ssp.KRB5, krbCfg),
-			dcerpc.WithSeal(),
-			dcerpc.WithTargetName("host/"+args.DCHost),
 		)
 	} else {
 		ctx, cancel = context.WithTimeout(context.Background(), timeout)
@@ -176,8 +172,16 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	defer cc.Close(ctx)
 
 	var clientOpts []dcerpc.Option
-	clientOpts = append(clientOpts, dcerpc.WithSeal())
-	if !useKerberos {
+	if useKerberos {
+		clientOpts = append(clientOpts,
+			dcerpc.WithCredentials(cred),
+			dcerpc.WithMechanism(ssp.SPNEGO),
+			dcerpc.WithMechanism(ssp.KRB5, krbCfg),
+			dcerpc.WithSeal(),
+			dcerpc.WithTargetName("host/"+args.DCHost),
+		)
+	} else {
+		clientOpts = append(clientOpts, dcerpc.WithSeal())
 		clientOpts = append(clientOpts, dcerpc.WithTargetName(args.Server))
 	}
 
