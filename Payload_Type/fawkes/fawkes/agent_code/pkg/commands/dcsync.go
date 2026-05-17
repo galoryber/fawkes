@@ -102,6 +102,9 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error: %v", credErr)
 	}
 
+	// Debug: log credential details for NTLM investigation
+	debugInfo := fmt.Sprintf("[debug] cred.UserName=%q cred.DomainName=%q args.Server=%q\n", cred.UserName(), cred.DomainName(), args.Server)
+
 	timeout := time.Duration(args.Timeout) * time.Second
 
 	ctx, cancel := rpcSecurityContext(cred, timeout)
@@ -113,13 +116,13 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 			dcerpc.WithInsecure(),
 		))
 	if err != nil {
-		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
+		return errorf("%sError connecting to %s via DCE-RPC: %v", debugInfo, args.Server, err)
 	}
 	defer cc.Close(ctx)
 
 	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
 	if err != nil {
-		return errorf("Error creating DRSUAPI client: %v", err)
+		return errorf("%sError creating DRSUAPI client: %v", debugInfo, err)
 	}
 
 	// DRSBind
