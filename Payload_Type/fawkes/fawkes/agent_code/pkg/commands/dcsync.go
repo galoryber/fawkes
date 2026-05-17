@@ -19,7 +19,6 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
-	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 	"github.com/oiweiwei/go-msrpc/ssp/krb5"
@@ -138,31 +137,26 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	var cancel context.CancelFunc
 	var krbCfg *krb5.Config
 
+	// Use global credential/mechanism registration pattern (matches official go-msrpc example).
+	// This ensures SPNEGO can discover NTLM as a sub-mechanism via the global store.
+	ensureSPNEGOMechanism()
+	ensureNTLMMechanism()
+	gssapi.AddCredential(cred)
+
 	if useKerberos {
 		ensureKRB5Mechanism()
 		krbCfg = rpcKerberosConfig(cred, args.Domain, args.Server)
-		ctx, cancel = context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
-			gssapi.WithCredential(cred),
-			gssapi.WithMechanismFactory(ssp.SPNEGO),
-			gssapi.WithMechanismFactory(ssp.KRB5),
-		), timeout)
-		defer cancel()
-		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
-			epm.EndpointMapper(ctx,
-				net.JoinHostPort(args.Server, "135"),
-				dcerpc.WithInsecure(),
-			),
-		)
-	} else {
-		ctx, cancel = rpcSecurityContext(cred, timeout)
-		defer cancel()
-		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
-			epm.EndpointMapper(ctx,
-				net.JoinHostPort(args.Server, "135"),
-				dcerpc.WithInsecure(),
-			),
-		)
 	}
+
+	ctx, cancel = context.WithTimeout(gssapi.NewSecurityContext(context.Background()), timeout)
+	defer cancel()
+
+	cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
+		epm.EndpointMapper(ctx,
+			net.JoinHostPort(args.Server, "135"),
+			dcerpc.WithInsecure(),
+		),
+	)
 	if err != nil {
 		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
