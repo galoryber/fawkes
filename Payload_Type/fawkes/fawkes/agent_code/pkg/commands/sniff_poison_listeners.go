@@ -220,12 +220,16 @@ func poisonNBTNS(ctx context.Context, responseIP net.IP, mu *sync.Mutex, result 
 
 		_, _ = conn.WriteTo(resp, remoteAddr)
 
+		udpAddr, ok := remoteAddr.(*net.UDPAddr)
+		if !ok {
+			continue
+		}
 		mu.Lock()
 		result.QueriesAnswered++
 		result.Credentials = append(result.Credentials, &sniffCredential{
 			Protocol:  "NBT-NS",
-			SrcIP:     remoteAddr.(*net.UDPAddr).IP.String(),
-			SrcPort:   uint16(remoteAddr.(*net.UDPAddr).Port),
+			SrcIP:     udpAddr.IP.String(),
+			SrcPort:   uint16(udpAddr.Port),
 			DstIP:     responseIP.String(),
 			DstPort:   nbtnsPort,
 			Username:  name,

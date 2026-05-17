@@ -192,8 +192,14 @@ func handleHTTPNTLMConn(conn net.Conn, mu *sync.Mutex, result *poisonResult) {
 			// Type 3 (Authenticate) — extract NTLMv2 hash
 			hash := extractNTLMv2Hash(ntlmData, challenge)
 			if hash != nil {
-				remoteAddr := conn.RemoteAddr().(*net.TCPAddr)
-				localAddr := conn.LocalAddr().(*net.TCPAddr)
+				remoteAddr, ok := conn.RemoteAddr().(*net.TCPAddr)
+				if !ok {
+					return
+				}
+				localAddr, ok := conn.LocalAddr().(*net.TCPAddr)
+				if !ok {
+					return
+				}
 				mu.Lock()
 				result.QueriesAnswered++
 				result.Credentials = append(result.Credentials, &sniffCredential{

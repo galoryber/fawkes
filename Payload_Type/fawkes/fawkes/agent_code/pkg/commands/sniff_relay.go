@@ -183,7 +183,10 @@ func handleRelayConn(ctx context.Context, conn net.Conn, target string, targetPo
 	defer conn.Close()
 	_ = conn.SetDeadline(time.Now().Add(60 * time.Second))
 
-	victimAddr := conn.RemoteAddr().(*net.TCPAddr)
+	victimAddr, ok := conn.RemoteAddr().(*net.TCPAddr)
+	if !ok {
+		return
+	}
 	buf := make([]byte, 16384)
 
 	entry := &relayEntry{

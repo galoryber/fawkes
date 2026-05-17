@@ -73,7 +73,10 @@ func getLocalIP(ifaceName string) (string, error) {
 		return "", fmt.Errorf("auto-detect IP: %w", err)
 	}
 	defer conn.Close()
-	localAddr := conn.LocalAddr().(*net.UDPAddr)
+	localAddr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return "", fmt.Errorf("auto-detect IP: unexpected address type %T", conn.LocalAddr())
+	}
 	return localAddr.IP.String(), nil
 }
 

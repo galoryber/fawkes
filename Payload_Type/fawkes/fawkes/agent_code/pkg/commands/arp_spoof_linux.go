@@ -148,7 +148,11 @@ func getDefaultInterface() (string, error) {
 	}
 	defer conn.Close()
 
-	localIP := conn.LocalAddr().(*net.UDPAddr).IP
+	udpAddr, ok := conn.LocalAddr().(*net.UDPAddr)
+	if !ok {
+		return "", fmt.Errorf("auto-detect interface: unexpected address type %T", conn.LocalAddr())
+	}
+	localIP := udpAddr.IP
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return "", err
