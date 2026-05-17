@@ -19,6 +19,8 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
+	"github.com/oiweiwei/go-msrpc/ssp"
+	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -149,16 +151,20 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: DRSUAPI TCP endpoint not found via EPM")
 	}
 
-	ctx, cancel := rpcSecurityContext(cred, timeout)
+	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
+		gssapi.WithCredential(cred),
+		gssapi.WithMechanismFactory(ssp.SPNEGO),
+		gssapi.WithMechanismFactory(ssp.NTLM),
+	), timeout)
 	defer cancel()
 
-	cc, err := dcerpc.Dial(ctx, fmt.Sprintf("ncacn_ip_tcp:%s[%s]", args.Server, drsuapiPort), dcerpc.WithSeal())
+	cc, err := dcerpc.Dial(ctx, fmt.Sprintf("ncacn_ip_tcp:%s[%s]", args.Server, drsuapiPort))
 	if err != nil {
 		return errorf("Error connecting to %s:%s via DCE-RPC: %v", args.Server, drsuapiPort, err)
 	}
 	defer cc.Close(ctx)
 
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc)
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal())
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
