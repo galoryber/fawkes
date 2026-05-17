@@ -2,6 +2,8 @@ package commands
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 	"github.com/oiweiwei/go-msrpc/ssp/krb5"
 	krbconfig "github.com/oiweiwei/gokrb5.fork/v9/config"
+	"golang.org/x/crypto/md4" //nolint:staticcheck // MD4 required for NTLM hash computation
 )
 
 // rpcCredential creates a go-msrpc credential from username, domain, password, and/or hash.
@@ -79,6 +82,10 @@ func rpcKerberosConfig(cred sspcred.Credential, domain, kdcAddr string) *krb5.Co
 
 // rpcKerberosCredential creates a credential with the realm (uppercase domain)
 // as the domain prefix, which is required for Kerberos authentication.
+// Always uses NTHash credential (even for passwords) because the go-msrpc KRB5
+// mechanism's password-based AffirmLogin path has a key derivation issue that
+// causes KDC_ERR_PREAUTH_FAILED. Using NTHash forces RC4-HMAC pre-auth which
+// bypasses the broken path entirely.
 func rpcKerberosCredential(username, domain, password, hash string) (sspcred.Credential, error) {
 	realm := strings.ToUpper(domain)
 	credUser := realm + `\` + username
@@ -87,9 +94,20 @@ func rpcKerberosCredential(username, domain, password, hash string) (sspcred.Cre
 		return sspcred.NewFromNTHash(credUser, stripLMPrefix(hash)), nil
 	}
 	if password != "" {
-		return sspcred.NewFromPassword(credUser, password), nil
+		return sspcred.NewFromNTHash(credUser, passwordToNTHash(password)), nil
 	}
 	return nil, fmt.Errorf("either -password or -hash is required")
+}
+
+// passwordToNTHash computes the NTLM hash (MD4 of UTF-16LE encoded password).
+func passwordToNTHash(password string) string {
+	utf16le := make([]byte, len(password)*2)
+	for i, r := range []byte(password) {
+		binary.LittleEndian.PutUint16(utf16le[i*2:], uint16(r))
+	}
+	h := md4.New()
+	h.Write(utf16le)
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func ensureKRB5Mechanism() {
