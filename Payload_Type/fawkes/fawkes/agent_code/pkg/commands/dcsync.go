@@ -26,6 +26,7 @@ import (
 
 	krbclient "github.com/oiweiwei/gokrb5.fork/v9/client"
 	krbconfig "github.com/oiweiwei/gokrb5.fork/v9/config"
+	krbcredentials "github.com/oiweiwei/gokrb5.fork/v9/credentials"
 )
 
 type DcsyncCommand struct{}
@@ -487,12 +488,24 @@ func dcsyncKerberosDirectTest(username, domain, password, kdcAddr string) string
 		"." + lowDomain: realm,
 	}
 
-	cl := krbclient.NewWithPassword(username, realm, password, kc, krbclient.DisablePAFXFAST(true))
-	err := cl.Login()
-	if err != nil {
-		return fmt.Sprintf("DIRECT gokrb5 Login() FAILED: %v", err)
+	// Test 1: direct (known working)
+	cl1 := krbclient.NewWithPassword(username, realm, password, kc, krbclient.DisablePAFXFAST(true))
+	if err := cl1.Login(); err != nil {
+		return fmt.Sprintf("T1-DIRECT FAILED: %v", err)
 	}
-	return "" // success
+
+	// Test 2: replicate go-msrpc's credential replacement pattern
+	parsedKC := krb5.ParsedLibDefaults(kc)
+	creds := krbclient.NewWithPassword(username, realm, "", parsedKC,
+		krbclient.DisablePAFXFAST(true), krbclient.AnyServiceClassSPN(true))
+	// Replace credentials (what go-msrpc's authentifier does)
+	krbCreds := krbcredentials.New(username, realm)
+	creds.Credentials = krbCreds.WithPassword(password)
+	if err := creds.AffirmLogin(); err != nil {
+		return fmt.Sprintf("T2-REPLACEMENT FAILED: %v", err)
+	}
+
+	return "" // both pass
 }
 
 func dcsyncDecodeUTF16LE(b []byte) string {
