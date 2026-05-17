@@ -21,6 +21,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/ndr"
 	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
+	"github.com/oiweiwei/go-msrpc/ssp/krb5"
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 
 	krbclient "github.com/oiweiwei/gokrb5.fork/v9/client"
@@ -138,9 +139,11 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var cc dcerpc.Conn
 	var err error
+	var krbCfg *krb5.Config
 
 	if useKerberos {
 		ensureKRB5Mechanism()
+		krbCfg = rpcKerberosConfig(cred, args.Domain, args.Server)
 		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
 			epm.EndpointMapper(ctx,
 				net.JoinHostPort(args.Server, "135"),
@@ -149,6 +152,8 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 			dcerpc.WithCredentials(cred),
 			dcerpc.WithMechanism(ssp.SPNEGO),
 			dcerpc.WithMechanism(ssp.KRB5),
+			dcerpc.WithTargetName("host/"+args.DCHost),
+			dcerpc.WithSecurityConfig(krbCfg),
 		)
 	} else {
 		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
@@ -169,7 +174,6 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	var clientOpts []dcerpc.Option
 	clientOpts = append(clientOpts, dcerpc.WithSeal())
 	if useKerberos {
-		krbCfg := rpcKerberosConfig(cred, args.Domain, args.Server)
 		clientOpts = append(clientOpts,
 			dcerpc.WithTargetName("host/"+args.DCHost),
 			dcerpc.WithSecurityConfig(krbCfg),
