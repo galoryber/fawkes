@@ -21,6 +21,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/ndr"
 	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
+	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 	"github.com/oiweiwei/go-msrpc/ssp/krb5"
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 
@@ -135,28 +136,33 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	timeout := time.Duration(args.Timeout) * time.Second
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
 
 	var cc dcerpc.Conn
 	var err error
-	var krbCfg *krb5.Config
+	var ctx context.Context
+	var cancel context.CancelFunc
 
 	if useKerberos {
 		ensureKRB5Mechanism()
-		krbCfg = rpcKerberosConfig(cred, args.Domain, args.Server)
+		krbCfg := rpcKerberosConfig(cred, args.Domain, args.Server)
+		gssCtx := gssapi.NewSecurityContext(context.Background(),
+			gssapi.WithMechanismFactory(ssp.SPNEGO),
+			gssapi.WithMechanismFactory(ssp.KRB5),
+			gssapi.WithMechanismConfig(krbCfg),
+		)
+		ctx, cancel = context.WithTimeout(gssCtx, timeout)
+		defer cancel()
 		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
 			epm.EndpointMapper(ctx,
 				net.JoinHostPort(args.Server, "135"),
 				dcerpc.WithInsecure(),
 			),
-			dcerpc.WithCredentials(cred),
-			dcerpc.WithMechanism(ssp.SPNEGO),
-			dcerpc.WithMechanism(ssp.KRB5),
+			dcerpc.WithSeal(),
 			dcerpc.WithTargetName("host/"+args.DCHost),
-			dcerpc.WithSecurityConfig(krbCfg),
 		)
 	} else {
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+		defer cancel()
 		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
 			epm.EndpointMapper(ctx,
 				net.JoinHostPort(args.Server, "135"),
@@ -174,12 +180,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	var clientOpts []dcerpc.Option
 	clientOpts = append(clientOpts, dcerpc.WithSeal())
-	if useKerberos {
-		clientOpts = append(clientOpts,
-			dcerpc.WithTargetName("host/"+args.DCHost),
-			dcerpc.WithSecurityConfig(krbCfg),
-		)
-	} else {
+	if !useKerberos {
 		clientOpts = append(clientOpts, dcerpc.WithTargetName(args.Server))
 	}
 
