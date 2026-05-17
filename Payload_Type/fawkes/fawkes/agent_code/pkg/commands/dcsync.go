@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -19,8 +18,6 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
-	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
-
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
 
@@ -107,10 +104,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	timeout := time.Duration(args.Timeout) * time.Second
 
-	// Register credential globally (matching go-msrpc official drsr example)
-	gssapi.AddCredential(cred)
-
-	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background()), timeout)
+	ctx, cancel := rpcSecurityContext(cred, timeout)
 	defer cancel()
 
 	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
