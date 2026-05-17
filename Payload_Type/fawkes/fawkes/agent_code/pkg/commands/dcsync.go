@@ -152,9 +152,6 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 				net.JoinHostPort(args.Server, "135"),
 				dcerpc.WithInsecure(),
 			),
-			dcerpc.WithCredentials(cred),
-			dcerpc.WithMechanism(ssp.SPNEGO),
-			dcerpc.WithMechanism(ssp.KRB5, krbCfg),
 		)
 	} else {
 		ctx, cancel = rpcSecurityContext(cred, timeout)
@@ -164,9 +161,6 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 				net.JoinHostPort(args.Server, "135"),
 				dcerpc.WithInsecure(),
 			),
-			dcerpc.WithCredentials(cred),
-			dcerpc.WithMechanism(ssp.SPNEGO),
-			dcerpc.WithMechanism(ssp.NTLM),
 		)
 	}
 	if err != nil {
@@ -179,6 +173,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		clientOpts = append(clientOpts,
 			dcerpc.WithSeal(),
 			dcerpc.WithTargetName("host/"+args.DCHost),
+			dcerpc.WithSecurityConfig(krbCfg),
 		)
 	} else {
 		clientOpts = append(clientOpts, dcerpc.WithSeal())
