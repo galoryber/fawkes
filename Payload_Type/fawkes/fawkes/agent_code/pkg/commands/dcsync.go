@@ -21,6 +21,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/ndr"
 	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
+	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 	"github.com/oiweiwei/go-msrpc/ssp/krb5"
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 
@@ -114,13 +115,8 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: domain is required for Kerberos auth")
 	}
 
-	// Diagnostic: test gokrb5 direct TGT acquisition when using Kerberos
-	if useKerberos {
-		krbDiag := dcsyncKerberosDirectTest(args.Username, args.Domain, args.Password, args.Server)
-		if krbDiag != "" {
-			return errorf("Kerberos diagnostic: %s", krbDiag)
-		}
-	}
+	// Diagnostic removed — direct gokrb5 login passes but mechanism still fails.
+	// Keeping dcsyncKerberosDirectTest function for future debugging.
 
 	var credErr error
 	var cred sspcred.Credential
@@ -145,13 +141,17 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	if useKerberos {
 		ensureKRB5Mechanism()
 		krbCfg = rpcKerberosConfig(cred, args.Domain, args.Server)
-		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+		ctx, cancel = context.WithTimeout(
+			gssapi.NewSecurityContext(context.Background()), timeout)
 		defer cancel()
 		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
 			epm.EndpointMapper(ctx,
 				net.JoinHostPort(args.Server, "135"),
 				dcerpc.WithInsecure(),
 			),
+			dcerpc.WithCredentials(cred),
+			dcerpc.WithMechanism(ssp.SPNEGO),
+			dcerpc.WithMechanism(ssp.KRB5, krbCfg),
 		)
 	} else {
 		ctx, cancel = context.WithTimeout(context.Background(), timeout)
@@ -174,9 +174,6 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	var clientOpts []dcerpc.Option
 	if useKerberos {
 		clientOpts = append(clientOpts,
-			dcerpc.WithCredentials(cred),
-			dcerpc.WithMechanism(ssp.SPNEGO),
-			dcerpc.WithMechanism(ssp.KRB5, krbCfg),
 			dcerpc.WithSeal(),
 			dcerpc.WithTargetName("host/"+args.DCHost),
 		)
