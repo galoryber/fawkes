@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
+	"github.com/oiweiwei/go-msrpc/ssp"
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
 
@@ -102,27 +104,27 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error: %v", credErr)
 	}
 
-	// Debug: log credential details for NTLM investigation
-	debugInfo := fmt.Sprintf("[debug] cred.UserName=%q cred.DomainName=%q args.Server=%q\n", cred.UserName(), cred.DomainName(), args.Server)
-
 	timeout := time.Duration(args.Timeout) * time.Second
-
-	ctx, cancel := rpcSecurityContext(cred, timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
 		epm.EndpointMapper(ctx,
 			net.JoinHostPort(args.Server, "135"),
 			dcerpc.WithInsecure(),
-		))
+		),
+		dcerpc.WithCredentials(cred),
+		dcerpc.WithMechanism(ssp.SPNEGO),
+		dcerpc.WithMechanism(ssp.NTLM),
+	)
 	if err != nil {
-		return errorf("%sError connecting to %s via DCE-RPC: %v", debugInfo, args.Server, err)
+		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
 	defer cc.Close(ctx)
 
 	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
 	if err != nil {
-		return errorf("%sError creating DRSUAPI client: %v", debugInfo, err)
+		return errorf("Error creating DRSUAPI client: %v", err)
 	}
 
 	// DRSBind
