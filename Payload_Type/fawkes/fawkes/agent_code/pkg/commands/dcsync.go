@@ -18,6 +18,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
+	"github.com/oiweiwei/go-msrpc/ssp"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -112,13 +113,17 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		epm.EndpointMapper(ctx,
 			net.JoinHostPort(args.Server, "135"),
 			dcerpc.WithInsecure(),
-		))
+		),
+		dcerpc.WithCredentials(cred),
+		dcerpc.WithMechanism(ssp.SPNEGO),
+		dcerpc.WithMechanism(ssp.NTLM),
+	)
 	if err != nil {
 		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
 	defer cc.Close(ctx)
 
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal())
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
