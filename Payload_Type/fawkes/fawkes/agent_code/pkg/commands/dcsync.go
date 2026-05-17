@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 
 	"github.com/oiweiwei/go-msrpc/dcerpc"
 	"github.com/oiweiwei/go-msrpc/midl/uuid"
+	"github.com/oiweiwei/go-msrpc/msrpc/dcetypes"
 	"github.com/oiweiwei/go-msrpc/msrpc/drsr/drsuapi/v4"
 	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
 	"github.com/oiweiwei/go-msrpc/msrpc/epm/epm/v3"
@@ -106,20 +106,55 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	timeout := time.Duration(args.Timeout) * time.Second
 
-	// Auth context on the Dial only; EPM gets a plain context so its internal
-	// dcerpc.Dial cannot touch or corrupt the mutable SecurityContext pointer.
+	// Manual EPM lookup on separate insecure connection, then direct dial
+	// to the discovered port with auth. This eliminates epm.EndpointMapper
+	// as a Dial option, which may modify connection state.
+	epmCtx, epmCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	epmConn, err := dcerpc.Dial(epmCtx, fmt.Sprintf("ncacn_ip_tcp:%s[135]", args.Server), dcerpc.WithInsecure())
+	if err != nil {
+		epmCancel()
+		return errorf("Error connecting to EPM on %s: %v", args.Server, err)
+	}
+	epmCli, err := epm.NewEpmClient(epmCtx, epmConn, dcerpc.WithInsecure())
+	if err != nil {
+		epmConn.Close(epmCtx)
+		epmCancel()
+		return errorf("Error creating EPM client on %s: %v", args.Server, err)
+	}
+	lookupResp, err := epmCli.Lookup(epmCtx, &epm.LookupRequest{
+		InquiryType: 0x00000001, // RPC_C_EP_MATCH_BY_IF
+		VersOption:  0x00000003, // RPC_C_VERS_EXACT
+		InterfaceID: &dcetypes.InterfaceID{
+			UUID:      dtyp.GUIDFromUUID(drsuapi.DrsuapiSyntaxV4_0.IfUUID),
+			VersMajor: drsuapi.DrsuapiSyntaxV4_0.IfVersionMajor,
+			VersMinor: drsuapi.DrsuapiSyntaxV4_0.IfVersionMinor,
+		},
+		MaxEntries: 10,
+	})
+	epmConn.Close(epmCtx)
+	epmCancel()
+	if err != nil {
+		return errorf("Error looking up DRSUAPI endpoint on %s: %v", args.Server, err)
+	}
+
+	var drsuapiPort string
+	for _, entry := range lookupResp.Entries {
+		b := entry.Tower.Binding()
+		if b.StringBinding.ProtocolSequence == dcerpc.ProtocolSequenceIPTCP && b.StringBinding.Endpoint != "" {
+			drsuapiPort = b.StringBinding.Endpoint
+			break
+		}
+	}
+	if drsuapiPort == "" {
+		return errorResult("Error: DRSUAPI TCP endpoint not found via EPM")
+	}
+
 	ctx, cancel := rpcSecurityContext(cred, timeout)
 	defer cancel()
 
-	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
-		epm.EndpointMapper(context.Background(),
-			net.JoinHostPort(args.Server, "135"),
-			dcerpc.WithInsecure(),
-		),
-		dcerpc.WithSeal(),
-	)
+	cc, err := dcerpc.Dial(ctx, fmt.Sprintf("ncacn_ip_tcp:%s[%s]", args.Server, drsuapiPort), dcerpc.WithSeal())
 	if err != nil {
-		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
+		return errorf("Error connecting to %s:%s via DCE-RPC: %v", args.Server, drsuapiPort, err)
 	}
 	defer cc.Close(ctx)
 
