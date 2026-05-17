@@ -141,8 +141,11 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	if useKerberos {
 		ensureKRB5Mechanism()
 		krbCfg = rpcKerberosConfig(cred, args.Domain, args.Server)
-		ctx, cancel = context.WithTimeout(
-			gssapi.NewSecurityContext(context.Background()), timeout)
+		ctx, cancel = context.WithTimeout(gssapi.NewSecurityContext(context.Background(),
+			gssapi.WithCredential(cred),
+			gssapi.WithMechanismFactory(ssp.SPNEGO),
+			gssapi.WithMechanismFactory(ssp.KRB5),
+		), timeout)
 		defer cancel()
 		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
 			epm.EndpointMapper(ctx,
@@ -154,7 +157,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 			dcerpc.WithMechanism(ssp.KRB5, krbCfg),
 		)
 	} else {
-		ctx, cancel = context.WithTimeout(context.Background(), timeout)
+		ctx, cancel = rpcSecurityContext(cred, timeout)
 		defer cancel()
 		cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
 			epm.EndpointMapper(ctx,
