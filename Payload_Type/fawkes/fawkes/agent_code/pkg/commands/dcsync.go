@@ -22,6 +22,9 @@ import (
 	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
+
+	krbclient "github.com/oiweiwei/gokrb5.fork/v9/client"
+	krbconfig "github.com/oiweiwei/gokrb5.fork/v9/config"
 )
 
 type DcsyncCommand struct{}
@@ -107,6 +110,14 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	if useKerberos && args.Domain == "" {
 		return errorResult("Error: domain is required for Kerberos auth")
+	}
+
+	// Diagnostic: test gokrb5 direct TGT acquisition when using Kerberos
+	if useKerberos {
+		krbDiag := dcsyncKerberosDirectTest(args.Username, args.Domain, args.Password, args.Server)
+		if krbDiag != "" {
+			return errorf("Kerberos diagnostic: %s", krbDiag)
+		}
 	}
 
 	var credErr error
@@ -447,6 +458,37 @@ func dcsyncExtractKerberosKeys(prop *samr.UserProperty, result *dcsyncResult) {
 			}
 		}
 	}
+}
+
+func dcsyncKerberosDirectTest(username, domain, password, kdcAddr string) string {
+	realm := strings.ToUpper(domain)
+
+	kc := krbconfig.New()
+	kc.LibDefaults.DefaultRealm = realm
+	kc.LibDefaults.DNSLookupKDC = false
+	kc.LibDefaults.DNSLookupRealm = false
+	kc.LibDefaults.UDPPreferenceLimit = 1
+	kc.LibDefaults.AllowWeakCrypto = true
+	kc.LibDefaults.DefaultTGSEnctypes = []string{"aes256-cts-hmac-sha1-96", "aes128-cts-hmac-sha1-96", "rc4-hmac"}
+	kc.LibDefaults.DefaultTktEnctypes = []string{"aes256-cts-hmac-sha1-96", "aes128-cts-hmac-sha1-96", "rc4-hmac"}
+	kc.LibDefaults.PermittedEnctypes = []string{"aes256-cts-hmac-sha1-96", "aes128-cts-hmac-sha1-96", "rc4-hmac"}
+	kc.Realms = []krbconfig.Realm{{
+		Realm:       realm,
+		KDC:         []string{kdcAddr + ":88"},
+		AdminServer: []string{kdcAddr + ":749"},
+	}}
+	lowDomain := strings.ToLower(domain)
+	kc.DomainRealm = krbconfig.DomainRealm{
+		lowDomain:       realm,
+		"." + lowDomain: realm,
+	}
+
+	cl := krbclient.NewWithPassword(username, realm, password, kc, krbclient.DisablePAFXFAST(true))
+	err := cl.Login()
+	if err != nil {
+		return fmt.Sprintf("DIRECT gokrb5 Login() FAILED: %v", err)
+	}
+	return "" // success
 }
 
 func dcsyncDecodeUTF16LE(b []byte) string {
