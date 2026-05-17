@@ -106,29 +106,24 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	timeout := time.Duration(args.Timeout) * time.Second
 
-	// Plain context with no gssapi.NewSecurityContext — avoids mutable SecurityContext
-	// state that EPM's internal Dial corrupts. Mechanisms are globally registered by
-	// coerce.go init(); credentials passed via dcerpc.WithCredentials option only.
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	// Auth context on the Dial only; EPM gets a plain context so its internal
+	// dcerpc.Dial cannot touch or corrupt the mutable SecurityContext pointer.
+	ctx, cancel := rpcSecurityContext(cred, timeout)
 	defer cancel()
 
 	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
-		epm.EndpointMapper(ctx,
+		epm.EndpointMapper(context.Background(),
 			net.JoinHostPort(args.Server, "135"),
 			dcerpc.WithInsecure(),
 		),
 		dcerpc.WithSeal(),
-		dcerpc.WithCredentials(cred),
 	)
 	if err != nil {
 		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
 	defer cc.Close(ctx)
 
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc,
-		dcerpc.WithSeal(),
-		dcerpc.WithCredentials(cred),
-	)
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, dcerpc.WithSeal())
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
