@@ -107,25 +107,25 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	timeout := time.Duration(args.Timeout) * time.Second
 
-	// Use a SEPARATE plain context for EPM discovery (unauthenticated) to avoid
-	// the EPM connection corrupting our security context state. Then connect to
-	// the discovered port with a FRESH security context for authenticated DRSUAPI.
-	epmCtx, epmCancel := context.WithTimeout(context.Background(), 15*time.Second)
-	cc, err := dcerpc.Dial(epmCtx, "ncacn_ip_tcp:"+args.Server,
-		epm.EndpointMapper(epmCtx,
+	// Plain context — NO gssapi.NewSecurityContext. Auth is handled entirely via
+	// dcerpc options (WithCredentials/WithMechanism). This prevents EPM's internal
+	// Dial from corrupting a mutable SecurityContext stored in context.Value.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
+		epm.EndpointMapper(ctx,
 			net.JoinHostPort(args.Server, "135"),
 			dcerpc.WithInsecure(),
 		),
-		dcerpc.WithInsecure(),
+		dcerpc.WithSeal(),
+		dcerpc.WithCredentials(cred),
+		dcerpc.WithMechanism(ssp.SPNEGO),
+		dcerpc.WithMechanism(ssp.NTLM),
 	)
-	epmCancel()
 	if err != nil {
 		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
-
-	// Create authenticated security context on the existing connection
-	ctx, cancel := rpcSecurityContext(cred, timeout)
-	defer cancel()
 	defer cc.Close(ctx)
 
 	cli, err := drsuapi.NewDrsuapiClient(ctx, cc,
