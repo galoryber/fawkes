@@ -21,7 +21,6 @@ build:
 	GOOS=linux go build -o ${BINARY_NAME} .
 	cp ./${BINARY_NAME} /
 	cd ./fawkes/agent_code && go mod download && go mod tidy && go mod vendor && cd ../../
-	cd ./fawkes/agent_code && patch -p1 -d vendor/github.com/oiweiwei/go-msrpc < patches/go-msrpc-ntlm-attrflags.patch && cd ../../
 	cd ./fawkes/agentfunctions && go mod download && go mod tidy && cd ../..
 
 run:
