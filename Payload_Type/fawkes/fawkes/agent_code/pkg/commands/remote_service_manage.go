@@ -22,7 +22,7 @@ func remoteSvcCreate(args remoteServiceArgs) structs.CommandResult {
 
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerCreateService)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Failed to connect to %s: %v", args.Server, err)
 	}
 	defer cancel()
 	defer cleanup()
@@ -56,7 +56,7 @@ func remoteSvcStart(args remoteServiceArgs) structs.CommandResult {
 
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Failed to connect to %s: %v", args.Server, err)
 	}
 	defer cancel()
 	defer cleanup()
@@ -95,7 +95,7 @@ func remoteSvcStop(args remoteServiceArgs) structs.CommandResult {
 
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Failed to connect to %s: %v", args.Server, err)
 	}
 	defer cancel()
 	defer cleanup()
@@ -136,7 +136,7 @@ func remoteSvcDelete(args remoteServiceArgs) structs.CommandResult {
 
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Failed to connect to %s: %v", args.Server, err)
 	}
 	defer cancel()
 	defer cleanup()

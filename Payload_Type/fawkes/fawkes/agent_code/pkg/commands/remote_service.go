@@ -254,7 +254,7 @@ func remoteSvcConnect(args remoteServiceArgs, desiredAccess uint32) (svcctl.Svcc
 func remoteSvcList(args remoteServiceArgs) structs.CommandResult {
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect|scManagerEnumerateService)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Failed to connect to %s: %v", args.Server, err)
 	}
 	defer cancel()
 	defer cleanup()
@@ -315,7 +315,7 @@ func remoteSvcQuery(args remoteServiceArgs) structs.CommandResult {
 
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerConnect)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Failed to connect to %s: %v", args.Server, err)
 	}
 	defer cancel()
 	defer cleanup()

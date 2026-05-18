@@ -56,7 +56,7 @@ func remoteSvcTrigger(args remoteServiceArgs) structs.CommandResult {
 	// Step 1: Create the service with demand start (not auto — the trigger handles starting)
 	cli, scm, ctx, cancel, cleanup, err := remoteSvcConnect(args, scManagerCreateService|scManagerConnect)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Failed to connect to %s: %v", args.Server, err)
 	}
 	defer cancel()
 	defer cleanup()

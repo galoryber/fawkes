@@ -28,7 +28,7 @@ func remoteSvcDLLSideload(args remoteServiceArgs) structs.CommandResult {
 	// Step 1: Verify service exists and get current config via SVCCTL
 	svcCli, scm, svcCtx, svcCancel, svcCleanup, err := remoteSvcConnect(args, scManagerConnect)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Failed to connect to %s: %v", args.Server, err)
 	}
 	defer svcCancel()
 	defer svcCleanup()
