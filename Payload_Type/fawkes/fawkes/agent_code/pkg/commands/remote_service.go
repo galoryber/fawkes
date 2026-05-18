@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -141,28 +142,58 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 		args.Timeout = 30
 	}
 
-	switch strings.ToLower(args.Action) {
-	case "list":
-		return remoteSvcList(args)
-	case "query":
-		return remoteSvcQuery(args)
-	case "create":
-		return remoteSvcCreate(args)
-	case "start":
-		return remoteSvcStart(args)
-	case "stop":
-		return remoteSvcStop(args)
-	case "delete":
-		return remoteSvcDelete(args)
+	action := strings.ToLower(args.Action)
+
+	// Advanced operations that require both SVCCTL + WinReg remain in-process
+	// (they'll need their own subprocess approach later if NTLM is required)
+	switch action {
 	case "modify-path", "modify_path":
 		return remoteSvcModifyPath(args)
 	case "trigger":
 		return remoteSvcTrigger(args)
 	case "dll-sideload", "dll_sideload":
 		return remoteSvcDLLSideload(args)
-	default:
+	}
+
+	opMap := map[string]string{
+		"list":   "svcctl-list",
+		"query":  "svcctl-query",
+		"create": "svcctl-create",
+		"start":  "svcctl-start",
+		"stop":   "svcctl-stop",
+		"delete": "svcctl-delete",
+	}
+	op, ok := opMap[action]
+	if !ok {
 		return errorf("Unknown action: %s\nAvailable: list, query, create, start, stop, delete, modify-path, trigger, dll-sideload", args.Action)
 	}
+
+	params, _ := json.Marshal(svcctlParams{
+		Name:        args.Name,
+		DisplayName: args.DisplayName,
+		BinPath:     args.BinPath,
+		StartType:   args.StartType,
+	})
+
+	output, err := rpcViaSubprocess(rpcHelperRequest{
+		Operation: op,
+		Server:    args.Server,
+		Username:  args.Username,
+		Password:  args.Password,
+		Hash:      args.Hash,
+		Domain:    args.Domain,
+		Timeout:   args.Timeout,
+		Params:    params,
+	})
+	if err != nil {
+		return errorf("Error: %v", err)
+	}
+
+	var result svcctlResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		return errorf("Error parsing result: %v", err)
+	}
+	return successResult(result.Text)
 }
 
 // remoteSvcConnect establishes a DCE-RPC connection to the remote SVCCTL service

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -73,18 +74,46 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 		args.Timeout = 30
 	}
 
-	switch strings.ToLower(args.Action) {
-	case "query":
-		return remoteRegQuery(args)
-	case "enum":
-		return remoteRegEnum(args)
-	case "set":
-		return remoteRegSet(args)
-	case "delete":
-		return remoteRegDelete(args)
-	default:
+	action := strings.ToLower(args.Action)
+
+	opMap := map[string]string{
+		"query":  "winreg-query",
+		"enum":   "winreg-enum",
+		"set":    "winreg-set",
+		"delete": "winreg-delete",
+	}
+	op, ok := opMap[action]
+	if !ok {
 		return errorf("Unknown action: %s\nAvailable: query, enum, set, delete", args.Action)
 	}
+
+	params, _ := json.Marshal(winregParams{
+		Hive:    args.Hive,
+		Path:    args.Path,
+		Name:    args.Name,
+		Data:    args.Data,
+		RegType: args.RegType,
+	})
+
+	output, err := rpcViaSubprocess(rpcHelperRequest{
+		Operation: op,
+		Server:    args.Server,
+		Username:  args.Username,
+		Password:  args.Password,
+		Hash:      args.Hash,
+		Domain:    args.Domain,
+		Timeout:   args.Timeout,
+		Params:    params,
+	})
+	if err != nil {
+		return errorf("Error: %v", err)
+	}
+
+	var result winregResult
+	if err := json.Unmarshal(output, &result); err != nil {
+		return errorf("Error parsing result: %v", err)
+	}
+	return successResult(result.Text)
 }
 
 // remoteRegConnect establishes a DCE-RPC connection to the remote winreg service

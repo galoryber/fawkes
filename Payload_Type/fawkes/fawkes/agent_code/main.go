@@ -20,6 +20,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--rpc-helper" {
+		commands.RunRPCHelper(os.Args[2:])
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "--dcsync-helper" {
 		commands.RunDcsyncHelper(os.Args[2:])
 		return
