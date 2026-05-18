@@ -20,6 +20,10 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "--dcsync-helper" {
+		commands.RunDcsyncHelper(os.Args[2:])
+		return
+	}
 	// Try running as a Windows service first. If started by SCM, this blocks
 	// and runs the agent in the service context (with full service privileges).
 	// On non-Windows or when not started by SCM, returns false immediately.
