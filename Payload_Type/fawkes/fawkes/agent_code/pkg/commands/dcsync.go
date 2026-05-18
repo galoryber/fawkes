@@ -19,8 +19,8 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/erref/drsr"
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
+	"github.com/oiweiwei/go-msrpc/ssp"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
-	"github.com/oiweiwei/go-msrpc/ssp/gssapi"
 	"github.com/oiweiwei/go-msrpc/ssp/krb5"
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 
@@ -137,44 +137,41 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	var cancel context.CancelFunc
 	var krbCfg *krb5.Config
 
-	// Use global credential/mechanism registration pattern (matches official go-msrpc example).
-	// This ensures SPNEGO can discover NTLM as a sub-mechanism via the global store.
-	ensureSPNEGOMechanism()
-	ensureNTLMMechanism()
-	gssapi.AddCredential(cred)
-
 	if useKerberos {
 		ensureKRB5Mechanism()
 		krbCfg = rpcKerberosConfig(cred, args.Domain, args.Server)
 	}
 
-	ctx, cancel = context.WithTimeout(gssapi.NewSecurityContext(context.Background()), timeout)
+	ctx, cancel = rpcSecurityContext(cred, timeout)
 	defer cancel()
 
-	cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
+	var dialOpts []dcerpc.Option
+	dialOpts = append(dialOpts,
 		epm.EndpointMapper(ctx,
 			net.JoinHostPort(args.Server, "135"),
 			dcerpc.WithInsecure(),
 		),
+		dcerpc.WithCredentials(cred),
+		dcerpc.WithMechanism(ssp.SPNEGO),
+		dcerpc.WithMechanism(ssp.NTLM),
+		dcerpc.WithSeal(),
 	)
+	if useKerberos {
+		dialOpts = append(dialOpts,
+			dcerpc.WithTargetName("host/"+args.DCHost),
+			dcerpc.WithSecurityConfig(krbCfg),
+		)
+	} else {
+		dialOpts = append(dialOpts, dcerpc.WithTargetName(args.Server))
+	}
+
+	cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server, dialOpts...)
 	if err != nil {
 		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
 	defer cc.Close(ctx)
 
-	var clientOpts []dcerpc.Option
-	if useKerberos {
-		clientOpts = append(clientOpts,
-			dcerpc.WithSeal(),
-			dcerpc.WithTargetName("host/"+args.DCHost),
-			dcerpc.WithSecurityConfig(krbCfg),
-		)
-	} else {
-		clientOpts = append(clientOpts, dcerpc.WithSeal())
-		clientOpts = append(clientOpts, dcerpc.WithTargetName(args.Server))
-	}
-
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, clientOpts...)
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc)
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
