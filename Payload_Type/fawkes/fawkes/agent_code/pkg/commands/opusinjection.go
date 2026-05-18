@@ -78,6 +78,7 @@ var (
 	procFreeConsole                 = kernel32.NewProc("FreeConsole")
 	procAllocConsole                = kernel32.NewProc("AllocConsole")
 	procGenerateConsoleCtrlEvent    = kernel32.NewProc("GenerateConsoleCtrlEvent")
+	procSetConsoleCtrlHandler       = kernel32.NewProc("SetConsoleCtrlHandler")
 	procNtQueryInformationProcessOp = ntdllOpus.NewProc("NtQueryInformationProcess")
 	procFindWindowA                 = user32Opus.NewProc("FindWindowA")
 	procFindWindowExA               = user32Opus.NewProc("FindWindowExA")

