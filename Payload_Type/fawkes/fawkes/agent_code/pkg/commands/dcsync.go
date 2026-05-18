@@ -145,33 +145,33 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	ctx, cancel = rpcSecurityContext(cred, timeout)
 	defer cancel()
 
-	var dialOpts []dcerpc.Option
-	dialOpts = append(dialOpts,
+	cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
 		epm.EndpointMapper(ctx,
 			net.JoinHostPort(args.Server, "135"),
 			dcerpc.WithInsecure(),
 		),
-		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.SPNEGO),
-		dcerpc.WithMechanism(ssp.NTLM),
-		dcerpc.WithSeal(),
 	)
-	if useKerberos {
-		dialOpts = append(dialOpts,
-			dcerpc.WithTargetName("host/"+args.DCHost),
-			dcerpc.WithSecurityConfig(krbCfg),
-		)
-	} else {
-		dialOpts = append(dialOpts, dcerpc.WithTargetName(args.Server))
-	}
-
-	cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server, dialOpts...)
 	if err != nil {
 		return errorf("Error connecting to %s via DCE-RPC: %v", args.Server, err)
 	}
 	defer cc.Close(ctx)
 
-	cli, err := drsuapi.NewDrsuapiClient(ctx, cc)
+	var clientOpts []dcerpc.Option
+	if useKerberos {
+		clientOpts = append(clientOpts,
+			dcerpc.WithSeal(),
+			dcerpc.WithTargetName("host/"+args.DCHost),
+			dcerpc.WithSecurityConfig(krbCfg),
+		)
+	} else {
+		clientOpts = append(clientOpts,
+			dcerpc.WithSeal(),
+			dcerpc.WithTargetName(args.Server),
+			dcerpc.WithMechanism(ssp.NTLM),
+		)
+	}
+
+	cli, err := drsuapi.NewDrsuapiClient(ctx, cc, clientOpts...)
 	if err != nil {
 		return errorf("Error creating DRSUAPI client: %v", err)
 	}
