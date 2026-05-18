@@ -5,6 +5,7 @@ package commands
 import (
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strings"
 	"syscall"
 
@@ -58,6 +59,9 @@ func spawnSuspendedProcessLinux(params SpawnParams) structs.CommandResult {
 		Ptrace: true,
 	}
 
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	if err := cmd.Start(); err != nil {
 		return errorf("Error starting process: %v", err)
 	}
@@ -77,9 +81,16 @@ func spawnSuspendedProcessLinux(params SpawnParams) structs.CommandResult {
 		sb.WriteString(fmt.Sprintf("[+] Stop signal: %v\n", ws.StopSignal()))
 	}
 
-	sb.WriteString("\n[*] Process is stopped at exec. Use ptrace-inject to inject shellcode:\n")
+	// Transition from ptrace-stop to SIGSTOP so ptrace-inject can PTRACE_ATTACH
+	// from any thread. Ptrace ops are thread-bound, but SIGSTOP is not.
+	_ = syscall.Kill(pid, syscall.SIGSTOP)
+	_ = syscall.PtraceDetach(pid)
+	syscall.Wait4(pid, &ws, syscall.WUNTRACED, nil)
+
+	sb.WriteString("[+] Detached (process held via SIGSTOP)\n")
+	sb.WriteString("\n[*] Process is stopped. Use ptrace-inject to inject shellcode:\n")
 	sb.WriteString(fmt.Sprintf("    ptrace-inject -action inject -pid %d -shellcode_b64 <base64>\n", pid))
-	sb.WriteString("\n[*] Or detach to let it run normally:\n")
+	sb.WriteString("\n[*] Or resume it normally:\n")
 	sb.WriteString(fmt.Sprintf("    kill -CONT %d\n", pid))
 
 	return successResult(sb.String())

