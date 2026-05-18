@@ -125,6 +125,18 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 	}
 	sb.WriteString("[+] Process stopped\n")
 
+	// If the process was in SIGSTOP group-stop (e.g., from spawn), PTRACE_SINGLESTEP
+	// won't execute instructions. Clear group-stop by resuming, then re-stop.
+	if ws.Stopped() && ws.StopSignal() == syscall.SIGSTOP {
+		_ = syscall.Kill(args.PID, syscall.SIGSTOP)
+		_ = syscall.PtraceCont(args.PID, 0)
+		if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
+			_ = syscall.PtraceDetach(args.PID)
+			return errorResult(sb.String() + fmt.Sprintf("[!] Wait4 after group-stop clear failed: %v\n", err))
+		}
+		sb.WriteString("[+] Cleared SIGSTOP group-stop\n")
+	}
+
 	var origRegs syscall.PtraceRegs
 	if err := syscall.PtraceGetRegs(args.PID, &origRegs); err != nil {
 		_ = syscall.PtraceDetach(args.PID)
