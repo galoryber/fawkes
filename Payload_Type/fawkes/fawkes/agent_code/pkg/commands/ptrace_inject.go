@@ -105,6 +105,20 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 		return errorResult(sb.String() + fmt.Sprintf("[!] Process %d not found\n", args.PID))
 	}
 
+	// If the target is in SIGSTOP group-stop (e.g., from spawn), PTRACE_SINGLESTEP
+	// won't execute instructions after attach. Send SIGCONT before attaching so
+	// we attach to a running process and get a clean signal-delivery-stop.
+	if statusData, readErr := os.ReadFile(fmt.Sprintf("/proc/%d/status", args.PID)); readErr == nil {
+		for _, line := range strings.Split(string(statusData), "\n") {
+			if strings.HasPrefix(line, "State:") && strings.Contains(line, "stopped") {
+				_ = syscall.Kill(args.PID, syscall.SIGCONT)
+				time.Sleep(10 * time.Millisecond)
+				sb.WriteString("[*] Target was stopped — sent SIGCONT before attach\n")
+				break
+			}
+		}
+	}
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -124,18 +138,6 @@ func ptraceInject(args ptraceInjectArgs) structs.CommandResult {
 		return errorResult(sb.String() + fmt.Sprintf("[!] Wait4 failed: %v\n", err))
 	}
 	sb.WriteString("[+] Process stopped\n")
-
-	// If the process was in SIGSTOP group-stop (e.g., from spawn), PTRACE_SINGLESTEP
-	// won't execute instructions. Clear group-stop by resuming, then re-stop.
-	if ws.Stopped() && ws.StopSignal() == syscall.SIGSTOP {
-		_ = syscall.Kill(args.PID, syscall.SIGSTOP)
-		_ = syscall.PtraceCont(args.PID, 0)
-		if _, err := syscall.Wait4(args.PID, &ws, 0, nil); err != nil {
-			_ = syscall.PtraceDetach(args.PID)
-			return errorResult(sb.String() + fmt.Sprintf("[!] Wait4 after group-stop clear failed: %v\n", err))
-		}
-		sb.WriteString("[+] Cleared SIGSTOP group-stop\n")
-	}
 
 	var origRegs syscall.PtraceRegs
 	if err := syscall.PtraceGetRegs(args.PID, &origRegs); err != nil {
