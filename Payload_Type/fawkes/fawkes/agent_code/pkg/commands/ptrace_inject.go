@@ -292,12 +292,30 @@ func isTracedByUs(pid int) bool {
 	if err != nil {
 		return false
 	}
-	myPid := os.Getpid()
+	var tracerPid int
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.HasPrefix(line, "TracerPid:") {
-			var tracerPid int
-			if _, err := fmt.Sscanf(line, "TracerPid:\t%d", &tracerPid); err == nil {
-				return tracerPid == myPid
+			fmt.Sscanf(line, "TracerPid:\t%d", &tracerPid)
+			break
+		}
+	}
+	if tracerPid == 0 {
+		return false
+	}
+	myPid := os.Getpid()
+	if tracerPid == myPid {
+		return true
+	}
+	// TracerPid may be a thread (TID) in our process group — check its Tgid
+	tracerStatus, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", tracerPid))
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(tracerStatus), "\n") {
+		if strings.HasPrefix(line, "Tgid:") {
+			var tgid int
+			if _, err := fmt.Sscanf(line, "Tgid:\t%d", &tgid); err == nil {
+				return tgid == myPid
 			}
 		}
 	}
