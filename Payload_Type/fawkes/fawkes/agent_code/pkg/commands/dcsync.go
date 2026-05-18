@@ -140,9 +140,10 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	if useKerberos {
 		ensureKRB5Mechanism()
 		krbCfg = rpcKerberosConfig(cred, args.Domain, args.Server)
+		ctx, cancel = rpcSecurityContext(cred, timeout)
+	} else {
+		ctx, cancel = context.WithTimeout(context.Background(), timeout)
 	}
-
-	ctx, cancel = rpcSecurityContext(cred, timeout)
 	defer cancel()
 
 	cc, err = dcerpc.Dial(ctx, "ncacn_ip_tcp:"+args.Server,
@@ -166,7 +167,7 @@ func (c *DcsyncCommand) Execute(task structs.Task) structs.CommandResult {
 	} else {
 		clientOpts = append(clientOpts,
 			dcerpc.WithSeal(),
-			dcerpc.WithTargetName(args.Server),
+			dcerpc.WithCredentials(cred),
 			dcerpc.WithMechanism(ssp.NTLM),
 		)
 	}
