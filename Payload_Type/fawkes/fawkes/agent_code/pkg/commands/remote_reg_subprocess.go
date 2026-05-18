@@ -8,6 +8,8 @@ import (
 
 	"github.com/oiweiwei/go-msrpc/dcerpc"
 	"github.com/oiweiwei/go-msrpc/msrpc/rrp/winreg/v1"
+	"github.com/oiweiwei/go-msrpc/ssp"
+	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 )
 
 type winregParams struct {
@@ -22,9 +24,12 @@ type winregResult struct {
 	Text string `json:"text"`
 }
 
-func winregSubprocessConnect(ctx context.Context, server string) (winreg.WinregClient, dcerpc.Conn, error) {
+func winregSubprocessConnect(ctx context.Context, server string, cred sspcred.Credential) (winreg.WinregClient, dcerpc.Conn, error) {
 	cc, err := dcerpc.Dial(ctx, server,
 		dcerpc.WithEndpoint("ncacn_np:[winreg]"),
+		dcerpc.WithCredentials(cred),
+		dcerpc.WithMechanism(ssp.SPNEGO),
+		dcerpc.WithMechanism(ssp.NTLM),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("DCE-RPC connection failed: %w", err)
@@ -48,13 +53,13 @@ func rpcHelperWinregQuery(req rpcHelperRequest) (json.RawMessage, error) {
 		p.Hive = "HKLM"
 	}
 
-	ctx, cancel, err := rpcHelperCredAndContext(req)
+	ctx, cancel, cred, err := rpcHelperCredAndContext(req)
 	if err != nil {
 		return nil, err
 	}
 	defer cancel()
 
-	cli, cc, err := winregSubprocessConnect(ctx, req.Server)
+	cli, cc, err := winregSubprocessConnect(ctx, req.Server, cred)
 	if err != nil {
 		return nil, err
 	}
@@ -103,13 +108,13 @@ func rpcHelperWinregEnum(req rpcHelperRequest) (json.RawMessage, error) {
 		p.Hive = "HKLM"
 	}
 
-	ctx, cancel, err := rpcHelperCredAndContext(req)
+	ctx, cancel, cred, err := rpcHelperCredAndContext(req)
 	if err != nil {
 		return nil, err
 	}
 	defer cancel()
 
-	cli, cc, err := winregSubprocessConnect(ctx, req.Server)
+	cli, cc, err := winregSubprocessConnect(ctx, req.Server, cred)
 	if err != nil {
 		return nil, err
 	}
@@ -193,13 +198,13 @@ func rpcHelperWinregSet(req rpcHelperRequest) (json.RawMessage, error) {
 		p.Hive = "HKLM"
 	}
 
-	ctx, cancel, err := rpcHelperCredAndContext(req)
+	ctx, cancel, cred, err := rpcHelperCredAndContext(req)
 	if err != nil {
 		return nil, err
 	}
 	defer cancel()
 
-	cli, cc, err := winregSubprocessConnect(ctx, req.Server)
+	cli, cc, err := winregSubprocessConnect(ctx, req.Server, cred)
 	if err != nil {
 		return nil, err
 	}
@@ -248,13 +253,13 @@ func rpcHelperWinregDelete(req rpcHelperRequest) (json.RawMessage, error) {
 		p.Hive = "HKLM"
 	}
 
-	ctx, cancel, err := rpcHelperCredAndContext(req)
+	ctx, cancel, cred, err := rpcHelperCredAndContext(req)
 	if err != nil {
 		return nil, err
 	}
 	defer cancel()
 
-	cli, cc, err := winregSubprocessConnect(ctx, req.Server)
+	cli, cc, err := winregSubprocessConnect(ctx, req.Server, cred)
 	if err != nil {
 		return nil, err
 	}

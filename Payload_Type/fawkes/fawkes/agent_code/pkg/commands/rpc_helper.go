@@ -91,7 +91,7 @@ func writeRPCError(msg string) {
 	fmt.Fprintln(os.Stdout, string(out))
 }
 
-func rpcHelperCredAndContext(req rpcHelperRequest) (context.Context, context.CancelFunc, error) {
+func rpcHelperCredAndContext(req rpcHelperRequest) (context.Context, context.CancelFunc, sspcred.Credential, error) {
 	credUser := req.Username
 	if req.Domain != "" {
 		credUser = req.Domain + `\` + req.Username
@@ -102,7 +102,7 @@ func rpcHelperCredAndContext(req rpcHelperRequest) (context.Context, context.Can
 	} else if req.Password != "" {
 		cred = sspcred.NewFromPassword(credUser, req.Password)
 	} else {
-		return nil, nil, fmt.Errorf("either password or hash required")
+		return nil, nil, nil, fmt.Errorf("either password or hash required")
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(req.Timeout)*time.Second)
@@ -112,7 +112,7 @@ func rpcHelperCredAndContext(req rpcHelperRequest) (context.Context, context.Can
 		gssapi.WithMechanismFactory(ssp.NTLM),
 	)
 
-	return ctx, cancel, nil
+	return ctx, cancel, cred, nil
 }
 
 func rpcViaSubprocess(req rpcHelperRequest) (json.RawMessage, error) {

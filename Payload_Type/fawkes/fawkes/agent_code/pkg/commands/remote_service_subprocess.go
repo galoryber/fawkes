@@ -8,6 +8,8 @@ import (
 
 	"github.com/oiweiwei/go-msrpc/dcerpc"
 	svcctl "github.com/oiweiwei/go-msrpc/msrpc/scmr/svcctl/v2"
+	"github.com/oiweiwei/go-msrpc/ssp"
+	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
 )
 
 type svcctlParams struct {
@@ -21,9 +23,12 @@ type svcctlResult struct {
 	Text string `json:"text"`
 }
 
-func svcctlSubprocessConnect(ctx context.Context, server string, desiredAccess uint32) (svcctl.SvcctlClient, *svcctl.Handle, dcerpc.Conn, error) {
+func svcctlSubprocessConnect(ctx context.Context, server string, cred sspcred.Credential, desiredAccess uint32) (svcctl.SvcctlClient, *svcctl.Handle, dcerpc.Conn, error) {
 	cc, err := dcerpc.Dial(ctx, server,
 		dcerpc.WithEndpoint("ncacn_np:[svcctl]"),
+		dcerpc.WithCredentials(cred),
+		dcerpc.WithMechanism(ssp.SPNEGO),
+		dcerpc.WithMechanism(ssp.NTLM),
 	)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %w", err)
@@ -52,13 +57,13 @@ func svcctlSubprocessConnect(ctx context.Context, server string, desiredAccess u
 }
 
 func rpcHelperSvcctlList(req rpcHelperRequest) (json.RawMessage, error) {
-	ctx, cancel, err := rpcHelperCredAndContext(req)
+	ctx, cancel, cred, err := rpcHelperCredAndContext(req)
 	if err != nil {
 		return nil, err
 	}
 	defer cancel()
 
-	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, scManagerConnect|scManagerEnumerateService)
+	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, cred, scManagerConnect|scManagerEnumerateService)
 	if err != nil {
 		return nil, err
 	}
@@ -120,13 +125,13 @@ func rpcHelperSvcctlQuery(req rpcHelperRequest) (json.RawMessage, error) {
 		return nil, fmt.Errorf("-name is required for query")
 	}
 
-	ctx, cancel, err := rpcHelperCredAndContext(req)
+	ctx, cancel, cred, err := rpcHelperCredAndContext(req)
 	if err != nil {
 		return nil, err
 	}
 	defer cancel()
 
-	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, scManagerConnect)
+	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, cred, scManagerConnect)
 	if err != nil {
 		return nil, err
 	}
@@ -184,13 +189,13 @@ func rpcHelperSvcctlCreate(req rpcHelperRequest) (json.RawMessage, error) {
 		return nil, fmt.Errorf("-name and -binpath required for create")
 	}
 
-	ctx, cancel, err := rpcHelperCredAndContext(req)
+	ctx, cancel, cred, err := rpcHelperCredAndContext(req)
 	if err != nil {
 		return nil, err
 	}
 	defer cancel()
 
-	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, scManagerConnect|scManagerCreateService)
+	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, cred, scManagerConnect|scManagerCreateService)
 	if err != nil {
 		return nil, err
 	}
@@ -234,13 +239,13 @@ func rpcHelperSvcctlStart(req rpcHelperRequest) (json.RawMessage, error) {
 		return nil, fmt.Errorf("-name required for start")
 	}
 
-	ctx, cancel, err := rpcHelperCredAndContext(req)
+	ctx, cancel, cred, err := rpcHelperCredAndContext(req)
 	if err != nil {
 		return nil, err
 	}
 	defer cancel()
 
-	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, scManagerConnect)
+	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, cred, scManagerConnect)
 	if err != nil {
 		return nil, err
 	}
@@ -281,13 +286,13 @@ func rpcHelperSvcctlStop(req rpcHelperRequest) (json.RawMessage, error) {
 		return nil, fmt.Errorf("-name required for stop")
 	}
 
-	ctx, cancel, err := rpcHelperCredAndContext(req)
+	ctx, cancel, cred, err := rpcHelperCredAndContext(req)
 	if err != nil {
 		return nil, err
 	}
 	defer cancel()
 
-	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, scManagerConnect)
+	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, cred, scManagerConnect)
 	if err != nil {
 		return nil, err
 	}
@@ -329,13 +334,13 @@ func rpcHelperSvcctlDelete(req rpcHelperRequest) (json.RawMessage, error) {
 		return nil, fmt.Errorf("-name required for delete")
 	}
 
-	ctx, cancel, err := rpcHelperCredAndContext(req)
+	ctx, cancel, cred, err := rpcHelperCredAndContext(req)
 	if err != nil {
 		return nil, err
 	}
 	defer cancel()
 
-	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, scManagerConnect)
+	cli, scm, cc, err := svcctlSubprocessConnect(ctx, req.Server, cred, scManagerConnect)
 	if err != nil {
 		return nil, err
 	}
