@@ -45,7 +45,7 @@ func (c *RegDeleteCommand) Execute(task structs.Task) structs.CommandResult {
 
 	hiveKey, err := parseHive(args.Hive)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Error deleting registry key: %v", err)
 	}
 
 	if args.Name != "" {

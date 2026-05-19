@@ -83,7 +83,7 @@ func (c *AutoPatchCommand) Execute(task structs.Task) structs.CommandResult {
 		}
 		output, err := PerformAutoPatch(args.DllName, args.FunctionName, args.NumBytes)
 		if err != nil {
-			return errorResult(err.Error())
+			return errorf("Error patching %s!%s: %v", args.DllName, args.FunctionName, err)
 		}
 		return successResult(output)
 	default:
@@ -111,7 +111,7 @@ func autopatchTarget(targetName, strategy string) structs.CommandResult {
 
 	output, err := PatchTarget(target, strategy)
 	if err != nil {
-		return errorResult(err.Error())
+		return errorf("Error patching target '%s': %v", targetName, err)
 	}
 	return successResult(output)
 }
