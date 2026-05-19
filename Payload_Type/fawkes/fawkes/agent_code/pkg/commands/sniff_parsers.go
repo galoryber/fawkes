@@ -124,6 +124,12 @@ func sniffExtractNTLM(payload []byte, meta *packetMeta) *sniffCredential {
 		return nil
 	}
 
+	unicode := false
+	if len(data) >= 64 {
+		flags := binary.LittleEndian.Uint32(data[60:64])
+		unicode = flags&0x01 != 0 // NTLMSSP_NEGOTIATE_UNICODE
+	}
+
 	readField := func(lenOff, offOff int) string {
 		if len(data) < offOff+4 {
 			return ""
@@ -134,7 +140,10 @@ func sniffExtractNTLM(payload []byte, meta *packetMeta) *sniffCredential {
 		if fLen == 0 || end > uint32(len(data)) {
 			return ""
 		}
-		return sniffDecodeUTF16LE(data[fOff:end])
+		if unicode {
+			return sniffDecodeUTF16LE(data[fOff:end])
+		}
+		return string(data[fOff:end])
 	}
 
 	domain := readField(28, 32)

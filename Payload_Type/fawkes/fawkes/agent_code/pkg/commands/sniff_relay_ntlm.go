@@ -82,16 +82,27 @@ func relayExtractType3Info(type3 []byte) (user, domain string) {
 	if len(type3) < 52 {
 		return "", ""
 	}
+
+	unicode := false
+	if len(type3) >= 64 {
+		flags := binary.LittleEndian.Uint32(type3[60:64])
+		unicode = flags&0x01 != 0 // NTLMSSP_NEGOTIATE_UNICODE
+	}
+
+	decode := func(b []byte) string {
+		if b == nil {
+			return ""
+		}
+		if unicode {
+			return sniffDecodeUTF16LE(b)
+		}
+		return string(b)
+	}
+
 	domainBuf := readSecBuf(type3, 28)
 	userBuf := readSecBuf(type3, 36)
-	domainData := domainBuf.getData(type3)
-	userData := userBuf.getData(type3)
-	if domainData != nil {
-		domain = sniffDecodeUTF16LE(domainData)
-	}
-	if userData != nil {
-		user = sniffDecodeUTF16LE(userData)
-	}
+	domain = decode(domainBuf.getData(type3))
+	user = decode(userBuf.getData(type3))
 	return user, domain
 }
 

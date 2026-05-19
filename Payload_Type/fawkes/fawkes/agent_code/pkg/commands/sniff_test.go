@@ -125,6 +125,9 @@ func TestSniffExtractNTLM(t *testing.T) {
 			return len(b)
 		}
 
+		// NegotiateFlags at offset 60: set NTLMSSP_NEGOTIATE_UNICODE (0x01)
+		binary.LittleEndian.PutUint32(msg[60:64], 0x01)
+
 		off := 72
 		off += writeField(domain, 28, 32, off)
 		off += writeField(user, 36, 40, off)

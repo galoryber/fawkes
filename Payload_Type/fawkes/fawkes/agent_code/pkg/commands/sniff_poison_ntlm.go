@@ -77,12 +77,21 @@ func extractNTLMv2Hash(type3 []byte, serverChallenge [8]byte) *ntlmCapturedHash 
 		return type3[fOff:end]
 	}
 
-	readUTF16Field := func(offset int) string {
+	unicode := false
+	if len(type3) >= 64 {
+		flags := binary.LittleEndian.Uint32(type3[60:64])
+		unicode = flags&0x01 != 0 // NTLMSSP_NEGOTIATE_UNICODE
+	}
+
+	readTextField := func(offset int) string {
 		data := readSecBuf(offset)
 		if data == nil {
 			return ""
 		}
-		return sniffDecodeUTF16LE(data)
+		if unicode {
+			return sniffDecodeUTF16LE(data)
+		}
+		return string(data)
 	}
 
 	// NtChallengeResponse at offset 20
@@ -91,11 +100,11 @@ func extractNTLMv2Hash(type3 []byte, serverChallenge [8]byte) *ntlmCapturedHash 
 		return nil
 	}
 
-	user := readUTF16Field(36)
+	user := readTextField(36)
 	if user == "" {
 		return nil
 	}
-	domain := readUTF16Field(28)
+	domain := readTextField(28)
 
 	// NTProofStr = first 16 bytes of NtChallengeResponse
 	ntProofStr := hex.EncodeToString(ntResponse[:16])
