@@ -18,11 +18,12 @@ require (
 	github.com/jcmturner/gokrb5/v8 v8.4.4
 	github.com/masterzen/winrm v0.0.0-20260407182533-5570be7f80cf
 	github.com/oiweiwei/go-msrpc v1.4.2
+	github.com/oiweiwei/gokrb5.fork/v9 v9.0.6
 	github.com/refraction-networking/utls v1.8.2
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/stretchr/testify v1.11.1
-	golang.org/x/crypto v0.50.0
-	golang.org/x/sys v0.43.0
+	golang.org/x/crypto v0.51.0
+	golang.org/x/sys v0.44.0
 	modernc.org/sqlite v1.48.2
 )
 
@@ -53,7 +54,6 @@ require (
 	github.com/oiweiwei/go-math v1.0.0 // indirect
 	github.com/oiweiwei/go-oem v1.0.0 // indirect
 	github.com/oiweiwei/go-smb2.fork v1.0.1 // indirect
-	github.com/oiweiwei/gokrb5.fork/v9 v9.0.6 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
@@ -66,9 +66,8 @@ require (
 	github.com/tklauser/numcpus v0.11.0 // indirect
 	github.com/xyproto/randomstring v1.2.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
-	golang.org/x/net v0.53.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
+	golang.org/x/net v0.54.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.72.0 // indirect
