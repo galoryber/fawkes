@@ -69,6 +69,7 @@ func psexecCheck(host string, timeout int) structs.CommandResult {
 			result.ServiceCreate = "skipped"
 			result.AdminShareC = "skipped"
 			result.AdminShareADM = "skipped"
+			// go-smb2 returns untyped errors — string matching required
 			if strings.Contains(res.err.Error(), "Access is denied") {
 				result.Recommendation = "Access denied — use make-token with admin credentials first."
 			} else {

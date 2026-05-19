@@ -1181,21 +1181,21 @@ func TestMakeRequest_FailoverToBackup(t *testing.T) {
 	}))
 	defer backup.Close()
 
-	cfg := testConfig("http://127.0.0.1:1") // unreachable port
-	cfg.MaxRetries = 1
-	cfg.Jitter = 0
-	cfg.GetEndpoint = "/test"
-	cfg.PostEndpoint = "/test"
-	cfg.FallbackURLs = []string{backup.URL}
-	p := NewHTTPProfile(cfg)
+	pcfg := testConfig("http://127.0.0.1:1") // unreachable port
+	pcfg.MaxRetries = 1
+	pcfg.Jitter = 0
+	pcfg.GetEndpoint = "/test"
+	pcfg.PostEndpoint = "/test"
+	pcfg.FallbackURLs = []string{backup.URL}
+	p := NewHTTPProfile(pcfg)
 
-	cfg := &sensitiveConfig{
+	scfg := &sensitiveConfig{
 		BaseURL:      "http://127.0.0.1:1",
 		FallbackURLs: []string{backup.URL},
 		UserAgent:    "TestAgent/1.0",
 	}
 
-	resp, err := p.makeRequest("GET", "/test", nil, cfg)
+	resp, err := p.makeRequest("GET", "/test", nil, scfg)
 	if err != nil {
 		t.Fatalf("makeRequest should succeed via fallback, got: %v", err)
 	}
@@ -1287,23 +1287,23 @@ func TestMakeRequest_ConcurrentFailover(t *testing.T) {
 }
 
 func TestSealConfig_PreservesFallbackURLs(t *testing.T) {
-	cfg := testConfig("http://primary:80")
-	cfg.FallbackURLs = []string{"http://backup:80"}
-	p := NewHTTPProfile(cfg)
+	pcfg := testConfig("http://primary:80")
+	pcfg.FallbackURLs = []string{"http://backup:80"}
+	p := NewHTTPProfile(pcfg)
 
 	if err := p.SealConfig(); err != nil {
 		t.Fatalf("SealConfig failed: %v", err)
 	}
 
-	cfg := p.getConfig()
-	if cfg == nil {
+	scfg := p.getConfig()
+	if scfg == nil {
 		t.Fatal("getConfig returned nil after seal")
 	}
-	if cfg.BaseURL != "http://primary:80" {
-		t.Errorf("BaseURL = %q after seal, want http://primary:80", cfg.BaseURL)
+	if scfg.BaseURL != "http://primary:80" {
+		t.Errorf("BaseURL = %q after seal, want http://primary:80", scfg.BaseURL)
 	}
-	if len(cfg.FallbackURLs) != 1 || cfg.FallbackURLs[0] != "http://backup:80" {
-		t.Errorf("FallbackURLs = %v after seal, want [http://backup:80]", cfg.FallbackURLs)
+	if len(scfg.FallbackURLs) != 1 || scfg.FallbackURLs[0] != "http://backup:80" {
+		t.Errorf("FallbackURLs = %v after seal, want [http://backup:80]", scfg.FallbackURLs)
 	}
 	// Struct fields should be zeroed
 	if p.BaseURL != "" {

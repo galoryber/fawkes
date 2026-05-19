@@ -245,8 +245,7 @@ func queryFGPPs(conn *ldap.Conn, baseDN string) string {
 
 	result, err := conn.Search(searchRequest)
 	if err != nil {
-		// Container may not exist (pre-2008 domain, or no FGPPs configured)
-		if strings.Contains(err.Error(), "No Such Object") {
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultNoSuchObject) {
 			return "[*] Fine-Grained Password Policies: None found (no PSO container)\n"
 		}
 		return fmt.Sprintf("[!] Error querying FGPPs: %v\n", err)

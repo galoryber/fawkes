@@ -226,10 +226,10 @@ func ldapShadowCred(conn *ldap.Conn, args ldapWriteArgs, baseDN string) structs.
 
 	if err := conn.Modify(modReq); err != nil {
 		errMsg := fmt.Sprintf("Error writing msDS-KeyCredentialLink: %v", err)
-		if strings.Contains(err.Error(), "Insufficient") || strings.Contains(err.Error(), "access") {
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultInsufficientAccessRights) {
 			errMsg += "\n[!] Insufficient permissions. Need: GenericWrite, WriteProperty on msDS-KeyCredentialLink, or WriteDACL on the target object."
 		}
-		if strings.Contains(err.Error(), "unwilling") || strings.Contains(err.Error(), "Unwilling") {
+		if ldap.IsErrorWithCode(err, ldap.LDAPResultUnwillingToPerform) {
 			errMsg += "\n[!] DC may not support Key Trust. Requires Windows Server 2016+ domain functional level."
 		}
 		return errorResult(errMsg)
