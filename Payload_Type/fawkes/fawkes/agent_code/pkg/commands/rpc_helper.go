@@ -71,6 +71,8 @@ func RunRPCHelper(args []string) {
 		output, err = rpcHelperSvcctlStop(req)
 	case "svcctl-delete":
 		output, err = rpcHelperSvcctlDelete(req)
+	case "coerce":
+		output, err = rpcHelperCoerce(req)
 	default:
 		writeRPCError(fmt.Sprintf("unknown operation: %s", req.Operation))
 		os.Exit(1)
