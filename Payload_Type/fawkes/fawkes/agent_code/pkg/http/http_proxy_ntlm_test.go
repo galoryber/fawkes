@@ -191,18 +191,14 @@ func TestProxyConnectNTLM_BasicFallback(t *testing.T) {
 }
 
 func TestNewHTTPProfile_NTLMProxy(t *testing.T) {
-	p := NewHTTPProfile(
-		"https://c2.example.com",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post", "",
-		"http://proxy.corp.com:8080",
-		"corpuser",
-		"corppass",
-		"CORP",
-		"none", "", "", "",
-		nil, nil, 0)
+	p := NewHTTPProfile(ProfileConfig{
+		BaseURL: "https://c2.example.com", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post",
+		ProxyURL: "http://proxy.corp.com:8080",
+		ProxyUser: "corpuser", ProxyPass: "corppass", ProxyDomain: "CORP",
+		TLSVerify: "none",
+	})
 	if p == nil {
 		t.Fatal("NewHTTPProfile returned nil with NTLM proxy config")
 	}
@@ -219,18 +215,14 @@ func TestNewHTTPProfile_NTLMProxy(t *testing.T) {
 }
 
 func TestNewHTTPProfile_NTLMProxyNoDomain(t *testing.T) {
-	p := NewHTTPProfile(
-		"https://c2.example.com",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post", "",
-		"http://proxy.corp.com:8080",
-		"corpuser",
-		"corppass",
-		"",
-		"none", "", "", "",
-		nil, nil, 0)
+	p := NewHTTPProfile(ProfileConfig{
+		BaseURL: "https://c2.example.com", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post",
+		ProxyURL: "http://proxy.corp.com:8080",
+		ProxyUser: "corpuser", ProxyPass: "corppass",
+		TLSVerify: "none",
+	})
 	if p == nil {
 		t.Fatal("NewHTTPProfile returned nil")
 	}

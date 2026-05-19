@@ -274,29 +274,29 @@ func initHTTPC2(cfg parsedConfig) (*c2Setup, error) {
 		}
 	}
 
-	httpProfile := http.NewHTTPProfile(
-		callbackURL,
-		userAgent,
-		encryptionKey,
-		cfg.maxRetries,
-		cfg.sleepInterval,
-		cfg.jitter,
-		cfg.debug,
-		getURI,
-		postURI,
-		hostHeader,
-		proxyURL,
-		proxyUser,
-		proxyPass,
-		proxyDomain,
-		tlsVerify,
-		tlsFingerprint,
-		decodedCert,
-		decodedKey,
-		fallbackURLs,
-		ctList,
-		cfg.recoverySeconds,
-	)
+	httpProfile := http.NewHTTPProfile(http.ProfileConfig{
+		BaseURL:         callbackURL,
+		UserAgent:       userAgent,
+		EncryptionKey:   encryptionKey,
+		MaxRetries:      cfg.maxRetries,
+		SleepInterval:   cfg.sleepInterval,
+		Jitter:          cfg.jitter,
+		Debug:           cfg.debug,
+		GetEndpoint:     getURI,
+		PostEndpoint:    postURI,
+		HostHeader:      hostHeader,
+		ProxyURL:        proxyURL,
+		ProxyUser:       proxyUser,
+		ProxyPass:       proxyPass,
+		ProxyDomain:     proxyDomain,
+		TLSVerify:       tlsVerify,
+		TLSFingerprint:  tlsFingerprint,
+		MTLSCertPEM:     decodedCert,
+		MTLSKeyPEM:      decodedKey,
+		FallbackURLs:    fallbackURLs,
+		ContentTypes:    ctList,
+		RecoverySeconds: cfg.recoverySeconds,
+	})
 	// Set configurable HTTP timeout
 	if cfg.httpTimeout != 30 {
 		httpProfile.SetTimeout(cfg.httpTimeout)

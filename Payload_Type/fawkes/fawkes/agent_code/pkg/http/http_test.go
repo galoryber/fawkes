@@ -494,28 +494,21 @@ func TestGetString_NonStringValue(t *testing.T) {
 
 // --- NewHTTPProfile Tests ---
 
+func testConfig(baseURL string) ProfileConfig {
+	return ProfileConfig{
+		BaseURL:       baseURL,
+		UserAgent:     "TestAgent/1.0",
+		MaxRetries:    10,
+		SleepInterval: 5,
+		Jitter:        10,
+		GetEndpoint:   "/get",
+		PostEndpoint:  "/post",
+		TLSVerify:     "none",
+	}
+}
+
 func TestNewHTTPProfile_BasicConfig(t *testing.T) {
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"none",
-		"",
-		"", "",
-		nil,
-		nil,
-		0)
+	p := NewHTTPProfile(testConfig("http://localhost:80"))
 
 	if p.BaseURL != "http://localhost:80" {
 		t.Errorf("BaseURL = %q, want %q", p.BaseURL, "http://localhost:80")
@@ -532,27 +525,9 @@ func TestNewHTTPProfile_BasicConfig(t *testing.T) {
 }
 
 func TestNewHTTPProfile_WithProxy(t *testing.T) {
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"http://proxy:8080",
-		"",
-		"",
-		"",
-		"none",
-		"",
-		"", "",
-		nil,
-		nil,
-		0)
+	cfg := testConfig("http://localhost:80")
+	cfg.ProxyURL = "http://proxy:8080"
+	p := NewHTTPProfile(cfg)
 
 	if p.client == nil {
 		t.Error("client should not be nil even with proxy")
@@ -560,27 +535,9 @@ func TestNewHTTPProfile_WithProxy(t *testing.T) {
 }
 
 func TestNewHTTPProfile_WithHostHeader(t *testing.T) {
-	p := NewHTTPProfile(
-		"http://realserver:80",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"fronted.example.com",
-		"",
-		"",
-		"",
-		"",
-		"none",
-		"",
-		"", "",
-		nil,
-		nil,
-		0)
+	cfg := testConfig("http://realserver:80")
+	cfg.HostHeader = "fronted.example.com"
+	p := NewHTTPProfile(cfg)
 
 	if p.HostHeader != "fronted.example.com" {
 		t.Errorf("HostHeader = %q, want %q", p.HostHeader, "fronted.example.com")
@@ -591,27 +548,11 @@ func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
 	key := make([]byte, 32)
 	keyB64 := base64.StdEncoding.EncodeToString(key)
 
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		keyB64,
-		10,
-		5,
-		10,
-		true,
-		"/get",
-		"/post",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"system-ca",
-		"",
-		"", "",
-		nil,
-		nil,
-		0)
+	cfg := testConfig("http://localhost:80")
+	cfg.EncryptionKey = keyB64
+	cfg.Debug = true
+	cfg.TLSVerify = "system-ca"
+	p := NewHTTPProfile(cfg)
 
 	if p.EncryptionKey != keyB64 {
 		t.Errorf("EncryptionKey not set correctly")
@@ -623,27 +564,9 @@ func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
 
 func TestNewHTTPProfile_InvalidProxy(t *testing.T) {
 	// Invalid proxy URL should not crash — silently ignored
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"://not-a-valid-url",
-		"",
-		"",
-		"",
-		"none",
-		"",
-		"", "",
-		nil,
-		nil,
-		0)
+	cfg := testConfig("http://localhost:80")
+	cfg.ProxyURL = "://not-a-valid-url"
+	p := NewHTTPProfile(cfg)
 
 	if p.client == nil {
 		t.Error("client should not be nil even with invalid proxy")
@@ -655,16 +578,10 @@ func TestNewHTTPProfile_WithMTLS(t *testing.T) {
 	certPEM, keyPEM := generateTestCertPEM(t)
 
 	// mTLS with valid cert — should not crash, client should be configured
-	p := NewHTTPProfile(
-		"https://localhost:443",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post",
-		"", "", "", "", "",
-		"none", "",
-		certPEM, keyPEM,
-		nil, nil, 0)
+	cfg := testConfig("https://localhost:443")
+	cfg.MTLSCertPEM = certPEM
+	cfg.MTLSKeyPEM = keyPEM
+	p := NewHTTPProfile(cfg)
 
 	if p == nil {
 		t.Fatal("NewHTTPProfile with mTLS returned nil")
@@ -686,16 +603,10 @@ func TestNewHTTPProfile_WithMTLS(t *testing.T) {
 
 func TestNewHTTPProfile_WithInvalidMTLS(t *testing.T) {
 	// Invalid cert/key — should not crash, just skip mTLS
-	p := NewHTTPProfile(
-		"https://localhost:443",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post",
-		"", "", "", "", "",
-		"none", "",
-		"invalid-cert", "invalid-key",
-		nil, nil, 0)
+	cfg := testConfig("https://localhost:443")
+	cfg.MTLSCertPEM = "invalid-cert"
+	cfg.MTLSKeyPEM = "invalid-key"
+	p := NewHTTPProfile(cfg)
 
 	if p == nil {
 		t.Fatal("NewHTTPProfile with invalid mTLS returned nil")
@@ -718,16 +629,7 @@ func TestNewHTTPProfile_WithInvalidMTLS(t *testing.T) {
 
 func TestNewHTTPProfile_WithEmptyMTLS(t *testing.T) {
 	// Empty cert/key — no mTLS configured
-	p := NewHTTPProfile(
-		"https://localhost:443",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post",
-		"", "", "", "", "",
-		"none", "",
-		"", "",
-		nil, nil, 0)
+	p := NewHTTPProfile(testConfig("https://localhost:443"))
 
 	if p == nil {
 		t.Fatal("NewHTTPProfile returned nil")
@@ -1279,18 +1181,13 @@ func TestMakeRequest_FailoverToBackup(t *testing.T) {
 	}))
 	defer backup.Close()
 
-	p := NewHTTPProfile(
-		"http://127.0.0.1:1", // unreachable port
-		"TestAgent/1.0",
-		"",
-		1, 5, 0, false,
-		"/test", "/test",
-		"", "", "", "", "", "none", "",
-		"", "",
-		[]string{backup.URL}, // fallback,
-		nil,
-		0,
-	)
+	cfg := testConfig("http://127.0.0.1:1") // unreachable port
+	cfg.MaxRetries = 1
+	cfg.Jitter = 0
+	cfg.GetEndpoint = "/test"
+	cfg.PostEndpoint = "/test"
+	cfg.FallbackURLs = []string{backup.URL}
+	p := NewHTTPProfile(cfg)
 
 	cfg := &sensitiveConfig{
 		BaseURL:      "http://127.0.0.1:1",
@@ -1313,20 +1210,13 @@ func TestMakeRequest_FailoverToBackup(t *testing.T) {
 }
 
 func TestMakeRequest_AllFail(t *testing.T) {
-	p := NewHTTPProfile(
-		"http://127.0.0.1:1",
-		"TestAgent/1.0",
-		"",
-		1, 5, 0, false,
-		"/test", "/test",
-		"", "",
- "",
- "",
- "", "none", "",
-		"", "",
-		[]string{"http://127.0.0.1:2"},
-		nil,
-		0)
+	pcfg := testConfig("http://127.0.0.1:1")
+	pcfg.MaxRetries = 1
+	pcfg.Jitter = 0
+	pcfg.GetEndpoint = "/test"
+	pcfg.PostEndpoint = "/test"
+	pcfg.FallbackURLs = []string{"http://127.0.0.1:2"}
+	p := NewHTTPProfile(pcfg)
 
 	cfg := &sensitiveConfig{
 		BaseURL:      "http://127.0.0.1:1",
@@ -1342,20 +1232,9 @@ func TestMakeRequest_AllFail(t *testing.T) {
 
 func TestNewHTTPProfile_WithFallbackURLs(t *testing.T) {
 	fallbacks := []string{"http://backup1:80", "http://backup2:80"}
-	p := NewHTTPProfile(
-		"http://primary:80",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post",
-		"", "",
- "",
- "",
- "", "none", "",
-		"", "",
-		fallbacks,
-		nil,
-		0)
+	cfg := testConfig("http://primary:80")
+	cfg.FallbackURLs = fallbacks
+	p := NewHTTPProfile(cfg)
 
 	if len(p.FallbackURLs) != 2 {
 		t.Fatalf("FallbackURLs = %v, want 2 entries", p.FallbackURLs)
@@ -1373,20 +1252,13 @@ func TestMakeRequest_ConcurrentFailover(t *testing.T) {
 	}))
 	defer server.Close()
 
-	p := NewHTTPProfile(
-		server.URL,
-		"TestAgent/1.0",
-		"",
-		1, 5, 0, false,
-		"/test", "/test",
-		"", "",
- "",
- "",
- "", "none", "",
-		"", "",
-		[]string{server.URL + "/fb1", server.URL + "/fb2"},
-		nil,
-		0)
+	ccfg := testConfig(server.URL)
+	ccfg.MaxRetries = 1
+	ccfg.Jitter = 0
+	ccfg.GetEndpoint = "/test"
+	ccfg.PostEndpoint = "/test"
+	ccfg.FallbackURLs = []string{server.URL + "/fb1", server.URL + "/fb2"}
+	p := NewHTTPProfile(ccfg)
 
 	cfg := &sensitiveConfig{
 		BaseURL:      server.URL,
@@ -1415,20 +1287,9 @@ func TestMakeRequest_ConcurrentFailover(t *testing.T) {
 }
 
 func TestSealConfig_PreservesFallbackURLs(t *testing.T) {
-	p := NewHTTPProfile(
-		"http://primary:80",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post",
-		"", "",
- "",
- "",
- "", "none", "",
-		"", "",
-		[]string{"http://backup:80"},
-		nil,
-		0)
+	cfg := testConfig("http://primary:80")
+	cfg.FallbackURLs = []string{"http://backup:80"}
+	p := NewHTTPProfile(cfg)
 
 	if err := p.SealConfig(); err != nil {
 		t.Fatalf("SealConfig failed: %v", err)
@@ -1524,19 +1385,11 @@ func TestResolveURITokens_Empty(t *testing.T) {
 // --- Proxy Authentication Tests ---
 
 func TestNewHTTPProfile_WithProxyAuth(t *testing.T) {
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post", "",
-		"http://proxy:8080",
-		"proxyuser",
-		"proxypass",
-		"",
-		"none", "",
-		"", "",
-		nil, nil, 0)
+	cfg := testConfig("http://localhost:80")
+	cfg.ProxyURL = "http://proxy:8080"
+	cfg.ProxyUser = "proxyuser"
+	cfg.ProxyPass = "proxypass"
+	p := NewHTTPProfile(cfg)
 
 	if p.client == nil {
 		t.Fatal("client should not be nil with proxy auth")
@@ -1554,19 +1407,11 @@ func TestNewHTTPProfile_WithProxyAuth(t *testing.T) {
 
 func TestNewHTTPProfile_WithProxyEmbeddedCreds(t *testing.T) {
 	// Credentials embedded in the URL take precedence
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post", "",
-		"http://embeduser:embedpass@proxy:8080",
-		"separate-user",
-		"separate-pass",
-		"",
-		"none", "",
-		"", "",
-		nil, nil, 0)
+	cfg := testConfig("http://localhost:80")
+	cfg.ProxyURL = "http://embeduser:embedpass@proxy:8080"
+	cfg.ProxyUser = "separate-user"
+	cfg.ProxyPass = "separate-pass"
+	p := NewHTTPProfile(cfg)
 
 	if p.client == nil {
 		t.Fatal("client should not be nil")
@@ -1579,19 +1424,10 @@ func TestNewHTTPProfile_WithProxyEmbeddedCreds(t *testing.T) {
 
 func TestNewHTTPProfile_ProxyUserOnly(t *testing.T) {
 	// proxyUser without proxyPass
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post", "",
-		"http://proxy:8080",
-		"onlyuser",
-		"",
-		"",
-		"none", "",
-		"", "",
-		nil, nil, 0)
+	cfg := testConfig("http://localhost:80")
+	cfg.ProxyURL = "http://proxy:8080"
+	cfg.ProxyUser = "onlyuser"
+	p := NewHTTPProfile(cfg)
 
 	if p.client == nil {
 		t.Fatal("client should not be nil")
@@ -1600,16 +1436,7 @@ func TestNewHTTPProfile_ProxyUserOnly(t *testing.T) {
 
 func TestNewHTTPProfile_SystemProxy(t *testing.T) {
 	// No explicit proxy — should use systemProxyFunc()
-	p := NewHTTPProfile(
-		"http://localhost:80",
-		"TestAgent/1.0",
-		"",
-		10, 5, 10, false,
-		"/get", "/post", "",
-		"", "", "", "",
-		"none", "",
-		"", "",
-		nil, nil, 0)
+	p := NewHTTPProfile(testConfig("http://localhost:80"))
 
 	transport := p.client.Transport.(*http.Transport)
 	if transport.Proxy == nil {
@@ -1629,16 +1456,11 @@ func TestMakeRequest_ProxyAuthInTransport(t *testing.T) {
 	defer ts.Close()
 
 	// Create profile pointing directly at test server (simulating proxy)
-	p := NewHTTPProfile(
-		ts.URL,
-		"Mozilla/5.0 Chrome/134.0.0.0",
-		"",
-		1, 5, 0, false,
-		"/test", "/test", "",
-		"", "", "", "",
-		"none", "",
-		"", "",
-		nil, nil, 0)
+	p := NewHTTPProfile(ProfileConfig{
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		MaxRetries: 1, SleepInterval: 5,
+		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
+	})
 
 	resp, err := p.makeRequest("GET", "/test", nil, nil)
 	if err != nil {
@@ -1662,8 +1484,11 @@ func TestMakeRequest_MultipleCustomHeaders(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
-		1, 5, 0, false, "/test", "/test", "", "", "", "", "", "none", "", "", "", nil, nil, 0)
+	p := NewHTTPProfile(ProfileConfig{
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		MaxRetries: 1, SleepInterval: 5,
+		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
+	})
 
 	p.CustomHeaders = map[string]string{
 		"X-Forwarded-For": "10.0.0.1",
@@ -1696,8 +1521,11 @@ func TestMakeRequest_CustomHeadersEmptyMap(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
-		1, 5, 0, false, "/test", "/test", "", "", "", "", "", "none", "", "", "", nil, nil, 0)
+	p := NewHTTPProfile(ProfileConfig{
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		MaxRetries: 1, SleepInterval: 5,
+		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
+	})
 	p.CustomHeaders = map[string]string{}
 
 	resp, err := p.makeRequest("GET", "/test", nil, nil)
@@ -1720,8 +1548,11 @@ func TestMakeRequest_CustomHeadersFromSealed(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
-		1, 5, 0, false, "/test", "/test", "", "", "", "", "", "none", "", "", "", nil, nil, 0)
+	p := NewHTTPProfile(ProfileConfig{
+		BaseURL: ts.URL, UserAgent: "Mozilla/5.0 Chrome/134.0.0.0",
+		MaxRetries: 1, SleepInterval: 5,
+		GetEndpoint: "/test", PostEndpoint: "/test", TLSVerify: "none",
+	})
 
 	p.CustomHeaders = map[string]string{
 		"X-Custom-Sealed": "vault-value",

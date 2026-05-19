@@ -105,27 +105,13 @@ func TestRotationPoolHasExpectedBrowsers(t *testing.T) {
 }
 
 func TestNewHTTPProfile_WithRotateFingerprint(t *testing.T) {
-	p := NewHTTPProfile(
-		"https://localhost:443",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"none",
-		"rotate",
-		"", "",
-		nil,
-		nil,
-		0)
+	cfg := ProfileConfig{
+		BaseURL: "https://localhost:443", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post",
+		TLSVerify: "none", TLSFingerprint: "rotate",
+	}
+	p := NewHTTPProfile(cfg)
 	if p == nil {
 		t.Fatal("NewHTTPProfile returned nil")
 	}
@@ -162,27 +148,13 @@ func TestTlsFingerprintID_Whitespace(t *testing.T) {
 
 func TestNewHTTPProfile_WithTLSFingerprint(t *testing.T) {
 	// When fingerprint is set, DialTLSContext should be configured (non-nil transport)
-	p := NewHTTPProfile(
-		"https://localhost:443",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"none",
-		"chrome",
-		"", "",
-		nil,
-		nil,
-		0)
+	cfg := ProfileConfig{
+		BaseURL: "https://localhost:443", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post",
+		TLSVerify: "none", TLSFingerprint: "chrome",
+	}
+	p := NewHTTPProfile(cfg)
 	if p == nil {
 		t.Fatal("NewHTTPProfile returned nil")
 	}
@@ -193,27 +165,13 @@ func TestNewHTTPProfile_WithTLSFingerprint(t *testing.T) {
 
 func TestNewHTTPProfile_WithoutTLSFingerprint(t *testing.T) {
 	// When fingerprint is "go" or empty, standard TLS should be used
-	p := NewHTTPProfile(
-		"https://localhost:443",
-		"TestAgent/1.0",
-		"",
-		10,
-		5,
-		10,
-		false,
-		"/get",
-		"/post",
-		"",
-		"",
-		"",
-		"",
-		"",
-		"none",
-		"go",
-		"", "",
-		nil,
-		nil,
-		0)
+	cfg := ProfileConfig{
+		BaseURL: "https://localhost:443", UserAgent: "TestAgent/1.0",
+		MaxRetries: 10, SleepInterval: 5, Jitter: 10,
+		GetEndpoint: "/get", PostEndpoint: "/post",
+		TLSVerify: "none", TLSFingerprint: "go",
+	}
+	p := NewHTTPProfile(cfg)
 	if p == nil {
 		t.Fatal("NewHTTPProfile returned nil")
 	}
