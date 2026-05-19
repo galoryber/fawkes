@@ -173,7 +173,9 @@ func writeConnect(conn net.Conn, targetAddr, authHeader string) error {
 
 func drainBody(resp *http.Response) {
 	if resp.Body != nil {
-		_, _ = io.Copy(io.Discard, resp.Body)
+		if resp.ContentLength >= 0 {
+			_, _ = io.Copy(io.Discard, resp.Body)
+		}
 		_ = resp.Body.Close()
 	}
 }
