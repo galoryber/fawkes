@@ -35,7 +35,6 @@ local:
 test:
 	cd ./fawkes/agent_code && go test ./pkg/commands/ -timeout=300s -count=1
 	cd ./fawkes/agent_code && go test ./pkg/http/ -timeout=60s -count=1
-	cd ./fawkes/agent_code && go test ./... -timeout=60s -count=1 -run "^$$" 2>/dev/null || true
 	cd ./fawkes/agentfunctions && go test ./... -timeout=60s -count=1
 
 test-verbose:
@@ -49,12 +48,17 @@ lint:
 	@command -v golangci-lint >/dev/null 2>&1 && \
 		(cd ./fawkes/agent_code && golangci-lint run ./...) || \
 		echo "golangci-lint not installed, skipping"
+	@command -v gosec >/dev/null 2>&1 && \
+		(cd ./fawkes/agent_code && gosec -quiet ./...) || \
+		echo "gosec not installed, skipping (go install github.com/securego/gosec/v2/cmd/gosec@latest)"
 
 coverage:
 	cd ./fawkes/agent_code && go test ./pkg/commands/ -timeout=300s -coverprofile=coverage_commands.out && \
 		go tool cover -func=coverage_commands.out | tail -1
 	cd ./fawkes/agent_code && go test ./pkg/http/ -timeout=60s -coverprofile=coverage_http.out && \
 		go tool cover -func=coverage_http.out | tail -1
+	cd ./fawkes/agentfunctions && go test ./... -timeout=60s -coverprofile=coverage_agentfunctions.out && \
+		go tool cover -func=coverage_agentfunctions.out | tail -1
 
 fmt:
 	cd ./fawkes/agent_code && gofmt -w .
@@ -71,6 +75,7 @@ vuln:
 
 clean:
 	rm -f fawkes/agent_code/coverage_*.out
+	rm -f fawkes/agentfunctions/coverage_*.out
 	rm -f ${BINARY_NAME}
 
 run_custom: local
