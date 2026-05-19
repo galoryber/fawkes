@@ -80,6 +80,26 @@ func (m *Manager) DrainOutbound() []structs.SocksMsg {
 	return msgs
 }
 
+const maxRequeueMessages = 500
+
+// RequeuePending pushes undelivered messages back to the front of the outbound
+// queue so they are included in the next checkin attempt. Bounded to prevent
+// unbounded memory growth if the server is unreachable for extended periods.
+func (m *Manager) RequeuePending(msgs []structs.SocksMsg) {
+	if len(msgs) == 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	combined := make([]structs.SocksMsg, 0, len(msgs)+len(m.outbound))
+	combined = append(combined, msgs...)
+	combined = append(combined, m.outbound...)
+	if len(combined) > maxRequeueMessages {
+		combined = combined[len(combined)-maxRequeueMessages:]
+	}
+	m.outbound = combined
+}
+
 // HandleMessages processes inbound SOCKS messages from Mythic
 func (m *Manager) HandleMessages(msgs []structs.SocksMsg) {
 	for _, msg := range msgs {

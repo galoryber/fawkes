@@ -191,11 +191,13 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			tasks, inboundSocks, err := c2.GetTasking(agent, outboundSocks)
 			if err != nil {
 				log.Printf("poll error: %v", err)
+				if len(outboundSocks) > 0 {
+					socksManager.RequeuePending(outboundSocks)
+				}
 				retryCount++
-				// Exponential backoff: sleep 2^(retryCount-1) * base interval, capped at 5 minutes
-				backoffMultiplier := 1 << min(retryCount-1, 8) // 1, 2, 4, 8, 16, ...
+				backoffMultiplier := 1 << min(retryCount-1, 8)
 				backoffSeconds := agent.SleepInterval * backoffMultiplier
-				maxBackoff := 300 // 5 minutes cap
+				maxBackoff := 300
 				if backoffSeconds > maxBackoff {
 					backoffSeconds = maxBackoff
 				}

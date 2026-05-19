@@ -95,6 +95,46 @@ func TestDrainOutbound_Concurrent(t *testing.T) {
 	}
 }
 
+// --- RequeuePending Tests ---
+
+func TestRequeuePending_Empty(t *testing.T) {
+	m := NewManager()
+	m.RequeuePending(nil)
+	msgs := m.DrainOutbound()
+	if msgs != nil {
+		t.Errorf("RequeuePending(nil) should not add messages, got %d", len(msgs))
+	}
+}
+
+func TestRequeuePending_PrependsToOutbound(t *testing.T) {
+	m := NewManager()
+	m.mu.Lock()
+	m.outbound = append(m.outbound, structs.SocksMsg{ServerId: 100})
+	m.mu.Unlock()
+
+	m.RequeuePending([]structs.SocksMsg{{ServerId: 1}, {ServerId: 2}})
+	msgs := m.DrainOutbound()
+	if len(msgs) != 3 {
+		t.Fatalf("Expected 3 messages, got %d", len(msgs))
+	}
+	if msgs[0].ServerId != 1 || msgs[1].ServerId != 2 || msgs[2].ServerId != 100 {
+		t.Errorf("Expected requeued messages first, got %v", msgs)
+	}
+}
+
+func TestRequeuePending_BoundsAtMax(t *testing.T) {
+	m := NewManager()
+	pending := make([]structs.SocksMsg, maxRequeueMessages+100)
+	for i := range pending {
+		pending[i] = structs.SocksMsg{ServerId: uint32(i)}
+	}
+	m.RequeuePending(pending)
+	msgs := m.DrainOutbound()
+	if len(msgs) != maxRequeueMessages {
+		t.Errorf("Expected %d messages (max), got %d", maxRequeueMessages, len(msgs))
+	}
+}
+
 // --- sendReply Tests ---
 
 func TestSendReply_Success(t *testing.T) {
