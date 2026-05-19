@@ -90,6 +90,20 @@ func init() {
 				},
 			},
 			{
+				Name:             "assembly_b64",
+				ModalDisplayName: "Assembly (Base64)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Base64-encoded .NET assembly bytes (for CLI/API usage)",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: true,
+						GroupName:           "CLI",
+						UIModalPosition:     0,
+					},
+				},
+			},
+			{
 				Name:             "arguments",
 				ModalDisplayName: "Assembly Arguments",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
@@ -104,6 +118,11 @@ func init() {
 					{
 						ParameterIsRequired: false,
 						GroupName:           "New File",
+						UIModalPosition:     1,
+					},
+					{
+						ParameterIsRequired: false,
+						GroupName:           "CLI",
 						UIModalPosition:     1,
 					},
 				},
@@ -174,11 +193,26 @@ func init() {
 			var filename string
 			var fileContents []byte
 
+			// Check for CLI group (assembly_b64 provided directly)
+			cliB64, _ := taskData.Args.GetStringArg("assembly_b64")
+			if cliB64 != "" {
+				decoded, err := base64.StdEncoding.DecodeString(cliB64)
+				if err != nil {
+					response.Success = false
+					response.Error = "Invalid base64 in assembly_b64: " + err.Error()
+					return response
+				}
+				fileContents = decoded
+				filename = "cli-assembly"
+			}
+
 			// Check if this is a Forge invocation
 			forgeFileID, forgeErr := taskData.Args.GetStringArg("assembly_file")
 			isForgeCall := (forgeErr == nil && forgeFileID != "")
 
-			if isForgeCall {
+			if fileContents != nil {
+				// Already have contents from CLI group — skip file resolution
+			} else if isForgeCall {
 				// Forge invocation - use Forge parameter names
 				// Get file details
 				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
