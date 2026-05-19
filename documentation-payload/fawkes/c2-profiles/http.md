@@ -67,6 +67,26 @@ All messages use AES-256-CBC encryption with HMAC-SHA256 authentication:
 6. Base64 encoded
 7. Body transforms applied (if configured)
 
+## Proxy Support
+
+Fawkes supports routing C2 traffic through HTTP proxies, including enterprise proxies that require authentication.
+
+| Parameter | Description |
+|-----------|-------------|
+| `proxy_url` | Proxy URL (e.g., `http://proxy:8080` or `socks5://127.0.0.1:1080`) |
+| `proxy_user` | Proxy authentication username |
+| `proxy_pass` | Proxy authentication password |
+| `proxy_domain` | NTLM domain (e.g., `CORP`). When set, uses NTLM authentication instead of Basic |
+
+**Authentication modes:**
+- **No auth**: Leave `proxy_user` empty. Proxy is used without credentials.
+- **Basic auth**: Set `proxy_user` and `proxy_pass`. Credentials are sent via standard `Proxy-Authorization: Basic` header.
+- **NTLM auth**: Set `proxy_user`, `proxy_pass`, and `proxy_domain`. The agent performs a full NTLM handshake (Type1→Type2→Type3) during the CONNECT tunnel establishment. Required for enterprise proxies using Windows domain authentication.
+
+**System proxy detection (Windows):** When `proxy_url` is empty, the agent queries WinHTTP for system proxy settings, including PAC file and WPAD auto-detection. On non-Windows platforms, `HTTP_PROXY`/`HTTPS_PROXY` environment variables are used.
+
+**uTLS compatibility:** NTLM proxy authentication works with TLS fingerprinting — the proxy tunnel is established first, then the uTLS handshake occurs over the tunnel.
+
 ## OPSEC Considerations
 
 - TLS fingerprinting prevents JA3-based detection
@@ -76,9 +96,11 @@ All messages use AES-256-CBC encryption with HMAC-SHA256 authentication:
 - Config vault encrypts C2 parameters in memory (AES-256-GCM)
 - Sleep mask encrypts all agent data during sleep cycles
 - Domain fronting hides true C2 destination from network observers
+- Proxy credentials are XOR-encrypted in the binary (with `obfuscate_strings`)
 
 ## MITRE ATT&CK Mapping
 
 - **T1071.001** — Application Layer Protocol: Web Protocols
 - **T1573.001** — Encrypted Channel: Symmetric Cryptography
+- **T1090.002** — Proxy: External Proxy
 - **T1090.004** — Proxy: Domain Fronting

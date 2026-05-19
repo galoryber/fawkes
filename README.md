@@ -522,6 +522,10 @@ Set the **proxy_url** build parameter to route agent traffic through an HTTP or 
 
 Examples: `http://proxy.corp.local:8080`, `socks5://127.0.0.1:1080`
 
+**Authenticated proxies:** Set **proxy_user** and **proxy_pass** for Basic authentication. For enterprise proxies requiring Windows domain authentication, also set **proxy_domain** (e.g., `CORP`) to enable NTLM authentication. The NTLM handshake (Type1→Type2→Type3) is performed automatically during the CONNECT tunnel establishment.
+
+**System proxy detection (Windows):** When proxy_url is not set, the agent queries WinHTTP for system proxy settings including PAC/WPAD auto-detection.
+
 ### Build Path Stripping (-trimpath)
 
 All builds use Go's `-trimpath` flag to strip local filesystem paths from the compiled binary. Without this, paths like `/home/user/project/...` and `/go/pkg/mod/...` leak into the binary through panic traces and runtime metadata. Combined with `-s -w` (symbol stripping) and empty `-buildid`, this minimizes forensic information in the binary. Garble builds already handle this; `-trimpath` covers non-garble builds.
