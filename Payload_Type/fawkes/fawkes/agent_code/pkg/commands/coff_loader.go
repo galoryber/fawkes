@@ -46,11 +46,12 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 	bssSize := uint32(0)
 
 	// Calculate sizes for special sections
+	// Allocate GOT space for all external symbols (some non-__imp_ symbols
+	// may resolve as Beacon API functions or Library$Function imports)
 	for _, symbol := range parsedCoff.Symbols {
 		if isSpecialSymbol(symbol) {
-			if isImportSymbol(symbol) {
-				gotSize += 8
-			} else {
+			gotSize += 8
+			if !isImportSymbol(symbol) {
 				bssSize += symbol.Value + 8
 			}
 		}
@@ -119,13 +120,10 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			symbolDefAddress := uintptr(0)
 
 			if isSpecialSymbol(symbol) {
-				if isImportSymbol(symbol) {
-					externalAddress := resolveExternalSymbol(symbol.NameString(), outputChan)
+				// Try resolving as an import first (handles both __imp_ and bare names)
+				externalAddress := resolveExternalSymbol(symbol.NameString(), outputChan)
 
-					if externalAddress == 0 {
-						return "", fmt.Errorf("failed to resolve external symbol: %s", symbol.NameString())
-					}
-
+				if externalAddress != 0 {
 					if existingGotAddress, exists := gotMap[symbol.NameString()]; exists {
 						symbolDefAddress = existingGotAddress
 					} else {
@@ -137,6 +135,8 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 						gotMap[symbol.NameString()] = symbolDefAddress
 					}
 					*(*uint64)(unsafe.Pointer(symbolDefAddress)) = uint64(externalAddress)
+				} else if isImportSymbol(symbol) {
+					return "", fmt.Errorf("failed to resolve external symbol: %s", symbol.NameString())
 				} else {
 					if uintptr(bssOffset)+uintptr(symbol.Value)+8 > uintptr(bssSize) {
 						return "", fmt.Errorf("BSS overflow: offset %d + size %d exceeds allocated %d", bssOffset, symbol.Value+8, bssSize)
@@ -243,17 +243,18 @@ func isImportSymbol(sym *pecoff.Symbol) bool {
 }
 
 func resolveExternalSymbol(symbolName string, outChannel chan<- interface{}) uintptr {
-	if !strings.HasPrefix(symbolName, "__imp_") {
-		return 0
+	// Strip __imp_ prefix if present; also handle symbols without it
+	// (BOFs compiled without __declspec(dllimport))
+	cleanName := symbolName
+	if strings.HasPrefix(cleanName, "__imp_") {
+		cleanName = cleanName[6:]
 	}
-
-	symbolName = symbolName[6:] // Remove "__imp_" prefix
-	if strings.HasPrefix(symbolName, "_") {
-		symbolName = symbolName[1:]
+	if strings.HasPrefix(cleanName, "_") {
+		cleanName = cleanName[1:]
 	}
 
 	// Check for Beacon API functions - use OUR implementations
-	switch symbolName {
+	switch cleanName {
 	case "BeaconOutput":
 		return windows.NewCallback(getBeaconOutputCallback(outChannel))
 	case "BeaconDataParse":
@@ -271,8 +272,8 @@ func resolveExternalSymbol(symbolName string, outChannel chan<- interface{}) uin
 	}
 
 	// Dynamic Function Resolution (Library$Function format)
-	if strings.Contains(symbolName, "$") {
-		parts := strings.Split(symbolName, "$")
+	if strings.Contains(cleanName, "$") {
+		parts := strings.Split(cleanName, "$")
 		libName := parts[0] + ".dll"
 		procName := parts[1]
 
@@ -289,7 +290,7 @@ func resolveExternalSymbol(symbolName string, outChannel chan<- interface{}) uin
 
 	// Standard library functions
 	var libName string
-	switch symbolName {
+	switch cleanName {
 	case "FreeLibrary", "LoadLibraryA", "GetProcAddress", "GetModuleHandleA":
 		libName = "kernel32.dll"
 	case "MessageBoxA":
@@ -302,7 +303,7 @@ func resolveExternalSymbol(symbolName string, outChannel chan<- interface{}) uin
 	if err != nil {
 		return 0
 	}
-	proc, err := syscall.GetProcAddress(lib, symbolName)
+	proc, err := syscall.GetProcAddress(lib, cleanName)
 	if err != nil {
 		return 0
 	}
