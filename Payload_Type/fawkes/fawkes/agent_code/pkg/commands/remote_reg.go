@@ -5,13 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	"fawkes/pkg/structs"
 
-	"github.com/oiweiwei/go-msrpc/dcerpc"
 	"github.com/oiweiwei/go-msrpc/msrpc/rrp/winreg/v1"
-	"github.com/oiweiwei/go-msrpc/ssp"
 
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
 )
@@ -114,50 +111,6 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Error parsing result: %v", err)
 	}
 	return successResult(result.Text)
-}
-
-// remoteRegConnect establishes a DCE-RPC connection to the remote winreg service
-// and opens the specified hive. Returns the client, hive key handle, context, and cancel func.
-func remoteRegConnect(args remoteRegArgs) (winreg.WinregClient, *winreg.Key, context.Context, context.CancelFunc, func(), error) {
-	cred, credErr := rpcCredential(args.Username, args.Domain, args.Password, args.Hash)
-	structs.ZeroString(&args.Password)
-	structs.ZeroString(&args.Hash)
-	if credErr != nil {
-		return nil, nil, nil, nil, nil, fmt.Errorf("%v for remote registry access", credErr)
-	}
-
-	ctx, cancel := rpcSecurityContext(cred, time.Duration(args.Timeout)*time.Second)
-
-	cc, err := dcerpc.Dial(ctx, args.Server,
-		dcerpc.WithEndpoint("ncacn_np:[winreg]"),
-		dcerpc.WithCredentials(cred),
-		dcerpc.WithMechanism(ssp.SPNEGO),
-		dcerpc.WithMechanism(ssp.NTLM),
-	)
-	if err != nil {
-		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("DCE-RPC connection failed: %w", err)
-	}
-
-	cli, err := winreg.NewWinregClient(ctx, cc, dcerpc.WithSeal(), dcerpc.WithTargetName(args.Server))
-	if err != nil {
-		cc.Close(ctx)
-		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to create WinReg client: %w", err)
-	}
-
-	cleanup := func() {
-		cc.Close(ctx)
-	}
-
-	hiveKey, err := openRemoteHive(ctx, cli, args.Hive)
-	if err != nil {
-		cleanup()
-		cancel()
-		return nil, nil, nil, nil, nil, fmt.Errorf("failed to open hive %s: %w", args.Hive, err)
-	}
-
-	return cli, hiveKey, ctx, cancel, cleanup, nil
 }
 
 func openRemoteHive(ctx context.Context, cli winreg.WinregClient, hive string) (*winreg.Key, error) {

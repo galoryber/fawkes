@@ -40,26 +40,26 @@ type dcsyncHelperOutput struct {
 func RunDcsyncHelper(args []string) {
 	if len(args) != 1 {
 		out, _ := json.Marshal(dcsyncHelperOutput{Error: "expected 1 JSON argument"})
-		fmt.Fprintln(os.Stdout, string(out))
+		_, _ = fmt.Fprintln(os.Stdout, string(out))
 		os.Exit(1)
 	}
 
 	var ha dcsyncHelperArgs
 	if err := json.Unmarshal([]byte(args[0]), &ha); err != nil {
 		out, _ := json.Marshal(dcsyncHelperOutput{Error: fmt.Sprintf("invalid JSON: %v", err)})
-		fmt.Fprintln(os.Stdout, string(out))
+		_, _ = fmt.Fprintln(os.Stdout, string(out))
 		os.Exit(1)
 	}
 
 	results, err := dcsyncNTLMStandalone(ha)
 	if err != nil {
 		out, _ := json.Marshal(dcsyncHelperOutput{Error: err.Error()})
-		fmt.Fprintln(os.Stdout, string(out))
+		_, _ = fmt.Fprintln(os.Stdout, string(out))
 		os.Exit(1)
 	}
 
 	out, _ := json.Marshal(dcsyncHelperOutput{Results: results})
-	fmt.Fprintln(os.Stdout, string(out))
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 }
 
 func dcsyncNTLMStandalone(ha dcsyncHelperArgs) ([]dcsyncResult, error) {

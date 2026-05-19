@@ -18,12 +18,7 @@ import (
 	"github.com/oiweiwei/go-msrpc/msrpc/samr/samr/v1"
 	"github.com/oiweiwei/go-msrpc/ndr"
 	sspcred "github.com/oiweiwei/go-msrpc/ssp/credential"
-	"github.com/oiweiwei/go-msrpc/ssp/krb5"
 	_ "github.com/oiweiwei/go-msrpc/msrpc/erref/win32"
-
-	krbclient "github.com/oiweiwei/gokrb5.fork/v9/client"
-	krbconfig "github.com/oiweiwei/gokrb5.fork/v9/config"
-	krbcredentials "github.com/oiweiwei/gokrb5.fork/v9/credentials"
 )
 
 type DcsyncCommand struct{}
@@ -422,49 +417,6 @@ func dcsyncExtractKerberosKeys(prop *samr.UserProperty, result *dcsyncResult) {
 			}
 		}
 	}
-}
-
-func dcsyncKerberosDirectTest(username, domain, password, kdcAddr string) string {
-	realm := strings.ToUpper(domain)
-
-	kc := krbconfig.New()
-	kc.LibDefaults.DefaultRealm = realm
-	kc.LibDefaults.DNSLookupKDC = false
-	kc.LibDefaults.DNSLookupRealm = false
-	kc.LibDefaults.UDPPreferenceLimit = 1
-	kc.LibDefaults.AllowWeakCrypto = true
-	kc.LibDefaults.DefaultTGSEnctypes = []string{"aes256-cts-hmac-sha1-96", "aes128-cts-hmac-sha1-96", "rc4-hmac"}
-	kc.LibDefaults.DefaultTktEnctypes = []string{"aes256-cts-hmac-sha1-96", "aes128-cts-hmac-sha1-96", "rc4-hmac"}
-	kc.LibDefaults.PermittedEnctypes = []string{"aes256-cts-hmac-sha1-96", "aes128-cts-hmac-sha1-96", "rc4-hmac"}
-	kc.Realms = []krbconfig.Realm{{
-		Realm:       realm,
-		KDC:         []string{kdcAddr + ":88"},
-		AdminServer: []string{kdcAddr + ":749"},
-	}}
-	lowDomain := strings.ToLower(domain)
-	kc.DomainRealm = krbconfig.DomainRealm{
-		lowDomain:       realm,
-		"." + lowDomain: realm,
-	}
-
-	// Test 1: direct (known working)
-	cl1 := krbclient.NewWithPassword(username, realm, password, kc, krbclient.DisablePAFXFAST(true))
-	if err := cl1.Login(); err != nil {
-		return fmt.Sprintf("T1-DIRECT FAILED: %v", err)
-	}
-
-	// Test 2: replicate go-msrpc's credential replacement pattern
-	parsedKC := krb5.ParsedLibDefaults(kc)
-	creds := krbclient.NewWithPassword(username, realm, "", parsedKC,
-		krbclient.DisablePAFXFAST(true), krbclient.AnyServiceClassSPN(true))
-	// Replace credentials (what go-msrpc's authentifier does)
-	krbCreds := krbcredentials.New(username, realm)
-	creds.Credentials = krbCreds.WithPassword(password)
-	if err := creds.AffirmLogin(); err != nil {
-		return fmt.Sprintf("T2-REPLACEMENT FAILED: %v", err)
-	}
-
-	return "" // both pass
 }
 
 func dcsyncDecodeUTF16LE(b []byte) string {

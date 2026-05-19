@@ -155,9 +155,5 @@ func coerceViaSubprocess(args coerceArgs, method string) coerceResult {
 		}
 	}
 
-	return coerceResult{
-		Method:  result.Method,
-		Success: result.Success,
-		Message: result.Message,
-	}
+	return coerceResult(result)
 }

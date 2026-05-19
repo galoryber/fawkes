@@ -85,7 +85,7 @@ func spawnSuspendedProcessLinux(params SpawnParams) structs.CommandResult {
 	// from any thread. Ptrace ops are thread-bound, but SIGSTOP is not.
 	_ = syscall.Kill(pid, syscall.SIGSTOP)
 	_ = syscall.PtraceDetach(pid)
-	syscall.Wait4(pid, &ws, syscall.WUNTRACED, nil)
+	_, _ = syscall.Wait4(pid, &ws, syscall.WUNTRACED, nil)
 
 	sb.WriteString("[+] Detached (process held via SIGSTOP)\n")
 	sb.WriteString("\n[*] Process is stopped. Use ptrace-inject to inject shellcode:\n")

@@ -68,6 +68,12 @@ linters:
       - text: "hostport.*IPv6"
         linters:
           - govet
+      # SA4023: createNamedPipeListener always returns error on non-Windows but is
+      # valid on Windows — cross-platform false positive
+      - path: tcp_tasking\.go
+        text: "SA4023"
+        linters:
+          - staticcheck
       # appendAssign: intentional slice construction patterns (iv+cipher, uuid+data)
       - text: "appendAssign"
         linters:

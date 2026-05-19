@@ -16,14 +16,14 @@ var (
 func initInstanceDrift() {
 	instanceDriftOnce.Do(func() {
 		var b [8]byte
-		rand.Read(b[:])
+		_, _ = rand.Read(b[:])
 		instanceDrift = (float64(binary.LittleEndian.Uint64(b[:])) / float64(math.MaxUint64)) * 0.1
 	})
 }
 
 func cryptoFloat64() float64 {
 	var b [8]byte
-	rand.Read(b[:])
+	_, _ = rand.Read(b[:])
 	return float64(binary.LittleEndian.Uint64(b[:])>>11) / (1 << 53)
 }
 
