@@ -106,11 +106,11 @@ var payloadDefinition = agentstructs.PayloadType{
 		},
 		{
 			Name:          "tls_fingerprint",
-			Description:   "TLS ClientHello fingerprint to mimic. Spoofs the JA3/JA3S hash to match a real browser. 'go' = default Go TLS stack (no spoofing). 'chrome' = Chrome/Chromium. 'firefox' = Firefox. 'safari' = Safari. 'edge' = Edge. 'random' = randomized fingerprint.",
+			Description:   "TLS ClientHello fingerprint to mimic. Spoofs the JA3/JA3S hash to match a real browser. 'go' = default Go TLS stack (no spoofing). 'chrome'/'firefox'/'safari'/'edge' = fixed browser fingerprint. 'rotate' = randomly selects a different real browser fingerprint per-connection (prevents JA3 correlation). 'random' = fully randomized fingerprint (not browser-matching).",
 			Required:      false,
 			DefaultValue:  "chrome",
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
-			Choices:       []string{"chrome", "firefox", "safari", "edge", "random", "go"},
+			Choices:       []string{"chrome", "firefox", "safari", "edge", "rotate", "random", "go"},
 		},
 		{
 			Name:          "mtls_cert",

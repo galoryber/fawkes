@@ -174,10 +174,11 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 	// If a TLS fingerprint is specified (not "go" or empty), use uTLS to spoof
 	// the TLS ClientHello. This replaces Go's default TLS stack with uTLS for
 	// HTTPS connections, producing a browser-matching JA3 fingerprint.
-	if helloID, ok := tlsFingerprintID(tlsFingerprint); ok {
+	if isRotateFingerprint(tlsFingerprint) {
+		transport.DialTLSContext = buildRotatingDialer(tlsConfig)
+		transport.TLSClientConfig = nil
+	} else if helloID, ok := tlsFingerprintID(tlsFingerprint); ok {
 		transport.DialTLSContext = buildUTLSTransportDialer(helloID, tlsConfig)
-		// Clear TLSClientConfig — uTLS handles TLS now, and having both
-		// causes http.Transport to skip DialTLSContext for HTTPS.
 		transport.TLSClientConfig = nil
 	}
 
