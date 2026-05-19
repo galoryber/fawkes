@@ -78,7 +78,10 @@ func constructBuildCommand(cfg buildCommandConfig) buildCommandResult {
 	command += "GOGARBLE=fawkes "
 	if cfg.garble {
 		if cfg.garbleMode == "full" {
-			command += "/go/bin/garble -tiny -literals -seed random build "
+			// GOMEMLIMIT + GOGC constrain compiler memory during -literals
+			// transformation of 200+ command files. Without this, peak RSS
+			// exceeds 11GB and the build is OOM-killed on hosts with ≤12GB RAM.
+			command += "GOMEMLIMIT=8GiB GOGC=50 /go/bin/garble -tiny -literals -seed random build "
 		} else {
 			command += "/go/bin/garble -tiny -seed random build "
 		}
