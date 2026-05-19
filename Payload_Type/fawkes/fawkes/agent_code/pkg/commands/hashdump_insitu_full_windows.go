@@ -263,8 +263,8 @@ func buildCredentialReport(c credentialListEntry, canDecrypt bool, material lsaC
 // formatInsituFullOutput builds the human-readable header for the insitu-full
 // result.
 func formatInsituFullOutput(phase1 []insituSession, protection LsassProtectionState,
-	pid uint32, mod lsassModuleInfo, anchor uintptr, walkErr error,
-	nodes []logonSessionNode, layout logonSessionLayout,
+	pid uint32, mod lsassRemoteModule, anchor uintptr, walkErr error,
+	nodes []logonListNode, layout logonSessionLayout,
 	structParsed int, matchedLUIDs map[uint64]bool, luidsOrdered []uint64,
 	nodesWithCreds, credBlobsCaptured int,
 	cryptoErrStr string, cryptoReport *insituFullCryptoReport,

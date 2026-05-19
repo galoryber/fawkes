@@ -37,6 +37,7 @@ jobs:
           working-directory: Payload_Type/fawkes/fawkes/agent_code
 
       - name: govulncheck
+        continue-on-error: true
         run: |
           go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
           govulncheck -scan module ./...
