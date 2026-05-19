@@ -68,15 +68,25 @@ func buildRotatingDialer(stdConfig *tls.Config) func(ctx context.Context, networ
 }
 
 func dialUTLS(ctx context.Context, network, addr string, helloID utls.ClientHelloID, stdConfig *tls.Config) (net.Conn, error) {
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		host = addr
-	}
-
 	dialer := &net.Dialer{}
 	rawConn, err := dialer.DialContext(ctx, network, addr)
 	if err != nil {
 		return nil, fmt.Errorf("TCP dial failed: %w", err)
+	}
+
+	tlsConn, err := upgradeToUTLS(ctx, rawConn, addr, helloID, stdConfig)
+	if err != nil {
+		rawConn.Close()
+		return nil, err
+	}
+	return tlsConn, nil
+}
+
+// upgradeToUTLS wraps an existing connection with a uTLS handshake.
+func upgradeToUTLS(ctx context.Context, rawConn net.Conn, addr string, helloID utls.ClientHelloID, stdConfig *tls.Config) (net.Conn, error) {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
 	}
 
 	utlsConfig := &utls.Config{
@@ -98,9 +108,23 @@ func dialUTLS(ctx context.Context, network, addr string, helloID utls.ClientHell
 
 	tlsConn := utls.UClient(rawConn, utlsConfig, helloID)
 	if err := tlsConn.HandshakeContext(ctx); err != nil {
-		rawConn.Close()
 		return nil, fmt.Errorf("TLS handshake failed: %w", err)
 	}
 
+	return tlsConn, nil
+}
+
+// upgradeToStdTLS wraps an existing connection with a standard Go TLS handshake.
+func upgradeToStdTLS(ctx context.Context, rawConn net.Conn, addr string, tlsConfig *tls.Config) (net.Conn, error) {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	cfg := tlsConfig.Clone()
+	cfg.ServerName = host
+	tlsConn := tls.Client(rawConn, cfg)
+	if err := tlsConn.HandshakeContext(ctx); err != nil {
+		return nil, fmt.Errorf("TLS handshake failed: %w", err)
+	}
 	return tlsConn, nil
 }

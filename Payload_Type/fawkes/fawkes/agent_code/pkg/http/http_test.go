@@ -509,6 +509,7 @@ func TestNewHTTPProfile_BasicConfig(t *testing.T) {
 		"",
 		"",
 		"",
+		"",
 		"none",
 		"",
 		"", "",
@@ -545,6 +546,7 @@ func TestNewHTTPProfile_WithProxy(t *testing.T) {
 		"http://proxy:8080",
 		"",
 		"",
+		"",
 		"none",
 		"",
 		"", "",
@@ -569,6 +571,7 @@ func TestNewHTTPProfile_WithHostHeader(t *testing.T) {
 		"/get",
 		"/post",
 		"fronted.example.com",
+		"",
 		"",
 		"",
 		"",
@@ -598,6 +601,7 @@ func TestNewHTTPProfile_WithEncryptionKey(t *testing.T) {
 		true,
 		"/get",
 		"/post",
+		"",
 		"",
 		"",
 		"",
@@ -633,6 +637,7 @@ func TestNewHTTPProfile_InvalidProxy(t *testing.T) {
 		"://not-a-valid-url",
 		"",
 		"",
+		"",
 		"none",
 		"",
 		"", "",
@@ -656,7 +661,7 @@ func TestNewHTTPProfile_WithMTLS(t *testing.T) {
 		"",
 		10, 5, 10, false,
 		"/get", "/post",
-		"", "", "", "",
+		"", "", "", "", "",
 		"none", "",
 		certPEM, keyPEM,
 		nil, nil, 0)
@@ -687,7 +692,7 @@ func TestNewHTTPProfile_WithInvalidMTLS(t *testing.T) {
 		"",
 		10, 5, 10, false,
 		"/get", "/post",
-		"", "", "", "",
+		"", "", "", "", "",
 		"none", "",
 		"invalid-cert", "invalid-key",
 		nil, nil, 0)
@@ -719,7 +724,7 @@ func TestNewHTTPProfile_WithEmptyMTLS(t *testing.T) {
 		"",
 		10, 5, 10, false,
 		"/get", "/post",
-		"", "", "", "",
+		"", "", "", "", "",
 		"none", "",
 		"", "",
 		nil, nil, 0)
@@ -1280,7 +1285,7 @@ func TestMakeRequest_FailoverToBackup(t *testing.T) {
 		"",
 		1, 5, 0, false,
 		"/test", "/test",
-		"", "", "", "", "none", "",
+		"", "", "", "", "", "none", "",
 		"", "",
 		[]string{backup.URL}, // fallback,
 		nil,
@@ -1316,6 +1321,7 @@ func TestMakeRequest_AllFail(t *testing.T) {
 		"/test", "/test",
 		"", "",
  "",
+ "",
  "", "none", "",
 		"", "",
 		[]string{"http://127.0.0.1:2"},
@@ -1343,6 +1349,7 @@ func TestNewHTTPProfile_WithFallbackURLs(t *testing.T) {
 		10, 5, 10, false,
 		"/get", "/post",
 		"", "",
+ "",
  "",
  "", "none", "",
 		"", "",
@@ -1373,6 +1380,7 @@ func TestMakeRequest_ConcurrentFailover(t *testing.T) {
 		1, 5, 0, false,
 		"/test", "/test",
 		"", "",
+ "",
  "",
  "", "none", "",
 		"", "",
@@ -1414,6 +1422,7 @@ func TestSealConfig_PreservesFallbackURLs(t *testing.T) {
 		10, 5, 10, false,
 		"/get", "/post",
 		"", "",
+ "",
  "",
  "", "none", "",
 		"", "",
@@ -1524,6 +1533,7 @@ func TestNewHTTPProfile_WithProxyAuth(t *testing.T) {
 		"http://proxy:8080",
 		"proxyuser",
 		"proxypass",
+		"",
 		"none", "",
 		"", "",
 		nil, nil, 0)
@@ -1553,6 +1563,7 @@ func TestNewHTTPProfile_WithProxyEmbeddedCreds(t *testing.T) {
 		"http://embeduser:embedpass@proxy:8080",
 		"separate-user",
 		"separate-pass",
+		"",
 		"none", "",
 		"", "",
 		nil, nil, 0)
@@ -1577,6 +1588,7 @@ func TestNewHTTPProfile_ProxyUserOnly(t *testing.T) {
 		"http://proxy:8080",
 		"onlyuser",
 		"",
+		"",
 		"none", "",
 		"", "",
 		nil, nil, 0)
@@ -1594,7 +1606,7 @@ func TestNewHTTPProfile_SystemProxy(t *testing.T) {
 		"",
 		10, 5, 10, false,
 		"/get", "/post", "",
-		"", "", "",
+		"", "", "", "",
 		"none", "",
 		"", "",
 		nil, nil, 0)
@@ -1623,7 +1635,7 @@ func TestMakeRequest_ProxyAuthInTransport(t *testing.T) {
 		"",
 		1, 5, 0, false,
 		"/test", "/test", "",
-		"", "", "",
+		"", "", "", "",
 		"none", "",
 		"", "",
 		nil, nil, 0)
@@ -1651,7 +1663,7 @@ func TestMakeRequest_MultipleCustomHeaders(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
-		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", "", "", nil, nil, 0)
+		1, 5, 0, false, "/test", "/test", "", "", "", "", "", "none", "", "", "", nil, nil, 0)
 
 	p.CustomHeaders = map[string]string{
 		"X-Forwarded-For": "10.0.0.1",
@@ -1685,7 +1697,7 @@ func TestMakeRequest_CustomHeadersEmptyMap(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
-		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", "", "", nil, nil, 0)
+		1, 5, 0, false, "/test", "/test", "", "", "", "", "", "none", "", "", "", nil, nil, 0)
 	p.CustomHeaders = map[string]string{}
 
 	resp, err := p.makeRequest("GET", "/test", nil, nil)
@@ -1709,7 +1721,7 @@ func TestMakeRequest_CustomHeadersFromSealed(t *testing.T) {
 	defer ts.Close()
 
 	p := NewHTTPProfile(ts.URL, "Mozilla/5.0 Chrome/134.0.0.0", "",
-		1, 5, 0, false, "/test", "/test", "", "", "", "", "none", "", "", "", nil, nil, 0)
+		1, 5, 0, false, "/test", "/test", "", "", "", "", "", "none", "", "", "", nil, nil, 0)
 
 	p.CustomHeaders = map[string]string{
 		"X-Custom-Sealed": "vault-value",
