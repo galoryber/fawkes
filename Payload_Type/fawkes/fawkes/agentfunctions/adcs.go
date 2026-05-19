@@ -330,14 +330,42 @@ func init() {
 						})
 					}
 				}
-			case "request":
-				// Track certificate request as Credential artifact
+			case "request", "auto-exploit":
 				template, _ := processResponse.TaskData.Args.GetStringArg("template")
+				altName, _ := processResponse.TaskData.Args.GetStringArg("alt_name")
 				mythicrpc.SendMythicRPCArtifactCreate(mythicrpc.MythicRPCArtifactCreateMessage{
 					TaskID:           processResponse.TaskData.Task.ID,
 					BaseArtifactType: "Credential",
 					ArtifactMessage:  fmt.Sprintf("Certificate requested: template=%s from %s", template, server),
 				})
+
+				if strings.Contains(responseText, "-----BEGIN CERTIFICATE-----") || strings.Contains(responseText, "pfx_b64") {
+					username, _ := processResponse.TaskData.Args.GetStringArg("username")
+					domain, _ := processResponse.TaskData.Args.GetStringArg("domain")
+					account := username
+					realm := domain
+					if idx := strings.Index(account, "\\"); idx >= 0 {
+						realm = account[:idx]
+						account = account[idx+1:]
+					} else if idx := strings.Index(account, "@"); idx >= 0 {
+						realm = account[idx+1:]
+						account = account[:idx]
+					}
+					comment := fmt.Sprintf("adcs %s: template=%s from %s", action, template, server)
+					if altName != "" {
+						comment += fmt.Sprintf(" (SAN: %s)", altName)
+					}
+					registerCredentials(processResponse.TaskData.Task.ID,
+						[]mythicrpc.MythicRPCCredentialCreateCredentialData{{
+							CredentialType: "certificate",
+							Realm:          realm,
+							Account:        account,
+							Credential:     "issued-certificate",
+							Comment:        comment,
+						}})
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[CREDENTIAL] ADCS certificate issued for %s via template %s", username, template), true)
+				}
 			}
 			return response
 		},

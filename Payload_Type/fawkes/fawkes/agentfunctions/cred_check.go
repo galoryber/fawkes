@@ -171,16 +171,53 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Track successful authentications as artifacts
-			for _, line := range strings.Split(responseText, "\n") {
-				if strings.Contains(line, "SUCCESS") && strings.Contains(line, "|") {
-					parts := strings.Split(line, "|")
-					if len(parts) >= 3 {
-						host := strings.TrimSpace(parts[0])
-						protocol := strings.TrimSpace(parts[1])
-						createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
-							fmt.Sprintf("Credential check SUCCESS: %s via %s", host, protocol))
+			successes := parseCredCheckSuccesses(responseText)
+			for _, s := range successes {
+				createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
+					fmt.Sprintf("Credential check SUCCESS: %s via %s", s.Host, s.Protocol))
+			}
+
+			if len(successes) > 0 {
+				username, _ := processResponse.TaskData.Args.GetStringArg("username")
+				password, _ := processResponse.TaskData.Args.GetStringArg("password")
+				hash, _ := processResponse.TaskData.Args.GetStringArg("hash")
+
+				if username != "" && (password != "" || hash != "") {
+					account := username
+					realm := processResponse.TaskData.Callback.Host
+					if idx := strings.Index(account, "\\"); idx >= 0 {
+						realm = account[:idx]
+						account = account[idx+1:]
+					} else if idx := strings.Index(account, "@"); idx >= 0 {
+						realm = account[idx+1:]
+						account = account[:idx]
 					}
+
+					credType := "plaintext"
+					credential := password
+					comment := "cred-check (validated)"
+					if hash != "" {
+						credType = "hash"
+						credential = hash
+						comment = "cred-check (PTH validated)"
+					}
+
+					var hosts []string
+					for _, s := range successes {
+						hosts = append(hosts, s.Host)
+					}
+					comment = fmt.Sprintf("%s on %s via %s", comment, strings.Join(hosts, ","), successes[0].Protocol)
+
+					registerCredentials(processResponse.TaskData.Task.ID,
+						[]mythicrpc.MythicRPCCredentialCreateCredentialData{{
+							CredentialType: credType,
+							Realm:          realm,
+							Account:        account,
+							Credential:     credential,
+							Comment:        comment,
+						}})
+					logOperationEvent(processResponse.TaskData.Task.ID,
+						fmt.Sprintf("[CREDENTIAL] cred-check validated %s on %d host(s)", username, len(successes)), true)
 				}
 			}
 			return response

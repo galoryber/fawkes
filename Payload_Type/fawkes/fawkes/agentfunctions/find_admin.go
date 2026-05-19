@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
+	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
@@ -194,7 +195,6 @@ func init() {
 			if !ok || responseText == "" || responseText == "[]" {
 				return response
 			}
-			// Parse JSON array of results, track admin-confirmed hosts
 			var results []struct {
 				Host   string `json:"host"`
 				Method string `json:"method"`
@@ -203,11 +203,51 @@ func init() {
 			if err := json.Unmarshal([]byte(responseText), &results); err != nil {
 				return response
 			}
+			var adminHosts []string
 			for _, r := range results {
 				if r.Admin {
 					createArtifact(processResponse.TaskData.Task.ID, "Network Connection",
 						fmt.Sprintf("Admin access confirmed: %s via %s", r.Host, r.Method))
+					adminHosts = append(adminHosts, r.Host)
 				}
+			}
+
+			if len(adminHosts) > 0 {
+				username, _ := processResponse.TaskData.Args.GetStringArg("username")
+				password, _ := processResponse.TaskData.Args.GetStringArg("password")
+				hash, _ := processResponse.TaskData.Args.GetStringArg("hash")
+				method, _ := processResponse.TaskData.Args.GetStringArg("method")
+
+				if username != "" && (password != "" || hash != "") {
+					account := username
+					realm := processResponse.TaskData.Callback.Host
+					if idx := strings.Index(account, "\\"); idx >= 0 {
+						realm = account[:idx]
+						account = account[idx+1:]
+					} else if idx := strings.Index(account, "@"); idx >= 0 {
+						realm = account[idx+1:]
+						account = account[:idx]
+					}
+
+					credType := "plaintext"
+					credential := password
+					comment := fmt.Sprintf("find-admin (admin on %s via %s)", strings.Join(adminHosts, ","), method)
+					if hash != "" {
+						credType = "hash"
+						credential = hash
+					}
+
+					registerCredentials(processResponse.TaskData.Task.ID,
+						[]mythicrpc.MythicRPCCredentialCreateCredentialData{{
+							CredentialType: credType,
+							Realm:          realm,
+							Account:        account,
+							Credential:     credential,
+							Comment:        comment,
+						}})
+				}
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[ADMIN ACCESS] %s has admin on %d host(s): %s", username, len(adminHosts), strings.Join(adminHosts, ", ")), true)
 			}
 			return response
 		},
