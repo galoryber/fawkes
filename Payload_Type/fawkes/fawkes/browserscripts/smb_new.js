@@ -11,6 +11,9 @@ function(task, responses){
         for(let i = 0; i < responses.length; i++){
             combined += responses[i];
         }
+        if(combined.includes("=== Share Sweep Chain Complete")){
+            return renderChainTable(combined, "Share Sweep Chain");
+        }
         let lines = combined.split("\n");
         // Detect mode: shares listing vs directory listing
         let isDir = combined.includes("Size") && combined.includes("Modified") && combined.includes("Name");
@@ -165,4 +168,51 @@ function(task, responses){
         }
         return {"plaintext": combined};
     }
+}
+
+function renderChainTable(text, chainName){
+    let lines = text.split("\n");
+    let headers = [
+        {"plaintext": "Status", "type": "string", "width": 100},
+        {"plaintext": "Command", "type": "string", "width": 200},
+        {"plaintext": "Detail", "type": "string", "fillWidth": true},
+    ];
+    let rows = [];
+    let successCount = 0;
+    let errorCount = 0;
+    for(let i = 0; i < lines.length; i++){
+        let line = lines[i].trim();
+        if(!line || line.match(/^={3,}$/)) continue;
+        let stepMatch = line.match(/^\[Step (\d+\/\d+)\]\s+(.*)/);
+        if(stepMatch){
+            rows.push({
+                "Status": {"plaintext": stepMatch[1], "cellStyle": {"fontWeight": "bold", "color": "#2196f3"}},
+                "Command": {"plaintext": "Progress"},
+                "Detail": {"plaintext": stepMatch[2]},
+                "rowStyle": {"backgroundColor": "rgba(33,150,243,0.08)"},
+            });
+            continue;
+        }
+        let taskMatch = line.match(/^\[(success|error|unknown)\]\s+(\S+)\s+(.*)/);
+        if(taskMatch){
+            let status = taskMatch[1].toUpperCase();
+            let isSuccess = status === "SUCCESS";
+            if(isSuccess) successCount++;
+            else if(status === "ERROR") errorCount++;
+            rows.push({
+                "Status": {"plaintext": status, "cellStyle": {"fontWeight": "bold", "color": isSuccess ? "#4caf50" : (status === "ERROR" ? "#f44336" : "#9e9e9e")}},
+                "Command": {"plaintext": taskMatch[2]},
+                "Detail": {"plaintext": taskMatch[3]},
+                "rowStyle": {"backgroundColor": isSuccess ? "rgba(76,175,80,0.08)" : (status === "ERROR" ? "rgba(244,67,54,0.08)" : "")},
+            });
+            continue;
+        }
+        if(line.startsWith("Total:") || line.startsWith("=== ")) continue;
+    }
+    let title = chainName;
+    if(successCount + errorCount > 0){
+        title += " — " + successCount + " success";
+        if(errorCount > 0) title += ", " + errorCount + " errors";
+    }
+    return {"table": [{"headers": headers, "rows": rows, "title": title}]};
 }

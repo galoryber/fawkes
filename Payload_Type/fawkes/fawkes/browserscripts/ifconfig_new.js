@@ -11,6 +11,9 @@ function(task, responses){
         for(let i = 0; i < responses.length; i++){
             combined += responses[i];
         }
+        if(combined.includes("=== Network Recon Chain Complete")){
+            return renderReconChainTable(combined);
+        }
         combined = combined.trim();
         let headers = [
             {"plaintext": "Interface", "type": "string", "width": 120},
@@ -66,4 +69,34 @@ function(task, responses){
         const combined = responses.reduce((prev, cur) => prev + cur, "");
         return {"plaintext": combined};
     }
+}
+
+function renderReconChainTable(text){
+    let lines = text.split("\n");
+    let headers = [
+        {"plaintext": "Status", "type": "string", "width": 100},
+        {"plaintext": "Command", "type": "string", "fillWidth": true},
+    ];
+    let rows = [];
+    let successCount = 0;
+    let errorCount = 0;
+    for(let i = 0; i < lines.length; i++){
+        let line = lines[i].trim();
+        if(!line || line.startsWith("===") || line.startsWith("Steps:")) continue;
+        let taskMatch = line.match(/^\[(OK|FAIL|success|error)\]\s+(.*)/);
+        if(taskMatch){
+            let raw = taskMatch[1].toUpperCase();
+            let isSuccess = raw === "OK" || raw === "SUCCESS";
+            if(isSuccess) successCount++;
+            else errorCount++;
+            rows.push({
+                "Status": {"plaintext": isSuccess ? "OK" : "FAIL",
+                    "cellStyle": {"fontWeight": "bold", "color": isSuccess ? "#4caf50" : "#f44336"}},
+                "Command": {"plaintext": taskMatch[2]},
+                "rowStyle": {"backgroundColor": isSuccess ? "rgba(76,175,80,0.08)" : "rgba(244,67,54,0.08)"},
+            });
+        }
+    }
+    let title = "Network Recon Chain — " + successCount + "/" + (successCount + errorCount) + " successful";
+    return {"table": [{"headers": headers, "rows": rows, "title": title}]};
 }

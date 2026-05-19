@@ -6,28 +6,26 @@ function(task, responses){
     if(responses.length === 0){
         return {"plaintext": "No response yet from agent..."};
     }
+    let combined = "";
+    for(let i = 0; i < responses.length; i++){
+        combined += responses[i];
+    }
+    if(combined.includes("=== Network Recon Chain") || combined.includes("[Step ")){
+        return renderChainTable(combined, "Network Recon Chain");
+    }
     try {
-        let combined = "";
-        for(let i = 0; i < responses.length; i++){
-            combined += responses[i];
-        }
         let lines = combined.split("\n");
-        // Parse header lines for summary
         let summaryLine = "";
-        let foundLine = "";
         let results = [];
         let inTable = false;
         for(let i = 0; i < lines.length; i++){
             let line = lines[i].trim();
             if(line.startsWith("Scanned ")){
                 summaryLine = line;
-            } else if(line.startsWith("Found ")){
-                foundLine = line;
             } else if(line.match(/^-{10,}$/)){
                 inTable = true;
                 continue;
             } else if(inTable && line.length > 0){
-                // Parse: Host                 Port     Service
                 let parts = line.split(/\s+/);
                 if(parts.length >= 2){
                     let host = parts[0];
@@ -40,7 +38,6 @@ function(task, responses){
         if(results.length === 0){
             return {"plaintext": combined};
         }
-        // Color-code by service type
         let criticalPorts = new Set([21, 23, 445, 3389, 5985, 5986, 1433, 3306, 5432]);
         let webPorts = new Set([80, 443, 8080, 8443]);
         let headers = [
@@ -59,7 +56,6 @@ function(task, responses){
             } else if(webPorts.has(portNum)){
                 rowStyle = {"backgroundColor": "rgba(0,150,255,0.1)"};
             }
-            // Local listen port: offset to avoid well-known port restrictions
             let localPort = portNum < 1024 ? portNum + 10000 : portNum + 1000;
             if(localPort > 65535){ localPort = 7000; }
             rows.push({
@@ -89,10 +85,53 @@ function(task, responses){
             }]
         };
     } catch(error) {
-        let combined = "";
-        for(let i = 0; i < responses.length; i++){
-            combined += responses[i];
-        }
         return {"plaintext": combined};
     }
+}
+
+function renderChainTable(text, chainName){
+    let lines = text.split("\n");
+    let headers = [
+        {"plaintext": "Status", "type": "string", "width": 100},
+        {"plaintext": "Command", "type": "string", "width": 200},
+        {"plaintext": "Detail", "type": "string", "fillWidth": true},
+    ];
+    let rows = [];
+    let successCount = 0;
+    let errorCount = 0;
+    for(let i = 0; i < lines.length; i++){
+        let line = lines[i].trim();
+        if(!line || line.match(/^={3,}$/)) continue;
+        let stepMatch = line.match(/^\[Step (\d+\/\d+)\]\s+(.*)/);
+        if(stepMatch){
+            rows.push({
+                "Status": {"plaintext": stepMatch[1], "cellStyle": {"fontWeight": "bold", "color": "#2196f3"}},
+                "Command": {"plaintext": "Progress"},
+                "Detail": {"plaintext": stepMatch[2]},
+                "rowStyle": {"backgroundColor": "rgba(33,150,243,0.08)"},
+            });
+            continue;
+        }
+        let taskMatch = line.match(/^\[(success|error|unknown)\]\s+(\S+)\s+(.*)/);
+        if(taskMatch){
+            let status = taskMatch[1].toUpperCase();
+            let isSuccess = status === "SUCCESS";
+            if(isSuccess) successCount++;
+            else if(status === "ERROR") errorCount++;
+            rows.push({
+                "Status": {"plaintext": status, "cellStyle": {"fontWeight": "bold", "color": isSuccess ? "#4caf50" : (status === "ERROR" ? "#f44336" : "#9e9e9e")}},
+                "Command": {"plaintext": taskMatch[2]},
+                "Detail": {"plaintext": taskMatch[3]},
+                "rowStyle": {"backgroundColor": isSuccess ? "rgba(76,175,80,0.08)" : (status === "ERROR" ? "rgba(244,67,54,0.08)" : "")},
+            });
+            continue;
+        }
+        if(line.startsWith("Total:") || line.startsWith("=== ")) continue;
+    }
+    let title = chainName;
+    if(successCount + errorCount > 0){
+        title += " — " + successCount + " success";
+        if(errorCount > 0) title += ", " + errorCount + " errors";
+    }
+    return {"table": [{"headers": headers, "rows": rows, "title": title}]};
 }
