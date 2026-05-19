@@ -41,17 +41,25 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 	gotSize := uint32(0)
 	var gotMap = make(map[string]uintptr)
 
+	trampolineBaseAddress := uintptr(0)
+	trampolineOffset := 0
+	trampolineSize := uint32(0)
+	var trampolineMap = make(map[string]uintptr)
+
 	bssBaseAddress := uintptr(0)
 	bssOffset := 0
 	bssSize := uint32(0)
 
 	// Calculate sizes for special sections
-	// Allocate GOT space for all external symbols (some non-__imp_ symbols
-	// may resolve as Beacon API functions or Library$Function imports)
+	// GOT: 8 bytes per __imp_ symbol. Trampoline: 16 bytes per bare symbol
+	// (JMP stub for direct CALL rel32 that can't reach windows.NewCallback addresses).
+	// BSS: for bare symbols that don't resolve to any known function.
 	for _, symbol := range parsedCoff.Symbols {
 		if isSpecialSymbol(symbol) {
-			gotSize += 8
-			if !isImportSymbol(symbol) {
+			if isImportSymbol(symbol) {
+				gotSize += 8
+			} else {
+				trampolineSize += 16
 				bssSize += symbol.Value + 8
 			}
 		}
@@ -97,13 +105,23 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 		}
 	}
 
-	// Allocate GOT
+	// Allocate GOT for __imp_ symbols
 	if gotSize == 0 {
-		gotSize = 8 // Minimum allocation to avoid zero-size VirtualAlloc
+		gotSize = 8
 	}
 	gotBaseAddress, err := virtualAllocRW(gotSize)
 	if err != nil {
 		return "", fmt.Errorf("GOT memory allocation failed: %w", err)
+	}
+
+	// Allocate trampoline area for bare symbols (direct CALL rel32 targets).
+	// Each trampoline is 14 bytes (FF 25 00 00 00 00 + 8-byte addr), padded to 16.
+	if trampolineSize == 0 {
+		trampolineSize = 16
+	}
+	trampolineBaseAddress, err = virtualAllocRW(trampolineSize)
+	if err != nil {
+		return "", fmt.Errorf("trampoline memory allocation failed: %w", err)
 	}
 
 	// Process relocations
@@ -136,8 +154,20 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 					}
 					*(*uint64)(unsafe.Pointer(symbolDefAddress)) = uint64(externalAddress)
 				} else if externalAddress != 0 {
-					// Bare symbol that resolved: use address directly (direct call)
-					symbolDefAddress = externalAddress
+					// Bare symbol: create JMP trampoline near BOF code.
+					// Direct CALL rel32 requires an executable target within ±2GB;
+					// windows.NewCallback() addresses may be far away.
+					if existingAddr, exists := trampolineMap[symbol.NameString()]; exists {
+						symbolDefAddress = existingAddr
+					} else {
+						trampAddr := trampolineBaseAddress + uintptr(trampolineOffset)
+						// FF 25 00 00 00 00 = jmp qword ptr [rip+0]
+						*(*[6]byte)(unsafe.Pointer(trampAddr)) = [6]byte{0xFF, 0x25, 0x00, 0x00, 0x00, 0x00}
+						*(*uint64)(unsafe.Pointer(trampAddr + 6)) = uint64(externalAddress)
+						trampolineMap[symbol.NameString()] = trampAddr
+						trampolineOffset += 16
+						symbolDefAddress = trampAddr
+					}
 				} else if isImportSymbol(symbol) {
 					return "", fmt.Errorf("failed to resolve external symbol: %s", symbol.NameString())
 				} else {
@@ -158,6 +188,14 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			processReloc(symbolDefAddress, sectionVirtualAddr, reloc, symbol)
 		}
 
+	}
+
+	// Mark trampoline area executable
+	if trampolineOffset > 0 {
+		if err := virtualProtectRX(trampolineBaseAddress, uint32(trampolineOffset)); err != nil {
+			return "", fmt.Errorf("trampoline protection change failed: %w", err)
+		}
+		flushInstructionCache(trampolineBaseAddress, uint32(trampolineOffset))
 	}
 
 	// Mark executable sections as RX and flush instruction cache
@@ -231,6 +269,9 @@ collectLoop:
 		}
 		if gotBaseAddress != 0 {
 			windows.VirtualFree(gotBaseAddress, 0, windows.MEM_RELEASE)
+		}
+		if trampolineBaseAddress != 0 {
+			windows.VirtualFree(trampolineBaseAddress, 0, windows.MEM_RELEASE)
 		}
 	}
 
