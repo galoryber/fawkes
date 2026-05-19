@@ -120,10 +120,10 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 			symbolDefAddress := uintptr(0)
 
 			if isSpecialSymbol(symbol) {
-				// Try resolving as an import first (handles both __imp_ and bare names)
 				externalAddress := resolveExternalSymbol(symbol.NameString(), outputChan)
 
-				if externalAddress != 0 {
+				if externalAddress != 0 && isImportSymbol(symbol) {
+					// __imp_ symbols: store address in GOT (indirect call through pointer)
 					if existingGotAddress, exists := gotMap[symbol.NameString()]; exists {
 						symbolDefAddress = existingGotAddress
 					} else {
@@ -135,6 +135,9 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 						gotMap[symbol.NameString()] = symbolDefAddress
 					}
 					*(*uint64)(unsafe.Pointer(symbolDefAddress)) = uint64(externalAddress)
+				} else if externalAddress != 0 {
+					// Bare symbol that resolved: use address directly (direct call)
+					symbolDefAddress = externalAddress
 				} else if isImportSymbol(symbol) {
 					return "", fmt.Errorf("failed to resolve external symbol: %s", symbol.NameString())
 				} else {
