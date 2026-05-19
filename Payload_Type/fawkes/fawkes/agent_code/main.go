@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"math/rand"
 	"os"
 	"os/signal"
 	"sync"
@@ -416,26 +415,7 @@ func processTaskWithAgent(task *structs.Task, agent *structs.Agent, c2 profiles.
 }
 
 func calculateSleepTime(interval, jitter int) time.Duration {
-	if jitter == 0 {
-		return time.Duration(interval) * time.Second
-	}
-
-	// Freyja-style jitter calculation
-	// Jitter is a percentage (0-100) that creates variation around the interval
-	jitterFloat := float64(rand.Intn(jitter)) / float64(100)
-	jitterDiff := float64(interval) * jitterFloat
-
-	// Randomly add or subtract jitter (50/50 chance)
-	if rand.Intn(2) == 0 {
-		actualInterval := interval + int(jitterDiff)
-		return time.Duration(actualInterval) * time.Second
-	} else {
-		actualInterval := interval - int(jitterDiff)
-		if actualInterval < 1 {
-			actualInterval = 1 // Minimum 1 second
-		}
-		return time.Duration(actualInterval) * time.Second
-	}
+	return commands.CalculateAdaptiveSleep(interval, jitter, "uniform")
 }
 
 // guardedSleep performs a sleep with sandbox detection. If the sleep completes

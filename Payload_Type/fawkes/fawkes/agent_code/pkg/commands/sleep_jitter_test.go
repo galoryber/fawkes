@@ -8,8 +8,9 @@ import (
 
 func TestCalculateAdaptiveSleep_NoJitter(t *testing.T) {
 	d := CalculateAdaptiveSleep(10, 0, "uniform")
-	if d != 10*time.Second {
-		t.Errorf("Expected 10s with 0 jitter, got %v", d)
+	secs := d.Seconds()
+	if secs < 9.0 || secs > 11.0 {
+		t.Errorf("Expected ~10s with 0 jitter (±5%% drift), got %v", d)
 	}
 }
 
@@ -27,8 +28,8 @@ func TestJitterUniform_Range(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		d := jitterUniform(interval, jitter)
 		secs := d.Seconds()
-		if secs < 1 || secs > 15 {
-			t.Errorf("Uniform jitter out of range: %v (expected 5-15s)", d)
+		if secs < 1 || secs > 15.5 {
+			t.Errorf("Uniform jitter out of range: %v (expected 1-15.5s)", d)
 		}
 	}
 }
@@ -137,5 +138,50 @@ func TestCalculateAdaptiveSleep_ProfileRouting(t *testing.T) {
 		if d < 1*time.Second || d > 20*time.Second {
 			t.Errorf("Profile %q: sleep %v out of reasonable range", p, d)
 		}
+	}
+}
+
+func TestCalculateAdaptiveSleep_SubSecondPrecision(t *testing.T) {
+	hasSubSecond := false
+	for i := 0; i < 100; i++ {
+		d := CalculateAdaptiveSleep(10, 30, "uniform")
+		ms := d.Milliseconds() % 1000
+		if ms != 0 {
+			hasSubSecond = true
+			break
+		}
+	}
+	if !hasSubSecond {
+		t.Error("Expected sub-second precision in sleep durations")
+	}
+}
+
+func TestCryptoFloat64_Distribution(t *testing.T) {
+	buckets := make([]int, 10)
+	n := 10000
+	for i := 0; i < n; i++ {
+		v := cryptoFloat64()
+		if v < 0 || v >= 1.0 {
+			t.Fatalf("cryptoFloat64 out of range: %v", v)
+		}
+		bucket := int(v * 10)
+		if bucket >= 10 {
+			bucket = 9
+		}
+		buckets[bucket]++
+	}
+	expected := float64(n) / 10.0
+	for i, count := range buckets {
+		ratio := float64(count) / expected
+		if ratio < 0.7 || ratio > 1.3 {
+			t.Errorf("Bucket %d: %d (expected ~%.0f, ratio %.2f) — poor uniformity", i, count, expected, ratio)
+		}
+	}
+}
+
+func TestInstanceDrift_Bounded(t *testing.T) {
+	initInstanceDrift()
+	if instanceDrift < 0 || instanceDrift >= 0.1 {
+		t.Errorf("Instance drift should be in [0, 0.1), got %v", instanceDrift)
 	}
 }
