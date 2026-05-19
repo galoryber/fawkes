@@ -334,6 +334,10 @@ func TestSpnegoWrapNegTokenInit_ContainsNTLM(t *testing.T) {
 	if wrapped[0] != 0x60 {
 		t.Errorf("outer tag = 0x%02x, want 0x60 (APPLICATION)", wrapped[0])
 	}
+	// Must contain the SPNEGO OID (1.3.6.1.5.5.2) for SMB compatibility
+	if !bytes.Contains(wrapped, spnegoOID) {
+		t.Error("wrapped token must contain SPNEGO OID for SMB SESSION_SETUP")
+	}
 }
 
 func TestSpnegoWrapNegTokenResp_ContainsNTLM(t *testing.T) {

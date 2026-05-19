@@ -21,6 +21,10 @@ const (
 // used in SPNEGO negTokenInit to advertise NTLM authentication.
 var ntlmsspOID = []byte{0x06, 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x82, 0x37, 0x02, 0x02, 0x0a}
 
+// spnegoOID is the SPNEGO mechanism OID (1.3.6.1.5.5.2) required in the
+// APPLICATION [0] wrapper of NegTokenInit messages.
+var spnegoOID = []byte{0x06, 0x06, 0x2b, 0x06, 0x01, 0x05, 0x05, 0x02}
+
 // relayNTLMSecBuf represents an NTLM security buffer (length, maxLength, offset).
 type relayNTLMSecBuf struct {
 	Length    uint16
@@ -110,7 +114,7 @@ func relayBuildNTLMv2Hashcat(type3 []byte, serverChallenge []byte) string {
 
 // spnegoWrapNegTokenInit wraps an NTLM Type 1 message in a SPNEGO negTokenInit
 // for the first SMB2 SESSION_SETUP request.
-// Structure: APPLICATION[0] { SEQUENCE { [0] SEQUENCE { OID }, [2] OCTET STRING { Type1 } } }
+// Structure: APPLICATION[0] { OID(SPNEGO), NegTokenInit[0] { SEQUENCE { [0] SEQUENCE { OID }, [2] OCTET STRING { Type1 } } } }
 func spnegoWrapNegTokenInit(ntlmType1 []byte) []byte {
 	// mechToken [2] EXPLICIT OCTET STRING
 	mechToken := asn1WrapExplicit(2, asn1WrapOctetString(ntlmType1))
@@ -119,11 +123,14 @@ func spnegoWrapNegTokenInit(ntlmType1 []byte) []byte {
 	mechTypeSeq := asn1WrapSequence(ntlmsspOID)
 	mechTypes := asn1WrapExplicit(0, mechTypeSeq)
 
-	// Inner SEQUENCE { mechTypes, mechToken }
+	// NegTokenInit SEQUENCE { mechTypes, mechToken }
 	innerSeq := asn1WrapSequence(append(mechTypes, mechToken...))
 
-	// APPLICATION [0] (constructed, class=application, tag=0)
-	app := asn1WrapApplication(0, innerSeq)
+	// Wrap in context-specific [0] (NegTokenInit)
+	negTokenInit := asn1WrapExplicit(0, innerSeq)
+
+	// APPLICATION [0] { SPNEGO OID, NegTokenInit }
+	app := asn1WrapApplication(0, append(spnegoOID, negTokenInit...))
 
 	return app
 }
