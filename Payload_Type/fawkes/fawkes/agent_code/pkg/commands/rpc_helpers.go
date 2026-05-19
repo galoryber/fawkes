@@ -96,10 +96,3 @@ func ensureKRB5Mechanism() {
 	func() { defer func() { _ = recover() }(); gssapi.AddMechanism(ssp.KRB5) }()
 }
 
-func ensureSPNEGOMechanism() {
-	func() { defer func() { _ = recover() }(); gssapi.AddMechanism(ssp.SPNEGO) }()
-}
-
-func ensureNTLMMechanism() {
-	func() { defer func() { _ = recover() }(); gssapi.AddMechanism(ssp.NTLM) }()
-}

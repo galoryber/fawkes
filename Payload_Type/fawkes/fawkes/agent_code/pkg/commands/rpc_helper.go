@@ -85,12 +85,12 @@ func RunRPCHelper(args []string) {
 
 	resp := rpcHelperResponse{Output: output}
 	out, _ := json.Marshal(resp)
-	fmt.Fprintln(os.Stdout, string(out))
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 }
 
 func writeRPCError(msg string) {
 	out, _ := json.Marshal(rpcHelperResponse{Error: msg})
-	fmt.Fprintln(os.Stdout, string(out))
+	_, _ = fmt.Fprintln(os.Stdout, string(out))
 }
 
 func rpcHelperCredAndContext(req rpcHelperRequest) (context.Context, context.CancelFunc, sspcred.Credential, error) {
