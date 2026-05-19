@@ -84,6 +84,10 @@ func (c *RemoteRegCommand) Execute(task structs.Task) structs.CommandResult {
 		return errorf("Unknown action: %s\nAvailable: query, enum, set, delete", args.Action)
 	}
 
+	if args.Password == "" && args.Hash == "" {
+		return errorf("Either -password or -hash is required for remote registry access")
+	}
+
 	params, _ := json.Marshal(winregParams{
 		Hive:    args.Hive,
 		Path:    args.Path,

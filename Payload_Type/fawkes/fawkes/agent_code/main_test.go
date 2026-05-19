@@ -11,16 +11,22 @@ import (
 
 func TestCalculateSleepTime_ZeroJitter(t *testing.T) {
 	duration := calculateSleepTime(10, 0)
-	expected := 10 * time.Second
-	if duration != expected {
-		t.Errorf("calculateSleepTime(10, 0) = %v, want %v", duration, expected)
+	// With per-instance drift (±5%) and micro-jitter, allow ±6% tolerance
+	low := time.Duration(float64(10*time.Second) * 0.94)
+	high := time.Duration(float64(10*time.Second) * 1.06)
+	if duration < low || duration > high {
+		t.Errorf("calculateSleepTime(10, 0) = %v, want within [%v, %v]", duration, low, high)
 	}
 }
 
 func TestCalculateSleepTime_ZeroInterval(t *testing.T) {
 	duration := calculateSleepTime(0, 0)
-	if duration != 0 {
-		t.Errorf("calculateSleepTime(0, 0) = %v, want 0", duration)
+	// interval=0 is clamped to 1s, then drift is applied; must be >= 1s
+	if duration < 1*time.Second {
+		t.Errorf("calculateSleepTime(0, 0) = %v, want >= 1s", duration)
+	}
+	if duration > time.Duration(float64(1*time.Second)*1.06) {
+		t.Errorf("calculateSleepTime(0, 0) = %v, want <= ~1.06s", duration)
 	}
 }
 
@@ -77,17 +83,19 @@ func TestCalculateSleepTime_MinClamp(t *testing.T) {
 
 func TestCalculateSleepTime_LargeInterval(t *testing.T) {
 	duration := calculateSleepTime(3600, 0) // 1 hour, no jitter
-	expected := 3600 * time.Second
-	if duration != expected {
-		t.Errorf("calculateSleepTime(3600, 0) = %v, want %v", duration, expected)
+	low := time.Duration(float64(3600*time.Second) * 0.94)
+	high := time.Duration(float64(3600*time.Second) * 1.06)
+	if duration < low || duration > high {
+		t.Errorf("calculateSleepTime(3600, 0) = %v, want within [%v, %v]", duration, low, high)
 	}
 }
 
 func TestCalculateSleepTime_OneSecond(t *testing.T) {
 	duration := calculateSleepTime(1, 0)
-	expected := 1 * time.Second
-	if duration != expected {
-		t.Errorf("calculateSleepTime(1, 0) = %v, want %v", duration, expected)
+	low := time.Duration(float64(1*time.Second) * 0.94)
+	high := time.Duration(float64(1*time.Second) * 1.06)
+	if duration < low || duration > high {
+		t.Errorf("calculateSleepTime(1, 0) = %v, want within [%v, %v]", duration, low, high)
 	}
 }
 

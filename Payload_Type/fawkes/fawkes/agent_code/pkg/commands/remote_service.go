@@ -155,6 +155,10 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 		return remoteSvcDLLSideload(args)
 	}
 
+	if args.Password == "" && args.Hash == "" {
+		return errorf("Either -password or -hash is required for remote service access")
+	}
+
 	opMap := map[string]string{
 		"list":   "svcctl-list",
 		"query":  "svcctl-query",
@@ -166,6 +170,20 @@ func (c *RemoteServiceCommand) Execute(task structs.Task) structs.CommandResult 
 	op, ok := opMap[action]
 	if !ok {
 		return errorf("Unknown action: %s\nAvailable: list, query, create, start, stop, delete, modify-path, trigger, dll-sideload", args.Action)
+	}
+
+	switch action {
+	case "query", "start", "stop", "delete":
+		if args.Name == "" {
+			return errorf("Action %q requires -name parameter", action)
+		}
+	case "create":
+		if args.Name == "" {
+			return errorf("Action %q requires -name parameter", action)
+		}
+		if args.BinPath == "" {
+			return errorf("Action %q requires -binpath parameter", action)
+		}
 	}
 
 	params, _ := json.Marshal(svcctlParams{
