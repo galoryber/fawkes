@@ -433,7 +433,8 @@ Go's standard TLS stack produces a distinctive JA3 hash that network security to
 | `firefox` | Firefox |
 | `safari` | Safari |
 | `edge` | Microsoft Edge |
-| `random` | Randomized fingerprint per connection |
+| `rotate` | Randomly selects Chrome/Firefox/Safari/Edge per-connection (prevents JA3 correlation) |
+| `random` | Fully randomized fingerprint (not browser-matching) |
 | `go` | No spoofing — use Go's default TLS stack |
 
 ### Mutual TLS (mTLS) Client Certificate Authentication
@@ -555,7 +556,7 @@ The HTTP profile calls back to the Mythic server over the basic, non-dynamic pro
 - **Content-Type cycling:** Set the `content_types` build parameter to a comma-separated list (e.g., `application/json,text/plain,application/x-www-form-urlencoded`). The agent cycles through them round-robin. Default: `application/x-www-form-urlencoded`.
 - **User-Agent rotation:** Set the `user_agent_pool` build parameter to a newline-separated list of User-Agent strings. The agent rotates through them per-request, eliminating the static UA fingerprint. Default: single Chrome 134 UA.
 - **Exponential backoff:** On consecutive C2 failures, the agent doubles its sleep interval (capped at 5 minutes). Normal interval is restored on successful contact.
-- **TLS fingerprinting:** Spoof browser JA3 fingerprints (`chrome`, `firefox`, `safari`, `edge`, `random`).
+- **TLS fingerprinting:** Spoof browser JA3 fingerprints (`chrome`, `firefox`, `safari`, `edge`, `rotate`, `random`).
 - **Mutual TLS (mTLS):** Client certificate authentication prevents passive interception and proxy MITM (T1573.002).
 - **Domain fronting:** Set `host_header` to override the HTTP Host header.
 - **Automatic failover:** Configure `fallback_hosts` for resilient C2.

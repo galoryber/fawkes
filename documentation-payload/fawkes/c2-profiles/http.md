@@ -41,7 +41,11 @@ Example: `content_types=application/json,text/plain,application/x-www-form-urlen
 
 ### TLS Fingerprinting
 
-Set `tls_fingerprint` to spoof browser JA3 fingerprints: `chrome`, `firefox`, `safari`, `edge`, `random`, `go` (default).
+Set `tls_fingerprint` to spoof browser JA3 fingerprints:
+- `chrome`, `firefox`, `safari`, `edge` — fixed browser fingerprint (same JA3 every connection)
+- `rotate` — randomly selects Chrome/Firefox/Safari/Edge per-connection (prevents JA3-based correlation)
+- `random` — fully randomized fingerprint (not browser-matching)
+- `go` — default Go TLS stack (no spoofing)
 
 ### Domain Fronting
 
