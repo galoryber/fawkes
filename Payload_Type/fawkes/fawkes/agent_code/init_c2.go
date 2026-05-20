@@ -295,7 +295,8 @@ func initHTTPC2(cfg parsedConfig) (*c2Setup, error) {
 		MTLSKeyPEM:      decodedKey,
 		FallbackURLs:    fallbackURLs,
 		ContentTypes:    ctList,
-		RecoverySeconds: cfg.recoverySeconds,
+		RecoverySeconds:     cfg.recoverySeconds,
+		KeyRotationInterval: cfg.keyRotationInterval,
 	})
 	// Set configurable HTTP timeout
 	if cfg.httpTimeout != 30 {

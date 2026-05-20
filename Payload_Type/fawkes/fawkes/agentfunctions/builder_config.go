@@ -273,6 +273,14 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 		ldflags += fmt.Sprintf(" -X '%s.maxRetries=%s'", fawkesMainPackage, mrStr)
 	}
 
+	// Key rotation interval (ECDH forward secrecy)
+	if krStr, err := payloadBuildMsg.BuildParameters.GetStringArg("key_rotation_interval"); err == nil && krStr != "" && krStr != "0" {
+		if _, parseErr := strconv.Atoi(krStr); parseErr != nil {
+			return "", fmt.Errorf("invalid key_rotation_interval %q — must be a number", krStr)
+		}
+		ldflags += fmt.Sprintf(" -X '%s.keyRotationInterval=%s'", fawkesMainPackage, krStr)
+	}
+
 	// Recovery interval for unhealthy domains
 	if riStr, err := payloadBuildMsg.BuildParameters.GetStringArg("recovery_interval"); err == nil && riStr != "" && riStr != "600" {
 		if _, parseErr := strconv.Atoi(riStr); parseErr != nil {

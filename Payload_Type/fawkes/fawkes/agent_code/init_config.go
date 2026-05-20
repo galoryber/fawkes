@@ -25,7 +25,8 @@ type parsedConfig struct {
 	killDate            int64
 	maxRetries          int
 	httpTimeout         int
-	recoverySeconds     int // Seconds between recovery attempts for unhealthy C2 domains
+	recoverySeconds     int    // Seconds between recovery attempts for unhealthy C2 domains
+	keyRotationInterval uint64 // Check-ins between ECDH key rotations (0 = disabled)
 	failoverThreshold   int // Consecutive failures before switching C2 profile
 	failoverRecovery    int // Seconds between primary recovery attempts when on backup
 	debug               bool
@@ -111,6 +112,9 @@ func parseConfigValues() parsedConfig {
 	cfg.recoverySeconds, err = strconv.Atoi(recoveryInterval)
 	if err != nil || cfg.recoverySeconds <= 0 {
 		cfg.recoverySeconds = 600 // 10 minutes default
+	}
+	if kri, parseErr := strconv.ParseUint(keyRotationInterval, 10, 64); parseErr == nil {
+		cfg.keyRotationInterval = kri
 	}
 	cfg.failoverThreshold, err = strconv.Atoi(failoverThreshold)
 	if err != nil || cfg.failoverThreshold <= 0 {
