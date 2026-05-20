@@ -157,7 +157,7 @@ func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult 
 	// Create temp zip file
 	tmpFile, err := os.CreateTemp("", "")
 	if err != nil {
-		return errorf("Error creating temp file: %v", err)
+		return errorf("Error: cannot create temp file (disk full or temp directory not writable)")
 	}
 	tmpPath := tmpFile.Name()
 
@@ -178,7 +178,7 @@ func downloadDirectory(task structs.Task, dirPath string) structs.CommandResult 
 	// Open the temp zip for transfer
 	zipFile, err := os.Open(tmpPath)
 	if err != nil {
-		return errorf("Error opening zip for transfer: %v", err)
+		return errorf("Error: cannot open temp zip file for transfer (file may have been cleaned up)")
 	}
 	defer zipFile.Close()
 
