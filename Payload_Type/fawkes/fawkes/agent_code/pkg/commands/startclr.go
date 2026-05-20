@@ -156,6 +156,7 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		if err != nil {
 			output += fmt.Sprintf("[-] ETW Autopatch failed: %v\n", err)
 		} else {
+			etwPatched = true
 			output += patchOutput + "\n"
 		}
 		output += "[*] Applying ETW Autopatch (EtwEventRegister)...\n"
@@ -171,6 +172,7 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 		if err != nil {
 			output += fmt.Sprintf("[-] ETW Ret Patch failed: %v\n", err)
 		} else {
+			etwPatched = true
 			output += patchOutput
 		}
 		output += "[*] Applying ETW Ret Patch (EtwEventRegister)...\n"
@@ -216,6 +218,9 @@ func (c *StartCLRCommand) Execute(task structs.Task) structs.CommandResult {
 			} else {
 				if amsiAddr != 0 {
 					amsiPatched = true
+				}
+				if etwAddr != 0 {
+					etwPatched = true
 				}
 				output += hwbpOutput
 			}

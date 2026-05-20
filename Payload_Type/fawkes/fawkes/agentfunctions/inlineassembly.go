@@ -171,7 +171,7 @@ func init() {
 				TaskID:             taskData.Task.ID,
 				Success:            true,
 				OpsecPreBlocked:    false,
-				OpsecPreMessage:    "OPSEC WARNING: Inline assembly execution loads and runs .NET assemblies in-process via the CLR. Creates CLR loading artifacts (clrjit.dll, mscorlib.ni.dll). Detectable by ETW .NET tracing, AMSI scanning, and memory scanners looking for .NET metadata in non-.NET processes.",
+				OpsecPreMessage:    "OPSEC WARNING: Inline assembly execution loads .NET assemblies in-process via the CLR. Creates CLR loading artifacts (clrjit.dll, mscorlib.ni.dll). ETW (EtwEventWrite) is auto-patched before assembly loading to silence CLR telemetry. Memory scanners may detect .NET metadata in non-.NET processes.",
 				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
@@ -180,7 +180,7 @@ func init() {
 				TaskID:              taskData.Task.ID,
 				Success:             true,
 				OpsecPostBlocked:    false,
-				OpsecPostMessage:    "OPSEC AUDIT: .NET assembly executed via CLR. The CLR remains loaded in the process (cannot be unloaded). Assembly metadata may be visible to ETW .NET runtime providers. Use 'etw -action blind' to suppress .NET ETW if needed.",
+				OpsecPostMessage:    "OPSEC AUDIT: .NET assembly executed via CLR. The CLR remains loaded in the process (cannot be unloaded). ETW was auto-patched before execution — CLR Assembly.Load and JIT events were silenced.",
 				OpsecPostBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
 			}
 		},
