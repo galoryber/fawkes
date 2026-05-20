@@ -182,3 +182,182 @@ func TestCorrelatedSleep_MinimumBound(t *testing.T) {
 		t.Errorf("Expected at least 1s minimum, got %v", result)
 	}
 }
+
+// --- RecordCheckIn tests ---
+
+func TestRecordCheckIn_FirstCall(t *testing.T) {
+	nc := NewNetworkCorrelator(50)
+	nc.RecordCheckIn()
+	if nc.CheckInCount() != 0 {
+		t.Errorf("First call should not record an interval, got %d", nc.CheckInCount())
+	}
+}
+
+func TestRecordCheckIn_SecondCall(t *testing.T) {
+	nc := NewNetworkCorrelator(50)
+	nc.RecordCheckIn()
+	time.Sleep(10 * time.Millisecond)
+	nc.RecordCheckIn()
+	if nc.CheckInCount() != 1 {
+		t.Errorf("Expected 1 interval after 2 calls, got %d", nc.CheckInCount())
+	}
+}
+
+func TestRecordCheckIn_MultipleCalls(t *testing.T) {
+	nc := NewNetworkCorrelator(50)
+	for i := 0; i < 10; i++ {
+		nc.RecordCheckIn()
+	}
+	if nc.CheckInCount() != 9 {
+		t.Errorf("Expected 9 intervals after 10 calls, got %d", nc.CheckInCount())
+	}
+}
+
+func TestCheckInStats_InsufficientData(t *testing.T) {
+	nc := NewNetworkCorrelator(50)
+	mean, stddev, cv := nc.CheckInStats()
+	if mean != 0 || stddev != 0 || cv != 0 {
+		t.Errorf("Expected zeros with no data, got mean=%f stddev=%f cv=%f", mean, stddev, cv)
+	}
+}
+
+func TestCheckInStats_WithData(t *testing.T) {
+	nc := NewNetworkCorrelator(50)
+	// Simulate check-ins with known intervals by injecting directly
+	nc.mu.Lock()
+	for i := 0; i < 20; i++ {
+		nc.checkinSamples = append(nc.checkinSamples, 10000+int64(i*200))
+	}
+	nc.mu.Unlock()
+
+	mean, stddev, cv := nc.CheckInStats()
+	if mean < 10000 || mean > 14000 {
+		t.Errorf("Expected mean ~11900, got %f", mean)
+	}
+	if stddev <= 0 {
+		t.Errorf("Expected positive stddev, got %f", stddev)
+	}
+	if cv <= 0 {
+		t.Errorf("Expected positive cv, got %f", cv)
+	}
+}
+
+// --- AdaptSleep tests ---
+
+func TestAdaptSleep_InsufficientSamples(t *testing.T) {
+	nc := NewNetworkCorrelator(50)
+	base := 10 * time.Second
+	result := nc.AdaptSleep(base)
+	if result != base {
+		t.Errorf("Expected base duration with insufficient samples, got %v vs %v", result, base)
+	}
+}
+
+func TestAdaptSleep_TooRegular_IncreasesVariance(t *testing.T) {
+	nc := NewNetworkCorrelator(50)
+	// Inject perfectly uniform check-in intervals (CV=0) → should boost
+	nc.mu.Lock()
+	for i := 0; i < 20; i++ {
+		nc.checkinSamples = append(nc.checkinSamples, 10000)
+	}
+	nc.mu.Unlock()
+
+	base := 10 * time.Second
+	boostSeen := false
+	for i := 0; i < 50; i++ {
+		result := nc.AdaptSleep(base)
+		if result > base {
+			boostSeen = true
+			break
+		}
+	}
+	if !boostSeen {
+		t.Error("Expected AdaptSleep to boost sleep when CV=0 (too regular), but all results were <= base")
+	}
+}
+
+func TestAdaptSleep_NormalRange_NoChange(t *testing.T) {
+	nc := NewNetworkCorrelator(50)
+	// Inject samples with CV ~0.2 (within target range 0.10-0.40)
+	nc.mu.Lock()
+	for i := 0; i < 20; i++ {
+		base := int64(10000 + (i%5)*2000) // 10-18s range
+		nc.checkinSamples = append(nc.checkinSamples, base)
+	}
+	nc.mu.Unlock()
+
+	_, _, cv := nc.CheckInStats()
+	if cv < 0.10 || cv > 0.40 {
+		t.Skipf("Test samples have CV=%f outside expected range, skipping", cv)
+	}
+
+	base := 10 * time.Second
+	result := nc.AdaptSleep(base)
+	if result != base {
+		t.Errorf("Expected no adjustment in normal CV range, got %v vs %v", result, base)
+	}
+}
+
+func TestAdaptSleep_TooErratic_Dampens(t *testing.T) {
+	nc := NewNetworkCorrelator(50)
+	// Inject highly variable samples (CV > 0.5)
+	nc.mu.Lock()
+	for i := 0; i < 20; i++ {
+		val := int64(5000 + (i%2)*20000) // alternates between 5s and 25s
+		nc.checkinSamples = append(nc.checkinSamples, val)
+	}
+	nc.mu.Unlock()
+
+	_, _, cv := nc.CheckInStats()
+	if cv <= 0.40 {
+		t.Skipf("Test samples have CV=%f not erratic enough, skipping", cv)
+	}
+
+	base := 10 * time.Second
+	result := nc.AdaptSleep(base)
+	if result >= base {
+		t.Errorf("Expected dampened sleep when CV>0.40, got %v >= %v", result, base)
+	}
+	// Should not go below 50% of base
+	minAllowed := 5 * time.Second
+	if result < minAllowed {
+		t.Errorf("Result %v below minimum bound %v", result, minAllowed)
+	}
+}
+
+func TestAdaptSleep_BoundsEnforced(t *testing.T) {
+	nc := NewNetworkCorrelator(50)
+	// Extreme: CV = 0, should boost but not exceed 200%
+	nc.mu.Lock()
+	for i := 0; i < 20; i++ {
+		nc.checkinSamples = append(nc.checkinSamples, 10000)
+	}
+	nc.mu.Unlock()
+
+	base := 10 * time.Second
+	for i := 0; i < 100; i++ {
+		result := nc.AdaptSleep(base)
+		maxAllowed := 20 * time.Second
+		if result > maxAllowed {
+			t.Errorf("Result %v exceeds maximum bound %v", result, maxAllowed)
+		}
+		minAllowed := 5 * time.Second
+		if result < minAllowed {
+			t.Errorf("Result %v below minimum bound %v", result, minAllowed)
+		}
+	}
+}
+
+func TestAdaptSleep_MinimumOneSecond(t *testing.T) {
+	nc := NewNetworkCorrelator(50)
+	nc.mu.Lock()
+	for i := 0; i < 20; i++ {
+		nc.checkinSamples = append(nc.checkinSamples, 500)
+	}
+	nc.mu.Unlock()
+
+	result := nc.AdaptSleep(500 * time.Millisecond)
+	if result < 1*time.Second {
+		t.Errorf("Expected at least 1s minimum, got %v", result)
+	}
+}
