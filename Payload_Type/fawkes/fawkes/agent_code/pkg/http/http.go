@@ -113,6 +113,9 @@ type HTTPProfile struct {
 	// Interactive hooks — set by main.go for PTY/terminal bidirectional streaming.
 	GetInteractiveOutbound func() []structs.InteractiveMsg
 	HandleInteractive      func(msgs []structs.InteractiveMsg)
+
+	// Key rotation state for forward secrecy (ECDH X25519).
+	keyRotation *keyRotationState
 }
 
 // ProfileConfig holds the configuration for creating an HTTP C2 profile.
@@ -136,8 +139,9 @@ type ProfileConfig struct {
 	MTLSCertPEM    string
 	MTLSKeyPEM     string
 	FallbackURLs   []string
-	ContentTypes   []string
+	ContentTypes    []string
 	RecoverySeconds int
+	KeyRotationInterval uint64
 }
 
 // NewHTTPProfile creates a new HTTP profile from the given configuration.
@@ -159,6 +163,7 @@ func NewHTTPProfile(cfg ProfileConfig) *HTTPProfile {
 		FallbackURLs:  cfg.FallbackURLs,
 		ContentTypes:  cfg.ContentTypes,
 		tracker:       resilience.NewTracker(1+len(cfg.FallbackURLs), 3, cfg.RecoverySeconds),
+		keyRotation:   newKeyRotationState(cfg.KeyRotationInterval),
 	}
 
 	tlsConfig := buildTLSConfig(cfg.TLSVerify)

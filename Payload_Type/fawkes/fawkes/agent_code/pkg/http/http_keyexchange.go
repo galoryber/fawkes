@@ -172,6 +172,51 @@ func zeroBytes(b []byte) {
 	}
 }
 
+// processKeyExchangeResponse handles the server's ECDH key exchange response.
+// Phase 1: server sends its ephemeral public key → agent derives new key, stores pending.
+// Phase 2: server confirms key switch → agent rotates to new key.
+func (h *HTTPProfile) processKeyExchangeResponse(resp map[string]interface{}, cfg *sensitiveConfig) {
+	if h.keyRotation == nil {
+		return
+	}
+
+	// Phase 1: server responded with its ephemeral public key
+	if serverPub, ok := resp["key_exchange_response"].(string); ok && serverPub != "" {
+		currentKeyBytes, err := base64.StdEncoding.DecodeString(cfg.EncryptionKey)
+		if err != nil {
+			h.keyRotation.Abort()
+			return
+		}
+		_, err = h.keyRotation.ProcessServerKey(serverPub, currentKeyBytes)
+		if err != nil {
+			h.keyRotation.Abort()
+		}
+		return
+	}
+
+	// Phase 2: server confirmed the key switch
+	if confirmed, ok := resp["key_exchange_confirmed"].(bool); ok && confirmed {
+		if h.keyRotation.Phase() != phaseExchanged {
+			return
+		}
+		h.keyRotation.mu.Lock()
+		pendingKey := h.keyRotation.pendingKey
+		h.keyRotation.mu.Unlock()
+
+		if pendingKey == nil {
+			h.keyRotation.Abort()
+			return
+		}
+
+		newKeyB64 := base64.StdEncoding.EncodeToString(pendingKey)
+		if err := h.RotateEncryptionKey(newKeyB64); err != nil {
+			h.keyRotation.Abort()
+			return
+		}
+		h.keyRotation.ConfirmRotation()
+	}
+}
+
 // RotateEncryptionKey atomically swaps the encryption key in the config vault.
 // The old key is zeroed after the swap.
 func (h *HTTPProfile) RotateEncryptionKey(newKeyB64 string) error {

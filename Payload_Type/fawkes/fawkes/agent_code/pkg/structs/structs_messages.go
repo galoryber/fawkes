@@ -98,6 +98,9 @@ type TaskingMessage struct {
 	PayloadUUID string `json:"uuid,omitempty"`
 	PayloadType string `json:"payload_type,omitempty"`
 	C2Profile   string `json:"c2_profile,omitempty"`
+	// ECDH key exchange for forward secrecy
+	KeyExchange        string `json:"key_exchange,omitempty"`
+	KeyExchangeConfirm bool   `json:"key_exchange_confirm,omitempty"`
 }
 
 // PostResponseMessage represents posting a response back to Mythic

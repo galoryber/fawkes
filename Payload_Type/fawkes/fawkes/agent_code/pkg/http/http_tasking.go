@@ -151,6 +151,18 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 		}
 	}
 
+	// ECDH key exchange: Phase 2 confirmation (previous exchange completed)
+	if h.keyRotation != nil && h.keyRotation.Phase() == phaseExchanged {
+		taskingMsg.KeyExchangeConfirm = true
+	}
+
+	// ECDH key exchange: Phase 1 initiation (interval reached, no exchange in progress)
+	if h.keyRotation != nil && h.keyRotation.ShouldInitiateExchange() {
+		if pubKey, err := h.keyRotation.GenerateEphemeralKey(); err == nil {
+			taskingMsg.KeyExchange = pubKey
+		}
+	}
+
 	body, err := json.Marshal(taskingMsg)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to marshal tasking message: %w", err)
@@ -271,6 +283,9 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 			}
 		}
 	}
+
+	// ECDH key exchange: process server's response
+	h.processKeyExchangeResponse(taskResponse, cfg)
 
 	return tasks, inboundSocks, nil
 }

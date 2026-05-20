@@ -355,3 +355,185 @@ func TestFullKeyExchange_BothSidesDeriveSameKey(t *testing.T) {
 		agentKR.ConfirmRotation()
 	}
 }
+
+func TestProcessKeyExchangeResponse_Phase1(t *testing.T) {
+	currentKeyB64 := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	profile := &HTTPProfile{
+		EncryptionKey: currentKeyB64,
+		keyRotation:   newKeyRotationState(1),
+	}
+	profile.keyRotation.ShouldInitiateExchange()
+	profile.keyRotation.GenerateEphemeralKey()
+
+	curve := ecdh.X25519()
+	serverPriv, _ := curve.GenerateKey(rand.Reader)
+	serverPubB64 := base64.StdEncoding.EncodeToString(serverPriv.PublicKey().Bytes())
+
+	cfg := &sensitiveConfig{EncryptionKey: currentKeyB64}
+	resp := map[string]interface{}{
+		"key_exchange_response": serverPubB64,
+	}
+
+	profile.processKeyExchangeResponse(resp, cfg)
+
+	if profile.keyRotation.Phase() != phaseExchanged {
+		t.Errorf("phase = %d, want phaseExchanged", profile.keyRotation.Phase())
+	}
+	profile.keyRotation.mu.Lock()
+	hasPending := profile.keyRotation.pendingKey != nil
+	profile.keyRotation.mu.Unlock()
+	if !hasPending {
+		t.Error("expected pending key after Phase 1")
+	}
+}
+
+func TestProcessKeyExchangeResponse_Phase2_RotatesKey(t *testing.T) {
+	currentKey := make([]byte, 32)
+	rand.Read(currentKey)
+	currentKeyB64 := base64.StdEncoding.EncodeToString(currentKey)
+
+	profile := &HTTPProfile{
+		EncryptionKey: currentKeyB64,
+		keyRotation:   newKeyRotationState(1),
+	}
+	profile.keyRotation.ShouldInitiateExchange()
+	profile.keyRotation.GenerateEphemeralKey()
+
+	curve := ecdh.X25519()
+	serverPriv, _ := curve.GenerateKey(rand.Reader)
+	serverPubB64 := base64.StdEncoding.EncodeToString(serverPriv.PublicKey().Bytes())
+
+	cfg := &sensitiveConfig{EncryptionKey: currentKeyB64}
+	profile.processKeyExchangeResponse(map[string]interface{}{
+		"key_exchange_response": serverPubB64,
+	}, cfg)
+
+	if profile.keyRotation.Phase() != phaseExchanged {
+		t.Fatalf("expected phaseExchanged after Phase 1")
+	}
+
+	profile.processKeyExchangeResponse(map[string]interface{}{
+		"key_exchange_confirmed": true,
+	}, cfg)
+
+	if profile.keyRotation.Phase() != phaseIdle {
+		t.Errorf("phase after confirmation = %d, want phaseIdle", profile.keyRotation.Phase())
+	}
+	if profile.EncryptionKey == currentKeyB64 {
+		t.Error("encryption key should have changed after rotation")
+	}
+}
+
+func TestProcessKeyExchangeResponse_NilKeyRotation(t *testing.T) {
+	profile := &HTTPProfile{}
+	cfg := &sensitiveConfig{EncryptionKey: "test"}
+	profile.processKeyExchangeResponse(map[string]interface{}{
+		"key_exchange_response": "something",
+	}, cfg)
+}
+
+func TestProcessKeyExchangeResponse_InvalidServerKey_Aborts(t *testing.T) {
+	currentKeyB64 := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	profile := &HTTPProfile{
+		EncryptionKey: currentKeyB64,
+		keyRotation:   newKeyRotationState(1),
+	}
+	profile.keyRotation.ShouldInitiateExchange()
+	profile.keyRotation.GenerateEphemeralKey()
+
+	cfg := &sensitiveConfig{EncryptionKey: currentKeyB64}
+	resp := map[string]interface{}{
+		"key_exchange_response": "not-valid-base64!!!",
+	}
+	profile.processKeyExchangeResponse(resp, cfg)
+
+	if profile.keyRotation.Phase() != phaseIdle {
+		t.Errorf("phase after invalid key = %d, want phaseIdle (aborted)", profile.keyRotation.Phase())
+	}
+}
+
+func TestProcessKeyExchangeResponse_ConfirmWithoutExchange_NoOp(t *testing.T) {
+	currentKeyB64 := base64.StdEncoding.EncodeToString(make([]byte, 32))
+	profile := &HTTPProfile{
+		EncryptionKey: currentKeyB64,
+		keyRotation:   newKeyRotationState(1),
+	}
+
+	cfg := &sensitiveConfig{EncryptionKey: currentKeyB64}
+	profile.processKeyExchangeResponse(map[string]interface{}{
+		"key_exchange_confirmed": true,
+	}, cfg)
+
+	if profile.EncryptionKey != currentKeyB64 {
+		t.Error("key should not change without prior exchange")
+	}
+}
+
+func TestProcessKeyExchangeResponse_Phase2_WithVault(t *testing.T) {
+	currentKey := make([]byte, 32)
+	rand.Read(currentKey)
+	currentKeyB64 := base64.StdEncoding.EncodeToString(currentKey)
+
+	profile := &HTTPProfile{
+		BaseURL:       "http://test.com",
+		EncryptionKey: currentKeyB64,
+		UserAgent:     "TestAgent",
+		GetEndpoint:   "/get",
+		PostEndpoint:  "/post",
+		keyRotation:   newKeyRotationState(1),
+	}
+	if err := profile.SealConfig(); err != nil {
+		t.Fatalf("SealConfig: %v", err)
+	}
+
+	profile.keyRotation.ShouldInitiateExchange()
+	profile.keyRotation.GenerateEphemeralKey()
+
+	curve := ecdh.X25519()
+	serverPriv, _ := curve.GenerateKey(rand.Reader)
+	serverPubB64 := base64.StdEncoding.EncodeToString(serverPriv.PublicKey().Bytes())
+
+	cfg := profile.getConfig()
+	profile.processKeyExchangeResponse(map[string]interface{}{
+		"key_exchange_response": serverPubB64,
+	}, cfg)
+
+	cfg = profile.getConfig()
+	profile.processKeyExchangeResponse(map[string]interface{}{
+		"key_exchange_confirmed": true,
+	}, cfg)
+
+	if profile.keyRotation.Phase() != phaseIdle {
+		t.Errorf("phase = %d, want phaseIdle", profile.keyRotation.Phase())
+	}
+
+	newCfg := profile.getConfig()
+	if newCfg == nil {
+		t.Fatal("getConfig returned nil after vault rotation")
+	}
+	if newCfg.EncryptionKey == currentKeyB64 {
+		t.Error("vault key should have changed after rotation")
+	}
+	if newCfg.BaseURL != "http://test.com" {
+		t.Error("rotation should not affect other vault fields")
+	}
+}
+
+func TestKeyRotationState_IntegrationWithProfile(t *testing.T) {
+	profile := &HTTPProfile{
+		keyRotation: newKeyRotationState(0),
+	}
+	if profile.keyRotation.ShouldInitiateExchange() {
+		t.Error("disabled rotation should never trigger")
+	}
+
+	profile2 := &HTTPProfile{
+		keyRotation: newKeyRotationState(2),
+	}
+	if profile2.keyRotation.ShouldInitiateExchange() {
+		t.Error("should not trigger on first check-in")
+	}
+	if !profile2.keyRotation.ShouldInitiateExchange() {
+		t.Error("should trigger on second check-in (interval=2)")
+	}
+}
