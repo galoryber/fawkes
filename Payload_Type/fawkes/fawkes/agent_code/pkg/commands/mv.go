@@ -47,12 +47,21 @@ func (c *MvCommand) Execute(task structs.Task) structs.CommandResult {
 
 	// Check if source file exists
 	if _, err := os.Stat(args.Source); err != nil {
-		return errorf("Error: Source file does not exist or cannot be accessed: %v", err)
+		if os.IsNotExist(err) {
+			return errorf("Error: source not found: %s", args.Source)
+		}
+		if os.IsPermission(err) {
+			return errorf("Error: access denied to %s — check privileges", args.Source)
+		}
+		return errorf("Error: cannot access source: %s", args.Source)
 	}
 
 	// Move/rename the file
 	if err := os.Rename(args.Source, args.Destination); err != nil {
-		return errorf("Error moving file: %v", err)
+		if os.IsPermission(err) {
+			return errorf("Error: access denied — cannot write to destination %s", args.Destination)
+		}
+		return errorf("Error: cannot move %s to %s (cross-device move or destination directory missing)", args.Source, args.Destination)
 	}
 
 	return successf("Successfully moved %s to %s", args.Source, args.Destination)

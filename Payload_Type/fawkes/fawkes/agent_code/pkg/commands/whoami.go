@@ -30,7 +30,7 @@ func (c *WhoamiCommand) Execute(task structs.Task) structs.CommandResult {
 
 	u, err := user.Current()
 	if err != nil {
-		return errorf("Failed to get current user: %v", err)
+		return errorf("Error: cannot determine current user (user database lookup failed)")
 	}
 
 	// Hostname
