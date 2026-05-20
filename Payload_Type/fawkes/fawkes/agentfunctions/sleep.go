@@ -114,6 +114,24 @@ func init() {
 			},
 		},
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sleep_new.js"), Author: "@galoryber"},
+		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
+			interval, _ := taskData.Args.GetNumberArg("interval")
+			msg := fmt.Sprintf("OPSEC WARNING: Changing sleep interval to %ds. ", int(interval))
+			if interval < 5 {
+				msg += "Very short interval — high network traffic, increased detection risk."
+			} else if interval < 30 {
+				msg += "Short interval increases C2 traffic frequency."
+			} else {
+				msg += "Interval affects responsiveness vs. stealth tradeoff."
+			}
+			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
+				TaskID:             taskData.Task.ID,
+				Success:            true,
+				OpsecPreBlocked:    false,
+				OpsecPreMessage:    msg,
+				OpsecPreBypassRole: agentstructs.OPSEC_ROLE_OPERATOR,
+			}
+		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,
