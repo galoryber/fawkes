@@ -1134,7 +1134,7 @@ func TestResolveProviderGUID_Shorthands(t *testing.T) {
 		{"sysmon", "B3A7698A-0C45-44DA-B73D-E181C9B5C8E6", "Microsoft-Windows-Sysmon"},
 		{"amsi", "F4E1897A-BB65-5399-F245-102D38640FFE", "Microsoft-Antimalware-Scan-Interface"},
 		{"powershell", "A0C1853B-5C40-4B15-8766-3CF1C58F985A", "Microsoft-Windows-PowerShell"},
-		{"dotnet", "04C2CAB3-2A99-4097-AB1C-1291F8EB6E95", "Microsoft-Windows-DotNETRuntime"},
+		{"dotnet", "E13C0D23-CCBC-4E12-931B-D9CC2EEE27E4", "Microsoft-Windows-DotNETRuntime"},
 		{"winrm", "11C5D8AD-756A-42C2-8087-EB1B4A72A846", "Microsoft-Windows-WinRM"},
 		{"wmi", "DCBE5AAA-16E2-457C-9337-366950045F0A", "Microsoft-Windows-WMI-Activity"},
 		{"api-calls", "7DD42A49-5329-4832-8DFD-43D979153A88", "Microsoft-Windows-Kernel-Audit-API-Calls"},

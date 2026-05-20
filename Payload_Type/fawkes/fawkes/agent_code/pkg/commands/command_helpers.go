@@ -89,7 +89,7 @@ var knownSecurityProviders = map[string]string{
 	"B3A7698A-0C45-44DA-B73D-E181C9B5C8E6": "Microsoft-Windows-Sysmon",
 	"555908D1-A6D7-4695-8E1E-26931D2012F4": "Microsoft-Windows-DNS-Client",
 	"A83D4C09-79AF-4A78-A129-A15ECCAE1BF9": "Microsoft-Windows-RPC",
-	"04C2CAB3-2A99-4097-AB1C-1291F8EB6E95": "Microsoft-Windows-DotNETRuntime",
+	"E13C0D23-CCBC-4E12-931B-D9CC2EEE27E4": "Microsoft-Windows-DotNETRuntime",
 }
 
 // Shorthand provider names for operator convenience
@@ -103,7 +103,7 @@ var providerShorthands = map[string]string{
 	"amsi":              "F4E1897A-BB65-5399-F245-102D38640FFE",
 	"powershell":        "A0C1853B-5C40-4B15-8766-3CF1C58F985A",
 	"winrm":             "11C5D8AD-756A-42C2-8087-EB1B4A72A846",
-	"dotnet":            "04C2CAB3-2A99-4097-AB1C-1291F8EB6E95",
+	"dotnet":            "E13C0D23-CCBC-4E12-931B-D9CC2EEE27E4",
 	"wmi":               "DCBE5AAA-16E2-457C-9337-366950045F0A",
 	"api-calls":         "7DD42A49-5329-4832-8DFD-43D979153A88",
 	"task-scheduler":    "E8109B99-3A2C-4961-AA83-D1A7A148ADA8",
