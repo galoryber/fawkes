@@ -222,6 +222,8 @@ pre = "<b>2. </b>"
     * [iptables](/agents/fawkes/commands/iptables/)
     * [linux-logs](/agents/fawkes/commands/linux-logs/)
     * [history-scrub](/agents/fawkes/commands/history-scrub/)
+    * [lolbin](/agents/fawkes/commands/lolbin/)
+    * [masquerade](/agents/fawkes/commands/masquerade/)
     * [ntdll-unhook](/agents/fawkes/commands/ntdll-unhook/)
     * [process-mitigation](/agents/fawkes/commands/process-mitigation/)
     * [syscalls](/agents/fawkes/commands/syscalls/)
