@@ -84,6 +84,12 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			action, _ := taskData.Args.GetStringArg("action")
+			if action == "" {
+				action = "check"
+			}
+			display := action
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "Registry Read", "Sysmon service/driver registry keys + event channels")
 			return response
 		},

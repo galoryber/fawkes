@@ -135,6 +135,16 @@ func init() {
 				Success: true,
 				TaskID:  taskData.Task.ID,
 			}
+			path, _ := taskData.Args.GetStringArg("path")
+			if path == "" {
+				path = "~"
+			}
+			depth, _ := taskData.Args.GetNumberArg("depth")
+			if depth == 0 {
+				depth = 5
+			}
+			display := fmt.Sprintf("scan %s (depth: %d)", path, int(depth))
+			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "File Read", "Scanning files for secret patterns")
 			return response
 		},
