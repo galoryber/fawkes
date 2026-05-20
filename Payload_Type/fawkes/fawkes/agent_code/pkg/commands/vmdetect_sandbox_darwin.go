@@ -16,7 +16,8 @@ func sandboxCheckUptime() sandboxCheck {
 	// Use syscall.Sysctl to get boot time
 	bootTimeStr, err := syscall.Sysctl("kern.boottime")
 	if err != nil || len(bootTimeStr) < 4 {
-		return sandboxCheck{Name: "System Uptime", Category: "timing", Details: "unable to determine"}
+		return sandboxCheck{Name: "System Uptime", Category: "timing", Suspicious: true, Score: 5,
+			Details: "cannot read kern.boottime — sysctl restricted or sandboxed"}
 	}
 
 	// kern.boottime returns a struct timeval; first 4 bytes are tv_sec (little-endian on arm64)
@@ -44,7 +45,8 @@ func sandboxCheckUptime() sandboxCheck {
 func sandboxCheckRAM() sandboxCheck {
 	memStr, err := syscall.Sysctl("hw.memsize")
 	if err != nil || len(memStr) < 8 {
-		return sandboxCheck{Name: "Total RAM", Category: "hardware", Details: "unable to determine"}
+		return sandboxCheck{Name: "Total RAM", Category: "hardware", Suspicious: true, Score: 5,
+			Details: "cannot read hw.memsize — sysctl restricted or sandboxed"}
 	}
 
 	// hw.memsize returns uint64 bytes
@@ -75,7 +77,8 @@ func sandboxCheckRAM() sandboxCheck {
 func sandboxCheckDisk() sandboxCheck {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs("/", &stat); err != nil {
-		return sandboxCheck{Name: "Disk Size", Category: "hardware", Details: "error: " + err.Error()}
+		return sandboxCheck{Name: "Disk Size", Category: "hardware", Suspicious: true, Score: 10,
+			Details: "cannot stat root filesystem — restricted environment or container"}
 	}
 
 	totalBytes := stat.Blocks * uint64(stat.Bsize)

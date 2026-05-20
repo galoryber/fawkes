@@ -15,17 +15,20 @@ import (
 func sandboxCheckUptime() sandboxCheck {
 	data, err := os.ReadFile("/proc/uptime")
 	if err != nil {
-		return sandboxCheck{Name: "System Uptime", Category: "timing", Details: "error: " + err.Error()}
+		return sandboxCheck{Name: "System Uptime", Category: "timing", Suspicious: true, Score: 10,
+			Details: "cannot read /proc/uptime — restricted environment or container"}
 	}
 
 	fields := strings.Fields(string(data))
 	if len(fields) < 1 {
-		return sandboxCheck{Name: "System Uptime", Category: "timing", Details: "parse error"}
+		return sandboxCheck{Name: "System Uptime", Category: "timing", Suspicious: true, Score: 5,
+			Details: "/proc/uptime empty — unusual environment"}
 	}
 
 	uptimeSec, err := strconv.ParseFloat(fields[0], 64)
 	if err != nil {
-		return sandboxCheck{Name: "System Uptime", Category: "timing", Details: "parse error: " + err.Error()}
+		return sandboxCheck{Name: "System Uptime", Category: "timing", Suspicious: true, Score: 5,
+			Details: fmt.Sprintf("/proc/uptime not parseable: %q", fields[0])}
 	}
 
 	uptime := time.Duration(uptimeSec * float64(time.Second))
@@ -50,7 +53,8 @@ func sandboxCheckUptime() sandboxCheck {
 func sandboxCheckRAM() sandboxCheck {
 	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
-		return sandboxCheck{Name: "Total RAM", Category: "hardware", Details: "error: " + err.Error()}
+		return sandboxCheck{Name: "Total RAM", Category: "hardware", Suspicious: true, Score: 10,
+			Details: "cannot read /proc/meminfo — restricted environment or container"}
 	}
 
 	for _, line := range strings.Split(string(data), "\n") {
@@ -80,14 +84,16 @@ func sandboxCheckRAM() sandboxCheck {
 		}
 	}
 
-	return sandboxCheck{Name: "Total RAM", Category: "hardware", Details: "unable to determine"}
+	return sandboxCheck{Name: "Total RAM", Category: "hardware", Suspicious: true, Score: 5,
+		Details: "MemTotal not found in /proc/meminfo — unusual environment"}
 }
 
 // sandboxCheckDisk checks total disk space — sandboxes often have small disks.
 func sandboxCheckDisk() sandboxCheck {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs("/", &stat); err != nil {
-		return sandboxCheck{Name: "Disk Size", Category: "hardware", Details: "error: " + err.Error()}
+		return sandboxCheck{Name: "Disk Size", Category: "hardware", Suspicious: true, Score: 10,
+			Details: "cannot stat root filesystem — restricted environment or container"}
 	}
 
 	totalBytes := stat.Blocks * uint64(stat.Bsize)

@@ -58,7 +58,8 @@ func sandboxCheckRAM() sandboxCheck {
 
 	ret, _, _ := globalMemoryStatusEx.Call(uintptr(unsafe.Pointer(&memStatus)))
 	if ret == 0 {
-		return sandboxCheck{Name: "Total RAM", Category: "hardware", Details: "unable to determine"}
+		return sandboxCheck{Name: "Total RAM", Category: "hardware", Suspicious: true, Score: 5,
+			Details: "GlobalMemoryStatusEx failed — API may be hooked or restricted"}
 	}
 
 	gb := float64(memStatus.TotalPhys) / (1024 * 1024 * 1024)
@@ -94,7 +95,8 @@ func sandboxCheckDisk() sandboxCheck {
 		uintptr(unsafe.Pointer(&totalFreeBytes)),
 	)
 	if ret == 0 {
-		return sandboxCheck{Name: "Disk Size", Category: "hardware", Details: "unable to determine"}
+		return sandboxCheck{Name: "Disk Size", Category: "hardware", Suspicious: true, Score: 5,
+			Details: "GetDiskFreeSpaceExW failed — API may be hooked or restricted"}
 	}
 
 	totalGB := float64(totalBytes) / (1024 * 1024 * 1024)
