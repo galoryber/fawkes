@@ -212,9 +212,16 @@ func NewHTTPProfile(cfg ProfileConfig) *HTTPProfile {
 		}
 	}
 
+	var rt http.RoundTripper = transport
+	if transport.DialTLSContext != nil {
+		rt = newH2AwareTransport(transport, transport.DialTLSContext)
+	} else if strings.HasPrefix(cfg.BaseURL, "https://") {
+		transport.ForceAttemptHTTP2 = true
+	}
+
 	profile.client = &http.Client{
 		Timeout:   30 * time.Second,
-		Transport: transport,
+		Transport: rt,
 	}
 
 	return profile

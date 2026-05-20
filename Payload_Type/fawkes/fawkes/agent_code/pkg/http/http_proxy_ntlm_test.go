@@ -205,12 +205,8 @@ func TestNewHTTPProfile_NTLMProxy(t *testing.T) {
 	if p.client == nil {
 		t.Fatal("HTTP client not initialized with NTLM proxy config")
 	}
-	transport := p.client.Transport.(*http.Transport)
-	if transport.Proxy != nil {
-		t.Error("Proxy should be nil when NTLM proxy is configured (handled by DialTLSContext)")
-	}
-	if transport.DialTLSContext == nil {
-		t.Error("DialTLSContext should be set for NTLM proxy")
+	if _, ok := p.client.Transport.(*h2AwareTransport); !ok {
+		t.Errorf("transport type = %T, want *h2AwareTransport (NTLM proxy uses DialTLSContext)", p.client.Transport)
 	}
 }
 
