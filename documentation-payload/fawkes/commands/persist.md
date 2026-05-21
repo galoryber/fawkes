@@ -7,13 +7,13 @@ hidden = false
 
 ## Summary
 
-Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart), macOS (launchagent, periodic, folder-action, login-item, auth-plugin). All methods support install, remove, and list actions.
+Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor, wmi-event, netsh-helper), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart), macOS (launchagent, periodic, folder-action, login-item, auth-plugin). All methods support install, remove, and list/check actions.
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| method | choose_one | Yes | registry | Persistence method: `registry`, `startup-folder`, `com-hijack`, `screensaver`, `ifeo`, `winlogon`, `print-processor`, `accessibility`, `active-setup`, `time-provider`, `port-monitor`, `xdg-autostart`, or `list` |
+| method | choose_one | Yes | registry | Persistence method: `registry`, `startup-folder`, `com-hijack`, `screensaver`, `ifeo`, `winlogon`, `print-processor`, `accessibility`, `active-setup`, `time-provider`, `port-monitor`, `wmi-event`, `netsh-helper`, `xdg-autostart`, or `list` |
 | action | choose_one | No | install | `install` to add persistence, `remove` to delete it |
 | name | string | No* | - | Registry value name or startup folder filename (*required for registry, defaults to exe name for startup) |
 | path | string | No | Current agent | Path to executable. Defaults to the running agent binary. |
@@ -202,6 +202,57 @@ persist -method time-provider -action remove -name "NtpClientExt"
 
 {{% notice tip %}}Restart w32time to load immediately: `net stop w32time && net start w32time`. The DLL must export `TimeProvGetTimeSysInfo`.{{% /notice %}}
 
+### WMI Event Subscription Persistence
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Create a WMI event subscription in `root\subscription` namespace. Creates an `__EventFilter` (trigger), `CommandLineEventConsumer` (payload), and `__FilterToConsumerBinding` (link). Triggers when system uptime reaches 120 seconds after boot. Survives reboots and is often missed by security tools that focus on registry/startup locations.
+
+Install (default name "SystemHealthCheck", polls every 300s):
+```
+persist -method wmi-event -action install -path "C:\Windows\Temp\payload.exe"
+```
+
+Install with custom name and polling interval:
+```
+persist -method wmi-event -action install -name "HealthMonitor" -path "C:\Temp\svc.exe" -timeout 60
+```
+
+Check existing WMI subscriptions:
+```
+persist -method wmi-event -action check
+```
+
+Remove:
+```
+persist -method wmi-event -action remove -name "SystemHealthCheck"
+```
+
+{{% notice warning %}}WMI event subscriptions require admin privileges. Sysmon Event ID 19/20/21 logs WMI subscription creation. Some EDRs specifically monitor `root\subscription` namespace changes.{{% /notice %}}
+
+### Netsh Helper DLL Persistence
+
+{{% notice info %}}Windows Only{{% /notice %}}
+
+Register a DLL as a netsh helper. The DLL loads whenever any `netsh` command runs (common in network troubleshooting and configuration scripts). Requires admin to write to `HKLM\SOFTWARE\Microsoft\NetSh` and copy to System32.
+
+Install:
+```
+persist -method netsh-helper -action install -path "C:\Temp\helper.dll" -name "nshipsec"
+```
+
+Check registered netsh helpers:
+```
+persist -method netsh-helper -action check
+```
+
+Remove:
+```
+persist -method netsh-helper -action remove -name "nshipsec"
+```
+
+{{% notice tip %}}Default helper name "nshipsec" mimics the legitimate IPsec netsh helper. The DLL is copied to System32 and the registry value stores only the filename. Triggers on any `netsh` invocation by any user.{{% /notice %}}
+
 ### XDG Autostart Persistence
 
 {{% notice info %}}Linux Only{{% /notice %}}
@@ -222,7 +273,7 @@ persist -method xdg-autostart -action remove -name "my-service"
 
 ### List Existing Persistence
 
-Enumerate all known persistence entries — registry Run keys (HKCU + HKLM), startup folder, COM hijack entries, IFEO debugger entries, Active Setup entries, Winlogon helper values, print processors, accessibility binary integrity, screensaver settings, XDG autostart entries:
+Enumerate all known persistence entries — registry Run keys (HKCU + HKLM), startup folder, COM hijack entries, IFEO debugger entries, Active Setup entries, Winlogon helper values, print processors, accessibility binary integrity, screensaver settings, WMI event subscriptions, netsh helper DLLs, XDG autostart entries:
 ```
 persist -method list
 ```
@@ -388,3 +439,5 @@ persist -method auth-plugin -action remove -name "FawkesAuth"
 - T1053.003 — Scheduled Task/Job: Periodic Scripts (macOS)
 - T1547.015 — Boot or Logon Autostart Execution: Login Items (macOS)
 - T1547.002 — Boot or Logon Autostart Execution: Authentication Process (macOS Authorization Plugin)
+- T1546.003 — Event Triggered Execution: Windows Management Instrumentation Event Subscription
+- T1546.007 — Event Triggered Execution: Netsh Helper DLL

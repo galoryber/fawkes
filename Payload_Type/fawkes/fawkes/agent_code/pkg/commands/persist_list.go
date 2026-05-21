@@ -333,6 +333,49 @@ func listPersistence(args persistArgs) structs.CommandResult {
 		}
 	}
 
+	// Check WMI event subscriptions
+	lines = append(lines, "--- WMI Event Subscriptions (root\\subscription) ---")
+	wmiOut, wmiErr := runPowerShell(
+		`$c = Get-WmiObject -Namespace root\subscription -Class CommandLineEventConsumer 2>$null; ` +
+			`if ($c) { $c | ForEach-Object { "$($_.Name)|$($_.CommandLineTemplate)" } } else { '(none)' }`)
+	if wmiErr != nil {
+		lines = append(lines, fmt.Sprintf("  Error: %v", wmiErr))
+	} else {
+		for _, line := range strings.Split(wmiOut, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "(none)" || line == "" {
+				lines = append(lines, "  (none)")
+				break
+			}
+			parts := strings.SplitN(line, "|", 2)
+			if len(parts) == 2 {
+				lines = append(lines, fmt.Sprintf("  %s → %s", parts[0], parts[1]))
+			}
+		}
+	}
+	lines = append(lines, "")
+
+	// Check Netsh helpers
+	lines = append(lines, "--- Netsh Helper DLLs (HKLM\\SOFTWARE\\Microsoft\\NetSh) ---")
+	if netshKey, err := registry.OpenKey(registry.LOCAL_MACHINE, `SOFTWARE\Microsoft\NetSh`, registry.QUERY_VALUE); err == nil {
+		defer netshKey.Close()
+		if names, err := netshKey.ReadValueNames(-1); err == nil {
+			if len(names) == 0 {
+				lines = append(lines, "  (empty)")
+			}
+			for _, name := range names {
+				if val, _, err := netshKey.GetStringValue(name); err == nil {
+					lines = append(lines, fmt.Sprintf("  %s = %s", name, val))
+				}
+			}
+		} else {
+			lines = append(lines, fmt.Sprintf("  Error: %v", err))
+		}
+	} else {
+		lines = append(lines, fmt.Sprintf("  Error: %v", err))
+	}
+	lines = append(lines, "")
+
 	return successResult(strings.Join(lines, "\n"))
 }
 

