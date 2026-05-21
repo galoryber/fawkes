@@ -28,7 +28,7 @@ import (
 // each rule is checked via rbacRuleIsDangerous; severity is computed by
 // rbacSeverityFor.
 func escapeK8sRBAC(args containerEscapeArgs) (string, string) {
-	kc, err := newK8sClient()
+	kc, err := newK8sClient(args.Kubeconfig)
 	if err != nil {
 		return fmt.Sprintf("K8s RBAC enumeration failed: %v", err), "error"
 	}

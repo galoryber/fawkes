@@ -13,7 +13,7 @@ import (
 
 // escapeK8sDeploy creates a pod with a specified image and command.
 func escapeK8sDeploy(args containerEscapeArgs) (string, string) {
-	kc, err := newK8sClient()
+	kc, err := newK8sClient(args.Kubeconfig)
 	if err != nil {
 		return fmt.Sprintf("K8s deploy failed: %v", err), "error"
 	}
@@ -140,7 +140,7 @@ func escapeK8sExec(args containerEscapeArgs) (string, string) {
 	targetPod := parts[0]
 	execCmd := parts[1]
 
-	kc, err := newK8sClient()
+	kc, err := newK8sClient(args.Kubeconfig)
 	if err != nil {
 		return fmt.Sprintf("K8s exec failed: %v", err), "error"
 	}

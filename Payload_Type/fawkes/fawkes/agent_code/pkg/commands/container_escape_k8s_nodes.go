@@ -17,8 +17,7 @@ import (
 // internal/external IPs (lateral movement targets), allocatable resources
 // (where to deploy a workload).
 func escapeK8sNodes(args containerEscapeArgs) (string, string) {
-	_ = args // node enumeration is cluster-scoped — args are unused for now
-	kc, err := newK8sClient()
+	kc, err := newK8sClient(args.Kubeconfig)
 	if err != nil {
 		return fmt.Sprintf("K8s node enumeration failed: %v", err), "error"
 	}

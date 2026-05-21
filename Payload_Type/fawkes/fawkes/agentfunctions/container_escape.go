@@ -289,8 +289,8 @@ func init() {
 			Author:     "@galoryber",
 		},
 		Description:         "Container escape and K8s operations — enumerate breakout vectors, exploit Docker/cgroup/nsenter, and interact with Kubernetes API (RBAC privesc paths, nodes, secrets, etcd unauth probe, pod exec) (T1611, T1610, T1613, T1552.007, T1069.003)",
-		HelpString:          "container-escape -action <check|docker-sock|cgroup|nsenter|mount-host|k8s-enum|k8s-secrets|k8s-rbac|k8s-nodes|k8s-etcd|k8s-deploy|k8s-exec> [-command '<cmd>'] [-image alpine] [-path /dev/sda1|<namespace>|*]",
-		Version:             4,
+		HelpString:          "container-escape -action <check|docker-sock|cgroup|nsenter|mount-host|k8s-enum|k8s-secrets|k8s-rbac|k8s-nodes|k8s-etcd|k8s-deploy|k8s-exec> [-command '<cmd>'] [-image alpine] [-path /dev/sda1|<namespace>|*] [-kubeconfig /path/to/config]",
+		Version:             5,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1611", "T1610", "T1613", "T1552.007", "T1069.003", "T1087.004"},
@@ -357,6 +357,20 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "kubeconfig",
+				ModalDisplayName: "Kubeconfig Path",
+				CLIName:          "kubeconfig",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Path to kubeconfig file for out-of-cluster K8s access (e.g., ~/.kube/config or stolen kubeconfig). Supports token and client certificate auth. If empty, uses in-cluster service account.",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:           "Default",
+					},
+				},
+			},
 		},
 		TaskFunctionOPSECPost: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTaskOPSECPostTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
@@ -388,6 +402,7 @@ func init() {
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
+			kubeconfig, _ := taskData.Args.GetStringArg("kubeconfig")
 			msg := "OPSEC WARNING: Container escape attempts to break out of container isolation to the host OS. Highly detectable by container security tools (Falco, Sysdig, Aqua). May trigger alerts for mount namespace manipulation, cgroup abuse, or /proc filesystem access."
 			switch action {
 			case "k8s-rbac":
@@ -396,6 +411,9 @@ func init() {
 				msg = "OPSEC WARNING: K8s node enumeration calls /api/v1/nodes which is restricted to cluster-admin-equivalent roles in most clusters. A 403 from this endpoint is itself a high-signal alert. Successful enumeration reveals kubelet versions (CVE-hunt), OS images, kernel versions (LPE-hunt), pod CIDRs (network plan), and taints (control-plane vs worker topology) — all suitable for the audit log."
 			case "k8s-etcd":
 				msg = "OPSEC WARNING: K8s etcd probe runs in two phases. Phase 1 inspects kube-system pod specs to scrape --etcd-servers/--listen-client-urls from control-plane container args (audit log: GET /api/v1/namespaces/kube-system/pods). Phase 2 issues unauthenticated GET /version requests against each discovered endpoint at :2379. Direct connections to etcd's client port are extremely uncommon outside the apiserver process — IDS, NetFlow, and Falco (`Etcd Connection Not From Allowed Source` default rule) all flag this. A successful unauthenticated read against etcd is a full cluster compromise: every secret, token, and config is unencrypted at rest in the keyspace."
+			}
+			if kubeconfig != "" {
+				msg += " [KUBECONFIG] Using out-of-cluster access via kubeconfig file — file read generates filesystem access artifacts; API calls will authenticate as the kubeconfig identity (not the pod service account)."
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
@@ -411,7 +429,11 @@ func init() {
 				TaskID:  taskData.Task.ID,
 			}
 			action, _ := taskData.Args.GetStringArg("action")
-			display := fmt.Sprintf("%s", action)
+			kubeconfig, _ := taskData.Args.GetStringArg("kubeconfig")
+			display := action
+			if kubeconfig != "" {
+				display += fmt.Sprintf(" (kubeconfig: %s)", kubeconfig)
+			}
 			response.DisplayParams = &display
 			createArtifact(taskData.Task.ID, "Process Create", "Container escape attempt")
 			return response

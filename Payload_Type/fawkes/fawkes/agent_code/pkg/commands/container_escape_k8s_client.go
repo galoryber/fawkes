@@ -30,9 +30,48 @@ type k8sClient struct {
 	namespace string
 }
 
-// newK8sClient creates an authenticated K8s API client from service account credentials.
-func newK8sClient() (*k8sClient, error) {
-	// Read service account token
+// newK8sClient creates an authenticated K8s API client. If kubeconfigPath is
+// non-empty, credentials are loaded from the kubeconfig file. Otherwise,
+// in-cluster service account authentication is used.
+func newK8sClient(kubeconfigPath string) (*k8sClient, error) {
+	if kubeconfigPath != "" {
+		return newK8sClientFromKubeconfig(kubeconfigPath)
+	}
+	return newK8sClientInCluster()
+}
+
+func newK8sClientFromKubeconfig(path string) (*k8sClient, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read kubeconfig %q: %w", path, err)
+	}
+	defer structs.ZeroBytes(data)
+
+	kc, err := parseKubeconfig(data)
+	if err != nil {
+		return nil, err
+	}
+
+	auth, err := resolveKubeconfigAuth(kc, "")
+	if err != nil {
+		return nil, err
+	}
+
+	tlsConfig := auth.buildTLSConfig()
+	client := &http.Client{
+		Transport: &http.Transport{TLSClientConfig: tlsConfig},
+		Timeout:   30 * time.Second,
+	}
+
+	return &k8sClient{
+		client:    client,
+		apiServer: auth.APIServer,
+		token:     auth.Token,
+		namespace: auth.Namespace,
+	}, nil
+}
+
+func newK8sClientInCluster() (*k8sClient, error) {
 	tokenData, err := os.ReadFile(k8sTokenPath)
 	if err != nil {
 		return nil, fmt.Errorf("K8s service account token not found: %w", err)
@@ -40,7 +79,6 @@ func newK8sClient() (*k8sClient, error) {
 	token := strings.TrimSpace(string(tokenData))
 	structs.ZeroBytes(tokenData)
 
-	// Read namespace
 	nsData, err := os.ReadFile(k8sNamespacePath)
 	if err != nil {
 		return nil, fmt.Errorf("K8s namespace not found: %w", err)
@@ -48,7 +86,6 @@ func newK8sClient() (*k8sClient, error) {
 	namespace := strings.TrimSpace(string(nsData))
 	structs.ZeroBytes(nsData)
 
-	// Discover API server from env
 	host := os.Getenv("KUBERNETES_SERVICE_HOST")
 	port := os.Getenv("KUBERNETES_SERVICE_PORT")
 	if host == "" || port == "" {
@@ -56,7 +93,6 @@ func newK8sClient() (*k8sClient, error) {
 	}
 	apiServer := fmt.Sprintf("https://%s:%s", host, port)
 
-	// Build TLS config with CA cert if available
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
 	if caData, err := os.ReadFile(k8sCAPath); err == nil {
 		pool := x509.NewCertPool()
@@ -86,7 +122,9 @@ func (k *k8sClient) k8sGet(path string) ([]byte, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	req.Header.Set("Authorization", "Bearer "+k.token)
+	if k.token != "" {
+		req.Header.Set("Authorization", "Bearer "+k.token)
+	}
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := k.client.Do(req)
@@ -104,7 +142,9 @@ func (k *k8sClient) k8sPost(path string, jsonBody []byte) ([]byte, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	req.Header.Set("Authorization", "Bearer "+k.token)
+	if k.token != "" {
+		req.Header.Set("Authorization", "Bearer "+k.token)
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
@@ -123,7 +163,9 @@ func (k *k8sClient) k8sDelete(path string) ([]byte, int, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	req.Header.Set("Authorization", "Bearer "+k.token)
+	if k.token != "" {
+		req.Header.Set("Authorization", "Bearer "+k.token)
+	}
 
 	resp, err := k.client.Do(req)
 	if err != nil {

@@ -13,7 +13,7 @@ import (
 
 // escapeK8sEnum enumerates K8s resources: namespaces, pods, services, nodes.
 func escapeK8sEnum(args containerEscapeArgs) (string, string) {
-	kc, err := newK8sClient()
+	kc, err := newK8sClient(args.Kubeconfig)
 	if err != nil {
 		return fmt.Sprintf("K8s enumeration failed: %v", err), "error"
 	}
@@ -142,7 +142,7 @@ func escapeK8sEnum(args containerEscapeArgs) (string, string) {
 
 // escapeK8sSecrets lists and reads K8s secrets (T1552.007).
 func escapeK8sSecrets(args containerEscapeArgs) (string, string) {
-	kc, err := newK8sClient()
+	kc, err := newK8sClient(args.Kubeconfig)
 	if err != nil {
 		return fmt.Sprintf("K8s secrets access failed: %v", err), "error"
 	}

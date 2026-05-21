@@ -26,10 +26,11 @@ func (c *ContainerEscapeCommand) Description() string {
 }
 
 type containerEscapeArgs struct {
-	Action  string `json:"action"`
-	Command string `json:"command"`
-	Image   string `json:"image"`
-	Path    string `json:"path"`
+	Action     string `json:"action"`
+	Command    string `json:"command"`
+	Image      string `json:"image"`
+	Path       string `json:"path"`
+	Kubeconfig string `json:"kubeconfig"`
 }
 
 func (c *ContainerEscapeCommand) Execute(task structs.Task) structs.CommandResult {
