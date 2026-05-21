@@ -18,7 +18,7 @@ func init() {
 		Description:         "sysinfo - Collect comprehensive system information: OS version, hardware, memory, uptime, domain membership, .NET versions (Windows), SELinux/SIP status, virtualization detection. Use 'full-profile' action for automated host profiling chain.",
 		HelpString:          "sysinfo\nsysinfo -action full-profile",
 		Version:             2,
-		MitreAttackMappings: []string{"T1082"}, // System Information Discovery
+		MitreAttackMappings: []string{"T1082", "T1071.001", "T1573.001", "T1132.001"}, // System Information Discovery, Web Protocols, Symmetric Cryptography (AES C2), Standard Encoding (base64 C2)
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "sysinfo_new.js"), Author: "@galoryber"},
 		CommandAttributes: agentstructs.CommandAttribute{

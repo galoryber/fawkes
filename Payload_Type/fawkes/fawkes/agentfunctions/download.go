@@ -21,7 +21,7 @@ func init() {
 		Description:         "Download a file or directory from the target system (directories auto-zipped, files auto-compressed with gzip for large transfers)",
 		HelpString:          "download [path] or download {\"path\": \"/file\", \"compress\": true} — files >1MB auto-compressed",
 		Version:             3,
-		MitreAttackMappings: []string{"T1020", "T1030", "T1041", "T1560.002"},
+		MitreAttackMappings: []string{"T1020", "T1030", "T1041", "T1105", "T1560.002"},
 		SupportedUIFeatures: []string{"file_browser:download"},
 		Author:              "@galoryber",
 		CommandAttributes: agentstructs.CommandAttribute{

@@ -15,7 +15,7 @@ func init() {
 		Description:         "Link to a P2P agent via TCP or named pipe to establish a peer-to-peer connection for internal pivoting. The target agent must be built with a TCP or named pipe profile and listening.",
 		HelpString:          "link -host <ip> -port <port> | link -connection_type namedpipe -host <ip> -pipe_name <name>",
 		Version:             1,
-		MitreAttackMappings: []string{"T1572"},
+		MitreAttackMappings: []string{"T1572", "T1008"}, // Protocol Tunneling, Fallback Channels
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,

@@ -18,7 +18,7 @@ func init() {
 		Description:         "Start, stop, or view stats for the SOCKS5 proxy through this callback. Supports TCP and UDP relay with optional bandwidth limiting.",
 		HelpString:          "socks start [port]  /  socks stop [port]  /  socks stats  /  socks bandwidth [kb/s]",
 		Version:             4,
-		MitreAttackMappings: []string{"T1090"}, // Proxy
+		MitreAttackMappings: []string{"T1090", "T1572"}, // Proxy, Protocol Tunneling
 		SupportedUIFeatures: []string{},
 		Author:              "@xorrior",
 		CommandAttributes: agentstructs.CommandAttribute{

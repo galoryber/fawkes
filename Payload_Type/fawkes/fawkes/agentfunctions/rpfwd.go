@@ -18,7 +18,7 @@ func init() {
 		Description:         "Start, stop, or forward port forwarding through this agent. 'start' creates a reverse port forward (agent listens, Mythic connects to remote). 'forward' creates a local relay (agent listens, agent connects to internal target).",
 		HelpString:          "rpfwd start <port> <remote_ip> <remote_port>  /  rpfwd forward <port> <target_ip> <target_port>  /  rpfwd stop <port>",
 		Version:             3,
-		MitreAttackMappings: []string{"T1090"}, // Proxy
+		MitreAttackMappings: []string{"T1090", "T1572"}, // Proxy, Protocol Tunneling
 		SupportedUIFeatures: []string{"port_browser:forward"},
 		Author:              "@GlobeTechLLC",
 		CommandAttributes: agentstructs.CommandAttribute{

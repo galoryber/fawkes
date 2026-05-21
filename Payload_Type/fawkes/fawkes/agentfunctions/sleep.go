@@ -20,7 +20,7 @@ func init() {
 		HelpString:          "sleep {interval} [jitter%] [working_start] [working_end] [working_days] OR sleep -interval 60 -jitter 30 -jitter_profile normal",
 		Version:             3,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{},
+		MitreAttackMappings: []string{"T1029"}, // Scheduled Transfer (callback interval)
 		SupportedUIFeatures: []string{},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS, agentstructs.SUPPORTED_OS_WINDOWS},
