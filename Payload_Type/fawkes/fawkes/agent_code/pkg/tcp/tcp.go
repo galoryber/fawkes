@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 
 	"fawkes/pkg/structs"
 )
@@ -62,6 +63,9 @@ type TCPProfile struct {
 	needsParent       bool   // set when parent disconnects; next accepted connection becomes parent
 	needsParentMu     sync.Mutex
 	parentReady       chan struct{} // signaled when a new parent connection is established
+
+	// Monotonic sequence counter for replay attack protection.
+	outSeq atomic.Uint64
 }
 
 // NewTCPProfile creates a new TCP profile for P2P communication.
@@ -82,6 +86,11 @@ func NewTCPProfile(bindAddress, encryptionKey string, debug bool, pipeName ...st
 		p.PipeName = pipeName[0]
 	}
 	return p
+}
+
+// nextSeq returns the next monotonic sequence number for outbound messages.
+func (t *TCPProfile) nextSeq() uint64 {
+	return t.outSeq.Add(1)
 }
 
 // resolveUUID maps a temporary UUID to its Mythic-assigned UUID if mapping exists.
