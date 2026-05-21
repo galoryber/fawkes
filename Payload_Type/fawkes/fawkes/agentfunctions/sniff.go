@@ -32,9 +32,9 @@ func formatSniffRealm(dstIP string, dstPort uint16) string {
 func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "sniff",
-		Description:         "Network sniffing, poisoning, and relay. capture: passive credential sniffing. poison: LLMNR/NBT-NS/mDNS responder. relay: NTLM relay to target SMB.",
+		Description:         "Network sniffing, poisoning, and relay. capture: passive credential sniffing. poison: LLMNR/NBT-NS/mDNS responder with SMB+HTTP NTLM hash capture. relay: NTLM relay to target SMB.",
 		HelpString:          "sniff [-action capture] [-interface eth0] [-duration 30] [-ports 21,80,445]\nsniff -action poison [-response_ip 10.0.0.5] [-protocols llmnr,nbtns] [-duration 120]\nsniff -action relay -response_ip <target_smb_host> [-ports listen:target] [-duration 120]",
-		Version:             3,
+		Version:             4,
 		MitreAttackMappings: []string{"T1040", "T1557.001"}, // Network Sniffing + LLMNR/NBT-NS Poisoning + Relay
 		Author:              "@galoryber",
 		ScriptOnlyCommand:   false,
@@ -189,10 +189,11 @@ func init() {
 			switch action {
 			case "poison":
 				msg = "OPSEC CRITICAL: LLMNR/NBT-NS/mDNS poisoning (T1557.001) actively responds to multicast/broadcast name resolution queries. " +
+					"Starts SMB server (port 445) and HTTP server (port 80) to capture NTLMv2 hashes from poisoned victims. " +
 					"This generates network traffic that IDS/IPS signatures specifically detect (Responder-like behavior). " +
 					"Multiple hosts may authenticate to the attacker IP — monitor for account lockouts. " +
-					"Requires root/CAP_NET_RAW for raw socket + UDP multicast listeners. " +
-					"Poisoning is ACTIVE — it sends packets, not just captures."
+					"Requires root/admin for raw socket + UDP multicast + privileged port listeners. " +
+					"Hashes output in hashcat mode 5600 format. Poisoning is ACTIVE — it sends packets, not just captures."
 			case "relay":
 				msg = "OPSEC CRITICAL: NTLM relay (T1557.001) starts an HTTP server that triggers NTLM authentication and relays captured " +
 					"credentials to a target SMB server. This opens a TCP listener, generates SMB traffic to the target, and may trigger " +
@@ -233,10 +234,14 @@ func init() {
 				response.DisplayParams = &displayParams
 			}
 			action, _ := task.Args.GetStringArg("action")
-			if action == "relay" {
+			switch action {
+			case "relay":
 				createArtifact(task.Task.ID, "TCP Listener", "HTTP listener for NTLM relay victim connections")
 				createArtifact(task.Task.ID, "SMB Connection", "SMB2 session to relay target for NTLM authentication forwarding")
-			} else {
+			case "poison":
+				createArtifact(task.Task.ID, "UDP Listener", "LLMNR/NBT-NS/mDNS multicast listeners for name resolution poisoning")
+				createArtifact(task.Task.ID, "TCP Listener", "SMB (445) + HTTP (80) NTLM hash capture servers")
+			default:
 				createArtifact(task.Task.ID, "Raw Socket", "AF_PACKET raw socket for network sniffing")
 			}
 			return response

