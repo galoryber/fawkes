@@ -561,6 +561,9 @@ The HTTP profile calls back to the Mythic server over the basic, non-dynamic pro
 - **User-Agent rotation:** Set the `user_agent_pool` build parameter to a newline-separated list of User-Agent strings. The agent rotates through them per-request, eliminating the static UA fingerprint. Default: single Chrome 134 UA.
 - **Exponential backoff:** On consecutive C2 failures, the agent doubles its sleep interval (capped at 5 minutes). Normal interval is restored on successful contact.
 - **TLS fingerprinting:** Spoof browser JA3 fingerprints (`chrome`, `firefox`, `safari`, `edge`, `rotate`, `random`).
+- **HTTP/2 multiplexing:** Automatic h2 negotiation over HTTPS. Multiplexes requests on a single connection, matching browser behavior. Transparent h1 fallback.
+- **Forward secrecy:** ECDH X25519 key rotation every N check-ins (`key_rotation_interval`). Derives fresh AES-256 keys via HKDF-SHA256, zeroes old keys. Limits blast radius of key compromise.
+- **Replay protection:** Monotonic sequence numbers in every message (inside encrypted envelope). Prevents captured request/response replay.
 - **Mutual TLS (mTLS):** Client certificate authentication prevents passive interception and proxy MITM (T1573.002).
 - **Domain fronting:** Set `host_header` to override the HTTP Host header.
 - **Automatic failover:** Configure `fallback_hosts` for resilient C2.

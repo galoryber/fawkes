@@ -55,11 +55,38 @@ Set `host_header` to override the HTTP Host header for CDN domain fronting (e.g.
 
 Set `fallback_hosts` to comma-separated backup URLs. If the primary C2 is unreachable, the agent automatically rotates through fallback URLs.
 
+## HTTP/2 Support
+
+When the C2 server uses HTTPS, the agent automatically probes for HTTP/2 (h2) support on the first request. If h2 is negotiated, all subsequent requests are multiplexed on a single persistent connection, matching modern browser behavior. If the server doesn't support h2, the agent transparently falls back to HTTP/1.1.
+
+This works with all TLS fingerprinting modes — uTLS connections advertise h2 in ALPN, and the agent correctly routes to the h2 transport when h2 is negotiated. No configuration needed.
+
+## Forward Secrecy (ECDH Key Rotation)
+
+| Parameter | Description | Default |
+|-----------|-------------|---------|
+| `key_rotation_interval` | Check-ins between key rotations | `0` (disabled) |
+
+When enabled, the agent performs X25519 ECDH key exchange every N check-ins:
+
+1. Agent generates ephemeral X25519 keypair, sends public key in check-in message
+2. Server generates its own ephemeral keypair, responds with its public key
+3. Both sides derive a new AES-256 key via HKDF-SHA256
+4. Old key is zeroed after the new key is confirmed
+
+This limits the blast radius of key compromise — even if an attacker extracts the current session key, they cannot decrypt past traffic. Recommended value: `100` for long-term implants.
+
+## Replay Protection
+
+Each outbound message includes a monotonic sequence number (`seq` field inside the encrypted JSON envelope). The counter starts at 1 and increments per message. This enables server-side replay detection: any message with `seq` <= the last-seen value for that callback is a replay.
+
+Since the sequence is inside the encrypted envelope, a MitM cannot modify it without breaking the HMAC-SHA256 authentication tag.
+
 ## Encryption
 
 All messages use AES-256-CBC encryption with HMAC-SHA256 authentication:
 
-1. JSON message is serialized
+1. JSON message is serialized (includes monotonic sequence number)
 2. AES-256-CBC encryption with random 16-byte IV
 3. HMAC-SHA256 computed over IV + ciphertext
 4. Format: `[IV (16B)][Ciphertext][HMAC (32B)]`
@@ -90,6 +117,7 @@ Fawkes supports routing C2 traffic through HTTP proxies, including enterprise pr
 ## OPSEC Considerations
 
 - TLS fingerprinting prevents JA3-based detection
+- HTTP/2 multiplexing matches modern browser connection patterns
 - URI randomization prevents static path signatures
 - Content-Type cycling varies request appearance
 - Body transforms disguise encrypted blobs as legitimate content
@@ -97,6 +125,8 @@ Fawkes supports routing C2 traffic through HTTP proxies, including enterprise pr
 - Sleep mask encrypts all agent data during sleep cycles
 - Domain fronting hides true C2 destination from network observers
 - Proxy credentials are XOR-encrypted in the binary (with `obfuscate_strings`)
+- Forward secrecy limits blast radius of key compromise
+- Sequence numbers prevent message replay attacks
 
 ## MITRE ATT&CK Mapping
 
