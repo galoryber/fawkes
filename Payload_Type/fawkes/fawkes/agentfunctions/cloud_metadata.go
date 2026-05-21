@@ -109,10 +109,10 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "cloud-metadata",
 		Description:         "Probe cloud instance metadata services (AWS/Azure/GCP/DigitalOcean) for credentials, identity, and configuration. Supports IMDSv2 for AWS.",
-		HelpString:          "cloud-metadata -action detect\ncloud-metadata -action creds\ncloud-metadata -action all -provider aws\ncloud-metadata -action aws-iam\ncloud-metadata -action azure-graph\ncloud-metadata -action gcp-iam",
-		Version:             1,
+		HelpString:          "cloud-metadata -action detect\ncloud-metadata -action creds\ncloud-metadata -action storage\ncloud-metadata -action all -provider aws\ncloud-metadata -action aws-iam\ncloud-metadata -action aws-s3\ncloud-metadata -action azure-blob\ncloud-metadata -action gcp-gcs",
+		Version:             2,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1552.005", "T1580", "T1526", "T1098.001", "T1602"},
+		MitreAttackMappings: []string{"T1552.005", "T1580", "T1526", "T1098.001", "T1602", "T1530"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{
 				agentstructs.SUPPORTED_OS_WINDOWS,
@@ -128,10 +128,10 @@ func init() {
 			{
 				Name:          "action",
 				CLIName:       "action",
-				Description:   "Action: detect, all, creds, identity, userdata, network, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist, aws-ssm, azure-keyvault, gcp-secrets",
+				Description:   "Action: detect, all, creds, identity, userdata, network, storage, aws-iam, azure-graph, gcp-iam, aws-persist, azure-persist, aws-ssm, azure-keyvault, gcp-secrets, aws-s3, azure-blob, gcp-gcs",
 				DefaultValue:  "detect",
 				ParameterType: agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:       []string{"detect", "all", "creds", "identity", "userdata", "network", "aws-iam", "azure-graph", "gcp-iam", "aws-persist", "azure-persist", "aws-ssm", "azure-keyvault", "gcp-secrets"},
+				Choices:       []string{"detect", "all", "creds", "identity", "userdata", "network", "storage", "aws-iam", "azure-graph", "gcp-iam", "aws-persist", "azure-persist", "aws-ssm", "azure-keyvault", "gcp-secrets", "aws-s3", "azure-blob", "gcp-gcs"},
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -282,6 +282,15 @@ func init() {
 				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
 					"GCP Secret Manager enumeration (T1602)")
 				tagTask(processResponse.TaskData.Task.ID, "CRED", "GCP secrets accessed")
+			case "storage", "aws-s3", "aws-storage":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"AWS S3 bucket enumeration (T1530)")
+			case "azure-blob", "azure-storage":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"Azure Blob Storage container enumeration (T1530)")
+			case "gcp-gcs", "gcp-storage":
+				createArtifact(processResponse.TaskData.Task.ID, "Cloud Discovery",
+					"GCP Cloud Storage bucket enumeration (T1530)")
 			}
 
 			return response
@@ -306,6 +315,12 @@ func init() {
 				msg += " Azure Key Vault access is logged in Key Vault diagnostic logs and Azure Activity Log. GetSecret operations generate AuditEvent entries. Defender for Key Vault alerts on suspicious access patterns from managed identities."
 			case "gcp-secrets":
 				msg += " GCP Secret Manager access is logged in Cloud Audit Logs (AccessSecretVersion). IAM conditions and VPC Service Controls may restrict access. Security Command Center alerts on unusual service account activity."
+			case "storage", "aws-s3", "aws-storage":
+				msg += " AWS S3 ListBuckets and ListObjectsV2 are logged in CloudTrail as data events. S3 access logging (if enabled per-bucket) records every object-level request. GuardDuty detects anomalous S3 access patterns."
+			case "azure-blob", "azure-storage":
+				msg += " Azure Blob Storage list operations are logged in Azure Storage Analytics and Activity Log. Defender for Storage alerts on anomalous access from managed identities."
+			case "gcp-gcs", "gcp-storage":
+				msg += " GCP Cloud Storage list operations are logged in Cloud Audit Logs (storage.buckets.list, storage.objects.list). VPC Service Controls may restrict access. Security Command Center alerts on unusual service account data access."
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID: taskData.Task.ID, Success: true,
