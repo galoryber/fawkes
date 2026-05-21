@@ -116,6 +116,10 @@ type HTTPProfile struct {
 
 	// Key rotation state for forward secrecy (ECDH X25519).
 	keyRotation *keyRotationState
+
+	// Monotonic sequence counter for replay attack protection.
+	// Incremented per outbound message. Server can reject seq ≤ last seen.
+	outSeq atomic.Uint64
 }
 
 // ProfileConfig holds the configuration for creating an HTTP C2 profile.

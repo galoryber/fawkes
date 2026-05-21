@@ -90,15 +90,14 @@ type CheckinMessage struct {
 type TaskingMessage struct {
 	Action      string            `json:"action"`
 	TaskingSize int               `json:"tasking_size"`
+	Seq         uint64            `json:"seq,omitempty"`
 	Socks       []SocksMsg        `json:"socks,omitempty"`
 	Rpfwd       []SocksMsg        `json:"rpfwd,omitempty"`
 	Delegates   []DelegateMessage `json:"delegates,omitempty"`
 	Interactive []InteractiveMsg  `json:"interactive,omitempty"`
-	// Add agent identification for checkin updates
 	PayloadUUID string `json:"uuid,omitempty"`
 	PayloadType string `json:"payload_type,omitempty"`
 	C2Profile   string `json:"c2_profile,omitempty"`
-	// ECDH key exchange for forward secrecy
 	KeyExchange        string `json:"key_exchange,omitempty"`
 	KeyExchangeConfirm bool   `json:"key_exchange_confirm,omitempty"`
 }
@@ -106,6 +105,7 @@ type TaskingMessage struct {
 // PostResponseMessage represents posting a response back to Mythic
 type PostResponseMessage struct {
 	Action      string                 `json:"action"`
+	Seq         uint64                 `json:"seq,omitempty"`
 	Responses   []Response             `json:"responses"`
 	Socks       []SocksMsg             `json:"socks,omitempty"`
 	Rpfwd       []SocksMsg             `json:"rpfwd,omitempty"`

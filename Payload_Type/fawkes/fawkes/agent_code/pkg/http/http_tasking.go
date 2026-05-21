@@ -119,10 +119,10 @@ func (h *HTTPProfile) GetTasking(agent *structs.Agent, outboundSocks []structs.S
 
 	taskingMsg := structs.TaskingMessage{
 		Action:      "get_tasking",
-		TaskingSize: -1, // Get all pending tasks (important for SOCKS throughput)
+		TaskingSize: -1,
+		Seq:         h.nextSeq(),
 		Socks:       outboundSocks,
-		// Include agent identification for checkin updates
-		PayloadUUID: h.getActiveUUID(agent, cfg), // Use callback UUID if available
+		PayloadUUID: h.getActiveUUID(agent, cfg),
 		PayloadType: "fawkes",
 		C2Profile:   "http",
 	}
@@ -302,6 +302,7 @@ func (h *HTTPProfile) PostResponse(response structs.Response, agent *structs.Age
 
 	responseMsg := structs.PostResponseMessage{
 		Action:    "post_response",
+		Seq:       h.nextSeq(),
 		Responses: []structs.Response{response},
 		Socks:     socks,
 	}
