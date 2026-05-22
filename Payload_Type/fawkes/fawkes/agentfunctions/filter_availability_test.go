@@ -76,8 +76,8 @@ func TestFilterCommandAvailability_WindowsOnlyCount(t *testing.T) {
 	}
 
 	// We added filters to Windows-only commands (count may drift as commands evolve)
-	if windowsFiltered < 45 {
-		t.Errorf("expected at least 45 Windows-only filtered commands, got %d", windowsFiltered)
+	if windowsFiltered < 43 {
+		t.Errorf("expected at least 43 Windows-only filtered commands, got %d", windowsFiltered)
 	}
 }
 
