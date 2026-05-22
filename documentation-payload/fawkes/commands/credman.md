@@ -5,23 +5,27 @@ weight = 108
 hidden = false
 +++
 
-{{% notice info %}}Windows Only{{% /notice %}}
-
 ## Summary
 
-Enumerate Windows Credential Manager entries and Windows Vault stores in one command:
+Enumerate platform-native credential stores:
 
-- `list` / `dump` — legacy Credential Manager (`CredEnumerateW`): generic and domain credentials saved through `cmdkey`, RDP, network shares, etc.
-- `vault` — Windows Vault (`vaultcli.dll`: `VaultEnumerateVaults` → `VaultOpenVault` → `VaultEnumerateItems` → `VaultGetItem`): web logins from Edge/IE, Microsoft account sign-ins, Passport credentials. `VaultGetItem` auto-decrypts the authenticator element via DPAPI in the calling user's context.
+**Windows:**
+- `list` / `dump` — Credential Manager (`CredEnumerateW`): generic and domain credentials saved through `cmdkey`, RDP, network shares, etc.
+- `vault` — Windows Vault (`vaultcli.dll`): web logins from Edge/IE, Microsoft account sign-ins, Passport credentials. Auto-decrypts via DPAPI.
 
-No subprocess creation — pure Win32 API.
+**Linux:**
+- `list` / `dump` — Enumerates multiple credential stores:
+  - **GNOME Keyring / Secret Service** via `secret-tool` — saved passwords, application tokens, WiFi keys
+  - **KDE KWallet** via `kwalletcli` / `kwallet-query` — stored wallet entries
+  - **NetworkManager** — saved WiFi PSKs, 802.1x credentials, VPN passwords from `/etc/NetworkManager/system-connections/`
+  - **GNOME Online Accounts** — cloud service accounts from `~/.config/goa-1.0/accounts.conf`
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| action | choose_one | No | list | `list`: show credman targets and usernames. `dump`: also reveal stored credman passwords. `vault`: enumerate Windows Vault stores with auto-DPAPI decryption. |
-| filter | string | No | (all) | For `list`/`dump`: target name filter using wildcards (e.g., `Microsoft*`). For `vault`: substring match against resource / identity / friendly name (case-insensitive). |
+| action | choose_one | No | list | `list`: show credential targets and usernames. `dump`: also reveal stored passwords. `vault` (Windows only): enumerate Windows Vault stores with auto-DPAPI decryption. |
+| filter | string | No | (all) | Filter credentials by label or account name (substring match, case-insensitive). Supports `*` wildcard. |
 
 ## Usage
 
@@ -41,10 +45,10 @@ credman -action dump
 
 ### Filter by target name
 ```
-credman -action dump -filter "Microsoft*"
+credman -action dump -filter "wifi"
 ```
 
-### Example Output (list)
+### Example Output — Windows (list)
 ```
 === Windows Credential Manager (3 entries) ===
 
@@ -68,20 +72,42 @@ credman -action dump -filter "Microsoft*"
 Summary: 2 generic, 1 domain credentials
 ```
 
-### Example Output (dump)
-Same as above but includes `Password:` field with decrypted credential blobs.
+### Example Output — Linux (dump)
+```
+=== Linux Credential Stores (5 entries) ===
+
+--- Secret Service (2 entries) ---
+  Label:   Chrome Safe Storage
+  Account: chrome
+  Secret:  [chromium encryption key]
+
+  Label:   WiFi Password
+  Account: admin
+  Secret:  wpa2password123
+
+--- NetworkManager (2 entries) ---
+  Label:   CorpWiFi
+  Account: employee@corp.com
+  Secret:  enterprisepass
+  security: wpa-eap
+
+  Label:   HomeNetwork
+  Secret:  mywifikey
+  ssid: HomeNetwork
+  security: wpa-psk
+
+--- GNOME Online Accounts (1 entries) ---
+  Label:   user@gmail.com
+  Account: user@gmail.com
+  provider: google
+```
 
 ### Enumerate Windows Vault stores
 ```
 credman -action vault
 ```
 
-### Filter vault items by resource or identity
-```
-credman -action vault -filter "live.com"
-```
-
-### Example Output (vault)
+### Example Output — Windows (vault)
 ```
 === Windows Vault Enumeration (2 vault(s)) ===
 
@@ -101,13 +127,13 @@ Summary: 2 vault(s), 1 item(s) total, 1 credential(s) registered to Mythic vault
 
 ## Notes
 
-- **Credential Vault registration**: All credentials with usernames are automatically reported to Mythic's Credentials store. `dump` and `vault` register cleartext passwords; `list` only registers metadata.
-- **Requires interactive logon session**: Both Credential Manager and Vault are tied to the user's interactive logon. SSH / non-interactive service contexts cannot decrypt items — `vault` items will surface as `[protected, decryption requires interactive user context]`. Deploy via methods that create an interactive session (phishing, exploit, GUI session).
-- **User context**: Returns credentials for the current user only. To access another user's credentials, impersonate them first (make-token / steal-token).
-- **Vault types observed**: `Web Credentials` (Edge / IE saved passwords), `Windows Credentials` (network share / RDP / Live ID), `Passport` (Microsoft account sign-in tokens).
-- **OPSEC**: vaultcli calls write to the user's vault audit log. EDRs that hook the Microsoft-Windows-VaultSvc ETW provider or `vaultcli.dll` exports will surface every call.
-- Credential blobs are typically UTF-16 encoded passwords. Binary blobs are reported as `[binary data, N bytes]`.
+- **Credential Vault registration**: All credentials with usernames are automatically reported to Mythic's Credentials store. `dump` registers cleartext passwords; `list` only registers metadata.
+- **Windows**: Requires interactive logon session for Vault decryption. SSH / non-interactive contexts show `[protected]`.
+- **Linux**: `secret-tool` requires a running keyring daemon (gnome-keyring-daemon or kwalletd). NetworkManager connections require root to read `/etc/NetworkManager/system-connections/`.
+- **OPSEC (Windows)**: vaultcli calls write to the vault audit log. EDRs monitoring Microsoft-Windows-VaultSvc ETW provider will surface every call.
+- **OPSEC (Linux)**: Spawns `secret-tool` / `kwalletcli` child processes visible in process logs. Reading NM config files leaves file access timestamps.
 
 ## MITRE ATT&CK Mapping
 
 - T1555.004 — Credentials from Password Stores: Windows Credential Manager
+- T1555.001 — Credentials from Password Stores: Keychain (Linux keyring equivalent)

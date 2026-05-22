@@ -209,3 +209,91 @@ func TestParseCredmanVaultBlocks_NoIdentityNoAuth(t *testing.T) {
 		t.Errorf("expected 0 creds when Identity/Auth missing, got %d", len(creds))
 	}
 }
+
+func TestParseCredmanLinuxBlocks_SecretService(t *testing.T) {
+	input := `=== Linux Credential Stores (2 entries) ===
+
+--- Secret Service (2 entries) ---
+  Label:   Chrome Safe Storage
+  Account: chrome
+  Secret:  mysafekey123
+
+  Label:   WiFi Password
+  Account: admin
+  Secret:  wifipass456
+`
+	creds := parseCredmanLinuxBlocks(input)
+	if len(creds) != 2 {
+		t.Fatalf("expected 2 creds, got %d", len(creds))
+	}
+	if creds[0].Account != "chrome" {
+		t.Errorf("creds[0].Account = %q, want 'chrome'", creds[0].Account)
+	}
+	if creds[0].Credential != "mysafekey123" {
+		t.Errorf("creds[0].Credential = %q", creds[0].Credential)
+	}
+	if creds[0].Realm != "Chrome Safe Storage" {
+		t.Errorf("creds[0].Realm = %q", creds[0].Realm)
+	}
+	if creds[1].Account != "admin" {
+		t.Errorf("creds[1].Account = %q", creds[1].Account)
+	}
+	if creds[1].Credential != "wifipass456" {
+		t.Errorf("creds[1].Credential = %q", creds[1].Credential)
+	}
+}
+
+func TestParseCredmanLinuxBlocks_NetworkManager(t *testing.T) {
+	input := `=== Linux Credential Stores (1 entries) ===
+
+--- NetworkManager (1 entries) ---
+  Label:   CorpWiFi
+  Account: employee@corp.com
+  Secret:  enterprisepass
+  security: wpa-eap
+`
+	creds := parseCredmanLinuxBlocks(input)
+	if len(creds) != 1 {
+		t.Fatalf("expected 1 cred, got %d", len(creds))
+	}
+	if creds[0].Account != "employee@corp.com" {
+		t.Errorf("Account = %q", creds[0].Account)
+	}
+	if creds[0].Credential != "enterprisepass" {
+		t.Errorf("Credential = %q", creds[0].Credential)
+	}
+}
+
+func TestParseCredmanLinuxBlocks_SkipsDumpHint(t *testing.T) {
+	input := `=== Linux Credential Stores (1 entries) ===
+
+--- Secret Service (1 entries) ---
+  Label:   My Secret
+  Account: myuser
+  Secret:  [use -action dump to reveal]
+`
+	creds := parseCredmanLinuxBlocks(input)
+	if len(creds) != 0 {
+		t.Errorf("expected 0 creds (dump hint should be skipped), got %d", len(creds))
+	}
+}
+
+func TestParseCredmanLinuxBlocks_Empty(t *testing.T) {
+	creds := parseCredmanLinuxBlocks("")
+	if len(creds) != 0 {
+		t.Errorf("expected 0 creds for empty input, got %d", len(creds))
+	}
+}
+
+func TestParseCredmanLinuxBlocks_NoAccount(t *testing.T) {
+	input := `=== Linux Credential Stores (1 entries) ===
+
+--- Secret Service (1 entries) ---
+  Label:   Some Label
+  Secret:  mysecret
+`
+	creds := parseCredmanLinuxBlocks(input)
+	if len(creds) != 0 {
+		t.Errorf("expected 0 creds (no account), got %d", len(creds))
+	}
+}
