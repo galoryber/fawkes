@@ -128,7 +128,7 @@ func securityInfoKernelDrivers() structs.CommandResult {
 		imageBase := *(*uint64)(unsafe.Pointer(&entry[16]))
 		imageSize := *(*uint32)(unsafe.Pointer(&entry[24]))
 		loadOrder := *(*uint16)(unsafe.Pointer(&entry[32]))
-		offsetToFileName := *(*uint16)(unsafe.Pointer(&entry[36]))
+		offsetToFileName := *(*uint16)(unsafe.Pointer(&entry[38]))
 
 		fullPathBytes := entry[40 : 40+256]
 		fullPath := bytesToGoString(fullPathBytes)
