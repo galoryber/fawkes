@@ -7,7 +7,7 @@ hidden = false
 
 ## Summary
 
-Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor, wmi-event, netsh-helper), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart), macOS (launchagent, periodic, folder-action, login-item, auth-plugin). All methods support install, remove, and list/check actions.
+Install or remove persistence mechanisms. Cross-platform: Windows (registry, startup-folder, com-hijack, screensaver, IFEO, winlogon, print-processor, accessibility, active-setup, time-provider, port-monitor, wmi-event, netsh-helper), Linux (crontab, systemd, shell-profile, ssh-key, xdg-autostart), macOS (launchagent, periodic, folder-action, login-item, auth-plugin, dylib-hijack, xpc-service). All methods support install, remove, and list/check actions.
 
 ### Arguments
 
@@ -417,6 +417,48 @@ persist -method auth-plugin -action remove -name "FawkesAuth"
 
 {{% notice warning %}}Authorization plugins execute as root during the login flow. Malformed plugins may prevent login. Always test in a lab environment first.{{% /notice %}}
 
+### macOS Dylib Hijacking (T1574.004)
+
+Scan for weak-linked dylib hijack opportunities, then plant a payload dylib at a missing weak dependency path. The host application loads the dylib automatically on next launch.
+
+Scan for hijackable dylibs:
+```
+persist -method dylib-hijack -action scan -path /Applications
+```
+
+Plant a payload dylib at a weak link path (from scan results):
+```
+persist -method dylib-hijack -action install -path /tmp/payload.dylib -name /usr/local/lib/missing.dylib
+```
+
+Remove planted dylib:
+```
+persist -method dylib-hijack -action remove -name /usr/local/lib/missing.dylib
+```
+
+{{% notice info %}}SIP-protected paths (e.g., /System/) cannot be hijacked. Unsigned dylibs may be quarantined by Gatekeeper. Use `scan` to find viable candidates first.{{% /notice %}}
+
+### macOS XPC Service
+
+Register an XPC/Mach service with launchd. Uses `MachServices` key for XPC connection-based activation with `KeepAlive` for automatic restart on crash. Runs as LaunchAgent (user) or LaunchDaemon (root).
+
+Install (user scope):
+```
+persist -method xpc-service -action install -path /tmp/agent -name com.company.helper
+```
+
+Install (system scope, requires root):
+```
+persist -method xpc-service -action install -path /usr/local/bin/svc -name com.company.daemon
+```
+
+Remove:
+```
+persist -method xpc-service -action remove -name com.company.helper
+```
+
+{{% notice tip %}}XPC services appear as standard launchd jobs but with MachServices registration, enabling connection-based activation via `NSXPCConnection` or `xpc_connection_create_mach_service`.{{% /notice %}}
+
 ## MITRE ATT&CK Mapping
 
 - T1547.001 — Boot or Logon Autostart Execution: Registry Run Keys / Startup Folder
@@ -441,3 +483,5 @@ persist -method auth-plugin -action remove -name "FawkesAuth"
 - T1547.002 — Boot or Logon Autostart Execution: Authentication Process (macOS Authorization Plugin)
 - T1546.003 — Event Triggered Execution: Windows Management Instrumentation Event Subscription
 - T1546.007 — Event Triggered Execution: Netsh Helper DLL
+- T1574.004 — Hijack Execution Flow: Dylib Hijacking (macOS)
+- T1543.004 — Create or Modify System Process: XPC Service (macOS)

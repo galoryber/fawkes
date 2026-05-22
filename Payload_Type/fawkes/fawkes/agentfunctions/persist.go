@@ -55,10 +55,10 @@ func init() {
 		Name:                "persist",
 		Description:         "Install or remove persistence mechanisms (registry, startup folder, COM hijack, screensaver, IFEO, winlogon helper, print processor, port monitor, accessibility features, active setup, XDG autostart)",
 		HelpString:          "persist -method <registry|startup-folder|com-hijack|screensaver|ifeo|winlogon|print-processor|port-monitor|accessibility|active-setup|time-provider|wmi-event|netsh-helper|list> -action <install|remove|check> [-name <name>] [-path <exe_path>] [-hive <HKCU|HKLM>] [-clsid <CLSID>] [-timeout <seconds>]",
-		Version:             8,
+		Version:             9,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1547.001", "T1547.002", "T1547.009", "T1547.015", "T1546.015", "T1546.002", "T1546.012", "T1053.003", "T1543.002", "T1546.004", "T1098.004", "T1543.004", "T1070.009", "T1547.004", "T1547.012", "T1546.008", "T1547.014", "T1547.013", "T1547.003", "T1547.010", "T1546.003", "T1546.007"},
+		MitreAttackMappings: []string{"T1547.001", "T1547.002", "T1547.009", "T1547.015", "T1546.015", "T1546.002", "T1546.012", "T1053.003", "T1543.002", "T1546.004", "T1098.004", "T1543.004", "T1070.009", "T1547.004", "T1547.012", "T1546.008", "T1547.014", "T1547.013", "T1547.003", "T1547.010", "T1546.003", "T1546.007", "T1574.004"},
 		ScriptOnlyCommand: false,
 		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
 			"persistFullInstallDone": persistFullInstallDone,
@@ -77,8 +77,8 @@ func init() {
 				ModalDisplayName: "Persistence Method",
 				CLIName:          "method",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "port-monitor", "accessibility", "active-setup", "time-provider", "wmi-event", "netsh-helper", "crontab", "systemd", "shell-profile", "ssh-key", "xdg-autostart", "launchagent", "periodic", "folder-action", "login-item", "auth-plugin", "list"},
-				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, port-monitor, accessibility, active-setup, time-provider, wmi-event (T1546.003), netsh-helper (T1546.007). Linux: crontab, systemd, shell-profile, ssh-key, xdg-autostart. macOS: launchagent, periodic (root), folder-action, login-item, auth-plugin (root). All: list.",
+				Choices:          []string{"registry", "startup-folder", "com-hijack", "screensaver", "ifeo", "winlogon", "print-processor", "port-monitor", "accessibility", "active-setup", "time-provider", "wmi-event", "netsh-helper", "crontab", "systemd", "shell-profile", "ssh-key", "xdg-autostart", "launchagent", "periodic", "folder-action", "login-item", "auth-plugin", "dylib-hijack", "xpc-service", "list"},
+				Description:      "Persistence method. Windows: registry, startup-folder, com-hijack, screensaver, ifeo, winlogon, print-processor, port-monitor, accessibility, active-setup, time-provider, wmi-event (T1546.003), netsh-helper (T1546.007). Linux: crontab, systemd, shell-profile, ssh-key, xdg-autostart. macOS: launchagent, periodic (root), folder-action, login-item, auth-plugin (root), dylib-hijack (T1574.004), xpc-service. All: list.",
 				DefaultValue:     "registry",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -375,6 +375,18 @@ func init() {
 					}
 					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Authorization Plugin: /Library/Security/SecurityAgentPlugins/%s.bundle -> %s", pluginName, path))
 					createArtifact(taskData.Task.ID, "Authorization DB", fmt.Sprintf("Mechanism: %s:auth,privileged in system.login.console", pluginName))
+				case "dylib-hijack":
+					path, _ := taskData.Args.GetStringArg("path")
+					targetPath := name
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("Dylib hijack: planted %s at %s (T1574.004)", path, targetPath))
+				case "xpc-service":
+					path, _ := taskData.Args.GetStringArg("path")
+					svcName := name
+					if svcName == "" {
+						svcName = "com.fawkes.helper"
+					}
+					createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("XPC service plist: %s -> %s", svcName, path))
+					createArtifact(taskData.Task.ID, "Process", fmt.Sprintf("launchctl load %s.plist", svcName))
 				}
 			}
 			if action == "install" || action == "remove" {

