@@ -96,6 +96,9 @@ func securityInfoMinifilterEnum() structs.CommandResult {
 		if uint32(hr) == sHresultFromWin32ErrorNoMoreItems {
 			return successResult("No minifilter drivers loaded.")
 		}
+		if uint32(hr) == 0x80070005 {
+			return errorf("FilterFindFirst failed: access denied — requires elevated (high integrity) privileges")
+		}
 		return errorf("FilterFindFirst failed: HRESULT 0x%08X", uint32(hr))
 	}
 
