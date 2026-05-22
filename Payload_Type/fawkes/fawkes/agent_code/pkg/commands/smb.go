@@ -34,6 +34,10 @@ type smbArgs struct {
 	Source      string `json:"source"`      // local file path for push action
 	PlantName   string `json:"plant_name"`  // filename to plant on shares (for taint action)
 	Port        int    `json:"port"`        // SMB port (default: 445)
+	Depth       int    `json:"depth"`       // max recursion depth for spider/search (default: 3)
+	Extensions  string `json:"extensions"`  // comma-separated extension filter for spider (e.g., ".docx,.xlsx,.pdf")
+	Patterns    string `json:"patterns"`    // comma-separated filename patterns for search
+	MaxResults  int    `json:"max_results"` // max results to return (default: 500)
 }
 
 func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
@@ -52,7 +56,7 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 
 	if args.Action == "" {
-		return errorResult("Error: action required. Valid actions: shares, ls, cat, upload, rm, mkdir, mv, push")
+		return errorResult("Error: action required. Valid actions: shares, ls, cat, upload, rm, mkdir, mv, push, exfil, taint, share-perms, share-spider, share-search")
 	}
 
 	if args.Port <= 0 {
@@ -112,8 +116,17 @@ func (c *SmbCommand) Execute(task structs.Task) structs.CommandResult {
 			return errorResult("Error: -source (local file to plant) or -content (inline content) required for taint action")
 		}
 		return smbTaintShares(args)
+	case "share-perms":
+		return smbSharePerms(args)
+	case "share-spider":
+		if args.Share == "" {
+			return errorResult("Error: -share required for share-spider action")
+		}
+		return smbShareSpider(args)
+	case "share-search":
+		return smbShareSearch(args)
 	default:
-		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push, exfil, taint", args.Action)
+		return errorf("Error: unknown action %q. Valid: shares, ls, cat, upload, rm, mkdir, mv, push, exfil, taint, share-perms, share-spider, share-search", args.Action)
 	}
 }
 

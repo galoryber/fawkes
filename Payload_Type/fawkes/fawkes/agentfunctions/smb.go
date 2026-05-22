@@ -19,9 +19,9 @@ func init() {
 		},
 		Description:         "SMB file operations on remote shares. List shares, browse, read/write/delete files, create directories, rename/move, taint shares with planted files, via SMB2 with NTLM auth. Pass-the-hash support.",
 		HelpString:          "smb -action shares -host 192.168.1.1 -username user -password pass -domain DOMAIN\nsmb -action ls -host 192.168.1.1 -share C$ -username admin -hash aad3b435b51404ee:8846f7eaee8fb117 -domain DOMAIN\nsmb -action taint -host 192.168.1.1 -source /tmp/payload.exe -plant_name update.exe -username admin -password pass\nsmb -action mv -host 192.168.1.1 -share C$ -path old.txt -destination new.txt -username admin -password pass",
-		Version:             2,
+		Version:             3,
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1021.002", "T1550.002", "T1570", "T1080"},
+		MitreAttackMappings: []string{"T1021.002", "T1550.002", "T1570", "T1080", "T1135", "T1039"},
 		TaskCompletionFunctions: map[string]agentstructs.PTTaskCompletionFunction{
 			"shareSweepSharesDone":    shareSweepSharesDone,
 			"shareSweepShareHuntDone": shareSweepShareHuntDone,
@@ -39,9 +39,9 @@ func init() {
 				Name:             "action",
 				CLIName:          "action",
 				ModalDisplayName: "Action",
-				Description:      "Operation: shares, ls, cat, upload, rm, mkdir, mv, push (lateral tool transfer), exfil (data exfiltration to SMB share), taint (plant files on writable shares), share-sweep (automated chain)",
+				Description:      "Operation: shares, ls, cat, upload, rm, mkdir, mv, push (lateral tool transfer), exfil (data exfiltration), taint (plant files), share-perms (test read/write access), share-spider (recursive listing), share-search (find sensitive files), share-sweep (automated chain)",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"shares", "ls", "cat", "upload", "rm", "mkdir", "mv", "push", "exfil", "taint", "share-sweep"},
+				Choices:          []string{"shares", "ls", "cat", "upload", "rm", "mkdir", "mv", "push", "exfil", "taint", "share-perms", "share-spider", "share-search", "share-sweep"},
 				DefaultValue:     "shares",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{ParameterIsRequired: true, GroupName: "Default"},
@@ -182,6 +182,50 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "Default"},
 				},
 			},
+			{
+				Name:             "depth",
+				CLIName:          "depth",
+				ModalDisplayName: "Recursion Depth",
+				Description:      "Max directory recursion depth for share-spider and share-search (default: 3)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     3,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "extensions",
+				CLIName:          "extensions",
+				ModalDisplayName: "Extension Filter",
+				Description:      "Comma-separated file extension filter for share-spider (e.g., .docx,.xlsx,.pdf)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "patterns",
+				CLIName:          "patterns",
+				ModalDisplayName: "Search Patterns",
+				Description:      "Comma-separated filename patterns for share-search (e.g., *.kdbx,passwords.*,web.config). Defaults to built-in sensitive file patterns.",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
+			{
+				Name:             "max_results",
+				CLIName:          "max_results",
+				ModalDisplayName: "Max Results",
+				Description:      "Maximum number of results to return for share-spider (default: 500) and share-search (default: 200)",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_NUMBER,
+				DefaultValue:     0,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default"},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -199,6 +243,25 @@ func init() {
 			msg := fmt.Sprintf("OPSEC WARNING: SMB %s operation on %s.", action, host)
 			if action == "share-sweep" {
 				msg = fmt.Sprintf("OPSEC WARNING: Share Sweep Chain against %s. This executes 3 automated steps: (1) SMB share enumeration, (2) share-hunt file crawl across all readable shares, (3) local credential triage. Combined footprint generates multiple SMB sessions, share access events (5140/5145), and file access logs. Behavioral analytics may flag the automated access pattern.", host)
+			} else if action == "share-perms" {
+				msg = fmt.Sprintf("OPSEC WARNING: SMB share permission enumeration on %s. "+
+					"Tests read/write access on ALL shares — mounts each share, reads root directory, "+
+					"and creates+deletes a temp file to test write access. Generates multiple share access events (5140/5145) "+
+					"and file creation/deletion events. Failed access attempts generate access denied events.", host)
+			} else if action == "share-spider" {
+				msg = fmt.Sprintf("OPSEC WARNING: SMB share spider on %s\\%s. "+
+					"Recursive directory enumeration generates many file access events (5145). "+
+					"Behavioral analytics may flag rapid directory traversal. "+
+					"Volume of SMB queries is proportional to share depth/size.", host, share)
+			} else if action == "share-search" {
+				searchScope := "all shares"
+				if share != "" {
+					searchScope = share
+				}
+				msg = fmt.Sprintf("OPSEC WARNING: SMB sensitive file search on %s (%s). "+
+					"Recursive search generates many directory access events (5145). "+
+					"Pattern matching against filenames leaves a discoverable access pattern. "+
+					"Matches may include files monitored by DLP solutions.", host, searchScope)
 			} else {
 				if share == "ADMIN$" || share == "C$" || share == "IPC$" {
 					msg += fmt.Sprintf(" Accessing %s share — administrative share access is a high-fidelity lateral movement indicator.", share)
@@ -274,6 +337,38 @@ func init() {
 						fmt.Sprintf("SMB taint: planted %s on \\\\%s\\%s (%d bytes, timestomped=%v)",
 							p.Path, taintResult.Host, p.Share, p.Size, p.Stomped))
 				}
+			}
+			// Track share-perms results (writable shares)
+			var permResults []struct {
+				Share string `json:"share"`
+				Read  bool   `json:"read"`
+				Write bool   `json:"write"`
+			}
+			if json.Unmarshal([]byte(responseText), &permResults) == nil && len(permResults) > 0 {
+				for _, p := range permResults {
+					if p.Write {
+						createArtifact(processResponse.TaskData.Task.ID, "Network Share",
+							fmt.Sprintf("[WRITABLE] \\\\%s (read+write access)", p.Share))
+					}
+				}
+			}
+			// Track share-search results (sensitive files found)
+			var searchResult struct {
+				Host    string `json:"host"`
+				Count   int    `json:"count"`
+				Matches []struct {
+					Share   string `json:"share"`
+					Path    string `json:"path"`
+					Pattern string `json:"pattern"`
+				} `json:"matches"`
+			}
+			if json.Unmarshal([]byte(responseText), &searchResult) == nil && searchResult.Count > 0 {
+				for _, m := range searchResult.Matches {
+					createArtifact(processResponse.TaskData.Task.ID, "Sensitive File",
+						fmt.Sprintf("[MATCH] \\\\%s\\%s\\%s (pattern: %s)", searchResult.Host, m.Share, m.Path, m.Pattern))
+				}
+				logOperationEvent(processResponse.TaskData.Task.ID,
+					fmt.Sprintf("[DISCOVERY] Found %d sensitive files on %s via share-search", searchResult.Count, searchResult.Host), false)
 			}
 			// Track SMB operations: look for host reference in output
 			if strings.Contains(responseText, "Shares on") || strings.Contains(responseText, "SMB") {
@@ -397,6 +492,22 @@ func init() {
 					plantName = filepath.Base(source)
 				}
 				displayMsg = fmt.Sprintf("SMB taint \\\\%s — plant '%s' on writable shares", host, plantName)
+			}
+			if action == "share-perms" {
+				displayMsg = fmt.Sprintf("SMB share-perms \\\\%s — test read/write access on all shares", host)
+			}
+			if action == "share-spider" {
+				displayMsg = fmt.Sprintf("SMB share-spider \\\\%s\\%s", host, share)
+				if path != "" {
+					displayMsg += fmt.Sprintf("\\%s", path)
+				}
+			}
+			if action == "share-search" {
+				searchScope := "all shares"
+				if share != "" {
+					searchScope = share
+				}
+				displayMsg = fmt.Sprintf("SMB share-search \\\\%s (%s)", host, searchScope)
 			}
 			response.DisplayParams = &displayMsg
 
