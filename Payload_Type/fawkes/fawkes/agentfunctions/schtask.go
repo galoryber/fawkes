@@ -21,10 +21,10 @@ func init() {
 		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1053.005", "T1053.003", "T1053.006", "T1562.001"},
+		MitreAttackMappings: []string{"T1053.005", "T1053.003", "T1053.004", "T1053.006", "T1562.001"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -89,8 +89,8 @@ func init() {
 				ModalDisplayName: "Trigger",
 				CLIName:          "trigger",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"ONLOGON", "ONSTART", "DAILY", "WEEKLY", "MONTHLY", "ONCE", "ONIDLE", "systemd", "at"},
-				Description:      "When the task should run. Windows: ONLOGON/DAILY/etc. Linux: DAILY/WEEKLY (cron), systemd (timer unit), at (one-shot)",
+				Choices:          []string{"ONLOGON", "ONSTART", "DAILY", "WEEKLY", "MONTHLY", "ONCE", "ONIDLE", "systemd", "at", "launchd", "launchagent", "launchdaemon"},
+				Description:      "When the task should run. Windows: ONLOGON/DAILY/etc. Linux: DAILY/WEEKLY (cron), systemd (timer). macOS: launchd/launchagent/launchdaemon, DAILY/WEEKLY (cron). All: at (one-shot)",
 				DefaultValue:     "ONLOGON",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -181,6 +181,22 @@ func init() {
 				default:
 					msg += "Enumerating scheduled tasks (crontab/systemd/at) — reads filesystem and runs system tools."
 				}
+			} else if taskData.Callback.OS == "macOS" {
+				switch action {
+				case "create":
+					trigger, _ := taskData.Args.GetStringArg("trigger")
+					if strings.EqualFold(trigger, "launchd") || strings.EqualFold(trigger, "launchagent") || strings.EqualFold(trigger, "launchdaemon") {
+						msg += "Creates LaunchAgent/LaunchDaemon plist — visible via launchctl list, /Library/Launch*. Generates Unified Log entries."
+					} else if strings.EqualFold(trigger, "at") {
+						msg += "Creates at job — visible via atq."
+					} else {
+						msg += "Modifies crontab — visible via crontab -l."
+					}
+				case "delete":
+					msg += "Removes scheduled task — cleanup operation."
+				default:
+					msg += "Enumerating scheduled tasks (launchd/crontab/at) — reads plist files and runs launchctl."
+				}
 			} else {
 				switch action {
 				case "create":
@@ -209,6 +225,8 @@ func init() {
 			}
 			if taskData.Callback.OS == "Linux" {
 				msg += " configured. Artifacts: crontab entries, systemd unit files, or at job spool."
+			} else if taskData.Callback.OS == "macOS" {
+				msg += " configured. Artifacts: LaunchAgent/LaunchDaemon plist files, crontab entries, or at job spool."
 			} else {
 				msg += " configured. SCM artifacts will be created on execution."
 			}
@@ -279,6 +297,33 @@ func init() {
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl %s %s", action, name))
 				case "stop":
 					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl stop %s", name))
+				}
+			} else if taskData.Callback.OS == "macOS" {
+				switch action {
+				case "create":
+					program, _ := taskData.Args.GetStringArg("program")
+					trigger, _ := taskData.Args.GetStringArg("trigger")
+					if strings.EqualFold(trigger, "launchd") || strings.EqualFold(trigger, "launchagent") || strings.EqualFold(trigger, "launchdaemon") {
+						createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("launchd plist: %s (exec=%q)", name, program))
+					} else if strings.EqualFold(trigger, "at") {
+						createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("at job creation (exec=%q)", program))
+					} else {
+						createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("crontab -l | crontab - (exec=%q)", program))
+					}
+				case "delete":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl unload / crontab / atrm: %s", name))
+				case "list":
+					createArtifact(taskData.Task.ID, "Process Create", "launchctl list, crontab -l, atq")
+				case "query":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl list %s", name))
+				case "run":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl start %s", name))
+				case "enable":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl load -w %s", name))
+				case "disable":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl unload -w %s", name))
+				case "stop":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("launchctl stop %s", name))
 				}
 			} else {
 				switch action {

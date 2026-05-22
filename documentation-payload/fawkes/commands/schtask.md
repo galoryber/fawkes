@@ -144,16 +144,64 @@ SubState: waiting
 TimersCalendar: { OnCalendar=*-*-* 6,18:00:00 }
 ```
 
+## macOS Usage
+
+### List All Scheduled Tasks
+
+Enumerates LaunchAgents, LaunchDaemons, crontab entries, and at jobs:
+```
+schtask -action list
+schtask -action list -filter "com.apple"
+```
+
+### Query a Launchd Job
+
+```
+schtask -action query -name "com.apple.security.updater"
+```
+
+### Create a Launchd Job
+
+```
+schtask -action create -program "/usr/local/bin/agent" -trigger launchagent -name "com.corp.updater"
+schtask -action create -program "/usr/local/bin/daemon" -trigger launchdaemon -name "com.corp.daemon"
+```
+
+### Create Cron/At Jobs (same as Linux)
+
+```
+schtask -action create -program "/usr/local/bin/backup.sh" -trigger DAILY -time 02:00 -name "nightly"
+schtask -action create -program "/usr/local/bin/task.sh" -trigger at -time 14:30
+```
+
+### Enable/Disable/Run/Stop Launchd Jobs
+
+```
+schtask -action enable -name "com.corp.updater"
+schtask -action disable -name "com.corp.updater"
+schtask -action run -name "com.corp.updater"
+schtask -action stop -name "com.corp.updater"
+```
+
+### Delete
+
+```
+schtask -action delete -name "com.corp.updater"
+```
+
 ## Notes
 
 - **Linux list** enumerates: user crontab, `/etc/crontab`, `/etc/cron.d/*`, `/etc/cron.{hourly,daily,weekly,monthly}/*`, all systemd timers (system + user), and at queue
+- **macOS list** enumerates: LaunchAgents (user + system), LaunchDaemons, running launchd services, crontab, and at queue
 - **Systemd timer creation** writes `.timer` and `.service` unit files; root uses `/etc/systemd/system`, non-root uses `~/.config/systemd/user`
+- **Launchd creation** writes plist to `~/Library/LaunchAgents` (user) or `/Library/LaunchDaemons` (root), loads with `launchctl load -w`
 - **Cron entry deletion** matches by name marker comment (`# name`) or command substring
-- **enable/disable/run/stop** on Linux operate on systemd timer/service units
+- **enable/disable/run/stop** on Linux operate on systemd units; on macOS operate via launchctl
 
 ## MITRE ATT&CK Mapping
 
 - T1053.005 -- Scheduled Task/Job: Scheduled Task (Windows)
-- T1053.003 -- Scheduled Task/Job: Cron (Linux)
+- T1053.003 -- Scheduled Task/Job: Cron (Linux/macOS)
+- T1053.004 -- Scheduled Task/Job: Launchd (macOS)
 - T1053.006 -- Scheduled Task/Job: Systemd Timers (Linux)
 - T1562.001 -- Impair Defenses: Disable or Modify Tools (disable action)
