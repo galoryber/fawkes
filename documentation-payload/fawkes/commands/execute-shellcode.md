@@ -37,6 +37,7 @@ Unlike process injection commands (vanilla-injection, apc-injection, etc.), this
 | technique | No | `mmap` (default) or `memfd` (Linux only). Selects the memory allocation technique. |
 | encoding | No | Shellcode encoding: `none` (default), `xor` (repeating XOR key), `aes` (AES-256-CTR, first 16 bytes = IV) |
 | key | No | Hex-encoded decryption key. For XOR: any length. For AES: exactly 32 bytes (64 hex chars). |
+| stack_spoof | No | Spoof the call stack during injection API calls. Executes Nt* syscalls from a dedicated thread with fake kernel32/ntdll return frames, evading EDR thread stack scanners. Requires `indirect_syscalls` and `stack_spoof` build options. Default: `false`. |
 
 ## Usage
 

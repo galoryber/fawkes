@@ -31,6 +31,9 @@ DLL containing the function to hook. Default: `kernelbase.dll`.
 #### Function Name (optional)
 Function to hook. Default: `CreateEventW`.
 
+#### Stack Spoof (`stack_spoof`)
+Spoof the call stack during injection API calls. Executes Nt* syscalls from a dedicated thread with fake kernel32/ntdll return frames, evading EDR thread stack scanners. Requires `indirect_syscalls` and `stack_spoof` build options. Default: `false`.
+
 ## Usage
 
 Use the Mythic UI popup to select shellcode and configure the injection target.

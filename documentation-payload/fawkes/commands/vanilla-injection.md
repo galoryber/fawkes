@@ -31,6 +31,9 @@ Select a shellcode file already registered in Mythic, or upload a new shellcode 
 #### Target PID
 The process ID to inject shellcode into. For migration, choose a stable, long-lived process.
 
+#### Stack Spoof (`stack_spoof`)
+Spoof the call stack during injection API calls. Executes Nt* syscalls from a dedicated thread with fake kernel32/ntdll return frames, evading EDR thread stack scanners. Requires `indirect_syscalls` and `stack_spoof` build options. Default: `false`.
+
 ## Usage
 
 ### Standard Injection

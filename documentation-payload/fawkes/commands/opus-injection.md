@@ -30,6 +30,9 @@ The process ID to inject into. Must match the variant type (console process for 
 #### CFG Bypass (default: enabled)
 When enabled, calls `SetProcessValidCallTargets` on the shellcode allocation to mark it as a valid Control Flow Guard call target before the callback executes. Required on Windows 10/11 targets with CFG-enabled processes (most system processes). Disable only if the API call itself triggers EDR detection.
 
+#### Stack Spoof (`stack_spoof`)
+Spoof the call stack during injection API calls. Executes Nt* syscalls from a dedicated thread with fake kernel32/ntdll return frames, evading EDR thread stack scanners. Requires `indirect_syscalls` and `stack_spoof` build options. Default: `false`.
+
 ## Usage
 
 Use the Mythic UI popup to select the variant, shellcode, and target PID.

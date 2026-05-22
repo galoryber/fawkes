@@ -41,6 +41,9 @@ The address is resolved in the agent process via LoadLibrary/FindProc, then assu
 ### HWBP Timeout (`timeout_ms`)
 HWBP method only. Maximum time to wait for the breakpoint to fire and a thread to be redirected. Default 30000 (30s). On timeout, DR0/DR7 are cleared on every thread (best-effort) and the debugger detaches before the call returns the failure.
 
+### Stack Spoof (`stack_spoof`)
+Spoof the call stack during injection API calls. Executes Nt* syscalls from a dedicated thread with fake kernel32/ntdll return frames, evading EDR thread stack scanners. Requires `indirect_syscalls` and `stack_spoof` build options. Default: `false`.
+
 ## Usage
 
 ### APC (default)
