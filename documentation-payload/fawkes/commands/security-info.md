@@ -15,11 +15,17 @@ Report security posture and active security controls, or detect installed EDR/XD
 |--------|-------------|
 | `all` | Report security posture and active controls (default) |
 | `edr` | Detect installed EDR/XDR/AV products from 20+ vendors via process enumeration and filesystem path checks |
+| `minifilter-enum` | Enumerate loaded minifilter drivers with EDR classification (Windows only) |
+| `kernel-drivers` | Enumerate loaded kernel drivers with EDR/callback type classification (Windows only) |
 
 ### Arguments
 
 #### Action
-Choose `all` (default) to report full security posture, or `edr` to detect installed endpoint security products.
+Choose an action:
+- `all` (default) — Full security posture report
+- `edr` — Detect installed endpoint security products
+- `minifilter-enum` — Enumerate Windows minifilter drivers via fltlib.dll (FilterFindFirst/Next)
+- `kernel-drivers` — Enumerate loaded kernel modules via NtQuerySystemInformation with EDR classification
 
 ## Usage
 
@@ -27,6 +33,8 @@ Choose `all` (default) to report full security posture, or `edr` to detect insta
 security-info
 security-info -action all
 security-info -action edr
+security-info -action minifilter-enum
+security-info -action kernel-drivers
 ```
 
 ## EDR Detection
@@ -109,11 +117,25 @@ Output includes JSON with product name, vendor, status (running/installed), PID,
 | BitLocker | `Get-BitLockerVolume` |
 | PS Constrained Language Mode | `LanguageMode` property |
 
+### Minifilter Enumeration (Windows)
+
+Uses `fltlib.dll` APIs (`FilterFindFirst`, `FilterFindNext`, `FilterFindClose`) to enumerate all loaded minifilter drivers. Cross-references against 34+ known EDR minifilters from vendors including CrowdStrike, SentinelOne, Carbon Black, Sophos, ESET, Kaspersky, Trend Micro, Symantec, Cortex XDR, Trellix, Cybereason, Cylance, Bitdefender, Elastic, and Sysmon.
+
+Output includes filter name, frame ID, instance count, and EDR vendor/product classification.
+
+### Kernel Driver Enumeration (Windows)
+
+Uses `NtQuerySystemInformation(SystemModuleInformation)` to enumerate all loaded kernel modules. Cross-references against 42+ known EDR/security-relevant drivers with callback type classification (minifilter, process, thread, image, registry, object, network, boot, framework, crypto).
+
+Output includes driver name, full path, image base address, image size, load order, and security classification. Requires elevated privileges (SYSTEM or SeDebugPrivilege).
+
 ## OPSEC Considerations
 
 - Linux: Most checks use native sysfs/procfs reads (zero subprocess overhead). `iptables`/`nft` require subprocess
 - macOS: `csrutil`, `spctl`, `fdesetup` require subprocess; other checks use native file reads
 - Windows: Spawns `powershell.exe` for WMI/registry queries — may trigger command-line logging
+- `minifilter-enum`: Uses fltlib.dll — no subprocess, but filter enumeration may be logged by EDR
+- `kernel-drivers`: Uses NtQuerySystemInformation — direct NTAPI call, no subprocess. Requires elevated privileges
 - EDR action: Process enumeration and path checks are passive — no subprocess spawned on Linux/macOS
 - Passive reconnaissance — does not modify any security settings
 

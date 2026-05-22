@@ -36,6 +36,30 @@ func TestSecurityInfoExecute(t *testing.T) {
 	}
 }
 
+func TestSecurityInfoMinifilterEnumAction(t *testing.T) {
+	cmd := &SecurityInfoCommand{}
+	task := structs.Task{Params: `{"action":"minifilter-enum"}`}
+	result := cmd.Execute(task)
+	if !result.Completed {
+		t.Error("Completed should be true")
+	}
+	if result.Status != "error" && result.Status != "success" {
+		t.Errorf("Status = %q, want error (non-Windows) or success (Windows)", result.Status)
+	}
+}
+
+func TestSecurityInfoKernelDriversAction(t *testing.T) {
+	cmd := &SecurityInfoCommand{}
+	task := structs.Task{Params: `{"action":"kernel-drivers"}`}
+	result := cmd.Execute(task)
+	if !result.Completed {
+		t.Error("Completed should be true")
+	}
+	if result.Status != "error" && result.Status != "success" {
+		t.Errorf("Status = %q, want error (non-Windows) or success (Windows)", result.Status)
+	}
+}
+
 func TestSecurityInfoLinux(t *testing.T) {
 	controls := securityInfoLinux()
 	if len(controls) == 0 {
