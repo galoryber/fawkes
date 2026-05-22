@@ -11,3 +11,11 @@ func initStackSpoof() {
 	}()
 	_ = commands.InitStackSpoof()
 }
+
+func initAPISpoofing() {
+	defer func() {
+		if r := recover(); r != nil {
+		}
+	}()
+	_ = commands.InitAPISpoofing()
+}

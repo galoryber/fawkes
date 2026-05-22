@@ -12,6 +12,7 @@ type executeShellcodeArgs struct {
 	Technique    string `json:"technique"`
 	Encoding     string `json:"encoding"`
 	Key          string `json:"key"`
+	StackSpoof   bool   `json:"stack_spoof"`
 }
 
 // decodeShellcode applies the specified decoding to raw shellcode bytes.

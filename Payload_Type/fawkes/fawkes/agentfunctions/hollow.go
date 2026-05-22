@@ -111,6 +111,19 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 4},
 				},
 			},
+			{
+				Name:             "stack_spoof",
+				ModalDisplayName: "Stack Spoof",
+				CLIName:          "stack_spoof",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Spoof the call stack during injection API calls. Requires indirect_syscalls and stack_spoof build options.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 5},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 5},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 5},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -206,11 +219,13 @@ func init() {
 			createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("Process hollowing: %s (shellcode: %d bytes)", target, len(scBytes)))
 
 			// Build agent parameters
+			stackSpoof, _ := taskData.Args.GetBooleanArg("stack_spoof")
 			agentParams := map[string]interface{}{
 				"shellcode_b64": shellcodeB64,
 				"target":        target,
 				"ppid":          int(ppid),
 				"block_dlls":    blockDLLs,
+				"stack_spoof":   stackSpoof,
 			}
 			paramsJSON, err := json.Marshal(agentParams)
 			if err != nil {

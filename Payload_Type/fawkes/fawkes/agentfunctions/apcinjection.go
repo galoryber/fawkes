@@ -172,6 +172,19 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "stack_spoof",
+				ModalDisplayName: "Stack Spoof",
+				CLIName:          "stack_spoof",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Spoof the call stack during injection API calls. Requires indirect_syscalls and stack_spoof build options.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 8},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 8},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 8},
+				},
+			},
 		},
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			pid, _ := taskData.Args.GetStringArg("pid")
@@ -278,10 +291,12 @@ func init() {
 				method = "apc"
 			}
 
+			stackSpoof, _ := taskData.Args.GetBooleanArg("stack_spoof")
 			params := map[string]interface{}{
 				"shellcode_b64": shellcodeB64,
 				"pid":           pid,
 				"method":        method,
+				"stack_spoof":   stackSpoof,
 			}
 			var displayParams string
 

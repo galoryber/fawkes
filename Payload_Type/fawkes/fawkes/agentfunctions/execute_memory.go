@@ -144,6 +144,19 @@ func init() {
 					},
 				},
 			},
+			{
+				Name:             "stack_spoof",
+				ModalDisplayName: "Stack Spoof",
+				CLIName:          "stack_spoof",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Spoof the call stack during injection API calls. Requires indirect_syscalls and stack_spoof build options.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 5},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 5},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 5},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -182,6 +195,7 @@ func init() {
 			arguments, _ := taskData.Args.GetStringArg("arguments")
 			timeout, _ := taskData.Args.GetNumberArg("timeout")
 			exportName, _ := taskData.Args.GetStringArg("export_name")
+			stackSpoof, _ := taskData.Args.GetBooleanArg("stack_spoof")
 			if timeout <= 0 {
 				timeout = 60
 			}
@@ -211,10 +225,11 @@ func init() {
 					return response
 				}
 				params := map[string]interface{}{
-					"binary_b64":  b64,
-					"arguments":   arguments,
-					"timeout":     timeout,
-					"export_name": exportName,
+					"binary_b64":   b64,
+					"arguments":    arguments,
+					"timeout":      timeout,
+					"export_name":  exportName,
+					"stack_spoof":  stackSpoof,
 				}
 				paramsJSON, _ := json.Marshal(params)
 				taskData.Args.SetManualArgs(string(paramsJSON))
@@ -298,6 +313,7 @@ func init() {
 				"arguments":   arguments,
 				"timeout":     timeout,
 				"export_name": exportName,
+				"stack_spoof": stackSpoof,
 			}
 			paramsJSON, err := json.Marshal(params)
 			if err != nil {

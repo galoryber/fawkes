@@ -25,6 +25,7 @@ type hollowParams struct {
 	Target       string `json:"target"`
 	Ppid         int    `json:"ppid"`
 	BlockDLLs    bool   `json:"block_dlls"`
+	StackSpoof   bool   `json:"stack_spoof"`
 }
 
 func (c *HollowingCommand) Execute(task structs.Task) structs.CommandResult {

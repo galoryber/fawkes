@@ -136,7 +136,14 @@ func (c *VanillaInjectionCommand) Execute(task structs.Task) structs.CommandResu
 
 	output += fmt.Sprintf("[*] Target PID: %d\n", params.PID)
 
-	if IndirectSyscallsAvailable() {
+	if params.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
+	}
+
+	if params.StackSpoof && APISpoofAvailable() {
+		output += "[*] Using spoofed stack + indirect syscalls\n"
+	} else if IndirectSyscallsAvailable() {
 		output += "[*] Using indirect syscalls (calls originate from ntdll)\n"
 	} else {
 		output += "[*] Using standard Win32 API calls\n"

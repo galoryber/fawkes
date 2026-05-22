@@ -2,4 +2,5 @@
 
 package main
 
-func initStackSpoof() {}
+func initStackSpoof()   {}
+func initAPISpoofing() {}
