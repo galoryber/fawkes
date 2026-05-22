@@ -17,10 +17,10 @@ func init() {
 		Name:                "execute-shellcode",
 		Description:         "Execute shellcode in the current process. Windows: VirtualAlloc + CreateThread. Linux: mmap + mprotect. macOS: MAP_JIT (ARM64) or mmap (x86_64). Shellcode runs in a new thread.",
 		HelpString:          "execute-shellcode",
-		Version:             1,
+		Version:             2,
 		Author:              "@galoryber",
 		AssociatedBrowserScript: &agentstructs.BrowserScript{ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "executeshellcode_new.js"), Author: "@galoryber"},
-		MitreAttackMappings: []string{"T1059.006", "T1055.012"}, // Command and Scripting Interpreter, Process Hollowing
+		MitreAttackMappings: []string{"T1059.006", "T1055.012", "T1027"}, // Command and Scripting Interpreter, Process Hollowing, Obfuscated Files
 		SupportedUIFeatures: []string{"process_browser:inject"},
 		CommandAttributes: agentstructs.CommandAttribute{
 			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX, agentstructs.SUPPORTED_OS_MACOS},
@@ -84,6 +84,33 @@ func init() {
 					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 3},
 				},
 			},
+			{
+				Name:             "encoding",
+				ModalDisplayName: "Encoding",
+				CLIName:          "encoding",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:      "Shellcode encoding. none: raw shellcode (default). xor: XOR with repeating key. aes: AES-256-CTR (first 16 bytes = IV).",
+				Choices:          []string{"none", "xor", "aes"},
+				DefaultValue:     "none",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 4},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 4},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 4},
+				},
+			},
+			{
+				Name:             "key",
+				ModalDisplayName: "Decryption Key",
+				CLIName:          "key",
+				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
+				Description:      "Hex-encoded decryption key. For XOR: any length (repeating). For AES: exactly 32 bytes (64 hex chars).",
+				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{ParameterIsRequired: false, GroupName: "Default", UIModalPosition: 5},
+					{ParameterIsRequired: false, GroupName: "New File", UIModalPosition: 5},
+					{ParameterIsRequired: false, GroupName: "CLI", UIModalPosition: 5},
+				},
+			},
 		},
 		TaskFunctionParseArgString: func(args *agentstructs.PTTaskMessageArgsData, input string) error {
 			if input == "" {
@@ -125,20 +152,27 @@ func init() {
 			if technique == "" {
 				technique = "mmap"
 			}
+			encoding, _ := taskData.Args.GetStringArg("encoding")
+			if encoding == "" {
+				encoding = "none"
+			}
+			key, _ := taskData.Args.GetStringArg("key")
 
 			sc, _ := taskData.Args.GetStringArg("shellcode_b64")
 			if sc != "" {
-				// Validate it's actual base64
 				decoded, err := base64.StdEncoding.DecodeString(sc)
 				if err != nil {
 					response.Success = false
 					response.Error = "shellcode_b64 is not valid base64: " + err.Error()
 					return response
 				}
-				params := map[string]interface{}{"shellcode_b64": sc, "technique": technique}
+				params := map[string]interface{}{"shellcode_b64": sc, "technique": technique, "encoding": encoding, "key": key}
 				paramsJSON, _ := json.Marshal(params)
 				taskData.Args.SetManualArgs(string(paramsJSON))
 				displayParams := fmt.Sprintf("Shellcode: base64 (%d bytes), Technique: %s", len(decoded), technique)
+				if encoding != "none" && encoding != "" {
+					displayParams += fmt.Sprintf(", Encoding: %s", encoding)
+				}
 				response.DisplayParams = &displayParams
 				createArtifact(taskData.Task.ID, "API Call", "VirtualAlloc/CreateThread (self-injection)")
 				return response
@@ -205,12 +239,17 @@ func init() {
 			}
 
 			displayParams := fmt.Sprintf("Shellcode: %s (%d bytes), Technique: %s", filename, len(fileContents), technique)
+			if encoding != "none" && encoding != "" {
+				displayParams += fmt.Sprintf(", Encoding: %s", encoding)
+			}
 			response.DisplayParams = &displayParams
 			createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("Shellcode self-injection via %s (%d bytes)", technique, len(fileContents)))
 
 			params := map[string]interface{}{
 				"shellcode_b64": base64.StdEncoding.EncodeToString(fileContents),
 				"technique":     technique,
+				"encoding":      encoding,
+				"key":           key,
 			}
 			paramsJSON, err := json.Marshal(params)
 			if err != nil {

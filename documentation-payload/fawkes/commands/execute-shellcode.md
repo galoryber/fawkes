@@ -35,6 +35,8 @@ Unlike process injection commands (vanilla-injection, apc-injection, etc.), this
 | file | Yes (New File group) | Upload a new shellcode file |
 | shellcode_b64 | Yes (CLI group) | Base64-encoded raw shellcode bytes |
 | technique | No | `mmap` (default) or `memfd` (Linux only). Selects the memory allocation technique. |
+| encoding | No | Shellcode encoding: `none` (default), `xor` (repeating XOR key), `aes` (AES-256-CTR, first 16 bytes = IV) |
+| key | No | Hex-encoded decryption key. For XOR: any length. For AES: exactly 32 bytes (64 hex chars). |
 
 ## Usage
 
@@ -47,6 +49,34 @@ execute-shellcode -filename my_shellcode.bin -technique memfd
 
 # From API
 execute-shellcode -shellcode_b64 "kJBQ..." -technique memfd
+
+# XOR-encoded shellcode (key=0xDEADBEEF repeating)
+execute-shellcode -shellcode_b64 "<xor-encoded-b64>" -encoding xor -key deadbeef
+
+# AES-256-CTR encoded (first 16 bytes of shellcode = IV, rest = ciphertext)
+execute-shellcode -shellcode_b64 "<aes-encoded-b64>" -encoding aes -key 0011223344556677...  # 64 hex chars
+```
+
+### Encoding Shellcode (Operator Prep)
+
+XOR encode shellcode before sending (Python example):
+```python
+import base64
+key = bytes.fromhex("deadbeef")
+shellcode = open("payload.bin", "rb").read()
+encoded = bytes(b ^ key[i % len(key)] for i, b in enumerate(shellcode))
+print(base64.b64encode(encoded).decode())
+```
+
+AES-256-CTR encode shellcode (Python example):
+```python
+import base64, os
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+key = bytes.fromhex("0011223344556677...")  # 32 bytes
+iv = os.urandom(16)
+cipher = Cipher(algorithms.AES(key), modes.CTR(iv))
+ciphertext = cipher.encryptor().update(shellcode)
+print(base64.b64encode(iv + ciphertext).decode())
 ```
 
 ## OPSEC Considerations
@@ -60,5 +90,6 @@ execute-shellcode -shellcode_b64 "kJBQ..." -technique memfd
 
 ## MITRE ATT&CK Mapping
 
+- **T1027** — Obfuscated Files or Information (XOR/AES shellcode encoding)
 - **T1059.006** — Command and Scripting Interpreter (shellcode execution)
 - **T1620** — Reflective Code Loading (memfd technique)
