@@ -5,27 +5,25 @@ weight = 130
 hidden = false
 +++
 
-{{% notice info %}}Windows Only{{% /notice %}}
-
 ## Summary
 
-Manage Windows scheduled tasks via Task Scheduler COM API (no subprocess creation). Uses ITaskService COM interface with XML-based task registration. Supports multiple trigger types, custom run-as accounts, immediate execution, enable/disable, and stop.
+Manage scheduled tasks across Windows and Linux. On Windows, uses Task Scheduler COM API (no subprocess creation). On Linux, enumerates and manages crontab entries, systemd timers, and at jobs.
 
 ### Arguments
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
 | action | choose_one | Yes | query | `create`, `query`, `delete`, `run`, `list`, `enable`, `disable`, or `stop` |
-| name | string | No* | - | Task name (e.g., `\MyTask`). *Required for all actions except `list`. |
+| name | string | No* | - | Task name. *Required for all actions except `list`. |
 | program | string | No* | - | Path to executable. *Required for `create`. |
 | args | string | No | - | Arguments to pass to the program |
-| trigger | choose_one | No | ONLOGON | When to run: `ONLOGON`, `ONSTART`, `DAILY`, `WEEKLY`, `MONTHLY`, `ONCE`, `ONIDLE` |
+| trigger | choose_one | No | ONLOGON | When to run. Windows: `ONLOGON`, `ONSTART`, `DAILY`, `WEEKLY`, `MONTHLY`, `ONCE`, `ONIDLE`. Linux: same plus `systemd` (timer unit), `at` (one-shot) |
 | time | string | No | - | Start time for time-based triggers (HH:MM format) |
-| user | string | No | - | Run-as user account (e.g., `SYSTEM`, `NT AUTHORITY\SYSTEM`) |
-| run_now | boolean | No | false | Execute the task immediately after creation |
+| user | string | No | - | Run-as user account. Windows: `SYSTEM`, etc. Linux: target user for crontab |
+| run_now | boolean | No | false | Execute the task immediately after creation (Windows only) |
 | filter | string | No | - | Case-insensitive substring filter on task name (used with `list` action) |
 
-## Usage
+## Windows Usage
 
 ### Create a Scheduled Task
 
@@ -44,87 +42,118 @@ Create and run immediately:
 schtask -action create -name "Maintenance" -program "C:\Windows\Temp\payload.exe" -trigger ONCE -time 23:59 -run_now true
 ```
 
-### Query a Task
+### Query, List, Enable/Disable, Stop, Delete
 
-Get detailed information about a specific task:
 ```
 schtask -action query -name "WindowsUpdate"
-```
-
-### Run a Task
-
-Trigger immediate execution of an existing task:
-```
-schtask -action run -name "WindowsUpdate"
-```
-
-### List All Tasks
-
-Enumerate all scheduled tasks on the system:
-```
-schtask -action list
-```
-
-Filter tasks by name:
-```
 schtask -action list -filter "Update"
-```
-
-### Enable/Disable a Task
-
-Toggle a scheduled task's enabled state:
-```
 schtask -action disable -name "WindowsUpdate"
 schtask -action enable -name "WindowsUpdate"
-```
-
-### Stop a Running Task
-
-Terminate a currently-running task instance:
-```
+schtask -action run -name "WindowsUpdate"
 schtask -action stop -name "SecurityScan"
-```
-
-### Delete a Task
-
-Remove a scheduled task:
-```
 schtask -action delete -name "WindowsUpdate"
 ```
 
-### Example Output (create)
+## Linux Usage
+
+### List All Scheduled Tasks
+
+Enumerates crontab entries (user + system + cron.d + periodic), systemd timers, and at jobs:
 ```
-Created scheduled task:
-  Name:    SecurityScan
-  Program: C:\Windows\Temp\scan.exe
-  Trigger: DAILY
+schtask -action list
+schtask -action list -filter "backup"
 ```
 
-### Example Output (query)
+### Query a Systemd Timer or At Job
+
 ```
-Task: SecurityScan
-State: Ready
-Enabled: true
-Last Run Time: 2026-02-22 03:20:00
-Next Run Time: 2026-02-23 09:00:00
-Last Result: 0
-Description: Created by Fawkes
-Action Path: C:\Windows\Temp\scan.exe
+schtask -action query -name "apt-daily.timer"
+schtask -action query -name "at-job-5"
 ```
 
-### Output Format (list)
+### Create a Cron Job
 
-The `list` action returns a JSON array (rendered as a sortable table in the Mythic UI with color-coded states):
+Uses standard cron schedule derived from trigger type:
+```
+schtask -action create -program "/usr/local/bin/backup.sh" -trigger DAILY -time 02:00 -name "nightly-backup"
+```
+
+### Create a Systemd Timer
+
+```
+schtask -action create -program "/usr/local/bin/check.sh" -trigger systemd -name "health-check" -time 06:00
+```
+
+### Create an At Job (One-Shot)
+
+```
+schtask -action create -program "/usr/local/bin/task.sh" -trigger at -time 14:30
+```
+
+### Delete a Scheduled Task
+
+Cron entry (by name/marker):
+```
+schtask -action delete -name "nightly-backup"
+```
+
+Systemd timer:
+```
+schtask -action delete -name "health-check.timer"
+```
+
+At job:
+```
+schtask -action delete -name "at-job-5"
+```
+
+### Enable/Disable Systemd Timers
+
+```
+schtask -action enable -name "apt-daily.timer"
+schtask -action disable -name "apt-daily.timer"
+```
+
+### Run/Stop Systemd Services
+
+```
+schtask -action run -name "health-check"
+schtask -action stop -name "health-check"
+```
+
+## Example Output
+
+### List (JSON array, rendered as table in Mythic UI)
 
 ```json
 [
-  {"name": "SecurityScan", "state": "Ready", "enabled": "true", "next_run_time": "2026-02-23 09:00:00"}
+  {"name": "crontab(root): */5 * * * * /usr/bin/check-updates", "state": "Active", "type": "crontab"},
+  {"name": "apt-daily.timer -> apt-daily.service [system]", "state": "waiting", "type": "systemd-timer", "next_run_time": "Thu 2026-05-22 09:00:00 CDT"},
+  {"name": "at-job-3", "state": "queued", "type": "at", "next_run_time": "Thu May 22 14:30:00 2026"}
 ]
 ```
 
-Other actions (create, query, delete, run) return plain text status messages.
+### Query (systemd timer)
+
+```
+Timer: apt-daily.timer
+Description: Daily apt download activities
+LoadState: loaded
+ActiveState: waiting
+SubState: waiting
+TimersCalendar: { OnCalendar=*-*-* 6,18:00:00 }
+```
+
+## Notes
+
+- **Linux list** enumerates: user crontab, `/etc/crontab`, `/etc/cron.d/*`, `/etc/cron.{hourly,daily,weekly,monthly}/*`, all systemd timers (system + user), and at queue
+- **Systemd timer creation** writes `.timer` and `.service` unit files; root uses `/etc/systemd/system`, non-root uses `~/.config/systemd/user`
+- **Cron entry deletion** matches by name marker comment (`# name`) or command substring
+- **enable/disable/run/stop** on Linux operate on systemd timer/service units
 
 ## MITRE ATT&CK Mapping
 
-- T1053.005 — Scheduled Task/Job: Scheduled Task
-- T1562.001 — Impair Defenses: Disable or Modify Tools (disable action)
+- T1053.005 -- Scheduled Task/Job: Scheduled Task (Windows)
+- T1053.003 -- Scheduled Task/Job: Cron (Linux)
+- T1053.006 -- Scheduled Task/Job: Systemd Timers (Linux)
+- T1562.001 -- Impair Defenses: Disable or Modify Tools (disable action)

@@ -52,4 +52,5 @@ func registerPlatformCommands() {
 	RegisterCommand(&PersistCommand{})
 	RegisterCommand(&NetEnumCommand{})
 	RegisterCommand(&CredmanCommand{})
+	RegisterCommand(&SchtaskCommand{})
 }

@@ -16,16 +16,15 @@ func init() {
 			ScriptPath: filepath.Join(".", "fawkes", "browserscripts", "schtask_new.js"),
 			Author:     "@galoryber",
 		},
-		Description:         "Manage Windows scheduled tasks via COM API (T1053.005)",
-		HelpString:          "schtask -action <create|query|delete|run|list|enable|disable|stop> -name <task_name> [-program <path>] [-args <arguments>] [-trigger <ONLOGON|DAILY|...>] [-time <HH:MM>] [-user <account>] [-run_now] [-filter <substring>]",
-		Version:             2,
+		Description:         "Manage scheduled tasks: Windows Task Scheduler (COM API), Linux crontab/systemd timers/at jobs (T1053)",
+		HelpString:          "schtask -action <create|query|delete|run|list|enable|disable|stop> -name <task_name> [-program <path>] [-args <arguments>] [-trigger <ONLOGON|DAILY|systemd|at>] [-time <HH:MM>] [-user <account>] [-run_now] [-filter <substring>]",
+		Version:             3,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
-		MitreAttackMappings: []string{"T1053.005", "T1562.001"},
+		MitreAttackMappings: []string{"T1053.005", "T1053.003", "T1053.006", "T1562.001"},
 		ScriptOnlyCommand:   false,
 		CommandAttributes: agentstructs.CommandAttribute{
-			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS},
-			FilterCommandAvailabilityByAgentBuildParameters: map[string]string{"selected_os": "Windows"},
+			SupportedOS: []string{agentstructs.SUPPORTED_OS_WINDOWS, agentstructs.SUPPORTED_OS_LINUX},
 		},
 		CommandParameters: []agentstructs.CommandParameter{
 			{
@@ -90,8 +89,8 @@ func init() {
 				ModalDisplayName: "Trigger",
 				CLIName:          "trigger",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"ONLOGON", "ONSTART", "DAILY", "WEEKLY", "MONTHLY", "ONCE", "ONIDLE"},
-				Description:      "When the task should run (default: ONLOGON)",
+				Choices:          []string{"ONLOGON", "ONSTART", "DAILY", "WEEKLY", "MONTHLY", "ONCE", "ONIDLE", "systemd", "at"},
+				Description:      "When the task should run. Windows: ONLOGON/DAILY/etc. Linux: DAILY/WEEKLY (cron), systemd (timer unit), at (one-shot)",
 				DefaultValue:     "ONLOGON",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -166,14 +165,32 @@ func init() {
 				msg += fmt.Sprintf(", name: %s", name)
 			}
 			msg += "). "
-			switch action {
-			case "create":
-				msg += "Creates a scheduled task — generates Event ID 4698 (Security) and 106 (TaskScheduler). " +
-					"Detectable via autoruns, task scheduler monitoring, and SIEM rules."
-			case "delete":
-				msg += "Deletes a scheduled task — generates Event ID 4699. Cleanup operation."
-			default:
-				msg += "Querying scheduled tasks — low detection risk."
+			if taskData.Callback.OS == "Linux" {
+				switch action {
+				case "create":
+					trigger, _ := taskData.Args.GetStringArg("trigger")
+					if strings.EqualFold(trigger, "systemd") || strings.EqualFold(trigger, "timer") {
+						msg += "Creates systemd timer unit files — visible via systemctl, journald logging."
+					} else if strings.EqualFold(trigger, "at") {
+						msg += "Creates at job — visible via atq, /var/spool/at."
+					} else {
+						msg += "Modifies crontab — visible via crontab -l, /var/log/cron, auditd."
+					}
+				case "delete":
+					msg += "Removes scheduled task entry — cleanup operation, logged by auditd if configured."
+				default:
+					msg += "Enumerating scheduled tasks (crontab/systemd/at) — reads filesystem and runs system tools."
+				}
+			} else {
+				switch action {
+				case "create":
+					msg += "Creates a scheduled task — generates Event ID 4698 (Security) and 106 (TaskScheduler). " +
+						"Detectable via autoruns, task scheduler monitoring, and SIEM rules."
+				case "delete":
+					msg += "Deletes a scheduled task — generates Event ID 4699. Cleanup operation."
+				default:
+					msg += "Querying scheduled tasks — low detection risk."
+				}
 			}
 			return agentstructs.PTTTaskOPSECPreTaskMessageResponse{
 				TaskID:             taskData.Task.ID,
@@ -190,7 +207,11 @@ func init() {
 			if name != "" {
 				msg += fmt.Sprintf(" (name: %s)", name)
 			}
-			msg += " configured. SCM artifacts will be created on execution."
+			if taskData.Callback.OS == "Linux" {
+				msg += " configured. Artifacts: crontab entries, systemd unit files, or at job spool."
+			} else {
+				msg += " configured. SCM artifacts will be created on execution."
+			}
 			return agentstructs.PTTaskOPSECPostTaskMessageResponse{
 				TaskID:              taskData.Task.ID,
 				Success:             true,
@@ -234,20 +255,47 @@ func init() {
 				display += fmt.Sprintf(" (filter: %s)", filter)
 			}
 			response.DisplayParams = &display
-			switch action {
-			case "create":
-				program, _ := taskData.Args.GetStringArg("program")
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ITaskFolder.RegisterTaskDefinition(%q, exec=%q)", name, program))
-			case "delete":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ITaskFolder.DeleteTask(%q)", name))
-			case "run":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("IRegisteredTask.Run(%q)", name))
-			case "enable":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("IRegisteredTask.put_Enabled(%q, true)", name))
-			case "disable":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("IRegisteredTask.put_Enabled(%q, false)", name))
-			case "stop":
-				createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("IRegisteredTask.Stop(%q)", name))
+			if taskData.Callback.OS == "Linux" {
+				switch action {
+				case "create":
+					program, _ := taskData.Args.GetStringArg("program")
+					trigger, _ := taskData.Args.GetStringArg("trigger")
+					if strings.EqualFold(trigger, "systemd") || strings.EqualFold(trigger, "timer") {
+						createArtifact(taskData.Task.ID, "File Write", fmt.Sprintf("systemd timer unit: %s (exec=%q)", name, program))
+					} else if strings.EqualFold(trigger, "at") {
+						createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("at job creation (exec=%q)", program))
+					} else {
+						createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("crontab -l | crontab - (exec=%q)", program))
+					}
+				case "delete":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("crontab/systemctl/atrm delete: %s", name))
+				case "list":
+					createArtifact(taskData.Task.ID, "Process Create", "crontab -l, systemctl list-timers, atq")
+				case "query":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl show / at -c: %s", name))
+				case "run":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl start %s", name))
+				case "enable", "disable":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl %s %s", action, name))
+				case "stop":
+					createArtifact(taskData.Task.ID, "Process Create", fmt.Sprintf("systemctl stop %s", name))
+				}
+			} else {
+				switch action {
+				case "create":
+					program, _ := taskData.Args.GetStringArg("program")
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ITaskFolder.RegisterTaskDefinition(%q, exec=%q)", name, program))
+				case "delete":
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("ITaskFolder.DeleteTask(%q)", name))
+				case "run":
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("IRegisteredTask.Run(%q)", name))
+				case "enable":
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("IRegisteredTask.put_Enabled(%q, true)", name))
+				case "disable":
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("IRegisteredTask.put_Enabled(%q, false)", name))
+				case "stop":
+					createArtifact(taskData.Task.ID, "API Call", fmt.Sprintf("IRegisteredTask.Stop(%q)", name))
+				}
 			}
 			if action == "create" || action == "delete" || action == "run" || action == "enable" || action == "disable" {
 				logOperationEvent(taskData.Task.ID,
@@ -264,15 +312,19 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
-			// Try to parse as JSON task list (from "list" action)
 			var tasks []struct {
 				Name        string `json:"name"`
 				State       string `json:"state"`
+				Type        string `json:"type,omitempty"`
 				NextRunTime string `json:"next_run_time,omitempty"`
 			}
 			if json.Unmarshal([]byte(responseText), &tasks) == nil && len(tasks) > 0 {
 				for _, t := range tasks {
-					desc := fmt.Sprintf("[Scheduled Task] %s: %s", t.Name, t.State)
+					label := "Scheduled Task"
+					if t.Type != "" {
+						label = t.Type
+					}
+					desc := fmt.Sprintf("[%s] %s: %s", label, t.Name, t.State)
 					if t.NextRunTime != "" {
 						desc += " (next: " + t.NextRunTime + ")"
 					}
