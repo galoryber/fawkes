@@ -468,8 +468,11 @@ Prevent the agent from executing on unauthorized systems. Configured at build ti
 | `env_key_domain` | Regex | Domain must match (e.g., `CONTOSO` or `.*\.local`) |
 | `env_key_username` | Regex | Username must match (e.g., `admin.*` or `svc_.*`) |
 | `env_key_process` | String | Process name that must be running (e.g., `outlook.exe`) |
+| `env_key_derive` | Choice | Encrypt C2 config with key derived from target host properties. Options: `hostname`, `domain`, `username`, `hostname+domain`, `hostname+domain+username`. Wrong host = AES decrypt fails = silent exit. Stronger than regex match — config values never appear in binary. |
 
 All patterns are case-insensitive and anchored to match the full value. Multiple keys can be combined — all must pass. Invalid regex patterns fail closed (agent exits). Leave empty to skip a check.
+
+**Environmental Key Derivation (`env_key_derive`):** When set, all sensitive C2 config (callback host, UUID, encryption key, URIs, proxy settings, etc.) is AES-256-GCM encrypted at build time using a key derived from the target's environment. At runtime, the agent re-derives the key from its own environment — if it doesn't match (wrong host/domain/user), decryption fails and the agent exits silently. This is stronger than regex matching because the config values are never present in the binary in any form. Requires the corresponding `env_key_*` values to contain the EXACT target values (not regex patterns). Stacks with `obfuscate_strings` (XOR layer applied first, then AES-GCM).
 
 ### C2 String Obfuscation
 

