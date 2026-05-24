@@ -306,7 +306,9 @@ func mainLoop(ctx context.Context, agent *structs.Agent, c2 profiles.Profile, so
 			commands.PostSleepInit()
 			// Rotate config vault encryption key to limit forensic blast radius
 			if rotator, ok := c2.(interface{ RotateVaultKey() error }); ok {
-				rotator.RotateVaultKey()
+				if err := rotator.RotateVaultKey(); err != nil {
+					log.Printf("vault key rotation failed: %v", err)
+				}
 			}
 			if sleepSkipped {
 				log.Printf("timing anomaly, exiting")
