@@ -377,6 +377,43 @@ func (h *HTTPProfile) UpdateCallbackUUID(uuid string) {
 	h.CallbackUUID = uuid
 }
 
+// RotateVaultKey generates a new encryption key, re-encrypts the vault blob,
+// and zeros the old key. This limits the blast radius if a previous key is
+// recovered via memory forensics — only data encrypted since the last rotation
+// is at risk. No-op if vault is not active.
+func (h *HTTPProfile) RotateVaultKey() error {
+	if h.vault == nil {
+		return nil
+	}
+
+	plaintext := vaultDecrypt(h.vault.key, h.vault.blob)
+	if plaintext == nil {
+		return fmt.Errorf("vault decryption failed during key rotation")
+	}
+
+	newKey := make([]byte, 32)
+	if _, err := rand.Read(newKey); err != nil {
+		vaultZeroBytes(plaintext)
+		return fmt.Errorf("new key generation failed: %w", err)
+	}
+
+	newBlob := vaultEncrypt(newKey, plaintext)
+	vaultZeroBytes(plaintext)
+	if newBlob == nil {
+		vaultZeroBytes(newKey)
+		return fmt.Errorf("vault re-encryption failed")
+	}
+
+	oldKey := h.vault.key
+	oldBlob := h.vault.blob
+	h.vault.key = newKey
+	h.vault.blob = newBlob
+	vaultZeroBytes(oldKey)
+	vaultZeroBytes(oldBlob)
+
+	return nil
+}
+
 // buildTLSConfig creates a TLS configuration based on the verification mode.
 // Modes: "none" (skip verification), "system-ca" (OS trust store), "pinned:<hex-sha256>" (cert pin)
 func buildTLSConfig(tlsVerify string) *tls.Config {

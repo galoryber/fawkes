@@ -1,6 +1,9 @@
 package structs
 
-import "time"
+import (
+	"time"
+	"unsafe"
+)
 
 // ProcessEntry represents a process for Mythic's process browser
 type ProcessEntry struct {
@@ -45,6 +48,57 @@ type CommandResult struct {
 	Completed   bool
 	Processes   *[]ProcessEntry     // Optional: populated by ps command for Mythic process browser
 	Credentials *[]MythicCredential // Optional: credentials to store in Mythic's credential vault
+}
+
+// Wipe zeros all sensitive fields in the Response after it has been transmitted.
+// This reduces the window for memory forensics to recover credential data,
+// command output, and other sensitive task results from the heap.
+func (r *Response) Wipe() {
+	zeroString(&r.UserOutput)
+	if r.Credentials != nil {
+		for i := range *r.Credentials {
+			zeroString(&(*r.Credentials)[i].Credential)
+			zeroString(&(*r.Credentials)[i].Account)
+			zeroString(&(*r.Credentials)[i].Realm)
+			zeroString(&(*r.Credentials)[i].Comment)
+			zeroString(&(*r.Credentials)[i].CredentialType)
+		}
+		r.Credentials = nil
+	}
+	if r.ProcessResponse != nil {
+		if s, ok := r.ProcessResponse.(string); ok {
+			zeroString(&s)
+		}
+		r.ProcessResponse = nil
+	}
+	r.Processes = nil
+}
+
+// Wipe zeros all sensitive fields in the CommandResult after use.
+func (cr *CommandResult) Wipe() {
+	zeroString(&cr.Output)
+	if cr.Credentials != nil {
+		for i := range *cr.Credentials {
+			zeroString(&(*cr.Credentials)[i].Credential)
+			zeroString(&(*cr.Credentials)[i].Account)
+			zeroString(&(*cr.Credentials)[i].Realm)
+			zeroString(&(*cr.Credentials)[i].Comment)
+			zeroString(&(*cr.Credentials)[i].CredentialType)
+		}
+		cr.Credentials = nil
+	}
+	cr.Processes = nil
+}
+
+// zeroString zeros the backing memory of a heap-allocated string.
+// Only safe on strings from JSON unmarshaling, fmt.Sprintf, string([]byte), etc.
+// String literals live in read-only .rodata and must not be passed here.
+func zeroString(s *string) {
+	if len(*s) > 0 {
+		b := unsafe.Slice(unsafe.StringData(*s), len(*s))
+		clear(b)
+	}
+	*s = ""
 }
 
 // Command interface for all commands
