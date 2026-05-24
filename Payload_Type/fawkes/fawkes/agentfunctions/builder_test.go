@@ -611,6 +611,11 @@ func TestConstructBuildCommand_Shellcode(t *testing.T) {
 	if !strings.HasSuffix(result.payloadName, ".dll") {
 		t.Errorf("shellcode payloadName should end in .dll, got %q", result.payloadName)
 	}
+	// Shellcode mode must not duplicate CC= (c-shared block already sets it)
+	ccCount := strings.Count(result.command, "CC=x86_64-w64-mingw32-gcc")
+	if ccCount != 1 {
+		t.Errorf("expected exactly 1 CC= assignment for shellcode mode, got %d: %s", ccCount, result.command)
+	}
 }
 
 func TestConstructBuildCommand_Garble(t *testing.T) {

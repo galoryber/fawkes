@@ -63,7 +63,7 @@ func constructBuildCommand(cfg buildCommandConfig) buildCommandResult {
 		}
 	}
 	// Enable CGO for Windows builds (needed for go-coff BOF execution)
-	if cfg.targetOs == "windows" && cfg.mode != "shared" {
+	if cfg.targetOs == "windows" && cfg.mode != "shared" && cfg.mode != "windows-shellcode" {
 		command = strings.Replace(command, "CGO_ENABLED=0", "CGO_ENABLED=1", 1)
 		if goarch == "amd64" {
 			command += "CC=x86_64-w64-mingw32-gcc "

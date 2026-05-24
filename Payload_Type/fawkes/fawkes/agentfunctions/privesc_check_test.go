@@ -1,6 +1,9 @@
 package agentfunctions
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // --- analyzeWindowsPrivesc tests ---
 
@@ -154,5 +157,123 @@ func TestMacOSPrivesc_NoVectors(t *testing.T) {
 	cmd, _, _ := analyzeMacOSPrivesc(output)
 	if cmd != "getsystem" {
 		t.Errorf("expected getsystem check fallback, got %q", cmd)
+	}
+}
+
+// --- generateProxyCSource tests ---
+
+func TestGenerateProxyCSource_BasicStructure(t *testing.T) {
+	shellcode := []byte{0x90, 0xCC, 0xC3}
+	exports := []hijackExportEntry{
+		{Ordinal: 1, Name: "GetFileVersionInfoA"},
+	}
+	src := generateProxyCSource(exports, "version_orig.dll", shellcode)
+
+	if !strings.Contains(src, "#include <windows.h>") {
+		t.Error("expected windows.h include")
+	}
+	if !strings.Contains(src, "0x90, 0xCC, 0xC3") {
+		t.Error("expected shellcode bytes in array")
+	}
+	if !strings.Contains(src, "DllMain") {
+		t.Error("expected DllMain entry point")
+	}
+	if !strings.Contains(src, "VirtualAlloc") {
+		t.Error("expected VirtualAlloc for shellcode execution")
+	}
+	if !strings.Contains(src, "CreateThread") {
+		t.Error("expected CreateThread for async execution")
+	}
+}
+
+func TestGenerateProxyCSource_EmptyShellcode(t *testing.T) {
+	src := generateProxyCSource(nil, "test.dll", []byte{})
+	if !strings.Contains(src, "static unsigned char payload[]") {
+		t.Error("expected payload array even when empty")
+	}
+	if !strings.Contains(src, "DllMain") {
+		t.Error("expected DllMain")
+	}
+}
+
+func TestGenerateProxyCSource_LargeShellcode(t *testing.T) {
+	shellcode := make([]byte, 100)
+	for i := range shellcode {
+		shellcode[i] = byte(i % 256)
+	}
+	src := generateProxyCSource(nil, "test.dll", shellcode)
+	if !strings.Contains(src, "0x00") {
+		t.Error("expected first byte")
+	}
+	if !strings.Contains(src, "0x63") {
+		t.Error("expected last byte (99 = 0x63)")
+	}
+}
+
+// --- generateProxyDEFFile tests ---
+
+func TestGenerateProxyDEFFile_NamedExports(t *testing.T) {
+	exports := []hijackExportEntry{
+		{Ordinal: 1, Name: "GetFileVersionInfoA"},
+		{Ordinal: 2, Name: "GetFileVersionInfoW"},
+		{Ordinal: 3, Name: "VerQueryValueA"},
+	}
+	def := generateProxyDEFFile(exports, "version_orig.dll")
+
+	if !strings.HasPrefix(def, "EXPORTS\n") {
+		t.Error("expected EXPORTS header")
+	}
+	if !strings.Contains(def, "GetFileVersionInfoA=version_orig.GetFileVersionInfoA @1") {
+		t.Errorf("expected proxy export line, got:\n%s", def)
+	}
+	if !strings.Contains(def, "VerQueryValueA=version_orig.VerQueryValueA @3") {
+		t.Error("expected third export")
+	}
+}
+
+func TestGenerateProxyDEFFile_OrdinalOnly(t *testing.T) {
+	exports := []hijackExportEntry{
+		{Ordinal: 42, Name: ""},
+	}
+	def := generateProxyDEFFile(exports, "target.dll")
+
+	if !strings.Contains(def, "noname_42=target.#42 @42 NONAME") {
+		t.Errorf("expected NONAME ordinal export, got:\n%s", def)
+	}
+}
+
+func TestGenerateProxyDEFFile_SkipsForwarders(t *testing.T) {
+	exports := []hijackExportEntry{
+		{Ordinal: 1, Name: "RealExport"},
+		{Ordinal: 2, Name: "ForwardedExport", Forwarder: "ntdll.RtlMoveMemory"},
+	}
+	def := generateProxyDEFFile(exports, "test.dll")
+
+	if strings.Contains(def, "ForwardedExport") {
+		t.Error("forwarder exports should be skipped")
+	}
+	if !strings.Contains(def, "RealExport") {
+		t.Error("real exports should be included")
+	}
+}
+
+func TestGenerateProxyDEFFile_DLLSuffix(t *testing.T) {
+	exports := []hijackExportEntry{
+		{Ordinal: 1, Name: "Func1"},
+	}
+	def := generateProxyDEFFile(exports, "mylib.dll")
+
+	if strings.Contains(def, "mylib.dll.Func1") {
+		t.Error("should strip .dll suffix from renamed DLL name")
+	}
+	if !strings.Contains(def, "mylib.Func1") {
+		t.Errorf("expected mylib.Func1, got:\n%s", def)
+	}
+}
+
+func TestGenerateProxyDEFFile_Empty(t *testing.T) {
+	def := generateProxyDEFFile(nil, "test.dll")
+	if def != "EXPORTS\n" {
+		t.Errorf("expected just header for empty exports, got %q", def)
 	}
 }
