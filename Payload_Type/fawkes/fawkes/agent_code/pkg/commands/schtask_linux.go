@@ -322,7 +322,7 @@ func deleteSystemdTimer(name string) structs.CommandResult {
 		}
 	}
 
-	execCmdTimeout("systemctl", append(scopeArgs, "daemon-reload")...)
+	_, _ = execCmdTimeout("systemctl", append(scopeArgs, "daemon-reload")...)
 
 	if removed == 0 {
 		return errorf("No systemd unit files found for '%s'", unitName)
