@@ -31,6 +31,19 @@ Supported types:
 - `s` - int16
 - `b` - binary (base64)
 
+#### Timeout (optional)
+Execution timeout in seconds. Default: 30. Increase for long-running BOFs.
+
+## Features
+
+### Structured Output
+BOF output is classified by Beacon API output type:
+- **Standard output** (CALLBACK_OUTPUT, CALLBACK_OUTPUT_UTF8) — displayed normally
+- **Error output** (CALLBACK_ERROR) — prefixed with `[ERROR]` and rendered in red in the Mythic UI
+
+### Forge Compatibility
+Supports Forge Command Augmentation for community BOFs with TypedArray arguments.
+
 ## Usage
 
 Use the Mythic UI popup to select the BOF file and configure arguments.
@@ -38,6 +51,7 @@ Use the Mythic UI popup to select the BOF file and configure arguments.
 Example
 ```
 inline-execute    (select BOF, entry_point: go, arguments: i:80)
+inline-execute    (select BOF, entry_point: go, arguments: z:hostname i:443, timeout: 120)
 ```
 
 ## MITRE ATT&CK Mapping

@@ -21,13 +21,26 @@ import (
 
 const coffImageScnMemExecute = 0x20000000
 
+const (
+	beaconCallbackOutput     = 0x00
+	beaconCallbackError      = 0x0d
+	beaconCallbackOutputOEM  = 0x1e
+	beaconCallbackOutputUTF8 = 0x20
+)
+
+type bofOutputMsg struct {
+	outType int
+	text    string
+}
+
 type coffSection struct {
 	Section *pecoff.Section
 	Address uintptr
 }
 
-// LoadAndRunBOF loads a COFF/BOF file and executes it with the given arguments
-func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string, error) {
+// LoadAndRunBOF loads a COFF/BOF file and executes it with the given arguments.
+// timeoutSec controls the execution timeout in seconds (0 = default 30s).
+func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string, timeoutSec int) (string, error) {
 	outputChan := make(chan interface{}, 100)
 
 	parsedCoff := pecoff.Explore(binutil.WrapByteSlice(coffBytes))
@@ -241,9 +254,12 @@ func LoadAndRunBOF(coffBytes []byte, argBytes []byte, entryPoint string) (string
 	}()
 
 	// Collect output with timeout to prevent blocking the agent
+	if timeoutSec <= 0 {
+		timeoutSec = 30
+	}
 	var outputBuf strings.Builder
 	timedOut := false
-	timeout := time.After(30 * time.Second)
+	deadline := time.After(time.Duration(timeoutSec) * time.Second)
 collectLoop:
 	for {
 		select {
@@ -251,9 +267,18 @@ collectLoop:
 			if !ok {
 				break collectLoop
 			}
-			fmt.Fprintf(&outputBuf, "%v\n", msg)
-		case <-timeout:
-			outputBuf.WriteString("[!] BOF execution timed out after 30 seconds\n")
+			switch m := msg.(type) {
+			case bofOutputMsg:
+				if m.outType == beaconCallbackError {
+					fmt.Fprintf(&outputBuf, "[ERROR] %s\n", m.text)
+				} else {
+					fmt.Fprintf(&outputBuf, "%s\n", m.text)
+				}
+			default:
+				fmt.Fprintf(&outputBuf, "%v\n", msg)
+			}
+		case <-deadline:
+			fmt.Fprintf(&outputBuf, "[!] BOF execution timed out after %d seconds\n", timeoutSec)
 			timedOut = true
 			break collectLoop
 		}
@@ -363,7 +388,7 @@ func getBeaconOutputCallback(ch chan<- interface{}) func(int, uintptr, int) uint
 		for i := 0; i < length; i++ {
 			out[i] = *(*byte)(unsafe.Pointer(data + uintptr(i)))
 		}
-		ch <- string(out)
+		ch <- bofOutputMsg{outType: outType, text: string(out)}
 		return 1
 	}
 }
@@ -371,8 +396,7 @@ func getBeaconOutputCallback(ch chan<- interface{}) func(int, uintptr, int) uint
 func getBeaconPrintfCallback(ch chan<- interface{}) func(int, uintptr, uintptr, uintptr, uintptr, uintptr, uintptr, uintptr, uintptr, uintptr, uintptr, uintptr) uintptr {
 	return func(outType int, format uintptr, a0, a1, a2, a3, a4, a5, a6, a7, a8, a9 uintptr) uintptr {
 		formatStr := readCString(format)
-		// Basic format string handling
-		ch <- formatStr
+		ch <- bofOutputMsg{outType: outType, text: formatStr}
 		return 0
 	}
 }

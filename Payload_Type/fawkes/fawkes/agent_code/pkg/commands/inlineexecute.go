@@ -29,6 +29,7 @@ type InlineExecuteParams struct {
 	BOFB64     string   `json:"bof_b64"`     // Base64-encoded BOF bytes
 	EntryPoint string   `json:"entry_point"` // Entry point function name
 	Arguments  []string `json:"arguments"`   // Arguments in format: ["zvalue", "i80"]
+	Timeout    int      `json:"timeout"`     // Execution timeout in seconds (0 = default 30s)
 }
 
 // Execute executes the inline-execute command
@@ -69,7 +70,7 @@ func (c *InlineExecuteCommand) Execute(task structs.Task) structs.CommandResult 
 		entryPoint = "go"
 	}
 
-	bofOutput, err := LoadAndRunBOF(bofBytes, argBytes, entryPoint)
+	bofOutput, err := LoadAndRunBOF(bofBytes, argBytes, entryPoint, params.Timeout)
 
 	// Check for execution errors
 	if err != nil {
