@@ -26,28 +26,75 @@ type ntlmCapturedHash struct {
 
 // buildNTLMType2 constructs an NTLM Type 2 (Challenge) message with the given
 // server challenge. Returns the raw NTLMSSP bytes (not SPNEGO-wrapped).
+// Includes TargetInfo AVPairs required by modern NTLMv2 clients (Windows SMB,
+// smbclient) which refuse to authenticate without target information.
 func buildNTLMType2(challenge [8]byte) []byte {
-	// Minimal Type 2: 56 bytes (no target info or OS version)
-	msg := make([]byte, 56)
+	// Build TargetInfo AVPairs: DomainName + ComputerName + EOL
+	domainName := ntlmEncodeUTF16LE("WORKGROUP")
+	computerName := ntlmEncodeUTF16LE("SERVER")
+
+	// AVPair format: Type(2) + Length(2) + Value(variable)
+	targetInfo := make([]byte, 0, 4+len(domainName)+4+len(computerName)+4)
+	// MsvAvNbDomainName (type 2)
+	targetInfo = append(targetInfo, 0x02, 0x00)
+	targetInfo = binary.LittleEndian.AppendUint16(targetInfo, uint16(len(domainName)))
+	targetInfo = append(targetInfo, domainName...)
+	// MsvAvNbComputerName (type 1)
+	targetInfo = append(targetInfo, 0x01, 0x00)
+	targetInfo = binary.LittleEndian.AppendUint16(targetInfo, uint16(len(computerName)))
+	targetInfo = append(targetInfo, computerName...)
+	// MsvAvEOL (type 0, length 0)
+	targetInfo = append(targetInfo, 0x00, 0x00, 0x00, 0x00)
+
+	targetName := ntlmEncodeUTF16LE("WORKGROUP")
+
+	// Type 2 header = 56 bytes, payload = targetName + targetInfo
+	headerSize := 56
+	payloadOffset := headerSize
+	targetNameOffset := payloadOffset
+	targetInfoOffset := targetNameOffset + len(targetName)
+	totalSize := targetInfoOffset + len(targetInfo)
+
+	msg := make([]byte, totalSize)
 	copy(msg[0:8], []byte("NTLMSSP\x00"))
 	binary.LittleEndian.PutUint32(msg[8:12], 2) // Type 2
 
-	// Target Name: empty security buffer
-	binary.LittleEndian.PutUint16(msg[12:14], 0)  // Length
-	binary.LittleEndian.PutUint16(msg[14:16], 0)  // MaxLength
-	binary.LittleEndian.PutUint32(msg[16:20], 56) // Offset
+	// Target Name security buffer
+	binary.LittleEndian.PutUint16(msg[12:14], uint16(len(targetName)))
+	binary.LittleEndian.PutUint16(msg[14:16], uint16(len(targetName)))
+	binary.LittleEndian.PutUint32(msg[16:20], uint32(targetNameOffset))
 
 	// Negotiate Flags:
 	// NEGOTIATE_UNICODE(0x01) | REQUEST_TARGET(0x04) | NEGOTIATE_NTLM(0x200) |
 	// NEGOTIATE_ALWAYS_SIGN(0x8000) | NEGOTIATE_NTLM2(0x80000) |
-	// TARGET_TYPE_SERVER(0x20000)
-	flags := uint32(0x000A8235)
+	// TARGET_TYPE_SERVER(0x20000) | NEGOTIATE_TARGET_INFO(0x800000)
+	flags := uint32(0x00828235)
 	binary.LittleEndian.PutUint32(msg[20:24], flags)
 
 	// Server Challenge
 	copy(msg[24:32], challenge[:])
-	// Reserved (8 bytes) already zeroed
+	// Reserved (8 bytes at offset 32) already zeroed
+
+	// Target Info security buffer (offset 40)
+	binary.LittleEndian.PutUint16(msg[40:42], uint16(len(targetInfo)))
+	binary.LittleEndian.PutUint16(msg[42:44], uint16(len(targetInfo)))
+	binary.LittleEndian.PutUint32(msg[44:48], uint32(targetInfoOffset))
+
+	// Copy payload
+	copy(msg[targetNameOffset:], targetName)
+	copy(msg[targetInfoOffset:], targetInfo)
+
 	return msg
+}
+
+// ntlmEncodeUTF16LE encodes an ASCII string as UTF-16LE bytes for NTLM messages.
+func ntlmEncodeUTF16LE(s string) []byte {
+	out := make([]byte, len(s)*2)
+	for i := 0; i < len(s); i++ {
+		out[i*2] = s[i]
+		out[i*2+1] = 0
+	}
+	return out
 }
 
 // extractNTLMv2Hash extracts NTLMv2 hash components from an NTLM Type 3 message
