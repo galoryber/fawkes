@@ -137,6 +137,75 @@ func TestSMBServerType2SPNEGOWrap(t *testing.T) {
 	}
 }
 
+func TestBuildNTLMType2TargetInfo(t *testing.T) {
+	challenge := [8]byte{0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22}
+	type2 := buildNTLMType2(challenge)
+
+	// Verify NTLMSSP signature
+	if !bytes.Equal(type2[0:8], []byte("NTLMSSP\x00")) {
+		t.Fatal("missing NTLMSSP signature")
+	}
+	// Message type = 2
+	if binary.LittleEndian.Uint32(type2[8:12]) != 2 {
+		t.Fatal("wrong message type")
+	}
+	// Challenge matches
+	if !bytes.Equal(type2[24:32], challenge[:]) {
+		t.Error("challenge mismatch")
+	}
+	// NEGOTIATE_TARGET_INFO flag (0x800000) must be set
+	flags := binary.LittleEndian.Uint32(type2[20:24])
+	if flags&0x800000 == 0 {
+		t.Error("NEGOTIATE_TARGET_INFO flag not set")
+	}
+	// TargetInfo security buffer at offset 40 must be non-empty
+	tiLen := binary.LittleEndian.Uint16(type2[40:42])
+	tiOff := binary.LittleEndian.Uint32(type2[44:48])
+	if tiLen == 0 {
+		t.Fatal("TargetInfo length is 0")
+	}
+	if int(tiOff)+int(tiLen) > len(type2) {
+		t.Fatal("TargetInfo extends past message")
+	}
+	targetInfo := type2[tiOff : tiOff+uint32(tiLen)]
+
+	// Parse AVPairs: look for MsvAvNbDomainName (2) and MsvAvNbComputerName (1) and MsvAvEOL (0)
+	foundDomain := false
+	foundComputer := false
+	foundEOL := false
+	offset := 0
+	for offset+4 <= len(targetInfo) {
+		avID := binary.LittleEndian.Uint16(targetInfo[offset : offset+2])
+		avLen := binary.LittleEndian.Uint16(targetInfo[offset+2 : offset+4])
+		switch avID {
+		case 0:
+			foundEOL = true
+		case 1:
+			foundComputer = true
+		case 2:
+			foundDomain = true
+		}
+		offset += 4 + int(avLen)
+		if avID == 0 {
+			break
+		}
+	}
+	if !foundDomain {
+		t.Error("TargetInfo missing MsvAvNbDomainName (type 2)")
+	}
+	if !foundComputer {
+		t.Error("TargetInfo missing MsvAvNbComputerName (type 1)")
+	}
+	if !foundEOL {
+		t.Error("TargetInfo missing MsvAvEOL (type 0)")
+	}
+	// TargetName should be non-empty
+	tnLen := binary.LittleEndian.Uint16(type2[12:14])
+	if tnLen == 0 {
+		t.Error("TargetName length is 0")
+	}
+}
+
 func TestSMBServerHashExtractionFromType3(t *testing.T) {
 	challenge := [8]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08}
 
