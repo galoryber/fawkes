@@ -68,10 +68,12 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return winHijackExecute(args)
 	case "hijack-deploy":
 		return winHijackDeploy(args)
+	case "hijack-cleanup":
+		return winHijackCleanup(args)
 	case "service-registry":
 		return winPrivescCheckServiceRegistryPerms()
 	default:
-		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac, dll-hijack, dll-plant, dll-sideload, dll-exports, hijack-execute, hijack-deploy, service-registry", args.Action)
+		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac, dll-hijack, dll-plant, dll-sideload, dll-exports, hijack-execute, hijack-deploy, hijack-cleanup, service-registry", args.Action)
 	}
 }
 

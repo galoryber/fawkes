@@ -177,3 +177,56 @@ func winHijackDeploy(args privescCheckArgs) structs.CommandResult {
 
 	return successResult(sb.String())
 }
+
+func winHijackCleanup(args privescCheckArgs) structs.CommandResult {
+	if args.TargetDir == "" {
+		return errorResult("Error: 'target_dir' is required — directory where the hijack was deployed")
+	}
+	if args.DLLName == "" {
+		return errorResult("Error: 'dll_name' is required — original DLL filename (e.g. version.dll)")
+	}
+
+	targetDir, err := filepath.Abs(args.TargetDir)
+	if err != nil {
+		return errorf("Error resolving target directory: %v", err)
+	}
+
+	dllName := args.DLLName
+	if !strings.HasSuffix(strings.ToLower(dllName), ".dll") {
+		dllName += ".dll"
+	}
+
+	proxyPath := filepath.Join(targetDir, dllName)
+	renamedName := proxyRenamedDLLName(dllName)
+	renamedPath := filepath.Join(targetDir, renamedName)
+
+	_, renamedExists := os.Stat(renamedPath)
+	_, proxyExists := os.Stat(proxyPath)
+
+	if renamedExists != nil && proxyExists != nil {
+		return errorf("No hijack found: neither %s nor %s exists", proxyPath, renamedPath)
+	}
+
+	var sb strings.Builder
+	sb.WriteString("[+] DLL hijack cleanup\n")
+
+	if proxyExists == nil {
+		if err := os.Remove(proxyPath); err != nil {
+			return errorf("Error deleting proxy DLL %s: %v", proxyPath, err)
+		}
+		sb.WriteString(fmt.Sprintf("    Deleted proxy: %s\n", proxyPath))
+	}
+
+	if renamedExists == nil {
+		origPath := filepath.Join(targetDir, dllName)
+		if err := os.Rename(renamedPath, origPath); err != nil {
+			return errorf("Error restoring original DLL: %v", err)
+		}
+		sb.WriteString(fmt.Sprintf("    Restored:      %s → %s\n", renamedPath, origPath))
+	} else {
+		sb.WriteString(fmt.Sprintf("    No original to restore (%s not found)\n", renamedPath))
+	}
+
+	sb.WriteString("\n[+] Hijack cleaned up successfully")
+	return successResult(sb.String())
+}
