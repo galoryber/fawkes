@@ -15,7 +15,7 @@ Supports authentication via explicit credentials (UPN format) or anonymous bind.
 
 | Argument | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `action` | Yes | `users` | Query type: `users`, `computers`, `groups`, `domain-admins`, `spns`, `asrep`, `admins`, `disabled`, `gpo`, `ou`, `password-never-expires`, `trusts`, `unconstrained`, `constrained`, `dacl`, `gmsa`, or `query` |
+| `action` | Yes | `users` | Query type: `users`, `computers`, `groups`, `domain-admins`, `spns`, `asrep`, `admins`, `disabled`, `gpo`, `ou`, `password-never-expires`, `trusts`, `unconstrained`, `constrained`, `dacl`, `gmsa`, `bloodhound`, or `query` |
 | `server` | Yes | | Domain controller IP or hostname |
 | `filter` | No | | Custom LDAP filter (required when action=`query`). For `dacl`, specify target object name. |
 | `base_dn` | No | auto | LDAP search base (auto-detected from RootDSE) |
@@ -45,6 +45,7 @@ Supports authentication via explicit credentials (UPN format) or anonymous bind.
 | `constrained` | `(msDS-AllowedToDelegateTo=*)` | Accounts with constrained delegation |
 | `dacl` | N/A | Parse DACL of a specific AD object (use `-filter` for target name) |
 | `gmsa` | `(objectClass=msDS-GroupManagedServiceAccount)` | Enumerate Group Managed Service Accounts. Extracts NTLM hash from msDS-ManagedPassword if readable. Identifies who can read the password. |
+| `bloodhound` | Multiple queries | Comprehensive AD collection in BloodHound CE v6 JSON format. Collects users, computers, groups, OUs, GPOs, trusts, and group memberships for graph analysis. |
 
 ## Usage
 
@@ -93,6 +94,9 @@ ldap-query -action dacl -server dc01 -filter "Domain Admins" -username user@doma
 
 # Enumerate gMSA accounts and extract NTLM hashes (if readable)
 ldap-query -action gmsa -server dc01 -username user@domain.local -password Pass123
+
+# BloodHound CE collection (graph analysis)
+ldap-query -action bloodhound -server dc01 -username user@domain.local -password Pass123 -limit 500
 
 # Custom LDAP filter
 ldap-query -action query -server 192.168.1.10 -username user@domain.local -password Pass123 -filter "(servicePrincipalName=*MSSQLSvc*)"
@@ -165,6 +169,53 @@ The `gmsa` action enumerates Group Managed Service Accounts and attempts to extr
 
 This is a common AD privilege escalation path: any principal allowed to read `msDS-ManagedPassword` can extract the NTLM hash and use it for authentication via pass-the-hash.
 
+## BloodHound CE Collection
+
+The `bloodhound` action performs comprehensive AD enumeration and outputs data in BloodHound Community Edition v6 JSON format, ready for import into BloodHound CE for graph-based attack path analysis.
+
+### What it collects
+
+- **Users**: SID, name, UPN, UAC flags (enabled, delegation, preauth, adminCount, SPN), primary group, constrained delegation targets, timestamps
+- **Computers**: SID, DNS hostname, OS, UAC flags, LAPS status, delegation, primary group, timestamps
+- **Groups**: SID, name, direct members (resolved to SIDs with User/Computer/Group type), adminCount
+- **OUs**: GUID, name, GPO links (with enforcement status), inheritance blocking
+- **GPOs**: GUID, display name, SYSVOL path
+- **Domain**: SID, functional level, trust relationships (direction, type, transitivity, SID filtering)
+
+### What it does NOT collect (requires per-host enumeration)
+
+- ACLs/DACLs (use `ldap-query -action dacl` per object instead)
+- Local admin sessions, RDP/DCOM/PSRemote users (requires SMB/WinRM to each host)
+- Active logon sessions (requires NetSessionEnum to each host)
+
+### Output format
+
+The output is a single JSON object containing separate BloodHound CE v6 collections (users, computers, groups, domains, ous, gpos) plus a summary:
+
+```json
+{
+  "computers": {"meta": {"type": "computers", "count": 5, "version": 6}, "data": [...]},
+  "users": {"meta": {"type": "users", "count": 100, "version": 6}, "data": [...]},
+  "groups": {"meta": {"type": "groups", "count": 50, "version": 6}, "data": [...]},
+  "domains": {"meta": {"type": "domains", "count": 1, "version": 6}, "data": [...]},
+  "ous": {"meta": {"type": "ous", "count": 10, "version": 6}, "data": [...]},
+  "gpos": {"meta": {"type": "gpos", "count": 5, "version": 6}, "data": [...]},
+  "summary": {"domain": "SEVENKINGDOMS.LOCAL", "domain_sid": "S-1-5-21-...", "users": 100, "computers": 5, ...}
+}
+```
+
+To import into BloodHound CE, download the task output JSON and split it by type, or use each top-level key's content as a separate import file.
+
+### OPSEC considerations
+
+BloodHound collection generates significant LDAP traffic (bulk queries for all users, computers, groups, OUs, GPOs, and trusts). This pattern is detected by:
+
+- **Microsoft Defender for Identity** (MDI/ATA): detects LDAP reconnaissance patterns
+- **CrowdStrike Falcon**: monitors for bulk LDAP enumeration
+- **Custom SIEM rules**: Event ID 4662 (Directory Service Access) at high volume
+
+Consider running during business hours to blend with normal AD authentication traffic. Use the `limit` parameter to constrain result counts if stealth is a priority.
+
 ## Notes
 
 - **Authentication**: Most AD environments require authenticated bind. Use UPN format (`user@domain.local`) for the username. The `DOMAIN\user` format is not supported for LDAP simple bind.
@@ -179,3 +230,4 @@ This is a common AD privilege escalation path: any principal allowed to read `ms
 - **T1482** — Domain Trust Discovery
 - **T1555** — Credentials from Password Stores (gMSA)
 - **T1003** — OS Credential Dumping (gMSA)
+- **T1615** — Group Policy Discovery (bloodhound)

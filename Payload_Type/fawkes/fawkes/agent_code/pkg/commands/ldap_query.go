@@ -110,7 +110,7 @@ var presetQueries = map[string]struct {
 
 func (c *LdapQueryCommand) Execute(task structs.Task) structs.CommandResult {
 	if task.Params == "" {
-		return errorResult("Error: parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|admins|disabled|gpo|ou|password-never-expires|trusts|unconstrained|constrained|dacl|query> -server <DC>")
+		return errorResult("Error: parameters required. Use -action <users|computers|groups|domain-admins|spns|asrep|admins|disabled|gpo|ou|password-never-expires|trusts|unconstrained|constrained|dacl|gmsa|bloodhound|query> -server <DC>")
 	}
 
 	args, parseErr := unmarshalParams[ldapQueryArgs](task)
@@ -188,10 +188,15 @@ func ldapRunQuery(args ldapQueryArgs) structs.CommandResult {
 		return ldapQueryGMSA(conn, args, baseDN)
 	}
 
+	// Handle bloodhound action (comprehensive AD collection in BH CE format)
+	if strings.ToLower(args.Action) == "bloodhound" {
+		return successResult(ldapQueryBloodHound(conn, args, baseDN))
+	}
+
 	// Resolve filter and attributes
 	filter, attributes, desc := resolveQuery(args, baseDN)
 	if filter == "" {
-		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, admins, disabled, gpo, ou, password-never-expires, trusts, unconstrained, constrained, dacl, gmsa, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
+		return errorResult("Error: action must be one of: users, computers, groups, domain-admins, spns, asrep, admins, disabled, gpo, ou, password-never-expires, trusts, unconstrained, constrained, dacl, gmsa, bloodhound, query. For 'query', provide -filter. For 'dacl', provide -filter with target object name.")
 	}
 
 	// Execute search — use SizeLimit=0 with paging to avoid "Size Limit Exceeded"
