@@ -14,8 +14,8 @@ func init() {
 	agentstructs.AllPayloadData.Get("fawkes").AddCommand(agentstructs.Command{
 		Name:                "privesc-check",
 		Description:         "Privilege escalation enumeration. Windows: token privileges, unquoted services, AlwaysInstallElevated, auto-logon, UAC. Linux: SUID/SGID, capabilities, sudo, containers, cron hijacking, NFS, systemd units, sudo tokens, PATH hijacking, docker group, dangerous groups, Polkit rules, modprobe hooks, ld.so.preload, security modules. macOS: LaunchDaemons, TCC, dylib hijacking, SIP (T1548)",
-		HelpString:          "privesc-check -action <all|...> (Windows: privileges, services, registry, uac, unattend, dll-hijack. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable)",
-		Version:             8,
+		HelpString:          "privesc-check -action <all|...> (Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload, dll-exports, service-registry. Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable)",
+		Version:             9,
 		SupportedUIFeatures: []string{},
 		Author:              "@galoryber",
 		MitreAttackMappings: []string{"T1548", "T1548.001", "T1548.002", "T1574.001", "T1574.002", "T1574.009", "T1574.011", "T1552.001", "T1613", "T1082"},
@@ -37,8 +37,8 @@ func init() {
 				ModalDisplayName: "Action",
 				CLIName:          "action",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_CHOOSE_ONE,
-				Choices:          []string{"all", "auto-escalate", "privileges", "services", "registry", "uac", "unattend", "writable", "dll-hijack", "dll-plant", "dll-sideload", "service-registry", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "path-hijack", "docker-group", "group", "polkit", "modprobe", "ld-preload", "security", "launchdaemons", "tcc", "dylib", "sip"},
-				Description:      "Check to perform. auto-escalate: automated chain — enumerate vectors then attempt privilege escalation. Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload (T1574.002), service-registry (T1574.011). Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
+				Choices:          []string{"all", "auto-escalate", "privileges", "services", "registry", "uac", "unattend", "writable", "dll-hijack", "dll-plant", "dll-sideload", "dll-exports", "service-registry", "suid", "sudo", "capabilities", "container", "cron", "nfs", "systemd", "sudo-token", "path-hijack", "docker-group", "group", "polkit", "modprobe", "ld-preload", "security", "launchdaemons", "tcc", "dylib", "sip"},
+				Description:      "Check to perform. auto-escalate: automated chain — enumerate vectors then attempt privilege escalation. Windows: privileges, services, registry, uac, unattend, dll-hijack, dll-plant, dll-sideload (T1574.002), dll-exports (PE export table), service-registry (T1574.011). Linux: suid, capabilities, sudo, container, cron, nfs, systemd, sudo-token, path-hijack, docker-group, group, polkit, modprobe, ld-preload, security. macOS: launchdaemons, tcc, dylib, sip. Shared: all, writable",
 				DefaultValue:     "all",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{
@@ -52,7 +52,7 @@ func init() {
 				ModalDisplayName: "Source DLL Path",
 				CLIName:          "source",
 				ParameterType:    agentstructs.COMMAND_PARAMETER_TYPE_STRING,
-				Description:      "Path to DLL on target (for dll-plant). Upload the DLL first, then reference its local path.",
+				Description:      "Path to PE file on target. For dll-plant: path to the DLL to plant. For dll-exports: path to a DLL/EXE to enumerate exports from.",
 				DefaultValue:     "",
 				ParameterGroupInformation: []agentstructs.ParameterGroupInfo{
 					{

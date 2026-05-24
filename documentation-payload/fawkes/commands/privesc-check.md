@@ -39,6 +39,7 @@ Cross-platform privilege escalation enumeration. Scans for common privilege esca
 - **dll-hijack** — Scan for DLL search order hijacking opportunities: SafeDllSearchMode, 15 phantom DLLs, writable PATH directories, KnownDLLs protection
 - **dll-plant** — Plant a DLL in a target directory for DLL search order hijacking (T1574.001). Requires source, target_dir, and dll_name parameters. Auto-timestomps to kernel32.dll
 - **dll-sideload** — Scan for DLL sideloading opportunities: finds executables that load DLLs from their own directory where the directory is writable (T1574.002)
+- **dll-exports** — Enumerate the export table of any PE file (DLL or EXE) on disk. Lists all exported functions with ordinals, names, and forwarders. Generates a DEF file for proxy DLL creation. Use with `source` parameter.
 - **service-registry** — Check for services with weak registry key permissions (WriteDACL, WriteOwner, ChangeConfig) that allow modifying the service binary path or configuration for privilege escalation (T1574.011)
 
 ### Linux-Only Actions

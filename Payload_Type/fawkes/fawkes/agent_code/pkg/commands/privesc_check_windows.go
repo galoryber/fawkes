@@ -62,10 +62,12 @@ func (c *PrivescCheckCommand) Execute(task structs.Task) structs.CommandResult {
 		return winDLLPlant(args)
 	case "dll-sideload":
 		return winPrivescCheckDLLSideLoad()
+	case "dll-exports":
+		return winDLLExports(args)
 	case "service-registry":
 		return winPrivescCheckServiceRegistryPerms()
 	default:
-		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac, dll-hijack, dll-plant, dll-sideload, service-registry", args.Action)
+		return errorf("Unknown action: %s. Use: all, privileges, services, registry, writable, unattend, uac, dll-hijack, dll-plant, dll-sideload, dll-exports, service-registry", args.Action)
 	}
 }
 
