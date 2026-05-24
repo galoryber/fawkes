@@ -573,7 +573,7 @@ func processHijackExecuteResponse(taskData *agentstructs.PTTaskMessageAllData, r
 	deployInstructions.WriteString(fmt.Sprintf("    File ID: %s\n\n", createResp.AgentFileID))
 	deployInstructions.WriteString("--- Deployment Steps ---\n")
 	deployInstructions.WriteString("1. Download the proxy DLL to the target:\n")
-	deployInstructions.WriteString(fmt.Sprintf("   upload -file_id %s -remote_path C:\\path\\%s\n\n", proxyFilename, proxyFilename))
+	deployInstructions.WriteString(fmt.Sprintf("   upload -file_id %s -remote_path C:\\path\\%s\n\n", createResp.AgentFileID, proxyFilename))
 	deployInstructions.WriteString("2. Deploy the hijack (rename original, place proxy):\n")
 	deployInstructions.WriteString(fmt.Sprintf("   privesc-check -action hijack-deploy -source C:\\path\\%s -target_dir %s -dll_name %s\n\n",
 		proxyFilename, filepath.Dir(exportData.OrigPath), exportData.OrigName))
