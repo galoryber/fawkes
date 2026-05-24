@@ -443,9 +443,10 @@ func parseNMConnectionFile(path string) (linuxCredEntry, error) {
 
 		switch section {
 		case "connection":
-			if key == "id" {
+			switch key {
+			case "id":
 				entry.Label = val
-			} else if key == "type" {
+			case "type":
 				entry.Attrs["type"] = val
 			}
 		case "wifi":
@@ -454,15 +455,17 @@ func parseNMConnectionFile(path string) (linuxCredEntry, error) {
 				entry.Attrs["ssid"] = val
 			}
 		case "wifi-security":
-			if key == "psk" {
+			switch key {
+			case "psk":
 				entry.Secret = val
-			} else if key == "key-mgmt" {
+			case "key-mgmt":
 				entry.Attrs["security"] = val
 			}
 		case "802-1x":
-			if key == "identity" {
+			switch key {
+			case "identity":
 				entry.Account = val
-			} else if key == "password" {
+			case "password":
 				entry.Secret = val
 			}
 		case "vpn":

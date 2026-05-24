@@ -3,8 +3,10 @@ package commands
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 )
 
 type executeShellcodeArgs struct {
@@ -28,6 +30,47 @@ func decodeShellcode(data []byte, encoding, keyHex string) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported encoding %q (use none, xor, or aes)", encoding)
 	}
+}
+
+func encodeData(data []byte, encoding string) (encoded []byte, keyHex string, err error) {
+	switch encoding {
+	case "xor":
+		return encodeXOR(data)
+	case "aes":
+		return encodeAES(data)
+	default:
+		return nil, "", fmt.Errorf("unsupported encoding %q (use xor or aes)", encoding)
+	}
+}
+
+func encodeXOR(data []byte) ([]byte, string, error) {
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, key); err != nil {
+		return nil, "", fmt.Errorf("generate key: %v", err)
+	}
+	out := make([]byte, len(data))
+	for i, b := range data {
+		out[i] = b ^ key[i%len(key)]
+	}
+	return out, hex.EncodeToString(key), nil
+}
+
+func encodeAES(data []byte) ([]byte, string, error) {
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, key); err != nil {
+		return nil, "", fmt.Errorf("generate key: %v", err)
+	}
+	iv := make([]byte, aes.BlockSize)
+	if _, err := io.ReadFull(rand.Reader, iv); err != nil {
+		return nil, "", fmt.Errorf("generate IV: %v", err)
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, "", fmt.Errorf("aes cipher: %v", err)
+	}
+	ciphertext := make([]byte, len(data))
+	cipher.NewCTR(block, iv).XORKeyStream(ciphertext, data)
+	return append(iv, ciphertext...), hex.EncodeToString(key), nil
 }
 
 func decodeXOR(data []byte, keyHex string) ([]byte, error) {

@@ -204,9 +204,7 @@ func schtaskLinuxCreateSystemdTimer(args schtaskArgs) structs.CommandResult {
 	}
 
 	unitName := args.Name
-	if strings.HasSuffix(unitName, ".timer") {
-		unitName = strings.TrimSuffix(unitName, ".timer")
-	}
+	unitName = strings.TrimSuffix(unitName, ".timer")
 
 	command := args.Program
 	if args.Args != "" {
@@ -262,7 +260,7 @@ func schtaskLinuxCreateSystemdTimer(args schtaskArgs) structs.CommandResult {
 		scopeArgs = append(scopeArgs, "--user")
 	}
 
-	execCmdTimeout("systemctl", append(scopeArgs, "daemon-reload")...)
+	_, _ = execCmdTimeout("systemctl", append(scopeArgs, "daemon-reload")...)
 	out, err := execCmdTimeout("systemctl", append(scopeArgs, "enable", "--now", unitName+".timer")...)
 	if err != nil {
 		return errorf("Timer files created but enable failed: %v\n%s\nFiles: %s, %s", err, string(out), servicePath, timerPath)
@@ -305,8 +303,8 @@ func deleteSystemdTimer(name string) structs.CommandResult {
 		scopeArgs = append(scopeArgs, "--user")
 	}
 
-	execCmdTimeout("systemctl", append(scopeArgs, "stop", timerName)...)
-	execCmdTimeout("systemctl", append(scopeArgs, "disable", timerName)...)
+	_, _ = execCmdTimeout("systemctl", append(scopeArgs, "stop", timerName)...)
+	_, _ = execCmdTimeout("systemctl", append(scopeArgs, "disable", timerName)...)
 
 	var unitDir string
 	if isRoot {
